@@ -146,6 +146,13 @@ RUN \
     make -j$THREADS && \
     cp riscvemu64 $RISCV/bin
 
+# Build poweroff
+COPY poweroff.c $RISCV
+
+RUN \
+    cd $RISCV && \
+    riscv64-unknown-linux-gnu-gcc -O2 -o root/sbin/poweroff poweroff.c
+
 # Build ext2 filesystem containing root
 RUN \
     cd $RISCV && \

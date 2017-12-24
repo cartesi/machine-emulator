@@ -12,8 +12,6 @@ ifconfig lo 127.0.0.1
 
 cd $HOME
 
-while true; do
+setsid sh -c 'exec sh < /dev/hvc0 > /dev/hvc0 2>&1'
 
-  setsid sh -c 'exec sh < /dev/hvc0 > /dev/hvc0 2>&1'
-
-done
+poweroff

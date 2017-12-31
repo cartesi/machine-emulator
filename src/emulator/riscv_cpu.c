@@ -47,7 +47,7 @@
 #endif
 #endif /* !FLEN */
 
-#define CONFIG_EXT_C /* compressed instructions */
+//#define CONFIG_EXT_C /* compressed instructions */
 
 //#define DUMP_INVALID_MEM_ACCESS
 //#define DUMP_MMU_EXCEPTIONS

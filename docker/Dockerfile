@@ -126,26 +126,6 @@ RUN \
     cd .. && \
     rm -rf busybox-1.27.2
 
-# build riscvemu without floating-point or compressed instruction support
-RUN \
-    apt-get update && \
-    apt-get install -y libssl-dev libcurl4-openssl-dev
-
-ADD riscvemu-2017-08-06.tar.gz $RISCV
-
-COPY \
-    riscvemu-2017-08-06.patch \
-    riscvemu.cfg \
-    $RISCV/
-
-# Build emulator ----------------------------------------------------
-
-RUN \
-    cd $RISCV/riscvemu-2017-08-06 && \
-    patch < $RISCV/riscvemu-2017-08-06.patch && \
-    make -j$THREADS && \
-    cp riscvemu64 $RISCV/bin
-
 # Build poweroff
 COPY poweroff.c $RISCV
 
@@ -158,8 +138,27 @@ RUN \
     cd $RISCV && \
     genext2fs -i 4096 -b 65536 -d root root.bin
 
+# Build emulator ----------------------------------------------------
+
+RUN \
+    apt-get update && \
+    apt-get install -y libssl-dev libcurl4-openssl-dev
+
+COPY \
+    riscvemu.cfg \
+    riscvemu-2017-08-06.patch \
+    $RISCV/
+
+ADD riscvemu-2017-08-06.tar.gz $RISCV
+
+RUN \
+    cd $RISCV/riscvemu-2017-08-06 && \
+    patch < $RISCV/riscvemu-2017-08-06.patch && \
+    make -j$THREADS && \
+    cp riscvemu64 $RISCV/bin
+
 USER themis
 
-WORKDIR $RISCV
+WORKDIR /home/themis
 
 CMD ["/bin/bash", "-l"]

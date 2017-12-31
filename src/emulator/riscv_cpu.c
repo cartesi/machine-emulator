@@ -1,6 +1,6 @@
 /*
  * RISCV CPU emulator
- * 
+ *
  * Copyright (c) 2016-2017 Fabrice Bellard
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -39,14 +39,6 @@
 //#define MAX_XLEN 128
 #endif
 
-#ifndef FLEN
-#if MAX_XLEN == 128
-#define FLEN 128
-#else
-#define FLEN 64
-#endif
-#endif /* !FLEN */
-
 //#define CONFIG_EXT_C /* compressed instructions */
 
 //#define DUMP_INVALID_MEM_ACCESS
@@ -61,10 +53,6 @@
 #define USE_GLOBAL_STATE
 /* use local variables slows down the generated JS code */
 #define USE_GLOBAL_VARIABLES
-#endif
-
-#if FLEN > 0
-#include "softfp.h"
 #endif
 
 #define __exception __attribute__((warn_unused_result))
@@ -85,28 +73,10 @@ typedef int128_t target_long;
 #error unsupported MAX_XLEN
 #endif
 
-/* FLEN is the floating point register width */
-#if FLEN > 0
-#if FLEN == 32
-typedef uint32_t fp_uint;
-#define F32_HIGH 0
-#elif FLEN == 64
-typedef uint64_t fp_uint;
-#define F32_HIGH ((fp_uint)-1 << 32)
-#define F64_HIGH 0
-#elif FLEN == 128
-typedef uint128_t fp_uint;
-#define F32_HIGH ((fp_uint)-1 << 32)
-#define F64_HIGH ((fp_uint)-1 << 64)
-#else
-#error unsupported FLEN
-#endif
-#endif
-
 /* MLEN is the maximum memory access width */
-#if MAX_XLEN <= 32 && FLEN <= 32
+#if MAX_XLEN <= 32
 #define MLEN 32
-#elif MAX_XLEN <= 64 && FLEN <= 64
+#elif MAX_XLEN <= 64
 #define MLEN 64
 #else
 #define MLEN 128
@@ -141,7 +111,7 @@ typedef uint128_t mem_uint_t;
 #define CAUSE_STORE_PAGE_FAULT    0xf
 
 /* Note: converted to correct bit position at runtime */
-#define CAUSE_INTERRUPT  ((uint32_t)1 << 31) 
+#define CAUSE_INTERRUPT  ((uint32_t)1 << 31)
 
 #define PRV_U 0
 #define PRV_S 1
@@ -208,23 +178,18 @@ struct RISCVCPUState {
     uint8_t *__code_ptr, *__code_end;
     target_ulong __code_to_pc_addend;
 #endif
-    
-#if FLEN > 0
-    fp_uint fp_reg[32];
-    uint32_t fflags;
-    uint8_t frm;
-#endif
-    
+
+
     uint8_t cur_xlen;  /* current XLEN value, <= MAX_XLEN */
     uint8_t priv; /* see PRV_x */
     uint8_t fs; /* MSTATUS_FS value */
     uint8_t mxl; /* MXL field in MISA register */
-    
+
     uint64_t insn_counter;
     BOOL power_down_flag;
     int pending_exception; /* used during MMU exception handling */
     target_ulong pending_tval;
-    
+
     /* CSRs */
     target_ulong mstatus;
     target_ulong mtvec;
@@ -239,7 +204,7 @@ struct RISCVCPUState {
     uint32_t medeleg;
     uint32_t mideleg;
     uint32_t mcounteren;
-    
+
     target_ulong stvec;
     target_ulong sscratch;
     target_ulong sepc;
@@ -672,7 +637,7 @@ static no_inline int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
                 /* emulate 64 bit access */
                 ret = pr->read_func(pr->opaque, offset, 2);
                 ret |= (uint64_t)pr->read_func(pr->opaque, offset + 4, 2) << 32;
-                
+
             }
 #endif
             else {
@@ -697,7 +662,7 @@ static no_inline int target_write_slow(RISCVCPUState *s, target_ulong addr,
     target_ulong paddr, offset;
     uint8_t *ptr;
     PhysMemoryRange *pr;
-    
+
     /* first handle unaligned accesses */
     size = 1 << size_log2;
     if ((addr & (size - 1)) != 0) {
@@ -798,7 +763,7 @@ static no_inline __exception int target_read_insn_slow(RISCVCPUState *s,
     target_ulong paddr;
     uint8_t *ptr;
     PhysMemoryRange *pr;
-    
+
     if (get_phys_addr(s, &paddr, addr, ACCESS_CODE)) {
         s->pending_tval = addr;
         s->pending_exception = CAUSE_FETCH_PAGE_FAULT;
@@ -825,7 +790,7 @@ static inline __exception int target_read_insn_u16(RISCVCPUState *s, uint16_t *p
 {
     uint32_t tlb_idx;
     uintptr_t mem_addend;
-    
+
     tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
     if (likely(s->tlb_code[tlb_idx].vaddr == (addr & ~PG_MASK))) {
         mem_addend = s->tlb_code[tlb_idx].mem_addend;
@@ -840,7 +805,7 @@ static inline __exception int target_read_insn_u16(RISCVCPUState *s, uint16_t *p
 static void tlb_init(RISCVCPUState *s)
 {
     int i;
-    
+
     for(i = 0; i < TLB_SIZE; i++) {
         s->tlb_read[i].vaddr = -1;
         s->tlb_write[i].vaddr = -1;
@@ -864,7 +829,7 @@ void riscv_cpu_flush_tlb_write_range_ram(RISCVCPUState *s,
 {
     uint8_t *ptr, *ram_end;
     int i;
-    
+
     ram_end = ram_ptr + ram_size;
     for(i = 0; i < TLB_SIZE; i++) {
         if (s->tlb_write[i].vaddr != -1) {
@@ -912,7 +877,7 @@ static target_ulong get_mstatus(RISCVCPUState *s, target_ulong mask)
         val |= (target_ulong)1 << (s->cur_xlen - 1);
     return val;
 }
-                              
+
 static int get_base_from_xlen(int xlen)
 {
     if (xlen == 32)
@@ -926,7 +891,7 @@ static int get_base_from_xlen(int xlen)
 static void set_mstatus(RISCVCPUState *s, target_ulong val)
 {
     target_ulong mod, mask;
-    
+
     /* flush the TLBs if change of MMU config */
     mod = s->mstatus ^ val;
     if ((mod & (MSTATUS_MPRV | MSTATUS_SUM | MSTATUS_MXR)) != 0 ||
@@ -961,25 +926,8 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
         return -1; /* read-only CSR */
     if (s->priv < ((csr >> 8) & 3))
         return -1; /* not enough priviledge */
-    
+
     switch(csr) {
-#if FLEN > 0
-    case 0x001: /* fflags */
-        if (s->fs == 0)
-            return -1;
-        val = s->fflags;
-        break;
-    case 0x002: /* frm */
-        if (s->fs == 0)
-            return -1;
-        val = s->frm;
-        break;
-    case 0x003:
-        if (s->fs == 0)
-            return -1;
-        val = s->fflags | (s->frm << 5);
-        break;
-#endif
     case 0xc00: /* ucycle */
     case 0xc02: /* uinstret */
         {
@@ -1012,7 +960,7 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
         }
         val = s->insn_counter >> 32;
         break;
-        
+
     case 0x100:
         val = get_mstatus(s, SSTATUS_MASK);
         break;
@@ -1108,26 +1056,6 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
     return 0;
 }
 
-#if FLEN > 0
-static void set_frm(RISCVCPUState *s, unsigned int val)
-{
-    if (val >= 5)
-        val = 0;
-    s->frm = val;
-}
-
-/* return -1 if invalid roundind mode */
-static int get_insn_rm(RISCVCPUState *s, unsigned int rm)
-{
-    if (rm == 7)
-        return s->frm;
-    if (rm >= 5)
-        return -1;
-    else
-        return rm;
-}
-#endif
-
 /* return -1 if invalid CSR, 0 if OK, 1 if the interpreter loop must be
    exited (e.g. XLEN was modified), 2 if TLBs have been flushed. */
 static int csr_write(RISCVCPUState *s, uint32_t csr, target_ulong val)
@@ -1140,21 +1068,6 @@ static int csr_write(RISCVCPUState *s, uint32_t csr, target_ulong val)
     printf("\n");
 #endif
     switch(csr) {
-#if FLEN > 0
-    case 0x001: /* fflags */
-        s->fflags = val & 0x1f;
-        s->fs = 3;
-        break;
-    case 0x002: /* frm */
-        set_frm(s, val & 7);
-        s->fs = 3;
-        break;
-    case 0x003: /* fcsr */
-        set_frm(s, (val >> 5) & 7);
-        s->fflags = val & 0x1f;
-        s->fs = 3;
-        break;
-#endif
     case 0x100: /* sstatus */
         set_mstatus(s, (s->mstatus & ~SSTATUS_MASK) | (val & SSTATUS_MASK));
         break;
@@ -1206,7 +1119,7 @@ static int csr_write(RISCVCPUState *s, uint32_t csr, target_ulong val)
 #endif
         tlb_flush_all(s);
         return 2;
-        
+
     case 0x300:
         set_mstatus(s, val);
         break;
@@ -1296,7 +1209,7 @@ static void raise_exception2(RISCVCPUState *s, uint32_t cause,
 {
     BOOL deleg;
     target_ulong causel;
-    
+
 #if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS)
     {
         int flag;
@@ -1341,11 +1254,11 @@ static void raise_exception2(RISCVCPUState *s, uint32_t cause,
     } else {
         deleg = 0;
     }
-    
+
     causel = cause & 0x7fffffff;
     if (cause & CAUSE_INTERRUPT)
         causel |= (target_ulong)1 << (s->cur_xlen - 1);
-    
+
     if (deleg) {
         s->scause = causel;
         s->sepc = s->pc;
@@ -1453,7 +1366,7 @@ static inline int32_t sext(int32_t val, int n)
     return (val << (32 - n)) >> (32 - n);
 }
 
-static inline uint32_t get_field1(uint32_t val, int src_pos, 
+static inline uint32_t get_field1(uint32_t val, int src_pos,
                                   int dst_pos, int dst_pos_max)
 {
     int mask;
@@ -1546,7 +1459,7 @@ int riscv_cpu_get_max_xlen(void)
 RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map)
 {
     RISCVCPUState *s;
-    
+
 #ifdef USE_GLOBAL_STATE
     s = &riscv_cpu_global_state;
 #else
@@ -1560,15 +1473,6 @@ RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map)
     s->mstatus = ((uint64_t)s->mxl << MSTATUS_UXL_SHIFT) |
         ((uint64_t)s->mxl << MSTATUS_SXL_SHIFT);
     s->misa |= MCPUID_SUPER | MCPUID_USER | MCPUID_I | MCPUID_M | MCPUID_A;
-#if FLEN >= 32
-    s->misa |= MCPUID_F;
-#endif
-#if FLEN >= 64
-    s->misa |= MCPUID_D;
-#endif
-#if FLEN >= 128
-    s->misa |= MCPUID_Q;
-#endif
 #ifdef CONFIG_EXT_C
     s->misa |= MCPUID_C;
 #endif

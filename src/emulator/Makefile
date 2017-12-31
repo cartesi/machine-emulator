@@ -44,7 +44,6 @@ EMU_OBJS:= \
 	fs_disk.o \
 	riscvemu.o \
 	riscv_machine.o \
-	softfp.o \
 	riscv_cpu.o
 
 LIBS=-lrt

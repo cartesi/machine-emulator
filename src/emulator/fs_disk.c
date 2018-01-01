@@ -27,9 +27,16 @@
 #include <inttypes.h>
 #include <assert.h>
 #include <stdarg.h>
+#ifndef __APPLE__
 #include <sys/statfs.h>
+#else
+#include <sys/param.h>
+#include <sys/mount.h>
+#endif
 #include <sys/stat.h>
+#ifndef __APPLE__
 #include <sys/sysmacros.h>
+#endif
 #include <unistd.h>
 #include <fcntl.h>
 #include <dirent.h>

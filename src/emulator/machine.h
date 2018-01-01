@@ -49,13 +49,6 @@ typedef struct {
 } VMDriveEntry;
 
 typedef struct {
-    char *device;
-    char *tag; /* 9p mount tag */
-    char *filename;
-    FSDevice *fs_dev;
-} VMFSEntry;
-
-typedef struct {
     char *cfg_filename;
     uint64_t ram_size;
     BOOL rtc_real_time;
@@ -65,8 +58,6 @@ typedef struct {
     CharacterDevice *console;
     VMDriveEntry tab_drive[MAX_DRIVE_DEVICE];
     int drive_count;
-    VMFSEntry tab_fs[MAX_FS_DEVICE];
-    int fs_count;
 
     char *cmdline; /* bios or kernel command line */
     char *input_device; /* NULL means no input */

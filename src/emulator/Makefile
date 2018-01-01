@@ -55,7 +55,7 @@ OBJS:= \
 	cutils.o \
 	iomem.o \
 	machine.o \
-	riscvemu.o \
+	luaemu.o \
 	riscv_machine.o \
 	riscv_cpu.o
 

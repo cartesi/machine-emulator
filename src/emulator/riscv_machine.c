@@ -841,11 +841,10 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
         }
     }
 
-    if (!p->files[VM_FILE_BIOS].buf) {
-        vm_error("No bios found");
+    if (!p->kernel.buf) {
+        vm_error("No kernel found");
     }
-    copy_kernel(s, p->files[VM_FILE_BIOS].buf, p->files[VM_FILE_BIOS].len,
-                p->cmdline);
+    copy_kernel(s, p->kernel.buf, p->kernel.len, p->cmdline);
 
     return (VirtMachine *)s;
 }

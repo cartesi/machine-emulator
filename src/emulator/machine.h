@@ -1,6 +1,6 @@
 /*
  * VM definitions
- * 
+ *
  * Copyright (c) 2016-2017 Fabrice Bellard
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -27,13 +27,6 @@
 
 #define VM_CONFIG_VERSION 1
 
-typedef enum {
-    VM_FILE_BIOS,
-    VM_FILE_KERNEL,
-
-    VM_FILE_COUNT,
-} VMFileTypeEnum;
-
 typedef struct {
     char *filename;
     uint8_t *buf;
@@ -57,11 +50,11 @@ typedef struct {
     VMDriveEntry tab_drive[VM_MAX_DRIVE_DEVICE];
     int drive_count;
 
-    char *cmdline; /* bios or kernel command line */
+    char *cmdline; /* kernel command line */
     char *input_device; /* NULL means no input */
 
-    /* kernel, bios and other auxiliary files */
-    VMFileEntry files[VM_FILE_COUNT];
+    /* kernel file */
+    VMFileEntry kernel;
 } VirtMachineParams;
 
 typedef struct VirtMachine {

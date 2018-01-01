@@ -177,8 +177,12 @@ void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx) {
     p->ram_size = checkuint(L, tabidx, "memory_size");
     p->ram_size <<= 20;
 
-    p->files[VM_FILE_BIOS].filename = dupcheckstring(L, tabidx, "bios");
-    p->files[VM_FILE_KERNEL].filename = dupoptstring(L, tabidx, "kernel");
+    p->kernel.filename = dupcheckstring(L, tabidx, "kernel");
+    p->kernel.len = load_file(&p->kernel.buf, p->kernel.filename);
+    if (p->kernel.len < 0) {
+        luaL_error(L, "Unable to load %s.", p->kernel.filename);
+    }
+
     p->cmdline = dupoptstring(L, tabidx, "cmdline");
 
     for (p->drive_count = 0;
@@ -207,14 +211,6 @@ void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx) {
 
     p->rtc_local_time = optboolean(L, tabidx, "rtc_local_time", 0);
 
-	for (i = 0; i < VM_FILE_COUNT; i++) {
-		if (p->files[i].filename != NULL) {
-            int len = load_file(&p->files[i].buf, p->files[i].filename);
-            if (len < 0)
-                luaL_error(L, "Unable to load %s.", p->files[i].filename);
-			p->files[i].len = len;
-		}
-    }
 }
 
 void vm_add_cmdline(VirtMachineParams *p, const char *cmdline)
@@ -238,12 +234,9 @@ void vm_add_cmdline(VirtMachineParams *p, const char *cmdline)
 void virt_machine_free_config(VirtMachineParams *p)
 {
     int i;
-
     free(p->cmdline);
-    for(i = 0; i < VM_FILE_COUNT; i++) {
-        free(p->files[i].filename);
-        free(p->files[i].buf);
-    }
+    free(p->kernel.filename);
+    free(p->kernel.buf);
     for(i = 0; i < p->drive_count; i++) {
         free(p->tab_drive[i].filename);
         free(p->tab_drive[i].device);

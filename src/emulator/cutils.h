@@ -173,16 +173,4 @@ void pstrcpy(char *buf, int buf_size, const char *str);
 char *pstrcat(char *buf, int buf_size, const char *s);
 int strstart(const char *str, const char *val, const char **ptr);
 
-typedef struct {
-    uint8_t *buf;
-    size_t size;
-    size_t allocated_size;
-} DynBuf;
-
-void dbuf_init(DynBuf *s);
-void dbuf_write(DynBuf *s, size_t offset, const uint8_t *data, size_t len);
-void dbuf_putc(DynBuf *s, uint8_t c);
-void dbuf_putstr(DynBuf *s, const char *str);
-void dbuf_free(DynBuf *s);
-
 #endif /* CUTILS_H */

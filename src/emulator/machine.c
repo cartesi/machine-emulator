@@ -1,6 +1,6 @@
 /*
  * VM utilities
- * 
+ *
  * Copyright (c) 2017 Fabrice Bellard
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -57,7 +57,7 @@ void __attribute__((format(printf, 1, 2))) vm_error(const char *fmt, ...)
 }
 
 int vm_get_int(JSONValue obj, const char *name, int *pval)
-{ 
+{
     JSONValue val;
     val = json_object_get(obj, name);
     if (json_is_undefined(val)) {
@@ -74,7 +74,7 @@ int vm_get_int(JSONValue obj, const char *name, int *pval)
 
 static int vm_get_str2(JSONValue obj, const char *name, const char **pstr,
                       BOOL is_opt)
-{ 
+{
     JSONValue val;
     val = json_object_get(obj, name);
     if (json_is_undefined(val)) {
@@ -95,12 +95,12 @@ static int vm_get_str2(JSONValue obj, const char *name, const char **pstr,
 }
 
 static int vm_get_str(JSONValue obj, const char *name, const char **pstr)
-{ 
+{
     return vm_get_str2(obj, name, pstr, FALSE);
 }
 
 static int vm_get_str_opt(JSONValue obj, const char *name, const char **pstr)
-{ 
+{
     return vm_get_str2(obj, name, pstr, TRUE);
 }
 
@@ -118,7 +118,7 @@ static char *cmdline_subst(const char *cmdline)
     DynBuf dbuf;
     const char *p;
     char var_name[32], *q, buf[32];
-    
+
     dbuf_init(&dbuf);
     p = cmdline;
     while (*p != '\0') {
@@ -165,7 +165,7 @@ static int virt_machine_parse_config(VirtMachineParams *p,
     const char *tag_name, *machine_name, *str;
     char buf1[256];
     JSONValue cfg, obj, el;
-    
+
     cfg = json_parse_value_len(config_file_str, len);
     if (json_is_error(cfg)) {
         vm_error("error: %s\n", json_get_error(cfg));
@@ -184,7 +184,7 @@ static int virt_machine_parse_config(VirtMachineParams *p,
             return -1;
         }
     }
-    
+
     if (vm_get_str(cfg, "machine", &str) < 0)
         goto tag_fail;
     machine_name = virt_machine_get_name();
@@ -198,7 +198,7 @@ static int virt_machine_parse_config(VirtMachineParams *p,
     if (vm_get_int(cfg, tag_name, &val) < 0)
         goto tag_fail;
     p->ram_size = val << 20;
-    
+
     tag_name = "bios";
     if (vm_get_str_opt(cfg, tag_name, &str) < 0)
         goto tag_fail;
@@ -218,7 +218,7 @@ static int virt_machine_parse_config(VirtMachineParams *p,
     if (str) {
         p->cmdline = cmdline_subst(str);
     }
-    
+
     for(;;) {
         snprintf(buf1, sizeof(buf1), "drive%d", p->drive_count);
         obj = json_object_get(cfg, buf1);
@@ -262,59 +262,11 @@ static int virt_machine_parse_config(VirtMachineParams *p,
         p->fs_count++;
     }
 
-    for(;;) {
-        snprintf(buf1, sizeof(buf1), "eth%d", p->eth_count);
-        obj = json_object_get(cfg, buf1);
-        if (json_is_undefined(obj))
-            break;
-        if (p->eth_count >= MAX_ETH_DEVICE) {
-            vm_error("Too many ethernet interfaces\n");
-            return -1;
-        }
-        if (vm_get_str(obj, "driver", &str) < 0)
-            goto tag_fail;
-        p->tab_eth[p->eth_count].driver = strdup(str);
-        if (!strcmp(str, "tap")) {
-            if (vm_get_str(obj, "ifname", &str) < 0)
-                goto tag_fail;
-            p->tab_eth[p->eth_count].ifname = strdup(str);
-        }
-        p->eth_count++;
-    }
-
     p->display_device = NULL;
-    obj = json_object_get(cfg, "display0");
-    if (!json_is_undefined(obj)) {
-        if (vm_get_str(obj, "device", &str) < 0)
-            goto tag_fail;
-        p->display_device = strdup(str);
-        if (vm_get_int(obj, "width", &p->width) < 0)
-            goto tag_fail;
-        if (vm_get_int(obj, "height", &p->height) < 0)
-            goto tag_fail;
-        if (vm_get_str_opt(obj, "vga_bios", &str) < 0)
-            goto tag_fail;
-        if (str) {
-            p->files[VM_FILE_VGA_BIOS].filename = strdup(str);
-        }
-    }
 
     if (vm_get_str_opt(cfg, "input_device", &str) < 0)
         goto tag_fail;
     p->input_device = strdup_null(str);
-
-    if (vm_get_str_opt(cfg, "accel", &str) < 0)
-        goto tag_fail;
-    if (str) {
-        if (!strcmp(str, "none")) {
-            p->accel_enable = FALSE;
-        } else if (!strcmp(str, "auto")) {
-            p->accel_enable = TRUE;
-        } else {
-            vm_error("unsupported 'accel' config: %s\n", str);
-            return -1;
-        }
-    }
 
     tag_name = "rtc_local_time";
     el = json_object_get(cfg, tag_name);
@@ -325,7 +277,7 @@ static int virt_machine_parse_config(VirtMachineParams *p,
         }
         p->rtc_local_time = el.u.b;
     }
-    
+
     json_free(cfg);
     return 0;
  tag_fail:
@@ -339,7 +291,7 @@ typedef struct {
     VirtMachineParams *vm_params;
     void (*start_cb)(void *opaque);
     void *opaque;
-    
+
     FSLoadFileCB *file_load_cb;
     void *file_load_opaque;
     int file_index;
@@ -355,7 +307,7 @@ char *get_file_path(const char *base_filename, const char *filename)
 {
     int len, len1;
     char *fname, *p;
-    
+
     if (!base_filename)
         goto done;
     if (strchr(filename, ':'))
@@ -388,7 +340,7 @@ static int load_file(uint8_t **pbuf, const char *filename)
     FILE *f;
     int size;
     uint8_t *buf;
-    
+
     f = fopen(filename, "rb");
     if (!f) {
         perror(filename);
@@ -412,7 +364,7 @@ static int load_file(uint8_t **pbuf, const char *filename)
 static void config_load_file_cb(void *opaque, int err, void *data, size_t size)
 {
     VMConfigLoadState *s = opaque;
-    
+
     //    printf("err=%d data=%p size=%ld\n", err, data, size);
     if (err < 0) {
         vm_error("Error %d while loading file\n", -err);
@@ -448,7 +400,7 @@ void virt_machine_load_config_file(VirtMachineParams *p,
                                    void *opaque)
 {
     VMConfigLoadState *s;
-    
+
     s = mallocz(sizeof(*s));
     s->vm_params = p;
     s->start_cb = start_cb;
@@ -465,7 +417,7 @@ static void config_file_loaded(void *opaque, uint8_t *buf, int buf_len)
 
     if (virt_machine_parse_config(p, (char *)buf, buf_len) < 0)
         exit(1);
-    
+
     /* load the additional files */
     s->file_index = 0;
     config_additional_file_load(s);
@@ -484,7 +436,7 @@ static void config_additional_file_load(VMConfigLoadState *s)
         free(s);
     } else {
         char *fname;
-        
+
         fname = get_file_path(p->cfg_filename,
                               p->files[s->file_index].filename);
         config_load_file(s, fname,
@@ -529,7 +481,7 @@ void vm_add_cmdline(VirtMachineParams *p, const char *cmdline)
 void virt_machine_free_config(VirtMachineParams *p)
 {
     int i;
-    
+
     free(p->cmdline);
     for(i = 0; i < VM_FILE_COUNT; i++) {
         free(p->files[i].filename);
@@ -542,10 +494,6 @@ void virt_machine_free_config(VirtMachineParams *p)
     for(i = 0; i < p->fs_count; i++) {
         free(p->tab_fs[i].filename);
         free(p->tab_fs[i].tag);
-    }
-    for(i = 0; i < p->eth_count; i++) {
-        free(p->tab_eth[i].driver);
-        free(p->tab_eth[i].ifname);
     }
     free(p->input_device);
     free(p->display_device);

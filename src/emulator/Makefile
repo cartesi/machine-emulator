@@ -38,7 +38,6 @@ EMU_OBJS:= \
 	fs.o \
 	cutils.o \
 	iomem.o \
-	simplefb.o \
     json.o \
 	machine.o \
 	fs_disk.o \

@@ -23,26 +23,8 @@
  */
 #include "json.h"
 
-typedef struct FBDevice FBDevice;
-
-typedef void SimpleFBDrawFunc(FBDevice *fb_dev, void *opaque,
-                              int x, int y, int w, int h);
-
-struct FBDevice {
-    /* the following is set by the device */
-    int width;
-    int height;
-    int stride; /* current stride in bytes */
-    uint8_t *fb_data; /* current pointer to the pixel data */
-    int fb_size; /* frame buffer memory size (info only) */
-    void *device_opaque;
-    void (*refresh)(struct FBDevice *fb_dev,
-                    SimpleFBDrawFunc *redraw_func, void *opaque);
-};
-
 #define MAX_DRIVE_DEVICE 4
 #define MAX_FS_DEVICE 4
-#define MAX_ETH_DEVICE 1
 
 #define VM_CONFIG_VERSION 1
 
@@ -74,12 +56,6 @@ typedef struct {
 } VMFSEntry;
 
 typedef struct {
-    char *driver;
-    char *ifname;
-    EthernetDevice *net;
-} VMEthEntry;
-
-typedef struct {
     char *cfg_filename;
     uint64_t ram_size;
     BOOL rtc_real_time;
@@ -91,25 +67,18 @@ typedef struct {
     int drive_count;
     VMFSEntry tab_fs[MAX_FS_DEVICE];
     int fs_count;
-    VMEthEntry tab_eth[MAX_ETH_DEVICE];
-    int eth_count;
 
     char *cmdline; /* bios or kernel command line */
-    BOOL accel_enable; /* enable acceleration (KVM) */
     char *input_device; /* NULL means no input */
-    
+
     /* kernel, bios and other auxiliary files */
     VMFileEntry files[VM_FILE_COUNT];
 } VirtMachineParams;
 
 typedef struct VirtMachine {
-    /* network */
-    EthernetDevice *net;
     /* console */
     VIRTIODevice *console_dev;
     CharacterDevice *console;
-    /* graphics */
-    FBDevice *fb_dev;
 } VirtMachine;
 
 void __attribute__((format(printf, 1, 2))) vm_error(const char *fmt, ...);
@@ -132,28 +101,3 @@ BOOL vm_mouse_is_absolute(VirtMachine *s);
 void vm_send_mouse_event(VirtMachine *s1, int dx, int dy, int dz,
                          unsigned int buttons);
 void vm_send_key_event(VirtMachine *s1, BOOL is_down, uint16_t key_code);
-
-/* gui */
-void sdl_refresh(VirtMachine *m);
-void sdl_init(int width, int height);
-
-/* simplefb.c */
-typedef struct SimpleFBState SimpleFBState;
-SimpleFBState *simplefb_init(PhysMemoryMap *map, uint64_t phys_addr,
-                             FBDevice *fb_dev, int width, int height);
-void simplefb_refresh(FBDevice *fb_dev,
-                      SimpleFBDrawFunc *redraw_func, void *opaque,
-                      PhysMemoryRange *mem_range,
-                      int fb_page_count);
-
-/* vga.c */
-typedef struct VGAState VGAState;
-VGAState *pci_vga_init(PCIBus *bus, FBDevice *fb_dev,
-                       int width, int height,
-                       const uint8_t *vga_rom_buf, int vga_rom_size);
-                      
-/* block_net.c */
-BlockDevice *block_device_init_http(const char *url,
-                                    int max_cache_size_kb,
-                                    void (*start_cb)(void *opaque),
-                                    void *start_opaque);

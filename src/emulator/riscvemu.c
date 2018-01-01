@@ -1,6 +1,6 @@
 /*
  * RISCV emulator
- * 
+ *
  * Copyright (c) 2016-2017 Fabrice Bellard
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -32,31 +32,16 @@
 #include <unistd.h>
 #include <time.h>
 #include <getopt.h>
-#ifndef _WIN32
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
-#include <linux/if_tun.h>
-#endif
 #include <sys/stat.h>
 #include <signal.h>
-
 #include "cutils.h"
 #include "iomem.h"
 #include "virtio.h"
 #include "machine.h"
-#ifdef CONFIG_FS_NET
-#include "fs_utils.h"
-#include "fs_wget.h"
-#endif
-#ifdef CONFIG_CPU_RISCV
 #include "riscv_cpu.h"
-#endif
-#ifdef CONFIG_SLIRP
-#include "slirp/libslirp.h"
-#endif
-
-#ifndef _WIN32
 
 typedef struct {
     int stdin_fd;
@@ -110,7 +95,7 @@ static int console_read(void *opaque, uint8_t *buf, int len)
     STDIODevice *s = opaque;
     int ret, i, j;
     uint8_t ch;
-    
+
     if (len <= 0)
         return 0;
 
@@ -193,20 +178,18 @@ CharacterDevice *console_init(BOOL allow_ctrlc)
 
     s->resize_pending = TRUE;
     global_stdio_device = s;
-    
+
     /* use a signal to get the host terminal resize events */
     sig.sa_handler = term_resize_handler;
     sigemptyset(&sig.sa_mask);
     sig.sa_flags = 0;
     sigaction(SIGWINCH, &sig, NULL);
-    
+
     dev->opaque = s;
     dev->write_data = console_write;
     dev->read_data = console_read;
     return dev;
 }
-
-#endif /* !_WIN32 */
 
 typedef enum {
     BF_MODE_RO,
@@ -320,7 +303,7 @@ static BlockDevice *block_device_init(const char *filename,
     } else {
         mode_str = "rb";
     }
-    
+
     f = fopen(filename, mode_str);
     if (!f) {
         perror(filename);
@@ -340,198 +323,13 @@ static BlockDevice *block_device_init(const char *filename,
         bf->sector_table = mallocz(sizeof(bf->sector_table[0]) *
                                    bf->nb_sectors);
     }
-    
+
     bs->opaque = bf;
     bs->get_sector_count = bf_get_sector_count;
     bs->read_async = bf_read_async;
     bs->write_async = bf_write_async;
     return bs;
 }
-
-#ifndef _WIN32
-
-typedef struct {
-    int fd;
-    BOOL select_filled;
-} TunState;
-
-static void tun_write_packet(EthernetDevice *net,
-                             const uint8_t *buf, int len)
-{
-    TunState *s = net->opaque;
-    write(s->fd, buf, len);
-}
-
-static void tun_select_fill(EthernetDevice *net, int *pfd_max,
-                            fd_set *rfds, fd_set *wfds, fd_set *efds,
-                            int *pdelay)
-{
-    TunState *s = net->opaque;
-    int net_fd = s->fd;
-
-    s->select_filled = net->device_can_write_packet(net);
-    if (s->select_filled) {
-        FD_SET(net_fd, rfds);
-        *pfd_max = max_int(*pfd_max, net_fd);
-    }
-}
-
-static void tun_select_poll(EthernetDevice *net, 
-                            fd_set *rfds, fd_set *wfds, fd_set *efds,
-                            int select_ret)
-{
-    TunState *s = net->opaque;
-    int net_fd = s->fd;
-    uint8_t buf[2048];
-    int ret;
-    
-    if (select_ret <= 0)
-        return;
-    if (s->select_filled && FD_ISSET(net_fd, rfds)) {
-        ret = read(net_fd, buf, sizeof(buf));
-        if (ret > 0)
-            net->device_write_packet(net, buf, ret);
-    }
-    
-}
-
-/* configure with:
-# bridge configuration (connect tap0 to bridge interface br0)
-   ip link add br0 type bridge
-   ip tuntap add dev tap0 mode tap [user x] [group x]
-   ip link set tap0 master br0
-   ip link set dev br0 up
-   ip link set dev tap0 up
-
-# NAT configuration (eth1 is the interface connected to internet)
-   ifconfig br0 192.168.3.1
-   echo 1 > /proc/sys/net/ipv4/ip_forward
-   iptables -D FORWARD 1
-   iptables -t nat -A POSTROUTING -o eth1 -j MASQUERADE
-
-   In the VM:
-   ifconfig eth0 192.168.3.2
-   route add -net 0.0.0.0 netmask 0.0.0.0 gw 192.168.3.1
-*/
-static EthernetDevice *tun_open(const char *ifname)
-{
-    struct ifreq ifr;
-    int fd, ret;
-    EthernetDevice *net;
-    TunState *s;
-    
-    fd = open("/dev/net/tun", O_RDWR);
-    if (fd < 0) {
-        fprintf(stderr, "Error: could not open /dev/net/tun\n");
-        return NULL;
-    }
-    memset(&ifr, 0, sizeof(ifr));
-    ifr.ifr_flags = IFF_TAP | IFF_NO_PI;
-    pstrcpy(ifr.ifr_name, sizeof(ifr.ifr_name), ifname);
-    ret = ioctl(fd, TUNSETIFF, (void *) &ifr);
-    if (ret != 0) {
-        fprintf(stderr, "Error: could not configure /dev/net/tun\n");
-        close(fd);
-        return NULL;
-    }
-    fcntl(fd, F_SETFL, O_NONBLOCK);
-
-    net = mallocz(sizeof(*net));
-    net->mac_addr[0] = 0x02;
-    net->mac_addr[1] = 0x00;
-    net->mac_addr[2] = 0x00;
-    net->mac_addr[3] = 0x00;
-    net->mac_addr[4] = 0x00;
-    net->mac_addr[5] = 0x01;
-    s = mallocz(sizeof(*s));
-    s->fd = fd;
-    net->opaque = s;
-    net->write_packet = tun_write_packet;
-    net->select_fill = tun_select_fill;
-    net->select_poll = tun_select_poll;
-    return net;
-}
-
-#endif /* !_WIN32 */
-
-#ifdef CONFIG_SLIRP
-
-/*******************************************************/
-/* slirp */
-
-static Slirp *slirp_state;
-
-static void slirp_write_packet(EthernetDevice *net,
-                               const uint8_t *buf, int len)
-{
-    Slirp *slirp_state = net->opaque;
-    slirp_input(slirp_state, buf, len);
-}
-
-int slirp_can_output(void *opaque)
-{
-    EthernetDevice *net = opaque;
-    return net->device_can_write_packet(net);
-}
-
-void slirp_output(void *opaque, const uint8_t *pkt, int pkt_len)
-{
-    EthernetDevice *net = opaque;
-    return net->device_write_packet(net, pkt, pkt_len);
-}
-
-static void slirp_select_fill1(EthernetDevice *net, int *pfd_max,
-                               fd_set *rfds, fd_set *wfds, fd_set *efds,
-                               int *pdelay)
-{
-    Slirp *slirp_state = net->opaque;
-    slirp_select_fill(slirp_state, pfd_max, rfds, wfds, efds);
-}
-
-static void slirp_select_poll1(EthernetDevice *net, 
-                               fd_set *rfds, fd_set *wfds, fd_set *efds,
-                               int select_ret)
-{
-    Slirp *slirp_state = net->opaque;
-    slirp_select_poll(slirp_state, rfds, wfds, efds, (select_ret <= 0));
-}
-
-static EthernetDevice *slirp_open(void)
-{
-    EthernetDevice *net;
-    struct in_addr net_addr  = { .s_addr = htonl(0x0a000200) }; /* 10.0.2.0 */
-    struct in_addr mask = { .s_addr = htonl(0xffffff00) }; /* 255.255.255.0 */
-    struct in_addr host = { .s_addr = htonl(0x0a000202) }; /* 10.0.2.2 */
-    struct in_addr dhcp = { .s_addr = htonl(0x0a00020f) }; /* 10.0.2.15 */
-    struct in_addr dns  = { .s_addr = htonl(0x0a000203) }; /* 10.0.2.3 */
-    const char *bootfile = NULL;
-    const char *vhostname = NULL;
-    int restricted = 0;
-    
-    if (slirp_state) {
-        fprintf(stderr, "Only a single slirp instance is allowed\n");
-        return NULL;
-    }
-    net = mallocz(sizeof(*net));
-
-    slirp_state = slirp_init(restricted, net_addr, mask, host, vhostname,
-                             "", bootfile, dhcp, dns, net);
-    
-    net->mac_addr[0] = 0x02;
-    net->mac_addr[1] = 0x00;
-    net->mac_addr[2] = 0x00;
-    net->mac_addr[3] = 0x00;
-    net->mac_addr[4] = 0x00;
-    net->mac_addr[5] = 0x01;
-    net->opaque = slirp_state;
-    net->write_packet = slirp_write_packet;
-    net->select_fill = slirp_select_fill1;
-    net->select_poll = slirp_select_poll1;
-    
-    return net;
-}
-
-#endif /* CONFIG_SLIRP */
 
 #define MAX_EXEC_CYCLE 500000
 #define MAX_SLEEP_TIME 10 /* in ms */
@@ -544,9 +342,9 @@ void virt_machine_run(VirtMachine *m)
 #ifndef _WIN32
     int stdin_fd;
 #endif
-    
+
     delay = virt_machine_get_sleep_duration(m, MAX_SLEEP_TIME);
-    
+
     /* wait for an event */
     FD_ZERO(&rfds);
     FD_ZERO(&wfds);
@@ -567,18 +365,9 @@ void virt_machine_run(VirtMachine *m)
         }
     }
 #endif
-    if (m->net) {
-        m->net->select_fill(m->net, &fd_max, &rfds, &wfds, &efds, &delay);
-    }
-#ifdef CONFIG_FS_NET
-    fs_net_set_fdset(&fd_max, &rfds, &wfds, &efds, &delay);
-#endif
     tv.tv_sec = delay / 1000;
     tv.tv_usec = delay % 1000;
     ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
-    if (m->net) {
-        m->net->select_poll(m->net, &rfds, &wfds, &efds, ret);
-    }
     if (ret > 0) {
 #ifndef _WIN32
         if (m->console_dev && FD_ISSET(stdin_fd, &rfds)) {
@@ -594,10 +383,6 @@ void virt_machine_run(VirtMachine *m)
 #endif
     }
 
-#ifdef CONFIG_SDL
-    sdl_refresh(m);
-#endif
-    
     virt_machine_interp(m, MAX_EXEC_CYCLE);
 }
 
@@ -618,84 +403,30 @@ void help(void)
     printf("riscvemu version " CONFIG_VERSION ", Copyright (c) 2016-2017 Fabrice Bellard\n"
            "usage: riscvemu [options] config_file\n"
            "options are:\n"
-#ifdef CONFIG_CPU_RISCV
-           "-b [32|64|128]    set the integer register width in bits\n"
-#endif
            "-m ram_size       set the RAM size in MB\n"
            "-rw               allow write access to the disk image (default=snapshot)\n"
            "-ctrlc            the C-c key stops the emulator instead of being sent to the\n"
            "                  emulated software\n"
            "-append cmdline   append cmdline to the kernel command line\n"
-#ifdef CONFIG_CPU_X86
-           "-no-accel         disable VM acceleration (KVM)\n"
-#endif
            "\n"
            "Console keys:\n"
            "Press C-a x to exit the emulator, C-a h to get some help.\n");
     exit(1);
 }
 
-#ifdef CONFIG_CPU_RISCV
-void launch_alternate_executable(char **argv, int xlen)
-{
-    char filename[1024];
-    char new_exename[64];
-    const char *p, *exename;
-    int len;
-
-    snprintf(new_exename, sizeof(new_exename), "riscvemu%d", xlen);
-    exename = argv[0];
-    p = strrchr(exename, '/');
-    if (p) {
-        len = p - exename + 1;
-    } else {
-        len = 0;
-    }
-    if (len + strlen(new_exename) > sizeof(filename) - 1) {
-        fprintf(stderr, "%s: filename too long\n", exename);
-        exit(1);
-    }
-    memcpy(filename, exename, len);
-    filename[len] = '\0';
-    strcat(filename, new_exename);
-    argv[0] = filename;
-
-    if (execvp(argv[0], argv) < 0) {
-        perror(argv[0]);
-        exit(1);
-    }
-}
-#endif
-
-#ifdef CONFIG_FS_NET
-static BOOL net_completed;
-
-static void net_start_cb(void *arg)
-{
-    net_completed = TRUE;
-}
-
-static BOOL net_poll_cb(void *arg)
-{
-    return net_completed;
-}
-
-#endif
-
 int main(int argc, char **argv)
 {
     VirtMachine *s;
     const char *path, *cmdline;
-    int c, option_index, i, ram_size, accel_enable;
+    int c, option_index, i, ram_size;
     BOOL allow_ctrlc;
     BlockDeviceModeEnum drive_mode;
     VirtMachineParams p_s, *p = &p_s;
-    
+
     ram_size = -1;
     allow_ctrlc = FALSE;
     (void)allow_ctrlc;
     drive_mode = BF_MODE_SNAPSHOT;
-    accel_enable = -1;
     cmdline = NULL;
     for(;;) {
         c = getopt_long_only(argc, argv, "hb:m:", options, &option_index);
@@ -716,9 +447,6 @@ int main(int argc, char **argv)
             case 4: /* append */
                 cmdline = optarg;
                 break;
-            case 5: /* no-accel */
-                accel_enable = FALSE;
-                break;
             default:
                 fprintf(stderr, "unknown option index: %d\n", option_index);
                 exit(1);
@@ -727,21 +455,6 @@ int main(int argc, char **argv)
         case 'h':
             help();
             break;
-#ifdef CONFIG_CPU_RISCV
-        case 'b':
-            {
-                int xlen;
-                xlen = atoi(optarg);
-                if (xlen != 32 && xlen != 64 && xlen != 128) {
-                    fprintf(stderr, "Invalid integer register width\n");
-                    exit(1);
-                }
-                if (xlen != riscv_cpu_get_max_xlen()) {
-                    launch_alternate_executable(argv, xlen);
-                }
-            }
-            break;
-#endif
         case 'm':
             ram_size = (uint64_t)strtoul(optarg, NULL, 0) << 20;
             break;
@@ -757,43 +470,24 @@ int main(int argc, char **argv)
     path = argv[optind++];
 
     virt_machine_set_defaults(p);
-#ifdef CONFIG_FS_NET
-    fs_wget_init();
-#endif
     virt_machine_load_config_file(p, path, NULL, NULL);
-#ifdef CONFIG_FS_NET
-    fs_net_event_loop(NULL, NULL);
-#endif
 
     /* override some config parameters */
 
     if (ram_size > 0) {
         p->ram_size = ram_size << 20;
     }
-    if (accel_enable != -1)
-        p->accel_enable = accel_enable;
 
     if (cmdline) {
         vm_add_cmdline(p, cmdline);
     }
-    
+
     /* open the files & devices */
     for(i = 0; i < p->drive_count; i++) {
         BlockDevice *drive;
         char *fname;
         fname = get_file_path(p->cfg_filename, p->tab_drive[i].filename);
-#ifdef CONFIG_FS_NET
-        if (is_url(fname)) {
-            net_completed = FALSE;
-            drive = block_device_init_http(fname, 128 * 1024,
-                                           net_start_cb, NULL);
-            /* wait until the drive is initialized */
-            fs_net_event_loop(net_poll_cb, NULL);
-        } else
-#endif
-        {
-            drive = block_device_init(fname, drive_mode);
-        }
+        drive = block_device_init(fname, drive_mode);
         free(fname);
         p->tab_drive[i].block_dev = drive;
     }
@@ -801,78 +495,25 @@ int main(int argc, char **argv)
     for(i = 0; i < p->fs_count; i++) {
         FSDevice *fs;
         const char *path;
+        char *fname;
         path = p->tab_fs[i].filename;
-#ifdef CONFIG_FS_NET
-        if (is_url(path)) {
-            fs = fs_net_init(path, NULL, NULL);
-            if (!fs)
-                exit(1);
-            fs_net_event_loop(NULL, NULL);
-        } else
-#endif
-        {
-#ifdef _WIN32
-            fprintf(stderr, "Filesystem access not supported yet\n");
+        fname = get_file_path(p->cfg_filename, path);
+        fs = fs_disk_init(fname);
+        if (!fs) {
+            fprintf(stderr, "%s: must be a directory\n", fname);
             exit(1);
-#else
-            char *fname;
-            fname = get_file_path(p->cfg_filename, path);
-            fs = fs_disk_init(fname);
-            if (!fs) {
-                fprintf(stderr, "%s: must be a directory\n", fname);
-                exit(1);
-            }
-            free(fname);
-#endif
         }
+        free(fname);
         p->tab_fs[i].fs_dev = fs;
     }
 
-    for(i = 0; i < p->eth_count; i++) {
-#ifdef CONFIG_SLIRP
-        if (!strcmp(p->tab_eth[i].driver, "user")) {
-            p->tab_eth[i].net = slirp_open();
-            if (!p->tab_eth[i].net)
-                exit(1);
-        } else
-#endif
-#ifndef _WIN32
-        if (!strcmp(p->tab_eth[i].driver, "tap")) {
-            p->tab_eth[i].net = tun_open(p->tab_eth[i].ifname);
-            if (!p->tab_eth[i].net)
-                exit(1);
-        } else
-#endif
-        {
-            fprintf(stderr, "Unsupported network driver '%s'\n",
-                    p->tab_eth[i].driver);
-            exit(1);
-        }
-    }
-    
-#ifdef CONFIG_SDL
-    if (p->display_device) {
-        sdl_init(p->width, p->height);
-    } else
-#endif
-    {
-#ifdef _WIN32
-        fprintf(stderr, "Console not supported yet\n");
-        exit(1);
-#else
-        p->console = console_init(allow_ctrlc);
-#endif
-    }
+    p->console = console_init(allow_ctrlc);
     p->rtc_real_time = TRUE;
 
     s = virt_machine_init(p);
 
     virt_machine_free_config(p);
 
-    if (s->net) {
-        s->net->device_set_carrier(s->net, TRUE);
-    }
-    
     for(;;) {
         virt_machine_run(s);
     }

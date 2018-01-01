@@ -40,21 +40,15 @@ typedef struct {
 } VMDriveEntry;
 
 typedef struct {
-    char *cfg_filename;
     uint64_t ram_size;
     BOOL rtc_real_time;
     BOOL rtc_local_time;
-    char *display_device; /* NULL means no display */
     int width, height; /* graphic width & height */
     CharacterDevice *console;
     VMDriveEntry tab_drive[VM_MAX_DRIVE_DEVICE];
     int drive_count;
-
     char *cmdline; /* kernel command line */
-    char *input_device; /* NULL means no input */
-
-    /* kernel file */
-    VMFileEntry kernel;
+    VMFileEntry kernel; /* kernel file */
 } VirtMachineParams;
 
 typedef struct VirtMachine {

@@ -820,27 +820,6 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
         s->virtio_count++;
     }
 
-    if (p->input_device) {
-        if (!strcmp(p->input_device, "virtio")) {
-            vbus->irq = &s->plic_irq[irq_num];
-            s->keyboard_dev = virtio_input_init(vbus,
-                                                VIRTIO_INPUT_TYPE_KEYBOARD);
-            vbus->addr += VIRTIO_SIZE;
-            irq_num++;
-            s->virtio_count++;
-
-            vbus->irq = &s->plic_irq[irq_num];
-            s->mouse_dev = virtio_input_init(vbus,
-                                             VIRTIO_INPUT_TYPE_TABLET);
-            vbus->addr += VIRTIO_SIZE;
-            irq_num++;
-            s->virtio_count++;
-        } else {
-            vm_error("unsupported input device: %s\n", p->input_device);
-            exit(1);
-        }
-    }
-
     if (!p->kernel.buf) {
         vm_error("No kernel found");
     }

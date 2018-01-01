@@ -392,11 +392,8 @@ static int emu_lua_run(lua_State *L) {
 
     /* open the files & devices */
     for(i = 0; i < p->drive_count; i++) {
-        BlockDevice *drive;
-        char *fname;
-        fname = get_file_path(p->cfg_filename, p->tab_drive[i].filename);
-        drive = block_device_init(fname, drive_mode);
-        free(fname);
+        BlockDevice *drive =
+            block_device_init(p->tab_drive[i].filename, drive_mode);
         p->tab_drive[i].block_dev = drive;
     }
 

@@ -207,8 +207,6 @@ void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx) {
         luaL_error(L, "too many drives (max is %d)", VM_MAX_DRIVE_DEVICE);
     }
 
-    p->input_device = dupoptstring(L, tabidx, "input_device");
-
     p->rtc_local_time = optboolean(L, tabidx, "rtc_local_time", 0);
 
 }
@@ -241,7 +239,4 @@ void virt_machine_free_config(VirtMachineParams *p)
         free(p->tab_drive[i].filename);
         free(p->tab_drive[i].device);
     }
-    free(p->input_device);
-    free(p->display_device);
-    free(p->cfg_filename);
 }

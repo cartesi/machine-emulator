@@ -21,16 +21,14 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#include "json.h"
+#include <lua.h>
 
-#define MAX_DRIVE_DEVICE 4
-#define MAX_FS_DEVICE 4
+#define VM_MAX_DRIVE_DEVICE 4
 
 #define VM_CONFIG_VERSION 1
 
 typedef enum {
     VM_FILE_BIOS,
-    VM_FILE_VGA_BIOS,
     VM_FILE_KERNEL,
 
     VM_FILE_COUNT,
@@ -56,7 +54,7 @@ typedef struct {
     char *display_device; /* NULL means no display */
     int width, height; /* graphic width & height */
     CharacterDevice *console;
-    VMDriveEntry tab_drive[MAX_DRIVE_DEVICE];
+    VMDriveEntry tab_drive[VM_MAX_DRIVE_DEVICE];
     int drive_count;
 
     char *cmdline; /* bios or kernel command line */
@@ -73,14 +71,10 @@ typedef struct VirtMachine {
 } VirtMachine;
 
 void __attribute__((format(printf, 1, 2))) vm_error(const char *fmt, ...);
-int vm_get_int(JSONValue obj, const char *name, int *pval);
 
 const char *virt_machine_get_name(void);
 void virt_machine_set_defaults(VirtMachineParams *p);
-void virt_machine_load_config_file(VirtMachineParams *p,
-                                   const char *filename,
-                                   void (*start_cb)(void *opaque),
-                                   void *opaque);
+void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx);
 void vm_add_cmdline(VirtMachineParams *p, const char *cmdline);
 char *get_file_path(const char *base_filename, const char *filename);
 void virt_machine_free_config(VirtMachineParams *p);

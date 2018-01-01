@@ -47,13 +47,6 @@
 //#define DUMP_INVALID_CSR
 //#define DUMP_EXCEPTIONS
 //#define DUMP_CSR
-//#define CONFIG_LOGFILE
-
-#if defined(EMSCRIPTEN)
-#define USE_GLOBAL_STATE
-/* use local variables slows down the generated JS code */
-#define USE_GLOBAL_VARIABLES
-#endif
 
 #define __exception __attribute__((warn_unused_result))
 
@@ -173,13 +166,6 @@ struct RISCVCPUState {
     target_ulong pc;
     target_ulong reg[32];
 
-#ifdef USE_GLOBAL_VARIABLES
-    /* faster to use global variables with emscripten */
-    uint8_t *__code_ptr, *__code_end;
-    target_ulong __code_to_pc_addend;
-#endif
-
-
     uint8_t cur_xlen;  /* current XLEN value, <= MAX_XLEN */
     uint8_t priv; /* see PRV_x */
     uint8_t fs; /* MSTATUS_FS value */
@@ -231,30 +217,10 @@ static no_inline int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
 static no_inline int target_write_slow(RISCVCPUState *s, target_ulong addr,
                                        mem_uint_t val, int size_log2);
 
-#ifdef USE_GLOBAL_STATE
-static RISCVCPUState riscv_cpu_global_state;
-#endif
-#ifdef USE_GLOBAL_VARIABLES
-#define code_ptr s->__code_ptr
-#define code_end s->__code_end
-#define code_to_pc_addend s->__code_to_pc_addend
-#endif
-
-#ifdef CONFIG_LOGFILE
-static FILE *log_file;
-
-void log_vprintf(const char *fmt, va_list ap)
-{
-    if (!log_file)
-        log_file = fopen("/tmp/riscemu.log", "wb");
-    vfprintf(log_file, fmt, ap);
-}
-#else
 void log_vprintf(const char *fmt, va_list ap)
 {
     vprintf(fmt, ap);
 }
-#endif
 
 void __attribute__((format(printf, 1, 2))) log_printf(const char *fmt, ...)
 {
@@ -1234,11 +1200,7 @@ static void raise_exception2(RISCVCPUState *s, uint32_t cause,
 #endif
         if (flag) {
             log_printf("raise_exception: cause=0x%08x tval=0x", cause);
-#ifdef CONFIG_LOGFILE
-            fprint_target_ulong(log_file, tval);
-#else
             print_target_ulong(tval);
-#endif
             log_printf("\n");
             dump_regs(s);
         }
@@ -1393,9 +1355,6 @@ static inline uint32_t get_field1(uint32_t val, int src_pos,
 
 void riscv_cpu_interp(RISCVCPUState *s, int n_cycles)
 {
-#ifdef USE_GLOBAL_STATE
-    s = &riscv_cpu_global_state;
-#endif
     uint64_t timeout;
 
     timeout = s->insn_counter + n_cycles;
@@ -1459,12 +1418,7 @@ int riscv_cpu_get_max_xlen(void)
 RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map)
 {
     RISCVCPUState *s;
-
-#ifdef USE_GLOBAL_STATE
-    s = &riscv_cpu_global_state;
-#else
     s = mallocz(sizeof(*s));
-#endif
     s->mem_map = mem_map;
     s->pc = 0x1000;
     s->priv = PRV_M;
@@ -1482,9 +1436,6 @@ RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map)
 
 void riscv_cpu_end(RISCVCPUState *s)
 {
-#ifdef USE_GLOBAL_STATE
-    free(s);
-#endif
 }
 
 uint32_t riscv_cpu_get_misa(RISCVCPUState *s)

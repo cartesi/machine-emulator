@@ -23,20 +23,20 @@
  */
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdarg.h>
 #include <string.h>
-#include <inttypes.h>
 #include <assert.h>
 #include <fcntl.h>
-#include <errno.h>
 #include <unistd.h>
 #include <time.h>
 #include <getopt.h>
 #include <termios.h>
 #include <sys/ioctl.h>
-#include <net/if.h>
 #include <sys/stat.h>
 #include <signal.h>
+
+#include <lua.h>
+#include <lauxlib.h>
+
 #include "cutils.h"
 #include "iomem.h"
 #include "virtio.h"
@@ -339,9 +339,7 @@ void virt_machine_run(VirtMachine *m)
     fd_set rfds, wfds, efds;
     int fd_max, ret, delay;
     struct timeval tv;
-#ifndef _WIN32
     int stdin_fd;
-#endif
 
     delay = virt_machine_get_sleep_duration(m, MAX_SLEEP_TIME);
 
@@ -350,7 +348,6 @@ void virt_machine_run(VirtMachine *m)
     FD_ZERO(&wfds);
     FD_ZERO(&efds);
     fd_max = -1;
-#ifndef _WIN32
     if (m->console_dev && virtio_console_can_write_data(m->console_dev)) {
         STDIODevice *s = m->console->opaque;
         stdin_fd = s->stdin_fd;
@@ -364,12 +361,10 @@ void virt_machine_run(VirtMachine *m)
             s->resize_pending = FALSE;
         }
     }
-#endif
     tv.tv_sec = delay / 1000;
     tv.tv_usec = delay % 1000;
     ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
     if (ret > 0) {
-#ifndef _WIN32
         if (m->console_dev && FD_ISSET(stdin_fd, &rfds)) {
             uint8_t buf[128];
             int ret, len;
@@ -380,7 +375,6 @@ void virt_machine_run(VirtMachine *m)
                 virtio_console_write_data(m->console_dev, buf, ret);
             }
         }
-#endif
     }
 
     virt_machine_interp(m, MAX_EXEC_CYCLE);
@@ -388,99 +382,13 @@ void virt_machine_run(VirtMachine *m)
 
 /*******************************************************/
 
-static struct option options[] = {
-    { "help", no_argument, NULL, 'h' },
-    { "ctrlc", no_argument },
-    { "rw", no_argument },
-    { "ro", no_argument },
-    { "append", required_argument },
-    { "no-accel", no_argument },
-    { NULL },
-};
-
-void help(void)
-{
-    printf("Copyright (c) 2016-2017 Fabrice Bellard\n"
-           "usage: riscvemu [options] config_file\n"
-           "options are:\n"
-           "-m ram_size       set the RAM size in MB\n"
-           "-rw               allow write access to the disk image (default=snapshot)\n"
-           "-ctrlc            the C-c key stops the emulator instead of being sent to the\n"
-           "                  emulated software\n"
-           "-append cmdline   append cmdline to the kernel command line\n"
-           "\n"
-           "Console keys:\n"
-           "Press C-a x to exit the emulator, C-a h to get some help.\n");
-    exit(1);
-}
-
-int main(int argc, char **argv)
-{
+static int emu_lua_run(lua_State *L) {
     VirtMachine *s;
-    const char *path, *cmdline;
-    int c, option_index, i, ram_size;
-    BOOL allow_ctrlc;
-    BlockDeviceModeEnum drive_mode;
+    int i;
+    BlockDeviceModeEnum drive_mode = BF_MODE_SNAPSHOT;
     VirtMachineParams p_s, *p = &p_s;
 
-    ram_size = -1;
-    allow_ctrlc = FALSE;
-    (void)allow_ctrlc;
-    drive_mode = BF_MODE_SNAPSHOT;
-    cmdline = NULL;
-    for(;;) {
-        c = getopt_long_only(argc, argv, "hb:m:", options, &option_index);
-        if (c == -1)
-            break;
-        switch(c) {
-        case 0:
-            switch(option_index) {
-            case 1: /* ctrlc */
-                allow_ctrlc = TRUE;
-                break;
-            case 2: /* rw */
-                drive_mode = BF_MODE_RW;
-                break;
-            case 3: /* ro */
-                drive_mode = BF_MODE_RO;
-                break;
-            case 4: /* append */
-                cmdline = optarg;
-                break;
-            default:
-                fprintf(stderr, "unknown option index: %d\n", option_index);
-                exit(1);
-            }
-            break;
-        case 'h':
-            help();
-            break;
-        case 'm':
-            ram_size = (uint64_t)strtoul(optarg, NULL, 0) << 20;
-            break;
-        default:
-            exit(1);
-        }
-    }
-
-    if (optind >= argc) {
-        help();
-    }
-
-    path = argv[optind++];
-
-    virt_machine_set_defaults(p);
-    virt_machine_load_config_file(p, path, NULL, NULL);
-
-    /* override some config parameters */
-
-    if (ram_size > 0) {
-        p->ram_size = ram_size << 20;
-    }
-
-    if (cmdline) {
-        vm_add_cmdline(p, cmdline);
-    }
+    virt_lua_load_config(L, p, 1);
 
     /* open the files & devices */
     for(i = 0; i < p->drive_count; i++) {
@@ -492,7 +400,7 @@ int main(int argc, char **argv)
         p->tab_drive[i].block_dev = drive;
     }
 
-    p->console = console_init(allow_ctrlc);
+    p->console = console_init(FALSE);
     p->rtc_real_time = TRUE;
 
     s = virt_machine_init(p);
@@ -504,4 +412,16 @@ int main(int argc, char **argv)
     }
     virt_machine_end(s);
     return 0;
+}
+
+static const luaL_Reg emu_lua[] = {
+    {"run", emu_lua_run},
+    { NULL, NULL }
+};
+
+__attribute__((visibility("default")))
+int luaopen_emu(lua_State *L) {
+    lua_newtable(L);
+    luaL_setfuncs(L, emu_lua, 0);
+    return 1;
 }

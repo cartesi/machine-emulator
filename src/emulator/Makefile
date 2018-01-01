@@ -20,37 +20,49 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
-#
 
-CC=gcc
-CFLAGS=-O2 -Wall -g -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -MMD
-CFLAGS+=-D_GNU_SOURCE
-CFLAGS+=-DFLEN=0
-LDFLAGS=
 
-ALL=emu
+UNAME:=$(shell uname)
+
+LUA_INC:=$(shell pkg-config --cflags lua53)
+
+SOLDFLAGS_Darwin:= -L/opt/local/lib -L/opt/local/lib/libomp -bundle -undefined dynamic_lookup
+CC_Darwin=clang
+CXX_Darwin=clang++
+
+SOLDFLAGS_Linux:= -shared -fpic
+CC_Linux=gcc
+CXX_Linux=g++
+
+CC?=$(CC_$(UNAME))
+CXX?=$(CXX_$(UNAME))
+SOLDFLAGS?=$(SOLDFLAGS_$(UNAME))
+
+WARNS=-W -Wall -Wno-unused-parameter -Wno-unused-result
+
+INCS=$(LUA_INC)
+
+CFLAGS=$(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS)
+CXXFLAGS=-std=c++14 $(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS)
+
+ALL=emu.so
 
 all: $(ALL)
 
-EMU_OBJS:= \
+OBJS:= \
 	virtio.o \
 	pci.o \
 	cutils.o \
 	iomem.o \
-    json.o \
 	machine.o \
 	riscvemu.o \
 	riscv_machine.o \
 	riscv_cpu.o
 
-LIBS=
+riscv_cpu.o: CFLAGS += -DMAX_XLEN=64 -DFLEN=0
 
-OBJS:=$(EMU_OBJS)
-
-riscv_cpu.o: CFLAGS += -DMAX_XLEN=64
-
-emu: $(OBJS)
-	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
+emu.so: $(OBJS)
+	$(CC) $(SOLDFLAGS) -o $@ $^
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<

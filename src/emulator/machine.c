@@ -36,13 +36,7 @@
 #include "iomem.h"
 #include "virtio.h"
 #include "machine.h"
-#include "fs_utils.h"
-#ifdef CONFIG_FS_NET
-#include "fs_wget.h"
-#endif
-#ifdef CONFIG_CPU_RISCV
 #include "riscv_cpu.h"
-#endif
 
 void __attribute__((format(printf, 1, 2))) vm_error(const char *fmt, ...)
 {

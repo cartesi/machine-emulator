@@ -43,7 +43,7 @@ EMU_OBJS:= \
 	riscv_machine.o \
 	riscv_cpu.o
 
-LIBS=-lrt
+LIBS=
 
 OBJS:=$(EMU_OBJS)
 

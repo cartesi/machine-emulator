@@ -237,31 +237,6 @@ static int virt_machine_parse_config(VirtMachineParams *p,
         p->drive_count++;
     }
 
-    for(;;) {
-        snprintf(buf1, sizeof(buf1), "fs%d", p->fs_count);
-        obj = json_object_get(cfg, buf1);
-        if (json_is_undefined(obj))
-            break;
-        if (p->fs_count >= MAX_DRIVE_DEVICE) {
-            vm_error("Too many filesystems\n");
-            return -1;
-        }
-        if (vm_get_str(obj, "file", &str) < 0)
-            goto tag_fail;
-        p->tab_fs[p->fs_count].filename = strdup(str);
-        if (vm_get_str_opt(obj, "tag", &str) < 0)
-            goto tag_fail;
-        if (!str) {
-            if (p->fs_count == 0)
-                strcpy(buf1, "/dev/root");
-            else
-                snprintf(buf1, sizeof(buf1), "/dev/root%d", p->fs_count);
-            str = buf1;
-        }
-        p->tab_fs[p->fs_count].tag = strdup(str);
-        p->fs_count++;
-    }
-
     p->display_device = NULL;
 
     if (vm_get_str_opt(cfg, "input_device", &str) < 0)
@@ -490,10 +465,6 @@ void virt_machine_free_config(VirtMachineParams *p)
     for(i = 0; i < p->drive_count; i++) {
         free(p->tab_drive[i].filename);
         free(p->tab_drive[i].device);
-    }
-    for(i = 0; i < p->fs_count; i++) {
-        free(p->tab_fs[i].filename);
-        free(p->tab_fs[i].tag);
     }
     free(p->input_device);
     free(p->display_device);

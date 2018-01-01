@@ -400,7 +400,7 @@ static struct option options[] = {
 
 void help(void)
 {
-    printf("riscvemu version " CONFIG_VERSION ", Copyright (c) 2016-2017 Fabrice Bellard\n"
+    printf("Copyright (c) 2016-2017 Fabrice Bellard\n"
            "usage: riscvemu [options] config_file\n"
            "options are:\n"
            "-m ram_size       set the RAM size in MB\n"
@@ -490,21 +490,6 @@ int main(int argc, char **argv)
         drive = block_device_init(fname, drive_mode);
         free(fname);
         p->tab_drive[i].block_dev = drive;
-    }
-
-    for(i = 0; i < p->fs_count; i++) {
-        FSDevice *fs;
-        const char *path;
-        char *fname;
-        path = p->tab_fs[i].filename;
-        fname = get_file_path(p->cfg_filename, path);
-        fs = fs_disk_init(fname);
-        if (!fs) {
-            fprintf(stderr, "%s: must be a directory\n", fname);
-            exit(1);
-        }
-        free(fname);
-        p->tab_fs[i].fs_dev = fs;
     }
 
     p->console = console_init(allow_ctrlc);

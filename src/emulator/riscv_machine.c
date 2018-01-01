@@ -820,19 +820,6 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
         s->virtio_count++;
     }
 
-    /* virtio filesystem */
-    for(i = 0; i < p->fs_count; i++) {
-        VIRTIODevice *fs_dev;
-        vbus->irq = &s->plic_irq[irq_num];
-        fs_dev = virtio_9p_init(vbus, p->tab_fs[i].fs_dev,
-                                p->tab_fs[i].tag);
-        (void)fs_dev;
-        //        virtio_set_debug(fs_dev, VIRTIO_DEBUG_9P);
-        vbus->addr += VIRTIO_SIZE;
-        irq_num++;
-        s->virtio_count++;
-    }
-
     if (p->input_device) {
         if (!strcmp(p->input_device, "virtio")) {
             vbus->irq = &s->plic_irq[irq_num];

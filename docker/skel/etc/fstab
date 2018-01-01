@@ -3,3 +3,4 @@
 # <file system>	<mount point>	<type>	<options>		<dump>	<pass>
 proc	/proc	proc	defaults	0	0
 tmpfs	/var	tmpfs	defaults	0	0
+sysfs   /sys    sysfs   nosuid,noexec,nodev 0   0

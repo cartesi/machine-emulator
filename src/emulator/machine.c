@@ -32,6 +32,9 @@
 #include <unistd.h>
 #include <time.h>
 
+#include <lua.h>
+#include <lauxlib.h>
+
 #include "cutils.h"
 #include "iomem.h"
 #include "virtio.h"
@@ -49,227 +52,6 @@ void __attribute__((format(printf, 1, 2))) vm_error(const char *fmt, ...)
 #endif
     va_end(ap);
 }
-
-int vm_get_int(JSONValue obj, const char *name, int *pval)
-{
-    JSONValue val;
-    val = json_object_get(obj, name);
-    if (json_is_undefined(val)) {
-        vm_error("expecting '%s' property\n", name);
-        return -1;
-    }
-    if (val.type != JSON_INT) {
-        vm_error("%s: integer expected\n", name);
-        return -1;
-    }
-    *pval = val.u.int32;
-    return 0;
-}
-
-static int vm_get_str2(JSONValue obj, const char *name, const char **pstr,
-                      BOOL is_opt)
-{
-    JSONValue val;
-    val = json_object_get(obj, name);
-    if (json_is_undefined(val)) {
-        if (is_opt) {
-            *pstr = NULL;
-            return 0;
-        } else {
-            vm_error("expecting '%s' property\n", name);
-            return -1;
-        }
-    }
-    if (val.type != JSON_STR) {
-        vm_error("%s: string expected\n", name);
-        return -1;
-    }
-    *pstr = val.u.str->data;
-    return 0;
-}
-
-static int vm_get_str(JSONValue obj, const char *name, const char **pstr)
-{
-    return vm_get_str2(obj, name, pstr, FALSE);
-}
-
-static int vm_get_str_opt(JSONValue obj, const char *name, const char **pstr)
-{
-    return vm_get_str2(obj, name, pstr, TRUE);
-}
-
-static char *strdup_null(const char *str)
-{
-    if (!str)
-        return NULL;
-    else
-        return strdup(str);
-}
-
-/* currently only for "TZ" */
-static char *cmdline_subst(const char *cmdline)
-{
-    DynBuf dbuf;
-    const char *p;
-    char var_name[32], *q, buf[32];
-
-    dbuf_init(&dbuf);
-    p = cmdline;
-    while (*p != '\0') {
-        if (p[0] == '$' && p[1] == '{') {
-            p += 2;
-            q = var_name;
-            while (*p != '\0' && *p != '}') {
-                if ((q - var_name) < sizeof(var_name) - 1)
-                    *q++ = *p;
-                p++;
-            }
-            *q = '\0';
-            if (*p == '}')
-                p++;
-            if (!strcmp(var_name, "TZ")) {
-                time_t ti;
-                struct tm tm;
-                int n, sg;
-                /* get the offset to UTC */
-                time(&ti);
-                localtime_r(&ti, &tm);
-                n = tm.tm_gmtoff / 60;
-                sg = '-';
-                if (n < 0) {
-                    sg = '+';
-                    n = -n;
-                }
-                snprintf(buf, sizeof(buf), "UTC%c%02d:%02d",
-                         sg, n / 60, n % 60);
-                dbuf_putstr(&dbuf, buf);
-            }
-        } else {
-            dbuf_putc(&dbuf, *p++);
-        }
-    }
-    dbuf_putc(&dbuf, 0);
-    return (char *)dbuf.buf;
-}
-
-static int virt_machine_parse_config(VirtMachineParams *p,
-                                     char *config_file_str, int len)
-{
-    int version, val;
-    const char *tag_name, *machine_name, *str;
-    char buf1[256];
-    JSONValue cfg, obj, el;
-
-    cfg = json_parse_value_len(config_file_str, len);
-    if (json_is_error(cfg)) {
-        vm_error("error: %s\n", json_get_error(cfg));
-        json_free(cfg);
-        return -1;
-    }
-
-    if (vm_get_int(cfg, "version", &version) < 0)
-        goto tag_fail;
-    if (version != VM_CONFIG_VERSION) {
-        if (version > VM_CONFIG_VERSION) {
-            vm_error("The emulator is too old to run this VM: please upgrade\n");
-            return -1;
-        } else {
-            vm_error("The VM configuration file is too old for this emulator version: please upgrade the VM configuration file\n");
-            return -1;
-        }
-    }
-
-    if (vm_get_str(cfg, "machine", &str) < 0)
-        goto tag_fail;
-    machine_name = virt_machine_get_name();
-    if (strcmp(machine_name, str) != 0) {
-        vm_error("Unsupported machine: '%s' (running machine is '%s')\n",
-                 str, machine_name);
-        return -1;
-    }
-
-    tag_name = "memory_size";
-    if (vm_get_int(cfg, tag_name, &val) < 0)
-        goto tag_fail;
-    p->ram_size = val << 20;
-
-    tag_name = "bios";
-    if (vm_get_str_opt(cfg, tag_name, &str) < 0)
-        goto tag_fail;
-    if (str) {
-        p->files[VM_FILE_BIOS].filename = strdup(str);
-    }
-
-    tag_name = "kernel";
-    if (vm_get_str_opt(cfg, tag_name, &str) < 0)
-        goto tag_fail;
-    if (str) {
-        p->files[VM_FILE_KERNEL].filename = strdup(str);
-    }
-
-    if (vm_get_str_opt(cfg, "cmdline", &str) < 0)
-        goto tag_fail;
-    if (str) {
-        p->cmdline = cmdline_subst(str);
-    }
-
-    for(;;) {
-        snprintf(buf1, sizeof(buf1), "drive%d", p->drive_count);
-        obj = json_object_get(cfg, buf1);
-        if (json_is_undefined(obj))
-            break;
-        if (p->drive_count >= MAX_DRIVE_DEVICE) {
-            vm_error("Too many drives\n");
-            return -1;
-        }
-        if (vm_get_str(obj, "file", &str) < 0)
-            goto tag_fail;
-        p->tab_drive[p->drive_count].filename = strdup(str);
-        if (vm_get_str_opt(obj, "device", &str) < 0)
-            goto tag_fail;
-        p->tab_drive[p->drive_count].device = strdup_null(str);
-        p->drive_count++;
-    }
-
-    p->display_device = NULL;
-
-    if (vm_get_str_opt(cfg, "input_device", &str) < 0)
-        goto tag_fail;
-    p->input_device = strdup_null(str);
-
-    tag_name = "rtc_local_time";
-    el = json_object_get(cfg, tag_name);
-    if (!json_is_undefined(el)) {
-        if (el.type != JSON_BOOL) {
-            vm_error("%s: boolean expected\n", tag_name);
-            goto tag_fail;
-        }
-        p->rtc_local_time = el.u.b;
-    }
-
-    json_free(cfg);
-    return 0;
- tag_fail:
-    json_free(cfg);
-    return -1;
-}
-
-typedef void FSLoadFileCB(void *opaque, uint8_t *buf, int buf_len);
-
-typedef struct {
-    VirtMachineParams *vm_params;
-    void (*start_cb)(void *opaque);
-    void *opaque;
-
-    FSLoadFileCB *file_load_cb;
-    void *file_load_opaque;
-    int file_index;
-} VMConfigLoadState;
-
-static void config_file_loaded(void *opaque, uint8_t *buf, int buf_len);
-static void config_additional_file_load(VMConfigLoadState *s);
-static void config_additional_file_load_cb(void *opaque,
-                                           uint8_t *buf, int buf_len);
 
 /* XXX: win32, URL */
 char *get_file_path(const char *base_filename, const char *filename)
@@ -297,12 +79,6 @@ char *get_file_path(const char *base_filename, const char *filename)
 }
 
 
-#ifdef EMSCRIPTEN
-static int load_file(uint8_t **pbuf, const char *filename)
-{
-    abort();
-}
-#else
 /* return -1 if error. */
 static int load_file(uint8_t **pbuf, const char *filename)
 {
@@ -327,106 +103,118 @@ static int load_file(uint8_t **pbuf, const char *filename)
     *pbuf = buf;
     return size;
 }
-#endif
 
-#ifdef CONFIG_FS_NET
-static void config_load_file_cb(void *opaque, int err, void *data, size_t size)
-{
-    VMConfigLoadState *s = opaque;
-
-    //    printf("err=%d data=%p size=%ld\n", err, data, size);
-    if (err < 0) {
-        vm_error("Error %d while loading file\n", -err);
-        exit(1);
+static int optboolean(lua_State *L, int tabidx, const char *field, int def) {
+    int val = def;
+    lua_getfield(L, tabidx, field);
+    if (lua_isboolean(L, -1)) {
+        val = lua_toboolean(L, -1);
+    } else if (!lua_isnil(L, -1)) {
+        luaL_error(L, "Invalid %s (expected Boolean).", field);
     }
-    s->file_load_cb(s->file_load_opaque, data, size);
-}
-#endif
-
-static void config_load_file(VMConfigLoadState *s, const char *filename,
-                             FSLoadFileCB *cb, void *opaque)
-{
-    //    printf("loading %s\n", filename);
-#ifdef CONFIG_FS_NET
-    if (is_url(filename)) {
-        s->file_load_cb = cb;
-        s->file_load_opaque = opaque;
-        fs_wget(filename, NULL, NULL, s, config_load_file_cb, TRUE);
-    } else
-#endif
-    {
-        uint8_t *buf;
-        int size;
-        size = load_file(&buf, filename);
-        cb(opaque, buf, size);
-        free(buf);
-    }
+    lua_pop(L, 1);
+    return val;
 }
 
-void virt_machine_load_config_file(VirtMachineParams *p,
-                                   const char *filename,
-                                   void (*start_cb)(void *opaque),
-                                   void *opaque)
-{
-    VMConfigLoadState *s;
-
-    s = mallocz(sizeof(*s));
-    s->vm_params = p;
-    s->start_cb = start_cb;
-    s->opaque = opaque;
-    p->cfg_filename = strdup(filename);
-
-    config_load_file(s, filename, config_file_loaded, s);
+static unsigned int checkuint(lua_State *L, int tabidx, const char *field) {
+    int val;
+    lua_getfield(L, tabidx, field);
+    if (!lua_isinteger(L, -1))
+        luaL_error(L, "Invalid %s (expected unsigned integer).", field);
+    val = lua_tointeger(L, -1);
+    if (val < 0)
+        luaL_error(L, "Invalid %s (expected unsigned integer).", field);
+    lua_pop(L, 1);
+    return (unsigned int) val;
 }
 
-static void config_file_loaded(void *opaque, uint8_t *buf, int buf_len)
-{
-    VMConfigLoadState *s = opaque;
-    VirtMachineParams *p = s->vm_params;
-
-    if (virt_machine_parse_config(p, (char *)buf, buf_len) < 0)
-        exit(1);
-
-    /* load the additional files */
-    s->file_index = 0;
-    config_additional_file_load(s);
-}
-
-static void config_additional_file_load(VMConfigLoadState *s)
-{
-    VirtMachineParams *p = s->vm_params;
-    while (s->file_index < VM_FILE_COUNT &&
-           p->files[s->file_index].filename == NULL) {
-        s->file_index++;
-    }
-    if (s->file_index == VM_FILE_COUNT) {
-        if (s->start_cb)
-            s->start_cb(s->opaque);
-        free(s);
+static char *dupoptstring(lua_State *L, int tabidx, const char *field) {
+    char *val = NULL;
+    lua_getfield(L, tabidx, field);
+    if (lua_isnil(L, -1)) {
+        val = NULL;
+    } else if (lua_isstring(L, -1)) {
+        val = strdup(lua_tostring(L, -1));
     } else {
-        char *fname;
-
-        fname = get_file_path(p->cfg_filename,
-                              p->files[s->file_index].filename);
-        config_load_file(s, fname,
-                         config_additional_file_load_cb, s);
-        free(fname);
+        luaL_error(L, "Invalid %s (expected string).", field);
     }
+    lua_pop(L, 1);
+    return val;
 }
 
-static void config_additional_file_load_cb(void *opaque,
-                                           uint8_t *buf, int buf_len)
-{
-    VMConfigLoadState *s = opaque;
-    VirtMachineParams *p = s->vm_params;
+static char *dupcheckstring(lua_State *L, int tabidx, const char *field) {
+    char *val = NULL;
+    lua_getfield(L, tabidx, field);
+    if (lua_isstring(L, -1)) {
+        val = strdup(lua_tostring(L, -1));
+    } else {
+        luaL_error(L, "Invalid %s (expected string).", field);
+    }
+    lua_pop(L, 1);
+    return val;
+}
 
-    p->files[s->file_index].buf = malloc(buf_len);
-    memcpy(p->files[s->file_index].buf, buf, buf_len);
-    p->files[s->file_index].len = buf_len;
+void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx) {
 
-    /* load the next files */
-    s->file_index++;
-    config_additional_file_load(s);
+	int i = 0;
+
+    virt_machine_set_defaults(p);
+
+    if (checkuint(L, tabidx, "version") != VM_CONFIG_VERSION) {
+        luaL_error(L, "Emulator does not match version number.");
+    }
+
+    lua_getfield(L, tabidx, "machine");
+    if (!lua_isstring(L, -1)) {
+        luaL_error(L, "No machine string.");
+    }
+    if (strcmp(virt_machine_get_name(), lua_tostring(L, -1)) != 0) {
+        luaL_error(L, "Unsupported machine %s (running machine is %s).",
+            lua_tostring(L, -1), virt_machine_get_name());
+    }
+    lua_pop(L, 1);
+
+    p->ram_size = checkuint(L, tabidx, "memory_size");
+    p->ram_size <<= 20;
+
+    p->files[VM_FILE_BIOS].filename = dupcheckstring(L, tabidx, "bios");
+    p->files[VM_FILE_KERNEL].filename = dupoptstring(L, tabidx, "kernel");
+    p->cmdline = dupoptstring(L, tabidx, "cmdline");
+
+    for (p->drive_count = 0;
+         p->drive_count < VM_MAX_DRIVE_DEVICE;
+         p->drive_count++) {
+        char drive[16];
+        snprintf(drive, sizeof(drive), "drive%d", p->drive_count);
+        lua_getfield(L, tabidx, drive);
+        if (lua_isnil(L, -1)) {
+            lua_pop(L, 1);
+            break;
+        }
+        if (!lua_istable(L, -1)) {
+            luaL_error(L, "Invalid drive%d.", p->drive_count);
+        }
+        p->tab_drive[p->drive_count].filename = dupcheckstring(L, -1, "file");
+        p->tab_drive[p->drive_count].device = dupoptstring(L, -1, "device");
+        lua_pop(L, 1);
+    }
+
+    if (p->drive_count >= VM_MAX_DRIVE_DEVICE) {
+        luaL_error(L, "too many drives (max is %d)", VM_MAX_DRIVE_DEVICE);
+    }
+
+    p->input_device = dupoptstring(L, tabidx, "input_device");
+
+    p->rtc_local_time = optboolean(L, tabidx, "rtc_local_time", 0);
+
+	for (i = 0; i < VM_FILE_COUNT; i++) {
+		if (p->files[i].filename != NULL) {
+            int len = load_file(&p->files[i].buf, p->files[i].filename);
+            if (len < 0)
+                luaL_error(L, "Unable to load %s.", p->files[i].filename);
+			p->files[i].len = len;
+		}
+    }
 }
 
 void vm_add_cmdline(VirtMachineParams *p, const char *cmdline)

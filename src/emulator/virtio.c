@@ -29,7 +29,6 @@
 #include <stdarg.h>
 
 #include "cutils.h"
-#include "list.h"
 #include "virtio.h"
 
 //#define DEBUG_VIRTIO

@@ -1,6 +1,6 @@
 /*
  * RISCV emulator
- * 
+ *
  * Copyright (c) 2016 Fabrice Bellard
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -133,7 +133,7 @@ static uintx_t glue(mulhu, XLEN)(uintx_t a, uintx_t b)
     r01 = (uintx_t)a0 * (uintx_t)b1;
     r10 = (uintx_t)a1 * (uintx_t)b0;
     r11 = (uintx_t)a1 * (uintx_t)b1;
-    
+
     //    r0 = r00;
     c = (r00 >> UHALF_LEN) + (UHALF)r01 + (UHALF)r10;
     //    r1 = c;
@@ -183,7 +183,7 @@ static inline uintx_t glue(mulhsu, XLEN)(intx_t a, uintx_t b)
     case n+(16 << 2): case n+(17 << 2): case n+(18 << 2): case n+(19 << 2): \
     case n+(20 << 2): case n+(21 << 2): case n+(22 << 2): case n+(23 << 2): \
     case n+(24 << 2): case n+(25 << 2): case n+(26 << 2): case n+(27 << 2): \
-    case n+(28 << 2): case n+(29 << 2): case n+(30 << 2): case n+(31 << 2): 
+    case n+(28 << 2): case n+(29 << 2): case n+(30 << 2): case n+(31 << 2):
 
 #define GET_PC() (target_ulong)((uintptr_t)code_ptr + code_to_pc_addend)
 #define GET_INSN_COUNTER() (insn_counter_addend - n_cycles)
@@ -225,7 +225,7 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
     code_ptr = NULL;
     code_end = NULL;
     code_to_pc_addend = s->pc;
-    
+
     /* we use a single execution loop to keep a simple control flow
        for emscripten */
     for(;;) {
@@ -247,11 +247,11 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
                     goto the_end;
                 }
             }
-    
+
             addr = s->pc;
             tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
             if (likely(s->tlb_code[tlb_idx].vaddr == (addr & ~PG_MASK))) {
-                /* TLB match */ 
+                /* TLB match */
                 mem_addend = s->tlb_code[tlb_idx].mem_addend;
             } else {
                 if (unlikely(target_read_insn_slow(s, &mem_addend, addr)))
@@ -447,7 +447,7 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
                 break;
 #if XLEN == 32
             case 1: /* c.jal */
-                imm = sext(get_field1(insn, 12, 11, 11) | 
+                imm = sext(get_field1(insn, 12, 11, 11) |
                            get_field1(insn, 11, 4, 4) |
                            get_field1(insn, 9, 8, 9) |
                            get_field1(insn, 8, 10, 10) |
@@ -492,12 +492,12 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
                     s->reg[rd] = imm;
                 }
                 break;
-            case 4: 
+            case 4:
                 funct3 = (insn >> 10) & 3;
                 rd = ((insn >> 7) & 7) | 8;
                 switch(funct3) {
-                case 0: /* c.srli */ 
-                case 1: /* c.srai */ 
+                case 0: /* c.srli */
+                case 1: /* c.srai */
                     imm = get_field1(insn, 12, 5, 5) |
                         get_field1(insn, 2, 0, 4);
 #if XLEN == 32
@@ -513,14 +513,14 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
                         s->reg[rd] = (intx_t)((uintx_t)s->reg[rd] >> imm);
                     else
                         s->reg[rd] = (intx_t)s->reg[rd] >> imm;
-                    
+
                     break;
                 case 2: /* c.andi */
                     imm = sext(get_field1(insn, 12, 5, 5) |
                                get_field1(insn, 2, 0, 4), 6);
                     s->reg[rd] &= imm;
                     break;
-                case 3: 
+                case 3:
                     rs2 = ((insn >> 2) & 7) | 8;
                     funct3 = ((insn >> 5) & 3) | ((insn >> (12 - 2)) & 4);
                     switch(funct3) {
@@ -551,7 +551,7 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
                 }
                 break;
             case 5: /* c.j */
-                imm = sext(get_field1(insn, 12, 11, 11) | 
+                imm = sext(get_field1(insn, 12, 11, 11) |
                            get_field1(insn, 11, 4, 4) |
                            get_field1(insn, 9, 8, 9) |
                            get_field1(insn, 8, 10, 10) |
@@ -563,7 +563,7 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
                 JUMP_INSN;
             case 6: /* c.beqz */
                 rs1 = ((insn >> 7) & 7) | 8;
-                imm = sext(get_field1(insn, 12, 8, 8) | 
+                imm = sext(get_field1(insn, 12, 8, 8) |
                            get_field1(insn, 10, 3, 4) |
                            get_field1(insn, 5, 6, 7) |
                            get_field1(insn, 3, 1, 2) |
@@ -575,7 +575,7 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
                 break;
             case 7: /* c.bnez */
                 rs1 = ((insn >> 7) & 7) | 8;
-                imm = sext(get_field1(insn, 12, 8, 8) | 
+                imm = sext(get_field1(insn, 12, 8, 8) |
                            get_field1(insn, 10, 3, 4) |
                            get_field1(insn, 5, 6, 7) |
                            get_field1(insn, 3, 1, 2) |
@@ -728,7 +728,7 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
                 if (target_write_u64(s, addr, s->fp_reg[rs2]))
                     goto mmu_exception;
                 break;
-#endif 
+#endif
             case 6: /* c.swsp */
                 imm = get_field1(insn, 9, 2, 5) |
                     get_field1(insn, 7, 6, 7);

@@ -35,12 +35,10 @@ all: $(ALL)
 EMU_OBJS:= \
 	virtio.o \
 	pci.o \
-	fs.o \
 	cutils.o \
 	iomem.o \
     json.o \
 	machine.o \
-	fs_disk.o \
 	riscvemu.o \
 	riscv_machine.o \
 	riscv_cpu.o

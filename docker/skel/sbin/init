@@ -14,4 +14,4 @@ cd $HOME
 
 setsid sh -c 'exec sh < /dev/hvc0 > /dev/hvc0 2>&1'
 
-poweroff
+poweroff -f

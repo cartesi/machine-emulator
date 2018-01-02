@@ -7,6 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV RISCV=/opt/riscv
 
 # Base system and user so we can do stuff
+# ----------------------------------------------------
 RUN \
     apt-get update && \
     apt-get install -y apt-utils && \
@@ -18,6 +19,7 @@ RUN \
     echo themis:themis | chpasswd
 
 # Development basics
+# ----------------------------------------------------
 RUN \
     apt-get update && \
     apt-get install -y build-essential && \
@@ -25,6 +27,7 @@ RUN \
     apt-get install -y git make pkg-config patchutils gawk bison flex
 
 # Obtain sources to gcc (delete git history to save space)
+# ----------------------------------------------------
 RUN \
     cd $RISCV && \
     git clone https://github.com/riscv/riscv-gnu-toolchain.git && \
@@ -34,6 +37,7 @@ RUN \
     find $RISCV -name ".git" -print0 | xargs -0 rm -rf
 
 # Build riscv's gcc (delete source to save space)
+# ----------------------------------------------------
 ENV THREADS=24
 
 RUN \
@@ -51,6 +55,7 @@ RUN \
 ENV PATH "${RISCV}/bin:${PATH}"
 
 # Build the linux kernel
+# ----------------------------------------------------
 ADD diskimage-linux-riscv-2017-08-06.tar.gz $RISCV
 ADD riscv-linux-48ec1f0914a9203d2935d94912d3b6742144209e.tar.gz $RISCV
 
@@ -63,6 +68,7 @@ RUN \
     make -j$THREADS ARCH=riscv vmlinux
 
 # Build bootloader linked with kernel
+# ----------------------------------------------------
 COPY riscv-pk.patch $RISCV
 
 RUN \
@@ -83,7 +89,27 @@ RUN \
     rm -rf $RISCV/diskimage-linux-riscv-2017-08-06 && \
     rm -rf $RISCV/riscv-linux-48ec1f0914a9203d2935d94912d3b6742144209e
 
+# Build original emulator
+# ----------------------------------------------------
+RUN \
+    apt-get update && \
+    apt-get install -y libssl-dev libcurl4-openssl-dev
+
+COPY \
+    riscvemu.cfg \
+    riscvemu-2017-08-06.patch \
+    $RISCV/
+
+ADD riscvemu-2017-08-06.tar.gz $RISCV
+
+RUN \
+    cd $RISCV/riscvemu-2017-08-06 && \
+    patch < $RISCV/riscvemu-2017-08-06.patch && \
+    make -j$THREADS && \
+    cp riscvemu64 $RISCV/bin
+
 # Make root filesystem for riscv
+# ----------------------------------------------------
 RUN \
     apt-get update && \
     apt-get install -y genext2fs
@@ -93,6 +119,7 @@ COPY skel $RISCV/root
 # Copy gcc support files
 RUN \
     cd $RISCV/root && \
+    find . -name .keep -print0 | xargs -0 rm && \
     cp $RISCV/sysroot/lib/libm-2.24.90.so lib && \
     cp $RISCV/sysroot/lib/ld-2.24.90.so lib && \
     cp $RISCV/sysroot/lib/libc-2.24.90.so lib && \
@@ -124,38 +151,21 @@ RUN \
     make -j$THREADS && \
     cp $RISCV/busybox-1.27.2/busybox $RISCV/root/bin && \
     cd .. && \
-    rm -rf busybox-1.27.2
+    \rm -rf $RISCV/busybox-1.27.2
 
-# Build poweroff
-COPY poweroff.c $RISCV
-
+# Build device-tree compiler and add it to root
 RUN \
-    cd $RISCV && \
-    riscv64-unknown-linux-gnu-gcc -O2 -o root/sbin/poweroff poweroff.c
+    curl -L https://git.kernel.org/pub/scm/utils/dtc/dtc.git/snapshot/dtc-1.4.5.tar.gz | tar -xz && \
+    cd dtc-1.4.5 && \
+    CC=riscv64-unknown-linux-gnu-gcc make && \
+    cp dtc $RISCV/root/usr/bin && \
+    cd .. && \
+    \rm -rf $RISCV/dtc-1.4.5
 
 # Build ext2 filesystem containing root
 RUN \
     cd $RISCV && \
     genext2fs -i 4096 -b 65536 -d root root.bin
-
-# Build emulator ----------------------------------------------------
-
-RUN \
-    apt-get update && \
-    apt-get install -y libssl-dev libcurl4-openssl-dev
-
-COPY \
-    riscvemu.cfg \
-    riscvemu-2017-08-06.patch \
-    $RISCV/
-
-ADD riscvemu-2017-08-06.tar.gz $RISCV
-
-RUN \
-    cd $RISCV/riscvemu-2017-08-06 && \
-    patch < $RISCV/riscvemu-2017-08-06.patch && \
-    make -j$THREADS && \
-    cp riscvemu64 $RISCV/bin
 
 USER themis
 

@@ -43,8 +43,6 @@ typedef struct {
 
 typedef struct {
     uint64_t ram_size;
-    BOOL rtc_real_time;
-    BOOL rtc_local_time;
     int width, height; /* graphic width & height */
     CharacterDevice *console;
     VMFlashEntry tab_flash[VM_MAX_FLASH_DEVICE];
@@ -64,13 +62,8 @@ void __attribute__((format(printf, 1, 2))) vm_error(const char *fmt, ...);
 const char *virt_machine_get_name(void);
 void virt_machine_set_defaults(VirtMachineParams *p);
 void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx);
-void vm_add_cmdline(VirtMachineParams *p, const char *cmdline);
 void virt_machine_free_config(VirtMachineParams *p);
 VirtMachine *virt_machine_init(const VirtMachineParams *p);
 void virt_machine_end(VirtMachine *s);
-int virt_machine_get_sleep_duration(VirtMachine *s, int delay);
+void virt_machine_advance_cycle_counter(VirtMachine *s);
 void virt_machine_interp(VirtMachine *s, int max_exec_cycle);
-BOOL vm_mouse_is_absolute(VirtMachine *s);
-void vm_send_mouse_event(VirtMachine *s1, int dx, int dy, int dz,
-                         unsigned int buttons);
-void vm_send_key_event(VirtMachine *s1, BOOL is_down, uint16_t key_code);

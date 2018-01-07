@@ -172,6 +172,7 @@ struct RISCVCPUState {
     uint8_t mxl; /* MXL field in MISA register */
 
     uint64_t insn_counter;
+    uint64_t cycle_counter;
     BOOL power_down_flag;
     int pending_exception; /* used during MMU exception handling */
     target_ulong pending_tval;
@@ -260,7 +261,8 @@ static void dump_regs(RISCVCPUState *s)
     printf("priv=%c", priv_str[s->priv]);
     printf(" mstatus=");
     print_target_ulong(s->mstatus);
-    printf(" cycles=%" PRId64, s->insn_counter);
+    printf(" cycles=%" PRId64, s->cycle_counter);
+    printf(" insns=%" PRId64, s->insn_counter);
     printf("\n");
 #if 1
     printf(" mideleg=");
@@ -882,6 +884,19 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
 
     switch(csr) {
     case 0xc00: /* ucycle */
+        {
+            uint32_t counteren;
+            if (s->priv < PRV_M) {
+                if (s->priv < PRV_S)
+                    counteren = s->scounteren;
+                else
+                    counteren = s->mcounteren;
+                if (((counteren >> (csr & 0x1f)) & 1) == 0)
+                    goto invalid_csr;
+            }
+        }
+        val = (int64_t)s->cycle_counter;
+        break;
     case 0xc02: /* uinstret */
         {
             uint32_t counteren;
@@ -897,6 +912,21 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
         val = (int64_t)s->insn_counter;
         break;
     case 0xc80: /* mcycleh */
+        if (s->cur_xlen != 32)
+            goto invalid_csr;
+        {
+            uint32_t counteren;
+            if (s->priv < PRV_M) {
+                if (s->priv < PRV_S)
+                    counteren = s->scounteren;
+                else
+                    counteren = s->mcounteren;
+                if (((counteren >> (csr & 0x1f)) & 1) == 0)
+                    goto invalid_csr;
+            }
+        }
+        val = s->cycle_counter >> 32;
+        break;
     case 0xc82: /* minstreth */
         if (s->cur_xlen != 32)
             goto invalid_csr;
@@ -913,7 +943,6 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
         }
         val = s->insn_counter >> 32;
         break;
-
     case 0x100:
         val = get_mstatus(s, SSTATUS_MASK);
         break;
@@ -982,10 +1011,16 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
         val = s->mip;
         break;
     case 0xb00: /* mcycle */
+        val = (int64_t)s->cycle_counter;
+        break;
     case 0xb02: /* minstret */
         val = (int64_t)s->insn_counter;
         break;
     case 0xb80: /* mcycleh */
+        if (s->cur_xlen != 32)
+            goto invalid_csr;
+        val = s->cycle_counter >> 32;
+        break;
     case 0xb82: /* minstreth */
         if (s->cur_xlen != 32)
             goto invalid_csr;
@@ -1312,34 +1347,24 @@ static __exception int raise_interrupt(RISCVCPUState *s)
 
 #define XLEN 32
 #include "riscvemu_template.h"
-
-#if MAX_XLEN >= 64
 #define XLEN 64
 #include "riscvemu_template.h"
-#endif
 
 void riscv_cpu_interp(RISCVCPUState *s, int n_cycles)
 {
     uint64_t timeout;
 
-    timeout = s->insn_counter + n_cycles;
+    timeout = s->cycle_counter + n_cycles;
     while (!s->power_down_flag &&
-           (int)(timeout - s->insn_counter) > 0) {
-        n_cycles = timeout - s->insn_counter;
+           (int)(timeout - s->cycle_counter) > 0) {
+        n_cycles = timeout - s->cycle_counter;
         switch(s->cur_xlen) {
         case 32:
             riscv_cpu_interp32(s, n_cycles);
             break;
-#if MAX_XLEN >= 64
         case 64:
             riscv_cpu_interp64(s, n_cycles);
             break;
-#endif
-#if MAX_XLEN >= 128
-        case 128:
-            riscv_cpu_interp128(s, n_cycles);
-            break;
-#endif
         default:
             abort();
         }
@@ -1349,7 +1374,12 @@ void riscv_cpu_interp(RISCVCPUState *s, int n_cycles)
 /* Note: the value is not accurate when called in riscv_cpu_interp() */
 uint64_t riscv_cpu_get_cycles(RISCVCPUState *s)
 {
-    return s->insn_counter;
+    return s->cycle_counter;
+}
+
+void riscv_cpu_advance_cycles(RISCVCPUState *s, uint64_t amount)
+{
+    s->cycle_counter += amount;
 }
 
 void riscv_cpu_set_mip(RISCVCPUState *s, uint32_t mask)

@@ -1346,9 +1346,9 @@ static __exception int raise_interrupt(RISCVCPUState *s)
 }
 
 #define XLEN 32
-#include "riscvemu_template.h"
+#include "riscv_cpu_template.h"
 #define XLEN 64
-#include "riscvemu_template.h"
+#include "riscv_cpu_template.h"
 
 void riscv_cpu_interp(RISCVCPUState *s, int n_cycles)
 {

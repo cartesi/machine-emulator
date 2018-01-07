@@ -217,19 +217,6 @@ static no_inline int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
 static no_inline int target_write_slow(RISCVCPUState *s, target_ulong addr,
                                        mem_uint_t val, int size_log2);
 
-void log_vprintf(const char *fmt, va_list ap)
-{
-    vprintf(fmt, ap);
-}
-
-void __attribute__((format(printf, 1, 2))) log_printf(const char *fmt, ...)
-{
-    va_list ap;
-    va_start(ap, fmt);
-    log_vprintf(fmt, ap);
-    va_end(ap);
-}
-
 #if MAX_XLEN == 128
 static void fprint_target_ulong(FILE *f, target_ulong a)
 {
@@ -1323,33 +1310,11 @@ static __exception int raise_interrupt(RISCVCPUState *s)
     return -1;
 }
 
-static inline int32_t sext(int32_t val, int n)
-{
-    return (val << (32 - n)) >> (32 - n);
-}
-
-static inline uint32_t get_field1(uint32_t val, int src_pos,
-                                  int dst_pos, int dst_pos_max)
-{
-    int mask;
-    assert(dst_pos_max >= dst_pos);
-    mask = ((1 << (dst_pos_max - dst_pos + 1)) - 1) << dst_pos;
-    if (dst_pos >= src_pos)
-        return (val << (dst_pos - src_pos)) & mask;
-    else
-        return (val >> (src_pos - dst_pos)) & mask;
-}
-
 #define XLEN 32
 #include "riscvemu_template.h"
 
 #if MAX_XLEN >= 64
 #define XLEN 64
-#include "riscvemu_template.h"
-#endif
-
-#if MAX_XLEN >= 128
-#define XLEN 128
 #include "riscvemu_template.h"
 #endif
 

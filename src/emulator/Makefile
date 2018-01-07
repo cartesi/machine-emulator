@@ -25,6 +25,7 @@
 UNAME:=$(shell uname)
 
 LUA_INC:=$(shell pkg-config --cflags lua53)
+LUA_LIB:=$(shell pkg-config --libs lua53)
 
 SOLDFLAGS_Darwin:= -L/opt/local/lib -L/opt/local/lib/libomp -bundle -undefined dynamic_lookup
 CC_Darwin=clang
@@ -42,8 +43,12 @@ WARNS=-W -Wall -Wno-unused-parameter -Wno-unused-result
 
 INCS=$(LUA_INC)
 
-CFLAGS=$(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS)
-CXXFLAGS=-std=c++14 $(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS)
+# so we can use gcc to check if there are unused symbols
+# GCFLAGS=-fdata-sections -ffunction-sections
+# GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
+
+CFLAGS=$(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS)
+CXXFLAGS=-std=c++14 $(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS)
 
 ALL=emu.so
 
@@ -52,6 +57,7 @@ all: $(ALL)
 OBJS:= \
 	virtio.o \
 	pci.o \
+	fdt.o \
 	cutils.o \
 	iomem.o \
 	machine.o \
@@ -63,6 +69,9 @@ riscv_cpu.o: CFLAGS += -DMAX_XLEN=64 -DFLEN=0
 
 emu.so: $(OBJS)
 	$(CC) $(SOLDFLAGS) -o $@ $^
+
+main: $(OBJS) main.o
+	$(CC) -o $@ $^ $(GCLDFLAGS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<

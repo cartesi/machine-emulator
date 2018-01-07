@@ -28,24 +28,20 @@
 #include <inttypes.h>
 #include <assert.h>
 
+#include <sys/mman.h> /* mmap, munmap */
+#include <unistd.h> /* close */
+#include <fcntl.h> /* open */
+
 #include "cutils.h"
 #include "iomem.h"
 
-static PhysMemoryRange *default_register_ram(PhysMemoryMap *s, uint64_t addr,
-                                             uint64_t size, int devram_flags);
-static void default_free_ram(PhysMemoryMap *s, PhysMemoryRange *pr);
 static const uint32_t *default_get_dirty_bits(PhysMemoryMap *map, PhysMemoryRange *pr);
-static void default_set_addr(PhysMemoryMap *map,
-                             PhysMemoryRange *pr, uint64_t addr, BOOL enabled);
 
 PhysMemoryMap *phys_mem_map_init(void)
 {
     PhysMemoryMap *s;
     s = mallocz(sizeof(*s));
-    s->register_ram = default_register_ram;
-    s->free_ram = default_free_ram;
     s->get_dirty_bits = default_get_dirty_bits;
-    s->set_ram_addr = default_set_addr;
     return s;
 }
 
@@ -57,7 +53,12 @@ void phys_mem_map_end(PhysMemoryMap *s)
     for(i = 0; i < s->n_phys_mem_range; i++) {
         pr = &s->phys_mem_range[i];
         if (pr->is_ram) {
-            s->free_ram(s, pr);
+            if (pr->is_backed) {
+                munmap(pr->phys_mem, pr->org_size);
+                close(pr->fd);
+            } else {
+                free(pr->phys_mem);
+            }
         }
     }
     free(s);
@@ -77,7 +78,7 @@ PhysMemoryRange *get_phys_mem_range(PhysMemoryMap *s, uint64_t paddr)
     return NULL;
 }
 
-PhysMemoryRange *register_ram_entry(PhysMemoryMap *s, uint64_t addr,
+static PhysMemoryRange *register_ram_entry(PhysMemoryMap *s, uint64_t addr,
                                     uint64_t size, int devram_flags)
 {
     PhysMemoryRange *pr;
@@ -99,7 +100,50 @@ PhysMemoryRange *register_ram_entry(PhysMemoryMap *s, uint64_t addr,
     return pr;
 }
 
-static PhysMemoryRange *default_register_ram(PhysMemoryMap *s, uint64_t addr,
+static void init_dirty_bits(PhysMemoryRange *pr, uint64_t size) {
+    size_t nb_pages;
+    int i;
+    nb_pages = size >> DEVRAM_PAGE_SIZE_LOG2;
+    pr->dirty_bits_size = ((nb_pages + 31) / 32) * sizeof(uint32_t);
+    pr->dirty_bits_index = 0;
+    for(i = 0; i < 2; i++) {
+        pr->dirty_bits_tab[i] = mallocz(pr->dirty_bits_size);
+    }
+    pr->dirty_bits = pr->dirty_bits_tab[pr->dirty_bits_index];
+}
+
+PhysMemoryRange *cpu_register_backed_ram(PhysMemoryMap *s, uint64_t addr,
+                                     uint64_t size, const char *path,
+                                     int devram_flags)
+{
+    PhysMemoryRange *pr;
+    int oflag = (devram_flags & DEVRAM_FLAG_SHARED)? O_RDWR: O_RDONLY;
+    int mflag = (devram_flags & DEVRAM_FLAG_SHARED)? MAP_SHARED: MAP_PRIVATE;
+
+    pr = register_ram_entry(s, addr, size, devram_flags);
+
+    pr->fd = open(path, oflag);
+    if (pr->fd < 0) {
+        fprintf(stderr, "Could not open file %s\n", path);
+        exit(1);
+    }
+
+    pr->phys_mem = mmap(NULL, size, PROT_READ | PROT_WRITE, mflag, pr->fd, 0);
+    if (!pr->phys_mem) {
+        fprintf(stderr, "Could not map filed-backed memory\n");
+        exit(1);
+    }
+
+    if (devram_flags & DEVRAM_FLAG_DIRTY_BITS) {
+        init_dirty_bits(pr, size);
+    }
+
+    return pr;
+}
+
+
+
+PhysMemoryRange *cpu_register_ram(PhysMemoryMap *s, uint64_t addr,
                                              uint64_t size, int devram_flags)
 {
     PhysMemoryRange *pr;
@@ -113,16 +157,9 @@ static PhysMemoryRange *default_register_ram(PhysMemoryMap *s, uint64_t addr,
     }
 
     if (devram_flags & DEVRAM_FLAG_DIRTY_BITS) {
-        size_t nb_pages;
-        int i;
-        nb_pages = size >> DEVRAM_PAGE_SIZE_LOG2;
-        pr->dirty_bits_size = ((nb_pages + 31) / 32) * sizeof(uint32_t);
-        pr->dirty_bits_index = 0;
-        for(i = 0; i < 2; i++) {
-            pr->dirty_bits_tab[i] = mallocz(pr->dirty_bits_size);
-        }
-        pr->dirty_bits = pr->dirty_bits_tab[pr->dirty_bits_index];
+        init_dirty_bits(pr, size);
     }
+
     return pr;
 }
 
@@ -155,11 +192,6 @@ static const uint32_t *default_get_dirty_bits(PhysMemoryMap *map,
     return dirty_bits;
 }
 
-static void default_free_ram(PhysMemoryMap *s, PhysMemoryRange *pr)
-{
-    free(pr->phys_mem);
-}
-
 PhysMemoryRange *cpu_register_device(PhysMemoryMap *s, uint64_t addr,
                                      uint64_t size, void *opaque,
                                      DeviceReadFunc *read_func, DeviceWriteFunc *write_func,
@@ -184,9 +216,10 @@ PhysMemoryRange *cpu_register_device(PhysMemoryMap *s, uint64_t addr,
     return pr;
 }
 
-static void default_set_addr(PhysMemoryMap *map,
-                             PhysMemoryRange *pr, uint64_t addr, BOOL enabled)
+void phys_mem_set_addr(PhysMemoryRange *pr, uint64_t addr, BOOL enabled)
 {
+    PhysMemoryMap *map = pr->map;
+
     if (enabled) {
         if (pr->size == 0 || pr->addr != addr) {
             /* enable or move mapping */
@@ -207,16 +240,6 @@ static void default_set_addr(PhysMemoryMap *map,
             pr->addr = 0;
             pr->size = 0;
         }
-    }
-}
-
-void phys_mem_set_addr(PhysMemoryRange *pr, uint64_t addr, BOOL enabled)
-{
-    PhysMemoryMap *map = pr->map;
-    if (!pr->is_ram) {
-        default_set_addr(map, pr, addr, enabled);
-    } else {
-        return map->set_ram_addr(map, pr, addr, enabled);
     }
 }
 

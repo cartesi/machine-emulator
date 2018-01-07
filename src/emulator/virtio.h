@@ -1,6 +1,6 @@
 /*
  * VIRTIO driver
- * 
+ *
  * Copyright (c) 2016 Fabrice Bellard
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -29,18 +29,8 @@
 #include "pci.h"
 
 #define VIRTIO_PAGE_SIZE 4096
-
-#if defined(EMSCRIPTEN)
-#define VIRTIO_ADDR_BITS 32
-#else
 #define VIRTIO_ADDR_BITS 64
-#endif
-
-#if VIRTIO_ADDR_BITS == 64
 typedef uint64_t virtio_phys_addr_t;
-#else
-typedef uint32_t virtio_phys_addr_t;
-#endif
 
 typedef struct {
     /* PCI only: */
@@ -51,31 +41,11 @@ typedef struct {
     IRQSignal *irq;
 } VIRTIOBusDef;
 
-typedef struct VIRTIODevice VIRTIODevice; 
+typedef struct VIRTIODevice VIRTIODevice;
 
 #define VIRTIO_DEBUG_IO (1 << 0)
-#define VIRTIO_DEBUG_9P (1 << 1)
 
 void virtio_set_debug(VIRTIODevice *s, int debug_flags);
-
-/* block device */
-
-typedef void BlockDeviceCompletionFunc(void *opaque, int ret);
-
-typedef struct BlockDevice BlockDevice;
-
-struct BlockDevice {
-    int64_t (*get_sector_count)(BlockDevice *bs);
-    int (*read_async)(BlockDevice *bs,
-                      uint64_t sector_num, uint8_t *buf, int n,
-                      BlockDeviceCompletionFunc *cb, void *opaque);
-    int (*write_async)(BlockDevice *bs,
-                       uint64_t sector_num, const uint8_t *buf, int n,
-                       BlockDeviceCompletionFunc *cb, void *opaque);
-    void *opaque;
-};
-
-VIRTIODevice *virtio_block_init(VIRTIOBusDef *bus, BlockDevice *bs);
 
 /* console device */
 
@@ -90,24 +60,5 @@ BOOL virtio_console_can_write_data(VIRTIODevice *s);
 int virtio_console_get_write_len(VIRTIODevice *s);
 int virtio_console_write_data(VIRTIODevice *s, const uint8_t *buf, int buf_len);
 void virtio_console_resize_event(VIRTIODevice *s, int width, int height);
-
-/* input device */
-
-typedef enum {
-    VIRTIO_INPUT_TYPE_KEYBOARD,
-    VIRTIO_INPUT_TYPE_MOUSE,
-    VIRTIO_INPUT_TYPE_TABLET,
-} VirtioInputTypeEnum;
-
-#define VIRTIO_INPUT_ABS_SCALE 32768
-
-int virtio_input_send_key_event(VIRTIODevice *s, BOOL is_down,
-                                uint16_t key_code);
-int virtio_input_send_mouse_event(VIRTIODevice *s, int dx, int dy, int dz,
-                                  unsigned int buttons);
-
-VIRTIODevice *virtio_input_init(VIRTIOBusDef *bus, VirtioInputTypeEnum type);
-
-/* 9p filesystem device */
 
 #endif /* VIRTIO_H */

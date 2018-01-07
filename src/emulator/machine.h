@@ -23,7 +23,7 @@
  */
 #include <lua.h>
 
-#define VM_MAX_DRIVE_DEVICE 4
+#define VM_MAX_FLASH_DEVICE 4
 
 #define VM_CONFIG_VERSION 1
 
@@ -34,10 +34,12 @@ typedef struct {
 } VMFileEntry;
 
 typedef struct {
-    char *device;
-    char *filename;
-    BlockDevice *block_dev;
-} VMDriveEntry;
+    char *backing;
+    char *label;
+    BOOL shared;
+    uint64_t address;
+    uint64_t size;
+} VMFlashEntry;
 
 typedef struct {
     uint64_t ram_size;
@@ -45,8 +47,8 @@ typedef struct {
     BOOL rtc_local_time;
     int width, height; /* graphic width & height */
     CharacterDevice *console;
-    VMDriveEntry tab_drive[VM_MAX_DRIVE_DEVICE];
-    int drive_count;
+    VMFlashEntry tab_flash[VM_MAX_FLASH_DEVICE];
+    int flash_count;
     char *cmdline; /* kernel command line */
     VMFileEntry kernel; /* kernel file */
 } VirtMachineParams;
@@ -63,7 +65,6 @@ const char *virt_machine_get_name(void);
 void virt_machine_set_defaults(VirtMachineParams *p);
 void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx);
 void vm_add_cmdline(VirtMachineParams *p, const char *cmdline);
-char *get_file_path(const char *base_filename, const char *filename);
 void virt_machine_free_config(VirtMachineParams *p);
 VirtMachine *virt_machine_init(const VirtMachineParams *p);
 void virt_machine_end(VirtMachine *s);

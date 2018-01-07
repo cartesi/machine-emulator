@@ -23,7 +23,6 @@
  */
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdarg.h>
 #include <string.h>
 #include <inttypes.h>
 #include <assert.h>
@@ -37,6 +36,7 @@
 #include "riscv_cpu.h"
 #include "virtio.h"
 #include "machine.h"
+#include "fdt.h"
 
 /* RISCV machine */
 
@@ -72,7 +72,6 @@ typedef struct RISCVMachine {
 #define VIRTIO_IRQ       1
 #define PLIC_BASE_ADDR 0x40100000
 #define PLIC_SIZE      0x00400000
-#define FRAMEBUFFER_BASE_ADDR 0x41000000
 
 #define RTC_FREQ 10000000
 #define RTC_FREQ_DIV 16 /* arbitrary, relative to CPU freq to have a
@@ -319,264 +318,8 @@ static uint8_t *get_ram_ptr(RISCVMachine *s, uint64_t paddr)
     return pr->phys_mem + (uintptr_t)(paddr - pr->addr);
 }
 
-/* FDT machine description */
-
-#define FDT_MAGIC	0xd00dfeed
-#define FDT_VERSION	17
-
-struct fdt_header {
-    uint32_t magic;
-    uint32_t totalsize;
-    uint32_t off_dt_struct;
-    uint32_t off_dt_strings;
-    uint32_t off_mem_rsvmap;
-    uint32_t version;
-    uint32_t last_comp_version; /* <= 17 */
-    uint32_t boot_cpuid_phys;
-    uint32_t size_dt_strings;
-    uint32_t size_dt_struct;
-};
-
-struct fdt_reserve_entry {
-       uint64_t address;
-       uint64_t size;
-};
-
-#define FDT_BEGIN_NODE	1
-#define FDT_END_NODE	2
-#define FDT_PROP	3
-#define FDT_NOP		4
-#define FDT_END		9
-
-typedef struct {
-    uint32_t *tab;
-    int tab_len;
-    int tab_size;
-    int open_node_count;
-
-    char *string_table;
-    int string_table_len;
-    int string_table_size;
-} FDTState;
-
-static FDTState *fdt_init(void)
-{
-    FDTState *s;
-    s = mallocz(sizeof(*s));
-    return s;
-}
-
-static void fdt_alloc_len(FDTState *s, int len)
-{
-    int new_size;
-    if (unlikely(len > s->tab_size)) {
-        new_size = max_int(len, s->tab_size * 3 / 2);
-        s->tab = realloc(s->tab, new_size * sizeof(uint32_t));
-        s->tab_size = new_size;
-    }
-}
-
-static void fdt_put32(FDTState *s, int v)
-{
-    fdt_alloc_len(s, s->tab_len + 1);
-    s->tab[s->tab_len++] = cpu_to_be32(v);
-}
-
-/* the data is zero padded */
-static void fdt_put_data(FDTState *s, const uint8_t *data, int len)
-{
-    int len1;
-
-    len1 = (len + 3) / 4;
-    fdt_alloc_len(s, s->tab_len + len1);
-    memcpy(s->tab + s->tab_len, data, len);
-    memset((uint8_t *)(s->tab + s->tab_len) + len, 0, -len & 3);
-    s->tab_len += len1;
-}
-
-static void fdt_begin_node(FDTState *s, const char *name)
-{
-    fdt_put32(s, FDT_BEGIN_NODE);
-    fdt_put_data(s, (uint8_t *)name, strlen(name) + 1);
-    s->open_node_count++;
-}
-
-static void fdt_begin_node_num(FDTState *s, const char *name, uint64_t n)
-{
-    char buf[256];
-    snprintf(buf, sizeof(buf), "%s@%" PRIx64, name, n);
-    fdt_begin_node(s, buf);
-}
-
-static void fdt_end_node(FDTState *s)
-{
-    fdt_put32(s, FDT_END_NODE);
-    s->open_node_count--;
-}
-
-static int fdt_get_string_offset(FDTState *s, const char *name)
-{
-    int pos, new_size, name_size, new_len;
-
-    pos = 0;
-    while (pos < s->string_table_len) {
-        if (!strcmp(s->string_table + pos, name))
-            return pos;
-        pos += strlen(s->string_table + pos) + 1;
-    }
-    /* add a new string */
-    name_size = strlen(name) + 1;
-    new_len = s->string_table_len + name_size;
-    if (new_len > s->string_table_size) {
-        new_size = max_int(new_len, s->string_table_size * 3 / 2);
-        s->string_table = realloc(s->string_table, new_size);
-        s->string_table_size = new_size;
-    }
-    pos = s->string_table_len;
-    memcpy(s->string_table + pos, name, name_size);
-    s->string_table_len = new_len;
-    return pos;
-}
-
-static void fdt_prop(FDTState *s, const char *prop_name,
-                     const void *data, int data_len)
-{
-    fdt_put32(s, FDT_PROP);
-    fdt_put32(s, data_len);
-    fdt_put32(s, fdt_get_string_offset(s, prop_name));
-    fdt_put_data(s, data, data_len);
-}
-
-static void fdt_prop_tab_u32(FDTState *s, const char *prop_name,
-                             uint32_t *tab, int tab_len)
-{
-    int i;
-    fdt_put32(s, FDT_PROP);
-    fdt_put32(s, tab_len * sizeof(uint32_t));
-    fdt_put32(s, fdt_get_string_offset(s, prop_name));
-    for(i = 0; i < tab_len; i++)
-        fdt_put32(s, tab[i]);
-}
-
-static void fdt_prop_u32(FDTState *s, const char *prop_name, uint32_t val)
-{
-    fdt_prop_tab_u32(s, prop_name, &val, 1);
-}
-
-static void fdt_prop_tab_u64_2(FDTState *s, const char *prop_name,
-                               uint64_t v0, uint64_t v1)
-{
-    uint32_t tab[4];
-    tab[0] = v0 >> 32;
-    tab[1] = v0;
-    tab[2] = v1 >> 32;
-    tab[3] = v1;
-    fdt_prop_tab_u32(s, prop_name, tab, 4);
-}
-
-static void fdt_prop_str(FDTState *s, const char *prop_name,
-                         const char *str)
-{
-    fdt_prop(s, prop_name, str, strlen(str) + 1);
-}
-
-/* NULL terminated string list */
-static void fdt_prop_tab_str(FDTState *s, const char *prop_name,
-                             ...)
-{
-    va_list ap;
-    int size, str_size;
-    char *ptr, *tab;
-
-    va_start(ap, prop_name);
-    size = 0;
-    for(;;) {
-        ptr = va_arg(ap, char *);
-        if (!ptr)
-            break;
-        str_size = strlen(ptr) + 1;
-        size += str_size;
-    }
-    va_end(ap);
-
-    tab = malloc(size);
-    va_start(ap, prop_name);
-    size = 0;
-    for(;;) {
-        ptr = va_arg(ap, char *);
-        if (!ptr)
-            break;
-        str_size = strlen(ptr) + 1;
-        memcpy(tab + size, ptr, str_size);
-        size += str_size;
-    }
-    va_end(ap);
-
-    fdt_prop(s, prop_name, tab, size);
-    free(tab);
-}
-
-/* write the FDT to 'dst1'. return the FDT size in bytes */
-int fdt_output(FDTState *s, uint8_t *dst)
-{
-    struct fdt_header *h;
-    struct fdt_reserve_entry *re;
-    int dt_struct_size;
-    int dt_strings_size;
-    int pos;
-
-    assert(s->open_node_count == 0);
-
-    fdt_put32(s, FDT_END);
-
-    dt_struct_size = s->tab_len * sizeof(uint32_t);
-    dt_strings_size = s->string_table_len;
-
-    h = (struct fdt_header *)dst;
-    h->magic = cpu_to_be32(FDT_MAGIC);
-    h->version = cpu_to_be32(FDT_VERSION);
-    h->last_comp_version = cpu_to_be32(16);
-    h->boot_cpuid_phys = cpu_to_be32(0);
-    h->size_dt_strings = cpu_to_be32(dt_strings_size);
-    h->size_dt_struct = cpu_to_be32(dt_struct_size);
-
-    pos = sizeof(struct fdt_header);
-
-    h->off_dt_struct = cpu_to_be32(pos);
-    memcpy(dst + pos, s->tab, dt_struct_size);
-    pos += dt_struct_size;
-
-    /* align to 8 */
-    while ((pos & 7) != 0) {
-        dst[pos++] = 0;
-    }
-    h->off_mem_rsvmap = cpu_to_be32(pos);
-    re = (struct fdt_reserve_entry *)(dst + pos);
-    re->address = 0; /* no reserved entry */
-    re->size = 0;
-    pos += sizeof(struct fdt_reserve_entry);
-
-    h->off_dt_strings = cpu_to_be32(pos);
-    memcpy(dst + pos, s->string_table, dt_strings_size);
-    pos += dt_strings_size;
-
-    /* align to 8, just in case */
-    while ((pos & 7) != 0) {
-        dst[pos++] = 0;
-    }
-
-    h->totalsize = cpu_to_be32(pos);
-    return pos;
-}
-
-void fdt_end(FDTState *s)
-{
-    free(s->tab);
-    free(s->string_table);
-    free(s);
-}
-
-static int riscv_build_fdt(RISCVMachine *m, uint8_t *dst, const char *cmd_line)
+static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
+    uint8_t *dst)
 {
     FDTState *s;
     int size, max_xlen, i, cur_phandle, intc_phandle, plic_phandle;
@@ -643,6 +386,29 @@ static int riscv_build_fdt(RISCVMachine *m, uint8_t *dst, const char *cmd_line)
 
     fdt_end_node(s); /* memory */
 
+    /* flash */
+    for (i = 0; i < p->flash_count; i++) {
+        fdt_begin_node_num(s, "flash", p->tab_flash[i].address);
+            fdt_prop_u32(s, "#address-cells", 2);
+            fdt_prop_u32(s, "#size-cells", 2);
+            fdt_prop_str(s, "compatible", "mtd-ram");
+            fdt_prop_u32(s, "bank-width", 4);
+            tab[0] = p->tab_flash[i].address >> 32;
+            tab[1] = p->tab_flash[i].address;
+            tab[2] = p->tab_flash[i].size >> 32;
+            tab[3] = p->tab_flash[i].size;
+            fdt_prop_tab_u32(s, "reg", tab, 4);
+            fdt_begin_node_num(s, "fs0", 0);
+                fdt_prop_str(s, "label", p->tab_flash[i].label);
+                tab[0] = 0;
+                tab[1] = 0;
+                tab[2] = p->tab_flash[i].size >> 32;
+                tab[3] = p->tab_flash[i].size;
+                fdt_prop_tab_u32(s, "reg", tab, 4);
+            fdt_end_node(s); /* fs */
+        fdt_end_node(s); /* flash */
+    }
+
     fdt_begin_node(s, "soc");
     fdt_prop_u32(s, "#address-cells", 2);
     fdt_prop_u32(s, "#size-cells", 2);
@@ -695,7 +461,7 @@ static int riscv_build_fdt(RISCVMachine *m, uint8_t *dst, const char *cmd_line)
     fdt_end_node(s); /* soc */
 
     fdt_begin_node(s, "chosen");
-    fdt_prop_str(s, "bootargs", cmd_line ? cmd_line : "");
+    fdt_prop_str(s, "bootargs", p->cmdline ? p->cmdline : "");
 
     fdt_end_node(s); /* chosen */
 
@@ -714,26 +480,30 @@ static int riscv_build_fdt(RISCVMachine *m, uint8_t *dst, const char *cmd_line)
     return size;
 }
 
-static void copy_kernel(RISCVMachine *s, const uint8_t *buf, int buf_len,
-                        const char *cmd_line)
+static void copy_kernel(const VirtMachineParams *p, RISCVMachine *s)
 {
     uint32_t fdt_addr;
     uint8_t *ram_ptr;
     uint32_t *q;
 
-    if (buf_len > s->ram_size) {
+    if (!p->kernel.buf) {
+        vm_error("No kernel found\n");
+        exit(1);
+    }
+
+    if (p->kernel.len > (int) s->ram_size) {
         vm_error("Kernel too big\n");
         exit(1);
     }
 
     ram_ptr = get_ram_ptr(s, RAM_BASE_ADDR);
-    memcpy(ram_ptr, buf, buf_len);
+    memcpy(ram_ptr, p->kernel.buf, p->kernel.len);
 
     ram_ptr = get_ram_ptr(s, 0);
 
     fdt_addr = 0x1000 + 8 * 8;
 
-    riscv_build_fdt(s, ram_ptr + fdt_addr, cmd_line);
+    riscv_build_fdt(p, s, ram_ptr + fdt_addr);
 
     /* jump_addr = 0x80000000 */
 
@@ -760,7 +530,6 @@ void virt_machine_set_defaults(VirtMachineParams *p)
 VirtMachine *virt_machine_init(const VirtMachineParams *p)
 {
     RISCVMachine *s;
-    VIRTIODevice *blk_dev;
     int irq_num, i;
     VIRTIOBusDef vbus_s, *vbus = &vbus_s;
 
@@ -777,6 +546,13 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
     /* RAM */
     cpu_register_ram(s->mem_map, RAM_BASE_ADDR, p->ram_size, 0);
     cpu_register_ram(s->mem_map, 0x00000000, LOW_RAM_SIZE, 0);
+
+    /* flash */
+    for (i = 0; i < p->flash_count; i++) {
+        cpu_register_backed_ram(s->mem_map, p->tab_flash[i].address,
+            p->tab_flash[i].size, p->tab_flash[i].backing,
+            p->tab_flash[i].shared? DEVRAM_FLAG_SHARED: 0);
+    }
 
     s->rtc_real_time = p->rtc_real_time;
     if (p->rtc_real_time) {
@@ -809,20 +585,7 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
         s->virtio_count++;
     }
 
-    /* virtio block device */
-    for(i = 0; i < p->drive_count; i++) {
-        vbus->irq = &s->plic_irq[irq_num];
-        blk_dev = virtio_block_init(vbus, p->tab_drive[i].block_dev);
-        (void)blk_dev;
-        vbus->addr += VIRTIO_SIZE;
-        irq_num++;
-        s->virtio_count++;
-    }
-
-    if (!p->kernel.buf) {
-        vm_error("No kernel found");
-    }
-    copy_kernel(s, p->kernel.buf, p->kernel.len, p->cmdline);
+    copy_kernel(p, s);
 
     return (VirtMachine *)s;
 }
@@ -869,37 +632,5 @@ void virt_machine_interp(VirtMachine *s1, int max_exec_cycle)
 
 const char *virt_machine_get_name(void)
 {
-    switch(riscv_cpu_get_max_xlen()) {
-    case 32:
-        return "riscv32";
-    case 64:
-        return "riscv64";
-    case 128:
-        return "riscv128";
-    default:
-        abort();
-    }
-}
-
-void vm_send_key_event(VirtMachine *s1, BOOL is_down,
-                       uint16_t key_code)
-{
-    RISCVMachine *s = (RISCVMachine *)s1;
-    if (s->keyboard_dev) {
-        virtio_input_send_key_event(s->keyboard_dev, is_down, key_code);
-    }
-}
-
-BOOL vm_mouse_is_absolute(VirtMachine *s)
-{
-    return TRUE;
-}
-
-void vm_send_mouse_event(VirtMachine *s1, int dx, int dy, int dz,
-                        unsigned int buttons)
-{
-    RISCVMachine *s = (RISCVMachine *)s1;
-    if (s->mouse_dev) {
-        virtio_input_send_mouse_event(s->mouse_dev, dx, dy, dz, buttons);
-    }
+    return "riscv64";
 }

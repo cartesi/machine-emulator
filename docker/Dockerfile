@@ -59,13 +59,17 @@ ENV PATH "${RISCV}/bin:${PATH}"
 ADD diskimage-linux-riscv-2017-08-06.tar.gz $RISCV
 ADD riscv-linux-48ec1f0914a9203d2935d94912d3b6742144209e.tar.gz $RISCV
 
+COPY linux.config $RISCV
+
 RUN \
     cd $RISCV/riscv-linux-48ec1f0914a9203d2935d94912d3b6742144209e && \
     patch -p1 < $RISCV/diskimage-linux-riscv-2017-08-06/patches/riscv-linux.diff && \
-    cp $RISCV/diskimage-linux-riscv-2017-08-06/patches/config_linux_riscv64 .config && \
-    sed -i "s/riscv32-unknown-linux-gnu/riscv64-unknown-linux-gnu/g" .config && \
-    sed -i "s/CONFIG_ISA_C=y/# CONFIG_ISA_C is not set/g" .config && \
+    cp $RISCV/linux.config .config && \
     make -j$THREADS ARCH=riscv vmlinux
+
+#    cp $RISCV/diskimage-linux-riscv-2017-08-06/patches/config_linux_riscv64 .config && \
+#    sed -i "s/riscv32-unknown-linux-gnu/riscv64-unknown-linux-gnu/g" .config && \
+#    sed -i "s/CONFIG_ISA_C=y/# CONFIG_ISA_C is not set/g" .config && \
 
 # Build bootloader linked with kernel
 # ----------------------------------------------------
@@ -82,12 +86,6 @@ RUN \
     ../configure --with-payload=$RISCV/riscv-linux-48ec1f0914a9203d2935d94912d3b6742144209e/vmlinux --host=riscv64-unknown-linux-gnu && \
     CFLAGS="-march=rv64ima -mabi=lp64" make -j$THREADS bbl && \
     riscv64-unknown-linux-gnu-objcopy -O binary bbl $RISCV/kernel.bin
-
-# remove kernel and bootloader sources
-RUN \
-    rm -rf $RISCV/riscv-pk && \
-    rm -rf $RISCV/diskimage-linux-riscv-2017-08-06 && \
-    rm -rf $RISCV/riscv-linux-48ec1f0914a9203d2935d94912d3b6742144209e
 
 # Build original emulator
 # ----------------------------------------------------
@@ -149,12 +147,11 @@ RUN \
     cd busybox-1.27.2 && \
     cp $RISCV/busybox-1.27.config .config && \
     make -j$THREADS && \
-    cp $RISCV/busybox-1.27.2/busybox $RISCV/root/bin && \
-    cd .. && \
-    \rm -rf $RISCV/busybox-1.27.2
+    cp $RISCV/busybox-1.27.2/busybox $RISCV/root/bin
 
 # Build device-tree compiler and add it to root
 RUN \
+    cd $RISCV && \
     curl -L https://git.kernel.org/pub/scm/utils/dtc/dtc.git/snapshot/dtc-1.4.5.tar.gz | tar -xz && \
     cd dtc-1.4.5 && \
     CC=riscv64-unknown-linux-gnu-gcc make && \
@@ -167,8 +164,20 @@ RUN \
     cd $RISCV && \
     genext2fs -i 4096 -b 65536 -d root root.bin
 
-USER themis
+# Remove kernel and bootloader sources to save space
+# ----------------------------------------------------
+#RUN \
+#    rm -rf $RISCV/riscv-pk && \
+#    rm -rf $RISCV/diskimage-linux-riscv-2017-08-06 && \
+#    rm -rf $RISCV/riscv-linux-48ec1f0914a9203d2935d94912d3b6742144209e
 
-WORKDIR /home/themis
+COPY Dockerfile $RISCV
+
+#USER themis
+#WORKDIR /home/themis
+
+USER root
+
+WORKDIR $RISCV
 
 CMD ["/bin/bash", "-l"]

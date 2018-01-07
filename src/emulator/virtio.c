@@ -1,6 +1,6 @@
 /*
  * VIRTIO driver
- * 
+ *
  * Copyright (c) 2016 Fabrice Bellard
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -185,7 +185,7 @@ static uint8_t *virtio_pci_get_ram_ptr(VIRTIODevice *s, virtio_phys_addr_t paddr
 static uint8_t *virtio_mmio_get_ram_ptr(VIRTIODevice *s, virtio_phys_addr_t paddr)
 {
     PhysMemoryRange *pr;
-    
+
     pr = get_phys_mem_range(s->mem_map, paddr);
     if (!pr || !pr->is_ram)
         return NULL;
@@ -231,7 +231,7 @@ static void virtio_init(VIRTIODevice *s, VIRTIOBusDef *bus,
         uint16_t pci_device_id, class_id;
         char name[32];
         int bar_num;
-        
+
         switch(device_id) {
         case 1:
             pci_device_id = 0x1000; /* net */
@@ -273,7 +273,7 @@ static void virtio_init(VIRTIODevice *s, VIRTIOBusDef *bus,
                               VIRTIO_PCI_CONFIG_OFFSET, 0x1000, 0); /* config */
         virtio_add_pci_capability(s, 2, bar_num,
                               VIRTIO_PCI_NOTIFY_OFFSET, 0x1000, 0); /* notify */
-        
+
         s->get_ram_ptr = virtio_pci_get_ram_ptr;
         s->irq = pci_device_get_irq(s->pci_dev, 0);
         s->mem_map = pci_device_get_mem_map(s->pci_dev);
@@ -353,7 +353,7 @@ static int virtio_memcpy_from_ram(VIRTIODevice *s, uint8_t *buf,
     return 0;
 }
 
-static int virtio_memcpy_to_ram(VIRTIODevice *s, virtio_phys_addr_t addr, 
+static int virtio_memcpy_to_ram(VIRTIODevice *s, virtio_phys_addr_t addr,
                                 const uint8_t *buf, int count)
 {
     uint8_t *ptr;
@@ -372,7 +372,7 @@ static int virtio_memcpy_to_ram(VIRTIODevice *s, virtio_phys_addr_t addr,
     return 0;
 }
 
-static int get_desc(VIRTIODevice *s, VIRTIODesc *desc,  
+static int get_desc(VIRTIODevice *s, VIRTIODesc *desc,
                     int queue_idx, int desc_idx)
 {
     QueueState *qs = &s->queue[queue_idx];
@@ -481,7 +481,7 @@ static void virtio_consume_desc(VIRTIODevice *s,
     set_irq(s->irq, 1);
 }
 
-static int get_desc_rw_size(VIRTIODevice *s, 
+static int get_desc_rw_size(VIRTIODevice *s,
                              int *pread_size, int *pwrite_size,
                              int queue_idx, int desc_idx)
 {
@@ -501,7 +501,7 @@ static int get_desc_rw_size(VIRTIODevice *s,
         desc_idx = desc.next;
         get_desc(s, &desc, queue_idx, desc_idx);
     }
-    
+
     for(;;) {
         if (!(desc.flags & VRING_DESC_F_WRITE))
             return -1;
@@ -530,7 +530,7 @@ static void queue_notify(VIRTIODevice *s, int queue_idx)
 
     avail_idx = virtio_read16(s, qs->avail_addr + 2);
     while (qs->last_avail_idx != avail_idx) {
-        desc_idx = virtio_read16(s, qs->avail_addr + 4 + 
+        desc_idx = virtio_read16(s, qs->avail_addr + 4 +
                                  (qs->last_avail_idx & (qs->num - 1)) * 2);
         if (!get_desc_rw_size(s, &read_size, &write_size, queue_idx, desc_idx)) {
 #ifdef DEBUG_VIRTIO
@@ -696,7 +696,7 @@ static uint32_t virtio_mmio_read(void *opaque, uint32_t offset, int size_log2)
     }
 #ifdef DEBUG_VIRTIO
     if (s->debug & VIRTIO_DEBUG_IO) {
-        printf("virto_mmio_read: offset=0x%x val=0x%x size=%d\n", 
+        printf("virto_mmio_read: offset=0x%x val=0x%x size=%d\n",
                offset, val, 1 << size_log2);
     }
 #endif
@@ -724,7 +724,7 @@ static void virtio_mmio_write(void *opaque, uint32_t offset,
                               uint32_t val, int size_log2)
 {
     VIRTIODevice *s = opaque;
-    
+
 #ifdef DEBUG_VIRTIO
     if (s->debug & VIRTIO_DEBUG_IO) {
         printf("virto_mmio_write: offset=0x%x val=0x%x size=%d\n",
@@ -883,7 +883,7 @@ static uint32_t virtio_pci_read(void *opaque, uint32_t offset1, int size_log2)
     }
 #ifdef DEBUG_VIRTIO
     if (s->debug & VIRTIO_DEBUG_IO) {
-        printf("virto_pci_read: offset=0x%x val=0x%x size=%d\n", 
+        printf("virto_pci_read: offset=0x%x val=0x%x size=%d\n",
                offset1, val, 1 << size_log2);
     }
 #endif
@@ -895,7 +895,7 @@ static void virtio_pci_write(void *opaque, uint32_t offset1,
 {
     VIRTIODevice *s = opaque;
     uint32_t offset;
-    
+
 #ifdef DEBUG_VIRTIO
     if (s->debug & VIRTIO_DEBUG_IO) {
         printf("virto_pci_write: offset=0x%x val=0x%x size=%d\n",
@@ -982,160 +982,6 @@ static void virtio_config_change_notify(VIRTIODevice *s)
 }
 
 /*********************************************************************/
-/* block device */
-
-typedef struct {
-    uint32_t type;
-    uint8_t *buf;
-    int write_size;
-    int queue_idx;
-    int desc_idx;
-} BlockRequest;
-
-typedef struct VIRTIOBlockDevice {
-    VIRTIODevice common;
-    BlockDevice *bs;
-
-    BOOL req_in_progress;
-    BlockRequest req; /* request in progress */
-} VIRTIOBlockDevice;
-
-typedef struct {
-    uint32_t type;
-    uint32_t ioprio;
-    uint64_t sector_num;
-} BlockRequestHeader;
-
-#define VIRTIO_BLK_T_IN          0
-#define VIRTIO_BLK_T_OUT         1
-#define VIRTIO_BLK_T_FLUSH       4
-#define VIRTIO_BLK_T_FLUSH_OUT   5
-
-#define VIRTIO_BLK_S_OK     0
-#define VIRTIO_BLK_S_IOERR  1
-#define VIRTIO_BLK_S_UNSUPP 2
-
-#define SECTOR_SIZE 512
-
-static void virtio_block_req_end(VIRTIODevice *s, int ret)
-{
-    VIRTIOBlockDevice *s1 = (VIRTIOBlockDevice *)s;
-    int write_size;
-    int queue_idx = s1->req.queue_idx;
-    int desc_idx = s1->req.desc_idx;
-    uint8_t *buf, buf1[1];
-
-    switch(s1->req.type) {
-    case VIRTIO_BLK_T_IN:
-        write_size = s1->req.write_size;
-        buf = s1->req.buf;
-        if (ret < 0) {
-            buf[write_size - 1] = VIRTIO_BLK_S_IOERR;
-        } else {
-            buf[write_size - 1] = VIRTIO_BLK_S_OK;
-        }
-        memcpy_to_queue(s, queue_idx, desc_idx, 0, buf, write_size);
-        free(buf);
-        virtio_consume_desc(s, queue_idx, desc_idx, write_size);
-        break;
-    case VIRTIO_BLK_T_OUT:
-        if (ret < 0)
-            buf1[0] = VIRTIO_BLK_S_IOERR;
-        else
-            buf1[0] = VIRTIO_BLK_S_OK;
-        memcpy_to_queue(s, queue_idx, desc_idx, 0, buf1, sizeof(buf1));
-        virtio_consume_desc(s, queue_idx, desc_idx, 1);
-        break;
-    default:
-        abort();
-    }
-}
-
-static void virtio_block_req_cb(void *opaque, int ret)
-{
-    VIRTIODevice *s = opaque;
-    VIRTIOBlockDevice *s1 = (VIRTIOBlockDevice *)s;
-
-    virtio_block_req_end(s, ret);
-    
-    s1->req_in_progress = FALSE;
-
-    /* handle next requests */
-    queue_notify((VIRTIODevice *)s, s1->req.queue_idx);
-}
-
-/* XXX: handle async I/O */
-static int virtio_block_recv_request(VIRTIODevice *s, int queue_idx,
-                                     int desc_idx, int read_size,
-                                     int write_size)
-{
-    VIRTIOBlockDevice *s1 = (VIRTIOBlockDevice *)s;
-    BlockDevice *bs = s1->bs;
-    BlockRequestHeader h;
-    uint8_t *buf;
-    int len, ret;
-
-    if (s1->req_in_progress)
-        return -1;
-    
-    if (memcpy_from_queue(s, &h, queue_idx, desc_idx, 0, sizeof(h)) < 0)
-        return 0;
-    s1->req.type = h.type;
-    s1->req.queue_idx = queue_idx;
-    s1->req.desc_idx = desc_idx;
-    switch(h.type) {
-    case VIRTIO_BLK_T_IN:
-        s1->req.buf = malloc(write_size);
-        s1->req.write_size = write_size;
-        ret = bs->read_async(bs, h.sector_num, s1->req.buf, 
-                             (write_size - 1) / SECTOR_SIZE,
-                             virtio_block_req_cb, s);
-        if (ret > 0) {
-            /* asyncronous read */
-            s1->req_in_progress = TRUE;
-        } else {
-            virtio_block_req_end(s, ret);
-        }
-        break;
-    case VIRTIO_BLK_T_OUT:
-        assert(write_size >= 1);
-        len = read_size - sizeof(h);
-        buf = malloc(len);
-        memcpy_from_queue(s, buf, queue_idx, desc_idx, sizeof(h), len);
-        ret = bs->write_async(bs, h.sector_num, buf, len / SECTOR_SIZE,
-                              virtio_block_req_cb, s);
-        free(buf);
-        if (ret > 0) {
-            /* asyncronous write */
-            s1->req_in_progress = TRUE;
-        } else {
-            virtio_block_req_end(s, ret);
-        }
-        break;
-    default:
-        break;
-    }
-    return 0;
-}
-
-VIRTIODevice *virtio_block_init(VIRTIOBusDef *bus, BlockDevice *bs)
-{
-    VIRTIOBlockDevice *s;
-    uint64_t nb_sectors;
-
-    s = mallocz(sizeof(*s));
-    virtio_init(&s->common, bus,
-                2, 8, virtio_block_recv_request);
-    s->bs = bs;
-    
-    nb_sectors = bs->get_sector_count(bs);
-    put_le32(s->common.config_space, nb_sectors);
-    put_le32(s->common.config_space + 4, nb_sectors >> 32);
-
-    return (VIRTIODevice *)s;
-}
-
-/*********************************************************************/
 /* console device */
 
 typedef struct VIRTIOConsoleDevice {
@@ -1186,7 +1032,7 @@ int virtio_console_get_write_len(VIRTIODevice *s)
     avail_idx = virtio_read16(s, qs->avail_addr + 2);
     if (qs->last_avail_idx == avail_idx)
         return 0;
-    desc_idx = virtio_read16(s, qs->avail_addr + 4 + 
+    desc_idx = virtio_read16(s, qs->avail_addr + 4 +
                              (qs->last_avail_idx & (qs->num - 1)) * 2);
     if (get_desc_rw_size(s, &read_size, &write_size, queue_idx, desc_idx))
         return 0;
@@ -1205,7 +1051,7 @@ int virtio_console_write_data(VIRTIODevice *s, const uint8_t *buf, int buf_len)
     avail_idx = virtio_read16(s, qs->avail_addr + 2);
     if (qs->last_avail_idx == avail_idx)
         return 0;
-    desc_idx = virtio_read16(s, qs->avail_addr + 4 + 
+    desc_idx = virtio_read16(s, qs->avail_addr + 4 +
                              (qs->last_avail_idx & (qs->num - 1)) * 2);
     memcpy_to_queue(s, queue_idx, desc_idx, 0, buf, buf_len);
     virtio_consume_desc(s, queue_idx, desc_idx, buf_len);
@@ -1232,291 +1078,7 @@ VIRTIODevice *virtio_console_init(VIRTIOBusDef *bus, CharacterDevice *cs)
                 3, 4, virtio_console_recv_request);
     s->common.device_features = (1 << 0); /* VIRTIO_CONSOLE_F_SIZE */
     s->common.queue[0].manual_recv = TRUE;
-    
+
     s->cs = cs;
-    return (VIRTIODevice *)s;
-}
-
-/*********************************************************************/
-/* input device */
-
-enum {
-    VIRTIO_INPUT_CFG_UNSET      = 0x00,
-    VIRTIO_INPUT_CFG_ID_NAME    = 0x01,
-    VIRTIO_INPUT_CFG_ID_SERIAL  = 0x02,
-    VIRTIO_INPUT_CFG_ID_DEVIDS  = 0x03,
-    VIRTIO_INPUT_CFG_PROP_BITS  = 0x10,
-    VIRTIO_INPUT_CFG_EV_BITS    = 0x11,
-    VIRTIO_INPUT_CFG_ABS_INFO   = 0x12,
-};
-
-#define VIRTIO_INPUT_EV_SYN 0x00
-#define VIRTIO_INPUT_EV_KEY 0x01
-#define VIRTIO_INPUT_EV_REL 0x02
-#define VIRTIO_INPUT_EV_ABS 0x03
-#define VIRTIO_INPUT_EV_REP 0x14
-
-#define BTN_LEFT         0x110
-#define BTN_RIGHT        0x111
-#define BTN_MIDDLE       0x112
-#define BTN_GEAR_DOWN    0x150
-#define BTN_GEAR_UP      0x151
-
-#define REL_X 0x00
-#define REL_Y 0x01
-#define REL_Z 0x02
-#define REL_WHEEL 0x08
-
-#define ABS_X 0x00
-#define ABS_Y 0x01
-#define ABS_Z 0x02
-
-typedef struct VIRTIOInputDevice {
-    VIRTIODevice common;
-    VirtioInputTypeEnum type;
-    uint32_t buttons_state;
-} VIRTIOInputDevice;
-
-static const uint16_t buttons_list[] = {
-    BTN_LEFT, BTN_RIGHT, BTN_MIDDLE
-};
-
-static int virtio_input_recv_request(VIRTIODevice *s, int queue_idx,
-                                      int desc_idx, int read_size,
-                                      int write_size)
-{
-    if (queue_idx == 1) {
-        /* led & keyboard updates */
-        //        printf("%s: write_size=%d\n", __func__, write_size);
-        virtio_consume_desc(s, queue_idx, desc_idx, 0);
-    }
-    return 0;
-}
-
-/* return < 0 if could not send key event */
-static int virtio_input_queue_event(VIRTIODevice *s,
-                                    uint16_t type, uint16_t code,
-                                    uint32_t value)
-{
-    int queue_idx = 0;
-    QueueState *qs = &s->queue[queue_idx];
-    int desc_idx, buf_len;
-    uint16_t avail_idx;
-    uint8_t buf[8];
-
-    if (!qs->ready)
-        return -1;
-
-    put_le16(buf, type);
-    put_le16(buf + 2, code);
-    put_le32(buf + 4, value);
-    buf_len = 8;
-    
-    avail_idx = virtio_read16(s, qs->avail_addr + 2);
-    if (qs->last_avail_idx == avail_idx)
-        return -1;
-    desc_idx = virtio_read16(s, qs->avail_addr + 4 + 
-                             (qs->last_avail_idx & (qs->num - 1)) * 2);
-    //    printf("send: queue_idx=%d desc_idx=%d\n", queue_idx, desc_idx);
-    memcpy_to_queue(s, queue_idx, desc_idx, 0, buf, buf_len);
-    virtio_consume_desc(s, queue_idx, desc_idx, buf_len);
-    qs->last_avail_idx++;
-    return 0;
-}
-
-int virtio_input_send_key_event(VIRTIODevice *s, BOOL is_down,
-                                uint16_t key_code)
-{
-    VIRTIOInputDevice *s1 = (VIRTIOInputDevice *)s;
-    int ret;
-    
-    if (s1->type != VIRTIO_INPUT_TYPE_KEYBOARD)
-        return -1;
-    ret = virtio_input_queue_event(s, VIRTIO_INPUT_EV_KEY, key_code, is_down);
-    if (ret)
-        return ret;
-    return virtio_input_queue_event(s, VIRTIO_INPUT_EV_SYN, 0, 0);
-}
-
-/* also used for the tablet */
-int virtio_input_send_mouse_event(VIRTIODevice *s, int dx, int dy, int dz,
-                                  unsigned int buttons)
-{
-    VIRTIOInputDevice *s1 = (VIRTIOInputDevice *)s;
-    int ret, i, b, last_b;
-
-    if (s1->type != VIRTIO_INPUT_TYPE_MOUSE &&
-        s1->type != VIRTIO_INPUT_TYPE_TABLET)
-        return -1;
-    if (s1->type == VIRTIO_INPUT_TYPE_MOUSE) {
-        ret = virtio_input_queue_event(s, VIRTIO_INPUT_EV_REL, REL_X, dx);
-        if (ret != 0)
-            return ret;
-        ret = virtio_input_queue_event(s, VIRTIO_INPUT_EV_REL, REL_Y, dy);
-        if (ret != 0)
-            return ret;
-    } else {
-        ret = virtio_input_queue_event(s, VIRTIO_INPUT_EV_ABS, ABS_X, dx);
-        if (ret != 0)
-            return ret;
-        ret = virtio_input_queue_event(s, VIRTIO_INPUT_EV_ABS, ABS_Y, dy);
-        if (ret != 0)
-            return ret;
-    }
-    if (dz != 0) {
-        ret = virtio_input_queue_event(s, VIRTIO_INPUT_EV_REL, REL_WHEEL, dz);
-        if (ret != 0)
-            return ret;
-    }
-
-    if (buttons != s1->buttons_state) {
-        for(i = 0; i < countof(buttons_list); i++) {
-            b = (buttons >> i) & 1;
-            last_b = (s1->buttons_state >> i) & 1;
-            if (b != last_b) {
-                ret = virtio_input_queue_event(s, VIRTIO_INPUT_EV_KEY,
-                                               buttons_list[i], b);
-                if (ret != 0)
-                    return ret;
-            }
-        }
-        s1->buttons_state = buttons;
-    }
-
-    return virtio_input_queue_event(s, VIRTIO_INPUT_EV_SYN, 0, 0);
-}
-
-static void set_bit(uint8_t *tab, int k)
-{
-    tab[k >> 3] |= 1 << (k & 7);
-}
-
-static void virtio_input_config_write(VIRTIODevice *s)
-{
-    VIRTIOInputDevice *s1 = (VIRTIOInputDevice *)s;
-    uint8_t *config = s->config_space;
-    int i;
-    
-    //    printf("config_write: %02x %02x\n", config[0], config[1]);
-    switch(config[0]) {
-    case VIRTIO_INPUT_CFG_UNSET:
-        break;
-    case VIRTIO_INPUT_CFG_ID_NAME:
-        {
-            const char *name;
-            int len;
-            switch(s1->type) {
-            case VIRTIO_INPUT_TYPE_KEYBOARD:
-                name = "virtio_keyboard";
-                break;
-            case VIRTIO_INPUT_TYPE_MOUSE:
-                name = "virtio_mouse";
-                break;
-            case VIRTIO_INPUT_TYPE_TABLET:
-                name = "virtio_tablet";
-                break;
-            default:
-                abort();
-            }
-            len = strlen(name);
-            config[2] = len;
-            memcpy(config + 8, name, len);
-        }
-        break;
-    default:
-    case VIRTIO_INPUT_CFG_ID_SERIAL:
-    case VIRTIO_INPUT_CFG_ID_DEVIDS:
-    case VIRTIO_INPUT_CFG_PROP_BITS:
-        config[2] = 0; /* size of reply */
-        break;
-    case VIRTIO_INPUT_CFG_EV_BITS:
-        config[2] = 0;
-        switch(s1->type) {
-        case VIRTIO_INPUT_TYPE_KEYBOARD:
-            switch(config[1]) {
-            case VIRTIO_INPUT_EV_KEY:
-                config[2] = 128 / 8;
-                memset(config + 8, 0xff, 128 / 8); /* bitmap */
-                break;
-            case VIRTIO_INPUT_EV_REP: /* allow key repetition */
-                config[2] = 1;
-                break;
-            default:
-                break;
-            }
-            break;
-        case VIRTIO_INPUT_TYPE_MOUSE:
-            switch(config[1]) {
-            case VIRTIO_INPUT_EV_KEY:
-                config[2] = 512 / 8;
-                memset(config + 8, 0, 512 / 8); /* bitmap */
-                for(i = 0; i < countof(buttons_list); i++)
-                    set_bit(config + 8, buttons_list[i]);
-                break;
-            case VIRTIO_INPUT_EV_REL:
-                config[2] = 2;
-                config[8] = 0;
-                config[9] = 0;
-                set_bit(config + 8, REL_X);
-                set_bit(config + 8, REL_Y);
-                set_bit(config + 8, REL_WHEEL);
-                break;
-            default:
-                break;
-            }
-            break;
-        case VIRTIO_INPUT_TYPE_TABLET:
-            switch(config[1]) {
-            case VIRTIO_INPUT_EV_KEY:
-                config[2] = 512 / 8;
-                memset(config + 8, 0, 512 / 8); /* bitmap */
-                for(i = 0; i < countof(buttons_list); i++)
-                    set_bit(config + 8, buttons_list[i]);
-                break;
-            case VIRTIO_INPUT_EV_REL:
-                config[2] = 2;
-                config[8] = 0;
-                config[9] = 0;
-                set_bit(config + 8, REL_WHEEL);
-                break;
-            case VIRTIO_INPUT_EV_ABS:
-                config[2] = 1;
-                config[8] = 0;
-                set_bit(config + 8, ABS_X);
-                set_bit(config + 8, ABS_Y);
-                break;
-            default:
-                break;
-            }
-            break;
-        default:
-            abort();
-        }
-        break;
-    case VIRTIO_INPUT_CFG_ABS_INFO:
-        if (s1->type == VIRTIO_INPUT_TYPE_TABLET && config[1] <= 1) {
-            /* for ABS_X and ABS_Y */
-            config[2] = 5 * 4;
-            put_le32(config + 8, 0); /* min */
-            put_le32(config + 12, VIRTIO_INPUT_ABS_SCALE - 1) ; /* max */
-            put_le32(config + 16, 0); /* fuzz */
-            put_le32(config + 20, 0); /* flat */
-            put_le32(config + 24, 0); /* res */
-        }
-        break;
-    }
-}
-
-VIRTIODevice *virtio_input_init(VIRTIOBusDef *bus, VirtioInputTypeEnum type)
-{
-    VIRTIOInputDevice *s;
-
-    s = mallocz(sizeof(*s));
-    virtio_init(&s->common, bus,
-                18, 256, virtio_input_recv_request);
-    s->common.queue[0].manual_recv = TRUE;
-    s->common.device_features = 0;
-    s->common.config_write = virtio_input_config_write;
-    s->type = type;
     return (VIRTIODevice *)s;
 }

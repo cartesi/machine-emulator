@@ -53,32 +53,6 @@ void __attribute__((format(printf, 1, 2))) vm_error(const char *fmt, ...)
     va_end(ap);
 }
 
-/* XXX: win32, URL */
-char *get_file_path(const char *base_filename, const char *filename)
-{
-    int len, len1;
-    char *fname, *p;
-
-    if (!base_filename)
-        goto done;
-    if (strchr(filename, ':'))
-        goto done; /* full URL */
-    if (filename[0] == '/')
-        goto done;
-    p = strrchr(base_filename, '/');
-    if (!p) {
-    done:
-        return strdup(filename);
-    }
-    len = p + 1 - base_filename;
-    len1 = strlen(filename);
-    fname = malloc(len + len1 + 1);
-    memcpy(fname, base_filename, len);
-    memcpy(fname + len, filename, len1 + 1);
-    return fname;
-}
-
-
 /* return -1 if error. */
 static int load_file(uint8_t **pbuf, const char *filename)
 {
@@ -116,16 +90,16 @@ static int optboolean(lua_State *L, int tabidx, const char *field, int def) {
     return val;
 }
 
-static unsigned int checkuint(lua_State *L, int tabidx, const char *field) {
-    int val;
+static uint64_t checkuint(lua_State *L, int tabidx, const char *field) {
+    lua_Integer ival;
     lua_getfield(L, tabidx, field);
     if (!lua_isinteger(L, -1))
         luaL_error(L, "Invalid %s (expected unsigned integer).", field);
-    val = lua_tointeger(L, -1);
-    if (val < 0)
+    ival = lua_tointeger(L, -1);
+    if (ival < 0)
         luaL_error(L, "Invalid %s (expected unsigned integer).", field);
     lua_pop(L, 1);
-    return (unsigned int) val;
+    return (uint64_t) ival;
 }
 
 static char *dupoptstring(lua_State *L, int tabidx, const char *field) {
@@ -156,8 +130,6 @@ static char *dupcheckstring(lua_State *L, int tabidx, const char *field) {
 
 void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx) {
 
-	int i = 0;
-
     virt_machine_set_defaults(p);
 
     if (checkuint(L, tabidx, "version") != VM_CONFIG_VERSION) {
@@ -185,48 +157,33 @@ void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx) {
 
     p->cmdline = dupoptstring(L, tabidx, "cmdline");
 
-    for (p->drive_count = 0;
-         p->drive_count < VM_MAX_DRIVE_DEVICE;
-         p->drive_count++) {
-        char drive[16];
-        snprintf(drive, sizeof(drive), "drive%d", p->drive_count);
-        lua_getfield(L, tabidx, drive);
+    for (p->flash_count = 0;
+         p->flash_count < VM_MAX_FLASH_DEVICE;
+         p->flash_count++) {
+        char flash[16];
+        snprintf(flash, sizeof(flash), "flash%d", p->flash_count);
+        lua_getfield(L, tabidx, flash);
         if (lua_isnil(L, -1)) {
             lua_pop(L, 1);
             break;
         }
         if (!lua_istable(L, -1)) {
-            luaL_error(L, "Invalid drive%d.", p->drive_count);
+            luaL_error(L, "Invalid flash%d.", p->flash_count);
         }
-        p->tab_drive[p->drive_count].filename = dupcheckstring(L, -1, "file");
-        p->tab_drive[p->drive_count].device = dupoptstring(L, -1, "device");
+        p->tab_flash[p->flash_count].shared = optboolean(L, -1, "shared", 0);
+        p->tab_flash[p->flash_count].backing = dupcheckstring(L, -1, "backing");
+        p->tab_flash[p->flash_count].label = dupcheckstring(L, -1, "label");
+        p->tab_flash[p->flash_count].address = checkuint(L, -1, "address");
+        p->tab_flash[p->flash_count].size = checkuint(L, -1, "size");
         lua_pop(L, 1);
     }
 
-    if (p->drive_count >= VM_MAX_DRIVE_DEVICE) {
-        luaL_error(L, "too many drives (max is %d)", VM_MAX_DRIVE_DEVICE);
+    if (p->flash_count >= VM_MAX_FLASH_DEVICE) {
+        luaL_error(L, "too many flash drives (max is %d)", VM_MAX_FLASH_DEVICE);
     }
 
     p->rtc_local_time = optboolean(L, tabidx, "rtc_local_time", 0);
 
-}
-
-void vm_add_cmdline(VirtMachineParams *p, const char *cmdline)
-{
-    char *new_cmdline, *old_cmdline;
-    if (cmdline[0] == '!') {
-        new_cmdline = strdup(cmdline + 1);
-    } else {
-        old_cmdline = p->cmdline;
-        if (!old_cmdline)
-            old_cmdline = "";
-        new_cmdline = malloc(strlen(old_cmdline) + 1 + strlen(cmdline) + 1);
-        strcpy(new_cmdline, old_cmdline);
-        strcat(new_cmdline, " ");
-        strcat(new_cmdline, cmdline);
-    }
-    free(p->cmdline);
-    p->cmdline = new_cmdline;
 }
 
 void virt_machine_free_config(VirtMachineParams *p)
@@ -235,8 +192,8 @@ void virt_machine_free_config(VirtMachineParams *p)
     free(p->cmdline);
     free(p->kernel.filename);
     free(p->kernel.buf);
-    for(i = 0; i < p->drive_count; i++) {
-        free(p->tab_drive[i].filename);
-        free(p->tab_drive[i].device);
+    for(i = 0; i < p->flash_count; i++) {
+        free(p->tab_flash[i].backing);
+        free(p->tab_flash[i].label);
     }
 }

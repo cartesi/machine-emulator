@@ -70,12 +70,4 @@ void pci_device_set_config16(PCIDevice *d, uint8_t addr, uint16_t val);
 int pci_device_get_devfn(PCIDevice *d);
 int pci_add_capability(PCIDevice *d, const uint8_t *buf, int size);
 
-typedef struct I440FXState I440FXState;
-
-I440FXState *i440fx_init(PCIBus **pbus, int *ppiix3_devfn,
-                         PhysMemoryMap *mem_map, PhysMemoryMap *port_map,
-                         IRQSignal *pic_irqs);
-void i440fx_map_interrupts(I440FXState *s, uint8_t *elcr,
-                           const uint8_t *pci_irqs);
-
 #endif /* PCI_H */

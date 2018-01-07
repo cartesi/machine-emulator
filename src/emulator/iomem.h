@@ -38,8 +38,10 @@ typedef uint32_t DeviceReadFunc(void *opaque, uint32_t offset, int size_log2);
 #define DEVRAM_FLAG_ROM        (1 << 0) /* not writable */
 #define DEVRAM_FLAG_DIRTY_BITS (1 << 1) /* maintain dirty bits */
 #define DEVRAM_FLAG_DISABLED   (1 << 2) /* allocated but not mapped */
+#define DEVRAM_FLAG_SHARED     (1 << 3) /* backing file can be modified */
 #define DEVRAM_PAGE_SIZE_LOG2 12
 #define DEVRAM_PAGE_SIZE (1 << DEVRAM_PAGE_SIZE_LOG2)
+
 
 typedef struct PhysMemoryMap PhysMemoryMap;
 
@@ -49,6 +51,7 @@ typedef struct {
     uint64_t org_size; /* original size */
     uint64_t size; /* =org_size or 0 if the mapping is disabled */
     BOOL is_ram;
+    BOOL is_backed; /* ram is backed by host file via mmap */
     /* the following is used for RAM access */
     int devram_flags;
     uint8_t *phys_mem;
@@ -56,6 +59,8 @@ typedef struct {
     uint32_t *dirty_bits; /* NULL if not used */
     uint32_t *dirty_bits_tab[2];
     int dirty_bits_index; /* 0-1 */
+    /* the following is used for file RAM access */
+    int fd;
     /* the following is used for I/O access */
     void *opaque;
     DeviceReadFunc *read_func;
@@ -68,12 +73,7 @@ typedef struct {
 struct PhysMemoryMap {
     int n_phys_mem_range;
     PhysMemoryRange phys_mem_range[PHYS_MEM_RANGE_MAX];
-    PhysMemoryRange *(*register_ram)(PhysMemoryMap *s, uint64_t addr,
-                                     uint64_t size, int devram_flags);
-    void (*free_ram)(PhysMemoryMap *s, PhysMemoryRange *pr);
     const uint32_t *(*get_dirty_bits)(PhysMemoryMap *s, PhysMemoryRange *pr);
-    void (*set_ram_addr)(PhysMemoryMap *s, PhysMemoryRange *pr, uint64_t addr,
-                         BOOL enabled);
     void *opaque;
     void (*flush_tlb_write_range)(void *opaque, uint8_t *ram_addr,
                                   size_t ram_size);
@@ -81,13 +81,11 @@ struct PhysMemoryMap {
 
 PhysMemoryMap *phys_mem_map_init(void);
 void phys_mem_map_end(PhysMemoryMap *s);
-PhysMemoryRange *register_ram_entry(PhysMemoryMap *s, uint64_t addr,
-                                    uint64_t size, int devram_flags);
-static inline PhysMemoryRange *cpu_register_ram(PhysMemoryMap *s, uint64_t addr,
-                                  uint64_t size, int devram_flags)
-{
-    return s->register_ram(s, addr, size, devram_flags);
-}
+PhysMemoryRange *cpu_register_ram(PhysMemoryMap *s, uint64_t addr,
+                                  uint64_t size, int devram_flags);
+PhysMemoryRange *cpu_register_backed_ram(PhysMemoryMap *s, uint64_t addr,
+                                     uint64_t size, const char *path,
+                                     int devram_flags);
 PhysMemoryRange *cpu_register_device(PhysMemoryMap *s, uint64_t addr,
                                      uint64_t size, void *opaque,
                                      DeviceReadFunc *read_func, DeviceWriteFunc *write_func,

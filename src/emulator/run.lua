@@ -9,8 +9,15 @@ emu.run {
     flash0 = {
         address = 0x60000000,
         size = 0x08000000,
-        shared = true,
+        shared = false,
         label = "root",
-        backing = "root-other.bin"
+        backing = "root.bin"
+    },
+    flash1 = {
+        address = 0x68000000,
+        size = 0x01000000,
+        shared = true,
+        label = "input",
+        backing = "input.bin"
     }
 }

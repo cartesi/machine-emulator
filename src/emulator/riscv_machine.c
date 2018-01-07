@@ -46,8 +46,6 @@ typedef struct RISCVMachine {
     RISCVCPUState *cpu_state;
     uint64_t ram_size;
     /* RTC */
-    BOOL rtc_real_time;
-    uint64_t rtc_start_time;
     uint64_t timecmp;
     /* PLIC */
     uint32_t plic_pending_irq, plic_served_irq;
@@ -77,24 +75,16 @@ typedef struct RISCVMachine {
 #define RTC_FREQ_DIV 16 /* arbitrary, relative to CPU freq to have a
                            10 MHz frequency */
 
-static uint64_t rtc_get_real_time(RISCVMachine *s)
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * RTC_FREQ +
-        (ts.tv_nsec / (1000000000 / RTC_FREQ));
-}
-
 static uint64_t rtc_get_time(RISCVMachine *m)
 {
     uint64_t val;
-    if (m->rtc_real_time) {
-        val = rtc_get_real_time(m) - m->rtc_start_time;
-    } else {
-        val = riscv_cpu_get_cycles(m->cpu_state) / RTC_FREQ_DIV;
-    }
-    //    printf("rtc_time=%" PRId64 "\n", val);
+    val = riscv_cpu_get_cycles(m->cpu_state) / RTC_FREQ_DIV;
     return val;
+}
+
+static void rtc_advance_time(RISCVMachine *m, uint64_t amount)
+{
+    riscv_cpu_advance_cycles(m->cpu_state, amount * RTC_FREQ_DIV);
 }
 
 static uint32_t htif_read(void *opaque, uint32_t offset,
@@ -554,11 +544,6 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
             p->tab_flash[i].shared? DEVRAM_FLAG_SHARED: 0);
     }
 
-    s->rtc_real_time = p->rtc_real_time;
-    if (p->rtc_real_time) {
-        s->rtc_start_time = rtc_get_real_time(s);
-    }
-
     cpu_register_device(s->mem_map, CLINT_BASE_ADDR, CLINT_SIZE, s,
                         clint_read, clint_write, DEVIO_SIZE32);
     cpu_register_device(s->mem_map, PLIC_BASE_ADDR, PLIC_SIZE, s,
@@ -599,29 +584,25 @@ void virt_machine_end(VirtMachine *s1)
     free(s);
 }
 
-/* in ms */
-int virt_machine_get_sleep_duration(VirtMachine *s1, int delay)
+void virt_machine_advance_cycle_counter(VirtMachine *s1)
 {
     RISCVMachine *m = (RISCVMachine *)s1;
     RISCVCPUState *s = m->cpu_state;
-    int64_t delay1;
+    int64_t skip_ahead = 0;
 
     /* wait for an event: the only asynchronous event is the RTC timer */
     if (!(riscv_cpu_get_mip(s) & MIP_MTIP)) {
-        delay1 = m->timecmp - rtc_get_time(m);
-        if (delay1 <= 0) {
+        skip_ahead = m->timecmp - rtc_get_time(m);
+        if (skip_ahead <= 0) {
             riscv_cpu_set_mip(s, MIP_MTIP);
-            delay = 0;
-        } else {
-            /* convert delay to ms */
-            delay1 = delay1 / (RTC_FREQ / 1000);
-            if (delay1 < delay)
-                delay = delay1;
+            skip_ahead = 0;
         }
     }
+
     if (!riscv_cpu_get_power_down(s))
-        delay = 0;
-    return delay;
+        skip_ahead = 0;
+
+    rtc_advance_time(m, skip_ahead);
 }
 
 void virt_machine_interp(VirtMachine *s1, int max_exec_cycle)

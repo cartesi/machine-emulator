@@ -68,8 +68,7 @@ static void term_init(BOOL allow_ctrlc)
     oldtty = tty;
     old_fd0_flags = fcntl(0, F_GETFL);
 
-    tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP
-                          |INLCR|IGNCR|ICRNL|IXON);
+    tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
     tty.c_oflag |= OPOST;
     tty.c_lflag &= ~(ECHO|ECHONL|ICANON|IEXTEN);
     if (!allow_ctrlc)
@@ -192,16 +191,15 @@ CharacterDevice *console_init(BOOL allow_ctrlc)
 }
 
 #define MAX_EXEC_CYCLE 500000
-#define MAX_SLEEP_TIME 10 /* in ms */
 
 void virt_machine_run(VirtMachine *m)
 {
     fd_set rfds, wfds, efds;
-    int fd_max, ret, delay;
+    int fd_max, ret;
     struct timeval tv;
     int stdin_fd;
 
-    delay = virt_machine_get_sleep_duration(m, MAX_SLEEP_TIME);
+    virt_machine_advance_cycle_counter(m);
 
     /* wait for an event */
     FD_ZERO(&rfds);
@@ -221,8 +219,8 @@ void virt_machine_run(VirtMachine *m)
             s->resize_pending = FALSE;
         }
     }
-    tv.tv_sec = delay / 1000;
-    tv.tv_usec = delay % 1000;
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
     ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
     if (ret > 0) {
         if (m->console_dev && FD_ISSET(stdin_fd, &rfds)) {
@@ -248,23 +246,13 @@ static int emu_lua_run(lua_State *L) {
 
     virt_lua_load_config(L, p, 1);
 
-    /* open the files & devices */
-#if 0
-    for(i = 0; i < p->drive_count; i++) {
-        BlockDevice *drive =
-            block_device_init(p->tab_drive[i].filename, drive_mode);
-        p->tab_drive[i].block_dev = drive;
-    }
-#endif
-
     p->console = console_init(FALSE);
-    p->rtc_real_time = TRUE;
 
     s = virt_machine_init(p);
 
     virt_machine_free_config(p);
 
-    for(;;) {
+    for ( ;; ) {
         virt_machine_run(s);
     }
     virt_machine_end(s);

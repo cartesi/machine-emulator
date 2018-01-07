@@ -187,6 +187,7 @@ static inline uintx_t glue(mulhsu, XLEN)(intx_t a, uintx_t b)
 
 #define GET_PC() (target_ulong)((uintptr_t)code_ptr + code_to_pc_addend)
 #define GET_INSN_COUNTER() (insn_counter_addend - n_cycles)
+#define GET_CYCLE_COUNTER() (cycle_counter_addend - n_cycles)
 
 #define C_NEXT_INSN code_ptr += 2; break
 #define NEXT_INSN code_ptr += 4; break
@@ -203,15 +204,15 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
     uint32_t opcode, insn, rd, rs1, rs2, funct3;
     int32_t imm, cond, err;
     target_ulong addr, val, val2;
-#ifndef USE_GLOBAL_VARIABLES
+    uint64_t insn_counter_addend;
+    uint64_t cycle_counter_addend;
     uint8_t *code_ptr, *code_end;
     target_ulong code_to_pc_addend;
-#endif
-    uint64_t insn_counter_addend;
 
     if (n_cycles == 0)
         return;
     insn_counter_addend = s->insn_counter + n_cycles;
+    cycle_counter_addend = s->cycle_counter + n_cycles;
 
     /* check pending interrupts */
     if (unlikely((s->mip & s->mie) != 0)) {
@@ -1219,6 +1220,7 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
             switch(funct3) {
             case 1: /* csrrw */
                 s->insn_counter = GET_INSN_COUNTER();
+                s->cycle_counter = GET_CYCLE_COUNTER();
                 if (csr_read(s, &val2, imm, TRUE))
                     goto illegal_insn;
                 val2 = (intx_t)val2;
@@ -1238,6 +1240,7 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
             case 2: /* csrrs */
             case 3: /* csrrc */
                 s->insn_counter = GET_INSN_COUNTER();
+                s->cycle_counter = GET_CYCLE_COUNTER();
                 if (csr_read(s, &val2, imm, (rs1 != 0)))
                     goto illegal_insn;
                 val2 = (intx_t)val2;
@@ -1480,11 +1483,7 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
     n_cycles--;
 the_end:
     s->insn_counter = GET_INSN_COUNTER();
-#if 0
-    printf("done interp %lx int=%x mstatus=%lx prv=%d\n",
-           (uint64_t)s->insn_counter, s->mip & s->mie, (uint64_t)s->mstatus,
-           s->priv);
-#endif
+    s->cycle_counter = GET_CYCLE_COUNTER();
 }
 
 #undef uintx_t

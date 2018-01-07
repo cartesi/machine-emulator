@@ -181,9 +181,6 @@ void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx) {
     if (p->flash_count >= VM_MAX_FLASH_DEVICE) {
         luaL_error(L, "too many flash drives (max is %d)", VM_MAX_FLASH_DEVICE);
     }
-
-    p->rtc_local_time = optboolean(L, tabidx, "rtc_local_time", 0);
-
 }
 
 void virt_machine_free_config(VirtMachineParams *p)

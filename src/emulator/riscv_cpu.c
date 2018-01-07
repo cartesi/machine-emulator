@@ -33,11 +33,7 @@
 #include "iomem.h"
 #include "riscv_cpu.h"
 
-#ifndef MAX_XLEN
-//#define MAX_XLEN 32
 #define MAX_XLEN 64
-//#define MAX_XLEN 128
-#endif
 
 //#define CONFIG_EXT_C /* compressed instructions */
 
@@ -50,40 +46,11 @@
 
 #define __exception __attribute__((warn_unused_result))
 
-#if MAX_XLEN == 32
-typedef uint32_t target_ulong;
-typedef int32_t target_long;
-#define PR_target_ulong "08x"
-#elif MAX_XLEN == 64
 typedef uint64_t target_ulong;
 typedef int64_t target_long;
 #define PR_target_ulong "016" PRIx64
-#elif MAX_XLEN == 128
-typedef uint128_t target_ulong;
-typedef int128_t target_long;
-#define PR_target_ulong "016" PRIx64 /* XXX */
-#else
-#error unsupported MAX_XLEN
-#endif
 
-/* MLEN is the maximum memory access width */
-#if MAX_XLEN <= 32
-#define MLEN 32
-#elif MAX_XLEN <= 64
-#define MLEN 64
-#else
-#define MLEN 128
-#endif
-
-#if MLEN == 32
-typedef uint32_t mem_uint_t;
-#elif MLEN == 64
 typedef uint64_t mem_uint_t;
-#elif MLEN == 128
-typedef uint128_t mem_uint_t;
-#else
-#unsupported MLEN
-#endif
 
 #define TLB_SIZE 256
 
@@ -218,17 +185,10 @@ static no_inline int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
 static no_inline int target_write_slow(RISCVCPUState *s, target_ulong addr,
                                        mem_uint_t val, int size_log2);
 
-#if MAX_XLEN == 128
-static void fprint_target_ulong(FILE *f, target_ulong a)
-{
-    fprintf(f, "%016" PRIx64 "%016" PRIx64, (uint64_t)(a >> 64), (uint64_t)a);
-}
-#else
 static void fprint_target_ulong(FILE *f, target_ulong a)
 {
     fprintf(f, "%" PR_target_ulong, a);
 }
-#endif
 
 static void print_target_ulong(target_ulong a)
 {
@@ -341,12 +301,7 @@ static inline __exception int target_write_u ## size(RISCVCPUState *s, target_ul
 TARGET_READ_WRITE(8, uint8_t, 0)
 TARGET_READ_WRITE(16, uint16_t, 1)
 TARGET_READ_WRITE(32, uint32_t, 2)
-#if MLEN >= 64
 TARGET_READ_WRITE(64, uint64_t, 3)
-#endif
-#if MLEN >= 128
-TARGET_READ_WRITE(128, uint128_t, 4)
-#endif
 
 #define PTE_V_MASK (1 << 0)
 #define PTE_U_MASK (1 << 4)
@@ -507,7 +462,6 @@ static no_inline int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
                 ret = (v0 >> (al * 8)) | (v1 << (32 - al * 8));
             }
             break;
-#if MLEN >= 64
         case 3:
             {
                 uint64_t v0, v1;
@@ -521,22 +475,6 @@ static no_inline int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
                 ret = (v0 >> (al * 8)) | (v1 << (64 - al * 8));
             }
             break;
-#endif
-#if MLEN >= 128
-        case 4:
-            {
-                uint128_t v0, v1;
-                addr -= al;
-                err = target_read_u128(s, &v0, addr);
-                if (err)
-                    return err;
-                err = target_read_u128(s, &v1, addr + 16);
-                if (err)
-                    return err;
-                ret = (v0 >> (al * 8)) | (v1 << (128 - al * 8));
-            }
-            break;
-#endif
         default:
             abort();
         }
@@ -569,16 +507,9 @@ static no_inline int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
             case 2:
                 ret = *(uint32_t *)ptr;
                 break;
-#if MLEN >= 64
             case 3:
                 ret = *(uint64_t *)ptr;
                 break;
-#endif
-#if MLEN >= 128
-            case 4:
-                ret = *(uint128_t *)ptr;
-                break;
-#endif
             default:
                 abort();
             }
@@ -587,14 +518,12 @@ static no_inline int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
             if (((pr->devio_flags >> size_log2) & 1) != 0) {
                 ret = pr->read_func(pr->opaque, offset, size_log2);
             }
-#if MLEN >= 64
             else if ((pr->devio_flags & DEVIO_SIZE32) && size_log2 == 3) {
                 /* emulate 64 bit access */
                 ret = pr->read_func(pr->opaque, offset, 2);
                 ret |= (uint64_t)pr->read_func(pr->opaque, offset + 4, 2) << 32;
 
             }
-#endif
             else {
 #ifdef DUMP_INVALID_MEM_ACCESS
                 printf("unsupported device read access: addr=0x");
@@ -656,16 +585,9 @@ static no_inline int target_write_slow(RISCVCPUState *s, target_ulong addr,
             case 2:
                 *(uint32_t *)ptr = val;
                 break;
-#if MLEN >= 64
             case 3:
                 *(uint64_t *)ptr = val;
                 break;
-#endif
-#if MLEN >= 128
-            case 4:
-                *(uint128_t *)ptr = val;
-                break;
-#endif
             default:
                 abort();
             }
@@ -674,7 +596,6 @@ static no_inline int target_write_slow(RISCVCPUState *s, target_ulong addr,
             if (((pr->devio_flags >> size_log2) & 1) != 0) {
                 pr->write_func(pr->opaque, offset, val, size_log2);
             }
-#if MLEN >= 64
             else if ((pr->devio_flags & DEVIO_SIZE32) && size_log2 == 3) {
                 /* emulate 64 bit access */
                 pr->write_func(pr->opaque, offset,
@@ -682,7 +603,6 @@ static no_inline int target_write_slow(RISCVCPUState *s, target_ulong addr,
                 pr->write_func(pr->opaque, offset + 4,
                                (val >> 32) & 0xffffffff, 2);
             }
-#endif
             else {
 #ifdef DUMP_INVALID_MEM_ACCESS
                 printf("unsupported device write access: addr=0x");

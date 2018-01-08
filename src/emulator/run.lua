@@ -1,6 +1,6 @@
 local emu = require"emu"
 
-emu.run {
+local config = {
     version = 1,
     machine = "riscv64",
     memory_size = 128,
@@ -21,3 +21,6 @@ emu.run {
         backing = "input.bin"
     }
 }
+
+emu.run(config)
+

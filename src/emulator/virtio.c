@@ -127,8 +127,6 @@ typedef uint8_t *VIRTIOGetRAMPtrFunc(VIRTIODevice *s, virtio_phys_addr_t paddr);
 struct VIRTIODevice {
     PhysMemoryMap *mem_map;
     PhysMemoryRange *mem_range;
-    /* PCI only */
-    PCIDevice *pci_dev;
     /* MMIO only */
     IRQSignal *irq;
     VIRTIOGetRAMPtrFunc *get_ram_ptr;
@@ -154,9 +152,6 @@ struct VIRTIODevice {
 static uint32_t virtio_mmio_read(void *opaque, uint32_t offset1, int size_log2);
 static void virtio_mmio_write(void *opaque, uint32_t offset,
                               uint32_t val, int size_log2);
-static uint32_t virtio_pci_read(void *opaque, uint32_t offset, int size_log2);
-static void virtio_pci_write(void *opaque, uint32_t offset,
-                             uint32_t val, int size_log2);
 
 static void virtio_reset(VIRTIODevice *s)
 {
@@ -177,11 +172,6 @@ static void virtio_reset(VIRTIODevice *s)
     }
 }
 
-static uint8_t *virtio_pci_get_ram_ptr(VIRTIODevice *s, virtio_phys_addr_t paddr)
-{
-    return pci_device_get_dma_ptr(s->pci_dev, paddr);
-}
-
 static uint8_t *virtio_mmio_get_ram_ptr(VIRTIODevice *s, virtio_phys_addr_t paddr)
 {
     PhysMemoryRange *pr;
@@ -192,106 +182,19 @@ static uint8_t *virtio_mmio_get_ram_ptr(VIRTIODevice *s, virtio_phys_addr_t padd
     return pr->phys_mem + (uintptr_t)(paddr - pr->addr);
 }
 
-static void virtio_add_pci_capability(VIRTIODevice *s, int cfg_type,
-                                      int bar, uint32_t offset, uint32_t len,
-                                      uint32_t mult)
-{
-    uint8_t cap[20];
-    int cap_len;
-    if (cfg_type == 2)
-        cap_len = 20;
-    else
-        cap_len = 16;
-    memset(cap, 0, cap_len);
-    cap[0] = 0x09; /* vendor specific */
-    cap[2] = cap_len; /* set by pci_add_capability() */
-    cap[3] = cfg_type;
-    cap[4] = bar;
-    put_le32(cap + 8, offset);
-    put_le32(cap + 12, len);
-    if (cfg_type == 2)
-        put_le32(cap + 16, mult);
-    pci_add_capability(s->pci_dev, cap, cap_len);
-}
-
-static void virtio_pci_bar_set(void *opaque, int bar_num,
-                               uint32_t addr, BOOL enabled)
-{
-    VIRTIODevice *s = opaque;
-    phys_mem_set_addr(s->mem_range, addr, enabled);
-}
-
 static void virtio_init(VIRTIODevice *s, VIRTIOBusDef *bus,
                         uint32_t device_id, int config_space_size,
                         VIRTIODeviceRecvFunc *device_recv)
 {
     memset(s, 0, sizeof(*s));
 
-    if (bus->pci_bus) {
-        uint16_t pci_device_id, class_id;
-        char name[32];
-        int bar_num;
-
-        switch(device_id) {
-        case 1:
-            pci_device_id = 0x1000; /* net */
-            class_id = 0x0200;
-            break;
-        case 2:
-            pci_device_id = 0x1001; /* block */
-            class_id = 0x0100; /* XXX: check it */
-            break;
-        case 3:
-            pci_device_id = 0x1003; /* console */
-            class_id = 0x0780;
-            break;
-        case 9:
-            pci_device_id = 0x1040 + device_id; /* use new device ID */
-            class_id = 0x2;
-            break;
-        case 18:
-            pci_device_id = 0x1040 + device_id; /* use new device ID */
-            class_id = 0x0980;
-            break;
-        default:
-            abort();
-        }
-        snprintf(name, sizeof(name), "virtio_%04x", pci_device_id);
-        s->pci_dev = pci_register_device(bus->pci_bus, name, -1,
-                                         0x1af4, pci_device_id, 0x00,
-                                         class_id);
-        pci_device_set_config16(s->pci_dev, 0x2c, 0x1af4);
-        pci_device_set_config16(s->pci_dev, 0x2e, device_id);
-        pci_device_set_config8(s->pci_dev, PCI_INTERRUPT_PIN, 1);
-
-        bar_num = 4;
-        virtio_add_pci_capability(s, 1, bar_num,
-                              VIRTIO_PCI_CFG_OFFSET, 0x1000, 0); /* common */
-        virtio_add_pci_capability(s, 3, bar_num,
-                              VIRTIO_PCI_ISR_OFFSET, 0x1000, 0); /* isr */
-        virtio_add_pci_capability(s, 4, bar_num,
-                              VIRTIO_PCI_CONFIG_OFFSET, 0x1000, 0); /* config */
-        virtio_add_pci_capability(s, 2, bar_num,
-                              VIRTIO_PCI_NOTIFY_OFFSET, 0x1000, 0); /* notify */
-
-        s->get_ram_ptr = virtio_pci_get_ram_ptr;
-        s->irq = pci_device_get_irq(s->pci_dev, 0);
-        s->mem_map = pci_device_get_mem_map(s->pci_dev);
-        s->mem_range = cpu_register_device(s->mem_map, 0, 0x4000, s,
-                                           virtio_pci_read, virtio_pci_write,
-                                           DEVIO_SIZE8 | DEVIO_SIZE16 | DEVIO_SIZE32 | DEVIO_DISABLED);
-        pci_register_bar(s->pci_dev, bar_num, 0x4000, PCI_ADDRESS_SPACE_MEM,
-                         s, virtio_pci_bar_set);
-    } else {
-        /* MMIO case */
-        s->mem_map = bus->mem_map;
-        s->irq = bus->irq;
-        s->mem_range = cpu_register_device(s->mem_map, bus->addr, VIRTIO_PAGE_SIZE,
-                                           s, virtio_mmio_read, virtio_mmio_write,
-                                           DEVIO_SIZE8 | DEVIO_SIZE16 | DEVIO_SIZE32);
-        s->get_ram_ptr = virtio_mmio_get_ram_ptr;
-    }
-
+    /* MMIO case */
+    s->mem_map = bus->mem_map;
+    s->irq = bus->irq;
+    s->mem_range = cpu_register_device(s->mem_map, bus->addr, VIRTIO_PAGE_SIZE,
+       s, virtio_mmio_read, virtio_mmio_write, DEVIO_SIZE8 | DEVIO_SIZE16 |
+       DEVIO_SIZE32);
+    s->get_ram_ptr = virtio_mmio_get_ram_ptr;
     s->device_id = device_id;
     s->vendor_id = 0xffff;
     s->config_space_size = config_space_size;
@@ -793,179 +696,6 @@ static void virtio_mmio_write(void *opaque, uint32_t offset,
             }
             break;
         }
-    }
-}
-
-static uint32_t virtio_pci_read(void *opaque, uint32_t offset1, int size_log2)
-{
-    VIRTIODevice *s = opaque;
-    uint32_t offset;
-    uint32_t val = 0;
-
-    offset = offset1 & 0xfff;
-    switch(offset1 >> 12) {
-    case VIRTIO_PCI_CFG_OFFSET >> 12:
-        if (size_log2 == 2) {
-            switch(offset) {
-            case VIRTIO_PCI_DEVICE_FEATURE:
-                switch(s->device_features_sel) {
-                case 0:
-                    val = s->device_features;
-                    break;
-                case 1:
-                    val = 1; /* version 1 */
-                    break;
-                default:
-                    val = 0;
-                    break;
-                }
-                break;
-            case VIRTIO_PCI_DEVICE_FEATURE_SEL:
-                val = s->device_features_sel;
-                break;
-            case VIRTIO_PCI_QUEUE_DESC_LOW:
-                val = s->queue[s->queue_sel].desc_addr;
-                break;
-            case VIRTIO_PCI_QUEUE_AVAIL_LOW:
-                val = s->queue[s->queue_sel].avail_addr;
-                break;
-            case VIRTIO_PCI_QUEUE_USED_LOW:
-                val = s->queue[s->queue_sel].used_addr;
-                break;
-#if VIRTIO_ADDR_BITS == 64
-            case VIRTIO_PCI_QUEUE_DESC_HIGH:
-                val = s->queue[s->queue_sel].desc_addr >> 32;
-                break;
-            case VIRTIO_PCI_QUEUE_AVAIL_HIGH:
-                val = s->queue[s->queue_sel].avail_addr >> 32;
-                break;
-            case VIRTIO_PCI_QUEUE_USED_HIGH:
-                val = s->queue[s->queue_sel].used_addr >> 32;
-                break;
-#endif
-            }
-        } else if (size_log2 == 1) {
-            switch(offset) {
-            case VIRTIO_PCI_NUM_QUEUES:
-                val = MAX_QUEUE_NUM;
-                break;
-            case VIRTIO_PCI_QUEUE_SEL:
-                val = s->queue_sel;
-                break;
-            case VIRTIO_PCI_QUEUE_SIZE:
-                val = s->queue[s->queue_sel].num;
-                break;
-            case VIRTIO_PCI_QUEUE_ENABLE:
-                val = s->queue[s->queue_sel].ready;
-                break;
-            case VIRTIO_PCI_QUEUE_NOTIFY_OFF:
-                val = 0;
-                break;
-            }
-        } else if (size_log2 == 0) {
-            switch(offset) {
-            case VIRTIO_PCI_DEVICE_STATUS:
-                val = s->status;
-                break;
-            }
-        }
-        break;
-    case VIRTIO_PCI_ISR_OFFSET >> 12:
-        if (offset == 0 && size_log2 == 0) {
-            val = s->int_status;
-            s->int_status = 0;
-            set_irq(s->irq, 0);
-        }
-        break;
-    case VIRTIO_PCI_CONFIG_OFFSET >> 12:
-        val = virtio_config_read(s, offset, size_log2);
-        break;
-    }
-#ifdef DEBUG_VIRTIO
-    if (s->debug & VIRTIO_DEBUG_IO) {
-        printf("virto_pci_read: offset=0x%x val=0x%x size=%d\n",
-               offset1, val, 1 << size_log2);
-    }
-#endif
-    return val;
-}
-
-static void virtio_pci_write(void *opaque, uint32_t offset1,
-                             uint32_t val, int size_log2)
-{
-    VIRTIODevice *s = opaque;
-    uint32_t offset;
-
-#ifdef DEBUG_VIRTIO
-    if (s->debug & VIRTIO_DEBUG_IO) {
-        printf("virto_pci_write: offset=0x%x val=0x%x size=%d\n",
-               offset1, val, 1 << size_log2);
-    }
-#endif
-    offset = offset1 & 0xfff;
-    switch(offset1 >> 12) {
-    case VIRTIO_PCI_CFG_OFFSET >> 12:
-        if (size_log2 == 2) {
-            switch(offset) {
-            case VIRTIO_PCI_DEVICE_FEATURE_SEL:
-                s->device_features_sel = val;
-                break;
-            case VIRTIO_PCI_QUEUE_DESC_LOW:
-                set_low32(&s->queue[s->queue_sel].desc_addr, val);
-                break;
-            case VIRTIO_PCI_QUEUE_AVAIL_LOW:
-                set_low32(&s->queue[s->queue_sel].avail_addr, val);
-                break;
-            case VIRTIO_PCI_QUEUE_USED_LOW:
-                set_low32(&s->queue[s->queue_sel].used_addr, val);
-                break;
-#if VIRTIO_ADDR_BITS == 64
-            case VIRTIO_PCI_QUEUE_DESC_HIGH:
-                set_high32(&s->queue[s->queue_sel].desc_addr, val);
-                break;
-            case VIRTIO_PCI_QUEUE_AVAIL_HIGH:
-                set_high32(&s->queue[s->queue_sel].avail_addr, val);
-                break;
-            case VIRTIO_PCI_QUEUE_USED_HIGH:
-                set_high32(&s->queue[s->queue_sel].used_addr, val);
-                break;
-#endif
-            }
-        } else if (size_log2 == 1) {
-            switch(offset) {
-            case VIRTIO_PCI_QUEUE_SEL:
-                if (val < MAX_QUEUE)
-                    s->queue_sel = val;
-                break;
-            case VIRTIO_PCI_QUEUE_SIZE:
-                if ((val & (val - 1)) == 0 && val > 0) {
-                    s->queue[s->queue_sel].num = val;
-                }
-                break;
-            case VIRTIO_PCI_QUEUE_ENABLE:
-                s->queue[s->queue_sel].ready = val & 1;
-                break;
-            }
-        } else if (size_log2 == 0) {
-            switch(offset) {
-            case VIRTIO_PCI_DEVICE_STATUS:
-                s->status = val;
-                if (val == 0) {
-                    /* reset */
-                    set_irq(s->irq, 0);
-                    virtio_reset(s);
-                }
-                break;
-            }
-        }
-        break;
-    case VIRTIO_PCI_CONFIG_OFFSET >> 12:
-        virtio_config_write(s, offset, val, size_log2);
-        break;
-    case VIRTIO_PCI_NOTIFY_OFFSET >> 12:
-        if (val < MAX_QUEUE)
-            queue_notify(s, val);
-        break;
     }
 }
 

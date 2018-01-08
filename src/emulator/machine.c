@@ -695,8 +695,8 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
         irq_init(&s->plic_irq[i], plic_set_irq, s, i);
     }
 
-    cpu_register_device(s->mem_map, HTIF_BASE_ADDR, 16,
-                        s, htif_read, htif_write, DEVIO_SIZE32);
+    cpu_register_device(s->mem_map, HTIF_BASE_ADDR, 16, s,
+        htif_read, htif_write, DEVIO_SIZE32);
     s->common.console = p->console;
 
     memset(vbus, 0, sizeof(*vbus));

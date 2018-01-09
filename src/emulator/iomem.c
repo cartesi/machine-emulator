@@ -1,6 +1,6 @@
 /*
  * IO memory handling
- * 
+ *
  * Copyright (c) 2016-2017 Fabrice Bellard
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -133,6 +133,7 @@ PhysMemoryRange *cpu_register_backed_ram(PhysMemoryMap *s, uint64_t addr,
         fprintf(stderr, "Could not map filed-backed memory\n");
         exit(1);
     }
+    pr->is_backed = TRUE;
 
     if (devram_flags & DEVRAM_FLAG_DIRTY_BITS) {
         init_dirty_bits(pr, size);
@@ -170,7 +171,7 @@ static const uint32_t *default_get_dirty_bits(PhysMemoryMap *map,
     uint32_t *dirty_bits;
     BOOL has_dirty_bits;
     size_t n, i;
-    
+
     dirty_bits = pr->dirty_bits;
 
     has_dirty_bits = FALSE;
@@ -185,7 +186,7 @@ static const uint32_t *default_get_dirty_bits(PhysMemoryMap *map,
         /* invalidate the corresponding CPU write TLBs */
         map->flush_tlb_write_range(map->opaque, pr->phys_mem, pr->org_size);
     }
-    
+
     pr->dirty_bits_index ^= 1;
     pr->dirty_bits = pr->dirty_bits_tab[pr->dirty_bits_index];
     memset(pr->dirty_bits, 0, pr->dirty_bits_size);

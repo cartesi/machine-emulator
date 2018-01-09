@@ -224,7 +224,7 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
     /* we use a single execution loop to keep a simple control flow
        for emscripten */
     for(;;) {
-        if (unlikely(!--n_cycles)) {
+        if (unlikely(!--n_cycles || s->shuthost_flag)) {
             s->pc = GET_PC();
             goto the_end;
         }

@@ -141,6 +141,7 @@ struct RISCVCPUState {
     uint64_t insn_counter;
     uint64_t cycle_counter;
     BOOL power_down_flag;
+    BOOL shuthost_flag;
     int pending_exception; /* used during MMU exception handling */
     target_ulong pending_tval;
 
@@ -233,12 +234,6 @@ static void dump_regs(RISCVCPUState *s)
     print_target_ulong(s->mip);
     printf("\n");
 #endif
-}
-
-static __attribute__((unused)) void cpu_abort(RISCVCPUState *s)
-{
-    dump_regs(s);
-    abort();
 }
 
 /* addr must be aligned. Only RAM accesses are supported */
@@ -1275,7 +1270,7 @@ void riscv_cpu_interp(RISCVCPUState *s, int n_cycles)
     uint64_t timeout;
 
     timeout = s->cycle_counter + n_cycles;
-    while (!s->power_down_flag &&
+    while (!s->power_down_flag && !s->shuthost_flag &&
            (int)(timeout - s->cycle_counter) > 0) {
         n_cycles = timeout - s->cycle_counter;
         switch(s->cur_xlen) {
@@ -1325,6 +1320,16 @@ BOOL riscv_cpu_get_power_down(RISCVCPUState *s)
     return s->power_down_flag;
 }
 
+BOOL riscv_cpu_get_shuthost(RISCVCPUState *s)
+{
+    return s->shuthost_flag;
+}
+
+void riscv_cpu_set_shuthost(RISCVCPUState *s)
+{
+    s->shuthost_flag = TRUE;
+}
+
 int riscv_cpu_get_max_xlen(void)
 {
     return MAX_XLEN;
@@ -1335,6 +1340,7 @@ RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map)
     RISCVCPUState *s;
     s = mallocz(sizeof(*s));
     s->mem_map = mem_map;
+    s->power_down_flag = FALSE;
     s->pc = 0x1000;
     s->priv = PRV_M;
     s->cur_xlen = MAX_XLEN;

@@ -92,6 +92,7 @@ static int console_read(void *opaque, uint8_t *buf, int len)
         return 0;
 
     ret = read(s->stdin_fd, buf, len);
+#if 0
     if (ret < 0)
         return 0;
     if (ret == 0) {
@@ -100,6 +101,9 @@ static int console_read(void *opaque, uint8_t *buf, int len)
         fprintf(stderr, "EOF\n");
         exit(1);
     }
+#endif
+    if (ret <= 0)
+        return 0;
     return ret;
 }
 
@@ -151,7 +155,7 @@ static void console_end(CharacterDevice *dev) {
 
 #define MAX_EXEC_CYCLE 500000
 
-void virt_machine_run(VirtMachine *m)
+static int virt_machine_run(VirtMachine *m)
 {
     fd_set rfds, wfds, efds;
     int fd_max, ret;
@@ -194,7 +198,7 @@ void virt_machine_run(VirtMachine *m)
         }
     }
 
-    virt_machine_interp(m, MAX_EXEC_CYCLE);
+    return virt_machine_interp(m, MAX_EXEC_CYCLE);
 }
 
 /*******************************************************/
@@ -211,13 +215,19 @@ static int emu_lua_run(lua_State *L) {
 
     virt_machine_free_config(p);
 
-    for ( ;; ) {
-        virt_machine_run(s);
+    if (!s) {
+        luaL_error(L, "Failed to initialize machine.");
     }
 
-    virt_machine_end(s);
+    /* repeat interpreter run until shuthost */
+    while (!virt_machine_run(s)) {
+        ;
+    }
+
 
     console_end(p->console);
+
+    virt_machine_end(s);
 
     return 0;
 }

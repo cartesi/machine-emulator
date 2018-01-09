@@ -56,7 +56,6 @@ all: $(ALL)
 
 OBJS:= \
 	virtio.o \
-	pci.o \
 	fdt.o \
 	cutils.o \
 	iomem.o \

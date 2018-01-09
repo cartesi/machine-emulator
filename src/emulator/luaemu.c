@@ -45,42 +45,36 @@
 
 typedef struct {
     int stdin_fd;
-    int console_esc_state;
     BOOL resize_pending;
+    struct termios oldtty;
+    int old_fd0_flags;
 } STDIODevice;
 
-static struct termios oldtty;
-static int old_fd0_flags;
-static STDIODevice *global_stdio_device;
-
-static void term_exit(void)
-{
-    tcsetattr (0, TCSANOW, &oldtty);
-    fcntl(0, F_SETFL, old_fd0_flags);
-}
-
-static void term_init(BOOL allow_ctrlc)
+static void term_init(STDIODevice *s)
 {
     struct termios tty;
 
     memset(&tty, 0, sizeof(tty));
     tcgetattr (0, &tty);
-    oldtty = tty;
-    old_fd0_flags = fcntl(0, F_GETFL);
+    s->oldtty = tty;
+    s->old_fd0_flags = fcntl(0, F_GETFL);
 
     tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
     tty.c_oflag |= OPOST;
     tty.c_lflag &= ~(ECHO|ECHONL|ICANON|IEXTEN);
-    if (!allow_ctrlc)
-        tty.c_lflag &= ~ISIG;
+    tty.c_lflag &= ~ISIG;
     tty.c_cflag &= ~(CSIZE|PARENB);
     tty.c_cflag |= CS8;
     tty.c_cc[VMIN] = 1;
     tty.c_cc[VTIME] = 0;
 
     tcsetattr (0, TCSANOW, &tty);
+}
 
-    atexit(term_exit);
+static void term_end(STDIODevice *s)
+{
+    tcsetattr (0, TCSANOW, &s->oldtty);
+    fcntl(0, F_SETFL, s->old_fd0_flags);
 }
 
 static void console_write(void *opaque, const uint8_t *buf, int len)
@@ -92,8 +86,7 @@ static void console_write(void *opaque, const uint8_t *buf, int len)
 static int console_read(void *opaque, uint8_t *buf, int len)
 {
     STDIODevice *s = opaque;
-    int ret, i, j;
-    uint8_t ch;
+    int ret;
 
     if (len <= 0)
         return 0;
@@ -102,46 +95,12 @@ static int console_read(void *opaque, uint8_t *buf, int len)
     if (ret < 0)
         return 0;
     if (ret == 0) {
-        /* EOF */
+        /* EOF: i.e., the console was redirected and the
+         * file ended */
+        fprintf(stderr, "EOF\n");
         exit(1);
     }
-
-    j = 0;
-    for(i = 0; i < ret; i++) {
-        ch = buf[i];
-        if (s->console_esc_state) {
-            s->console_esc_state = 0;
-            switch(ch) {
-            case 'x':
-                printf("Terminated\n");
-                exit(0);
-            case 'h':
-                printf("\n"
-                       "C-a h   print this help\n"
-                       "C-a x   exit emulator\n"
-                       "C-a C-a send C-a\n");
-                break;
-            case 1:
-                goto output_char;
-            default:
-                break;
-            }
-        } else {
-            if (ch == 1) {
-                s->console_esc_state = 1;
-            } else {
-            output_char:
-                buf[j++] = ch;
-            }
-        }
-    }
-    return j;
-}
-
-static void term_resize_handler(int sig)
-{
-    if (global_stdio_device)
-        global_stdio_device->resize_pending = TRUE;
+    return ret;
 }
 
 static void console_get_size(STDIODevice *s, int *pw, int *ph)
@@ -160,34 +119,34 @@ static void console_get_size(STDIODevice *s, int *pw, int *ph)
     *ph = height;
 }
 
-CharacterDevice *console_init(BOOL allow_ctrlc)
+CharacterDevice *console_init(void)
 {
     CharacterDevice *dev;
     STDIODevice *s;
-    struct sigaction sig;
-
-    term_init(allow_ctrlc);
 
     dev = mallocz(sizeof(*dev));
     s = mallocz(sizeof(*s));
+
+    term_init(s);
+
     s->stdin_fd = 0;
     /* Note: the glibc does not properly tests the return value of
        write() in printf, so some messages on stdout may be lost */
     fcntl(s->stdin_fd, F_SETFL, O_NONBLOCK);
 
     s->resize_pending = TRUE;
-    global_stdio_device = s;
-
-    /* use a signal to get the host terminal resize events */
-    sig.sa_handler = term_resize_handler;
-    sigemptyset(&sig.sa_mask);
-    sig.sa_flags = 0;
-    sigaction(SIGWINCH, &sig, NULL);
 
     dev->opaque = s;
     dev->write_data = console_write;
     dev->read_data = console_read;
     return dev;
+}
+
+static void console_end(CharacterDevice *dev) {
+    STDIODevice *s = dev->opaque;
+    term_end(s);
+    free(s);
+    free(dev);
 }
 
 #define MAX_EXEC_CYCLE 500000
@@ -246,7 +205,7 @@ static int emu_lua_run(lua_State *L) {
 
     virt_lua_load_config(L, p, 1);
 
-    p->console = console_init(FALSE);
+    p->console = console_init();
 
     s = virt_machine_init(p);
 
@@ -255,7 +214,11 @@ static int emu_lua_run(lua_State *L) {
     for ( ;; ) {
         virt_machine_run(s);
     }
+
     virt_machine_end(s);
+
+    console_end(p->console);
+
     return 0;
 }
 

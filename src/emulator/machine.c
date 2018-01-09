@@ -58,9 +58,6 @@ typedef struct RISCVMachine {
     /* HTIF */
     uint64_t htif_tohost, htif_fromhost;
 
-    VIRTIODevice *keyboard_dev;
-    VIRTIODevice *mouse_dev;
-
     int virtio_count;
 } RISCVMachine;
 
@@ -69,7 +66,6 @@ typedef struct RISCVMachine {
 #define CLINT_BASE_ADDR 0x02000000
 #define CLINT_SIZE      0x000c0000
 #define HTIF_BASE_ADDR 0x40008000
-#define IDE_BASE_ADDR  0x40009000
 #define VIRTIO_BASE_ADDR 0x40010000
 #define VIRTIO_SIZE      0x1000
 #define VIRTIO_IRQ       1
@@ -246,6 +242,7 @@ static void rtc_advance_time(RISCVMachine *m, uint64_t amount)
     riscv_cpu_advance_cycles(m->cpu_state, amount * RTC_FREQ_DIV);
 }
 
+/* Host/Target Interface */
 static uint32_t htif_read(void *opaque, uint32_t offset,
                           int size_log2)
 {
@@ -322,6 +319,7 @@ static void htif_write(void *opaque, uint32_t offset, uint32_t val,
     }
 }
 
+/* Clock Interrupt */
 static uint32_t clint_read(void *opaque, uint32_t offset, int size_log2)
 {
     RISCVMachine *m = opaque;
@@ -368,6 +366,7 @@ static void clint_write(void *opaque, uint32_t offset, uint32_t val,
     }
 }
 
+/* Platform-Level Interrupt Controller (PLIC) */
 static void plic_update_mip(RISCVMachine *s)
 {
     RISCVCPUState *cpu = s->cpu_state;
@@ -549,6 +548,7 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
                      "ucbbar,riscvemu-bar-soc", "simple-bus", NULL);
     fdt_prop(s, "ranges", NULL, 0);
 
+#if 1
     fdt_begin_node_num(s, "clint", CLINT_BASE_ADDR);
     fdt_prop_str(s, "compatible", "riscv,clint0");
 
@@ -561,6 +561,7 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
     fdt_prop_tab_u64_2(s, "reg", CLINT_BASE_ADDR, CLINT_SIZE);
 
     fdt_end_node(s); /* clint */
+#endif
 
     fdt_begin_node_num(s, "plic", PLIC_BASE_ADDR);
     fdt_prop_u32(s, "#interrupt-cells", 1);
@@ -601,15 +602,8 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
     fdt_end_node(s); /* / */
 
     size = fdt_output(s, dst);
-#if 0
-    {
-        FILE *f;
-        f = fopen("/tmp/riscvemu.dtb", "wb");
-        fwrite(dst, 1, size, f);
-        fclose(f);
-    }
-#endif
     fdt_end(s);
+
     return size;
 }
 

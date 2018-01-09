@@ -169,8 +169,5 @@ static inline int ctz32(uint32_t a)
 
 
 void *mallocz(size_t size);
-void pstrcpy(char *buf, int buf_size, const char *str);
-char *pstrcat(char *buf, int buf_size, const char *s);
-int strstart(const char *str, const char *val, const char **ptr);
 
 #endif /* CUTILS_H */

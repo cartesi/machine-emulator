@@ -79,6 +79,7 @@ static void term_end(STDIODevice *s)
 
 static void console_write(void *opaque, const uint8_t *buf, int len)
 {
+    (void) opaque;
     fwrite(buf, 1, len, stdout);
     fflush(stdout);
 }

@@ -43,7 +43,28 @@
 
 #include "machine.h"
 
-/* RISCV machine */
+#define Ki(n) ((uint64_t)n << 10)
+#define Mi(n) ((uint64_t)n << 20)
+#define Gi(n) ((uint64_t)n << 30)
+
+#define LOW_RAM_SIZE     Ki(64)
+#define RAM_BASE_ADDR    Gi(2)
+#define CLINT_BASE_ADDR  Mi(32)
+#define CLINT_SIZE       Ki(768)
+#define HTIF_BASE_ADDR   (Gi(1)+Ki(32))
+#define HTIF_SIZE  		 16
+#define VIRTIO_BASE_ADDR (Gi(1)+Ki(64))
+#define VIRTIO_SIZE      Ki(4)
+#define VIRTIO_CONSOLE_IRQ       1
+#define PLIC_BASE_ADDR   (Gi(1)+Mi(1))
+#define PLIC_SIZE        Mi(4)
+#define PLIC_NIRQS       32
+#define PLIC_HART_BASE   Mi(2) /* hardcoded in pk */
+#define PLIC_HART_SIZE   Ki(4) /* hardcoded in pk */
+
+#define RTC_FREQ 10000000 /*100 MHz */
+#define RTC_FREQ_DIV 10 /* arbitrary, relative to CPU freq to have a
+                           10 MHz frequency */
 
 typedef struct RISCVMachine {
     VirtMachine common;
@@ -54,27 +75,11 @@ typedef struct RISCVMachine {
     uint64_t timecmp;
     /* PLIC */
     uint32_t plic_pending_irq, plic_served_irq;
-    IRQSignal plic_irq[32]; /* IRQ 0 is not used */
+    IRQSignal plic_irq[PLIC_NIRQS]; /* IRQ 0 is not used */
     /* HTIF */
     uint64_t htif_tohost, htif_fromhost;
-
-    int virtio_count;
+	BOOL virtio_console;
 } RISCVMachine;
-
-#define LOW_RAM_SIZE   0x00010000 /* 64KB */
-#define RAM_BASE_ADDR  0x80000000
-#define CLINT_BASE_ADDR 0x02000000
-#define CLINT_SIZE      0x000c0000
-#define HTIF_BASE_ADDR 0x40008000
-#define VIRTIO_BASE_ADDR 0x40010000
-#define VIRTIO_SIZE      0x1000
-#define VIRTIO_IRQ       1
-#define PLIC_BASE_ADDR 0x40100000
-#define PLIC_SIZE      0x00400000
-
-#define RTC_FREQ 10000000
-#define RTC_FREQ_DIV 16 /* arbitrary, relative to CPU freq to have a
-                           10 MHz frequency */
 
 /* return -1 if error. */
 static int load_file(uint8_t **pbuf, const char *filename)
@@ -92,7 +97,7 @@ static int load_file(uint8_t **pbuf, const char *filename)
     size = ftell(f);
     fseek(f, 0, SEEK_SET);
     buf = malloc(size);
-    if (fread(buf, 1, size, f) != size) {
+    if ((int) fread(buf, 1, size, f) != size) {
         fprintf(stderr, "Unable to read from %s\n", filename);
         return -1;
     }
@@ -267,9 +272,7 @@ static void htif_handle_cmd(RISCVMachine *m)
     if (m->htif_tohost == 1) {
         riscv_cpu_set_shuthost(m->cpu_state);
     } else if (device == 1 && cmd == 1) {
-        uint8_t buf[1];
-        buf[0] = m->htif_tohost & 0xff;
-        m->common.console->write_data(m->common.console->opaque, buf, 1);
+        putc(m->htif_tohost & 0xff, stderr);
         m->htif_tohost = 0;
         m->htif_fromhost = ((uint64_t)device << 56) | ((uint64_t)cmd << 48);
     } else if (device == 1 && cmd == 0) {
@@ -366,9 +369,6 @@ static void plic_update_mip(RISCVMachine *m)
     }
 }
 
-#define PLIC_HART_BASE 0x200000
-#define PLIC_HART_SIZE 0x1000
-
 static uint32_t plic_read(void *opaque, uint32_t offset, int size_log2)
 {
     RISCVMachine *m = opaque;
@@ -406,7 +406,7 @@ static void plic_write(void *opaque, uint32_t offset, uint32_t val,
     switch(offset) {
     case PLIC_HART_BASE + 4:
         val--;
-        if (val < 32) {
+        if (val < PLIC_NIRQS) {
             m->plic_served_irq &= ~(1 << val);
             plic_update_mip(m);
         }
@@ -450,143 +450,135 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
 
     cur_phandle = 1;
 
-    fdt_begin_node(d, "");
-    fdt_prop_u32(d, "#address-cells", 2);
-    fdt_prop_u32(d, "#size-cells", 2);
-    fdt_prop_str(d, "compatible", "ucbbar,riscvemu-bar_dev");
-    fdt_prop_str(d, "model", "ucbbar,riscvemu-bare");
+    fdt_begin_node(d, ""); /* root */
 
-    /* CPU list */
-    fdt_begin_node(d, "cpus");
-    fdt_prop_u32(d, "#address-cells", 1);
-    fdt_prop_u32(d, "#size-cells", 0);
-    fdt_prop_u32(d, "timebase-frequency", RTC_FREQ);
+		fdt_prop_u32(d, "#address-cells", 2);
+		fdt_prop_u32(d, "#size-cells", 2);
+		fdt_prop_str(d, "compatible", "ucbbar,riscvemu-bar_dev");
+		fdt_prop_str(d, "model", "ucbbar,riscvemu-bare");
 
-    /* cpu */
-    fdt_begin_node_num(d, "cpu", 0);
-    fdt_prop_str(d, "device_type", "cpu");
-    fdt_prop_u32(d, "reg", 0);
-    fdt_prop_str(d, "status", "okay");
-    fdt_prop_str(d, "compatible", "riscv");
+		/* CPU list */
+		fdt_begin_node(d, "cpus");
+			fdt_prop_u32(d, "#address-cells", 1);
+			fdt_prop_u32(d, "#size-cells", 0);
+			fdt_prop_u32(d, "timebase-frequency", RTC_FREQ);
+			/* cpu */
+			fdt_begin_node_num(d, "cpu", 0);
+				fdt_prop_str(d, "device_type", "cpu");
+				fdt_prop_u32(d, "reg", 0);
+				fdt_prop_str(d, "status", "okay");
+				fdt_prop_str(d, "compatible", "riscv");
+				max_xlen = riscv_cpu_get_max_xlen();
+				misa = riscv_cpu_get_misa(m->cpu_state);
+				q = isa_string;
+				q += snprintf(isa_string, sizeof(isa_string), "rv%d", max_xlen);
+				for(i = 0; i < 26; i++) {
+					if (misa & (1 << i))
+						*q++ = 'a' + i;
+				}
+				*q = '\0';
+				fdt_prop_str(d, "riscv,isa", isa_string);
+				fdt_prop_str(d, "mmu-type", max_xlen <= 32 ? "riscv,sv32" : "riscv,sv48");
+				fdt_prop_u32(d, "clock-frequency", 2000000000);
+				fdt_begin_node(d, "interrupt-controller");
+					fdt_prop_u32(d, "#interrupt-cells", 1);
+					fdt_prop(d, "interrupt-controller", NULL, 0);
+					fdt_prop_str(d, "compatible", "riscv,cpu-intc");
+					intc_phandle = cur_phandle++;
+					fdt_prop_u32(d, "phandle", intc_phandle);
+				fdt_end_node(d); /* interrupt-controller */
+			fdt_end_node(d); /* cpu */
+		fdt_end_node(d); /* cpus */
 
-    max_xlen = riscv_cpu_get_max_xlen();
-    misa = riscv_cpu_get_misa(m->cpu_state);
-    q = isa_string;
-    q += snprintf(isa_string, sizeof(isa_string), "rv%d", max_xlen);
-    for(i = 0; i < 26; i++) {
-        if (misa & (1 << i))
-            *q++ = 'a' + i;
-    }
-    *q = '\0';
-    fdt_prop_str(d, "riscv,isa", isa_string);
+		fdt_begin_node_num(d, "memory", RAM_BASE_ADDR);
+			fdt_prop_str(d, "device_type", "memory");
+			tab[0] = (uint64_t)RAM_BASE_ADDR >> 32;
+			tab[1] = RAM_BASE_ADDR;
+			tab[2] = m->ram_size >> 32;
+			tab[3] = m->ram_size;
+			fdt_prop_tab_u32(d, "reg", tab, 4);
+		fdt_end_node(d); /* memory */
 
-    fdt_prop_str(d, "mmu-type", max_xlen <= 32 ? "sv32" : "sv48");
-    fdt_prop_u32(d, "clock-frequency", 2000000000);
+		/* flash */
+		for (i = 0; i < p->flash_count; i++) {
+			fdt_begin_node_num(d, "flash", p->tab_flash[i].address);
+				fdt_prop_u32(d, "#address-cells", 2);
+				fdt_prop_u32(d, "#size-cells", 2);
+				fdt_prop_str(d, "compatible", "mtd-ram");
+				fdt_prop_u32(d, "bank-width", 4);
+				tab[0] = p->tab_flash[i].address >> 32;
+				tab[1] = p->tab_flash[i].address;
+				tab[2] = p->tab_flash[i].size >> 32;
+				tab[3] = p->tab_flash[i].size;
+				fdt_prop_tab_u32(d, "reg", tab, 4);
+				fdt_begin_node_num(d, "fs0", 0);
+					fdt_prop_str(d, "label", p->tab_flash[i].label);
+					tab[0] = 0;
+					tab[1] = 0;
+					tab[2] = p->tab_flash[i].size >> 32;
+					tab[3] = p->tab_flash[i].size;
+					fdt_prop_tab_u32(d, "reg", tab, 4);
+				fdt_end_node(d); /* fs */
+			fdt_end_node(d); /* flash */
+		}
 
-    fdt_begin_node(d, "interrupt-controller");
-    fdt_prop_u32(d, "#interrupt-cells", 1);
-    fdt_prop(d, "interrupt-controller", NULL, 0);
-    fdt_prop_str(d, "compatible", "riscv,cpu-intc");
-    intc_phandle = cur_phandle++;
-    fdt_prop_u32(d, "phandle", intc_phandle);
-    fdt_end_node(d); /* interrupt-controller */
+		fdt_begin_node(d, "soc");
+			fdt_prop_u32(d, "#address-cells", 2);
+			fdt_prop_u32(d, "#size-cells", 2);
+			fdt_prop_tab_str(d, "compatible",
+							 "ucbbar,riscvemu-bar-soc", "simple-bus", NULL);
+			fdt_prop(d, "ranges", NULL, 0);
 
-    fdt_end_node(d); /* cpu */
+			fdt_begin_node_num(d, "clint", CLINT_BASE_ADDR);
+				fdt_prop_str(d, "compatible", "riscv,clint0");
+				tab[0] = intc_phandle;
+				tab[1] = 3; /* M IPI irq */
+				tab[2] = intc_phandle;
+				tab[3] = 7; /* M timer irq */
+				fdt_prop_tab_u32(d, "interrupts-extended", tab, 4);
+				fdt_prop_tab_u64_2(d, "reg", CLINT_BASE_ADDR, CLINT_SIZE);
+			fdt_end_node(d); /* clint */
 
-    fdt_end_node(d); /* cpus */
 
-    fdt_begin_node_num(d, "memory", RAM_BASE_ADDR);
-    fdt_prop_str(d, "device_type", "memory");
-    tab[0] = (uint64_t)RAM_BASE_ADDR >> 32;
-    tab[1] = RAM_BASE_ADDR;
-    tab[2] = m->ram_size >> 32;
-    tab[3] = m->ram_size;
-    fdt_prop_tab_u32(d, "reg", tab, 4);
+			fdt_begin_node_num(d, "plic", PLIC_BASE_ADDR);
+				fdt_prop_u32(d, "#interrupt-cells", 1);
+				fdt_prop(d, "interrupt-controller", NULL, 0);
+				fdt_prop_str(d, "compatible", "riscv,plic0");
+				fdt_prop_u32(d, "riscv,ndev", 31);
+				fdt_prop_tab_u64_2(d, "reg", PLIC_BASE_ADDR, PLIC_SIZE);
+				tab[0] = intc_phandle;
+				tab[1] = 9; /* S ext irq */
+				tab[2] = intc_phandle;
+				tab[3] = 11; /* M ext irq */
+				fdt_prop_tab_u32(d, "interrupts-extended", tab, 4);
+				plic_phandle = cur_phandle++;
+				fdt_prop_u32(d, "phandle", plic_phandle);
+			fdt_end_node(d); /* plic */
 
-    fdt_end_node(d); /* memory */
-
-    /* flash */
-    for (i = 0; i < p->flash_count; i++) {
-        fdt_begin_node_num(d, "flash", p->tab_flash[i].address);
-            fdt_prop_u32(d, "#address-cells", 2);
-            fdt_prop_u32(d, "#size-cells", 2);
-            fdt_prop_str(d, "compatible", "mtd-ram");
-            fdt_prop_u32(d, "bank-width", 4);
-            tab[0] = p->tab_flash[i].address >> 32;
-            tab[1] = p->tab_flash[i].address;
-            tab[2] = p->tab_flash[i].size >> 32;
-            tab[3] = p->tab_flash[i].size;
-            fdt_prop_tab_u32(d, "reg", tab, 4);
-            fdt_begin_node_num(d, "fs0", 0);
-                fdt_prop_str(d, "label", p->tab_flash[i].label);
-                tab[0] = 0;
-                tab[1] = 0;
-                tab[2] = p->tab_flash[i].size >> 32;
-                tab[3] = p->tab_flash[i].size;
-                fdt_prop_tab_u32(d, "reg", tab, 4);
-            fdt_end_node(d); /* fs */
-        fdt_end_node(d); /* flash */
-    }
-
-    fdt_begin_node(d, "soc");
-    fdt_prop_u32(d, "#address-cells", 2);
-    fdt_prop_u32(d, "#size-cells", 2);
-    fdt_prop_tab_str(d, "compatible",
-                     "ucbbar,riscvemu-bar-soc", "simple-bus", NULL);
-    fdt_prop(d, "ranges", NULL, 0);
-
-#if 1
-    fdt_begin_node_num(d, "clint", CLINT_BASE_ADDR);
-    fdt_prop_str(d, "compatible", "riscv,clint0");
-
-    tab[0] = intc_phandle;
-    tab[1] = 3; /* M IPI irq */
-    tab[2] = intc_phandle;
-    tab[3] = 7; /* M timer irq */
-    fdt_prop_tab_u32(d, "interrupts-extended", tab, 4);
-
-    fdt_prop_tab_u64_2(d, "reg", CLINT_BASE_ADDR, CLINT_SIZE);
-
-    fdt_end_node(d); /* clint */
+#if 0
+			fdt_begin_node_num(d, "htif", HTIF_BASE_ADDR);
+				fdt_prop_str(d, "compatible", "ucb,htif0");
+				fdt_prop_tab_u64_2(d, "reg", HTIF_BASE_ADDR, HTIF_SIZE);
+			fdt_end_node(d);
 #endif
 
-    fdt_begin_node_num(d, "plic", PLIC_BASE_ADDR);
-    fdt_prop_u32(d, "#interrupt-cells", 1);
-    fdt_prop(d, "interrupt-controller", NULL, 0);
-    fdt_prop_str(d, "compatible", "riscv,plic0");
-    fdt_prop_u32(d, "riscv,ndev", 31);
-    fdt_prop_tab_u64_2(d, "reg", PLIC_BASE_ADDR, PLIC_SIZE);
+			if (m->virtio_console) {
+				fdt_begin_node_num(d, "virtio", VIRTIO_BASE_ADDR);
+					fdt_prop_str(d, "compatible", "virtio,mmio");
+					fdt_prop_tab_u64_2(d, "reg", VIRTIO_BASE_ADDR, VIRTIO_SIZE);
+					tab[0] = plic_phandle;
+					tab[1] = VIRTIO_CONSOLE_IRQ;
+					fdt_prop_tab_u32(d, "interrupts-extended", tab, 2);
+				fdt_end_node(d);
+			}
 
-    tab[0] = intc_phandle;
-    tab[1] = 9; /* S ext irq */
-    tab[2] = intc_phandle;
-    tab[3] = 11; /* M ext irq */
-    fdt_prop_tab_u32(d, "interrupts-extended", tab, 4);
+		fdt_end_node(d); /* soc */
 
-    plic_phandle = cur_phandle++;
-    fdt_prop_u32(d, "phandle", plic_phandle);
+		fdt_begin_node(d, "chosen");
+			fdt_prop_str(d, "bootargs", p->cmdline ? p->cmdline : "");
+		fdt_end_node(d);
 
-    fdt_end_node(d); /* plic */
-
-    for(i = 0; i < m->virtio_count; i++) {
-        fdt_begin_node_num(d, "virtio", VIRTIO_BASE_ADDR + i * VIRTIO_SIZE);
-        fdt_prop_str(d, "compatible", "virtio,mmio");
-        fdt_prop_tab_u64_2(d, "reg", VIRTIO_BASE_ADDR + i * VIRTIO_SIZE,
-                           VIRTIO_SIZE);
-        tab[0] = plic_phandle;
-        tab[1] = VIRTIO_IRQ + i;
-        fdt_prop_tab_u32(d, "interrupts-extended", tab, 2);
-        fdt_end_node(d); /* virtio */
-    }
-
-    fdt_end_node(d); /* soc */
-
-    fdt_begin_node(d, "chosen");
-    fdt_prop_str(d, "bootargs", p->cmdline ? p->cmdline : "");
-
-    fdt_end_node(d); /* chosen */
-
-    fdt_end_node(d); /* / */
+    fdt_end_node(d); /* root */
 
     size = fdt_output(d, dst);
     fdt_end(d);
@@ -641,7 +633,7 @@ void virt_machine_set_defaults(VirtMachineParams *p)
 VirtMachine *virt_machine_init(const VirtMachineParams *p)
 {
     RISCVMachine *m;
-    int irq_num, i;
+    int i;
     VIRTIOBusDef vbus_s, *vbus = &vbus_s;
 
     if (!p->kernel.buf) {
@@ -677,28 +669,27 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
 
     cpu_register_device(m->mem_map, CLINT_BASE_ADDR, CLINT_SIZE, m,
                         clint_read, clint_write, DEVIO_SIZE32);
+
     cpu_register_device(m->mem_map, PLIC_BASE_ADDR, PLIC_SIZE, m,
                         plic_read, plic_write, DEVIO_SIZE32);
-    for(i = 1; i < 32; i++) {
+    for(i = 1; i < PLIC_NIRQS; i++) {
         irq_init(&m->plic_irq[i], plic_set_irq, m, i);
     }
 
-    cpu_register_device(m->mem_map, HTIF_BASE_ADDR, 16, m,
+    cpu_register_device(m->mem_map, HTIF_BASE_ADDR, HTIF_SIZE, m,
         htif_read, htif_write, DEVIO_SIZE32);
-    m->common.console = p->console;
 
-    memset(vbus, 0, sizeof(*vbus));
-    vbus->mem_map = m->mem_map;
-    vbus->addr = VIRTIO_BASE_ADDR;
-    irq_num = VIRTIO_IRQ;
 
     /* virtio console */
     if (p->console) {
-        vbus->irq = &m->plic_irq[irq_num];
+		m->common.console = p->console;
+		memset(vbus, 0, sizeof(*vbus));
+		vbus->mem_map = m->mem_map;
+		vbus->addr = VIRTIO_BASE_ADDR;
+        vbus->irq = &m->plic_irq[VIRTIO_CONSOLE_IRQ];
         m->common.console_dev = virtio_console_init(vbus, p->console);
         vbus->addr += VIRTIO_SIZE;
-        irq_num++;
-        m->virtio_count++;
+        m->virtio_console = TRUE;
     }
 
     copy_kernel(p, m);

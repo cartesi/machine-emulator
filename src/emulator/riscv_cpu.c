@@ -203,7 +203,7 @@ static char *reg_name[32] = {
 "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"
 };
 
-static void dump_regs(RISCVCPUState *s)
+void dump_regs(RISCVCPUState *s)
 {
     int i, cols;
     const char priv_str[4] = "USHM";
@@ -357,7 +357,7 @@ static int get_phys_addr(RISCVCPUState *s,
         levels = mode - 8 + 3;
         pte_size_log2 = 3;
         vaddr_shift = MAX_XLEN - (PG_SHIFT + levels * 9);
-        if ((((target_long)vaddr << vaddr_shift) >> vaddr_shift) != vaddr)
+        if ((((target_ulong)vaddr << vaddr_shift) >> vaddr_shift) != vaddr)
             return -1;
         pte_addr_bits = 44;
     }
@@ -690,6 +690,7 @@ static void tlb_flush_all(RISCVCPUState *s)
 
 static void tlb_flush_vaddr(RISCVCPUState *s, target_ulong vaddr)
 {
+    (void) vaddr;
     tlb_flush_all(s);
 }
 
@@ -702,7 +703,7 @@ void riscv_cpu_flush_tlb_write_range_ram(RISCVCPUState *s,
 
     ram_end = ram_ptr + ram_size;
     for(i = 0; i < TLB_SIZE; i++) {
-        if (s->tlb_write[i].vaddr != -1) {
+        if (s->tlb_write[i].vaddr != (target_ulong) -1) {
             ptr = (uint8_t *)(s->tlb_write[i].mem_addend +
                               (uintptr_t)s->tlb_write[i].vaddr);
             if (ptr >= ram_ptr && ptr < ram_end) {
@@ -1357,6 +1358,7 @@ RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map)
 
 void riscv_cpu_end(RISCVCPUState *s)
 {
+    free(s);
 }
 
 uint32_t riscv_cpu_get_misa(RISCVCPUState *s)

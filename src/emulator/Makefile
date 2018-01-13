@@ -39,7 +39,7 @@ CC?=$(CC_$(UNAME))
 CXX?=$(CXX_$(UNAME))
 SOLDFLAGS?=$(SOLDFLAGS_$(UNAME))
 
-WARNS=-W -Wall -Wno-unused-parameter -Wno-unused-result
+WARNS=-W -Wall
 
 INCS=$(LUA_INC)
 

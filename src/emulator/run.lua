@@ -3,6 +3,7 @@ local emu = require"emu"
 local config = {
     version = 1,
     machine = "riscv64",
+    interactive = true,
     memory_size = 128,
     kernel = "kernel.bin",
     cmdline = "quiet console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw",
@@ -22,5 +23,8 @@ local config = {
     }
 }
 
-emu.run(config)
+local m = emu.create(config)
 
+repeat
+    local c = m:interrupt_and_run(500000)
+until not c

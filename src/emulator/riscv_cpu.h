@@ -40,7 +40,7 @@ int riscv_cpu_get_max_xlen(void);
 
 RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map);
 void riscv_cpu_end(RISCVCPUState *s);
-void riscv_cpu_interp(RISCVCPUState *s, int n_cycles);
+void riscv_cpu_run(RISCVCPUState *s, int n_cycles);
 uint64_t riscv_cpu_get_cycles(RISCVCPUState *s);
 void riscv_cpu_advance_cycles(RISCVCPUState *s, uint64_t n_cyles);
 void riscv_cpu_set_mip(RISCVCPUState *s, uint32_t mask);

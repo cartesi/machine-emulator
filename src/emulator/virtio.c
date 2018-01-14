@@ -719,6 +719,11 @@ typedef struct VIRTIOConsoleDevice {
     CharacterDevice *cs;
 } VIRTIOConsoleDevice;
 
+CharacterDevice *virtio_console_get_char_dev(VIRTIODevice *s) {
+    VIRTIOConsoleDevice *s1 = (VIRTIOConsoleDevice *)s;
+    return s1->cs;
+}
+
 static int virtio_console_recv_request(VIRTIODevice *s, int queue_idx,
                                        int desc_idx, int read_size,
                                        int write_size)

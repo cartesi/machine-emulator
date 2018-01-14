@@ -54,6 +54,7 @@ typedef struct {
 
 VIRTIODevice *virtio_console_init(VIRTIOBusDef *bus, CharacterDevice *cs);
 BOOL virtio_console_can_write_data(VIRTIODevice *s);
+CharacterDevice *virtio_console_get_char_dev(VIRTIODevice *s);
 int virtio_console_get_write_len(VIRTIODevice *s);
 int virtio_console_write_data(VIRTIODevice *s, const uint8_t *buf, int buf_len);
 void virtio_console_resize_event(VIRTIODevice *s, int width, int height);

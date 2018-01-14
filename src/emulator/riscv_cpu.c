@@ -333,20 +333,6 @@ static int get_phys_addr(RISCVCPUState *s,
         }
         return 0;
     }
-#if MAX_XLEN == 32
-    /* 32 bits */
-    mode = s->satp >> 31;
-    if (mode == 0) {
-        /* bare: no translation */
-        *ppaddr = vaddr;
-        return 0;
-    } else {
-        /* sv32 */
-        levels = 2;
-        pte_size_log2 = 2;
-        pte_addr_bits = 22;
-    }
-#else
     mode = (s->satp >> 60) & 0xf;
     if (mode == 0) {
         /* bare: no translation */
@@ -357,11 +343,10 @@ static int get_phys_addr(RISCVCPUState *s,
         levels = mode - 8 + 3;
         pte_size_log2 = 3;
         vaddr_shift = MAX_XLEN - (PG_SHIFT + levels * 9);
-        if ((((target_ulong)vaddr << vaddr_shift) >> vaddr_shift) != vaddr)
+        if ((((target_long)vaddr << vaddr_shift) >> vaddr_shift) != vaddr)
             return -1;
         pte_addr_bits = 44;
     }
-#endif
     pte_addr = (s->satp & (((target_ulong)1 << pte_addr_bits) - 1)) << PG_SHIFT;
     pte_bits = 12 - pte_size_log2;
     pte_mask = (1 << pte_bits) - 1;
@@ -703,7 +688,7 @@ void riscv_cpu_flush_tlb_write_range_ram(RISCVCPUState *s,
 
     ram_end = ram_ptr + ram_size;
     for(i = 0; i < TLB_SIZE; i++) {
-        if (s->tlb_write[i].vaddr != (target_ulong) -1) {
+        if (s->tlb_write[i].vaddr != -1) {
             ptr = (uint8_t *)(s->tlb_write[i].mem_addend +
                               (uintptr_t)s->tlb_write[i].vaddr);
             if (ptr >= ram_ptr && ptr < ram_end) {
@@ -1266,7 +1251,7 @@ static __exception int raise_interrupt(RISCVCPUState *s)
 #define XLEN 64
 #include "riscv_cpu_template.h"
 
-void riscv_cpu_interp(RISCVCPUState *s, int n_cycles)
+void riscv_cpu_run(RISCVCPUState *s, int n_cycles)
 {
     uint64_t timeout;
 

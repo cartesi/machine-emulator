@@ -23,6 +23,8 @@
  */
 #include <lua.h>
 
+#include "cutils.h"
+
 #define VM_MAX_FLASH_DEVICE 4
 
 #define VM_CONFIG_VERSION 1
@@ -44,18 +46,15 @@ typedef struct {
 typedef struct {
     uint64_t ram_size;
     int width, height; /* graphic width & height */
-    CharacterDevice *console;
     VMFlashEntry tab_flash[VM_MAX_FLASH_DEVICE];
     int flash_count;
     char *cmdline; /* kernel command line */
     VMFileEntry kernel; /* kernel file */
+    BOOL interactive; /* should we initialize the console? */
 } VirtMachineParams;
 
-typedef struct VirtMachine {
-    /* console */
-    VIRTIODevice *console_dev;
-    CharacterDevice *console;
-} VirtMachine;
+struct VirtMachine;
+typedef struct VirtMachine VirtMachine;
 
 void __attribute__((format(printf, 1, 2))) vm_error(const char *fmt, ...);
 
@@ -64,6 +63,7 @@ void virt_machine_set_defaults(VirtMachineParams *p);
 void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx);
 void virt_machine_free_config(VirtMachineParams *p);
 VirtMachine *virt_machine_init(const VirtMachineParams *p);
-void virt_machine_end(VirtMachine *m);
-void virt_machine_advance_cycle_counter(VirtMachine *m);
-int virt_machine_interp(VirtMachine *m, int max_exec_cycle);
+uint64_t virt_machine_get_cycle_counter(VirtMachine *v);
+void virt_machine_end(VirtMachine *v);
+void virt_machine_advance_cycle_counter(VirtMachine *v);
+int virt_machine_interrupt_and_run(VirtMachine *v, uint64_t max_exec_cycle);

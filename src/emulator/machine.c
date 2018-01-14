@@ -25,10 +25,14 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <termios.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -63,11 +67,10 @@
 #define PLIC_HART_SIZE   Ki(4) /* hardcoded in pk */
 
 #define RTC_FREQ 10000000 /*100 MHz */
-#define RTC_FREQ_DIV 10 /* arbitrary, relative to CPU freq to have a
-                           10 MHz frequency */
+#define RTC_FREQ_DIV 50 /* arbitrary, relative to CPU freq to have a
+                           2 MHz frequency */
 
 typedef struct RISCVMachine {
-    VirtMachine common;
     PhysMemoryMap *mem_map;
     RISCVCPUState *cpu_state;
     uint64_t ram_size;
@@ -78,7 +81,8 @@ typedef struct RISCVMachine {
     IRQSignal plic_irq[PLIC_NIRQS]; /* IRQ 0 is not used */
     /* HTIF */
     uint64_t htif_tohost, htif_fromhost;
-	BOOL virtio_console;
+    /* Console */
+    VIRTIODevice *virtio_console_dev;
 } RISCVMachine;
 
 /* return -1 if error. */
@@ -182,6 +186,8 @@ void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx) {
     if (p->kernel.len < 0) {
         luaL_error(L, "Unable to load %s.", p->kernel.filename);
     }
+
+    p->interactive = optboolean(L, -1, "interactive", 0);
 
     p->cmdline = dupoptstring(L, tabidx, "cmdline");
 
@@ -478,7 +484,7 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
 				}
 				*q = '\0';
 				fdt_prop_str(d, "riscv,isa", isa_string);
-				fdt_prop_str(d, "mmu-type", max_xlen <= 32 ? "riscv,sv32" : "riscv,sv48");
+				fdt_prop_str(d, "mmu-type", max_xlen <= 32 ? "sv32" : "sv48");
 				fdt_prop_u32(d, "clock-frequency", 2000000000);
 				fdt_begin_node(d, "interrupt-controller");
 					fdt_prop_u32(d, "#interrupt-cells", 1);
@@ -539,7 +545,6 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
 				fdt_prop_tab_u64_2(d, "reg", CLINT_BASE_ADDR, CLINT_SIZE);
 			fdt_end_node(d); /* clint */
 
-
 			fdt_begin_node_num(d, "plic", PLIC_BASE_ADDR);
 				fdt_prop_u32(d, "#interrupt-cells", 1);
 				fdt_prop(d, "interrupt-controller", NULL, 0);
@@ -555,14 +560,12 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
 				fdt_prop_u32(d, "phandle", plic_phandle);
 			fdt_end_node(d); /* plic */
 
-#if 0
-			fdt_begin_node_num(d, "htif", HTIF_BASE_ADDR);
-				fdt_prop_str(d, "compatible", "ucb,htif0");
-				fdt_prop_tab_u64_2(d, "reg", HTIF_BASE_ADDR, HTIF_SIZE);
-			fdt_end_node(d);
-#endif
+            fdt_begin_node_num(d, "htif", HTIF_BASE_ADDR);
+                fdt_prop_str(d, "compatible", "ucb,htif0");
+                fdt_prop_tab_u64_2(d, "reg", HTIF_BASE_ADDR, HTIF_SIZE);
+            fdt_end_node(d);
 
-			if (m->virtio_console) {
+			if (m->virtio_console_dev) {
 				fdt_begin_node_num(d, "virtio", VIRTIO_BASE_ADDR);
 					fdt_prop_str(d, "compatible", "virtio,mmio");
 					fdt_prop_tab_u64_2(d, "reg", VIRTIO_BASE_ADDR, VIRTIO_SIZE);
@@ -630,11 +633,121 @@ void virt_machine_set_defaults(VirtMachineParams *p)
     memset(p, 0, sizeof(*p));
 }
 
+typedef struct {
+    int stdin_fd;
+    BOOL resize_pending;
+    struct termios oldtty;
+    int old_fd0_flags;
+} STDIODevice;
+
+static void term_init(STDIODevice *s)
+{
+    struct termios tty;
+
+    memset(&tty, 0, sizeof(tty));
+    tcgetattr (0, &tty);
+    s->oldtty = tty;
+    s->old_fd0_flags = fcntl(0, F_GETFL);
+
+    tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
+    tty.c_oflag |= OPOST;
+    tty.c_lflag &= ~(ECHO|ECHONL|ICANON|IEXTEN);
+    tty.c_lflag &= ~ISIG;
+    tty.c_cflag &= ~(CSIZE|PARENB);
+    tty.c_cflag |= CS8;
+    tty.c_cc[VMIN] = 1;
+    tty.c_cc[VTIME] = 0;
+
+    tcsetattr (0, TCSANOW, &tty);
+}
+
+static void term_end(STDIODevice *s)
+{
+    tcsetattr (0, TCSANOW, &s->oldtty);
+    fcntl(0, F_SETFL, s->old_fd0_flags);
+}
+
+static void console_write(void *opaque, const uint8_t *buf, int len)
+{
+    (void) opaque;
+    fwrite(buf, 1, len, stdout);
+    fflush(stdout);
+}
+
+static int console_read(void *opaque, uint8_t *buf, int len)
+{
+    STDIODevice *s = opaque;
+    int ret;
+
+    if (len <= 0)
+        return 0;
+
+    ret = read(s->stdin_fd, buf, len);
+#if 0
+    if (ret < 0)
+        return 0;
+    if (ret == 0) {
+        /* EOF: i.e., the console was redirected and the
+         * file ended */
+        fprintf(stderr, "EOF\n");
+        exit(1);
+    }
+#endif
+    if (ret <= 0)
+        return 0;
+    return ret;
+}
+
+static void console_get_size(STDIODevice *s, int *pw, int *ph)
+{
+    struct winsize ws;
+    int width, height;
+    /* default values */
+    width = 80;
+    height = 25;
+    if (ioctl(s->stdin_fd, TIOCGWINSZ, &ws) == 0 &&
+        ws.ws_col >= 4 && ws.ws_row >= 4) {
+        width = ws.ws_col;
+        height = ws.ws_row;
+    }
+    *pw = width;
+    *ph = height;
+}
+
+CharacterDevice *console_init(void)
+{
+    CharacterDevice *dev;
+    STDIODevice *s;
+
+    dev = mallocz(sizeof(*dev));
+    s = mallocz(sizeof(*s));
+
+    term_init(s);
+
+    s->stdin_fd = 0;
+    /* Note: the glibc does not properly tests the return value of
+       write() in printf, so some messages on stdout may be lost */
+    fcntl(s->stdin_fd, F_SETFL, O_NONBLOCK);
+
+    s->resize_pending = TRUE;
+
+    dev->opaque = s;
+    dev->write_data = console_write;
+    dev->read_data = console_read;
+    return dev;
+}
+
+static void console_end(CharacterDevice *dev) {
+    STDIODevice *s = dev->opaque;
+    term_end(s);
+    free(s);
+    free(dev);
+}
+
 VirtMachine *virt_machine_init(const VirtMachineParams *p)
 {
     RISCVMachine *m;
     int i;
-    VIRTIOBusDef vbus_s, *vbus = &vbus_s;
 
     if (!p->kernel.buf) {
         fprintf(stderr, "No kernel found\n");
@@ -679,17 +792,15 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
     cpu_register_device(m->mem_map, HTIF_BASE_ADDR, HTIF_SIZE, m,
         htif_read, htif_write, DEVIO_SIZE32);
 
-
     /* virtio console */
-    if (p->console) {
-		m->common.console = p->console;
+    if (p->interactive) {
+        VIRTIOBusDef vbus_s, *vbus = &vbus_s;
 		memset(vbus, 0, sizeof(*vbus));
 		vbus->mem_map = m->mem_map;
 		vbus->addr = VIRTIO_BASE_ADDR;
         vbus->irq = &m->plic_irq[VIRTIO_CONSOLE_IRQ];
-        m->common.console_dev = virtio_console_init(vbus, p->console);
+        m->virtio_console_dev = virtio_console_init(vbus, console_init());
         vbus->addr += VIRTIO_SIZE;
-        m->virtio_console = TRUE;
     }
 
     copy_kernel(p, m);
@@ -700,9 +811,20 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
 void virt_machine_end(VirtMachine *v)
 {
     RISCVMachine *m = (RISCVMachine *)v;
+    VIRTIODevice *vd = m->virtio_console_dev;
+    if (vd) {
+        CharacterDevice *cs = virtio_console_get_char_dev(vd);
+        console_end(cs);
+        free(vd);
+    }
     riscv_cpu_end(m->cpu_state);
     phys_mem_map_end(m->mem_map);
     free(m);
+}
+
+uint64_t virt_machine_get_cycle_counter(VirtMachine *v) {
+    RISCVMachine *m = (RISCVMachine *)v;
+    return riscv_cpu_get_cycles(m->cpu_state);
 }
 
 void virt_machine_advance_cycle_counter(VirtMachine *v)
@@ -724,15 +846,62 @@ void virt_machine_advance_cycle_counter(VirtMachine *v)
         rtc_advance_time(m, skip_ahead);
 }
 
-int virt_machine_interp(VirtMachine *v, int max_exec_cycle)
-{
-    RISCVMachine *m = (RISCVMachine *)v;
-    RISCVCPUState *s = m->cpu_state;
-    riscv_cpu_interp(s, max_exec_cycle);
-    return riscv_cpu_get_shuthost(s);
-}
-
 const char *virt_machine_get_name(void)
 {
     return "riscv64";
+}
+
+int virt_machine_interrupt_and_run(VirtMachine *v, uint64_t max_exec_cycle)
+{
+    RISCVMachine *m = (RISCVMachine *)v;
+    VIRTIODevice *vd = m->virtio_console_dev;
+    RISCVCPUState *c = m->cpu_state;
+
+    virt_machine_advance_cycle_counter(v);
+
+    if (vd) {
+        CharacterDevice *cs = virtio_console_get_char_dev(vd);
+        STDIODevice *s = cs->opaque;
+        int stdin_fd = s->stdin_fd;
+        fd_set rfds, wfds, efds;
+        int fd_max, ret;
+        struct timeval tv;
+
+        /* wait for an event */
+        FD_ZERO(&rfds);
+        FD_ZERO(&wfds);
+        FD_ZERO(&efds);
+        fd_max = -1;
+
+        if (virtio_console_can_write_data(vd)) {
+            FD_SET(stdin_fd, &rfds);
+            fd_max = stdin_fd;
+            if (s->resize_pending) {
+                int width, height;
+                console_get_size(s, &width, &height);
+                virtio_console_resize_event(vd, width, height);
+                s->resize_pending = FALSE;
+            }
+        }
+
+        tv.tv_sec = 0;
+        tv.tv_usec = 0;
+        ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
+        if (ret > 0) {
+            if (FD_ISSET(stdin_fd, &rfds)) {
+                uint8_t buf[128];
+                int ret, len;
+                len = virtio_console_get_write_len(vd);
+                len = min_int(len, sizeof(buf));
+                ret = cs->read_data(s, buf, len);
+                if (ret > 0) {
+                    virtio_console_write_data(vd, buf, ret);
+                }
+            }
+        }
+    }
+
+    riscv_cpu_run(c, max_exec_cycle);
+
+    return riscv_cpu_get_shuthost(c);
 }

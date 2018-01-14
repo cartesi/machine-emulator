@@ -39,7 +39,7 @@ CC?=$(CC_$(UNAME))
 CXX?=$(CXX_$(UNAME))
 SOLDFLAGS?=$(SOLDFLAGS_$(UNAME))
 
-WARNS=-W -Wall -DDEBUG_VIRTIO
+WARNS=-W -Wall -pedantic
 
 INCS=$(LUA_INC)
 
@@ -62,8 +62,6 @@ OBJS:= \
 	machine.o \
 	luaemu.o \
 	riscv_cpu.o
-
-riscv_cpu.o: CFLAGS += -DMAX_XLEN=64 -DFLEN=0
 
 emu.so: $(OBJS)
 	$(CC) $(SOLDFLAGS) -o $@ $^

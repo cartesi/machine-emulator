@@ -66,9 +66,9 @@
 #define PLIC_HART_BASE   Mi(2) /* hardcoded in pk */
 #define PLIC_HART_SIZE   Ki(4) /* hardcoded in pk */
 
-#define RTC_FREQ 10000000 /*100 MHz */
-#define RTC_FREQ_DIV 50 /* arbitrary, relative to CPU freq to have a
-                           2 MHz frequency */
+#define CLOCK_FREQ 2000000000 /* 2 GHz */
+#define RTC_FREQ_DIV 1000     /* arbitrary, relative to CPU freq to have a
+                                 2 MHz frequency */
 
 typedef struct RISCVMachine {
     PhysMemoryMap *mem_map;
@@ -467,7 +467,7 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
 		fdt_begin_node(d, "cpus");
 			fdt_prop_u32(d, "#address-cells", 1);
 			fdt_prop_u32(d, "#size-cells", 0);
-			fdt_prop_u32(d, "timebase-frequency", RTC_FREQ);
+			fdt_prop_u32(d, "timebase-frequency", CLOCK_FREQ/RTC_FREQ_DIV);
 			/* cpu */
 			fdt_begin_node_num(d, "cpu", 0);
 				fdt_prop_str(d, "device_type", "cpu");
@@ -484,8 +484,8 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
 				}
 				*q = '\0';
 				fdt_prop_str(d, "riscv,isa", isa_string);
-				fdt_prop_str(d, "mmu-type", max_xlen <= 32 ? "sv32" : "sv48");
-				fdt_prop_u32(d, "clock-frequency", 2000000000);
+				fdt_prop_str(d, "mmu-type", "riscv,sv48");
+				fdt_prop_u32(d, "clock-frequency", CLOCK_FREQ);
 				fdt_begin_node(d, "interrupt-controller");
 					fdt_prop_u32(d, "#interrupt-cells", 1);
 					fdt_prop(d, "interrupt-controller", NULL, 0);

@@ -29,13 +29,11 @@
 #include <assert.h>
 #include <fcntl.h>
 
+#define MAX_XLEN 64
+
 #include "cutils.h"
 #include "iomem.h"
 #include "riscv_cpu.h"
-
-#define MAX_XLEN 64
-
-//#define CONFIG_EXT_C /* compressed instructions */
 
 //#define DUMP_INVALID_MEM_ACCESS
 //#define DUMP_MMU_EXCEPTIONS
@@ -165,11 +163,7 @@ struct RISCVCPUState {
     target_ulong sepc;
     target_ulong scause;
     target_ulong stval;
-#if MAX_XLEN == 32
-    uint32_t satp;
-#else
     uint64_t satp; /* currently 64 bit physical addresses max */
-#endif
     uint32_t scounteren;
 
     target_ulong load_res; /* for atomic LR/SC */
@@ -343,7 +337,7 @@ static int get_phys_addr(RISCVCPUState *s,
         levels = mode - 8 + 3;
         pte_size_log2 = 3;
         vaddr_shift = MAX_XLEN - (PG_SHIFT + levels * 9);
-        if ((((target_long)vaddr << vaddr_shift) >> vaddr_shift) != vaddr)
+        if ((((target_long)vaddr << vaddr_shift) >> vaddr_shift) != (target_long) vaddr)
             return -1;
         pte_addr_bits = 44;
     }
@@ -688,7 +682,7 @@ void riscv_cpu_flush_tlb_write_range_ram(RISCVCPUState *s,
 
     ram_end = ram_ptr + ram_size;
     for(i = 0; i < TLB_SIZE; i++) {
-        if (s->tlb_write[i].vaddr != -1) {
+        if (s->tlb_write[i].vaddr != (target_ulong) -1) {
             ptr = (uint8_t *)(s->tlb_write[i].mem_addend +
                               (uintptr_t)s->tlb_write[i].vaddr);
             if (ptr >= ram_ptr && ptr < ram_end) {
@@ -704,11 +698,7 @@ void riscv_cpu_flush_tlb_write_range_ram(RISCVCPUState *s,
                       MSTATUS_SPP | \
                       MSTATUS_FS | MSTATUS_XS | \
                       MSTATUS_SUM | MSTATUS_MXR)
-#if MAX_XLEN >= 64
-#define SSTATUS_MASK (SSTATUS_MASK0 | MSTATUS_UXL_MASK)
-#else
 #define SSTATUS_MASK SSTATUS_MASK0
-#endif
 
 
 #define MSTATUS_MASK (MSTATUS_UIE | MSTATUS_SIE | MSTATUS_MIE |      \
@@ -757,7 +747,6 @@ static void set_mstatus(RISCVCPUState *s, target_ulong val)
     s->fs = (val >> MSTATUS_FS_SHIFT) & 3;
 
     mask = MSTATUS_MASK & ~MSTATUS_FS;
-#if MAX_XLEN >= 64
     {
         int uxl, sxl;
         uxl = (val >> MSTATUS_UXL_SHIFT) & 3;
@@ -767,7 +756,6 @@ static void set_mstatus(RISCVCPUState *s, target_ulong val)
         if (sxl >= 1 && sxl <= get_base_from_xlen(MAX_XLEN))
             mask |= MSTATUS_SXL_MASK;
     }
-#endif
     s->mstatus = (s->mstatus & ~mask) | (val & mask);
 }
 
@@ -988,14 +976,6 @@ static int csr_write(RISCVCPUState *s, uint32_t csr, target_ulong val)
         break;
     case 0x180:
         /* no ASID implemented */
-#if MAX_XLEN == 32
-        {
-            int new_mode;
-            new_mode = (val >> 31) & 1;
-            s->satp = (val & (((target_ulong)1 << 22) - 1)) |
-                (new_mode << 31);
-        }
-#else
         {
             int mode, new_mode;
             mode = s->satp >> 60;
@@ -1005,7 +985,6 @@ static int csr_write(RISCVCPUState *s, uint32_t csr, target_ulong val)
             s->satp = (val & (((uint64_t)1 << 44) - 1)) |
                 ((uint64_t)mode << 60);
         }
-#endif
         tlb_flush_all(s);
         return 2;
 
@@ -1013,7 +992,6 @@ static int csr_write(RISCVCPUState *s, uint32_t csr, target_ulong val)
         set_mstatus(s, val);
         break;
     case 0x301: /* misa */
-#if MAX_XLEN >= 64
         {
             int new_mxl;
             new_mxl = (val >> (s->cur_xlen - 2)) & 3;
@@ -1027,7 +1005,6 @@ static int csr_write(RISCVCPUState *s, uint32_t csr, target_ulong val)
                 }
             }
         }
-#endif
         break;
     case 0x302:
         mask = (1 << (CAUSE_STORE_PAGE_FAULT + 1)) - 1;
@@ -1076,7 +1053,6 @@ static void set_priv(RISCVCPUState *s, int priv)
 {
     if (s->priv != priv) {
         tlb_flush_all(s);
-#if MAX_XLEN >= 64
         /* change the current xlen */
         {
             int mxl;
@@ -1088,7 +1064,6 @@ static void set_priv(RISCVCPUState *s, int priv)
                 mxl = s->mxl;
             s->cur_xlen = 1 << (4 + mxl);
         }
-#endif
         s->priv = priv;
     }
 }
@@ -1334,9 +1309,6 @@ RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map)
     s->mstatus = ((uint64_t)s->mxl << MSTATUS_UXL_SHIFT) |
         ((uint64_t)s->mxl << MSTATUS_SXL_SHIFT);
     s->misa |= MCPUID_SUPER | MCPUID_USER | MCPUID_I | MCPUID_M | MCPUID_A;
-#ifdef CONFIG_EXT_C
-    s->misa |= MCPUID_C;
-#endif
     tlb_init(s);
     return s;
 }

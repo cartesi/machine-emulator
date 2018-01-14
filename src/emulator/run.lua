@@ -14,13 +14,6 @@ local config = {
         label = "root",
         backing = "root.bin"
     },
-    flash1 = {
-        address = 0x68000000,
-        size = 0x01000000,
-        shared = true,
-        label = "input",
-        backing = "input.bin"
-    }
 }
 
 local m = emu.create(config)

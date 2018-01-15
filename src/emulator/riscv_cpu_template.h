@@ -193,20 +193,22 @@ static inline uintx_t glue(mulhsu, XLEN)(intx_t a, uintx_t b)
     } while (0)
 
 static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
-                                                   int n_cycles)
+                   uint64_t cycle_counter_addend)
 {
     uint32_t opcode, insn, rd, rs1, rs2, funct3;
     int32_t imm, cond, err;
     target_ulong addr, val, val2;
     uint64_t insn_counter_addend;
-    uint64_t cycle_counter_addend;
+    uint64_t n_cycles;
     uint8_t *code_ptr, *code_end;
     target_ulong code_to_pc_addend;
 
-    if (n_cycles == 0)
+    if (s->cycle_counter >= cycle_counter_addend)
         return;
+
+    n_cycles = cycle_counter_addend - s->cycle_counter;
+
     insn_counter_addend = s->insn_counter + n_cycles;
-    cycle_counter_addend = s->cycle_counter + n_cycles;
 
     /* check pending interrupts */
     if (unlikely((s->mip & s->mie) != 0)) {

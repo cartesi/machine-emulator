@@ -30,10 +30,10 @@ static VirtMachine *check_virt_machine(lua_State *L, int idx) {
     return *pv;
 }
 
-static int virt_lua_interrupt_and_run(lua_State *L) {
+static int virt_lua_run(lua_State *L) {
     VirtMachine *v = check_virt_machine(L, 1);
-    lua_Integer n = luaL_checkinteger(L, 2);
-    int shuthost = virt_machine_interrupt_and_run(v, n);
+    lua_Integer cycles_end = luaL_checkinteger(L, 2);
+    int shuthost = virt_machine_run(v, cycles_end);
     if (shuthost) {
         lua_pushnil(L);
         lua_pushinteger(L, virt_machine_get_cycle_counter(v));
@@ -73,7 +73,7 @@ static int virt_lua__gc(lua_State *L) {
 }
 
 static const luaL_Reg virt_lua__index[] = {
-    {"interrupt_and_run", virt_lua_interrupt_and_run},
+    {"run", virt_lua_run},
     { NULL, NULL }
 };
 

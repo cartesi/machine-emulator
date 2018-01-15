@@ -18,6 +18,15 @@ local config = {
 
 local m = emu.create(config)
 
-repeat
-    local c = m:interrupt_and_run(500000)
-until not c
+local step = 500000
+local cycles_end = step
+while 1 do
+    local c, e = m:run(cycles_end)
+    if c then
+        cycles_end = cycles_end + step
+        --io.stderr:write("stepping to ", cycles_end, "\n")
+    else
+        io.stderr:write("done in ", e, " cycles\n")
+        break
+    end
+end

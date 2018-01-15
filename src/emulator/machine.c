@@ -229,16 +229,17 @@ void virt_machine_free_config(VirtMachineParams *p)
     }
 }
 
-static uint64_t rtc_get_time(RISCVMachine *m)
+static uint64_t rtc_cycles_to_time(uint64_t cycle_counter)
 {
-    uint64_t val;
-    val = riscv_cpu_get_cycles(m->cpu_state) / RTC_FREQ_DIV;
-    return val;
+    return cycle_counter / RTC_FREQ_DIV;
 }
 
-static void rtc_advance_time(RISCVMachine *m, uint64_t amount)
-{
-    riscv_cpu_advance_cycles(m->cpu_state, amount * RTC_FREQ_DIV);
+static uint64_t rtc_time_to_cycles(uint64_t time) {
+    return time * RTC_FREQ_DIV;
+}
+
+static uint64_t rtc_get_time(RISCVMachine *m) {
+    return rtc_cycles_to_time(riscv_cpu_get_cycle_counter(m->cpu_state));
 }
 
 /* Host/Target Interface */
@@ -824,26 +825,7 @@ void virt_machine_end(VirtMachine *v)
 
 uint64_t virt_machine_get_cycle_counter(VirtMachine *v) {
     RISCVMachine *m = (RISCVMachine *)v;
-    return riscv_cpu_get_cycles(m->cpu_state);
-}
-
-void virt_machine_advance_cycle_counter(VirtMachine *v)
-{
-    RISCVMachine *m = (RISCVMachine *)v;
-    RISCVCPUState *s = m->cpu_state;
-    int64_t skip_ahead = 0;
-
-    /* wait for an event: the only asynchronous event is the RTC timer */
-    if (!(riscv_cpu_get_mip(s) & MIP_MTIP)) {
-        skip_ahead = m->timecmp - rtc_get_time(m);
-        if (skip_ahead <= 0) {
-            riscv_cpu_set_mip(s, MIP_MTIP);
-            skip_ahead = 0;
-        }
-    }
-
-    if (!riscv_cpu_get_shuthost(s) && riscv_cpu_get_power_down(s))
-        rtc_advance_time(m, skip_ahead);
+    return riscv_cpu_get_cycle_counter(m->cpu_state);
 }
 
 const char *virt_machine_get_name(void)
@@ -851,57 +833,94 @@ const char *virt_machine_get_name(void)
     return "riscv64";
 }
 
-int virt_machine_interrupt_and_run(VirtMachine *v, uint64_t max_exec_cycle)
+int virt_machine_run(VirtMachine *v, uint64_t cycles_end)
 {
     RISCVMachine *m = (RISCVMachine *)v;
     VIRTIODevice *vd = m->virtio_console_dev;
     RISCVCPUState *c = m->cpu_state;
 
-    virt_machine_advance_cycle_counter(v);
+    for (;;) {
 
-    if (vd) {
-        CharacterDevice *cs = virtio_console_get_char_dev(vd);
-        STDIODevice *s = cs->opaque;
-        int stdin_fd = s->stdin_fd;
-        fd_set rfds, wfds, efds;
-        int fd_max, ret;
-        struct timeval tv;
+        uint64_t cycles = riscv_cpu_get_cycle_counter(c);
 
-        /* wait for an event */
-        FD_ZERO(&rfds);
-        FD_ZERO(&wfds);
-        FD_ZERO(&efds);
-        fd_max = -1;
-
-        if (virtio_console_can_write_data(vd)) {
-            FD_SET(stdin_fd, &rfds);
-            fd_max = stdin_fd;
-            if (s->resize_pending) {
-                int width, height;
-                console_get_size(s, &width, &height);
-                virtio_console_resize_event(vd, width, height);
-                s->resize_pending = FALSE;
-            }
+        /* if we reached our target number of cycles, break */
+        if (cycles >= cycles_end) {
+            return 0;
         }
 
-        tv.tv_sec = 0;
-        tv.tv_usec = 0;
-        ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
-        if (ret > 0) {
-            if (FD_ISSET(stdin_fd, &rfds)) {
-                uint8_t buf[128];
-                int ret, len;
-                len = virtio_console_get_write_len(vd);
-                len = min_int(len, sizeof(buf));
-                ret = cs->read_data(s, buf, len);
-                if (ret > 0) {
-                    virtio_console_write_data(vd, buf, ret);
+        /* if we are shutdown, break */
+        if (riscv_cpu_get_shuthost(c)) {
+            return 1;
+        }
+
+        /* check for timer interrupts */
+
+        /* if the timer interrupt is not already pending */
+        if (!(riscv_cpu_get_mip(c) & MIP_MTIP)) {
+            uint64_t timer_cycles = rtc_time_to_cycles(m->timecmp);
+            /* if timer expired, raise interrupt */
+            if (timer_cycles <= cycles) {
+                riscv_cpu_set_mip(c, MIP_MTIP);
+            /* otherwise, if the cpu is powered down, waiting for interrupts, 
+             * skip time */
+            } else if (riscv_cpu_get_power_down(c)) {
+                if (timer_cycles < cycles_end) {
+                    riscv_cpu_set_cycle_counter(c, timer_cycles);
+                } else {
+                    riscv_cpu_set_cycle_counter(c, cycles_end);
                 }
             }
         }
+
+        /* check for I/O with console */
+
+        if (vd) {
+            CharacterDevice *cs = virtio_console_get_char_dev(vd);
+            STDIODevice *s = cs->opaque;
+            int stdin_fd = s->stdin_fd;
+            fd_set rfds, wfds, efds;
+            int fd_max, ret;
+            struct timeval tv;
+
+            /* wait for an event */
+            FD_ZERO(&rfds);
+            FD_ZERO(&wfds);
+            FD_ZERO(&efds);
+            fd_max = -1;
+
+            if (virtio_console_can_write_data(vd)) {
+                FD_SET(stdin_fd, &rfds);
+                fd_max = stdin_fd;
+                if (s->resize_pending) {
+                    int width, height;
+                    console_get_size(s, &width, &height);
+                    virtio_console_resize_event(vd, width, height);
+                    s->resize_pending = FALSE;
+                }
+            }
+
+            tv.tv_sec = 0;
+            tv.tv_usec = riscv_cpu_get_power_down(c)? 1000: 0;
+
+            ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
+            if (ret > 0) {
+                if (FD_ISSET(stdin_fd, &rfds)) {
+                    uint8_t buf[128];
+                    int ret, len;
+                    len = virtio_console_get_write_len(vd);
+                    len = min_int(len, sizeof(buf));
+                    ret = cs->read_data(s, buf, len);
+                    if (ret > 0) {
+                        virtio_console_write_data(vd, buf, ret);
+                    }
+                }
+            }
+        }
+
+        /* do as much work as possible until we either power
+         * down, shutdown, or until we reach the target
+         * number of cycles */
+
+        riscv_cpu_run(c, cycles_end);
     }
-
-    riscv_cpu_run(c, max_exec_cycle);
-
-    return riscv_cpu_get_shuthost(c);
 }

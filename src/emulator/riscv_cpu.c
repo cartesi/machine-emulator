@@ -1226,20 +1226,16 @@ static __exception int raise_interrupt(RISCVCPUState *s)
 #define XLEN 64
 #include "riscv_cpu_template.h"
 
-void riscv_cpu_run(RISCVCPUState *s, int n_cycles)
+void riscv_cpu_run(RISCVCPUState *s, uint64_t cycles_end)
 {
-    uint64_t timeout;
-
-    timeout = s->cycle_counter + n_cycles;
     while (!s->power_down_flag && !s->shuthost_flag &&
-           (int)(timeout - s->cycle_counter) > 0) {
-        n_cycles = timeout - s->cycle_counter;
+        s->cycle_counter < cycles_end) {
         switch(s->cur_xlen) {
         case 32:
-            riscv_cpu_interp32(s, n_cycles);
+            riscv_cpu_interp32(s, cycles_end);
             break;
         case 64:
-            riscv_cpu_interp64(s, n_cycles);
+            riscv_cpu_interp64(s, cycles_end);
             break;
         default:
             abort();
@@ -1248,14 +1244,14 @@ void riscv_cpu_run(RISCVCPUState *s, int n_cycles)
 }
 
 /* Note: the value is not accurate when called in riscv_cpu_interp() */
-uint64_t riscv_cpu_get_cycles(RISCVCPUState *s)
+uint64_t riscv_cpu_get_cycle_counter(RISCVCPUState *s)
 {
     return s->cycle_counter;
 }
 
-void riscv_cpu_advance_cycles(RISCVCPUState *s, uint64_t amount)
+void riscv_cpu_set_cycle_counter(RISCVCPUState *s, uint64_t cycles)
 {
-    s->cycle_counter += amount;
+    s->cycle_counter = cycles;
 }
 
 void riscv_cpu_set_mip(RISCVCPUState *s, uint32_t mask)
@@ -1302,6 +1298,7 @@ RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map)
     s = mallocz(sizeof(*s));
     s->mem_map = mem_map;
     s->power_down_flag = FALSE;
+    s->shuthost_flag = FALSE;
     s->pc = 0x1000;
     s->priv = PRV_M;
     s->cur_xlen = MAX_XLEN;

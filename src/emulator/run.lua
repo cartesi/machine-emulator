@@ -6,7 +6,7 @@ local config = {
     interactive = true,
     memory_size = 128,
     kernel = "kernel.bin",
-    cmdline = "quiet console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw",
+    cmdline = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw",
     flash0 = {
         address = 0x60000000,
         size = 0x08000000,

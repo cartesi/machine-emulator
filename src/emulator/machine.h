@@ -66,4 +66,4 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p);
 uint64_t virt_machine_get_cycle_counter(VirtMachine *v);
 void virt_machine_end(VirtMachine *v);
 void virt_machine_advance_cycle_counter(VirtMachine *v);
-int virt_machine_interrupt_and_run(VirtMachine *v, uint64_t max_exec_cycle);
+int virt_machine_run(VirtMachine *v, uint64_t cycle_end);

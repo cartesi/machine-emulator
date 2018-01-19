@@ -1097,9 +1097,9 @@ static void raise_exception2(RISCVCPUState *s, uint32_t cause,
             flag = 0;
 #endif
         if (flag) {
-            log_printf("raise_exception: cause=0x%08x tval=0x", cause);
+            fprintf(stderr, "raise_exception: cause=0x%08x tval=0x", cause);
             print_target_ulong(tval);
-            log_printf("\n");
+            fprintf(stderr, "\n");
             dump_regs(s);
         }
     }
@@ -1277,14 +1277,19 @@ BOOL riscv_cpu_get_power_down(RISCVCPUState *s)
     return s->power_down_flag;
 }
 
+void riscv_cpu_set_power_down(RISCVCPUState *s, BOOL v)
+{
+    s->power_down_flag = v;
+}
+
 BOOL riscv_cpu_get_shuthost(RISCVCPUState *s)
 {
     return s->shuthost_flag;
 }
 
-void riscv_cpu_set_shuthost(RISCVCPUState *s)
+void riscv_cpu_set_shuthost(RISCVCPUState *s, BOOL v)
 {
-    s->shuthost_flag = TRUE;
+    s->shuthost_flag = v;
 }
 
 int riscv_cpu_get_max_xlen(void)

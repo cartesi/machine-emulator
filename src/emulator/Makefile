@@ -55,7 +55,6 @@ ALL=emu.so
 all: $(ALL)
 
 OBJS:= \
-	virtio.o \
 	fdt.o \
 	cutils.o \
 	iomem.o \

@@ -820,11 +820,13 @@ int virt_machine_run(VirtMachine *v, uint64_t cycles_end)
                         }
                     }
                 }
-                /* feed another character and wake the cpu */
-                m->htif_fromhost = ((uint64_t)1 << 56) |
-                        ((uint64_t)0 << 48) | con->buf[con->buf_pos++];
-                con->irq_pending = TRUE;
-                riscv_cpu_set_power_down(c, FALSE);
+                if (con->buf_pos < con->buf_len) {
+                    /* feed another character and wake the cpu */
+                    m->htif_fromhost = ((uint64_t)1 << 56) |
+                            ((uint64_t)0 << 48) | con->buf[con->buf_pos++];
+                    con->irq_pending = TRUE;
+                    riscv_cpu_set_power_down(c, FALSE);
+                }
             }
         }
     }

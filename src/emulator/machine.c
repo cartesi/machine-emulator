@@ -42,14 +42,13 @@
 #include "cutils.h"
 #include "iomem.h"
 #include "riscv_cpu.h"
-#include "virtio.h"
 #include "fdt.h"
 
 #include "machine.h"
 
-#define Ki(n) ((uint64_t)n << 10)
-#define Mi(n) ((uint64_t)n << 20)
-#define Gi(n) ((uint64_t)n << 30)
+#define Ki(n) (((uint64_t)n) << 10)
+#define Mi(n) (((uint64_t)n) << 20)
+#define Gi(n) (((uint64_t)n) << 30)
 
 #define LOW_RAM_SIZE     Ki(64)
 #define RAM_BASE_ADDR    Gi(2)
@@ -57,9 +56,7 @@
 #define CLINT_SIZE       Ki(768)
 #define HTIF_BASE_ADDR   (Gi(1)+Ki(32))
 #define HTIF_SIZE  		 16
-#define VIRTIO_BASE_ADDR (Gi(1)+Ki(64))
-#define VIRTIO_SIZE      Ki(4)
-#define VIRTIO_CONSOLE_IRQ       1
+#define HTIF_CONSOLE_BUF_SIZE (1024)
 #define PLIC_BASE_ADDR   (Gi(1)+Mi(1))
 #define PLIC_SIZE        Mi(4)
 #define PLIC_NIRQS       32
@@ -69,6 +66,15 @@
 #define CLOCK_FREQ 2000000000 /* 2 GHz */
 #define RTC_FREQ_DIV 1000     /* arbitrary, relative to CPU freq to have a
                                  2 MHz frequency */
+
+typedef struct {
+    int stdin_fd;
+    struct termios oldtty;
+    int old_fd0_flags;
+    uint8_t buf[HTIF_CONSOLE_BUF_SIZE];
+    ssize_t buf_len, buf_pos;
+    BOOL irq_pending;
+} HTIFConsole;
 
 typedef struct RISCVMachine {
     PhysMemoryMap *mem_map;
@@ -81,8 +87,7 @@ typedef struct RISCVMachine {
     IRQSignal plic_irq[PLIC_NIRQS]; /* IRQ 0 is not used */
     /* HTIF */
     uint64_t htif_tohost, htif_fromhost;
-    /* Console */
-    VIRTIODevice *virtio_console_dev;
+    HTIFConsole *htif_console;
 } RISCVMachine;
 
 /* return -1 if error. */
@@ -242,127 +247,6 @@ static uint64_t rtc_get_time(RISCVMachine *m) {
     return rtc_cycles_to_time(riscv_cpu_get_cycle_counter(m->cpu_state));
 }
 
-/* Host/Target Interface */
-static uint32_t htif_read(void *opaque, uint32_t offset,
-                          int size_log2)
-{
-    RISCVMachine *m = opaque;
-    uint32_t val;
-
-    assert(size_log2 == 2);
-    switch(offset) {
-    case 0:
-        val = m->htif_tohost;
-        break;
-    case 4:
-        val = m->htif_tohost >> 32;
-        break;
-    case 8:
-        val = m->htif_fromhost;
-        break;
-    case 12:
-        val = m->htif_fromhost >> 32;
-        break;
-    default:
-        val = 0;
-        break;
-    }
-    return val;
-}
-
-static void htif_handle_cmd(RISCVMachine *m)
-{
-    uint32_t device, cmd;
-
-    device = m->htif_tohost >> 56;
-    cmd = (m->htif_tohost >> 48) & 0xff;
-    if (m->htif_tohost == 1) {
-        riscv_cpu_set_shuthost(m->cpu_state);
-    } else if (device == 1 && cmd == 1) {
-        putc(m->htif_tohost & 0xff, stderr);
-        m->htif_tohost = 0;
-        m->htif_fromhost = ((uint64_t)device << 56) | ((uint64_t)cmd << 48);
-    } else if (device == 1 && cmd == 0) {
-        /* request keyboard interrupt */
-        m->htif_tohost = 0;
-    } else {
-        printf("HTIF: unsupported tohost=0x%016" PRIx64 "\n", m->htif_tohost);
-    }
-}
-
-static void htif_write(void *opaque, uint32_t offset, uint32_t val,
-                       int size_log2)
-{
-    RISCVMachine *m = opaque;
-
-    assert(size_log2 == 2);
-    switch(offset) {
-    case 0:
-        m->htif_tohost = (m->htif_tohost & ~0xffffffff) | val;
-        break;
-    case 4:
-        m->htif_tohost = (m->htif_tohost & 0xffffffff) | ((uint64_t)val << 32);
-        htif_handle_cmd(m);
-        break;
-    case 8:
-        m->htif_fromhost = (m->htif_fromhost & ~0xffffffff) | val;
-        break;
-    case 12:
-        m->htif_fromhost = (m->htif_fromhost & 0xffffffff) |
-            (uint64_t)val << 32;
-        break;
-    default:
-        break;
-    }
-}
-
-/* Clock Interrupt */
-static uint32_t clint_read(void *opaque, uint32_t offset, int size_log2)
-{
-    RISCVMachine *m = opaque;
-    uint32_t val;
-
-    assert(size_log2 == 2);
-    switch(offset) {
-    case 0xbff8:
-        val = rtc_get_time(m);
-        break;
-    case 0xbffc:
-        val = rtc_get_time(m) >> 32;
-        break;
-    case 0x4000:
-        val = m->timecmp;
-        break;
-    case 0x4004:
-        val = m->timecmp >> 32;
-        break;
-    default:
-        val = 0;
-        break;
-    }
-    return val;
-}
-
-static void clint_write(void *opaque, uint32_t offset, uint32_t val,
-                      int size_log2)
-{
-    RISCVMachine *m = opaque;
-
-    assert(size_log2 == 2);
-    switch(offset) {
-    case 0x4000:
-        m->timecmp = (m->timecmp & ~0xffffffff) | val;
-        riscv_cpu_reset_mip(m->cpu_state, MIP_MTIP);
-        break;
-    case 0x4004:
-        m->timecmp = (m->timecmp & 0xffffffff) | ((uint64_t)val << 32);
-        riscv_cpu_reset_mip(m->cpu_state, MIP_MTIP);
-        break;
-    default:
-        break;
-    }
-}
-
 /* Platform-Level Interrupt Controller (PLIC) */
 static void plic_update_mip(RISCVMachine *m)
 {
@@ -434,6 +318,131 @@ static void plic_set_irq(void *opaque, int irq_num, int state)
     else
         m->plic_pending_irq &= ~mask;
     plic_update_mip(m);
+}
+
+
+/* Host/Target Interface */
+static uint32_t htif_read(void *opaque, uint32_t offset,
+                          int size_log2)
+{
+    RISCVMachine *m = opaque;
+    uint32_t val;
+
+    assert(size_log2 == 2);
+    switch(offset) {
+    case 0:
+        val = m->htif_tohost;
+        break;
+    case 4:
+        val = m->htif_tohost >> 32;
+        break;
+    case 8:
+        val = m->htif_fromhost;
+        break;
+    case 12:
+        val = m->htif_fromhost >> 32;
+        break;
+    default:
+        val = 0;
+        break;
+    }
+    return val;
+}
+
+static void htif_handle_cmd(RISCVMachine *m)
+{
+    uint32_t device, cmd;
+
+    device = m->htif_tohost >> 56;
+    cmd = (m->htif_tohost >> 48) & 0xff;
+    if (m->htif_tohost == 1) {
+        riscv_cpu_set_shuthost(m->cpu_state, TRUE);
+    } else if (device == 1 && cmd == 1) {
+        uint8_t ch = m->htif_tohost & 0xff;
+        write(1, &ch, 1);
+        m->htif_tohost = 0; // notify that we are done with putchar
+        m->htif_fromhost = ((uint64_t)device << 56) | ((uint64_t)cmd << 48);
+    } else if (device == 1 && cmd == 0) {
+        // request keyboard interrupt
+        m->htif_tohost = 0;
+    } else {
+        printf("HTIF: unsupported tohost=0x%016" PRIx64 "\n", m->htif_tohost);
+    }
+}
+
+static void htif_write(void *opaque, uint32_t offset, uint32_t val,
+                       int size_log2)
+{
+    RISCVMachine *m = opaque;
+    assert(size_log2 == 2);
+    switch(offset) {
+    case 0:
+        m->htif_tohost = (m->htif_tohost & ~0xffffffff) | val;
+        break;
+    case 4:
+        m->htif_tohost = (m->htif_tohost & 0xffffffff) | ((uint64_t)val << 32);
+        htif_handle_cmd(m);
+        break;
+    case 8:
+        m->htif_fromhost = (m->htif_fromhost & ~0xffffffff) | val;
+        break;
+    case 12:
+        m->htif_fromhost = (m->htif_fromhost & 0xffffffff) |
+            (uint64_t)val << 32;
+        if (m->htif_console) {
+            m->htif_console->irq_pending = FALSE;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+/* Clock Interrupt */
+static uint32_t clint_read(void *opaque, uint32_t offset, int size_log2)
+{
+    RISCVMachine *m = opaque;
+    uint32_t val;
+
+    assert(size_log2 == 2);
+    switch(offset) {
+    case 0xbff8:
+        val = rtc_get_time(m);
+        break;
+    case 0xbffc:
+        val = rtc_get_time(m) >> 32;
+        break;
+    case 0x4000:
+        val = m->timecmp;
+        break;
+    case 0x4004:
+        val = m->timecmp >> 32;
+        break;
+    default:
+        val = 0;
+        break;
+    }
+    return val;
+}
+
+static void clint_write(void *opaque, uint32_t offset, uint32_t val,
+                      int size_log2)
+{
+    RISCVMachine *m = opaque;
+
+    assert(size_log2 == 2);
+    switch(offset) {
+    case 0x4000:
+        m->timecmp = (m->timecmp & ~0xffffffff) | val;
+        riscv_cpu_reset_mip(m->cpu_state, MIP_MTIP);
+        break;
+    case 0x4004:
+        m->timecmp = (m->timecmp & 0xffffffff) | ((uint64_t)val << 32);
+        riscv_cpu_reset_mip(m->cpu_state, MIP_MTIP);
+        break;
+    default:
+        break;
+    }
 }
 
 static uint8_t *get_ram_ptr(RISCVMachine *m, uint64_t paddr)
@@ -564,17 +573,10 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
             fdt_begin_node_num(d, "htif", HTIF_BASE_ADDR);
                 fdt_prop_str(d, "compatible", "ucb,htif0");
                 fdt_prop_tab_u64_2(d, "reg", HTIF_BASE_ADDR, HTIF_SIZE);
+                tab[0] = intc_phandle;
+                tab[1] = 13; // X HOST
+                fdt_prop_tab_u32(d, "interrupts-extended", tab, 2);
             fdt_end_node(d);
-
-			if (m->virtio_console_dev) {
-				fdt_begin_node_num(d, "virtio", VIRTIO_BASE_ADDR);
-					fdt_prop_str(d, "compatible", "virtio,mmio");
-					fdt_prop_tab_u64_2(d, "reg", VIRTIO_BASE_ADDR, VIRTIO_SIZE);
-					tab[0] = plic_phandle;
-					tab[1] = VIRTIO_CONSOLE_IRQ;
-					fdt_prop_tab_u32(d, "interrupts-extended", tab, 2);
-				fdt_end_node(d);
-			}
 
 		fdt_end_node(d); /* soc */
 
@@ -634,22 +636,13 @@ void virt_machine_set_defaults(VirtMachineParams *p)
     memset(p, 0, sizeof(*p));
 }
 
-typedef struct {
-    int stdin_fd;
-    BOOL resize_pending;
-    struct termios oldtty;
-    int old_fd0_flags;
-} STDIODevice;
-
-static void term_init(STDIODevice *s)
-{
+static HTIFConsole *htif_console_init(void) {
     struct termios tty;
-
+    HTIFConsole *con = mallocz(sizeof(*con));
     memset(&tty, 0, sizeof(tty));
     tcgetattr (0, &tty);
-    s->oldtty = tty;
-    s->old_fd0_flags = fcntl(0, F_GETFL);
-
+    con->oldtty = tty;
+    con->old_fd0_flags = fcntl(0, F_GETFL);
     tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
     tty.c_oflag |= OPOST;
     tty.c_lflag &= ~(ECHO|ECHONL|ICANON|IEXTEN);
@@ -658,91 +651,17 @@ static void term_init(STDIODevice *s)
     tty.c_cflag |= CS8;
     tty.c_cc[VMIN] = 1;
     tty.c_cc[VTIME] = 0;
-
     tcsetattr (0, TCSANOW, &tty);
-}
-
-static void term_end(STDIODevice *s)
-{
-    tcsetattr (0, TCSANOW, &s->oldtty);
-    fcntl(0, F_SETFL, s->old_fd0_flags);
-}
-
-static void console_write(void *opaque, const uint8_t *buf, int len)
-{
-    (void) opaque;
-    fwrite(buf, 1, len, stdout);
-    fflush(stdout);
-}
-
-static int console_read(void *opaque, uint8_t *buf, int len)
-{
-    STDIODevice *s = opaque;
-    int ret;
-
-    if (len <= 0)
-        return 0;
-
-    ret = read(s->stdin_fd, buf, len);
-#if 0
-    if (ret < 0)
-        return 0;
-    if (ret == 0) {
-        /* EOF: i.e., the console was redirected and the
-         * file ended */
-        fprintf(stderr, "EOF\n");
-        exit(1);
-    }
-#endif
-    if (ret <= 0)
-        return 0;
-    return ret;
-}
-
-static void console_get_size(STDIODevice *s, int *pw, int *ph)
-{
-    struct winsize ws;
-    int width, height;
-    /* default values */
-    width = 80;
-    height = 25;
-    if (ioctl(s->stdin_fd, TIOCGWINSZ, &ws) == 0 &&
-        ws.ws_col >= 4 && ws.ws_row >= 4) {
-        width = ws.ws_col;
-        height = ws.ws_row;
-    }
-    *pw = width;
-    *ph = height;
-}
-
-CharacterDevice *console_init(void)
-{
-    CharacterDevice *dev;
-    STDIODevice *s;
-
-    dev = mallocz(sizeof(*dev));
-    s = mallocz(sizeof(*s));
-
-    term_init(s);
-
-    s->stdin_fd = 0;
-    /* Note: the glibc does not properly tests the return value of
+    /* Note: the glibc does not properly test the return value of
        write() in printf, so some messages on stdout may be lost */
-    fcntl(s->stdin_fd, F_SETFL, O_NONBLOCK);
-
-    s->resize_pending = TRUE;
-
-    dev->opaque = s;
-    dev->write_data = console_write;
-    dev->read_data = console_read;
-    return dev;
+    fcntl(con->stdin_fd, F_SETFL, O_NONBLOCK);
+    return con;
 }
 
-static void console_end(CharacterDevice *dev) {
-    STDIODevice *s = dev->opaque;
-    term_end(s);
-    free(s);
-    free(dev);
+static void htif_console_end(HTIFConsole *con) {
+    tcsetattr (0, TCSANOW, &con->oldtty);
+    fcntl(0, F_SETFL, con->old_fd0_flags);
+    free(con);
 }
 
 VirtMachine *virt_machine_init(const VirtMachineParams *p)
@@ -793,18 +712,11 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
     cpu_register_device(m->mem_map, HTIF_BASE_ADDR, HTIF_SIZE, m,
         htif_read, htif_write, DEVIO_SIZE32);
 
-    /* virtio console */
-    if (p->interactive) {
-        VIRTIOBusDef vbus_s, *vbus = &vbus_s;
-		memset(vbus, 0, sizeof(*vbus));
-		vbus->mem_map = m->mem_map;
-		vbus->addr = VIRTIO_BASE_ADDR;
-        vbus->irq = &m->plic_irq[VIRTIO_CONSOLE_IRQ];
-        m->virtio_console_dev = virtio_console_init(vbus, console_init());
-        vbus->addr += VIRTIO_SIZE;
-    }
-
     copy_kernel(p, m);
+
+    if (p->interactive) {
+        m->htif_console = htif_console_init();
+    }
 
     return (VirtMachine *)m;
 }
@@ -812,11 +724,8 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
 void virt_machine_end(VirtMachine *v)
 {
     RISCVMachine *m = (RISCVMachine *)v;
-    VIRTIODevice *vd = m->virtio_console_dev;
-    if (vd) {
-        CharacterDevice *cs = virtio_console_get_char_dev(vd);
-        console_end(cs);
-        free(vd);
+    if (m->htif_console) {
+        htif_console_end(m->htif_console);
     }
     riscv_cpu_end(m->cpu_state);
     phys_mem_map_end(m->mem_map);
@@ -836,32 +745,42 @@ const char *virt_machine_get_name(void)
 int virt_machine_run(VirtMachine *v, uint64_t cycles_end)
 {
     RISCVMachine *m = (RISCVMachine *)v;
-    VIRTIODevice *vd = m->virtio_console_dev;
     RISCVCPUState *c = m->cpu_state;
+    HTIFConsole *con = m->htif_console;
+
 
     for (;;) {
 
         uint64_t cycles = riscv_cpu_get_cycle_counter(c);
+
+        uint64_t cycles_div_end = cycles + RTC_FREQ_DIV -
+            cycles % RTC_FREQ_DIV;
+        uint64_t this_cycles_end = cycles_end > cycles_div_end?
+            cycles_div_end: cycles_end;
+
+        /* execute as many cycles as possible until shuthost
+         * or powerdown */
+        riscv_cpu_run(c, this_cycles_end);
+        cycles = riscv_cpu_get_cycle_counter(c);
 
         /* if we reached our target number of cycles, break */
         if (cycles >= cycles_end) {
             return 0;
         }
 
-        /* if we are shutdown, break */
+        /* if we were shutdown, break */
         if (riscv_cpu_get_shuthost(c)) {
             return 1;
         }
 
         /* check for timer interrupts */
-
         /* if the timer interrupt is not already pending */
         if (!(riscv_cpu_get_mip(c) & MIP_MTIP)) {
             uint64_t timer_cycles = rtc_time_to_cycles(m->timecmp);
             /* if timer expired, raise interrupt */
             if (timer_cycles <= cycles) {
                 riscv_cpu_set_mip(c, MIP_MTIP);
-            /* otherwise, if the cpu is powered down, waiting for interrupts, 
+            /* otherwise, if the cpu is powered down, waiting for interrupts,
              * skip time */
             } else if (riscv_cpu_get_power_down(c)) {
                 if (timer_cycles < cycles_end) {
@@ -873,54 +792,40 @@ int virt_machine_run(VirtMachine *v, uint64_t cycles_end)
         }
 
         /* check for I/O with console */
-
-        if (vd) {
-            CharacterDevice *cs = virtio_console_get_char_dev(vd);
-            STDIODevice *s = cs->opaque;
-            int stdin_fd = s->stdin_fd;
-            fd_set rfds, wfds, efds;
-            int fd_max, ret;
-            struct timeval tv;
-
-            /* wait for an event */
-            FD_ZERO(&rfds);
-            FD_ZERO(&wfds);
-            FD_ZERO(&efds);
-            fd_max = -1;
-
-            if (virtio_console_can_write_data(vd)) {
-                FD_SET(stdin_fd, &rfds);
-                fd_max = stdin_fd;
-                if (s->resize_pending) {
-                    int width, height;
-                    console_get_size(s, &width, &height);
-                    virtio_console_resize_event(vd, width, height);
-                    s->resize_pending = FALSE;
-                }
-            }
-
-            tv.tv_sec = 0;
-            tv.tv_usec = riscv_cpu_get_power_down(c)? 1000: 0;
-
-            ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
-            if (ret > 0) {
-                if (FD_ISSET(stdin_fd, &rfds)) {
-                    uint8_t buf[128];
-                    int ret, len;
-                    len = virtio_console_get_write_len(vd);
-                    len = min_int(len, sizeof(buf));
-                    ret = cs->read_data(s, buf, len);
-                    if (ret > 0) {
-                        virtio_console_write_data(vd, buf, ret);
+        if (con) {
+            /* if the character we made available has
+             * already been consumed */
+            if (!con->irq_pending) {
+                /* if we don't have any characters left in
+                 * buffer, try to obtain more from stdin */
+                if (con->buf_pos >= con->buf_len) {
+                    fd_set rfds, wfds, efds;
+                    int fd_max, ret;
+                    struct timeval tv;
+                    FD_ZERO(&rfds);
+                    FD_ZERO(&wfds);
+                    FD_ZERO(&efds);
+                    fd_max = con->stdin_fd;
+                    FD_SET(con->stdin_fd, &rfds);
+                    tv.tv_sec = 0;
+                    tv.tv_usec = riscv_cpu_get_power_down(c)? 1000: 0;
+                    ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
+                    if (ret > 0 && FD_ISSET(con->stdin_fd, &rfds)) {
+                        con->buf_pos = 0;
+                        con->buf_len = read(con->stdin_fd, con->buf,
+                            HTIF_CONSOLE_BUF_SIZE);
+                        if (con->buf_len <= 0) {
+                            con->buf_len = 1;
+                            con->buf[0] = 4; /* CTRL+D */
+                        }
                     }
                 }
+                /* feed another character and wake the cpu */
+                m->htif_fromhost = ((uint64_t)1 << 56) |
+                        ((uint64_t)0 << 48) | con->buf[con->buf_pos++];
+                con->irq_pending = TRUE;
+                riscv_cpu_set_power_down(c, FALSE);
             }
         }
-
-        /* do as much work as possible until we either power
-         * down, shutdown, or until we reach the target
-         * number of cycles */
-
-        riscv_cpu_run(c, cycles_end);
     }
 }

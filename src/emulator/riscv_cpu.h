@@ -21,18 +21,20 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#define MIP_USIP (1 << 0)
-#define MIP_SSIP (1 << 1)
-#define MIP_HSIP (1 << 2)
-#define MIP_MSIP (1 << 3)
-#define MIP_UTIP (1 << 4)
-#define MIP_STIP (1 << 5)
-#define MIP_HTIP (1 << 6)
-#define MIP_MTIP (1 << 7)
-#define MIP_UEIP (1 << 8)
-#define MIP_SEIP (1 << 9)
-#define MIP_HEIP (1 << 10)
-#define MIP_MEIP (1 << 11)
+#define MIP_USIP   (1 << 0)
+#define MIP_SSIP   (1 << 1)
+#define MIP_HSIP   (1 << 2)
+#define MIP_MSIP   (1 << 3)
+#define MIP_UTIP   (1 << 4)
+#define MIP_STIP   (1 << 5)
+#define MIP_HTIP   (1 << 6)
+#define MIP_MTIP   (1 << 7)
+#define MIP_UEIP   (1 << 8)
+#define MIP_SEIP   (1 << 9)
+#define MIP_HEIP   (1 << 10)
+#define MIP_MEIP   (1 << 11)
+#define MIP_X_HOST (1 << 13)
+
 
 typedef struct RISCVCPUState RISCVCPUState;
 
@@ -47,8 +49,9 @@ void riscv_cpu_set_mip(RISCVCPUState *s, uint32_t mask);
 void riscv_cpu_reset_mip(RISCVCPUState *s, uint32_t mask);
 uint32_t riscv_cpu_get_mip(RISCVCPUState *s);
 BOOL riscv_cpu_get_power_down(RISCVCPUState *s);
+void riscv_cpu_set_power_down(RISCVCPUState *s, BOOL v);
 BOOL riscv_cpu_get_shuthost(RISCVCPUState *s);
-void riscv_cpu_set_shuthost(RISCVCPUState *s);
+void riscv_cpu_set_shuthost(RISCVCPUState *s, BOOL v);
 uint32_t riscv_cpu_get_misa(RISCVCPUState *s);
 void riscv_cpu_flush_tlb_write_range_ram(RISCVCPUState *s,
                                          uint8_t *ram_ptr, size_t ram_size);

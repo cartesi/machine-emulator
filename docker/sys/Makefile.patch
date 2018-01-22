@@ -1,0 +1,46 @@
+diff --git a/Makefile b/Makefile
+index 7f528cb..b09232d 100644
+--- a/Makefile
++++ b/Makefile
+@@ -19,7 +19,7 @@ buildroot_initramfs_config := $(confdir)/buildroot_initramfs_config
+ buildroot_initramfs_sysroot_stamp := $(wrkdir)/.buildroot_initramfs_sysroot
+ buildroot_initramfs_sysroot := $(wrkdir)/buildroot_initramfs_sysroot
+ buildroot_rootfs_wrkdir := $(wrkdir)/buildroot_rootfs
+-buildroot_rootfs_ext := $(buildroot_rootfs_wrkdir)/images/rootfs.ext4
++buildroot_rootfs_ext := $(buildroot_rootfs_wrkdir)/images/rootfs.ext2
+ buildroot_rootfs_config := $(confdir)/buildroot_rootfs_config
+ 
+ linux_srcdir := $(srcdir)/linux
+@@ -121,11 +121,8 @@ ifeq ($(ISA),$(filter rv32%,$(ISA)))
+ 	$(MAKE) -C $(linux_srcdir) O=$(linux_wrkdir) ARCH=riscv olddefconfig
+ endif
+ 
+-$(vmlinux): $(linux_srcdir) $(linux_wrkdir)/.config $(buildroot_initramfs_sysroot_stamp)
++$(vmlinux): $(linux_srcdir) $(linux_wrkdir)/.config
+ 	$(MAKE) -C $< O=$(linux_wrkdir) \
+-		CONFIG_INITRAMFS_SOURCE="$(confdir)/initramfs.txt $(buildroot_initramfs_sysroot)" \
+-		CONFIG_INITRAMFS_ROOT_UID=$(shell id -u) \
+-		CONFIG_INITRAMFS_ROOT_GID=$(shell id -g) \
+ 		ARCH=riscv \
+ 		vmlinux
+ 
+@@ -144,8 +141,8 @@ $(bbl): $(pk_srcdir) $(vmlinux_stripped)
+ 	cd $(pk_wrkdir) && $</configure \
+ 		--host=$(target) \
+ 		--with-payload=$(vmlinux_stripped) \
+-		--enable-logo --enable-print-device-tree \
+-		--with-logo=$(abspath conf/sifive_logo.txt)
++		--enable-fp-emulation \
++		--enable-print-device-tree
+ 	CFLAGS="-mabi=$(ABI) -march=$(ISA)" $(MAKE) -C $(pk_wrkdir)
+ 
+ $(bin): $(bbl)
+@@ -204,6 +201,5 @@ sim: $(spike) $(bbl)
+ 
+ .PHONY: qemu
+ qemu: $(qemu) $(bbl) $(rootfs)
+-	$(qemu) -nographic -machine virt -kernel $(bbl) \
+-		-drive file=$(rootfs),format=raw,id=hd0 -device virtio-blk-device,drive=hd0 \
+-		-netdev user,id=net0 -device virtio-net-device,netdev=net0
++	$(qemu) -nographic -machine virt -kernel $(bbl) -snapshot \
++		-drive file=$(rootfs),format=raw,id=hd0 -device virtio-blk-device,drive=hd0 -append "console=hvc0 rootfstype=ext4 root=/dev/vda rw"

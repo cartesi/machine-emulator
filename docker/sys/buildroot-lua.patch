@@ -1,0 +1,13 @@
+diff --git a/package/lua/lua.mk b/package/lua/lua.mk
+index b2dab39..4e217b2 100644
+--- a/package/lua/lua.mk
++++ b/package/lua/lua.mk
+@@ -24,7 +24,7 @@ endif
+ 
+ LUA_PROVIDES = luainterpreter
+ 
+-LUA_CFLAGS = -Wall -fPIC -DLUA_USE_POSIX
++LUA_CFLAGS = -Wall -fPIC -DLUA_USE_POSIX -D_XOPEN_SOURCE=0
+ 
+ ifeq ($(BR2_PACKAGE_LUA_5_2),y)
+ LUA_CFLAGS += -DLUA_COMPAT_ALL

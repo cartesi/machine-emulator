@@ -1,0 +1,981 @@
+diff --git a/hw/riscv/riscv_htif.c b/hw/riscv/riscv_htif.c
+index 0181433..6096f7b 100644
+--- a/hw/riscv/riscv_htif.c
++++ b/hw/riscv/riscv_htif.c
+@@ -339,6 +339,51 @@ static const MemoryRegionOps htif_mm_ops[3] = {
+ };
+ 
+ HTIFState *htif_mm_init(MemoryRegion *address_space,
++           uint64_t tohost_addr, uint64_t tohost_size, uint64_t fromhost_addr,
++           uint64_t fromhost_size, qemu_irq irq, MemoryRegion *main_mem,
++           CPURISCVState *env, CharDriverState *chr)
++{
++    /* now setup HTIF device */
++    HTIFState *htifstate;
++
++    htifstate = g_malloc0(sizeof(HTIFState));
++    htifstate->irq = irq;
++    htifstate->address_space = address_space;
++    htifstate->main_mem = main_mem;
++    htifstate->main_mem_ram_ptr = memory_region_get_ram_ptr(main_mem);
++    htifstate->env = env;
++    htifstate->chr = chr;
++    htifstate->pending_read = 0;
++    htifstate->allow_tohost = 0;
++    htifstate->fromhost_inprogress = 0;
++    htifstate->fromhost_size = fromhost_size;
++    htifstate->tohost_size = tohost_size;
++
++#ifdef ENABLE_CHARDEV
++    qemu_chr_add_handlers(htifstate->chr, htif_can_recv, htif_recv, htif_event,
++                          htifstate);
++#endif
++
++    uint64_t base = tohost_addr < fromhost_addr ? tohost_addr : fromhost_addr;
++    uint64_t second = tohost_addr < fromhost_addr ? fromhost_addr : tohost_addr;
++    uint64_t regionwidth = second - base + 8;
++
++    htifstate->tohost_offset = base == tohost_addr ? 0 : tohost_addr -
++                                                         fromhost_addr;
++    htifstate->fromhost_offset = base == fromhost_addr ? 0 : fromhost_addr -
++                                                             tohost_addr;
++
++    vmstate_register(NULL, base, &vmstate_htif, htifstate);
++
++    memory_region_init_io(&htifstate->io, NULL,
++                          &htif_mm_ops[DEVICE_LITTLE_ENDIAN],
++                           htifstate, "htif", regionwidth);
++    memory_region_add_subregion(address_space, base, &htifstate->io);
++
++    return htifstate;
++}
++
++HTIFState *htif_mm_init_elf(MemoryRegion *address_space,
+            const char *kernel_filename, qemu_irq irq, MemoryRegion *main_mem,
+            CPURISCVState *env, CharDriverState *chr)
+ {
+@@ -395,42 +440,6 @@ HTIFState *htif_mm_init(MemoryRegion *address_space,
+ #endif
+     }
+ 
+-    /* now setup HTIF device */
+-    HTIFState *htifstate;
+-
+-    htifstate = g_malloc0(sizeof(HTIFState));
+-    htifstate->irq = irq;
+-    htifstate->address_space = address_space;
+-    htifstate->main_mem = main_mem;
+-    htifstate->main_mem_ram_ptr = memory_region_get_ram_ptr(main_mem);
+-    htifstate->env = env;
+-    htifstate->chr = chr;
+-    htifstate->pending_read = 0;
+-    htifstate->allow_tohost = 0;
+-    htifstate->fromhost_inprogress = 0;
+-    htifstate->fromhost_size = fromhost_size;
+-    htifstate->tohost_size = tohost_size;
+-
+-#ifdef ENABLE_CHARDEV
+-    qemu_chr_add_handlers(htifstate->chr, htif_can_recv, htif_recv, htif_event,
+-                          htifstate);
+-#endif
+-
+-    uint64_t base = tohost_addr < fromhost_addr ? tohost_addr : fromhost_addr;
+-    uint64_t second = tohost_addr < fromhost_addr ? fromhost_addr : tohost_addr;
+-    uint64_t regionwidth = second - base + 8;
+-
+-    htifstate->tohost_offset = base == tohost_addr ? 0 : tohost_addr -
+-                                                         fromhost_addr;
+-    htifstate->fromhost_offset = base == fromhost_addr ? 0 : fromhost_addr -
+-                                                             tohost_addr;
+-
+-    vmstate_register(NULL, base, &vmstate_htif, htifstate);
+-
+-    memory_region_init_io(&htifstate->io, NULL,
+-                          &htif_mm_ops[DEVICE_LITTLE_ENDIAN],
+-                           htifstate, "htif", regionwidth);
+-    memory_region_add_subregion(address_space, base, &htifstate->io);
+-
+-    return htifstate;
++    return htif_mm_init(address_space, fromhost_addr, fromhost_size,
++        tohost_addr, tohost_size, irq, main_mem, env, chr);
+ }
+diff --git a/hw/riscv/spike_v1_09.c b/hw/riscv/spike_v1_09.c
+index cbf2c0b..35c74f4 100644
+--- a/hw/riscv/spike_v1_09.c
++++ b/hw/riscv/spike_v1_09.c
+@@ -166,7 +166,7 @@ static void riscv_spike_board_init(MachineState *machine)
+     /* add memory mapped htif registers at location specified in the symbol
+        table of the elf being loaded (thus kernel_filename is passed to the
+        init rather than an address) */
+-    htif_mm_init(system_memory, machine->kernel_filename,
++    htif_mm_init_elf(system_memory, machine->kernel_filename,
+         s->soc.harts[0].env.irq[4], boot_rom,
+         &s->soc.harts[0].env, serial_hds[0]);
+ 
+diff --git a/hw/riscv/spike_v1_10.c b/hw/riscv/spike_v1_10.c
+index 3818c44..03a3f67 100644
+--- a/hw/riscv/spike_v1_10.c
++++ b/hw/riscv/spike_v1_10.c
+@@ -223,7 +223,7 @@ static void riscv_spike_board_init(MachineState *machine)
+     /* add memory mapped htif registers at location specified in the symbol
+        table of the elf being loaded (thus kernel_filename is passed to the
+        init rather than an address) */
+-    htif_mm_init(system_memory, machine->kernel_filename,
++    htif_mm_init_elf(system_memory, machine->kernel_filename,
+         s->soc.harts[0].env.irq[4], boot_rom,
+         &s->soc.harts[0].env, serial_hds[0]);
+ 
+diff --git a/hw/riscv/virt.c b/hw/riscv/virt.c
+index d1c0140..7dc35b1 100644
+--- a/hw/riscv/virt.c
++++ b/hw/riscv/virt.c
+@@ -54,6 +54,7 @@ static const struct MemmapEntry {
+     [VIRT_CLINT] =    {  0x2000000,    0x10000 },
+     [VIRT_PLIC] =     {  0xc000000,  0x4000000 },
+     [VIRT_VIRTIO] =   { 0x10000000,     0x1000 },
++    [VIRT_HTIF] =     { 0x40008000,       0x10 },
+     [VIRT_DRAM] =     { 0x80000000,        0x0 },
+ };
+ 
+@@ -76,7 +77,7 @@ static uint64_t load_kernel(const char *kernel_filename)
+ }
+ 
+ static void create_fdt(RISCVVirtState *s, const struct MemmapEntry *memmap,
+-    uint64_t mem_size)
++    uint64_t mem_size, const char *cmdline)
+ {
+     void *fdt;
+     int cpu;
+@@ -98,6 +99,14 @@ static void create_fdt(RISCVVirtState *s, const struct MemmapEntry *memmap,
+ 
+     qemu_fdt_add_subnode(fdt, "/htif");
+     qemu_fdt_setprop_string(fdt, "/htif", "compatible", "ucb,htif0");
++    qemu_fdt_setprop_cells(fdt, "/htif", "reg",
++        0x0, memmap[VIRT_HTIF].base,
++        0x0, memmap[VIRT_HTIF].size);
++
++    qemu_fdt_add_subnode(fdt, "/chosen");
++    qemu_fdt_setprop_string(fdt, "/chosen", "bootargs", cmdline? cmdline: "");
++
++
+ 
+     qemu_fdt_add_subnode(fdt, "/soc");
+     qemu_fdt_setprop(fdt, "/soc", "ranges", NULL, 0);
+@@ -226,7 +235,7 @@ static void riscv_virt_board_init(MachineState *machine)
+         main_mem);
+ 
+     /* create device tree */
+-    create_fdt(s, memmap, machine->ram_size);
++    create_fdt(s, memmap, machine->ram_size, machine->kernel_cmdline);
+ 
+     /* boot rom */
+     memory_region_init_ram(boot_rom, NULL, "riscv_virt_board.bootrom",
+@@ -262,12 +271,18 @@ static void riscv_virt_board_init(MachineState *machine)
+     qemu_fdt_dumpdtb(s->fdt, s->fdt_size);
+     cpu_physical_memory_write(ROM_BASE + sizeof(reset_vec), s->fdt, s->fdt_size);
+ 
++#if 0
+     /* add memory mapped htif registers at location specified in the symbol
+        table of the elf being loaded (thus kernel_filename is passed to the
+        init rather than an address) */
+-    htif_mm_init(system_memory, machine->kernel_filename,
++    htif_mm_init_elf(system_memory, machine->kernel_filename,
+         s->soc.harts[0].env.irq[4], boot_rom,
+         &s->soc.harts[0].env, serial_hds[0]);
++#else
++    htif_mm_init(system_memory, memmap[VIRT_HTIF].base, 8,
++        memmap[VIRT_HTIF].base+8, 8, s->soc.harts[0].env.irq[4], boot_rom,
++        &s->soc.harts[0].env, serial_hds[0]);
++#endif
+ 
+     /* MMIO */
+     s->plic = sifive_plic_create(memmap[VIRT_PLIC].base, &s->soc,
+diff --git a/include/hw/riscv/riscv_htif.h b/include/hw/riscv/riscv_htif.h
+index 1f3be5c..7f66d35 100644
+--- a/include/hw/riscv/riscv_htif.h
++++ b/include/hw/riscv/riscv_htif.h
+@@ -53,9 +53,13 @@ extern const VMStateDescription vmstate_htif;
+ extern const MemoryRegionOps htif_io_ops;
+ 
+ /* legacy pre qom */
+-HTIFState *htif_mm_init(MemoryRegion *address_space,
++HTIFState *htif_mm_init_elf(MemoryRegion *address_space,
+                         const char *kernel_filename, qemu_irq irq,
+                         MemoryRegion *main_mem,
+                         CPURISCVState *env, CharDriverState *chr);
+ 
++HTIFState *htif_mm_init(MemoryRegion *address_space,
++           uint64_t tohost_addr, uint64_t tohost_size, uint64_t fromhost_addr,
++           uint64_t fromhost_size, qemu_irq irq, MemoryRegion *main_mem,
++           CPURISCVState *env, CharDriverState *chr);
+ #endif
+diff --git a/include/hw/riscv/virt.h b/include/hw/riscv/virt.h
+index f635cca..39278e9 100644
+--- a/include/hw/riscv/virt.h
++++ b/include/hw/riscv/virt.h
+@@ -48,6 +48,7 @@ enum {
+ 	VIRT_CLINT,
+ 	VIRT_PLIC,
+     VIRT_VIRTIO,
++    VIRT_HTIF,
+     VIRT_DRAM
+ };
+ 
+diff --git a/po/bg.po b/po/bg.po
+index 5047861..1239e64 100644
+--- a/po/bg.po
++++ b/po/bg.po
+@@ -6,8 +6,8 @@
+ msgid ""
+ msgstr ""
+ "Project-Id-Version: QEMU 2.6.50\n"
+-"Report-Msgid-Bugs-To: \n"
+-"POT-Creation-Date: 2016-06-26 10:16+0300\n"
++"Report-Msgid-Bugs-To: qemu-devel@nongnu.org\n"
++"POT-Creation-Date: 2018-01-14 23:31-0200\n"
+ "PO-Revision-Date: 2016-06-09 15:54+0300\n"
+ "Last-Translator: Alexander Shopov <ash@kambanaria.org>\n"
+ "Language-Team: Bulgarian <dict@ludost.net>\n"
+diff --git a/po/de_DE.po b/po/de_DE.po
+index 97ae655..8146233 100644
+--- a/po/de_DE.po
++++ b/po/de_DE.po
+@@ -6,7 +6,7 @@ msgid ""
+ msgstr ""
+ "Project-Id-Version: QEMU 1.4.50\n"
+ "Report-Msgid-Bugs-To: qemu-devel@nongnu.org\n"
+-"POT-Creation-Date: 2016-04-18 14:50+0100\n"
++"POT-Creation-Date: 2018-01-14 23:31-0200\n"
+ "PO-Revision-Date: 2012-02-28 16:00+0100\n"
+ "Last-Translator: Kevin Wolf <kwolf@redhat.com>\n"
+ "Language-Team: Deutsch <de@li.org>\n"
+@@ -16,70 +16,74 @@ msgstr ""
+ "Content-Transfer-Encoding: 8bit\n"
+ "Plural-Forms: nplurals=2; plural=(n!=1);\n"
+ 
+-#: ui/gtk.c:273
++#: ui/gtk.c:274
+ msgid " - Press Ctrl+Alt+G to release grab"
+ msgstr " - Strg+Alt+G drücken, um Eingabegeräte freizugeben"
+ 
+-#: ui/gtk.c:277
++#: ui/gtk.c:278
+ msgid " [Paused]"
+ msgstr " [Angehalten]"
+ 
+-#: ui/gtk.c:1833
++#: ui/gtk.c:1906
+ msgid "_Pause"
+ msgstr "_Angehalten"
+ 
+-#: ui/gtk.c:1839
++#: ui/gtk.c:1912
+ msgid "_Reset"
+ msgstr "_Reset"
+ 
+-#: ui/gtk.c:1842
++#: ui/gtk.c:1915
+ msgid "Power _Down"
+ msgstr "_Herunterfahren"
+ 
+-#: ui/gtk.c:1848
++#: ui/gtk.c:1921
+ msgid "_Quit"
+ msgstr "_Beenden"
+ 
+-#: ui/gtk.c:1940
++#: ui/gtk.c:2013
+ msgid "_Fullscreen"
+ msgstr "_Vollbild"
+ 
+-#: ui/gtk.c:1954
++#: ui/gtk.c:2016
++msgid "_Copy"
++msgstr ""
++
++#: ui/gtk.c:2032
+ msgid "Zoom _In"
+ msgstr "_Heranzoomen"
+ 
+-#: ui/gtk.c:1961
++#: ui/gtk.c:2039
+ msgid "Zoom _Out"
+ msgstr "_Wegzoomen"
+ 
+-#: ui/gtk.c:1968
++#: ui/gtk.c:2046
+ msgid "Best _Fit"
+ msgstr "_Einpassen"
+ 
+-#: ui/gtk.c:1975
++#: ui/gtk.c:2053
+ msgid "Zoom To _Fit"
+ msgstr "Auf _Fenstergröße skalieren"
+ 
+-#: ui/gtk.c:1981
++#: ui/gtk.c:2059
+ msgid "Grab On _Hover"
+ msgstr "Tastatur _automatisch einfangen"
+ 
+-#: ui/gtk.c:1984
++#: ui/gtk.c:2062
+ msgid "_Grab Input"
+ msgstr "_Eingabegeräte einfangen"
+ 
+-#: ui/gtk.c:2013
++#: ui/gtk.c:2091
+ msgid "Show _Tabs"
+ msgstr "Reiter anzeigen"
+ 
+-#: ui/gtk.c:2016
++#: ui/gtk.c:2094
+ msgid "Detach Tab"
+ msgstr "Reiter abtrennen"
+ 
+-#: ui/gtk.c:2028
++#: ui/gtk.c:2106
+ msgid "_Machine"
+ msgstr "_Maschine"
+ 
+-#: ui/gtk.c:2033
++#: ui/gtk.c:2111
+ msgid "_View"
+ msgstr "_Ansicht"
+diff --git a/po/fr_FR.po b/po/fr_FR.po
+index e9fb040..be78d5d 100644
+--- a/po/fr_FR.po
++++ b/po/fr_FR.po
+@@ -6,7 +6,7 @@ msgid ""
+ msgstr ""
+ "Project-Id-Version: QEMU 1.4.50\n"
+ "Report-Msgid-Bugs-To: qemu-devel@nongnu.org\n"
+-"POT-Creation-Date: 2016-04-18 14:50+0100\n"
++"POT-Creation-Date: 2018-01-14 23:31-0200\n"
+ "PO-Revision-Date: 2014-07-28 23:25+0200\n"
+ "Last-Translator: Aurelien Jarno <aurelien@aurel32.net>\n"
+ "Language-Team: French <FR@li.org>\n"
+@@ -17,70 +17,74 @@ msgstr ""
+ "Plural-Forms: nplurals=2; plural=n != 1;\n"
+ "X-Generator: Lokalize 1.4\n"
+ 
+-#: ui/gtk.c:273
++#: ui/gtk.c:274
+ msgid " - Press Ctrl+Alt+G to release grab"
+ msgstr "- Appuyer sur Ctrl+Alt+G pour arrêter la capture"
+ 
+-#: ui/gtk.c:277
++#: ui/gtk.c:278
+ msgid " [Paused]"
+ msgstr " [En pause]"
+ 
+-#: ui/gtk.c:1833
++#: ui/gtk.c:1906
+ msgid "_Pause"
+ msgstr "_Pause"
+ 
+-#: ui/gtk.c:1839
++#: ui/gtk.c:1912
+ msgid "_Reset"
+ msgstr "_Réinitialiser"
+ 
+-#: ui/gtk.c:1842
++#: ui/gtk.c:1915
+ msgid "Power _Down"
+ msgstr "_Éteindre"
+ 
+-#: ui/gtk.c:1848
++#: ui/gtk.c:1921
+ msgid "_Quit"
+ msgstr "_Quitter"
+ 
+-#: ui/gtk.c:1940
++#: ui/gtk.c:2013
+ msgid "_Fullscreen"
+ msgstr "Mode _plein écran"
+ 
+-#: ui/gtk.c:1954
++#: ui/gtk.c:2016
++msgid "_Copy"
++msgstr ""
++
++#: ui/gtk.c:2032
+ msgid "Zoom _In"
+ msgstr "Zoom _avant"
+ 
+-#: ui/gtk.c:1961
++#: ui/gtk.c:2039
+ msgid "Zoom _Out"
+ msgstr "_Zoom arrière"
+ 
+-#: ui/gtk.c:1968
++#: ui/gtk.c:2046
+ msgid "Best _Fit"
+ msgstr "Zoom _idéal"
+ 
+-#: ui/gtk.c:1975
++#: ui/gtk.c:2053
+ msgid "Zoom To _Fit"
+ msgstr "Zoomer pour a_juster"
+ 
+-#: ui/gtk.c:1981
++#: ui/gtk.c:2059
+ msgid "Grab On _Hover"
+ msgstr "Capturer en _survolant"
+ 
+-#: ui/gtk.c:1984
++#: ui/gtk.c:2062
+ msgid "_Grab Input"
+ msgstr "_Capturer les entrées"
+ 
+-#: ui/gtk.c:2013
++#: ui/gtk.c:2091
+ msgid "Show _Tabs"
+ msgstr "Montrer les _onglets"
+ 
+-#: ui/gtk.c:2016
++#: ui/gtk.c:2094
+ msgid "Detach Tab"
+ msgstr "_Détacher l'onglet"
+ 
+-#: ui/gtk.c:2028
++#: ui/gtk.c:2106
+ msgid "_Machine"
+ msgstr "_Machine"
+ 
+-#: ui/gtk.c:2033
++#: ui/gtk.c:2111
+ msgid "_View"
+ msgstr "_Vue"
+diff --git a/po/hu.po b/po/hu.po
+index 1149adf..734cfca 100644
+--- a/po/hu.po
++++ b/po/hu.po
+@@ -6,7 +6,7 @@ msgid ""
+ msgstr ""
+ "Project-Id-Version: QEMU 1.4.50\n"
+ "Report-Msgid-Bugs-To: qemu-devel@nongnu.org\n"
+-"POT-Creation-Date: 2016-04-18 14:50+0100\n"
++"POT-Creation-Date: 2018-01-14 23:31-0200\n"
+ "PO-Revision-Date: 2013-05-06 20:42+0200\n"
+ "Last-Translator: Ákos Kovács <akoskovacs@gmx.com>\n"
+ "Language-Team: Hungarian <hu@li.org>\n"
+@@ -15,73 +15,77 @@ msgstr ""
+ "Content-Type: text/plain; charset=UTF-8\n"
+ "Content-Transfer-Encoding: 8bit\n"
+ 
+-#: ui/gtk.c:273
++#: ui/gtk.c:274
+ msgid " - Press Ctrl+Alt+G to release grab"
+ msgstr " - Nyomj Ctrl+Alt+G-t a bemeneti eszközök elengedéséhez"
+ 
+-#: ui/gtk.c:277
++#: ui/gtk.c:278
+ msgid " [Paused]"
+ msgstr " [Megállítva]"
+ 
+-#: ui/gtk.c:1833
++#: ui/gtk.c:1906
+ msgid "_Pause"
+ msgstr "_Megállítás"
+ 
+-#: ui/gtk.c:1839
++#: ui/gtk.c:1912
+ msgid "_Reset"
+ msgstr "Új_raindítás"
+ 
+-#: ui/gtk.c:1842
++#: ui/gtk.c:1915
+ msgid "Power _Down"
+ msgstr "_Leállítás"
+ 
+-#: ui/gtk.c:1848
++#: ui/gtk.c:1921
+ msgid "_Quit"
+ msgstr ""
+ 
+-#: ui/gtk.c:1940
++#: ui/gtk.c:2013
+ msgid "_Fullscreen"
+ msgstr ""
+ 
+-#: ui/gtk.c:1954
++#: ui/gtk.c:2016
++msgid "_Copy"
++msgstr ""
++
++#: ui/gtk.c:2032
+ #, fuzzy
+ msgid "Zoom _In"
+ msgstr "Ablakmérethez _igazítás"
+ 
+-#: ui/gtk.c:1961
++#: ui/gtk.c:2039
+ #, fuzzy
+ msgid "Zoom _Out"
+ msgstr "Ablakmérethez _igazítás"
+ 
+-#: ui/gtk.c:1968
++#: ui/gtk.c:2046
+ msgid "Best _Fit"
+ msgstr ""
+ 
+-#: ui/gtk.c:1975
++#: ui/gtk.c:2053
+ msgid "Zoom To _Fit"
+ msgstr "Ablakmérethez _igazítás"
+ 
+-#: ui/gtk.c:1981
++#: ui/gtk.c:2059
+ msgid "Grab On _Hover"
+ msgstr "Automatikus _elfogás"
+ 
+-#: ui/gtk.c:1984
++#: ui/gtk.c:2062
+ msgid "_Grab Input"
+ msgstr "_Bemeneti eszközök megragadása"
+ 
+-#: ui/gtk.c:2013
++#: ui/gtk.c:2091
+ msgid "Show _Tabs"
+ msgstr "_Fülek megjelenítése"
+ 
+-#: ui/gtk.c:2016
++#: ui/gtk.c:2094
+ msgid "Detach Tab"
+ msgstr ""
+ 
+-#: ui/gtk.c:2028
++#: ui/gtk.c:2106
+ msgid "_Machine"
+ msgstr "_Gép"
+ 
+-#: ui/gtk.c:2033
++#: ui/gtk.c:2111
+ msgid "_View"
+ msgstr "_Nézet"
+ 
+diff --git a/po/it.po b/po/it.po
+index a2c8e55..92c5ee4 100644
+--- a/po/it.po
++++ b/po/it.po
+@@ -6,7 +6,7 @@ msgid ""
+ msgstr ""
+ "Project-Id-Version: QEMU 1.4.50\n"
+ "Report-Msgid-Bugs-To: qemu-devel@nongnu.org\n"
+-"POT-Creation-Date: 2016-04-18 14:50+0100\n"
++"POT-Creation-Date: 2018-01-14 23:31-0200\n"
+ "PO-Revision-Date: 2014-07-29 08:25+0200\n"
+ "Last-Translator: Paolo Bonzini <pbonzini@redhat.com>\n"
+ "Language-Team: Italian <it@li.org>\n"
+@@ -16,70 +16,74 @@ msgstr ""
+ "Content-Transfer-Encoding: 8bit\n"
+ "Plural-Forms: nplurals=2; plural=n != 1;\n"
+ 
+-#: ui/gtk.c:273
++#: ui/gtk.c:274
+ msgid " - Press Ctrl+Alt+G to release grab"
+ msgstr " - Premere Ctrl+Alt+G per rilasciare l'input"
+ 
+-#: ui/gtk.c:277
++#: ui/gtk.c:278
+ msgid " [Paused]"
+ msgstr " [Pausa]"
+ 
+-#: ui/gtk.c:1833
++#: ui/gtk.c:1906
+ msgid "_Pause"
+ msgstr "_Pausa"
+ 
+-#: ui/gtk.c:1839
++#: ui/gtk.c:1912
+ msgid "_Reset"
+ msgstr "_Reset"
+ 
+-#: ui/gtk.c:1842
++#: ui/gtk.c:1915
+ msgid "Power _Down"
+ msgstr "_Spegni"
+ 
+-#: ui/gtk.c:1848
++#: ui/gtk.c:1921
+ msgid "_Quit"
+ msgstr "_Esci"
+ 
+-#: ui/gtk.c:1940
++#: ui/gtk.c:2013
+ msgid "_Fullscreen"
+ msgstr ""
+ 
+-#: ui/gtk.c:1954
++#: ui/gtk.c:2016
++msgid "_Copy"
++msgstr ""
++
++#: ui/gtk.c:2032
+ msgid "Zoom _In"
+ msgstr "_Aumenta zoom"
+ 
+-#: ui/gtk.c:1961
++#: ui/gtk.c:2039
+ msgid "Zoom _Out"
+ msgstr "_Riduci zoom"
+ 
+-#: ui/gtk.c:1968
++#: ui/gtk.c:2046
+ msgid "Best _Fit"
+ msgstr "A_nnulla zoom"
+ 
+-#: ui/gtk.c:1975
++#: ui/gtk.c:2053
+ msgid "Zoom To _Fit"
+ msgstr "Adatta alla _finestra"
+ 
+-#: ui/gtk.c:1981
++#: ui/gtk.c:2059
+ msgid "Grab On _Hover"
+ msgstr "Cattura _automatica input"
+ 
+-#: ui/gtk.c:1984
++#: ui/gtk.c:2062
+ msgid "_Grab Input"
+ msgstr "_Cattura input"
+ 
+-#: ui/gtk.c:2013
++#: ui/gtk.c:2091
+ msgid "Show _Tabs"
+ msgstr "Mostra _tab"
+ 
+-#: ui/gtk.c:2016
++#: ui/gtk.c:2094
+ msgid "Detach Tab"
+ msgstr "_Sposta in una nuova finestra"
+ 
+-#: ui/gtk.c:2028
++#: ui/gtk.c:2106
+ msgid "_Machine"
+ msgstr "_Macchina virtuale"
+ 
+-#: ui/gtk.c:2033
++#: ui/gtk.c:2111
+ msgid "_View"
+ msgstr "_Visualizza"
+diff --git a/po/messages.po b/po/messages.po
+index e8f9ccd..61741fe 100644
+--- a/po/messages.po
++++ b/po/messages.po
+@@ -5,9 +5,9 @@
+ #, fuzzy
+ msgid ""
+ msgstr ""
+-"Project-Id-Version: QEMU 2.5.92\n"
++"Project-Id-Version: QEMU 2.7.50\n"
+ "Report-Msgid-Bugs-To: qemu-devel@nongnu.org\n"
+-"POT-Creation-Date: 2016-04-18 14:50+0100\n"
++"POT-Creation-Date: 2018-01-14 23:31-0200\n"
+ "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+ "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+ "Language-Team: LANGUAGE <LL@li.org>\n"
+@@ -16,70 +16,74 @@ msgstr ""
+ "Content-Type: text/plain; charset=UTF-8\n"
+ "Content-Transfer-Encoding: 8bit\n"
+ 
+-#: ui/gtk.c:273
++#: ui/gtk.c:274
+ msgid " - Press Ctrl+Alt+G to release grab"
+ msgstr ""
+ 
+-#: ui/gtk.c:277
++#: ui/gtk.c:278
+ msgid " [Paused]"
+ msgstr ""
+ 
+-#: ui/gtk.c:1833
++#: ui/gtk.c:1906
+ msgid "_Pause"
+ msgstr ""
+ 
+-#: ui/gtk.c:1839
++#: ui/gtk.c:1912
+ msgid "_Reset"
+ msgstr ""
+ 
+-#: ui/gtk.c:1842
++#: ui/gtk.c:1915
+ msgid "Power _Down"
+ msgstr ""
+ 
+-#: ui/gtk.c:1848
++#: ui/gtk.c:1921
+ msgid "_Quit"
+ msgstr ""
+ 
+-#: ui/gtk.c:1940
++#: ui/gtk.c:2013
+ msgid "_Fullscreen"
+ msgstr ""
+ 
+-#: ui/gtk.c:1954
++#: ui/gtk.c:2016
++msgid "_Copy"
++msgstr ""
++
++#: ui/gtk.c:2032
+ msgid "Zoom _In"
+ msgstr ""
+ 
+-#: ui/gtk.c:1961
++#: ui/gtk.c:2039
+ msgid "Zoom _Out"
+ msgstr ""
+ 
+-#: ui/gtk.c:1968
++#: ui/gtk.c:2046
+ msgid "Best _Fit"
+ msgstr ""
+ 
+-#: ui/gtk.c:1975
++#: ui/gtk.c:2053
+ msgid "Zoom To _Fit"
+ msgstr ""
+ 
+-#: ui/gtk.c:1981
++#: ui/gtk.c:2059
+ msgid "Grab On _Hover"
+ msgstr ""
+ 
+-#: ui/gtk.c:1984
++#: ui/gtk.c:2062
+ msgid "_Grab Input"
+ msgstr ""
+ 
+-#: ui/gtk.c:2013
++#: ui/gtk.c:2091
+ msgid "Show _Tabs"
+ msgstr ""
+ 
+-#: ui/gtk.c:2016
++#: ui/gtk.c:2094
+ msgid "Detach Tab"
+ msgstr ""
+ 
+-#: ui/gtk.c:2028
++#: ui/gtk.c:2106
+ msgid "_Machine"
+ msgstr ""
+ 
+-#: ui/gtk.c:2033
++#: ui/gtk.c:2111
+ msgid "_View"
+ msgstr ""
+diff --git a/po/tr.po b/po/tr.po
+index ec99127..7f1179f 100644
+--- a/po/tr.po
++++ b/po/tr.po
+@@ -6,7 +6,7 @@ msgid ""
+ msgstr ""
+ "Project-Id-Version: QEMU 1.4.50\n"
+ "Report-Msgid-Bugs-To: qemu-devel@nongnu.org\n"
+-"POT-Creation-Date: 2016-04-18 14:50+0100\n"
++"POT-Creation-Date: 2018-01-14 23:31-0200\n"
+ "PO-Revision-Date: 2013-04-22 18:35+0300\n"
+ "Last-Translator: Ozan Çağlayan <ozancag@gmail.com>\n"
+ "Language-Team: Türkçe <>\n"
+@@ -17,72 +17,76 @@ msgstr ""
+ "Plural-Forms: nplurals=1; plural=0;\n"
+ "X-Generator: Gtranslator 2.91.6\n"
+ 
+-#: ui/gtk.c:273
++#: ui/gtk.c:274
+ msgid " - Press Ctrl+Alt+G to release grab"
+ msgstr " - Yakalamayı durdurmak için Ctrl+Alt+G tuşlarına basın"
+ 
+-#: ui/gtk.c:277
++#: ui/gtk.c:278
+ msgid " [Paused]"
+ msgstr " [Duraklatıldı]"
+ 
+-#: ui/gtk.c:1833
++#: ui/gtk.c:1906
+ msgid "_Pause"
+ msgstr "_Duraklat"
+ 
+-#: ui/gtk.c:1839
++#: ui/gtk.c:1912
+ msgid "_Reset"
+ msgstr "_Sıfırla"
+ 
+-#: ui/gtk.c:1842
++#: ui/gtk.c:1915
+ msgid "Power _Down"
+ msgstr "_Kapat"
+ 
+-#: ui/gtk.c:1848
++#: ui/gtk.c:1921
+ msgid "_Quit"
+ msgstr ""
+ 
+-#: ui/gtk.c:1940
++#: ui/gtk.c:2013
+ msgid "_Fullscreen"
+ msgstr ""
+ 
+-#: ui/gtk.c:1954
++#: ui/gtk.c:2016
++msgid "_Copy"
++msgstr ""
++
++#: ui/gtk.c:2032
+ #, fuzzy
+ msgid "Zoom _In"
+ msgstr "Yakınlaş ve Sığ_dır"
+ 
+-#: ui/gtk.c:1961
++#: ui/gtk.c:2039
+ #, fuzzy
+ msgid "Zoom _Out"
+ msgstr "Yakınlaş ve Sığ_dır"
+ 
+-#: ui/gtk.c:1968
++#: ui/gtk.c:2046
+ msgid "Best _Fit"
+ msgstr ""
+ 
+-#: ui/gtk.c:1975
++#: ui/gtk.c:2053
+ msgid "Zoom To _Fit"
+ msgstr "Yakınlaş ve Sığ_dır"
+ 
+-#: ui/gtk.c:1981
++#: ui/gtk.c:2059
+ msgid "Grab On _Hover"
+ msgstr "Ü_zerindeyken Yakala"
+ 
+-#: ui/gtk.c:1984
++#: ui/gtk.c:2062
+ msgid "_Grab Input"
+ msgstr "Girdiyi _Yakala"
+ 
+-#: ui/gtk.c:2013
++#: ui/gtk.c:2091
+ msgid "Show _Tabs"
+ msgstr "Se_kmeleri Göster"
+ 
+-#: ui/gtk.c:2016
++#: ui/gtk.c:2094
+ msgid "Detach Tab"
+ msgstr ""
+ 
+-#: ui/gtk.c:2028
++#: ui/gtk.c:2106
+ msgid "_Machine"
+ msgstr "_Makine"
+ 
+-#: ui/gtk.c:2033
++#: ui/gtk.c:2111
+ msgid "_View"
+ msgstr "_Görüntüle"
+diff --git a/po/zh_CN.po b/po/zh_CN.po
+index b55b6f3..6829d0a 100644
+--- a/po/zh_CN.po
++++ b/po/zh_CN.po
+@@ -6,7 +6,7 @@ msgid ""
+ msgstr ""
+ "Project-Id-Version: QEMU 2.2\n"
+ "Report-Msgid-Bugs-To: qemu-devel@nongnu.org\n"
+-"POT-Creation-Date: 2016-04-18 14:50+0100\n"
++"POT-Creation-Date: 2018-01-14 23:31-0200\n"
+ "PO-Revision-Date: 2014-07-31 10:00+0800\n"
+ "Last-Translator: Fam Zheng <famz@redhat.com>\n"
+ "Language-Team: Chinese <zh@li.org>\n"
+@@ -17,70 +17,74 @@ msgstr ""
+ "Plural-Forms: nplurals=2; plural=n != 1;\n"
+ "X-Generator: Lokalize 1.4\n"
+ 
+-#: ui/gtk.c:273
++#: ui/gtk.c:274
+ msgid " - Press Ctrl+Alt+G to release grab"
+ msgstr " - 按下 Ctrl+Alt+G 取消捕获"
+ 
+-#: ui/gtk.c:277
++#: ui/gtk.c:278
+ msgid " [Paused]"
+ msgstr " [已暂停]"
+ 
+-#: ui/gtk.c:1833
++#: ui/gtk.c:1906
+ msgid "_Pause"
+ msgstr "暂停(_P)"
+ 
+-#: ui/gtk.c:1839
++#: ui/gtk.c:1912
+ msgid "_Reset"
+ msgstr "重置(_R)"
+ 
+-#: ui/gtk.c:1842
++#: ui/gtk.c:1915
+ msgid "Power _Down"
+ msgstr "关闭电源(_D)"
+ 
+-#: ui/gtk.c:1848
++#: ui/gtk.c:1921
+ msgid "_Quit"
+ msgstr "退出(_Q)"
+ 
+-#: ui/gtk.c:1940
++#: ui/gtk.c:2013
+ msgid "_Fullscreen"
+ msgstr "全屏(_F)"
+ 
+-#: ui/gtk.c:1954
++#: ui/gtk.c:2016
++msgid "_Copy"
++msgstr ""
++
++#: ui/gtk.c:2032
+ msgid "Zoom _In"
+ msgstr "放大(_I)"
+ 
+-#: ui/gtk.c:1961
++#: ui/gtk.c:2039
+ msgid "Zoom _Out"
+ msgstr "缩小(_O)"
+ 
+-#: ui/gtk.c:1968
++#: ui/gtk.c:2046
+ msgid "Best _Fit"
+ msgstr "最合适大小(_F)"
+ 
+-#: ui/gtk.c:1975
++#: ui/gtk.c:2053
+ msgid "Zoom To _Fit"
+ msgstr "缩放以适应大小(_F)"
+ 
+-#: ui/gtk.c:1981
++#: ui/gtk.c:2059
+ msgid "Grab On _Hover"
+ msgstr "鼠标经过时捕获(_H)"
+ 
+-#: ui/gtk.c:1984
++#: ui/gtk.c:2062
+ msgid "_Grab Input"
+ msgstr "捕获输入(_G)"
+ 
+-#: ui/gtk.c:2013
++#: ui/gtk.c:2091
+ msgid "Show _Tabs"
+ msgstr "显示标签页(_T)"
+ 
+-#: ui/gtk.c:2016
++#: ui/gtk.c:2094
+ msgid "Detach Tab"
+ msgstr "分离标签页"
+ 
+-#: ui/gtk.c:2028
++#: ui/gtk.c:2106
+ msgid "_Machine"
+ msgstr "虚拟机(_M)"
+ 
+-#: ui/gtk.c:2033
++#: ui/gtk.c:2111
+ msgid "_View"
+ msgstr "视图(_V)"

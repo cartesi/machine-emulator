@@ -1,5 +1,13 @@
 local emu = require"emu"
 
+if arg[1] == "rw" then
+    backing = "rootfs-rw.bin"
+    shared = true
+else
+    backing = "rootfs.bin"
+    shared = false
+end
+
 local config = {
     version = 1,
     machine = "riscv64",
@@ -10,9 +18,9 @@ local config = {
     flash0 = {
         address = 0x60000000,
         size = 0x08000000,
-        shared = false,
+        shared = shared,
         label = "root",
-        backing = "root.bin"
+        backing = backing
     },
 }
 

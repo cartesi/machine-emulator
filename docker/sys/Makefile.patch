@@ -1,7 +1,24 @@
 diff --git a/Makefile b/Makefile
-index 7f528cb..b09232d 100644
+index 7f528cb..c0f10f7 100644
 --- a/Makefile
 +++ b/Makefile
+@@ -1,6 +1,6 @@
+ RISCV ?= $(CURDIR)/toolchain
+ PATH := $(RISCV)/bin:$(PATH)
+-ISA ?= rv64imafdc
++ISA ?= rv64imafd
+ ABI ?= lp64d
+ 
+ srcdir := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
+@@ -10,7 +10,7 @@ wrkdir := $(CURDIR)/work
+ 
+ toolchain_srcdir := $(srcdir)/riscv-gnu-toolchain
+ toolchain_wrkdir := $(wrkdir)/riscv-gnu-toolchain
+-toolchain_dest := $(CURDIR)/toolchain
++toolchain_dest ?= $(CURDIR)/toolchain
+ 
+ buildroot_srcdir := $(srcdir)/buildroot
+ buildroot_initramfs_wrkdir := $(wrkdir)/buildroot_initramfs
 @@ -19,7 +19,7 @@ buildroot_initramfs_config := $(confdir)/buildroot_initramfs_config
  buildroot_initramfs_sysroot_stamp := $(wrkdir)/.buildroot_initramfs_sysroot
  buildroot_initramfs_sysroot := $(wrkdir)/buildroot_initramfs_sysroot
@@ -11,16 +28,29 @@ index 7f528cb..b09232d 100644
  buildroot_rootfs_config := $(confdir)/buildroot_rootfs_config
  
  linux_srcdir := $(srcdir)/linux
+@@ -63,9 +63,9 @@ $(toolchain_dest)/bin/$(target)-gcc: $(toolchain_srcdir)
+ 	mkdir -p $(toolchain_wrkdir)
+ 	$(MAKE) -C $(linux_srcdir) O=$(dir $<) ARCH=riscv INSTALL_HDR_PATH=$(abspath $(toolchain_srcdir)/linux-headers) headers_install
+ 	cd $(toolchain_wrkdir); $(toolchain_srcdir)/configure \
++        --with-arch=$(ISA) \
++        --with-abi=$(ABI) \
+ 		--prefix=$(toolchain_dest) \
+-		--with-arch=$(ISA) \
+-		--with-abi=$(ABI) \
+ 		--enable-linux
+ 	$(MAKE) -C $(toolchain_wrkdir)
+ 	sed 's/^#define LINUX_VERSION_CODE.*/#define LINUX_VERSION_CODE 263682/' -i $(toolchain_dest)/sysroot/usr/include/linux/version.h
 @@ -121,11 +121,8 @@ ifeq ($(ISA),$(filter rv32%,$(ISA)))
  	$(MAKE) -C $(linux_srcdir) O=$(linux_wrkdir) ARCH=riscv olddefconfig
  endif
  
 -$(vmlinux): $(linux_srcdir) $(linux_wrkdir)/.config $(buildroot_initramfs_sysroot_stamp)
-+$(vmlinux): $(linux_srcdir) $(linux_wrkdir)/.config
- 	$(MAKE) -C $< O=$(linux_wrkdir) \
+-	$(MAKE) -C $< O=$(linux_wrkdir) \
 -		CONFIG_INITRAMFS_SOURCE="$(confdir)/initramfs.txt $(buildroot_initramfs_sysroot)" \
 -		CONFIG_INITRAMFS_ROOT_UID=$(shell id -u) \
 -		CONFIG_INITRAMFS_ROOT_GID=$(shell id -g) \
++$(vmlinux): $(linux_srcdir) $(linux_wrkdir)/.config
++	KCFLAGS="-mabi=$(ABI) -march=$(ISA)" $(MAKE) -C $< O=$(linux_wrkdir) \
  		ARCH=riscv \
  		vmlinux
  

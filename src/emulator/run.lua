@@ -32,7 +32,7 @@ while 1 do
     local c, e = m:run(cycles_end)
     if c then
         cycles_end = cycles_end + step
-        --io.stderr:write("stepping to ", cycles_end, "\n")
+--        io.stderr:write("stepping to ", cycles_end, "\n")
     else
         io.stderr:write("done in ", e, " cycles\n")
         break

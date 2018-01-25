@@ -1,0 +1,8 @@
+docker build -t diegonehab/themis:use .
+docker run --name tosquash -it diegonehab/themis:use
+docker export --output=latest.tar tosquash
+docker container rm tosquash
+docker rmi diegonehab/themis:use
+cat latest.tar | docker import - diegonehab/themis:latest
+rm latest.tar
+docker push diegonehab/themis:latest

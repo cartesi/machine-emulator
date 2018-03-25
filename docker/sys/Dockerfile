@@ -1,4 +1,4 @@
-FROM diegonehab/themis:src
+FROM diegonehab/cartesi:src
 
 MAINTAINER Diego Nehab <diego.nehab@gmail.com>
 
@@ -40,9 +40,11 @@ RUN \
 # ----------------------------------------------------
 RUN \
     apt-get update && \
-    apt-get install -y device-tree-compiler libmpc-dev libmpfr-dev && \
-    apt-get install -y libgmp-dev libusb-1.0-0-dev texinfo gperf bc && \
-    apt-get install -y zlib1g-dev libncurses-dev libexpat-dev python
+    apt-get install --no-install-recommends -y \
+        device-tree-compiler libmpc-dev libmpfr-dev libgmp-dev \
+        libusb-1.0-0-dev texinfo gperf bc zlib1g-dev libncurses-dev \
+        libexpat-dev python && \
+    rm -rf /var/lib/apt/lists/*
 
 ENV ISA "rv64imafd"
 ENV ABI "lp64d"
@@ -52,7 +54,8 @@ RUN \
     mkdir -p $RISCV && \
     cd $BASE/freedom-u-sdk && \
     \rm -rf work/riscv-gnu-toolchain && \
-    toolchain_dest=$BASE/$ISA-$ABI make -j$THREADS $RISCV/bin/riscv64-unknown-linux-gnu-gcc
+    toolchain_dest=$BASE/$ISA-$ABI make -j$THREADS $RISCV/bin/riscv64-unknown-linux-gnu-gcc && \
+    \rm -rf work/riscv-gnu-toolchain
 
 ENV ISA "rv64ima"
 ENV ABI "lp64"
@@ -62,9 +65,11 @@ RUN \
     mkdir -p $RISCV && \
     cd $BASE/freedom-u-sdk && \
     \rm -rf work/riscv-gnu-toolchain && \
-    toolchain_dest=$BASE/$ISA-$ABI make -j$THREADS $RISCV/bin/riscv64-unknown-linux-gnu-gcc
+    toolchain_dest=$BASE/$ISA-$ABI make -j$THREADS $RISCV/bin/riscv64-unknown-linux-gnu-gcc && \
+    \rm -rf work/riscv-gnu-toolchain
 
 # Build riscv's kernel and bootloader with ABI lp64 and ISA rv64ima
+# (emulating rv64imafd)
 # ----------------------------------------------------
 ENV ISA "rv64ima"
 ENV ABI "lp64"
@@ -73,25 +78,26 @@ ENV PATH "$RISCV/bin:${OLDPATH}"
 
 RUN \
     apt-get update && \
-    apt-get install -y libglib2.0-dev libssl-dev cpio
+    apt-get install --no-install-recommends -y \
+        libglib2.0-dev libssl-dev cpio && \
+    rm -rf /var/lib/apt/lists/*
 
-# Build kernel
-# ----------------------------------------------------
 RUN \
     cd $BASE/freedom-u-sdk && \
-    make -j$THREADS $BASE/freedom-u-sdk/work/linux/vmlinux
-
-# Build bootloader with rv64imafd emulation
-# ----------------------------------------------------
-RUN \
+    make -j$THREADS $BASE/freedom-u-sdk/work/linux/vmlinux && \
     cd $BASE/freedom-u-sdk && \
-    make -j$THREADS $BASE/freedom-u-sdk/work/bbl.bin
+    make -j$THREADS $BASE/freedom-u-sdk/work/bbl.bin && \
+    cp work/bbl.bin $BASE/kernel.bin && \
+    cp work/riscv-pk/bbl $BASE/kernel.elf && \
+    \rm -rf work/riscv-pk work/linux
 
 # Build qemu using host's compiler
 # ----------------------------------------------------
 RUN \
     cd $BASE/freedom-u-sdk && \
-    make -j$THREADS $BASE/freedom-u-sdk/work/riscv-qemu/prefix/bin/qemu-system-riscv64
+    make -j$THREADS $BASE/freedom-u-sdk/work/riscv-qemu/prefix/bin/qemu-system-riscv64 && \
+    mv work/riscv-qemu/prefix $BASE/riscv-qemu && \
+    \rm -rf work/riscv-qemu
 
 # Build rootfs with ABI lp64d and ISA rv64g
 # ----------------------------------------------------
@@ -105,19 +111,17 @@ COPY buildroot-lua.patch $BASE/freedom-u-sdk/buildroot
 COPY skel $BASE/freedom-u-sdk/buildroot/skel
 
 RUN \
+    apt-get update && \
+    apt-get install --no-install-recommends -y \
+        rsync && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN \
     cd $BASE/freedom-u-sdk/buildroot && \
     patch -p1 < buildroot-lua.patch && \
     cd .. && \
-    make -j$THREADS $BASE/freedom-u-sdk/work/rootfs.bin
-
-# Remove intemediate stuff and keep only the important stuff
-# ----------------------------------------------------
-RUN \
-    cd $BASE/freedom-u-sdk && \
+    make -j$THREADS $BASE/freedom-u-sdk/work/rootfs.bin && \
     cp work/rootfs.bin $BASE/rootfs.bin && \
-    cp work/bbl.bin $BASE/kernel.bin && \
-    cp work/riscv-pk/bbl $BASE/kernel.elf && \
-    mv work/riscv-qemu/prefix $BASE/riscv-qemu && \
     \rm -rf work
 
 USER root

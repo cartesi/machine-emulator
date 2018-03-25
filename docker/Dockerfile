@@ -1,4 +1,4 @@
-FROM diegonehab/themis:sys
+FROM diegonehab/cartesi:sys
 
 MAINTAINER Diego Nehab <diego.nehab@gmail.com>
 

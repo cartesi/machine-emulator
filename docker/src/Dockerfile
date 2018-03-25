@@ -10,21 +10,22 @@ ENV BASE=/opt/riscv
 # ----------------------------------------------------
 RUN \
     apt-get update && \
-    apt-get install -y apt-utils && \
-    apt-get install -y vim wget curl sudo && \
-    apt-get install -y zip unzip && \
+    apt-get install --no-install-recommends -y \
+        apt-utils vim wget curl zip unzip sudo && \
     mkdir -p $BASE && \
-    adduser themis --gecos "" --disabled-password && \
-    adduser themis sudo && \
-    echo themis:themis | chpasswd
+    adduser cartesi --gecos "" --disabled-password && \
+    adduser cartesi sudo && \
+    echo cartesi:cartesi | chpasswd && \
+    rm -rf /var/lib/apt/lists/*
 
 # Development basics
 # ----------------------------------------------------
 RUN \
     apt-get update && \
-    apt-get install -y build-essential && \
-    apt-get install -y autoconf automake libtool autotools-dev && \
-    apt-get install -y git make pkg-config patchutils gawk bison flex
+    apt-get install --no-install-recommends -y \
+        build-essential autoconf automake libtool autotools-dev \
+        git make pkg-config patchutils gawk bison flex ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 # Obtain sources to linux, riscv-pk, and gcc
 # ----------------------------------------------------
@@ -34,4 +35,3 @@ RUN \
     cd freedom-u-sdk && \
     git reset --hard b84ef550a159b6801a036862a8b0d15615c36b64 && \
     git submodule update --init --recursive
-

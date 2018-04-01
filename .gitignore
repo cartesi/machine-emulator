@@ -24,3 +24,7 @@ src/mm/test-mm
 *.ind
 *.out
 *.pdf
+
+*.so
+*.bin
+*.dtb

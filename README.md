@@ -1,4 +1,4 @@
-# Themis #
+# Cartesi #
 
 A platform for verified off-chain computations in Ethereum. Use cases include:
 

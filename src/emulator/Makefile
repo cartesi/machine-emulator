@@ -41,14 +41,15 @@ SOLDFLAGS?=$(SOLDFLAGS_$(UNAME))
 
 WARNS=-W -Wall -pedantic
 
-INCS=$(LUA_INC)
+INCS=$(LUA_INC) -Idis
+#DEFS=-DDUMP_EXCEPTIONS -DDUMP_MMU_EXCEPTIONS -DDUMP_INVALID_MEM_ACCESS -DDUMP_INSN
 
 # so we can use gcc to check if there are unused symbols
 # GCFLAGS=-fdata-sections -ffunction-sections
 # GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
 
-CFLAGS=$(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS)
-CXXFLAGS=-std=c++14 $(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS)
+CFLAGS=$(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS)
+CXXFLAGS=-std=c++14 $(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS)
 
 ALL=emu.so
 

@@ -186,10 +186,10 @@ void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx) {
     p->ram_size = checkuint(L, tabidx, "memory_size");
     p->ram_size <<= 20;
 
-    p->kernel.filename = dupcheckstring(L, tabidx, "kernel");
-    p->kernel.len = load_file(&p->kernel.buf, p->kernel.filename);
-    if (p->kernel.len < 0) {
-        luaL_error(L, "Unable to load %s.", p->kernel.filename);
+    p->boot_image.filename = dupcheckstring(L, tabidx, "boot_image");
+    p->boot_image.len = load_file(&p->boot_image.buf, p->boot_image.filename);
+    if (p->boot_image.len < 0) {
+        luaL_error(L, "Unable to load %s.", p->boot_image.filename);
     }
 
     p->interactive = optboolean(L, -1, "interactive", 0);
@@ -226,8 +226,8 @@ void virt_machine_free_config(VirtMachineParams *p)
 {
     int i;
     free(p->cmdline);
-    free(p->kernel.filename);
-    free(p->kernel.buf);
+    free(p->boot_image.filename);
+    free(p->boot_image.buf);
     for(i = 0; i < p->flash_count; i++) {
         free(p->tab_flash[i].backing);
         free(p->tab_flash[i].label);
@@ -352,21 +352,32 @@ static uint32_t htif_read(void *opaque, uint32_t offset,
 static void htif_handle_cmd(RISCVMachine *m)
 {
     uint32_t device, cmd;
+    uint64_t payload;
 
     device = m->htif_tohost >> 56;
     cmd = (m->htif_tohost >> 48) & 0xff;
-    if (m->htif_tohost == 1) {
+    payload = (m->htif_tohost & (~1ULL >> 16));
+
+#if 0
+    printf("HTIF: tohost=0x%016"
+        PRIx64 "(%" PRIu32 "):(%" PRIu32 "):(%" PRIu64 ")\n",
+        m->htif_tohost, device, cmd, payload);
+#endif
+
+    if (device == 0x0 && cmd == 0x0 && payload & 0x1) {
         riscv_cpu_set_shuthost(m->cpu_state, TRUE);
-    } else if (device == 1 && cmd == 1) {
+    } else if (device == 0x1 && cmd == 0x1) {
         uint8_t ch = m->htif_tohost & 0xff;
-        write(1, &ch, 1);
+        if (write(1, &ch, 1) < 1) { }
         m->htif_tohost = 0; // notify that we are done with putchar
         m->htif_fromhost = ((uint64_t)device << 56) | ((uint64_t)cmd << 48);
-    } else if (device == 1 && cmd == 0) {
+    } else if (device == 0x1 && cmd == 0x0) {
         // request keyboard interrupt
         m->htif_tohost = 0;
     } else {
-        printf("HTIF: unsupported tohost=0x%016" PRIx64 "\n", m->htif_tohost);
+        printf("HTIF: unsupported tohost=0x%016"
+            PRIx64 "(%" PRIu32 "):(%" PRIu32 "):(%" PRIu64 ")\n",
+            m->htif_tohost, device, cmd, payload);
     }
 }
 
@@ -377,9 +388,11 @@ static void htif_write(void *opaque, uint32_t offset, uint32_t val,
     assert(size_log2 == 2);
     switch(offset) {
     case 0:
+        /* fprintf(stderr, "wrote %u to 0\n", val); */
         m->htif_tohost = (m->htif_tohost & ~0xffffffff) | val;
         break;
     case 4:
+        /* fprintf(stderr, "wrote %u to 4\n", val); */
         m->htif_tohost = (m->htif_tohost & 0xffffffff) | ((uint64_t)val << 32);
         htif_handle_cmd(m);
         break;
@@ -589,24 +602,26 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
     size = fdt_output(d, dst);
     fdt_end(d);
 
+#if 0
     {
         FILE *f;
         f = fopen("emu.dtb", "wb");
         fwrite(dst, 1, size, f);
         fclose(f);
     }
+#endif
 
     return size;
 }
 
-static void copy_kernel(const VirtMachineParams *p, RISCVMachine *m)
+static void copy_boot_image(const VirtMachineParams *p, RISCVMachine *m)
 {
     uint32_t fdt_addr;
     uint8_t *ram_ptr;
     uint32_t *q;
 
     ram_ptr = get_ram_ptr(m, RAM_BASE_ADDR);
-    memcpy(ram_ptr, p->kernel.buf, p->kernel.len);
+    memcpy(ram_ptr, p->boot_image.buf, p->boot_image.len);
 
     ram_ptr = get_ram_ptr(m, 0);
 
@@ -669,13 +684,14 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
     RISCVMachine *m;
     int i;
 
-    if (!p->kernel.buf) {
-        fprintf(stderr, "No kernel found\n");
+    if (!p->boot_image.buf) {
+        fprintf(stderr, "No boot image found\n");
         return NULL;
     }
 
-    if (p->kernel.len > (int) p->ram_size) {
-        fprintf(stderr, "Kernel too big\n");
+    if (p->boot_image.len > (int) p->ram_size) {
+        fprintf(stderr, "Kernel too big (%d vs %d)\n", p->boot_image.len, 
+            (int)p->ram_size);
         return NULL;
     }
 
@@ -712,7 +728,7 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
     cpu_register_device(m->mem_map, HTIF_BASE_ADDR, HTIF_SIZE, m,
         htif_read, htif_write, DEVIO_SIZE32);
 
-    copy_kernel(p, m);
+    copy_boot_image(p, m);
 
     if (p->interactive) {
         m->htif_console = htif_console_init();
@@ -735,6 +751,11 @@ void virt_machine_end(VirtMachine *v)
 uint64_t virt_machine_get_cycle_counter(VirtMachine *v) {
     RISCVMachine *m = (RISCVMachine *)v;
     return riscv_cpu_get_cycle_counter(m->cpu_state);
+}
+
+uint64_t virt_machine_get_htif_tohost(VirtMachine *v) {
+    RISCVMachine *m = (RISCVMachine *)v;
+    return m->htif_tohost;
 }
 
 const char *virt_machine_get_name(void)

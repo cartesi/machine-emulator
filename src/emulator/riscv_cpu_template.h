@@ -275,10 +275,18 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
             /* fast path */
             insn = get_insn32(code_ptr);
         }
-#if 0
-        if (1) {
-            printf("pc=0x"); print_target_ulong(GET_PC()); printf(" insn=%08x\n", insn);
-            //            dump_regs(s);
+#ifdef DUMP_INSN
+        {
+            target_ulong pc = GET_PC();
+            target_ulong ppc;
+            if (!get_phys_addr(s, &ppc, pc, ACCESS_CODE)) {
+                fprintf(stderr, "p    %08" PRIx64, ppc);
+            } else {
+                ppc = pc;
+                fprintf(stderr, "v    %08" PRIx64, ppc);
+            }
+            fprintf(stderr, ":   %08" PRIx32 "   ", insn);
+            fprintf(stderr, "\n");
         }
 #endif
         opcode = insn & 0x7f;

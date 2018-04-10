@@ -49,7 +49,7 @@ typedef struct {
     VMFlashEntry tab_flash[VM_MAX_FLASH_DEVICE];
     int flash_count;
     char *cmdline; /* kernel command line */
-    VMFileEntry kernel; /* kernel file */
+    VMFileEntry boot_image; /* boot image file */
     BOOL interactive; /* should we initialize the console? */
 } VirtMachineParams;
 
@@ -64,6 +64,7 @@ void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx);
 void virt_machine_free_config(VirtMachineParams *p);
 VirtMachine *virt_machine_init(const VirtMachineParams *p);
 uint64_t virt_machine_get_cycle_counter(VirtMachine *v);
+uint64_t virt_machine_get_htif_tohost(VirtMachine *v);
 void virt_machine_end(VirtMachine *v);
 void virt_machine_advance_cycle_counter(VirtMachine *v);
 int virt_machine_run(VirtMachine *v, uint64_t cycle_end);

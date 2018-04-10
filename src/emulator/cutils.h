@@ -60,8 +60,20 @@ enum {
 #endif
 
 #ifdef HAVE_INT128
+
+#ifdef __GNUC__
+// GCC complains about __int128 with -pedantic or -pedantic-errors
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
+
 typedef __int128 int128_t;
 typedef unsigned __int128 uint128_t;
+
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
+
 #endif
 
 static inline int max_int(int a, int b)

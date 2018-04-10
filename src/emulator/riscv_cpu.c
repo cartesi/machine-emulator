@@ -320,12 +320,7 @@ static int get_phys_addr(RISCVCPUState *s,
     }
 
     if (priv == PRV_M) {
-        if (s->cur_xlen < MAX_XLEN) {
-            /* truncate virtual address */
-            *ppaddr = vaddr & (((target_ulong)1 << s->cur_xlen) - 1);
-        } else {
-            *ppaddr = vaddr;
-        }
+        *ppaddr = vaddr;
         return 0;
     }
     mode = (s->satp >> 60) & 0xf;
@@ -748,15 +743,6 @@ static void set_mstatus(RISCVCPUState *s, target_ulong val)
     s->fs = (val >> MSTATUS_FS_SHIFT) & 3;
 
     mask = MSTATUS_MASK & ~MSTATUS_FS;
-    {
-        int uxl, sxl;
-        uxl = (val >> MSTATUS_UXL_SHIFT) & 3;
-        if (uxl >= 1 && uxl <= get_base_from_xlen(MAX_XLEN))
-            mask |= MSTATUS_UXL_MASK;
-        sxl = (val >> MSTATUS_UXL_SHIFT) & 3;
-        if (sxl >= 1 && sxl <= get_base_from_xlen(MAX_XLEN))
-            mask |= MSTATUS_SXL_MASK;
-    }
     s->mstatus = (s->mstatus & ~mask) | (val & mask);
 }
 
@@ -802,36 +788,10 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
         val = (int64_t)s->insn_counter;
         break;
     case 0xc80: /* mcycleh */
-        if (s->cur_xlen != 32)
-            goto invalid_csr;
-        {
-            uint32_t counteren;
-            if (s->priv < PRV_M) {
-                if (s->priv < PRV_S)
-                    counteren = s->scounteren;
-                else
-                    counteren = s->mcounteren;
-                if (((counteren >> (csr & 0x1f)) & 1) == 0)
-                    goto invalid_csr;
-            }
-        }
-        val = s->cycle_counter >> 32;
+        goto invalid_csr;
         break;
     case 0xc82: /* minstreth */
-        if (s->cur_xlen != 32)
-            goto invalid_csr;
-        {
-            uint32_t counteren;
-            if (s->priv < PRV_M) {
-                if (s->priv < PRV_S)
-                    counteren = s->scounteren;
-                else
-                    counteren = s->mcounteren;
-                if (((counteren >> (csr & 0x1f)) & 1) == 0)
-                    goto invalid_csr;
-            }
-        }
-        val = s->insn_counter >> 32;
+        goto invalid_csr;
         break;
     case 0x100:
         val = get_mstatus(s, SSTATUS_MASK);
@@ -868,7 +828,6 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
         break;
     case 0x301:
         val = s->misa;
-        val |= (target_ulong)s->mxl << (s->cur_xlen - 2);
         break;
     case 0x302:
         val = s->medeleg;
@@ -907,14 +866,10 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
         val = (int64_t)s->insn_counter;
         break;
     case 0xb80: /* mcycleh */
-        if (s->cur_xlen != 32)
-            goto invalid_csr;
-        val = s->cycle_counter >> 32;
+        goto invalid_csr;
         break;
     case 0xb82: /* minstreth */
-        if (s->cur_xlen != 32)
-            goto invalid_csr;
-        val = s->insn_counter >> 32;
+        goto invalid_csr;
         break;
     case 0xf14:
         val = s->mhartid;
@@ -993,19 +948,7 @@ static int csr_write(RISCVCPUState *s, uint32_t csr, target_ulong val)
         set_mstatus(s, val);
         break;
     case 0x301: /* misa */
-        {
-            int new_mxl;
-            new_mxl = (val >> (s->cur_xlen - 2)) & 3;
-            if (new_mxl >= 1 && new_mxl <= get_base_from_xlen(MAX_XLEN)) {
-                /* Note: misa is only modified in M level, so cur_xlen
-                   = 2^(mxl + 4) */
-                if (s->mxl != new_mxl) {
-                    s->mxl = new_mxl;
-                    s->cur_xlen = 1 << (new_mxl + 4);
-                    return 1;
-                }
-            }
-        }
+        /* ignore writes to misa */
         break;
     case 0x302:
         mask = (1 << (CAUSE_STORE_PAGE_FAULT + 1)) - 1;
@@ -1054,17 +997,6 @@ static void set_priv(RISCVCPUState *s, int priv)
 {
     if (s->priv != priv) {
         tlb_flush_all(s);
-        /* change the current xlen */
-        {
-            int mxl;
-            if (priv == PRV_S)
-                mxl = (s->mstatus >> MSTATUS_SXL_SHIFT) & 3;
-            else if (priv == PRV_U)
-                mxl = (s->mstatus >> MSTATUS_UXL_SHIFT) & 3;
-            else
-                mxl = s->mxl;
-            s->cur_xlen = 1 << (4 + mxl);
-        }
         s->priv = priv;
     }
 }
@@ -1231,16 +1163,7 @@ void riscv_cpu_run(RISCVCPUState *s, uint64_t cycles_end)
 {
     while (!s->power_down_flag && !s->shuthost_flag &&
         s->cycle_counter < cycles_end) {
-        switch(s->cur_xlen) {
-        case 32:
-            riscv_cpu_interp32(s, cycles_end);
-            break;
-        case 64:
-            riscv_cpu_interp64(s, cycles_end);
-            break;
-        default:
-            abort();
-        }
+        riscv_cpu_interp64(s, cycles_end);
     }
 }
 

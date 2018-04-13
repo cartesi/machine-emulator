@@ -212,6 +212,6 @@ while 1 do
         cycles_end = cycles_end + step
     else
         io.stderr:write("done in ", c, " cycles with exit code ", e, "\n")
-        break
+        os.exit(e)
     end
 end

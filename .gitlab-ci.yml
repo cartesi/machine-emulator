@@ -1,0 +1,2 @@
+test-riscv:
+  src/emulator/tests.sh

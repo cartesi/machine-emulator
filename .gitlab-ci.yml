@@ -1,2 +1,5 @@
-test-riscv:
-  - src/emulator/tests.sh
+image: mhndev/docker-lua
+
+test:
+  script:
+    - src/emulator/tests.sh

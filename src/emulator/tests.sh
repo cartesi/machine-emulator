@@ -1,4 +1,5 @@
 #!/bin/sh
+
 root_dir="$( cd "$(dirname "$0")" ; pwd -P )"
 errors_count=0
 
@@ -7,7 +8,7 @@ cd $root_dir
 for t in tests/*.bin
 do 
   echo $t 
-  lua run.lua --batch --boot-image=$t || let errors_count++ 
+  lua run.lua --batch --boot-image=$t || errors_count=$((errors_count+1))
   if [ "$errors_count" -gt 3 ]
   then
     break

@@ -4,7 +4,22 @@ errors_count=0
 
 cd $root_dir
 
-for t in tests/*.bin; do echo $t; lua run.lua --batch --boot-image=$t || ((errors_count++)); done
-echo $errors_count  
+for t in tests/*.bin
+do 
+  echo $t 
+  lua run.lua --batch --boot-image=$t || let errors_count++ 
+  if [ "$errors_count" -gt 3 ]
+  then
+    break
+  fi
+done
 
-exit $?
+if [ "$errors_count" -eq 0 ]
+then
+  echo "SUCCESS"
+else
+  echo "$errors_count FAILURE(S)"
+fi
+
+exit $errors_count
+

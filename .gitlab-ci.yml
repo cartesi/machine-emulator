@@ -1,5 +1,9 @@
-image: mhndev/docker-lua
+image: erickdemoura/cartesi:lua
+
+before_script:
+- cd src/emulator
+- make
 
 test:
   script:
-    - src/emulator/tests.sh
+  - ./tests.sh

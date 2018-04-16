@@ -1,4 +1,4 @@
-FROM erickdemoura/cartesi:src
+FROM ubuntu:16.04
 
 MAINTAINER Diego Nehab <diego.nehab@gmail.com>
 

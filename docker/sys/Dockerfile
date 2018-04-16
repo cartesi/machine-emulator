@@ -1,4 +1,4 @@
-FROM diegonehab/cartesi:src
+FROM cartesi/core:src
 
 MAINTAINER Diego Nehab <diego.nehab@gmail.com>
 

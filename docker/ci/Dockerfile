@@ -16,5 +16,4 @@ RUN \
 RUN ln -s /usr/bin/lua5.3 /usr/bin/lua
 
 USER root
-
-WORKDIR $BASE
+WORKDIR ~

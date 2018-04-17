@@ -1,4 +1,4 @@
-image: erickdemoura/cartesi:lua
+image: cartesi/core:ci
 
 before_script:
 - cd src/emulator

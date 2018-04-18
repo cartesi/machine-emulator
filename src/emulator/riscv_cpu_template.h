@@ -185,12 +185,21 @@ static inline uintx_t glue(mulhsu, XLEN)(intx_t a, uintx_t b)
 
 #define C_NEXT_INSN code_ptr += 2; break
 #define NEXT_INSN code_ptr += 4; break
+
+#define CHECK_JUMP do { \
+    if (s->pc & 3) { \
+        s->pending_exception = CAUSE_MISALIGNED_FETCH; \
+        s->pending_tval = s->pc; \
+        goto exception; \
+    } \
+} while (0)
+
 #define JUMP_INSN do {   \
-        code_ptr = NULL;           \
-        code_end = NULL;           \
-        code_to_pc_addend = s->pc; \
-        goto jump_insn;            \
-    } while (0)
+    code_ptr = NULL;           \
+    code_end = NULL;           \
+    code_to_pc_addend = s->pc; \
+    goto jump_insn;            \
+} while (0)
 
 static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
                    uint64_t cycle_counter_addend)
@@ -210,12 +219,6 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
 
     insn_counter_addend = s->insn_counter + n_cycles;
 
-    /* check pending interrupts */
-    if (unlikely((s->mip & s->mie) != 0)) {
-        if (raise_interrupt(s))
-            goto done_interp;
-    }
-
     s->pending_exception = -1;
     n_cycles++;
     /* Note: we assume NULL is represented as a zero number */
@@ -226,6 +229,13 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
     /* we use a single execution loop to keep a simple control flow
        for emscripten */
     for(;;) {
+
+#if 0
+    fprintf(stderr, " mstatus=");
+    print_target_ulong(s->mstatus);
+    fprintf(stderr, "\n");
+#endif
+
         if (unlikely(!--n_cycles || s->shuthost_flag)) {
             s->pc = GET_PC();
             goto the_end;
@@ -308,14 +318,16 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
                 ((insn >> (20 - 11)) & (1 << 11)) |
                 (insn & 0xff000);
             imm = (imm << 11) >> 11;
+            s->pc = (intx_t)(GET_PC() + imm);
+            CHECK_JUMP;
             if (rd != 0)
                 s->reg[rd] = GET_PC() + 4;
-            s->pc = (intx_t)(GET_PC() + imm);
             JUMP_INSN;
         case 0x67: /* jalr */
             imm = (int32_t)insn >> 20;
             val = GET_PC() + 4;
             s->pc = (intx_t)(s->reg[rs1] + imm) & ~1;
+            CHECK_JUMP;
             if (rd != 0)
                 s->reg[rd] = val;
             JUMP_INSN;
@@ -342,6 +354,7 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
                     ((insn << (11 - 7)) & (1 << 11));
                 imm = (imm << 19) >> 19;
                 s->pc = (intx_t)(GET_PC() + imm);
+                CHECK_JUMP;
                 JUMP_INSN;
             }
             NEXT_INSN;
@@ -714,7 +727,8 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
                     {
                         if (insn & 0x000fff80)
                             goto illegal_insn;
-                        if (s->priv < PRV_S)
+                        if (s->priv < PRV_S || 
+                            (s->priv == PRV_S && (s->mstatus & MSTATUS_TSR)))
                             goto illegal_insn;
                         s->pc = GET_PC();
                         handle_sret(s);
@@ -735,7 +749,8 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
                 case 0x105: /* wfi */
                     if (insn & 0x00007f80)
                         goto illegal_insn;
-                    if (s->priv == PRV_U)
+                    if (s->priv == PRV_U ||
+                        (s->priv == PRV_S && (s->mstatus & MSTATUS_TW)))
                         goto illegal_insn;
                     /* go to power down if no enabled interrupts are
                        pending */
@@ -750,7 +765,8 @@ static void no_inline glue(riscv_cpu_interp, XLEN)(RISCVCPUState *s,
                         /* sfence.vma */
                         if (insn & 0x00007f80)
                             goto illegal_insn;
-                        if (s->priv == PRV_U)
+                        if (s->priv == PRV_U ||
+                            (s->priv == PRV_S && (s->mstatus & MSTATUS_TVM)))
                             goto illegal_insn;
                         if (rs1 == 0) {
                             tlb_flush_all(s);

@@ -204,14 +204,18 @@ local config = new_config{
 
 local machine = emu.create(config)
 
-local step = 500000
+local step = 5000
 local cycles_end = step
-while 1 do
+while true do
     local c, s, e = machine:run(cycles_end)
     if s then
         cycles_end = cycles_end + step
     else
-        io.stderr:write("done in ", c, " cycles with exit code ", e, "\n")
-        os.exit(e)
+        if e ~= 0 then
+            io.stderr:write("done in ", c, " cycles with exit code ", e, "\n")
+            os.exit(e)
+        else
+            break
+        end
     end
 end

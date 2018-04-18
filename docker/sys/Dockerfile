@@ -68,6 +68,19 @@ RUN \
     toolchain_dest=$BASE/$ISA-$ABI make -j$THREADS $RISCV/bin/riscv64-unknown-linux-gnu-gcc && \
     \rm -rf work/riscv-gnu-toolchain
 
+# We also need an compiler that does not target Linux, but
+# simply target elf binaries. This is to build riscv-tests.
+# ----------------------------------------------------
+RUN \
+    mkdir -p $RISCV && \
+    cd $BASE/freedom-u-sdk && \
+    \rm -rf work/riscv-gnu-toolchain && \
+    mkdir -p work/riscv-gnu-toolchain && \
+    cd work/riscv-gnu-toolchain && \
+    $BASE/freedom-u-sdk/riscv-gnu-toolchain/configure --prefix=$BASE/elf && \
+    make -j24 && \
+    \rm -rf $BASE/work/riscv-gnu-toolchain
+
 # Build riscv's kernel and bootloader with ABI lp64 and ISA rv64ima
 # (emulating rv64imafd)
 # ----------------------------------------------------
@@ -91,7 +104,7 @@ RUN \
     cp work/riscv-pk/bbl $BASE/kernel.elf && \
     \rm -rf work/riscv-pk work/linux
 
-# Build qemu using host's compiler
+# Build qemu
 # ----------------------------------------------------
 RUN \
     cd $BASE/freedom-u-sdk && \
@@ -99,30 +112,20 @@ RUN \
     mv work/riscv-qemu/prefix $BASE/riscv-qemu && \
     \rm -rf work/riscv-qemu
 
-# Build rootfs with ABI lp64d and ISA rv64g
+# Build spike
 # ----------------------------------------------------
-ENV ISA "rv64imafd"
-ENV ABI "lp64d"
-ENV RISCV "$BASE/$ISA-$ABI"
-ENV PATH "$RISCV/bin:${OLDPATH}"
-
-COPY buildroot_rootfs_config $BASE/freedom-u-sdk/conf
-COPY buildroot-lua.patch $BASE/freedom-u-sdk/buildroot
-COPY skel $BASE/freedom-u-sdk/buildroot/skel
-
 RUN \
-    apt-get update && \
-    apt-get install --no-install-recommends -y \
-        rsync && \
-    rm -rf /var/lib/apt/lists/*
+    cd $BASE/freedom-u-sdk && \
+    make -j$THREADS $BASE/freedom-u-sdk/work/riscv-fesvr/prefix/lib/libfesvr.so && \
+    make -j$THREADS $BASE/freedom-u-sdk/work/riscv-isa-sim/prefix/bin/spike && \
+    mv work/riscv-isa-sim/prefix $BASE/riscv-isa-sim && \
+    mv work/riscv-fesvr/prefix $BASE/riscv-fesvr && \
+    \rm -rf work/riscv-isa-sim && \
+    \rm -rf work/riscv-fesvr
 
-RUN \
-    cd $BASE/freedom-u-sdk/buildroot && \
-    patch -p1 < buildroot-lua.patch && \
-    cd .. && \
-    make -j$THREADS $BASE/freedom-u-sdk/work/rootfs.bin && \
-    cp work/rootfs.bin $BASE/rootfs.bin && \
-    \rm -rf work
+ENV PATH "${BASE}/rv64imafd-lp64d/bin:${BASE}/elf/bin:${BASE}/riscv-isa-sim/bin:${OLDPATH}"
+
+ENV LD_LIBRARY_PATH "${BASE}/riscv-isa-sim/lib:${BASE}/riscv-fesvr/lib"
 
 USER root
 

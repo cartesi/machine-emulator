@@ -90,6 +90,11 @@ typedef uint64_t mem_uint_t;
 
 /* mstatus CSR */
 
+#define MSTATUS_UIE_SHIFT 0
+#define MSTATUS_SIE_SHIFT 1
+#define MSTATUS_HIE_SHIFT 2
+#define MSTATUS_MIE_SHIFT 3
+#define MSTATUS_UPIE_SHIFT 4
 #define MSTATUS_SPIE_SHIFT 5
 #define MSTATUS_MPIE_SHIFT 7
 #define MSTATUS_SPP_SHIFT 8
@@ -114,11 +119,11 @@ typedef uint64_t mem_uint_t;
 #define MSTATUS_MPRV (1 << 17)
 #define MSTATUS_SUM (1 << 18)
 #define MSTATUS_MXR (1 << 19)
-//#define MSTATUS_TVM (1 << 20)
-//#define MSTATUS_TW (1 << 21)
-//#define MSTATUS_TSR (1 << 22)
-#define MSTATUS_UXL_MASK ((uint64_t)3 << MSTATUS_UXL_SHIFT)
-#define MSTATUS_SXL_MASK ((uint64_t)3 << MSTATUS_SXL_SHIFT)
+#define MSTATUS_TVM (1 << 20)
+#define MSTATUS_TW (1 << 21)
+#define MSTATUS_TSR (1 << 22)
+#define MSTATUS_UXL ((uint64_t)3 << MSTATUS_UXL_SHIFT)
+#define MSTATUS_SXL ((uint64_t)3 << MSTATUS_SXL_SHIFT)
 
 #define PG_SHIFT 12
 #define PG_MASK ((1 << PG_SHIFT) - 1)
@@ -152,7 +157,8 @@ struct RISCVCPUState {
     target_ulong mcause;
     target_ulong mtval;
     target_ulong mhartid; /* ro */
-    uint32_t misa;
+    target_ulong misa;
+
     uint32_t mie;
     uint32_t mip;
     uint32_t medeleg;
@@ -188,7 +194,7 @@ static void fprint_target_ulong(FILE *f, target_ulong a)
 
 static void print_target_ulong(target_ulong a)
 {
-    fprint_target_ulong(stdout, a);
+    fprint_target_ulong(stderr, a);
 }
 
 static char *reg_name[32] = {
@@ -203,31 +209,31 @@ void dump_regs(RISCVCPUState *s)
     int i, cols;
     const char priv_str[4] = "USHM";
     cols = 256 / MAX_XLEN;
-    printf("pc =");
+    fprintf(stderr, "pc = ");
     print_target_ulong(s->pc);
-    printf(" ");
+    fprintf(stderr, " ");
     for(i = 1; i < 32; i++) {
-        printf("%-3s=", reg_name[i]);
+        fprintf(stderr, "%-3s= ", reg_name[i]);
         print_target_ulong(s->reg[i]);
         if ((i & (cols - 1)) == (cols - 1))
-            printf("\n");
+            fprintf(stderr, "\n");
         else
-            printf(" ");
+            fprintf(stderr, " ");
     }
-    printf("priv=%c", priv_str[s->priv]);
-    printf(" mstatus=");
+    fprintf(stderr, "priv=%c", priv_str[s->priv]);
+    fprintf(stderr, " mstatus=");
     print_target_ulong(s->mstatus);
-    printf(" cycles=%" PRId64, s->cycle_counter);
-    printf(" insns=%" PRId64, s->insn_counter);
-    printf("\n");
+    fprintf(stderr, " cycles=%" PRId64, s->cycle_counter);
+    fprintf(stderr, " insns=%" PRId64, s->insn_counter);
+    fprintf(stderr, "\n");
 #if 1
-    printf(" mideleg=");
+    fprintf(stderr, "mideleg=");
     print_target_ulong(s->mideleg);
-    printf(" mie=");
+    fprintf(stderr, " mie=");
     print_target_ulong(s->mie);
-    printf(" mip=");
+    fprintf(stderr, " mip=");
     print_target_ulong(s->mip);
-    printf("\n");
+    fprintf(stderr, "\n");
 #endif
 }
 
@@ -324,19 +330,18 @@ static int get_phys_addr(RISCVCPUState *s,
         return 0;
     }
     mode = (s->satp >> 60) & 0xf;
+    /* bare: no translation */
     if (mode == 0) {
-        /* bare: no translation */
         *ppaddr = vaddr;
         return 0;
-    } else {
-        /* sv39/sv48 */
-        levels = mode - 8 + 3;
-        pte_size_log2 = 3;
-        vaddr_shift = MAX_XLEN - (PG_SHIFT + levels * 9);
-        if ((((target_long)vaddr << vaddr_shift) >> vaddr_shift) != (target_long) vaddr)
-            return -1;
-        pte_addr_bits = 44;
     }
+    /* sv39/sv48 */
+    levels = mode - 8 + 3;
+    pte_size_log2 = 3;
+    vaddr_shift = MAX_XLEN - (PG_SHIFT + levels * 9);
+    if ((((target_long)vaddr << vaddr_shift) >> vaddr_shift) != (target_long) vaddr)
+        return -1;
+    pte_addr_bits = 44;
     pte_addr = (s->satp & (((target_ulong)1 << pte_addr_bits) - 1)) << PG_SHIFT;
     pte_bits = 12 - pte_size_log2;
     pte_mask = (1 << pte_bits) - 1;
@@ -348,7 +353,6 @@ static int get_phys_addr(RISCVCPUState *s,
             pte = phys_read_u32(s, pte_addr);
         else
             pte = phys_read_u64(s, pte_addr);
-        //printf("pte=0x%08" PRIx64 "\n", pte);
         if (!(pte & PTE_V_MASK))
             return -1; /* invalid PTE */
         paddr = (pte >> 10) << PG_SHIFT;
@@ -371,6 +375,9 @@ static int get_phys_addr(RISCVCPUState *s,
 
             if (((xwr >> access) & 1) == 0)
                 return -1;
+            vaddr_mask = ((target_ulong)1 << vaddr_shift) - 1;
+            if (paddr  & vaddr_mask) /* alignment check */
+                return -1;
             need_write = !(pte & PTE_A_MASK) ||
                 (!(pte & PTE_D_MASK) && access == ACCESS_WRITE);
             pte |= PTE_A_MASK;
@@ -382,7 +389,6 @@ static int get_phys_addr(RISCVCPUState *s,
                 else
                     phys_write_u64(s, pte_addr, pte);
             }
-            vaddr_mask = ((target_ulong)1 << vaddr_shift) - 1;
             *ppaddr = (vaddr & vaddr_mask) | (paddr  & ~vaddr_mask);
             return 0;
         } else {
@@ -457,11 +463,13 @@ static no_inline int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
         pr = get_phys_mem_range(s->mem_map, paddr);
         if (!pr) {
 #ifdef DUMP_INVALID_MEM_ACCESS
-            printf("target_read_slow: invalid physical address 0x");
+            fprintf(stderr, "target_read_slow: invalid physical address 0x");
             print_target_ulong(paddr);
-            printf("\n");
+            fprintf(stderr, "\n");
 #endif
-            return 0;
+            s->pending_tval = addr;
+            s->pending_exception = CAUSE_FAULT_LOAD;
+            return -1;
         } else if (pr->is_ram) {
             tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
             ptr = pr->phys_mem + (uintptr_t)(paddr - pr->addr);
@@ -496,9 +504,9 @@ static no_inline int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
             }
             else {
 #ifdef DUMP_INVALID_MEM_ACCESS
-                printf("unsupported device read access: addr=0x");
+                fprintf(stderr, "unsupported device read access: addr=0x");
                 print_target_ulong(paddr);
-                printf(" width=%d bits\n", 1 << (3 + size_log2));
+                fprintf(stderr, " width=%d bits\n", 1 << (3 + size_log2));
 #endif
                 ret = 0;
             }
@@ -534,10 +542,11 @@ static no_inline int target_write_slow(RISCVCPUState *s, target_ulong addr,
         }
         pr = get_phys_mem_range(s->mem_map, paddr);
         if (!pr) {
+            /*??DD should raise exception here */
 #ifdef DUMP_INVALID_MEM_ACCESS
-            printf("target_write_slow: invalid physical address 0x");
+            fprintf(stderr, "target_write_slow: invalid physical address 0x");
             print_target_ulong(paddr);
-            printf("\n");
+            fprintf(stderr, "\n");
 #endif
         } else if (pr->is_ram) {
             phys_mem_set_dirty_bit(pr, paddr - pr->addr);
@@ -575,9 +584,9 @@ static no_inline int target_write_slow(RISCVCPUState *s, target_ulong addr,
             }
             else {
 #ifdef DUMP_INVALID_MEM_ACCESS
-                printf("unsupported device write access: addr=0x");
+                fprintf(stderr, "unsupported device write access: addr=0x");
                 print_target_ulong(paddr);
-                printf(" width=%d bits\n", 1 << (3 + size_log2));
+                fprintf(stderr, " width=%d bits\n", 1 << (3 + size_log2));
 #endif
             }
         }
@@ -689,20 +698,18 @@ void riscv_cpu_flush_tlb_write_range_ram(RISCVCPUState *s,
 }
 
 
-#define SSTATUS_MASK0 (MSTATUS_UIE | MSTATUS_SIE |       \
+#define SSTATUS_MASK (MSTATUS_UIE | MSTATUS_SIE |       \
                       MSTATUS_UPIE | MSTATUS_SPIE |     \
                       MSTATUS_SPP | \
                       MSTATUS_FS | MSTATUS_XS | \
-                      MSTATUS_SUM | MSTATUS_MXR)
-#define SSTATUS_MASK SSTATUS_MASK0
-
+                      MSTATUS_SUM | MSTATUS_MXR | MSTATUS_UXL)
 
 #define MSTATUS_MASK (MSTATUS_UIE | MSTATUS_SIE | MSTATUS_MIE |      \
                       MSTATUS_UPIE | MSTATUS_SPIE | MSTATUS_MPIE |    \
                       MSTATUS_SPP | MSTATUS_MPP | \
                       MSTATUS_FS | \
-                      MSTATUS_MPRV | MSTATUS_SUM | MSTATUS_MXR)
-
+                      MSTATUS_MPRV | MSTATUS_SUM | MSTATUS_MXR |\
+                      MSTATUS_TVM | MSTATUS_TW | MSTATUS_TSR )
 /* cycle and insn counters */
 #define COUNTEREN_MASK ((1 << 0) | (1 << 2))
 
@@ -793,7 +800,7 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
     case 0xc82: /* minstreth */
         goto invalid_csr;
         break;
-    case 0x100:
+    case 0x100: /* sstatus */
         val = get_mstatus(s, SSTATUS_MASK);
         break;
     case 0x104: /* sie */
@@ -821,6 +828,8 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
         val = s->mip & s->mideleg;
         break;
     case 0x180:
+        if (s->priv == PRV_S && s->mstatus & MSTATUS_TVM)
+            return -1;
         val = s->satp;
         break;
     case 0x300:
@@ -871,6 +880,21 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
     case 0xb82: /* minstreth */
         goto invalid_csr;
         break;
+    case 0x7a0: /* tselect */ /* ignore all */
+    case 0x7a1: /* tdata1 */
+    case 0x7a2: /* tdata2 */
+    case 0x7a3: /* tdata3 */
+        val = 0;
+        break;
+    case 0xf11: /* mvendorid */
+        val = 0;
+        break;
+    case 0xf12: /* marchid */
+        val = 0;
+        break;
+    case 0xf13: /* mimpid */
+        val = 0;
+        break;
     case 0xf14:
         val = s->mhartid;
         break;
@@ -879,7 +903,7 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
 #ifdef DUMP_INVALID_CSR
         /* the 'time' counter is usually emulated */
         if (csr != 0xc01 && csr != 0xc81) {
-            printf("csr_read: invalid CSR=0x%x\n", csr);
+            fprintf(stderr, "csr_read: invalid CSR=0x%x\n", csr);
         }
 #endif
         *pval = 0;
@@ -896,9 +920,9 @@ static int csr_write(RISCVCPUState *s, uint32_t csr, target_ulong val)
     target_ulong mask;
 
 #if defined(DUMP_CSR)
-    printf("csr_write: csr=0x%03x val=0x", csr);
+    fprintf(stderr, "csr_write: csr=0x%03x val=0x", csr);
     print_target_ulong(val);
-    printf("\n");
+    fprintf(stderr, "\n");
 #endif
     switch(csr) {
     case 0x100: /* sstatus */
@@ -963,6 +987,7 @@ static int csr_write(RISCVCPUState *s, uint32_t csr, target_ulong val)
         s->mie = (s->mie & ~mask) | (val & mask);
         break;
     case 0x305:
+        /* ??DD no support for vectored iterrupts */
         s->mtvec = val & ~3;
         break;
     case 0x306:
@@ -984,9 +1009,15 @@ static int csr_write(RISCVCPUState *s, uint32_t csr, target_ulong val)
         mask = MIP_SSIP | MIP_STIP;
         s->mip = (s->mip & ~mask) | (val & mask);
         break;
+    case 0x7a0: /* tselect */ /* ignore all */
+    case 0x7a1: /* tdata1 */
+    case 0x7a2: /* tdata2 */
+    case 0x7a3: /* tdata3 */
+        break;
+
     default:
 #ifdef DUMP_INVALID_CSR
-        printf("csr_write: invalid CSR=0x%x\n", csr);
+        fprintf(stderr, "csr_write: invalid CSR=0x%x\n", csr);
 #endif
         return -1;
     }
@@ -1006,7 +1037,6 @@ static void raise_exception2(RISCVCPUState *s, uint32_t cause,
 {
     BOOL deleg;
     target_ulong causel;
-
 #if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS)
     {
         int flag;
@@ -1024,9 +1054,8 @@ static void raise_exception2(RISCVCPUState *s, uint32_t cause,
         flag |= (cause & CAUSE_INTERRUPT) != 0;
 #endif
 #ifdef DUMP_EXCEPTIONS
-        flag = 1;
         flag = (cause & CAUSE_INTERRUPT) == 0;
-        if (cause == CAUSE_SUPERVISOR_ECALL || cause == CAUSE_ILLEGAL_INSTRUCTION)
+        if (cause == CAUSE_SUPERVISOR_ECALL)
             flag = 0;
 #endif
         if (flag) {
@@ -1088,8 +1117,10 @@ static void handle_sret(RISCVCPUState *s)
     spp = (s->mstatus >> MSTATUS_SPP_SHIFT) & 1;
     /* set the IE state to previous IE state */
     spie = (s->mstatus >> MSTATUS_SPIE_SHIFT) & 1;
-    s->mstatus = (s->mstatus & ~(1 << spp)) |
-        (spie << spp);
+    /* s->mstatus = (s->mstatus & ~(1 << spp)) |
+        (spie << spp); */
+    s->mstatus = (s->mstatus & ~(1 << MSTATUS_SIE_SHIFT)) |
+        (spie << MSTATUS_SIE_SHIFT);
     /* set SPIE to 1 */
     s->mstatus |= MSTATUS_SPIE;
     /* set SPP to U */
@@ -1104,8 +1135,10 @@ static void handle_mret(RISCVCPUState *s)
     mpp = (s->mstatus >> MSTATUS_MPP_SHIFT) & 3;
     /* set the IE state to previous IE state */
     mpie = (s->mstatus >> MSTATUS_MPIE_SHIFT) & 1;
-    s->mstatus = (s->mstatus & ~(1 << mpp)) |
-        (mpie << mpp);
+    /* s->mstatus = (s->mstatus & ~(1 << mpp)) |
+        (mpie << mpp); */
+    s->mstatus = (s->mstatus & ~(1 << MSTATUS_MIE_SHIFT)) |
+        (mpie << MSTATUS_MIE_SHIFT);
     /* set MPIE to 1 */
     s->mstatus |= MSTATUS_MPIE;
     /* set MPP to U */
@@ -1145,7 +1178,6 @@ static __exception int raise_interrupt(RISCVCPUState *s)
 {
     uint32_t mask;
     int irq_num;
-
     mask = get_pending_irq_mask(s);
     if (mask == 0)
         return 0;
@@ -1234,6 +1266,7 @@ RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map)
     s->mxl = get_base_from_xlen(MAX_XLEN);
     s->mstatus = ((uint64_t)s->mxl << MSTATUS_UXL_SHIFT) |
         ((uint64_t)s->mxl << MSTATUS_SXL_SHIFT);
+    s->misa = s->mxl; s->misa <<= (MAX_XLEN-2); /* set xlen to 64 */
     s->misa |= MCPUID_SUPER | MCPUID_USER | MCPUID_I | MCPUID_M | MCPUID_A;
     tlb_init(s);
     return s;

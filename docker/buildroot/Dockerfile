@@ -1,4 +1,4 @@
-FROM diegonehab/cartesi:sys
+FROM cartesi/core:sys
 
 MAINTAINER Diego Nehab <diego.nehab@gmail.com>
 

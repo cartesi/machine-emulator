@@ -9,7 +9,7 @@ where options are:
   --boot-image=<filename>    binary image to boot
                              (default: "kernel.bin")
   --root-backing=<filename>  backing storage for root filesystem
-                             (default: "rootfs.bin")
+                             (default: "rv64ima.bin")
   --root-shared              target modifications to root filesystem
                              modify backing storage as well
   --memory-size=<number>     target memory in MiB
@@ -25,7 +25,7 @@ where options are:
     os.exit()
 end
 
-local root_backing
+local root_backing = "rv64ima.bin"
 local root_shared
 local extra_backing
 local extra_shared
@@ -129,7 +129,7 @@ local config_meta = {
         machine = "riscv64",
         interactive = true,
         cmdline = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw",
-        flash_base = 0x60000000,
+        flash_base = 0x6000000000,
         flash_id = 0,
     }
 }
@@ -204,7 +204,7 @@ local config = new_config{
 
 local machine = emu.create(config)
 
-local step = 5000
+local step = 500000
 local cycles_end = step
 while true do
     local c, s, e = machine:run(cycles_end)

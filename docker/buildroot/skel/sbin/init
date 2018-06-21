@@ -10,6 +10,12 @@ ifconfig lo 127.0.0.1
 
 cd $HOME
 
-setsid sh -c 'exec sh < /dev/hvc0 > /dev/hvc0 2>&1'
+cmd=$(echo $1 | cut -d " " -f1)
+
+if [ -x "$1" ]; then
+	/bin/sh -c "$*"
+else
+	setsid sh -c 'exec sh < /dev/hvc0 > /dev/hvc0 2>&1'
+fi
 
 poweroff -f

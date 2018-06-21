@@ -21,15 +21,9 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#if XLEN == 32
-#define uintx_t uint32_t
-#define intx_t int32_t
-#elif XLEN == 64
+
 #define uintx_t uint64_t
 #define intx_t int64_t
-#else
-#error unsupported XLEN
-#endif
 
 static inline intx_t glue(div, XLEN)(intx_t a, intx_t b)
 {
@@ -922,5 +916,4 @@ the_end:
 
 #undef uintx_t
 #undef intx_t
-#undef XLEN
 #undef OP_A

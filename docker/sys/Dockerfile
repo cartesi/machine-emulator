@@ -77,7 +77,17 @@ RUN \
     \rm -rf work/riscv-gnu-toolchain && \
     mkdir -p work/riscv-gnu-toolchain && \
     cd work/riscv-gnu-toolchain && \
-    $BASE/freedom-u-sdk/riscv-gnu-toolchain/configure --prefix=$BASE/elf && \
+    $BASE/freedom-u-sdk/riscv-gnu-toolchain/configure --with-arch=rv64imafd --with-abi=lp64d --prefix=$BASE/elf-rv64imafd-lp64d && \
+    make -j24 && \
+    \rm -rf $BASE/work/riscv-gnu-toolchain
+
+RUN \
+    mkdir -p $RISCV && \
+    cd $BASE/freedom-u-sdk && \
+    \rm -rf work/riscv-gnu-toolchain && \
+    mkdir -p work/riscv-gnu-toolchain && \
+    cd work/riscv-gnu-toolchain && \
+    $BASE/freedom-u-sdk/riscv-gnu-toolchain/configure --with-arch=rv64ima --with-abi=lp64 --prefix=$BASE/elf-rv64ima-lp64 && \
     make -j24 && \
     \rm -rf $BASE/work/riscv-gnu-toolchain
 
@@ -123,7 +133,7 @@ RUN \
     \rm -rf work/riscv-isa-sim && \
     \rm -rf work/riscv-fesvr
 
-ENV PATH "${BASE}/rv64imafd-lp64d/bin:${BASE}/elf/bin:${BASE}/riscv-isa-sim/bin:${OLDPATH}"
+ENV PATH "${BASE}/rv64imafd-lp64d/bin:${BASE}/elf-rv64ima-lp64/bin:${BASE}/riscv-isa-sim/bin:${OLDPATH}"
 
 ENV LD_LIBRARY_PATH "${BASE}/riscv-isa-sim/lib:${BASE}/riscv-fesvr/lib"
 

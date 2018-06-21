@@ -52,6 +52,6 @@ BOOL riscv_cpu_get_power_down(RISCVCPUState *s);
 void riscv_cpu_set_power_down(RISCVCPUState *s, BOOL v);
 BOOL riscv_cpu_get_shuthost(RISCVCPUState *s);
 void riscv_cpu_set_shuthost(RISCVCPUState *s, BOOL v);
-uint32_t riscv_cpu_get_misa(RISCVCPUState *s);
+uint64_t riscv_cpu_get_misa(RISCVCPUState *s);
 void riscv_cpu_flush_tlb_write_range_ram(RISCVCPUState *s,
                                          uint8_t *ram_ptr, size_t ram_size);

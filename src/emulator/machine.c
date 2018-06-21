@@ -57,11 +57,6 @@
 #define HTIF_BASE_ADDR   (Gi(1)+Ki(32))
 #define HTIF_SIZE  		 16
 #define HTIF_CONSOLE_BUF_SIZE (1024)
-#define PLIC_BASE_ADDR   (Gi(1)+Mi(1))
-#define PLIC_SIZE        Mi(4)
-#define PLIC_NIRQS       32
-#define PLIC_HART_BASE   Mi(2) /* hardcoded in pk */
-#define PLIC_HART_SIZE   Ki(4) /* hardcoded in pk */
 
 #define CLOCK_FREQ 2000000000 /* 2 GHz */
 #define RTC_FREQ_DIV 1000     /* arbitrary, relative to CPU freq to have a
@@ -82,9 +77,6 @@ typedef struct RISCVMachine {
     uint64_t ram_size;
     /* RTC */
     uint64_t timecmp;
-    /* PLIC */
-    uint32_t plic_pending_irq, plic_served_irq;
-    IRQSignal plic_irq[PLIC_NIRQS]; /* IRQ 0 is not used */
     /* HTIF */
     uint64_t htif_tohost, htif_fromhost;
     HTIFConsole *htif_console;
@@ -247,80 +239,6 @@ static uint64_t rtc_get_time(RISCVMachine *m) {
     return rtc_cycles_to_time(riscv_cpu_get_cycle_counter(m->cpu_state));
 }
 
-/* Platform-Level Interrupt Controller (PLIC) */
-static void plic_update_mip(RISCVMachine *m)
-{
-    RISCVCPUState *cpu = m->cpu_state;
-    uint32_t mask;
-    mask = m->plic_pending_irq & ~m->plic_served_irq;
-    if (mask) {
-        riscv_cpu_set_mip(cpu, MIP_MEIP | MIP_SEIP);
-    } else {
-        riscv_cpu_reset_mip(cpu, MIP_MEIP | MIP_SEIP);
-    }
-}
-
-static uint32_t plic_read(void *opaque, uint32_t offset, int size_log2)
-{
-    RISCVMachine *m = opaque;
-    uint32_t val, mask;
-    int i;
-    assert(size_log2 == 2);
-    switch(offset) {
-    case PLIC_HART_BASE:
-        val = 0;
-        break;
-    case PLIC_HART_BASE + 4:
-        mask = m->plic_pending_irq & ~m->plic_served_irq;
-        if (mask != 0) {
-            i = ctz32(mask);
-            m->plic_served_irq |= 1 << i;
-            plic_update_mip(m);
-            val = i + 1;
-        } else {
-            val = 0;
-        }
-        break;
-    default:
-        val = 0;
-        break;
-    }
-    return val;
-}
-
-static void plic_write(void *opaque, uint32_t offset, uint32_t val,
-                       int size_log2)
-{
-    RISCVMachine *m = opaque;
-
-    assert(size_log2 == 2);
-    switch(offset) {
-    case PLIC_HART_BASE + 4:
-        val--;
-        if (val < PLIC_NIRQS) {
-            m->plic_served_irq &= ~(1 << val);
-            plic_update_mip(m);
-        }
-        break;
-    default:
-        break;
-    }
-}
-
-static void plic_set_irq(void *opaque, int irq_num, int state)
-{
-    RISCVMachine *m = opaque;
-    uint32_t mask;
-
-    mask = 1 << (irq_num - 1);
-    if (state)
-        m->plic_pending_irq |= mask;
-    else
-        m->plic_pending_irq &= ~mask;
-    plic_update_mip(m);
-}
-
-
 /* Host/Target Interface */
 static uint32_t htif_read(void *opaque, uint32_t offset,
                           int size_log2)
@@ -417,6 +335,8 @@ static uint32_t clint_read(void *opaque, uint32_t offset, int size_log2)
     RISCVMachine *m = opaque;
     uint32_t val;
 
+    /*??D we should probably enable reads from offset 0,
+     * which should return MSIP of HART 0*/
     assert(size_log2 == 2);
     switch(offset) {
     case 0xbff8:
@@ -443,6 +363,8 @@ static void clint_write(void *opaque, uint32_t offset, uint32_t val,
 {
     RISCVMachine *m = opaque;
 
+    /*??D we should probably enable writes to offset 0,
+     * which should modify MSIP of HART 0*/
     assert(size_log2 == 2);
     switch(offset) {
     case 0x4000:
@@ -470,7 +392,7 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
     uint8_t *dst)
 {
     FDTState *d;
-    int size, max_xlen, i, cur_phandle, intc_phandle, plic_phandle;
+    int size, max_xlen, i, cur_phandle, intc_phandle;
     char isa_string[128], *q;
     uint32_t misa;
     uint32_t tab[4];
@@ -568,21 +490,6 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
 				fdt_prop_tab_u64_2(d, "reg", CLINT_BASE_ADDR, CLINT_SIZE);
 			fdt_end_node(d); /* clint */
 
-			fdt_begin_node_num(d, "plic", PLIC_BASE_ADDR);
-				fdt_prop_u32(d, "#interrupt-cells", 1);
-				fdt_prop(d, "interrupt-controller", NULL, 0);
-				fdt_prop_str(d, "compatible", "riscv,plic0");
-				fdt_prop_u32(d, "riscv,ndev", 31);
-				fdt_prop_tab_u64_2(d, "reg", PLIC_BASE_ADDR, PLIC_SIZE);
-				tab[0] = intc_phandle;
-				tab[1] = 9; /* S ext irq */
-				tab[2] = intc_phandle;
-				tab[3] = 11; /* M ext irq */
-				fdt_prop_tab_u32(d, "interrupts-extended", tab, 4);
-				plic_phandle = cur_phandle++;
-				fdt_prop_u32(d, "phandle", plic_phandle);
-			fdt_end_node(d); /* plic */
-
             fdt_begin_node_num(d, "htif", HTIF_BASE_ADDR);
                 fdt_prop_str(d, "compatible", "ucb,htif0");
                 fdt_prop_tab_u64_2(d, "reg", HTIF_BASE_ADDR, HTIF_SIZE);
@@ -632,11 +539,13 @@ static void copy_boot_image(const VirtMachineParams *p, RISCVMachine *m)
     /* jump_addr = 0x80000000 */
 
     q = (uint32_t *)(ram_ptr + 0x1000);
-    q[0] = 0x297 + 0x80000000 - 0x1000; /* auipc t0, jump_addr */
-    q[1] = 0x597; /* auipc a1, dtb */
-    q[2] = 0x58593 + ((fdt_addr - 4) << 20); /* addi a1, a1, dtb */
+    /* la t0, jump_addr */
+    q[0] = 0x297 + 0x80000000 - 0x1000; /* auipc t0, 0x80000000-0x1000 */
+    /* la a1, fdt_addr */
+      q[1] = 0x597; /* auipc a1, 0  (a1 := 0x1004) */
+      q[2] = 0x58593 + ((fdt_addr - 0x1004) << 20); /* addi a1, a1, 60 */
     q[3] = 0xf1402573; /* csrr a0, mhartid */
-    q[4] = 0x00028067; /* jalr zero, t0, jump_addr */
+    q[4] = 0x00028067; /* jr t0 */
 }
 
 static void riscv_flush_tlb_write_range(void *opaque, uint8_t *ram_addr,
@@ -718,12 +627,6 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
 
     cpu_register_device(m->mem_map, CLINT_BASE_ADDR, CLINT_SIZE, m,
                         clint_read, clint_write, DEVIO_SIZE32);
-
-    cpu_register_device(m->mem_map, PLIC_BASE_ADDR, PLIC_SIZE, m,
-                        plic_read, plic_write, DEVIO_SIZE32);
-    for(i = 1; i < PLIC_NIRQS; i++) {
-        irq_init(&m->plic_irq[i], plic_set_irq, m, i);
-    }
 
     cpu_register_device(m->mem_map, HTIF_BASE_ADDR, HTIF_SIZE, m,
         htif_read, htif_write, DEVIO_SIZE32);

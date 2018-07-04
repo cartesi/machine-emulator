@@ -138,23 +138,28 @@ struct RISCVCPUState {
     target_ulong pc;
     target_ulong reg[32];
 
+    /*??D these are what makes our flags register */
     uint8_t priv; /* see PRV_x */
-
-    uint64_t insn_counter;
-    uint64_t cycle_counter;
     BOOL power_down_flag;
     BOOL shuthost_flag;
+
+    /*??D change to mcycle and minstret? */
+    uint64_t insn_counter;
+    uint64_t cycle_counter;
+
+    /*??D change to icause and itval? */
     int pending_exception; /* used during MMU exception handling */
     target_ulong pending_tval;
 
     /* CSRs */
+    /*??D we should add mvendorid, marchid, and mimplid */
     target_ulong mstatus;
     target_ulong mtvec;
     target_ulong mscratch;
     target_ulong mepc;
     target_ulong mcause;
     target_ulong mtval;
-    target_ulong mhartid; /* ro */
+    target_ulong mhartid; /* ??D ro and always zero. remove? */
     target_ulong misa;
 
     uint32_t mie;
@@ -171,6 +176,7 @@ struct RISCVCPUState {
     uint64_t satp; /* currently 64 bit physical addresses max */
     uint32_t scounteren;
 
+    /*??D change to lrsc? */
     target_ulong load_res; /* for atomic LR/SC */
 
     PhysMemoryMap *mem_map;
@@ -581,7 +587,7 @@ static no_inline int target_write_slow(RISCVCPUState *s, target_ulong addr,
         }
         pr = get_phys_mem_range(s->mem_map, paddr);
         if (!pr) {
-            /*??DD should raise exception here */
+            /*??D should raise exception here */
 #ifdef DUMP_INVALID_MEM_ACCESS
             fprintf(stderr, "target_write_slow: invalid physical address 0x");
             print_target_ulong(paddr);
@@ -918,11 +924,11 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, uint32_t csr,
     case 0xf12: /* marchid */
         val = 0;
         break;
-    case 0xf13: /* mimpid */
+    case 0xf13: /* mimplid */
         val = 0;
         break;
-    case 0xf14:
-        val = s->mhartid;
+    case 0xf14: /* mheartid */
+        val = 0;
         break;
     default:
     invalid_csr:
@@ -1013,7 +1019,7 @@ static int csr_write(RISCVCPUState *s, uint32_t csr, target_ulong val)
         s->mie = (s->mie & ~mask) | (val & mask);
         break;
     case 0x305:
-        /* ??DD no support for vectored iterrupts */
+        /* ??D no support for vectored iterrupts */
         s->mtvec = val & ~3;
         break;
     case 0x306:

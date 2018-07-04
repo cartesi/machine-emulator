@@ -50,17 +50,17 @@
 #define Mi(n) (((uint64_t)n) << 20)
 #define Gi(n) (((uint64_t)n) << 30)
 
-#define LOW_RAM_SIZE     Ki(64)
-#define RAM_BASE_ADDR    Gi(2)
-#define CLINT_BASE_ADDR  Mi(32)
-#define CLINT_SIZE       Ki(768)
-#define HTIF_BASE_ADDR   (Gi(1)+Ki(32))
-#define HTIF_SIZE  		 16
+#define LOW_RAM_BASE_ADDR  Ki(4)
+#define LOW_RAM_SIZE       Ki(64)
+#define RAM_BASE_ADDR      Gi(2)
+#define CLINT_BASE_ADDR    Mi(32)
+#define CLINT_SIZE         Ki(768)
+#define HTIF_BASE_ADDR     (Gi(1)+Ki(32))
+#define HTIF_SIZE  		   16
 #define HTIF_CONSOLE_BUF_SIZE (1024)
 
-#define CLOCK_FREQ 2000000000 /* 2 GHz */
-#define RTC_FREQ_DIV 1000     /* arbitrary, relative to CPU freq to have a
-                                 2 MHz frequency */
+#define CLOCK_FREQ 1000000000 /* 1 GHz (arbitrary) */
+#define RTC_FREQ_DIV 100      /* This cannot change */
 
 typedef struct {
     int stdin_fd;
@@ -75,7 +75,7 @@ typedef struct RISCVMachine {
     PhysMemoryMap *mem_map;
     RISCVCPUState *cpu_state;
     uint64_t ram_size;
-    /* RTC */
+    /* CLINT */
     uint64_t timecmp;
     /* HTIF */
     uint64_t htif_tohost, htif_fromhost;
@@ -506,6 +506,9 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
 
     fdt_end_node(d); /* root */
 
+    /*??D This is not a safe module. It doesn't even ask how
+     * much memory we have when writing! We need to change
+     * this!!! */
     size = fdt_output(d, dst);
     fdt_end(d);
 
@@ -530,20 +533,20 @@ static void copy_boot_image(const VirtMachineParams *p, RISCVMachine *m)
     ram_ptr = get_ram_ptr(m, RAM_BASE_ADDR);
     memcpy(ram_ptr, p->boot_image.buf, p->boot_image.len);
 
-    ram_ptr = get_ram_ptr(m, 0);
+    ram_ptr = get_ram_ptr(m, LOW_RAM_BASE_ADDR);
 
-    fdt_addr = 0x1000 + 8 * 8;
+    fdt_addr = 8 * 8;
 
     riscv_build_fdt(p, m, ram_ptr + fdt_addr);
 
-    /* jump_addr = 0x80000000 */
+    /* jump_addr = RAM_BASE_ADDR */
 
-    q = (uint32_t *)(ram_ptr + 0x1000);
+    q = (uint32_t *)(ram_ptr);
     /* la t0, jump_addr */
-    q[0] = 0x297 + 0x80000000 - 0x1000; /* auipc t0, 0x80000000-0x1000 */
+    q[0] = 0x297 + RAM_BASE_ADDR - LOW_RAM_BASE_ADDR; /* auipc t0, 0x80000000-0x1000 */
     /* la a1, fdt_addr */
       q[1] = 0x597; /* auipc a1, 0  (a1 := 0x1004) */
-      q[2] = 0x58593 + ((fdt_addr - 0x1004) << 20); /* addi a1, a1, 60 */
+      q[2] = 0x58593 + ((fdt_addr - (LOW_RAM_BASE_ADDR+4)) << 20); /* addi a1, a1, 60 */
     q[3] = 0xf1402573; /* csrr a0, mhartid */
     q[4] = 0x00028067; /* jr t0 */
 }
@@ -616,7 +619,7 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
 
     /* RAM */
     cpu_register_ram(m->mem_map, RAM_BASE_ADDR, p->ram_size, 0);
-    cpu_register_ram(m->mem_map, 0x00000000, LOW_RAM_SIZE, 0);
+    cpu_register_ram(m->mem_map, LOW_RAM_BASE_ADDR, LOW_RAM_SIZE, 0);
 
     /* flash */
     for (i = 0; i < p->flash_count; i++) {

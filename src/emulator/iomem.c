@@ -120,6 +120,11 @@ PhysMemoryRange *cpu_register_backed_ram(PhysMemoryMap *s, uint64_t addr,
     int oflag = (devram_flags & DEVRAM_FLAG_SHARED)? O_RDWR: O_RDONLY;
     int mflag = (devram_flags & DEVRAM_FLAG_SHARED)? MAP_SHARED: MAP_PRIVATE;
 
+    /*??D probably should be careful here to align the size
+     * to a 4KiB page boundary and clear the remaining
+     * memory by hand, even though the kernel should do this
+     * itself */
+
     pr = register_ram_entry(s, addr, size, devram_flags);
 
     pr->fd = open(path, oflag);

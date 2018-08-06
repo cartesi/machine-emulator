@@ -25,7 +25,7 @@ where options are:
     os.exit()
 end
 
-local root_backing = "rv64ima.bin"
+local root_backing
 local root_shared
 local extra_backing
 local extra_shared
@@ -129,7 +129,7 @@ local config_meta = {
         machine = "riscv64",
         interactive = true,
         cmdline = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw",
-        flash_base = 0x6000000000,
+        flash_base = 1 << 63,
         flash_id = 0,
     }
 }

@@ -125,8 +125,6 @@ static uint64_t checkuint(lua_State *L, int tabidx, const char *field) {
     if (!lua_isinteger(L, -1))
         luaL_error(L, "Invalid %s (expected unsigned integer).", field);
     ival = lua_tointeger(L, -1);
-    if (ival < 0)
-        luaL_error(L, "Invalid %s (expected unsigned integer).", field);
     lua_pop(L, 1);
     return (uint64_t) ival;
 }

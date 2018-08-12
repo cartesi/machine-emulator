@@ -41,7 +41,7 @@ SOLDFLAGS?=$(SOLDFLAGS_$(UNAME))
 
 WARNS=-W -Wall -pedantic
 
-INCS=$(LUA_INC) -Idis
+INCS=$(LUA_INC)
 
 ifeq ($(dump),yes)
 DEFS+=-DDUMP_EXCEPTIONS -DDUMP_MMU_EXCEPTIONS -DDUMP_INVALID_MEM_ACCESS -DDUMP_INSN -DDUMP_CSR
@@ -74,6 +74,9 @@ main: $(OBJS) main.o
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 clean:
 	rm -f *.o *.d $(ALL)

@@ -1,5 +1,4 @@
-#include <lua.h>
-#include <lauxlib.h>
+#include <lua.hpp>
 
 #include "machine.h"
 
@@ -30,11 +29,19 @@ static VirtMachine *check_virt_machine(lua_State *L, int idx) {
     return *pv;
 }
 
+static int virt_lua_destroy(lua_State *L) {
+    VirtMachine *v = check_virt_machine(L, 1);
+    virt_machine_end(v);
+    lua_pushnil(L);
+    lua_setmetatable(L, -2);
+    return 0;
+}
+
 static int virt_lua_run(lua_State *L) {
     VirtMachine *v = check_virt_machine(L, 1);
     uint64_t cycles_end = luaL_checkinteger(L, 2);
     int shuthost = virt_machine_run(v, cycles_end);
-    lua_pushinteger(L, virt_machine_get_cycle_counter(v));
+    lua_pushinteger(L, virt_machine_get_mcycle(v));
     if (shuthost) {
         uint64_t htif_tohost = virt_machine_get_htif_tohost(v);
         uint64_t payload = (htif_tohost & (~1ULL >> 16));
@@ -57,7 +64,7 @@ static int virt_lua_create(lua_State *L) {
     if (!s) {
         luaL_error(L, "Failed to initialize machine.");
     }
-    u = lua_newuserdata(L, sizeof(s));
+    u = reinterpret_cast<void **>(lua_newuserdata(L, sizeof(s)));
     *u = s;
     lua_pushvalue(L, lua_upvalueindex(1));
     lua_setmetatable(L, -2);
@@ -77,6 +84,7 @@ static int virt_lua__gc(lua_State *L) {
 
 static const luaL_Reg virt_lua__index[] = {
     {"run", virt_lua_run},
+    {"destroy", virt_lua_destroy},
     { NULL, NULL }
 };
 
@@ -91,6 +99,7 @@ static const luaL_Reg emu_module[] = {
     { NULL, NULL }
 };
 
+extern "C"
 __attribute__((visibility("default")))
 int luaopen_emu(lua_State *L) {
     lua_newtable(L); /* mod */

@@ -39,8 +39,7 @@ static const uint32_t *default_get_dirty_bits(PhysMemoryMap *map, PhysMemoryRang
 
 PhysMemoryMap *phys_mem_map_init(void)
 {
-    PhysMemoryMap *s;
-    s = mallocz(sizeof(*s));
+    PhysMemoryMap *s = reinterpret_cast<PhysMemoryMap *>(mallocz(sizeof(*s)));
     s->get_dirty_bits = default_get_dirty_bits;
     return s;
 }
@@ -107,7 +106,8 @@ static void init_dirty_bits(PhysMemoryRange *pr, uint64_t size) {
     pr->dirty_bits_size = ((nb_pages + 31) / 32) * sizeof(uint32_t);
     pr->dirty_bits_index = 0;
     for(i = 0; i < 2; i++) {
-        pr->dirty_bits_tab[i] = mallocz(pr->dirty_bits_size);
+        pr->dirty_bits_tab[i] = reinterpret_cast<uint32_t *>(
+            mallocz(pr->dirty_bits_size));
     }
     pr->dirty_bits = pr->dirty_bits_tab[pr->dirty_bits_index];
 }
@@ -133,7 +133,8 @@ PhysMemoryRange *cpu_register_backed_ram(PhysMemoryMap *s, uint64_t addr,
         exit(1);
     }
 
-    pr->phys_mem = mmap(NULL, size, PROT_READ | PROT_WRITE, mflag, pr->fd, 0);
+    pr->phys_mem = reinterpret_cast<uint8_t *>(
+        mmap(NULL, size, PROT_READ | PROT_WRITE, mflag, pr->fd, 0));
     if (!pr->phys_mem) {
         fprintf(stderr, "Could not map filed-backed memory\n");
         exit(1);
@@ -156,7 +157,7 @@ PhysMemoryRange *cpu_register_ram(PhysMemoryMap *s, uint64_t addr,
 
     pr = register_ram_entry(s, addr, size, devram_flags);
 
-    pr->phys_mem = mallocz(size);
+    pr->phys_mem = reinterpret_cast<uint8_t *>(mallocz(size));
     if (!pr->phys_mem) {
         fprintf(stderr, "Could not allocate VM memory\n");
         exit(1);

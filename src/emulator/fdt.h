@@ -46,7 +46,7 @@ typedef struct {
 FDTState *fdt_init(void);
 void fdt_alloc_len(FDTState *s, int len);
 void fdt_put32(FDTState *s, int v);
-void fdt_put_data(FDTState *s, const uint8_t *data, int len);
+void fdt_put_data(FDTState *s, const void *data, int len);
 void fdt_begin_node(FDTState *s, const char *name);
 void fdt_begin_node_num(FDTState *s, const char *name, uint64_t n);
 void fdt_end_node(FDTState *s);

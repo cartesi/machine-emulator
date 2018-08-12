@@ -36,8 +36,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <lua.h>
-#include <lauxlib.h>
+#include <lua.hpp>
 
 #include "cutils.h"
 #include "iomem.h"
@@ -97,7 +96,7 @@ static int load_file(uint8_t **pbuf, const char *filename)
     fseek(f, 0, SEEK_END);
     size = ftell(f);
     fseek(f, 0, SEEK_SET);
-    buf = malloc(size);
+    buf = reinterpret_cast<uint8_t *>(malloc(size));
     if ((int) fread(buf, 1, size, f) != size) {
         fprintf(stderr, "Unable to read from %s\n", filename);
         return -1;
@@ -234,14 +233,14 @@ static uint64_t rtc_time_to_cycles(uint64_t time) {
 }
 
 static uint64_t rtc_get_time(RISCVMachine *m) {
-    return rtc_cycles_to_time(riscv_cpu_get_cycle_counter(m->cpu_state));
+    return rtc_cycles_to_time(riscv_cpu_get_mcycle(m->cpu_state));
 }
 
 /* Host/Target Interface */
 static uint32_t htif_read(void *opaque, uint32_t offset,
                           int size_log2)
 {
-    RISCVMachine *m = opaque;
+    RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
     uint32_t val;
 
     assert(size_log2 == 2);
@@ -300,7 +299,7 @@ static void htif_handle_cmd(RISCVMachine *m)
 static void htif_write(void *opaque, uint32_t offset, uint32_t val,
                        int size_log2)
 {
-    RISCVMachine *m = opaque;
+    RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
     assert(size_log2 == 2);
     switch(offset) {
     case 0:
@@ -330,7 +329,7 @@ static void htif_write(void *opaque, uint32_t offset, uint32_t val,
 /* Clock Interrupt */
 static uint32_t clint_read(void *opaque, uint32_t offset, int size_log2)
 {
-    RISCVMachine *m = opaque;
+    RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
     uint32_t val;
 
     /*??D we should probably enable reads from offset 0,
@@ -359,7 +358,7 @@ static uint32_t clint_read(void *opaque, uint32_t offset, int size_log2)
 static void clint_write(void *opaque, uint32_t offset, uint32_t val,
                       int size_log2)
 {
-    RISCVMachine *m = opaque;
+    RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
 
     /*??D we should probably enable writes to offset 0,
      * which should modify MSIP of HART 0*/
@@ -552,7 +551,7 @@ static void copy_boot_image(const VirtMachineParams *p, RISCVMachine *m)
 static void riscv_flush_tlb_write_range(void *opaque, uint8_t *ram_addr,
                                         size_t ram_size)
 {
-    RISCVMachine *m = opaque;
+    RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
     riscv_cpu_flush_tlb_write_range_ram(m->cpu_state, ram_addr, ram_size);
 }
 
@@ -563,7 +562,7 @@ void virt_machine_set_defaults(VirtMachineParams *p)
 
 static HTIFConsole *htif_console_init(void) {
     struct termios tty;
-    HTIFConsole *con = mallocz(sizeof(*con));
+    HTIFConsole *con = reinterpret_cast<HTIFConsole *>(mallocz(sizeof(*con)));
     memset(&tty, 0, sizeof(tty));
     tcgetattr (0, &tty);
     con->oldtty = tty;
@@ -591,7 +590,6 @@ static void htif_console_end(HTIFConsole *con) {
 
 VirtMachine *virt_machine_init(const VirtMachineParams *p)
 {
-    RISCVMachine *m;
     int i;
 
     if (!p->boot_image.buf) {
@@ -600,12 +598,12 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
     }
 
     if (p->boot_image.len > (int) p->ram_size) {
-        fprintf(stderr, "Kernel too big (%d vs %d)\n", p->boot_image.len, 
+        fprintf(stderr, "Kernel too big (%d vs %d)\n", p->boot_image.len,
             (int)p->ram_size);
         return NULL;
     }
 
-    m = mallocz(sizeof(*m));
+    RISCVMachine *m = reinterpret_cast<RISCVMachine *>(mallocz(sizeof(*m)));
 
     m->ram_size = p->ram_size;
     m->mem_map = phys_mem_map_init();
@@ -652,9 +650,9 @@ void virt_machine_end(VirtMachine *v)
     free(m);
 }
 
-uint64_t virt_machine_get_cycle_counter(VirtMachine *v) {
+uint64_t virt_machine_get_mcycle(VirtMachine *v) {
     RISCVMachine *m = (RISCVMachine *)v;
-    return riscv_cpu_get_cycle_counter(m->cpu_state);
+    return riscv_cpu_get_mcycle(m->cpu_state);
 }
 
 uint64_t virt_machine_get_htif_tohost(VirtMachine *v) {
@@ -676,7 +674,7 @@ int virt_machine_run(VirtMachine *v, uint64_t cycles_end)
 
     for (;;) {
 
-        uint64_t cycles = riscv_cpu_get_cycle_counter(c);
+        uint64_t cycles = riscv_cpu_get_mcycle(c);
 
         uint64_t cycles_div_end = cycles + RTC_FREQ_DIV -
             cycles % RTC_FREQ_DIV;
@@ -686,7 +684,7 @@ int virt_machine_run(VirtMachine *v, uint64_t cycles_end)
         /* execute as many cycles as possible until shuthost
          * or powerdown */
         riscv_cpu_run(c, this_cycles_end);
-        cycles = riscv_cpu_get_cycle_counter(c);
+        cycles = riscv_cpu_get_mcycle(c);
 
         /* if we reached our target number of cycles, break */
         if (cycles >= cycles_end) {
@@ -709,9 +707,9 @@ int virt_machine_run(VirtMachine *v, uint64_t cycles_end)
              * skip time */
             } else if (riscv_cpu_get_power_down(c)) {
                 if (timer_cycles < cycles_end) {
-                    riscv_cpu_set_cycle_counter(c, timer_cycles);
+                    riscv_cpu_set_mcycle(c, timer_cycles);
                 } else {
-                    riscv_cpu_set_cycle_counter(c, cycles_end);
+                    riscv_cpu_set_mcycle(c, cycles_end);
                 }
             }
         }

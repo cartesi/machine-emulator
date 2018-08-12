@@ -9,9 +9,7 @@
 
 FDTState *fdt_init(void)
 {
-    FDTState *s;
-    s = mallocz(sizeof(*s));
-    return s;
+    return reinterpret_cast<FDTState *>(mallocz(sizeof(FDTState)));
 }
 
 void fdt_alloc_len(FDTState *s, int len)
@@ -19,7 +17,8 @@ void fdt_alloc_len(FDTState *s, int len)
     int new_size;
     if (unlikely(len > s->tab_size)) {
         new_size = max_int(len, s->tab_size * 3 / 2);
-        s->tab = realloc(s->tab, new_size * sizeof(uint32_t));
+        s->tab = reinterpret_cast<uint32_t *>(
+            realloc(s->tab, new_size * sizeof(uint32_t)));
         s->tab_size = new_size;
     }
 }
@@ -31,7 +30,7 @@ void fdt_put32(FDTState *s, int v)
 }
 
 /* the data is zero padded */
-void fdt_put_data(FDTState *s, const uint8_t *data, int len)
+void fdt_put_data(FDTState *s, const void *data, int len)
 {
     int len1;
 
@@ -77,7 +76,8 @@ int fdt_get_string_offset(FDTState *s, const char *name)
     new_len = s->string_table_len + name_size;
     if (new_len > s->string_table_size) {
         new_size = max_int(new_len, s->string_table_size * 3 / 2);
-        s->string_table = realloc(s->string_table, new_size);
+        s->string_table = reinterpret_cast<char *>(
+            realloc(s->string_table, new_size));
         s->string_table_size = new_size;
     }
     pos = s->string_table_len;
@@ -129,8 +129,7 @@ void fdt_prop_str(FDTState *s, const char *prop_name,
 }
 
 /* NULL terminated string list */
-void fdt_prop_tab_str(FDTState *s, const char *prop_name,
-                             ...)
+void fdt_prop_tab_str(FDTState *s, const char *prop_name, ...)
 {
     va_list ap;
     int size, str_size;
@@ -147,7 +146,7 @@ void fdt_prop_tab_str(FDTState *s, const char *prop_name,
     }
     va_end(ap);
 
-    tab = malloc(size);
+    tab = reinterpret_cast<char *>(malloc(size));
     va_start(ap, prop_name);
     size = 0;
     for(;;) {

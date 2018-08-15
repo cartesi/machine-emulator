@@ -21,18 +21,39 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include <string.h>
-#include <inttypes.h>
-#include <assert.h>
+#include <cstdlib>
+#include <cstdio>
+#include <cstdarg>
+#include <cstring>
+#include <cinttypes>
+#include <cassert>
 #include <fcntl.h>
+
+/* this test works at least with gcc */
+#if defined(__SIZEOF_INT128__)
+#define HAVE_INT128
+#endif
+
+#ifdef HAVE_INT128
+
+#ifdef __GNUC__
+// GCC complains about __int128 with -pedantic or -pedantic-errors
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
+
+typedef __int128 int128_t;
+typedef unsigned __int128 uint128_t;
+
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
+
+#endif
 
 #define XLEN 64
 #define MXL   2
 
-#include "cutils.h"
 #include "iomem.h"
 #include "riscv_cpu.h"
 
@@ -144,8 +165,8 @@ struct RISCVCPUState {
 
     /*??D these are what makes our flags register */
     uint8_t priv; /* see PRV_x */
-    BOOL power_down_flag;
-    BOOL shuthost_flag;
+    bool power_down_flag;
+    bool shuthost_flag;
 
     /*??D change to icause and itval? */
     int pending_exception; /* used during MMU exception handling */
@@ -186,9 +207,9 @@ struct RISCVCPUState {
     TLBEntry tlb_code[TLB_SIZE];
 };
 
-static no_inline int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
+static int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
                                       target_ulong addr, int size_log2);
-static no_inline int target_write_slow(RISCVCPUState *s, target_ulong addr,
+static int target_write_slow(RISCVCPUState *s, target_ulong addr,
                                        mem_uint_t val, int size_log2);
 
 static void fprint_target_ulong(FILE *f, target_ulong a)
@@ -271,7 +292,7 @@ static inline __exception int target_read_u ## size(RISCVCPUState *s, uint_type 
 {\
     uint32_t tlb_idx;\
     tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);\
-    if (likely(s->tlb_read[tlb_idx].vaddr == (addr & ~(PG_MASK & ~((size / 8) - 1))))) { \
+    if (s->tlb_read[tlb_idx].vaddr == (addr & ~(PG_MASK & ~((size / 8) - 1)))) { \
         *pval = *(uint_type *)(s->tlb_read[tlb_idx].mem_addend + (uintptr_t)addr);\
     } else {\
         mem_uint_t val;\
@@ -289,7 +310,7 @@ static inline __exception int target_write_u ## size(RISCVCPUState *s, target_ul
 {\
     uint32_t tlb_idx;\
     tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);\
-    if (likely(s->tlb_write[tlb_idx].vaddr == (addr & ~(PG_MASK & ~((size / 8) - 1))))) { \
+    if (s->tlb_write[tlb_idx].vaddr == (addr & ~(PG_MASK & ~((size / 8) - 1)))) { \
         *(uint_type *)(s->tlb_write[tlb_idx].mem_addend + (uintptr_t)addr) = val;\
         return 0;\
     } else {\
@@ -305,7 +326,7 @@ template <typename T>
 static inline int target_read(RISCVCPUState *s, T *pval, target_ulong addr)  {
     uint32_t tlb_idx;
     tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
-    if (likely(s->tlb_read[tlb_idx].vaddr == (addr & ~(PG_MASK & ~(sizeof(T) - 1))))) {
+    if (s->tlb_read[tlb_idx].vaddr == (addr & ~(PG_MASK & ~(sizeof(T) - 1)))) {
         *pval = *(T *)(s->tlb_read[tlb_idx].mem_addend + (uintptr_t)addr);
     } else {
         mem_uint_t val;
@@ -321,7 +342,7 @@ template <typename T>
 static inline int target_write(RISCVCPUState *s, target_ulong addr, T val) {
     uint32_t tlb_idx;
     tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
-    if (likely(s->tlb_write[tlb_idx].vaddr == (addr & ~(PG_MASK & ~(sizeof(T) - 1))))) {
+    if (s->tlb_write[tlb_idx].vaddr == (addr & ~(PG_MASK & ~(sizeof(T) - 1)))) {
         *(T *)(s->tlb_write[tlb_idx].mem_addend + (uintptr_t)addr) = val;
         return 0;
     } else {
@@ -469,7 +490,7 @@ static int get_phys_addr(RISCVCPUState *s,
 }
 
 /* return 0 if OK, != 0 if exception */
-static no_inline int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
+static int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
                                       target_ulong addr, int size_log2)
 {
     int size, tlb_idx, err, al;
@@ -587,7 +608,7 @@ static no_inline int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
 }
 
 /* return 0 if OK, != 0 if exception */
-static no_inline int target_write_slow(RISCVCPUState *s, target_ulong addr,
+static int target_write_slow(RISCVCPUState *s, target_ulong addr,
                                        mem_uint_t val, int size_log2)
 {
     int size, i, tlb_idx, err;
@@ -679,7 +700,7 @@ static uint32_t get_insn32(uint8_t *ptr)
 }
 
 /* return 0 if OK, != 0 if exception */
-static no_inline __exception int target_read_insn_slow(RISCVCPUState *s,
+static __exception int target_read_insn_slow(RISCVCPUState *s,
                                                        uintptr_t *pmem_addend,
                                                        target_ulong addr)
 {
@@ -716,7 +737,7 @@ static inline __exception int target_read_insn_u16(RISCVCPUState *s, uint16_t *p
     uintptr_t mem_addend;
 
     tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
-    if (likely(s->tlb_code[tlb_idx].vaddr == (addr & ~PG_MASK))) {
+    if (s->tlb_code[tlb_idx].vaddr == (addr & ~PG_MASK)) {
         mem_addend = s->tlb_code[tlb_idx].mem_addend;
     } else {
         if (target_read_insn_slow(s, &mem_addend, addr))
@@ -787,7 +808,7 @@ void riscv_cpu_flush_tlb_write_range_ram(RISCVCPUState *s,
 static target_ulong get_mstatus(RISCVCPUState *s, target_ulong mask)
 {
     target_ulong val;
-    BOOL sd;
+    bool sd;
     val = s->mstatus & mask;
     sd = ((val & MSTATUS_FS) == MSTATUS_FS) |
         ((val & MSTATUS_XS) == MSTATUS_XS);
@@ -884,7 +905,7 @@ static inline int csr_priv(CSR csr) {
 
 /* return -1 if invalid CSR. 0 if OK. 'will_write' indicate that the
    csr will be written after (used for CSR access check) */
-static int csr_read(RISCVCPUState *s, target_ulong *pval, CSR csr, BOOL will_write)
+static int csr_read(RISCVCPUState *s, target_ulong *pval, CSR csr, bool will_write)
 {
     target_ulong val;
 
@@ -1163,7 +1184,7 @@ static void set_priv(RISCVCPUState *s, int priv)
 
 static void raise_exception(RISCVCPUState *s, uint32_t cause, target_ulong tval)
 {
-    BOOL deleg;
+    bool deleg;
     target_ulong causel;
 #if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS)
     {
@@ -1297,6 +1318,11 @@ static inline uint32_t get_pending_irq_mask(RISCVCPUState *s)
     return pending_ints & enabled_ints;
 }
 
+static inline uint32_t hibit(uint32_t n) {
+    if (n == 0) return 32;
+    else return fls(n)-1;
+}
+
 static __exception int raise_interrupt(RISCVCPUState *s)
 {
     uint32_t mask;
@@ -1304,7 +1330,7 @@ static __exception int raise_interrupt(RISCVCPUState *s)
     mask = get_pending_irq_mask(s);
     if (mask == 0)
         return 0;
-    irq_num = ctz32(mask);
+    irq_num = hibit(mask);
     raise_exception(s, irq_num | CAUSE_INTERRUPT, 0);
     return -1;
 }
@@ -1446,7 +1472,7 @@ static inline uint64_t mulhsu64(int64_t a, uint64_t b)
     goto jump_insn;            \
 } while (0)
 
-static void no_inline riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_addend) {
+static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_addend) {
     uint32_t opcode, insn, rd, rs1, rs2, funct3;
     int32_t imm, cond, err;
     target_ulong addr, val, val2;
@@ -1479,11 +1505,11 @@ static void no_inline riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_adde
     fprintf(stderr, "\n");
 #endif
 
-        if (unlikely(!--n_cycles || s->shuthost_flag)) {
+        if (!--n_cycles || s->shuthost_flag) {
             s->pc = GET_PC();
             goto the_end;
         }
-        if (unlikely(code_ptr >= code_end)) {
+        if (code_ptr >= code_end) {
             uint32_t tlb_idx;
             uint16_t insn_high;
             uintptr_t mem_addend;
@@ -1492,7 +1518,7 @@ static void no_inline riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_adde
             s->pc = GET_PC();
 
             /* check pending interrupts */
-            if (unlikely((s->mip & s->mie) != 0)) {
+            if ((s->mip & s->mie) != 0) {
                 if (raise_interrupt(s)) {
                     goto the_end;
                 }
@@ -1500,24 +1526,24 @@ static void no_inline riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_adde
 
             addr = s->pc;
             tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
-            if (likely(s->tlb_code[tlb_idx].vaddr == (addr & ~PG_MASK))) {
+            if (s->tlb_code[tlb_idx].vaddr == (addr & ~PG_MASK)) {
                 /* TLB match */
                 mem_addend = s->tlb_code[tlb_idx].mem_addend;
             } else {
-                if (unlikely(target_read_insn_slow(s, &mem_addend, addr)))
+                if (target_read_insn_slow(s, &mem_addend, addr))
                     goto mmu_exception;
             }
             code_ptr = (uint8_t *)(mem_addend + (uintptr_t)addr);
             code_end = (uint8_t *)(mem_addend +
                                    (uintptr_t)((addr & ~PG_MASK) + PG_MASK - 1));
             code_to_pc_addend = addr - (uintptr_t)code_ptr;
-            if (unlikely(code_ptr >= code_end)) {
+            if (code_ptr >= code_end) {
                 /* instruction is potentially half way between two
                    pages ? */
                 insn = *(uint16_t *)code_ptr;
                 if ((insn & 3) == 3) {
                     /* instruction is half way between two pages */
-                    if (unlikely(target_read_insn_u16(s, &insn_high, addr + 2)))
+                    if (target_read_insn_u16(s, &insn_high, addr + 2))
                         goto mmu_exception;
                     insn |= insn_high << 16;
                 }
@@ -1910,7 +1936,7 @@ static void no_inline riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_adde
             case 1: /* csrrw */
                 s->minstret = GET_INSN_COUNTER();
                 s->mcycle = GET_CYCLE_COUNTER();
-                if (csr_read(s, &val2, static_cast<CSR>(imm), TRUE))
+                if (csr_read(s, &val2, static_cast<CSR>(imm), true))
                     goto illegal_insn;
                 val2 = (int64_t)val2;
                 err = csr_write(s, static_cast<CSR>(imm), val);
@@ -1998,7 +2024,7 @@ static void no_inline riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_adde
                     /* go to power down if no enabled interrupts are
                        pending */
                     if ((s->mip & s->mie) == 0) {
-                        s->power_down_flag = TRUE;
+                        s->power_down_flag = true;
                         s->pc = GET_PC() + 4;
                         goto done_interp;
                     }
@@ -2189,7 +2215,7 @@ void riscv_cpu_set_mip(RISCVCPUState *s, uint32_t mask)
     s->mip |= mask;
     /* exit from power down if an interrupt is pending */
     if (s->power_down_flag && (s->mip & s->mie) != 0)
-        s->power_down_flag = FALSE;
+        s->power_down_flag = false;
 }
 
 void riscv_cpu_reset_mip(RISCVCPUState *s, uint32_t mask)
@@ -2202,22 +2228,22 @@ uint32_t riscv_cpu_get_mip(RISCVCPUState *s)
     return s->mip;
 }
 
-BOOL riscv_cpu_get_power_down(RISCVCPUState *s)
+bool riscv_cpu_get_power_down(RISCVCPUState *s)
 {
     return s->power_down_flag;
 }
 
-void riscv_cpu_set_power_down(RISCVCPUState *s, BOOL v)
+void riscv_cpu_set_power_down(RISCVCPUState *s, bool v)
 {
     s->power_down_flag = v;
 }
 
-BOOL riscv_cpu_get_shuthost(RISCVCPUState *s)
+bool riscv_cpu_get_shuthost(RISCVCPUState *s)
 {
     return s->shuthost_flag;
 }
 
-void riscv_cpu_set_shuthost(RISCVCPUState *s, BOOL v)
+void riscv_cpu_set_shuthost(RISCVCPUState *s, bool v)
 {
     s->shuthost_flag = v;
 }
@@ -2229,10 +2255,10 @@ int riscv_cpu_get_max_xlen(void)
 
 RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map)
 {
-    RISCVCPUState *s = reinterpret_cast<RISCVCPUState *>(mallocz(sizeof(*s)));
+    RISCVCPUState *s = reinterpret_cast<RISCVCPUState *>(calloc(1, sizeof(*s)));
     s->mem_map = mem_map;
-    s->power_down_flag = FALSE;
-    s->shuthost_flag = FALSE;
+    s->power_down_flag = false;
+    s->shuthost_flag = false;
     s->pc = 0x1000;
     s->priv = PRV_M;
     s->mstatus = ((uint64_t)MXL << MSTATUS_UXL_SHIFT) |

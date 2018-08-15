@@ -21,9 +21,11 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#include <lua.h>
+#ifndef MACHINE_H
+#define MACHINE_H
 
-#include "cutils.h"
+#include <lua.hpp>
+#include <cstdint>
 
 #define VM_MAX_FLASH_DEVICE 4
 
@@ -38,7 +40,7 @@ typedef struct {
 typedef struct {
     char *backing;
     char *label;
-    BOOL shared;
+    bool shared;
     uint64_t address;
     uint64_t size;
 } VMFlashEntry;
@@ -50,7 +52,7 @@ typedef struct {
     int flash_count;
     char *cmdline; /* kernel command line */
     VMFileEntry boot_image; /* boot image file */
-    BOOL interactive; /* should we initialize the console? */
+    bool interactive; /* should we initialize the console? */
 } VirtMachineParams;
 
 struct VirtMachine;
@@ -68,3 +70,5 @@ uint64_t virt_machine_get_htif_tohost(VirtMachine *v);
 void virt_machine_end(VirtMachine *v);
 void virt_machine_advance_mcycle(VirtMachine *v);
 int virt_machine_run(VirtMachine *v, uint64_t cycle_end);
+
+#endif

@@ -60,7 +60,6 @@ all: $(ALL)
 
 OBJS:= \
 	fdt.o \
-	cutils.o \
 	iomem.o \
 	machine.o \
 	luaemu.o \

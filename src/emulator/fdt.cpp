@@ -1,22 +1,47 @@
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <assert.h>
-#include <string.h>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <cassert>
+#include <cstring>
+#include <algorithm>
 
 #include "fdt.h"
-#include "cutils.h"
+
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#if defined(__APPLE__)
+// Mac OS X / Darwin features
+#include <libkern/OSByteOrder.h>
+#define bswap_32(x) OSSwapInt32(x)
+#define bswap_64(x) OSSwapInt64(x)
+#elif defined(__sun) || defined(sun)
+#include <sys/byteorder.h>
+#define bswap_32(x) BSWAP_32(x)
+#define bswap_64(x) BSWAP_64(x)
+#else
+// Linux
+#include <byteswap.h>
+#endif
+static inline uint32_t cpu_to_be32(uint32_t v)
+{
+    return bswap_32(v);
+}
+#else
+static inline uint32_t cpu_to_be32(uint32_t v)
+{
+    return v;
+}
+#endif
 
 FDTState *fdt_init(void)
 {
-    return reinterpret_cast<FDTState *>(mallocz(sizeof(FDTState)));
+    return reinterpret_cast<FDTState *>(calloc(1, sizeof(FDTState)));
 }
 
 void fdt_alloc_len(FDTState *s, int len)
 {
     int new_size;
-    if (unlikely(len > s->tab_size)) {
-        new_size = max_int(len, s->tab_size * 3 / 2);
+    if (len > s->tab_size) {
+        new_size = std::max(len, s->tab_size * 3 / 2);
         s->tab = reinterpret_cast<uint32_t *>(
             realloc(s->tab, new_size * sizeof(uint32_t)));
         s->tab_size = new_size;
@@ -75,7 +100,7 @@ int fdt_get_string_offset(FDTState *s, const char *name)
     name_size = strlen(name) + 1;
     new_len = s->string_table_len + name_size;
     if (new_len > s->string_table_size) {
-        new_size = max_int(new_len, s->string_table_size * 3 / 2);
+        new_size = std::max(new_len, s->string_table_size * 3 / 2);
         s->string_table = reinterpret_cast<char *>(
             realloc(s->string_table, new_size));
         s->string_table_size = new_size;

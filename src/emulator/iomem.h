@@ -50,8 +50,8 @@ typedef struct {
     uint64_t addr;
     uint64_t org_size; /* original size */
     uint64_t size; /* =org_size or 0 if the mapping is disabled */
-    BOOL is_ram;
-    BOOL is_backed; /* ram is backed by host file via mmap */
+    bool is_ram;
+    bool is_backed; /* ram is backed by host file via mmap */
     /* the following is used for RAM access */
     int devram_flags;
     uint8_t *phys_mem;
@@ -91,7 +91,7 @@ PhysMemoryRange *cpu_register_device(PhysMemoryMap *s, uint64_t addr,
                                      DeviceReadFunc *read_func, DeviceWriteFunc *write_func,
                                      int devio_flags);
 PhysMemoryRange *get_phys_mem_range(PhysMemoryMap *s, uint64_t paddr);
-void phys_mem_set_addr(PhysMemoryRange *pr, uint64_t addr, BOOL enabled);
+void phys_mem_set_addr(PhysMemoryRange *pr, uint64_t addr, bool enabled);
 
 static inline const uint32_t *phys_mem_get_dirty_bits(PhysMemoryRange *pr)
 {
@@ -111,12 +111,12 @@ static inline void phys_mem_set_dirty_bit(PhysMemoryRange *pr, size_t offset)
     }
 }
 
-static inline BOOL phys_mem_is_dirty_bit(PhysMemoryRange *pr, size_t offset)
+static inline bool phys_mem_is_dirty_bit(PhysMemoryRange *pr, size_t offset)
 {
     size_t page_index;
     uint32_t *dirty_bits_ptr;
     if (!pr->dirty_bits)
-        return TRUE;
+        return true;
     page_index = offset >> DEVRAM_PAGE_SIZE_LOG2;
     dirty_bits_ptr = pr->dirty_bits + (page_index >> 5);
     return (*dirty_bits_ptr >> (page_index & 0x1f)) & 1;

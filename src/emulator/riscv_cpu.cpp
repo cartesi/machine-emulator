@@ -1320,7 +1320,7 @@ static inline uint32_t get_pending_irq_mask(RISCVCPUState *s)
 
 static inline uint32_t hibit(uint32_t n) {
     if (n == 0) return 32;
-    else return fls(n)-1;
+    else return ffs(n)-1;
 }
 
 static __exception int raise_interrupt(RISCVCPUState *s)

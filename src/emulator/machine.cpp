@@ -38,7 +38,6 @@
 
 #include <lua.hpp>
 
-#include "cutils.h"
 #include "iomem.h"
 #include "riscv_cpu.h"
 #include "fdt.h"
@@ -67,7 +66,7 @@ typedef struct {
     int old_fd0_flags;
     uint8_t buf[HTIF_CONSOLE_BUF_SIZE];
     ssize_t buf_len, buf_pos;
-    BOOL irq_pending;
+    bool irq_pending;
 } HTIFConsole;
 
 typedef struct RISCVMachine {
@@ -280,7 +279,7 @@ static void htif_handle_cmd(RISCVMachine *m)
 #endif
 
     if (device == 0x0 && cmd == 0x0 && payload & 0x1) {
-        riscv_cpu_set_shuthost(m->cpu_state, TRUE);
+        riscv_cpu_set_shuthost(m->cpu_state, true);
     } else if (device == 0x1 && cmd == 0x1) {
         uint8_t ch = m->htif_tohost & 0xff;
         if (write(1, &ch, 1) < 1) { }
@@ -318,7 +317,7 @@ static void htif_write(void *opaque, uint32_t offset, uint32_t val,
         m->htif_fromhost = (m->htif_fromhost & 0xffffffff) |
             (uint64_t)val << 32;
         if (m->htif_console) {
-            m->htif_console->irq_pending = FALSE;
+            m->htif_console->irq_pending = false;
         }
         break;
     default:
@@ -388,6 +387,7 @@ static uint8_t *get_ram_ptr(RISCVMachine *m, uint64_t paddr)
 static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
     uint8_t *dst)
 {
+    //??D should change to libfdt instead of fdt.c.
     FDTState *d;
     int size, max_xlen, i, cur_phandle, intc_phandle;
     char isa_string[128], *q;
@@ -517,7 +517,6 @@ static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
         fclose(f);
     }
 #endif
-
     return size;
 }
 
@@ -562,7 +561,7 @@ void virt_machine_set_defaults(VirtMachineParams *p)
 
 static HTIFConsole *htif_console_init(void) {
     struct termios tty;
-    HTIFConsole *con = reinterpret_cast<HTIFConsole *>(mallocz(sizeof(*con)));
+    HTIFConsole *con = reinterpret_cast<HTIFConsole *>(calloc(1, sizeof(*con)));
     memset(&tty, 0, sizeof(tty));
     tcgetattr (0, &tty);
     con->oldtty = tty;
@@ -603,7 +602,7 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
         return NULL;
     }
 
-    RISCVMachine *m = reinterpret_cast<RISCVMachine *>(mallocz(sizeof(*m)));
+    RISCVMachine *m = reinterpret_cast<RISCVMachine *>(calloc(1, sizeof(*m)));
 
     m->ram_size = p->ram_size;
     m->mem_map = phys_mem_map_init();
@@ -747,8 +746,8 @@ int virt_machine_run(VirtMachine *v, uint64_t cycles_end)
                     /* feed another character and wake the cpu */
                     m->htif_fromhost = ((uint64_t)1 << 56) |
                             ((uint64_t)0 << 48) | con->buf[con->buf_pos++];
-                    con->irq_pending = TRUE;
-                    riscv_cpu_set_power_down(c, FALSE);
+                    con->irq_pending = true;
+                    riscv_cpu_set_power_down(c, false);
                 }
             }
         }

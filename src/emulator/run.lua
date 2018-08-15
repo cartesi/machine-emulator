@@ -25,7 +25,7 @@ where options are:
     os.exit()
 end
 
-local root_backing
+local root_backing = "rv64ima.bin"
 local root_shared
 local extra_backing
 local extra_shared

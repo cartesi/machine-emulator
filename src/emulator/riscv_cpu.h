@@ -38,20 +38,20 @@
 
 typedef struct RISCVCPUState RISCVCPUState;
 
-int riscv_cpu_get_max_xlen(void);
 
 RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map);
 void riscv_cpu_end(RISCVCPUState *s);
 void riscv_cpu_run(RISCVCPUState *s, uint64_t cycles_end);
-uint64_t riscv_cpu_get_mcycle(RISCVCPUState *s);
+uint64_t riscv_cpu_get_mcycle(const RISCVCPUState *s);
+int riscv_cpu_get_max_xlen(const RISCVCPUState *s);
 void riscv_cpu_set_mcycle(RISCVCPUState *s, uint64_t cycles);
 void riscv_cpu_set_mip(RISCVCPUState *s, uint32_t mask);
 void riscv_cpu_reset_mip(RISCVCPUState *s, uint32_t mask);
-uint32_t riscv_cpu_get_mip(RISCVCPUState *s);
-bool riscv_cpu_get_power_down(RISCVCPUState *s);
+uint32_t riscv_cpu_get_mip(const RISCVCPUState *s);
+bool riscv_cpu_get_power_down(const RISCVCPUState *s);
 void riscv_cpu_set_power_down(RISCVCPUState *s, bool v);
-bool riscv_cpu_get_shuthost(RISCVCPUState *s);
+bool riscv_cpu_get_shuthost(const RISCVCPUState *s);
 void riscv_cpu_set_shuthost(RISCVCPUState *s, bool v);
-uint64_t riscv_cpu_get_misa(RISCVCPUState *s);
+uint64_t riscv_cpu_get_misa(const RISCVCPUState *s);
 void riscv_cpu_flush_tlb_write_range_ram(RISCVCPUState *s,
                                          uint8_t *ram_ptr, size_t ram_size);

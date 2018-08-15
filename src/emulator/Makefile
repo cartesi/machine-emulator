@@ -26,6 +26,10 @@ UNAME:=$(shell uname)
 
 LUA_INC:=$(shell pkg-config --cflags lua53)
 LUA_LIB:=$(shell pkg-config --libs lua53)
+FDT_INC:=
+FDT_LIB:=-lfdt
+
+LIBS:=$(FDT_LIB)
 
 SOLDFLAGS_Darwin:= -L/opt/local/lib -L/opt/local/lib/libomp -bundle -undefined dynamic_lookup
 CC_Darwin=clang
@@ -59,17 +63,13 @@ ALL=emu.so
 all: $(ALL)
 
 OBJS:= \
-	fdt.o \
 	iomem.o \
 	machine.o \
 	luaemu.o \
 	riscv_cpu.o
 
 emu.so: $(OBJS)
-	$(CC) $(SOLDFLAGS) -o $@ $^
-
-main: $(OBJS) main.o
-	$(CC) -o $@ $^ $(GCLDFLAGS)
+	$(CC) $(SOLDFLAGS) -o $@ $^ $(LIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<

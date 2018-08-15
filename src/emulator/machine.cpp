@@ -21,26 +21,28 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#include <assert.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <inttypes.h>
+#include <cassert>
+#include <cinttypes>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+
 #include <signal.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <termios.h>
-#include <time.h>
 #include <unistd.h>
+
+extern "C" {
+#include <libfdt.h>
+}
 
 #include <lua.hpp>
 
 #include "iomem.h"
 #include "riscv_cpu.h"
-#include "fdt.h"
 
 #include "machine.h"
 
@@ -54,7 +56,7 @@
 #define CLINT_BASE_ADDR    Mi(32)
 #define CLINT_SIZE         Ki(768)
 #define HTIF_BASE_ADDR     (Gi(1)+Ki(32))
-#define HTIF_SIZE  		   16
+#define HTIF_SIZE             16
 #define HTIF_CONSOLE_BUF_SIZE (1024)
 
 #define CLOCK_FREQ 1000000000 /* 1 GHz (arbitrary) */
@@ -384,139 +386,138 @@ static uint8_t *get_ram_ptr(RISCVMachine *m, uint64_t paddr)
     return pr->phys_mem + (uintptr_t)(paddr - pr->addr);
 }
 
-static int riscv_build_fdt(const VirtMachineParams *p, RISCVMachine *m,
-    uint8_t *dst)
-{
-    //??D should change to libfdt instead of fdt.c.
-    FDTState *d;
-    int size, max_xlen, i, cur_phandle, intc_phandle;
-    char isa_string[128], *q;
-    uint32_t misa;
+#define FDT_CHECK(s) do { \
+    int err = s; \
+    if (err != 0) return err; \
+} while (0);
+
+static int fdt_begin_node_num(void *fdt, const char *name, uint64_t num) {
+    char name_num[256];
+    snprintf(name_num, sizeof(name_num), "%s@%" PRIx64, name, num);
+    return fdt_begin_node(fdt, name_num);
+}
+
+static int fdt_property_u64_u64(void *fdt, const char *name, uint64_t v0, uint64_t v1) {
     uint32_t tab[4];
+    tab[0] = cpu_to_fdt32(v0 >> 32);
+    tab[1] = cpu_to_fdt32(v0);
+    tab[2] = cpu_to_fdt32(v1 >> 32);
+    tab[3] = cpu_to_fdt32(v1);
+	return fdt_property(fdt, name, tab, sizeof(tab));
+}
 
-    d = fdt_init();
+static int fdt_build_riscv(const VirtMachineParams *p, const RISCVMachine *m,
+    void *buf, int bufsize)
+{
+    int cur_phandle = 1;
+    FDT_CHECK(fdt_create(buf, bufsize));
+    FDT_CHECK(fdt_add_reservemap_entry(buf, 0, 0));
+    FDT_CHECK(fdt_finish_reservemap(buf));
+    FDT_CHECK(fdt_begin_node(buf, ""));
+     FDT_CHECK(fdt_property_u32(buf, "#address-cells", 2));
+     FDT_CHECK(fdt_property_u32(buf, "#size-cells", 2));
+     FDT_CHECK(fdt_property_string(buf, "compatible", "ucbbar,riscvemu-bar_dev"));
+     FDT_CHECK(fdt_property_string(buf, "model", "ucbbar,riscvemu-bare"));
+     FDT_CHECK(fdt_begin_node(buf, "cpus"));
+      FDT_CHECK(fdt_property_u32(buf, "#address-cells", 1));
+      FDT_CHECK(fdt_property_u32(buf, "#size-cells", 0));
+      FDT_CHECK(fdt_property_u32(buf, "timebase-frequency", CLOCK_FREQ/RTC_FREQ_DIV));
+      FDT_CHECK(fdt_begin_node_num(buf, "cpu", 0));
+       FDT_CHECK(fdt_property_string(buf, "device_type", "cpu"));
+       FDT_CHECK(fdt_property_u32(buf, "reg", 0));
+       FDT_CHECK(fdt_property_string(buf, "status", "okay"));
+       FDT_CHECK(fdt_property_string(buf, "compatible", "riscv"));
+       int max_xlen = riscv_cpu_get_max_xlen(m->cpu_state);
+       uint32_t misa = riscv_cpu_get_misa(m->cpu_state);
+       char isa_string[128], *q = isa_string;
+       q += snprintf(isa_string, sizeof(isa_string), "rv%d", max_xlen);
+       for(int i = 0; i < 26; i++) {
+           if (misa & (1 << i))
+               *q++ = 'a' + i;
+       }
+       *q = '\0';
+       FDT_CHECK(fdt_property_string(buf, "riscv,isa", isa_string));
+       FDT_CHECK(fdt_property_string(buf, "mmu-type", "riscv,sv48"));
+       FDT_CHECK(fdt_property_u32(buf, "clock-frequency", CLOCK_FREQ));
+       FDT_CHECK(fdt_begin_node(buf, "interrupt-controller"));
+        FDT_CHECK(fdt_property_u32(buf, "#interrupt-cells", 1));
+        FDT_CHECK(fdt_property(buf, "interrupt-controller", NULL, 0));
+        FDT_CHECK(fdt_property_string(buf, "compatible", "riscv,cpu-intc"));
+        int intc_phandle = cur_phandle++;
+        FDT_CHECK(fdt_property_u32(buf, "phandle", intc_phandle));
+       FDT_CHECK(fdt_end_node(buf)); /* interrupt-controller */
+      FDT_CHECK(fdt_end_node(buf)); /* cpu */
+     FDT_CHECK(fdt_end_node(buf)); /* cpus */
 
-    cur_phandle = 1;
+     FDT_CHECK(fdt_begin_node_num(buf, "memory", RAM_BASE_ADDR));
+      FDT_CHECK(fdt_property_string(buf, "device_type", "memory"));
+      FDT_CHECK(fdt_property_u64_u64(buf, "reg", RAM_BASE_ADDR, m->ram_size));
+     FDT_CHECK(fdt_end_node(buf)); /* memory */
 
-    fdt_begin_node(d, ""); /* root */
+     /* flash */
+     for (int i = 0; i < p->flash_count; i++) {
+         FDT_CHECK(fdt_begin_node_num(buf, "flash", p->tab_flash[i].address));
+          FDT_CHECK(fdt_property_u32(buf, "#address-cells", 2));
+          FDT_CHECK(fdt_property_u32(buf, "#size-cells", 2));
+          FDT_CHECK(fdt_property_string(buf, "compatible", "mtd-ram"));
+          FDT_CHECK(fdt_property_u32(buf, "bank-width", 4));
+          FDT_CHECK(fdt_property_u64_u64(buf, "reg", p->tab_flash[i].address, p->tab_flash[i].size));
+          FDT_CHECK(fdt_begin_node_num(buf, "fs0", 0));
+           FDT_CHECK(fdt_property_string(buf, "label", p->tab_flash[i].label));
+           FDT_CHECK(fdt_property_u64_u64(buf, "reg", 0, p->tab_flash[i].size));
+          FDT_CHECK(fdt_end_node(buf)); /* fs */
+         FDT_CHECK(fdt_end_node(buf)); /* flash */
+     }
 
-		fdt_prop_u32(d, "#address-cells", 2);
-		fdt_prop_u32(d, "#size-cells", 2);
-		fdt_prop_str(d, "compatible", "ucbbar,riscvemu-bar_dev");
-		fdt_prop_str(d, "model", "ucbbar,riscvemu-bare");
+     FDT_CHECK(fdt_begin_node(buf, "soc"));
+      FDT_CHECK(fdt_property_u32(buf, "#address-cells", 2));
+      FDT_CHECK(fdt_property_u32(buf, "#size-cells", 2));
+      const char comp[] = "ucbbar,riscvemu-bar-soc\0simple-bus";
+      FDT_CHECK(fdt_property(buf, "compatible", comp, sizeof(comp)));
+      FDT_CHECK(fdt_property(buf, "ranges", NULL, 0));
 
-		/* CPU list */
-		fdt_begin_node(d, "cpus");
-			fdt_prop_u32(d, "#address-cells", 1);
-			fdt_prop_u32(d, "#size-cells", 0);
-			fdt_prop_u32(d, "timebase-frequency", CLOCK_FREQ/RTC_FREQ_DIV);
-			/* cpu */
-			fdt_begin_node_num(d, "cpu", 0);
-				fdt_prop_str(d, "device_type", "cpu");
-				fdt_prop_u32(d, "reg", 0);
-				fdt_prop_str(d, "status", "okay");
-				fdt_prop_str(d, "compatible", "riscv");
-				max_xlen = riscv_cpu_get_max_xlen();
-				misa = riscv_cpu_get_misa(m->cpu_state);
-				q = isa_string;
-				q += snprintf(isa_string, sizeof(isa_string), "rv%d", max_xlen);
-				for(i = 0; i < 26; i++) {
-					if (misa & (1 << i))
-						*q++ = 'a' + i;
-				}
-				*q = '\0';
-				fdt_prop_str(d, "riscv,isa", isa_string);
-				fdt_prop_str(d, "mmu-type", "riscv,sv48");
-				fdt_prop_u32(d, "clock-frequency", CLOCK_FREQ);
-				fdt_begin_node(d, "interrupt-controller");
-					fdt_prop_u32(d, "#interrupt-cells", 1);
-					fdt_prop(d, "interrupt-controller", NULL, 0);
-					fdt_prop_str(d, "compatible", "riscv,cpu-intc");
-					intc_phandle = cur_phandle++;
-					fdt_prop_u32(d, "phandle", intc_phandle);
-				fdt_end_node(d); /* interrupt-controller */
-			fdt_end_node(d); /* cpu */
-		fdt_end_node(d); /* cpus */
+      FDT_CHECK(fdt_begin_node_num(buf, "clint", CLINT_BASE_ADDR));
+       FDT_CHECK(fdt_property_string(buf, "compatible", "riscv,clint0"));
+       uint32_t clint[] = {
+	       cpu_to_fdt32(intc_phandle),
+	       cpu_to_fdt32(3), /* M IPI irq */
+	       cpu_to_fdt32(intc_phandle),
+	       cpu_to_fdt32(7) /* M timer irq */
+       };
+       FDT_CHECK(fdt_property(buf, "interrupts-extended", clint, sizeof(clint)));
+       FDT_CHECK(fdt_property_u64_u64(buf, "reg", CLINT_BASE_ADDR, CLINT_SIZE));
+      FDT_CHECK(fdt_end_node(buf)); /* clint */
 
-		fdt_begin_node_num(d, "memory", RAM_BASE_ADDR);
-			fdt_prop_str(d, "device_type", "memory");
-			tab[0] = (uint64_t)RAM_BASE_ADDR >> 32;
-			tab[1] = RAM_BASE_ADDR;
-			tab[2] = m->ram_size >> 32;
-			tab[3] = m->ram_size;
-			fdt_prop_tab_u32(d, "reg", tab, 4);
-		fdt_end_node(d); /* memory */
+      FDT_CHECK(fdt_begin_node_num(buf, "htif", HTIF_BASE_ADDR));
+       FDT_CHECK(fdt_property_string(buf, "compatible", "ucb,htif0"));
+       FDT_CHECK(fdt_property_u64_u64(buf, "reg", HTIF_BASE_ADDR, HTIF_SIZE));
+       uint32_t htif[] = {
+           cpu_to_fdt32(intc_phandle),
+           cpu_to_fdt32(13) // X HOST
+       };
+       FDT_CHECK(fdt_property(buf, "interrupts-extended", htif, sizeof(htif)));
+      FDT_CHECK(fdt_end_node(buf));
 
-		/* flash */
-		for (i = 0; i < p->flash_count; i++) {
-			fdt_begin_node_num(d, "flash", p->tab_flash[i].address);
-				fdt_prop_u32(d, "#address-cells", 2);
-				fdt_prop_u32(d, "#size-cells", 2);
-				fdt_prop_str(d, "compatible", "mtd-ram");
-				fdt_prop_u32(d, "bank-width", 4);
-				tab[0] = p->tab_flash[i].address >> 32;
-				tab[1] = p->tab_flash[i].address;
-				tab[2] = p->tab_flash[i].size >> 32;
-				tab[3] = p->tab_flash[i].size;
-				fdt_prop_tab_u32(d, "reg", tab, 4);
-				fdt_begin_node_num(d, "fs0", 0);
-					fdt_prop_str(d, "label", p->tab_flash[i].label);
-					tab[0] = 0;
-					tab[1] = 0;
-					tab[2] = p->tab_flash[i].size >> 32;
-					tab[3] = p->tab_flash[i].size;
-					fdt_prop_tab_u32(d, "reg", tab, 4);
-				fdt_end_node(d); /* fs */
-			fdt_end_node(d); /* flash */
-		}
+     FDT_CHECK(fdt_end_node(buf)); /* soc */
 
-		fdt_begin_node(d, "soc");
-			fdt_prop_u32(d, "#address-cells", 2);
-			fdt_prop_u32(d, "#size-cells", 2);
-			fdt_prop_tab_str(d, "compatible",
-							 "ucbbar,riscvemu-bar-soc", "simple-bus", NULL);
-			fdt_prop(d, "ranges", NULL, 0);
+     FDT_CHECK(fdt_begin_node(buf, "chosen"));
+      FDT_CHECK(fdt_property_string(buf, "bootargs", p->cmdline ? p->cmdline : ""));
+     FDT_CHECK(fdt_end_node(buf));
 
-			fdt_begin_node_num(d, "clint", CLINT_BASE_ADDR);
-				fdt_prop_str(d, "compatible", "riscv,clint0");
-				tab[0] = intc_phandle;
-				tab[1] = 3; /* M IPI irq */
-				tab[2] = intc_phandle;
-				tab[3] = 7; /* M timer irq */
-				fdt_prop_tab_u32(d, "interrupts-extended", tab, 4);
-				fdt_prop_tab_u64_2(d, "reg", CLINT_BASE_ADDR, CLINT_SIZE);
-			fdt_end_node(d); /* clint */
+    FDT_CHECK(fdt_end_node(buf)); /* root */
+    FDT_CHECK(fdt_finish(buf));
 
-            fdt_begin_node_num(d, "htif", HTIF_BASE_ADDR);
-                fdt_prop_str(d, "compatible", "ucb,htif0");
-                fdt_prop_tab_u64_2(d, "reg", HTIF_BASE_ADDR, HTIF_SIZE);
-                tab[0] = intc_phandle;
-                tab[1] = 13; // X HOST
-                fdt_prop_tab_u32(d, "interrupts-extended", tab, 2);
-            fdt_end_node(d);
-
-		fdt_end_node(d); /* soc */
-
-		fdt_begin_node(d, "chosen");
-			fdt_prop_str(d, "bootargs", p->cmdline ? p->cmdline : "");
-		fdt_end_node(d);
-
-    fdt_end_node(d); /* root */
-
-    /*??D This is not a safe module. It doesn't even ask how
-     * much memory we have when writing! We need to change
-     * this!!! */
-    size = fdt_output(d, dst);
-    fdt_end(d);
+    auto size = fdt_totalsize(buf);
 
 #if 0
     {
         FILE *f;
         f = fopen("emu.dtb", "wb");
-        fwrite(dst, 1, size, f);
+        fwrite(buf, 1, size, f);
         fclose(f);
     }
 #endif
+
     return size;
 }
 
@@ -533,7 +534,8 @@ static void copy_boot_image(const VirtMachineParams *p, RISCVMachine *m)
 
     fdt_addr = 8 * 8;
 
-    riscv_build_fdt(p, m, ram_ptr + fdt_addr);
+    //??D should check for error here.
+    fdt_build_riscv(p, m, ram_ptr + fdt_addr, LOW_RAM_SIZE-fdt_addr);
 
     /* jump_addr = RAM_BASE_ADDR */
 

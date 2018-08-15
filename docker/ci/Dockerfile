@@ -9,9 +9,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN \
     apt-get update && \
     apt-get install --no-install-recommends -y \
-        lua5.3 liblua5.3-dev unzip \
+        lua5.3 liblua5.3-dev unzip libfdt-dev \
         build-essential autoconf automake libtool autotools-dev \
-        git make pkg-config
+        git make pkg-config && \
+    rm -rf /var/lib/apt/lists/*
 
 # Make sure we have an executable lua command
 # in the PATh

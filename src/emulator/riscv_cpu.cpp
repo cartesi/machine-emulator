@@ -2200,7 +2200,7 @@ void riscv_cpu_run(RISCVCPUState *s, uint64_t cycles_end)
 }
 
 /* Note: the value is not accurate when called in riscv_cpu_interp() */
-uint64_t riscv_cpu_get_mcycle(RISCVCPUState *s)
+uint64_t riscv_cpu_get_mcycle(const RISCVCPUState *s)
 {
     return s->mcycle;
 }
@@ -2223,12 +2223,12 @@ void riscv_cpu_reset_mip(RISCVCPUState *s, uint32_t mask)
     s->mip &= ~mask;
 }
 
-uint32_t riscv_cpu_get_mip(RISCVCPUState *s)
+uint32_t riscv_cpu_get_mip(const RISCVCPUState *s)
 {
     return s->mip;
 }
 
-bool riscv_cpu_get_power_down(RISCVCPUState *s)
+bool riscv_cpu_get_power_down(const RISCVCPUState *s)
 {
     return s->power_down_flag;
 }
@@ -2238,7 +2238,7 @@ void riscv_cpu_set_power_down(RISCVCPUState *s, bool v)
     s->power_down_flag = v;
 }
 
-bool riscv_cpu_get_shuthost(RISCVCPUState *s)
+bool riscv_cpu_get_shuthost(const RISCVCPUState *s)
 {
     return s->shuthost_flag;
 }
@@ -2248,7 +2248,7 @@ void riscv_cpu_set_shuthost(RISCVCPUState *s, bool v)
     s->shuthost_flag = v;
 }
 
-int riscv_cpu_get_max_xlen(void)
+int riscv_cpu_get_max_xlen(const RISCVCPUState *)
 {
     return XLEN;
 }
@@ -2274,7 +2274,7 @@ void riscv_cpu_end(RISCVCPUState *s)
     free(s);
 }
 
-uint64_t riscv_cpu_get_misa(RISCVCPUState *s)
+uint64_t riscv_cpu_get_misa(const RISCVCPUState *s)
 {
     return s->misa;
 }

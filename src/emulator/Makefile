@@ -1,27 +1,3 @@
-#
-# RISCV emulator
-#
-# Copyright (c) 2016-2017 Fabrice Bellard
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-# THE SOFTWARE.
-
-
 UNAME:=$(shell uname)
 
 LUA_INC:=$(shell pkg-config --cflags lua53)
@@ -31,10 +7,24 @@ FDT_LIB:=-lfdt
 
 LIBS:=$(FDT_LIB)
 
+# Mac OS X setup
+# Lua
+#   port install lua
+# lua53.pc is missing.
+#   Link from lua.pc to lua53.pc in /opt/local/lib/pkgconfig
+# libfdt
+#   git clone https://git.kernel.org/pub/scm/utils/dtc/dtc.git
+#   cd dtc
+#   sudo make NO_PYTHON=1 PREFIX=/usr/local install
+#
 SOLDFLAGS_Darwin:= -L/opt/local/lib -L/opt/local/lib/libomp -bundle -undefined dynamic_lookup
 CC_Darwin=clang
 CXX_Darwin=clang++
 
+# Linux settings
+# libfdt
+#   apt-get install libfdt-dev
+#
 SOLDFLAGS_Linux:= -shared -fpic
 CC_Linux=gcc
 CXX_Linux=g++

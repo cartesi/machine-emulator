@@ -95,8 +95,7 @@ typedef uint64_t mem_uint_t;
 #define CAUSE_LOAD_PAGE_FAULT     0xd
 #define CAUSE_STORE_PAGE_FAULT    0xf
 
-/* Note: converted to correct bit position at runtime */
-#define CAUSE_INTERRUPT  ((uint32_t)1 << 31)
+#define CAUSE_INTERRUPT  ((uint64_t)1 << 63)
 
 /* privilege levels */
 #define PRV_U 0
@@ -804,16 +803,17 @@ void riscv_cpu_flush_tlb_write_range_ram(RISCVCPUState *s,
 /* cycle and insn counters */
 #define COUNTEREN_MASK ((1 << 0) | (1 << 2))
 
-/* return the complete mstatus with the SD bit */
+/* return the complete mstatus */
 static target_ulong get_mstatus(RISCVCPUState *s, target_ulong mask)
 {
-    target_ulong val;
-    bool sd;
-    val = s->mstatus & mask;
-    sd = ((val & MSTATUS_FS) == MSTATUS_FS) |
+    target_ulong val = s->mstatus & mask;
+#if 0
+    //??D we do not use XS or FS, and therefore can hardwire SD to 0
+    bool sd = ((val & MSTATUS_FS) == MSTATUS_FS) |
         ((val & MSTATUS_XS) == MSTATUS_XS);
     if (sd)
         val |= (target_ulong)1 << (XLEN - 1);
+#endif
     return val;
 }
 
@@ -1177,15 +1177,13 @@ static void set_priv(RISCVCPUState *s, int priv)
     if (s->priv != priv) {
         tlb_flush_all(s);
         s->priv = priv;
-        /* ??D shouldn't we clear s->ilrsc here?
-         * so it fails because of a context switch? */
+        s->ilrsc = 0;
     }
 }
 
-static void raise_exception(RISCVCPUState *s, uint32_t cause, target_ulong tval)
+static void raise_exception(RISCVCPUState *s, target_ulong cause,
+    target_ulong tval)
 {
-    bool deleg;
-    target_ulong causel;
 #if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS)
     {
         int flag;
@@ -1203,7 +1201,7 @@ static void raise_exception(RISCVCPUState *s, uint32_t cause, target_ulong tval)
         flag |= (cause & CAUSE_INTERRUPT) != 0;
 #endif
 #ifdef DUMP_EXCEPTIONS
-        flag = (cause & CAUSE_INTERRUPT) == 0;
+        flag |= (cause & CAUSE_INTERRUPT) == 0;
         if (cause == CAUSE_SUPERVISOR_ECALL)
             flag = 0;
 #endif
@@ -1216,9 +1214,13 @@ static void raise_exception(RISCVCPUState *s, uint32_t cause, target_ulong tval)
     }
 #endif
 
+    // Check if exception should be delegated to supervisor privilege
+    // For each interrupt or exception number, there is a bit at mideleg
+    // or medeleg saying if it should be delegated
+    bool deleg;
     if (s->priv <= PRV_S) {
-        /* delegate the exception to the supervisor priviledge */
         if (cause & CAUSE_INTERRUPT)
+            // Clear the CAUSE_INTERRUPT bit before shifting
             deleg = (s->mideleg >> (cause & (XLEN - 1))) & 1;
         else
             deleg = (s->medeleg >> cause) & 1;
@@ -1226,12 +1228,8 @@ static void raise_exception(RISCVCPUState *s, uint32_t cause, target_ulong tval)
         deleg = 0;
     }
 
-    causel = cause & 0x7fffffff;
-    if (cause & CAUSE_INTERRUPT)
-        causel |= (target_ulong)1 << (XLEN-1);
-
     if (deleg) {
-        s->scause = causel;
+        s->scause = cause;
         s->sepc = s->pc;
         s->stval = tval;
         s->mstatus = (s->mstatus & ~MSTATUS_SPIE) |
@@ -1242,7 +1240,7 @@ static void raise_exception(RISCVCPUState *s, uint32_t cause, target_ulong tval)
         set_priv(s, PRV_S);
         s->pc = s->stvec;
     } else {
-        s->mcause = causel;
+        s->mcause = cause;
         s->mepc = s->pc;
         s->mtval = tval;
         s->mstatus = (s->mstatus & ~MSTATUS_MPIE) |
@@ -1261,8 +1259,6 @@ static void handle_sret(RISCVCPUState *s)
     spp = (s->mstatus >> MSTATUS_SPP_SHIFT) & 1;
     /* set the IE state to previous IE state */
     spie = (s->mstatus >> MSTATUS_SPIE_SHIFT) & 1;
-    /* s->mstatus = (s->mstatus & ~(1 << spp)) |
-        (spie << spp); */
     s->mstatus = (s->mstatus & ~(1 << MSTATUS_SIE_SHIFT)) |
         (spie << MSTATUS_SIE_SHIFT);
     /* set SPIE to 1 */
@@ -1279,8 +1275,6 @@ static void handle_mret(RISCVCPUState *s)
     mpp = (s->mstatus >> MSTATUS_MPP_SHIFT) & 3;
     /* set the IE state to previous IE state */
     mpie = (s->mstatus >> MSTATUS_MPIE_SHIFT) & 1;
-    /* s->mstatus = (s->mstatus & ~(1 << mpp)) |
-        (mpie << mpp); */
     s->mstatus = (s->mstatus & ~(1 << MSTATUS_MIE_SHIFT)) |
         (mpie << MSTATUS_MIE_SHIFT);
     /* set MPIE to 1 */
@@ -1306,6 +1300,8 @@ static inline uint32_t get_pending_irq_mask(RISCVCPUState *s)
             enabled_ints = ~s->mideleg;
         break;
     case PRV_S:
+        // Interrupts not set in mideleg are machine-mode
+        // and cannot be masked by supervisor mode
         enabled_ints = ~s->mideleg;
         if (s->mstatus & MSTATUS_SIE)
             enabled_ints |= s->mideleg;
@@ -1318,19 +1314,11 @@ static inline uint32_t get_pending_irq_mask(RISCVCPUState *s)
     return pending_ints & enabled_ints;
 }
 
-static inline uint32_t hibit(uint32_t n) {
-    if (n == 0) return 32;
-    else return ffs(n)-1;
-}
-
 static __exception int raise_interrupt(RISCVCPUState *s)
 {
-    uint32_t mask;
-    int irq_num;
-    mask = get_pending_irq_mask(s);
-    if (mask == 0)
-        return 0;
-    irq_num = hibit(mask);
+    uint32_t mask = get_pending_irq_mask(s);
+    if (mask == 0) return 0;
+    target_ulong irq_num = ffs(mask)-1; // highest bit set
     raise_exception(s, irq_num | CAUSE_INTERRUPT, 0);
     return -1;
 }
@@ -1375,7 +1363,7 @@ static inline uint64_t remu64(uint64_t a, uint64_t b)
     }
 }
 
-#if XLEN == 64 && defined(HAVE_INT128)
+#if defined(HAVE_INT128)
 
 static inline uint64_t mulh64(int64_t a, int64_t b)
 {
@@ -1394,12 +1382,8 @@ static inline uint64_t mulhu64(uint64_t a, uint64_t b)
 
 #else
 
-#if XLEN == 64
 #define UHALF uint32_t
 #define UHALF_LEN 32
-#else
-#error unsupported XLEN
-#endif
 
 static uint64_t mulhu64(uint64_t a, uint64_t b)
 {
@@ -1451,8 +1435,8 @@ static inline uint64_t mulhsu64(int64_t a, uint64_t b)
 #endif
 
 #define GET_PC() (target_ulong)((uintptr_t)code_ptr + code_to_pc_addend)
-#define GET_INSN_COUNTER() (minstret_addend - n_cycles)
-#define GET_CYCLE_COUNTER() (mcycle_addend - n_cycles)
+#define GET_INSN_COUNTER() (minstret_end - n_cycles)
+#define GET_CYCLE_COUNTER() (mcycle_end - n_cycles)
 
 #define C_NEXT_INSN code_ptr += 2; break
 #define NEXT_INSN code_ptr += 4; break
@@ -1472,21 +1456,21 @@ static inline uint64_t mulhsu64(int64_t a, uint64_t b)
     goto jump_insn;            \
 } while (0)
 
-static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_addend) {
+static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
     uint32_t opcode, insn, rd, rs1, rs2, funct3;
     int32_t imm, cond, err;
     target_ulong addr, val, val2;
-    uint64_t minstret_addend;
+    uint64_t minstret_end;
     uint64_t n_cycles;
     uint8_t *code_ptr, *code_end;
     target_ulong code_to_pc_addend;
 
-    if (s->mcycle >= mcycle_addend)
+    if (s->mcycle >= mcycle_end)
         return;
 
-    n_cycles = mcycle_addend - s->mcycle;
+    n_cycles = mcycle_end - s->mcycle;
 
-    minstret_addend = s->minstret + n_cycles;
+    minstret_end = s->minstret + n_cycles;
 
     s->pending_exception = -1;
     n_cycles++;
@@ -1495,8 +1479,6 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_addend) {
     code_end = NULL;
     code_to_pc_addend = s->pc;
 
-    /* we use a single execution loop to keep a simple control flow
-       for emscripten */
     for(;;) {
 
 #if 0
@@ -1672,7 +1654,6 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_addend) {
                     val = rval;
                 }
                 break;
-#if XLEN >= 64
             case 3: /* ld */
                 {
                     uint64_t rval;
@@ -1689,7 +1670,6 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_addend) {
                     val = rval;
                 }
                 break;
-#endif
             default:
                 goto illegal_insn;
             }
@@ -1715,12 +1695,10 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_addend) {
                 if (target_write<uint32_t>(s, addr, val))
                     goto mmu_exception;
                 break;
-#if XLEN >= 64
             case 3: /* sd */
                 if (target_write<uint64_t>(s, addr, val))
                     goto mmu_exception;
                 break;
-#endif
             default:
                 goto illegal_insn;
             }
@@ -1765,7 +1743,6 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_addend) {
             if (rd != 0)
                 s->reg[rd] = val;
             NEXT_INSN;
-#if XLEN >= 64
         case 0x1b:/* OP-IMM-32 */
             funct3 = (insn >> 12) & 7;
             imm = (int32_t)insn >> 20;
@@ -1793,7 +1770,6 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_addend) {
             if (rd != 0)
                 s->reg[rd] = val;
             NEXT_INSN;
-#endif
         case 0x33:
             imm = insn >> 25;
             val = s->reg[rs1];
@@ -1870,7 +1846,6 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_addend) {
             if (rd != 0)
                 s->reg[rd] = val;
             NEXT_INSN;
-#if XLEN >= 64
         case 0x3b: /* OP-32 */
             imm = insn >> 25;
             val = s->reg[rs1];
@@ -1923,7 +1898,6 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_addend) {
             if (rd != 0)
                 s->reg[rd] = val;
             NEXT_INSN;
-#endif
         case 0x73:
             funct3 = (insn >> 12) & 7;
             imm = insn >> 20;
@@ -1996,7 +1970,7 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_addend) {
                     {
                         if (insn & 0x000fff80)
                             goto illegal_insn;
-                        if (s->priv < PRV_S || 
+                        if (s->priv < PRV_S ||
                             (s->priv == PRV_S && (s->mstatus & MSTATUS_TSR)))
                             goto illegal_insn;
                         s->pc = GET_PC();
@@ -2150,16 +2124,13 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_addend) {
                     goto illegal_insn;                                  \
                 }                                                       \
             }
-
             switch(funct3) {
             case 2:
                 OP_A(32);
                 break;
-#if XLEN >= 64
             case 3:
                 OP_A(64);
                 break;
-#endif
             default:
                 goto illegal_insn;
             }
@@ -2172,9 +2143,11 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_addend) {
         /* update PC for next instruction */
     jump_insn: ;
     } /* end of main loop */
+
  illegal_insn:
     s->pending_exception = CAUSE_ILLEGAL_INSTRUCTION;
     s->pending_tval = insn;
+
  mmu_exception:
  exception:
     s->pc = GET_PC();

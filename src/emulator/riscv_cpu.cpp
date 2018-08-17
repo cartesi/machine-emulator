@@ -26,8 +26,6 @@
 #include <cstdarg>
 #include <cstring>
 #include <cinttypes>
-#include <cassert>
-#include <fcntl.h>
 
 /* this test works at least with gcc */
 #if defined(__SIZEOF_INT128__)
@@ -284,41 +282,6 @@ template <> int size_log2<uint8_t>(void) { return 0; }
 template <> int size_log2<uint16_t>(void) { return 1; }
 template <> int size_log2<uint32_t>(void) { return 2; }
 template <> int size_log2<uint64_t>(void) { return 3; }
-
-/* return 0 if OK, != 0 if exception */
-#define TARGET_READ_WRITE(size, uint_type, size_log2)                   \
-static inline __exception int target_read_u ## size(RISCVCPUState *s, uint_type *pval, target_ulong addr)                              \
-{\
-    uint32_t tlb_idx;\
-    tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);\
-    if (s->tlb_read[tlb_idx].vaddr == (addr & ~(PG_MASK & ~((size / 8) - 1)))) { \
-        *pval = *(uint_type *)(s->tlb_read[tlb_idx].mem_addend + (uintptr_t)addr);\
-    } else {\
-        mem_uint_t val;\
-        int ret;\
-        ret = target_read_slow(s, &val, addr, size_log2);\
-        if (ret)\
-            return ret;\
-        *pval = val;\
-    }\
-    return 0;\
-}\
-\
-static inline __exception int target_write_u ## size(RISCVCPUState *s, target_ulong addr,\
-                                          uint_type val)                \
-{\
-    uint32_t tlb_idx;\
-    tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);\
-    if (s->tlb_write[tlb_idx].vaddr == (addr & ~(PG_MASK & ~((size / 8) - 1)))) { \
-        *(uint_type *)(s->tlb_write[tlb_idx].mem_addend + (uintptr_t)addr) = val;\
-        return 0;\
-    } else {\
-        return target_write_slow(s, addr, val, size_log2);\
-    }\
-}
-
-TARGET_READ_WRITE(32, uint32_t, 2)
-TARGET_READ_WRITE(64, uint64_t, 3)
 
 /* return 0 if OK, != 0 if exception */
 template <typename T>
@@ -1061,8 +1024,7 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, CSR csr, bool will_wri
     return 0;
 }
 
-/* return -1 if invalid CSR, 0 if OK, 1 if the interpreter loop must be
-   exited, 2 if TLBs have been flushed. */
+// return -1 if invalid CSR, 0 if OK, 2 if TLBs have been flushed.
 static int csr_write(RISCVCPUState *s, CSR csr, target_ulong val)
 {
     target_ulong mask;
@@ -1318,7 +1280,7 @@ static __exception int raise_interrupt(RISCVCPUState *s)
 {
     uint32_t mask = get_pending_irq_mask(s);
     if (mask == 0) return 0;
-    target_ulong irq_num = ffs(mask)-1; // highest bit set
+    target_ulong irq_num = fls(mask)-1; // highest bit set
     raise_exception(s, irq_num | CAUSE_INTERRUPT, 0);
     return -1;
 }
@@ -1363,8 +1325,6 @@ static inline uint64_t remu64(uint64_t a, uint64_t b)
     }
 }
 
-#if defined(HAVE_INT128)
-
 static inline uint64_t mulh64(int64_t a, int64_t b)
 {
     return ((int128_t)a * (int128_t)b) >> 64;
@@ -1379,60 +1339,6 @@ static inline uint64_t mulhu64(uint64_t a, uint64_t b)
 {
     return ((int128_t)a * (int128_t)b) >> 64;
 }
-
-#else
-
-#define UHALF uint32_t
-#define UHALF_LEN 32
-
-static uint64_t mulhu64(uint64_t a, uint64_t b)
-{
-    UHALF a0, a1, b0, b1, r2, r3;
-    uint64_t r00, r01, r10, r11, c;
-    a0 = a;
-    a1 = a >> UHALF_LEN;
-    b0 = b;
-    b1 = b >> UHALF_LEN;
-
-    r00 = (uint64_t)a0 * (uint64_t)b0;
-    r01 = (uint64_t)a0 * (uint64_t)b1;
-    r10 = (uint64_t)a1 * (uint64_t)b0;
-    r11 = (uint64_t)a1 * (uint64_t)b1;
-
-    //    r0 = r00;
-    c = (r00 >> UHALF_LEN) + (UHALF)r01 + (UHALF)r10;
-    //    r1 = c;
-    c = (c >> UHALF_LEN) + (r01 >> UHALF_LEN) + (r10 >> UHALF_LEN) + (UHALF)r11;
-    r2 = c;
-    r3 = (c >> UHALF_LEN) + (r11 >> UHALF_LEN);
-
-    //    *plow = ((uint64_t)r1 << UHALF_LEN) | r0;
-    return ((uint64_t)r3 << UHALF_LEN) | r2;
-}
-
-#undef UHALF
-
-static inline uint64_t mulh64(int64_t a, int64_t b)
-{
-    uint64_t r1;
-    r1 = mulhu64(a, b);
-    if (a < 0)
-        r1 -= a;
-    if (b < 0)
-        r1 -= b;
-    return r1;
-}
-
-static inline uint64_t mulhsu64(int64_t a, uint64_t b)
-{
-    uint64_t r1;
-    r1 = mulhu64(a, b);
-    if (a < 0)
-        r1 -= a;
-    return r1;
-}
-
-#endif
 
 #define GET_PC() (target_ulong)((uintptr_t)code_ptr + code_to_pc_addend)
 #define GET_INSN_COUNTER() (minstret_end - n_cycles)
@@ -1455,6 +1361,20 @@ static inline uint64_t mulhsu64(int64_t a, uint64_t b)
     code_to_pc_addend = s->pc; \
     goto jump_insn;            \
 } while (0)
+
+enum class Atomic {
+    lr      = 0x02,
+    sc      = 0x03,
+    amoswap = 0x01,
+    amoadd  = 0x00,
+    amoxor  = 0x04,
+    amoand  = 0x0c,
+    amoor   = 0x08,
+    amomin  = 0x10,
+    amomax  = 0x14,
+    amominu = 0x18,
+    amomaxu = 0x1c
+};
 
 static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
     uint32_t opcode, insn, rd, rs1, rs2, funct3;
@@ -2044,99 +1964,150 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
                 goto illegal_insn;
             }
             NEXT_INSN;
-        case 0x2f:
-            funct3 = (insn >> 12) & 7;
-#define OP_A(size)                                                      \
-            {                                                           \
-                uint ## size ##_t rval;                                 \
-                                                                        \
-                addr = s->reg[rs1];                                     \
-                funct3 = insn >> 27;                                    \
-                switch(funct3) {                                        \
-                case 2: /* lr.w */                                      \
-                    if (rs2 != 0)                                       \
-                        goto illegal_insn;                              \
-                    if (target_read_u ## size(s, &rval, addr))          \
-                        goto mmu_exception;                             \
-                    val = (int## size ## _t)rval;                       \
-                    s->ilrsc = addr;                                 \
-                    break;                                              \
-                case 3: /* sc.w */                                      \
-                    if (s->ilrsc == addr) {                          \
-                        if (target_write_u ## size(s, addr, s->reg[rs2])) \
-                            goto mmu_exception;                         \
-                        val = 0;                                        \
-                    } else {                                            \
-                        val = 1;                                        \
-                    }                                                   \
-                    break;                                              \
-                case 1: /* amiswap.w */                                 \
-                case 0: /* amoadd.w */                                  \
-                case 4: /* amoxor.w */                                  \
-                case 0xc: /* amoand.w */                                \
-                case 0x8: /* amoor.w */                                 \
-                case 0x10: /* amomin.w */                               \
-                case 0x14: /* amomax.w */                               \
-                case 0x18: /* amominu.w */                              \
-                case 0x1c: /* amomaxu.w */                              \
-                    if (target_read_u ## size(s, &rval, addr))          \
-                        goto mmu_exception;                             \
-                    val = (int## size ## _t)rval;                       \
-                    val2 = s->reg[rs2];                                 \
-                    switch(funct3) {                                    \
-                    case 1: /* amiswap.w */                             \
-                        break;                                          \
-                    case 0: /* amoadd.w */                              \
-                        val2 = (int## size ## _t)(val + val2);          \
-                        break;                                          \
-                    case 4: /* amoxor.w */                              \
-                        val2 = (int## size ## _t)(val ^ val2);          \
-                        break;                                          \
-                    case 0xc: /* amoand.w */                            \
-                        val2 = (int## size ## _t)(val & val2);          \
-                        break;                                          \
-                    case 0x8: /* amoor.w */                             \
-                        val2 = (int## size ## _t)(val | val2);          \
-                        break;                                          \
-                    case 0x10: /* amomin.w */                           \
-                        if ((int## size ## _t)val < (int## size ## _t)val2) \
-                            val2 = (int## size ## _t)val;               \
-                        break;                                          \
-                    case 0x14: /* amomax.w */                           \
-                        if ((int## size ## _t)val > (int## size ## _t)val2) \
-                            val2 = (int## size ## _t)val;               \
-                        break;                                          \
-                    case 0x18: /* amominu.w */                          \
-                        if ((uint## size ## _t)val < (uint## size ## _t)val2) \
-                            val2 = (int## size ## _t)val;               \
-                        break;                                          \
-                    case 0x1c: /* amomaxu.w */                          \
-                        if ((uint## size ## _t)val > (uint## size ## _t)val2) \
-                            val2 = (int## size ## _t)val;               \
-                        break;                                          \
-                    default:                                            \
-                        goto illegal_insn;                              \
-                    }                                                   \
-                    if (target_write_u ## size(s, addr, val2))          \
-                        goto mmu_exception;                             \
-                    break;                                              \
-                default:                                                \
-                    goto illegal_insn;                                  \
-                }                                                       \
-            }
-            switch(funct3) {
-            case 2:
-                OP_A(32);
-                break;
-            case 3:
-                OP_A(64);
-                break;
-            default:
+        case 0x2f: { // atomics
+            funct3 = (insn >> 12) & 7; // width
+            // width = 2 (32-bit variant) or width = 3 (64-bit variant)
+            if ((funct3 != 2) && (funct3 != 3))
                 goto illegal_insn;
+            uint32_t funct5 = (insn >> 27); // func
+            addr = s->reg[rs1];
+            // 64 bit variants
+            if (funct3 & 1) {
+                uint64_t rval;
+                switch (static_cast<Atomic>(funct5)) {
+                case Atomic::lr:
+                    if (rs2 != 0)
+                        goto illegal_insn;
+                    if (target_read<uint64_t>(s, &rval, addr))
+                        goto mmu_exception;
+                    val = (int64_t)rval;
+                    s->ilrsc = addr;
+                    break;
+                case Atomic::sc:
+                    if (s->ilrsc == addr) {
+                        if (target_write<uint64_t>(s, addr, s->reg[rs2]))
+                            goto mmu_exception;
+                        val = 0;
+                    } else {
+                        val = 1;
+                    }
+                    break;
+                default:
+                    if (funct5 > 4 && (funct5 & 3))
+                        goto illegal_insn;
+                    if (target_read<uint64_t>(s, &rval, addr))
+                        goto mmu_exception;
+                    val = (int64_t)rval;
+                    val2 = s->reg[rs2];
+                    switch (static_cast<Atomic>(funct5)) {
+                    case Atomic::amoswap:
+                        break;
+                    case Atomic::amoadd:
+                        val2 = (int64_t)(val + val2);
+                        break;
+                    case Atomic::amoxor:
+                        val2 = (int64_t)(val ^ val2);
+                        break;
+                    case Atomic::amoand:
+                        val2 = (int64_t)(val & val2);
+                        break;
+                    case Atomic::amoor:
+                        val2 = (int64_t)(val | val2);
+                        break;
+                    case Atomic::amomin:
+                        if ((int64_t)val < (int64_t)val2)
+                            val2 = (int64_t)val;
+                        break;
+                    case Atomic::amomax:
+                        if ((int64_t)val > (int64_t)val2)
+                            val2 = (int64_t)val;
+                        break;
+                    case Atomic::amominu:
+                        if ((uint64_t)val < (uint64_t)val2)
+                            val2 = (int64_t)val;
+                        break;
+                    case Atomic::amomaxu:
+                        if ((uint64_t)val > (uint64_t)val2)
+                            val2 = (int64_t)val;
+                        break;
+                    default:
+                        goto illegal_insn;
+                    }
+                    if (target_write<uint64_t>(s, addr, val2))
+                        goto mmu_exception;
+                    break;
+                }
+            // 32 bit variants
+            } else {
+                uint32_t rval;
+                switch (static_cast<Atomic>(funct5)) {
+                case Atomic::lr:
+                    if (rs2 != 0)
+                        goto illegal_insn;
+                    if (target_read<uint32_t>(s, &rval, addr))
+                        goto mmu_exception;
+                    val = (int32_t)rval;
+                    s->ilrsc = addr;
+                    break;
+                case Atomic::sc:
+                    if (s->ilrsc == addr) {
+                        if (target_write<uint32_t>(s, addr, s->reg[rs2]))
+                            goto mmu_exception;
+                        val = 0;
+                    } else {
+                        val = 1;
+                    }
+                    break;
+                default:
+                    if (funct5 > 4 && (funct5 & 3))
+                        goto illegal_insn;
+                    if (target_read<uint32_t>(s, &rval, addr))
+                        goto mmu_exception;
+                    val = (int32_t)rval;
+                    val2 = s->reg[rs2];
+                    switch (static_cast<Atomic>(funct5)) {
+                    case Atomic::amoswap:
+                        break;
+                    case Atomic::amoadd:
+                        val2 = (int32_t)(val + val2);
+                        break;
+                    case Atomic::amoxor:
+                        val2 = (int32_t)(val ^ val2);
+                        break;
+                    case Atomic::amoand:
+                        val2 = (int32_t)(val & val2);
+                        break;
+                    case Atomic::amoor:
+                        val2 = (int32_t)(val | val2);
+                        break;
+                    case Atomic::amomin:
+                        if ((int32_t)val < (int32_t)val2)
+                            val2 = (int32_t)val;
+                        break;
+                    case Atomic::amomax:
+                        if ((int32_t)val > (int32_t)val2)
+                            val2 = (int32_t)val;
+                        break;
+                    case Atomic::amominu:
+                        if ((uint32_t)val < (uint32_t)val2)
+                            val2 = (int32_t)val;
+                        break;
+                    case Atomic::amomaxu:
+                        if ((uint32_t)val > (uint32_t)val2)
+                            val2 = (int32_t)val;
+                        break;
+                    default:
+                        goto illegal_insn;
+                    }
+                    if (target_write<uint32_t>(s, addr, val2))
+                        goto mmu_exception;
+                    break;
+                }
             }
             if (rd != 0)
                 s->reg[rd] = val;
             NEXT_INSN;
+        }
         default:
             goto illegal_insn;
         }
@@ -2161,8 +2132,6 @@ the_end:
     s->minstret = GET_INSN_COUNTER();
     s->mcycle = GET_CYCLE_COUNTER();
 }
-
-#undef OP_A
 
 void riscv_cpu_run(RISCVCPUState *s, uint64_t cycles_end)
 {

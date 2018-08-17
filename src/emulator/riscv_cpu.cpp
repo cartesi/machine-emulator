@@ -56,16 +56,10 @@ typedef unsigned __int128 uint128_t;
 #include "riscv_cpu.h"
 
 #ifdef DUMP_INSN
+extern "C" {
 #include "dis/riscv-opc.h"
+}
 #endif
-
-
-//#define DUMP_INVALID_MEM_ACCESS
-//#define DUMP_MMU_EXCEPTIONS
-//#define DUMP_INTERRUPTS
-//#define DUMP_INVALID_CSR
-//#define DUMP_EXCEPTIONS
-//#define DUMP_CSR
 
 #define __exception __attribute__((warn_unused_result))
 
@@ -1013,7 +1007,7 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, CSR csr, bool will_wri
 #ifdef DUMP_INVALID_CSR
         /* the 'time' counter is usually emulated */
         //??D but we don't emulate it, so maybe we should handle it right here
-        if (csr != 0xc01 && csr != 0xc81) {
+        if (csr != CSR::utime) {
             fprintf(stderr, "csr_read: invalid CSR=0x%x\n", static_cast<int>(csr));
         }
 #endif
@@ -1168,7 +1162,9 @@ static void raise_exception(RISCVCPUState *s, target_ulong cause,
             flag = 0;
 #endif
         if (flag) {
-            fprintf(stderr, "raise_exception: cause=0x%08x tval=0x", cause);
+            fprintf(stderr, "raise_exception: cause=0x");
+            print_target_ulong(cause);
+            fprintf(stderr, " tval=0x");
             print_target_ulong(tval);
             fprintf(stderr, "\n");
             dump_regs(s);
@@ -2124,6 +2120,21 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
  illegal_insn:
     s->pending_exception = CAUSE_ILLEGAL_INSTRUCTION;
     s->pending_tval = insn;
+#ifdef DUMP_ILLEGAL_INSN
+        {
+            fprintf(stderr, "ILLEGAL INSTRUCTION\n");
+            target_ulong pc = GET_PC();
+            target_ulong ppc;
+            if (!get_phys_addr(s, &ppc, pc, ACCESS_CODE)) {
+                fprintf(stderr, "p    %08" PRIx64, ppc);
+            } else {
+                ppc = pc;
+                fprintf(stderr, "v    %08" PRIx64, ppc);
+            }
+            fprintf(stderr, ":   %08" PRIx32 "   ", insn);
+            fprintf(stderr, "\n");
+        }
+#endif
 
  mmu_exception:
  exception:

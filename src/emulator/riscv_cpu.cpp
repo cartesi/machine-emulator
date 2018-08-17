@@ -1276,11 +1276,17 @@ static inline uint32_t get_pending_irq_mask(RISCVCPUState *s)
     return pending_ints & enabled_ints;
 }
 
+// The return value is undefined if v == 0
+// This works on gcc and clang and uses the lzcnt instruction
+static inline uint32_t ilog2(uint32_t v) {
+    return 31 - __builtin_clz(v);
+}
+
 static __exception int raise_interrupt(RISCVCPUState *s)
 {
     uint32_t mask = get_pending_irq_mask(s);
     if (mask == 0) return 0;
-    target_ulong irq_num = fls(mask)-1; // highest bit set
+    target_ulong irq_num = ilog2(mask);
     raise_exception(s, irq_num | CAUSE_INTERRUPT, 0);
     return -1;
 }

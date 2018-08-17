@@ -158,6 +158,7 @@ struct RISCVCPUState {
     uint8_t priv; /* see PRV_x */
     bool power_down_flag;
     bool shuthost_flag;
+    uint8_t fs; /* MSTATUS_FS value */
 
     /*??D change to icause and itval? */
     int pending_exception; /* used during MMU exception handling */
@@ -763,28 +764,26 @@ void riscv_cpu_flush_tlb_write_range_ram(RISCVCPUState *s,
 /* return the complete mstatus */
 static target_ulong get_mstatus(RISCVCPUState *s, target_ulong mask)
 {
-    target_ulong val = s->mstatus & mask;
-#if 0
-    //??D we do not use XS or FS, and therefore can hardwire SD to 0
+    target_ulong val = s->mstatus | (s->fs << MSTATUS_FS_SHIFT);
+    val &= mask;
     bool sd = ((val & MSTATUS_FS) == MSTATUS_FS) |
         ((val & MSTATUS_XS) == MSTATUS_XS);
     if (sd)
         val |= (target_ulong)1 << (XLEN - 1);
-#endif
     return val;
 }
 
 static void set_mstatus(RISCVCPUState *s, target_ulong val)
 {
-    target_ulong mod, mask;
 
     /* flush the TLBs if change of MMU config */
-    mod = s->mstatus ^ val;
+    target_ulong mod = s->mstatus ^ val;
     if ((mod & (MSTATUS_MPRV | MSTATUS_SUM | MSTATUS_MXR)) != 0 ||
         ((s->mstatus & MSTATUS_MPRV) && (mod & MSTATUS_MPP) != 0)) {
         tlb_flush_all(s);
     }
-    mask = MSTATUS_MASK & ~MSTATUS_FS;
+    s->fs = (val >> MSTATUS_FS_SHIFT) & 3;
+    target_ulong mask = MSTATUS_MASK & ~MSTATUS_FS;
     s->mstatus = (s->mstatus & ~mask) | (val & mask);
 }
 

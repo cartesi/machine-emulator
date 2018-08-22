@@ -2,6 +2,10 @@
 
 #include "machine.h"
 
+#ifdef GPERF
+#include "gperftools/profiler.h"
+#endif
+
 #if 0
 static void print(lua_State *L, int idx) {
     idx = lua_absindex(L, idx);
@@ -99,9 +103,30 @@ static const luaL_Reg emu_module[] = {
     { NULL, NULL }
 };
 
+#ifdef GPERF
+static int gperf__gc(lua_State *) {
+    ProfilerStop();
+    return 0;
+}
+
+static const luaL_Reg gperf_meta[] = {
+    {"__gc", gperf__gc},
+    { NULL, NULL }
+};
+#endif
+
 extern "C"
 __attribute__((visibility("default")))
 int luaopen_emu(lua_State *L) {
+#ifdef GPERF
+    lua_newuserdata(L, 1); /* gperf */
+    lua_pushvalue(L, -1); /* gperf gperf */
+    lua_newtable(L); /* gperf gperf gperfmeta */
+    luaL_setfuncs(L, gperf_meta, 0); /* gperf gperf gperfmeta */
+    lua_setmetatable(L, -2); /* gperf gperf */
+    lua_settable(L, LUA_REGISTRYINDEX); /**/
+    ProfilerStart("emu.prof");
+#endif
     lua_newtable(L); /* mod */
     lua_newtable(L); /* mod emumeta */
     lua_newtable(L); /* mod emumeta emuidx */

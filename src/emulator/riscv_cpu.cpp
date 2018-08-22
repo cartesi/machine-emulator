@@ -26,6 +26,9 @@
 #include <cstdarg>
 #include <cstring>
 #include <cinttypes>
+#include <cstdint>
+#include <bitset>
+#include <iostream>
 
 /* this test works at least with gcc */
 #if defined(__SIZEOF_INT128__)
@@ -154,11 +157,11 @@ struct RISCVCPUState {
     target_ulong pc;
     target_ulong reg[32];
 
-    /*??D these are what makes our flags register */
-    uint8_t priv; /* see PRV_x */
-    bool power_down_flag;
-    bool shuthost_flag;
-    uint8_t fs; /* MSTATUS_FS value */
+    uint8_t iflags_PRV; /* see PRV_x */
+    bool iflags_I;
+    bool iflags_H;
+
+    uint8_t mstatus_FS; /* MSTATUS_FS value */
 
     /*??D change to icause and itval? */
     int pending_exception; /* used during MMU exception handling */
@@ -237,7 +240,7 @@ void dump_regs(RISCVCPUState *s)
         else
             fprintf(stderr, " ");
     }
-    fprintf(stderr, "priv=%c", priv_str[s->priv]);
+    fprintf(stderr, "priv=%c", priv_str[s->iflags_PRV]);
     fprintf(stderr, " mstatus=");
     print_target_ulong(s->mstatus);
     fprintf(stderr, " cycles=%" PRId64, s->mcycle);
@@ -370,7 +373,7 @@ static int get_phys_addr(RISCVCPUState *s,
         /* use previous priviledge */
         priv = (s->mstatus >> MSTATUS_MPP_SHIFT) & 3;
     } else {
-        priv = s->priv;
+        priv = s->iflags_PRV;
     }
 
     if (priv == PRV_M) {
@@ -642,18 +645,9 @@ static int target_write_slow(RISCVCPUState *s, target_ulong addr,
     return 0;
 }
 
-struct __attribute__((packed)) unaligned_u32 {
-    uint32_t u32;
-};
-
-/* unaligned access at an address known to be a multiple of 2 */
-static uint32_t get_insn32(uint8_t *ptr)
+static inline uint32_t get_insn32(uint8_t *ptr)
 {
-#if defined(EMSCRIPTEN)
-    return ((uint16_t *)ptr)[0] | (((uint16_t *)ptr)[1] << 16);
-#else
-    return ((struct unaligned_u32 *)ptr)->u32;
-#endif
+    return *((uint32_t*) ptr);
 }
 
 /* return 0 if OK, != 0 if exception */
@@ -683,24 +677,6 @@ static __exception int target_read_insn_slow(RISCVCPUState *s,
     s->tlb_code[tlb_idx].vaddr = addr & ~PG_MASK;
     s->tlb_code[tlb_idx].mem_addend = (uintptr_t)ptr - addr;
     *pmem_addend = s->tlb_code[tlb_idx].mem_addend;
-    return 0;
-}
-
-/* addr must be aligned */
-static inline __exception int target_read_insn_u16(RISCVCPUState *s, uint16_t *pinsn,
-                                                   target_ulong addr)
-{
-    uint32_t tlb_idx;
-    uintptr_t mem_addend;
-
-    tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
-    if (s->tlb_code[tlb_idx].vaddr == (addr & ~PG_MASK)) {
-        mem_addend = s->tlb_code[tlb_idx].mem_addend;
-    } else {
-        if (target_read_insn_slow(s, &mem_addend, addr))
-            return -1;
-    }
-    *pinsn = *(uint16_t *)(mem_addend + (uintptr_t)addr);
     return 0;
 }
 
@@ -764,7 +740,7 @@ void riscv_cpu_flush_tlb_write_range_ram(RISCVCPUState *s,
 /* return the complete mstatus */
 static target_ulong get_mstatus(RISCVCPUState *s, target_ulong mask)
 {
-    target_ulong val = s->mstatus | (s->fs << MSTATUS_FS_SHIFT);
+    target_ulong val = s->mstatus | (s->mstatus_FS << MSTATUS_FS_SHIFT);
     val &= mask;
     bool sd = ((val & MSTATUS_FS) == MSTATUS_FS) |
         ((val & MSTATUS_XS) == MSTATUS_XS);
@@ -782,7 +758,7 @@ static void set_mstatus(RISCVCPUState *s, target_ulong val)
         ((s->mstatus & MSTATUS_MPRV) && (mod & MSTATUS_MPP) != 0)) {
         tlb_flush_all(s);
     }
-    s->fs = (val >> MSTATUS_FS_SHIFT) & 3;
+    s->mstatus_FS = (val >> MSTATUS_FS_SHIFT) & 3;
     target_ulong mask = MSTATUS_MASK & ~MSTATUS_FS;
     s->mstatus = (s->mstatus & ~mask) | (val & mask);
 }
@@ -866,14 +842,14 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, CSR csr, bool will_wri
     target_ulong val;
 
     if (csr_is_read_only(csr) && will_write) return -1;
-    if (csr_priv(csr) > s->priv) return -1;
+    if (csr_priv(csr) > s->iflags_PRV) return -1;
 
     switch(csr) {
     case CSR::ucycle:
         {
             uint32_t counteren;
-            if (s->priv < PRV_M) {
-                if (s->priv < PRV_S)
+            if (s->iflags_PRV < PRV_M) {
+                if (s->iflags_PRV < PRV_S)
                     counteren = s->scounteren;
                 else
                     counteren = s->mcounteren;
@@ -886,8 +862,8 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, CSR csr, bool will_wri
     case CSR::uinstret:
         {
             uint32_t counteren;
-            if (s->priv < PRV_M) {
-                if (s->priv < PRV_S)
+            if (s->iflags_PRV < PRV_M) {
+                if (s->iflags_PRV < PRV_S)
                     counteren = s->scounteren;
                 else
                     counteren = s->mcounteren;
@@ -931,7 +907,7 @@ static int csr_read(RISCVCPUState *s, target_ulong *pval, CSR csr, bool will_wri
         val = s->mip & s->mideleg;
         break;
     case CSR::satp:
-        if (s->priv == PRV_S && s->mstatus & MSTATUS_TVM)
+        if (s->iflags_PRV == PRV_S && s->mstatus & MSTATUS_TVM)
             return -1;
         val = s->satp;
         break;
@@ -1129,9 +1105,9 @@ static int csr_write(RISCVCPUState *s, CSR csr, target_ulong val)
 
 static void set_priv(RISCVCPUState *s, int priv)
 {
-    if (s->priv != priv) {
+    if (s->iflags_PRV != priv) {
         tlb_flush_all(s);
-        s->priv = priv;
+        s->iflags_PRV = priv;
         s->ilrsc = 0;
     }
 }
@@ -1175,7 +1151,7 @@ static void raise_exception(RISCVCPUState *s, target_ulong cause,
     // For each interrupt or exception number, there is a bit at mideleg
     // or medeleg saying if it should be delegated
     bool deleg;
-    if (s->priv <= PRV_S) {
+    if (s->iflags_PRV <= PRV_S) {
         if (cause & CAUSE_INTERRUPT)
             // Clear the CAUSE_INTERRUPT bit before shifting
             deleg = (s->mideleg >> (cause & (XLEN - 1))) & 1;
@@ -1190,9 +1166,9 @@ static void raise_exception(RISCVCPUState *s, target_ulong cause,
         s->sepc = s->pc;
         s->stval = tval;
         s->mstatus = (s->mstatus & ~MSTATUS_SPIE) |
-            (((s->mstatus >> s->priv) & 1) << MSTATUS_SPIE_SHIFT);
+            (((s->mstatus >> s->iflags_PRV) & 1) << MSTATUS_SPIE_SHIFT);
         s->mstatus = (s->mstatus & ~MSTATUS_SPP) |
-            (s->priv << MSTATUS_SPP_SHIFT);
+            (s->iflags_PRV << MSTATUS_SPP_SHIFT);
         s->mstatus &= ~MSTATUS_SIE;
         set_priv(s, PRV_S);
         s->pc = s->stvec;
@@ -1201,9 +1177,9 @@ static void raise_exception(RISCVCPUState *s, target_ulong cause,
         s->mepc = s->pc;
         s->mtval = tval;
         s->mstatus = (s->mstatus & ~MSTATUS_MPIE) |
-            (((s->mstatus >> s->priv) & 1) << MSTATUS_MPIE_SHIFT);
+            (((s->mstatus >> s->iflags_PRV) & 1) << MSTATUS_MPIE_SHIFT);
         s->mstatus = (s->mstatus & ~MSTATUS_MPP) |
-            (s->priv << MSTATUS_MPP_SHIFT);
+            (s->iflags_PRV << MSTATUS_MPP_SHIFT);
         s->mstatus &= ~MSTATUS_MIE;
         set_priv(s, PRV_M);
         s->pc = s->mtvec;
@@ -1251,7 +1227,7 @@ static inline uint32_t get_pending_irq_mask(RISCVCPUState *s)
         return 0;
 
     enabled_ints = 0;
-    switch(s->priv) {
+    switch(s->iflags_PRV) {
     case PRV_M:
         if (s->mstatus & MSTATUS_MIE)
             enabled_ints = ~s->mideleg;
@@ -1345,7 +1321,6 @@ static inline uint64_t mulhu64(uint64_t a, uint64_t b)
 #define GET_INSN_COUNTER() (minstret_end - n_cycles)
 #define GET_CYCLE_COUNTER() (mcycle_end - n_cycles)
 
-#define C_NEXT_INSN code_ptr += 2; break
 #define NEXT_INSN code_ptr += 4; break
 
 #define CHECK_JUMP do { \
@@ -1408,13 +1383,13 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
     fprintf(stderr, "\n");
 #endif
 
-        if (!--n_cycles || s->shuthost_flag) {
+        if (!--n_cycles || s->iflags_H) {
             s->pc = GET_PC();
             goto the_end;
         }
+
         if (code_ptr >= code_end) {
             uint32_t tlb_idx;
-            uint16_t insn_high;
             uintptr_t mem_addend;
             target_ulong addr;
 
@@ -1440,23 +1415,9 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
             code_end = (uint8_t *)(mem_addend +
                                    (uintptr_t)((addr & ~PG_MASK) + PG_MASK - 1));
             code_to_pc_addend = addr - (uintptr_t)code_ptr;
-            if (code_ptr >= code_end) {
-                /* instruction is potentially half way between two
-                   pages ? */
-                insn = *(uint16_t *)code_ptr;
-                if ((insn & 3) == 3) {
-                    /* instruction is half way between two pages */
-                    if (target_read_insn_u16(s, &insn_high, addr + 2))
-                        goto mmu_exception;
-                    insn |= insn_high << 16;
-                }
-            } else {
-                insn = get_insn32(code_ptr);
-            }
-        } else {
-            /* fast path */
-            insn = get_insn32(code_ptr);
         }
+
+        insn = get_insn32(code_ptr);
 #ifdef DUMP_INSN
         {
             target_ulong pc = GET_PC();
@@ -1880,7 +1841,7 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
                 case 0x000: /* ecall */
                     if (insn & 0x000fff80)
                         goto illegal_insn;
-                    s->pending_exception = CAUSE_USER_ECALL + s->priv;
+                    s->pending_exception = CAUSE_USER_ECALL + s->iflags_PRV;
                     goto exception;
                 case 0x001: /* ebreak */
                     if (insn & 0x000fff80)
@@ -1891,8 +1852,8 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
                     {
                         if (insn & 0x000fff80)
                             goto illegal_insn;
-                        if (s->priv < PRV_S ||
-                            (s->priv == PRV_S && (s->mstatus & MSTATUS_TSR)))
+                        if (s->iflags_PRV < PRV_S ||
+                            (s->iflags_PRV == PRV_S && (s->mstatus & MSTATUS_TSR)))
                             goto illegal_insn;
                         s->pc = GET_PC();
                         handle_sret(s);
@@ -1903,7 +1864,7 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
                     {
                         if (insn & 0x000fff80)
                             goto illegal_insn;
-                        if (s->priv < PRV_M)
+                        if (s->iflags_PRV < PRV_M)
                             goto illegal_insn;
                         s->pc = GET_PC();
                         handle_mret(s);
@@ -1913,13 +1874,13 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
                 case 0x105: /* wfi */
                     if (insn & 0x00007f80)
                         goto illegal_insn;
-                    if (s->priv == PRV_U ||
-                        (s->priv == PRV_S && (s->mstatus & MSTATUS_TW)))
+                    if (s->iflags_PRV == PRV_U ||
+                        (s->iflags_PRV == PRV_S && (s->mstatus & MSTATUS_TW)))
                         goto illegal_insn;
                     /* go to power down if no enabled interrupts are
                        pending */
                     if ((s->mip & s->mie) == 0) {
-                        s->power_down_flag = true;
+                        s->iflags_I = true;
                         s->pc = GET_PC() + 4;
                         goto done_interp;
                     }
@@ -1929,8 +1890,8 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
                         /* sfence.vma */
                         if (insn & 0x00007f80)
                             goto illegal_insn;
-                        if (s->priv == PRV_U ||
-                            (s->priv == PRV_S && (s->mstatus & MSTATUS_TVM)))
+                        if (s->iflags_PRV == PRV_U ||
+                            (s->iflags_PRV == PRV_S && (s->mstatus & MSTATUS_TVM)))
                             goto illegal_insn;
                         if (rs1 == 0) {
                             tlb_flush_all(s);
@@ -2151,7 +2112,7 @@ the_end:
 
 void riscv_cpu_run(RISCVCPUState *s, uint64_t cycles_end)
 {
-    while (!s->power_down_flag && !s->shuthost_flag &&
+    while (!s->iflags_I && !s->iflags_H &&
         s->mcycle < cycles_end) {
         riscv_cpu_interpret(s, cycles_end);
     }
@@ -2172,8 +2133,10 @@ void riscv_cpu_set_mip(RISCVCPUState *s, uint32_t mask)
 {
     s->mip |= mask;
     /* exit from power down if an interrupt is pending */
-    if (s->power_down_flag && (s->mip & s->mie) != 0)
-        s->power_down_flag = false;
+    s->iflags_I &= !(s->mip & s->mie);
+
+    //if (s->iflags_I && (s->mip & s->mie) != 0)
+        //s->iflags_I = false;
 }
 
 void riscv_cpu_reset_mip(RISCVCPUState *s, uint32_t mask)
@@ -2188,22 +2151,22 @@ uint32_t riscv_cpu_get_mip(const RISCVCPUState *s)
 
 bool riscv_cpu_get_power_down(const RISCVCPUState *s)
 {
-    return s->power_down_flag;
+    return s->iflags_I;
 }
 
 void riscv_cpu_set_power_down(RISCVCPUState *s, bool v)
 {
-    s->power_down_flag = v;
+    s->iflags_I = v;
 }
 
 bool riscv_cpu_get_shuthost(const RISCVCPUState *s)
 {
-    return s->shuthost_flag;
+    return s->iflags_H;
 }
 
 void riscv_cpu_set_shuthost(RISCVCPUState *s, bool v)
 {
-    s->shuthost_flag = v;
+    s->iflags_H = v;
 }
 
 int riscv_cpu_get_max_xlen(const RISCVCPUState *)
@@ -2215,10 +2178,10 @@ RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map)
 {
     RISCVCPUState *s = reinterpret_cast<RISCVCPUState *>(calloc(1, sizeof(*s)));
     s->mem_map = mem_map;
-    s->power_down_flag = false;
-    s->shuthost_flag = false;
+    s->iflags_I = false;
+    s->iflags_H = false;
     s->pc = 0x1000;
-    s->priv = PRV_M;
+    s->iflags_PRV = PRV_M;
     s->mstatus = ((uint64_t)MXL << MSTATUS_UXL_SHIFT) |
         ((uint64_t)MXL << MSTATUS_SXL_SHIFT);
     s->misa = MXL; s->misa <<= (XLEN-2); /* set xlen to 64 */

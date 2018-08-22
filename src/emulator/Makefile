@@ -25,7 +25,7 @@ CXX_Darwin=clang++
 # libfdt
 #   apt-get install libfdt-dev
 #
-SOLDFLAGS_Linux:= -shared -fpic
+SOLDFLAGS_Linux:= -shared -fpic -g
 CC_Linux=gcc
 CXX_Linux=g++
 
@@ -48,10 +48,12 @@ endif
 # GCFLAGS=-fdata-sections -ffunction-sections
 # GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
 
-CFLAGS=$(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS)
-CXXFLAGS=-std=c++14 $(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS)
+CFLAGS=$(WARNS) -g -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS)
+CXXFLAGS=-g -std=c++14 $(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS)
 
 ALL=emu.so
+
+.PHONY: all generate use clean
 
 all: $(ALL)
 
@@ -61,8 +63,27 @@ OBJS:= \
 	luaemu.o \
 	riscv_cpu.o
 
+ifeq ($(gperf),yes)
+DEFS+=-DGPERF
+LIBS+=-lprofiler
+endif
+
 emu.so: $(OBJS)
-	$(CC) $(SOLDFLAGS) -o $@ $^ $(LIBS)
+	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LIBS)
+
+generate: CFLAGS += -fprofile-generate
+generate: CXXFLAGS += -fprofile-generate
+generate: SOLDFLAGS += -fprofile-generate
+
+generate: emu.so
+	lua run.lua --boot-image=kernel.bin --root-backing=rv64ima.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 1500"
+
+use: CFLAGS += -fprofile-use
+use: CXXFLAGS += -fprofile-use
+use: SOLDFLAGS += -fprofile-use
+
+use: emu.so
+	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<

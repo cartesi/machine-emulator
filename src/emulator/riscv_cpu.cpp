@@ -400,10 +400,7 @@ static int get_phys_addr(RISCVCPUState *s,
         vaddr_shift = PG_SHIFT + pte_bits * (levels - 1 - i);
         pte_idx = (vaddr >> vaddr_shift) & pte_mask;
         pte_addr += pte_idx << pte_size_log2;
-        if (pte_size_log2 == 2)
-            pte = phys_read<uint32_t>(s, pte_addr);
-        else
-            pte = phys_read<uint64_t>(s, pte_addr);
+        pte = phys_read<uint64_t>(s, pte_addr);
         if (!(pte & PTE_V_MASK))
             return -1; /* invalid PTE */
         paddr = (pte >> 10) << PG_SHIFT;
@@ -435,10 +432,7 @@ static int get_phys_addr(RISCVCPUState *s,
             if (access == ACCESS_WRITE)
                 pte |= PTE_D_MASK;
             if (need_write) {
-                if (pte_size_log2 == 2)
-                    phys_write<uint32_t>(s, pte_addr, pte);
-                else
-                    phys_write<uint64_t>(s, pte_addr, pte);
+                phys_write<uint64_t>(s, pte_addr, pte);
             }
             *ppaddr = (vaddr & vaddr_mask) | (paddr  & ~vaddr_mask);
             return 0;
@@ -2376,32 +2370,32 @@ static inline uint32_t insn_rs2(uint32_t insn) {
 }
 
 static inline uint32_t insn_opcode(uint32_t insn) {
-    std::cerr << "opcode: " << std::bitset<7>(insn & 0b1111111) << '\n';
+    //std::cerr << "opcode: " << std::bitset<7>(insn & 0b1111111) << '\n';
     return insn & 0b1111111;
 }
 
 static inline uint32_t insn_funct3(uint32_t insn) {
-    std::cerr << "funct3: " << std::bitset<3>((insn >> 12) & 0b111) << '\n';
+    //std::cerr << "funct3: " << std::bitset<3>((insn >> 12) & 0b111) << '\n';
     return (insn >> 12) & 0b111;
 }
 
 static inline uint32_t insn_funct3_funct7(uint32_t insn) {
-    std::cerr << "funct3_funct7: " << std::bitset<10>(((insn >> 5) & 0b1110000000) | (insn >> 24)) << '\n';
+    //std::cerr << "funct3_funct7: " << std::bitset<10>(((insn >> 5) & 0b1110000000) | (insn >> 24)) << '\n';
     return ((insn >> 5) & 0b1110000000) | (insn >> 24);
 }
 
 static inline uint32_t insn_funct3_funct5(uint32_t insn) {
-    std::cerr << "funct3_funct5: " << std::bitset<8>(((insn >> 7) & 0b11100000) | (insn >> 27)) << '\n';
+    //std::cerr << "funct3_funct5: " << std::bitset<8>(((insn >> 7) & 0b11100000) | (insn >> 27)) << '\n';
     return ((insn >> 7) & 0b11100000) | (insn >> 27);
 }
 
 static inline uint32_t insn_funct7(uint32_t insn) {
-    std::cerr << "funct7: " << std::bitset<7>((insn >> 25) & 0b1111111) << '\n';
+    //std::cerr << "funct7: " << std::bitset<7>((insn >> 25) & 0b1111111) << '\n';
     return (insn >> 25) & 0b1111111;
 }
 
 static inline uint32_t insn_funct6(uint32_t insn) {
-    std::cerr << "funct6: " << std::bitset<6>((insn >> 26) & 0b111111) << '\n';
+    //std::cerr << "funct6: " << std::bitset<6>((insn >> 26) & 0b111111) << '\n';
     return (insn >> 26) & 0b111111;
 }
 
@@ -2415,8 +2409,8 @@ static void dump_insn(const char *insn) {
 //    instruction is valid.
 
 static inline bool illegal_insn(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("illegal instruction");
+    s->minstret--;
+    raise_exception(s, CAUSE_ILLEGAL_INSTRUCTION, insn);
     return true;
 }
 
@@ -3213,7 +3207,7 @@ static inline bool execute_branch_group(RISCVCPUState *s, uint32_t insn) {
 }
 
 static inline bool execute_insn(RISCVCPUState *s, uint32_t insn) {
-    std::cerr << "insn: " << std::bitset<32>(insn) << '\n';
+    //std::cerr << "insn: " << std::bitset<32>(insn) << '\n';
     switch (static_cast<opcode>(insn_opcode(insn))) {
         case opcode::LUI: return execute_LUI(s, insn);
         case opcode::AUIPC: return execute_AUIPC(s, insn);
@@ -3233,8 +3227,41 @@ static inline bool execute_insn(RISCVCPUState *s, uint32_t insn) {
     }
 }
 
-bool fetch_insn(RISCVCPUState *s, uint32_t *insn) {
-    (void) s; (void) insn;
+static bool fetch_insn(RISCVCPUState *s, uint32_t *insn) {
+    // Translate pc address from virtual to physical
+    // First, check TLB
+    target_ulong vaddr = s->pc;
+    int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
+    uintptr_t mem_addend;
+    // TLB match
+    if (s->tlb_code[tlb_idx].vaddr == (vaddr & ~PG_MASK)) {
+        mem_addend = s->tlb_code[tlb_idx].mem_addend;
+    // TLB miss
+    } else {
+        target_ulong paddr;
+        // Walk page table
+        if (get_phys_addr(s, &paddr, vaddr, ACCESS_CODE)) {
+            raise_exception(s, CAUSE_FETCH_PAGE_FAULT, vaddr);
+            return false;
+        }
+        // Walk memory map
+        PhysMemoryRange *pr = get_phys_mem_range(s->mem_map, paddr);
+        if (!pr || !pr->is_ram) {
+            raise_exception(s, CAUSE_FAULT_FETCH, vaddr);
+            return false;
+        }
+        // Update TLB
+        tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
+        uint8_t *ptr = pr->phys_mem + (uintptr_t)(paddr - pr->addr);
+        s->tlb_code[tlb_idx].vaddr = vaddr & ~PG_MASK;
+        s->tlb_code[tlb_idx].mem_addend = (uintptr_t)ptr - vaddr;
+        mem_addend = s->tlb_code[tlb_idx].mem_addend;
+    }
+
+    // code_ptr = (uint8_t *)(mem_addend + (uintptr_t)vaddr);
+    // code_end = (uint8_t *)(mem_addend + (uintptr_t)((vaddr & ~PG_MASK) + PG_MASK - 1));
+    // code_to_pc_addend = vaddr - (uintptr_t)code_ptr;
+    *insn = *reinterpret_cast<uint32_t *>(mem_addend + (uintptr_t)vaddr);
     return true;
 }
 
@@ -3244,19 +3271,21 @@ flow interpret(RISCVCPUState *s, uint64_t mcycle_end) {
     // becomes idle, or mcycle reaches mcycle_end
     for ( ;; ) {
 
-        // If the cpu is halted, there is nothing else to do
+        // If the cpu is halted, report it
         if (s->iflags_H) {
             return flow::halted;
         }
 
-        // If machine is waiting for interrupts, also nothing to do
-        if (s->iflags_I) {
-            return flow::idle;
-        }
-
-        // If we reached the target mcycle, we are done
+        // If we reached the target mcycle, report it
         if (s->mcycle >= mcycle_end) {
             return flow::done;
+        }
+
+        // The machine is idle if there were no pending interrupts when it executed a WFI instruction.
+        // Any external attempt to externally set a pending interrupt clears the idle bit.
+        // Finding it set, there is nothing else to do and we simply report it
+        if (s->iflags_I) {
+            return flow::idle;
         }
 
         // If we broke from the inner loop, handle any available interrupts
@@ -3272,13 +3301,17 @@ flow interpret(RISCVCPUState *s, uint64_t mcycle_end) {
             s->mcycle++;
             // Try to fetch the next instruction
             if (fetch_insn(s, &insn)) {
+                // Try to execute it
+                auto next = execute_insn(s, insn);
+                // If the instruction was illegal, execute_insn decrements minstret,
+                // in which case we continue with the previous value
                 s->minstret++;
-                // Execute it and decide if we need to break the inner loop
-                if (!execute_insn(s, insn)) {
-                    break;
-                }
+                // execute_insn tells us if there is a chance an interrupt would be raised
+                // If so, we break from the inner loop
+                if (!next) break;
             }
 
+            // If we reached the target mcycle, we are done
             if (s->mcycle >= mcycle_end) {
                 return flow::done;
             }

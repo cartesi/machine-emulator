@@ -160,7 +160,7 @@ struct RISCVCPUState {
     uint8_t iflags_PRV; // current privilege level
     bool iflags_I; // CPU is idle (waiting for interrupts)
     bool iflags_H; // CPU is permanently halted
-    bool iflags_CI; // Next fetch-execute should check for interrupts
+    bool iflags_CI; // same as (mie & mip)
 
     uint8_t mstatus_FS; /* MSTATUS_FS value */
 
@@ -1247,7 +1247,7 @@ static inline uint32_t ilog2(uint32_t v) {
     return 31 - __builtin_clz(v);
 }
 
-static __exception int raise_interrupt(RISCVCPUState *s)
+static int raise_interrupt(RISCVCPUState *s)
 {
     uint32_t mask = get_pending_irq_mask(s);
     if (mask == 0) return 0;
@@ -2351,12 +2351,6 @@ enum class atomic_funct3_funct5 {
     AMOMAXU_D = 0b01111100
 };
 
-enum class flow {
-    done,
-    halted,
-    idle
-};
-
 static inline uint32_t insn_rd(uint32_t insn) {
     return (insn >> 7) & 0b11111;
 }
@@ -2408,9 +2402,23 @@ static void dump_insn(const char *insn) {
 //    In some cases, further checks are needed to ensure the
 //    instruction is valid.
 
-static inline bool illegal_insn(RISCVCPUState *s, uint32_t insn) {
-    s->minstret--;
+static inline bool execute_illegal_insn_exception(RISCVCPUState *s, uint32_t insn) {
     raise_exception(s, CAUSE_ILLEGAL_INSTRUCTION, insn);
+    return false;
+}
+
+static inline bool execute_misaligned_fetch_exception(RISCVCPUState *s) {
+    raise_exception(s, CAUSE_MISALIGNED_FETCH, s->pc);
+    return true;
+}
+
+static inline bool execute_next_insn(RISCVCPUState *s) {
+    s->pc += 4;
+    return true;
+}
+
+static inline bool execute_jump_insn(RISCVCPUState *s) {
+    (void) s;
     return true;
 }
 
@@ -2420,7 +2428,7 @@ static inline bool execute_LR_W(RISCVCPUState *s, uint32_t insn) {
         dump_insn("LR_W");
         return true;
     } else {
-        return illegal_insn(s, insn);
+        return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -2490,7 +2498,7 @@ static inline bool execute_LR_D(RISCVCPUState *s, uint32_t insn) {
         dump_insn("LR_D");
         return true;
     } else {
-        return illegal_insn(s, insn);
+        return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -2638,7 +2646,7 @@ static inline bool execute_SLLIW(RISCVCPUState *s, uint32_t insn) {
         dump_insn("SLLIW");
         return true;
     } else {
-        return illegal_insn(s, insn);
+        return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -2888,7 +2896,7 @@ static inline bool execute_SLLI(RISCVCPUState *s, uint32_t insn) {
         dump_insn("SLLI");
         return true;
     } else {
-        return illegal_insn(s, insn);
+        return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -2995,27 +3003,48 @@ static inline bool execute_BGEU(RISCVCPUState *s, uint32_t insn) {
 }
 
 static inline bool execute_LUI(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("LUI");
-    return true;
+    uint32_t rd = insn_rd(insn);
+    if (rd != 0)
+        s->reg[rd] = (int32_t)(insn & 0xfffff000);
+    return execute_next_insn(s);
 }
 
 static inline bool execute_AUIPC(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("AUIPC");
-    return true;
+    uint32_t rd = insn_rd(insn);
+    if (rd != 0)
+        s->reg[rd] = (int64_t)(s->pc + (int32_t)(insn & 0xfffff000));
+    return execute_next_insn(s);
 }
 
 static inline bool execute_JAL(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("JAL");
-    return true;
+    int32_t imm = ((insn >> (31 - 20)) & (1 << 20)) |
+        ((insn >> (21 - 1)) & 0x7fe) |
+        ((insn >> (20 - 11)) & (1 << 11)) |
+        (insn & 0xff000);
+    imm = (imm << 11) >> 11;
+    s->pc = (int64_t)(s->pc + imm);
+    if (s->pc & 3)
+        return execute_misaligned_fetch_exception(s);
+    uint32_t rd = insn_rd(insn);
+    if (rd != 0)
+        s->reg[rd] = s->pc + 4;
+    return execute_jump_insn(s);
 }
 
 static inline bool execute_JALR(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("JALR");
-    return true;
+    int32_t imm = (int32_t)insn >> 20;
+    target_ulong val = s->pc + 4;
+    s->pc = (int64_t)(s->reg[insn_rs1(insn)] + imm) & ~1;
+    if (s->pc & 3)
+        return execute_misaligned_fetch_exception(s);
+    uint32_t rd = insn_rd(insn);
+    if (rd != 0)
+        s->reg[rd] = val;
+    return execute_jump_insn(s);
 }
 
 static bool execute_SFENCE_VMA(RISCVCPUState *s, uint32_t insn) {
@@ -3025,7 +3054,7 @@ static bool execute_SFENCE_VMA(RISCVCPUState *s, uint32_t insn) {
         dump_insn("SFENCE_VMA");
         return true;
     } else {
-        return illegal_insn(s, insn);
+        return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -3053,7 +3082,7 @@ static inline bool execute_atomic_group(RISCVCPUState *s, uint32_t insn) {
         case atomic_funct3_funct5::AMOMAX_D: return execute_AMOMAX_D(s, insn);
         case atomic_funct3_funct5::AMOMINU_D: return execute_AMOMINU_D(s, insn);
         case atomic_funct3_funct5::AMOMAXU_D: return execute_AMOMAXU_D(s, insn);
-        default: return illegal_insn(s, insn);
+        default: return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -3069,7 +3098,7 @@ static inline bool execute_arithmetic_32_group(RISCVCPUState *s, uint32_t insn) 
         case arithmetic_32_funct3_funct7::DIVUW: return execute_DIVUW(s, insn);
         case arithmetic_32_funct3_funct7::REMW: return execute_REMW(s, insn);
         case arithmetic_32_funct3_funct7::REMUW: return execute_REMUW(s, insn);
-        default: return illegal_insn(s, insn);
+        default: return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -3077,7 +3106,7 @@ static inline bool execute_shift_right_immediate_32_group(RISCVCPUState *s, uint
     switch (static_cast<shift_right_immediate_32_funct7>(insn_funct7(insn))) {
         case shift_right_immediate_32_funct7::SRLIW: return execute_SRLIW(s, insn);
         case shift_right_immediate_32_funct7::SRAIW: return execute_SRAIW(s, insn);
-        default: return illegal_insn(s, insn);
+        default: return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -3086,7 +3115,7 @@ static inline bool execute_arithmetic_immediate_32_group(RISCVCPUState *s, uint3
         case arithmetic_immediate_32_funct3::ADDIW: return execute_ADDIW(s, insn);
         case arithmetic_immediate_32_funct3::SLLIW: return execute_SLLIW(s, insn);
         case arithmetic_immediate_32_funct3::shift_right_immediate_32_group: return execute_shift_right_immediate_32_group(s, insn);
-        default: return illegal_insn(s, insn);
+        default: return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -3111,7 +3140,7 @@ static inline bool execute_csr_env_trap_int_mm_group(RISCVCPUState *s, uint32_t 
         case csr_env_trap_int_mm_funct3::CSRRSI: return execute_CSRRSI(s, insn);
         case csr_env_trap_int_mm_funct3::CSRRCI: return execute_CSRRCI(s, insn);
         case csr_env_trap_int_mm_funct3::env_trap_int_mm_group: return execute_env_trap_int_mm_group(s, insn);
-        default: return illegal_insn(s, insn);
+        default: return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -3121,7 +3150,7 @@ static inline bool execute_fence_group(RISCVCPUState *s, uint32_t insn) {
     } else if ((insn & 0b11110000000011111111111111111111) == 0b00000000000000000000000000001111) {
         return execute_FENCE(s, insn);
     } else {
-        return illegal_insn(s, insn);
+        return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -3129,7 +3158,7 @@ static inline bool execute_shift_right_immediate_group(RISCVCPUState *s, uint32_
     switch (static_cast<shift_right_immediate_funct6>(insn_funct6(insn))) {
         case shift_right_immediate_funct6::SRLI: return execute_SRLI(s, insn);
         case shift_right_immediate_funct6::SRAI: return execute_SRAI(s, insn);
-        default: return illegal_insn(s, insn);
+        default: return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -3153,7 +3182,7 @@ static inline bool execute_arithmetic_group(RISCVCPUState *s, uint32_t insn) {
         case arithmetic_funct3_funct7::DIVU: return execute_DIVU(s, insn);
         case arithmetic_funct3_funct7::REM: return execute_REM(s, insn);
         case arithmetic_funct3_funct7::REMU: return execute_REMU(s, insn);
-        default: return illegal_insn(s, insn);
+        default: return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -3167,7 +3196,7 @@ static inline bool execute_arithmetic_immediate_group(RISCVCPUState *s, uint32_t
         case arithmetic_immediate_funct3::ANDI: return execute_ANDI(s, insn);
         case arithmetic_immediate_funct3::SLLI: return execute_SLLI(s, insn);
         case arithmetic_immediate_funct3::shift_right_immediate_group: return execute_shift_right_immediate_group(s, insn);
-        default: return illegal_insn(s, insn);
+        default: return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -3177,7 +3206,7 @@ static inline bool execute_store_group(RISCVCPUState *s, uint32_t insn) {
         case store_funct3::SH: return execute_SH(s, insn);
         case store_funct3::SW: return execute_SW(s, insn);
         case store_funct3::SD: return execute_SD(s, insn);
-        default: return illegal_insn(s, insn);
+        default: return execute_illegal_insn_exception(s, insn);
     }
 }
 
@@ -3190,10 +3219,14 @@ static inline bool execute_load_group(RISCVCPUState *s, uint32_t insn) {
         case load_funct3::LBU: return execute_LBU(s, insn);
         case load_funct3::LHU: return execute_LHU(s, insn);
         case load_funct3::LWU: return execute_LWU(s, insn);
-        default: return illegal_insn(s, insn);
+        default: return execute_illegal_insn_exception(s, insn);
     }
 }
 
+/// \brief Executes an instruction in the branch group.
+/// \param s CPU state.
+/// \param insn Instruction.
+/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 static inline bool execute_branch_group(RISCVCPUState *s, uint32_t insn) {
     switch (static_cast<branch_funct3>(insn_funct3(insn))) {
         case branch_funct3::BEQ: return execute_BEQ(s, insn);
@@ -3202,10 +3235,14 @@ static inline bool execute_branch_group(RISCVCPUState *s, uint32_t insn) {
         case branch_funct3::BGE: return execute_BGE(s, insn);
         case branch_funct3::BLTU: return execute_BLTU(s, insn);
         case branch_funct3::BGEU: return execute_BGEU(s, insn);
-        default: return illegal_insn(s, insn);
+        default: return execute_illegal_insn_exception(s, insn);
     }
 }
 
+/// \brief Executes an instruction.
+/// \param s CPU state.
+/// \param insn Instruction.
+/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 static inline bool execute_insn(RISCVCPUState *s, uint32_t insn) {
     //std::cerr << "insn: " << std::bitset<32>(insn) << '\n';
     switch (static_cast<opcode>(insn_opcode(insn))) {
@@ -3223,10 +3260,14 @@ static inline bool execute_insn(RISCVCPUState *s, uint32_t insn) {
         case opcode::arithmetic_immediate_32_group: return execute_arithmetic_immediate_32_group(s, insn);
         case opcode::arithmetic_32_group: return execute_arithmetic_32_group(s, insn);
         case opcode::atomic_group: return execute_atomic_group(s, insn);
-        default: return illegal_insn(s, insn);
+        default: return execute_illegal_insn_exception(s, insn);
     }
 }
 
+/// \brief Loads the next instruction.
+/// \param s CPU state.
+/// \param insn Instruction.
+/// \return Returns true if load succeeded, false if it caused an exception. In that case, raise the exception.
 static bool fetch_insn(RISCVCPUState *s, uint32_t *insn) {
     // Translate pc address from virtual to physical
     // First, check TLB
@@ -3239,18 +3280,19 @@ static bool fetch_insn(RISCVCPUState *s, uint32_t *insn) {
     // TLB miss
     } else {
         target_ulong paddr;
-        // Walk page table
+        // Walk page table and obtain the physical address
         if (get_phys_addr(s, &paddr, vaddr, ACCESS_CODE)) {
             raise_exception(s, CAUSE_FETCH_PAGE_FAULT, vaddr);
             return false;
         }
-        // Walk memory map
+        // Walk memory map to find the range that contains the physical address
         PhysMemoryRange *pr = get_phys_mem_range(s->mem_map, paddr);
+        // We only execute directly from RAM (as in "random access memory", which includes ROM)
         if (!pr || !pr->is_ram) {
             raise_exception(s, CAUSE_FAULT_FETCH, vaddr);
             return false;
         }
-        // Update TLB
+        // Update TLB with the new mapping between virtual and physical
         tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
         uint8_t *ptr = pr->phys_mem + (uintptr_t)(paddr - pr->addr);
         s->tlb_code[tlb_idx].vaddr = vaddr & ~PG_MASK;
@@ -3261,11 +3303,27 @@ static bool fetch_insn(RISCVCPUState *s, uint32_t *insn) {
     // code_ptr = (uint8_t *)(mem_addend + (uintptr_t)vaddr);
     // code_end = (uint8_t *)(mem_addend + (uintptr_t)((vaddr & ~PG_MASK) + PG_MASK - 1));
     // code_to_pc_addend = vaddr - (uintptr_t)code_ptr;
+
+    // Finally load the instruction
     *insn = *reinterpret_cast<uint32_t *>(mem_addend + (uintptr_t)vaddr);
     return true;
 }
 
-flow interpret(RISCVCPUState *s, uint64_t mcycle_end) {
+
+/// \brief Interpreter status code
+enum class interpreter_status {
+    done, ///< mcycle reached target value
+    halted, ///< iflags_H is set, indicating the machine is permanently halted
+    idle ///< iflags_I is set, indicating the machine is waiting for an interrupt
+};
+
+
+/// \brief Tries to run the interpreter until mcycle hits a target
+/// \param s CPU state.
+/// \param mcycle_end Target value for mcycle.
+/// \returns Returns a status code that tells if the loop hit the target mcycle or stopped early.
+/// \details The interpret may stop early if the machine halts permanently or becomes temporarily idle (waiting for interrupts).
+interpreter_status interpret(RISCVCPUState *s, uint64_t mcycle_end) {
 
     // The external loop continues until the CPU halts,
     // becomes idle, or mcycle reaches mcycle_end
@@ -3273,25 +3331,25 @@ flow interpret(RISCVCPUState *s, uint64_t mcycle_end) {
 
         // If the cpu is halted, report it
         if (s->iflags_H) {
-            return flow::halted;
+            return interpreter_status::halted;
         }
 
         // If we reached the target mcycle, report it
         if (s->mcycle >= mcycle_end) {
-            return flow::done;
+            return interpreter_status::done;
         }
 
-        // The machine is idle if there were no pending interrupts when it executed a WFI instruction.
-        // Any external attempt to externally set a pending interrupt clears the idle bit.
-        // Finding it set, there is nothing else to do and we simply report it
+        // The idle flag is set if there were no pending interrupts when the machine executed a WFI instruction.
+        // Any attempt to externally set a pending interrupt clears the idle flag.
+        // Finding it set, there is nothing else to do and we simply report it back to the callee.
         if (s->iflags_I) {
-            return flow::idle;
+            return interpreter_status::idle;
         }
 
-        // If we broke from the inner loop, handle any available interrupts
+        // The check interrupt flag is set whenever there are enabled pending interrupts.
+        // If so, we raise the interrupt.
         if (s->iflags_CI) {
-            s->iflags_CI = false;
-            //setup_interrupt(s);
+            raise_interrupt(s);
         }
 
         uint32_t insn = 0;
@@ -3302,18 +3360,17 @@ flow interpret(RISCVCPUState *s, uint64_t mcycle_end) {
             // Try to fetch the next instruction
             if (fetch_insn(s, &insn)) {
                 // Try to execute it
-                auto next = execute_insn(s, insn);
-                // If the instruction was illegal, execute_insn decrements minstret,
-                // in which case we continue with the previous value
-                s->minstret++;
-                // execute_insn tells us if there is a chance an interrupt would be raised
-                // If so, we break from the inner loop
-                if (!next) break;
+                if (execute_insn(s, insn)) {
+                    s->minstret++;
+                }
+                // If the check interrupt flag is active, ans if so break from the inner loop.
+                // This will give the outer loop an opportunity to handle it.
+                if (s->iflags_CI) break;
             }
 
             // If we reached the target mcycle, we are done
             if (s->mcycle >= mcycle_end) {
-                return flow::done;
+                return interpreter_status::done;
             }
         }
 

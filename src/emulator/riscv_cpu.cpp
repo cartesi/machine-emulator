@@ -157,13 +157,13 @@ struct RISCVCPUState {
     target_ulong pc;
     target_ulong reg[32];
 
-    uint8_t iflags_PRV; /* see PRV_x */
-    bool iflags_I;
-    bool iflags_H;
+    uint8_t iflags_PRV; // current privilege level
+    bool iflags_I; // CPU is idle (waiting for interrupts)
+    bool iflags_H; // CPU is permanently halted
+    bool iflags_CI; // Next fetch-execute should check for interrupts
 
     uint8_t mstatus_FS; /* MSTATUS_FS value */
 
-    /*??D change to icause and itval? */
     int pending_exception; /* used during MMU exception handling */
     target_ulong pending_tval;
 
@@ -2199,3 +2199,1120 @@ uint64_t riscv_cpu_get_misa(const RISCVCPUState *s)
 {
     return s->misa;
 }
+
+enum class opcode {
+    LUI   = 0b0110111,
+    AUIPC = 0b0010111,
+    JAL   = 0b1101111,
+    JALR  = 0b1100111,
+
+    branch_group = 0b1100011,
+    load_group = 0b0000011,
+    store_group = 0b0100011,
+    arithmetic_immediate_group = 0b0010011,
+    arithmetic_group = 0b0110011,
+    fence_group = 0b0001111,
+    csr_env_trap_int_mm_group = 0b1110011,
+    arithmetic_immediate_32_group = 0b0011011,
+    arithmetic_32_group = 0b0111011,
+    atomic_group = 0b0101111,
+};
+
+enum class branch_funct3 {
+    BEQ  = 0b000,
+    BNE  = 0b001,
+    BLT  = 0b100,
+    BGE  = 0b101,
+    BLTU = 0b110,
+    BGEU = 0b111
+};
+
+enum class load_funct3 {
+    LB  = 0b000,
+    LH  = 0b001,
+    LW  = 0b010,
+    LD  = 0b011,
+    LBU = 0b100,
+    LHU = 0b101,
+    LWU = 0b110
+};
+
+enum class store_funct3 {
+    SB = 0b000,
+    SH = 0b001,
+    SW = 0b010,
+    SD = 0b011
+};
+
+enum class arithmetic_immediate_funct3 {
+    ADDI  = 0b000,
+    SLTI  = 0b010,
+    SLTIU = 0b011,
+    XORI  = 0b100,
+    ORI   = 0b110,
+    ANDI  = 0b111,
+    SLLI  = 0b001,
+
+    shift_right_immediate_group = 0b101,
+};
+
+enum class shift_right_immediate_funct6 {
+    SRLI = 0b000000,
+    SRAI = 0b010000
+};
+
+enum class arithmetic_funct3_funct7 {
+    ADD    = 0b0000000000,
+    SUB    = 0b0000100000,
+    SLL    = 0b0010000000,
+    SLT    = 0b0100000000,
+    SLTU   = 0b0110000000,
+    XOR    = 0b1000000000,
+    SRL    = 0b1010000000,
+    SRA    = 0b1010100000,
+    OR     = 0b1100000000,
+    AND    = 0b1110000000,
+    MUL    = 0b0000000001,
+    MULH   = 0b0010000001,
+    MULHSU = 0b0100000001,
+    MULHU  = 0b0110000001,
+    DIV    = 0b1000000001,
+    DIVU   = 0b1010000001,
+    REM    = 0b1100000001,
+    REMU   = 0b1110000001,
+};
+
+enum class fence_group_funct3 {
+    FENCE   = 0b000,
+    FENCE_I = 0b001
+};
+
+enum class env_trap_int_group_insn {
+    ECALL  = 0b00000000000000000000000001110011,
+    EBREAK = 0b00000000000100000000000001110011,
+    URET   = 0b00000000001000000000000001110011,
+    SRET   = 0b00010000001000000000000001110011,
+    MRET   = 0b00110000001000000000000001110011,
+    WFI    = 0b00010000010100000000000001110011
+};
+
+enum class csr_env_trap_int_mm_funct3 {
+    CSRRW  = 0b001,
+    CSRRS  = 0b010,
+    CSRRC  = 0b011,
+    CSRRWI = 0b101,
+    CSRRSI = 0b110,
+    CSRRCI = 0b111,
+
+    env_trap_int_mm_group  = 0b000,
+};
+
+enum class arithmetic_immediate_32_funct3 {
+    ADDIW = 0b000,
+    SLLIW = 0b001,
+
+    shift_right_immediate_32_group = 0b101,
+};
+
+enum class shift_right_immediate_32_funct7 {
+    SRLIW = 0b0000000,
+    SRAIW = 0b0100000
+};
+
+enum class arithmetic_32_funct3_funct7 {
+    ADDW  = 0b0000000000,
+    SUBW  = 0b0000100000,
+    SLLW  = 0b0010000000,
+    SRLW  = 0b1010000000,
+    SRAW  = 0b1010100000,
+    MULW  = 0b0000000001,
+    DIVW  = 0b1000000001,
+    DIVUW = 0b1010000001,
+    REMW  = 0b1100000001,
+    REMUW = 0b1110000001
+};
+
+enum class atomic_funct3_funct5 {
+    LR_W      = 0b01000010,
+    SC_W      = 0b01000011,
+    AMOSWAP_W = 0b01000001,
+    AMOADD_W  = 0b01000000,
+    AMOXOR_W  = 0b01000100,
+    AMOAND_W  = 0b01001100,
+    AMOOR_W   = 0b01001000,
+    AMOMIN_W  = 0b01010000,
+    AMOMAX_W  = 0b01010100,
+    AMOMINU_W = 0b01011000,
+    AMOMAXU_W = 0b01011100,
+    LR_D      = 0b01100010,
+    SC_D      = 0b01100011,
+    AMOSWAP_D = 0b01100001,
+    AMOADD_D  = 0b01100000,
+    AMOXOR_D  = 0b01100100,
+    AMOAND_D  = 0b01101100,
+    AMOOR_D   = 0b01101000,
+    AMOMIN_D  = 0b01110000,
+    AMOMAX_D  = 0b01110100,
+    AMOMINU_D = 0b01111000,
+    AMOMAXU_D = 0b01111100
+};
+
+enum class flow {
+    done,
+    halted,
+    idle
+};
+
+static inline uint32_t insn_rd(uint32_t insn) {
+    return (insn >> 7) & 0b11111;
+}
+
+static inline uint32_t insn_rs1(uint32_t insn) {
+    return (insn >> 15) & 0b11111;
+}
+
+static inline uint32_t insn_rs2(uint32_t insn) {
+    return (insn >> 20) & 0b11111;
+}
+
+static inline uint32_t insn_opcode(uint32_t insn) {
+    std::cerr << "opcode: " << std::bitset<7>(insn & 0b1111111) << '\n';
+    return insn & 0b1111111;
+}
+
+static inline uint32_t insn_funct3(uint32_t insn) {
+    std::cerr << "funct3: " << std::bitset<3>((insn >> 12) & 0b111) << '\n';
+    return (insn >> 12) & 0b111;
+}
+
+static inline uint32_t insn_funct3_funct7(uint32_t insn) {
+    std::cerr << "funct3_funct7: " << std::bitset<10>(((insn >> 5) & 0b1110000000) | (insn >> 24)) << '\n';
+    return ((insn >> 5) & 0b1110000000) | (insn >> 24);
+}
+
+static inline uint32_t insn_funct3_funct5(uint32_t insn) {
+    std::cerr << "funct3_funct5: " << std::bitset<8>(((insn >> 7) & 0b11100000) | (insn >> 27)) << '\n';
+    return ((insn >> 7) & 0b11100000) | (insn >> 27);
+}
+
+static inline uint32_t insn_funct7(uint32_t insn) {
+    std::cerr << "funct7: " << std::bitset<7>((insn >> 25) & 0b1111111) << '\n';
+    return (insn >> 25) & 0b1111111;
+}
+
+static inline uint32_t insn_funct6(uint32_t insn) {
+    std::cerr << "funct6: " << std::bitset<6>((insn >> 26) & 0b111111) << '\n';
+    return (insn >> 26) & 0b111111;
+}
+
+static void dump_insn(const char *insn) {
+    fprintf(stdout, "%s\n", insn);
+}
+
+//??D An execute_OP function is only invoked when the opcode
+//    has been decoded enough to preclude any other instruction.
+//    In some cases, further checks are needed to ensure the
+//    instruction is valid.
+
+static inline bool illegal_insn(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("illegal instruction");
+    return true;
+}
+
+static inline bool execute_LR_W(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    if ((insn & 0b00000001111100000000000000000000) == 0 ) {
+        dump_insn("LR_W");
+        return true;
+    } else {
+        return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_SC_W(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SC_W");
+    return true;
+}
+
+static inline bool execute_AMOSWAP_W(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOSWAP_W");
+    return true;
+}
+
+static inline bool execute_AMOADD_W(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOADD_W");
+    return true;
+}
+
+static inline bool execute_AMOXOR_W(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOXOR_W");
+    return true;
+}
+
+static inline bool execute_AMOAND_W(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOAND_W");
+    return true;
+}
+
+static inline bool execute_AMOOR_W(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOOR_W");
+    return true;
+}
+
+static inline bool execute_AMOMIN_W(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOMIN_W");
+    return true;
+}
+
+static inline bool execute_AMOMAX_W(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOMAX_W");
+    return true;
+}
+
+static inline bool execute_AMOMINU_W(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOMINU_W");
+    return true;
+}
+
+static inline bool execute_AMOMAXU_W(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOMAXU_W");
+    return true;
+}
+
+static inline bool execute_LR_D(RISCVCPUState *s, uint32_t insn) {
+    if ((insn & 0b00000001111100000000000000000000) == 0 ) {
+        (void) s; (void) insn;
+        dump_insn("LR_D");
+        return true;
+    } else {
+        return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_SC_D(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SC_D");
+    return true;
+}
+
+static inline bool execute_AMOSWAP_D(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOSWAP_D");
+    return true;
+}
+
+static inline bool execute_AMOADD_D(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOADD_D");
+    return true;
+}
+
+static inline bool execute_AMOXOR_D(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOXOR_D");
+    return true;
+}
+
+static inline bool execute_AMOAND_D(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOAND_D");
+    return true;
+}
+
+static inline bool execute_AMOOR_D(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOOR_D");
+    return true;
+}
+
+static inline bool execute_AMOMIN_D(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOMIN_D");
+    return true;
+}
+
+static inline bool execute_AMOMAX_D(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOMAX_D");
+    return true;
+}
+
+static inline bool execute_AMOMINU_D(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOMINU_D");
+    return true;
+}
+
+static inline bool execute_AMOMAXU_D(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AMOMAXU_D");
+    return true;
+}
+
+static inline bool execute_ADDW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("ADDW");
+    return true;
+}
+
+static inline bool execute_SUBW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SUBW");
+    return true;
+}
+
+static inline bool execute_SLLW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SLLW");
+    return true;
+}
+
+static inline bool execute_SRLW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SRLW");
+    return true;
+}
+
+static inline bool execute_SRAW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SRAW");
+    return true;
+}
+
+static inline bool execute_MULW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("MULW");
+    return true;
+}
+
+static inline bool execute_DIVW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("DIVW");
+    return true;
+}
+
+static inline bool execute_DIVUW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("DIVUW");
+    return true;
+}
+
+static inline bool execute_REMW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("REMW");
+    return true;
+}
+
+static inline bool execute_REMUW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("REMUW");
+    return true;
+}
+
+static inline bool execute_SRLIW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SRLIW");
+    return true;
+}
+
+static inline bool execute_SRAIW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SRAIW");
+    return true;
+}
+
+static inline bool execute_ADDIW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("ADDIW");
+    return true;
+}
+
+static inline bool execute_SLLIW(RISCVCPUState *s, uint32_t insn) {
+    if (insn_funct7(insn) == 0) {
+        (void) s; (void) insn;
+        dump_insn("SLLIW");
+        return true;
+    } else {
+        return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_CSRRW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("CSRRW");
+    return true;
+}
+
+static inline bool execute_CSRRS(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("CSRRS");
+    return true;
+}
+
+static inline bool execute_CSRRC(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("CSRRC");
+    return true;
+}
+
+static inline bool execute_CSRRWI(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("CSRRWI");
+    return true;
+}
+
+static inline bool execute_CSRRSI(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("CSRRSI");
+    return true;
+}
+
+static inline bool execute_CSRRCI(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("CSRRCI");
+    return true;
+}
+
+static inline bool execute_ECALL(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("ECALL");
+    return true;
+}
+
+static inline bool execute_EBREAK(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("EBREAK");
+    return true;
+}
+
+static inline bool execute_URET(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("URET");
+    return true;
+}
+
+static inline bool execute_SRET(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SRET");
+    return true;
+}
+
+static inline bool execute_MRET(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("MRET");
+    return true;
+}
+
+static inline bool execute_WFI(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("WFI");
+    return true;
+}
+
+static inline bool execute_FENCE(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("FENCE");
+    return true;
+}
+
+static inline bool execute_FENCE_I(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("FENCE_I");
+    return true;
+}
+
+static inline bool execute_SRLI(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SRLI");
+    return true;
+}
+
+static inline bool execute_SRAI(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SRAI");
+    return true;
+}
+
+static inline bool execute_ADD(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("ADD");
+    return true;
+}
+
+static inline bool execute_SUB(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SUB");
+    return true;
+}
+
+static inline bool execute_SLL(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SLL");
+    return true;
+}
+
+static inline bool execute_SLT(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SLT");
+    return true;
+}
+
+static inline bool execute_SLTU(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SLTU");
+    return true;
+}
+
+static inline bool execute_XOR(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("XOR");
+    return true;
+}
+
+static inline bool execute_SRL(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SRL");
+    return true;
+}
+
+static inline bool execute_SRA(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SRA");
+    return true;
+}
+
+static inline bool execute_OR(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("OR");
+    return true;
+}
+
+static inline bool execute_AND(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AND");
+    return true;
+}
+
+static inline bool execute_MUL(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("MUL");
+    return true;
+}
+
+static inline bool execute_MULH(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("MULH");
+    return true;
+}
+
+static inline bool execute_MULHSU(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("MULHSU");
+    return true;
+}
+
+static inline bool execute_MULHU(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("MULHU");
+    return true;
+}
+
+static inline bool execute_DIV(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("DIV");
+    return true;
+}
+
+static inline bool execute_DIVU(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("DIVU");
+    return true;
+}
+
+static inline bool execute_REM(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("REM");
+    return true;
+}
+
+static inline bool execute_REMU(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("REMU");
+    return true;
+}
+
+static inline bool execute_ADDI(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("ADDI");
+    return true;
+}
+
+static inline bool execute_SLTI(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SLTI");
+    return true;
+}
+
+static inline bool execute_SLTIU(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SLTIU");
+    return true;
+}
+
+static inline bool execute_XORI(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("XORI");
+    return true;
+}
+
+static inline bool execute_ORI(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("ORI");
+    return true;
+}
+
+static inline bool execute_ANDI(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("ANDI");
+    return true;
+}
+
+static inline bool execute_SLLI(RISCVCPUState *s, uint32_t insn) {
+    if (insn_funct6(insn) == 0) {
+        (void) s; (void) insn;
+        dump_insn("SLLI");
+        return true;
+    } else {
+        return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_SB(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SB");
+    return true;
+}
+
+static inline bool execute_SH(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SH");
+    return true;
+}
+
+static inline bool execute_SW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SW");
+    return true;
+}
+
+static inline bool execute_SD(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("SD");
+    return true;
+}
+
+static inline bool execute_LB(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("LB");
+    return true;
+}
+
+static inline bool execute_LH(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("LH");
+    return true;
+}
+
+static inline bool execute_LW(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("LW");
+    return true;
+}
+
+static inline bool execute_LD(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("LD");
+    return true;
+}
+
+static inline bool execute_LBU(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("LBU");
+    return true;
+}
+
+static inline bool execute_LHU(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("LHU");
+    return true;
+}
+
+static inline bool execute_LWU(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("LWU");
+    return true;
+}
+
+static inline bool execute_BEQ(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("BEQ");
+    return true;
+}
+
+static inline bool execute_BNE(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("BNE");
+    return true;
+}
+
+static inline bool execute_BLT(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("BLT");
+    return true;
+}
+
+static inline bool execute_BGE(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("BGE");
+    return true;
+}
+
+static inline bool execute_BLTU(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("BLTU");
+    return true;
+}
+
+static inline bool execute_BGEU(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("BGEU");
+    return true;
+}
+
+static inline bool execute_LUI(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("LUI");
+    return true;
+}
+
+static inline bool execute_AUIPC(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("AUIPC");
+    return true;
+}
+
+static inline bool execute_JAL(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("JAL");
+    return true;
+}
+
+static inline bool execute_JALR(RISCVCPUState *s, uint32_t insn) {
+    (void) s; (void) insn;
+    dump_insn("JALR");
+    return true;
+}
+
+static bool execute_SFENCE_VMA(RISCVCPUState *s, uint32_t insn) {
+    // rs1 and rs2 are arbitrary, rest is set
+    if ((insn & 0b11111110000000000111111111111111) == 0b00010010000000000000000001110011) {
+        (void) s; (void) insn;
+        dump_insn("SFENCE_VMA");
+        return true;
+    } else {
+        return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_atomic_group(RISCVCPUState *s, uint32_t insn) {
+    switch (static_cast<atomic_funct3_funct5>(insn_funct3_funct5(insn))) {
+        case atomic_funct3_funct5::LR_W: return execute_LR_W(s, insn);
+        case atomic_funct3_funct5::SC_W: return execute_SC_W(s, insn);
+        case atomic_funct3_funct5::AMOSWAP_W: return execute_AMOSWAP_W(s, insn);
+        case atomic_funct3_funct5::AMOADD_W: return execute_AMOADD_W(s, insn);
+        case atomic_funct3_funct5::AMOXOR_W: return execute_AMOXOR_W(s, insn);
+        case atomic_funct3_funct5::AMOAND_W: return execute_AMOAND_W(s, insn);
+        case atomic_funct3_funct5::AMOOR_W: return execute_AMOOR_W(s, insn);
+        case atomic_funct3_funct5::AMOMIN_W: return execute_AMOMIN_W(s, insn);
+        case atomic_funct3_funct5::AMOMAX_W: return execute_AMOMAX_W(s, insn);
+        case atomic_funct3_funct5::AMOMINU_W: return execute_AMOMINU_W(s, insn);
+        case atomic_funct3_funct5::AMOMAXU_W: return execute_AMOMAXU_W(s, insn);
+        case atomic_funct3_funct5::LR_D: return execute_LR_D(s, insn);
+        case atomic_funct3_funct5::SC_D: return execute_SC_D(s, insn);
+        case atomic_funct3_funct5::AMOSWAP_D: return execute_AMOSWAP_D(s, insn);
+        case atomic_funct3_funct5::AMOADD_D: return execute_AMOADD_D(s, insn);
+        case atomic_funct3_funct5::AMOXOR_D: return execute_AMOXOR_D(s, insn);
+        case atomic_funct3_funct5::AMOAND_D: return execute_AMOAND_D(s, insn);
+        case atomic_funct3_funct5::AMOOR_D: return execute_AMOOR_D(s, insn);
+        case atomic_funct3_funct5::AMOMIN_D: return execute_AMOMIN_D(s, insn);
+        case atomic_funct3_funct5::AMOMAX_D: return execute_AMOMAX_D(s, insn);
+        case atomic_funct3_funct5::AMOMINU_D: return execute_AMOMINU_D(s, insn);
+        case atomic_funct3_funct5::AMOMAXU_D: return execute_AMOMAXU_D(s, insn);
+        default: return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_arithmetic_32_group(RISCVCPUState *s, uint32_t insn) {
+    switch (static_cast<arithmetic_32_funct3_funct7>(insn_funct3_funct7(insn))) {
+        case arithmetic_32_funct3_funct7::ADDW: return execute_ADDW(s, insn);
+        case arithmetic_32_funct3_funct7::SUBW: return execute_SUBW(s, insn);
+        case arithmetic_32_funct3_funct7::SLLW: return execute_SLLW(s, insn);
+        case arithmetic_32_funct3_funct7::SRLW: return execute_SRLW(s, insn);
+        case arithmetic_32_funct3_funct7::SRAW: return execute_SRAW(s, insn);
+        case arithmetic_32_funct3_funct7::MULW: return execute_MULW(s, insn);
+        case arithmetic_32_funct3_funct7::DIVW: return execute_DIVW(s, insn);
+        case arithmetic_32_funct3_funct7::DIVUW: return execute_DIVUW(s, insn);
+        case arithmetic_32_funct3_funct7::REMW: return execute_REMW(s, insn);
+        case arithmetic_32_funct3_funct7::REMUW: return execute_REMUW(s, insn);
+        default: return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_shift_right_immediate_32_group(RISCVCPUState *s, uint32_t insn) {
+    switch (static_cast<shift_right_immediate_32_funct7>(insn_funct7(insn))) {
+        case shift_right_immediate_32_funct7::SRLIW: return execute_SRLIW(s, insn);
+        case shift_right_immediate_32_funct7::SRAIW: return execute_SRAIW(s, insn);
+        default: return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_arithmetic_immediate_32_group(RISCVCPUState *s, uint32_t insn) {
+    switch (static_cast<arithmetic_immediate_32_funct3>(insn_funct3(insn))) {
+        case arithmetic_immediate_32_funct3::ADDIW: return execute_ADDIW(s, insn);
+        case arithmetic_immediate_32_funct3::SLLIW: return execute_SLLIW(s, insn);
+        case arithmetic_immediate_32_funct3::shift_right_immediate_32_group: return execute_shift_right_immediate_32_group(s, insn);
+        default: return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_env_trap_int_mm_group(RISCVCPUState *s, uint32_t insn) {
+    switch (static_cast<env_trap_int_group_insn>(insn)) {
+        case env_trap_int_group_insn::ECALL: return execute_ECALL(s, insn);
+        case env_trap_int_group_insn::EBREAK: return execute_EBREAK(s, insn);
+        case env_trap_int_group_insn::URET: return execute_URET(s, insn);
+        case env_trap_int_group_insn::SRET: return execute_SRET(s, insn);
+        case env_trap_int_group_insn::MRET: return execute_MRET(s, insn);
+        case env_trap_int_group_insn::WFI: return execute_WFI(s, insn);
+        default: return execute_SFENCE_VMA(s, insn);
+    }
+}
+
+static inline bool execute_csr_env_trap_int_mm_group(RISCVCPUState *s, uint32_t insn) {
+    switch (static_cast<csr_env_trap_int_mm_funct3>(insn_funct3(insn))) {
+        case csr_env_trap_int_mm_funct3::CSRRW: return execute_CSRRW(s, insn);
+        case csr_env_trap_int_mm_funct3::CSRRS: return execute_CSRRS(s, insn);
+        case csr_env_trap_int_mm_funct3::CSRRC: return execute_CSRRC(s, insn);
+        case csr_env_trap_int_mm_funct3::CSRRWI: return execute_CSRRWI(s, insn);
+        case csr_env_trap_int_mm_funct3::CSRRSI: return execute_CSRRSI(s, insn);
+        case csr_env_trap_int_mm_funct3::CSRRCI: return execute_CSRRCI(s, insn);
+        case csr_env_trap_int_mm_funct3::env_trap_int_mm_group: return execute_env_trap_int_mm_group(s, insn);
+        default: return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_fence_group(RISCVCPUState *s, uint32_t insn) {
+    if (insn == 0b00000000000000000001000000001111) {
+        return execute_FENCE_I(s, insn);
+    } else if ((insn & 0b11110000000011111111111111111111) == 0b00000000000000000000000000001111) {
+        return execute_FENCE(s, insn);
+    } else {
+        return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_shift_right_immediate_group(RISCVCPUState *s, uint32_t insn) {
+    switch (static_cast<shift_right_immediate_funct6>(insn_funct6(insn))) {
+        case shift_right_immediate_funct6::SRLI: return execute_SRLI(s, insn);
+        case shift_right_immediate_funct6::SRAI: return execute_SRAI(s, insn);
+        default: return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_arithmetic_group(RISCVCPUState *s, uint32_t insn) {
+    switch (static_cast<arithmetic_funct3_funct7>(insn_funct3_funct7(insn))) {
+        case arithmetic_funct3_funct7::ADD: return execute_ADD(s, insn);
+        case arithmetic_funct3_funct7::SUB: return execute_SUB(s, insn);
+        case arithmetic_funct3_funct7::SLL: return execute_SLL(s, insn);
+        case arithmetic_funct3_funct7::SLT: return execute_SLT(s, insn);
+        case arithmetic_funct3_funct7::SLTU: return execute_SLTU(s, insn);
+        case arithmetic_funct3_funct7::XOR: return execute_XOR(s, insn);
+        case arithmetic_funct3_funct7::SRL: return execute_SRL(s, insn);
+        case arithmetic_funct3_funct7::SRA: return execute_SRA(s, insn);
+        case arithmetic_funct3_funct7::OR: return execute_OR(s, insn);
+        case arithmetic_funct3_funct7::AND: return execute_AND(s, insn);
+        case arithmetic_funct3_funct7::MUL: return execute_MUL(s, insn);
+        case arithmetic_funct3_funct7::MULH: return execute_MULH(s, insn);
+        case arithmetic_funct3_funct7::MULHSU: return execute_MULHSU(s, insn);
+        case arithmetic_funct3_funct7::MULHU: return execute_MULHU(s, insn);
+        case arithmetic_funct3_funct7::DIV: return execute_DIV(s, insn);
+        case arithmetic_funct3_funct7::DIVU: return execute_DIVU(s, insn);
+        case arithmetic_funct3_funct7::REM: return execute_REM(s, insn);
+        case arithmetic_funct3_funct7::REMU: return execute_REMU(s, insn);
+        default: return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_arithmetic_immediate_group(RISCVCPUState *s, uint32_t insn) {
+    switch (static_cast<arithmetic_immediate_funct3>(insn_funct3(insn))) {
+        case arithmetic_immediate_funct3::ADDI: return execute_ADDI(s, insn);
+        case arithmetic_immediate_funct3::SLTI: return execute_SLTI(s, insn);
+        case arithmetic_immediate_funct3::SLTIU: return execute_SLTIU(s, insn);
+        case arithmetic_immediate_funct3::XORI: return execute_XORI(s, insn);
+        case arithmetic_immediate_funct3::ORI: return execute_ORI(s, insn);
+        case arithmetic_immediate_funct3::ANDI: return execute_ANDI(s, insn);
+        case arithmetic_immediate_funct3::SLLI: return execute_SLLI(s, insn);
+        case arithmetic_immediate_funct3::shift_right_immediate_group: return execute_shift_right_immediate_group(s, insn);
+        default: return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_store_group(RISCVCPUState *s, uint32_t insn) {
+    switch (static_cast<store_funct3>(insn_funct3(insn))) {
+        case store_funct3::SB: return execute_SB(s, insn);
+        case store_funct3::SH: return execute_SH(s, insn);
+        case store_funct3::SW: return execute_SW(s, insn);
+        case store_funct3::SD: return execute_SD(s, insn);
+        default: return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_load_group(RISCVCPUState *s, uint32_t insn) {
+    switch (static_cast<load_funct3>(insn_funct3(insn))) {
+        case load_funct3::LB: return execute_LB(s, insn);
+        case load_funct3::LH: return execute_LH(s, insn);
+        case load_funct3::LW: return execute_LW(s, insn);
+        case load_funct3::LD: return execute_LD(s, insn);
+        case load_funct3::LBU: return execute_LBU(s, insn);
+        case load_funct3::LHU: return execute_LHU(s, insn);
+        case load_funct3::LWU: return execute_LWU(s, insn);
+        default: return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_branch_group(RISCVCPUState *s, uint32_t insn) {
+    switch (static_cast<branch_funct3>(insn_funct3(insn))) {
+        case branch_funct3::BEQ: return execute_BEQ(s, insn);
+        case branch_funct3::BNE: return execute_BNE(s, insn);
+        case branch_funct3::BLT: return execute_BLT(s, insn);
+        case branch_funct3::BGE: return execute_BGE(s, insn);
+        case branch_funct3::BLTU: return execute_BLTU(s, insn);
+        case branch_funct3::BGEU: return execute_BGEU(s, insn);
+        default: return illegal_insn(s, insn);
+    }
+}
+
+static inline bool execute_insn(RISCVCPUState *s, uint32_t insn) {
+    std::cerr << "insn: " << std::bitset<32>(insn) << '\n';
+    switch (static_cast<opcode>(insn_opcode(insn))) {
+        case opcode::LUI: return execute_LUI(s, insn);
+        case opcode::AUIPC: return execute_AUIPC(s, insn);
+        case opcode::JAL: return execute_JAL(s, insn);
+        case opcode::JALR: return execute_JALR(s, insn);
+        case opcode::branch_group: return execute_branch_group(s, insn);
+        case opcode::load_group: return execute_load_group(s, insn);
+        case opcode::store_group: return execute_store_group(s, insn);
+        case opcode::arithmetic_immediate_group: return execute_arithmetic_immediate_group(s, insn);
+        case opcode::arithmetic_group: return execute_arithmetic_group(s, insn);
+        case opcode::fence_group: return execute_fence_group(s, insn);
+        case opcode::csr_env_trap_int_mm_group: return execute_csr_env_trap_int_mm_group(s, insn);
+        case opcode::arithmetic_immediate_32_group: return execute_arithmetic_immediate_32_group(s, insn);
+        case opcode::arithmetic_32_group: return execute_arithmetic_32_group(s, insn);
+        case opcode::atomic_group: return execute_atomic_group(s, insn);
+        default: return illegal_insn(s, insn);
+    }
+}
+
+bool fetch_insn(RISCVCPUState *s, uint32_t *insn) {
+    (void) s; (void) insn;
+    return true;
+}
+
+flow interpret(RISCVCPUState *s, uint64_t mcycle_end) {
+
+    // The external loop continues until the CPU halts,
+    // becomes idle, or mcycle reaches mcycle_end
+    for ( ;; ) {
+
+        // If the cpu is halted, there is nothing else to do
+        if (s->iflags_H) {
+            return flow::halted;
+        }
+
+        // If machine is waiting for interrupts, also nothing to do
+        if (s->iflags_I) {
+            return flow::idle;
+        }
+
+        // If we reached the target mcycle, we are done
+        if (s->mcycle >= mcycle_end) {
+            return flow::done;
+        }
+
+        // If we broke from the inner loop, handle any available interrupts
+        if (s->iflags_CI) {
+            s->iflags_CI = false;
+            //setup_interrupt(s);
+        }
+
+        uint32_t insn = 0;
+
+        for ( ;; )  {
+
+            s->mcycle++;
+            // Try to fetch the next instruction
+            if (fetch_insn(s, &insn)) {
+                s->minstret++;
+                // Execute it and decide if we need to break the inner loop
+                if (!execute_insn(s, insn)) {
+                    break;
+                }
+            }
+
+            if (s->mcycle >= mcycle_end) {
+                return flow::done;
+            }
+        }
+
+    }
+
+}
+
+#if 0
+int gmain(void) {
+    execute_insn(nullptr, 0x34202f73);
+    execute_insn(nullptr, 0x00800f93);
+    execute_insn(nullptr, 0x03ff0a63);
+    execute_insn(nullptr, 0x80000f17);
+    execute_insn(nullptr, 0xfe0f0f13);
+    execute_insn(nullptr, 0x000f0067);
+    execute_insn(nullptr, 0x000f5463);
+    execute_insn(nullptr, 0x0040006f);
+    execute_insn(nullptr, 0x5391e193);
+    execute_insn(nullptr, 0xfc3f2023);
+    execute_insn(nullptr, 0x00000073);
+    execute_insn(nullptr, 0x30200073);
+    execute_insn(nullptr, 0x08b6a72f);
+    execute_insn(nullptr, 0x0ff0000f);
+    execute_insn(nullptr, 0x00119193);
+    execute_insn(nullptr, 0x1005a5af);
+    execute_insn(nullptr, 0x18b5272f);
+    return 0;
+}
+#endif
+
+
+
+
+
+

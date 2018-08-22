@@ -509,7 +509,7 @@ static int fdt_build_riscv(const VirtMachineParams *p, const RISCVMachine *m,
 
     auto size = fdt_totalsize(buf);
 
-#if 0
+#if 1
     {
         FILE *f;
         f = fopen("emu.dtb", "wb");

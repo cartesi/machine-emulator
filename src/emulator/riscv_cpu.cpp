@@ -2361,14 +2361,89 @@ enum class atomic_funct3_funct5 {
     AMOMAXU_D = 0b01111100
 };
 
-static inline target_ulong reg_read(RISCVCPUState *s, uint32_t r) {
-    return s->reg[r];
-}
+template <typename DERIVED> class i_state_access {
 
-static inline void reg_write(RISCVCPUState *s, uint32_t r, target_ulong val) {
-    assert(r != 0);
-    s->reg[r] = val;
-}
+    DERIVED &derived(void) {
+        return *static_cast<DERIVED *>(this);
+    }
+
+    const DERIVED &derived(void) const {
+        return *static_cast<const DERIVED *>(this);
+    }
+
+public:
+
+    target_ulong read_register(RISCVCPUState *s, uint32_t reg) {
+        return derived().do_read_register(s, reg);
+    }
+
+    void write_register(RISCVCPUState *s, uint32_t reg, target_ulong val) {
+        derived().do_write_register(s, reg, val);
+    }
+
+    target_ulong read_mcycle(RISCVCPUState *s) {
+        return derived().do_read_mcycle(s);
+    }
+
+    void write_mcycle(RISCVCPUState *s, target_ulong val) {
+        return derived().do_write_mcycle(s, val);
+    }
+
+    target_ulong read_minstret(RISCVCPUState *s) {
+        return derived().do_read_minstret(s);
+    }
+
+    void write_minstret(RISCVCPUState *s, target_ulong val) {
+        return derived().do_write_minstret(s, val);
+    }
+
+    target_ulong read_pc(RISCVCPUState *s) {
+        return derived().do_read_pc(s);
+    }
+
+    void write_pc(RISCVCPUState *s, target_ulong val) {
+        return derived().do_write_pc(s, val);
+    }
+
+};
+
+class state_access: public i_state_access<state_access> {
+private:
+    friend i_state_access<state_access>;
+
+    void do_write_register(RISCVCPUState *s, uint32_t reg, target_ulong val) {
+        assert(reg != 0);
+        s->reg[reg] = val;
+    }
+
+    target_ulong do_read_register(RISCVCPUState *s, uint32_t reg) {
+        return s->reg[reg];
+    }
+
+    target_ulong do_read_mcycle(RISCVCPUState *s) {
+        return s->mcycle;
+    }
+
+    void do_write_mcycle(RISCVCPUState *s, target_ulong val) {
+        s->mcycle = val;
+    }
+
+    target_ulong do_read_minstret(RISCVCPUState *s) {
+        return s->minstret;
+    }
+
+    void do_write_minstret(RISCVCPUState *s, target_ulong val) {
+        s->minstret = val;
+    }
+
+    target_ulong do_read_pc(RISCVCPUState *s) {
+        return s->pc;
+    }
+
+    void do_write_pc(RISCVCPUState *s, target_ulong val) {
+        s->pc = val;
+    }
+};
 
 static inline uint32_t insn_rd(uint32_t insn) {
     return (insn >> 7) & 0b11111;
@@ -2380,6 +2455,14 @@ static inline uint32_t insn_rs1(uint32_t insn) {
 
 static inline uint32_t insn_rs2(uint32_t insn) {
     return (insn >> 20) & 0b11111;
+}
+
+static inline int32_t insn_I_imm(uint32_t insn) {
+    return (int32_t)insn >> 20;
+}
+
+static inline int32_t insn_U_imm(uint32_t insn) {
+    return (int32_t)(insn & 0xfffff000);
 }
 
 static inline int32_t insn_B_imm(uint32_t insn) {
@@ -2439,900 +2522,1191 @@ static void dump_insn(const char *insn) {
 //    In some cases, further checks are needed to ensure the
 //    instruction is valid.
 
-static inline bool execute_illegal_insn_exception(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_illegal_insn_exception(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) pc;
     raise_exception(s, CAUSE_ILLEGAL_INSTRUCTION, insn);
     return false;
 }
 
-static inline bool execute_misaligned_fetch_exception(RISCVCPUState *s) {
-    raise_exception(s, CAUSE_MISALIGNED_FETCH, s->pc);
+template <typename STATE_ACCESS>
+static inline bool execute_misaligned_fetch_exception(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc) {
+    (void) a;
+    raise_exception(s, CAUSE_MISALIGNED_FETCH, pc);
     return true;
 }
 
-static inline bool execute_jump_insn(RISCVCPUState *s, target_ulong pc) {
-    s->pc = pc;
+template <typename STATE_ACCESS>
+static inline bool execute_jump_insn(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc) {
+    a.write_pc(s, pc);
     return true;
 }
 
-static inline bool execute_next_insn(RISCVCPUState *s) {
-    s->pc += 4;
+template <typename STATE_ACCESS>
+static inline bool execute_next_insn(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc) {
+    a.write_pc(s, pc + 4);
     return true;
 }
 
-static inline bool execute_LR_W(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_LR_W(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     if ((insn & 0b00000001111100000000000000000000) == 0 ) {
         dump_insn("LR_W");
         return true;
     } else {
-        return execute_illegal_insn_exception(s, insn);
+        return execute_illegal_insn_exception(a, s, pc, insn);
     }
 }
 
-static inline bool execute_SC_W(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_SC_W(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SC_W");
     return true;
 }
 
-static inline bool execute_AMOSWAP_W(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOSWAP_W(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOSWAP_W");
     return true;
 }
 
-static inline bool execute_AMOADD_W(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOADD_W(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOADD_W");
     return true;
 }
 
-static inline bool execute_AMOXOR_W(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOXOR_W(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOXOR_W");
     return true;
 }
 
-static inline bool execute_AMOAND_W(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOAND_W(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOAND_W");
     return true;
 }
 
-static inline bool execute_AMOOR_W(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOOR_W(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOOR_W");
     return true;
 }
 
-static inline bool execute_AMOMIN_W(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOMIN_W(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOMIN_W");
     return true;
 }
 
-static inline bool execute_AMOMAX_W(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOMAX_W(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOMAX_W");
     return true;
 }
 
-static inline bool execute_AMOMINU_W(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOMINU_W(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOMINU_W");
     return true;
 }
 
-static inline bool execute_AMOMAXU_W(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOMAXU_W(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOMAXU_W");
     return true;
 }
 
-static inline bool execute_LR_D(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_LR_D(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     if ((insn & 0b00000001111100000000000000000000) == 0 ) {
-        (void) s; (void) insn;
+        (void) a; (void) s; (void) pc; (void) insn;
         dump_insn("LR_D");
         return true;
     } else {
-        return execute_illegal_insn_exception(s, insn);
+        return execute_illegal_insn_exception(a, s, pc, insn);
     }
 }
 
-static inline bool execute_SC_D(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_SC_D(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SC_D");
     return true;
 }
 
-static inline bool execute_AMOSWAP_D(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOSWAP_D(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOSWAP_D");
     return true;
 }
 
-static inline bool execute_AMOADD_D(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOADD_D(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOADD_D");
     return true;
 }
 
-static inline bool execute_AMOXOR_D(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOXOR_D(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOXOR_D");
     return true;
 }
 
-static inline bool execute_AMOAND_D(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOAND_D(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOAND_D");
     return true;
 }
 
-static inline bool execute_AMOOR_D(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOOR_D(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOOR_D");
     return true;
 }
 
-static inline bool execute_AMOMIN_D(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOMIN_D(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOMIN_D");
     return true;
 }
 
-static inline bool execute_AMOMAX_D(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOMAX_D(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOMAX_D");
     return true;
 }
 
-static inline bool execute_AMOMINU_D(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOMINU_D(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOMINU_D");
     return true;
 }
 
-static inline bool execute_AMOMAXU_D(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_AMOMAXU_D(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("AMOMAXU_D");
     return true;
 }
 
-static inline bool execute_ADDW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_ADDW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("ADDW");
     return true;
 }
 
-static inline bool execute_SUBW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_SUBW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SUBW");
     return true;
 }
 
-static inline bool execute_SLLW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_SLLW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SLLW");
     return true;
 }
 
-static inline bool execute_SRLW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_SRLW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SRLW");
     return true;
 }
 
-static inline bool execute_SRAW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_SRAW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SRAW");
     return true;
 }
 
-static inline bool execute_MULW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_MULW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("MULW");
     return true;
 }
 
-static inline bool execute_DIVW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_DIVW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("DIVW");
     return true;
 }
 
-static inline bool execute_DIVUW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_DIVUW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("DIVUW");
     return true;
 }
 
-static inline bool execute_REMW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_REMW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("REMW");
     return true;
 }
 
-static inline bool execute_REMUW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_REMUW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("REMUW");
     return true;
 }
 
-static inline bool execute_SRLIW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_SRLIW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SRLIW");
     return true;
 }
 
-static inline bool execute_SRAIW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_SRAIW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SRAIW");
     return true;
 }
 
-static inline bool execute_ADDIW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_ADDIW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("ADDIW");
     return true;
 }
 
-static inline bool execute_SLLIW(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_SLLIW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     if (insn_funct7(insn) == 0) {
-        (void) s; (void) insn;
+        (void) a; (void) s; (void) pc; (void) insn;
         dump_insn("SLLIW");
         return true;
     } else {
-        return execute_illegal_insn_exception(s, insn);
+        return execute_illegal_insn_exception(a, s, pc, insn);
     }
 }
 
-static inline bool execute_CSRRW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_CSRRW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("CSRRW");
     return true;
 }
 
-static inline bool execute_CSRRS(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_CSRRS(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("CSRRS");
     return true;
 }
 
-static inline bool execute_CSRRC(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_CSRRC(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("CSRRC");
     return true;
 }
 
-static inline bool execute_CSRRWI(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_CSRRWI(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("CSRRWI");
     return true;
 }
 
-static inline bool execute_CSRRSI(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_CSRRSI(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("CSRRSI");
     return true;
 }
 
-static inline bool execute_CSRRCI(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_CSRRCI(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("CSRRCI");
     return true;
 }
 
-static inline bool execute_ECALL(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_ECALL(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("ECALL");
     return true;
 }
 
-static inline bool execute_EBREAK(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_EBREAK(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("EBREAK");
     return true;
 }
 
-static inline bool execute_URET(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_URET(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("URET");
     return true;
 }
 
-static inline bool execute_SRET(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_SRET(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SRET");
     return true;
 }
 
-static inline bool execute_MRET(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_MRET(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("MRET");
     return true;
 }
 
-static inline bool execute_WFI(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_WFI(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("WFI");
     return true;
 }
 
-static inline bool execute_FENCE(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_FENCE(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("FENCE");
-    return true;
+    // Really do nothing
+    return execute_next_insn(a, s, pc);
 }
 
-static inline bool execute_FENCE_I(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_FENCE_I(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("FENCE_I");
-    return true;
-}
-
-static inline bool execute_ADD(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("ADD");
-    return true;
-}
-
-static inline bool execute_SUB(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("SUB");
-    return true;
-}
-
-static inline bool execute_SLL(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("SLL");
-    return true;
-}
-
-static inline bool execute_SLT(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("SLT");
-    return true;
-}
-
-static inline bool execute_SLTU(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("SLTU");
-    return true;
-}
-
-static inline bool execute_XOR(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("XOR");
-    return true;
-}
-
-static inline bool execute_SRL(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("SRL");
-    return true;
-}
-
-static inline bool execute_SRA(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("SRA");
-    return true;
-}
-
-static inline bool execute_OR(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("OR");
-    return true;
-}
-
-static inline bool execute_AND(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("AND");
-    return true;
-}
-
-static inline bool execute_MUL(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("MUL");
-    return true;
-}
-
-static inline bool execute_MULH(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("MULH");
-    return true;
-}
-
-static inline bool execute_MULHSU(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("MULHSU");
-    return true;
-}
-
-static inline bool execute_MULHU(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("MULHU");
-    return true;
-}
-
-static inline bool execute_DIV(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("DIV");
-    return true;
-}
-
-static inline bool execute_DIVU(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("DIVU");
-    return true;
-}
-
-static inline bool execute_REM(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("REM");
-    return true;
-}
-
-static inline bool execute_REMU(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("REMU");
-    return true;
+    // Really do nothing
+    return execute_next_insn(a, s, pc);
 }
 
 template <typename V> struct shift_left_binop {
     V operator()(V a, V b) {
-        return a << b;
+        return a << (b & (XLEN-1));
     }
 };
 
 template <typename V> struct shift_right_binop {
     V operator()(V a, V b) {
+        return a >> (b & (XLEN-1));
+    }
+};
+
+template <typename V> struct div64_binop {
+    int64_t operator()(int64_t a, int64_t b) {
+        if (b == 0) {
+            return -1;
+        } else if (a == ((int64_t)1 << (XLEN - 1)) && b == -1) {
+            return a;
+        } else {
+            return a / b;
+        }
+    }
+};
+
+template <typename V> struct divu64_binop {
+    uint64_t operator()(uint64_t a, uint64_t b) {
+        if (b == 0) {
+            return -1;
+        } else {
+            return a / b;
+        }
+    }
+};
+
+template <typename V> struct rem64_binop {
+    int64_t operator()(int64_t a, int64_t b) {
+        if (b == 0) {
+            return a;
+        } else if (a == ((int64_t)1 << (XLEN - 1)) && b == -1) {
+            return 0;
+        } else {
+            return a % b;
+        }
+    }
+};
+
+template <typename V> struct remu64_binop {
+    uint64_t operator()(uint64_t a, uint64_t b) {
+        if (b == 0) {
+            return a;
+        } else {
+            return a % b;
+        }
+    }
+};
+
+template <typename V> struct mulh64_binop {
+    uint64_t operator()(int64_t a, int64_t b) {
+        return ((int128_t)a * (int128_t)b) >> 64;
+    }
+};
+
+template <typename V> struct mulhsu64_binop {
+    uint64_t operator()(int64_t a, uint64_t b) {
+        return ((int128_t)a * (int128_t)b) >> 64;
+    }
+};
+
+template <typename V> struct mulhu64_binop {
+    uint64_t operator()(uint64_t a, uint64_t b) {
+        return ((int128_t)a * (int128_t)b) >> 64;
+    }
+};
+
+template <template <typename> class ARI, typename V, typename U, typename STATE_ACCESS>
+static inline bool execute_arithmetic_vu(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    ARI<V> arith;
+    uint32_t rd = insn_rd(insn);
+    if (rd != 0) {
+        // Ensure rs1 and rs2 are loaded in order: do not nest with call to arith as
+        // the order of evaluation of arguments in a function call is undefined.
+        target_ulong rs1 = a.read_register(s, insn_rs1(insn));
+        target_ulong rs2 = a.read_register(s, insn_rs2(insn));
+        target_ulong val = arith(static_cast<V>(rs1), static_cast<U>(rs2));
+        a.write_register(s, rd, val);
+    }
+    return execute_next_insn(a, s, pc);
+}
+
+template <template <typename> class ARI, typename V, typename STATE_ACCESS>
+static inline bool execute_arithmetic(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    return execute_arithmetic_vu<ARI, V, V>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_ADD(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("ADD");
+    return execute_arithmetic<std::plus, target_long>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_SUB(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("SUB");
+    return execute_arithmetic<std::minus, target_long>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_SLL(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("SLL");
+    return execute_arithmetic<shift_left_binop, target_ulong>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_SLT(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("SLT");
+    return execute_arithmetic<std::less, target_long>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_SLTU(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("SLTU");
+    return execute_arithmetic<std::less, target_ulong>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_XOR(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("XOR");
+    return execute_arithmetic<std::bit_xor, target_long>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_SRL(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("SRL");
+    return execute_arithmetic<shift_right_binop, target_ulong>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_SRA(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("SRA");
+    return execute_arithmetic<shift_right_binop, target_long>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_OR(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("OR");
+    return execute_arithmetic<std::bit_or, target_long>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_AND(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("AND");
+    return execute_arithmetic<std::bit_and, target_long>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_MUL(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("MUL");
+    return execute_arithmetic<std::multiplies, target_long>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_MULH(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("MULH");
+    return execute_arithmetic<mulh64_binop, target_long>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_MULHSU(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("MULHSU");
+    return execute_arithmetic_vu<mulhsu64_binop, target_long, target_ulong>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_MULHU(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("MULHU");
+    return execute_arithmetic<mulhu64_binop, target_ulong>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_DIV(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("DIV");
+    return execute_arithmetic<div64_binop, target_long>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_DIVU(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("DIVU");
+    return execute_arithmetic<divu64_binop, target_ulong>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_REM(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("REM");
+    return execute_arithmetic<rem64_binop, target_ulong>(a, s, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_REMU(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    dump_insn("REMU");
+    return execute_arithmetic<remu64_binop, target_ulong>(a, s, pc, insn);
+}
+
+template <typename V> struct shift_left_immediate_binop {
+    V operator()(V a, V b) {
+        return a << b;
+    }
+};
+
+template <typename V> struct shift_right_immediate_binop {
+    V operator()(V a, V b) {
         return a >> b;
     }
 };
 
-template <template <typename> class ARI, typename V>
-static inline bool execute_arithmetic_immediate(RISCVCPUState *s, uint32_t insn) {
+template <template <typename> class ARI, typename V, typename STATE_ACCESS>
+static inline bool execute_arithmetic_immediate(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     ARI<V> arith;
-    int32_t imm = (int32_t)insn >> 20;
-    target_ulong rs1 = reg_read(s, insn_rs1(insn));
     uint32_t rd = insn_rd(insn);
     if (rd != 0) {
-        target_ulong val = arith(static_cast<V>(rs1), static_cast<V>(imm));
-        reg_write(s, rd, val);
+        target_ulong rs1 = a.read_register(s, insn_rs1(insn));
+        target_ulong val = arith(static_cast<V>(rs1), static_cast<V>(insn_I_imm(insn)));
+        a.write_register(s, rd, val);
     }
-    return execute_next_insn(s);
+    return execute_next_insn(a, s, pc);
 }
 
-static inline bool execute_SRLI(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_SRLI(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("SRLI");
-    return execute_arithmetic_immediate<shift_right_binop, target_ulong>(s, insn);
+    return execute_arithmetic_immediate<shift_right_immediate_binop, target_ulong>(a, s, pc, insn);
 }
 
-static inline bool execute_SRAI(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_SRAI(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("SRAI");
-    return execute_arithmetic_immediate<shift_right_binop, target_long>(s, insn);
+    return execute_arithmetic_immediate<shift_right_immediate_binop, target_long>(a, s, pc, insn);
 }
 
-static inline bool execute_ADDI(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_ADDI(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("ADDI");
-    return execute_arithmetic_immediate<std::plus, target_long>(s, insn);
+    return execute_arithmetic_immediate<std::plus, target_long>(a, s, pc, insn);
 }
 
-static inline bool execute_SLTI(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_SLTI(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("SLTI");
-    return execute_arithmetic_immediate<std::less, target_long>(s, insn);
+    return execute_arithmetic_immediate<std::less, target_long>(a, s, pc, insn);
 }
 
-static inline bool execute_SLTIU(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_SLTIU(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("SLTIU");
-    return execute_arithmetic_immediate<std::less, target_ulong>(s, insn);
+    return execute_arithmetic_immediate<std::less, target_ulong>(a, s, pc, insn);
 }
 
-static inline bool execute_XORI(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_XORI(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("XORI");
-    return execute_arithmetic_immediate<std::bit_xor, target_long>(s, insn);
+    return execute_arithmetic_immediate<std::bit_xor, target_long>(a, s, pc, insn);
 }
 
-static inline bool execute_ORI(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_ORI(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("ORI");
-    return execute_arithmetic_immediate<std::bit_or, target_long>(s, insn);
+    return execute_arithmetic_immediate<std::bit_or, target_long>(a, s, pc, insn);
 }
 
-static inline bool execute_ANDI(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_ANDI(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("ANDI");
-    return execute_arithmetic_immediate<std::bit_and, target_long>(s, insn);
+    return execute_arithmetic_immediate<std::bit_and, target_long>(a, s, pc, insn);
 }
 
-static inline bool execute_SLLI(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_SLLI(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     if ((insn & (0b111111 << 26)) == 0) {
         dump_insn("SLLI");
-        return execute_arithmetic_immediate<shift_left_binop, target_ulong>(s, insn);
+        return execute_arithmetic_immediate<shift_left_immediate_binop, target_ulong>(a, s, pc, insn);
     } else {
-        return execute_illegal_insn_exception(s, insn);
+        return execute_illegal_insn_exception(a, s, pc, insn);
     }
 }
 
-static inline bool execute_SB(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_SB(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SB");
     return true;
 }
 
-static inline bool execute_SH(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_SH(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SH");
     return true;
 }
 
-static inline bool execute_SW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_SW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SW");
     return true;
 }
 
-static inline bool execute_SD(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_SD(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SD");
     return true;
 }
 
-static inline bool execute_LB(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_LB(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("LB");
     return true;
 }
 
-static inline bool execute_LH(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_LH(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("LH");
     return true;
 }
 
-static inline bool execute_LW(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_LW(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("LW");
     return true;
 }
 
-static inline bool execute_LD(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_LD(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("LD");
     return true;
 }
 
-static inline bool execute_LBU(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_LBU(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("LBU");
     return true;
 }
 
-static inline bool execute_LHU(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_LHU(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("LHU");
     return true;
 }
 
-static inline bool execute_LWU(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
+template <typename STATE_ACCESS>
+static inline bool execute_LWU(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("LWU");
     return true;
 }
 
-template <template <typename> class CMP, typename V>
-static inline bool execute_branch(RISCVCPUState *s, uint32_t insn) {
-    CMP<V> cmp;
-    target_ulong rs1 = reg_read(s, insn_rs1(insn));
-    target_ulong rs2 = reg_read(s, insn_rs2(insn));
-    if (cmp(static_cast<V>(rs1), static_cast<V>(rs2))) {
-        int32_t imm = insn_B_imm(insn);
-        target_ulong new_pc = (int64_t)(s->pc + imm);
+template <template <typename> class BRANCH, typename V, typename STATE_ACCESS>
+static inline bool execute_branch(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    BRANCH<V> branch;
+    target_ulong rs1 = a.read_register(s, insn_rs1(insn));
+    target_ulong rs2 = a.read_register(s, insn_rs2(insn));
+    if (branch(static_cast<V>(rs1), static_cast<V>(rs2))) {
+        target_ulong new_pc = (int64_t)(pc + insn_B_imm(insn));
         if (new_pc & 3) {
-            return execute_misaligned_fetch_exception(s);
+            return execute_misaligned_fetch_exception(a, s, new_pc);
         } else {
-            return execute_jump_insn(s, new_pc);
+            return execute_jump_insn(a, s, new_pc);
         }
     }
-    return execute_next_insn(s);
+    return execute_next_insn(a, s, pc);
 }
 
-static inline bool execute_BEQ(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_BEQ(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("BEQ");
-    return execute_branch<std::equal_to, target_ulong>(s, insn);
+    return execute_branch<std::equal_to, target_ulong>(a, s, pc, insn);
 }
 
 
-static inline bool execute_BNE(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_BNE(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("BNE");
-    return execute_branch<std::not_equal_to, target_ulong>(s, insn);
+    return execute_branch<std::not_equal_to, target_ulong>(a, s, pc, insn);
 }
 
-static inline bool execute_BLT(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_BLT(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("BLT");
-    return execute_branch<std::less, target_long>(s, insn);
+    return execute_branch<std::less, target_long>(a, s, pc, insn);
 }
 
-static inline bool execute_BGE(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_BGE(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("BGE");
-    return execute_branch<std::greater_equal, target_long>(s, insn);
+    return execute_branch<std::greater_equal, target_long>(a, s, pc, insn);
 }
 
-static inline bool execute_BLTU(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_BLTU(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("BLTU");
-    return execute_branch<std::less, target_ulong>(s, insn);
+    return execute_branch<std::less, target_ulong>(a, s, pc, insn);
 }
 
-static inline bool execute_BGEU(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_BGEU(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("BGEU");
-    return execute_branch<std::greater_equal, target_ulong>(s, insn);
+    return execute_branch<std::greater_equal, target_ulong>(a, s, pc, insn);
 }
 
-static inline bool execute_LUI(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_LUI(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("LUI");
     uint32_t rd = insn_rd(insn);
     if (rd != 0)
-        s->reg[rd] = (int32_t)(insn & 0xfffff000);
-    return execute_next_insn(s);
+        a.write_register(s, rd, insn_U_imm(insn));
+    return execute_next_insn(a, s, pc);
 }
 
-static inline bool execute_AUIPC(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_AUIPC(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("AUIPC");
     uint32_t rd = insn_rd(insn);
     if (rd != 0)
-        s->reg[rd] = (int64_t)(s->pc + (int32_t)(insn & 0xfffff000));
-    return execute_next_insn(s);
+        a.write_register(s, rd, (int64_t)(pc + insn_U_imm(insn)));
+    return execute_next_insn(a, s, pc);
 }
 
-static inline bool execute_JAL(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_JAL(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("JAL");
-    int32_t imm = insn_J_imm(insn);
-    target_ulong new_pc = (int64_t)(s->pc + imm);
+    target_ulong new_pc = (int64_t)(pc + insn_J_imm(insn));
     if (new_pc & 3)
-        return execute_misaligned_fetch_exception(s);
+        return execute_misaligned_fetch_exception(a, s, new_pc);
     uint32_t rd = insn_rd(insn);
     if (rd != 0)
-        s->reg[rd] = new_pc + 4;
-    return execute_jump_insn(s, new_pc);
+        a.write_register(s, rd, new_pc + 4);
+    return execute_jump_insn(a, s, new_pc);
 }
 
-static inline bool execute_JALR(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_JALR(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     dump_insn("JALR");
-    int32_t imm = (int32_t)insn >> 20;
-    target_ulong val = s->pc + 4;
-    target_ulong new_pc = (int64_t)(s->reg[insn_rs1(insn)] + imm) & ~1;
+    target_ulong val = pc + 4;
+    target_ulong new_pc = (int64_t)(a.read_register(s, insn_rs1(insn)) + insn_I_imm(insn)) & ~1;
     if (new_pc & 3)
-        return execute_misaligned_fetch_exception(s);
+        return execute_misaligned_fetch_exception(a, s, new_pc);
     uint32_t rd = insn_rd(insn);
     if (rd != 0)
-        s->reg[rd] = val;
-    return execute_jump_insn(s, new_pc);
+        a.write_register(s, rd, val);
+    return execute_jump_insn(a, s, new_pc);
 }
 
-static bool execute_SFENCE_VMA(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static bool execute_SFENCE_VMA(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     // rs1 and rs2 are arbitrary, rest is set
     if ((insn & 0b11111110000000000111111111111111) == 0b00010010000000000000000001110011) {
-        (void) s; (void) insn;
+        (void) a; (void) s; (void) pc; (void) insn;
         dump_insn("SFENCE_VMA");
         return true;
     } else {
-        return execute_illegal_insn_exception(s, insn);
+        return execute_illegal_insn_exception(a, s, pc, insn);
     }
 }
 
-static inline bool execute_atomic_group(RISCVCPUState *s, uint32_t insn) {
-    switch (static_cast<atomic_funct3_funct5>(insn_funct3_funct5(insn))) {
-        case atomic_funct3_funct5::LR_W: return execute_LR_W(s, insn);
-        case atomic_funct3_funct5::SC_W: return execute_SC_W(s, insn);
-        case atomic_funct3_funct5::AMOSWAP_W: return execute_AMOSWAP_W(s, insn);
-        case atomic_funct3_funct5::AMOADD_W: return execute_AMOADD_W(s, insn);
-        case atomic_funct3_funct5::AMOXOR_W: return execute_AMOXOR_W(s, insn);
-        case atomic_funct3_funct5::AMOAND_W: return execute_AMOAND_W(s, insn);
-        case atomic_funct3_funct5::AMOOR_W: return execute_AMOOR_W(s, insn);
-        case atomic_funct3_funct5::AMOMIN_W: return execute_AMOMIN_W(s, insn);
-        case atomic_funct3_funct5::AMOMAX_W: return execute_AMOMAX_W(s, insn);
-        case atomic_funct3_funct5::AMOMINU_W: return execute_AMOMINU_W(s, insn);
-        case atomic_funct3_funct5::AMOMAXU_W: return execute_AMOMAXU_W(s, insn);
-        case atomic_funct3_funct5::LR_D: return execute_LR_D(s, insn);
-        case atomic_funct3_funct5::SC_D: return execute_SC_D(s, insn);
-        case atomic_funct3_funct5::AMOSWAP_D: return execute_AMOSWAP_D(s, insn);
-        case atomic_funct3_funct5::AMOADD_D: return execute_AMOADD_D(s, insn);
-        case atomic_funct3_funct5::AMOXOR_D: return execute_AMOXOR_D(s, insn);
-        case atomic_funct3_funct5::AMOAND_D: return execute_AMOAND_D(s, insn);
-        case atomic_funct3_funct5::AMOOR_D: return execute_AMOOR_D(s, insn);
-        case atomic_funct3_funct5::AMOMIN_D: return execute_AMOMIN_D(s, insn);
-        case atomic_funct3_funct5::AMOMAX_D: return execute_AMOMAX_D(s, insn);
-        case atomic_funct3_funct5::AMOMINU_D: return execute_AMOMINU_D(s, insn);
-        case atomic_funct3_funct5::AMOMAXU_D: return execute_AMOMAXU_D(s, insn);
-        default: return execute_illegal_insn_exception(s, insn);
-    }
-}
-
-static inline bool execute_arithmetic_32_group(RISCVCPUState *s, uint32_t insn) {
-    switch (static_cast<arithmetic_32_funct3_funct7>(insn_funct3_funct7(insn))) {
-        case arithmetic_32_funct3_funct7::ADDW: return execute_ADDW(s, insn);
-        case arithmetic_32_funct3_funct7::SUBW: return execute_SUBW(s, insn);
-        case arithmetic_32_funct3_funct7::SLLW: return execute_SLLW(s, insn);
-        case arithmetic_32_funct3_funct7::SRLW: return execute_SRLW(s, insn);
-        case arithmetic_32_funct3_funct7::SRAW: return execute_SRAW(s, insn);
-        case arithmetic_32_funct3_funct7::MULW: return execute_MULW(s, insn);
-        case arithmetic_32_funct3_funct7::DIVW: return execute_DIVW(s, insn);
-        case arithmetic_32_funct3_funct7::DIVUW: return execute_DIVUW(s, insn);
-        case arithmetic_32_funct3_funct7::REMW: return execute_REMW(s, insn);
-        case arithmetic_32_funct3_funct7::REMUW: return execute_REMUW(s, insn);
-        default: return execute_illegal_insn_exception(s, insn);
-    }
-}
-
-static inline bool execute_shift_right_immediate_32_group(RISCVCPUState *s, uint32_t insn) {
-    switch (static_cast<shift_right_immediate_32_funct7>(insn_funct7(insn))) {
-        case shift_right_immediate_32_funct7::SRLIW: return execute_SRLIW(s, insn);
-        case shift_right_immediate_32_funct7::SRAIW: return execute_SRAIW(s, insn);
-        default: return execute_illegal_insn_exception(s, insn);
-    }
-}
-
-static inline bool execute_arithmetic_immediate_32_group(RISCVCPUState *s, uint32_t insn) {
-    switch (static_cast<arithmetic_immediate_32_funct3>(insn_funct3(insn))) {
-        case arithmetic_immediate_32_funct3::ADDIW: return execute_ADDIW(s, insn);
-        case arithmetic_immediate_32_funct3::SLLIW: return execute_SLLIW(s, insn);
-        case arithmetic_immediate_32_funct3::shift_right_immediate_32_group: return execute_shift_right_immediate_32_group(s, insn);
-        default: return execute_illegal_insn_exception(s, insn);
-    }
-}
-
-static inline bool execute_env_trap_int_mm_group(RISCVCPUState *s, uint32_t insn) {
-    switch (static_cast<env_trap_int_group_insn>(insn)) {
-        case env_trap_int_group_insn::ECALL: return execute_ECALL(s, insn);
-        case env_trap_int_group_insn::EBREAK: return execute_EBREAK(s, insn);
-        case env_trap_int_group_insn::URET: return execute_URET(s, insn);
-        case env_trap_int_group_insn::SRET: return execute_SRET(s, insn);
-        case env_trap_int_group_insn::MRET: return execute_MRET(s, insn);
-        case env_trap_int_group_insn::WFI: return execute_WFI(s, insn);
-        default: return execute_SFENCE_VMA(s, insn);
-    }
-}
-
-static inline bool execute_csr_env_trap_int_mm_group(RISCVCPUState *s, uint32_t insn) {
-    switch (static_cast<csr_env_trap_int_mm_funct3>(insn_funct3(insn))) {
-        case csr_env_trap_int_mm_funct3::CSRRW: return execute_CSRRW(s, insn);
-        case csr_env_trap_int_mm_funct3::CSRRS: return execute_CSRRS(s, insn);
-        case csr_env_trap_int_mm_funct3::CSRRC: return execute_CSRRC(s, insn);
-        case csr_env_trap_int_mm_funct3::CSRRWI: return execute_CSRRWI(s, insn);
-        case csr_env_trap_int_mm_funct3::CSRRSI: return execute_CSRRSI(s, insn);
-        case csr_env_trap_int_mm_funct3::CSRRCI: return execute_CSRRCI(s, insn);
-        case csr_env_trap_int_mm_funct3::env_trap_int_mm_group: return execute_env_trap_int_mm_group(s, insn);
-        default: return execute_illegal_insn_exception(s, insn);
-    }
-}
-
-static inline bool execute_fence_group(RISCVCPUState *s, uint32_t insn) {
-    if (insn == 0b00000000000000000001000000001111) {
-        return execute_FENCE_I(s, insn);
-    } else if ((insn & 0b11110000000011111111111111111111) == 0b00000000000000000000000000001111) {
-        return execute_FENCE(s, insn);
-    } else {
-        return execute_illegal_insn_exception(s, insn);
-    }
-}
-
-static inline bool execute_shift_right_immediate_group(RISCVCPUState *s, uint32_t insn) {
-    switch (static_cast<shift_right_immediate_funct6>(insn_funct6(insn))) {
-        case shift_right_immediate_funct6::SRLI: return execute_SRLI(s, insn);
-        case shift_right_immediate_funct6::SRAI: return execute_SRAI(s, insn);
-        default: return execute_illegal_insn_exception(s, insn);
-    }
-}
-
-static inline bool execute_arithmetic_group(RISCVCPUState *s, uint32_t insn) {
-    switch (static_cast<arithmetic_funct3_funct7>(insn_funct3_funct7(insn))) {
-        case arithmetic_funct3_funct7::ADD: return execute_ADD(s, insn);
-        case arithmetic_funct3_funct7::SUB: return execute_SUB(s, insn);
-        case arithmetic_funct3_funct7::SLL: return execute_SLL(s, insn);
-        case arithmetic_funct3_funct7::SLT: return execute_SLT(s, insn);
-        case arithmetic_funct3_funct7::SLTU: return execute_SLTU(s, insn);
-        case arithmetic_funct3_funct7::XOR: return execute_XOR(s, insn);
-        case arithmetic_funct3_funct7::SRL: return execute_SRL(s, insn);
-        case arithmetic_funct3_funct7::SRA: return execute_SRA(s, insn);
-        case arithmetic_funct3_funct7::OR: return execute_OR(s, insn);
-        case arithmetic_funct3_funct7::AND: return execute_AND(s, insn);
-        case arithmetic_funct3_funct7::MUL: return execute_MUL(s, insn);
-        case arithmetic_funct3_funct7::MULH: return execute_MULH(s, insn);
-        case arithmetic_funct3_funct7::MULHSU: return execute_MULHSU(s, insn);
-        case arithmetic_funct3_funct7::MULHU: return execute_MULHU(s, insn);
-        case arithmetic_funct3_funct7::DIV: return execute_DIV(s, insn);
-        case arithmetic_funct3_funct7::DIVU: return execute_DIVU(s, insn);
-        case arithmetic_funct3_funct7::REM: return execute_REM(s, insn);
-        case arithmetic_funct3_funct7::REMU: return execute_REMU(s, insn);
-        default: return execute_illegal_insn_exception(s, insn);
-    }
-}
-
-static inline bool execute_arithmetic_immediate_group(RISCVCPUState *s, uint32_t insn) {
-    switch (static_cast<arithmetic_immediate_funct3>(insn_funct3(insn))) {
-        case arithmetic_immediate_funct3::ADDI: return execute_ADDI(s, insn);
-        case arithmetic_immediate_funct3::SLTI: return execute_SLTI(s, insn);
-        case arithmetic_immediate_funct3::SLTIU: return execute_SLTIU(s, insn);
-        case arithmetic_immediate_funct3::XORI: return execute_XORI(s, insn);
-        case arithmetic_immediate_funct3::ORI: return execute_ORI(s, insn);
-        case arithmetic_immediate_funct3::ANDI: return execute_ANDI(s, insn);
-        case arithmetic_immediate_funct3::SLLI: return execute_SLLI(s, insn);
-        case arithmetic_immediate_funct3::shift_right_immediate_group: return execute_shift_right_immediate_group(s, insn);
-        default: return execute_illegal_insn_exception(s, insn);
-    }
-}
-
-static inline bool execute_store_group(RISCVCPUState *s, uint32_t insn) {
-    switch (static_cast<store_funct3>(insn_funct3(insn))) {
-        case store_funct3::SB: return execute_SB(s, insn);
-        case store_funct3::SH: return execute_SH(s, insn);
-        case store_funct3::SW: return execute_SW(s, insn);
-        case store_funct3::SD: return execute_SD(s, insn);
-        default: return execute_illegal_insn_exception(s, insn);
-    }
-}
-
-static inline bool execute_load_group(RISCVCPUState *s, uint32_t insn) {
-    switch (static_cast<load_funct3>(insn_funct3(insn))) {
-        case load_funct3::LB: return execute_LB(s, insn);
-        case load_funct3::LH: return execute_LH(s, insn);
-        case load_funct3::LW: return execute_LW(s, insn);
-        case load_funct3::LD: return execute_LD(s, insn);
-        case load_funct3::LBU: return execute_LBU(s, insn);
-        case load_funct3::LHU: return execute_LHU(s, insn);
-        case load_funct3::LWU: return execute_LWU(s, insn);
-        default: return execute_illegal_insn_exception(s, insn);
-    }
-}
-
-/// \brief Executes an instruction in the branch group.
+/// \brief Executes an instruction of the atomic group.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
 /// \param s CPU state.
+/// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-static inline bool execute_branch_group(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_atomic_group(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    switch (static_cast<atomic_funct3_funct5>(insn_funct3_funct5(insn))) {
+        case atomic_funct3_funct5::LR_W: return execute_LR_W(a, s, pc, insn);
+        case atomic_funct3_funct5::SC_W: return execute_SC_W(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOSWAP_W: return execute_AMOSWAP_W(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOADD_W: return execute_AMOADD_W(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOXOR_W: return execute_AMOXOR_W(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOAND_W: return execute_AMOAND_W(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOOR_W: return execute_AMOOR_W(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOMIN_W: return execute_AMOMIN_W(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOMAX_W: return execute_AMOMAX_W(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOMINU_W: return execute_AMOMINU_W(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOMAXU_W: return execute_AMOMAXU_W(a, s, pc, insn);
+        case atomic_funct3_funct5::LR_D: return execute_LR_D(a, s, pc, insn);
+        case atomic_funct3_funct5::SC_D: return execute_SC_D(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOSWAP_D: return execute_AMOSWAP_D(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOADD_D: return execute_AMOADD_D(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOXOR_D: return execute_AMOXOR_D(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOAND_D: return execute_AMOAND_D(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOOR_D: return execute_AMOOR_D(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOMIN_D: return execute_AMOMIN_D(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOMAX_D: return execute_AMOMAX_D(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOMINU_D: return execute_AMOMINU_D(a, s, pc, insn);
+        case atomic_funct3_funct5::AMOMAXU_D: return execute_AMOMAXU_D(a, s, pc, insn);
+        default: return execute_illegal_insn_exception(a, s, pc, insn);
+    }
+}
+
+/// \brief Executes an instruction of the arithmetic-32 group.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
+/// \param s CPU state.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+template <typename STATE_ACCESS>
+static inline bool execute_arithmetic_32_group(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    switch (static_cast<arithmetic_32_funct3_funct7>(insn_funct3_funct7(insn))) {
+        case arithmetic_32_funct3_funct7::ADDW: return execute_ADDW(a, s, pc, insn);
+        case arithmetic_32_funct3_funct7::SUBW: return execute_SUBW(a, s, pc, insn);
+        case arithmetic_32_funct3_funct7::SLLW: return execute_SLLW(a, s, pc, insn);
+        case arithmetic_32_funct3_funct7::SRLW: return execute_SRLW(a, s, pc, insn);
+        case arithmetic_32_funct3_funct7::SRAW: return execute_SRAW(a, s, pc, insn);
+        case arithmetic_32_funct3_funct7::MULW: return execute_MULW(a, s, pc, insn);
+        case arithmetic_32_funct3_funct7::DIVW: return execute_DIVW(a, s, pc, insn);
+        case arithmetic_32_funct3_funct7::DIVUW: return execute_DIVUW(a, s, pc, insn);
+        case arithmetic_32_funct3_funct7::REMW: return execute_REMW(a, s, pc, insn);
+        case arithmetic_32_funct3_funct7::REMUW: return execute_REMUW(a, s, pc, insn);
+        default: return execute_illegal_insn_exception(a, s, pc, insn);
+    }
+}
+
+/// \brief Executes an instruction of the shift-rightimmediate-32 group.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
+/// \param s CPU state.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+template <typename STATE_ACCESS>
+static inline bool execute_shift_right_immediate_32_group(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    switch (static_cast<shift_right_immediate_32_funct7>(insn_funct7(insn))) {
+        case shift_right_immediate_32_funct7::SRLIW: return execute_SRLIW(a, s, pc, insn);
+        case shift_right_immediate_32_funct7::SRAIW: return execute_SRAIW(a, s, pc, insn);
+        default: return execute_illegal_insn_exception(a, s, pc, insn);
+    }
+}
+
+/// \brief Executes an instruction of the arithmetic-immediate-32 group.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
+/// \param s CPU state.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+template <typename STATE_ACCESS>
+static inline bool execute_arithmetic_immediate_32_group(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    switch (static_cast<arithmetic_immediate_32_funct3>(insn_funct3(insn))) {
+        case arithmetic_immediate_32_funct3::ADDIW: return execute_ADDIW(a, s, pc, insn);
+        case arithmetic_immediate_32_funct3::SLLIW: return execute_SLLIW(a, s, pc, insn);
+        case arithmetic_immediate_32_funct3::shift_right_immediate_32_group:
+            return execute_shift_right_immediate_32_group(a, s, pc, insn);
+        default: return execute_illegal_insn_exception(a, s, pc, insn);
+    }
+}
+
+/// \brief Executes an instruction of the environment, trap, interrupt, or memory management groups.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
+/// \param s CPU state.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+template <typename STATE_ACCESS>
+static inline bool execute_env_trap_int_mm_group(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    switch (static_cast<env_trap_int_group_insn>(insn)) {
+        case env_trap_int_group_insn::ECALL: return execute_ECALL(a, s, pc, insn);
+        case env_trap_int_group_insn::EBREAK: return execute_EBREAK(a, s, pc, insn);
+        case env_trap_int_group_insn::URET: return execute_URET(a, s, pc, insn);
+        case env_trap_int_group_insn::SRET: return execute_SRET(a, s, pc, insn);
+        case env_trap_int_group_insn::MRET: return execute_MRET(a, s, pc, insn);
+        case env_trap_int_group_insn::WFI: return execute_WFI(a, s, pc, insn);
+        default: return execute_SFENCE_VMA(a, s, pc, insn);
+    }
+}
+
+/// \brief Executes an instruction of the CSR, environment, trap, interrupt, or memory management groups.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
+/// \param s CPU state.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+template <typename STATE_ACCESS>
+static inline bool execute_csr_env_trap_int_mm_group(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    switch (static_cast<csr_env_trap_int_mm_funct3>(insn_funct3(insn))) {
+        case csr_env_trap_int_mm_funct3::CSRRW: return execute_CSRRW(a, s, pc, insn);
+        case csr_env_trap_int_mm_funct3::CSRRS: return execute_CSRRS(a, s, pc, insn);
+        case csr_env_trap_int_mm_funct3::CSRRC: return execute_CSRRC(a, s, pc, insn);
+        case csr_env_trap_int_mm_funct3::CSRRWI: return execute_CSRRWI(a, s, pc, insn);
+        case csr_env_trap_int_mm_funct3::CSRRSI: return execute_CSRRSI(a, s, pc, insn);
+        case csr_env_trap_int_mm_funct3::CSRRCI: return execute_CSRRCI(a, s, pc, insn);
+        case csr_env_trap_int_mm_funct3::env_trap_int_mm_group:
+             return execute_env_trap_int_mm_group(a, s, pc, insn);
+        default: return execute_illegal_insn_exception(a, s, pc, insn);
+    }
+}
+
+/// \brief Executes an instruction of the fence group.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
+/// \param s CPU state.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+template <typename STATE_ACCESS>
+static inline bool execute_fence_group(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    if (insn == 0x0000100f) {
+        return execute_FENCE_I(a, s, pc, insn);
+    } else if (insn & 0xf00fff80) {
+        return execute_illegal_insn_exception(a, s, pc, insn);
+    } else {
+        return execute_FENCE(a, s, pc, insn);
+    }
+}
+
+/// \brief Executes an instruction of the shift-right-immediate group.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
+/// \param s CPU state.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+template <typename STATE_ACCESS>
+static inline bool execute_shift_right_immediate_group(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    switch (static_cast<shift_right_immediate_funct6>(insn_funct6(insn))) {
+        case shift_right_immediate_funct6::SRLI: return execute_SRLI(a, s, pc, insn);
+        case shift_right_immediate_funct6::SRAI: return execute_SRAI(a, s, pc, insn);
+        default: return execute_illegal_insn_exception(a, s, pc, insn);
+    }
+}
+
+/// \brief Executes an instruction of the arithmetic group.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
+/// \param s CPU state.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+template <typename STATE_ACCESS>
+static inline bool execute_arithmetic_group(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    switch (static_cast<arithmetic_funct3_funct7>(insn_funct3_funct7(insn))) {
+        case arithmetic_funct3_funct7::ADD: return execute_ADD(a, s, pc, insn);
+        case arithmetic_funct3_funct7::SUB: return execute_SUB(a, s, pc, insn);
+        case arithmetic_funct3_funct7::SLL: return execute_SLL(a, s, pc, insn);
+        case arithmetic_funct3_funct7::SLT: return execute_SLT(a, s, pc, insn);
+        case arithmetic_funct3_funct7::SLTU: return execute_SLTU(a, s, pc, insn);
+        case arithmetic_funct3_funct7::XOR: return execute_XOR(a, s, pc, insn);
+        case arithmetic_funct3_funct7::SRL: return execute_SRL(a, s, pc, insn);
+        case arithmetic_funct3_funct7::SRA: return execute_SRA(a, s, pc, insn);
+        case arithmetic_funct3_funct7::OR: return execute_OR(a, s, pc, insn);
+        case arithmetic_funct3_funct7::AND: return execute_AND(a, s, pc, insn);
+        case arithmetic_funct3_funct7::MUL: return execute_MUL(a, s, pc, insn);
+        case arithmetic_funct3_funct7::MULH: return execute_MULH(a, s, pc, insn);
+        case arithmetic_funct3_funct7::MULHSU: return execute_MULHSU(a, s, pc, insn);
+        case arithmetic_funct3_funct7::MULHU: return execute_MULHU(a, s, pc, insn);
+        case arithmetic_funct3_funct7::DIV: return execute_DIV(a, s, pc, insn);
+        case arithmetic_funct3_funct7::DIVU: return execute_DIVU(a, s, pc, insn);
+        case arithmetic_funct3_funct7::REM: return execute_REM(a, s, pc, insn);
+        case arithmetic_funct3_funct7::REMU: return execute_REMU(a, s, pc, insn);
+        default: return execute_illegal_insn_exception(a, s, pc, insn);
+    }
+}
+
+/// \brief Executes an instruction of the arithmetic-immediate group.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
+/// \param s CPU state.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+template <typename STATE_ACCESS>
+static inline bool execute_arithmetic_immediate_group(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    switch (static_cast<arithmetic_immediate_funct3>(insn_funct3(insn))) {
+        case arithmetic_immediate_funct3::ADDI: return execute_ADDI(a, s, pc, insn);
+        case arithmetic_immediate_funct3::SLTI: return execute_SLTI(a, s, pc, insn);
+        case arithmetic_immediate_funct3::SLTIU: return execute_SLTIU(a, s, pc, insn);
+        case arithmetic_immediate_funct3::XORI: return execute_XORI(a, s, pc, insn);
+        case arithmetic_immediate_funct3::ORI: return execute_ORI(a, s, pc, insn);
+        case arithmetic_immediate_funct3::ANDI: return execute_ANDI(a, s, pc, insn);
+        case arithmetic_immediate_funct3::SLLI: return execute_SLLI(a, s, pc, insn);
+        case arithmetic_immediate_funct3::shift_right_immediate_group:
+            return execute_shift_right_immediate_group(a, s, pc, insn);
+        default: return execute_illegal_insn_exception(a, s, pc, insn);
+    }
+}
+
+/// \brief Executes an instruction of the store group.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
+/// \param s CPU state.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+template <typename STATE_ACCESS>
+static inline bool execute_store_group(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    switch (static_cast<store_funct3>(insn_funct3(insn))) {
+        case store_funct3::SB: return execute_SB(a, s, pc, insn);
+        case store_funct3::SH: return execute_SH(a, s, pc, insn);
+        case store_funct3::SW: return execute_SW(a, s, pc, insn);
+        case store_funct3::SD: return execute_SD(a, s, pc, insn);
+        default: return execute_illegal_insn_exception(a, s, pc, insn);
+    }
+}
+
+/// \brief Executes an instruction of the load group.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
+/// \param s CPU state.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+template <typename STATE_ACCESS>
+static inline bool execute_load_group(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
+    switch (static_cast<load_funct3>(insn_funct3(insn))) {
+        case load_funct3::LB: return execute_LB(a, s, pc, insn);
+        case load_funct3::LH: return execute_LH(a, s, pc, insn);
+        case load_funct3::LW: return execute_LW(a, s, pc, insn);
+        case load_funct3::LD: return execute_LD(a, s, pc, insn);
+        case load_funct3::LBU: return execute_LBU(a, s, pc, insn);
+        case load_funct3::LHU: return execute_LHU(a, s, pc, insn);
+        case load_funct3::LWU: return execute_LWU(a, s, pc, insn);
+        default: return execute_illegal_insn_exception(a, s, pc, insn);
+    }
+}
+
+/// \brief Executes an instruction of the branch group.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
+/// \param s CPU state.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+template <typename STATE_ACCESS>
+static inline bool execute_branch_group(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     switch (static_cast<branch_funct3>(insn_funct3(insn))) {
-        case branch_funct3::BEQ: return execute_BEQ(s, insn);
-        case branch_funct3::BNE: return execute_BNE(s, insn);
-        case branch_funct3::BLT: return execute_BLT(s, insn);
-        case branch_funct3::BGE: return execute_BGE(s, insn);
-        case branch_funct3::BLTU: return execute_BLTU(s, insn);
-        case branch_funct3::BGEU: return execute_BGEU(s, insn);
-        default: return execute_illegal_insn_exception(s, insn);
+        case branch_funct3::BEQ: return execute_BEQ(a, s, pc, insn);
+        case branch_funct3::BNE: return execute_BNE(a, s, pc, insn);
+        case branch_funct3::BLT: return execute_BLT(a, s, pc, insn);
+        case branch_funct3::BGE: return execute_BGE(a, s, pc, insn);
+        case branch_funct3::BLTU: return execute_BLTU(a, s, pc, insn);
+        case branch_funct3::BGEU: return execute_BGEU(a, s, pc, insn);
+        default: return execute_illegal_insn_exception(a, s, pc, insn);
     }
 }
 
 /// \brief Executes an instruction.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
 /// \param s CPU state.
+/// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-static inline bool execute_insn(RISCVCPUState *s, uint32_t insn) {
+template <typename STATE_ACCESS>
+static inline bool execute_insn(STATE_ACCESS a, RISCVCPUState *s, target_ulong pc, uint32_t insn) {
     //std::cerr << "insn: " << std::bitset<32>(insn) << '\n';
     switch (static_cast<opcode>(insn_opcode(insn))) {
-        case opcode::LUI: return execute_LUI(s, insn);
-        case opcode::AUIPC: return execute_AUIPC(s, insn);
-        case opcode::JAL: return execute_JAL(s, insn);
-        case opcode::JALR: return execute_JALR(s, insn);
-        case opcode::branch_group: return execute_branch_group(s, insn);
-        case opcode::load_group: return execute_load_group(s, insn);
-        case opcode::store_group: return execute_store_group(s, insn);
-        case opcode::arithmetic_immediate_group: return execute_arithmetic_immediate_group(s, insn);
-        case opcode::arithmetic_group: return execute_arithmetic_group(s, insn);
-        case opcode::fence_group: return execute_fence_group(s, insn);
-        case opcode::csr_env_trap_int_mm_group: return execute_csr_env_trap_int_mm_group(s, insn);
-        case opcode::arithmetic_immediate_32_group: return execute_arithmetic_immediate_32_group(s, insn);
-        case opcode::arithmetic_32_group: return execute_arithmetic_32_group(s, insn);
-        case opcode::atomic_group: return execute_atomic_group(s, insn);
-        default: return execute_illegal_insn_exception(s, insn);
+        case opcode::LUI: return execute_LUI(a, s, pc, insn);
+        case opcode::AUIPC: return execute_AUIPC(a, s, pc, insn);
+        case opcode::JAL: return execute_JAL(a, s, pc, insn);
+        case opcode::JALR: return execute_JALR(a, s, pc, insn);
+        case opcode::branch_group: return execute_branch_group(a, s, pc, insn);
+        case opcode::load_group: return execute_load_group(a, s, pc, insn);
+        case opcode::store_group: return execute_store_group(a, s, pc, insn);
+        case opcode::arithmetic_immediate_group: return execute_arithmetic_immediate_group(a, s, pc, insn);
+        case opcode::arithmetic_group: return execute_arithmetic_group(a, s, pc, insn);
+        case opcode::fence_group: return execute_fence_group(a, s, pc, insn);
+        case opcode::csr_env_trap_int_mm_group: return execute_csr_env_trap_int_mm_group(a, s, pc, insn);
+        case opcode::arithmetic_immediate_32_group: return execute_arithmetic_immediate_32_group(a, s, pc, insn);
+        case opcode::arithmetic_32_group: return execute_arithmetic_32_group(a, s, pc, insn);
+        case opcode::atomic_group: return execute_atomic_group(a, s, pc, insn);
+        default: return execute_illegal_insn_exception(a, s, pc, insn);
     }
 }
 
 /// \brief Loads the next instruction.
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
 /// \param s CPU state.
-/// \param insn Instruction.
+/// \param pc Receives current pc.
+/// \param insn Receives fetched instruction.
 /// \return Returns true if load succeeded, false if it caused an exception. In that case, raise the exception.
-static bool fetch_insn(RISCVCPUState *s, uint32_t *insn) {
+template <typename STATE_ACCESS>
+static bool fetch_insn(STATE_ACCESS a, RISCVCPUState *s, target_ulong *pc, uint32_t *insn) {
+    // Get current pc from state
+    target_ulong vaddr = a.read_pc(s);
     // Translate pc address from virtual to physical
     // First, check TLB
-    target_ulong vaddr = s->pc;
     int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
     uintptr_t mem_addend;
     // TLB match
@@ -3366,10 +3740,10 @@ static bool fetch_insn(RISCVCPUState *s, uint32_t *insn) {
     // code_to_pc_addend = vaddr - (uintptr_t)code_ptr;
 
     // Finally load the instruction
+    *pc = vaddr;
     *insn = *reinterpret_cast<uint32_t *>(mem_addend + (uintptr_t)vaddr);
     return true;
 }
-
 
 /// \brief Interpreter status code
 enum class interpreter_status {
@@ -3379,11 +3753,14 @@ enum class interpreter_status {
 };
 
 /// \brief Tries to run the interpreter until mcycle hits a target
+/// \tparam STATE_ACCESS Class of CPU state accessor object.
+/// \param a CPU state accessor object.
 /// \param s CPU state.
 /// \param mcycle_end Target value for mcycle.
 /// \returns Returns a status code that tells if the loop hit the target mcycle or stopped early.
 /// \details The interpret may stop early if the machine halts permanently or becomes temporarily idle (waiting for interrupts).
-interpreter_status interpret(RISCVCPUState *s, uint64_t mcycle_end) {
+template <typename STATE_ACCESS>
+interpreter_status interpret(STATE_ACCESS a, RISCVCPUState *s, uint64_t mcycle_end) {
 
     // The external loop continues until the CPU halts,
     // becomes idle, or mcycle reaches mcycle_end
@@ -3395,7 +3772,7 @@ interpreter_status interpret(RISCVCPUState *s, uint64_t mcycle_end) {
         }
 
         // If we reached the target mcycle, report it
-        if (s->mcycle >= mcycle_end) {
+        if (a.read_mcycle(s) >= mcycle_end) {
             return interpreter_status::done;
         }
 
@@ -3412,29 +3789,40 @@ interpreter_status interpret(RISCVCPUState *s, uint64_t mcycle_end) {
             raise_interrupt(s);
         }
 
+        target_ulong pc = 0;
         uint32_t insn = 0;
 
         // The inner loops continues until there is an interrupt condition
         for ( ;; )  {
 
-            s->mcycle++;
+            // Increment the cycle counter mcycle
+            target_ulong mcycle = a.read_mcycle(s) + 1;
+            a.write_mcycle(s, mcycle);
             // Try to fetch the next instruction
-            if (fetch_insn(s, &insn)) {
+            if (fetch_insn(a, s, &pc, &insn)) {
                 // Try to execute it
-                if (execute_insn(s, insn)) {
-                    s->minstret++;
+                if (execute_insn(a, s, pc, insn)) {
+                    // If successful, increment the number of retired instructions minstret
+                    a.write_minstret(s, a.read_minstret(s)+1);
                 }
-                // If the check interrupt flag is active, ans if so break from the inner loop.
+                // If the check interrupt flag is active, break from the inner loop.
                 // This will give the outer loop an opportunity to handle it.
                 if (s->iflags_CI) break;
             }
 
             // If we reached the target mcycle, we are done
-            if (s->mcycle >= mcycle_end) {
+            if (mcycle >= mcycle_end) {
                 return interpreter_status::done;
             }
         }
     }
+}
+
+// Explicit instantiation just to test everything compiles fine.
+int foo(void) {
+    state_access a;
+    interpret(a, nullptr, 0);
+    return 0;
 }
 
 #if 0

@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <bitset>
 #include <iostream>
+#include <functional>
 
 /* this test works at least with gcc */
 #if defined(__SIZEOF_INT128__)
@@ -2351,6 +2352,15 @@ enum class atomic_funct3_funct5 {
     AMOMAXU_D = 0b01111100
 };
 
+static inline target_ulong reg_read(RISCVCPUState *s, uint32_t r) {
+    return s->reg[r];
+}
+
+static inline void reg_write(RISCVCPUState *s, uint32_t r, target_ulong val) {
+    assert(r != 0);
+    s->reg[r] = val;
+}
+
 static inline uint32_t insn_rd(uint32_t insn) {
     return (insn >> 7) & 0b11111;
 }
@@ -2361,6 +2371,24 @@ static inline uint32_t insn_rs1(uint32_t insn) {
 
 static inline uint32_t insn_rs2(uint32_t insn) {
     return (insn >> 20) & 0b11111;
+}
+
+static inline int32_t insn_B_imm(uint32_t insn) {
+    int32_t imm = ((insn >> (31 - 12)) & (1 << 12)) |
+        ((insn >> (25 - 5)) & 0x7e0) |
+        ((insn >> (8 - 1)) & 0x1e) |
+        ((insn << (11 - 7)) & (1 << 11));
+    imm = (imm << 19) >> 19;
+    return imm;
+}
+
+static inline int32_t insn_J_imm(uint32_t insn) {
+    int32_t imm = ((insn >> (31 - 20)) & (1 << 20)) |
+        ((insn >> (21 - 1)) & 0x7fe) |
+        ((insn >> (20 - 11)) & (1 << 11)) |
+        (insn & 0xff000);
+    imm = (imm << 11) >> 11;
+    return imm;
 }
 
 static inline uint32_t insn_opcode(uint32_t insn) {
@@ -2412,13 +2440,13 @@ static inline bool execute_misaligned_fetch_exception(RISCVCPUState *s) {
     return true;
 }
 
-static inline bool execute_next_insn(RISCVCPUState *s) {
-    s->pc += 4;
+static inline bool execute_jump_insn(RISCVCPUState *s, target_ulong pc) {
+    s->pc = pc;
     return true;
 }
 
-static inline bool execute_jump_insn(RISCVCPUState *s) {
-    (void) s;
+static inline bool execute_next_insn(RISCVCPUState *s) {
+    s->pc += 4;
     return true;
 }
 
@@ -2734,18 +2762,6 @@ static inline bool execute_FENCE_I(RISCVCPUState *s, uint32_t insn) {
     return true;
 }
 
-static inline bool execute_SRLI(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("SRLI");
-    return true;
-}
-
-static inline bool execute_SRAI(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("SRAI");
-    return true;
-}
-
 static inline bool execute_ADD(RISCVCPUState *s, uint32_t insn) {
     (void) s; (void) insn;
     dump_insn("ADD");
@@ -2854,47 +2870,75 @@ static inline bool execute_REMU(RISCVCPUState *s, uint32_t insn) {
     return true;
 }
 
+template <typename V> struct shift_left_binop {
+    V operator()(V a, V b) {
+        return a << b;
+    }
+};
+
+template <typename V> struct shift_right_binop {
+    V operator()(V a, V b) {
+        return a >> b;
+    }
+};
+
+template <template <typename> class ARI, typename V>
+static inline bool execute_arithmetic_immediate(RISCVCPUState *s, uint32_t insn) {
+    ARI<V> arith;
+    int32_t imm = (int32_t)insn >> 20;
+    target_ulong rs1 = reg_read(s, insn_rs1(insn));
+    uint32_t rd = insn_rd(insn);
+    if (rd != 0) {
+        target_ulong val = arith(static_cast<V>(rs1), static_cast<V>(imm));
+        reg_write(s, rd, val);
+    }
+    return execute_next_insn(s);
+}
+
+static inline bool execute_SRLI(RISCVCPUState *s, uint32_t insn) {
+    dump_insn("SRLI");
+    return execute_arithmetic_immediate<shift_right_binop, target_ulong>(s, insn);
+}
+
+static inline bool execute_SRAI(RISCVCPUState *s, uint32_t insn) {
+    dump_insn("SRAI");
+    return execute_arithmetic_immediate<shift_right_binop, target_long>(s, insn);
+}
+
 static inline bool execute_ADDI(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("ADDI");
-    return true;
+    return execute_arithmetic_immediate<std::plus, target_long>(s, insn);
 }
 
 static inline bool execute_SLTI(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("SLTI");
-    return true;
+    return execute_arithmetic_immediate<std::less, target_long>(s, insn);
 }
 
 static inline bool execute_SLTIU(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("SLTIU");
-    return true;
+    return execute_arithmetic_immediate<std::less, target_ulong>(s, insn);
 }
 
 static inline bool execute_XORI(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("XORI");
-    return true;
+    return execute_arithmetic_immediate<std::bit_xor, target_long>(s, insn);
 }
 
 static inline bool execute_ORI(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("ORI");
-    return true;
+    return execute_arithmetic_immediate<std::bit_or, target_long>(s, insn);
 }
 
 static inline bool execute_ANDI(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("ANDI");
-    return true;
+    return execute_arithmetic_immediate<std::bit_and, target_long>(s, insn);
 }
 
 static inline bool execute_SLLI(RISCVCPUState *s, uint32_t insn) {
-    if (insn_funct6(insn) == 0) {
-        (void) s; (void) insn;
+    if ((insn & (0b111111 << 26)) == 0) {
         dump_insn("SLLI");
-        return true;
+        return execute_arithmetic_immediate<shift_left_binop, target_ulong>(s, insn);
     } else {
         return execute_illegal_insn_exception(s, insn);
     }
@@ -2966,40 +3010,52 @@ static inline bool execute_LWU(RISCVCPUState *s, uint32_t insn) {
     return true;
 }
 
-static inline bool execute_BEQ(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
-    dump_insn("BEQ");
-    return true;
+template <template <typename> class CMP, typename V>
+static inline bool execute_branch(RISCVCPUState *s, uint32_t insn) {
+    CMP<V> cmp;
+    target_ulong rs1 = reg_read(s, insn_rs1(insn));
+    target_ulong rs2 = reg_read(s, insn_rs2(insn));
+    if (cmp(static_cast<V>(rs1), static_cast<V>(rs2))) {
+        int32_t imm = insn_B_imm(insn);
+        target_ulong new_pc = (int64_t)(s->pc + imm);
+        if (new_pc & 3) {
+            return execute_misaligned_fetch_exception(s);
+        } else {
+            return execute_jump_insn(s, new_pc);
+        }
+    }
+    return execute_next_insn(s);
 }
 
+static inline bool execute_BEQ(RISCVCPUState *s, uint32_t insn) {
+    dump_insn("BEQ");
+    return execute_branch<std::equal_to, target_ulong>(s, insn);
+}
+
+
 static inline bool execute_BNE(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("BNE");
-    return true;
+    return execute_branch<std::not_equal_to, target_ulong>(s, insn);
 }
 
 static inline bool execute_BLT(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("BLT");
-    return true;
+    return execute_branch<std::less, target_long>(s, insn);
 }
 
 static inline bool execute_BGE(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("BGE");
-    return true;
+    return execute_branch<std::greater_equal, target_long>(s, insn);
 }
 
 static inline bool execute_BLTU(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("BLTU");
-    return true;
+    return execute_branch<std::less, target_ulong>(s, insn);
 }
 
 static inline bool execute_BGEU(RISCVCPUState *s, uint32_t insn) {
-    (void) s; (void) insn;
     dump_insn("BGEU");
-    return true;
+    return execute_branch<std::greater_equal, target_ulong>(s, insn);
 }
 
 static inline bool execute_LUI(RISCVCPUState *s, uint32_t insn) {
@@ -3020,31 +3076,27 @@ static inline bool execute_AUIPC(RISCVCPUState *s, uint32_t insn) {
 
 static inline bool execute_JAL(RISCVCPUState *s, uint32_t insn) {
     dump_insn("JAL");
-    int32_t imm = ((insn >> (31 - 20)) & (1 << 20)) |
-        ((insn >> (21 - 1)) & 0x7fe) |
-        ((insn >> (20 - 11)) & (1 << 11)) |
-        (insn & 0xff000);
-    imm = (imm << 11) >> 11;
-    s->pc = (int64_t)(s->pc + imm);
-    if (s->pc & 3)
+    int32_t imm = insn_J_imm(insn);
+    target_ulong new_pc = (int64_t)(s->pc + imm);
+    if (new_pc & 3)
         return execute_misaligned_fetch_exception(s);
     uint32_t rd = insn_rd(insn);
     if (rd != 0)
-        s->reg[rd] = s->pc + 4;
-    return execute_jump_insn(s);
+        s->reg[rd] = new_pc + 4;
+    return execute_jump_insn(s, new_pc);
 }
 
 static inline bool execute_JALR(RISCVCPUState *s, uint32_t insn) {
     dump_insn("JALR");
     int32_t imm = (int32_t)insn >> 20;
     target_ulong val = s->pc + 4;
-    s->pc = (int64_t)(s->reg[insn_rs1(insn)] + imm) & ~1;
-    if (s->pc & 3)
+    target_ulong new_pc = (int64_t)(s->reg[insn_rs1(insn)] + imm) & ~1;
+    if (new_pc & 3)
         return execute_misaligned_fetch_exception(s);
     uint32_t rd = insn_rd(insn);
     if (rd != 0)
         s->reg[rd] = val;
-    return execute_jump_insn(s);
+    return execute_jump_insn(s, new_pc);
 }
 
 static bool execute_SFENCE_VMA(RISCVCPUState *s, uint32_t insn) {
@@ -3354,6 +3406,7 @@ interpreter_status interpret(RISCVCPUState *s, uint64_t mcycle_end) {
 
         uint32_t insn = 0;
 
+        // The inner loops continues until there is an interrupt condition
         for ( ;; )  {
 
             s->mcycle++;
@@ -3373,9 +3426,7 @@ interpreter_status interpret(RISCVCPUState *s, uint64_t mcycle_end) {
                 return interpreter_status::done;
             }
         }
-
     }
-
 }
 
 #if 0

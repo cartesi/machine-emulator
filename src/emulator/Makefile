@@ -48,8 +48,8 @@ endif
 # GCFLAGS=-fdata-sections -ffunction-sections
 # GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
 
-CFLAGS=$(WARNS) -g -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS)
-CXXFLAGS=-g -std=c++14 $(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS)
+CFLAGS=$(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS)
+CXXFLAGS=-std=c++14 $(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS)
 
 ALL=emu.so
 

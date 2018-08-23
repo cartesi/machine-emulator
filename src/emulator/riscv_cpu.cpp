@@ -27,9 +27,18 @@
 #include <cstring>
 #include <cinttypes>
 #include <cstdint>
+#include <cassert>
 #include <bitset>
 #include <iostream>
 #include <functional>
+
+
+//??D This code uses right-shifts of potentially negative
+// values assuming the result will be an arithmetic shift.
+// This is undefined in C and C++, but most compilers will
+// do the expected. GCC, Clang, and Visual C all do the
+// right thing, but if some other compiler is used, problems
+// can arise.
 
 /* this test works at least with gcc */
 #if defined(__SIZEOF_INT128__)
@@ -3368,7 +3377,6 @@ enum class interpreter_status {
     halted, ///< iflags_H is set, indicating the machine is permanently halted
     idle ///< iflags_I is set, indicating the machine is waiting for an interrupt
 };
-
 
 /// \brief Tries to run the interpreter until mcycle hits a target
 /// \param s CPU state.

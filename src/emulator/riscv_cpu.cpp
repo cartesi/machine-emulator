@@ -33,12 +33,53 @@
 #include <functional>
 
 
-//??D This code uses right-shifts of potentially negative
-// values assuming the result will be an arithmetic shift.
-// This is undefined in C and C++, but most compilers will
-// do the expected. GCC, Clang, and Visual C all do the
-// right thing, but if some other compiler is used, problems
-// can arise.
+//??D
+//
+// This code assumes the modulo operator is such that
+//
+//      (a/b)*b + a%b = a
+//
+// i.e., the sign of the result is the sign of a.
+// This is guaranteed from C++11 forward.
+//
+//   https://en.cppreference.com/w/cpp/language/operator_arithmetic
+//
+// RISC-V does not define this (at least I have not found it
+// in the documentation), but the tests assume this behavior.
+//
+//   https://github.com/riscv/riscv-tests/blob/master/isa/rv64um/rem.S
+//
+// EVM defines the same behavior. See the yellowpaper.
+//
+// This code assumes right-shifts of negative values are arithmetic shifts.
+// This is implementation-defined in C and C++.
+// Most compilers indeed do arithmetic shifts:
+//
+//   https://docs.microsoft.com/en-us/cpp/c-language/right-shifts
+//   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Integers-implementation.html#Integers-implementation
+//   (clang should behave the same as gcc, but does not document it)
+//   (I have not found documentation for icc)
+//
+// EVM does not have a shift operator.
+// Solidity defines shift as division, which means it rounds negative numbers towards zero.
+// WARNING: An arithmetic shift right would "round" a negative number away from zero!
+//
+// The code assumes narrowing conversions of signed types are modulo operations.
+// This is implementation-defined in C and C++.
+// Most compilers indeed do modulo narrowing:
+//
+//   https://docs.microsoft.com/en-us/cpp/c-language/demotion-of-integers
+//   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Integers-implementation.html#Integers-implementation
+//   (clang should behave the same as gcc, but does not document it)
+//   (I have not found documentation for icc)
+//
+// Signed integer overflows are UNDEFINED according to C and C++.
+// Detecting and preventing overflows is awkward and costly.
+// Fortunately, GCC offers intrinsics that have well-defined overflow behavior.
+//
+//   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Integer-Overflow-Builtins.html#Integer-Overflow-Builtins
+//
+
 
 /* this test works at least with gcc */
 #if defined(__SIZEOF_INT128__)
@@ -128,6 +169,7 @@ typedef uint64_t mem_uint_t;
 #define MSTATUS_SPP_SHIFT 8
 #define MSTATUS_MPP_SHIFT 11
 #define MSTATUS_FS_SHIFT 13
+#define MSTATUS_SD_SHIFT 31
 #define MSTATUS_UXL_SHIFT 32
 #define MSTATUS_SXL_SHIFT 34
 
@@ -150,8 +192,10 @@ typedef uint64_t mem_uint_t;
 #define MSTATUS_TVM (1 << 20)
 #define MSTATUS_TW (1 << 21)
 #define MSTATUS_TSR (1 << 22)
+#define MSTATUS_SD ((uint64_t)1 << MSTATUS_SD_SHIFT)
 #define MSTATUS_UXL ((uint64_t)3 << MSTATUS_UXL_SHIFT)
 #define MSTATUS_SXL ((uint64_t)3 << MSTATUS_SXL_SHIFT)
+
 
 #define PG_SHIFT 12
 #define PG_MASK ((1 << PG_SHIFT) - 1)
@@ -169,8 +213,6 @@ struct RISCVCPUState {
     bool iflags_I; // CPU is idle (waiting for interrupts)
     bool iflags_H; // CPU is permanently halted
     bool iflags_CI; // same as (mie & mip)
-
-    uint8_t mstatus_FS; /* MSTATUS_FS value */
 
     int pending_exception; /* used during MMU exception handling */
     uint64_t pending_tval;
@@ -723,49 +765,107 @@ void riscv_cpu_flush_tlb_write_range_ram(RISCVCPUState *s,
     }
 }
 
-
+//??D remove in favor of _READ and _WRITE variants
 #define SSTATUS_MASK (MSTATUS_UIE | MSTATUS_SIE |       \
                       MSTATUS_UPIE | MSTATUS_SPIE |     \
                       MSTATUS_SPP | \
-                      MSTATUS_FS | MSTATUS_XS | \
+                      MSTATUS_FS | \
                       MSTATUS_SUM | MSTATUS_MXR | MSTATUS_UXL)
 
+//??D remove in favor of _READ and _WRITE variants
 #define MSTATUS_MASK (MSTATUS_UIE | MSTATUS_SIE | MSTATUS_MIE |      \
                       MSTATUS_UPIE | MSTATUS_SPIE | MSTATUS_MPIE |    \
                       MSTATUS_SPP | MSTATUS_MPP | \
                       MSTATUS_FS | \
                       MSTATUS_MPRV | MSTATUS_SUM | MSTATUS_MXR |\
                       MSTATUS_TVM | MSTATUS_TW | MSTATUS_TSR )
+
+#define SSTATUS_WRITE_MASK ( \
+    MSTATUS_UIE  | \
+    MSTATUS_SIE  | \
+    MSTATUS_UPIE | \
+    MSTATUS_SPIE | \
+    MSTATUS_SPP  | \
+    MSTATUS_FS   | \
+    MSTATUS_SUM  | \
+    MSTATUS_MXR  \
+)
+
+#define SSTATUS_READ_MASK ( \
+    MSTATUS_UIE  | \
+    MSTATUS_SIE  | \
+    MSTATUS_UPIE | \
+    MSTATUS_SPIE | \
+    MSTATUS_SPP  | \
+    MSTATUS_FS   | \
+    MSTATUS_SUM  | \
+    MSTATUS_MXR  | \
+    MSTATUS_UXL  | \
+    MSTATUS_SD  \
+)
+
+#define MSTATUS_WRITE_MASK ( \
+    MSTATUS_UIE  | \
+    MSTATUS_SIE  | \
+    MSTATUS_MIE  | \
+    MSTATUS_UPIE | \
+    MSTATUS_SPIE | \
+    MSTATUS_MPIE | \
+    MSTATUS_SPP  | \
+    MSTATUS_MPP  | \
+    MSTATUS_FS   | \
+    MSTATUS_MPRV | \
+    MSTATUS_SUM  | \
+    MSTATUS_MXR  | \
+    MSTATUS_TVM  | \
+    MSTATUS_TW   | \
+    MSTATUS_TSR  \
+)
+
+#define MSTATUS_READ_MASK ( \
+    MSTATUS_UIE  | \
+    MSTATUS_SIE  | \
+    MSTATUS_MIE  | \
+    MSTATUS_UPIE | \
+    MSTATUS_SPIE | \
+    MSTATUS_MPIE | \
+    MSTATUS_SPP  | \
+    MSTATUS_MPP  | \
+    MSTATUS_FS   | \
+    MSTATUS_MPRV | \
+    MSTATUS_SUM  | \
+    MSTATUS_MXR  | \
+    MSTATUS_TVM  | \
+    MSTATUS_TW   | \
+    MSTATUS_TSR  | \
+    MSTATUS_UXL  | \
+    MSTATUS_SXL  | \
+    MSTATUS_SD  \
+)
+
 /* cycle and insn counters */
 #define COUNTEREN_MASK ((1 << 0) | (1 << 2))
 
 /* return the complete mstatus */
 static uint64_t get_mstatus(RISCVCPUState *s, uint64_t mask)
 {
-    uint64_t val = s->mstatus | (s->mstatus_FS << MSTATUS_FS_SHIFT);
-    val &= mask;
-    bool sd = ((val & MSTATUS_FS) == MSTATUS_FS) |
-        ((val & MSTATUS_XS) == MSTATUS_XS);
-    if (sd)
-        val |= (uint64_t)1 << (XLEN - 1);
+    uint64_t val = s->mstatus & mask;
     return val;
 }
 
 static void set_mstatus(RISCVCPUState *s, uint64_t val)
 {
-
     /* flush the TLBs if change of MMU config */
     uint64_t mod = s->mstatus ^ val;
     if ((mod & (MSTATUS_MPRV | MSTATUS_SUM | MSTATUS_MXR)) != 0 ||
         ((s->mstatus & MSTATUS_MPRV) && (mod & MSTATUS_MPP) != 0)) {
         tlb_flush_all(s);
     }
-    s->mstatus_FS = (val >> MSTATUS_FS_SHIFT) & 3;
-    uint64_t mask = MSTATUS_MASK & ~MSTATUS_FS;
-    s->mstatus = (s->mstatus & ~mask) | (val & mask);
+    s->mstatus = (s->mstatus & ~MSTATUS_MASK) | (val & MSTATUS_MASK);
+    if ((s->mstatus & MSTATUS_FS) == MSTATUS_FS) s->mstatus |= MSTATUS_SD;
 }
 
-enum class CSR {
+enum class CSR_address: uint32_t {
     ustatus = 0x000,
     uie = 0x004,
     utvec = 0x005,
@@ -828,18 +928,19 @@ enum class CSR {
     tdata3 = 0x7a3,
 };
 
-static inline int csr_is_read_only(CSR csr) {
-    //??D 0xd00 and 0xf00 are also read-only, but we don't need to detect here
-    return ((static_cast<int>(csr) & 0xc00) == 0xc00);
+static inline bool csr_is_read_only(CSR_address csraddr) {
+    // 0xc00--0xcff, 0xd00--0xdff, and 0xf00--0xfff are all read-only.
+    // so as long as bits 0xc00 are set, the register is read-only
+    return ((static_cast<uint32_t>(csraddr) & 0xc00) == 0xc00);
 }
 
-static inline int csr_priv(CSR csr) {
-    return ((static_cast<int>(csr) >> 8) & 3);
+static inline uint32_t csr_priv(CSR_address csr) {
+    return (static_cast<uint32_t>(csr) >> 8) & 3;
 }
 
 /* return -1 if invalid CSR. 0 if OK. 'will_write' indicate that the
    csr will be written after (used for CSR access check) */
-static int csr_read(RISCVCPUState *s, uint64_t *pval, CSR csr, bool will_write)
+static int csr_read(RISCVCPUState *s, uint64_t *pval, CSR_address csr, bool will_write)
 {
     uint64_t val;
 
@@ -847,7 +948,7 @@ static int csr_read(RISCVCPUState *s, uint64_t *pval, CSR csr, bool will_write)
     if (csr_priv(csr) > s->iflags_PRV) return -1;
 
     switch(csr) {
-    case CSR::ucycle:
+    case CSR_address::ucycle:
         {
             uint32_t counteren;
             if (s->iflags_PRV < PRV_M) {
@@ -861,7 +962,7 @@ static int csr_read(RISCVCPUState *s, uint64_t *pval, CSR csr, bool will_write)
         }
         val = (int64_t)s->mcycle;
         break;
-    case CSR::uinstret:
+    case CSR_address::uinstret:
         {
             uint32_t counteren;
             if (s->iflags_PRV < PRV_M) {
@@ -875,108 +976,108 @@ static int csr_read(RISCVCPUState *s, uint64_t *pval, CSR csr, bool will_write)
         }
         val = (int64_t)s->minstret;
         break;
-    case CSR::ucycleh:
+    case CSR_address::ucycleh:
         goto invalid_csr;
         break;
-    case CSR::uinstreth:
+    case CSR_address::uinstreth:
         goto invalid_csr;
         break;
-    case CSR::sstatus:
-        val = get_mstatus(s, SSTATUS_MASK);
+    case CSR_address::sstatus:
+        val = get_mstatus(s, SSTATUS_READ_MASK);
         break;
-    case CSR::sie:
+    case CSR_address::sie:
         val = s->mie & s->mideleg;
         break;
-    case CSR::stvec:
+    case CSR_address::stvec:
         val = s->stvec;
         break;
-    case CSR::scounteren:
+    case CSR_address::scounteren:
         val = s->scounteren;
         break;
-    case CSR::sscratch:
+    case CSR_address::sscratch:
         val = s->sscratch;
         break;
-    case CSR::sepc:
+    case CSR_address::sepc:
         val = s->sepc;
         break;
-    case CSR::scause:
+    case CSR_address::scause:
         val = s->scause;
         break;
-    case CSR::stval:
+    case CSR_address::stval:
         val = s->stval;
         break;
-    case CSR::sip:
+    case CSR_address::sip:
         val = s->mip & s->mideleg;
         break;
-    case CSR::satp:
+    case CSR_address::satp:
         if (s->iflags_PRV == PRV_S && s->mstatus & MSTATUS_TVM)
             return -1;
         val = s->satp;
         break;
-    case CSR::mstatus:
+    case CSR_address::mstatus:
         val = get_mstatus(s, (uint64_t)-1);
         break;
-    case CSR::misa:
+    case CSR_address::misa:
         val = s->misa;
         break;
-    case CSR::medeleg:
+    case CSR_address::medeleg:
         val = s->medeleg;
         break;
-    case CSR::mideleg:
+    case CSR_address::mideleg:
         val = s->mideleg;
         break;
-    case CSR::mie:
+    case CSR_address::mie:
         val = s->mie;
         break;
-    case CSR::mtvec:
+    case CSR_address::mtvec:
         val = s->mtvec;
         break;
-    case CSR::mcounteren:
+    case CSR_address::mcounteren:
         val = s->mcounteren;
         break;
-    case CSR::mscratch:
+    case CSR_address::mscratch:
         val = s->mscratch;
         break;
-    case CSR::mepc:
+    case CSR_address::mepc:
         val = s->mepc;
         break;
-    case CSR::mcause:
+    case CSR_address::mcause:
         val = s->mcause;
         break;
-    case CSR::mtval:
+    case CSR_address::mtval:
         val = s->mtval;
         break;
-    case CSR::mip:
+    case CSR_address::mip:
         val = s->mip;
         break;
-    case CSR::mcycle:
+    case CSR_address::mcycle:
         val = (int64_t)s->mcycle;
         break;
-    case CSR::minstret:
+    case CSR_address::minstret:
         val = (int64_t)s->minstret;
         break;
-    case CSR::mcycleh:
+    case CSR_address::mcycleh:
         goto invalid_csr;
         break;
-    case CSR::minstreth:
+    case CSR_address::minstreth:
         goto invalid_csr;
         break;
-    case CSR::tselect: /* ignore all */
-    case CSR::tdata1:
-    case CSR::tdata2:
-    case CSR::tdata3:
+    case CSR_address::tselect: /* ignore all */
+    case CSR_address::tdata1:
+    case CSR_address::tdata2:
+    case CSR_address::tdata3:
         val = 0;
         break;
-    case CSR::mvendorid:
+    case CSR_address::mvendorid:
         val = 0;
         break;
-    case CSR::marchid:
+    case CSR_address::marchid:
         val = 0;
         break;
-    case CSR::mimplid:
+    case CSR_address::mimplid:
         val = 0;
         break;
-    case CSR::mhartid:
+    case CSR_address::mhartid:
         val = 0;
         break;
     default:
@@ -984,8 +1085,8 @@ static int csr_read(RISCVCPUState *s, uint64_t *pval, CSR csr, bool will_write)
 #ifdef DUMP_INVALID_CSR
         /* the 'time' counter is usually emulated */
         //??D but we don't emulate it, so maybe we should handle it right here
-        if (csr != CSR::utime) {
-            fprintf(stderr, "csr_read: invalid CSR=0x%x\n", static_cast<int>(csr));
+        if (csr != CSR_address::utime) {
+            fprintf(stderr, "csr_read: invalid csr=0x%x\n", static_cast<int>(csr));
         }
 #endif
         *pval = 0;
@@ -996,7 +1097,7 @@ static int csr_read(RISCVCPUState *s, uint64_t *pval, CSR csr, bool will_write)
 }
 
 // return -1 if invalid CSR, 0 if OK, 2 if TLBs have been flushed.
-static int csr_write(RISCVCPUState *s, CSR csr, uint64_t val)
+static int csr_write(RISCVCPUState *s, CSR_address csr, uint64_t val)
 {
     uint64_t mask;
 
@@ -1006,36 +1107,36 @@ static int csr_write(RISCVCPUState *s, CSR csr, uint64_t val)
     fprintf(stderr, "\n");
 #endif
     switch(csr) {
-    case CSR::sstatus:
+    case CSR_address::sstatus:
         set_mstatus(s, (s->mstatus & ~SSTATUS_MASK) | (val & SSTATUS_MASK));
         break;
-    case CSR::sie:
+    case CSR_address::sie:
         mask = s->mideleg;
         s->mie = (s->mie & ~mask) | (val & mask);
         break;
-    case CSR::stvec:
+    case CSR_address::stvec:
         s->stvec = val & ~3;
         break;
-    case CSR::scounteren:
+    case CSR_address::scounteren:
         s->scounteren = val & COUNTEREN_MASK;
         break;
-    case CSR::sscratch:
+    case CSR_address::sscratch:
         s->sscratch = val;
         break;
-    case CSR::sepc:
+    case CSR_address::sepc:
         s->sepc = val & ~1;
         break;
-    case CSR::scause:
+    case CSR_address::scause:
         s->scause = val;
         break;
-    case CSR::stval:
+    case CSR_address::stval:
         s->stval = val;
         break;
-    case CSR::sip:
+    case CSR_address::sip:
         mask = s->mideleg;
         s->mip = (s->mip & ~mask) | (val & mask);
         break;
-    case CSR::satp:
+    case CSR_address::satp:
         /* no ASID implemented */
         {
             int mode, new_mode;
@@ -1049,51 +1150,51 @@ static int csr_write(RISCVCPUState *s, CSR csr, uint64_t val)
         tlb_flush_all(s);
         return 2;
 
-    case CSR::mstatus:
+    case CSR_address::mstatus:
         set_mstatus(s, val);
         break;
-    case CSR::misa:
+    case CSR_address::misa:
         /* ignore writes to misa */
         break;
-    case CSR::medeleg:
+    case CSR_address::medeleg:
         mask = (1 << (CAUSE_STORE_PAGE_FAULT + 1)) - 1;
         s->medeleg = (s->medeleg & ~mask) | (val & mask);
         break;
-    case CSR::mideleg:
+    case CSR_address::mideleg:
         mask = MIP_SSIP | MIP_STIP | MIP_SEIP;
         s->mideleg = (s->mideleg & ~mask) | (val & mask);
         break;
-    case CSR::mie:
+    case CSR_address::mie:
         mask = MIP_MSIP | MIP_MTIP | MIP_SSIP | MIP_STIP | MIP_SEIP;
         s->mie = (s->mie & ~mask) | (val & mask);
         break;
-    case CSR::mtvec:
+    case CSR_address::mtvec:
         /* ??D no support for vectored iterrupts */
         s->mtvec = val & ~3;
         break;
-    case CSR::mcounteren:
+    case CSR_address::mcounteren:
         s->mcounteren = val & COUNTEREN_MASK;
         break;
-    case CSR::mscratch:
+    case CSR_address::mscratch:
         s->mscratch = val;
         break;
-    case CSR::mepc:
+    case CSR_address::mepc:
         s->mepc = val & ~1;
         break;
-    case CSR::mcause:
+    case CSR_address::mcause:
         s->mcause = val;
         break;
-    case CSR::mtval:
+    case CSR_address::mtval:
         s->mtval = val;
         break;
-    case CSR::mip:
+    case CSR_address::mip:
         mask = MIP_SSIP | MIP_STIP;
         s->mip = (s->mip & ~mask) | (val & mask);
         break;
-    case CSR::tselect: /* ignore all */
-    case CSR::tdata1: /* tdata1 */
-    case CSR::tdata2: /* tdata2 */
-    case CSR::tdata3: /* tdata3 */
+    case CSR_address::tselect: /* ignore all */
+    case CSR_address::tdata1: /* tdata1 */
+    case CSR_address::tdata2: /* tdata2 */
+    case CSR_address::tdata3: /* tdata3 */
         break;
 
     default:
@@ -1794,10 +1895,10 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
             case 1: /* csrrw */
                 s->minstret = GET_INSN_COUNTER();
                 s->mcycle = GET_CYCLE_COUNTER();
-                if (csr_read(s, &val2, static_cast<CSR>(imm), true))
+                if (csr_read(s, &val2, static_cast<CSR_address>(imm), true))
                     goto illegal_insn;
                 val2 = (int64_t)val2;
-                err = csr_write(s, static_cast<CSR>(imm), val);
+                err = csr_write(s, static_cast<CSR_address>(imm), val);
                 if (err < 0)
                     goto illegal_insn;
                 if (rd != 0)
@@ -1814,7 +1915,7 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
             case 3: /* csrrc */
                 s->minstret = GET_INSN_COUNTER();
                 s->mcycle = GET_CYCLE_COUNTER();
-                if (csr_read(s, &val2, static_cast<CSR>(imm), (rs1 != 0)))
+                if (csr_read(s, &val2, static_cast<CSR_address>(imm), (rs1 != 0)))
                     goto illegal_insn;
                 val2 = (int64_t)val2;
                 if (rs1 != 0) {
@@ -1822,7 +1923,7 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
                         val = val2 | val;
                     else
                         val = val2 & ~val;
-                    err = csr_write(s, static_cast<CSR>(imm), val);
+                    err = csr_write(s, static_cast<CSR_address>(imm), val);
                     if (err < 0)
                         goto illegal_insn;
                 } else {
@@ -2202,6 +2303,8 @@ uint64_t riscv_cpu_get_misa(const RISCVCPUState *s)
     return s->misa;
 }
 
+#if 1
+
 enum class opcode {
     LUI   = 0b0110111,
     AUIPC = 0b0010111,
@@ -2376,23 +2479,7 @@ public:
     }
 
     void write_register(RISCVCPUState *s, uint32_t reg, uint64_t val) {
-        derived().do_write_register(s, reg, val);
-    }
-
-    uint64_t read_mcycle(RISCVCPUState *s) {
-        return derived().do_read_mcycle(s);
-    }
-
-    void write_mcycle(RISCVCPUState *s, uint64_t val) {
-        return derived().do_write_mcycle(s, val);
-    }
-
-    uint64_t read_minstret(RISCVCPUState *s) {
-        return derived().do_read_minstret(s);
-    }
-
-    void write_minstret(RISCVCPUState *s, uint64_t val) {
-        return derived().do_write_minstret(s, val);
+        return derived().do_write_register(s, reg, val);
     }
 
     uint64_t read_pc(RISCVCPUState *s) {
@@ -2403,6 +2490,181 @@ public:
         return derived().do_write_pc(s, val);
     }
 
+	uint64_t read_minstret(RISCVCPUState *s) {
+		return derived().do_read_minstret(s);
+	}
+
+	void write_minstret(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_minstret(s,val);
+	}
+
+	uint64_t read_mcycle(RISCVCPUState *s) {
+		return derived().do_read_mcycle(s);
+	}
+
+	void write_mcycle(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_mcycle(s,val);
+	}
+
+	uint64_t read_mstatus(RISCVCPUState *s) {
+		return derived().do_read_mstatus(s);
+	}
+
+	void write_mstatus(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_mstatus(s,val);
+	}
+
+	uint64_t read_mtvec(RISCVCPUState *s) {
+		return derived().do_read_mtvec(s);
+	}
+
+	void write_mtvec(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_mtvec(s,val);
+	}
+
+	uint64_t read_mscratch(RISCVCPUState *s) {
+		return derived().do_read_mscratch(s);
+	}
+
+	void write_mscratch(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_mscratch(s,val);
+	}
+
+	uint64_t read_mepc(RISCVCPUState *s) {
+		return derived().do_read_mepc(s);
+	}
+
+	void write_mepc(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_mepc(s,val);
+	}
+
+	uint64_t read_mcause(RISCVCPUState *s) {
+		return derived().do_read_mcause(s);
+	}
+
+	void write_mcause(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_mcause(s,val);
+	}
+
+	uint64_t read_mtval(RISCVCPUState *s) {
+		return derived().do_read_mtval(s);
+	}
+
+	void write_mtval(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_mtval(s,val);
+	}
+
+	uint64_t read_misa(RISCVCPUState *s) {
+		return derived().do_read_misa(s);
+	}
+
+	void write_misa(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_misa(s,val);
+	}
+
+	uint64_t read_mie(RISCVCPUState *s) {
+		return derived().do_read_mie(s);
+	}
+
+	void write_mie(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_mie(s,val);
+	}
+
+	uint64_t read_mip(RISCVCPUState *s) {
+		return derived().do_read_mip(s);
+	}
+
+	void write_mip(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_mip(s,val);
+	}
+
+	uint64_t read_medeleg(RISCVCPUState *s) {
+		return derived().do_read_medeleg(s);
+	}
+
+	void write_medeleg(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_medeleg(s,val);
+	}
+
+	uint64_t read_mideleg(RISCVCPUState *s) {
+		return derived().do_read_mideleg(s);
+	}
+
+	void write_mideleg(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_mideleg(s,val);
+	}
+
+	uint64_t read_mcounteren(RISCVCPUState *s) {
+		return derived().do_read_mcounteren(s);
+	}
+
+	void write_mcounteren(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_mcounteren(s,val);
+	}
+
+	uint64_t read_stvec(RISCVCPUState *s) {
+		return derived().do_read_stvec(s);
+	}
+
+	void write_stvec(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_stvec(s,val);
+	}
+
+	uint64_t read_sscratch(RISCVCPUState *s) {
+		return derived().do_read_sscratch(s);
+	}
+
+	void write_sscratch(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_sscratch(s,val);
+	}
+
+	uint64_t read_sepc(RISCVCPUState *s) {
+		return derived().do_read_sepc(s);
+	}
+
+	void write_sepc(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_sepc(s,val);
+	}
+
+	uint64_t read_scause(RISCVCPUState *s) {
+		return derived().do_read_scause(s);
+	}
+
+	void write_scause(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_scause(s,val);
+	}
+
+	uint64_t read_stval(RISCVCPUState *s) {
+		return derived().do_read_stval(s);
+	}
+
+	void write_stval(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_stval(s,val);
+	}
+
+	uint64_t read_satp(RISCVCPUState *s) {
+		return derived().do_read_satp(s);
+	}
+
+	void write_satp(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_satp(s,val);
+	}
+
+	uint64_t read_scounteren(RISCVCPUState *s) {
+		return derived().do_read_scounteren(s);
+	}
+
+	void write_scounteren(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_scounteren(s,val);
+	}
+
+	uint64_t read_ilrsc(RISCVCPUState *s) {
+		return derived().do_read_ilrsc(s);
+	}
+
+	void write_ilrsc(RISCVCPUState *s, uint64_t val) {
+		return derived().do_write_ilrsc(s,val);
+	}
 };
 
 class state_access: public i_state_access<state_access> {
@@ -2418,22 +2680,6 @@ private:
         return s->reg[reg];
     }
 
-    uint64_t do_read_mcycle(RISCVCPUState *s) {
-        return s->mcycle;
-    }
-
-    void do_write_mcycle(RISCVCPUState *s, uint64_t val) {
-        s->mcycle = val;
-    }
-
-    uint64_t do_read_minstret(RISCVCPUState *s) {
-        return s->minstret;
-    }
-
-    void do_write_minstret(RISCVCPUState *s, uint64_t val) {
-        s->minstret = val;
-    }
-
     uint64_t do_read_pc(RISCVCPUState *s) {
         return s->pc;
     }
@@ -2441,6 +2687,196 @@ private:
     void do_write_pc(RISCVCPUState *s, uint64_t val) {
         s->pc = val;
     }
+
+	uint64_t do_read_minstret(RISCVCPUState *s) {
+		return s->minstret;
+	}
+
+	void do_write_minstret(RISCVCPUState *s, uint64_t val) {
+		s->minstret = val;
+	}
+
+	uint64_t do_read_mcycle(RISCVCPUState *s) {
+		return s->mcycle;
+	}
+
+	void do_write_mcycle(RISCVCPUState *s, uint64_t val) {
+		s->mcycle = val;
+	}
+
+	uint64_t do_read_mstatus(RISCVCPUState *s) {
+        return s->mstatus & MSTATUS_READ_MASK;
+	}
+
+	void do_write_mstatus(RISCVCPUState *s, uint64_t val) {
+        uint64_t mstatus = do_read_mstatus(s);
+        // If MMU configuration was changted, flush the TLBs
+        // This does not need to be done within the blockchain
+        uint64_t mod = mstatus ^ val;
+        if ((mod & (MSTATUS_MPRV | MSTATUS_SUM | MSTATUS_MXR)) != 0 ||
+            ((mstatus & MSTATUS_MPRV) && (mod & MSTATUS_MPP) != 0)) {
+            tlb_flush_all(s);
+        }
+        // Modify only bits that can be written to
+        mstatus = (mstatus & ~MSTATUS_WRITE_MASK) | (val & MSTATUS_WRITE_MASK);
+        // Update the SD bit
+        if ((mstatus & MSTATUS_FS) == MSTATUS_FS) mstatus |= MSTATUS_SD;
+        // Store results
+        s->mstatus = mstatus;
+	}
+
+	uint64_t do_read_mtvec(RISCVCPUState *s) {
+		return s->mtvec;
+	}
+
+	void do_write_mtvec(RISCVCPUState *s, uint64_t val) {
+		s->mtvec = val;
+	}
+
+	uint64_t do_read_mscratch(RISCVCPUState *s) {
+		return s->mscratch;
+	}
+
+	void do_write_mscratch(RISCVCPUState *s, uint64_t val) {
+		s->mscratch = val;
+	}
+
+	uint64_t do_read_mepc(RISCVCPUState *s) {
+		return s->mepc;
+	}
+
+	void do_write_mepc(RISCVCPUState *s, uint64_t val) {
+		s->mepc = val;
+	}
+
+	uint64_t do_read_mcause(RISCVCPUState *s) {
+		return s->mcause;
+	}
+
+	void do_write_mcause(RISCVCPUState *s, uint64_t val) {
+		s->mcause = val;
+	}
+
+	uint64_t do_read_mtval(RISCVCPUState *s) {
+		return s->mtval;
+	}
+
+	void do_write_mtval(RISCVCPUState *s, uint64_t val) {
+		s->mtval = val;
+	}
+
+	uint64_t do_read_misa(RISCVCPUState *s) {
+		return s->misa;
+	}
+
+	void do_write_misa(RISCVCPUState *s, uint64_t val) {
+		s->misa = val;
+	}
+
+	uint64_t do_read_mie(RISCVCPUState *s) {
+		return s->mie;
+	}
+
+	void do_write_mie(RISCVCPUState *s, uint64_t val) {
+		s->mie = val;
+	}
+
+	uint64_t do_read_mip(RISCVCPUState *s) {
+		return s->mip;
+	}
+
+	void do_write_mip(RISCVCPUState *s, uint64_t val) {
+		s->mip = val;
+	}
+
+	uint64_t do_read_medeleg(RISCVCPUState *s) {
+		return s->medeleg;
+	}
+
+	void do_write_medeleg(RISCVCPUState *s, uint64_t val) {
+		s->medeleg = val;
+	}
+
+	uint64_t do_read_mideleg(RISCVCPUState *s) {
+		return s->mideleg;
+	}
+
+	void do_write_mideleg(RISCVCPUState *s, uint64_t val) {
+		s->mideleg = val;
+	}
+
+	uint64_t do_read_mcounteren(RISCVCPUState *s) {
+		return s->mcounteren;
+	}
+
+	void do_write_mcounteren(RISCVCPUState *s, uint64_t val) {
+		s->mcounteren = val;
+	}
+
+	uint64_t do_read_stvec(RISCVCPUState *s) {
+		return s->stvec;
+	}
+
+	void do_write_stvec(RISCVCPUState *s, uint64_t val) {
+		s->stvec = val;
+	}
+
+	uint64_t do_read_sscratch(RISCVCPUState *s) {
+		return s->sscratch;
+	}
+
+	void do_write_sscratch(RISCVCPUState *s, uint64_t val) {
+		s->sscratch = val;
+	}
+
+	uint64_t do_read_sepc(RISCVCPUState *s) {
+		return s->sepc;
+	}
+
+	void do_write_sepc(RISCVCPUState *s, uint64_t val) {
+		s->sepc = val;
+	}
+
+	uint64_t do_read_scause(RISCVCPUState *s) {
+		return s->scause;
+	}
+
+	void do_write_scause(RISCVCPUState *s, uint64_t val) {
+		s->scause = val;
+	}
+
+	uint64_t do_read_stval(RISCVCPUState *s) {
+		return s->stval;
+	}
+
+	void do_write_stval(RISCVCPUState *s, uint64_t val) {
+		s->stval = val;
+	}
+
+	uint64_t do_read_satp(RISCVCPUState *s) {
+		return s->satp;
+	}
+
+	void do_write_satp(RISCVCPUState *s, uint64_t val) {
+		s->satp = val;
+	}
+
+	uint64_t do_read_scounteren(RISCVCPUState *s) {
+		return s->scounteren;
+	}
+
+	void do_write_scounteren(RISCVCPUState *s, uint64_t val) {
+		s->scounteren = val;
+	}
+
+	uint64_t do_read_ilrsc(RISCVCPUState *s) {
+		return s->ilrsc;
+	}
+
+	void do_write_ilrsc(RISCVCPUState *s, uint64_t val) {
+		s->ilrsc = val;
+	}
+
 };
 
 static inline uint32_t insn_rd(uint32_t insn) {
@@ -2457,6 +2893,10 @@ static inline uint32_t insn_rs2(uint32_t insn) {
 
 static inline int32_t insn_I_imm(uint32_t insn) {
     return (int32_t)insn >> 20;
+}
+
+static inline uint32_t insn_I_uimm(uint32_t insn) {
+    return insn >> 20;
 }
 
 static inline int32_t insn_U_imm(uint32_t insn) {
@@ -2515,10 +2955,10 @@ static void dump_insn(const char *insn) {
     fprintf(stdout, "%s\n", insn);
 }
 
-//??D An execute_OP function is only invoked when the opcode
-//    has been decoded enough to preclude any other instruction.
-//    In some cases, further checks are needed to ensure the
-//    instruction is valid.
+// An execute_OP function is only invoked when the opcode
+// has been decoded enough to preclude any other instruction.
+// In some cases, further checks are needed to ensure the
+// instruction is valid.
 
 template <typename STATE_ACCESS>
 static inline bool execute_illegal_insn_exception(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
@@ -2710,114 +3150,762 @@ static inline bool execute_AMOMAXU_D(STATE_ACCESS a, RISCVCPUState *s, uint64_t 
 
 template <typename STATE_ACCESS>
 static inline bool execute_ADDW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("ADDW");
-    return true;
+    return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        // Discard upper 32 bits
+        int32_t rs1w = static_cast<int32_t>(rs1);
+        int32_t rs2w = static_cast<int32_t>(rs2);
+        int32_t val = 0;
+        __builtin_add_overflow(rs1w, rs2w, &val);
+        return static_cast<uint64_t>(val);
+    });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_SUBW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SUBW");
-    return true;
+    return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        // Convert 64-bit to 32-bit
+        int32_t rs1w = static_cast<int32_t>(rs1);
+        int32_t rs2w = static_cast<int32_t>(rs2);
+        int32_t val = 0;
+        __builtin_sub_overflow(rs1w, rs2w, &val);
+        return static_cast<uint64_t>(val);
+    });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_SLLW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SLLW");
-    return true;
+    return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        uint32_t rs1w = static_cast<uint32_t>(rs1);
+        return static_cast<uint64_t>(rs1w << (rs2 & 31));
+    });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_SRLW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SRLW");
-    return true;
+    return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        uint32_t rs1w = static_cast<uint32_t>(rs1);
+        return static_cast<uint64_t>(rs1w >> (rs2 & 31));
+    });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_SRAW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("SRAW");
-    return true;
+    return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        int32_t rs1w = static_cast<int32_t>(rs1);
+        return static_cast<uint64_t>(rs1w >> (rs2 & 31));
+    });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_MULW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("MULW");
-    return true;
+    return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        int32_t rs1w = static_cast<int32_t>(rs1);
+        int32_t rs2w = static_cast<int32_t>(rs2);
+        int32_t val = 0;
+        __builtin_mul_overflow(rs1w, rs2w, &val);
+        return static_cast<uint64_t>(val);
+    });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_DIVW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("DIVW");
-    return true;
+    return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        int32_t rs1w = static_cast<int32_t>(rs1);
+        int32_t rs2w = static_cast<int32_t>(rs2);
+        if (rs2w == 0) {
+            return static_cast<uint64_t>(-1);
+        } else if (rs1w == ((int32_t)1 << (32 - 1)) && rs2w == -1) {
+            return static_cast<uint64_t>(rs1w);
+        } else {
+            return static_cast<uint64_t>(rs1w / rs2w);
+        }
+    });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_DIVUW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("DIVUW");
-    return true;
+    return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        uint32_t rs1w = static_cast<uint32_t>(rs1);
+        uint32_t rs2w = static_cast<uint32_t>(rs2);
+        if (rs2w == 0) {
+            return static_cast<uint64_t>(-1);
+        } else {
+            return static_cast<uint64_t>(rs1w / rs2w);
+        }
+    });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_REMW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("REMW");
-    return true;
+    return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        int32_t rs1w = static_cast<int32_t>(rs1);
+        int32_t rs2w = static_cast<int32_t>(rs2);
+        if (rs2w == 0) {
+            return static_cast<uint64_t>(rs1w);
+        } else if (rs1w == ((int32_t)1 << (32 - 1)) && rs2w == -1) {
+            return static_cast<uint64_t>(0);
+        } else {
+            return static_cast<uint64_t>(rs1w % rs2w);
+        }
+    });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_REMUW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("REMUW");
+    return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        uint32_t rs1w = static_cast<uint32_t>(rs1);
+        uint32_t rs2w = static_cast<uint32_t>(rs2);
+        if (rs2w == 0) {
+            return static_cast<uint64_t>(rs1w);
+        } else {
+            return static_cast<uint64_t>(rs1w % rs2w);
+        }
+    });
+}
+
+static inline uint64_t read_csr_fail(bool *status) {
+    *status = false;
+    return 0;
+}
+
+static inline uint64_t read_csr_success(uint64_t val, bool *status) {
+    *status = true;
+    return val;
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_ucycle(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    uint32_t counteren;
+    if (s->iflags_PRV < PRV_M) {
+        if (s->iflags_PRV < PRV_S) {
+            counteren = a.read_scounteren(s);
+        } else {
+            counteren = a.read_mcounteren(s);
+        }
+        if (((counteren >> (static_cast<int>(csraddr) & 0x1f)) & 1) == 0) {
+            return read_csr_fail(status);
+        }
+    }
+    return read_csr_success(a.read_mcycle(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_uinstret(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    uint32_t counteren;
+    if (s->iflags_PRV < PRV_M) {
+        if (s->iflags_PRV < PRV_S) {
+            counteren = a.read_scounteren(s);
+        } else {
+            counteren = a.read_mcounteren(s);
+        }
+        if (((counteren >> (static_cast<int>(csraddr) & 0x1f)) & 1) == 0) {
+            return read_csr_fail(status);
+        }
+    }
+    return read_csr_success(a.read_minstret(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_sstatus(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_mstatus(s) & SSTATUS_READ_MASK, status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_sie(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    uint64_t mie = a.read_mie(s);
+    uint64_t mideleg = a.read_mideleg(s);
+    return read_csr_success(mie & mideleg, status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_stvec(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_stvec(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_scounteren(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_scounteren(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_sscratch(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_sscratch(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_sepc(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_sepc(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_scause(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_scause(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_stval(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_stval(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_sip(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    // Ensure values are are loaded in order: do not nest with operator
+    uint64_t mip = a.read_mip(s);
+    uint64_t mideleg = a.read_mideleg(s);
+    return read_csr_success(mip & mideleg, status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_satp(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    uint64_t mstatus = a.read_mstatus(s);
+    if (s->iflags_PRV == PRV_S && mstatus & MSTATUS_TVM) {
+        return read_csr_fail(status);
+    } else {
+        return read_csr_success(a.read_satp(s), status);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_mstatus(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_mstatus(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_misa(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_misa(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_medeleg(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_medeleg(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_mideleg(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_mideleg(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_mie(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_mie(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_mtvec(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_mtvec(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_mcounteren(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_mcounteren(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_mscratch(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_mscratch(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_mepc(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_mepc(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_mcause(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_mcause(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_mtval(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_mtval(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_mip(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_mip(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_mcycle(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_mcycle(s), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_minstret(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+    (void) csraddr;
+    return read_csr_success(a.read_minstret(s), status);
+}
+
+template <typename STATE_ACCESS>
+static uint64_t read_csr(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+
+    if (csr_priv(csraddr) > s->iflags_PRV)
+        return read_csr_fail(status);
+
+    switch (csraddr) {
+        case CSR_address::ucycle: return read_csr_ucycle(a, s, csraddr, status);
+        case CSR_address::uinstret: return read_csr_uinstret(a, s, csraddr, status);
+        //??D case CSR_address::utime: ?
+
+        case CSR_address::sstatus: return read_csr_sstatus(a, s, csraddr, status);
+        case CSR_address::sie: return read_csr_sie(a, s, csraddr, status);
+        case CSR_address::stvec: return read_csr_stvec(a, s, csraddr, status);
+        case CSR_address::scounteren: return read_csr_scounteren(a, s, csraddr, status);
+        case CSR_address::sscratch: return read_csr_sscratch(a, s, csraddr, status);
+        case CSR_address::sepc: return read_csr_sepc(a, s, csraddr, status);
+        case CSR_address::scause: return read_csr_scause(a, s, csraddr, status);
+        case CSR_address::stval: return read_csr_stval(a, s, csraddr, status);
+        case CSR_address::sip: return read_csr_sip(a, s, csraddr, status);
+        case CSR_address::satp: return read_csr_satp(a, s, csraddr, status);
+
+
+        case CSR_address::mstatus: return read_csr_mstatus(a, s, csraddr, status);
+        case CSR_address::misa: return read_csr_misa(a, s, csraddr, status);
+        case CSR_address::medeleg: return read_csr_medeleg(a, s, csraddr, status);
+        case CSR_address::mideleg: return read_csr_mideleg(a, s, csraddr, status);
+        case CSR_address::mie: return read_csr_mie(a, s, csraddr, status);
+        case CSR_address::mtvec: return read_csr_mtvec(a, s, csraddr, status);
+        case CSR_address::mcounteren: return read_csr_mcounteren(a, s, csraddr, status);
+
+
+        case CSR_address::mscratch: return read_csr_mscratch(a, s, csraddr, status);
+        case CSR_address::mepc: return read_csr_mepc(a, s, csraddr, status);
+        case CSR_address::mcause: return read_csr_mcause(a, s, csraddr, status);
+        case CSR_address::mtval: return read_csr_mtval(a, s, csraddr, status);
+        case CSR_address::mip: return read_csr_mip(a, s, csraddr, status);
+
+        case CSR_address::mcycle: return read_csr_mcycle(a, s, csraddr, status);
+        case CSR_address::minstret: return read_csr_minstret(a, s, csraddr, status);
+
+        // All hardwired to zero
+        case CSR_address::tselect:
+        case CSR_address::tdata1:
+        case CSR_address::tdata2:
+        case CSR_address::tdata3:
+        case CSR_address::mvendorid:
+        case CSR_address::marchid:
+        case CSR_address::mimplid:
+        case CSR_address::mhartid:
+           return read_csr_success(0, status);
+
+        // Invalid CSRs
+        default:
+        //case CSR_address::ustatus: // no U-mode traps
+        //case CSR_address::uie: // no U-mode traps
+        //case CSR_address::utvec: // no U-mode traps
+        //case CSR_address::uscratch: // no U-mode traps
+        //case CSR_address::uepc: // no U-mode traps
+        //case CSR_address::ucause: // no U-mode traps
+        //case CSR_address::utval: // no U-mode traps
+        //case CSR_address::uip: // no U-mode traps
+        //case CSR_address::sedeleg: // no U-mode traps
+        //case CSR_address::sideleg: // no U-mode traps
+        //case CSR_address::ucycleh: // 32-bit only
+        //case CSR_address::utimeh: // 32-bit only
+        //case CSR_address::uinstreth: // 32-bit only
+        //case CSR_address::mcycleh: // 32-bit only
+        //case CSR_address::minstreth: // 32-bit only
+#ifdef DUMP_INVALID_CSR
+            /* the 'time' counter is usually emulated */
+            //??D but we don't emulate it, so maybe we should handle it right here
+            if (csraddr != CSR_address::utime) {
+                fprintf(stderr, "csr_read: invalid CSR=0x%x\n", static_cast<int>(csr));
+            }
+#endif
+            return read_csr_fail(status);
+    }
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_sstatus(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    uint64_t mstatus = a.read_mstatus(s);
+    a.write_mstatus(s, (mstatus & ~SSTATUS_WRITE_MASK) | (val & SSTATUS_WRITE_MASK));
     return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_sie(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    uint64_t mask = a.read_mideleg(s);
+    uint64_t mie = a.read_mie(s);
+    a.write_mie(s, (mie & ~mask) | (val & mask));
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_stvec(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_stvec(s, val & ~3);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_scounteren(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_scounteren(s, val & COUNTEREN_MASK);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_sscratch(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_sscratch(s, val);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_sepc(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_sepc(s, val & ~3);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_scause(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_scause(s, val);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_stval(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_stval(s, val);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_sip(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    uint64_t mask = a.read_mideleg(s);
+    uint64_t mip = a.read_mip(s);
+    a.write_mip(s, (mip & ~mask) | (val & mask));
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_satp(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    uint64_t satp = a.read_satp(s);
+    // no ASID implemented
+    int mode = satp >> 60;
+    int new_mode = (val >> 60) & 0xf;
+    if (new_mode == 0 || (new_mode >= 8 && new_mode <= 9))
+        mode = new_mode;
+    a.write_satp(s, (val & (((uint64_t)1 << 44) - 1)) | ((uint64_t)mode << 60));
+    // Since MMU configuration was changted, flush the TLBs
+    // This does not need to be done within the blockchain
+    tlb_flush_all(s);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_mstatus(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_mstatus(s, val);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_medeleg(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    const uint64_t mask = (1 << (CAUSE_STORE_PAGE_FAULT + 1)) - 1;
+    a.write_medeleg(s, (a.read_medeleg(s) & ~mask) | (val & mask));
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_mideleg(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    const uint64_t mask = MIP_SSIP | MIP_STIP | MIP_SEIP;
+    a.write_mideleg(s, (a.read_mideleg(s) & ~mask) | (val & mask));
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_mie(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    const uint64_t mask = MIP_MSIP | MIP_MTIP | MIP_SSIP | MIP_STIP | MIP_SEIP;
+    a.write_mie(s, (a.read_mie(s) & ~mask) | (val & mask));
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_mtvec(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_mtvec(s, val & ~3);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_mcounteren(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_mcounteren(s, val & COUNTEREN_MASK);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_minstret(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_minstret(s, val-1); // The value will be incremented after the instruction is executed
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_mcycle(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_mcycle(s, val-1); // The value will be incremented after the instruction is executed
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_mscratch(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_mscratch(s, val);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_mepc(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_mepc(s, val & ~3);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_mcause(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_mcause(s, val);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_mtval(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    a.write_mtval(s, val);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_mip(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+    (void) csraddr;
+    const uint64_t mask = MIP_SSIP | MIP_STIP;
+    a.write_mip(s, (a.read_mip(s) & ~mask) | (val & mask));
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+#if defined(DUMP_CSR)
+    fprintf(stderr, "csr_write: csr=0x%03x val=0x", static_cast<int>(csraddr));
+    print_uint64_t(val);
+    fprintf(stderr, "\n");
+#endif
+    if (csr_is_read_only(csraddr)) return false;
+    if (csr_priv(csraddr) > s->iflags_PRV) return false;
+
+    switch(csraddr) {
+        case CSR_address::sstatus: return write_csr_sstatus(a, s, csraddr, val);
+        case CSR_address::sie: return write_csr_sie(a, s, csraddr, val);
+        case CSR_address::stvec: return write_csr_stvec(a, s, csraddr, val);
+        case CSR_address::scounteren: return write_csr_scounteren(a, s, csraddr, val);
+
+        case CSR_address::sscratch: return write_csr_sscratch(a, s, csraddr, val);
+        case CSR_address::sepc: return write_csr_sepc(a, s, csraddr, val);
+        case CSR_address::scause: return write_csr_scause(a, s, csraddr, val);
+        case CSR_address::stval: return write_csr_stval(a, s, csraddr, val);
+        case CSR_address::sip: return write_csr_sip(a, s, csraddr, val);
+
+        case CSR_address::satp: return write_csr_satp(a, s, csraddr, val);
+
+        case CSR_address::mstatus: return write_csr_mstatus(a, s, csraddr, val);
+        case CSR_address::medeleg: return write_csr_medeleg(a, s, csraddr, val);
+        case CSR_address::mideleg: return write_csr_mideleg(a, s, csraddr, val);
+        case CSR_address::mie: return write_csr_mie(a, s, csraddr, val);
+        case CSR_address::mtvec: return write_csr_mtvec(a, s, csraddr, val);
+        case CSR_address::mcounteren: return write_csr_mcounteren(a, s, csraddr, val);
+
+        case CSR_address::mscratch: return write_csr_mscratch(a, s, csraddr, val);
+        case CSR_address::mepc: return write_csr_mepc(a, s, csraddr, val);
+        case CSR_address::mcause: return write_csr_mcause(a, s, csraddr, val);
+        case CSR_address::mtval: return write_csr_mtval(a, s, csraddr, val);
+        case CSR_address::mip: return write_csr_mip(a, s, csraddr, val);
+
+        case CSR_address::mcycle: return write_csr_mcycle(a, s, csraddr, val);
+        case CSR_address::minstret: return write_csr_minstret(a, s, csraddr, val);
+
+        // Ignore writes
+        case CSR_address::misa:
+        case CSR_address::tselect:
+        case CSR_address::tdata1:
+        case CSR_address::tdata2:
+        case CSR_address::tdata3:
+            return true;
+
+        // Invalid CSRs
+        default:
+        //case CSR_address::ucycle: // read-only
+        //case CSR_address::utime: // read-only
+        //case CSR_address::uinstret: // read-only
+        //case CSR_address::ustatus: // no U-mode traps
+        //case CSR_address::uie: // no U-mode traps
+        //case CSR_address::utvec: // no U-mode traps
+        //case CSR_address::uscratch: // no U-mode traps
+        //case CSR_address::uepc: // no U-mode traps
+        //case CSR_address::ucause: // no U-mode traps
+        //case CSR_address::utval: // no U-mode traps
+        //case CSR_address::uip: // no U-mode traps
+        //case CSR_address::ucycleh: // 32-bit only
+        //case CSR_address::utimeh: // 32-bit only
+        //case CSR_address::uinstreth: // 32-bit only
+        //case CSR_address::sedeleg: // no U-mode traps
+        //case CSR_address::sideleg: // no U-mode traps
+        //case CSR_address::mvendorid: // read-only
+        //case CSR_address::marchid: // read-only
+        //case CSR_address::mimplid: // read-only
+        //case CSR_address::mhartid: // read-only
+        //case CSR_address::mcycleh: // 32-bit only
+        //case CSR_address::minstreth: // 32-bit only
+#ifdef DUMP_INVALID_CSR
+            fprintf(stderr, "csr_write: invalid CSR=0x%x\n", static_cast<int>(csr));
+#endif
+            return false;
+    }
+}
+
+template <typename STATE_ACCESS, typename RS1VAL>
+static inline bool execute_csr_RW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn, const RS1VAL &rs1val) {
+    CSR_address csraddr = static_cast<CSR_address>(insn_I_uimm(insn));
+    // Try to read old CSR value
+    bool status = false;
+    uint64_t csrval = 0;
+    // If rd=r0, we do not read from the CSR to avoid side-effects
+    uint32_t rd = insn_rd(insn);
+    if (rd != 0)
+        csrval = read_csr(a, s, csraddr, &status);
+    if (!status)
+        return execute_illegal_insn_exception(a, s, pc, insn);
+    // Try to write new CSR value
+    //??D When we optimize the inner interpreter loop, we
+    //    will have to check if there was a change to the
+    //    memory manager and report back from here so we
+    //    break out of the inner loop
+    if (!write_csr(a, s, csraddr, rs1val(a, s, insn)))
+        return execute_illegal_insn_exception(a, s, pc, insn);
+    if (rd != 0)
+        a.write_register(s, rd, csrval);
+    return execute_next_insn(a, s, pc);
+
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_CSRRW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("CSRRW");
-    return true;
+    return execute_csr_RW(a, s, pc, insn,
+        [](STATE_ACCESS a, RISCVCPUState *s, uint32_t insn) -> uint64_t { return a.read_register(s, insn_rs1(insn)); }
+    );
+}
+
+template <typename STATE_ACCESS, typename RS1VAL, typename F>
+static inline bool execute_csr_SC(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn, const RS1VAL &rs1val, const F &f) {
+    CSR_address csraddr = static_cast<CSR_address>(insn_I_uimm(insn));
+    // Try to read old CSR value
+    bool status = false;
+    uint64_t csrval = read_csr(a, s, csraddr, &status);
+    if (!status)
+        return execute_illegal_insn_exception(a, s, pc, insn);
+    uint32_t rd = insn_rd(insn);
+    if (rd != 0)
+        a.write_register(s, rd, csrval);
+    uint64_t rs1 = rs1val(a, s, insn);
+    if (rs1 != 0) {
+        //??D When we optimize the inner interpreter loop, we
+        //    will have to check if there was a change to the
+        //    memory manager and report back from here so we
+        //    break out of the inner loop
+        if (!write_csr(a, s, csraddr, f(csrval, rs1)))
+            return execute_illegal_insn_exception(a, s, pc, insn);
+    }
+    return execute_next_insn(a, s, pc);
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_CSRRS(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("CSRRS");
-    return true;
+    return execute_csr_SC(a, s, pc, insn,
+        [](STATE_ACCESS a, RISCVCPUState *s, uint32_t insn) -> uint64_t { return a.read_register(s, insn_rs1(insn)); },
+        [](uint64_t csr, uint64_t rs1) -> uint64_t { return csr | rs1; }
+    );
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_CSRRC(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("CSRRC");
-    return true;
+    return execute_csr_SC(a, s, pc, insn,
+        [](STATE_ACCESS a, RISCVCPUState *s, uint32_t insn) -> uint64_t { return a.read_register(s, insn_rs1(insn)); },
+        [](uint64_t csr, uint64_t rs1) -> uint64_t { return csr & ~rs1; }
+    );
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_CSRRWI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("CSRRWI");
-    return true;
+    return execute_csr_RW(a, s, pc, insn,
+        [](STATE_ACCESS, RISCVCPUState *, uint32_t insn) -> uint64_t { return static_cast<uint64_t>(insn_rs1(insn)); }
+    );
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_CSRRSI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("CSRRSI");
-    return true;
+    return execute_csr_SC(a, s, pc, insn,
+        [](STATE_ACCESS, RISCVCPUState *, uint32_t insn) -> uint64_t { return static_cast<uint64_t>(insn_rs1(insn)); },
+        [](uint64_t csr, uint64_t rs1) -> uint64_t { return csr | rs1; }
+    );
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_CSRRCI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
     dump_insn("CSRRCI");
-    return true;
+    return execute_csr_SC(a, s, pc, insn,
+        [](STATE_ACCESS, RISCVCPUState *, uint32_t insn) -> uint64_t { return static_cast<uint64_t>(insn_rs1(insn)); },
+        [](uint64_t csr, uint64_t rs1) -> uint64_t { return csr & ~rs1; }
+    );
 }
 
 template <typename STATE_ACCESS>
@@ -2864,7 +3952,7 @@ static inline bool execute_WFI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_FENCE(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
+    (void) insn;
     dump_insn("FENCE");
     // Really do nothing
     return execute_next_insn(a, s, pc);
@@ -2872,7 +3960,7 @@ static inline bool execute_FENCE(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, 
 
 template <typename STATE_ACCESS>
 static inline bool execute_FENCE_I(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
+    (void) insn;
     dump_insn("FENCE_I");
     // Really do nothing
     return execute_next_insn(a, s, pc);
@@ -2896,7 +3984,9 @@ template <typename STATE_ACCESS>
 static inline bool execute_ADD(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     dump_insn("ADD");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        return rs1+rs2;
+        uint64_t val = 0;
+        __builtin_add_overflow(rs1, rs2, &val);
+        return val;
     });
 }
 
@@ -2904,7 +3994,9 @@ template <typename STATE_ACCESS>
 static inline bool execute_SUB(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     dump_insn("SUB");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        return rs1-rs2;
+        uint64_t val = 0;
+        __builtin_sub_overflow(rs1, rs2, &val);
+        return val;
     });
 }
 
@@ -2978,7 +4070,9 @@ static inline bool execute_MUL(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int64_t srs1 = static_cast<int64_t>(rs1);
         int64_t srs2 = static_cast<int64_t>(rs2);
-        return static_cast<uint64_t>(srs1 * srs2);
+        int64_t val = 0;
+        __builtin_mul_overflow(srs1, srs2, &val);
+        return static_cast<uint64_t>(val);
     });
 }
 
@@ -3146,7 +4240,8 @@ static inline bool execute_SLLI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
         dump_insn("SLLI");
         return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
             // No need to mask lower 6 bits in imm because of the if condition a above
-            return rs1 << imm;
+            // We do it anyway here to prevent problems if this code is moved
+            return rs1 << (imm & 0b111111);
         });
     } else {
         return execute_illegal_insn_exception(a, s, pc, insn);
@@ -3167,7 +4262,8 @@ static inline bool execute_SLLIW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, 
         dump_insn("SLLIW");
         return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
             // No need to mask lower 5 bits in imm because of the if condition a above
-            return static_cast<uint64_t>(static_cast<int32_t>(rs1 << imm));
+            // We do it anyway here to prevent problems if this code is moved
+            return static_cast<uint64_t>(static_cast<int32_t>(rs1 << (imm & 0b11111)));
         });
     } else {
         return execute_illegal_insn_exception(a, s, pc, insn);
@@ -3179,7 +4275,8 @@ static inline bool execute_SRLIW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, 
     dump_insn("SRLIW");
     return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         // No need to mask lower 5 bits in imm because of funct7 test in caller
-        return static_cast<uint64_t>(static_cast<uint32_t>(rs1) >> imm);
+        // We do it anyway here to prevent problems if this code is moved
+        return static_cast<uint64_t>(static_cast<uint32_t>(rs1) >> (imm & 0b11111));
     });
 }
 
@@ -3269,12 +4366,11 @@ static inline bool execute_LWU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
     return true;
 }
 
-template <template <typename> class BRANCH, typename V, typename STATE_ACCESS>
-static inline bool execute_branch(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    BRANCH<V> branch;
+template <typename STATE_ACCESS, typename F>
+static inline bool execute_branch(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t rs1 = a.read_register(s, insn_rs1(insn));
     uint64_t rs2 = a.read_register(s, insn_rs2(insn));
-    if (branch(static_cast<V>(rs1), static_cast<V>(rs2))) {
+    if (f(rs1, rs2)) {
         uint64_t new_pc = (int64_t)(pc + insn_B_imm(insn));
         if (new_pc & 3) {
             return execute_misaligned_fetch_exception(a, s, new_pc);
@@ -3288,38 +4384,46 @@ static inline bool execute_branch(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc,
 template <typename STATE_ACCESS>
 static inline bool execute_BEQ(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     dump_insn("BEQ");
-    return execute_branch<std::equal_to, uint64_t>(a, s, pc, insn);
+    return execute_branch(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 == rs2; });
 }
 
 
 template <typename STATE_ACCESS>
 static inline bool execute_BNE(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     dump_insn("BNE");
-    return execute_branch<std::not_equal_to, uint64_t>(a, s, pc, insn);
+    return execute_branch(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 != rs2; });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_BLT(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     dump_insn("BLT");
-    return execute_branch<std::less, int64_t>(a, s, pc, insn);
+    return execute_branch(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool {
+        return static_cast<int64_t>(rs1) < static_cast<int64_t>(rs2);
+    });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_BGE(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     dump_insn("BGE");
-    return execute_branch<std::greater_equal, int64_t>(a, s, pc, insn);
+    return execute_branch(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool {
+        return static_cast<int64_t>(rs1) >= static_cast<int64_t>(rs2);
+    });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_BLTU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     dump_insn("BLTU");
-    return execute_branch<std::less, uint64_t>(a, s, pc, insn);
+    return execute_branch(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool {
+        return rs1 < rs2;
+    });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_BGEU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     dump_insn("BGEU");
-    return execute_branch<std::greater_equal, uint64_t>(a, s, pc, insn);
+    return execute_branch(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool {
+        return rs1 >= rs2;
+    });
 }
 
 template <typename STATE_ACCESS>
@@ -3789,22 +4893,28 @@ interpreter_status interpret(STATE_ACCESS a, RISCVCPUState *s, uint64_t mcycle_e
         uint32_t insn = 0;
 
         // The inner loops continues until there is an interrupt condition
+        // or mcyc
         for ( ;; )  {
 
-            // Increment the cycle counter mcycle
-            uint64_t mcycle = a.read_mcycle(s) + 1;
-            a.write_mcycle(s, mcycle);
             // Try to fetch the next instruction
             if (fetch_insn(a, s, &pc, &insn)) {
                 // Try to execute it
                 if (execute_insn(a, s, pc, insn)) {
                     // If successful, increment the number of retired instructions minstret
+                    // WARNING: if an instruction modifies minstret, it needs to take into
+                    // account it this unconditional increment and set the value accordingly
                     a.write_minstret(s, a.read_minstret(s)+1);
                 }
-                // If the check interrupt flag is active, break from the inner loop.
-                // This will give the outer loop an opportunity to handle it.
-                if (s->iflags_CI) break;
             }
+            // Increment the cycle counter mcycle
+            // WARNING: if an instruction modifies mcycle, it needs to take into
+            // account it this unconditional increment and set the value accordingly
+            uint64_t mcycle = a.read_mcycle(s) + 1;
+            a.write_mcycle(s, mcycle);
+
+            // If the check interrupt flag is active, break from the inner loop.
+            // This will give the outer loop an opportunity to handle it.
+            if (s->iflags_CI) break;
 
             // If we reached the target mcycle, we are done
             if (mcycle >= mcycle_end) {
@@ -3845,7 +4955,4 @@ int gmain(void) {
 #endif
 
 
-
-
-
-
+#endif

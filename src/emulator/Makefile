@@ -53,7 +53,7 @@ CXXFLAGS=-std=c++14 $(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD
 
 ALL=emu.so
 
-.PHONY: all generate use clean
+.PHONY: all generate use clean test
 
 all: $(ALL)
 
@@ -70,6 +70,9 @@ endif
 
 emu.so: $(OBJS)
 	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LIBS)
+
+test: emu.so
+	lua tests.lua
 
 generate: CFLAGS += -fprofile-generate
 generate: CXXFLAGS += -fprofile-generate

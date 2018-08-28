@@ -27,6 +27,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <algorithm>
 
 #include <signal.h>
 #include <fcntl.h>
@@ -50,8 +51,8 @@ extern "C" {
 #define Mi(n) (((uint64_t)n) << 20)
 #define Gi(n) (((uint64_t)n) << 30)
 
-#define LOW_RAM_BASE_ADDR  Ki(4)
-#define LOW_RAM_SIZE       Ki(64)
+#define ROM_BASE_ADDR  Ki(4)
+#define ROM_SIZE       Ki(64)
 #define RAM_BASE_ADDR      Gi(2)
 #define CLINT_BASE_ADDR    Mi(32)
 #define CLINT_SIZE         Ki(768)
@@ -83,7 +84,7 @@ typedef struct RISCVMachine {
 } RISCVMachine;
 
 /* return -1 if error. */
-static int load_file(uint8_t **pbuf, const char *filename)
+static uint64_t load_file(uint8_t **pbuf, const char *filename)
 {
     FILE *f;
     int size;
@@ -92,12 +93,12 @@ static int load_file(uint8_t **pbuf, const char *filename)
     f = fopen(filename, "rb");
     if (!f) {
         fprintf(stderr, "Unable to open %s\n", filename);
-        return -1;
+        return 0;
     }
     fseek(f, 0, SEEK_END);
     size = ftell(f);
     fseek(f, 0, SEEK_SET);
-    buf = reinterpret_cast<uint8_t *>(malloc(size));
+    buf = reinterpret_cast<uint8_t *>(calloc(1, size));
     if ((int) fread(buf, 1, size, f) != size) {
         fprintf(stderr, "Unable to read from %s\n", filename);
         return -1;
@@ -176,10 +177,18 @@ void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx) {
     p->ram_size = checkuint(L, tabidx, "memory_size");
     p->ram_size <<= 20;
 
-    p->boot_image.filename = dupcheckstring(L, tabidx, "boot_image");
-    p->boot_image.len = load_file(&p->boot_image.buf, p->boot_image.filename);
-    if (p->boot_image.len < 0) {
-        luaL_error(L, "Unable to load %s.", p->boot_image.filename);
+    p->ram_image.filename = dupcheckstring(L, tabidx, "ram_image");
+    p->ram_image.len = load_file(&p->ram_image.buf, p->ram_image.filename);
+    if (p->ram_image.len == 0) {
+        luaL_error(L, "Unable to load RAM image %s.", p->ram_image.filename);
+    }
+
+    p->rom_image.filename = dupoptstring(L, tabidx, "rom_image");
+    if (p->rom_image.filename) {
+        p->rom_image.len = load_file(&p->rom_image.buf, p->rom_image.filename);
+        if (p->rom_image.len == 0) {
+            luaL_error(L, "Unable to load ROM image %s.", p->rom_image.filename);
+        }
     }
 
     p->interactive = optboolean(L, -1, "interactive", 0);
@@ -216,8 +225,10 @@ void virt_machine_free_config(VirtMachineParams *p)
 {
     int i;
     free(p->cmdline);
-    free(p->boot_image.filename);
-    free(p->boot_image.buf);
+    free(p->ram_image.filename);
+    free(p->ram_image.buf);
+    free(p->rom_image.filename);
+    free(p->rom_image.buf);
     for(i = 0; i < p->flash_count; i++) {
         free(p->tab_flash[i].backing);
         free(p->tab_flash[i].label);
@@ -509,7 +520,7 @@ static int fdt_build_riscv(const VirtMachineParams *p, const RISCVMachine *m,
 
     auto size = fdt_totalsize(buf);
 
-#if 1
+#if 0
     {
         FILE *f;
         f = fopen("emu.dtb", "wb");
@@ -521,32 +532,30 @@ static int fdt_build_riscv(const VirtMachineParams *p, const RISCVMachine *m,
     return size;
 }
 
-static void copy_boot_image(const VirtMachineParams *p, RISCVMachine *m)
+static void init_ram_and_rom(const VirtMachineParams *p, RISCVMachine *m)
 {
-    uint32_t fdt_addr;
-    uint8_t *ram_ptr;
-    uint32_t *q;
 
-    ram_ptr = get_ram_ptr(m, RAM_BASE_ADDR);
-    memcpy(ram_ptr, p->boot_image.buf, p->boot_image.len);
+    uint8_t *ram_ptr = get_ram_ptr(m, RAM_BASE_ADDR);
+    memcpy(ram_ptr, p->ram_image.buf, std::min(p->ram_image.len, p->ram_size));
 
-    ram_ptr = get_ram_ptr(m, LOW_RAM_BASE_ADDR);
+    uint8_t *rom_ptr = get_ram_ptr(m, ROM_BASE_ADDR);
 
-    fdt_addr = 8 * 8;
-
-    //??D should check for error here.
-    fdt_build_riscv(p, m, ram_ptr + fdt_addr, LOW_RAM_SIZE-fdt_addr);
-
-    /* jump_addr = RAM_BASE_ADDR */
-
-    q = (uint32_t *)(ram_ptr);
-    /* la t0, jump_addr */
-    q[0] = 0x297 + RAM_BASE_ADDR - LOW_RAM_BASE_ADDR; /* auipc t0, 0x80000000-0x1000 */
-    /* la a1, fdt_addr */
-      q[1] = 0x597; /* auipc a1, 0  (a1 := 0x1004) */
-      q[2] = 0x58593 + ((fdt_addr - (LOW_RAM_BASE_ADDR+4)) << 20); /* addi a1, a1, 60 */
-    q[3] = 0xf1402573; /* csrr a0, mhartid */
-    q[4] = 0x00028067; /* jr t0 */
+    if (!p->rom_image.buf) {
+        uint32_t fdt_addr = 8 * 8;
+        //??D should check for error here.
+        fdt_build_riscv(p, m, rom_ptr + fdt_addr, ROM_SIZE-fdt_addr);
+        /* jump_addr = RAM_BASE_ADDR */
+        uint32_t *q = (uint32_t *)(rom_ptr);
+        /* la t0, jump_addr */
+        q[0] = 0x297 + RAM_BASE_ADDR - ROM_BASE_ADDR; /* auipc t0, 0x80000000-0x1000 */
+        /* la a1, fdt_addr */
+          q[1] = 0x597; /* auipc a1, 0  (a1 := 0x1004) */
+          q[2] = 0x58593 + ((fdt_addr - (ROM_BASE_ADDR+4)) << 20); /* addi a1, a1, 60 */
+        q[3] = 0xf1402573; /* csrr a0, mhartid */
+        q[4] = 0x00028067; /* jr t0 */
+    } else {
+        memcpy(rom_ptr, p->rom_image.buf, std::min(p->rom_image.len, ROM_SIZE));
+    }
 }
 
 static void riscv_flush_tlb_write_range(void *opaque, uint8_t *ram_addr,
@@ -593,14 +602,18 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
 {
     int i;
 
-    if (!p->boot_image.buf) {
-        fprintf(stderr, "No boot image found\n");
+    if (!p->ram_image.buf && !p->rom_image.buf) {
+        fprintf(stderr, "No ROM or RAM images\n");
         return NULL;
     }
 
-    if (p->boot_image.len > (int) p->ram_size) {
-        fprintf(stderr, "Kernel too big (%d vs %d)\n", p->boot_image.len,
-            (int)p->ram_size);
+    if (p->rom_image.buf && p->rom_image.len > ROM_SIZE) {
+        fprintf(stderr, "ROM image too big (%d vs %d)\n", (int) p->ram_image.len, (int) ROM_SIZE);
+        return NULL;
+    }
+
+    if (p->ram_image.len >  p->ram_size) {
+        fprintf(stderr, "RAM image too big (%d vs %d)\n", (int) p->ram_image.len, (int) p->ram_size);
         return NULL;
     }
 
@@ -616,7 +629,7 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
 
     /* RAM */
     cpu_register_ram(m->mem_map, RAM_BASE_ADDR, p->ram_size, 0);
-    cpu_register_ram(m->mem_map, LOW_RAM_BASE_ADDR, LOW_RAM_SIZE, 0);
+    cpu_register_ram(m->mem_map, ROM_BASE_ADDR, ROM_SIZE, 0);
 
     /* flash */
     for (i = 0; i < p->flash_count; i++) {
@@ -631,7 +644,7 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
     cpu_register_device(m->mem_map, HTIF_BASE_ADDR, HTIF_SIZE, m,
         htif_read, htif_write, DEVIO_SIZE32);
 
-    copy_boot_image(p, m);
+    init_ram_and_rom(p, m);
 
     if (p->interactive) {
         m->htif_console = htif_console_init();

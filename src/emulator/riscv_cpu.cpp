@@ -31,7 +31,10 @@
 #include <bitset>
 #include <iostream>
 #include <functional>
+#include <limits>
+#include <type_traits>
 
+#define NEWEMU 1
 
 //??D
 //
@@ -74,12 +77,13 @@
 //   (I have not found documentation for icc)
 //
 // Signed integer overflows are UNDEFINED according to C and C++.
+// The original code assumed signed integers handled overflowed with modulo arithmetic.
+// This is *not* true in general.
 // Detecting and preventing overflows is awkward and costly.
 // Fortunately, GCC offers intrinsics that have well-defined overflow behavior.
 //
 //   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Integer-Overflow-Builtins.html#Integer-Overflow-Builtins
 //
-
 
 /* this test works at least with gcc */
 #if defined(__SIZEOF_INT128__)
@@ -123,21 +127,17 @@ typedef uint64_t mem_uint_t;
 
 #define TLB_SIZE 256
 
-#define CAUSE_MISALIGNED_FETCH    0x0
-#define CAUSE_FAULT_FETCH         0x1
-#define CAUSE_ILLEGAL_INSTRUCTION 0x2
-#define CAUSE_BREAKPOINT          0x3
-#define CAUSE_MISALIGNED_LOAD     0x4
-#define CAUSE_FAULT_LOAD          0x5
-#define CAUSE_MISALIGNED_STORE    0x6
-#define CAUSE_FAULT_STORE         0x7
-#define CAUSE_USER_ECALL          0x8
-#define CAUSE_SUPERVISOR_ECALL    0x9
-#define CAUSE_HYPERVISOR_ECALL    0xa
-#define CAUSE_MACHINE_ECALL       0xb
-#define CAUSE_FETCH_PAGE_FAULT    0xc
-#define CAUSE_LOAD_PAGE_FAULT     0xd
-#define CAUSE_STORE_PAGE_FAULT    0xf
+#define CAUSE_MISALIGNED_FETCH        0x0
+#define CAUSE_FETCH_FAULT             0x1
+#define CAUSE_ILLEGAL_INSTRUCTION     0x2
+#define CAUSE_BREAKPOINT              0x3
+#define CAUSE_LOAD_FAULT              0x5
+#define CAUSE_MISALIGNED_AMO          0x6
+#define CAUSE_STORE_AMO_FAULT         0x7
+#define CAUSE_ECALL                   0x8
+#define CAUSE_FETCH_PAGE_FAULT        0xc
+#define CAUSE_LOAD_PAGE_FAULT         0xd
+#define CAUSE_STORE_AMO_PAGE_FAULT    0xf
 
 #define CAUSE_INTERRUPT  ((uint64_t)1 << 63)
 
@@ -212,7 +212,7 @@ struct RISCVCPUState {
     uint8_t iflags_PRV; // current privilege level
     bool iflags_I; // CPU is idle (waiting for interrupts)
     bool iflags_H; // CPU is permanently halted
-    bool iflags_CI; // same as (mie & mip)
+    bool iflags_B; // Set when we need to break from the the inner loop
 
     int pending_exception; /* used during MMU exception handling */
     uint64_t pending_tval;
@@ -252,10 +252,12 @@ struct RISCVCPUState {
     TLBEntry tlb_code[TLB_SIZE];
 };
 
-static int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
-                                      uint64_t addr, int size_log2);
-static int target_write_slow(RISCVCPUState *s, uint64_t addr,
-                                       mem_uint_t val, int size_log2);
+static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end);
+
+static int target_read_slow(RISCVCPUState *s, mem_uint_t *pval, uint64_t addr, int size_log2);
+
+template <typename T>
+static int target_write_slow(RISCVCPUState *s, uint64_t addr, mem_uint_t val);
 
 static void fprint_uint64_t(FILE *f, uint64_t a)
 {
@@ -356,7 +358,7 @@ static inline int target_write(RISCVCPUState *s, uint64_t addr, T val) {
         *(T *)(s->tlb_write[tlb_idx].mem_addend + (uintptr_t)addr) = val;
         return 0;
     } else {
-        return target_write_slow(s, addr, val, size_log2<T>());
+        return target_write_slow<T>(s, addr, val);
     }
 }
 
@@ -563,7 +565,7 @@ static int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
             fprintf(stderr, "\n");
 #endif
             s->pending_tval = addr;
-            s->pending_exception = CAUSE_FAULT_LOAD;
+            s->pending_exception = CAUSE_LOAD_FAULT;
             return -1;
         } else if (pr->is_ram) {
             tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
@@ -612,16 +614,15 @@ static int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
 }
 
 /* return 0 if OK, != 0 if exception */
-static int target_write_slow(RISCVCPUState *s, uint64_t addr,
-                                       mem_uint_t val, int size_log2)
-{
+template <typename T>
+static int target_write_slow(RISCVCPUState *s, uint64_t addr, mem_uint_t val) {
     int size, i, tlb_idx, err;
     uint64_t paddr, offset;
     uint8_t *ptr;
     PhysMemoryRange *pr;
 
     /* first handle unaligned accesses */
-    size = 1 << size_log2;
+    size = 1 << size_log2<T>();
     if ((addr & (size - 1)) != 0) {
         /* XXX: should avoid modifying the memory in case of exception */
         for(i = 0; i < size; i++) {
@@ -632,7 +633,7 @@ static int target_write_slow(RISCVCPUState *s, uint64_t addr,
     } else {
         if (get_phys_addr(s, &paddr, addr, ACCESS_WRITE)) {
             s->pending_tval = addr;
-            s->pending_exception = CAUSE_STORE_PAGE_FAULT;
+            s->pending_exception = CAUSE_STORE_AMO_PAGE_FAULT;
             return -1;
         }
         pr = get_phys_mem_range(s->mem_map, paddr);
@@ -649,7 +650,7 @@ static int target_write_slow(RISCVCPUState *s, uint64_t addr,
             ptr = pr->phys_mem + (uintptr_t)(paddr - pr->addr);
             s->tlb_write[tlb_idx].vaddr = addr & ~PG_MASK;
             s->tlb_write[tlb_idx].mem_addend = (uintptr_t)ptr - addr;
-            switch(size_log2) {
+            switch(size_log2<T>()) {
             case 0:
                 *(uint8_t *)ptr = val;
                 break;
@@ -667,10 +668,10 @@ static int target_write_slow(RISCVCPUState *s, uint64_t addr,
             }
         } else {
             offset = paddr - pr->addr;
-            if (((pr->devio_flags >> size_log2) & 1) != 0) {
-                pr->write_func(pr->opaque, offset, val, size_log2);
+            if (((pr->devio_flags >> size_log2<T>()) & 1) != 0) {
+                pr->write_func(pr->opaque, offset, val, size_log2<T>());
             }
-            else if ((pr->devio_flags & DEVIO_SIZE32) && size_log2 == 3) {
+            else if ((pr->devio_flags & DEVIO_SIZE32) && size_log2<T>() == 3) {
                 /* emulate 64 bit access */
                 pr->write_func(pr->opaque, offset,
                                val & 0xffffffff, 2);
@@ -681,7 +682,7 @@ static int target_write_slow(RISCVCPUState *s, uint64_t addr,
 #ifdef DUMP_INVALID_MEM_ACCESS
                 fprintf(stderr, "unsupported device write access: addr=0x");
                 print_uint64_t(paddr);
-                fprintf(stderr, " width=%d bits\n", 1 << (3 + size_log2));
+                fprintf(stderr, " width=%d bits\n", 1 << (3 + size_log2<T>()));
 #endif
             }
         }
@@ -713,7 +714,7 @@ static __exception int target_read_insn_slow(RISCVCPUState *s,
     if (!pr || !pr->is_ram) {
         /* XXX: we only access to execute code from RAM */
         s->pending_tval = addr;
-        s->pending_exception = CAUSE_FAULT_FETCH;
+        s->pending_exception = CAUSE_FETCH_FAULT;
         return -1;
     }
     tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
@@ -1157,7 +1158,7 @@ static int csr_write(RISCVCPUState *s, CSR_address csr, uint64_t val)
         /* ignore writes to misa */
         break;
     case CSR_address::medeleg:
-        mask = (1 << (CAUSE_STORE_PAGE_FAULT + 1)) - 1;
+        mask = (1 << (CAUSE_STORE_AMO_PAGE_FAULT + 1)) - 1;
         s->medeleg = (s->medeleg & ~mask) | (val & mask);
         break;
     case CSR_address::mideleg:
@@ -1223,12 +1224,12 @@ static void raise_exception(RISCVCPUState *s, uint64_t cause,
         int flag;
         flag = 0;
 #ifdef DUMP_MMU_EXCEPTIONS
-        if (cause == CAUSE_FAULT_FETCH ||
-            cause == CAUSE_FAULT_LOAD ||
-            cause == CAUSE_FAULT_STORE ||
+        if (cause == CAUSE_FETCH_FAULT ||
+            cause == CAUSE_LOAD_FAULT ||
+            cause == CAUSE_STORE_AMO_FAULT ||
             cause == CAUSE_FETCH_PAGE_FAULT ||
             cause == CAUSE_LOAD_PAGE_FAULT ||
-            cause == CAUSE_STORE_PAGE_FAULT)
+            cause == CAUSE_STORE_AMO_PAGE_FAULT)
             flag = 1;
 #endif
 #ifdef DUMP_INTERRUPTS
@@ -1236,8 +1237,6 @@ static void raise_exception(RISCVCPUState *s, uint64_t cause,
 #endif
 #ifdef DUMP_EXCEPTIONS
         flag |= (cause & CAUSE_INTERRUPT) == 0;
-        if (cause == CAUSE_SUPERVISOR_ECALL)
-            flag = 0;
 #endif
         if (flag) {
             fprintf(stderr, "raise_exception: cause=0x");
@@ -1455,7 +1454,12 @@ enum class Atomic {
     amomaxu = 0x1c
 };
 
+#ifdef NEWEMU
+static void old_riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
+    (void) old_riscv_cpu_interpret;
+#else
 static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
+#endif
     uint32_t opcode, insn, rd, rs1, rs2, funct3;
     int32_t imm, cond, err;
     uint64_t addr, val, val2;
@@ -1466,7 +1470,7 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
 
     if (s->mcycle >= mcycle_end)
         return;
- 
+
     n_cycles = mcycle_end - s->mcycle;
 
     minstret_end = s->minstret + n_cycles;
@@ -1477,20 +1481,20 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
     code_ptr = NULL;
     code_end = NULL;
     code_to_pc_addend = s->pc;
- 
+
     for(;;) {
- 
+
 #if 0
     fprintf(stderr, " mstatus=");
     print_uint64_t(s->mstatus);
     fprintf(stderr, "\n");
 #endif
- 
+
         if (!--n_cycles || s->iflags_H) {
             s->pc = GET_PC();
             goto the_end;
         }
- 
+
         if (code_ptr >= code_end) {
             uint32_t tlb_idx;
             uintptr_t mem_addend;
@@ -1519,7 +1523,7 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
                                    (uintptr_t)((addr & ~PG_MASK) + PG_MASK - 1));
             code_to_pc_addend = addr - (uintptr_t)code_ptr;
         }
- 
+
         insn = get_insn32(code_ptr);
 #ifdef DUMP_INSN
         {
@@ -1944,7 +1948,7 @@ static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
                 case 0x000: /* ecall */
                     if (insn & 0x000fff80)
                         goto illegal_insn;
-                    s->pending_exception = CAUSE_USER_ECALL + s->iflags_PRV;
+                    s->pending_exception = CAUSE_ECALL + s->iflags_PRV;
                     goto exception;
                 case 0x001: /* ebreak */
                     if (insn & 0x000fff80)
@@ -2260,6 +2264,7 @@ bool riscv_cpu_get_power_down(const RISCVCPUState *s)
 void riscv_cpu_set_power_down(RISCVCPUState *s, bool v)
 {
     s->iflags_I = v;
+    if (v) s->iflags_B = true;
 }
 
 bool riscv_cpu_get_shuthost(const RISCVCPUState *s)
@@ -2270,6 +2275,7 @@ bool riscv_cpu_get_shuthost(const RISCVCPUState *s)
 void riscv_cpu_set_shuthost(RISCVCPUState *s, bool v)
 {
     s->iflags_H = v;
+    if (v) s->iflags_B = true;
 }
 
 int riscv_cpu_get_max_xlen(const RISCVCPUState *)
@@ -2302,8 +2308,6 @@ uint64_t riscv_cpu_get_misa(const RISCVCPUState *s)
 {
     return s->misa;
 }
-
-#if 1
 
 enum class opcode {
     LUI   = 0b0110111,
@@ -2900,7 +2904,7 @@ static inline uint32_t insn_I_uimm(uint32_t insn) {
 }
 
 static inline int32_t insn_U_imm(uint32_t insn) {
-    return (int32_t)(insn & 0xfffff000);
+    return static_cast<int32_t>(insn & 0xfffff000);
 }
 
 static inline int32_t insn_B_imm(uint32_t insn) {
@@ -2921,6 +2925,10 @@ static inline int32_t insn_J_imm(uint32_t insn) {
     return imm;
 }
 
+static inline int32_t insn_S_imm(uint32_t insn) {
+    return (static_cast<int32_t>(insn & 0xfe000000) >> (25 - 5)) | ((insn >> 7) & 0b11111);
+}
+
 static inline uint32_t insn_opcode(uint32_t insn) {
     //std::cerr << "opcode: " << std::bitset<7>(insn & 0b1111111) << '\n';
     return insn & 0b1111111;
@@ -2933,7 +2941,7 @@ static inline uint32_t insn_funct3(uint32_t insn) {
 
 static inline uint32_t insn_funct3_funct7(uint32_t insn) {
     //std::cerr << "funct3_funct7: " << std::bitset<10>(((insn >> 5) & 0b1110000000) | (insn >> 24)) << '\n';
-    return ((insn >> 5) & 0b1110000000) | (insn >> 24);
+    return ((insn >> 5) & 0b1110000000) | (insn >> 25);
 }
 
 static inline uint32_t insn_funct3_funct5(uint32_t insn) {
@@ -2951,8 +2959,23 @@ static inline uint32_t insn_funct6(uint32_t insn) {
     return (insn >> 26) & 0b111111;
 }
 
-static void dump_insn(const char *insn) {
-    fprintf(stdout, "%s\n", insn);
+static void dump_insn(RISCVCPUState *s, uint64_t pc, uint32_t insn, const char *name) {
+#ifdef DUMP_INSN
+    uint64_t ppc;
+    if (!get_phys_addr(s, &ppc, pc, ACCESS_CODE)) {
+        fprintf(stderr, "p    %08" PRIx64, ppc);
+    } else {
+        ppc = pc;
+        fprintf(stderr, "v    %08" PRIx64, ppc);
+    }
+    fprintf(stderr, ":   %08" PRIx32 "   ", insn);
+    fprintf(stderr, "\n");
+#else
+    (void) s;
+    (void) pc;
+    (void) insn;
+    (void) name;
+#endif
 }
 
 // An execute_OP function is only invoked when the opcode
@@ -2975,7 +2998,13 @@ static inline bool execute_misaligned_fetch_exception(STATE_ACCESS a, RISCVCPUSt
 }
 
 template <typename STATE_ACCESS>
-static inline bool execute_jump_insn(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc) {
+static inline bool execute_raised_exception(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc) {
+    (void) a; (void) s; (void) pc;
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static inline bool execute_jump(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc) {
     a.write_pc(s, pc);
     return true;
 }
@@ -2990,7 +3019,7 @@ template <typename STATE_ACCESS>
 static inline bool execute_LR_W(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
     if ((insn & 0b00000001111100000000000000000000) == 0 ) {
-        dump_insn("LR_W");
+        dump_insn(s, pc, insn, "LR_W");
         return true;
     } else {
         return execute_illegal_insn_exception(a, s, pc, insn);
@@ -3000,70 +3029,70 @@ static inline bool execute_LR_W(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 template <typename STATE_ACCESS>
 static inline bool execute_SC_W(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("SC_W");
+    dump_insn(s, pc, insn, "SC_W");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOSWAP_W(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOSWAP_W");
+    dump_insn(s, pc, insn, "AMOSWAP_W");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOADD_W(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOADD_W");
+    dump_insn(s, pc, insn, "AMOADD_W");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOXOR_W(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOXOR_W");
+    dump_insn(s, pc, insn, "AMOXOR_W");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOAND_W(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOAND_W");
+    dump_insn(s, pc, insn, "AMOAND_W");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOOR_W(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOOR_W");
+    dump_insn(s, pc, insn, "AMOOR_W");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOMIN_W(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOMIN_W");
+    dump_insn(s, pc, insn, "AMOMIN_W");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOMAX_W(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOMAX_W");
+    dump_insn(s, pc, insn, "AMOMAX_W");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOMINU_W(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOMINU_W");
+    dump_insn(s, pc, insn, "AMOMINU_W");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOMAXU_W(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOMAXU_W");
+    dump_insn(s, pc, insn, "AMOMAXU_W");
     return true;
 }
 
@@ -3071,7 +3100,7 @@ template <typename STATE_ACCESS>
 static inline bool execute_LR_D(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     if ((insn & 0b00000001111100000000000000000000) == 0 ) {
         (void) a; (void) s; (void) pc; (void) insn;
-        dump_insn("LR_D");
+        dump_insn(s, pc, insn, "LR_D");
         return true;
     } else {
         return execute_illegal_insn_exception(a, s, pc, insn);
@@ -3081,76 +3110,76 @@ static inline bool execute_LR_D(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 template <typename STATE_ACCESS>
 static inline bool execute_SC_D(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("SC_D");
+    dump_insn(s, pc, insn, "SC_D");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOSWAP_D(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOSWAP_D");
+    dump_insn(s, pc, insn, "AMOSWAP_D");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOADD_D(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOADD_D");
+    dump_insn(s, pc, insn, "AMOADD_D");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOXOR_D(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOXOR_D");
+    dump_insn(s, pc, insn, "AMOXOR_D");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOAND_D(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOAND_D");
+    dump_insn(s, pc, insn, "AMOAND_D");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOOR_D(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOOR_D");
+    dump_insn(s, pc, insn, "AMOOR_D");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOMIN_D(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOMIN_D");
+    dump_insn(s, pc, insn, "AMOMIN_D");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOMAX_D(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOMAX_D");
+    dump_insn(s, pc, insn, "AMOMAX_D");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOMINU_D(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOMINU_D");
+    dump_insn(s, pc, insn, "AMOMINU_D");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_AMOMAXU_D(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("AMOMAXU_D");
+    dump_insn(s, pc, insn, "AMOMAXU_D");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_ADDW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("ADDW");
+    dump_insn(s, pc, insn, "ADDW");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         // Discard upper 32 bits
         int32_t rs1w = static_cast<int32_t>(rs1);
@@ -3163,7 +3192,7 @@ static inline bool execute_ADDW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_SUBW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SUBW");
+    dump_insn(s, pc, insn, "SUBW");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         // Convert 64-bit to 32-bit
         int32_t rs1w = static_cast<int32_t>(rs1);
@@ -3176,34 +3205,34 @@ static inline bool execute_SUBW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_SLLW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SLLW");
+    dump_insn(s, pc, insn, "SLLW");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        uint32_t rs1w = static_cast<uint32_t>(rs1);
-        return static_cast<uint64_t>(rs1w << (rs2 & 31));
+        int32_t rs1w = static_cast<int32_t>(rs1) << (rs2 & 31);
+        return static_cast<uint64_t>(rs1w);
     });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_SRLW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SRLW");
+    dump_insn(s, pc, insn, "SRLW");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        uint32_t rs1w = static_cast<uint32_t>(rs1);
-        return static_cast<uint64_t>(rs1w >> (rs2 & 31));
+        int32_t rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) >> (rs2 & 31));
+        return static_cast<uint64_t>(rs1w);
     });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_SRAW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SRAW");
+    dump_insn(s, pc, insn, "SRAW");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        int32_t rs1w = static_cast<int32_t>(rs1);
-        return static_cast<uint64_t>(rs1w >> (rs2 & 31));
+        int32_t rs1w = static_cast<int32_t>(rs1) >> (rs2 & 31);
+        return static_cast<uint64_t>(rs1w);
     });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_MULW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("MULW");
+    dump_insn(s, pc, insn, "MULW");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int32_t rs1w = static_cast<int32_t>(rs1);
         int32_t rs2w = static_cast<int32_t>(rs2);
@@ -3215,7 +3244,7 @@ static inline bool execute_MULW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_DIVW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("DIVW");
+    dump_insn(s, pc, insn, "DIVW");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int32_t rs1w = static_cast<int32_t>(rs1);
         int32_t rs2w = static_cast<int32_t>(rs2);
@@ -3231,7 +3260,7 @@ static inline bool execute_DIVW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_DIVUW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("DIVUW");
+    dump_insn(s, pc, insn, "DIVUW");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         uint32_t rs1w = static_cast<uint32_t>(rs1);
         uint32_t rs2w = static_cast<uint32_t>(rs2);
@@ -3245,7 +3274,7 @@ static inline bool execute_DIVUW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, 
 
 template <typename STATE_ACCESS>
 static inline bool execute_REMW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("REMW");
+    dump_insn(s, pc, insn, "REMW");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int32_t rs1w = static_cast<int32_t>(rs1);
         int32_t rs2w = static_cast<int32_t>(rs2);
@@ -3262,7 +3291,7 @@ static inline bool execute_REMW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 template <typename STATE_ACCESS>
 static inline bool execute_REMUW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("REMUW");
+    dump_insn(s, pc, insn, "REMUW");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         uint32_t rs1w = static_cast<uint32_t>(rs1);
         uint32_t rs2w = static_cast<uint32_t>(rs2);
@@ -3644,7 +3673,7 @@ static bool write_csr_mstatus(STATE_ACCESS a, RISCVCPUState *s, CSR_address csra
 template <typename STATE_ACCESS>
 static bool write_csr_medeleg(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
     (void) csraddr;
-    const uint64_t mask = (1 << (CAUSE_STORE_PAGE_FAULT + 1)) - 1;
+    const uint64_t mask = (1 << (CAUSE_STORE_AMO_PAGE_FAULT + 1)) - 1;
     a.write_medeleg(s, (a.read_medeleg(s) & ~mask) | (val & mask));
     return true;
 }
@@ -3812,7 +3841,7 @@ template <typename STATE_ACCESS, typename RS1VAL>
 static inline bool execute_csr_RW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn, const RS1VAL &rs1val) {
     CSR_address csraddr = static_cast<CSR_address>(insn_I_uimm(insn));
     // Try to read old CSR value
-    bool status = false;
+    bool status = true;
     uint64_t csrval = 0;
     // If rd=r0, we do not read from the CSR to avoid side-effects
     uint32_t rd = insn_rd(insn);
@@ -3835,7 +3864,7 @@ static inline bool execute_csr_RW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc,
 
 template <typename STATE_ACCESS>
 static inline bool execute_CSRRW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("CSRRW");
+    dump_insn(s, pc, insn, "CSRRW");
     return execute_csr_RW(a, s, pc, insn,
         [](STATE_ACCESS a, RISCVCPUState *s, uint32_t insn) -> uint64_t { return a.read_register(s, insn_rs1(insn)); }
     );
@@ -3866,7 +3895,7 @@ static inline bool execute_csr_SC(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc,
 
 template <typename STATE_ACCESS>
 static inline bool execute_CSRRS(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("CSRRS");
+    dump_insn(s, pc, insn, "CSRRS");
     return execute_csr_SC(a, s, pc, insn,
         [](STATE_ACCESS a, RISCVCPUState *s, uint32_t insn) -> uint64_t { return a.read_register(s, insn_rs1(insn)); },
         [](uint64_t csr, uint64_t rs1) -> uint64_t { return csr | rs1; }
@@ -3875,7 +3904,7 @@ static inline bool execute_CSRRS(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, 
 
 template <typename STATE_ACCESS>
 static inline bool execute_CSRRC(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("CSRRC");
+    dump_insn(s, pc, insn, "CSRRC");
     return execute_csr_SC(a, s, pc, insn,
         [](STATE_ACCESS a, RISCVCPUState *s, uint32_t insn) -> uint64_t { return a.read_register(s, insn_rs1(insn)); },
         [](uint64_t csr, uint64_t rs1) -> uint64_t { return csr & ~rs1; }
@@ -3884,7 +3913,7 @@ static inline bool execute_CSRRC(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, 
 
 template <typename STATE_ACCESS>
 static inline bool execute_CSRRWI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("CSRRWI");
+    dump_insn(s, pc, insn, "CSRRWI");
     return execute_csr_RW(a, s, pc, insn,
         [](STATE_ACCESS, RISCVCPUState *, uint32_t insn) -> uint64_t { return static_cast<uint64_t>(insn_rs1(insn)); }
     );
@@ -3892,7 +3921,7 @@ static inline bool execute_CSRRWI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc,
 
 template <typename STATE_ACCESS>
 static inline bool execute_CSRRSI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("CSRRSI");
+    dump_insn(s, pc, insn, "CSRRSI");
     return execute_csr_SC(a, s, pc, insn,
         [](STATE_ACCESS, RISCVCPUState *, uint32_t insn) -> uint64_t { return static_cast<uint64_t>(insn_rs1(insn)); },
         [](uint64_t csr, uint64_t rs1) -> uint64_t { return csr | rs1; }
@@ -3901,7 +3930,7 @@ static inline bool execute_CSRRSI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc,
 
 template <typename STATE_ACCESS>
 static inline bool execute_CSRRCI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("CSRRCI");
+    dump_insn(s, pc, insn, "CSRRCI");
     return execute_csr_SC(a, s, pc, insn,
         [](STATE_ACCESS, RISCVCPUState *, uint32_t insn) -> uint64_t { return static_cast<uint64_t>(insn_rs1(insn)); },
         [](uint64_t csr, uint64_t rs1) -> uint64_t { return csr & ~rs1; }
@@ -3910,50 +3939,61 @@ static inline bool execute_CSRRCI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc,
 
 template <typename STATE_ACCESS>
 static inline bool execute_ECALL(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("ECALL");
+    (void) a;
+    dump_insn(s, pc, insn, "ECALL");
+    //??D Need another version of raise_exception that does not modify mtval
+    raise_exception(s, CAUSE_ECALL + s->iflags_PRV, s->mtval);
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_EBREAK(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("EBREAK");
+    (void) a;
+    dump_insn(s, pc, insn, "EBREAK");
+    //??D Need another version of raise_exception that does not modify mtval
+    raise_exception(s, CAUSE_BREAKPOINT, s->mtval);
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_URET(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("URET");
-    return true;
+    dump_insn(s, pc, insn, "URET"); // no U-mode traps
+    return execute_illegal_insn_exception(a, s, pc, insn);
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_SRET(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("SRET");
-    return true;
+    dump_insn(s, pc, insn, "SRET");
+    if (s->iflags_PRV < PRV_S || (s->iflags_PRV == PRV_S && (s->mstatus & MSTATUS_TSR))) {
+        return execute_illegal_insn_exception(a, s, pc, insn);
+    } else {
+        handle_sret(s);
+        return execute_next_insn(a, s, pc);
+    }
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_MRET(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("MRET");
-    return true;
+    dump_insn(s, pc, insn, "MRET");
+    if (s->iflags_PRV < PRV_M) {
+        return execute_illegal_insn_exception(a, s, pc, insn);
+    } else {
+        handle_mret(s);
+        return execute_next_insn(a, s, pc);
+    }
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_WFI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("WFI");
+    dump_insn(s, pc, insn, "WFI");
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_FENCE(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) insn;
-    dump_insn("FENCE");
+    dump_insn(s, pc, insn, "FENCE");
     // Really do nothing
     return execute_next_insn(a, s, pc);
 }
@@ -3961,7 +4001,7 @@ static inline bool execute_FENCE(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, 
 template <typename STATE_ACCESS>
 static inline bool execute_FENCE_I(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     (void) insn;
-    dump_insn("FENCE_I");
+    dump_insn(s, pc, insn, "FENCE_I");
     // Really do nothing
     return execute_next_insn(a, s, pc);
 }
@@ -3982,7 +4022,7 @@ static inline bool execute_arithmetic(STATE_ACCESS a, RISCVCPUState *s, uint64_t
 
 template <typename STATE_ACCESS>
 static inline bool execute_ADD(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("ADD");
+    dump_insn(s, pc, insn, "ADD");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         uint64_t val = 0;
         __builtin_add_overflow(rs1, rs2, &val);
@@ -3992,7 +4032,7 @@ static inline bool execute_ADD(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_SUB(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SUB");
+    dump_insn(s, pc, insn, "SUB");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         uint64_t val = 0;
         __builtin_sub_overflow(rs1, rs2, &val);
@@ -4002,7 +4042,7 @@ static inline bool execute_SUB(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_SLL(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SLL");
+    dump_insn(s, pc, insn, "SLL");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return rs1 << (rs2 & (XLEN-1));
     });
@@ -4010,7 +4050,7 @@ static inline bool execute_SLL(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_SLT(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SLT");
+    dump_insn(s, pc, insn, "SLT");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return static_cast<int64_t>(rs1) < static_cast<int64_t>(rs2);
     });
@@ -4018,7 +4058,7 @@ static inline bool execute_SLT(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_SLTU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SLTU");
+    dump_insn(s, pc, insn, "SLTU");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return rs1 < rs2;
     });
@@ -4026,7 +4066,7 @@ static inline bool execute_SLTU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_XOR(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("XOR");
+    dump_insn(s, pc, insn, "XOR");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return rs1 ^ rs2;
     });
@@ -4034,7 +4074,7 @@ static inline bool execute_XOR(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_SRL(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SRL");
+    dump_insn(s, pc, insn, "SRL");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return rs1 >> (rs2 & (XLEN-1));
     });
@@ -4042,7 +4082,7 @@ static inline bool execute_SRL(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_SRA(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SRA");
+    dump_insn(s, pc, insn, "SRA");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return static_cast<uint64_t>(static_cast<int64_t>(rs1) >> (rs2 & (XLEN-1)));
     });
@@ -4050,7 +4090,7 @@ static inline bool execute_SRA(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_OR(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("OR");
+    dump_insn(s, pc, insn, "OR");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return rs1 | rs2;
     });
@@ -4058,7 +4098,7 @@ static inline bool execute_OR(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uin
 
 template <typename STATE_ACCESS>
 static inline bool execute_AND(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("AND");
+    dump_insn(s, pc, insn, "AND");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return rs1 & rs2;
     });
@@ -4066,7 +4106,7 @@ static inline bool execute_AND(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_MUL(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("MUL");
+    dump_insn(s, pc, insn, "MUL");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int64_t srs1 = static_cast<int64_t>(rs1);
         int64_t srs2 = static_cast<int64_t>(rs2);
@@ -4078,7 +4118,7 @@ static inline bool execute_MUL(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_MULH(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("MULH");
+    dump_insn(s, pc, insn, "MULH");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int64_t srs1 = static_cast<int64_t>(rs1);
         int64_t srs2 = static_cast<int64_t>(rs2);
@@ -4088,7 +4128,7 @@ static inline bool execute_MULH(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_MULHSU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("MULHSU");
+    dump_insn(s, pc, insn, "MULHSU");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int64_t srs1 = static_cast<int64_t>(rs1);
         return static_cast<uint64_t>((static_cast<int128_t>(srs1) * static_cast<int128_t>(rs2)) >> 64);
@@ -4097,7 +4137,7 @@ static inline bool execute_MULHSU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc,
 
 template <typename STATE_ACCESS>
 static inline bool execute_MULHU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("MULHU");
+    dump_insn(s, pc, insn, "MULHU");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return static_cast<uint64_t>((static_cast<int128_t>(rs1) * static_cast<int128_t>(rs2)) >> 64);
     });
@@ -4105,7 +4145,7 @@ static inline bool execute_MULHU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, 
 
 template <typename STATE_ACCESS>
 static inline bool execute_DIV(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("DIV");
+    dump_insn(s, pc, insn, "DIV");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int64_t srs1 = static_cast<int64_t>(rs1);
         int64_t srs2 = static_cast<int64_t>(rs2);
@@ -4121,7 +4161,7 @@ static inline bool execute_DIV(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_DIVU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("DIVU");
+    dump_insn(s, pc, insn, "DIVU");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         if (rs2 == 0) {
             return static_cast<uint64_t>(-1);
@@ -4133,7 +4173,7 @@ static inline bool execute_DIVU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_REM(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("REM");
+    dump_insn(s, pc, insn, "REM");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int64_t srs1 = static_cast<int64_t>(rs1);
         int64_t srs2 = static_cast<int64_t>(rs2);
@@ -4149,7 +4189,7 @@ static inline bool execute_REM(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_REMU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("REMU");
+    dump_insn(s, pc, insn, "REMU");
     return execute_arithmetic(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         if (rs2 == 0) {
             return rs1;
@@ -4172,7 +4212,7 @@ static inline bool execute_arithmetic_immediate(STATE_ACCESS a, RISCVCPUState *s
 
 template <typename STATE_ACCESS>
 static inline bool execute_SRLI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SRLI");
+    dump_insn(s, pc, insn, "SRLI");
     return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return rs1 >> (imm & (XLEN - 1));
     });
@@ -4180,7 +4220,7 @@ static inline bool execute_SRLI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_SRAI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SRAI");
+    dump_insn(s, pc, insn, "SRAI");
     return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return static_cast<uint64_t>(static_cast<int64_t>(rs1) >> (imm & (XLEN - 1)));
     });
@@ -4188,7 +4228,7 @@ static inline bool execute_SRAI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_ADDI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("ADDI");
+    dump_insn(s, pc, insn, "ADDI");
     return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return rs1+imm;
     });
@@ -4196,7 +4236,7 @@ static inline bool execute_ADDI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_SLTI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SLTI");
+    dump_insn(s, pc, insn, "SLTI");
     return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return static_cast<int64_t>(rs1) < static_cast<int64_t>(imm);
     });
@@ -4204,7 +4244,7 @@ static inline bool execute_SLTI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_SLTIU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SLTIU");
+    dump_insn(s, pc, insn, "SLTIU");
     return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return rs1 < static_cast<uint64_t>(imm);
     });
@@ -4212,7 +4252,7 @@ static inline bool execute_SLTIU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, 
 
 template <typename STATE_ACCESS>
 static inline bool execute_XORI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("XORI");
+    dump_insn(s, pc, insn, "XORI");
     return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return rs1 ^ imm;
     });
@@ -4220,7 +4260,7 @@ static inline bool execute_XORI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_ORI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("ORI");
+    dump_insn(s, pc, insn, "ORI");
     return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return rs1 | imm;
     });
@@ -4228,7 +4268,7 @@ static inline bool execute_ORI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_ANDI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("ANDI");
+    dump_insn(s, pc, insn, "ANDI");
     return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return rs1 & imm;
     });
@@ -4237,7 +4277,7 @@ static inline bool execute_ANDI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 template <typename STATE_ACCESS>
 static inline bool execute_SLLI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     if ((insn & (0b111111 << 26)) == 0) {
-        dump_insn("SLLI");
+        dump_insn(s, pc, insn, "SLLI");
         return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
             // No need to mask lower 6 bits in imm because of the if condition a above
             // We do it anyway here to prevent problems if this code is moved
@@ -4250,7 +4290,7 @@ static inline bool execute_SLLI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_ADDIW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("ADDIW");
+    dump_insn(s, pc, insn, "ADDIW");
     return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return static_cast<int32_t>(rs1 + imm);
     });
@@ -4259,11 +4299,12 @@ static inline bool execute_ADDIW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, 
 template <typename STATE_ACCESS>
 static inline bool execute_SLLIW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
     if (insn_funct7(insn) == 0) {
-        dump_insn("SLLIW");
+        dump_insn(s, pc, insn, "SLLIW");
         return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
             // No need to mask lower 5 bits in imm because of the if condition a above
             // We do it anyway here to prevent problems if this code is moved
-            return static_cast<uint64_t>(static_cast<int32_t>(rs1 << (imm & 0b11111)));
+            int32_t rs1w = static_cast<int32_t>(rs1) << (imm & 0b11111);
+            return static_cast<uint64_t>(rs1w);
         });
     } else {
         return execute_illegal_insn_exception(a, s, pc, insn);
@@ -4272,98 +4313,251 @@ static inline bool execute_SLLIW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, 
 
 template <typename STATE_ACCESS>
 static inline bool execute_SRLIW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SRLIW");
+    dump_insn(s, pc, insn, "SRLIW");
     return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         // No need to mask lower 5 bits in imm because of funct7 test in caller
         // We do it anyway here to prevent problems if this code is moved
-        return static_cast<uint64_t>(static_cast<uint32_t>(rs1) >> (imm & 0b11111));
+        int32_t rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) >> (imm & 0b11111));
+        return static_cast<uint64_t>(rs1w);
     });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_SRAIW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("SRAIW");
+    dump_insn(s, pc, insn, "SRAIW");
     return execute_arithmetic_immediate(a, s, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
-        return static_cast<uint64_t>(static_cast<int32_t>(rs1) >> (imm & 0b11111));
+        int32_t rs1w = static_cast<int32_t>(rs1) >> (imm & 0b11111);
+        return static_cast<uint64_t>(rs1w);
     });
 }
 
+template <typename T>
+static inline bool write_memory(RISCVCPUState *s, uint64_t addr, uint64_t val);
+
+template <typename T>
+static bool write_memory_slow(RISCVCPUState *s, uint64_t addr, uint64_t val) {
+    /* first handle unaligned accesses */
+    const int size = 1 << size_log2<T>();
+    if ((addr & (size - 1)) != 0) {
+        /* WARNING: must avoid modifying memory in case of exception */
+        for (int i = 0; i < size; i++) {
+            if (!write_memory<uint8_t>(s, addr + i, (val >> (8 * i)) & 0xff)) {
+                return false;
+            }
+        }
+        return true;
+    } else {
+        uint64_t paddr, offset;
+        if (get_phys_addr(s, &paddr, addr, ACCESS_WRITE)) {
+            raise_exception(s, CAUSE_STORE_AMO_PAGE_FAULT, addr);
+            return false;
+        }
+        PhysMemoryRange *pr = get_phys_mem_range(s->mem_map, paddr);
+        if (!pr) {
+            // If we do not have the range in our map, we treat this as a PMA viloation
+            raise_exception(s, CAUSE_STORE_AMO_FAULT, addr);
+            return false;
+        } else if (pr->is_ram) {
+            phys_mem_set_dirty_bit(pr, paddr - pr->addr);
+            int tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
+            uint8_t *ptr = pr->phys_mem + (uintptr_t)(paddr - pr->addr);
+            s->tlb_write[tlb_idx].vaddr = addr & ~PG_MASK;
+            s->tlb_write[tlb_idx].mem_addend = (uintptr_t)ptr - addr;
+            *reinterpret_cast<T *>(ptr) = static_cast<T>(val);
+            return true;
+        } else {
+            offset = paddr - pr->addr;
+            if (((pr->devio_flags >> size_log2<T>()) & 1) != 0) {
+                pr->write_func(pr->opaque, offset, val, size_log2<T>());
+                return true;
+            } else if ((pr->devio_flags & DEVIO_SIZE32) && size_log2<T>() == 3) {
+                /* emulate 64 bit access */
+                pr->write_func(pr->opaque, offset, val & 0xffffffff, 2);
+                pr->write_func(pr->opaque, offset + 4, (val >> 32) & 0xffffffff, 2);
+                return true;
+            } else {
+                // If we do not know how to write, we treat this as a PMA viloation
+                raise_exception(s, CAUSE_STORE_AMO_FAULT, addr);
+                return false;
+            }
+        }
+    }
+}
+
+template <typename T>
+static inline bool write_memory(RISCVCPUState *s, uint64_t addr, uint64_t val) {
+    uint32_t tlb_idx;
+    tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
+    if (s->tlb_write[tlb_idx].vaddr == (addr & ~(PG_MASK & ~(sizeof(T) - 1)))) {
+        *reinterpret_cast<T *>(s->tlb_write[tlb_idx].mem_addend + (uintptr_t)addr) = static_cast<T>(val);
+        return true;
+    } else {
+        return write_memory_slow<T>(s, addr, val);
+    }
+}
+
+template <typename T, typename STATE_ACCESS>
+static inline bool execute_S(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
+    uint64_t addr = a.read_register(s, insn_rs1(insn));
+    int32_t imm = insn_S_imm(insn);
+    uint64_t val = a.read_register(s, insn_rs2(insn));
+    if (write_memory<T>(s, addr+imm, val)) {
+        return execute_next_insn(a, s, pc);
+    } else {
+        return execute_raised_exception(a, s, pc);
+    }
+}
 
 template <typename STATE_ACCESS>
 static inline bool execute_SB(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("SB");
-    return true;
+    dump_insn(s, pc, insn, "SB");
+    return execute_S<uint8_t>(a, s, pc, insn);
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_SH(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("SH");
-    return true;
+    dump_insn(s, pc, insn, "SH");
+    return execute_S<uint16_t>(a, s, pc, insn);
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_SW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("SW");
-    return true;
+    dump_insn(s, pc, insn, "SW");
+    return execute_S<uint32_t>(a, s, pc, insn);
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_SD(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("SD");
-    return true;
+    dump_insn(s, pc, insn, "SD");
+    return execute_S<uint64_t>(a, s, pc, insn);
+}
+
+template <typename T>
+static bool read_memory_slow(RISCVCPUState *s, uint64_t addr, T *pval);
+
+template <typename T>
+static inline bool read_memory(RISCVCPUState *s, uint64_t addr, T *pval)  {
+    int tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
+    if (s->tlb_read[tlb_idx].vaddr == (addr & ~(PG_MASK & ~(sizeof(T) - 1)))) {
+        *pval = *reinterpret_cast<T *>(s->tlb_read[tlb_idx].mem_addend + (uintptr_t)addr);
+        return true;
+    } else {
+        return read_memory_slow<T>(s, addr, pval);
+    }
+}
+
+/* return 0 if OK, != 0 if exception */
+template <typename T>
+static bool read_memory_slow(RISCVCPUState *s, uint64_t addr, T *pval) {
+    // To make sure shifts are logical
+    using U = std::make_unsigned_t<T>;
+    // Deal with unaligned accesses
+    uint64_t al = addr & (sizeof(T)-1);
+    if (al != 0) {
+        U v0, v1;
+        addr -= al;
+        // Read aligned word right before
+        if (!read_memory<U>(s, addr, &v0)) return false;
+        // Read aligned word right after
+        if (!read_memory<U>(s, addr + sizeof(U), &v1)) return false;
+        // Extract desired word from the middle
+        *pval = static_cast<T>((v0 >> (al * 8)) | (v1 << ((sizeof(U)-al) * 8)));
+        return true;
+    // Deal with aligned accesses
+    } else {
+        uint64_t paddr;
+        if (get_phys_addr(s, &paddr, addr, ACCESS_READ)) {
+            raise_exception(s, CAUSE_LOAD_PAGE_FAULT, addr);
+            return false;
+        }
+        PhysMemoryRange *pr = get_phys_mem_range(s->mem_map, paddr);
+        if (!pr) {
+            raise_exception(s, CAUSE_LOAD_FAULT, addr);
+            return false;
+        } else if (pr->is_ram) {
+            int tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
+            uint8_t *ptr = pr->phys_mem + (uintptr_t)(paddr - pr->addr);
+            s->tlb_read[tlb_idx].vaddr = addr & ~PG_MASK;
+            s->tlb_read[tlb_idx].mem_addend = (uintptr_t)ptr - addr;
+            *pval = *reinterpret_cast<T *>(ptr);
+            return true;
+        } else {
+            uint64_t offset = paddr - pr->addr;
+            if (((pr->devio_flags >> size_log2<U>()) & 1) != 0) {
+                *pval = pr->read_func(pr->opaque, offset, size_log2<U>());
+                return true;
+            } else if ((pr->devio_flags & DEVIO_SIZE32) && size_log2<U>() == 3) {
+                /* emulate 64 bit access */
+                *pval = pr->read_func(pr->opaque, offset, 2);
+                *pval |= static_cast<uint64_t>(pr->read_func(pr->opaque, offset + 4, 2)) << 32;
+                return true;
+            } else {
+                // If we do not know how to read, we treat this as a PMA viloation
+                raise_exception(s, CAUSE_LOAD_FAULT, addr);
+                return false;
+            }
+        }
+    }
+}
+
+template <typename T, typename STATE_ACCESS>
+static inline bool execute_L(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
+    uint64_t addr = a.read_register(s, insn_rs1(insn));
+    int32_t imm = insn_I_imm(insn);
+    T val;
+    if (read_memory<T>(s, addr+imm, &val)) {
+        // This static branch is eliminated by the compiler
+        if (std::is_signed<T>::value) {
+            a.write_register(s, insn_rd(insn), static_cast<int64_t>(val));
+        } else {
+            a.write_register(s, insn_rd(insn), static_cast<uint64_t>(val));
+        }
+        return execute_next_insn(a, s, pc);
+    } else {
+        return execute_raised_exception(a, s, pc);
+    }
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_LB(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("LB");
-    return true;
+    dump_insn(s, pc, insn, "LB");
+    return execute_L<int8_t>(a, s, pc, insn);
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_LH(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("LH");
-    return true;
+    dump_insn(s, pc, insn, "LH");
+    return execute_L<int16_t>(a, s, pc, insn);
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_LW(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("LW");
-    return true;
+    dump_insn(s, pc, insn, "LW");
+    return execute_L<int32_t>(a, s, pc, insn);
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_LD(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("LD");
-    return true;
+    dump_insn(s, pc, insn, "LD");
+    return execute_L<int64_t>(a, s, pc, insn);
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_LBU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("LBU");
-    return true;
+    dump_insn(s, pc, insn, "LBU");
+    return execute_L<uint8_t>(a, s, pc, insn);
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_LHU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("LHU");
-    return true;
+    dump_insn(s, pc, insn, "LHU");
+    return execute_L<uint16_t>(a, s, pc, insn);
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_LWU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    (void) a; (void) s; (void) pc; (void) insn;
-    dump_insn("LWU");
-    return true;
+    dump_insn(s, pc, insn, "LWU");
+    return execute_L<uint32_t>(a, s, pc, insn);
 }
 
 template <typename STATE_ACCESS, typename F>
@@ -4375,7 +4569,7 @@ static inline bool execute_branch(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc,
         if (new_pc & 3) {
             return execute_misaligned_fetch_exception(a, s, new_pc);
         } else {
-            return execute_jump_insn(a, s, new_pc);
+            return execute_jump(a, s, new_pc);
         }
     }
     return execute_next_insn(a, s, pc);
@@ -4383,20 +4577,20 @@ static inline bool execute_branch(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc,
 
 template <typename STATE_ACCESS>
 static inline bool execute_BEQ(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("BEQ");
+    dump_insn(s, pc, insn, "BEQ");
     return execute_branch(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 == rs2; });
 }
 
 
 template <typename STATE_ACCESS>
 static inline bool execute_BNE(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("BNE");
+    dump_insn(s, pc, insn, "BNE");
     return execute_branch(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 != rs2; });
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_BLT(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("BLT");
+    dump_insn(s, pc, insn, "BLT");
     return execute_branch(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool {
         return static_cast<int64_t>(rs1) < static_cast<int64_t>(rs2);
     });
@@ -4404,7 +4598,7 @@ static inline bool execute_BLT(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_BGE(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("BGE");
+    dump_insn(s, pc, insn, "BGE");
     return execute_branch(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool {
         return static_cast<int64_t>(rs1) >= static_cast<int64_t>(rs2);
     });
@@ -4412,7 +4606,7 @@ static inline bool execute_BGE(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_BLTU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("BLTU");
+    dump_insn(s, pc, insn, "BLTU");
     return execute_branch(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool {
         return rs1 < rs2;
     });
@@ -4420,7 +4614,7 @@ static inline bool execute_BLTU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_BGEU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("BGEU");
+    dump_insn(s, pc, insn, "BGEU");
     return execute_branch(a, s, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool {
         return rs1 >= rs2;
     });
@@ -4428,7 +4622,7 @@ static inline bool execute_BGEU(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static inline bool execute_LUI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("LUI");
+    dump_insn(s, pc, insn, "LUI");
     uint32_t rd = insn_rd(insn);
     if (rd != 0)
         a.write_register(s, rd, insn_U_imm(insn));
@@ -4437,28 +4631,29 @@ static inline bool execute_LUI(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
 
 template <typename STATE_ACCESS>
 static inline bool execute_AUIPC(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("AUIPC");
+    dump_insn(s, pc, insn, "AUIPC");
     uint32_t rd = insn_rd(insn);
     if (rd != 0)
-        a.write_register(s, rd, (int64_t)(pc + insn_U_imm(insn)));
+        a.write_register(s, rd, pc + insn_U_imm(insn));
     return execute_next_insn(a, s, pc);
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_JAL(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("JAL");
-    uint64_t new_pc = (int64_t)(pc + insn_J_imm(insn));
-    if (new_pc & 3)
+    dump_insn(s, pc, insn, "JAL");
+    uint64_t new_pc = pc + insn_J_imm(insn);
+    if (new_pc & 3) {
         return execute_misaligned_fetch_exception(a, s, new_pc);
+    }
     uint32_t rd = insn_rd(insn);
     if (rd != 0)
-        a.write_register(s, rd, new_pc + 4);
-    return execute_jump_insn(a, s, new_pc);
+        a.write_register(s, rd, pc + 4);
+    return execute_jump(a, s, new_pc);
 }
 
 template <typename STATE_ACCESS>
 static inline bool execute_JALR(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    dump_insn("JALR");
+    dump_insn(s, pc, insn, "JALR");
     uint64_t val = pc + 4;
     uint64_t new_pc = (int64_t)(a.read_register(s, insn_rs1(insn)) + insn_I_imm(insn)) & ~1;
     if (new_pc & 3)
@@ -4466,7 +4661,7 @@ static inline bool execute_JALR(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
     uint32_t rd = insn_rd(insn);
     if (rd != 0)
         a.write_register(s, rd, val);
-    return execute_jump_insn(a, s, new_pc);
+    return execute_jump(a, s, new_pc);
 }
 
 template <typename STATE_ACCESS>
@@ -4474,7 +4669,7 @@ static bool execute_SFENCE_VMA(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, ui
     // rs1 and rs2 are arbitrary, rest is set
     if ((insn & 0b11111110000000000111111111111111) == 0b00010010000000000000000001110011) {
         (void) a; (void) s; (void) pc; (void) insn;
-        dump_insn("SFENCE_VMA");
+        dump_insn(s, pc, insn, "SFENCE_VMA");
         return true;
     } else {
         return execute_illegal_insn_exception(a, s, pc, insn);
@@ -4660,6 +4855,7 @@ static inline bool execute_shift_right_immediate_group(STATE_ACCESS a, RISCVCPUS
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
 static inline bool execute_arithmetic_group(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
+    //std::cerr << "funct3_funct7: " << std::bitset<10>(insn_funct3_funct7(insn)) << '\n';
     switch (static_cast<arithmetic_funct3_funct7>(insn_funct3_funct7(insn))) {
         case arithmetic_funct3_funct7::ADD: return execute_ADD(a, s, pc, insn);
         case arithmetic_funct3_funct7::SUB: return execute_SUB(a, s, pc, insn);
@@ -4774,7 +4970,7 @@ static inline bool execute_branch_group(STATE_ACCESS a, RISCVCPUState *s, uint64
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
 static inline bool execute_insn(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, uint32_t insn) {
-    //std::cerr << "insn: " << std::bitset<32>(insn) << '\n';
+    // std::cerr << "insn: " << std::bitset<32>(insn) << '\n';
     switch (static_cast<opcode>(insn_opcode(insn))) {
         case opcode::LUI: return execute_LUI(a, s, pc, insn);
         case opcode::AUIPC: return execute_AUIPC(a, s, pc, insn);
@@ -4793,6 +4989,7 @@ static inline bool execute_insn(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc, u
         default: return execute_illegal_insn_exception(a, s, pc, insn);
     }
 }
+
 
 /// \brief Loads the next instruction.
 /// \tparam STATE_ACCESS Class of CPU state accessor object.
@@ -4823,8 +5020,9 @@ static bool fetch_insn(STATE_ACCESS a, RISCVCPUState *s, uint64_t *pc, uint32_t 
         // Walk memory map to find the range that contains the physical address
         PhysMemoryRange *pr = get_phys_mem_range(s->mem_map, paddr);
         // We only execute directly from RAM (as in "random access memory", which includes ROM)
+        // If we are not in RAM or if we are not in any range, we treat this as a PMA violation
         if (!pr || !pr->is_ram) {
-            raise_exception(s, CAUSE_FAULT_FETCH, vaddr);
+            raise_exception(s, CAUSE_FETCH_FAULT, vaddr);
             return false;
         }
         // Update TLB with the new mapping between virtual and physical
@@ -4883,9 +5081,9 @@ interpreter_status interpret(STATE_ACCESS a, RISCVCPUState *s, uint64_t mcycle_e
             return interpreter_status::idle;
         }
 
-        // The check interrupt flag is set whenever there are enabled pending interrupts.
-        // If so, we raise the interrupt.
-        if (s->iflags_CI) {
+        // If the break flag is set, try to raise the interrupts and reset the flag.
+        if (s->iflags_B) {
+            s->iflags_B = false;
             raise_interrupt(s);
         }
 
@@ -4893,9 +5091,8 @@ interpreter_status interpret(STATE_ACCESS a, RISCVCPUState *s, uint64_t mcycle_e
         uint32_t insn = 0;
 
         // The inner loops continues until there is an interrupt condition
-        // or mcyc
+        // or mcycle reaches mcycle_end
         for ( ;; )  {
-
             // Try to fetch the next instruction
             if (fetch_insn(a, s, &pc, &insn)) {
                 // Try to execute it
@@ -4911,11 +5108,11 @@ interpreter_status interpret(STATE_ACCESS a, RISCVCPUState *s, uint64_t mcycle_e
             // account it this unconditional increment and set the value accordingly
             uint64_t mcycle = a.read_mcycle(s) + 1;
             a.write_mcycle(s, mcycle);
-
-            // If the check interrupt flag is active, break from the inner loop.
+            // If the break flag is active, break from the inner loop.
             // This will give the outer loop an opportunity to handle it.
-            if (s->iflags_CI) break;
-
+            if (s->iflags_B) {
+                break;
+            }
             // If we reached the target mcycle, we are done
             if (mcycle >= mcycle_end) {
                 return interpreter_status::done;
@@ -4924,35 +5121,17 @@ interpreter_status interpret(STATE_ACCESS a, RISCVCPUState *s, uint64_t mcycle_e
     }
 }
 
+#ifdef NEWEMU
+static void riscv_cpu_interpret(RISCVCPUState *s, uint64_t mcycle_end) {
+    state_access a;
+    interpret(a, s, mcycle_end);
+}
+#else
 // Explicit instantiation just to test everything compiles fine.
-int foo(void) {
+static int foo(void) {
+    (void) foo;
     state_access a;
     interpret(a, nullptr, 0);
     return 0;
 }
-
-#if 0
-int gmain(void) {
-    execute_insn(nullptr, 0x34202f73);
-    execute_insn(nullptr, 0x00800f93);
-    execute_insn(nullptr, 0x03ff0a63);
-    execute_insn(nullptr, 0x80000f17);
-    execute_insn(nullptr, 0xfe0f0f13);
-    execute_insn(nullptr, 0x000f0067);
-    execute_insn(nullptr, 0x000f5463);
-    execute_insn(nullptr, 0x0040006f);
-    execute_insn(nullptr, 0x5391e193);
-    execute_insn(nullptr, 0xfc3f2023);
-    execute_insn(nullptr, 0x00000073);
-    execute_insn(nullptr, 0x30200073);
-    execute_insn(nullptr, 0x08b6a72f);
-    execute_insn(nullptr, 0x0ff0000f);
-    execute_insn(nullptr, 0x00119193);
-    execute_insn(nullptr, 0x1005a5af);
-    execute_insn(nullptr, 0x18b5272f);
-    return 0;
-}
-#endif
-
-
 #endif

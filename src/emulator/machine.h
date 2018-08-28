@@ -34,7 +34,7 @@
 typedef struct {
     char *filename;
     uint8_t *buf;
-    int len;
+    uint64_t len;
 } VMFileEntry;
 
 typedef struct {
@@ -51,7 +51,8 @@ typedef struct {
     VMFlashEntry tab_flash[VM_MAX_FLASH_DEVICE];
     int flash_count;
     char *cmdline; /* kernel command line */
-    VMFileEntry boot_image; /* boot image file */
+    VMFileEntry ram_image; /* initial ram contents */
+    VMFileEntry rom_image; /* initial rom contents */
     bool interactive; /* should we initialize the console? */
 } VirtMachineParams;
 

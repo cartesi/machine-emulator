@@ -1,6 +1,7 @@
 local emu = require"emu"
 
 local tests = {
+--[[
   {"rv64mi-p-access.bin", 113},
   {"rv64mi-p-breakpoint.bin", 64},
   {"rv64mi-p-csr.bin", 176},
@@ -54,6 +55,7 @@ local tests = {
   {"rv64ua-v-amoxor_d.bin", 10669},
   {"rv64ua-v-amoxor_w.bin", 10671},
   {"rv64ua-v-lrsc.bin", 16831},
+]]
   {"rv64ui-p-add.bin", 478},
   {"rv64ui-p-addi.bin", 253},
   {"rv64ui-p-addiw.bin", 250},
@@ -81,8 +83,9 @@ local tests = {
   {"rv64ui-p-or.bin", 586},
   {"rv64ui-p-ori.bin", 217},
   {"rv64ui-p-sb.bin", 438},
-  {"rv64ui-p-sd.bin", 610},
   {"rv64ui-p-sh.bin", 491},
+  {"rv64ui-p-sw.bin", 498},
+  {"rv64ui-p-sd.bin", 610},
   {"rv64ui-p-simple.bin", 49},
   {"rv64ui-p-sll.bin", 548},
   {"rv64ui-p-slli.bin", 281},
@@ -102,9 +105,9 @@ local tests = {
   {"rv64ui-p-srlw.bin", 514},
   {"rv64ui-p-sub.bin", 469},
   {"rv64ui-p-subw.bin", 465},
-  {"rv64ui-p-sw.bin", 498},
   {"rv64ui-p-xor.bin", 581},
   {"rv64ui-p-xori.bin", 215},
+--[[
   {"rv64ui-v-add.bin", 11561},
   {"rv64ui-v-addi.bin", 6636},
   {"rv64ui-v-addiw.bin", 6633},
@@ -182,6 +185,7 @@ local tests = {
   {"rv64um-v-remu.bin", 6492},
   {"rv64um-v-remuw.bin", 6487},
   {"rv64um-v-remw.bin", 6493}
+]]
 }
 
 local function run(machine)
@@ -202,22 +206,22 @@ end
 local errors = {}
 
 for _, test in ipairs(tests) do
-    local boot_image = test[1]
+    local ram_image = test[1]
     local expected_cycles = test[2]
-    io.write(boot_image, " ")
+    io.write(ram_image, " ")
     local machine = emu.create{
         version = 1,
         machine = "riscv64",
         memory_size = 128,
-        boot_image = "tests/" .. boot_image
+        ram_image = "tests/" .. ram_image
     }
     local cycles, payload = run(machine)
     if payload ~= 0 then
-        local e = string.format("test %s returned non-zero payload %d", boot_image, payload)
+        local e = string.format("test %s returned non-zero payload %d", ram_image, payload)
         errors[#errors+1] = e
         print(e)
     elseif cycles ~= expected_cycles then
-        local e = string.format("test %s terminated with mcycle = %d, expected %d", boot_image, cycles, expected_cycles)
+        local e = string.format("test %s terminated with mcycle = %d, expected %d", ram_image, cycles, expected_cycles)
         errors[#errors+1] = e
         print(e)
     else

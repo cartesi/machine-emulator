@@ -38,10 +38,10 @@ WARNS=-W -Wall -pedantic
 INCS=$(LUA_INC)
 
 ifeq ($(dump),yes)
-DEFS+=-DUMP_ILLEGAL_INSN
+#DEFS+=-DUMP_ILLEGAL_INSN
 #DEFS+=-DDUMP_EXCEPTIONS -DDUMP_MMU_EXCEPTIONS -DDUMP_INVALID_MEM_ACCESS -DDUMP_INVALID_CSR -DUMP_ILLEGAL_INSN
+DEFS+=-DDUMP_INSN
 endif
-#-DDUMP_INSN
 
 
 # so we can use gcc to check if there are unused symbols

@@ -6,8 +6,10 @@ local function help()
 Usage:
   lua run.lua [options]
 where options are:
-  --boot-image=<filename>    binary image to boot
+  --ram-image=<filename>     binary image for RAM
                              (default: "kernel.bin")
+  --rom-image=<filename>     binary image for ROM
+                             (default: none)
   --root-backing=<filename>  backing storage for root filesystem
                              (default: "rv64ima.bin")
   --root-shared              target modifications to root filesystem
@@ -29,7 +31,8 @@ local root_backing = "rv64ima.bin"
 local root_shared
 local extra_backing
 local extra_shared
-local boot_image = "kernel.bin"
+local ram_image = "kernel.bin"
+local rom_image
 local cmdline = ""
 local memory_size = 128
 local batch = false
@@ -83,9 +86,15 @@ local options = {
         memory_size = math.ceil(n)
         return true
     end },
-    { "^%-%-boot%-image%=(.*)$", function(o)
+    { "^%-%-ram%-image%=(.*)$", function(o)
         if not o or #o < 1 then return false end
-        boot_image = o
+        ram_image = o
+        return true
+    end },
+    { "^%-%-rom%-image%=(.*)$", function(o)
+print(o)
+        if not o or #o < 1 then return false end
+        rom_image = o
         return true
     end },
     { "^%-%-cmdline%=(.*)$", function(o)
@@ -171,8 +180,13 @@ function config_meta.__index:set_memory_size(memory_size)
     return self
 end
 
-function config_meta.__index:set_boot_image(boot_image)
-    self.boot_image = boot_image
+function config_meta.__index:set_ram_image(ram_image)
+    self.ram_image = ram_image
+    return self
+end
+
+function config_meta.__index:set_rom_image(rom_image)
+    self.rom_image = rom_image
     return self
 end
 
@@ -188,8 +202,10 @@ end
 local config = new_config{
     root_backing = root_backing,
     root_shared = root_shared
-}:set_boot_image(
-    boot_image
+}:set_ram_image(
+    ram_image
+):set_rom_image(
+    rom_image
 ):append_drive{
     backing = extra_backing,
     shared = extra_shared,
@@ -204,9 +220,10 @@ local config = new_config{
 
 local machine = emu.create(config)
 
-local step = 500000
+local step = 5000
 local cycles_end = step
-local cycles, not_halted, payload
+local cycles = 0
+local not_halted, payload
 while true do
     cycles, not_halted, payload = machine:run(cycles_end)
     if not_halted then

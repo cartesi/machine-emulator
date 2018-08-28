@@ -46,6 +46,7 @@ uint64_t riscv_cpu_get_mcycle(const RISCVCPUState *s);
 int riscv_cpu_get_max_xlen(const RISCVCPUState *s);
 void riscv_cpu_set_mcycle(RISCVCPUState *s, uint64_t cycles);
 void riscv_cpu_set_mip(RISCVCPUState *s, uint32_t mask);
+void riscv_cpu_set_iflags_B(RISCVCPUState *s);
 void riscv_cpu_reset_mip(RISCVCPUState *s, uint32_t mask);
 uint32_t riscv_cpu_get_mip(const RISCVCPUState *s);
 bool riscv_cpu_get_power_down(const RISCVCPUState *s);

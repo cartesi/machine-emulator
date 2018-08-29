@@ -11,12 +11,14 @@ where options are:
   --rom-image=<filename>     binary image for ROM
                              (default: none)
   --root-backing=<filename>  backing storage for root filesystem
-                             (default: "rv64ima.bin")
+                             appears as /dev/mtdblock0
+                             (default: "rootfs.bin")
   --root-shared              target modifications to root filesystem
                              modify backing storage as well
   --memory-size=<number>     target memory in MiB
                              (default: 128)
   --extra-backing=<filename> backing storage for extra filesystem
+                             appears as /dev/mtdblock1
                              (default: none)
   --extra-shared             target modifications to extra filesystem
                              modify backing storage as well
@@ -27,7 +29,7 @@ where options are:
     os.exit()
 end
 
-local root_backing = "rv64ima.bin"
+local root_backing = "rootfs.bin"
 local root_shared
 local extra_backing
 local extra_shared
@@ -220,7 +222,7 @@ local config = new_config{
 
 local machine = emu.create(config)
 
-local step = 5000
+local step = 500000
 local cycles_end = step
 local cycles = 0
 local not_halted, payload

@@ -1,7 +1,6 @@
 local emu = require"emu"
 
 local tests = {
---[[
   {"rv64mi-p-access.bin", 113},
   {"rv64mi-p-breakpoint.bin", 64},
   {"rv64mi-p-csr.bin", 176},
@@ -55,7 +54,6 @@ local tests = {
   {"rv64ua-v-amoxor_d.bin", 10669},
   {"rv64ua-v-amoxor_w.bin", 10671},
   {"rv64ua-v-lrsc.bin", 16831},
-]]
   {"rv64ui-p-add.bin", 478},
   {"rv64ui-p-addi.bin", 253},
   {"rv64ui-p-addiw.bin", 250},
@@ -107,7 +105,6 @@ local tests = {
   {"rv64ui-p-subw.bin", 465},
   {"rv64ui-p-xor.bin", 581},
   {"rv64ui-p-xori.bin", 215},
---[[
   {"rv64ui-v-add.bin", 11561},
   {"rv64ui-v-addi.bin", 6636},
   {"rv64ui-v-addiw.bin", 6633},
@@ -185,7 +182,6 @@ local tests = {
   {"rv64um-v-remu.bin", 6492},
   {"rv64um-v-remuw.bin", 6487},
   {"rv64um-v-remw.bin", 6493}
-]]
 }
 
 local function run(machine)

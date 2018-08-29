@@ -69,7 +69,7 @@ typedef struct {
     int old_fd0_flags;
     uint8_t buf[HTIF_CONSOLE_BUF_SIZE];
     ssize_t buf_len, buf_pos;
-    bool irq_pending;
+    bool char_pending;
 } HTIFConsole;
 
 typedef struct RISCVMachine {
@@ -330,7 +330,7 @@ static void htif_write(void *opaque, uint32_t offset, uint32_t val,
         m->htif_fromhost = (m->htif_fromhost & 0xffffffff) |
             (uint64_t)val << 32;
         if (m->htif_console) {
-            m->htif_console->irq_pending = false;
+            m->htif_console->char_pending = false;
         }
         break;
     default:
@@ -732,7 +732,7 @@ int virt_machine_run(VirtMachine *v, uint64_t cycles_end)
         if (con) {
             /* if the character we made available has
              * already been consumed */
-            if (!con->irq_pending) {
+            if (!con->char_pending) {
                 /* if we don't have any characters left in
                  * buffer, try to obtain more from stdin */
                 if (con->buf_pos >= con->buf_len) {
@@ -751,6 +751,7 @@ int virt_machine_run(VirtMachine *v, uint64_t cycles_end)
                         con->buf_pos = 0;
                         con->buf_len = read(con->stdin_fd, con->buf,
                             HTIF_CONSOLE_BUF_SIZE);
+                        // If stdin is closed, return EOF
                         if (con->buf_len <= 0) {
                             con->buf_len = 1;
                             con->buf[0] = 4; /* CTRL+D */
@@ -761,7 +762,7 @@ int virt_machine_run(VirtMachine *v, uint64_t cycles_end)
                     /* feed another character and wake the cpu */
                     m->htif_fromhost = ((uint64_t)1 << 56) |
                             ((uint64_t)0 << 48) | con->buf[con->buf_pos++];
-                    con->irq_pending = true;
+                    con->char_pending = true;
                     riscv_cpu_set_power_down(c, false);
                 }
             }

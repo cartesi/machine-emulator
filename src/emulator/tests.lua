@@ -5,7 +5,7 @@ local tests = {
   {"rv64mi-p-breakpoint.bin", 62},
   {"rv64mi-p-csr.bin", 174},
   {"rv64mi-p-illegal.bin", 411},
-  {"rv64mi-p-ma_addr.bin", 366},
+  {"rv64mi-p-ma_addr.bin", 683},
   {"rv64mi-p-ma_fetch.bin", 197},
   {"rv64mi-p-mcsr.bin", 70},
   {"rv64mi-p-sbreak.bin", 75},

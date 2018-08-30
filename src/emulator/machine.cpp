@@ -249,31 +249,24 @@ static uint64_t rtc_get_time(RISCVMachine *m) {
 }
 
 /* Host/Target Interface */
-static uint32_t htif_read(void *opaque, uint32_t offset,
-                          int size_log2)
-{
+static bool htif_read(void *opaque, uint64_t offset, uint64_t *pval, int size_log2) {
     RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
-    uint32_t val;
 
-    assert(size_log2 == 2);
-    switch(offset) {
-    case 0:
-        val = m->htif_tohost;
-        break;
-    case 4:
-        val = m->htif_tohost >> 32;
-        break;
-    case 8:
-        val = m->htif_fromhost;
-        break;
-    case 12:
-        val = m->htif_fromhost >> 32;
-        break;
-    default:
-        val = 0;
-        break;
+    // Our HTIF only supports aligned 64-bit reads
+    if (size_log2 != 3 || offset & 7) return false;
+
+    switch (offset) {
+        case 0: // tohost
+            *pval = m->htif_tohost;
+            return true;
+        case 8: // from host
+            *pval = m->htif_fromhost;
+            return true;
+        default:
+            // other reads return zero
+            *pval = 0;
+            return true;
     }
-    return val;
 }
 
 static void htif_handle_cmd(RISCVMachine *m)
@@ -308,84 +301,92 @@ static void htif_handle_cmd(RISCVMachine *m)
     }
 }
 
-static void htif_write(void *opaque, uint32_t offset, uint32_t val,
-                       int size_log2)
-{
+static bool htif_write(void *opaque, uint64_t offset, uint64_t val, int size_log2) {
     RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
-    assert(size_log2 == 2);
+
+    // Our HTIF only supports aligned 64-bit writes
+    if (size_log2 != 3 || offset & 7) return false;
+
     switch(offset) {
-    case 0:
-        /* fprintf(stderr, "wrote %u to 0\n", val); */
-        m->htif_tohost = (m->htif_tohost & ~0xffffffff) | val;
-        break;
-    case 4:
-        /* fprintf(stderr, "wrote %u to 4\n", val); */
-        m->htif_tohost = (m->htif_tohost & 0xffffffff) | ((uint64_t)val << 32);
-        htif_handle_cmd(m);
-        break;
-    case 8:
-        m->htif_fromhost = (m->htif_fromhost & ~0xffffffff) | val;
-        break;
-    case 12:
-        m->htif_fromhost = (m->htif_fromhost & 0xffffffff) |
-            (uint64_t)val << 32;
-        if (m->htif_console) {
-            m->htif_console->char_pending = false;
-        }
-        break;
-    default:
-        break;
+        case 0: // tohost
+            m->htif_tohost = val;
+            htif_handle_cmd(m);
+            return true;
+        case 8: // fromhost
+            m->htif_fromhost = val;
+            if (m->htif_console) {
+                m->htif_console->char_pending = false;
+            }
+            return true;
+        default:
+            // other writes are silently ignored
+            return true;
     }
 }
 
 /* Clock Interrupt */
-static uint32_t clint_read(void *opaque, uint32_t offset, int size_log2)
-{
+static bool clint_read(void *opaque, uint64_t offset, uint64_t *val, int size_log2) {
     RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
-    uint32_t val;
 
-    /*??D we should probably enable reads from offset 0,
-     * which should return MSIP of HART 0*/
-    assert(size_log2 == 2);
-    switch(offset) {
-    case 0xbff8:
-        val = rtc_get_time(m);
-        break;
-    case 0xbffc:
-        val = rtc_get_time(m) >> 32;
-        break;
-    case 0x4000:
-        val = m->timecmp;
-        break;
-    case 0x4004:
-        val = m->timecmp >> 32;
-        break;
-    default:
-        val = 0;
-        break;
+    // Our CLINT only supports 32 or 64-bit reads
+    if (size_log2 < 2) return false;
+
+    switch (offset) {
+        case 0xbff8: // mtime
+            if (size_log2 == 3) {
+                *val = rtc_get_time(m);
+                return true;
+            }
+            // partial mtime is not supported
+            return false;
+        case 0xbffc: // misaligned mtime is not supported
+            return false;
+        case 0x4000: // mtimecmp
+            if (size_log2 == 3) {
+                *val = rtc_get_time(m);
+                return true;
+            }
+            // partial mtimecmp is not supported
+            return false;
+        case 0x4004: // misaligned mtimecmp is not supported
+            return false;
+        default:
+            if (offset & ((1 << size_log2) - 1))
+                // misaligned reads not supported
+                return false;
+            // aligned reads return zero
+            *val = 0;
+            return true;
     }
-    return val;
 }
 
-static void clint_write(void *opaque, uint32_t offset, uint32_t val,
-                      int size_log2)
+static bool clint_write(void *opaque, uint64_t offset, uint64_t val, int size_log2)
 {
     RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
 
-    /*??D we should probably enable writes to offset 0,
-     * which should modify MSIP of HART 0*/
-    assert(size_log2 == 2);
-    switch(offset) {
-    case 0x4000:
-        m->timecmp = (m->timecmp & ~0xffffffff) | val;
-        riscv_cpu_reset_mip(m->cpu_state, MIP_MTIP);
-        break;
-    case 0x4004:
-        m->timecmp = (m->timecmp & 0xffffffff) | ((uint64_t)val << 32);
-        riscv_cpu_reset_mip(m->cpu_state, MIP_MTIP);
-        break;
-    default:
-        break;
+    // Our CLINT only supports 32 or 64-bit writes
+    if (size_log2 < 2) return false;
+
+    switch (offset) {
+        case 0xbff8: // writes to mtime, misaligned or not,
+        case 0xbffc: // are not supported
+            return false;
+        case 0x4000: // mtimecmp
+            if (size_log2 == 3) {
+                m->timecmp = val;
+                riscv_cpu_reset_mip(m->cpu_state, MIP_MTIP);
+                return true;
+            }
+            // partial mtimecmp is not supported
+            return false;
+        case 0x4004: // misaligned mtimecmp
+            return false;
+        default:
+            if (offset & ((1 << size_log2) - 1))
+                // misaligned writes not supported
+                return false;
+            // aligned writes are silently ignored
+            return true;
     }
 }
 
@@ -638,11 +639,9 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
             p->tab_flash[i].shared? DEVRAM_FLAG_SHARED: 0);
     }
 
-    cpu_register_device(m->mem_map, CLINT_BASE_ADDR, CLINT_SIZE, m,
-                        clint_read, clint_write, DEVIO_SIZE32);
+    cpu_register_device(m->mem_map, CLINT_BASE_ADDR, CLINT_SIZE, m, clint_read, clint_write, 0);
 
-    cpu_register_device(m->mem_map, HTIF_BASE_ADDR, HTIF_SIZE, m,
-        htif_read, htif_write, DEVIO_SIZE32);
+    cpu_register_device(m->mem_map, HTIF_BASE_ADDR, HTIF_SIZE, m, htif_read, htif_write, 0);
 
     init_ram_and_rom(p, m);
 

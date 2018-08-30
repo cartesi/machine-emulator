@@ -284,9 +284,9 @@ static void htif_handle_putchar(RISCVMachine *m, uint64_t payload) {
     m->htif_fromhost = ((uint64_t)1 << 56) | ((uint64_t)1 << 48);
 }
 
-static void htif_handle_shuthost(RISCVMachine *m, uint64_t payload) {
+static void htif_handle_halt(RISCVMachine *m, uint64_t payload) {
     (void) payload;
-    riscv_cpu_set_shuthost(m->cpu_state, true);
+    riscv_cpu_set_iflags_H(m->cpu_state);
 }
 
 static void htif_handle_cmd(RISCVMachine *m)
@@ -308,7 +308,7 @@ static void htif_handle_cmd(RISCVMachine *m)
 #endif
 
     if (device == 0 && cmd == 0 && (payload & 1)) { // power off
-        htif_handle_shuthost(m, payload);
+        htif_handle_halt(m, payload);
     } else if (device == 1 && cmd == 1) { // putchar
         htif_handle_putchar(m, payload);
     } else if (device == 1 && cmd == 0) { // getchar
@@ -713,8 +713,8 @@ int virt_machine_run(VirtMachine *v, uint64_t mcycle_end)
 
     for (;;) {
 
-        // If we are shutdown, do nothing
-        if (riscv_cpu_get_shuthost(c)) {
+        // If we are halted, do nothing
+        if (riscv_cpu_get_iflags_H(c)) {
             return 1;
         }
 
@@ -727,7 +727,8 @@ int virt_machine_run(VirtMachine *v, uint64_t mcycle_end)
             // Get the mcycle corresponding to mtimecmp
             uint64_t timecmp_mcycle = rtc_time_to_cycles(m->timecmp);
             // If the cpu is waiting for interrupts, we can skip until time hits timecmp
-            if (riscv_cpu_get_power_down(c)) {
+            // (CLINT is the only external interrupt source)
+            if (riscv_cpu_get_iflags_I(c)) {
                 mcycle = std::min(timecmp_mcycle, mcycle_end);
                 riscv_cpu_set_mcycle(c, mcycle);
             }
@@ -763,7 +764,7 @@ int virt_machine_run(VirtMachine *v, uint64_t mcycle_end)
                 FD_SET(0, &rfds);
                 tv.tv_sec = 0;
                 // If CPU is waiting for interrupts, we can wait a bit more
-                tv.tv_usec = riscv_cpu_get_power_down(c)? 1000: 0;
+                tv.tv_usec = riscv_cpu_get_iflags_I(c)? 1000: 0;
                 ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
                 if (ret > 0 && FD_ISSET(0, &rfds)) {
                     con->buf_pos = 0;
@@ -780,8 +781,10 @@ int virt_machine_run(VirtMachine *v, uint64_t mcycle_end)
                 // Send it using HTIF
                 m->htif_fromhost = ((uint64_t)1 << 56) | ((uint64_t)0 << 48) | con->buf[con->buf_pos++];
                 con->read_requested = false;
-                // Make sure CPU is up
-                riscv_cpu_set_power_down(c, false);
+                // Wake CPU up even though this is not an interrupt.
+                // The CPU does not need to find a raised interrupt when it wakes up from WFI
+                // (WFI can be replaced by a NOP with no change in correct program behavior)
+                riscv_cpu_reset_iflags_I(c);
             }
         }
     }

@@ -40,6 +40,7 @@
 //
 // This code assumes the host's byte-ordering is the same as RISC-V's.
 // RISC-V is little endian, and so is x86.
+// There is a static_assert to prevent the code from compiling otherwise.
 //
 // This code assumes the modulo operator is such that
 //
@@ -90,10 +91,8 @@
 // GCC complains about __int128 with -pedantic or -pedantic-errors
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
-
 typedef __int128 int128_t;
 typedef unsigned __int128 uint128_t;
-
 #pragma GCC diagnostic pop
 
 #define XLEN 64

@@ -59,17 +59,19 @@ extern "C" {
 #define HTIF_BASE_ADDR     (Gi(1)+Ki(32))
 #define HTIF_SIZE             16
 #define HTIF_CONSOLE_BUF_SIZE (1024)
+#define HTIF_CONSOLE_FREQ_DIV (10000)
 
 #define CLOCK_FREQ 1000000000 /* 1 GHz (arbitrary) */
 #define RTC_FREQ_DIV 100      /* This cannot change */
 
+
 typedef struct {
-    int stdin_fd;
     struct termios oldtty;
     int old_fd0_flags;
     uint8_t buf[HTIF_CONSOLE_BUF_SIZE];
     ssize_t buf_len, buf_pos;
-    bool char_pending;
+    bool read_requested;
+    uint64_t previous_mcycle;
 } HTIFConsole;
 
 typedef struct RISCVMachine {
@@ -269,6 +271,24 @@ static bool htif_read(void *opaque, uint64_t offset, uint64_t *pval, int size_lo
     }
 }
 
+static void htif_handle_getchar(RISCVMachine *m, uint64_t payload) {
+    (void) payload;
+    HTIFConsole *con = m->htif_console;
+    m->htif_tohost = 0;
+    con->read_requested = true;
+}
+
+static void htif_handle_putchar(RISCVMachine *m, uint64_t payload) {
+    uint8_t ch = payload & 0xff;
+    if (write(1, &ch, 1) < 1) { }
+    m->htif_fromhost = ((uint64_t)1 << 56) | ((uint64_t)1 << 48);
+}
+
+static void htif_handle_shuthost(RISCVMachine *m, uint64_t payload) {
+    (void) payload;
+    riscv_cpu_set_shuthost(m->cpu_state, true);
+}
+
 static void htif_handle_cmd(RISCVMachine *m)
 {
     uint32_t device, cmd;
@@ -278,22 +298,21 @@ static void htif_handle_cmd(RISCVMachine *m)
     cmd = (m->htif_tohost >> 48) & 0xff;
     payload = (m->htif_tohost & (~1ULL >> 16));
 
+    // Signal we received the data
+    m->htif_tohost = 0;
+
 #if 0
     printf("HTIF: tohost=0x%016"
         PRIx64 "(%" PRIu32 "):(%" PRIu32 "):(%" PRIu64 ")\n",
         m->htif_tohost, device, cmd, payload);
 #endif
 
-    if (device == 0x0 && cmd == 0x0 && payload & 0x1) {
-        riscv_cpu_set_shuthost(m->cpu_state, true);
-    } else if (device == 0x1 && cmd == 0x1) {
-        uint8_t ch = m->htif_tohost & 0xff;
-        if (write(1, &ch, 1) < 1) { }
-        m->htif_tohost = 0; // notify that we are done with putchar
-        m->htif_fromhost = ((uint64_t)device << 56) | ((uint64_t)cmd << 48);
-    } else if (device == 0x1 && cmd == 0x0) {
-        // request keyboard interrupt
-        m->htif_tohost = 0;
+    if (device == 0 && cmd == 0 && (payload & 1)) { // power off
+        htif_handle_shuthost(m, payload);
+    } else if (device == 1 && cmd == 1) { // putchar
+        htif_handle_putchar(m, payload);
+    } else if (device == 1 && cmd == 0) { // getchar
+        htif_handle_getchar(m, payload);
     } else {
         printf("HTIF: unsupported tohost=0x%016"
             PRIx64 "(%" PRIu32 "):(%" PRIu32 "):(%" PRIu64 ")\n",
@@ -314,9 +333,6 @@ static bool htif_write(void *opaque, uint64_t offset, uint64_t val, int size_log
             return true;
         case 8: // fromhost
             m->htif_fromhost = val;
-            if (m->htif_console) {
-                m->htif_console->char_pending = false;
-            }
             return true;
         default:
             // other writes are silently ignored
@@ -571,6 +587,18 @@ void virt_machine_set_defaults(VirtMachineParams *p)
     memset(p, 0, sizeof(*p));
 }
 
+static void set_blocking(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    flags &= (~(O_NONBLOCK));
+    fcntl(fd, F_SETFL, flags);
+}
+
+static void set_nonblocking(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    flags |= O_NONBLOCK;
+    fcntl(fd, F_SETFL, flags);
+}
+
 static HTIFConsole *htif_console_init(void) {
     struct termios tty;
     HTIFConsole *con = reinterpret_cast<HTIFConsole *>(calloc(1, sizeof(*con)));
@@ -587,15 +615,14 @@ static HTIFConsole *htif_console_init(void) {
     tty.c_cc[VMIN] = 1;
     tty.c_cc[VTIME] = 0;
     tcsetattr (0, TCSANOW, &tty);
-    /* Note: the glibc does not properly test the return value of
-       write() in printf, so some messages on stdout may be lost */
-    fcntl(con->stdin_fd, F_SETFL, O_NONBLOCK);
+    set_nonblocking(0);
     return con;
 }
 
 static void htif_console_end(HTIFConsole *con) {
     tcsetattr (0, TCSANOW, &con->oldtty);
     fcntl(0, F_SETFL, con->old_fd0_flags);
+    set_blocking(0);
     free(con);
 }
 
@@ -678,92 +705,83 @@ const char *virt_machine_get_name(void)
     return "riscv64";
 }
 
-int virt_machine_run(VirtMachine *v, uint64_t cycles_end)
+int virt_machine_run(VirtMachine *v, uint64_t mcycle_end)
 {
     RISCVMachine *m = (RISCVMachine *)v;
-    RISCVCPUState *c = m->cpu_state;
     HTIFConsole *con = m->htif_console;
-
+    RISCVCPUState *c = m->cpu_state;
 
     for (;;) {
 
-        uint64_t cycles = riscv_cpu_get_mcycle(c);
-
-        uint64_t cycles_div_end = cycles + RTC_FREQ_DIV -
-            cycles % RTC_FREQ_DIV;
-        uint64_t this_cycles_end = cycles_end > cycles_div_end?
-            cycles_div_end: cycles_end;
-
-        /* execute as many cycles as possible until shuthost
-         * or powerdown */
-        riscv_cpu_run(c, this_cycles_end);
-        cycles = riscv_cpu_get_mcycle(c);
-
-        /* if we reached our target number of cycles, break */
-        if (cycles >= cycles_end) {
-            return 0;
-        }
-
-        /* if we were shutdown, break */
+        // If we are shutdown, do nothing
         if (riscv_cpu_get_shuthost(c)) {
             return 1;
         }
 
-        /* check for timer interrupts */
-        /* if the timer interrupt is not already pending */
+        uint64_t mcycle = riscv_cpu_get_mcycle(c);
+
+        // Check if we should raise a timer interrupts
+        //
+        // If the timer interrupt is not already pending
         if (!(riscv_cpu_get_mip(c) & MIP_MTIP)) {
-            uint64_t timer_cycles = rtc_time_to_cycles(m->timecmp);
-            /* if timer expired, raise interrupt */
-            if (timer_cycles <= cycles) {
+            // Get the mcycle corresponding to mtimecmp
+            uint64_t timecmp_mcycle = rtc_time_to_cycles(m->timecmp);
+            // If the cpu is waiting for interrupts, we can skip until time hits timecmp
+            if (riscv_cpu_get_power_down(c)) {
+                mcycle = std::min(timecmp_mcycle, mcycle_end);
+                riscv_cpu_set_mcycle(c, mcycle);
+            }
+            // If the timer is expired, raise interrupt
+            if (timecmp_mcycle <= mcycle) {
                 riscv_cpu_set_mip(c, MIP_MTIP);
-            /* otherwise, if the cpu is powered down, waiting for interrupts,
-             * skip time */
-            } else if (riscv_cpu_get_power_down(c)) {
-                if (timer_cycles < cycles_end) {
-                    riscv_cpu_set_mcycle(c, timer_cycles);
-                } else {
-                    riscv_cpu_set_mcycle(c, cycles_end);
-                }
             }
         }
 
-        /* check for I/O with console */
-        if (con) {
-            /* if the character we made available has
-             * already been consumed */
-            if (!con->char_pending) {
-                /* if we don't have any characters left in
-                 * buffer, try to obtain more from stdin */
-                if (con->buf_pos >= con->buf_len) {
-                    fd_set rfds, wfds, efds;
-                    int fd_max, ret;
-                    struct timeval tv;
-                    FD_ZERO(&rfds);
-                    FD_ZERO(&wfds);
-                    FD_ZERO(&efds);
-                    fd_max = con->stdin_fd;
-                    FD_SET(con->stdin_fd, &rfds);
-                    tv.tv_sec = 0;
-                    tv.tv_usec = riscv_cpu_get_power_down(c)? 1000: 0;
-                    ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
-                    if (ret > 0 && FD_ISSET(con->stdin_fd, &rfds)) {
-                        con->buf_pos = 0;
-                        con->buf_len = read(con->stdin_fd, con->buf,
-                            HTIF_CONSOLE_BUF_SIZE);
-                        // If stdin is closed, return EOF
-                        if (con->buf_len <= 0) {
-                            con->buf_len = 1;
-                            con->buf[0] = 4; /* CTRL+D */
-                        }
+        // If we hit mcycle_end, we are done
+        if (mcycle >= mcycle_end) {
+            return 0;
+        }
+
+        // Run emulator until we reach the next multiple of RTC_FREQ_DIV
+        uint64_t next_timecmp_mcycle = mcycle + RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV;
+        riscv_cpu_run(c, std::min(next_timecmp_mcycle, mcycle_end));
+        mcycle = riscv_cpu_get_mcycle(c);
+
+        // Check for input from console, if requested by HTIF
+        if (con && con->read_requested) {
+            // If we don't have any characters left in buffer, try to obtain more
+            // Do this only every HTIF_CONSOLE_FREQ_DIV cycles
+            if (con->buf_pos >= con->buf_len && con->previous_mcycle + HTIF_CONSOLE_FREQ_DIV <= mcycle) {
+                con->previous_mcycle = mcycle;
+                fd_set rfds, wfds, efds;
+                int fd_max, ret;
+                struct timeval tv;
+                FD_ZERO(&rfds);
+                FD_ZERO(&wfds);
+                FD_ZERO(&efds);
+                fd_max = 0;
+                FD_SET(0, &rfds);
+                tv.tv_sec = 0;
+                // If CPU is waiting for interrupts, we can wait a bit more
+                tv.tv_usec = riscv_cpu_get_power_down(c)? 1000: 0;
+                ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
+                if (ret > 0 && FD_ISSET(0, &rfds)) {
+                    con->buf_pos = 0;
+                    con->buf_len = read(0, con->buf, HTIF_CONSOLE_BUF_SIZE);
+                    // If stdin is closed, pass EOF to client
+                    if (con->buf_len <= 0) {
+                        con->buf_len = 1;
+                        con->buf[0] = 4; // CTRL+D
                     }
                 }
-                if (con->buf_pos < con->buf_len) {
-                    /* feed another character and wake the cpu */
-                    m->htif_fromhost = ((uint64_t)1 << 56) |
-                            ((uint64_t)0 << 48) | con->buf[con->buf_pos++];
-                    con->char_pending = true;
-                    riscv_cpu_set_power_down(c, false);
-                }
+            }
+            // If we have data to return
+            if (con->buf_pos < con->buf_len) {
+                // Send it using HTIF
+                m->htif_fromhost = ((uint64_t)1 << 56) | ((uint64_t)0 << 48) | con->buf[con->buf_pos++];
+                con->read_requested = false;
+                // Make sure CPU is up
+                riscv_cpu_set_power_down(c, false);
             }
         }
     }

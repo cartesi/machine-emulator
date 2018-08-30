@@ -38,6 +38,9 @@
 
 //??D
 //
+// This code assumes the host's byte-ordering is the same as RISC-V's.
+// RISC-V is little endian, and so is x86.
+//
 // This code assumes the modulo operator is such that
 //
 //      (a/b)*b + a%b = a
@@ -77,35 +80,21 @@
 //   (I have not found documentation for icc)
 //
 // Signed integer overflows are UNDEFINED according to C and C++.
-// The original code assumed signed integers handled overflowed with modulo arithmetic.
-// This is *not* true in general.
+// We do not assume signed integers handled overflowed with modulo arithmetic.
 // Detecting and preventing overflows is awkward and costly.
 // Fortunately, GCC offers intrinsics that have well-defined overflow behavior.
 //
 //   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Integer-Overflow-Builtins.html#Integer-Overflow-Builtins
 //
 
-/* this test works at least with gcc */
-#if defined(__SIZEOF_INT128__)
-#define HAVE_INT128
-#endif
-
-#ifdef HAVE_INT128
-
-#ifdef __GNUC__
 // GCC complains about __int128 with -pedantic or -pedantic-errors
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
-#endif
 
 typedef __int128 int128_t;
 typedef unsigned __int128 uint128_t;
 
-#ifdef __GNUC__
 #pragma GCC diagnostic pop
-#endif
-
-#endif
 
 #define XLEN 64
 #define MXL   2
@@ -591,22 +580,15 @@ static int target_read_slow(RISCVCPUState *s, mem_uint_t *pval,
             }
         } else {
             offset = paddr - pr->addr;
-            if (((pr->devio_flags >> size_log2) & 1) != 0) {
-                ret = pr->read_func(pr->opaque, offset, size_log2);
-            }
-            else if ((pr->devio_flags & DEVIO_SIZE32) && size_log2 == 3) {
-                /* emulate 64 bit access */
-                ret = pr->read_func(pr->opaque, offset, 2);
-                ret |= (uint64_t)pr->read_func(pr->opaque, offset + 4, 2) << 32;
-
-            }
-            else {
+            if (!pr->read_func(pr->opaque, offset, &ret, size_log2)) {
 #ifdef DUMP_INVALID_MEM_ACCESS
                 fprintf(stderr, "unsupported device read access: addr=0x");
                 print_uint64_t(paddr);
                 fprintf(stderr, " width=%d bits\n", 1 << (3 + size_log2));
 #endif
-                ret = 0;
+                s->pending_tval = addr;
+                s->pending_exception = CAUSE_LOAD_FAULT;
+                return -1;
             }
         }
     }
@@ -639,12 +621,14 @@ static int target_write_slow(RISCVCPUState *s, uint64_t addr, mem_uint_t val) {
         }
         pr = get_phys_mem_range(s->mem_map, paddr);
         if (!pr) {
-            /*??D should raise exception here */
 #ifdef DUMP_INVALID_MEM_ACCESS
             fprintf(stderr, "target_write_slow: invalid physical address 0x");
             print_uint64_t(paddr);
             fprintf(stderr, "\n");
 #endif
+            s->pending_tval = addr;
+            s->pending_exception = CAUSE_STORE_AMO_FAULT;
+            return -1;
         } else if (pr->is_ram) {
             phys_mem_set_dirty_bit(pr, paddr - pr->addr);
             tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
@@ -669,22 +653,15 @@ static int target_write_slow(RISCVCPUState *s, uint64_t addr, mem_uint_t val) {
             }
         } else {
             offset = paddr - pr->addr;
-            if (((pr->devio_flags >> size_log2<T>()) & 1) != 0) {
-                pr->write_func(pr->opaque, offset, val, size_log2<T>());
-            }
-            else if ((pr->devio_flags & DEVIO_SIZE32) && size_log2<T>() == 3) {
-                /* emulate 64 bit access */
-                pr->write_func(pr->opaque, offset,
-                               val & 0xffffffff, 2);
-                pr->write_func(pr->opaque, offset + 4,
-                               (val >> 32) & 0xffffffff, 2);
-            }
-            else {
+            if (!pr->write_func(pr->opaque, offset, val, size_log2<T>())) {
 #ifdef DUMP_INVALID_MEM_ACCESS
                 fprintf(stderr, "unsupported device write access: addr=0x");
                 print_uint64_t(paddr);
                 fprintf(stderr, " width=%d bits\n", 1 << (3 + size_log2<T>()));
 #endif
+                s->pending_tval = addr;
+                s->pending_exception = CAUSE_STORE_AMO_FAULT;
+                return -1;
             }
         }
     }
@@ -3015,19 +2992,14 @@ static bool read_memory_slow(RISCVCPUState *s, uint64_t addr, T *pval) {
             return true;
         } else {
             uint64_t offset = paddr - pr->addr;
-            if (((pr->devio_flags >> size_log2<U>()) & 1) != 0) {
-                *pval = pr->read_func(pr->opaque, offset, size_log2<U>());
-                return true;
-            } else if ((pr->devio_flags & DEVIO_SIZE32) && size_log2<U>() == 3) {
-                /* emulate 64 bit access */
-                *pval = pr->read_func(pr->opaque, offset, 2);
-                *pval |= static_cast<uint64_t>(pr->read_func(pr->opaque, offset + 4, 2)) << 32;
-                return true;
-            } else {
-                // If we do not know how to read, we treat this as a PMA viloation
+            uint64_t val;
+            // If we do not know how to read, we treat this as a PMA viloation
+            if (!pr->read_func(pr->opaque, offset, &val, size_log2<U>())) {
                 raise_exception(s, CAUSE_LOAD_FAULT, addr);
                 return false;
             }
+            *pval = static_cast<T>(val);
+            return true;
         }
     }
 }
@@ -3069,19 +3041,12 @@ static bool write_memory_slow(RISCVCPUState *s, uint64_t addr, uint64_t val) {
             return true;
         } else {
             offset = paddr - pr->addr;
-            if (((pr->devio_flags >> size_log2<U>()) & 1) != 0) {
-                pr->write_func(pr->opaque, offset, val, size_log2<U>());
-                return true;
-            } else if ((pr->devio_flags & DEVIO_SIZE32) && size_log2<U>() == 3) {
-                /* emulate 64 bit access */
-                pr->write_func(pr->opaque, offset, val & 0xffffffff, 2);
-                pr->write_func(pr->opaque, offset + 4, (val >> 32) & 0xffffffff, 2);
-                return true;
-            } else {
-                // If we do not know how to write, we treat this as a PMA viloation
+            // If we do not know how to write, we treat this as a PMA viloation
+            if (!pr->write_func(pr->opaque, offset, val, size_log2<U>())) {
                 raise_exception(s, CAUSE_STORE_AMO_FAULT, addr);
                 return false;
             }
+            return true;
         }
     }
 }
@@ -5147,6 +5112,9 @@ enum class interpreter_status {
 /// \details The interpret may stop early if the machine halts permanently or becomes temporarily idle (waiting for interrupts).
 template <typename STATE_ACCESS>
 interpreter_status interpret(STATE_ACCESS a, RISCVCPUState *s, uint64_t mcycle_end) {
+
+    static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
+        "code assumes little-endian byte ordering");
 
     // The external loop continues until the CPU halts,
     // becomes idle, or mcycle reaches mcycle_end

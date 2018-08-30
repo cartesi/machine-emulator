@@ -24,15 +24,13 @@
 #ifndef IOMEM_H
 #define IOMEM_H
 
-typedef void DeviceWriteFunc(void *opaque, uint32_t offset,
-                             uint32_t val, int size_log2);
-typedef uint32_t DeviceReadFunc(void *opaque, uint32_t offset, int size_log2);
+typedef bool DeviceWriteFunc(void *opaque, uint64_t offset, uint64_t val, int size_log2);
+typedef bool DeviceReadFunc(void *opaque, uint64_t offset, uint64_t *val, int size_log2);
 
-#define DEVIO_SIZE8  (1 << 0)
-#define DEVIO_SIZE16 (1 << 1)
-#define DEVIO_SIZE32 (1 << 2)
-/* not supported, could add specific 64 bit callbacks when needed */
-//#define DEVIO_SIZE64 (1 << 3) 
+//#define DEVIO_SIZE8  (1 << 0)
+//#define DEVIO_SIZE16 (1 << 1)
+//#define DEVIO_SIZE32 (1 << 2)
+//#define DEVIO_SIZE64 (1 << 3)
 #define DEVIO_DISABLED (1 << 4)
 
 #define DEVRAM_FLAG_ROM        (1 << 0) /* not writable */
@@ -41,7 +39,6 @@ typedef uint32_t DeviceReadFunc(void *opaque, uint32_t offset, int size_log2);
 #define DEVRAM_FLAG_SHARED     (1 << 3) /* backing file can be modified */
 #define DEVRAM_PAGE_SIZE_LOG2 12
 #define DEVRAM_PAGE_SIZE (1 << DEVRAM_PAGE_SIZE_LOG2)
-
 
 typedef struct PhysMemoryMap PhysMemoryMap;
 
@@ -120,23 +117,6 @@ static inline bool phys_mem_is_dirty_bit(PhysMemoryRange *pr, size_t offset)
     page_index = offset >> DEVRAM_PAGE_SIZE_LOG2;
     dirty_bits_ptr = pr->dirty_bits + (page_index >> 5);
     return (*dirty_bits_ptr >> (page_index & 0x1f)) & 1;
-}
-
-/* IRQ support */
-
-typedef void SetIRQFunc(void *opaque, int irq_num, int level);
-
-typedef struct {
-    SetIRQFunc *set_irq;
-    void *opaque;
-    int irq_num;
-} IRQSignal;
-
-void irq_init(IRQSignal *irq, SetIRQFunc *set_irq, void *opaque, int irq_num);
-
-static inline void set_irq(IRQSignal *irq, int level)
-{
-    irq->set_irq(irq->opaque, irq->irq_num, level);
 }
 
 #endif /* IOMEM_H */

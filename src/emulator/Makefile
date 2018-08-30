@@ -5,6 +5,12 @@ LUA_LIB:=$(shell pkg-config --libs lua53)
 FDT_INC:=
 FDT_LIB:=-lfdt
 
+# So we can use gcc to check if there are unused symbols
+ifeq ($(gc),yes)
+GCFLAGS= -fno-inline-small-functions -fno-inline -fdata-sections -ffunction-sections
+GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
+endif
+
 LIBS:=$(FDT_LIB)
 
 # Mac OS X setup
@@ -25,13 +31,13 @@ CXX_Darwin=clang++
 # libfdt
 #   apt-get install libfdt-dev
 #
-SOLDFLAGS_Linux:= -shared -fpic -g
+SOLDFLAGS_Linux:= -shared -fpic
 CC_Linux=gcc
 CXX_Linux=g++
 
 CC?=$(CC_$(UNAME))
 CXX?=$(CXX_$(UNAME))
-SOLDFLAGS?=$(SOLDFLAGS_$(UNAME))
+SOLDFLAGS?=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 
 WARNS=-W -Wall -pedantic
 
@@ -43,13 +49,8 @@ ifeq ($(dump),yes)
 DEFS+=-DDUMP_INSN
 endif
 
-
-# so we can use gcc to check if there are unused symbols
-# GCFLAGS=-fdata-sections -ffunction-sections
-# GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
-
-CFLAGS=$(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS)
-CXXFLAGS=-std=c++14 $(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS)
+CFLAGS=$(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(GCFLAGS)
+CXXFLAGS=-std=c++14 $(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(GCFLAGS)
 
 ALL=emu.so
 

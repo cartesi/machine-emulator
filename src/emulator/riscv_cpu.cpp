@@ -200,8 +200,6 @@ struct RISCVCPUState {
     bool iflags_I; // CPU is idle (waiting for interrupts)
     bool iflags_H; // CPU is permanently halted
 
-    bool iflags_B; // Set when we need to break from the the inner loop
-
     /* CSRs */
     uint64_t minstret;
     uint64_t mcycle;
@@ -228,14 +226,25 @@ struct RISCVCPUState {
     uint64_t satp;
     uint32_t scounteren;
 
-    uint64_t ilrsc; /* for atomic LR/SC */
+    uint64_t ilrsc; // For LR/SC instructions
 
     PhysMemoryMap *mem_map;
+
+    bool brk; // Set when the tight loop must be broken
 
     TLBEntry tlb_read[TLB_SIZE];
     TLBEntry tlb_write[TLB_SIZE];
     TLBEntry tlb_code[TLB_SIZE];
+
 };
+
+static void brk_set_mip_mie(RISCVCPUState *s) {
+    s->brk = s->mip & s->mie;
+}
+
+static void brk_set_H(RISCVCPUState *s) {
+    s->brk = true;
+}
 
 static void fprint_uint64_t(FILE *f, uint64_t a)
 {
@@ -614,6 +623,8 @@ static void set_priv(RISCVCPUState *s, int priv)
 static void raise_exception(RISCVCPUState *s, uint64_t cause,
     uint64_t tval)
 {
+//#define DUMP_INTERRUPTS
+//#define DUMP_EXCEPTIONS
 #if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS)
     {
         int flag;
@@ -718,65 +729,15 @@ static inline uint32_t ilog2(uint32_t v) {
     return 31 - __builtin_clz(v);
 }
 
-static int raise_interrupt(RISCVCPUState *s)
+static void raise_interrupt_if_any(RISCVCPUState *s)
 {
     uint32_t mask = get_pending_irq_mask(s);
-    if (mask == 0) return 0;
-    uint64_t irq_num = ilog2(mask);
-    raise_exception(s, irq_num | CAUSE_INTERRUPT, 0);
-    return -1;
+    if (mask != 0) {
+        uint64_t irq_num = ilog2(mask);
+        raise_exception(s, irq_num | CAUSE_INTERRUPT, 0);
+    }
 }
 
-uint64_t riscv_cpu_get_mcycle(const RISCVCPUState *s) {
-    return s->mcycle;
-}
-
-void riscv_cpu_set_mcycle(RISCVCPUState *s, uint64_t cycles) {
-    s->mcycle = cycles;
-}
-
-void riscv_cpu_set_mip(RISCVCPUState *s, uint32_t mask) {
-    s->mip |= mask;
-    /* exit from power down if an interrupt is pending */
-    bool pending = (s->mip & s->mie);
-    s->iflags_I &= !pending;
-    s->iflags_B |= pending;
-}
-
-void riscv_cpu_reset_mip(RISCVCPUState *s, uint32_t mask) {
-    s->mip &= ~mask;
-}
-
-uint32_t riscv_cpu_get_mip(const RISCVCPUState *s) {
-    return s->mip;
-}
-
-bool riscv_cpu_get_iflags_I(const RISCVCPUState *s) {
-    return s->iflags_I;
-}
-
-void riscv_cpu_set_iflags_I(RISCVCPUState *s) {
-    s->iflags_I = true;
-    s->iflags_B = true;
-}
-
-void riscv_cpu_reset_iflags_I(RISCVCPUState *s) {
-    s->iflags_I = false;
-}
-
-bool riscv_cpu_get_iflags_H(const RISCVCPUState *s) {
-    return s->iflags_H;
-}
-
-void riscv_cpu_set_iflags_H(RISCVCPUState *s) {
-    s->iflags_H = true;
-    s->iflags_B = true;
-}
-
-int riscv_cpu_get_max_xlen(const RISCVCPUState *)
-{
-    return XLEN;
-}
 
 RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map)
 {
@@ -791,6 +752,7 @@ RISCVCPUState *riscv_cpu_init(PhysMemoryMap *mem_map)
     s->misa = MXL; s->misa <<= (XLEN-2); /* set xlen to 64 */
     s->misa |= MCPUID_SUPER | MCPUID_USER | MCPUID_I | MCPUID_M | MCPUID_A;
     tlb_init(s);
+    s->brk = false;
     return s;
 }
 
@@ -1622,7 +1584,7 @@ static inline execute_status execute_raised_exception(STATE_ACCESS a, RISCVCPUSt
 template <typename STATE_ACCESS>
 static inline execute_status execute_jump(STATE_ACCESS a, RISCVCPUState *s, uint64_t pc) {
     a.write_pc(s, pc);
-    s->iflags_B = true; // overkill
+    // s->brk = true; // overkill
     return execute_status::retired;
 }
 
@@ -1959,7 +1921,7 @@ static inline uint64_t read_csr_success(uint64_t val, bool *status) {
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_ucycle(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+static inline uint64_t read_csr_cycle(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
     uint32_t counteren;
     if (s->iflags_PRV < PRV_M) {
         if (s->iflags_PRV < PRV_S) {
@@ -1975,7 +1937,7 @@ static inline uint64_t read_csr_ucycle(STATE_ACCESS a, RISCVCPUState *s, CSR_add
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_uinstret(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
+static inline uint64_t read_csr_instret(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
     uint32_t counteren;
     if (s->iflags_PRV < PRV_M) {
         if (s->iflags_PRV < PRV_S) {
@@ -1991,58 +1953,49 @@ static inline uint64_t read_csr_uinstret(STATE_ACCESS a, RISCVCPUState *s, CSR_a
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_sstatus(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_sstatus(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_mstatus(s) & SSTATUS_READ_MASK, status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_sie(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_sie(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     uint64_t mie = a.read_mie(s);
     uint64_t mideleg = a.read_mideleg(s);
     return read_csr_success(mie & mideleg, status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_stvec(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_stvec(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_stvec(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_scounteren(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_scounteren(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_scounteren(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_sscratch(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_sscratch(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_sscratch(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_sepc(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_sepc(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_sepc(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_scause(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_scause(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_scause(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_stval(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_stval(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_stval(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_sip(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_sip(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     // Ensure values are are loaded in order: do not nest with operator
     uint64_t mip = a.read_mip(s);
     uint64_t mideleg = a.read_mideleg(s);
@@ -2050,8 +2003,7 @@ static inline uint64_t read_csr_sip(STATE_ACCESS a, RISCVCPUState *s, CSR_addres
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_satp(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_satp(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     uint64_t mstatus = a.read_mstatus(s);
     if (s->iflags_PRV == PRV_S && mstatus & MSTATUS_TVM) {
         return read_csr_fail(status);
@@ -2061,86 +2013,72 @@ static inline uint64_t read_csr_satp(STATE_ACCESS a, RISCVCPUState *s, CSR_addre
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_mstatus(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_mstatus(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_mstatus(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_misa(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_misa(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_misa(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_medeleg(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_medeleg(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_medeleg(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_mideleg(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_mideleg(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_mideleg(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_mie(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_mie(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_mie(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_mtvec(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_mtvec(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_mtvec(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_mcounteren(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_mcounteren(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_mcounteren(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_mscratch(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_mscratch(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_mscratch(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_mepc(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_mepc(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_mepc(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_mcause(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_mcause(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_mcause(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_mtval(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_mtval(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_mtval(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_mip(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_mip(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_mip(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_mcycle(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_mcycle(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_mcycle(s), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_minstret(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, bool *status) {
-    (void) csraddr;
+static inline uint64_t read_csr_minstret(STATE_ACCESS a, RISCVCPUState *s, bool *status) {
     return read_csr_success(a.read_minstret(s), status);
 }
 
@@ -2151,39 +2089,39 @@ static uint64_t read_csr(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, 
         return read_csr_fail(status);
 
     switch (csraddr) {
-        case CSR_address::ucycle: return read_csr_ucycle(a, s, csraddr, status);
-        case CSR_address::uinstret: return read_csr_uinstret(a, s, csraddr, status);
+        case CSR_address::ucycle: return read_csr_cycle(a, s, csraddr, status);
+        case CSR_address::uinstret: return read_csr_instret(a, s, csraddr, status);
         //??D case CSR_address::utime: ?
 
-        case CSR_address::sstatus: return read_csr_sstatus(a, s, csraddr, status);
-        case CSR_address::sie: return read_csr_sie(a, s, csraddr, status);
-        case CSR_address::stvec: return read_csr_stvec(a, s, csraddr, status);
-        case CSR_address::scounteren: return read_csr_scounteren(a, s, csraddr, status);
-        case CSR_address::sscratch: return read_csr_sscratch(a, s, csraddr, status);
-        case CSR_address::sepc: return read_csr_sepc(a, s, csraddr, status);
-        case CSR_address::scause: return read_csr_scause(a, s, csraddr, status);
-        case CSR_address::stval: return read_csr_stval(a, s, csraddr, status);
-        case CSR_address::sip: return read_csr_sip(a, s, csraddr, status);
-        case CSR_address::satp: return read_csr_satp(a, s, csraddr, status);
+        case CSR_address::sstatus: return read_csr_sstatus(a, s, status);
+        case CSR_address::sie: return read_csr_sie(a, s, status);
+        case CSR_address::stvec: return read_csr_stvec(a, s, status);
+        case CSR_address::scounteren: return read_csr_scounteren(a, s, status);
+        case CSR_address::sscratch: return read_csr_sscratch(a, s, status);
+        case CSR_address::sepc: return read_csr_sepc(a, s, status);
+        case CSR_address::scause: return read_csr_scause(a, s, status);
+        case CSR_address::stval: return read_csr_stval(a, s, status);
+        case CSR_address::sip: return read_csr_sip(a, s, status);
+        case CSR_address::satp: return read_csr_satp(a, s, status);
 
 
-        case CSR_address::mstatus: return read_csr_mstatus(a, s, csraddr, status);
-        case CSR_address::misa: return read_csr_misa(a, s, csraddr, status);
-        case CSR_address::medeleg: return read_csr_medeleg(a, s, csraddr, status);
-        case CSR_address::mideleg: return read_csr_mideleg(a, s, csraddr, status);
-        case CSR_address::mie: return read_csr_mie(a, s, csraddr, status);
-        case CSR_address::mtvec: return read_csr_mtvec(a, s, csraddr, status);
-        case CSR_address::mcounteren: return read_csr_mcounteren(a, s, csraddr, status);
+        case CSR_address::mstatus: return read_csr_mstatus(a, s, status);
+        case CSR_address::misa: return read_csr_misa(a, s, status);
+        case CSR_address::medeleg: return read_csr_medeleg(a, s, status);
+        case CSR_address::mideleg: return read_csr_mideleg(a, s, status);
+        case CSR_address::mie: return read_csr_mie(a, s, status);
+        case CSR_address::mtvec: return read_csr_mtvec(a, s, status);
+        case CSR_address::mcounteren: return read_csr_mcounteren(a, s, status);
 
 
-        case CSR_address::mscratch: return read_csr_mscratch(a, s, csraddr, status);
-        case CSR_address::mepc: return read_csr_mepc(a, s, csraddr, status);
-        case CSR_address::mcause: return read_csr_mcause(a, s, csraddr, status);
-        case CSR_address::mtval: return read_csr_mtval(a, s, csraddr, status);
-        case CSR_address::mip: return read_csr_mip(a, s, csraddr, status);
+        case CSR_address::mscratch: return read_csr_mscratch(a, s, status);
+        case CSR_address::mepc: return read_csr_mepc(a, s, status);
+        case CSR_address::mcause: return read_csr_mcause(a, s, status);
+        case CSR_address::mtval: return read_csr_mtval(a, s, status);
+        case CSR_address::mip: return read_csr_mip(a, s, status);
 
-        case CSR_address::mcycle: return read_csr_mcycle(a, s, csraddr, status);
-        case CSR_address::minstret: return read_csr_minstret(a, s, csraddr, status);
+        case CSR_address::mcycle: return read_csr_mcycle(a, s, status);
+        case CSR_address::minstret: return read_csr_minstret(a, s, status);
 
         // All hardwired to zero
         case CSR_address::tselect:
@@ -2225,76 +2163,69 @@ static uint64_t read_csr(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, 
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_sstatus(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_sstatus(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     uint64_t mstatus = a.read_mstatus(s);
     a.write_mstatus(s, (mstatus & ~SSTATUS_WRITE_MASK) | (val & SSTATUS_WRITE_MASK));
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_sie(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_sie(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     uint64_t mask = a.read_mideleg(s);
     uint64_t mie = a.read_mie(s);
     a.write_mie(s, (mie & ~mask) | (val & mask));
+    brk_set_mip_mie(s);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_stvec(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_stvec(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     a.write_stvec(s, val & ~3);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_scounteren(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_scounteren(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     a.write_scounteren(s, val & COUNTEREN_MASK);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_sscratch(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_sscratch(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     a.write_sscratch(s, val);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_sepc(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_sepc(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     a.write_sepc(s, val & ~3);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_scause(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_scause(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     a.write_scause(s, val);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_stval(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_stval(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     a.write_stval(s, val);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_sip(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_sip(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     uint64_t mask = a.read_mideleg(s);
     uint64_t mip = a.read_mip(s);
-    a.write_mip(s, (mip & ~mask) | (val & mask));
+    mip = (mip & ~mask) | (val & mask);
+    a.write_mip(s, mip);
+    brk_set_mip_mie(s);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_satp(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_satp(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     uint64_t satp = a.read_satp(s);
     int mode = satp >> 60;
     int new_mode = (val >> 60) & 0xf;
@@ -2309,97 +2240,97 @@ static bool write_csr_satp(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mstatus(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_mstatus(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     a.write_mstatus(s, val);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_medeleg(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_medeleg(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     const uint64_t mask = (1 << (CAUSE_STORE_AMO_PAGE_FAULT + 1)) - 1;
     a.write_medeleg(s, (a.read_medeleg(s) & ~mask) | (val & mask));
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mideleg(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_mideleg(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     const uint64_t mask = MIP_SSIP | MIP_STIP | MIP_SEIP;
     a.write_mideleg(s, (a.read_mideleg(s) & ~mask) | (val & mask));
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mie(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_mie(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     const uint64_t mask = MIP_MSIP | MIP_MTIP | MIP_SSIP | MIP_STIP | MIP_SEIP;
     a.write_mie(s, (a.read_mie(s) & ~mask) | (val & mask));
+    brk_set_mip_mie(s);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mtvec(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_mtvec(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     a.write_mtvec(s, val & ~3);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mcounteren(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_mcounteren(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     a.write_mcounteren(s, val & COUNTEREN_MASK);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_minstret(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_minstret(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     a.write_minstret(s, val-1); // The value will be incremented after the instruction is executed
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mcycle(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
+static bool write_csr_mcycle(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
+#if 0
     (void) csraddr;
     a.write_mcycle(s, val-1); // The value will be incremented after the instruction is executed
     return true;
+#endif
+    //??D We should decide if we want to allow writes to mcycle
+    //    RISC-V says it is an MRW CSR, read-writeable in machine-mode
+    //    It doesn't look as though BBL does this, so we are
+    //    fine making it read-only
+    (void) a; (void) s; (void) val;
+    return false;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mscratch(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_mscratch(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     a.write_mscratch(s, val);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mepc(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_mepc(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     a.write_mepc(s, val & ~3);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mcause(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_mcause(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     a.write_mcause(s, val);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mtval(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_mtval(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     a.write_mtval(s, val);
     return true;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mip(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uint64_t val) {
-    (void) csraddr;
+static bool write_csr_mip(STATE_ACCESS a, RISCVCPUState *s, uint64_t val) {
     const uint64_t mask = MIP_SSIP | MIP_STIP;
-    a.write_mip(s, (a.read_mip(s) & ~mask) | (val & mask));
+    uint64_t mip = a.read_mip(s);
+    mip = (mip & ~mask) | (val & mask);
+    a.write_mip(s, mip);
+    brk_set_mip_mie(s);
     return true;
 }
 
@@ -2414,34 +2345,34 @@ static bool write_csr(STATE_ACCESS a, RISCVCPUState *s, CSR_address csraddr, uin
     if (csr_priv(csraddr) > s->iflags_PRV) return false;
 
     switch(csraddr) {
-        case CSR_address::sstatus: return write_csr_sstatus(a, s, csraddr, val);
-        case CSR_address::sie: return write_csr_sie(a, s, csraddr, val);
-        case CSR_address::stvec: return write_csr_stvec(a, s, csraddr, val);
-        case CSR_address::scounteren: return write_csr_scounteren(a, s, csraddr, val);
+        case CSR_address::sstatus: return write_csr_sstatus(a, s, val);
+        case CSR_address::sie: return write_csr_sie(a, s, val);
+        case CSR_address::stvec: return write_csr_stvec(a, s, val);
+        case CSR_address::scounteren: return write_csr_scounteren(a, s, val);
 
-        case CSR_address::sscratch: return write_csr_sscratch(a, s, csraddr, val);
-        case CSR_address::sepc: return write_csr_sepc(a, s, csraddr, val);
-        case CSR_address::scause: return write_csr_scause(a, s, csraddr, val);
-        case CSR_address::stval: return write_csr_stval(a, s, csraddr, val);
-        case CSR_address::sip: return write_csr_sip(a, s, csraddr, val);
+        case CSR_address::sscratch: return write_csr_sscratch(a, s, val);
+        case CSR_address::sepc: return write_csr_sepc(a, s, val);
+        case CSR_address::scause: return write_csr_scause(a, s, val);
+        case CSR_address::stval: return write_csr_stval(a, s, val);
+        case CSR_address::sip: return write_csr_sip(a, s, val);
 
-        case CSR_address::satp: return write_csr_satp(a, s, csraddr, val);
+        case CSR_address::satp: return write_csr_satp(a, s, val);
 
-        case CSR_address::mstatus: return write_csr_mstatus(a, s, csraddr, val);
-        case CSR_address::medeleg: return write_csr_medeleg(a, s, csraddr, val);
-        case CSR_address::mideleg: return write_csr_mideleg(a, s, csraddr, val);
-        case CSR_address::mie: return write_csr_mie(a, s, csraddr, val);
-        case CSR_address::mtvec: return write_csr_mtvec(a, s, csraddr, val);
-        case CSR_address::mcounteren: return write_csr_mcounteren(a, s, csraddr, val);
+        case CSR_address::mstatus: return write_csr_mstatus(a, s, val);
+        case CSR_address::medeleg: return write_csr_medeleg(a, s, val);
+        case CSR_address::mideleg: return write_csr_mideleg(a, s, val);
+        case CSR_address::mie: return write_csr_mie(a, s, val);
+        case CSR_address::mtvec: return write_csr_mtvec(a, s, val);
+        case CSR_address::mcounteren: return write_csr_mcounteren(a, s, val);
 
-        case CSR_address::mscratch: return write_csr_mscratch(a, s, csraddr, val);
-        case CSR_address::mepc: return write_csr_mepc(a, s, csraddr, val);
-        case CSR_address::mcause: return write_csr_mcause(a, s, csraddr, val);
-        case CSR_address::mtval: return write_csr_mtval(a, s, csraddr, val);
-        case CSR_address::mip: return write_csr_mip(a, s, csraddr, val);
+        case CSR_address::mscratch: return write_csr_mscratch(a, s, val);
+        case CSR_address::mepc: return write_csr_mepc(a, s, val);
+        case CSR_address::mcause: return write_csr_mcause(a, s, val);
+        case CSR_address::mtval: return write_csr_mtval(a, s, val);
+        case CSR_address::mip: return write_csr_mip(a, s, val);
 
-        case CSR_address::mcycle: return write_csr_mcycle(a, s, csraddr, val);
-        case CSR_address::minstret: return write_csr_minstret(a, s, csraddr, val);
+        case CSR_address::mcycle: return write_csr_mcycle(a, s, val);
+        case CSR_address::minstret: return write_csr_minstret(a, s, val);
 
         // Ignore writes
         case CSR_address::misa:
@@ -2639,7 +2570,7 @@ static inline execute_status execute_SRET(STATE_ACCESS a, RISCVCPUState *s, uint
         s->mstatus &= ~MSTATUS_SPP;
         set_priv(s, spp);
         s->pc = s->sepc;
-        s->iflags_B = true;
+        // s->brk = true; // overkill
         return execute_status::retired;
     }
 }
@@ -2661,7 +2592,7 @@ static inline execute_status execute_MRET(STATE_ACCESS a, RISCVCPUState *s, uint
         s->mstatus &= ~MSTATUS_MPP;
         set_priv(s, mpp);
         s->pc = s->mepc;
-        s->iflags_B = true;
+        // s->brk = true; // overkill
         return execute_status::retired;
     }
 }
@@ -2674,7 +2605,7 @@ static inline execute_status execute_WFI(STATE_ACCESS a, RISCVCPUState *s, uint6
     // Go to power down if no enabled interrupts are pending
     if ((s->mip & s->mie) == 0) {
         s->iflags_I = true;
-        s->iflags_B = true;
+        s->brk = true; // set brk so the outer loop can skip time if it wants too
     }
     return execute_next_insn(a, s, pc);
 }
@@ -3234,8 +3165,8 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS a, RISCVCPUState *s, uint6
         } else {
             tlb_flush_vaddr(s, s->reg[rs1]);
         }
-        // The current code TLB may have been flushed
-        s->iflags_B = true;
+        //??D The current code TLB may have been flushed
+        // s->brk = true;
         return execute_next_insn(a, s, pc);
     } else {
         return execute_illegal_insn_exception(a, s, pc, insn);
@@ -3615,8 +3546,7 @@ static fetch_status fetch_insn(STATE_ACCESS a, RISCVCPUState *s, uint64_t *pc, u
 
 /// \brief Interpreter status code
 enum class interpreter_status: int {
-    halted, ///< iflags_H is set, indicating the machine is permanently halted
-    idle, ///< iflags_I is set, indicating the machine is waiting for an interrupt
+    brk,    ///< brk is set, indicating the tight loop was broken
     success ///< mcycle reached target value
 };
 
@@ -3633,63 +3563,50 @@ interpreter_status interpret(STATE_ACCESS a, RISCVCPUState *s, uint64_t mcycle_e
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
         "code assumes little-endian byte ordering");
 
-    // The external loop continues until the CPU halts,
-    // becomes idle, or mcycle reaches mcycle_end
-    for ( ;; ) {
+    // If the cpu is halted, we are done
+    if (s->iflags_H) {
+        return interpreter_status::success;
+    }
 
-        // If the cpu is halted, report it
-        if (s->iflags_H) {
-            return interpreter_status::halted;
+    // If we reached the target mcycle, we are done
+    if (a.read_mcycle(s) >= mcycle_end) {
+        return interpreter_status::success;
+    }
+
+    // Raise the highest priority pending interrupt, if any
+    raise_interrupt_if_any(s);
+    //sleep();
+
+    uint64_t pc = 0;
+    uint32_t insn = 0;
+
+    // The inner loops continues until there is an interrupt condition
+    // or mcycle reaches mcycle_end
+    for ( ;; )  {
+        // Try to fetch the next instruction
+        if (fetch_insn(a, s, &pc, &insn) == fetch_status::success) {
+            // Try to execute it
+            if (execute_insn(a, s, pc, insn) == execute_status::retired) {
+                // If successful, increment the number of retired instructions minstret
+                // WARNING: if an instruction modifies minstret, it needs to take into
+                // account it this unconditional increment and set the value accordingly
+                a.write_minstret(s, a.read_minstret(s)+1);
+            }
+        }
+        // Increment the cycle counter mcycle
+        // WARNING: if an instruction modifies mcycle, it needs to take into
+        // account it this unconditional increment and set the value accordingly
+        uint64_t mcycle = a.read_mcycle(s) + 1;
+        a.write_mcycle(s, mcycle);
+
+        // If the break flag is active, break from the inner loop
+        if (s->brk) {
+            return interpreter_status::brk;
         }
 
-        // If we reached the target mcycle, report it
-        if (a.read_mcycle(s) >= mcycle_end) {
+        // If we reached the target mcycle, we are done
+        if (mcycle >= mcycle_end) {
             return interpreter_status::success;
-        }
-
-        // The idle flag is set if there were no pending interrupts when the machine executed a WFI instruction.
-        // Any attempt to externally set a pending interrupt clears the idle flag.
-        // Finding it set, there is nothing else to do and we simply report it back to the callee.
-        if (s->iflags_I) {
-            return interpreter_status::idle;
-        }
-
-        // If the break flag is set, try to raise the interrupts and reset the flag.
-        if (s->iflags_B) {
-            s->iflags_B = false;
-            raise_interrupt(s);
-        }
-
-        uint64_t pc = 0;
-        uint32_t insn = 0;
-
-        // The inner loops continues until there is an interrupt condition
-        // or mcycle reaches mcycle_end
-        for ( ;; )  {
-            // Try to fetch the next instruction
-            if (fetch_insn(a, s, &pc, &insn) == fetch_status::success) {
-                // Try to execute it
-                if (execute_insn(a, s, pc, insn) == execute_status::retired) {
-                    // If successful, increment the number of retired instructions minstret
-                    // WARNING: if an instruction modifies minstret, it needs to take into
-                    // account it this unconditional increment and set the value accordingly
-                    a.write_minstret(s, a.read_minstret(s)+1);
-                }
-            }
-            // Increment the cycle counter mcycle
-            // WARNING: if an instruction modifies mcycle, it needs to take into
-            // account it this unconditional increment and set the value accordingly
-            uint64_t mcycle = a.read_mcycle(s) + 1;
-            a.write_mcycle(s, mcycle);
-            // If the break flag is active, break from the inner loop.
-            // This will give the outer loop an opportunity to handle it.
-            if (s->iflags_B) {
-                break;
-            }
-            // If we reached the target mcycle, we are done
-            if (mcycle >= mcycle_end) {
-                return interpreter_status::success;
-            }
         }
     }
 }
@@ -3698,3 +3615,50 @@ void riscv_cpu_run(RISCVCPUState *s, uint64_t mcycle_end) {
     state_access a;
     interpret(a, s, mcycle_end);
 }
+
+uint64_t riscv_cpu_get_mcycle(const RISCVCPUState *s) {
+    return s->mcycle;
+}
+
+void riscv_cpu_set_mcycle(RISCVCPUState *s, uint64_t cycles) {
+    s->mcycle = cycles;
+}
+
+void riscv_cpu_set_mip(RISCVCPUState *s, uint32_t mask) {
+    s->mip |= mask;
+    s->iflags_I = false;
+    brk_set_mip_mie(s);
+}
+
+void riscv_cpu_reset_mip(RISCVCPUState *s, uint32_t mask) {
+    s->mip &= ~mask;
+    brk_set_mip_mie(s);
+}
+
+uint32_t riscv_cpu_get_mip(const RISCVCPUState *s) {
+    return s->mip;
+}
+
+bool riscv_cpu_get_iflags_I(const RISCVCPUState *s) {
+    return s->iflags_I;
+}
+
+void riscv_cpu_reset_iflags_I(RISCVCPUState *s) {
+    s->iflags_I = false;
+}
+
+bool riscv_cpu_get_iflags_H(const RISCVCPUState *s) {
+    return s->iflags_H;
+}
+
+void riscv_cpu_set_iflags_H(RISCVCPUState *s) {
+    s->iflags_H = true;
+    brk_set_H(s);
+}
+
+int riscv_cpu_get_max_xlen(const RISCVCPUState *)
+{
+    return XLEN;
+}
+
+

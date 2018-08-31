@@ -59,7 +59,7 @@ extern "C" {
 #define HTIF_BASE_ADDR     (Gi(1)+Ki(32))
 #define HTIF_SIZE             16
 #define HTIF_CONSOLE_BUF_SIZE (1024)
-#define HTIF_CONSOLE_FREQ_DIV (10000)
+#define HTIF_CONSOLE_FREQ_DIV (100000)
 
 #define CLOCK_FREQ 1000000000 /* 1 GHz (arbitrary) */
 #define RTC_FREQ_DIV 100      /* This cannot change */
@@ -250,6 +250,47 @@ static uint64_t rtc_get_time(RISCVMachine *m) {
     return rtc_cycles_to_time(riscv_cpu_get_mcycle(m->cpu_state));
 }
 
+static void htif_poll_stdin(RISCVMachine *m) {
+    HTIFConsole *con = m->htif_console;
+    RISCVCPUState *c = m->cpu_state;
+    // Check for input from console, if requested by HTIF
+    if (con && con->read_requested) {
+        uint64_t mcycle = riscv_cpu_get_mcycle(c);
+        // If we don't have any characters left in buffer, try to obtain more
+        // Do this only every HTIF_CONSOLE_FREQ_DIV cycles
+        if (con->buf_pos >= con->buf_len && con->previous_mcycle + HTIF_CONSOLE_FREQ_DIV <= mcycle) {
+            con->previous_mcycle = mcycle;
+            fd_set rfds, wfds, efds;
+            int fd_max, ret;
+            struct timeval tv;
+            FD_ZERO(&rfds);
+            FD_ZERO(&wfds);
+            FD_ZERO(&efds);
+            fd_max = 0;
+            FD_SET(0, &rfds);
+            tv.tv_sec = 0;
+            // If CPU is waiting for interrupts, we can wait a bit more
+            tv.tv_usec = riscv_cpu_get_iflags_I(c)? 1000: 0;
+            ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
+            if (ret > 0 && FD_ISSET(0, &rfds)) {
+                con->buf_pos = 0;
+                con->buf_len = read(0, con->buf, HTIF_CONSOLE_BUF_SIZE);
+                // If stdin is closed, pass EOF to client
+                if (con->buf_len <= 0) {
+                    con->buf_len = 1;
+                    con->buf[0] = 4; // CTRL+D
+                }
+            }
+        }
+        // If we have data to return
+        if (con->buf_pos < con->buf_len) {
+            // Send it using HTIF
+            m->htif_fromhost = ((uint64_t)1 << 56) | ((uint64_t)0 << 48) | con->buf[con->buf_pos++];
+            con->read_requested = false;
+        }
+    }
+}
+
 /* Host/Target Interface */
 static bool htif_read(void *opaque, uint64_t offset, uint64_t *pval, int size_log2) {
     RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
@@ -276,6 +317,7 @@ static void htif_handle_getchar(RISCVMachine *m, uint64_t payload) {
     HTIFConsole *con = m->htif_console;
     m->htif_tohost = 0;
     con->read_requested = true;
+    htif_poll_stdin(m);
 }
 
 static void htif_handle_putchar(RISCVMachine *m, uint64_t payload) {
@@ -348,6 +390,12 @@ static bool clint_read(void *opaque, uint64_t offset, uint64_t *val, int size_lo
     if (size_log2 < 2) return false;
 
     switch (offset) {
+        case 0: // Machine software interrupt for hart 0
+            if (size_log2 == 2) {
+                *val = ((riscv_cpu_get_mip(m->cpu_state) & MIP_MSIP) == MIP_MSIP);
+                return true;
+            }
+            return false;
         case 0xbff8: // mtime
             if (size_log2 == 3) {
                 *val = rtc_get_time(m);
@@ -384,6 +432,19 @@ static bool clint_write(void *opaque, uint64_t offset, uint64_t val, int size_lo
     if (size_log2 < 2) return false;
 
     switch (offset) {
+        case 0: // Machine software interrupt for hart 0
+            if (size_log2 == 2) {
+                //??D I don't yet know why Linux tries to raise MSIP when we only have a single hart
+                //    It does so repeatedly before and after every command run in the shell
+                //    Will investigate.
+                if (val & 1) {
+                    riscv_cpu_set_mip(m->cpu_state, MIP_MSIP);
+                } else {
+                    riscv_cpu_reset_mip(m->cpu_state, MIP_MSIP);
+                }
+                return true;
+            }
+            return false;
         case 0xbff8: // writes to mtime, misaligned or not,
         case 0xbffc: // are not supported
             return false;
@@ -705,87 +766,52 @@ const char *virt_machine_get_name(void)
     return "riscv64";
 }
 
+
 int virt_machine_run(VirtMachine *v, uint64_t mcycle_end)
 {
     RISCVMachine *m = (RISCVMachine *)v;
-    HTIFConsole *con = m->htif_console;
     RISCVCPUState *c = m->cpu_state;
 
-    for (;;) {
+    // The emulator outer loop breaks only when the machine is halted
+    // or when mcycle hits mcycle_end
+    for ( ;; ) {
 
         // If we are halted, do nothing
         if (riscv_cpu_get_iflags_H(c)) {
             return 1;
         }
 
+        // Run the emulator inner loop until we reach the next multiple of RTC_FREQ_DIV
         uint64_t mcycle = riscv_cpu_get_mcycle(c);
+        uint64_t next_timecmp_mcycle = mcycle + RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV;
+        riscv_cpu_run(c, std::min(next_timecmp_mcycle, mcycle_end));
 
-        // Check if we should raise a timer interrupts
-        //
-        // If the timer interrupt is not already pending
+        // If we hit mcycle_end, we are done
+        mcycle = riscv_cpu_get_mcycle(c);
+        if (mcycle >= mcycle_end) {
+            return 0;
+        }
+
+        // If the timer interrupt is not already pending,
+        // check if we should raise a timer interrupt
         if (!(riscv_cpu_get_mip(c) & MIP_MTIP)) {
             // Get the mcycle corresponding to mtimecmp
             uint64_t timecmp_mcycle = rtc_time_to_cycles(m->timecmp);
             // If the cpu is waiting for interrupts, we can skip until time hits timecmp
-            // (CLINT is the only external interrupt source)
+            // CLINT is the only "external" interrupt source
+            // IPI (inter-processor interrupt) via MSIP can only be raised "internally"
             if (riscv_cpu_get_iflags_I(c)) {
                 mcycle = std::min(timecmp_mcycle, mcycle_end);
                 riscv_cpu_set_mcycle(c, mcycle);
             }
             // If the timer is expired, raise interrupt
-            if (timecmp_mcycle <= mcycle) {
+            if (timecmp_mcycle && timecmp_mcycle <= mcycle) {
                 riscv_cpu_set_mip(c, MIP_MTIP);
             }
         }
 
-        // If we hit mcycle_end, we are done
-        if (mcycle >= mcycle_end) {
-            return 0;
-        }
-
-        // Run emulator until we reach the next multiple of RTC_FREQ_DIV
-        uint64_t next_timecmp_mcycle = mcycle + RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV;
-        riscv_cpu_run(c, std::min(next_timecmp_mcycle, mcycle_end));
-        mcycle = riscv_cpu_get_mcycle(c);
-
-        // Check for input from console, if requested by HTIF
-        if (con && con->read_requested) {
-            // If we don't have any characters left in buffer, try to obtain more
-            // Do this only every HTIF_CONSOLE_FREQ_DIV cycles
-            if (con->buf_pos >= con->buf_len && con->previous_mcycle + HTIF_CONSOLE_FREQ_DIV <= mcycle) {
-                con->previous_mcycle = mcycle;
-                fd_set rfds, wfds, efds;
-                int fd_max, ret;
-                struct timeval tv;
-                FD_ZERO(&rfds);
-                FD_ZERO(&wfds);
-                FD_ZERO(&efds);
-                fd_max = 0;
-                FD_SET(0, &rfds);
-                tv.tv_sec = 0;
-                // If CPU is waiting for interrupts, we can wait a bit more
-                tv.tv_usec = riscv_cpu_get_iflags_I(c)? 1000: 0;
-                ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
-                if (ret > 0 && FD_ISSET(0, &rfds)) {
-                    con->buf_pos = 0;
-                    con->buf_len = read(0, con->buf, HTIF_CONSOLE_BUF_SIZE);
-                    // If stdin is closed, pass EOF to client
-                    if (con->buf_len <= 0) {
-                        con->buf_len = 1;
-                        con->buf[0] = 4; // CTRL+D
-                    }
-                }
-            }
-            // If we have data to return
-            if (con->buf_pos < con->buf_len) {
-                // Send it using HTIF
-                m->htif_fromhost = ((uint64_t)1 << 56) | ((uint64_t)0 << 48) | con->buf[con->buf_pos++];
-                con->read_requested = false;
-                // Wake CPU up even though this is not an interrupt.
-                // The CPU does not need to find a raised interrupt when it wakes up from WFI
-                // (WFI can be replaced by a NOP with no change in correct program behavior)
-                riscv_cpu_reset_iflags_I(c);
-            }
-        }
+        // Check if there is user input from stdin
+        // This is not used in solidity
+        htif_poll_stdin(m);
     }
 }

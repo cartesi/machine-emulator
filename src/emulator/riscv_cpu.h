@@ -48,12 +48,7 @@ uint64_t riscv_cpu_get_misa(const RISCVCPUState *s);
 uint64_t riscv_cpu_get_mcycle(const RISCVCPUState *s);
 void riscv_cpu_set_mcycle(RISCVCPUState *s, uint64_t cycles);
 
-bool riscv_cpu_get_iflags_B(RISCVCPUState *s);
-void riscv_cpu_set_iflags_B(RISCVCPUState *s);
-void riscv_cpu_reset_iflags_B(RISCVCPUState *s);
-
 bool riscv_cpu_get_iflags_I(const RISCVCPUState *s);
-void riscv_cpu_set_iflags_I(RISCVCPUState *s);
 void riscv_cpu_reset_iflags_I(RISCVCPUState *s);
 
 uint32_t riscv_cpu_get_mip(const RISCVCPUState *s);

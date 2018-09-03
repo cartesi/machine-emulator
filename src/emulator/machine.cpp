@@ -43,7 +43,7 @@ extern "C" {
 #include <lua.hpp>
 
 #include "iomem.h"
-#include "riscv_cpu.h"
+#include "processor.h"
 
 #include "machine.h"
 
@@ -61,27 +61,18 @@ extern "C" {
 #define HTIF_CONSOLE_BUF_SIZE (1024)
 #define HTIF_CONSOLE_FREQ_DIV (100000)
 
-#define CLOCK_FREQ 1000000000 /* 1 GHz (arbitrary) */
-#define RTC_FREQ_DIV 100      /* This cannot change */
-
-
 typedef struct {
     struct termios oldtty;
     int old_fd0_flags;
     uint8_t buf[HTIF_CONSOLE_BUF_SIZE];
     ssize_t buf_len, buf_pos;
-    bool read_requested;
     uint64_t previous_mcycle;
+    bool getchar_pending;
 } HTIFConsole;
 
 typedef struct RISCVMachine {
     PhysMemoryMap *mem_map;
-    RISCVCPUState *cpu_state;
-    uint64_t ram_size;
-    /* CLINT */
-    uint64_t timecmp;
-    /* HTIF */
-    uint64_t htif_tohost, htif_fromhost;
+    processor_state *processor;
     HTIFConsole *htif_console;
 } RISCVMachine;
 
@@ -237,25 +228,36 @@ void virt_machine_free_config(VirtMachineParams *p)
     }
 }
 
-static uint64_t rtc_cycles_to_time(uint64_t cycle_counter)
-{
-    return cycle_counter / RTC_FREQ_DIV;
-}
+static bool htif_read(i_device_state_access *a, void *opaque, uint64_t offset, uint64_t *pval, int size_log2) {
+    (void) opaque;
 
-static uint64_t rtc_time_to_cycles(uint64_t time) {
-    return time * RTC_FREQ_DIV;
-}
+    // Our HTIF only supports aligned 64-bit reads
+    if (size_log2 != 3 || offset & 7) return false;
 
-static uint64_t rtc_get_time(RISCVMachine *m) {
-    return rtc_cycles_to_time(riscv_cpu_get_mcycle(m->cpu_state));
+    switch (offset) {
+        case 0: // tohost
+            *pval = a->read_tohost();
+            return true;
+        case 8: // from host
+            *pval = a->read_fromhost();
+            return true;
+        default:
+            // other reads return zero
+            *pval = 0;
+            return true;
+    }
 }
 
 static void htif_poll_stdin(RISCVMachine *m) {
     HTIFConsole *con = m->htif_console;
-    RISCVCPUState *c = m->cpu_state;
+    processor_state *p = m->processor;
+
+    //??D We do not need to register any access to state here because
+    //    the console is always disabled during verifiable execution
+
     // Check for input from console, if requested by HTIF
-    if (con && con->read_requested) {
-        uint64_t mcycle = riscv_cpu_get_mcycle(c);
+    if (con && con->getchar_pending) {
+        uint64_t mcycle = processor_read_mcycle(p);
         // If we don't have any characters left in buffer, try to obtain more
         // Do this only every HTIF_CONSOLE_FREQ_DIV cycles
         if (con->buf_pos >= con->buf_len && con->previous_mcycle + HTIF_CONSOLE_FREQ_DIV <= mcycle) {
@@ -270,7 +272,7 @@ static void htif_poll_stdin(RISCVMachine *m) {
             FD_SET(0, &rfds);
             tv.tv_sec = 0;
             // If CPU is waiting for interrupts, we can wait a bit more
-            tv.tv_usec = riscv_cpu_get_iflags_I(c)? 1000: 0;
+            tv.tv_usec = processor_read_iflags_I(p)? 1000: 0;
             ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
             if (ret > 0 && FD_ISSET(0, &rfds)) {
                 con->buf_pos = 0;
@@ -284,106 +286,107 @@ static void htif_poll_stdin(RISCVMachine *m) {
         }
         // If we have data to return
         if (con->buf_pos < con->buf_len) {
-            // Send it using HTIF
-            m->htif_fromhost = ((uint64_t)1 << 56) | ((uint64_t)0 << 48) | con->buf[con->buf_pos++];
-            con->read_requested = false;
+            processor_write_fromhost(p, ((uint64_t)1 << 56) | ((uint64_t)0 << 48) | con->buf[con->buf_pos++]);
+            con->getchar_pending = false;
         }
     }
 }
 
-/* Host/Target Interface */
-static bool htif_read(void *opaque, uint64_t offset, uint64_t *pval, int size_log2) {
-    RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
-
-    // Our HTIF only supports aligned 64-bit reads
-    if (size_log2 != 3 || offset & 7) return false;
-
-    switch (offset) {
-        case 0: // tohost
-            *pval = m->htif_tohost;
-            return true;
-        case 8: // from host
-            *pval = m->htif_fromhost;
-            return true;
-        default:
-            // other reads return zero
-            *pval = 0;
-            return true;
-    }
-}
-
-static void htif_handle_getchar(RISCVMachine *m, uint64_t payload) {
-    (void) payload;
+static bool htif_getchar(i_device_state_access *a, RISCVMachine *m, uint64_t payload) {
+    (void) a; (void) payload;
     HTIFConsole *con = m->htif_console;
-    m->htif_tohost = 0;
-    con->read_requested = true;
+    con->getchar_pending = true;
     htif_poll_stdin(m);
+    return true;
 }
 
-static void htif_handle_putchar(RISCVMachine *m, uint64_t payload) {
+static bool htif_putchar(i_device_state_access *a, RISCVMachine *m, uint64_t payload) {
+    (void) m;
     uint8_t ch = payload & 0xff;
-    if (write(1, &ch, 1) < 1) { }
-    m->htif_fromhost = ((uint64_t)1 << 56) | ((uint64_t)1 << 48);
+    if (write(1, &ch, 1) < 1) { ; }
+    a->write_fromhost(((uint64_t)1 << 56) | ((uint64_t)1 << 48));
+    return true;
 }
 
-static void htif_handle_halt(RISCVMachine *m, uint64_t payload) {
-    (void) payload;
-    riscv_cpu_set_iflags_H(m->cpu_state);
+static bool htif_halt(i_device_state_access *a, RISCVMachine *m, uint64_t payload) {
+    (void) m; (void) payload;
+    a->set_iflags_H();
+    return true;
 }
 
-static void htif_handle_cmd(RISCVMachine *m)
-{
-    uint32_t device, cmd;
-    uint64_t payload;
-
-    device = m->htif_tohost >> 56;
-    cmd = (m->htif_tohost >> 48) & 0xff;
-    payload = (m->htif_tohost & (~1ULL >> 16));
-
-    // Signal we received the data
-    m->htif_tohost = 0;
-
-#if 0
-    printf("HTIF: tohost=0x%016"
-        PRIx64 "(%" PRIu32 "):(%" PRIu32 "):(%" PRIu64 ")\n",
-        m->htif_tohost, device, cmd, payload);
-#endif
-
-    if (device == 0 && cmd == 0 && (payload & 1)) { // power off
-        htif_handle_halt(m, payload);
-    } else if (device == 1 && cmd == 1) { // putchar
-        htif_handle_putchar(m, payload);
-    } else if (device == 1 && cmd == 0) { // getchar
-        htif_handle_getchar(m, payload);
-    } else {
-        printf("HTIF: unsupported tohost=0x%016"
-            PRIx64 "(%" PRIu32 "):(%" PRIu32 "):(%" PRIu64 ")\n",
-            m->htif_tohost, device, cmd, payload);
+static bool htif_write_tohost(i_device_state_access *a, RISCVMachine *m, uint64_t tohost) {
+    // Decode tohost
+    uint32_t device = tohost >> 56;
+    uint32_t cmd = (tohost >> 48) & 0xff;
+    uint64_t payload = (tohost & (~1ULL >> 16));
+    // Log write to tohost
+    //a->write_tohost(tohost); //??D We may be able to remove this write
+    // Immediately clear tohost to signal we received the value
+    a->write_tohost(0);
+    // Handle commands
+    if (device == 0 && cmd == 0 && (payload & 1)) {
+        return htif_halt(a, m, payload);
+    } else if (device == 1 && cmd == 1) {
+        return htif_putchar(a, m, payload);
+    } else if (device == 1 && cmd == 0) {
+        return htif_getchar(a, m, payload);
     }
+    //??D Unknown HTIF commands are sillently ignored
+    return true;
 }
 
-static bool htif_write(void *opaque, uint64_t offset, uint64_t val, int size_log2) {
+static bool htif_write_fromhost(i_device_state_access *a, RISCVMachine *m, uint64_t val) {
+    (void) m;
+    a->write_fromhost(val);
+    return true;
+}
+
+static bool htif_write(i_device_state_access *a, void *opaque, uint64_t offset, uint64_t val, int size_log2) {
     RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
 
     // Our HTIF only supports aligned 64-bit writes
     if (size_log2 != 3 || offset & 7) return false;
 
-    switch(offset) {
+    switch (offset) {
         case 0: // tohost
-            m->htif_tohost = val;
-            htif_handle_cmd(m);
-            return true;
+            return htif_write_tohost(a, m, val);
         case 8: // fromhost
-            m->htif_fromhost = val;
-            return true;
+            return htif_write_fromhost(a, m, val);
         default:
             // other writes are silently ignored
             return true;
     }
 }
 
+static bool clint_read_msip(i_device_state_access *a, RISCVMachine *m, uint64_t *val, int size_log2) {
+    (void) m;
+    if (size_log2 == 2) {
+        *val = ((a->read_mip() & MIP_MSIP) == MIP_MSIP);
+        return true;
+    }
+    return false;
+}
+
+static bool clint_read_mtime(i_device_state_access *a, RISCVMachine *m, uint64_t *val, int size_log2) {
+    (void) m;
+    if (size_log2 == 3) {
+        *val = processor_rtc_cycles_to_time(a->read_mcycle());
+        return true;
+    }
+    return false;
+}
+
+static bool clint_read_mtimecmp(i_device_state_access *a, RISCVMachine *m, uint64_t *val, int size_log2) {
+    (void) m;
+    if (size_log2 == 3) {
+        *val = a->read_mtimecmp();
+        return true;
+    }
+    return false;
+}
+
 /* Clock Interrupt */
-static bool clint_read(void *opaque, uint64_t offset, uint64_t *val, int size_log2) {
+static bool clint_read(i_device_state_access *a, void *opaque, uint64_t offset, uint64_t *val, int size_log2) {
     RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
 
     // Our CLINT only supports 32 or 64-bit reads
@@ -391,27 +394,13 @@ static bool clint_read(void *opaque, uint64_t offset, uint64_t *val, int size_lo
 
     switch (offset) {
         case 0: // Machine software interrupt for hart 0
-            if (size_log2 == 2) {
-                *val = ((riscv_cpu_get_mip(m->cpu_state) & MIP_MSIP) == MIP_MSIP);
-                return true;
-            }
-            return false;
+            return clint_read_msip(a, m, val, size_log2);
         case 0xbff8: // mtime
-            if (size_log2 == 3) {
-                *val = rtc_get_time(m);
-                return true;
-            }
-            // partial mtime is not supported
-            return false;
+            return clint_read_mtime(a, m, val, size_log2);
         case 0xbffc: // misaligned mtime is not supported
             return false;
         case 0x4000: // mtimecmp
-            if (size_log2 == 3) {
-                *val = rtc_get_time(m);
-                return true;
-            }
-            // partial mtimecmp is not supported
-            return false;
+            return clint_read_mtimecmp(a, m, val, size_log2);
         case 0x4004: // misaligned mtimecmp is not supported
             return false;
         default:
@@ -424,9 +413,8 @@ static bool clint_read(void *opaque, uint64_t offset, uint64_t *val, int size_lo
     }
 }
 
-static bool clint_write(void *opaque, uint64_t offset, uint64_t val, int size_log2)
-{
-    RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
+static bool clint_write(i_device_state_access *a, void *opaque, uint64_t offset, uint64_t val, int size_log2) {
+    (void) opaque;
 
     // Our CLINT only supports 32 or 64-bit writes
     if (size_log2 < 2) return false;
@@ -438,9 +426,9 @@ static bool clint_write(void *opaque, uint64_t offset, uint64_t val, int size_lo
                 //    It does so repeatedly before and after every command run in the shell
                 //    Will investigate.
                 if (val & 1) {
-                    riscv_cpu_set_mip(m->cpu_state, MIP_MSIP);
+                    a->set_mip(MIP_MSIP);
                 } else {
-                    riscv_cpu_reset_mip(m->cpu_state, MIP_MSIP);
+                    a->reset_mip(MIP_MSIP);
                 }
                 return true;
             }
@@ -450,8 +438,8 @@ static bool clint_write(void *opaque, uint64_t offset, uint64_t val, int size_lo
             return false;
         case 0x4000: // mtimecmp
             if (size_log2 == 3) {
-                m->timecmp = val;
-                riscv_cpu_reset_mip(m->cpu_state, MIP_MTIP);
+                a->write_mtimecmp(val);
+                a->reset_mip(MIP_MTIP);
                 return true;
             }
             // partial mtimecmp is not supported
@@ -510,14 +498,14 @@ static int fdt_build_riscv(const VirtMachineParams *p, const RISCVMachine *m,
      FDT_CHECK(fdt_begin_node(buf, "cpus"));
       FDT_CHECK(fdt_property_u32(buf, "#address-cells", 1));
       FDT_CHECK(fdt_property_u32(buf, "#size-cells", 0));
-      FDT_CHECK(fdt_property_u32(buf, "timebase-frequency", CLOCK_FREQ/RTC_FREQ_DIV));
+      FDT_CHECK(fdt_property_u32(buf, "timebase-frequency", RISCV_CLOCK_FREQ/RISCV_RTC_FREQ_DIV));
       FDT_CHECK(fdt_begin_node_num(buf, "cpu", 0));
        FDT_CHECK(fdt_property_string(buf, "device_type", "cpu"));
        FDT_CHECK(fdt_property_u32(buf, "reg", 0));
        FDT_CHECK(fdt_property_string(buf, "status", "okay"));
        FDT_CHECK(fdt_property_string(buf, "compatible", "riscv"));
-       int max_xlen = riscv_cpu_get_max_xlen(m->cpu_state);
-       uint32_t misa = riscv_cpu_get_misa(m->cpu_state);
+       int max_xlen = processor_get_max_xlen(m->processor);
+       uint32_t misa = processor_read_misa(m->processor);
        char isa_string[128], *q = isa_string;
        q += snprintf(isa_string, sizeof(isa_string), "rv%d", max_xlen);
        for(int i = 0; i < 26; i++) {
@@ -527,7 +515,7 @@ static int fdt_build_riscv(const VirtMachineParams *p, const RISCVMachine *m,
        *q = '\0';
        FDT_CHECK(fdt_property_string(buf, "riscv,isa", isa_string));
        FDT_CHECK(fdt_property_string(buf, "mmu-type", "riscv,sv48"));
-       FDT_CHECK(fdt_property_u32(buf, "clock-frequency", CLOCK_FREQ));
+       FDT_CHECK(fdt_property_u32(buf, "clock-frequency", RISCV_CLOCK_FREQ));
        FDT_CHECK(fdt_begin_node(buf, "interrupt-controller"));
         FDT_CHECK(fdt_property_u32(buf, "#interrupt-cells", 1));
         FDT_CHECK(fdt_property(buf, "interrupt-controller", NULL, 0));
@@ -540,7 +528,7 @@ static int fdt_build_riscv(const VirtMachineParams *p, const RISCVMachine *m,
 
      FDT_CHECK(fdt_begin_node_num(buf, "memory", RAM_BASE_ADDR));
       FDT_CHECK(fdt_property_string(buf, "device_type", "memory"));
-      FDT_CHECK(fdt_property_u64_u64(buf, "reg", RAM_BASE_ADDR, m->ram_size));
+      FDT_CHECK(fdt_property_u64_u64(buf, "reg", RAM_BASE_ADDR, p->ram_size));
      FDT_CHECK(fdt_end_node(buf)); /* memory */
 
      /* flash */
@@ -636,13 +624,6 @@ static void init_ram_and_rom(const VirtMachineParams *p, RISCVMachine *m)
     }
 }
 
-static void riscv_flush_tlb_write_range(void *opaque, uint8_t *ram_addr,
-                                        size_t ram_size)
-{
-    RISCVMachine *m = reinterpret_cast<RISCVMachine *>(opaque);
-    riscv_cpu_flush_tlb_write_range_ram(m->cpu_state, ram_addr, ram_size);
-}
-
 void virt_machine_set_defaults(VirtMachineParams *p)
 {
     memset(p, 0, sizeof(*p));
@@ -708,28 +689,23 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
 
     RISCVMachine *m = reinterpret_cast<RISCVMachine *>(calloc(1, sizeof(*m)));
 
-    m->ram_size = p->ram_size;
     m->mem_map = phys_mem_map_init();
-    /* needed to handle the RAM dirty bits */
-    m->mem_map->opaque = m;
-    m->mem_map->flush_tlb_write_range = riscv_flush_tlb_write_range;
-
-    m->cpu_state = riscv_cpu_init(m->mem_map);
+    m->processor = processor_init(m->mem_map);
 
     /* RAM */
-    cpu_register_ram(m->mem_map, RAM_BASE_ADDR, p->ram_size, 0);
-    cpu_register_ram(m->mem_map, ROM_BASE_ADDR, ROM_SIZE, 0);
+    cpu_register_ram(m->mem_map, RAM_BASE_ADDR, p->ram_size);
+    cpu_register_ram(m->mem_map, ROM_BASE_ADDR, ROM_SIZE);
 
     /* flash */
     for (i = 0; i < p->flash_count; i++) {
         cpu_register_backed_ram(m->mem_map, p->tab_flash[i].address,
             p->tab_flash[i].size, p->tab_flash[i].backing,
-            p->tab_flash[i].shared? DEVRAM_FLAG_SHARED: 0);
+            p->tab_flash[i].shared);
     }
 
-    cpu_register_device(m->mem_map, CLINT_BASE_ADDR, CLINT_SIZE, m, clint_read, clint_write, 0);
+    cpu_register_device(m->mem_map, CLINT_BASE_ADDR, CLINT_SIZE, m, clint_read, clint_write);
 
-    cpu_register_device(m->mem_map, HTIF_BASE_ADDR, HTIF_SIZE, m, htif_read, htif_write, 0);
+    cpu_register_device(m->mem_map, HTIF_BASE_ADDR, HTIF_SIZE, m, htif_read, htif_write);
 
     init_ram_and_rom(p, m);
 
@@ -746,19 +722,19 @@ void virt_machine_end(VirtMachine *v)
     if (m->htif_console) {
         htif_console_end(m->htif_console);
     }
-    riscv_cpu_end(m->cpu_state);
+    processor_end(m->processor);
     phys_mem_map_end(m->mem_map);
     free(m);
 }
 
-uint64_t virt_machine_get_mcycle(VirtMachine *v) {
+uint64_t virt_machine_read_mcycle(VirtMachine *v) {
     RISCVMachine *m = (RISCVMachine *)v;
-    return riscv_cpu_get_mcycle(m->cpu_state);
+    return processor_read_mcycle(m->processor);
 }
 
-uint64_t virt_machine_get_htif_tohost(VirtMachine *v) {
-    RISCVMachine *m = (RISCVMachine *)v;
-    return m->htif_tohost;
+uint64_t virt_machine_read_tohost(VirtMachine *v) {
+    RISCVMachine *m = (RISCVMachine *) v;
+    return processor_read_tohost(m->processor);
 }
 
 const char *virt_machine_get_name(void)
@@ -770,48 +746,48 @@ const char *virt_machine_get_name(void)
 int virt_machine_run(VirtMachine *v, uint64_t mcycle_end)
 {
     RISCVMachine *m = (RISCVMachine *)v;
-    RISCVCPUState *c = m->cpu_state;
+    processor_state *p = m->processor;
 
     // The emulator outer loop breaks only when the machine is halted
     // or when mcycle hits mcycle_end
     for ( ;; ) {
 
         // If we are halted, do nothing
-        if (riscv_cpu_get_iflags_H(c)) {
+        if (processor_read_iflags_H(p)) {
             return 1;
         }
 
-        // Run the emulator inner loop until we reach the next multiple of RTC_FREQ_DIV
-        uint64_t mcycle = riscv_cpu_get_mcycle(c);
-        uint64_t next_timecmp_mcycle = mcycle + RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV;
-        riscv_cpu_run(c, std::min(next_timecmp_mcycle, mcycle_end));
+        // Run the emulator inner loop until we reach the next multiple of RISCV_RTC_FREQ_DIV
+        uint64_t mcycle = processor_read_mcycle(p);
+        uint64_t next_timecmp_mcycle = mcycle + RISCV_RTC_FREQ_DIV - mcycle % RISCV_RTC_FREQ_DIV;
+        processor_run(p, std::min(next_timecmp_mcycle, mcycle_end));
 
         // If we hit mcycle_end, we are done
-        mcycle = riscv_cpu_get_mcycle(c);
+        mcycle = processor_read_mcycle(p);
         if (mcycle >= mcycle_end) {
             return 0;
         }
 
         // If the timer interrupt is not already pending,
         // check if we should raise a timer interrupt
-        if (!(riscv_cpu_get_mip(c) & MIP_MTIP)) {
+        if (!(processor_read_mip(p) & MIP_MTIP)) {
             // Get the mcycle corresponding to mtimecmp
-            uint64_t timecmp_mcycle = rtc_time_to_cycles(m->timecmp);
+            uint64_t timecmp_mcycle = processor_rtc_time_to_cycles(processor_read_mtimecmp(p));
             // If the cpu is waiting for interrupts, we can skip until time hits timecmp
             // CLINT is the only "external" interrupt source
             // IPI (inter-processor interrupt) via MSIP can only be raised "internally"
-            if (riscv_cpu_get_iflags_I(c)) {
+            if (processor_read_iflags_I(p)) {
                 mcycle = std::min(timecmp_mcycle, mcycle_end);
-                riscv_cpu_set_mcycle(c, mcycle);
+                processor_write_mcycle(p, mcycle);
             }
             // If the timer is expired, raise interrupt
             if (timecmp_mcycle && timecmp_mcycle <= mcycle) {
-                riscv_cpu_set_mip(c, MIP_MTIP);
+                processor_set_mip(p, MIP_MTIP);
             }
         }
 
         // Check if there is user input from stdin
-        // This is not used in solidity
+        // This is not used within the blockchain
         htif_poll_stdin(m);
     }
 }

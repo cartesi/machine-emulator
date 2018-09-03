@@ -47,6 +47,8 @@ ifeq ($(dump),yes)
 #DEFS+=-DUMP_ILLEGAL_INSN
 #DEFS+=-DDUMP_EXCEPTIONS -DDUMP_MMU_EXCEPTIONS -DDUMP_INVALID_MEM_ACCESS -DDUMP_INVALID_CSR -DUMP_ILLEGAL_INSN
 DEFS+=-DDUMP_INSN
+#DEFS+=-DDUMP_COUNTERS
+#DEFS+=-DDUMP_EXCEPTIONS
 endif
 
 CFLAGS=$(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(GCFLAGS)
@@ -62,7 +64,7 @@ OBJS:= \
 	iomem.o \
 	machine.o \
 	luaemu.o \
-	riscv_cpu.o
+	processor.o
 
 ifeq ($(gperf),yes)
 DEFS+=-DGPERF

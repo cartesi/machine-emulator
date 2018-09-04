@@ -34,6 +34,10 @@
 #include <limits>
 #include <type_traits>
 
+#ifdef WALLCLOCK
+#include <chrono>
+#endif
+
 //??D
 //
 // This code assumes the host's byte-ordering is the same as RISC-V's.
@@ -1622,6 +1626,12 @@ static inline uint64_t read_csr_minstret(STATE_ACCESS &a, processor_state *s, bo
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_utime(STATE_ACCESS &a, processor_state *s, bool *status) {
     uint64_t mtime = processor_rtc_cycles_to_time(a.read_mcycle(s));
+#ifdef WALLCLOCK
+        auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+        mtime = (now*RISCV_CLOCK_FREQ)/(static_cast<uint64_t>(1000000000)*RISCV_RTC_FREQ_DIV);
+fprintf(stderr, "rdtime mtime is %lu\n", mtime);
+#endif
     return read_csr_success(mtime, status);
 }
 

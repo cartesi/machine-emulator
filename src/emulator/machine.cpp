@@ -28,6 +28,8 @@
 #include <cstring>
 #include <ctime>
 #include <algorithm>
+#include <chrono>
+#include <thread>
 
 #include <signal.h>
 #include <fcntl.h>
@@ -70,11 +72,39 @@ typedef struct {
     bool getchar_pending;
 } HTIFConsole;
 
+using clock_source = std::chrono::system_clock;
+
+typedef struct {
+    std::chrono::time_point<clock_source> last_time;
+    uint64_t last_mcycle;
+} Wallclock;
+
+typedef struct {
+    HTIFConsole console;
+    Wallclock wallclock;
+} interactive_state;
+
 typedef struct RISCVMachine {
     PhysMemoryMap *mem_map;
     processor_state *processor;
-    HTIFConsole *htif_console;
+    interactive_state *interactive;
 } RISCVMachine;
+
+
+HTIFConsole *get_console(RISCVMachine *m) {
+    if (m->interactive) {
+        return &m->interactive->console;
+    }
+    return nullptr;
+}
+
+Wallclock *get_wallclock(RISCVMachine *m) {
+    if (m->interactive) {
+        return &m->interactive->wallclock;
+    }
+    return nullptr;
+}
+
 
 /* return -1 if error. */
 static uint64_t load_file(uint8_t **pbuf, const char *filename)
@@ -228,6 +258,22 @@ void virt_machine_free_config(VirtMachineParams *p)
     }
 }
 
+static void wallclock_adjust(RISCVMachine *m) {
+    Wallclock *wc = get_wallclock(m);
+    if (wc) {
+        // Figure out how much time should have passed in microseconds
+        int64_t now_mcycle = processor_read_mcycle(m->processor);
+        int64_t should = ((now_mcycle - wc->last_mcycle)*1000000)/RISCV_CLOCK_FREQ;
+        // Figure out how much time has passed in microseconds
+        auto now_time = clock_source::now();
+        int64_t has = std::chrono::duration_cast<std::chrono::microseconds>(now_time - wc->last_time).count();
+        // If we are moving too fast, sleep until wallclock catches up
+        if (should > has) {
+            std::this_thread::sleep_for(std::chrono::microseconds(should-has));
+        }
+    }
+}
+
 static bool htif_read(i_device_state_access *a, void *opaque, uint64_t offset, uint64_t *pval, int size_log2) {
     (void) opaque;
 
@@ -249,7 +295,7 @@ static bool htif_read(i_device_state_access *a, void *opaque, uint64_t offset, u
 }
 
 static void htif_poll_stdin(RISCVMachine *m) {
-    HTIFConsole *con = m->htif_console;
+    auto *con = get_console(m);
     processor_state *p = m->processor;
 
     //??D We do not need to register any access to state here because
@@ -259,7 +305,6 @@ static void htif_poll_stdin(RISCVMachine *m) {
     if (con && con->getchar_pending) {
         uint64_t mcycle = processor_read_mcycle(p);
         // If we don't have any characters left in buffer, try to obtain more
-        // Do this only every HTIF_CONSOLE_FREQ_DIV cycles
         if (con->buf_pos >= con->buf_len && con->previous_mcycle + HTIF_CONSOLE_FREQ_DIV <= mcycle) {
             con->previous_mcycle = mcycle;
             fd_set rfds, wfds, efds;
@@ -271,8 +316,7 @@ static void htif_poll_stdin(RISCVMachine *m) {
             fd_max = 0;
             FD_SET(0, &rfds);
             tv.tv_sec = 0;
-            // If CPU is waiting for interrupts, we can wait a bit more
-            tv.tv_usec = processor_read_iflags_I(p)? 1000: 0;
+            tv.tv_usec = 0;
             ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
             if (ret > 0 && FD_ISSET(0, &rfds)) {
                 con->buf_pos = 0;
@@ -294,9 +338,11 @@ static void htif_poll_stdin(RISCVMachine *m) {
 
 static bool htif_getchar(i_device_state_access *a, RISCVMachine *m, uint64_t payload) {
     (void) a; (void) payload;
-    HTIFConsole *con = m->htif_console;
-    con->getchar_pending = true;
-    htif_poll_stdin(m);
+    HTIFConsole *con = get_console(m);
+    if (con) {
+        con->getchar_pending = true;
+        htif_poll_stdin(m);
+    }
     return true;
 }
 
@@ -641,9 +687,9 @@ static void set_nonblocking(int fd) {
     fcntl(fd, F_SETFL, flags);
 }
 
-static HTIFConsole *htif_console_init(void) {
+static void htif_console_init(HTIFConsole *con) {
+    memset(con, 0, sizeof(*con));
     struct termios tty;
-    HTIFConsole *con = reinterpret_cast<HTIFConsole *>(calloc(1, sizeof(*con)));
     memset(&tty, 0, sizeof(tty));
     tcgetattr (0, &tty);
     con->oldtty = tty;
@@ -658,14 +704,38 @@ static HTIFConsole *htif_console_init(void) {
     tty.c_cc[VTIME] = 0;
     tcsetattr (0, TCSANOW, &tty);
     set_nonblocking(0);
-    return con;
 }
 
 static void htif_console_end(HTIFConsole *con) {
     tcsetattr (0, TCSANOW, &con->oldtty);
     fcntl(0, F_SETFL, con->old_fd0_flags);
     set_blocking(0);
-    free(con);
+}
+
+static void wallclock_init(Wallclock *wc) {
+    wc->last_time = clock_source::now();
+    wc->last_mcycle = 0;
+}
+
+static void wallclock_end(Wallclock *wc) {
+    (void) wc;
+}
+
+static interactive_state *interactive_init(void) {
+    interactive_state *i = reinterpret_cast<interactive_state *>(calloc(1, sizeof(interactive_state)));
+    if (i) {
+        htif_console_init(&i->console);
+        wallclock_init(&i->wallclock);
+    }
+    return i;
+}
+
+static void interactive_end(interactive_state *i) {
+    if (i) {
+        htif_console_end(&i->console);
+        wallclock_end(&i->wallclock);
+        free(i);
+    }
 }
 
 VirtMachine *virt_machine_init(const VirtMachineParams *p)
@@ -710,7 +780,7 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
     init_ram_and_rom(p, m);
 
     if (p->interactive) {
-        m->htif_console = htif_console_init();
+        m->interactive = interactive_init();
     }
 
     return (VirtMachine *)m;
@@ -719,9 +789,7 @@ VirtMachine *virt_machine_init(const VirtMachineParams *p)
 void virt_machine_end(VirtMachine *v)
 {
     RISCVMachine *m = (RISCVMachine *)v;
-    if (m->htif_console) {
-        htif_console_end(m->htif_console);
-    }
+    interactive_end(m->interactive);
     processor_end(m->processor);
     phys_mem_map_end(m->mem_map);
     free(m);
@@ -741,7 +809,6 @@ const char *virt_machine_get_name(void)
 {
     return "riscv64";
 }
-
 
 int virt_machine_run(VirtMachine *v, uint64_t mcycle_end)
 {
@@ -789,5 +856,8 @@ int virt_machine_run(VirtMachine *v, uint64_t mcycle_end)
         // Check if there is user input from stdin
         // This is not used within the blockchain
         htif_poll_stdin(m);
+
+        // Adjust wall clock time with real time if it is behind
+        wallclock_adjust(m);
     }
 }

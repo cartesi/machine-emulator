@@ -51,8 +51,12 @@ DEFS+=-DDUMP_INSN
 #DEFS+=-DDUMP_EXCEPTIONS
 endif
 
+ifeq ($(wallclock),yes)
+DEFS+=-DWALLCLOCK
+endif
+
 CFLAGS=$(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(GCFLAGS)
-CXXFLAGS=-std=c++14 $(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(GCFLAGS)
+CXXFLAGS=$(WARNS) -Ofast -std=c++14 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(GCFLAGS)
 
 ALL=emu.so
 
@@ -82,14 +86,13 @@ generate: CXXFLAGS += -fprofile-generate
 generate: SOLDFLAGS += -fprofile-generate
 
 generate: emu.so
-	lua run.lua --boot-image=kernel.bin --root-backing=rv64ima.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 1500"
+	lua run.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
 
 use: CFLAGS += -fprofile-use
 use: CXXFLAGS += -fprofile-use
 use: SOLDFLAGS += -fprofile-use
 
 use: emu.so
-	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<

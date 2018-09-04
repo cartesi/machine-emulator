@@ -1,12 +1,40 @@
 #ifndef I_STATE_ACCESS_H
 #define I_STATE_ACCESS_H
 
-template <typename DERIVED> class i_state_access {
+/// \file
+/// \brief State access interface
 
+#include <cstdint>
+
+#include "meta.h"
+
+/// \class i_state_access
+/// \details The final "step" function must log all read and write accesses to the state.
+/// The "run" function does not need a log, and must be as fast as possible.
+/// Both functions share the exact same implementation of what it means to advance the machine state by one cycle.
+/// In this common implementation, all state accesses go through a class that implements the i_state_access interface.
+/// When looging is needed, a logged_state_access class is used.
+/// When no logging is needed, a state_access class is used.
+//
+/// In a typical design, i_state_access would be pure virtual.
+/// For speed, we avoid virtual methods and instead use templates.
+/// State access classes inherit from i_state_access, and declare it as friend.
+/// They then implement all private do_* methods.
+/// Clients call the methods without the do_ prefix, which are inherited from the i_state_access
+/// interface and simply forward the call to the methods with do_ prefix implemented by the derived class.
+/// This is a form of "static polymorphism" that incurs no runtime cost
+///
+/// Methods are provided to read and write each state component.
+///
+/// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
+template <typename DERIVED> class i_state_access { // CRTP
+
+    /// \brief Returns object cast as the derived class
     DERIVED &derived(void) {
         return *static_cast<DERIVED *>(this);
     }
 
+    /// \brief Returns object cast as the derived class
     const DERIVED &derived(void) const {
         return *static_cast<const DERIVED *>(this);
     }
@@ -209,8 +237,20 @@ public:
         return derived().do_set_iflags_H(s);
     }
 
+    bool read_iflags_H(processor_state *s) {
+        return derived().do_read_iflags_H(s);
+    }
+
     void reset_iflags_I(processor_state *s) {
         return derived().do_reset_iflags_I(s);
+    }
+
+    bool read_iflags_I(processor_state *s) {
+        return derived().do_read_iflags_I(s);
+    }
+
+    uint8_t read_iflags_PRV(processor_state *s) {
+        return derived().do_read_iflags_PRV(s);
     }
 
 	uint64_t read_mtimecmp(processor_state *s) {
@@ -238,5 +278,14 @@ public:
 	}
 
 };
+
+/// \brief SFINAE test implementation of the i_state_access interface
+template <typename DERIVED>
+using is_an_i_state_access = std::integral_constant<
+    bool,
+    is_template_base_of<
+        i_state_access,
+        typename remove_cvref<DERIVED>::type
+    >::value>;
 
 #endif

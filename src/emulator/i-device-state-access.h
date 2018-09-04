@@ -1,9 +1,19 @@
 #ifndef I_DEVICE_STATE_ACCESS
 #define I_DEVICE_STATE_ACCESS
 
-// Provides a virtual interface for devices to access the machine state
-// while unaware of the underlying state access method
+/// \file
+/// \brief Device state access interface
 
+/// \class i_device_state_access
+/// \details Memory mapped devices must be able to modify the state.
+/// However, the prototype for the read/write callbacks
+/// cannot change depending on the different classes implementing the
+/// i_state_access interface (which is not virtual).
+///
+/// Since device access to state is not time critical, the i_device_state_access
+/// interace uses virtual methods.
+/// A template class device_state_access implements this virtual interface on top
+/// of any class that implements the i_state_access.
 class i_device_state_access {
 public:
 

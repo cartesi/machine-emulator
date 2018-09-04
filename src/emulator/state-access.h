@@ -1,22 +1,29 @@
 #ifndef STATE_ACCESS_H
 #define STATE_ACCESS_H
 
+/// \file
+/// \brief Fast state access implementation
+
 #include <cassert>
 
 #include "i-state-access.h"
 #include "processor-state.h"
 
+/// \class state_access
+/// \details The state_access class implements fast, direct
+/// access to the machine state. No logs are kept.
 class state_access: public i_state_access<state_access> {
 private:
+    // Declare interface as friend to it can forward calls to the "overriden" methods.
     friend i_state_access<state_access>;
+
+    uint64_t do_read_register(processor_state *s, uint32_t reg) {
+        return s->reg[reg];
+    }
 
     void do_write_register(processor_state *s, uint32_t reg, uint64_t val) {
         assert(reg != 0);
         s->reg[reg] = val;
-    }
-
-    uint64_t do_read_register(processor_state *s, uint32_t reg) {
-        return s->reg[reg];
     }
 
     uint64_t do_read_pc(processor_state *s) {
@@ -207,8 +214,20 @@ private:
         s->iflags_H = true;
     }
 
+    bool do_read_iflags_H(processor_state *s) {
+        return s->iflags_H;
+    }
+
     void do_reset_iflags_I(processor_state *s) {
         s->iflags_H = false;
+    }
+
+    bool do_read_iflags_I(processor_state *s) {
+        return s->iflags_I;
+    }
+
+    uint8_t do_read_iflags_PRV(processor_state *s) {
+        return s->iflags_PRV;
     }
 
     uint64_t do_read_mtimecmp(processor_state *s) {

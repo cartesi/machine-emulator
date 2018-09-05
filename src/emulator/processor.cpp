@@ -540,18 +540,18 @@ static inline uint32_t csr_priv(CSR_address csr) {
     return (static_cast<uint32_t>(csr) >> 8) & 3;
 }
 
-static void set_priv(processor_state *s, int priv)
+template <typename STATE_ACCESS>
+static void set_priv(STATE_ACCESS &a, processor_state *s, int previous_priv, int new_priv)
 {
-    if (s->iflags_PRV != priv) {
+    if (previous_priv != new_priv) {
         tlb_flush_all(s);
-        s->iflags_PRV = priv;
-        s->ilrsc = 0;
+        a.write_iflags_PRV(s, new_priv);
+        a.write_ilrsc(s, 0);
     }
 }
 
-static void raise_exception(processor_state *s, uint64_t cause,
-    uint64_t tval)
-{
+template <typename STATE_ACCESS>
+static void raise_exception(STATE_ACCESS &a, processor_state *s, uint64_t cause, uint64_t tval) {
 #if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS)
     {
         int flag;
@@ -585,28 +585,28 @@ static void raise_exception(processor_state *s, uint64_t cause,
     // Check if exception should be delegated to supervisor privilege
     // For each interrupt or exception number, there is a bit at mideleg
     // or medeleg saying if it should be delegated
-    bool deleg;
-    if (s->iflags_PRV <= PRV_S) {
-        if (cause & CAUSE_INTERRUPT)
+    bool deleg = false;
+    int priv = a.read_iflags_PRV(s);
+    if (priv <= PRV_S) {
+        if (cause & CAUSE_INTERRUPT) {
             // Clear the CAUSE_INTERRUPT bit before shifting
-            deleg = (s->mideleg >> (cause & (XLEN - 1))) & 1;
-        else
-            deleg = (s->medeleg >> cause) & 1;
-    } else {
-        deleg = 0;
+            deleg = (a.read_mideleg(s) >> (cause & (XLEN - 1))) & 1;
+        } else {
+            deleg = (a.read_medeleg(s) >> cause) & 1;
+        }
     }
 
     if (deleg) {
-        s->scause = cause;
-        s->sepc = s->pc;
-        s->stval = tval;
-        s->mstatus = (s->mstatus & ~MSTATUS_SPIE) |
-            (((s->mstatus >> s->iflags_PRV) & 1) << MSTATUS_SPIE_SHIFT);
-        s->mstatus = (s->mstatus & ~MSTATUS_SPP) |
-            (s->iflags_PRV << MSTATUS_SPP_SHIFT);
-        s->mstatus &= ~MSTATUS_SIE;
-        set_priv(s, PRV_S);
-        s->pc = s->stvec;
+        a.write_scause(s, cause);
+        a.write_sepc(s, a.read_pc(s));
+        a.write_stval(s, tval);
+        uint64_t mstatus = a.read_mstatus(s);
+        mstatus = (mstatus & ~MSTATUS_SPIE) | (((mstatus >> priv) & 1) << MSTATUS_SPIE_SHIFT);
+        mstatus = (mstatus & ~MSTATUS_SPP) | (priv << MSTATUS_SPP_SHIFT);
+        mstatus &= ~MSTATUS_SIE;
+        a.write_mstatus(s, mstatus);
+        set_priv(a, s, priv, PRV_S);
+        a.write_pc(s, a.read_stvec(s));
 #ifdef DUMP_COUNTERS
         if (cause & CAUSE_INTERRUPT) {
             s->count_si++;
@@ -617,16 +617,16 @@ static void raise_exception(processor_state *s, uint64_t cause,
         }
 #endif
     } else {
-        s->mcause = cause;
-        s->mepc = s->pc;
-        s->mtval = tval;
-        s->mstatus = (s->mstatus & ~MSTATUS_MPIE) |
-            (((s->mstatus >> s->iflags_PRV) & 1) << MSTATUS_MPIE_SHIFT);
-        s->mstatus = (s->mstatus & ~MSTATUS_MPP) |
-            (s->iflags_PRV << MSTATUS_MPP_SHIFT);
-        s->mstatus &= ~MSTATUS_MIE;
-        set_priv(s, PRV_M);
-        s->pc = s->mtvec;
+        a.write_mcause(s, cause);
+        a.write_mepc(s, a.read_pc(s));
+        a.write_mtval(s, tval);
+        uint64_t mstatus = a.read_mstatus(s);
+        mstatus = (mstatus & ~MSTATUS_MPIE) | (((mstatus >> priv) & 1) << MSTATUS_MPIE_SHIFT);
+        mstatus = (mstatus & ~MSTATUS_MPP) | (priv << MSTATUS_MPP_SHIFT);
+        mstatus &= ~MSTATUS_MIE;
+        a.write_mstatus(s, mstatus);
+        set_priv(a, s, priv, PRV_M);
+        a.write_pc(s, a.read_mtvec(s));
 #ifdef DUMP_COUNTERS
         if (cause & CAUSE_INTERRUPT) {
             s->count_mi++;
@@ -688,7 +688,7 @@ static void raise_interrupt_if_any(STATE_ACCESS &a, processor_state *s) {
     uint32_t mask = get_pending_irq_mask(a, s);
     if (mask != 0) {
         uint64_t irq_num = ilog2(mask);
-        raise_exception(s, irq_num | CAUSE_INTERRUPT, 0);
+        raise_exception(a, s, irq_num | CAUSE_INTERRUPT, 0);
     }
 }
 
@@ -982,19 +982,19 @@ static bool read_memory_slow(STATE_ACCESS &a, processor_state *s, uint64_t addr,
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (addr & (sizeof(T)-1)) {
-        raise_exception(s, CAUSE_LOAD_ADDRESS_MISALIGNED, addr);
+        raise_exception(a, s, CAUSE_LOAD_ADDRESS_MISALIGNED, addr);
         return false;
     // Deal with aligned accesses
     } else {
         uint64_t paddr;
         if (get_phys_addr(s, &paddr, addr, PTE_XWR_READ_SHIFT)) {
-            raise_exception(s, CAUSE_LOAD_PAGE_FAULT, addr);
+            raise_exception(a, s, CAUSE_LOAD_PAGE_FAULT, addr);
             return false;
         }
         PhysMemoryRange *pr = get_phys_mem_range(s->mem_map, paddr);
         if (!pr) {
             // If we do not have the range in our map, we treat this as a PMA violation
-            raise_exception(s, CAUSE_LOAD_FAULT, addr);
+            raise_exception(a, s, CAUSE_LOAD_FAULT, addr);
             return false;
         } else if (pr->is_ram) {
             int tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
@@ -1009,7 +1009,7 @@ static bool read_memory_slow(STATE_ACCESS &a, processor_state *s, uint64_t addr,
             device_state_access<STATE_ACCESS> da(a, s);
             // If we do not know how to read, we treat this as a PMA violation
             if (!pr->read_func(&da, pr->opaque, offset, &val, size_log2<U>())) {
-                raise_exception(s, CAUSE_LOAD_FAULT, addr);
+                raise_exception(a, s, CAUSE_LOAD_FAULT, addr);
                 return false;
             }
             *pval = static_cast<T>(val);
@@ -1026,19 +1026,19 @@ static bool write_memory_slow(STATE_ACCESS &a, processor_state *s, uint64_t addr
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (addr & (sizeof(T)-1)) {
-        raise_exception(s, CAUSE_STORE_AMO_ADDRESS_MISALIGNED, addr);
+        raise_exception(a, s, CAUSE_STORE_AMO_ADDRESS_MISALIGNED, addr);
         return false;
     // Deal with aligned accesses
     } else {
         uint64_t paddr, offset;
         if (get_phys_addr(s, &paddr, addr, PTE_XWR_WRITE_SHIFT)) {
-            raise_exception(s, CAUSE_STORE_AMO_PAGE_FAULT, addr);
+            raise_exception(a, s, CAUSE_STORE_AMO_PAGE_FAULT, addr);
             return false;
         }
         PhysMemoryRange *pr = get_phys_mem_range(s->mem_map, paddr);
         if (!pr) {
             // If we do not have the range in our map, we treat this as a PMA violation
-            raise_exception(s, CAUSE_STORE_AMO_FAULT, addr);
+            raise_exception(a, s, CAUSE_STORE_AMO_FAULT, addr);
             return false;
         } else if (pr->is_ram) {
             int tlb_idx = (addr >> PG_SHIFT) & (TLB_SIZE - 1);
@@ -1052,7 +1052,7 @@ static bool write_memory_slow(STATE_ACCESS &a, processor_state *s, uint64_t addr
             offset = paddr - pr->addr;
             // If we do not know how to write, we treat this as a PMA violation
             if (!pr->write_func(&da, pr->opaque, offset, val, size_log2<U>())) {
-                raise_exception(s, CAUSE_STORE_AMO_FAULT, addr);
+                raise_exception(a, s, CAUSE_STORE_AMO_FAULT, addr);
                 return false;
             }
             return true;
@@ -1101,14 +1101,14 @@ static void dump_insn(processor_state *s, uint64_t pc, uint32_t insn, const char
 template <typename STATE_ACCESS>
 static inline execute_status execute_illegal_insn_exception(STATE_ACCESS &a, processor_state *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) pc;
-    raise_exception(s, CAUSE_ILLEGAL_INSTRUCTION, insn);
+    raise_exception(a, s, CAUSE_ILLEGAL_INSTRUCTION, insn);
     return execute_status::illegal;
 }
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_misaligned_fetch_exception(STATE_ACCESS &a, processor_state *s, uint64_t pc) {
     (void) a;
-    raise_exception(s, CAUSE_MISALIGNED_FETCH, pc);
+    raise_exception(a, s, CAUSE_MISALIGNED_FETCH, pc);
     return execute_status::retired;
 }
 
@@ -2087,7 +2087,7 @@ static inline execute_status execute_ECALL(STATE_ACCESS &a, processor_state *s, 
     (void) a;
     dump_insn(s, pc, insn, "ECALL");
     //??D Need another version of raise_exception that does not modify mtval
-    raise_exception(s, CAUSE_ECALL_BASE + s->iflags_PRV, s->mtval);
+    raise_exception(a, s, CAUSE_ECALL_BASE + s->iflags_PRV, s->mtval);
     return execute_status::retired;
 }
 
@@ -2096,7 +2096,7 @@ static inline execute_status execute_EBREAK(STATE_ACCESS &a, processor_state *s,
     (void) a;
     dump_insn(s, pc, insn, "EBREAK");
     //??D Need another version of raise_exception that does not modify mtval
-    raise_exception(s, CAUSE_BREAKPOINT, s->mtval);
+    raise_exception(a, s, CAUSE_BREAKPOINT, s->mtval);
     return execute_status::retired;
 }
 
@@ -2109,20 +2109,22 @@ static inline execute_status execute_URET(STATE_ACCESS &a, processor_state *s, u
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRET(STATE_ACCESS &a, processor_state *s, uint64_t pc, uint32_t insn) {
     dump_insn(s, pc, insn, "SRET");
-    if (s->iflags_PRV < PRV_S || (s->iflags_PRV == PRV_S && (s->mstatus & MSTATUS_TSR))) {
+    int priv = a.read_iflags_PRV(s);
+    uint64_t mstatus = a.read_mstatus(s);
+    if (priv < PRV_S || (priv == PRV_S && (mstatus & MSTATUS_TSR))) {
         return execute_illegal_insn_exception(a, s, pc, insn);
     } else {
-        int spp = (s->mstatus >> MSTATUS_SPP_SHIFT) & 1;
+        int spp = (mstatus >> MSTATUS_SPP_SHIFT) & 1;
         /* set the IE state to previous IE state */
-        int spie = (s->mstatus >> MSTATUS_SPIE_SHIFT) & 1;
-        s->mstatus = (s->mstatus & ~(1 << MSTATUS_SIE_SHIFT)) |
-            (spie << MSTATUS_SIE_SHIFT);
+        int spie = (mstatus >> MSTATUS_SPIE_SHIFT) & 1;
+        mstatus = (mstatus & ~(1 << MSTATUS_SIE_SHIFT)) | (spie << MSTATUS_SIE_SHIFT);
         /* set SPIE to 1 */
-        s->mstatus |= MSTATUS_SPIE;
+        mstatus |= MSTATUS_SPIE;
         /* set SPP to U */
-        s->mstatus &= ~MSTATUS_SPP;
-        set_priv(s, spp);
-        s->pc = s->sepc;
+        mstatus &= ~MSTATUS_SPP;
+        a.write_mstatus(s, mstatus);
+        set_priv(a, s, priv, spp);
+        a.write_pc(s, a.read_sepc(s));
         // s->brk = true; // overkill
         return execute_status::retired;
     }
@@ -2131,20 +2133,22 @@ static inline execute_status execute_SRET(STATE_ACCESS &a, processor_state *s, u
 template <typename STATE_ACCESS>
 static inline execute_status execute_MRET(STATE_ACCESS &a, processor_state *s, uint64_t pc, uint32_t insn) {
     dump_insn(s, pc, insn, "MRET");
-    if (s->iflags_PRV < PRV_M) {
+    int priv = a.read_iflags_PRV(s);
+    if (priv < PRV_M) {
         return execute_illegal_insn_exception(a, s, pc, insn);
     } else {
-        int mpp = (s->mstatus >> MSTATUS_MPP_SHIFT) & 3;
+        uint64_t mstatus = a.read_mstatus(s);
+        int mpp = (mstatus >> MSTATUS_MPP_SHIFT) & 3;
         /* set the IE state to previous IE state */
-        int mpie = (s->mstatus >> MSTATUS_MPIE_SHIFT) & 1;
-        s->mstatus = (s->mstatus & ~(1 << MSTATUS_MIE_SHIFT)) |
-            (mpie << MSTATUS_MIE_SHIFT);
+        int mpie = (mstatus >> MSTATUS_MPIE_SHIFT) & 1;
+        mstatus = (mstatus & ~(1 << MSTATUS_MIE_SHIFT)) | (mpie << MSTATUS_MIE_SHIFT);
         /* set MPIE to 1 */
-        s->mstatus |= MSTATUS_MPIE;
+        mstatus |= MSTATUS_MPIE;
         /* set MPP to U */
-        s->mstatus &= ~MSTATUS_MPP;
-        set_priv(s, mpp);
-        s->pc = s->mepc;
+        mstatus &= ~MSTATUS_MPP;
+        a.write_mstatus(s, mstatus);
+        set_priv(a, s, priv, mpp);
+        a.write_pc(s, a.read_mepc(s));
         // s->brk = true; // overkill
         return execute_status::retired;
     }
@@ -3075,7 +3079,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, processor_state *s, uint64_t *pc
         uint64_t paddr;
         // Walk page table and obtain the physical address
         if (get_phys_addr(s, &paddr, vaddr, PTE_XWR_CODE_SHIFT)) {
-            raise_exception(s, CAUSE_FETCH_PAGE_FAULT, vaddr);
+            raise_exception(a, s, CAUSE_FETCH_PAGE_FAULT, vaddr);
             return fetch_status::exception;
         }
         // Walk memory map to find the range that contains the physical address
@@ -3083,7 +3087,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, processor_state *s, uint64_t *pc
         // We only execute directly from RAM (as in "random access memory", which includes ROM)
         // If we are not in RAM or if we are not in any range, we treat this as a PMA violation
         if (!pr || !pr->is_ram) {
-            raise_exception(s, CAUSE_FETCH_FAULT, vaddr);
+            raise_exception(a, s, CAUSE_FETCH_FAULT, vaddr);
             return fetch_status::exception;
         }
         // Update TLB with the new mapping between virtual and physical
@@ -3128,7 +3132,8 @@ interpreter_status interpret(STATE_ACCESS &a, processor_state *s, uint64_t mcycl
     }
 
     // If we reached the target mcycle, we are done
-    if (a.read_mcycle(s) >= mcycle_end) {
+    // This is not necessary in the blockchain
+    if (s->mcycle >= mcycle_end) {
         return interpreter_status::success;
     }
 

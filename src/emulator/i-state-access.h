@@ -253,6 +253,10 @@ public:
         return derived().do_read_iflags_PRV(s);
     }
 
+    void write_iflags_PRV(processor_state *s, uint8_t val) {
+        return derived().do_write_iflags_PRV(s, val);
+    }
+
 	uint64_t read_mtimecmp(processor_state *s) {
 		return derived().do_read_mtimecmp(s);
 	}

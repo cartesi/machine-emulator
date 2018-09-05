@@ -28,8 +28,6 @@
 #include <cstring>
 #include <ctime>
 #include <algorithm>
-#include <chrono>
-#include <thread>
 
 #include <signal.h>
 #include <fcntl.h>
@@ -71,16 +69,8 @@ typedef struct {
     bool fromhost_cleared;
 } HTIFConsole;
 
-using clock_source = std::chrono::system_clock;
-
-typedef struct {
-    std::chrono::time_point<clock_source> last_time;
-    uint64_t last_mcycle;
-} Wallclock;
-
 typedef struct {
     HTIFConsole console;
-    Wallclock wallclock;
     int divisor_counter;
 } interactive_state;
 
@@ -97,14 +87,6 @@ HTIFConsole *get_console(RISCVMachine *m) {
     }
     return nullptr;
 }
-
-Wallclock *get_wallclock(RISCVMachine *m) {
-    if (m->interactive) {
-        return &m->interactive->wallclock;
-    }
-    return nullptr;
-}
-
 
 /* return -1 if error. */
 static uint64_t load_file(uint8_t **pbuf, const char *filename)
@@ -246,36 +228,14 @@ void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx) {
 
 void virt_machine_free_config(VirtMachineParams *p)
 {
-    int i;
     free(p->cmdline);
     free(p->ram_image.filename);
     free(p->ram_image.buf);
     free(p->rom_image.filename);
     free(p->rom_image.buf);
-    for(i = 0; i < p->flash_count; i++) {
+    for (int i = 0; i < p->flash_count; i++) {
         free(p->tab_flash[i].backing);
         free(p->tab_flash[i].label);
-    }
-}
-
-static void wallclock_adjust(RISCVMachine *m) {
-    Wallclock *wc = get_wallclock(m);
-
-    //??D We do not need to register any access to state here because
-    //    wallclock is always disabled during verifiable execution
-
-    if (wc) {
-        // Figure out how much time should have passed in microseconds
-        int64_t now_mcycle = processor_read_mcycle(m->processor);
-        int64_t should = ((now_mcycle - wc->last_mcycle)*1000000)/RISCV_CLOCK_FREQ;
-        // Figure out how much time has passed in microseconds
-        auto now_time = clock_source::now();
-        int64_t has = std::chrono::duration_cast<std::chrono::microseconds>(now_time - wc->last_time).count();
-        int64_t adj = should-has;
-        // If we are moving too fast, sleep until wallclock catches up
-        if (adj > 0) {
-            std::this_thread::sleep_for(std::chrono::microseconds(adj));
-        }
     }
 }
 
@@ -338,13 +298,14 @@ static bool htif_read(i_device_state_access *a, void *opaque, uint64_t offset, u
 static bool htif_getchar(i_device_state_access *a, RISCVMachine *m, uint64_t payload) {
     //??D Not sure exactly what role this command plays
     (void) m; (void) payload;
-    a->write_tohost(0);
+    a->write_tohost(0); // Acknowledge command
+    // a->write_fromhost(((uint64_t)1 << 56) | ((uint64_t)1 << 48));
     return true;
 }
 
 static bool htif_putchar(i_device_state_access *a, RISCVMachine *m, uint64_t payload) {
     (void) m;
-    a->write_tohost(0);
+    a->write_tohost(0); // Acknowledge command
     uint8_t ch = payload & 0xff;
     if (write(1, &ch, 1) < 1) { ; }
     a->write_fromhost(((uint64_t)1 << 56) | ((uint64_t)1 << 48));
@@ -353,8 +314,8 @@ static bool htif_putchar(i_device_state_access *a, RISCVMachine *m, uint64_t pay
 
 static bool htif_halt(i_device_state_access *a, RISCVMachine *m, uint64_t payload) {
     (void) m; (void) payload;
-    a->write_tohost(0);
     a->set_iflags_H();
+    // Leave tohost value alone so the payload can be read afterwards
     return true;
 }
 
@@ -364,8 +325,7 @@ static bool htif_write_tohost(i_device_state_access *a, RISCVMachine *m, uint64_
     uint32_t cmd = (tohost >> 48) & 0xff;
     uint64_t payload = (tohost & (~1ULL >> 16));
     // Log write to tohost
-    a->write_tohost(tohost); //??D We may be able to remove this write
-    // Immediately clear tohost to signal we received the value
+    a->write_tohost(tohost);
     // Handle commands
     if (device == 0 && cmd == 0 && (payload & 1)) {
         return htif_halt(a, m, payload);
@@ -378,18 +338,13 @@ static bool htif_write_tohost(i_device_state_access *a, RISCVMachine *m, uint64_
     return true;
 }
 
-static void htif_console_advance(RISCVMachine *m) {
-    HTIFConsole *con = get_console(m);
-    // When fromhost is set to zero, we are free to write a new value
+static bool htif_write_fromhost(i_device_state_access *a, RISCVMachine *m, uint64_t val) {
+    a->write_fromhost(val);
+    auto con = get_console(m);
     if (con) {
         con->fromhost_cleared = true;
         htif_console_poll(m);
     }
-}
-
-static bool htif_write_fromhost(i_device_state_access *a, RISCVMachine *m, uint64_t val) {
-    a->write_fromhost(val);
-    if (val == 0) htif_console_advance(m);
     return true;
 }
 
@@ -718,20 +673,10 @@ static void htif_console_end(HTIFConsole *con) {
     set_blocking(0);
 }
 
-static void wallclock_init(Wallclock *wc) {
-    wc->last_time = clock_source::now();
-    wc->last_mcycle = 0;
-}
-
-static void wallclock_end(Wallclock *wc) {
-    (void) wc;
-}
-
 static interactive_state *interactive_init(void) {
     interactive_state *i = reinterpret_cast<interactive_state *>(calloc(1, sizeof(interactive_state)));
     if (i) {
         htif_console_init(&i->console);
-        wallclock_init(&i->wallclock);
     }
     return i;
 }
@@ -739,7 +684,6 @@ static interactive_state *interactive_init(void) {
 static void interactive_end(interactive_state *i) {
     if (i) {
         htif_console_end(&i->console);
-        wallclock_end(&i->wallclock);
         free(i);
     }
 }
@@ -863,12 +807,9 @@ int virt_machine_run(VirtMachine *v, uint64_t mcycle_end)
             // Perform interactive actions every 10 divisors
             // This is not used within the blockchain
             if (m->interactive && ++m->interactive->divisor_counter == 10) {
+                m->interactive->divisor_counter = 0;
                 // Check if there is user input from stdin
                 htif_console_poll(m);
-                // Adjust wall clock time with procereal time if it is behind
-                wallclock_adjust(m);
-
-                m->interactive->divisor_counter = 0;
             }
         }
     }

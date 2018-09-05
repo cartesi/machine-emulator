@@ -230,6 +230,10 @@ private:
         return s->iflags_PRV;
     }
 
+    void do_write_iflags_PRV(processor_state *s, uint8_t val) {
+        s->iflags_PRV = val;
+    }
+
     uint64_t do_read_mtimecmp(processor_state *s) {
 		return s->mtimecmp;
     }

@@ -68,8 +68,7 @@ typedef struct {
     int old_fd0_flags;
     uint8_t buf[HTIF_CONSOLE_BUF_SIZE];
     ssize_t buf_len, buf_pos;
-    uint64_t previous_mcycle;
-    bool getchar_pending;
+    bool fromhost_cleared;
 } HTIFConsole;
 
 using clock_source = std::chrono::system_clock;
@@ -82,6 +81,7 @@ typedef struct {
 typedef struct {
     HTIFConsole console;
     Wallclock wallclock;
+    int divisor_counter;
 } interactive_state;
 
 typedef struct RISCVMachine {
@@ -260,6 +260,10 @@ void virt_machine_free_config(VirtMachineParams *p)
 
 static void wallclock_adjust(RISCVMachine *m) {
     Wallclock *wc = get_wallclock(m);
+
+    //??D We do not need to register any access to state here because
+    //    wallclock is always disabled during verifiable execution
+
     if (wc) {
         // Figure out how much time should have passed in microseconds
         int64_t now_mcycle = processor_read_mcycle(m->processor);
@@ -267,9 +271,46 @@ static void wallclock_adjust(RISCVMachine *m) {
         // Figure out how much time has passed in microseconds
         auto now_time = clock_source::now();
         int64_t has = std::chrono::duration_cast<std::chrono::microseconds>(now_time - wc->last_time).count();
+        int64_t adj = should-has;
         // If we are moving too fast, sleep until wallclock catches up
-        if (should > has) {
-            std::this_thread::sleep_for(std::chrono::microseconds(should-has));
+        if (adj > 0) {
+            std::this_thread::sleep_for(std::chrono::microseconds(adj));
+        }
+    }
+}
+
+static void htif_console_poll(RISCVMachine *m) {
+    auto *con = get_console(m);
+
+    //??D We do not need to register any access to state here because
+    //    the console is always disabled during verifiable execution
+
+    // Check for input from console, if requested by HTIF
+    if (con && con->fromhost_cleared) {
+        // If we don't have any characters left in buffer, try to obtain more
+        if (con->buf_pos >= con->buf_len) {
+            fd_set rfds;
+            int fd_max;
+            struct timeval tv;
+            FD_ZERO(&rfds);
+            FD_SET(0, &rfds);
+            fd_max = 0;
+            tv.tv_sec = 0;
+            tv.tv_usec = 0;
+            if (select(fd_max+1, &rfds, nullptr, nullptr, &tv) > 0 && FD_ISSET(0, &rfds)) {
+                con->buf_pos = 0;
+                con->buf_len = read(0, con->buf, HTIF_CONSOLE_BUF_SIZE);
+                // If stdin is closed, pass EOF to client
+                if (con->buf_len <= 0) {
+                    con->buf_len = 1;
+                    con->buf[0] = 4; // CTRL+D
+                }
+            }
+        }
+        // If we have data to return
+        if (con->buf_pos < con->buf_len) {
+            processor_write_fromhost(m->processor, ((uint64_t)1 << 56) | ((uint64_t)0 << 48) | con->buf[con->buf_pos++]);
+            con->fromhost_cleared = false;
         }
     }
 }
@@ -284,7 +325,7 @@ static bool htif_read(i_device_state_access *a, void *opaque, uint64_t offset, u
         case 0: // tohost
             *pval = a->read_tohost();
             return true;
-        case 8: // from host
+        case 8: // fromhost
             *pval = a->read_fromhost();
             return true;
         default:
@@ -294,60 +335,16 @@ static bool htif_read(i_device_state_access *a, void *opaque, uint64_t offset, u
     }
 }
 
-static void htif_poll_stdin(RISCVMachine *m) {
-    auto *con = get_console(m);
-    processor_state *p = m->processor;
-
-    //??D We do not need to register any access to state here because
-    //    the console is always disabled during verifiable execution
-
-    // Check for input from console, if requested by HTIF
-    if (con && con->getchar_pending) {
-        uint64_t mcycle = processor_read_mcycle(p);
-        // If we don't have any characters left in buffer, try to obtain more
-        if (con->buf_pos >= con->buf_len && con->previous_mcycle + HTIF_CONSOLE_FREQ_DIV <= mcycle) {
-            con->previous_mcycle = mcycle;
-            fd_set rfds, wfds, efds;
-            int fd_max, ret;
-            struct timeval tv;
-            FD_ZERO(&rfds);
-            FD_ZERO(&wfds);
-            FD_ZERO(&efds);
-            fd_max = 0;
-            FD_SET(0, &rfds);
-            tv.tv_sec = 0;
-            tv.tv_usec = 0;
-            ret = select(fd_max + 1, &rfds, &wfds, &efds, &tv);
-            if (ret > 0 && FD_ISSET(0, &rfds)) {
-                con->buf_pos = 0;
-                con->buf_len = read(0, con->buf, HTIF_CONSOLE_BUF_SIZE);
-                // If stdin is closed, pass EOF to client
-                if (con->buf_len <= 0) {
-                    con->buf_len = 1;
-                    con->buf[0] = 4; // CTRL+D
-                }
-            }
-        }
-        // If we have data to return
-        if (con->buf_pos < con->buf_len) {
-            processor_write_fromhost(p, ((uint64_t)1 << 56) | ((uint64_t)0 << 48) | con->buf[con->buf_pos++]);
-            con->getchar_pending = false;
-        }
-    }
-}
-
 static bool htif_getchar(i_device_state_access *a, RISCVMachine *m, uint64_t payload) {
-    (void) a; (void) payload;
-    HTIFConsole *con = get_console(m);
-    if (con) {
-        con->getchar_pending = true;
-        htif_poll_stdin(m);
-    }
+    //??D Not sure exactly what role this command plays
+    (void) m; (void) payload;
+    a->write_tohost(0);
     return true;
 }
 
 static bool htif_putchar(i_device_state_access *a, RISCVMachine *m, uint64_t payload) {
     (void) m;
+    a->write_tohost(0);
     uint8_t ch = payload & 0xff;
     if (write(1, &ch, 1) < 1) { ; }
     a->write_fromhost(((uint64_t)1 << 56) | ((uint64_t)1 << 48));
@@ -356,6 +353,7 @@ static bool htif_putchar(i_device_state_access *a, RISCVMachine *m, uint64_t pay
 
 static bool htif_halt(i_device_state_access *a, RISCVMachine *m, uint64_t payload) {
     (void) m; (void) payload;
+    a->write_tohost(0);
     a->set_iflags_H();
     return true;
 }
@@ -366,9 +364,8 @@ static bool htif_write_tohost(i_device_state_access *a, RISCVMachine *m, uint64_
     uint32_t cmd = (tohost >> 48) & 0xff;
     uint64_t payload = (tohost & (~1ULL >> 16));
     // Log write to tohost
-    //a->write_tohost(tohost); //??D We may be able to remove this write
+    a->write_tohost(tohost); //??D We may be able to remove this write
     // Immediately clear tohost to signal we received the value
-    a->write_tohost(0);
     // Handle commands
     if (device == 0 && cmd == 0 && (payload & 1)) {
         return htif_halt(a, m, payload);
@@ -381,9 +378,18 @@ static bool htif_write_tohost(i_device_state_access *a, RISCVMachine *m, uint64_
     return true;
 }
 
+static void htif_console_advance(RISCVMachine *m) {
+    HTIFConsole *con = get_console(m);
+    // When fromhost is set to zero, we are free to write a new value
+    if (con) {
+        con->fromhost_cleared = true;
+        htif_console_poll(m);
+    }
+}
+
 static bool htif_write_fromhost(i_device_state_access *a, RISCVMachine *m, uint64_t val) {
-    (void) m;
     a->write_fromhost(val);
+    if (val == 0) htif_console_advance(m);
     return true;
 }
 
@@ -826,8 +832,8 @@ int virt_machine_run(VirtMachine *v, uint64_t mcycle_end)
 
         // Run the emulator inner loop until we reach the next multiple of RISCV_RTC_FREQ_DIV
         uint64_t mcycle = processor_read_mcycle(p);
-        uint64_t next_timecmp_mcycle = mcycle + RISCV_RTC_FREQ_DIV - mcycle % RISCV_RTC_FREQ_DIV;
-        processor_run(p, std::min(next_timecmp_mcycle, mcycle_end));
+        uint64_t next_rtc_freq_div = mcycle + RISCV_RTC_FREQ_DIV - mcycle % RISCV_RTC_FREQ_DIV;
+        processor_run(p, std::min(next_rtc_freq_div, mcycle_end));
 
         // If we hit mcycle_end, we are done
         mcycle = processor_read_mcycle(p);
@@ -835,29 +841,35 @@ int virt_machine_run(VirtMachine *v, uint64_t mcycle_end)
             return 0;
         }
 
-        // If the timer interrupt is not already pending,
-        // check if we should raise a timer interrupt
-        if (!(processor_read_mip(p) & MIP_MTIP)) {
+        // If we managed to run until the next possible frequency divisor
+        if (mcycle == next_rtc_freq_div) {
             // Get the mcycle corresponding to mtimecmp
             uint64_t timecmp_mcycle = processor_rtc_time_to_cycles(processor_read_mtimecmp(p));
-            // If the cpu is waiting for interrupts, we can skip until time hits timecmp
-            // CLINT is the only "external" interrupt source
-            // IPI (inter-processor interrupt) via MSIP can only be raised "internally"
+
+            // If the processor is waiting for interrupts, we can skip until time hits timecmp
+            // CLINT is the only interrupt source external to the inner loop
+            // IPI (inter-processor interrupt) via MSIP can only be raised internally
+            // This is not used within the blockchain
             if (processor_read_iflags_I(p)) {
                 mcycle = std::min(timecmp_mcycle, mcycle_end);
                 processor_write_mcycle(p, mcycle);
             }
+
             // If the timer is expired, raise interrupt
             if (timecmp_mcycle && timecmp_mcycle <= mcycle) {
                 processor_set_mip(p, MIP_MTIP);
             }
+
+            // Perform interactive actions every 10 divisors
+            // This is not used within the blockchain
+            if (m->interactive && ++m->interactive->divisor_counter == 10) {
+                // Check if there is user input from stdin
+                htif_console_poll(m);
+                // Adjust wall clock time with procereal time if it is behind
+                wallclock_adjust(m);
+
+                m->interactive->divisor_counter = 0;
+            }
         }
-
-        // Check if there is user input from stdin
-        // This is not used within the blockchain
-        htif_poll_stdin(m);
-
-        // Adjust wall clock time with real time if it is behind
-        wallclock_adjust(m);
     }
 }

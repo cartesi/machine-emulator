@@ -1,25 +1,48 @@
-#ifndef PROCESSOR_STATE_H
-#define PROCESSOR_STATE_H
+#ifndef STATE_H
+#define STATE_H
 
 #include <cstdint>
 
+#include "i-device-state-access.h"
+
+struct pma_memory {
+    uint8_t *host_memory;      // start of associated memory region in host
+    int backing_file;          // file descryptor for backed memory
+} ;
+
+struct pma_device {
+    void *context;
+    pma_device_read read;
+    pma_device_write write;
+};
+
+// physical memory attribute entry
+struct pma_entry {
+    uint64_t start;        // start of physical memory range
+    uint64_t length;       // end of physical memory range
+    uint32_t type_flags;   // type and flags of range
+    union {
+        pma_memory memory; // memory-specific data
+        pma_device device; // device-specific data
+    }; // anonymous union
+};
+
+#define PMA_SIZE 32
+
+struct tlb_entry {
+    uint64_t vaddr;       // virtual address of page start
+    uintptr_t mem_addend; // value added to translate from virtual to physical addresses in page
+};
+
 #define TLB_SIZE 256
 
-#include "iomem.h"
-
-typedef struct {
-    uint64_t vaddr;
-    uintptr_t mem_addend;
-} tlb_entry;
-
-struct processor_state {
+struct machine_state {
     uint64_t pc;
     uint64_t reg[32];
 
     uint8_t iflags_PRV; // current privilege level
     bool iflags_I;      // CPU is idle (waiting for interrupts)
     bool iflags_H;      // CPU has been permanently halted
-    bool brk;           // Set when the tight loop must be broken
 
     /* CSRs */
     uint64_t minstret;
@@ -52,7 +75,13 @@ struct processor_state {
     uint64_t mtimecmp; // CLINT
     uint64_t tohost, fromhost; // HTIF
 
-    PhysMemoryMap *mem_map;
+    pma_entry physical_memory[PMA_SIZE]; // Physical memory map
+    int pma_count;             // number of entries in map
+
+
+    // Entries below this mark are not needed in the blockchain
+
+    bool brk;           // Set when the tight loop must be broken
 
     tlb_entry tlb_read[TLB_SIZE];
     tlb_entry tlb_write[TLB_SIZE];

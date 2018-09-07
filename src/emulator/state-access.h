@@ -257,6 +257,19 @@ private:
     void do_write_tohost(machine_state *s, uint64_t val) {
         s->tohost = val;
     }
+
+    pma_entry *do_read_pma(machine_state *s, int i) {
+        return &s->physical_memory[i];
+    }
+
+    void do_read_memory(machine_state *s, pma_entry *entry, uint64_t paddr, uint64_t val, int size_log2) {
+        (void) s; (void) entry; (void) paddr; (void) val; (void) size_log2;
+    }
+
+    void do_write_memory(machine_state *s, pma_entry *entry, uint64_t paddr, uint64_t val, int size_log2) {
+        (void) s; (void) entry; (void) paddr; (void) val; (void) size_log2;
+    }
+
 };
 
 #endif

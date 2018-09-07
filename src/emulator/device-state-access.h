@@ -6,7 +6,7 @@
 
 #include <cstdint>
 
-#include "processor.h"
+#include "machine.h"
 
 /// \class device_state_access
 /// \details The device_state_access class implements a
@@ -19,14 +19,14 @@ template <typename STATE_ACCESS>
 class device_state_access: public i_device_state_access {
 public:
 
-    device_state_access(STATE_ACCESS &a, processor_state *s): m_a(a), m_s(s) {
+    device_state_access(STATE_ACCESS &a, machine_state *s): m_a(a), m_s(s) {
         static_assert(is_an_i_state_access<STATE_ACCESS>::value, "not an i_state_access");
     }
 
 private:
 
     STATE_ACCESS &m_a;
-    processor_state *m_s;
+    machine_state *m_s;
 
     void do_set_mip(uint32_t mask) override {
         uint32_t mip = m_a.read_mip(m_s);

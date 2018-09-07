@@ -1,5 +1,5 @@
 /*
- * VM definitions
+ * RISCV CPU emulator
  *
  * Copyright (c) 2016-2017 Fabrice Bellard
  *
@@ -21,54 +21,79 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+
 #ifndef MACHINE_H
 #define MACHINE_H
 
-#include <lua.hpp>
-#include <cstdint>
+#include "i-device-state-access.h"
 
-#define VM_MAX_FLASH_DEVICE 4
+typedef struct machine_state machine_state;
 
-#define VM_CONFIG_VERSION 1
+// Interrupt pending flags for use with set/reset mip
+#define MIP_USIP   (1 << 0)
+#define MIP_SSIP   (1 << 1)
+#define MIP_HSIP   (1 << 2)
+#define MIP_MSIP   (1 << 3)
+#define MIP_UTIP   (1 << 4)
+#define MIP_STIP   (1 << 5)
+#define MIP_HTIP   (1 << 6)
+#define MIP_MTIP   (1 << 7)
+#define MIP_UEIP   (1 << 8)
+#define MIP_SEIP   (1 << 9)
+#define MIP_HEIP   (1 << 10)
+#define MIP_MEIP   (1 << 11)
 
-typedef struct {
-    char *filename;
-    uint8_t *buf;
-    uint64_t len;
-} VMFileEntry;
+machine_state *machine_init(void);
+void machine_run(machine_state *s, uint64_t mcycle_end);
+void machine_end(machine_state *s);
 
-typedef struct {
-    char *backing;
-    char *label;
-    bool shared;
-    uint64_t address;
-    uint64_t size;
-} VMFlashEntry;
+int processor_get_max_xlen(const machine_state *s);
 
-typedef struct {
-    uint64_t ram_size;
-    int width, height; /* graphic width & height */
-    VMFlashEntry tab_flash[VM_MAX_FLASH_DEVICE];
-    int flash_count;
-    char *cmdline; /* kernel command line */
-    VMFileEntry ram_image; /* initial ram contents */
-    VMFileEntry rom_image; /* initial rom contents */
-    bool interactive; /* should we initialize the console? */
-} VirtMachineParams;
+uint64_t processor_read_misa(const machine_state *s);
+uint64_t processor_read_mcycle(const machine_state *s);
+void processor_write_mcycle(machine_state *s, uint64_t val);
 
-struct VirtMachine;
-typedef struct VirtMachine VirtMachine;
+uint64_t processor_read_tohost(const machine_state *s);
+void processor_write_tohost(machine_state *s, uint64_t val);
 
-void __attribute__((format(printf, 1, 2))) vm_error(const char *fmt, ...);
+uint64_t processor_read_fromhost(const machine_state *s);
+void processor_write_fromhost(machine_state *s, uint64_t val);
 
-const char *virt_machine_get_name(void);
-void virt_machine_set_defaults(VirtMachineParams *p);
-void virt_lua_load_config(lua_State *L, VirtMachineParams *p, int tabidx);
-void virt_machine_free_config(VirtMachineParams *p);
-VirtMachine *virt_machine_init(const VirtMachineParams *p);
-uint64_t virt_machine_read_mcycle(VirtMachine *v);
-uint64_t virt_machine_read_tohost(VirtMachine *v);
-void virt_machine_end(VirtMachine *v);
-int virt_machine_run(VirtMachine *v, uint64_t cycle_end);
+uint64_t processor_read_mtimecmp(const machine_state *s);
+void processor_write_mtimecmp(machine_state *s, uint64_t val);
+
+bool processor_read_iflags_I(const machine_state *s);
+void processor_reset_iflags_I(machine_state *s);
+
+uint32_t processor_read_mip(const machine_state *s);
+void processor_set_mip(machine_state *s, uint32_t mask);
+void processor_reset_mip(machine_state *s, uint32_t mask);
+void processor_set_brk_from_mip_mie(machine_state *s);
+
+bool processor_read_iflags_H(const machine_state *s);
+void processor_set_iflags_H(machine_state *s);
+void processor_set_brk_from_iflags_H(machine_state *s);
+
+#define RISCV_CLOCK_FREQ 1000000000 // 1 GHz (arbitrary)
+#define RISCV_RTC_FREQ_DIV 100      // Set in stone in whitepaper
+
+static inline uint64_t processor_rtc_cycles_to_time(uint64_t cycle_counter) {
+    return cycle_counter / RISCV_RTC_FREQ_DIV;
+}
+
+static inline uint64_t processor_rtc_time_to_cycles(uint64_t time) {
+    return time * RISCV_RTC_FREQ_DIV;
+}
+
+typedef bool (*pma_device_write)(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2);
+typedef bool (*pma_device_read)(i_device_state_access *a, void *context, uint64_t offset, uint64_t *val, int size_log2);
+
+uint8_t *board_get_host_memory(machine_state *s, uint64_t paddr);
+bool board_register_flash(machine_state *s, uint64_t start, uint64_t length, const char *path, bool shared);
+bool board_register_ram(machine_state *s, uint64_t start, uint64_t length);
+bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, pma_device_read device_read,
+    pma_device_write device_write);
+bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, pma_device_read device_read,
+    pma_device_write device_write);
 
 #endif

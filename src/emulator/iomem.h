@@ -27,45 +27,72 @@
 
 #include "i-device-state-access.h"
 
-typedef bool DeviceWriteFunc(i_device_state_access *a, void *opaque, uint64_t offset, uint64_t val, int size_log2);
-typedef bool DeviceReadFunc(i_device_state_access *a, void *opaque, uint64_t offset, uint64_t *val, int size_log2);
-
 #define DEVRAM_PAGE_SIZE_LOG2 12
-#define DEVRAM_PAGE_SIZE (1 << DEVRAM_PAGE_SIZE_LOG2)
+#define DEVRAM_PAGE_SIZE    (1 << DEVRAM_PAGE_SIZE_LOG2)
+
+#define PMA_FLAGS_M         (1 << 0)
+#define PMA_FLAGS_IO        (1 << 1)
+#define PMA_FLAGS_E         (1 << 2)
+#define PMA_FLAGS_R         (1 << 3)
+#define PMA_FLAGS_W         (1 << 4)
+#define PMA_FLAGS_X         (1 << 5)
+#define PMA_FLAGS_IR        (1 << 6)
+#define PMA_FLAGS_IW        (1 << 7)
+
+#define PMA_FLAGS_RAM       (PMA_FLAGS_M | PMA_FLAGS_X | PMA_FLAGS_W | PMA_FLAGS_R | PMA_FLAGS_IR | PMA_FLAGS_IW)
+#define PMA_FLAGS_FLASH     (PMA_FLAGS_M | PMA_FLAGS_W | PMA_FLAGS_R | PMA_FLAGS_IR | PMA_FLAGS_IW)
+#define PMA_FLAGS_DEVICE    (PMA_FLAGS_IO | PMA_FLAGS_W | PMA_FLAGS_R)
+
+#define PMA_FLAGS_MASK 0xff
+
+#define PMA_TYPE_MEMORY    (1 << 31)
+#define PMA_TYPE_DEVICE    (1 << 30)
+
+#define PMA_TYPE_FLAGS_RAM         (PMA_TYPE_MEMORY | PMA_FLAGS_RAM)
+#define PMA_TYPE_FLAGS_FLASH       (PMA_TYPE_MEMORY | PMA_FLAGS_FLASH)
+#define PMA_TYPE_FLAGS_DEVICE      (PMA_TYPE_DEVICE | PMA_FLAGS_DEVICE)
 
 typedef struct {
-    uint64_t addr;
-    uint64_t size;
-    bool is_ram;
-    bool is_backed; /* ram is backed by host file via mmap */
-    /* the following is used for RAM access */
-    int devram_flags;
-    uint8_t *phys_mem;
-    /* the following is used for file RAM access */
-    int fd;
-    /* the following is used for I/O access */
-    void *opaque;
-    DeviceReadFunc *read_func;
-    DeviceWriteFunc *write_func;
-} PhysMemoryRange;
+    uint8_t *host_memory;      // start of associated memory region in host
+    int backing_file;          // file descryptor for backed memory
+} pma_memory;
 
-#define PHYS_MEM_RANGE_MAX 32
+typedef bool (*pma_device_write)(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2);
+typedef bool (*pma_device_read)(i_device_state_access *a, void *context, uint64_t offset, uint64_t *val, int size_log2);
 
-struct PhysMemoryMap {
-    int n_phys_mem_range;
-    PhysMemoryRange phys_mem_range[PHYS_MEM_RANGE_MAX];
-};
+typedef struct {
+    void *context;
+    pma_device_read read;
+    pma_device_read write;
+} pma_device;
 
-PhysMemoryMap *phys_mem_map_init(void);
-void phys_mem_map_end(PhysMemoryMap *s);
+typedef struct {
+    uint64_t start;
+    uint64_t length;
+    uint32_t type_flags;
+    union {
+        pma_memory memory;
+        pma_device device;
+    }; // anonymous union
+} pma_entry; // Physical memory attributes
 
-PhysMemoryRange *cpu_register_ram(PhysMemoryMap *s, uint64_t addr, uint64_t size);
+#define PMA_ENTRY_MAX 32
 
-PhysMemoryRange *cpu_register_backed_ram(PhysMemoryMap *s, uint64_t addr, uint64_t size, const char *path, bool shared);
+typedef struct {
+    pma_entry entry[PMA_ENTRY_MAX];
+    int count;
+} physical_memory_map; // physical memory map
 
-PhysMemoryRange *cpu_register_device(PhysMemoryMap *s, uint64_t addr,
+pmm *pmm_init(void);
+void pmm_end(pmm *s);
+
+bool processor_pmm_register_ram(physical_memory_map *s, uint64_t paddr, uint64_t size);
+
+PhysMemoryRange *cpu_register_backed_ram(physical_memory_map *s, uint64_t paddr, uint64_t size, const char *path, bool shared);
+
+PhysMemoryRange *cpu_register_device(physical_memory_map *s, uint64_t paddr,
                                      uint64_t size, void *opaque,
                                      DeviceReadFunc *read_func, DeviceWriteFunc *write_func);
-PhysMemoryRange *get_phys_mem_range(PhysMemoryMap *s, uint64_t paddr);
+PhysMemoryRange *get_phys_mem_range(pmm *s, uint64_t paddr);
 
 #endif /* IOMEM_H */

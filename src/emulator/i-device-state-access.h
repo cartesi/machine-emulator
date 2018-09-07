@@ -1,6 +1,8 @@
 #ifndef I_DEVICE_STATE_ACCESS
 #define I_DEVICE_STATE_ACCESS
 
+#include <cstdint>
+
 /// \file
 /// \brief Device state access interface
 

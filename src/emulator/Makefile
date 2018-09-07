@@ -65,10 +65,9 @@ ALL=emu.so
 all: $(ALL)
 
 OBJS:= \
-	iomem.o \
+	emulator.o \
 	machine.o \
-	luaemu.o \
-	processor.o
+	luaemu.o
 
 ifeq ($(gperf),yes)
 DEFS+=-DGPERF

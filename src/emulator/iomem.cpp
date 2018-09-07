@@ -65,26 +65,26 @@ PhysMemoryRange *get_phys_mem_range(PhysMemoryMap *s, uint64_t paddr)
 {
     for (int i = 0; i < s->n_phys_mem_range; i++) {
         PhysMemoryRange *pr = &s->phys_mem_range[i];
-        if (paddr >= pr->addr && paddr < pr->addr + pr->size)
+        if (paddr >= pr->paddr && paddr < pr->paddr + pr->size)
             return pr;
     }
     return nullptr;
 }
 
-static PhysMemoryRange *register_ram_entry(PhysMemoryMap *s, uint64_t addr,
+static PhysMemoryRange *register_ram_entry(PhysMemoryMap *s, uint64_t paddr,
                                     uint64_t size)
 {
     assert(s->n_phys_mem_range < PHYS_MEM_RANGE_MAX);
     assert((size & (DEVRAM_PAGE_SIZE - 1)) == 0 && size != 0);
     PhysMemoryRange *pr = &s->phys_mem_range[s->n_phys_mem_range++];
     pr->is_ram = true;
-    pr->addr = addr;
+    pr->paddr = paddr;
     pr->size = size;
     pr->phys_mem = nullptr;
     return pr;
 }
 
-PhysMemoryRange *cpu_register_backed_ram(PhysMemoryMap *s, uint64_t addr,
+PhysMemoryRange *cpu_register_backed_ram(PhysMemoryMap *s, uint64_t paddr,
                                      uint64_t size, const char *path,
                                      bool shared)
 {
@@ -96,7 +96,7 @@ PhysMemoryRange *cpu_register_backed_ram(PhysMemoryMap *s, uint64_t addr,
      * memory by hand, even though the kernel should do this
      * itself */
 
-    PhysMemoryRange *pr = register_ram_entry(s, addr, size);
+    PhysMemoryRange *pr = register_ram_entry(s, paddr, size);
 
     pr->fd = open(path, oflag);
     if (pr->fd < 0) {
@@ -117,12 +117,12 @@ PhysMemoryRange *cpu_register_backed_ram(PhysMemoryMap *s, uint64_t addr,
 
 
 
-PhysMemoryRange *cpu_register_ram(PhysMemoryMap *s, uint64_t addr,
+PhysMemoryRange *cpu_register_ram(PhysMemoryMap *s, uint64_t paddr,
                                              uint64_t size)
 {
     PhysMemoryRange *pr;
 
-    pr = register_ram_entry(s, addr, size);
+    pr = register_ram_entry(s, paddr, size);
 
     pr->phys_mem = reinterpret_cast<uint8_t *>(calloc(1, size));
     if (!pr->phys_mem) {
@@ -133,15 +133,15 @@ PhysMemoryRange *cpu_register_ram(PhysMemoryMap *s, uint64_t addr,
     return pr;
 }
 
-PhysMemoryRange *cpu_register_device(PhysMemoryMap *s, uint64_t addr,
+PhysMemoryRange *cpu_register_device(PhysMemoryMap *s, uint64_t paddr,
                                      uint64_t size, void *opaque,
                                      DeviceReadFunc *read_func, DeviceWriteFunc *write_func)
 {
     PhysMemoryRange *pr;
     assert(s->n_phys_mem_range < PHYS_MEM_RANGE_MAX);
-    assert(size <= 0xffffffff);
+    assert(size <= 0xffffffff); //??D ??
     pr = &s->phys_mem_range[s->n_phys_mem_range++];
-    pr->addr = addr;
+    pr->paddr = paddr;
     pr->size = size;
     pr->is_ram = false;
     pr->opaque = opaque;

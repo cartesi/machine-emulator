@@ -25,9 +25,13 @@
 #ifndef MACHINE_H
 #define MACHINE_H
 
+typedef struct machine_state machine_state;
+typedef struct pma_entry pma_entry;
+
 #include "i-device-state-access.h"
 
-typedef struct machine_state machine_state;
+typedef bool (*pma_device_write)(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2);
+typedef bool (*pma_device_read)(i_device_state_access *a, void *context, uint64_t offset, uint64_t *val, int size_log2);
 
 // Interrupt pending flags for use with set/reset mip
 #define MIP_USIP   (1 << 0)
@@ -84,9 +88,6 @@ static inline uint64_t processor_rtc_cycles_to_time(uint64_t cycle_counter) {
 static inline uint64_t processor_rtc_time_to_cycles(uint64_t time) {
     return time * RISCV_RTC_FREQ_DIV;
 }
-
-typedef bool (*pma_device_write)(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2);
-typedef bool (*pma_device_read)(i_device_state_access *a, void *context, uint64_t offset, uint64_t *val, int size_log2);
 
 uint8_t *board_get_host_memory(machine_state *s, uint64_t paddr);
 bool board_register_flash(machine_state *s, uint64_t start, uint64_t length, const char *path, bool shared);

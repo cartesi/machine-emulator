@@ -282,9 +282,8 @@ static bool htif_read(i_device_state_access *a, void *context, uint64_t offset, 
             *pval = a->read_fromhost();
             return true;
         default:
-            // other reads return zero
-            *pval = 0;
-            return true;
+            // other reads are exceptions
+            return false;
     }
 }
 
@@ -300,7 +299,7 @@ static bool htif_putchar(i_device_state_access *a, emulator *emu, uint64_t paylo
     (void) emu;
     a->write_tohost(0); // Acknowledge command
     uint8_t ch = payload & 0xff;
-    if (write(1, &ch, 1) < 1) { ; }
+    if (write(1, &ch, 1) < 1) { ; } // Obviously, this is not done in blockchain
     a->write_fromhost(((uint64_t)1 << 56) | ((uint64_t)1 << 48));
     return true;
 }
@@ -353,8 +352,8 @@ static bool htif_write(i_device_state_access *a, void *context, uint64_t offset,
         case 8: // fromhost
             return htif_write_fromhost(a, emu, val);
         default:
-            // other writes are silently ignored
-            return true;
+            // other writes are exceptions
+            return false;
     }
 }
 
@@ -389,35 +388,21 @@ static bool clint_read_mtimecmp(i_device_state_access *a, emulator *emu, uint64_
 static bool clint_read(i_device_state_access *a, void *context, uint64_t offset, uint64_t *val, int size_log2) {
     emulator *emu = reinterpret_cast<emulator *>(context);
 
-    // Our CLINT only supports 32 or 64-bit reads
-    if (size_log2 < 2) return false;
-
     switch (offset) {
         case 0: // Machine software interrupt for hart 0
             return clint_read_msip(a, emu, val, size_log2);
         case 0xbff8: // mtime
             return clint_read_mtime(a, emu, val, size_log2);
-        case 0xbffc: // misaligned mtime is not supported
-            return false;
         case 0x4000: // mtimecmp
             return clint_read_mtimecmp(a, emu, val, size_log2);
-        case 0x4004: // misaligned mtimecmp is not supported
-            return false;
         default:
-            if (offset & ((1 << size_log2) - 1))
-                // misaligned reads not supported
-                return false;
-            // aligned reads return zero
-            *val = 0;
-            return true;
+            // other reads are exceptions
+            return false;
     }
 }
 
 static bool clint_write(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2) {
     (void) context;
-
-    // Our CLINT only supports 32 or 64-bit writes
-    if (size_log2 < 2) return false;
 
     switch (offset) {
         case 0: // Machine software interrupt for hart 0
@@ -433,9 +418,6 @@ static bool clint_write(i_device_state_access *a, void *context, uint64_t offset
                 return true;
             }
             return false;
-        case 0xbff8: // writes to mtime, misaligned or not,
-        case 0xbffc: // are not supported
-            return false;
         case 0x4000: // mtimecmp
             if (size_log2 == 3) {
                 a->write_mtimecmp(val);
@@ -444,20 +426,14 @@ static bool clint_write(i_device_state_access *a, void *context, uint64_t offset
             }
             // partial mtimecmp is not supported
             return false;
-        case 0x4004: // misaligned mtimecmp
-            return false;
         default:
-            if (offset & ((1 << size_log2) - 1))
-                // misaligned writes not supported
-                return false;
-            // aligned writes are silently ignored
-            return true;
+            // other writes are exceptions
+            return false;
     }
 }
 
 #define FDT_CHECK(func_call) do { \
-    int err = func_call; \
-    if (err != 0) return err; \
+    if ((func_call) != 0) return false; \
 } while (0);
 
 static int fdt_begin_node_num(void *fdt, const char *name, uint64_t num) {
@@ -475,7 +451,7 @@ static int fdt_property_u64_u64(void *fdt, const char *name, uint64_t v0, uint64
 	return fdt_property(fdt, name, tab, sizeof(tab));
 }
 
-static int fdt_build_riscv(const emulator_config *p, const emulator *emu, void *buf, int bufsize) {
+static bool fdt_build_riscv(const emulator_config *p, const emulator *emu, void *buf, int bufsize) {
     int cur_phandle = 1;
     FDT_CHECK(fdt_create(buf, bufsize));
     FDT_CHECK(fdt_add_reservemap_entry(buf, 0, 0));
@@ -574,8 +550,6 @@ static int fdt_build_riscv(const emulator_config *p, const emulator *emu, void *
     FDT_CHECK(fdt_end_node(buf)); /* root */
     FDT_CHECK(fdt_finish(buf));
 
-    auto size = fdt_totalsize(buf);
-
 #if 0
     {
         FILE *f;
@@ -585,7 +559,7 @@ static int fdt_build_riscv(const emulator_config *p, const emulator *emu, void *
     }
 #endif
 
-    return size;
+    return true;
 }
 
 static bool init_ram_and_rom(const emulator_config *p, emulator *emu) {
@@ -599,7 +573,7 @@ static bool init_ram_and_rom(const emulator_config *p, emulator *emu) {
     if (!rom_ptr) return false;
     if (!p->rom_image.buf) {
         uint32_t fdt_addr = 8 * 8;
-        if (fdt_build_riscv(p, emu, rom_ptr + fdt_addr, ROM_SIZE-fdt_addr) < 0)
+        if (!fdt_build_riscv(p, emu, rom_ptr + fdt_addr, ROM_SIZE-fdt_addr))
             return false;
         /* jump_addr = RAM_BASE_ADDR */
         uint32_t *q = (uint32_t *)(rom_ptr);
@@ -771,11 +745,12 @@ const char *emulator_get_name(void)
 }
 
 int emulator_run(emulator *emu, uint64_t mcycle_end) {
-    machine_state *s = emu->machine;
 
     // The emulator outer loop breaks only when the machine is halted
     // or when mcycle hits mcycle_end
     for ( ;; ) {
+
+        machine_state *s = emu->machine;
 
         // If we are halted, do nothing
         if (processor_read_iflags_H(s)) {
@@ -801,7 +776,6 @@ int emulator_run(emulator *emu, uint64_t mcycle_end) {
             // If the processor is waiting for interrupts, we can skip until time hits timecmp
             // CLINT is the only interrupt source external to the inner loop
             // IPI (inter-processor interrupt) via MSIP can only be raised internally
-            // This is not used within the blockchain
             if (processor_read_iflags_I(s)) {
                 mcycle = std::min(timecmp_mcycle, mcycle_end);
                 processor_write_mcycle(s, mcycle);
@@ -813,7 +787,6 @@ int emulator_run(emulator *emu, uint64_t mcycle_end) {
             }
 
             // Perform interactive actions every 10 divisors
-            // This is not used within the blockchain
             if (emu->interactive && ++emu->interactive->divisor_counter == 10) {
                 emu->interactive->divisor_counter = 0;
                 // Check if there is user input from stdin

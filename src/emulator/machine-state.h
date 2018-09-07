@@ -3,8 +3,6 @@
 
 #include <cstdint>
 
-#include "i-device-state-access.h"
-
 struct pma_memory {
     uint8_t *host_memory;      // start of associated memory region in host
     int backing_file;          // file descryptor for backed memory

@@ -105,6 +105,24 @@ typedef unsigned __int128 uint128_t;
 #include "state-access.h"
 #include "device-state-access.h"
 
+template <typename T> static inline int size_log2(void);
+template <> int size_log2<uint8_t>(void)  { return 0; }
+template <> int size_log2<uint16_t>(void) { return 1; }
+template <> int size_log2<uint32_t>(void) { return 2; }
+template <> int size_log2<uint64_t>(void) { return 3; }
+
+template <typename STATE_ACCESS>
+struct avoid_tlb {
+    static constexpr bool value = false;
+};
+
+#if 0
+template <>
+struct avoid_tlb<uint64_t> {
+    static constexpr bool value = true;
+};
+#endif
+
 #define PMA_PAGE_SIZE_LOG2 12
 #define PMA_PAGE_SIZE      (1 << PMA_PAGE_SIZE_LOG2)
 
@@ -156,6 +174,7 @@ static inline bool pma_is_ram(const pma_entry *entry) {
     return entry->type_flags == PMA_TYPE_FLAGS_RAM;
 }
 
+#if 0
 static inline bool pma_is_flash(const pma_entry *entry) {
     return entry->type_flags == PMA_TYPE_FLAGS_FLASH;
 }
@@ -167,6 +186,7 @@ static inline bool pma_is_mmio(const pma_entry *entry) {
 static inline bool pma_is_shadow(const pma_entry *entry) {
     return entry->type_flags == PMA_TYPE_FLAGS_SHADOW;
 }
+#endif
 
 static void board_init(machine_state *s) {
     memset(s->physical_memory, 0, sizeof(s->physical_memory));
@@ -420,30 +440,36 @@ void dump_regs(machine_state *s) {
 #endif
 }
 
-template <typename T>
-static inline void phys_write(machine_state *s, uint64_t paddr, T val) {
-    pma_entry *entry = pma_get_entry(s, paddr);
-    //??D Ignore writes to non-RAM ranges?
-    if (!entry || !pma_is_ram(entry))
-        return;
-    *reinterpret_cast<T *>(entry->memory.host_memory + (uintptr_t)(paddr - entry->start)) = val;
+template <typename STATE_ACCESS>
+static pma_entry *get_pma(STATE_ACCESS &a, machine_state *s, uint64_t paddr) {
+    for (int i = 0; i < PMA_SIZE; i++) {
+        pma_entry *entry = a.read_pma(s, i);
+        if (paddr >= entry->start && paddr < entry->start + entry->length)
+            return entry;
+    }
+    return nullptr;
 }
 
-template <typename T>
-static inline T phys_read(machine_state *s, uint64_t paddr) {
-    pma_entry *entry = pma_get_entry(s, paddr);
-    //??D Hardcode reads to non-RAM ranges to zero?
+template <typename STATE_ACCESS>
+static inline bool write_ram_uint64(STATE_ACCESS &a, machine_state *s, uint64_t paddr, uint64_t val) {
+    pma_entry *entry = get_pma(a, s, paddr);
     if (!entry || !pma_is_ram(entry))
-        return static_cast<T>(0);
-    return *reinterpret_cast<T *>(entry->memory.host_memory + (uintptr_t)(paddr - entry->start));
+        return false;
+    // log writes to memory BEFORE acutally modifying the state
+    a.write_memory(s, entry, paddr, val, size_log2<uint64_t>());
+    *reinterpret_cast<uint64_t *>(entry->memory.host_memory + (uintptr_t)(paddr - entry->start)) = val;
+    return true;
 }
 
-template <typename T> int size_log2(void);
-
-template <> int size_log2<uint8_t>(void) { return 0; }
-template <> int size_log2<uint16_t>(void) { return 1; }
-template <> int size_log2<uint32_t>(void) { return 2; }
-template <> int size_log2<uint64_t>(void) { return 3; }
+template <typename STATE_ACCESS>
+static inline bool read_ram_uint64(STATE_ACCESS &a, machine_state *s, uint64_t paddr, uint64_t *pval) {
+    pma_entry *entry = get_pma(a, s, paddr);
+    if (!entry || !pma_is_ram(entry)) return false;
+    *pval = *reinterpret_cast<uint64_t *>(entry->memory.host_memory + (uintptr_t)(paddr - entry->start));
+    // log read from memory
+    a.read_memory(s, entry, paddr, *pval, size_log2<uint64_t>());
+    return true;
+}
 
 #define PTE_V_MASK (1 << 0)
 #define PTE_U_MASK (1 << 4)
@@ -453,41 +479,43 @@ template <> int size_log2<uint64_t>(void) { return 3; }
 #define PTE_XWR_WRITE_SHIFT 1
 #define PTE_XWR_CODE_SHIFT  2
 
-// return 0 if OK, -1 if translation error
-static int get_phys_addr(machine_state *s,
-                         uint64_t *ppaddr, uint64_t vaddr,
-                         int xwr_shift)
-{
-    int priv = s->iflags_PRV;
+template <typename STATE_ACCESS>
+static bool translate_virtual_address(STATE_ACCESS a, machine_state *s, uint64_t *ppaddr,
+    uint64_t vaddr, int xwr_shift) {
+    int priv = a.read_iflags_PRV(s);
+    uint64_t mstatus = a.read_mstatus(s);
 
     // When MPRV is set, data loads and stores use privilege in MPP
     // instead of the current privilege level (code access is unaffected)
-    if ((s->mstatus & MSTATUS_MPRV) && xwr_shift != PTE_XWR_CODE_SHIFT) {
-        priv = (s->mstatus >> MSTATUS_MPP_SHIFT) & 3;
+    if ((mstatus & MSTATUS_MPRV) && xwr_shift != PTE_XWR_CODE_SHIFT) {
+        priv = (mstatus >> MSTATUS_MPP_SHIFT) & 3;
     }
 
     // M-mode code does not use virtual memory
     if (priv == PRV_M) {
         *ppaddr = vaddr;
-        return 0;
+        return true;
     }
+
+    uint64_t satp = a.read_satp(s);
 
     // In RV64, mode can be
     //   0: Bare: No translation or protection
     //   8: sv39: Page-based 39-bit virtual addressing
     //   9: sv48: Page-based 48-bit virtual addressing
-    int mode = (s->satp >> 60) & 0xf;
+    int mode = (satp >> 60) & 0xf;
     if (mode == 0) {
         *ppaddr = vaddr;
-        return 0;
+        return true;
     } else if (mode < 8 || mode > 9) {
-        return -1;
+        return false;
     }
     // Here we know we are in sv39 or sv48 modes
 
     // Page table hierarchy of sv39 has 3 levels, and sv48 has 4 levels
     // ??D It doesn't seem like restricting to one or the other will
-    //     simplify the code much
+    //     simplify the code much. However, we may want to use sv39
+    //     to reduce the size of the log sent to the blockchain
     int levels = mode - 8 + 3;
 
     // The least significant 12 bits of vaddr are the page offset
@@ -497,12 +525,12 @@ static int get_phys_addr(machine_state *s,
     // Hence, the use of arithmetic shifts here
     int vaddr_shift = XLEN - (PG_SHIFT + levels * 9);
     if ((((int64_t)vaddr << vaddr_shift) >> vaddr_shift) != (int64_t) vaddr)
-        return -1;
+        return false;
 
     // The least significant 44 bits of satp contain the physical page number for the root page table
     const int satp_ppn_bits = 44;
     // Initialize pte_addr with the base address for the root page table
-    uint64_t pte_addr = (s->satp & (((uint64_t)1 << satp_ppn_bits) - 1)) << PG_SHIFT;
+    uint64_t pte_addr = (satp & (((uint64_t)1 << satp_ppn_bits) - 1)) << PG_SHIFT;
     // All page table entries have 8 bytes
     const int pte_size_log2 = 3;
     // Each page table has 4k/pte_size entries
@@ -516,11 +544,14 @@ static int get_phys_addr(machine_state *s,
         // Add offset to find physical address of page table entry
         pte_addr += vpn << pte_size_log2; //??D we can probably save this shift here
         // Read page table entry from physical memory
-        uint64_t pte = phys_read<uint64_t>(s, pte_addr);
+        uint64_t pte = 0;
+        if (!read_ram_uint64(a, s, pte_addr, &pte)) {
+            return false;
+        }
         // The OS can mark page table entries as invalid,
         // but these entries shouldn't be reached during page lookups
         if (!(pte & PTE_V_MASK))
-            return -1;
+            return false;
         // Clear all flags in least significant bits, then shift back to multiple of page size to form physical address
         uint64_t ppn = (pte >> 10) << PG_SHIFT;
         // Obtain X, W, R protection bits
@@ -529,28 +560,28 @@ static int get_phys_addr(machine_state *s,
         if (xwr != 0) {
             // These protection bit combinations are reserved for future use
             if (xwr == 2 || xwr == 6)
-                return -1;
+                return false;
             // (We know we are not PRV_M if we reached here)
             if (priv == PRV_S) {
                 // If SUM is set, forbid S-mode code from accessing U-mode memory
-                if ((pte & PTE_U_MASK) && !(s->mstatus & MSTATUS_SUM))
-                    return -1;
+                if ((pte & PTE_U_MASK) && !(mstatus & MSTATUS_SUM))
+                    return false;
             } else {
                 // Forbid U-mode code from accessing S-mode memory
                 if (!(pte & PTE_U_MASK))
-                    return -1;
+                    return false;
             }
             // MXR allows read access to execute-only pages
-            if (s->mstatus & MSTATUS_MXR)
+            if (mstatus & MSTATUS_MXR)
                 // Set R bit if X bit is set
                 xwr |= (xwr >> 2);
             // Check protection bits against requested access
             if (((xwr >> xwr_shift) & 1) == 0)
-                return -1;
+                return false;
             // Check page, megapage, and gigapage alignment
             uint64_t vaddr_mask = ((uint64_t)1 << vaddr_shift) - 1;
             if (ppn & vaddr_mask)
-                return -1;
+                return false;
             // Decide if we need to update access bits in pte
             bool update_pte = !(pte & PTE_A_MASK) || (!(pte & PTE_D_MASK) && xwr_shift == PTE_XWR_WRITE_SHIFT);
             pte |= PTE_A_MASK;
@@ -558,16 +589,16 @@ static int get_phys_addr(machine_state *s,
                 pte |= PTE_D_MASK;
             // If so, update pte
             if (update_pte)
-                phys_write<uint64_t>(s, pte_addr, pte);
+                write_ram_uint64(a, s, pte_addr, pte); // Can't fail since read succeeded earlier
             // Add page offset in vaddr to ppn to form physical address
             *ppaddr = (vaddr & vaddr_mask) | (ppn & ~vaddr_mask);
-            return 0;
+            return true;
         // xwr == 0 means we have a pointer to the start of the next page table
         } else {
             pte_addr = ppn;
         }
     }
-    return -1;
+    return false;
 }
 
 
@@ -1170,22 +1201,25 @@ static inline uint32_t insn_funct6(uint32_t insn) {
     return (insn >> 26) & 0b111111;
 }
 
-/* return 0 if OK, != 0 if exception */
 template <typename T, typename STATE_ACCESS>
-static bool read_memory_slow(STATE_ACCESS &a, machine_state *s, uint64_t vaddr, T *pval) {
+static inline bool read_virtual_memory(STATE_ACCESS &a, machine_state *s, uint64_t vaddr, T *pval)  {
     using U = std::make_unsigned_t<T>;
+    int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
+    if (!avoid_tlb<STATE_ACCESS>::value && (s->tlb_read[tlb_idx].vaddr == (vaddr & ~(PG_MASK & ~(sizeof(T) - 1))))) {
+        *pval = *reinterpret_cast<T *>(s->tlb_read[tlb_idx].mem_addend + (uintptr_t)vaddr);
+        return true;
     // No support for misaligned accesses: They are handled by a trap in BBL
-    if (vaddr & (sizeof(T)-1)) {
+    } else if (vaddr & (sizeof(T)-1)) {
         raise_exception(a, s, CAUSE_LOAD_ADDRESS_MISALIGNED, vaddr);
         return false;
     // Deal with aligned accesses
     } else {
         uint64_t paddr;
-        if (get_phys_addr(s, &paddr, vaddr, PTE_XWR_READ_SHIFT)) {
+        if (!translate_virtual_address(a, s, &paddr, vaddr, PTE_XWR_READ_SHIFT)) {
             raise_exception(a, s, CAUSE_LOAD_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry *entry = pma_get_entry(s, paddr);
+        pma_entry *entry = get_pma(a, s, paddr);
         if (!entry) {
             // If we do not have the range in our map, we treat this as a PMA violation
             raise_exception(a, s, CAUSE_LOAD_FAULT, vaddr);
@@ -1193,6 +1227,7 @@ static bool read_memory_slow(STATE_ACCESS &a, machine_state *s, uint64_t vaddr, 
         } else if (pma_is_memory(entry)) {
             uint64_t mem_addend = tlb_add(s->tlb_read, entry, vaddr, paddr);
             *pval = *reinterpret_cast<T *>(mem_addend + (uintptr_t)vaddr);
+            a.read_memory(s, entry, paddr, *pval, size_log2<U>());
             return true;
         } else {
             uint64_t offset = paddr - entry->start;
@@ -1205,38 +1240,31 @@ static bool read_memory_slow(STATE_ACCESS &a, machine_state *s, uint64_t vaddr, 
                 return false;
             }
             *pval = static_cast<T>(val);
+            // device logs its own state accesses
             return true;
         }
     }
 }
 
-
 template <typename T, typename STATE_ACCESS>
-static inline bool read_memory(STATE_ACCESS &a, machine_state *s, uint64_t vaddr, T *pval)  {
-    int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
-    if (s->tlb_read[tlb_idx].vaddr == (vaddr & ~(PG_MASK & ~(sizeof(T) - 1)))) {
-        *pval = *reinterpret_cast<T *>(s->tlb_read[tlb_idx].mem_addend + (uintptr_t)vaddr);
-        return true;
-    } else {
-        return read_memory_slow<T>(a, s, vaddr, pval);
-    }
-}
-
-template <typename T, typename STATE_ACCESS>
-static bool write_memory_slow(STATE_ACCESS &a, machine_state *s, uint64_t vaddr, uint64_t val) {
+static inline bool write_virtual_memory(STATE_ACCESS &a, machine_state *s, uint64_t vaddr, uint64_t val) {
     using U = std::make_unsigned_t<T>;
+    uint32_t tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
+    if (!avoid_tlb<STATE_ACCESS>::value && (s->tlb_write[tlb_idx].vaddr == (vaddr & ~(PG_MASK & ~(sizeof(T) - 1))))) {
+        *reinterpret_cast<T *>(s->tlb_write[tlb_idx].mem_addend + (uintptr_t)vaddr) = static_cast<T>(val);
+        return true;
     // No support for misaligned accesses: They are handled by a trap in BBL
-    if (vaddr & (sizeof(T)-1)) {
+    } else if (vaddr & (sizeof(T)-1)) {
         raise_exception(a, s, CAUSE_STORE_AMO_ADDRESS_MISALIGNED, vaddr);
         return false;
     // Deal with aligned accesses
     } else {
         uint64_t paddr;
-        if (get_phys_addr(s, &paddr, vaddr, PTE_XWR_WRITE_SHIFT)) {
+        if (!translate_virtual_address(a, s, &paddr, vaddr, PTE_XWR_WRITE_SHIFT)) {
             raise_exception(a, s, CAUSE_STORE_AMO_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry *entry = pma_get_entry(s, paddr);
+        pma_entry *entry = get_pma(a, s, paddr);
         if (!entry) {
             // If we do not have the range in our map, we treat this as a PMA violation
             raise_exception(a, s, CAUSE_STORE_AMO_FAULT, vaddr);
@@ -1259,26 +1287,15 @@ static bool write_memory_slow(STATE_ACCESS &a, machine_state *s, uint64_t vaddr,
     }
 }
 
-template <typename T, typename STATE_ACCESS>
-static inline bool write_memory(STATE_ACCESS &a, machine_state *s, uint64_t vaddr, uint64_t val) {
-    uint32_t tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
-    if (s->tlb_write[tlb_idx].vaddr == (vaddr & ~(PG_MASK & ~(sizeof(T) - 1)))) {
-        *reinterpret_cast<T *>(s->tlb_write[tlb_idx].mem_addend + (uintptr_t)vaddr) = static_cast<T>(val);
-        return true;
-    } else {
-        return write_memory_slow<T>(a, s, vaddr, val);
-    }
-}
-
 static void dump_insn(machine_state *s, uint64_t pc, uint32_t insn, const char *name) {
 #ifdef DUMP_INSN
     fprintf(stderr, "%s\n", name);
     uint64_t ppc;
-    if (!get_phys_addr(s, &ppc, pc, PTE_XWR_CODE_SHIFT)) {
-        fprintf(stderr, "p    %08" PRIx64, ppc);
-    } else {
+    if (!translate_virtual_address(a, s, &ppc, pc, PTE_XWR_CODE_SHIFT)) {
         ppc = pc;
         fprintf(stderr, "v    %08" PRIx64, ppc);
+    } else {
+        fprintf(stderr, "p    %08" PRIx64, ppc);
     }
     fprintf(stderr, ":   %08" PRIx32 "   ", insn);
     fprintf(stderr, "\n");
@@ -1295,7 +1312,6 @@ static void dump_insn(machine_state *s, uint64_t pc, uint32_t insn, const char *
 // has been decoded enough to preclude any other instruction.
 // In some cases, further checks are needed to ensure the
 // instruction is valid.
-
 template <typename STATE_ACCESS>
 static inline execute_status execute_illegal_insn_exception(STATE_ACCESS &a, machine_state *s, uint64_t pc, uint32_t insn) {
     (void) a; (void) pc;
@@ -1333,7 +1349,7 @@ template <typename T, typename STATE_ACCESS>
 static inline execute_status execute_LR(STATE_ACCESS &a, machine_state *s, uint64_t pc, uint32_t insn) {
     uint64_t vaddr = a.read_register(s, insn_rs1(insn));
     T val = 0;
-    if (!read_memory<T>(a, s, vaddr, &val))
+    if (!read_virtual_memory<T>(a, s, vaddr, &val))
         return execute_status::retired;
     a.write_ilrsc(s, vaddr);
     uint32_t rd = insn_rd(insn);
@@ -1347,7 +1363,7 @@ static inline execute_status execute_SC(STATE_ACCESS &a, machine_state *s, uint6
     uint64_t val = 0;
     uint64_t vaddr = a.read_register(s, insn_rs1(insn));
     if (a.read_ilrsc(s) == vaddr) {
-        if (!write_memory<T>(a, s, vaddr, static_cast<T>(a.read_register(s, insn_rs2(insn)))))
+        if (!write_virtual_memory<T>(a, s, vaddr, static_cast<T>(a.read_register(s, insn_rs2(insn)))))
             return execute_status::retired;
     } else {
         val = 1;
@@ -1379,11 +1395,11 @@ template <typename T, typename STATE_ACCESS, typename F>
 static inline execute_status execute_AMO(STATE_ACCESS &a, machine_state *s, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t vaddr = a.read_register(s, insn_rs1(insn));
     T valm = 0;
-    if (!read_memory<T>(a, s, vaddr, &valm))
+    if (!read_virtual_memory<T>(a, s, vaddr, &valm))
         return execute_status::retired;
     T valr = static_cast<T>(a.read_register(s, insn_rs2(insn)));
     valr = f(valm, valr);
-    if (!write_memory<T>(a, s, vaddr, valr))
+    if (!write_virtual_memory<T>(a, s, vaddr, valr))
         return execute_status::retired;
     uint32_t rd = insn_rd(insn);
     if (rd != 0)
@@ -2710,7 +2726,7 @@ static inline execute_status execute_S(STATE_ACCESS &a, machine_state *s, uint64
     uint64_t vaddr = a.read_register(s, insn_rs1(insn));
     int32_t imm = insn_S_imm(insn);
     uint64_t val = a.read_register(s, insn_rs2(insn));
-    if (write_memory<T>(a, s, vaddr+imm, val)) {
+    if (write_virtual_memory<T>(a, s, vaddr+imm, val)) {
         return execute_next_insn(a, s, pc);
     } else {
         return execute_raised_exception(a, s, pc);
@@ -2746,7 +2762,7 @@ static inline execute_status execute_L(STATE_ACCESS &a, machine_state *s, uint64
     uint64_t vaddr = a.read_register(s, insn_rs1(insn));
     int32_t imm = insn_I_imm(insn);
     T val;
-    if (read_memory<T>(a, s, vaddr+imm, &val)) {
+    if (read_virtual_memory<T>(a, s, vaddr+imm, &val)) {
         // This static branch is eliminated by the compiler
         if (std::is_signed<T>::value) {
             a.write_register(s, insn_rd(insn), static_cast<int64_t>(val));
@@ -2928,9 +2944,9 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, machine_state *s, uint
 }
 
 /// \brief Executes an instruction of the atomic group.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
@@ -2967,9 +2983,9 @@ static inline execute_status execute_atomic_group(STATE_ACCESS &a, machine_state
 }
 
 /// \brief Executes an instruction of the arithmetic-32 group.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
@@ -2991,9 +3007,9 @@ static inline execute_status execute_arithmetic_32_group(STATE_ACCESS &a, machin
 }
 
 /// \brief Executes an instruction of the shift-rightimmediate-32 group.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
@@ -3007,9 +3023,9 @@ static inline execute_status execute_shift_right_immediate_32_group(STATE_ACCESS
 }
 
 /// \brief Executes an instruction of the arithmetic-immediate-32 group.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
@@ -3025,9 +3041,9 @@ static inline execute_status execute_arithmetic_immediate_32_group(STATE_ACCESS 
 }
 
 /// \brief Executes an instruction of the environment, trap, interrupt, or memory management groups.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
@@ -3045,9 +3061,9 @@ static inline execute_status execute_env_trap_int_mm_group(STATE_ACCESS &a, mach
 }
 
 /// \brief Executes an instruction of the CSR, environment, trap, interrupt, or memory management groups.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
@@ -3067,9 +3083,9 @@ static inline execute_status execute_csr_env_trap_int_mm_group(STATE_ACCESS &a, 
 }
 
 /// \brief Executes an instruction of the fence group.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
@@ -3085,9 +3101,9 @@ static inline execute_status execute_fence_group(STATE_ACCESS &a, machine_state 
 }
 
 /// \brief Executes an instruction of the shift-right-immediate group.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
@@ -3101,9 +3117,9 @@ static inline execute_status execute_shift_right_immediate_group(STATE_ACCESS &a
 }
 
 /// \brief Executes an instruction of the arithmetic group.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
@@ -3134,9 +3150,9 @@ static inline execute_status execute_arithmetic_group(STATE_ACCESS &a, machine_s
 }
 
 /// \brief Executes an instruction of the arithmetic-immediate group.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
@@ -3157,9 +3173,9 @@ static inline execute_status execute_arithmetic_immediate_group(STATE_ACCESS &a,
 }
 
 /// \brief Executes an instruction of the store group.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
@@ -3175,9 +3191,9 @@ static inline execute_status execute_store_group(STATE_ACCESS &a, machine_state 
 }
 
 /// \brief Executes an instruction of the load group.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
@@ -3196,9 +3212,9 @@ static inline execute_status execute_load_group(STATE_ACCESS &a, machine_state *
 }
 
 /// \brief Executes an instruction of the branch group.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
@@ -3216,9 +3232,9 @@ static inline execute_status execute_branch_group(STATE_ACCESS &a, machine_state
 }
 
 /// \brief Executes an instruction.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
@@ -3252,31 +3268,10 @@ enum class fetch_status: int {
     success ///< Instruction fetch succeeded: proceed to execute
 };
 
-template <typename STATE_ACCESS>
-static fetch_status fetch_insn_slow(STATE_ACCESS &a, machine_state *s, uint64_t vaddr, uint32_t *insn) {
-    uint64_t paddr;
-    // Walk page table and obtain the physical address
-    if (get_phys_addr(s, &paddr, vaddr, PTE_XWR_CODE_SHIFT)) {
-        raise_exception(a, s, CAUSE_FETCH_PAGE_FAULT, vaddr);
-        return fetch_status::exception;
-    }
-    // Walk memory map to find the range that contains the physical address
-    pma_entry *entry = pma_get_entry(s, paddr);
-    // We only execute directly from RAM (as in "random access memory", which includes ROM)
-    // If we are not in RAM or if we are not in any range, we treat this as a PMA violation
-    if (!entry || !pma_is_ram(entry)) {
-        raise_exception(a, s, CAUSE_FETCH_FAULT, vaddr);
-        return fetch_status::exception;
-    }
-    uint64_t mem_addend = tlb_add(s->tlb_code, entry, vaddr, paddr);
-    *insn = *reinterpret_cast<uint32_t *>(mem_addend + (uintptr_t)vaddr);
-    return fetch_status::success;
-}
-
 /// \brief Loads the next instruction.
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param pc Receives current pc.
 /// \param insn Receives fetched instruction.
 /// \return Returns fetch_status::success if load succeeded, fetch_status::exception if it caused an exception.
@@ -3285,15 +3280,31 @@ template <typename STATE_ACCESS>
 static fetch_status fetch_insn(STATE_ACCESS &a, machine_state *s, uint64_t *pc, uint32_t *insn) {
     // Get current pc from state
     uint64_t vaddr = *pc = a.read_pc(s);
-    // Translate pc address from virtual to physical
+    // Check TLB for hit
     int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
-    if (s->tlb_code[tlb_idx].vaddr == (vaddr & ~PG_MASK)) {
+    if (!avoid_tlb<STATE_ACCESS>::value && (s->tlb_code[tlb_idx].vaddr == (vaddr & ~PG_MASK))) {
         uint64_t mem_addend = s->tlb_code[tlb_idx].mem_addend;
         *insn = *reinterpret_cast<uint32_t *>(mem_addend + (uintptr_t)vaddr);
         return fetch_status::success;
     // TLB miss
     } else {
-        return fetch_insn_slow(a, s, vaddr, insn);
+        uint64_t paddr;
+        // Walk page table and obtain the physical address
+        if (!translate_virtual_address(a, s, &paddr, vaddr, PTE_XWR_CODE_SHIFT)) {
+            raise_exception(a, s, CAUSE_FETCH_PAGE_FAULT, vaddr);
+            return fetch_status::exception;
+        }
+        // Walk memory map to find the range that contains the physical address
+        pma_entry *entry = get_pma(a, s, paddr);
+        // We only execute directly from RAM (as in "random access memory", which includes ROM)
+        // If we are not in RAM or if we are not in any range, we treat this as a PMA violation
+        if (!entry || !pma_is_ram(entry)) {
+            raise_exception(a, s, CAUSE_FETCH_FAULT, vaddr);
+            return fetch_status::exception;
+        }
+        uint64_t mem_addend = tlb_add(s->tlb_code, entry, vaddr, paddr);
+        *insn = *reinterpret_cast<uint32_t *>(mem_addend + (uintptr_t)vaddr);
+        return fetch_status::success;
     }
 }
 
@@ -3304,9 +3315,9 @@ enum class interpreter_status: int {
 };
 
 /// \brief Tries to run the interpreter until mcycle hits a target
-/// \tparam STATE_ACCESS Class of CPU state accessor object.
-/// \param a CPU state accessor object.
-/// \param s CPU state.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param s Machine state.
 /// \param mcycle_end Target value for mcycle.
 /// \returns Returns a status code that tells if the loop hit the target mcycle or stopped early.
 /// \details The interpret may stop early if the machine halts permanently or becomes temporarily idle (waiting for interrupts).

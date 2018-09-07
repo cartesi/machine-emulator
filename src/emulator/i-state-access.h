@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include "meta.h"
+#include "machine.h"
 
 /// \class i_state_access
 /// \details The final "step" function must log all read and write accesses to the state.
@@ -281,6 +282,17 @@ public:
 		return derived().do_write_tohost(s, val);
 	}
 
+    pma_entry *read_pma(machine_state *s, int i) {
+        return derived().do_read_pma(s, i);
+    }
+
+    void read_memory(machine_state *s, pma_entry *entry, uint64_t paddr, uint64_t val, int size_log2) {
+        return derived().do_write_memory(s, entry, paddr, val, size_log2);
+    }
+
+    void write_memory(machine_state *s, pma_entry *entry, uint64_t paddr, uint64_t val, int size_log2) {
+        return derived().do_write_memory(s, entry, paddr, val, size_log2);
+    }
 };
 
 /// \brief SFINAE test implementation of the i_state_access interface

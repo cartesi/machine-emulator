@@ -1365,6 +1365,7 @@ static inline execute_status execute_SC(STATE_ACCESS &a, machine_state *s, uint6
     if (a.read_ilrsc(s) == vaddr) {
         if (!write_virtual_memory<T>(a, s, vaddr, static_cast<T>(a.read_register(s, insn_rs2(insn)))))
             return execute_status::retired;
+        a.write_ilrsc(s, 0);
     } else {
         val = 1;
     }

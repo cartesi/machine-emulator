@@ -49,15 +49,14 @@ extern "C" {
 #define Mi(n) (((uint64_t)n) << 20)
 #define Gi(n) (((uint64_t)n) << 30)
 
-#define ROM_BASE_ADDR  Ki(4)
-#define ROM_SIZE       Ki(64)
-#define RAM_BASE_ADDR      Gi(2)
-#define CLINT_BASE_ADDR    Mi(32)
-#define CLINT_SIZE         Ki(768)
-#define HTIF_BASE_ADDR     (Gi(1)+Ki(32))
-#define HTIF_SIZE             16
-#define HTIF_CONSOLE_BUF_SIZE (1024)
-#define HTIF_CONSOLE_FREQ_DIV (100000)
+#define ROM_BASE_ADDR          Ki(4)
+#define ROM_SIZE               Ki(64)
+#define RAM_BASE_ADDR          Gi(2)
+#define CLINT_BASE_ADDR        Mi(32)
+#define CLINT_SIZE             Ki(768)
+#define HTIF_BASE_ADDR         (Gi(1)+Ki(32))
+#define HTIF_SIZE              16
+#define HTIF_CONSOLE_BUF_SIZE  (1024)
 
 typedef struct {
     struct termios oldtty;
@@ -758,6 +757,8 @@ int emulator_run(emulator *emu, uint64_t mcycle_end) {
         }
 
         // Run the emulator inner loop until we reach the next multiple of RISCV_RTC_FREQ_DIV
+        // ??D This is enough for us to be inside the inner loop for about 98% of the time,
+        // according to measurement, so it is not a good target for further optimization
         uint64_t mcycle = processor_read_mcycle(s);
         uint64_t next_rtc_freq_div = mcycle + RISCV_RTC_FREQ_DIV - mcycle % RISCV_RTC_FREQ_DIV;
         machine_run(s, std::min(next_rtc_freq_div, mcycle_end));
@@ -781,7 +782,7 @@ int emulator_run(emulator *emu, uint64_t mcycle_end) {
                 processor_write_mcycle(s, mcycle);
             }
 
-            // If the timer is expired, raise interrupt
+            // If the timer is expired, set interrupt as pending
             if (timecmp_mcycle && timecmp_mcycle <= mcycle) {
                 processor_set_mip(s, MIP_MTIP);
             }

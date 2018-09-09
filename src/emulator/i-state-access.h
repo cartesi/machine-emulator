@@ -42,256 +42,268 @@ template <typename DERIVED> class i_state_access { // CRTP
 
 public:
 
-    uint64_t read_register(machine_state *s, uint32_t reg) {
-        return derived().do_read_register(s, reg);
+    machine_state *naked(void) {
+        return derived().do_naked();
     }
 
-    void write_register(machine_state *s, uint32_t reg, uint64_t val) {
-        return derived().do_write_register(s, reg, val);
+    const machine_state *naked(void) const {
+        return derived().do_naked();
     }
 
-    uint64_t read_pc(machine_state *s) {
-        return derived().do_read_pc(s);
+    uint64_t read_register(uint32_t reg) {
+        return derived().do_read_register(reg);
     }
 
-    void write_pc(machine_state *s, uint64_t val) {
-        return derived().do_write_pc(s, val);
+    void write_register(uint32_t reg, uint64_t val) {
+        return derived().do_write_register(reg, val);
     }
 
-	uint64_t read_minstret(machine_state *s) {
-		return derived().do_read_minstret(s);
-	}
-
-	void write_minstret(machine_state *s, uint64_t val) {
-		return derived().do_write_minstret(s, val);
-	}
-
-	uint64_t read_mcycle(machine_state *s) {
-		return derived().do_read_mcycle(s);
-	}
-
-	void write_mcycle(machine_state *s, uint64_t val) {
-		return derived().do_write_mcycle(s, val);
-	}
-
-	uint64_t read_mstatus(machine_state *s) {
-		return derived().do_read_mstatus(s);
-	}
-
-	void write_mstatus(machine_state *s, uint64_t val) {
-		return derived().do_write_mstatus(s, val);
-	}
-
-	uint64_t read_mtvec(machine_state *s) {
-		return derived().do_read_mtvec(s);
-	}
-
-	void write_mtvec(machine_state *s, uint64_t val) {
-		return derived().do_write_mtvec(s, val);
-	}
-
-	uint64_t read_mscratch(machine_state *s) {
-		return derived().do_read_mscratch(s);
-	}
-
-	void write_mscratch(machine_state *s, uint64_t val) {
-		return derived().do_write_mscratch(s, val);
-	}
-
-	uint64_t read_mepc(machine_state *s) {
-		return derived().do_read_mepc(s);
-	}
-
-	void write_mepc(machine_state *s, uint64_t val) {
-		return derived().do_write_mepc(s, val);
-	}
-
-	uint64_t read_mcause(machine_state *s) {
-		return derived().do_read_mcause(s);
-	}
-
-	void write_mcause(machine_state *s, uint64_t val) {
-		return derived().do_write_mcause(s, val);
-	}
-
-	uint64_t read_mtval(machine_state *s) {
-		return derived().do_read_mtval(s);
-	}
-
-	void write_mtval(machine_state *s, uint64_t val) {
-		return derived().do_write_mtval(s, val);
-	}
-
-	uint64_t read_misa(machine_state *s) {
-		return derived().do_read_misa(s);
-	}
-
-	void write_misa(machine_state *s, uint64_t val) {
-		return derived().do_write_misa(s, val);
-	}
-
-	uint64_t read_mie(machine_state *s) {
-		return derived().do_read_mie(s);
-	}
-
-	void write_mie(machine_state *s, uint64_t val) {
-		return derived().do_write_mie(s, val);
-	}
-
-	uint64_t read_mip(machine_state *s) {
-		return derived().do_read_mip(s);
-	}
-
-	void write_mip(machine_state *s, uint64_t val) {
-		return derived().do_write_mip(s, val);
-	}
-
-	uint64_t read_medeleg(machine_state *s) {
-		return derived().do_read_medeleg(s);
-	}
-
-	void write_medeleg(machine_state *s, uint64_t val) {
-		return derived().do_write_medeleg(s, val);
-	}
-
-	uint64_t read_mideleg(machine_state *s) {
-		return derived().do_read_mideleg(s);
-	}
-
-	void write_mideleg(machine_state *s, uint64_t val) {
-		return derived().do_write_mideleg(s, val);
-	}
-
-	uint64_t read_mcounteren(machine_state *s) {
-		return derived().do_read_mcounteren(s);
-	}
-
-	void write_mcounteren(machine_state *s, uint64_t val) {
-		return derived().do_write_mcounteren(s, val);
-	}
-
-	uint64_t read_stvec(machine_state *s) {
-		return derived().do_read_stvec(s);
-	}
-
-	void write_stvec(machine_state *s, uint64_t val) {
-		return derived().do_write_stvec(s, val);
-	}
-
-	uint64_t read_sscratch(machine_state *s) {
-		return derived().do_read_sscratch(s);
-	}
-
-	void write_sscratch(machine_state *s, uint64_t val) {
-		return derived().do_write_sscratch(s, val);
-	}
-
-	uint64_t read_sepc(machine_state *s) {
-		return derived().do_read_sepc(s);
-	}
-
-	void write_sepc(machine_state *s, uint64_t val) {
-		return derived().do_write_sepc(s, val);
-	}
-
-	uint64_t read_scause(machine_state *s) {
-		return derived().do_read_scause(s);
-	}
-
-	void write_scause(machine_state *s, uint64_t val) {
-		return derived().do_write_scause(s, val);
-	}
-
-	uint64_t read_stval(machine_state *s) {
-		return derived().do_read_stval(s);
-	}
-
-	void write_stval(machine_state *s, uint64_t val) {
-		return derived().do_write_stval(s, val);
-	}
-
-	uint64_t read_satp(machine_state *s) {
-		return derived().do_read_satp(s);
-	}
-
-	void write_satp(machine_state *s, uint64_t val) {
-		return derived().do_write_satp(s, val);
-	}
-
-	uint64_t read_scounteren(machine_state *s) {
-		return derived().do_read_scounteren(s);
-	}
-
-	void write_scounteren(machine_state *s, uint64_t val) {
-		return derived().do_write_scounteren(s, val);
-	}
-
-	uint64_t read_ilrsc(machine_state *s) {
-		return derived().do_read_ilrsc(s);
-	}
-
-	void write_ilrsc(machine_state *s, uint64_t val) {
-		return derived().do_write_ilrsc(s, val);
-	}
-
-    void set_iflags_H(machine_state *s) {
-        return derived().do_set_iflags_H(s);
+    uint64_t read_pc(void) {
+        return derived().do_read_pc();
     }
 
-    bool read_iflags_H(machine_state *s) {
-        return derived().do_read_iflags_H(s);
+    void write_pc(uint64_t val) {
+        return derived().do_write_pc(val);
     }
 
-    void reset_iflags_I(machine_state *s) {
-        return derived().do_reset_iflags_I(s);
-    }
-
-    bool read_iflags_I(machine_state *s) {
-        return derived().do_read_iflags_I(s);
-    }
-
-    uint8_t read_iflags_PRV(machine_state *s) {
-        return derived().do_read_iflags_PRV(s);
-    }
-
-    void write_iflags_PRV(machine_state *s, uint8_t val) {
-        return derived().do_write_iflags_PRV(s, val);
-    }
-
-	uint64_t read_mtimecmp(machine_state *s) {
-		return derived().do_read_mtimecmp(s);
+	uint64_t read_minstret(void) {
+		return derived().do_read_minstret();
 	}
 
-	void write_mtimecmp(machine_state *s, uint64_t val) {
-		return derived().do_write_mtimecmp(s, val);
+	void write_minstret(uint64_t val) {
+		return derived().do_write_minstret(val);
 	}
 
-	uint64_t read_fromhost(machine_state *s) {
-		return derived().do_read_fromhost(s);
+	uint64_t read_mcycle(void) {
+		return derived().do_read_mcycle();
 	}
 
-	void write_fromhost(machine_state *s, uint64_t val) {
-		return derived().do_write_fromhost(s, val);
+	void write_mcycle(uint64_t val) {
+		return derived().do_write_mcycle(val);
 	}
 
-	uint64_t read_tohost(machine_state *s) {
-		return derived().do_read_tohost(s);
+	uint64_t read_mstatus(void) {
+		return derived().do_read_mstatus();
 	}
 
-	void write_tohost(machine_state *s, uint64_t val) {
-		return derived().do_write_tohost(s, val);
+	void write_mstatus(uint64_t val) {
+		return derived().do_write_mstatus(val);
 	}
 
-    pma_entry *read_pma(machine_state *s, int i) {
-        return derived().do_read_pma(s, i);
+	uint64_t read_mtvec(void) {
+		return derived().do_read_mtvec();
+	}
+
+	void write_mtvec(uint64_t val) {
+		return derived().do_write_mtvec(val);
+	}
+
+	uint64_t read_mscratch(void) {
+		return derived().do_read_mscratch();
+	}
+
+	void write_mscratch(uint64_t val) {
+		return derived().do_write_mscratch(val);
+	}
+
+	uint64_t read_mepc(void) {
+		return derived().do_read_mepc();
+	}
+
+	void write_mepc(uint64_t val) {
+		return derived().do_write_mepc(val);
+	}
+
+	uint64_t read_mcause(void) {
+		return derived().do_read_mcause();
+	}
+
+	void write_mcause(uint64_t val) {
+		return derived().do_write_mcause(val);
+	}
+
+	uint64_t read_mtval(void) {
+		return derived().do_read_mtval();
+	}
+
+	void write_mtval(uint64_t val) {
+		return derived().do_write_mtval(val);
+	}
+
+	uint64_t read_misa(void) {
+		return derived().do_read_misa();
+	}
+
+	void write_misa(uint64_t val) {
+		return derived().do_write_misa(val);
+	}
+
+	uint64_t read_mie(void) {
+		return derived().do_read_mie();
+	}
+
+	void write_mie(uint64_t val) {
+		return derived().do_write_mie(val);
+	}
+
+	uint64_t read_mip(void) {
+		return derived().do_read_mip();
+	}
+
+	void write_mip(uint64_t val) {
+		return derived().do_write_mip(val);
+	}
+
+	uint64_t read_medeleg(void) {
+		return derived().do_read_medeleg();
+	}
+
+	void write_medeleg(uint64_t val) {
+		return derived().do_write_medeleg(val);
+	}
+
+	uint64_t read_mideleg(void) {
+		return derived().do_read_mideleg();
+	}
+
+	void write_mideleg(uint64_t val) {
+		return derived().do_write_mideleg(val);
+	}
+
+	uint64_t read_mcounteren(void) {
+		return derived().do_read_mcounteren();
+	}
+
+	void write_mcounteren(uint64_t val) {
+		return derived().do_write_mcounteren(val);
+	}
+
+	uint64_t read_stvec(void) {
+		return derived().do_read_stvec();
+	}
+
+	void write_stvec(uint64_t val) {
+		return derived().do_write_stvec(val);
+	}
+
+	uint64_t read_sscratch(void) {
+		return derived().do_read_sscratch();
+	}
+
+	void write_sscratch(uint64_t val) {
+		return derived().do_write_sscratch(val);
+	}
+
+	uint64_t read_sepc(void) {
+		return derived().do_read_sepc();
+	}
+
+	void write_sepc(uint64_t val) {
+		return derived().do_write_sepc(val);
+	}
+
+	uint64_t read_scause(void) {
+		return derived().do_read_scause();
+	}
+
+	void write_scause(uint64_t val) {
+		return derived().do_write_scause(val);
+	}
+
+	uint64_t read_stval(void) {
+		return derived().do_read_stval();
+	}
+
+	void write_stval(uint64_t val) {
+		return derived().do_write_stval(val);
+	}
+
+	uint64_t read_satp(void) {
+		return derived().do_read_satp();
+	}
+
+	void write_satp(uint64_t val) {
+		return derived().do_write_satp(val);
+	}
+
+	uint64_t read_scounteren(void) {
+		return derived().do_read_scounteren();
+	}
+
+	void write_scounteren(uint64_t val) {
+		return derived().do_write_scounteren(val);
+	}
+
+	uint64_t read_ilrsc(void) {
+		return derived().do_read_ilrsc();
+	}
+
+	void write_ilrsc(uint64_t val) {
+		return derived().do_write_ilrsc(val);
+	}
+
+    void set_iflags_H(void) {
+        return derived().do_set_iflags_H();
     }
 
-    void read_memory(machine_state *s, pma_entry *entry, uint64_t paddr, uint64_t val, int size_log2) {
-        return derived().do_write_memory(s, entry, paddr, val, size_log2);
+    bool read_iflags_H(void) {
+        return derived().do_read_iflags_H();
     }
 
-    void write_memory(machine_state *s, pma_entry *entry, uint64_t paddr, uint64_t val, int size_log2) {
-        return derived().do_write_memory(s, entry, paddr, val, size_log2);
+    void set_iflags_I(void) {
+        return derived().do_set_iflags_I();
+    }
+
+    void reset_iflags_I(void) {
+        return derived().do_reset_iflags_I();
+    }
+
+    bool read_iflags_I(void) {
+        return derived().do_read_iflags_I();
+    }
+
+    uint8_t read_iflags_PRV(void) {
+        return derived().do_read_iflags_PRV();
+    }
+
+    void write_iflags_PRV(uint8_t val) {
+        return derived().do_write_iflags_PRV(val);
+    }
+
+	uint64_t read_mtimecmp(void) {
+		return derived().do_read_mtimecmp();
+	}
+
+	void write_mtimecmp(uint64_t val) {
+		return derived().do_write_mtimecmp(val);
+	}
+
+	uint64_t read_fromhost(void) {
+		return derived().do_read_fromhost();
+	}
+
+	void write_fromhost(uint64_t val) {
+		return derived().do_write_fromhost(val);
+	}
+
+	uint64_t read_tohost(void) {
+		return derived().do_read_tohost();
+	}
+
+	void write_tohost(uint64_t val) {
+		return derived().do_write_tohost(val);
+	}
+
+    pma_entry *read_pma(int i) {
+        return derived().do_read_pma(i);
+    }
+
+    void read_memory(pma_entry *entry, uint64_t paddr, uint64_t val, int size_log2) {
+        return derived().do_write_memory(entry, paddr, val, size_log2);
+    }
+
+    void write_memory(pma_entry *entry, uint64_t paddr, uint64_t val, int size_log2) {
+        return derived().do_write_memory(entry, paddr, val, size_log2);
     }
 };
 

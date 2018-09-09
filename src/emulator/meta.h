@@ -28,7 +28,7 @@ struct remove_cvref {
 };
 
 /// \class is_template_base_of
-/// \brief SFINAE test if class inherites from a template class.
+/// \brief SFINAE test if class is derived from from a base template class.
 /// \tparam BASE Base template.
 /// \tparam DERIVED Derived class.
 template <template<typename...> class BASE, typename DERIVED>

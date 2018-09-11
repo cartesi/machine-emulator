@@ -30,8 +30,8 @@ typedef struct pma_entry pma_entry;
 
 #include "i-device-state-access.h"
 
-typedef bool (*pma_device_write)(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2);
-typedef bool (*pma_device_read)(i_device_state_access *a, void *context, uint64_t offset, uint64_t *val, int size_log2);
+typedef bool (*pma_device_write)(i_device_state_access *da, void *context, uint64_t offset, uint64_t val, int size_log2);
+typedef bool (*pma_device_read)(i_device_state_access *da, void *context, uint64_t offset, uint64_t *val, int size_log2);
 
 // Interrupt pending flags for use with set/reset mip
 #define MIP_USIP   (1 << 0)

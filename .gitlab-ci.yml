@@ -1,4 +1,4 @@
-image: cartesi/core:ci
+image: cartesi/image-ci
 
 before_script:
 - cd src/emulator

@@ -240,6 +240,14 @@ static pma_entry *pma_allocate_memory_entry(machine_state *s, uint64_t start, ui
     return entry;
 }
 
+static bool pma_device_write_error(i_device_state_access *, void *, uint64_t, uint64_t, int) {
+    return false;
+}
+
+static bool pma_device_read_error(i_device_state_access *, void *, uint64_t, uint64_t *, int) {
+    return false;
+}
+
 static pma_entry *pma_allocate_device_entry(machine_state *s, uint64_t start, uint64_t length, void *context,
     pma_device_read device_read, pma_device_write device_write) {
     pma_entry *entry = pma_allocate_entry(s, start, length);
@@ -247,8 +255,8 @@ static pma_entry *pma_allocate_device_entry(machine_state *s, uint64_t start, ui
     entry->start = start;
     entry->length = length;
     entry->device.context = context;
-    entry->device.read = device_read;
-    entry->device.write = device_write;
+    entry->device.read = device_read? device_read: pma_device_read_error;
+    entry->device.write = device_write? device_write: pma_device_write_error;
     return entry;
 }
 
@@ -2920,7 +2928,7 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_JALR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "JALR");
     uint64_t val = pc + 4;
-    uint64_t new_pc = (int64_t)(a.read_register(insn_rs1(insn)) + insn_I_imm(insn)) & ~1;
+    uint64_t new_pc = (int64_t)(a.read_register(insn_rs1(insn)) + insn_I_imm(insn)) & ~1; //??D check type of ~1
     if (new_pc & 3)
         return execute_misaligned_fetch_exception(a, new_pc);
     uint32_t rd = insn_rd(insn);

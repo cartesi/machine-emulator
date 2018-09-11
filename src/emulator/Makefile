@@ -2,8 +2,8 @@ UNAME:=$(shell uname)
 
 LUA_INC:=$(shell pkg-config --cflags lua53)
 LUA_LIB:=$(shell pkg-config --libs lua53)
-FDT_INC:=
 FDT_LIB:=-lfdt
+CRYPTOPP_LIB:=-lcryptopp
 
 # So we can use gcc to check if there are unused symbols
 ifeq ($(gc),yes)
@@ -11,9 +11,17 @@ GCFLAGS= -fno-inline-small-functions -fno-inline -fdata-sections -ffunction-sect
 GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
 endif
 
-LIBS:=$(FDT_LIB)
+LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB)
 
-# Mac OS X setup
+# Common setup
+# cryptopp
+#   git clone git@github.com:cartesi/cryptopp.git
+#   cd cryptopp
+#   git checkout cartesi
+#   make
+#   sudo make install
+
+# Mac OS X specific setup
 # Lua
 #   port install lua
 # lua53.pc is missing.
@@ -23,15 +31,15 @@ LIBS:=$(FDT_LIB)
 #   cd dtc
 #   sudo make NO_PYTHON=1 PREFIX=/usr/local install
 #
-SOLDFLAGS_Darwin:= -L/opt/local/lib -L/opt/local/lib/libomp -bundle -undefined dynamic_lookup
+SOLDFLAGS_Darwin:= -L/usr/local/lib -L/opt/local/lib -bundle -undefined dynamic_lookup
 CC_Darwin=clang
 CXX_Darwin=clang++
 
-# Linux settings
+# Linux specific setup
 # libfdt
 #   apt-get install libfdt-dev
 #
-SOLDFLAGS_Linux:= -shared -fpic
+SOLDFLAGS_Linux:= -L/usr/local/lib -shared -fpic
 CC_Linux=gcc
 CXX_Linux=g++
 
@@ -41,7 +49,7 @@ SOLDFLAGS?=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 
 WARNS=-W -Wall -pedantic
 
-INCS=$(LUA_INC)
+INCS=-I/usr/local/include $(LUA_INC) $(FDT_INC)
 
 ifeq ($(dump),yes)
 #DEFS+=-DUMP_ILLEGAL_INSN
@@ -51,8 +59,8 @@ DEFS+=-DDUMP_COUNTERS
 #DEFS+=-DDUMP_EXCEPTIONS
 endif
 
-CFLAGS=$(WARNS) -Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(GCFLAGS)
-CXXFLAGS=$(WARNS) -Ofast -std=c++14 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(GCFLAGS)
+CFLAGS=-Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
+CXXFLAGS=-Ofast -std=c++14 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
 ALL=emu.so
 

@@ -27,7 +27,7 @@
 #include <lua.hpp>
 #include <cstdint>
 
-#define VM_MAX_FLASH_DEVICE 4
+#define VM_MAX_FLASH_DEVICE 8
 
 #define VM_CONFIG_VERSION 1
 

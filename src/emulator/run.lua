@@ -6,33 +6,30 @@ local function help()
 Usage:
   lua run.lua [options]
 where options are:
-  --ram-image=<filename>     binary image for RAM
-                             (default: "kernel.bin")
-  --rom-image=<filename>     binary image for ROM
-                             (default: none)
-  --root-backing=<filename>  backing storage for root filesystem
-                             appears as /dev/mtdblock0
-                             (default: "rootfs.bin")
-  --root-shared              target modifications to root filesystem
-                             modify backing storage as well
-  --memory-size=<number>     target memory in MiB
-                             (default: 128)
-  --extra-backing=<filename> backing storage for extra filesystem
-                             appears as /dev/mtdblock1
-                             (default: none)
-  --extra-shared             target modifications to extra filesystem
-                             modify backing storage as well
-                             (default: false)
-  --cmdline                  pass additional command-line arguments to kernel
-  --batch                    run in batch mode
+  --ram-image=<filename>       binary image for RAM
+                               (default: "kernel.bin")
+  --rom-image=<filename>       binary image for ROM
+                               (default: none)
+  --memory-size=<number>       target memory in MiB
+                               (default: 128)
+  --root-backing=<filename>    backing storage for root filesystem
+                               corresponding to /dev/mtdblock0 mounted as /
+                               (default: rootfs.ext2)
+  --<label>-backing=<filename> backing storage for <label> filesystem
+                               corresponding to /dev/mtdblock[1-7]
+                               and mounted by init as /mnt/<label>
+                               (default: none)
+  --<label>-shared             target modifications to <label> filesystem
+                               modify backing storage as well
+                               (default: false)
+  --cmdline                    pass additional command-line arguments to kernel
+  --batch                      run in batch mode
 ]=])
     os.exit()
 end
 
-local root_backing = "rootfs.bin"
-local root_shared
-local extra_backing
-local extra_shared
+local backing = { root = "rootfs.ext2"}
+local shared = { }
 local ram_image = "kernel.bin"
 local rom_image
 local cmdline = ""
@@ -60,24 +57,14 @@ local options = {
         batch = true
         return true
     end },
-    { "^%-%-root%-backing%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        root_backing = o
+    { "^%-%-(%w+)-backing%=(.+)$", function(d, f)
+        if not d or not f then return false end
+        backing[d] = f
         return true
     end },
-    { "^%-%-extra%-backing%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        extra_backing = o
-        return true
-    end },
-    { "^%-%-extra%-shared$", function(all)
-        if not all then return false end
-        extra_shared = true
-        return true
-    end },
-    { "^%-%-root%-shared$", function(all)
-        if not all then return false end
-        root_shared = true
+    { "^%-%-(%w+)%-shared$", function(d)
+        if not d then return false end
+        shared[d] = true
         return true
     end },
     { "^(%-%-memory%-size%=(%d+)(.*))$", function(all, n, e)
@@ -147,6 +134,7 @@ local config_meta = {
 
 function config_meta.__index:append_drive(t)
     if t.backing then
+        assert(self.flash_id < 8, "too many flash devices")
         local size = assert(get_file_size(
             assert(t.backing, "no backing file specified")),
                 "backing file not found")
@@ -202,23 +190,29 @@ local function new_config(t)
 end
 
 local config = new_config{
-    root_backing = root_backing,
-    root_shared = root_shared
+    root_backing = backing.root,
+    root_shared = shared.root
 }:set_ram_image(
     ram_image
 ):set_rom_image(
     rom_image
-):append_drive{
-    backing = extra_backing,
-    shared = extra_shared,
-    label = "extra"
-}:set_memory_size(
+):set_memory_size(
     memory_size
 ):append_cmdline(
     cmdline
 ):set_interactive(
     not batch
 )
+
+for label, file in pairs(backing) do
+    if label ~= "root" then
+        config = config:append_drive{
+            backing = file,
+            shared = shared[label],
+            label = label
+        }
+    end
+end
 
 local machine = emu.create(config)
 

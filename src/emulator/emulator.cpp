@@ -42,6 +42,7 @@ extern "C" {
 
 #include <lua.hpp>
 
+#include "merkle-tree.h"
 #include "emulator.h"
 #include "machine.h"
 
@@ -55,7 +56,7 @@ extern "C" {
 #define CLINT_BASE_ADDR        Mi(32)
 #define CLINT_SIZE             Ki(768)
 #define HTIF_BASE_ADDR         (Gi(1)+Ki(32))
-#define HTIF_SIZE              16
+#define HTIF_SIZE              4096
 #define HTIF_CONSOLE_BUF_SIZE  (1024)
 
 typedef struct {
@@ -74,6 +75,7 @@ typedef struct {
 struct emulator {
     machine_state *machine;
     interactive_state *interactive;
+    merkle_tree *tree;
 };
 
 HTIFConsole *get_console(emulator *emu) {
@@ -650,6 +652,7 @@ static void interactive_end(interactive_state *i) {
 void emulator_end(emulator *emu) {
     interactive_end(emu->interactive);
     machine_end(emu->machine);
+    delete emu->tree;
     free(emu);
 }
 
@@ -722,6 +725,8 @@ emulator *emulator_init(const emulator_config *c) {
             goto failed;
         }
     }
+
+    emu->tree = new merkle_tree;
 
     return emu;
 

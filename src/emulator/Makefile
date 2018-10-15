@@ -54,8 +54,8 @@ INCS=-I/usr/local/include $(LUA_INC) $(FDT_INC)
 ifeq ($(dump),yes)
 #DEFS+=-DUMP_ILLEGAL_INSN
 #DEFS+=-DDUMP_EXCEPTIONS -DDUMP_MMU_EXCEPTIONS -DDUMP_INVALID_MEM_ACCESS -DDUMP_INVALID_CSR -DUMP_ILLEGAL_INSN
-#DEFS+=-DDUMP_INSN
-DEFS+=-DDUMP_COUNTERS
+DEFS+=-DDUMP_INSN
+#DEFS+=-DDUMP_COUNTERS
 #DEFS+=-DDUMP_EXCEPTIONS
 endif
 
@@ -86,6 +86,9 @@ test: emu.so
 
 fs.ext2: fs/*
 	genext2fs -i 512 -b 8192 -d fs fs.ext2
+
+hash: hash.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $^ -L/usr/local/lib $(LIBS)
 
 generate: CFLAGS += -fprofile-generate
 generate: CXXFLAGS += -fprofile-generate

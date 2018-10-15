@@ -162,6 +162,22 @@ struct avoid_tlb<uint64_t> {
 #define PMA_TYPE_FLAGS_MMIO       (PMA_TYPE_DEVICE | PMA_FLAGS_IO | PMA_FLAGS_W | PMA_FLAGS_R )
 #define PMA_TYPE_FLAGS_SHADOW      (PMA_TYPE_DEVICE | PMA_FLAGS_E )
 
+static bool pma_device_write_error(i_device_state_access *, void *, uint64_t, uint64_t, int) {
+    return false;
+}
+
+static bool pma_device_read_error(i_device_state_access *, void *, uint64_t, uint64_t *, int) {
+    return false;
+}
+
+static bool pma_device_peek_error(machine_state *, void *, uint64_t, uint64_t *, int) {
+    return false;
+}
+
+static bool pma_device_update_merkle_tree_error(machine_state *, void *, uint64_t, uint64_t, merkle_tree *) {
+    return false;
+}
+
 static inline bool pma_is_memory(const pma_entry *entry) {
     return entry->type_flags & PMA_TYPE_MEMORY;
 }
@@ -220,8 +236,9 @@ static pma_entry *pma_allocate_entry(machine_state *s, uint64_t start, uint64_t 
     assert(s->pma_count < PMA_SIZE); // check for too many entries
     if (s->pma_count >= PMA_SIZE)
         return nullptr;
-    assert((start & (PMA_PAGE_SIZE - 1)) == 0 && length != 0); // check for alignment
-    if ((start & (PMA_PAGE_SIZE - 1)) != 0 && length == 0)
+    fprintf(stderr, "start: %lu, length: %lu\n", start, length);
+    assert((start & (PMA_PAGE_SIZE - 1)) == 0 && (length & (PMA_PAGE_SIZE - 1)) == 0 && length != 0); // check for alignment
+    if ((start & (PMA_PAGE_SIZE - 1)) != 0 || (length & (PMA_PAGE_SIZE - 1)) != 0 || length == 0)
         return nullptr;
     assert(!pma_get_entry(s, start)); // check for overlapping entries
     if (pma_get_entry(s, start))
@@ -239,23 +256,17 @@ static pma_entry *pma_allocate_memory_entry(machine_state *s, uint64_t start, ui
     return entry;
 }
 
-static bool pma_device_write_error(i_device_state_access *, void *, uint64_t, uint64_t, int) {
-    return false;
-}
-
-static bool pma_device_read_error(i_device_state_access *, void *, uint64_t, uint64_t *, int) {
-    return false;
-}
-
 static pma_entry *pma_allocate_device_entry(machine_state *s, uint64_t start, uint64_t length, void *context,
-    pma_device_read device_read, pma_device_write device_write) {
+    pma_device_read read, pma_device_write write, pma_device_peek peek, pma_device_update_merkle_tree update_merkle_tree) {
     pma_entry *entry = pma_allocate_entry(s, start, length);
     if (!entry) return nullptr;
     entry->start = start;
     entry->length = length;
     entry->device.context = context;
-    entry->device.read = device_read? device_read: pma_device_read_error;
-    entry->device.write = device_write? device_write: pma_device_write_error;
+    entry->device.read = read? read: pma_device_read_error;
+    entry->device.write = write? write: pma_device_write_error;
+    entry->device.peek = peek? peek: pma_device_peek_error;
+    entry->device.update_merkle_tree = update_merkle_tree? update_merkle_tree: pma_device_update_merkle_tree_error;
     return entry;
 }
 
@@ -318,16 +329,16 @@ bool board_register_ram(machine_state *s, uint64_t start, uint64_t length) {
 }
 
 bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context,
-    pma_device_read device_read, pma_device_write device_write) {
-    pma_entry *entry = pma_allocate_device_entry(s, start, length, context, device_read, device_write);
+    pma_device_read read, pma_device_write write, pma_device_peek peek, pma_device_update_merkle_tree update_merkle_tree) {
+    pma_entry *entry = pma_allocate_device_entry(s, start, length, context, read, write, peek, update_merkle_tree);
     if (!entry) return false;
     entry->type_flags = PMA_TYPE_FLAGS_MMIO;
     return true;
 }
 
 bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context,
-    pma_device_read device_read, pma_device_write device_write) {
-    pma_entry *entry = pma_allocate_device_entry(s, start, length, context, device_read, device_write);
+    pma_device_read read, pma_device_write write, pma_device_peek peek, pma_device_update_merkle_tree update_merkle_tree) {
+    pma_entry *entry = pma_allocate_device_entry(s, start, length, context, read, write, peek, update_merkle_tree);
     if (!entry) return false;
     entry->type_flags = PMA_TYPE_FLAGS_SHADOW;
     return true;
@@ -1297,7 +1308,6 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
 template <typename STATE_ACCESS>
 static void dump_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const char *name) {
 #ifdef DUMP_INSN
-    auto s = a.naked();
     fprintf(stderr, "%s\n", name);
     uint64_t ppc;
     if (!translate_virtual_address(a, &ppc, pc, PTE_XWR_CODE_SHIFT)) {
@@ -2927,7 +2937,7 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_JALR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "JALR");
     uint64_t val = pc + 4;
-    uint64_t new_pc = (int64_t)(a.read_register(insn_rs1(insn)) + insn_I_imm(insn)) & ~1; //??D check type of ~1
+    uint64_t new_pc = static_cast<int64_t>(a.read_register(insn_rs1(insn)) + insn_I_imm(insn)) & ~static_cast<uint64_t>(1);
     if (new_pc & 3)
         return execute_misaligned_fetch_exception(a, new_pc);
     uint32_t rd = insn_rd(insn);
@@ -3481,4 +3491,28 @@ void processor_write_mtimecmp(machine_state *s, uint64_t val) {
 
 uint64_t processor_read_misa(const machine_state *s) {
     return s->misa;
+}
+
+bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
+    static_assert(merkle_tree::get_page_size() == PMA_PAGE_SIZE,
+        "incompatible PMA and Merkle tree page sizes");
+    CryptoPP::Keccak_256 kc;
+    t->begin_update(kc);
+    for (int i = 0; i < s->pma_count; i++) {
+        pma_entry *entry = &s->physical_memory[i];
+        if (pma_is_memory(entry)) {
+            for (uint64_t offset = 0; offset < entry->length; offset += PMA_PAGE_SIZE) {
+                if (t->is_error(t->update_page(kc, entry->start+offset, entry->memory.host_memory+offset))) {
+                    return false;
+                }
+            }
+        } else {
+            if (!entry->device.update_merkle_tree(s, entry->device.context,
+                    entry->start, entry->length, t)) {
+                return false;
+            }
+        }
+    }
+    t->end_update(kc);
+    return true;
 }

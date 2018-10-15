@@ -8,10 +8,13 @@ struct pma_memory {
     int backing_file;          // file descryptor for backed memory
 } ;
 
+//??D change this to a class with a virtual interface
 struct pma_device {
     void *context;
     pma_device_read read;
     pma_device_write write;
+    pma_device_peek peek;
+    pma_device_update_merkle_tree update_merkle_tree;
 };
 
 // physical memory attribute entry
@@ -76,7 +79,6 @@ struct machine_state {
     pma_entry physical_memory[PMA_SIZE]; // Physical memory map
     int pma_count;             // number of entries in map
 
-
     // Entries below this mark are not needed in the blockchain
 
     bool brk;           // Set when the tight loop must be broken
@@ -94,6 +96,7 @@ struct machine_state {
     uint64_t count_me;     // Machine exceptions (except ECALL)
     uint64_t count_amo;    // Atomic memory operations
 #endif
+
 };
 
 #endif

@@ -84,6 +84,9 @@ emu.so: $(OBJS)
 test: emu.so
 	lua tests.lua
 
+fs.ext2: fs/*
+	genext2fs -i 512 -b 8192 -d fs fs.ext2
+
 generate: CFLAGS += -fprofile-generate
 generate: CXXFLAGS += -fprofile-generate
 generate: SOLDFLAGS += -fprofile-generate

@@ -1,3 +1,4 @@
+#include <cstring>
 #include <lua.hpp>
 
 #include "emulator.h"
@@ -34,20 +35,35 @@ static emulator *check_emulator(lua_State *L, int idx) {
 }
 
 static int emu_lua_destroy(lua_State *L) {
-    emulator *v = check_emulator(L, 1);
-    emulator_end(v);
+    emulator *e = check_emulator(L, 1);
+    emulator_end(e);
     lua_pushnil(L);
     lua_setmetatable(L, -2);
     return 0;
 }
 
+static int emu_lua_update_merkle_tree(lua_State *L) {
+    emulator *e = check_emulator(L, 1);
+    emulator_update_merkle_tree(e);
+    return 0;
+}
+
+static int emu_lua_get_merkle_tree_root_hash(lua_State *L) {
+    emulator *e = check_emulator(L, 1);
+    uint8_t buf[32];
+    memset(buf, 0, sizeof(buf));
+    emulator_get_merkle_tree_root_hash(e, buf, sizeof(buf));
+    lua_pushlstring(L, reinterpret_cast<char *>(buf), sizeof(buf));
+    return 1;
+}
+
 static int emu_lua_run(lua_State *L) {
-    emulator *v = check_emulator(L, 1);
+    emulator *e = check_emulator(L, 1);
     uint64_t cycles_end = luaL_checkinteger(L, 2);
-    int halted = emulator_run(v, cycles_end);
-    lua_pushinteger(L, emulator_read_mcycle(v));
+    int halted = emulator_run(e, cycles_end);
+    lua_pushinteger(L, emulator_read_mcycle(e));
     if (halted) {
-        uint64_t htif_tohost = emulator_read_tohost(v);
+        uint64_t htif_tohost = emulator_read_tohost(e);
         uint64_t payload = (htif_tohost & (~1ULL >> 16));
         lua_pushnil(L);
         lua_pushinteger(L, payload >> 1);
@@ -79,13 +95,15 @@ static int emu_lua__tostring(lua_State *L) {
 }
 
 static int emu_lua__gc(lua_State *L) {
-    emulator *v = check_emulator(L, 1);
-    emulator_end(v);
+    emulator *e = check_emulator(L, 1);
+    emulator_end(e);
     return 0;
 }
 
 static const luaL_Reg emu_lua__index[] = {
     {"run", emu_lua_run},
+    {"update_merkle_tree", emu_lua_update_merkle_tree},
+    {"get_merkle_tree_root_hash", emu_lua_get_merkle_tree_root_hash},
     {"destroy", emu_lua_destroy},
     { NULL, NULL }
 };

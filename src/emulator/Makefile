@@ -70,6 +70,8 @@ all: $(ALL)
 
 OBJS:= \
 	emulator.o \
+	clint.o \
+	htif.o \
 	machine.o \
 	luaemu.o
 
@@ -87,7 +89,7 @@ test: emu.so
 fs.ext2: fs/*
 	genext2fs -i 512 -b 8192 -d fs fs.ext2
 
-hash: hash.cpp
+hash: hash.o
 	$(CXX) $(CXXFLAGS) -o $@ $^ -L/usr/local/lib $(LIBS)
 
 generate: CFLAGS += -fprofile-generate

@@ -11,7 +11,7 @@ where options are:
   --rom-image=<filename>       binary image for ROM
                                (default: none)
   --memory-size=<number>       target memory in MiB
-                               (default: 128)
+                               (default: 64)
   --root-backing=<filename>    backing storage for root filesystem
                                corresponding to /dev/mtdblock0 mounted as /
                                (default: rootfs.ext2)
@@ -33,7 +33,7 @@ local shared = { }
 local ram_image = "kernel.bin"
 local rom_image
 local cmdline = ""
-local memory_size = 128
+local memory_size = 64
 local batch = false
 
 -- List of supported options
@@ -81,7 +81,6 @@ local options = {
         return true
     end },
     { "^%-%-rom%-image%=(.*)$", function(o)
-print(o)
         if not o or #o < 1 then return false end
         rom_image = o
         return true
@@ -137,8 +136,7 @@ function config_meta.__index:append_drive(t)
         assert(self.flash_id < 8, "too many flash devices")
         local size = assert(get_file_size(
             assert(t.backing, "no backing file specified")),
-                "backing file not found")
-        size = math.max(next_power_of_2(size), 1024*1024)
+                "unable to compute backing file size")
         local flash = {
             address = self.flash_base,
             size = size,
@@ -148,7 +146,8 @@ function config_meta.__index:append_drive(t)
         }
         self["flash" .. self.flash_id] = flash
         self.flash_id = self.flash_id+1
-        self.flash_base = self.flash_base+size
+        -- make sure flash drives are separated by a power of two and at least 1MB
+        self.flash_base = self.flash_base + math.max(next_power_of_2(size), 1024*1024)
     end
     return self
 end
@@ -215,6 +214,13 @@ for label, file in pairs(backing) do
 end
 
 local machine = emu.create(config)
+
+--[[
+machine:update_merkle_tree()
+print((string.gsub(machine:get_merkle_tree_root_hash(), ".", function(c)
+    return string.format("%02x", string.byte(c))
+end)))
+]]
 
 local step = 500000
 local cycles_end = step

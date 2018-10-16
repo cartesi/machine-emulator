@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <cassert>
 #include <cstring>
 #include <functional>
 #include <iostream>
@@ -137,7 +138,7 @@ private:
     std::deque<std::pair<int, tree_node *>> m_merkle_update_fifo;
 
     // For statistics
-#ifndef NDEBUG
+#ifdef MERKLE_DUMP_STATS
     mutable uint64_t m_num_nodes;
 #endif
 
@@ -199,8 +200,6 @@ private:
     void get_concat_hash(CryptoPP::Keccak_256 &kc,
         const keccak_256_hash &child0, const keccak_256_hash &child1,
         keccak_256_hash &parent) const;
-
-    status_code update_merkle_tree(void);
 
 public:
 

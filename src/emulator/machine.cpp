@@ -1,26 +1,3 @@
-/*
- * RISCV CPU emulator
- *
- * Copyright (c) 2016-2017 Fabrice Bellard
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- */
 #include <cstdlib>
 #include <cstdio>
 #include <cstdarg>
@@ -35,6 +12,7 @@
 #include <type_traits>
 
 #include <sys/mman.h> /* mmap, munmap */
+#include <sys/stat.h> /* fstat */
 #include <unistd.h> /* close */
 #include <fcntl.h> /* open */
 
@@ -237,9 +215,8 @@ static pma_entry *pma_allocate_entry(machine_state *s, uint64_t start, uint64_t 
     assert(s->pma_count < PMA_SIZE); // check for too many entries
     if (s->pma_count >= PMA_SIZE)
         return nullptr;
-    fprintf(stderr, "start: %lu, length: %lu\n", start, length);
-    assert((start & (PMA_PAGE_SIZE - 1)) == 0 && (length & (PMA_PAGE_SIZE - 1)) == 0 && length != 0); // check for alignment
-    if ((start & (PMA_PAGE_SIZE - 1)) != 0 || (length & (PMA_PAGE_SIZE - 1)) != 0 || length == 0)
+    assert((start & (PMA_PAGE_SIZE - 1)) == 0 && length != 0); // check for alignment
+    if ((start & (PMA_PAGE_SIZE - 1)) != 0 || length == 0)
         return nullptr;
     assert(!pma_get_entry(s, start)); // check for overlapping entries
     if (pma_get_entry(s, start))
@@ -285,11 +262,6 @@ bool board_register_flash(machine_state *s, uint64_t start, uint64_t length, con
     int oflag = shared? O_RDWR: O_RDONLY;
     int mflag = shared? MAP_SHARED: MAP_PRIVATE;
 
-    /*??D probably should be careful here to align the length
-     * to a 4KiB page boundary and clear the remaining
-     * memory by hand, even though the kernel should do this
-     * by itself */
-
     pma_entry *entry = pma_allocate_memory_entry(s, start, length);
     if (!entry) return false;
 
@@ -300,10 +272,23 @@ bool board_register_flash(machine_state *s, uint64_t start, uint64_t length, con
         return false;
     }
 
+    struct stat statbuf;
+    if (fstat(entry->memory.backing_file, &statbuf) < 0) {
+        fprintf(stderr, "Unable to stat backing file '%s'\n", path);
+        close(entry->memory.backing_file);
+        return false;
+    }
+
+    if (static_cast<uint64_t>(statbuf.st_size) != length) {
+        fprintf(stderr, "Incorrect backing file size\n");
+        close(entry->memory.backing_file);
+        return false;
+    }
+
     // Try to map backing file to host memory
     entry->memory.host_memory = reinterpret_cast<uint8_t *>(
         mmap(nullptr, length, PROT_READ | PROT_WRITE, mflag, entry->memory.backing_file, 0));
-    if (!entry->memory.host_memory) {
+    if (entry->memory.host_memory == MAP_FAILED) {
         fprintf(stderr, "Could not map backing file '%s' to memory\n", path);
         close(entry->memory.backing_file);
         return false;
@@ -3494,26 +3479,49 @@ uint64_t processor_read_misa(const machine_state *s) {
     return s->misa;
 }
 
+static bool update_memory_merkle_tree(CryptoPP::Keccak_256 &kc, const pma_entry *entry, merkle_tree *t) {
+fprintf(stderr, "updating %lx\n", entry->start);
+    uint64_t offset = 0;
+    // Complete initial pages
+    while (offset + merkle_tree::get_page_size() <= entry->length) {
+        if (t->is_error(t->update_page(kc, entry->start + offset, entry->memory.host_memory + offset))) {
+            return false;
+        }
+        offset += merkle_tree::get_page_size();
+    }
+    // Potentially partial final page
+    if (offset < entry->length) {
+        uint8_t buf[merkle_tree::get_page_size()];
+        memset(buf, 0, sizeof(buf));
+        memcpy(buf, entry->memory.host_memory+offset, entry->length-offset);
+        if (t->is_error(t->update_page(kc, entry->start+offset, entry->memory.host_memory+offset))) {
+            return false;
+        }
+    }
+fprintf(stderr, "done updating %lx\n", entry->start);
+    return true;
+}
+
 bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
-    static_assert(merkle_tree::get_page_size() == PMA_PAGE_SIZE,
-        "incompatible PMA and Merkle tree page sizes");
     CryptoPP::Keccak_256 kc;
     t->begin_update(kc);
+    bool status = true;
     for (int i = 0; i < s->pma_count; i++) {
         pma_entry *entry = &s->physical_memory[i];
         if (pma_is_memory(entry)) {
-            for (uint64_t offset = 0; offset < entry->length; offset += PMA_PAGE_SIZE) {
-                if (t->is_error(t->update_page(kc, entry->start+offset, entry->memory.host_memory+offset))) {
-                    return false;
-                }
+            if (!update_memory_merkle_tree(kc, entry, t)) {
+                status = false;
+                break;
             }
         } else {
             if (!entry->device.update_merkle_tree(s, entry->device.context,
                     entry->start, entry->length, t)) {
-                return false;
+                fprintf(stderr, "failing on device\n");
+                status = false;
+                break;
             }
         }
     }
     t->end_update(kc);
-    return true;
+    return status;
 }

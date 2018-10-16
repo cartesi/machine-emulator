@@ -1,40 +1,8 @@
-/*
- * VM utilities
- *
- * Copyright (c) 2017 Fabrice Bellard
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- */
 #include <cassert>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <ctime>
-#include <algorithm>
-
-#include <signal.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <sys/stat.h>
-#include <termios.h>
-#include <unistd.h>
 
 extern "C" {
 #include <libfdt.h>
@@ -45,6 +13,8 @@ extern "C" {
 #include "merkle-tree.h"
 #include "emulator.h"
 #include "machine.h"
+#include "clint.h"
+#include "htif.h"
 
 #define Ki(n) (((uint64_t)n) << 10)
 #define Mi(n) (((uint64_t)n) << 20)
@@ -57,37 +27,15 @@ extern "C" {
 #define CLINT_SIZE             Ki(768)
 #define HTIF_BASE_ADDR         (Gi(1)+Ki(32))
 #define HTIF_SIZE              4096
-#define HTIF_CONSOLE_BUF_SIZE  (1024)
-
-typedef struct {
-    struct termios oldtty;
-    int old_fd0_flags;
-    uint8_t buf[HTIF_CONSOLE_BUF_SIZE];
-    ssize_t buf_len, buf_pos;
-    bool fromhost_pending;
-} HTIFConsole;
-
-typedef struct {
-    HTIFConsole console;
-    int divisor_counter;
-} interactive_state;
 
 struct emulator {
     machine_state *machine;
-    interactive_state *interactive;
+    htif_state *htif;
     merkle_tree *tree;
 };
 
-HTIFConsole *get_console(emulator *emu) {
-    if (emu->interactive) {
-        return &emu->interactive->console;
-    }
-    return nullptr;
-}
-
 /* return -1 if error. */
-static uint64_t load_file(uint8_t **pbuf, const char *filename)
-{
+static uint64_t load_file(uint8_t **pbuf, const char *filename) {
     FILE *f;
     int size;
     uint8_t *buf;
@@ -230,206 +178,6 @@ void emulator_free_config(emulator_config *p) {
     for (int i = 0; i < p->flash_count; i++) {
         free(p->tab_flash[i].backing);
         free(p->tab_flash[i].label);
-    }
-}
-
-static void htif_console_poll(emulator *emu) {
-    auto *con = get_console(emu);
-
-    //??D We do not need to register any access to state here because
-    //    the console is always disabled during verifiable execution
-
-    // Check for input from console, if requested by HTIF
-    if (con && !con->fromhost_pending) {
-        // If we don't have any characters left in buffer, try to obtain more
-        if (con->buf_pos >= con->buf_len) {
-            fd_set rfds;
-            int fd_max;
-            struct timeval tv;
-            FD_ZERO(&rfds);
-            FD_SET(0, &rfds);
-            fd_max = 0;
-            tv.tv_sec = 0;
-            tv.tv_usec = 0;
-            if (select(fd_max+1, &rfds, nullptr, nullptr, &tv) > 0 && FD_ISSET(0, &rfds)) {
-                con->buf_pos = 0;
-                con->buf_len = read(0, con->buf, HTIF_CONSOLE_BUF_SIZE);
-                // If stdin is closed, pass EOF to client
-                if (con->buf_len <= 0) {
-                    con->buf_len = 1;
-                    con->buf[0] = 4; // CTRL+D
-                }
-            }
-        }
-        // If we have data to return
-        if (con->buf_pos < con->buf_len) {
-            processor_write_fromhost(emu->machine, ((uint64_t)1 << 56) | ((uint64_t)0 << 48) | con->buf[con->buf_pos++]);
-            con->fromhost_pending = true;
-        }
-    }
-}
-
-static bool htif_read(i_device_state_access *a, void *context, uint64_t offset, uint64_t *pval, int size_log2) {
-    (void) context;
-
-    // Our HTIF only supports aligned 64-bit reads
-    if (size_log2 != 3 || offset & 7) return false;
-
-    switch (offset) {
-        case 0: // tohost
-            *pval = a->read_tohost();
-            return true;
-        case 8: // fromhost
-            *pval = a->read_fromhost();
-            return true;
-        default:
-            // other reads are exceptions
-            return false;
-    }
-}
-
-static bool htif_getchar(i_device_state_access *a, emulator *emu, uint64_t payload) {
-    //??D Not sure exactly what role this command plays
-    (void) emu; (void) payload;
-    a->write_tohost(0); // Acknowledge command
-    // a->write_fromhost(((uint64_t)1 << 56) | ((uint64_t)1 << 48));
-    return true;
-}
-
-static bool htif_putchar(i_device_state_access *a, emulator *emu, uint64_t payload) {
-    (void) emu;
-    a->write_tohost(0); // Acknowledge command
-    uint8_t ch = payload & 0xff;
-    if (write(1, &ch, 1) < 1) { ; } // Obviously, this is not done in blockchain
-    a->write_fromhost(((uint64_t)1 << 56) | ((uint64_t)1 << 48));
-    return true;
-}
-
-static bool htif_halt(i_device_state_access *a, emulator *emu, uint64_t payload) {
-    (void) emu; (void) payload;
-    a->set_iflags_H();
-    // Leave tohost value alone so the payload can be read afterwards
-    return true;
-}
-
-static bool htif_write_tohost(i_device_state_access *a, emulator *emu, uint64_t tohost) {
-    // Decode tohost
-    uint32_t device = tohost >> 56;
-    uint32_t cmd = (tohost >> 48) & 0xff;
-    uint64_t payload = (tohost & (~1ULL >> 16));
-    // Log write to tohost
-    a->write_tohost(tohost);
-    // Handle commands
-    if (device == 0 && cmd == 0 && (payload & 1)) {
-        return htif_halt(a, emu, payload);
-    } else if (device == 1 && cmd == 1) {
-        return htif_putchar(a, emu, payload);
-    } else if (device == 1 && cmd == 0) {
-        return htif_getchar(a, emu, payload);
-    }
-    //??D Unknown HTIF commands are sillently ignored
-    return true;
-}
-
-static bool htif_write_fromhost(i_device_state_access *a, emulator *emu, uint64_t val) {
-    a->write_fromhost(val);
-    auto con = get_console(emu);
-    if (con) {
-        con->fromhost_pending = false;
-        htif_console_poll(emu);
-    }
-    return true;
-}
-
-static bool htif_write(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2) {
-    emulator *emu = reinterpret_cast<emulator *>(context);
-
-    // Our HTIF only supports aligned 64-bit writes
-    if (size_log2 != 3 || offset & 7) return false;
-
-    switch (offset) {
-        case 0: // tohost
-            return htif_write_tohost(a, emu, val);
-        case 8: // fromhost
-            return htif_write_fromhost(a, emu, val);
-        default:
-            // other writes are exceptions
-            return false;
-    }
-}
-
-static bool clint_read_msip(i_device_state_access *a, emulator *emu, uint64_t *val, int size_log2) {
-    (void) emu;
-    if (size_log2 == 2) {
-        *val = ((a->read_mip() & MIP_MSIP) == MIP_MSIP);
-        return true;
-    }
-    return false;
-}
-
-static bool clint_read_mtime(i_device_state_access *a, emulator *emu, uint64_t *val, int size_log2) {
-    (void) emu;
-    if (size_log2 == 3) {
-        *val = processor_rtc_cycles_to_time(a->read_mcycle());
-        return true;
-    }
-    return false;
-}
-
-static bool clint_read_mtimecmp(i_device_state_access *a, emulator *emu, uint64_t *val, int size_log2) {
-    (void) emu;
-    if (size_log2 == 3) {
-        *val = a->read_mtimecmp();
-        return true;
-    }
-    return false;
-}
-
-/* Clock Interrupt */
-static bool clint_read(i_device_state_access *a, void *context, uint64_t offset, uint64_t *val, int size_log2) {
-    emulator *emu = reinterpret_cast<emulator *>(context);
-
-    switch (offset) {
-        case 0: // Machine software interrupt for hart 0
-            return clint_read_msip(a, emu, val, size_log2);
-        case 0xbff8: // mtime
-            return clint_read_mtime(a, emu, val, size_log2);
-        case 0x4000: // mtimecmp
-            return clint_read_mtimecmp(a, emu, val, size_log2);
-        default:
-            // other reads are exceptions
-            return false;
-    }
-}
-
-static bool clint_write(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2) {
-    (void) context;
-
-    switch (offset) {
-        case 0: // Machine software interrupt for hart 0
-            if (size_log2 == 2) {
-                //??D I don't yet know why Linux tries to raise MSIP when we only have a single hart
-                //    It does so repeatedly before and after every command run in the shell
-                //    Will investigate.
-                if (val & 1) {
-                    a->set_mip(MIP_MSIP);
-                } else {
-                    a->reset_mip(MIP_MSIP);
-                }
-                return true;
-            }
-            return false;
-        case 0x4000: // mtimecmp
-            if (size_log2 == 3) {
-                a->write_mtimecmp(val);
-                a->reset_mip(MIP_MTIP);
-                return true;
-            }
-            // partial mtimecmp is not supported
-            return false;
-        default:
-            // other writes are exceptions
-            return false;
     }
 }
 
@@ -589,68 +337,24 @@ static bool init_ram_and_rom(const emulator_config *p, emulator *emu) {
         memcpy(rom_ptr, p->rom_image.buf, std::min(p->rom_image.len, ROM_SIZE));
     }
 
+#if 0
+    {
+        FILE *f;
+        f = fopen("bootstrap.bin", "wb");
+        fwrite(rom_ptr, 1, ROM_SIZE, f);
+        fclose(f);
+    }
+#endif
+
     return true;
 }
 
-void emulator_set_defaults(emulator_config *p)
-{
+void emulator_set_defaults(emulator_config *p) {
     memset(p, 0, sizeof(*p));
 }
 
-static void set_blocking(int fd) {
-    int flags = fcntl(fd, F_GETFL, 0);
-    flags &= (~(O_NONBLOCK));
-    fcntl(fd, F_SETFL, flags);
-}
-
-static void set_nonblocking(int fd) {
-    int flags = fcntl(fd, F_GETFL, 0);
-    flags |= O_NONBLOCK;
-    fcntl(fd, F_SETFL, flags);
-}
-
-static void htif_console_init(HTIFConsole *con) {
-    memset(con, 0, sizeof(*con));
-    struct termios tty;
-    memset(&tty, 0, sizeof(tty));
-    tcgetattr (0, &tty);
-    con->oldtty = tty;
-    con->old_fd0_flags = fcntl(0, F_GETFL);
-    tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
-    tty.c_oflag |= OPOST;
-    tty.c_lflag &= ~(ECHO|ECHONL|ICANON|IEXTEN);
-    tty.c_lflag &= ~ISIG;
-    tty.c_cflag &= ~(CSIZE|PARENB);
-    tty.c_cflag |= CS8;
-    tty.c_cc[VMIN] = 1;
-    tty.c_cc[VTIME] = 0;
-    tcsetattr (0, TCSANOW, &tty);
-    set_nonblocking(0);
-}
-
-static void htif_console_end(HTIFConsole *con) {
-    tcsetattr (0, TCSANOW, &con->oldtty);
-    fcntl(0, F_SETFL, con->old_fd0_flags);
-    set_blocking(0);
-}
-
-static interactive_state *interactive_init(void) {
-    interactive_state *i = reinterpret_cast<interactive_state *>(calloc(1, sizeof(interactive_state)));
-    if (i) {
-        htif_console_init(&i->console);
-    }
-    return i;
-}
-
-static void interactive_end(interactive_state *i) {
-    if (i) {
-        htif_console_end(&i->console);
-        free(i);
-    }
-}
-
 void emulator_end(emulator *emu) {
-    interactive_end(emu->interactive);
+    htif_end(emu->htif);
     machine_end(emu->machine);
     delete emu->tree;
     free(emu);
@@ -701,12 +405,18 @@ emulator *emulator_init(const emulator_config *c) {
         }
     }
 
-    if (!board_register_mmio(emu->machine, CLINT_BASE_ADDR, CLINT_SIZE, emu, clint_read, clint_write)) {
+    if (!board_register_mmio(emu->machine, CLINT_BASE_ADDR, CLINT_SIZE, nullptr, clint_read, clint_write)) {
         fprintf(stderr, "Unable to initialize CLINT device\n");
         goto failed;
     }
 
-    if (!board_register_mmio(emu->machine, HTIF_BASE_ADDR, HTIF_SIZE, emu, htif_read, htif_write)) {
+    emu->htif = htif_init(emu->machine, c->interactive);
+    if (!emu->htif) {
+        fprintf(stderr, "Unable to initialize HTIF device\n");
+        goto failed;
+    }
+
+    if (!board_register_mmio(emu->machine, HTIF_BASE_ADDR, HTIF_SIZE, emu->htif, htif_read, htif_write)) {
         fprintf(stderr, "Unable to initialize HTIF device\n");
         goto failed;
     }
@@ -717,14 +427,6 @@ emulator *emulator_init(const emulator_config *c) {
     }
 
     //??D still need to initialize shadows for processor and board
-
-    if (c->interactive) {
-        emu->interactive = interactive_init();
-        if (!emu->interactive) {
-            fprintf(stderr, "Unable to initialize interactive session\n");
-            goto failed;
-        }
-    }
 
     emu->tree = new merkle_tree;
 
@@ -743,9 +445,23 @@ uint64_t emulator_read_tohost(emulator *emu) {
     return processor_read_tohost(emu->machine);
 }
 
-const char *emulator_get_name(void)
-{
+const char *emulator_get_name(void) {
     return "riscv64";
+}
+
+int emulator_update_merkle_tree(emulator *emu) {
+    machine_update_merkle_tree(emu->machine, emu->tree);
+    return 1;
+}
+
+int emulator_get_merkle_tree_root_hash(emulator *emu, uint8_t *buf, int len) {
+    merkle_tree::keccak_256_hash h;
+    if (!emu->tree->is_error(emu->tree->get_merkle_tree_root_hash(h))) {
+        memcpy(buf, h.data(), std::min(len, static_cast<int>(h.size())));
+        return 1;
+    } else {
+        return 0;
+    }
 }
 
 int emulator_run(emulator *emu, uint64_t mcycle_end) {
@@ -792,12 +508,8 @@ int emulator_run(emulator *emu, uint64_t mcycle_end) {
                 processor_set_mip(s, MIP_MTIP);
             }
 
-            // Perform interactive actions every 10 divisors
-            if (emu->interactive && ++emu->interactive->divisor_counter == 10) {
-                emu->interactive->divisor_counter = 0;
-                // Check if there is user input from stdin
-                htif_console_poll(emu);
-            }
+            // Perform interactive actions
+            htif_interact(emu->htif);
         }
     }
 }

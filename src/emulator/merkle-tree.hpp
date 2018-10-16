@@ -54,7 +54,7 @@ template <int T, int P>
 typename merkle_tree_t<T,P>::tree_node *
 merkle_tree_t<T,P>::
 create_node(void) const {
-#ifndef NDEBUG
+#ifdef MERKLE_DUMP_STATS
     m_num_nodes++;
 #endif
     return reinterpret_cast<tree_node *>(calloc(1, sizeof(tree_node)));
@@ -64,7 +64,7 @@ template <int T, int P>
 void
 merkle_tree_t<T,P>::
 destroy_node(tree_node *node) const {
-#ifndef NDEBUG
+#ifdef MERKLE_DUMP_STATS
     --m_num_nodes;
 #endif
     free(node);
@@ -334,7 +334,7 @@ merkle_tree_t(void) {
     initialize_pristine_hashes();
     m_root->hash = get_pristine_hash(get_log2_tree_size());
     m_merkle_update_nonce = 1;
-#ifndef NDEBUG
+#ifdef MERKLE_DUMP_STATS
     m_num_nodes = 0;
 #endif
 }
@@ -342,12 +342,12 @@ merkle_tree_t(void) {
 template <int T, int P>
 merkle_tree_t<T,P>::
 ~merkle_tree_t() {
-#ifndef NDEBUG
+#ifdef MERKLE_DUMP_STATS
     std::cerr << "before destruction\n";
     std::cerr << "  number of tree nodes:     " << m_num_nodes << '\n';
 #endif
     destroy_merkle_tree();
-#ifndef NDEBUG
+#ifdef MERKLE_DUMP_STATS
     std::cerr << "after destruction\n";
     std::cerr << "  number of tree nodes:     " << m_num_nodes << '\n';
 #endif
@@ -357,8 +357,6 @@ template <int T, int P>
 typename merkle_tree_t<T,P>::status_code
 merkle_tree_t<T,P>::
 get_merkle_tree_root_hash(keccak_256_hash &hash) {
-    status_code code = update_merkle_tree();
-    if (is_error(code)) return code;
     hash = m_root->hash;
     return status_code::success;
 }

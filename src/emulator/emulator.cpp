@@ -15,6 +15,7 @@ extern "C" {
 #include "machine.h"
 #include "clint.h"
 #include "htif.h"
+#include "rtc.h"
 
 #define Ki(n) (((uint64_t)n) << 10)
 #define Mi(n) (((uint64_t)n) << 20)
@@ -28,6 +29,8 @@ extern "C" {
 #define HTIF_BASE_ADDR         (Gi(1)+Ki(32))
 #define HTIF_SIZE              4096
 
+#define CLOCK_FREQ 1000000000 // 1 GHz (arbitrary)
+
 struct emulator {
     machine_state *machine;
     htif_state *htif;
@@ -35,6 +38,7 @@ struct emulator {
 };
 
 /* return -1 if error. */
+//??D Change to ifstream and std::vector to simplify code.
 static uint64_t load_file(uint8_t **pbuf, const char *filename) {
     FILE *f;
     int size;
@@ -213,7 +217,7 @@ static bool fdt_build_riscv(const emulator_config *p, const emulator *emu, void 
      FDT_CHECK(fdt_begin_node(buf, "cpus"));
       FDT_CHECK(fdt_property_u32(buf, "#address-cells", 1));
       FDT_CHECK(fdt_property_u32(buf, "#size-cells", 0));
-      FDT_CHECK(fdt_property_u32(buf, "timebase-frequency", RISCV_CLOCK_FREQ/RISCV_RTC_FREQ_DIV));
+      FDT_CHECK(fdt_property_u32(buf, "timebase-frequency", CLOCK_FREQ/RTC_FREQ_DIV));
       FDT_CHECK(fdt_begin_node_num(buf, "cpu", 0));
        FDT_CHECK(fdt_property_string(buf, "device_type", "cpu"));
        FDT_CHECK(fdt_property_u32(buf, "reg", 0));
@@ -230,7 +234,7 @@ static bool fdt_build_riscv(const emulator_config *p, const emulator *emu, void 
        *q = '\0';
        FDT_CHECK(fdt_property_string(buf, "riscv,isa", isa_string));
        FDT_CHECK(fdt_property_string(buf, "mmu-type", "riscv,sv48"));
-       FDT_CHECK(fdt_property_u32(buf, "clock-frequency", RISCV_CLOCK_FREQ));
+       FDT_CHECK(fdt_property_u32(buf, "clock-frequency", CLOCK_FREQ));
        FDT_CHECK(fdt_begin_node(buf, "interrupt-controller"));
         FDT_CHECK(fdt_property_u32(buf, "#interrupt-cells", 1));
         FDT_CHECK(fdt_property(buf, "interrupt-controller", NULL, 0));
@@ -481,7 +485,7 @@ int emulator_run(emulator *emu, uint64_t mcycle_end) {
         // ??D This is enough for us to be inside the inner loop for about 98% of the time,
         // according to measurement, so it is not a good target for further optimization
         uint64_t mcycle = processor_read_mcycle(s);
-        uint64_t next_rtc_freq_div = mcycle + RISCV_RTC_FREQ_DIV - mcycle % RISCV_RTC_FREQ_DIV;
+        uint64_t next_rtc_freq_div = mcycle + RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV;
         machine_run(s, std::min(next_rtc_freq_div, mcycle_end));
 
         // If we hit mcycle_end, we are done
@@ -493,7 +497,7 @@ int emulator_run(emulator *emu, uint64_t mcycle_end) {
         // If we managed to run until the next possible frequency divisor
         if (mcycle == next_rtc_freq_div) {
             // Get the mcycle corresponding to mtimecmp
-            uint64_t timecmp_mcycle = processor_rtc_time_to_cycles(processor_read_mtimecmp(s));
+            uint64_t timecmp_mcycle = rtc_time_to_cycle(processor_read_mtimecmp(s));
 
             // If the processor is waiting for interrupts, we can skip until time hits timecmp
             // CLINT is the only interrupt source external to the inner loop

@@ -1,7 +1,9 @@
 #include "clint.h"
 #include "machine.h"
+#include "rtc.h"
 
-static bool clint_read_msip(i_device_state_access *a, uint64_t *val, int size_log2) {
+static bool clint_read_msip(i_device_state_access *a, uint64_t *val,
+    int size_log2) {
     if (size_log2 == 2) {
         *val = ((a->read_mip() & MIP_MSIP) == MIP_MSIP);
         return true;
@@ -11,7 +13,7 @@ static bool clint_read_msip(i_device_state_access *a, uint64_t *val, int size_lo
 
 static bool clint_read_mtime(i_device_state_access *a, uint64_t *val, int size_log2) {
     if (size_log2 == 3) {
-        *val = processor_rtc_cycles_to_time(a->read_mcycle());
+        *val = rtc_cycle_to_time(a->read_mcycle());
         return true;
     }
     return false;

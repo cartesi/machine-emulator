@@ -78,7 +78,7 @@ new_page_node(uint64_t page_index) {
     uint64_t bit_mask = 1ull << (get_log2_tree_size() - 1);
     tree_node *node = m_root;
     // Descend tree until we reach the node at the end of the
-    // path determined by the virtual page index,
+    // path determined by the page index,
     // creating the needed nodes along the way
     while (1) {
         int bit = (page_index & bit_mask) != 0;
@@ -95,7 +95,7 @@ new_page_node(uint64_t page_index) {
         if (!(bit_mask & m_page_index_mask))
             break;
     }
-    // Finally associate page node to virtual page index
+    // Finally associate page node to page index
     if (!set_page_node_map(page_index, node)) {
         return nullptr;
     }
@@ -117,7 +117,7 @@ update_page_node_hash(CryptoPP::Keccak_256 &kc,
         get_concat_hash(kc, child0, child1, hash);
     } else {
         kc.Restart();
-        //??D change this to the insane EVM hash
+        //??D Make sure this is what EVM does
         kc.Update(start, get_word_size());
         kc.Final(hash.data());
     }
@@ -144,11 +144,12 @@ update_inner_node_hash(CryptoPP::Keccak_256 &kc,
 template <int T, int P>
 void
 merkle_tree_t<T,P>::
-print_hash(const uint8_t *hash) const {
+dump_hash(const uint8_t *hash) const {
     auto f = std::cerr.flags();
+    std::cerr << std::hex << std::setfill('0') << std::setw(2);
     for (unsigned i = 0; i < m_hash_size; ++i) {
         unsigned b = hash[i];
-        std::cerr << std::hex << std::setfill('0') << std::setw(2) << b;
+        std::cerr << b;
     }
     std::cerr << '\n';
     std::cerr.flags(f);
@@ -187,16 +188,16 @@ initialize_pristine_hashes(void) {
 template <int T, int P>
 void
 merkle_tree_t<T,P>::
-dump_merkle_tree(tree_node *node, int log2_tree_size) const {
-    fprintf(stderr, "%02d: ", log2_tree_size);
+dump_merkle_tree(tree_node *node, int log2_size) const {
+    std::cerr << log2_size << ": ";
     if (node) {
-        print_hash(node->hash);
-        if (log2_tree_size > get_log2_page_size()) {
-            dump_merkle_tree(node->child[0], log2_tree_size-1);
-            dump_merkle_tree(node->child[1], log2_tree_size-1);
+        dump_hash(node->hash);
+        if (log2_size > get_log2_page_size()) {
+            dump_merkle_tree(node->child[0], log2_size-1);
+            dump_merkle_tree(node->child[1], log2_size-1);
         }
     } else {
-        fprintf(stderr, "nullptr\n");
+        std::cerr << "nullptr\n";
     }
 }
 
@@ -229,26 +230,29 @@ template <int T, int P>
 void
 merkle_tree_t<T,P>::
 get_inside_page_word_value_proof(CryptoPP::Keccak_256 &kc,
-    uint64_t virtual_address, int parent_diverged, int diverged,
-    const uint8_t *physical_address, int log2_size,
+    uint64_t address, int parent_diverged, int diverged,
+    const uint8_t *node_data, int log2_size,
     word_value_proof &proof, keccak_256_hash &hash) {
     if (log2_size > get_log2_word_size()) {
         int log2_child_size = log2_size-1;
         uint64_t child_size = 1ull << log2_child_size;
         keccak_256_hash first, second;
-        int bit = (virtual_address & child_size) != 0;
-        get_inside_page_word_value_proof(kc, virtual_address,
+        int bit = (address & child_size) != 0;
+        get_inside_page_word_value_proof(kc, address,
             parent_diverged || diverged, bit != 0,
-            physical_address, log2_child_size, proof, first);
-        get_inside_page_word_value_proof(kc, virtual_address,
+            node_data, log2_child_size, proof, first);
+        get_inside_page_word_value_proof(kc, address,
             parent_diverged || diverged, bit != 1,
-            physical_address+child_size, log2_child_size, proof, second);
+            node_data+child_size, log2_child_size, proof, second);
         get_concat_hash(kc, first, second, hash);
     } else {
         kc.Restart();
-        kc.Update(physical_address, get_word_size());
+        kc.Update(node_data, get_word_size());
         kc.Final(hash.data());
     }
+    // We only store siblings of nodes along the path. So if
+    // the parent belongs to the path, but the node doesn't,
+    // we store it.
     if (!parent_diverged && diverged) {
         set_proof_hash(proof, log2_size, hash);
     }
@@ -257,12 +261,12 @@ get_inside_page_word_value_proof(CryptoPP::Keccak_256 &kc,
 template <int T, int P>
 void
 merkle_tree_t<T,P>::
-get_inside_page_word_value_proof(uint64_t virtual_address,
-    const uint8_t *physical_address, word_value_proof &proof) {
+get_inside_page_word_value_proof(uint64_t address,
+    const uint8_t *page_data, word_value_proof &proof) {
     keccak_256_hash hash;
     CryptoPP::Keccak_256 kc;
-    get_inside_page_word_value_proof(kc, virtual_address, 0, 0,
-        physical_address, get_log2_page_size(), proof, hash);
+    get_inside_page_word_value_proof(kc, address, 0, 0,
+        page_data, get_log2_page_size(), proof, hash);
 }
 
 template <int T, int P>
@@ -415,20 +419,11 @@ verify_merkle_tree(CryptoPP::Keccak_256 &kc,
         } else {
             return status_code::success;
         }
-    // verify page node
+    // Assume page nodes are correct
     } else {
-        keccak_256_hash hash;
-        const uint8_t *physical_address = node->data.page.physical_address;
-        update_page_node_hash(kc, physical_address,
-            get_log2_page_size(), hash);
-        if (hash != node->hash) {
-            return status_code::error;
-        } else {
-            return status_code::success;
-        }
+        return status_code::success;
     }
 }
-
 
 template <int T, int P>
 typename merkle_tree_t<T,P>::status_code

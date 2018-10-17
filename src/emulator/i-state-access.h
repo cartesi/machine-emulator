@@ -316,4 +316,11 @@ using is_an_i_state_access = std::integral_constant<
         typename remove_cvref<DERIVED>::type
     >::value>;
 
+/// \brief Type-trait selecting the use of TLB while
+/// accessing memory in the state
+template <typename STATE_ACCESS>
+struct avoid_tlb {
+    static constexpr bool value = false;
+};
+
 #endif

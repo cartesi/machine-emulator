@@ -4,7 +4,7 @@
 #include <type_traits>
 
 /// \file
-/// \brief Meta-programming helper functions
+/// \brief Meta-programming helper functions.
 
 namespace detail {
     template <template<typename...> class BASE, typename DERIVED>
@@ -40,5 +40,37 @@ using is_template_base_of = std::integral_constant<
         >::type,
         typename detail::is_template_base_of_helper<BASE, DERIVED>::yes
     >::value>;
+
+
+/// \class size_log2
+/// \brief Provides an int member value with the log<sub>2</sub> of size of \p T
+/// \param T Type from which the size is needed.
+template <typename T>
+struct size_log2 {
+};
+
+/// \cond HIDDEN_SYMBOLS
+
+template <>
+struct size_log2<uint8_t> {
+    static constexpr int value = 0;
+};
+
+template <>
+struct size_log2<uint16_t> {
+    static constexpr int value = 1;
+};
+
+template <>
+struct size_log2<uint32_t> {
+    static constexpr int value = 2;
+};
+
+template <>
+struct size_log2<uint64_t> {
+    static constexpr int value = 3;
+};
+
+/// \endcond
 
 #endif

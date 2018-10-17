@@ -1,20 +1,17 @@
-#include <cstdlib>
 #include <cstdio>
-#include <cstdarg>
 #include <cstring>
 #include <cinttypes>
 #include <cstdint>
 #include <cassert>
-#include <bitset>
-#include <iostream>
-#include <functional>
-#include <limits>
 #include <type_traits>
 
 #include <sys/mman.h> /* mmap, munmap */
 #include <sys/stat.h> /* fstat */
 #include <unistd.h> /* close */
 #include <fcntl.h> /* open */
+
+/// \file
+/// \brief Cartesi machine implementation.
 
 //??D
 //
@@ -82,43 +79,32 @@ typedef unsigned __int128 uint128_t;
 #include "machine-state.h"
 #include "state-access.h"
 #include "device-state-access.h"
+#include "rtc.h"
+#include "meta.h"
 
-template <typename T> static inline int size_log2(void);
-template <> int size_log2<uint8_t>(void)  { return 0; }
-template <> int size_log2<uint16_t>(void) { return 1; }
-template <> int size_log2<uint32_t>(void) { return 2; }
-template <> int size_log2<uint64_t>(void) { return 3; }
-
-template <typename STATE_ACCESS>
-struct avoid_tlb {
-    static constexpr bool value = false;
-};
-
-#if 0
-template <>
-struct avoid_tlb<uint64_t> {
-    static constexpr bool value = true;
-};
-#endif
-
->>>>>>> 4a95cde... All state access goes through state_access objects.
+/// log<sub>2</sub> of physical memory page size.
 #define PMA_PAGE_SIZE_LOG2 12
+/// Physical memory page size.
 #define PMA_PAGE_SIZE      (1 << PMA_PAGE_SIZE_LOG2)
 
-#define PMA_FLAGS_M         (1u << 0)
-#define PMA_FLAGS_IO        (1u << 1)
-#define PMA_FLAGS_E         (1u << 2)
-#define PMA_FLAGS_R         (1u << 3)
-#define PMA_FLAGS_W         (1u << 4)
-#define PMA_FLAGS_X         (1u << 5)
-#define PMA_FLAGS_IR        (1u << 6)
-#define PMA_FLAGS_IW        (1u << 7)
+/// \name PMA target flags
+/// \{
+#define PMA_FLAGS_M         (1u << 0) ///< Memory range
+#define PMA_FLAGS_IO        (1u << 1) ///< IO mapped range
+#define PMA_FLAGS_E         (1u << 2) ///< Empty range
+#define PMA_FLAGS_R         (1u << 3) ///< Readable
+#define PMA_FLAGS_W         (1u << 4) ///< Writable
+#define PMA_FLAGS_X         (1u << 5) ///< Executable
+#define PMA_FLAGS_IR        (1u << 6) ///< Idempotent reads
+#define PMA_FLAGS_IW        (1u << 7) ///< Idempotent writes
+/// \}
 
-#define PMA_FLAGS_MASK      0xff
+/// \name PMA host type
+#define PMA_TYPE_MEMORY     (1u << 31) ///< Mapped to host memory
+#define PMA_TYPE_DEVICE     (1u << 30) ///< Mapped to device
+/// \}
 
-#define PMA_TYPE_MEMORY     (1u << 31)
-#define PMA_TYPE_DEVICE     (1u << 30)
-
+/// RAM type-flags combination
 #define PMA_TYPE_FLAGS_RAM  ( \
     PMA_TYPE_MEMORY | \
     PMA_FLAGS_M     | \
@@ -129,6 +115,7 @@ struct avoid_tlb<uint64_t> {
     PMA_FLAGS_IW    \
 )
 
+/// Flash memory type-flags combination
 #define PMA_TYPE_FLAGS_FLASH  ( \
     PMA_TYPE_MEMORY | \
     PMA_FLAGS_M     | \
@@ -138,33 +125,46 @@ struct avoid_tlb<uint64_t> {
     PMA_FLAGS_IW    \
 )
 
+/// Memory mapped device type-flags combination
 #define PMA_TYPE_FLAGS_MMIO       (PMA_TYPE_DEVICE | PMA_FLAGS_IO | PMA_FLAGS_W | PMA_FLAGS_R )
+
+/// Shadow device type-flags combination
 #define PMA_TYPE_FLAGS_SHADOW      (PMA_TYPE_DEVICE | PMA_FLAGS_E )
 
+/// \brief Default device write callback issues error on write.
 static bool pma_device_write_error(i_device_state_access *, void *, uint64_t, uint64_t, int) {
     return false;
 }
 
+/// \brief Default device read callback issues error on reads.
 static bool pma_device_read_error(i_device_state_access *, void *, uint64_t, uint64_t *, int) {
     return false;
 }
 
-static bool pma_device_peek_error(machine_state *, void *, uint64_t, uint64_t *, int) {
+/// \brief Default device peek callback issues error on peeks.
+static bool pma_device_peek_error(const machine_state *, void *, uint64_t, uint64_t *, int) {
     return false;
 }
 
-static bool pma_device_update_merkle_tree_error(machine_state *, void *, uint64_t, uint64_t, merkle_tree *) {
+/// \brief Default device update_merkle_tree callback issues error on updates.
+static bool pma_device_update_merkle_tree_error(const machine_state *, void *, uint64_t, uint64_t, merkle_tree *) {
     return false;
 }
 
+/// \brief Checks if a PMA entry describes a memory range
+/// \param entry Pointer to entry of interest.
 static inline bool pma_is_memory(const pma_entry *entry) {
     return entry->type_flags & PMA_TYPE_MEMORY;
 }
 
+/// \brief Checks if a PMA entry describes a device range
+/// \param entry Pointer to entry of interest.
 static inline bool pma_is_device(const pma_entry *entry) {
     return entry->type_flags & PMA_TYPE_DEVICE;
 }
 
+/// \brief Checks if a PMA entry is RAM
+/// \param entry Pointer to entry of interest.
 static inline bool pma_is_ram(const pma_entry *entry) {
     return entry->type_flags == PMA_TYPE_FLAGS_RAM;
 }
@@ -183,11 +183,15 @@ static inline bool pma_is_shadow(const pma_entry *entry) {
 }
 #endif
 
+/// \brief Initializes the board PMA entries
+/// \param s Machine state.
 static void board_init(machine_state *s) {
     memset(s->physical_memory, 0, sizeof(s->physical_memory));
     s->pma_count = 0;
 }
 
+/// \brief Destroys the board PMA entries
+/// \param s Machine state.
 static void board_end(machine_state *s) {
     for (int i = 0; i < s->pma_count; i++) {
         pma_entry *entry = &s->physical_memory[i];
@@ -202,6 +206,11 @@ static void board_end(machine_state *s) {
     }
 }
 
+/// \brief Obtain PMA entry overlapping with target physical address
+/// \param s Machine state.
+/// \param paddr Target physical address.
+/// \returns Corresponding entry, or nullptr if no PMA
+/// matches \p paddr.
 static pma_entry *pma_get_entry(machine_state *s, uint64_t paddr) {
     for (int i = 0; i < s->pma_count; i++) {
         pma_entry *entry = &s->physical_memory[i];
@@ -211,6 +220,11 @@ static pma_entry *pma_get_entry(machine_state *s, uint64_t paddr) {
     return nullptr;
 }
 
+/// \brief Allocates a new PMA entry.
+/// \param s Machine state.
+/// \param start Start of range in target physical memory.
+/// \param length Length of range in target physical memory.
+/// \returns Corresponding entry, or nullptr if no room for new PMA.
 static pma_entry *pma_allocate_entry(machine_state *s, uint64_t start, uint64_t length) {
     assert(s->pma_count < PMA_SIZE); // check for too many entries
     if (s->pma_count >= PMA_SIZE)
@@ -218,12 +232,18 @@ static pma_entry *pma_allocate_entry(machine_state *s, uint64_t start, uint64_t 
     assert((start & (PMA_PAGE_SIZE - 1)) == 0 && length != 0); // check for alignment
     if ((start & (PMA_PAGE_SIZE - 1)) != 0 || length == 0)
         return nullptr;
+    //??D Should test for *any* overlapping, not just the start
     assert(!pma_get_entry(s, start)); // check for overlapping entries
     if (pma_get_entry(s, start))
         return nullptr;
     return &s->physical_memory[s->pma_count++];
 }
 
+/// \brief Allocates a new PMA memory entry.
+/// \param s Machine state.
+/// \param start Start of range in target physical memory.
+/// \param length Length of range in target physical memory.
+/// \returns Corresponding entry, or nullptr if no room for new PMA.
 static pma_entry *pma_allocate_memory_entry(machine_state *s, uint64_t start, uint64_t length) {
     pma_entry *entry = pma_allocate_entry(s, start, length);
     if (!entry) return nullptr;
@@ -234,6 +254,16 @@ static pma_entry *pma_allocate_memory_entry(machine_state *s, uint64_t start, ui
     return entry;
 }
 
+/// \brief Allocates a new PMA device entry.
+/// \param s Machine state.
+/// \param start Start of range in target physical memory.
+/// \param length Length of range in target physical memory.
+/// \param context Pointer to context to be passed to callbacks.
+/// \param read Callback for read operations.
+/// \param write Callback for write operations.
+/// \param peek Callback for peek operations.
+/// \param update_merkle_tree Callback for Merkle tree update operations.
+/// \returns Corresponding entry, or nullptr if no room for new PMA.
 static pma_entry *pma_allocate_device_entry(machine_state *s, uint64_t start, uint64_t length, void *context,
     pma_device_read read, pma_device_write write, pma_device_peek peek, pma_device_update_merkle_tree update_merkle_tree) {
     pma_entry *entry = pma_allocate_entry(s, start, length);
@@ -323,13 +353,15 @@ bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void
 }
 
 bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context,
-    pma_device_read read, pma_device_write write, pma_device_peek peek, pma_device_update_merkle_tree update_merkle_tree) {
-    pma_entry *entry = pma_allocate_device_entry(s, start, length, context, read, write, peek, update_merkle_tree);
+    pma_device_peek peek, pma_device_update_merkle_tree update_merkle_tree) {
+    pma_entry *entry = pma_allocate_device_entry(s, start, length, context, nullptr, nullptr, peek, update_merkle_tree);
     if (!entry) return false;
     entry->type_flags = PMA_TYPE_FLAGS_SHADOW;
     return true;
 }
 
+/// \name mcause for exceptions
+/// \{
 #define CAUSE_MISALIGNED_FETCH              0x0
 #define CAUSE_FETCH_FAULT                   0x1
 #define CAUSE_ILLEGAL_INSTRUCTION           0x2
@@ -343,25 +375,31 @@ bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length, vo
 #define CAUSE_LOAD_PAGE_FAULT               0xd
 #define CAUSE_STORE_AMO_PAGE_FAULT          0xf
 #define CAUSE_INTERRUPT                     ((uint64_t)1 << 63)
+/// \}
 
-/* privilege levels */
-#define PRV_U               0
-#define PRV_S               1
-#define PRV_H               2
-#define PRV_M               3
 
-/* misa CSR */
-#define MCPUID_SUPER        (1 << ('S' - 'A'))
-#define MCPUID_USER         (1 << ('U' - 'A'))
-#define MCPUID_I            (1 << ('I' - 'A'))
-#define MCPUID_M            (1 << ('M' - 'A'))
-#define MCPUID_A            (1 << ('A' - 'A'))
-#define MCPUID_F            (1 << ('F' - 'A'))
-#define MCPUID_D            (1 << ('D' - 'A'))
-#define MCPUID_Q            (1 << ('Q' - 'A'))
-#define MCPUID_C            (1 << ('C' - 'A'))
+/// \name Privilege levels
+/// \{
+#define PRV_U               0  ///< User
+#define PRV_S               1  ///< Supervisor
+#define PRV_H               2  ///< Reserved
+#define PRV_M               3  ///< Machine
+/// \}
 
-/* mstatus CSR */
+/// \name misa extensions
+/// \{
+#define MISAEXT_S            (1 << ('S' - 'A'))
+#define MISAEXT_U         (1 << ('U' - 'A'))
+#define MISAEXT_I            (1 << ('I' - 'A'))
+#define MISAEXT_M            (1 << ('M' - 'A'))
+#define MISAEXT_A            (1 << ('A' - 'A'))
+#define MISAEXT_F            (1 << ('F' - 'A'))
+#define MISAEXT_D            (1 << ('D' - 'A'))
+#define MISAEXT_C            (1 << ('C' - 'A'))
+/// \}
+
+/// \name mstatus shifts
+/// \{
 #define MSTATUS_UIE_SHIFT   0
 #define MSTATUS_SIE_SHIFT   1
 #define MSTATUS_HIE_SHIFT   2
@@ -375,7 +413,10 @@ bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length, vo
 #define MSTATUS_SD_SHIFT    31
 #define MSTATUS_UXL_SHIFT   32
 #define MSTATUS_SXL_SHIFT   34
+/// \}
 
+/// \name mstatus flags
+/// \{
 #define MSTATUS_UIE         (1 << 0)
 #define MSTATUS_SIE         (1 << 1)
 #define MSTATUS_HIE         (1 << 2)
@@ -398,6 +439,7 @@ bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length, vo
 #define MSTATUS_SD          ((uint64_t)1 << MSTATUS_SD_SHIFT)
 #define MSTATUS_UXL         ((uint64_t)3 << MSTATUS_UXL_SHIFT)
 #define MSTATUS_SXL         ((uint64_t)3 << MSTATUS_SXL_SHIFT)
+/// \}
 
 #define PG_SHIFT            12
 #define PG_MASK             ((1 << PG_SHIFT) - 1)
@@ -460,8 +502,8 @@ static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t va
     pma_entry *entry = get_pma(a, paddr);
     if (!entry || !pma_is_ram(entry))
         return false;
-    // log writes to memory BEFORE acutally modifying the state
-    a.write_memory(entry, paddr, val, size_log2<uint64_t>());
+    // log writes to memory BEFORE actually modifying the state
+    a.write_memory(entry, paddr, val, size_log2<uint64_t>::value);
     *reinterpret_cast<uint64_t *>(entry->memory.host_memory + (uintptr_t)(paddr - entry->start)) = val;
     return true;
 }
@@ -472,7 +514,7 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
     if (!entry || !pma_is_ram(entry)) return false;
     *pval = *reinterpret_cast<uint64_t *>(entry->memory.host_memory + (uintptr_t)(paddr - entry->start));
     // log read from memory
-    a.read_memory(entry, paddr, *pval, size_log2<uint64_t>());
+    a.read_memory(entry, paddr, *pval, size_log2<uint64_t>::value);
     return true;
 }
 
@@ -932,7 +974,7 @@ static void processor_init(machine_state *s) {
     s->mstatus = ((uint64_t)MXL << MSTATUS_UXL_SHIFT) |
         ((uint64_t)MXL << MSTATUS_SXL_SHIFT);
     s->misa = MXL; s->misa <<= (XLEN-2); /* set xlen to 64 */
-    s->misa |= MCPUID_SUPER | MCPUID_USER | MCPUID_I | MCPUID_M | MCPUID_A;
+    s->misa |= MISAEXT_S | MISAEXT_U | MISAEXT_I | MISAEXT_M | MISAEXT_A;
 
     tlb_init(s);
     s->brk = false;
@@ -1231,7 +1273,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
         } else if (pma_is_memory(entry)) {
             uint64_t mem_addend = tlb_add(a.naked()->tlb_read, entry, vaddr, paddr);
             *pval = *reinterpret_cast<T *>(mem_addend + (uintptr_t)vaddr);
-            a.read_memory(entry, paddr, *pval, size_log2<U>());
+            a.read_memory(entry, paddr, *pval, size_log2<U>::value);
             return true;
         } else {
             uint64_t offset = paddr - entry->start;
@@ -1239,7 +1281,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             assert(pma_is_device(entry));
             device_state_access<STATE_ACCESS> da(a);
             // If we do not know how to read, we treat this as a PMA violation
-            if (!entry->device.read(&da, entry->device.context, offset, &val, size_log2<U>())) {
+            if (!entry->device.read(&da, entry->device.context, offset, &val, size_log2<U>::value)) {
                 raise_exception(a, CAUSE_LOAD_FAULT, vaddr);
                 return false;
             }
@@ -1282,7 +1324,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             device_state_access<STATE_ACCESS> da(a);
             assert(pma_is_device(entry));
             // If we do not know how to write, we treat this as a PMA violation
-            if (!entry->device.write(&da, entry->device.context, offset, val, size_log2<U>())) {
+            if (!entry->device.write(&da, entry->device.context, offset, val, size_log2<U>::value)) {
                 raise_exception(a, CAUSE_STORE_AMO_FAULT, vaddr);
                 return false;
             }
@@ -1843,7 +1885,7 @@ static inline uint64_t read_csr_minstret(STATE_ACCESS &a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_utime(STATE_ACCESS &a, bool *status) {
-    uint64_t mtime = processor_rtc_cycles_to_time(a.read_mcycle());
+    uint64_t mtime = rtc_cycle_to_time(a.read_mcycle());
     return read_csr_success(mtime, status);
 }
 

@@ -19,6 +19,8 @@
 #include <cryptopp/keccak.h>
 
 /// \class merkle_tree_t
+/// \brief Merkle tree implementation.
+///
 /// \details The merkle_tree_t class implements a Merkle tree
 /// covering LOG2_TREE_SIZE bits of address space.
 ///
@@ -29,11 +31,11 @@
 /// memory are represented by <tt>nullptr</tt> nodes.
 /// Additionaly, the tree is truncated below *page* nodes
 /// subintending LOG2_PAGE_SIZE bits of address space.
-/// The trees corresponding to pages are implicitly built from the
-/// orgiginal data whenever needed and never stored.
+/// The trees corresponding to pages are rebuilt from the
+/// original data whenever needed and never stored.
 /// Pages are divided into *words* that cover LOG2_WORD_SIZE
 /// bits of address space.
-/// The tree leaves contain hashes of individual words.
+/// Tree leaves contain Keccak-256 hashes of individual words.
 ///
 /// Tree contents are updated page-by-page using calls to
 /// merkle_tree_t#begin_update, merkle_tree_t#update_page, ...,
@@ -96,113 +98,199 @@ public:
     using keccak_256_hash = std::array<uint8_t, get_hash_size()>;
 
     /// \brief Storage for the proof of a word value.
+    /// \details The proof for a word value contains the
+    /// hashes for all siblings in the path from the word
+    /// node to the root, followed by the hash for the root,
+    /// in that order.
     using word_value_proof = std::array<keccak_256_hash,
         LOG2_TREE_SIZE-LOG2_WORD_SIZE+1>;
 
 private:
-    // Merkle tree node structure
-    //
-    // Whether a node is a inner-node or a page-node is known implicitly
-    // based on its height in the tree.
+    /// \brief Merkle tree node structure.
+    /// \details A node is known to be an inner-node or a page-node implicitly
+    /// based on its height in the tree.
     struct tree_node {
-        // Keccak 256 hash of subintended data
-        keccak_256_hash hash;
-        // Pointer to parent node (nullptr for root)
-        tree_node *parent;
-        // Data specific to different node types
-        tree_node *child[2];
-        // Helper for traversal algorithms
-        uint64_t mark;
+        keccak_256_hash hash; ///< Keccak 256 hash of subintended data.
+        tree_node *parent;    ///< Pointer to parent node (nullptr for root).
+        tree_node *child[2];  ///< Children nodes.
+        uint64_t mark;        ///< Helper for traversal algorithms.
     };
 
     // Sparse map from virtual page index to the
-    // corresponding page node in the Merkle tree
+    // corresponding page node in the Merkle tree.
     std::unordered_map<
         uint64_t,
         tree_node *
     > m_page_node_map;
 
-    // Root of the Merkle tree
+    // Root of the Merkle tree.
     tree_node m_root_storage;
     tree_node *m_root;
 
     // Precomputed hashes of spans of zero bytes with
-    // increasing power-of-two sizes, from the
-    // 2^LOG2_WORD_SIZE all the way up to 2^LOG2_TREE_SIZE bytes
+    // increasing power-of-two sizes, from 2^LOG2_WORD_SIZE
+    // to 2^LOG2_TREE_SIZE bytes.
     word_value_proof m_pristine_hashes;
 
     // Used to mark visited nodes when traversing the tree
     // bottom up in breadth to propagate changes from dirty
-    // pages all the way up to the tree root
+    // pages all the way up to the tree root.
     uint64_t m_merkle_update_nonce;
+    // FIFO to process pages in bottom-up order.
     std::deque<std::pair<int, tree_node *>> m_merkle_update_fifo;
 
-    // For statistics
+    // For statistics.
 #ifdef MERKLE_DUMP_STATS
     mutable uint64_t m_num_nodes;
 #endif
 
+    /// \brief Get hash corresponding to log2_size in proof.
+    /// \param proof Input proof.
+    /// \param log2_size log<sub>2</sub> of size subintended by hash.
+    /// \return Reference to hash inside proof.
     const keccak_256_hash &get_proof_hash(const word_value_proof &proof,
         int log2_size) const;
 
+    /// \brief Set hash corresponding to log2_size in proof.
+    /// \param proof Proof to modify.
+    /// \param log2_size log<sub>2</sub> of size subintended by hash.
+    /// \param hash New hash for log2_size in proof.
     void set_proof_hash(word_value_proof &proof,
         int log2_size, const keccak_256_hash &hash) const;
 
+    /// \brief Maps a page_index to a node.
+    /// \param page_index Page index.
+    /// \param node Node subintending page.
+    /// \return 1 if succeeded, 0 othewise.
 	int set_page_node_map(uint64_t page_index, tree_node *node);
 
+    /// \brief Creates and returns a new tree node.
+    /// \return Newly created node or nullptr if out-of-memory.
     tree_node *create_node(void) const;
 
+    /// \brief Deallocates node.
+    /// \param node Node to be deallocated.
     void destroy_node(tree_node *node) const;
 
-    // Create a new page node and insert it into the Merkle tree
-    tree_node *new_page_node(uint64_t virtual_page_index);
+    /// \brief Creates a new page node and insert it into the Merkle tree.
+    /// \param page_index Page index for node.
+    /// \return Newly created node.
+    /// \details Does *not* check if a node already exists for that page index.
+    /// Maps new node to the page index.
+    tree_node *new_page_node(uint64_t page_index);
 
+    /// \brief Recursively builds hash for log2_size node
+    /// from contiguous memory.
+    /// \param kc Keccak hasher object.
+    /// \param start Start of contiguous memory subintended by node.
+    /// \param log2_size log<sub>2</sub> of size subintended by node.
+    /// \param hash Receives the hash.
     void update_page_node_hash(CryptoPP::Keccak_256 &kc,
         const uint8_t *start, int log2_size, keccak_256_hash &hash) const;
 
+    /// \brief Updates an inner node hash from its children.
+    /// \param kc Keccak hasher object.
+    /// \param log2_size log<sub>2</sub> of size subintended by node.
+    /// \param node Node to be updated.
     void update_inner_node_hash(CryptoPP::Keccak_256 &kc,
         int log2_size, tree_node *node);
 
-    void print_hash(const uint8_t *hash) const;
+    /// \brief Dumps a hash to std::cerr.
+    /// \param hash Hash to be dumped.
+    void dump_hash(const uint8_t *hash) const;
 
+    /// \brief Returns the hash for a log2_size pristine node.
+    /// \return Reference to precomputed hash.
     const keccak_256_hash &get_pristine_hash(int log2_size) const;
 
+    /// \brief Returns the hash for a child of a given node.
+    /// \param child_log2_size log2_size of child node.
+    /// \param node Node from which to obtain child.
+    /// \param bit Bit corresponding to child_log2_size in child node address.
+    /// \return Reference to child hash. If child pointer is null,
+    /// returns a pristine hash.
     const keccak_256_hash &get_inner_child_hash(int child_log2_size,
         const tree_node *node, int bit) const;
 
+    /// \brief Precomputes hashes for pristine nodes of all sizes.
     void initialize_pristine_hashes(void);
 
-    void dump_merkle_tree(tree_node *node, int log2_tree_size) const;
+    /// \brief Dumps tree rooted at node to std::cerr.
+    /// \param node Root of subtree.
+    /// \param  log2_size log<sub>2</sub> of size subintended by \p node.
+    void dump_merkle_tree(tree_node *node, int log2_size) const;
 
+    /// \brief Dumps the entire tree rooted to std::cerr.
+    void dump_merkle_tree(void) const;
+
+    /// \brief Destroys tree rooted at node.
+    /// \param node Root of subtree.
+    /// \param  log2_size log<sub>2</sub> of size subintended by \p node.
     void destroy_merkle_tree(tree_node *node, int log2_size);
 
+    /// \brief Destroys entire Merkle tree.
+    void destroy_merkle_tree(void);
+
+    /// \brief Verifies tree rooted at node.
+    /// \param kc Keccak hasher object.
+    /// \param node Root of subtree.
+    /// \param  log2_size log<sub>2</sub> of size subintended by \p node.
     status_code verify_merkle_tree(CryptoPP::Keccak_256 &kc,
         tree_node *node, int log2_size) const;
 
-    void destroy_merkle_tree(void);
-
+    /// \brief Computes the page index for a memory address.
+    /// \param address Memory address.
+    /// \return The page index.
     constexpr uint64_t get_page_index(uint64_t address);
 
+    /// \brief Computes the offset of a memory address within its page.
+    /// \param address Memory address.
+    /// \return The offset.
 	constexpr uint64_t get_offset_in_page(uint64_t address);
 
+    /// \brief Computes the offset of a memory address within its page.
+    /// \param page_index Page index associated to node.
+    /// \return The node, if found, or nullptr otherwise.
     tree_node *get_page_node(uint64_t page_index) const;
 
+    /// \brief Obtains the proof for target node at \p address and \p log2_size.
+    /// \param kc Keccak hasher object.
+    /// \param address Address of target node.
+    /// \param parent_diverged Parent node corresponding to \p node_data
+    /// is not not in path from root to target node.
+    /// \param diverged Node corresponding to \p node_data is not in 
+    /// path from root to target node.
+    /// \param node_data Pointer to start of contiguous node data.
+    /// \param log2_size log<sub>2</sub> of size subintended by target \p node.
+    /// \param proof Receives the proof.
+    /// \param hash Temporary storage for hashes.
     void get_inside_page_word_value_proof(CryptoPP::Keccak_256 &kc,
-        uint64_t virtual_address, int parent_diverged, int diverged,
-        const uint8_t *physical_address, int log2_size,
+        uint64_t address, int parent_diverged, int diverged,
+        const uint8_t *node_data, int log2_size,
         word_value_proof &proof, keccak_256_hash &hash);
 
-    void get_inside_page_word_value_proof(uint64_t virtual_address,
-        const uint8_t *physical_address, word_value_proof &proof);
+    /// \brief Obtains the proof for target node at \p address and \p log2_size.
+    /// \param address Address of target node.
+    /// \param page_data Pointer to start of contiguous page data.
+    /// \param proof Receives the proof.
+    void get_inside_page_word_value_proof(uint64_t address,
+        const uint8_t *page_data, word_value_proof &proof);
 
-    void dump_merkle_tree(void) const;
-
+    /// \brief Obtains hash of a \p parent node from the
+    /// handles of its children nodes.
+    /// \param kc Keccak hasher object.
+    /// \param child0 Hash of first child.
+    /// \param child1 Hash of second child.
+    /// \param parent Receives parent hash.
     void get_concat_hash(CryptoPP::Keccak_256 &kc,
         const keccak_256_hash &child0, const keccak_256_hash &child1,
         keccak_256_hash &parent) const;
 
 public:
 
+    /// \brief Verifies the entire Merkle tree.
+    /// \return status_code::success if tree is consistent,
+    /// or status_code::error otherwise.
     status_code verify_merkle_tree(void) const;
 
     /// \brief Default constructor.
@@ -214,18 +302,41 @@ public:
     ~merkle_tree_t();
 
     /// \brief Returns the root hash.
+    /// \param hash Receives the hash.
+    /// \returns status_code::success.
     status_code get_merkle_tree_root_hash(keccak_256_hash &hash);
 
-    /// \brief Returns a proof of pristine value.
+    /// \brief Returns a pristine proof.
+    /// \param proof Receives proof.
+    /// \details A pristine proof contains the hashes for
+    ///  nodes in all levels of a pristine tree.
+    /// \returns status_code::success.
     status_code get_pristine_proof(word_value_proof &proof);
 
-    /// \brief Update tree with new data for a page node
+    /// \brief Start tree update.
+    /// \param kc Keccak hasher object.
+    /// \returns status_code::success.
     status_code begin_update(CryptoPP::Keccak_256 &kc);
+
+    /// \brief Update tree with new data for a page node.
+    /// \param kc Keccak hasher object.
+    /// \param page_address Address of start of page.
+    /// \param page_data Pointer to start of contiguous page data.
+    /// \returns status_code::success if update completed,
+    /// status_code::out_of_memory if it failed.
     status_code update_page(CryptoPP::Keccak_256 &kc,
 		uint64_t page_address, uint8_t *page_data);
+
+    /// \brief End tree update.
+    /// \param kc Keccak hasher object.
+    /// \returns status_code::success.
     status_code end_update(CryptoPP::Keccak_256 &kc);
 
     /// \brief Returns a word value and its proof.
+    /// \param word_address Address of aligned word.
+    /// \param page_data Pointer to start of contiguous page data where word
+    /// resides.
+    /// \param proof Receives proof.
     status_code get_word_value_proof(uint64_t word_address, uint64_t *page_data,
         word_value_proof &proof);
 

@@ -14,6 +14,7 @@ static int prefix(const char *pre, const char *str) {
     return strncmp(pre, str, strlen(pre)) == 0;
 }
 
+#if 0
 int main(int argc, char *argv[]) {
     merkle_tree tree;
     uint8_t buf[4096];
@@ -68,5 +69,40 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    return 0;
+}
+#endif
+
+static void dump(const uint8_t *hash) {
+    auto f = std::cerr.flags();
+    std::cerr << std::hex << std::setfill('0') << std::setw(2);
+    for (unsigned i = 0; i < 32; ++i) {
+        unsigned b = hash[i];
+        std::cerr << b;
+    }
+    std::cerr << '\n';
+    std::cerr.flags(f);
+}
+
+int main(void) {
+    CryptoPP::Keccak_256 kc;
+    uint8_t a[] = {0, 0, 0, 0, 0, 0, 0, 1};
+    uint8_t hash_a[32];
+    uint8_t b[] = {1, 0, 0, 0, 0, 0, 0, 0};
+    uint8_t hash_b[32];
+    uint8_t hash_hash_a_hash_b[32];
+    kc.Restart();
+    kc.Update(a, sizeof(a));
+    kc.Final(hash_a);
+    dump(hash_a);
+    kc.Restart();
+    kc.Update(b, sizeof(b));
+    kc.Final(hash_b);
+    dump(hash_b);
+    kc.Restart();
+    kc.Update(hash_a, sizeof(a));
+    kc.Update(hash_b, sizeof(b));
+    kc.Final(hash_hash_a_hash_b);
+    dump(hash_hash_a_hash_b);
     return 0;
 }

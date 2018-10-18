@@ -81,6 +81,7 @@ typedef unsigned __int128 uint128_t;
 #include "device-state-access.h"
 #include "rtc.h"
 #include "meta.h"
+#include "riscv-constants.h"
 
 /// log<sub>2</sub> of physical memory page size.
 #define PMA_PAGE_SIZE_LOG2 12
@@ -152,76 +153,76 @@ static bool pma_device_update_merkle_tree_error(const machine_state *, void *, u
 }
 
 /// \brief Checks if a PMA entry describes a memory range
-/// \param entry Pointer to entry of interest.
-static inline bool pma_is_memory(const pma_entry *entry) {
-    return entry->type_flags & PMA_TYPE_MEMORY;
+/// \param pma Pointer to entry of interest.
+static inline bool pma_is_memory(const pma_entry *pma) {
+    return pma->type_flags & PMA_TYPE_MEMORY;
 }
 
 /// \brief Checks if a PMA entry describes a device range
-/// \param entry Pointer to entry of interest.
-static inline bool pma_is_device(const pma_entry *entry) {
-    return entry->type_flags & PMA_TYPE_DEVICE;
+/// \param pma Pointer to entry of interest.
+static inline bool pma_is_device(const pma_entry *pma) {
+    return pma->type_flags & PMA_TYPE_DEVICE;
 }
 
 /// \brief Checks if a PMA entry is RAM
-/// \param entry Pointer to entry of interest.
-static inline bool pma_is_ram(const pma_entry *entry) {
-    return entry->type_flags == PMA_TYPE_FLAGS_RAM;
+/// \param pma Pointer to entry of interest.
+static inline bool pma_is_ram(const pma_entry *pma) {
+    return pma->type_flags == PMA_TYPE_FLAGS_RAM;
 }
 
 #if 0
-static inline bool pma_is_flash(const pma_entry *entry) {
-    return entry->type_flags == PMA_TYPE_FLAGS_FLASH;
+static inline bool pma_is_flash(const pma_entry *pma) {
+    return pma->type_flags == PMA_TYPE_FLAGS_FLASH;
 }
 
-static inline bool pma_is_mmio(const pma_entry *entry) {
-    return entry->type_flags == PMA_TYPE_FLAGS_MMIO;
+static inline bool pma_is_mmio(const pma_entry *pma) {
+    return pma->type_flags == PMA_TYPE_FLAGS_MMIO;
 }
 
-static inline bool pma_is_shadow(const pma_entry *entry) {
-    return entry->type_flags == PMA_TYPE_FLAGS_SHADOW;
+static inline bool pma_is_shadow(const pma_entry *pma) {
+    return pma->type_flags == PMA_TYPE_FLAGS_SHADOW;
 }
 #endif
 
 /// \brief Initializes the board PMA entries
-/// \param s Machine state.
+/// \param s Pointer to machine state.
 static void board_init(machine_state *s) {
     memset(s->physical_memory, 0, sizeof(s->physical_memory));
     s->pma_count = 0;
 }
 
 /// \brief Destroys the board PMA entries
-/// \param s Machine state.
+/// \param s Pointer to machine state.
 static void board_end(machine_state *s) {
     for (int i = 0; i < s->pma_count; i++) {
-        pma_entry *entry = &s->physical_memory[i];
-        if (pma_is_memory(entry)) {
-            if (entry->memory.backing_file >= 0) {
-                munmap(entry->memory.host_memory, entry->length);
-                close(entry->memory.backing_file);
+        pma_entry *pma = &s->physical_memory[i];
+        if (pma_is_memory(pma)) {
+            if (pma->memory.backing_file >= 0) {
+                munmap(pma->memory.host_memory, pma->length);
+                close(pma->memory.backing_file);
             } else {
-                free(entry->memory.host_memory);
+                free(pma->memory.host_memory);
             }
         }
     }
 }
 
 /// \brief Obtain PMA entry overlapping with target physical address
-/// \param s Machine state.
+/// \param s Pointer to machine state.
 /// \param paddr Target physical address.
 /// \returns Corresponding entry, or nullptr if no PMA
 /// matches \p paddr.
 static pma_entry *pma_get_entry(machine_state *s, uint64_t paddr) {
     for (int i = 0; i < s->pma_count; i++) {
-        pma_entry *entry = &s->physical_memory[i];
-        if (paddr >= entry->start && paddr < entry->start + entry->length)
-            return entry;
+        pma_entry *pma = &s->physical_memory[i];
+        if (paddr >= pma->start && paddr < pma->start + pma->length)
+            return pma;
     }
     return nullptr;
 }
 
 /// \brief Allocates a new PMA entry.
-/// \param s Machine state.
+/// \param s Pointer to machine state.
 /// \param start Start of range in target physical memory.
 /// \param length Length of range in target physical memory.
 /// \returns Corresponding entry, or nullptr if no room for new PMA.
@@ -240,22 +241,22 @@ static pma_entry *pma_allocate_entry(machine_state *s, uint64_t start, uint64_t 
 }
 
 /// \brief Allocates a new PMA memory entry.
-/// \param s Machine state.
+/// \param s Pointer to machine state.
 /// \param start Start of range in target physical memory.
 /// \param length Length of range in target physical memory.
 /// \returns Corresponding entry, or nullptr if no room for new PMA.
 static pma_entry *pma_allocate_memory_entry(machine_state *s, uint64_t start, uint64_t length) {
-    pma_entry *entry = pma_allocate_entry(s, start, length);
-    if (!entry) return nullptr;
-    entry->start = start;
-    entry->length = length;
-    entry->memory.host_memory = nullptr;
-    entry->memory.backing_file = -1;
-    return entry;
+    pma_entry *pma = pma_allocate_entry(s, start, length);
+    if (!pma) return nullptr;
+    pma->start = start;
+    pma->length = length;
+    pma->memory.host_memory = nullptr;
+    pma->memory.backing_file = -1;
+    return pma;
 }
 
 /// \brief Allocates a new PMA device entry.
-/// \param s Machine state.
+/// \param s Pointer to machine state.
 /// \param start Start of range in target physical memory.
 /// \param length Length of range in target physical memory.
 /// \param context Pointer to context to be passed to callbacks.
@@ -266,23 +267,23 @@ static pma_entry *pma_allocate_memory_entry(machine_state *s, uint64_t start, ui
 /// \returns Corresponding entry, or nullptr if no room for new PMA.
 static pma_entry *pma_allocate_device_entry(machine_state *s, uint64_t start, uint64_t length, void *context,
     pma_device_read read, pma_device_write write, pma_device_peek peek, pma_device_update_merkle_tree update_merkle_tree) {
-    pma_entry *entry = pma_allocate_entry(s, start, length);
-    if (!entry) return nullptr;
-    entry->start = start;
-    entry->length = length;
-    entry->device.context = context;
-    entry->device.read = read? read: pma_device_read_error;
-    entry->device.write = write? write: pma_device_write_error;
-    entry->device.peek = peek? peek: pma_device_peek_error;
-    entry->device.update_merkle_tree = update_merkle_tree? update_merkle_tree: pma_device_update_merkle_tree_error;
-    return entry;
+    pma_entry *pma = pma_allocate_entry(s, start, length);
+    if (!pma) return nullptr;
+    pma->start = start;
+    pma->length = length;
+    pma->device.context = context;
+    pma->device.read = read? read: pma_device_read_error;
+    pma->device.write = write? write: pma_device_write_error;
+    pma->device.peek = peek? peek: pma_device_peek_error;
+    pma->device.update_merkle_tree = update_merkle_tree? update_merkle_tree: pma_device_update_merkle_tree_error;
+    return pma;
 }
 
 uint8_t *board_get_host_memory(machine_state *s, uint64_t paddr) {
     for (int i = 0; i < s->pma_count; i++) {
-        pma_entry *entry = &s->physical_memory[i];
-        if (paddr >= entry->start && paddr < entry->start + entry->length && pma_is_memory(entry)) {
-            return entry->memory.host_memory;
+        pma_entry *pma = &s->physical_memory[i];
+        if (paddr >= pma->start && paddr < pma->start + pma->length && pma_is_memory(pma)) {
+            return pma->memory.host_memory;
         }
     }
     return nullptr;
@@ -292,157 +293,73 @@ bool board_register_flash(machine_state *s, uint64_t start, uint64_t length, con
     int oflag = shared? O_RDWR: O_RDONLY;
     int mflag = shared? MAP_SHARED: MAP_PRIVATE;
 
-    pma_entry *entry = pma_allocate_memory_entry(s, start, length);
-    if (!entry) return false;
+    pma_entry *pma = pma_allocate_memory_entry(s, start, length);
+    if (!pma) return false;
 
     // Try to open backing file
-    entry->memory.backing_file = open(path, oflag);
-    if (entry->memory.backing_file < 0) {
+    pma->memory.backing_file = open(path, oflag);
+    if (pma->memory.backing_file < 0) {
         fprintf(stderr, "Could not open backing file '%s'\n", path);
         return false;
     }
 
     struct stat statbuf;
-    if (fstat(entry->memory.backing_file, &statbuf) < 0) {
+    if (fstat(pma->memory.backing_file, &statbuf) < 0) {
         fprintf(stderr, "Unable to stat backing file '%s'\n", path);
-        close(entry->memory.backing_file);
+        close(pma->memory.backing_file);
         return false;
     }
 
     if (static_cast<uint64_t>(statbuf.st_size) != length) {
         fprintf(stderr, "Incorrect backing file size\n");
-        close(entry->memory.backing_file);
+        close(pma->memory.backing_file);
         return false;
     }
 
     // Try to map backing file to host memory
-    entry->memory.host_memory = reinterpret_cast<uint8_t *>(
-        mmap(nullptr, length, PROT_READ | PROT_WRITE, mflag, entry->memory.backing_file, 0));
-    if (entry->memory.host_memory == MAP_FAILED) {
+    pma->memory.host_memory = reinterpret_cast<uint8_t *>(
+        mmap(nullptr, length, PROT_READ | PROT_WRITE, mflag, pma->memory.backing_file, 0));
+    if (pma->memory.host_memory == MAP_FAILED) {
         fprintf(stderr, "Could not map backing file '%s' to memory\n", path);
-        close(entry->memory.backing_file);
+        close(pma->memory.backing_file);
         return false;
     }
 
-    entry->type_flags = PMA_TYPE_FLAGS_FLASH;
+    pma->type_flags = PMA_TYPE_FLAGS_FLASH;
 
     return true;
 }
 
 bool board_register_ram(machine_state *s, uint64_t start, uint64_t length) {
-    pma_entry *entry = pma_allocate_memory_entry(s, start, length);
-    if (!entry) return false;
+    pma_entry *pma = pma_allocate_memory_entry(s, start, length);
+    if (!pma) return false;
 
-    entry->memory.host_memory = reinterpret_cast<uint8_t *>(calloc(1, length));
-    if (!entry->memory.host_memory) {
+    pma->memory.host_memory = reinterpret_cast<uint8_t *>(calloc(1, length));
+    if (!pma->memory.host_memory) {
         fprintf(stderr, "Could not allocate host memory\n");
         return false;
     }
 
-    entry->type_flags = PMA_TYPE_FLAGS_RAM;
+    pma->type_flags = PMA_TYPE_FLAGS_RAM;
 
     return true;
 }
 
 bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context,
     pma_device_read read, pma_device_write write, pma_device_peek peek, pma_device_update_merkle_tree update_merkle_tree) {
-    pma_entry *entry = pma_allocate_device_entry(s, start, length, context, read, write, peek, update_merkle_tree);
-    if (!entry) return false;
-    entry->type_flags = PMA_TYPE_FLAGS_MMIO;
+    pma_entry *pma = pma_allocate_device_entry(s, start, length, context, read, write, peek, update_merkle_tree);
+    if (!pma) return false;
+    pma->type_flags = PMA_TYPE_FLAGS_MMIO;
     return true;
 }
 
 bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context,
     pma_device_peek peek, pma_device_update_merkle_tree update_merkle_tree) {
-    pma_entry *entry = pma_allocate_device_entry(s, start, length, context, nullptr, nullptr, peek, update_merkle_tree);
-    if (!entry) return false;
-    entry->type_flags = PMA_TYPE_FLAGS_SHADOW;
+    pma_entry *pma = pma_allocate_device_entry(s, start, length, context, nullptr, nullptr, peek, update_merkle_tree);
+    if (!pma) return false;
+    pma->type_flags = PMA_TYPE_FLAGS_SHADOW;
     return true;
 }
-
-/// \name mcause for exceptions
-/// \{
-#define CAUSE_MISALIGNED_FETCH              0x0
-#define CAUSE_FETCH_FAULT                   0x1
-#define CAUSE_ILLEGAL_INSTRUCTION           0x2
-#define CAUSE_BREAKPOINT                    0x3
-#define CAUSE_LOAD_ADDRESS_MISALIGNED       0x4
-#define CAUSE_LOAD_FAULT                    0x5
-#define CAUSE_STORE_AMO_ADDRESS_MISALIGNED  0x6
-#define CAUSE_STORE_AMO_FAULT               0x7
-#define CAUSE_ECALL_BASE                    0x8
-#define CAUSE_FETCH_PAGE_FAULT              0xc
-#define CAUSE_LOAD_PAGE_FAULT               0xd
-#define CAUSE_STORE_AMO_PAGE_FAULT          0xf
-#define CAUSE_INTERRUPT                     ((uint64_t)1 << 63)
-/// \}
-
-
-/// \name Privilege levels
-/// \{
-#define PRV_U               0  ///< User
-#define PRV_S               1  ///< Supervisor
-#define PRV_H               2  ///< Reserved
-#define PRV_M               3  ///< Machine
-/// \}
-
-/// \name misa extensions
-/// \{
-#define MISAEXT_S            (1 << ('S' - 'A'))
-#define MISAEXT_U         (1 << ('U' - 'A'))
-#define MISAEXT_I            (1 << ('I' - 'A'))
-#define MISAEXT_M            (1 << ('M' - 'A'))
-#define MISAEXT_A            (1 << ('A' - 'A'))
-#define MISAEXT_F            (1 << ('F' - 'A'))
-#define MISAEXT_D            (1 << ('D' - 'A'))
-#define MISAEXT_C            (1 << ('C' - 'A'))
-/// \}
-
-/// \name mstatus shifts
-/// \{
-#define MSTATUS_UIE_SHIFT   0
-#define MSTATUS_SIE_SHIFT   1
-#define MSTATUS_HIE_SHIFT   2
-#define MSTATUS_MIE_SHIFT   3
-#define MSTATUS_UPIE_SHIFT  4
-#define MSTATUS_SPIE_SHIFT  5
-#define MSTATUS_MPIE_SHIFT  7
-#define MSTATUS_SPP_SHIFT   8
-#define MSTATUS_MPP_SHIFT   11
-#define MSTATUS_FS_SHIFT    13
-#define MSTATUS_SD_SHIFT    31
-#define MSTATUS_UXL_SHIFT   32
-#define MSTATUS_SXL_SHIFT   34
-/// \}
-
-/// \name mstatus flags
-/// \{
-#define MSTATUS_UIE         (1 << 0)
-#define MSTATUS_SIE         (1 << 1)
-#define MSTATUS_HIE         (1 << 2)
-#define MSTATUS_MIE         (1 << 3)
-#define MSTATUS_UPIE        (1 << 4)
-#define MSTATUS_SPIE        (1 << MSTATUS_SPIE_SHIFT)
-#define MSTATUS_HPIE        (1 << 6)
-#define MSTATUS_MPIE        (1 << MSTATUS_MPIE_SHIFT)
-#define MSTATUS_SPP         (1 << MSTATUS_SPP_SHIFT)
-#define MSTATUS_HPP         (3 << 9)
-#define MSTATUS_MPP         (3 << MSTATUS_MPP_SHIFT)
-#define MSTATUS_FS          (3 << MSTATUS_FS_SHIFT)
-#define MSTATUS_XS          (3 << 15)
-#define MSTATUS_MPRV        (1 << 17)
-#define MSTATUS_SUM         (1 << 18)
-#define MSTATUS_MXR         (1 << 19)
-#define MSTATUS_TVM         (1 << 20)
-#define MSTATUS_TW          (1 << 21)
-#define MSTATUS_TSR         (1 << 22)
-#define MSTATUS_SD          ((uint64_t)1 << MSTATUS_SD_SHIFT)
-#define MSTATUS_UXL         ((uint64_t)3 << MSTATUS_UXL_SHIFT)
-#define MSTATUS_SXL         ((uint64_t)3 << MSTATUS_SXL_SHIFT)
-/// \}
-
-#define PG_SHIFT            12
-#define PG_MASK             ((1 << PG_SHIFT) - 1)
 
 static void print_uint64_t(uint64_t a) {
     fprintf(stderr, "%016" PRIx64, a);
@@ -490,41 +407,33 @@ void dump_regs(machine_state *s) {
 template <typename STATE_ACCESS>
 static pma_entry *get_pma(STATE_ACCESS &a, uint64_t paddr) {
     for (int i = 0; i < PMA_SIZE; i++) {
-        pma_entry *entry = a.read_pma(i);
-        if (paddr >= entry->start && paddr < entry->start + entry->length)
-            return entry;
+        pma_entry *pma = a.read_pma(i);
+        if (paddr >= pma->start && paddr < pma->start + pma->length)
+            return pma;
     }
     return nullptr;
 }
 
 template <typename STATE_ACCESS>
 static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t val) {
-    pma_entry *entry = get_pma(a, paddr);
-    if (!entry || !pma_is_ram(entry))
+    pma_entry *pma = get_pma(a, paddr);
+    if (!pma || !pma_is_ram(pma))
         return false;
     // log writes to memory
-    *reinterpret_cast<uint64_t *>(entry->memory.host_memory + (uintptr_t)(paddr - entry->start)) = val;
-    a.write_memory(entry, paddr, val, size_log2<uint64_t>::value);
+    *reinterpret_cast<uint64_t *>(pma->memory.host_memory + (uintptr_t)(paddr - pma->start)) = val;
+    a.write_memory(pma, paddr, val, size_log2<uint64_t>::value);
     return true;
 }
 
 template <typename STATE_ACCESS>
 static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pval) {
-    pma_entry *entry = get_pma(a, paddr);
-    if (!entry || !pma_is_ram(entry)) return false;
-    *pval = *reinterpret_cast<uint64_t *>(entry->memory.host_memory + (uintptr_t)(paddr - entry->start));
+    pma_entry *pma = get_pma(a, paddr);
+    if (!pma || !pma_is_ram(pma)) return false;
+    *pval = *reinterpret_cast<uint64_t *>(pma->memory.host_memory + (uintptr_t)(paddr - pma->start));
     // log read from memory
-    a.read_memory(entry, paddr, *pval, size_log2<uint64_t>::value);
+    a.read_memory(pma, paddr, *pval, size_log2<uint64_t>::value);
     return true;
 }
-
-#define PTE_V_MASK (1 << 0)
-#define PTE_U_MASK (1 << 4)
-#define PTE_A_MASK (1 << 6)
-#define PTE_D_MASK (1 << 7)
-#define PTE_XWR_READ_SHIFT  0
-#define PTE_XWR_WRITE_SHIFT 1
-#define PTE_XWR_CODE_SHIFT  2
 
 template <typename STATE_ACCESS>
 static bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
@@ -647,7 +556,8 @@ static bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t
     return false;
 }
 
-
+/// \brief Initializes all TLBs with invalid entries.
+/// \param s Pointer to machine state.
 static void tlb_init(machine_state *s) {
     for (int i = 0; i < TLB_SIZE; i++) {
         s->tlb_read[i].vaddr = -1;
@@ -656,173 +566,69 @@ static void tlb_init(machine_state *s) {
     }
 }
 
-static inline uint64_t tlb_add(tlb_entry *tlb, const pma_entry *entry, uint64_t vaddr, uint64_t paddr) {
+/// \brief Add a new entry to the TLB.
+/// \param tlb Pointer to TLB.
+/// \param pma Pointer to PMA entry.
+/// \param vaddr Target virtual address.
+/// \param paddr Target physical address.
+/// \returns Offset from Target virtual address to host address
+static inline uint64_t tlb_add(tlb_entry *tlb, const pma_entry *pma, uint64_t vaddr, uint64_t paddr) {
     // Update TLB with the new mapping between virtual and physical
     int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
     tlb[tlb_idx].vaddr = vaddr & ~PG_MASK;
-    uint8_t *ptr = entry->memory.host_memory + (uintptr_t)(paddr - entry->start);
+    uint8_t *ptr = pma->memory.host_memory + (uintptr_t)(paddr - pma->start);
     tlb[tlb_idx].mem_addend = (uintptr_t)ptr - vaddr;
     return tlb[tlb_idx].mem_addend;
 }
 
+/// \brief Invalidates all TLB entries.
+/// \param s Pointer to machine state.
 static void tlb_flush_all(machine_state *s) {
     tlb_init(s);
 }
 
+/// \brief Invalidates a specific mapping.
+/// \param s Pointer to machine state.
+/// \param vaddr Target virtual address.
 static void tlb_flush_vaddr(machine_state *s, uint64_t vaddr) {
     (void) vaddr;
     //??D Optimize depending on how often it is used
     tlb_flush_all(s);
 }
 
-#define SSTATUS_WRITE_MASK ( \
-    MSTATUS_UIE  | \
-    MSTATUS_SIE  | \
-    MSTATUS_UPIE | \
-    MSTATUS_SPIE | \
-    MSTATUS_SPP  | \
-    MSTATUS_FS   | \
-    MSTATUS_SUM  | \
-    MSTATUS_MXR  \
-)
-
-#define SSTATUS_READ_MASK ( \
-    MSTATUS_UIE  | \
-    MSTATUS_SIE  | \
-    MSTATUS_UPIE | \
-    MSTATUS_SPIE | \
-    MSTATUS_SPP  | \
-    MSTATUS_FS   | \
-    MSTATUS_SUM  | \
-    MSTATUS_MXR  | \
-    MSTATUS_UXL  | \
-    MSTATUS_SD  \
-)
-
-#define MSTATUS_WRITE_MASK ( \
-    MSTATUS_UIE  | \
-    MSTATUS_SIE  | \
-    MSTATUS_MIE  | \
-    MSTATUS_UPIE | \
-    MSTATUS_SPIE | \
-    MSTATUS_MPIE | \
-    MSTATUS_SPP  | \
-    MSTATUS_MPP  | \
-    MSTATUS_FS   | \
-    MSTATUS_MPRV | \
-    MSTATUS_SUM  | \
-    MSTATUS_MXR  | \
-    MSTATUS_TVM  | \
-    MSTATUS_TW   | \
-    MSTATUS_TSR  \
-)
-
-#define MSTATUS_READ_MASK ( \
-    MSTATUS_UIE  | \
-    MSTATUS_SIE  | \
-    MSTATUS_MIE  | \
-    MSTATUS_UPIE | \
-    MSTATUS_SPIE | \
-    MSTATUS_MPIE | \
-    MSTATUS_SPP  | \
-    MSTATUS_MPP  | \
-    MSTATUS_FS   | \
-    MSTATUS_MPRV | \
-    MSTATUS_SUM  | \
-    MSTATUS_MXR  | \
-    MSTATUS_TVM  | \
-    MSTATUS_TW   | \
-    MSTATUS_TSR  | \
-    MSTATUS_UXL  | \
-    MSTATUS_SXL  | \
-    MSTATUS_SD  \
-)
-
-/* cycle and insn counters */
-#define COUNTEREN_MASK ((1 << 0) | (1 << 2))
-
-enum class CSR_address: uint32_t {
-    ustatus = 0x000,
-    uie = 0x004,
-    utvec = 0x005,
-
-    uscratch = 0x040,
-    uepc = 0x041,
-    ucause = 0x042,
-    utval = 0x043,
-    uip = 0x044,
-
-    ucycle = 0xc00,
-    utime = 0xc01,
-    uinstret =  0xc02,
-    ucycleh = 0xc80,
-    utimeh = 0xc81,
-    uinstreth = 0xc82,
-
-    sstatus = 0x100,
-    sedeleg = 0x102,
-    sideleg = 0x103,
-    sie = 0x104,
-    stvec = 0x105,
-    scounteren = 0x106,
-
-    sscratch = 0x140,
-    sepc = 0x141,
-    scause = 0x142,
-    stval = 0x143,
-    sip = 0x144,
-
-    satp = 0x180,
-
-    mvendorid = 0xf11,
-    marchid = 0xf12,
-    mimplid = 0xf13,
-    mhartid = 0xf14,
-
-    mstatus = 0x300,
-    misa = 0x301,
-    medeleg = 0x302,
-    mideleg = 0x303,
-    mie = 0x304,
-    mtvec = 0x305,
-    mcounteren = 0x306,
-
-    mscratch = 0x340,
-    mepc = 0x341,
-    mcause = 0x342,
-    mtval = 0x343,
-    mip = 0x344,
-
-    mcycle = 0xb00,
-    minstret = 0xb02,
-    mcycleh = 0xb80,
-    minstreth = 0xb82,
-
-    tselect = 0x7a0,
-    tdata1 = 0x7a1,
-    tdata2 = 0x7a2,
-    tdata3 = 0x7a3,
-};
-
+/// \brief Checks if CSR is read-only.
+/// \param CSR_address Address of CSR in file.
+/// \returns true if read-only, false otherwise.
 static inline bool csr_is_read_only(CSR_address csraddr) {
     // 0xc00--0xcff, 0xd00--0xdff, and 0xf00--0xfff are all read-only.
     // so as long as bits 0xc00 are set, the register is read-only
     return ((static_cast<uint32_t>(csraddr) & 0xc00) == 0xc00);
 }
 
+/// \brief Extract privilege level from CSR address.
+/// \param CSR_address Address of CSR in file.
+/// \returns Privilege level.
 static inline uint32_t csr_priv(CSR_address csr) {
     return (static_cast<uint32_t>(csr) >> 8) & 3;
 }
 
+/// \brief Changes privilege level.
+/// \param a Machine state accessor object.
+/// \param previous_prv Previous privilege level.
+/// \param new_prv New privilege level.
 template <typename STATE_ACCESS>
-static void set_priv(STATE_ACCESS &a, int previous_priv, int new_priv) {
-    if (previous_priv != new_priv) {
+static void set_priv(STATE_ACCESS &a, int previous_prv, int new_prv) {
+    if (previous_prv != new_prv) {
         tlb_flush_all(a.naked());
-        a.write_iflags_PRV(new_priv);
-        a.write_ilrsc(-1);
+        a.write_iflags_PRV(new_prv);
+        a.write_ilrsc(-1); // invalidate reserved address
     }
 }
 
+/// \brief Raise an exception (or interrupt).
+/// \param a Machine state accessor object.
+/// \param cause Exception (or interrupt) mcause (or scause).
+/// \param tval Associated tval.
 template <typename STATE_ACCESS>
 static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
 #if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS)
@@ -912,6 +718,9 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
     }
 }
 
+/// \brief Obtains a mask of pending and enabled interrupts.
+/// \param a Machine state accessor object.
+/// \returns The mask.
 template <typename STATE_ACCESS>
 static inline uint32_t get_pending_irq_mask(STATE_ACCESS &a) {
 
@@ -956,6 +765,8 @@ static inline uint32_t ilog2(uint32_t v) {
     return 31 - __builtin_clz(v);
 }
 
+/// \brief Raises an interrupt if any are enabled and pending.
+/// \param a Machine state accessor object.
 template <typename STATE_ACCESS>
 static void raise_interrupt_if_any(STATE_ACCESS &a) {
     uint32_t mask = get_pending_irq_mask(a);
@@ -965,6 +776,8 @@ static void raise_interrupt_if_any(STATE_ACCESS &a) {
     }
 }
 
+/// \brief Initializes the processor state.
+/// \param s Pointer to machine state.
 static void processor_init(machine_state *s) {
     s->iflags_I = false;
     s->iflags_H = false;
@@ -980,6 +793,8 @@ static void processor_init(machine_state *s) {
     s->brk = false;
 }
 
+/// \brief Deinitializes the processor state.
+/// \param s Pointer to machine state.
 static void processor_end(machine_state *s) {
     (void) s;
 }
@@ -1008,194 +823,176 @@ void machine_end(machine_state *s) {
     free(s);
 }
 
+uint64_t processor_read_mcycle(const machine_state *s) {
+    return s->mcycle;
+}
+
+void processor_write_mcycle(machine_state *s, uint64_t cycles) {
+    s->mcycle = cycles;
+}
+
+void processor_set_mip(machine_state *s, uint32_t mask) {
+    s->mip |= mask;
+    s->iflags_I = false;
+    processor_set_brk_from_mip_mie(s);
+}
+
+void processor_reset_mip(machine_state *s, uint32_t mask) {
+    s->mip &= ~mask;
+    processor_set_brk_from_mip_mie(s);
+}
+
+uint32_t processor_read_mip(const machine_state *s) {
+    return s->mip;
+}
+
+bool processor_read_iflags_I(const machine_state *s) {
+    return s->iflags_I;
+}
+
+void processor_reset_iflags_I(machine_state *s) {
+    s->iflags_I = false;
+}
+
+bool processor_read_iflags_H(const machine_state *s) {
+    return s->iflags_H;
+}
+
+void processor_set_iflags_H(machine_state *s) {
+    s->iflags_H = true;
+    processor_set_brk_from_iflags_H(s);
+}
+
+int processor_get_max_xlen(const machine_state *) {
+    return XLEN;
+}
+
+void processor_set_brk_from_mip_mie(machine_state *s) {
+    s->brk = s->mip & s->mie;
+}
+
+void processor_set_brk_from_iflags_H(machine_state *s) {
+    s->brk = true;
+}
+
+uint64_t processor_read_tohost(const machine_state *s) {
+    return s->tohost;
+}
+
+void processor_write_tohost(machine_state *s, uint64_t val) {
+    s->tohost = val;
+}
+
+uint64_t processor_read_fromhost(const machine_state *s) {
+    return s->fromhost;
+}
+
+void processor_write_fromhost(machine_state *s, uint64_t val) {
+    s->fromhost = val;
+}
+
+uint64_t processor_read_mtimecmp(const machine_state *s) {
+    return s->mtimecmp;
+}
+
+void processor_write_mtimecmp(machine_state *s, uint64_t val) {
+    s->mtimecmp = val;
+}
+
+uint64_t processor_read_misa(const machine_state *s) {
+    return s->misa;
+}
+
+static bool update_memory_merkle_tree(CryptoPP::Keccak_256 &kc, const pma_entry *pma, merkle_tree *t) {
+    uint64_t offset = 0;
+    // Complete initial pages
+    while (offset + merkle_tree::get_page_size() <= pma->length) {
+        if (t->is_error(t->update_page(kc, pma->start + offset, pma->memory.host_memory + offset))) {
+            return false;
+        }
+        offset += merkle_tree::get_page_size();
+    }
+    // Potentially partial final page
+    if (offset < pma->length) {
+        uint8_t buf[merkle_tree::get_page_size()];
+        memset(buf, 0, sizeof(buf));
+        memcpy(buf, pma->memory.host_memory+offset, pma->length-offset);
+        if (t->is_error(t->update_page(kc, pma->start+offset, pma->memory.host_memory+offset))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
+    CryptoPP::Keccak_256 kc;
+    t->begin_update(kc);
+    bool status = true;
+    for (int i = 0; i < s->pma_count; i++) {
+        pma_entry *pma = &s->physical_memory[i];
+        if (pma_is_memory(pma)) {
+            if (!update_memory_merkle_tree(kc, pma, t)) {
+                status = false;
+                break;
+            }
+        } else {
+            if (!pma->device.update_merkle_tree(s, pma->device.context,
+                    pma->start, pma->length, t)) {
+                fprintf(stderr, "failing on device\n");
+                status = false;
+                break;
+            }
+        }
+    }
+    t->end_update(kc);
+    return status;
+}
+
 /// \brief Instruction fetch status code
 enum class execute_status: int {
     illegal, ///< Illegal instruction: exception raised
     retired ///< Instruction was retired: exception may or may not have been raised
 };
 
-enum class opcode {
-    LUI   = 0b0110111,
-    AUIPC = 0b0010111,
-    JAL   = 0b1101111,
-    JALR  = 0b1100111,
-
-    branch_group = 0b1100011,
-    load_group = 0b0000011,
-    store_group = 0b0100011,
-    arithmetic_immediate_group = 0b0010011,
-    arithmetic_group = 0b0110011,
-    fence_group = 0b0001111,
-    csr_env_trap_int_mm_group = 0b1110011,
-    arithmetic_immediate_32_group = 0b0011011,
-    arithmetic_32_group = 0b0111011,
-    atomic_group = 0b0101111,
-};
-
-enum class branch_funct3 {
-    BEQ  = 0b000,
-    BNE  = 0b001,
-    BLT  = 0b100,
-    BGE  = 0b101,
-    BLTU = 0b110,
-    BGEU = 0b111
-};
-
-enum class load_funct3 {
-    LB  = 0b000,
-    LH  = 0b001,
-    LW  = 0b010,
-    LD  = 0b011,
-    LBU = 0b100,
-    LHU = 0b101,
-    LWU = 0b110
-};
-
-enum class store_funct3 {
-    SB = 0b000,
-    SH = 0b001,
-    SW = 0b010,
-    SD = 0b011
-};
-
-enum class arithmetic_immediate_funct3 {
-    ADDI  = 0b000,
-    SLTI  = 0b010,
-    SLTIU = 0b011,
-    XORI  = 0b100,
-    ORI   = 0b110,
-    ANDI  = 0b111,
-    SLLI  = 0b001,
-
-    shift_right_immediate_group = 0b101,
-};
-
-enum class shift_right_immediate_funct6 {
-    SRLI = 0b000000,
-    SRAI = 0b010000
-};
-
-enum class arithmetic_funct3_funct7 {
-    ADD    = 0b0000000000,
-    SUB    = 0b0000100000,
-    SLL    = 0b0010000000,
-    SLT    = 0b0100000000,
-    SLTU   = 0b0110000000,
-    XOR    = 0b1000000000,
-    SRL    = 0b1010000000,
-    SRA    = 0b1010100000,
-    OR     = 0b1100000000,
-    AND    = 0b1110000000,
-    MUL    = 0b0000000001,
-    MULH   = 0b0010000001,
-    MULHSU = 0b0100000001,
-    MULHU  = 0b0110000001,
-    DIV    = 0b1000000001,
-    DIVU   = 0b1010000001,
-    REM    = 0b1100000001,
-    REMU   = 0b1110000001,
-};
-
-enum class fence_group_funct3 {
-    FENCE   = 0b000,
-    FENCE_I = 0b001
-};
-
-enum class env_trap_int_group_insn {
-    ECALL  = 0b00000000000000000000000001110011,
-    EBREAK = 0b00000000000100000000000001110011,
-    URET   = 0b00000000001000000000000001110011,
-    SRET   = 0b00010000001000000000000001110011,
-    MRET   = 0b00110000001000000000000001110011,
-    WFI    = 0b00010000010100000000000001110011
-};
-
-enum class csr_env_trap_int_mm_funct3 {
-    CSRRW  = 0b001,
-    CSRRS  = 0b010,
-    CSRRC  = 0b011,
-    CSRRWI = 0b101,
-    CSRRSI = 0b110,
-    CSRRCI = 0b111,
-
-    env_trap_int_mm_group  = 0b000,
-};
-
-enum class arithmetic_immediate_32_funct3 {
-    ADDIW = 0b000,
-    SLLIW = 0b001,
-
-    shift_right_immediate_32_group = 0b101,
-};
-
-enum class shift_right_immediate_32_funct7 {
-    SRLIW = 0b0000000,
-    SRAIW = 0b0100000
-};
-
-enum class arithmetic_32_funct3_funct7 {
-    ADDW  = 0b0000000000,
-    SUBW  = 0b0000100000,
-    SLLW  = 0b0010000000,
-    SRLW  = 0b1010000000,
-    SRAW  = 0b1010100000,
-    MULW  = 0b0000000001,
-    DIVW  = 0b1000000001,
-    DIVUW = 0b1010000001,
-    REMW  = 0b1100000001,
-    REMUW = 0b1110000001
-};
-
-enum class atomic_funct3_funct5 {
-    LR_W      = 0b01000010,
-    SC_W      = 0b01000011,
-    AMOSWAP_W = 0b01000001,
-    AMOADD_W  = 0b01000000,
-    AMOXOR_W  = 0b01000100,
-    AMOAND_W  = 0b01001100,
-    AMOOR_W   = 0b01001000,
-    AMOMIN_W  = 0b01010000,
-    AMOMAX_W  = 0b01010100,
-    AMOMINU_W = 0b01011000,
-    AMOMAXU_W = 0b01011100,
-    LR_D      = 0b01100010,
-    SC_D      = 0b01100011,
-    AMOSWAP_D = 0b01100001,
-    AMOADD_D  = 0b01100000,
-    AMOXOR_D  = 0b01100100,
-    AMOAND_D  = 0b01101100,
-    AMOOR_D   = 0b01101000,
-    AMOMIN_D  = 0b01110000,
-    AMOMAX_D  = 0b01110100,
-    AMOMINU_D = 0b01111000,
-    AMOMAXU_D = 0b01111100
-};
-
-static inline uint32_t insn_rd(uint32_t insn) {
+/// \brief Obtains the RD field from an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_rd(uint32_t insn) {
     return (insn >> 7) & 0b11111;
 }
 
-static inline uint32_t insn_rs1(uint32_t insn) {
+/// \brief Obtains the RS1 field from an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_rs1(uint32_t insn) {
     return (insn >> 15) & 0b11111;
 }
 
-static inline uint32_t insn_rs2(uint32_t insn) {
+/// \brief Obtains the RS2 field from an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_rs2(uint32_t insn) {
     return (insn >> 20) & 0b11111;
 }
 
-static inline int32_t insn_I_imm(uint32_t insn) {
+/// \brief Obtains the immediate value from a I-type instruction.
+/// \param insn Instruction.
+static inline int32_t insn_I_get_imm(uint32_t insn) {
     return (int32_t)insn >> 20;
 }
 
-static inline uint32_t insn_I_uimm(uint32_t insn) {
+/// \brief Obtains the unsigned immediate value from a I-type instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_I_get_uimm(uint32_t insn) {
     return insn >> 20;
 }
 
-static inline int32_t insn_U_imm(uint32_t insn) {
+/// \brief Obtains the immediate value from a U-type instruction.
+/// \param insn Instruction.
+static inline int32_t insn_U_get_imm(uint32_t insn) {
     return static_cast<int32_t>(insn & 0xfffff000);
 }
 
-static inline int32_t insn_B_imm(uint32_t insn) {
+/// \brief Obtains the immediate value from a B-type instruction.
+/// \param insn Instruction.
+static inline int32_t insn_B_get_imm(uint32_t insn) {
     int32_t imm = ((insn >> (31 - 12)) & (1 << 12)) |
         ((insn >> (25 - 5)) & 0x7e0) |
         ((insn >> (8 - 1)) & 0x1e) |
@@ -1204,7 +1001,9 @@ static inline int32_t insn_B_imm(uint32_t insn) {
     return imm;
 }
 
-static inline int32_t insn_J_imm(uint32_t insn) {
+/// \brief Obtains the immediate value from a J-type instruction.
+/// \param insn Instruction.
+static inline int32_t insn_J_get_imm(uint32_t insn) {
     int32_t imm = ((insn >> (31 - 20)) & (1 << 20)) |
         ((insn >> (21 - 1)) & 0x7fe) |
         ((insn >> (20 - 11)) & (1 << 11)) |
@@ -1213,36 +1012,51 @@ static inline int32_t insn_J_imm(uint32_t insn) {
     return imm;
 }
 
-static inline int32_t insn_S_imm(uint32_t insn) {
+/// \brief Obtains the immediate value from a S-type instruction.
+/// \param insn Instruction.
+static inline int32_t insn_S_get_imm(uint32_t insn) {
     return (static_cast<int32_t>(insn & 0xfe000000) >> (25 - 5)) | ((insn >> 7) & 0b11111);
 }
 
-static inline uint32_t insn_opcode(uint32_t insn) {
+/// \brief Obtains the opcode field from an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_opcode(uint32_t insn) {
     //std::cerr << "opcode: " << std::bitset<7>(insn & 0b1111111) << '\n';
     return insn & 0b1111111;
 }
 
-static inline uint32_t insn_funct3(uint32_t insn) {
+/// \brief Obtains the funct3 field from an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_funct3(uint32_t insn) {
     //std::cerr << "funct3: " << std::bitset<3>((insn >> 12) & 0b111) << '\n';
     return (insn >> 12) & 0b111;
 }
 
-static inline uint32_t insn_funct3_funct7(uint32_t insn) {
+/// \brief Obtains the concatanation of funct3 and funct7 fields from an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_funct3_funct7(uint32_t insn) {
     //std::cerr << "funct3_funct7: " << std::bitset<10>(((insn >> 5) & 0b1110000000) | (insn >> 24)) << '\n';
     return ((insn >> 5) & 0b1110000000) | (insn >> 25);
 }
 
-static inline uint32_t insn_funct3_funct5(uint32_t insn) {
+/// \brief Obtains the concatanation of funct3 and funct5 fields from an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_funct3_funct5(uint32_t insn) {
     //std::cerr << "funct3_funct5: " << std::bitset<8>(((insn >> 7) & 0b11100000) | (insn >> 27)) << '\n';
     return ((insn >> 7) & 0b11100000) | (insn >> 27);
 }
 
-static inline uint32_t insn_funct7(uint32_t insn) {
+/// \brief Obtains the funct7 field from an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_funct7(uint32_t insn) {
     //std::cerr << "funct7: " << std::bitset<7>((insn >> 25) & 0b1111111) << '\n';
     return (insn >> 25) & 0b1111111;
 }
 
-static inline uint32_t insn_funct6(uint32_t insn) {
+/// \brief Obtains the funct6 field from an instruction.
+/// \param insn Instruction.
+/// \details I.e., the first 6 bits.
+static inline uint32_t insn_get_funct6(uint32_t insn) {
     //std::cerr << "funct6: " << std::bitset<6>((insn >> 26) & 0b111111) << '\n';
     return (insn >> 26) & 0b111111;
 }
@@ -1265,23 +1079,23 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             raise_exception(a, CAUSE_LOAD_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry *entry = get_pma(a, paddr);
-        if (!entry) {
+        pma_entry *pma = get_pma(a, paddr);
+        if (!pma) {
             // If we do not have the range in our map, we treat this as a PMA violation
             raise_exception(a, CAUSE_LOAD_FAULT, vaddr);
             return false;
-        } else if (pma_is_memory(entry)) {
-            uint64_t mem_addend = tlb_add(a.naked()->tlb_read, entry, vaddr, paddr);
+        } else if (pma_is_memory(pma)) {
+            uint64_t mem_addend = tlb_add(a.naked()->tlb_read, pma, vaddr, paddr);
             *pval = *reinterpret_cast<T *>(mem_addend + (uintptr_t)vaddr);
-            a.read_memory(entry, paddr, *pval, size_log2<U>::value);
+            a.read_memory(pma, paddr, *pval, size_log2<U>::value);
             return true;
         } else {
-            uint64_t offset = paddr - entry->start;
+            uint64_t offset = paddr - pma->start;
             uint64_t val;
-            assert(pma_is_device(entry));
+            assert(pma_is_device(pma));
             device_state_access<STATE_ACCESS> da(a);
             // If we do not know how to read, we treat this as a PMA violation
-            if (!entry->device.read(&da, entry->device.context, offset, &val, size_log2<U>::value)) {
+            if (!pma->device.read(&da, pma->device.context, offset, &val, size_log2<U>::value)) {
                 raise_exception(a, CAUSE_LOAD_FAULT, vaddr);
                 return false;
             }
@@ -1310,23 +1124,23 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             raise_exception(a, CAUSE_STORE_AMO_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry *entry = get_pma(a, paddr);
-        if (!entry) {
+        pma_entry *pma = get_pma(a, paddr);
+        if (!pma) {
             // If we do not have the range in our map, we treat this as a PMA violation
             raise_exception(a, CAUSE_STORE_AMO_FAULT, vaddr);
             return false;
-        } else if (pma_is_memory(entry)) {
-            uint64_t mem_addend = tlb_add(a.naked()->tlb_write, entry, vaddr, paddr);
+        } else if (pma_is_memory(pma)) {
+            uint64_t mem_addend = tlb_add(a.naked()->tlb_write, pma, vaddr, paddr);
             *reinterpret_cast<T *>(mem_addend + (uintptr_t)vaddr) = static_cast<T>(val);
             // log write to memory
-            a.write_memory(entry, paddr, val, size_log2<U>::value);
+            a.write_memory(pma, paddr, val, size_log2<U>::value);
             return true;
         } else {
-            uint64_t offset = paddr - entry->start;
+            uint64_t offset = paddr - pma->start;
             device_state_access<STATE_ACCESS> da(a);
-            assert(pma_is_device(entry));
+            assert(pma_is_device(pma));
             // If we do not know how to write, we treat this as a PMA violation
-            if (!entry->device.write(&da, entry->device.context, offset, val, size_log2<U>::value)) {
+            if (!pma->device.write(&da, pma->device.context, offset, val, size_log2<U>::value)) {
                 raise_exception(a, CAUSE_STORE_AMO_FAULT, vaddr);
                 return false;
             }
@@ -1395,12 +1209,12 @@ static inline execute_status execute_next_insn(STATE_ACCESS &a, uint64_t pc) {
 
 template <typename T, typename STATE_ACCESS>
 static inline execute_status execute_LR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    uint64_t vaddr = a.read_register(insn_rs1(insn));
+    uint64_t vaddr = a.read_register(insn_get_rs1(insn));
     T val = 0;
     if (!read_virtual_memory<T>(a, vaddr, &val))
         return execute_status::retired;
     a.write_ilrsc(vaddr);
-    uint32_t rd = insn_rd(insn);
+    uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         a.write_register(rd, static_cast<uint64_t>(val));
     return execute_next_insn(a, pc);
@@ -1409,15 +1223,15 @@ static inline execute_status execute_LR(STATE_ACCESS &a, uint64_t pc, uint32_t i
 template <typename T, typename STATE_ACCESS>
 static inline execute_status execute_SC(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     uint64_t val = 0;
-    uint64_t vaddr = a.read_register(insn_rs1(insn));
+    uint64_t vaddr = a.read_register(insn_get_rs1(insn));
     if (a.read_ilrsc() == vaddr) {
-        if (!write_virtual_memory<T>(a, vaddr, static_cast<T>(a.read_register(insn_rs2(insn)))))
+        if (!write_virtual_memory<T>(a, vaddr, static_cast<T>(a.read_register(insn_get_rs2(insn)))))
             return execute_status::retired;
         a.write_ilrsc(-1);
     } else {
         val = 1;
     }
-    uint32_t rd = insn_rd(insn);
+    uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         a.write_register(rd, val);
     return execute_next_insn(a, pc);
@@ -1442,15 +1256,15 @@ static inline execute_status execute_SC_W(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 template <typename T, typename STATE_ACCESS, typename F>
 static inline execute_status execute_AMO(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    uint64_t vaddr = a.read_register(insn_rs1(insn));
+    uint64_t vaddr = a.read_register(insn_get_rs1(insn));
     T valm = 0;
     if (!read_virtual_memory<T>(a, vaddr, &valm))
         return execute_status::retired;
-    T valr = static_cast<T>(a.read_register(insn_rs2(insn)));
+    T valr = static_cast<T>(a.read_register(insn_get_rs2(insn)));
     valr = f(valm, valr);
     if (!write_virtual_memory<T>(a, vaddr, valr))
         return execute_status::retired;
-    uint32_t rd = insn_rd(insn);
+    uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         a.write_register(rd, static_cast<uint64_t>(valm));
     return execute_next_insn(a, pc);
@@ -1891,6 +1705,11 @@ static inline uint64_t read_csr_utime(STATE_ACCESS &a, bool *status) {
     return read_csr_success(mtime, status);
 }
 
+/// \brief Reads the value of a CSR given its address
+/// \param a Machine state accessor object.
+/// \param csraddr Address of CSR in file.
+/// \param status Returns the status of the operation (true for success, false otherwise).
+/// \returns Register value.
 template <typename STATE_ACCESS>
 static uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
 
@@ -2152,6 +1971,11 @@ static bool write_csr_mip(STATE_ACCESS &a, uint64_t val) {
     return true;
 }
 
+/// \brief Writes a value to a CSR given its address
+/// \param a Machine state accessor object.
+/// \param csraddr Address of CSR in file.
+/// \param val New register value.
+/// \returns The status of the operation (true for success, false otherwise).
 template <typename STATE_ACCESS>
 static bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t val) {
 #if defined(DUMP_CSR)
@@ -2233,12 +2057,12 @@ static bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t val) {
 
 template <typename STATE_ACCESS, typename RS1VAL>
 static inline execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const RS1VAL &rs1val) {
-    CSR_address csraddr = static_cast<CSR_address>(insn_I_uimm(insn));
+    CSR_address csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
     bool status = true;
     uint64_t csrval = 0;
     // If rd=r0, we do not read from the CSR to avoid side-effects
-    uint32_t rd = insn_rd(insn);
+    uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         csrval = read_csr(a, csraddr, &status);
     if (!status)
@@ -2260,7 +2084,7 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_CSRRW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "CSRRW");
     return execute_csr_RW(a, pc, insn,
-        [](STATE_ACCESS &a, uint32_t insn) -> uint64_t { return a.read_register(insn_rs1(insn)); }
+        [](STATE_ACCESS &a, uint32_t insn) -> uint64_t { return a.read_register(insn_get_rs1(insn)); }
     );
 }
 
@@ -2268,13 +2092,13 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_CSRRWI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "CSRRWI");
     return execute_csr_RW(a, pc, insn,
-        [](STATE_ACCESS, uint32_t insn) -> uint64_t { return static_cast<uint64_t>(insn_rs1(insn)); }
+        [](STATE_ACCESS, uint32_t insn) -> uint64_t { return static_cast<uint64_t>(insn_get_rs1(insn)); }
     );
 }
 
 template <typename STATE_ACCESS, typename F>
 static inline execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    CSR_address csraddr = static_cast<CSR_address>(insn_I_uimm(insn));
+    CSR_address csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
     bool status = false;
     uint64_t csrval = read_csr(a, csraddr, &status);
@@ -2282,9 +2106,9 @@ static inline execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, uint32
         return execute_illegal_insn_exception(a, pc, insn);
     // Load value of rs1 before potentially overwriting it
     // with the value of the csr when rd=rs1
-    uint32_t rs1 = insn_rs1(insn);
+    uint32_t rs1 = insn_get_rs1(insn);
     uint64_t rs1val = a.read_register(rs1);
-    uint32_t rd = insn_rd(insn);
+    uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         a.write_register(rd, csrval);
     if (rs1 != 0) {
@@ -2314,16 +2138,16 @@ static inline execute_status execute_CSRRC(STATE_ACCESS &a, uint64_t pc, uint32_
 
 template <typename STATE_ACCESS, typename F>
 static inline execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    CSR_address csraddr = static_cast<CSR_address>(insn_I_uimm(insn));
+    CSR_address csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
     bool status = false;
     uint64_t csrval = read_csr(a, csraddr, &status);
     if (!status)
         return execute_illegal_insn_exception(a, pc, insn);
-    uint32_t rd = insn_rd(insn);
+    uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         a.write_register(rd, csrval);
-    uint32_t rs1 = insn_rs1(insn);
+    uint32_t rs1 = insn_get_rs1(insn);
     if (rs1 != 0) {
         //??D When we optimize the inner interpreter loop, we
         //    will have to check if there was a change to the
@@ -2453,12 +2277,12 @@ static inline execute_status execute_FENCE_I(STATE_ACCESS &a, uint64_t pc, uint3
 
 template <typename STATE_ACCESS, typename F>
 static inline execute_status execute_arithmetic(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    uint32_t rd = insn_rd(insn);
+    uint32_t rd = insn_get_rd(insn);
     if (rd != 0) {
         // Ensure rs1 and rs2 are loaded in order: do not nest with call to f() as
         // the order of evaluation of arguments in a function call is undefined.
-        uint64_t rs1 = a.read_register(insn_rs1(insn));
-        uint64_t rs2 = a.read_register(insn_rs2(insn));
+        uint64_t rs1 = a.read_register(insn_get_rs1(insn));
+        uint64_t rs2 = a.read_register(insn_get_rs2(insn));
         // Now we can safely invoke f()
         a.write_register(rd, f(rs1, rs2));
     }
@@ -2646,10 +2470,10 @@ static inline execute_status execute_REMU(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 template <typename STATE_ACCESS, typename F>
 static inline execute_status execute_arithmetic_immediate(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    uint32_t rd = insn_rd(insn);
+    uint32_t rd = insn_get_rd(insn);
     if (rd != 0) {
-        uint64_t rs1 = a.read_register(insn_rs1(insn));
-        int32_t imm = insn_I_imm(insn);
+        uint64_t rs1 = a.read_register(insn_get_rs1(insn));
+        int32_t imm = insn_I_get_imm(insn);
         a.write_register(rd, f(rs1, imm));
     }
     return execute_next_insn(a, pc);
@@ -2743,7 +2567,7 @@ static inline execute_status execute_ADDIW(STATE_ACCESS &a, uint64_t pc, uint32_
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    if (insn_funct7(insn) == 0) {
+    if (insn_get_funct7(insn) == 0) {
         dump_insn(a, pc, insn, "SLLIW");
         return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
             // No need to mask lower 5 bits in imm because of the if condition a above
@@ -2778,9 +2602,9 @@ static inline execute_status execute_SRAIW(STATE_ACCESS &a, uint64_t pc, uint32_
 
 template <typename T, typename STATE_ACCESS>
 static inline execute_status execute_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    uint64_t vaddr = a.read_register(insn_rs1(insn));
-    int32_t imm = insn_S_imm(insn);
-    uint64_t val = a.read_register(insn_rs2(insn));
+    uint64_t vaddr = a.read_register(insn_get_rs1(insn));
+    int32_t imm = insn_S_get_imm(insn);
+    uint64_t val = a.read_register(insn_get_rs2(insn));
     if (write_virtual_memory<T>(a, vaddr+imm, val)) {
         return execute_next_insn(a, pc);
     } else {
@@ -2814,15 +2638,15 @@ static inline execute_status execute_SD(STATE_ACCESS &a, uint64_t pc, uint32_t i
 
 template <typename T, typename STATE_ACCESS>
 static inline execute_status execute_L(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    uint64_t vaddr = a.read_register(insn_rs1(insn));
-    int32_t imm = insn_I_imm(insn);
+    uint64_t vaddr = a.read_register(insn_get_rs1(insn));
+    int32_t imm = insn_I_get_imm(insn);
     T val;
     if (read_virtual_memory<T>(a, vaddr+imm, &val)) {
         // This static branch is eliminated by the compiler
         if (std::is_signed<T>::value) {
-            a.write_register(insn_rd(insn), static_cast<int64_t>(val));
+            a.write_register(insn_get_rd(insn), static_cast<int64_t>(val));
         } else {
-            a.write_register(insn_rd(insn), static_cast<uint64_t>(val));
+            a.write_register(insn_get_rd(insn), static_cast<uint64_t>(val));
         }
         return execute_next_insn(a, pc);
     } else {
@@ -2874,10 +2698,10 @@ static inline execute_status execute_LWU(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 template <typename STATE_ACCESS, typename F>
 static inline execute_status execute_branch(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    uint64_t rs1 = a.read_register(insn_rs1(insn));
-    uint64_t rs2 = a.read_register(insn_rs2(insn));
+    uint64_t rs1 = a.read_register(insn_get_rs1(insn));
+    uint64_t rs2 = a.read_register(insn_get_rs2(insn));
     if (f(rs1, rs2)) {
-        uint64_t new_pc = (int64_t)(pc + insn_B_imm(insn));
+        uint64_t new_pc = (int64_t)(pc + insn_B_get_imm(insn));
         if (new_pc & 3) {
             return execute_misaligned_fetch_exception(a, new_pc);
         } else {
@@ -2935,29 +2759,29 @@ static inline execute_status execute_BGEU(STATE_ACCESS &a, uint64_t pc, uint32_t
 template <typename STATE_ACCESS>
 static inline execute_status execute_LUI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "LUI");
-    uint32_t rd = insn_rd(insn);
+    uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
-        a.write_register(rd, insn_U_imm(insn));
+        a.write_register(rd, insn_U_get_imm(insn));
     return execute_next_insn(a, pc);
 }
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_AUIPC(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AUIPC");
-    uint32_t rd = insn_rd(insn);
+    uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
-        a.write_register(rd, pc + insn_U_imm(insn));
+        a.write_register(rd, pc + insn_U_get_imm(insn));
     return execute_next_insn(a, pc);
 }
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_JAL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "JAL");
-    uint64_t new_pc = pc + insn_J_imm(insn);
+    uint64_t new_pc = pc + insn_J_get_imm(insn);
     if (new_pc & 3) {
         return execute_misaligned_fetch_exception(a, new_pc);
     }
-    uint32_t rd = insn_rd(insn);
+    uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         a.write_register(rd, pc + 4);
     return execute_jump(a, new_pc);
@@ -2967,10 +2791,10 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_JALR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "JALR");
     uint64_t val = pc + 4;
-    uint64_t new_pc = static_cast<int64_t>(a.read_register(insn_rs1(insn)) + insn_I_imm(insn)) & ~static_cast<uint64_t>(1);
+    uint64_t new_pc = static_cast<int64_t>(a.read_register(insn_get_rs1(insn)) + insn_I_get_imm(insn)) & ~static_cast<uint64_t>(1);
     if (new_pc & 3)
         return execute_misaligned_fetch_exception(a, new_pc);
-    uint32_t rd = insn_rd(insn);
+    uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         a.write_register(rd, val);
     return execute_jump(a, new_pc);
@@ -2985,7 +2809,7 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
         uint64_t mstatus = a.read_mstatus();
         if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM)))
             return execute_illegal_insn_exception(a, pc, insn);
-        uint32_t rs1 = insn_rs1(insn);
+        uint32_t rs1 = insn_get_rs1(insn);
         if (rs1 == 0) {
             tlb_flush_all(a.naked());
         } else {
@@ -3010,29 +2834,29 @@ static inline execute_status execute_atomic_group(STATE_ACCESS &a, uint64_t pc, 
 #ifdef DUMP_COUNTERS
     a.naked()->count_amo++;
 #endif
-    switch (static_cast<atomic_funct3_funct5>(insn_funct3_funct5(insn))) {
-        case atomic_funct3_funct5::LR_W: return execute_LR_W(a, pc, insn);
-        case atomic_funct3_funct5::SC_W: return execute_SC_W(a, pc, insn);
-        case atomic_funct3_funct5::AMOSWAP_W: return execute_AMOSWAP_W(a, pc, insn);
-        case atomic_funct3_funct5::AMOADD_W: return execute_AMOADD_W(a, pc, insn);
-        case atomic_funct3_funct5::AMOXOR_W: return execute_AMOXOR_W(a, pc, insn);
-        case atomic_funct3_funct5::AMOAND_W: return execute_AMOAND_W(a, pc, insn);
-        case atomic_funct3_funct5::AMOOR_W: return execute_AMOOR_W(a, pc, insn);
-        case atomic_funct3_funct5::AMOMIN_W: return execute_AMOMIN_W(a, pc, insn);
-        case atomic_funct3_funct5::AMOMAX_W: return execute_AMOMAX_W(a, pc, insn);
-        case atomic_funct3_funct5::AMOMINU_W: return execute_AMOMINU_W(a, pc, insn);
-        case atomic_funct3_funct5::AMOMAXU_W: return execute_AMOMAXU_W(a, pc, insn);
-        case atomic_funct3_funct5::LR_D: return execute_LR_D(a, pc, insn);
-        case atomic_funct3_funct5::SC_D: return execute_SC_D(a, pc, insn);
-        case atomic_funct3_funct5::AMOSWAP_D: return execute_AMOSWAP_D(a, pc, insn);
-        case atomic_funct3_funct5::AMOADD_D: return execute_AMOADD_D(a, pc, insn);
-        case atomic_funct3_funct5::AMOXOR_D: return execute_AMOXOR_D(a, pc, insn);
-        case atomic_funct3_funct5::AMOAND_D: return execute_AMOAND_D(a, pc, insn);
-        case atomic_funct3_funct5::AMOOR_D: return execute_AMOOR_D(a, pc, insn);
-        case atomic_funct3_funct5::AMOMIN_D: return execute_AMOMIN_D(a, pc, insn);
-        case atomic_funct3_funct5::AMOMAX_D: return execute_AMOMAX_D(a, pc, insn);
-        case atomic_funct3_funct5::AMOMINU_D: return execute_AMOMINU_D(a, pc, insn);
-        case atomic_funct3_funct5::AMOMAXU_D: return execute_AMOMAXU_D(a, pc, insn);
+    switch (static_cast<insn_atomic_funct3_funct5>(insn_get_funct3_funct5(insn))) {
+        case insn_atomic_funct3_funct5::LR_W: return execute_LR_W(a, pc, insn);
+        case insn_atomic_funct3_funct5::SC_W: return execute_SC_W(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOSWAP_W: return execute_AMOSWAP_W(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOADD_W: return execute_AMOADD_W(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOXOR_W: return execute_AMOXOR_W(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOAND_W: return execute_AMOAND_W(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOOR_W: return execute_AMOOR_W(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOMIN_W: return execute_AMOMIN_W(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOMAX_W: return execute_AMOMAX_W(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOMINU_W: return execute_AMOMINU_W(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOMAXU_W: return execute_AMOMAXU_W(a, pc, insn);
+        case insn_atomic_funct3_funct5::LR_D: return execute_LR_D(a, pc, insn);
+        case insn_atomic_funct3_funct5::SC_D: return execute_SC_D(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOSWAP_D: return execute_AMOSWAP_D(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOADD_D: return execute_AMOADD_D(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOXOR_D: return execute_AMOXOR_D(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOAND_D: return execute_AMOAND_D(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOOR_D: return execute_AMOOR_D(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOMIN_D: return execute_AMOMIN_D(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOMAX_D: return execute_AMOMAX_D(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOMINU_D: return execute_AMOMINU_D(a, pc, insn);
+        case insn_atomic_funct3_funct5::AMOMAXU_D: return execute_AMOMAXU_D(a, pc, insn);
         default: return execute_illegal_insn_exception(a, pc, insn);
     }
 }
@@ -3045,17 +2869,17 @@ static inline execute_status execute_atomic_group(STATE_ACCESS &a, uint64_t pc, 
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
 static inline execute_status execute_arithmetic_32_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<arithmetic_32_funct3_funct7>(insn_funct3_funct7(insn))) {
-        case arithmetic_32_funct3_funct7::ADDW: return execute_ADDW(a, pc, insn);
-        case arithmetic_32_funct3_funct7::SUBW: return execute_SUBW(a, pc, insn);
-        case arithmetic_32_funct3_funct7::SLLW: return execute_SLLW(a, pc, insn);
-        case arithmetic_32_funct3_funct7::SRLW: return execute_SRLW(a, pc, insn);
-        case arithmetic_32_funct3_funct7::SRAW: return execute_SRAW(a, pc, insn);
-        case arithmetic_32_funct3_funct7::MULW: return execute_MULW(a, pc, insn);
-        case arithmetic_32_funct3_funct7::DIVW: return execute_DIVW(a, pc, insn);
-        case arithmetic_32_funct3_funct7::DIVUW: return execute_DIVUW(a, pc, insn);
-        case arithmetic_32_funct3_funct7::REMW: return execute_REMW(a, pc, insn);
-        case arithmetic_32_funct3_funct7::REMUW: return execute_REMUW(a, pc, insn);
+    switch (static_cast<insn_arithmetic_32_funct3_funct7>(insn_get_funct3_funct7(insn))) {
+        case insn_arithmetic_32_funct3_funct7::ADDW: return execute_ADDW(a, pc, insn);
+        case insn_arithmetic_32_funct3_funct7::SUBW: return execute_SUBW(a, pc, insn);
+        case insn_arithmetic_32_funct3_funct7::SLLW: return execute_SLLW(a, pc, insn);
+        case insn_arithmetic_32_funct3_funct7::SRLW: return execute_SRLW(a, pc, insn);
+        case insn_arithmetic_32_funct3_funct7::SRAW: return execute_SRAW(a, pc, insn);
+        case insn_arithmetic_32_funct3_funct7::MULW: return execute_MULW(a, pc, insn);
+        case insn_arithmetic_32_funct3_funct7::DIVW: return execute_DIVW(a, pc, insn);
+        case insn_arithmetic_32_funct3_funct7::DIVUW: return execute_DIVUW(a, pc, insn);
+        case insn_arithmetic_32_funct3_funct7::REMW: return execute_REMW(a, pc, insn);
+        case insn_arithmetic_32_funct3_funct7::REMUW: return execute_REMUW(a, pc, insn);
         default: return execute_illegal_insn_exception(a, pc, insn);
     }
 }
@@ -3068,9 +2892,9 @@ static inline execute_status execute_arithmetic_32_group(STATE_ACCESS &a, uint64
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
 static inline execute_status execute_shift_right_immediate_32_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<shift_right_immediate_32_funct7>(insn_funct7(insn))) {
-        case shift_right_immediate_32_funct7::SRLIW: return execute_SRLIW(a, pc, insn);
-        case shift_right_immediate_32_funct7::SRAIW: return execute_SRAIW(a, pc, insn);
+    switch (static_cast<insn_shift_right_immediate_32_funct7>(insn_get_funct7(insn))) {
+        case insn_shift_right_immediate_32_funct7::SRLIW: return execute_SRLIW(a, pc, insn);
+        case insn_shift_right_immediate_32_funct7::SRAIW: return execute_SRAIW(a, pc, insn);
         default: return execute_illegal_insn_exception(a, pc, insn);
     }
 }
@@ -3083,10 +2907,10 @@ static inline execute_status execute_shift_right_immediate_32_group(STATE_ACCESS
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
 static inline execute_status execute_arithmetic_immediate_32_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<arithmetic_immediate_32_funct3>(insn_funct3(insn))) {
-        case arithmetic_immediate_32_funct3::ADDIW: return execute_ADDIW(a, pc, insn);
-        case arithmetic_immediate_32_funct3::SLLIW: return execute_SLLIW(a, pc, insn);
-        case arithmetic_immediate_32_funct3::shift_right_immediate_32_group:
+    switch (static_cast<insn_arithmetic_immediate_32_funct3>(insn_get_funct3(insn))) {
+        case insn_arithmetic_immediate_32_funct3::ADDIW: return execute_ADDIW(a, pc, insn);
+        case insn_arithmetic_immediate_32_funct3::SLLIW: return execute_SLLIW(a, pc, insn);
+        case insn_arithmetic_immediate_32_funct3::shift_right_immediate_32_group:
             return execute_shift_right_immediate_32_group(a, pc, insn);
         default: return execute_illegal_insn_exception(a, pc, insn);
     }
@@ -3100,13 +2924,13 @@ static inline execute_status execute_arithmetic_immediate_32_group(STATE_ACCESS 
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
 static inline execute_status execute_env_trap_int_mm_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<env_trap_int_group_insn>(insn)) {
-        case env_trap_int_group_insn::ECALL: return execute_ECALL(a, pc, insn);
-        case env_trap_int_group_insn::EBREAK: return execute_EBREAK(a, pc, insn);
-        case env_trap_int_group_insn::URET: return execute_URET(a, pc, insn);
-        case env_trap_int_group_insn::SRET: return execute_SRET(a, pc, insn);
-        case env_trap_int_group_insn::MRET: return execute_MRET(a, pc, insn);
-        case env_trap_int_group_insn::WFI: return execute_WFI(a, pc, insn);
+    switch (static_cast<insn_env_trap_int_group_insn>(insn)) {
+        case insn_env_trap_int_group_insn::ECALL: return execute_ECALL(a, pc, insn);
+        case insn_env_trap_int_group_insn::EBREAK: return execute_EBREAK(a, pc, insn);
+        case insn_env_trap_int_group_insn::URET: return execute_URET(a, pc, insn);
+        case insn_env_trap_int_group_insn::SRET: return execute_SRET(a, pc, insn);
+        case insn_env_trap_int_group_insn::MRET: return execute_MRET(a, pc, insn);
+        case insn_env_trap_int_group_insn::WFI: return execute_WFI(a, pc, insn);
         default: return execute_SFENCE_VMA(a, pc, insn);
     }
 }
@@ -3119,14 +2943,14 @@ static inline execute_status execute_env_trap_int_mm_group(STATE_ACCESS &a, uint
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
 static inline execute_status execute_csr_env_trap_int_mm_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<csr_env_trap_int_mm_funct3>(insn_funct3(insn))) {
-        case csr_env_trap_int_mm_funct3::CSRRW: return execute_CSRRW(a, pc, insn);
-        case csr_env_trap_int_mm_funct3::CSRRS: return execute_CSRRS(a, pc, insn);
-        case csr_env_trap_int_mm_funct3::CSRRC: return execute_CSRRC(a, pc, insn);
-        case csr_env_trap_int_mm_funct3::CSRRWI: return execute_CSRRWI(a, pc, insn);
-        case csr_env_trap_int_mm_funct3::CSRRSI: return execute_CSRRSI(a, pc, insn);
-        case csr_env_trap_int_mm_funct3::CSRRCI: return execute_CSRRCI(a, pc, insn);
-        case csr_env_trap_int_mm_funct3::env_trap_int_mm_group:
+    switch (static_cast<insn_csr_env_trap_int_mm_funct3>(insn_get_funct3(insn))) {
+        case insn_csr_env_trap_int_mm_funct3::CSRRW: return execute_CSRRW(a, pc, insn);
+        case insn_csr_env_trap_int_mm_funct3::CSRRS: return execute_CSRRS(a, pc, insn);
+        case insn_csr_env_trap_int_mm_funct3::CSRRC: return execute_CSRRC(a, pc, insn);
+        case insn_csr_env_trap_int_mm_funct3::CSRRWI: return execute_CSRRWI(a, pc, insn);
+        case insn_csr_env_trap_int_mm_funct3::CSRRSI: return execute_CSRRSI(a, pc, insn);
+        case insn_csr_env_trap_int_mm_funct3::CSRRCI: return execute_CSRRCI(a, pc, insn);
+        case insn_csr_env_trap_int_mm_funct3::env_trap_int_mm_group:
              return execute_env_trap_int_mm_group(a, pc, insn);
         default: return execute_illegal_insn_exception(a, pc, insn);
     }
@@ -3157,9 +2981,9 @@ static inline execute_status execute_fence_group(STATE_ACCESS &a, uint64_t pc, u
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
 static inline execute_status execute_shift_right_immediate_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<shift_right_immediate_funct6>(insn_funct6(insn))) {
-        case shift_right_immediate_funct6::SRLI: return execute_SRLI(a, pc, insn);
-        case shift_right_immediate_funct6::SRAI: return execute_SRAI(a, pc, insn);
+    switch (static_cast<insn_shift_right_immediate_funct6>(insn_get_funct6(insn))) {
+        case insn_shift_right_immediate_funct6::SRLI: return execute_SRLI(a, pc, insn);
+        case insn_shift_right_immediate_funct6::SRAI: return execute_SRAI(a, pc, insn);
         default: return execute_illegal_insn_exception(a, pc, insn);
     }
 }
@@ -3172,26 +2996,26 @@ static inline execute_status execute_shift_right_immediate_group(STATE_ACCESS &a
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
 static inline execute_status execute_arithmetic_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    //std::cerr << "funct3_funct7: " << std::bitset<10>(insn_funct3_funct7(insn)) << '\n';
-    switch (static_cast<arithmetic_funct3_funct7>(insn_funct3_funct7(insn))) {
-        case arithmetic_funct3_funct7::ADD: return execute_ADD(a, pc, insn);
-        case arithmetic_funct3_funct7::SUB: return execute_SUB(a, pc, insn);
-        case arithmetic_funct3_funct7::SLL: return execute_SLL(a, pc, insn);
-        case arithmetic_funct3_funct7::SLT: return execute_SLT(a, pc, insn);
-        case arithmetic_funct3_funct7::SLTU: return execute_SLTU(a, pc, insn);
-        case arithmetic_funct3_funct7::XOR: return execute_XOR(a, pc, insn);
-        case arithmetic_funct3_funct7::SRL: return execute_SRL(a, pc, insn);
-        case arithmetic_funct3_funct7::SRA: return execute_SRA(a, pc, insn);
-        case arithmetic_funct3_funct7::OR: return execute_OR(a, pc, insn);
-        case arithmetic_funct3_funct7::AND: return execute_AND(a, pc, insn);
-        case arithmetic_funct3_funct7::MUL: return execute_MUL(a, pc, insn);
-        case arithmetic_funct3_funct7::MULH: return execute_MULH(a, pc, insn);
-        case arithmetic_funct3_funct7::MULHSU: return execute_MULHSU(a, pc, insn);
-        case arithmetic_funct3_funct7::MULHU: return execute_MULHU(a, pc, insn);
-        case arithmetic_funct3_funct7::DIV: return execute_DIV(a, pc, insn);
-        case arithmetic_funct3_funct7::DIVU: return execute_DIVU(a, pc, insn);
-        case arithmetic_funct3_funct7::REM: return execute_REM(a, pc, insn);
-        case arithmetic_funct3_funct7::REMU: return execute_REMU(a, pc, insn);
+    //std::cerr << "funct3_funct7: " << std::bitset<10>(insn_get_funct3_funct7(insn)) << '\n';
+    switch (static_cast<insn_arithmetic_funct3_funct7>(insn_get_funct3_funct7(insn))) {
+        case insn_arithmetic_funct3_funct7::ADD: return execute_ADD(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::SUB: return execute_SUB(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::SLL: return execute_SLL(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::SLT: return execute_SLT(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::SLTU: return execute_SLTU(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::XOR: return execute_XOR(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::SRL: return execute_SRL(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::SRA: return execute_SRA(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::OR: return execute_OR(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::AND: return execute_AND(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::MUL: return execute_MUL(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::MULH: return execute_MULH(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::MULHSU: return execute_MULHSU(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::MULHU: return execute_MULHU(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::DIV: return execute_DIV(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::DIVU: return execute_DIVU(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::REM: return execute_REM(a, pc, insn);
+        case insn_arithmetic_funct3_funct7::REMU: return execute_REMU(a, pc, insn);
         default: return execute_illegal_insn_exception(a, pc, insn);
     }
 }
@@ -3204,15 +3028,15 @@ static inline execute_status execute_arithmetic_group(STATE_ACCESS &a, uint64_t 
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
 static inline execute_status execute_arithmetic_immediate_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<arithmetic_immediate_funct3>(insn_funct3(insn))) {
-        case arithmetic_immediate_funct3::ADDI: return execute_ADDI(a, pc, insn);
-        case arithmetic_immediate_funct3::SLTI: return execute_SLTI(a, pc, insn);
-        case arithmetic_immediate_funct3::SLTIU: return execute_SLTIU(a, pc, insn);
-        case arithmetic_immediate_funct3::XORI: return execute_XORI(a, pc, insn);
-        case arithmetic_immediate_funct3::ORI: return execute_ORI(a, pc, insn);
-        case arithmetic_immediate_funct3::ANDI: return execute_ANDI(a, pc, insn);
-        case arithmetic_immediate_funct3::SLLI: return execute_SLLI(a, pc, insn);
-        case arithmetic_immediate_funct3::shift_right_immediate_group:
+    switch (static_cast<insn_arithmetic_immediate_funct3>(insn_get_funct3(insn))) {
+        case insn_arithmetic_immediate_funct3::ADDI: return execute_ADDI(a, pc, insn);
+        case insn_arithmetic_immediate_funct3::SLTI: return execute_SLTI(a, pc, insn);
+        case insn_arithmetic_immediate_funct3::SLTIU: return execute_SLTIU(a, pc, insn);
+        case insn_arithmetic_immediate_funct3::XORI: return execute_XORI(a, pc, insn);
+        case insn_arithmetic_immediate_funct3::ORI: return execute_ORI(a, pc, insn);
+        case insn_arithmetic_immediate_funct3::ANDI: return execute_ANDI(a, pc, insn);
+        case insn_arithmetic_immediate_funct3::SLLI: return execute_SLLI(a, pc, insn);
+        case insn_arithmetic_immediate_funct3::shift_right_immediate_group:
             return execute_shift_right_immediate_group(a, pc, insn);
         default: return execute_illegal_insn_exception(a, pc, insn);
     }
@@ -3226,11 +3050,11 @@ static inline execute_status execute_arithmetic_immediate_group(STATE_ACCESS &a,
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
 static inline execute_status execute_store_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<store_funct3>(insn_funct3(insn))) {
-        case store_funct3::SB: return execute_SB(a, pc, insn);
-        case store_funct3::SH: return execute_SH(a, pc, insn);
-        case store_funct3::SW: return execute_SW(a, pc, insn);
-        case store_funct3::SD: return execute_SD(a, pc, insn);
+    switch (static_cast<insn_store_funct3>(insn_get_funct3(insn))) {
+        case insn_store_funct3::SB: return execute_SB(a, pc, insn);
+        case insn_store_funct3::SH: return execute_SH(a, pc, insn);
+        case insn_store_funct3::SW: return execute_SW(a, pc, insn);
+        case insn_store_funct3::SD: return execute_SD(a, pc, insn);
         default: return execute_illegal_insn_exception(a, pc, insn);
     }
 }
@@ -3243,14 +3067,14 @@ static inline execute_status execute_store_group(STATE_ACCESS &a, uint64_t pc, u
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
 static inline execute_status execute_load_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<load_funct3>(insn_funct3(insn))) {
-        case load_funct3::LB: return execute_LB(a, pc, insn);
-        case load_funct3::LH: return execute_LH(a, pc, insn);
-        case load_funct3::LW: return execute_LW(a, pc, insn);
-        case load_funct3::LD: return execute_LD(a, pc, insn);
-        case load_funct3::LBU: return execute_LBU(a, pc, insn);
-        case load_funct3::LHU: return execute_LHU(a, pc, insn);
-        case load_funct3::LWU: return execute_LWU(a, pc, insn);
+    switch (static_cast<insn_load_funct3>(insn_get_funct3(insn))) {
+        case insn_load_funct3::LB: return execute_LB(a, pc, insn);
+        case insn_load_funct3::LH: return execute_LH(a, pc, insn);
+        case insn_load_funct3::LW: return execute_LW(a, pc, insn);
+        case insn_load_funct3::LD: return execute_LD(a, pc, insn);
+        case insn_load_funct3::LBU: return execute_LBU(a, pc, insn);
+        case insn_load_funct3::LHU: return execute_LHU(a, pc, insn);
+        case insn_load_funct3::LWU: return execute_LWU(a, pc, insn);
         default: return execute_illegal_insn_exception(a, pc, insn);
     }
 }
@@ -3263,13 +3087,13 @@ static inline execute_status execute_load_group(STATE_ACCESS &a, uint64_t pc, ui
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
 static inline execute_status execute_branch_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<branch_funct3>(insn_funct3(insn))) {
-        case branch_funct3::BEQ: return execute_BEQ(a, pc, insn);
-        case branch_funct3::BNE: return execute_BNE(a, pc, insn);
-        case branch_funct3::BLT: return execute_BLT(a, pc, insn);
-        case branch_funct3::BGE: return execute_BGE(a, pc, insn);
-        case branch_funct3::BLTU: return execute_BLTU(a, pc, insn);
-        case branch_funct3::BGEU: return execute_BGEU(a, pc, insn);
+    switch (static_cast<insn_branch_funct3>(insn_get_funct3(insn))) {
+        case insn_branch_funct3::BEQ: return execute_BEQ(a, pc, insn);
+        case insn_branch_funct3::BNE: return execute_BNE(a, pc, insn);
+        case insn_branch_funct3::BLT: return execute_BLT(a, pc, insn);
+        case insn_branch_funct3::BGE: return execute_BGE(a, pc, insn);
+        case insn_branch_funct3::BLTU: return execute_BLTU(a, pc, insn);
+        case insn_branch_funct3::BGEU: return execute_BGEU(a, pc, insn);
         default: return execute_illegal_insn_exception(a, pc, insn);
     }
 }
@@ -3285,21 +3109,21 @@ static inline execute_status execute_insn(STATE_ACCESS &a, uint64_t pc, uint32_t
 //std::cerr << "insn: " << std::bitset<32>(insn) << '\n';
 //??D We should probably try doing the first branch on the combined opcode, funct3, and funct7.
 //    Maybe it reduces the number of levels needed to decode most instructions.
-    switch (static_cast<opcode>(insn_opcode(insn))) {
-        case opcode::LUI: return execute_LUI(a, pc, insn);
-        case opcode::AUIPC: return execute_AUIPC(a, pc, insn);
-        case opcode::JAL: return execute_JAL(a, pc, insn);
-        case opcode::JALR: return execute_JALR(a, pc, insn);
-        case opcode::branch_group: return execute_branch_group(a, pc, insn);
-        case opcode::load_group: return execute_load_group(a, pc, insn);
-        case opcode::store_group: return execute_store_group(a, pc, insn);
-        case opcode::arithmetic_immediate_group: return execute_arithmetic_immediate_group(a, pc, insn);
-        case opcode::arithmetic_group: return execute_arithmetic_group(a, pc, insn);
-        case opcode::fence_group: return execute_fence_group(a, pc, insn);
-        case opcode::csr_env_trap_int_mm_group: return execute_csr_env_trap_int_mm_group(a, pc, insn);
-        case opcode::arithmetic_immediate_32_group: return execute_arithmetic_immediate_32_group(a, pc, insn);
-        case opcode::arithmetic_32_group: return execute_arithmetic_32_group(a, pc, insn);
-        case opcode::atomic_group: return execute_atomic_group(a, pc, insn);
+    switch (static_cast<insn_opcode>(insn_get_opcode(insn))) {
+        case insn_opcode::LUI: return execute_LUI(a, pc, insn);
+        case insn_opcode::AUIPC: return execute_AUIPC(a, pc, insn);
+        case insn_opcode::JAL: return execute_JAL(a, pc, insn);
+        case insn_opcode::JALR: return execute_JALR(a, pc, insn);
+        case insn_opcode::branch_group: return execute_branch_group(a, pc, insn);
+        case insn_opcode::load_group: return execute_load_group(a, pc, insn);
+        case insn_opcode::store_group: return execute_store_group(a, pc, insn);
+        case insn_opcode::arithmetic_immediate_group: return execute_arithmetic_immediate_group(a, pc, insn);
+        case insn_opcode::arithmetic_group: return execute_arithmetic_group(a, pc, insn);
+        case insn_opcode::fence_group: return execute_fence_group(a, pc, insn);
+        case insn_opcode::csr_env_trap_int_mm_group: return execute_csr_env_trap_int_mm_group(a, pc, insn);
+        case insn_opcode::arithmetic_immediate_32_group: return execute_arithmetic_immediate_32_group(a, pc, insn);
+        case insn_opcode::arithmetic_32_group: return execute_arithmetic_32_group(a, pc, insn);
+        case insn_opcode::atomic_group: return execute_atomic_group(a, pc, insn);
         default: return execute_illegal_insn_exception(a, pc, insn);
     }
 }
@@ -3336,14 +3160,14 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
             return fetch_status::exception;
         }
         // Walk memory map to find the range that contains the physical address
-        pma_entry *entry = get_pma(a, paddr);
+        pma_entry *pma = get_pma(a, paddr);
         // We only execute directly from RAM (as in "random access memory", which includes ROM)
         // If we are not in RAM or if we are not in any range, we treat this as a PMA violation
-        if (!entry || !pma_is_ram(entry)) {
+        if (!pma || !pma_is_ram(pma)) {
             raise_exception(a, CAUSE_FETCH_FAULT, vaddr);
             return fetch_status::exception;
         }
-        uint64_t mem_addend = tlb_add(a.naked()->tlb_code, entry, vaddr, paddr);
+        uint64_t mem_addend = tlb_add(a.naked()->tlb_code, pma, vaddr, paddr);
         *insn = *reinterpret_cast<uint32_t *>(mem_addend + (uintptr_t)vaddr);
         return fetch_status::success;
     }
@@ -3439,131 +3263,8 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
 }
 
 void machine_run(machine_state *s, uint64_t mcycle_end) {
+    // Use a non-logging state access object
     state_access a(s);
     interpret(a, mcycle_end);
 }
 
-uint64_t processor_read_mcycle(const machine_state *s) {
-    return s->mcycle;
-}
-
-void processor_write_mcycle(machine_state *s, uint64_t cycles) {
-    s->mcycle = cycles;
-}
-
-void processor_set_mip(machine_state *s, uint32_t mask) {
-    s->mip |= mask;
-    s->iflags_I = false;
-    processor_set_brk_from_mip_mie(s);
-}
-
-void processor_reset_mip(machine_state *s, uint32_t mask) {
-    s->mip &= ~mask;
-    processor_set_brk_from_mip_mie(s);
-}
-
-uint32_t processor_read_mip(const machine_state *s) {
-    return s->mip;
-}
-
-bool processor_read_iflags_I(const machine_state *s) {
-    return s->iflags_I;
-}
-
-void processor_reset_iflags_I(machine_state *s) {
-    s->iflags_I = false;
-}
-
-bool processor_read_iflags_H(const machine_state *s) {
-    return s->iflags_H;
-}
-
-void processor_set_iflags_H(machine_state *s) {
-    s->iflags_H = true;
-    processor_set_brk_from_iflags_H(s);
-}
-
-int processor_get_max_xlen(const machine_state *) {
-    return XLEN;
-}
-
-void processor_set_brk_from_mip_mie(machine_state *s) {
-    s->brk = s->mip & s->mie;
-}
-
-void processor_set_brk_from_iflags_H(machine_state *s) {
-    s->brk = true;
-}
-
-uint64_t processor_read_tohost(const machine_state *s) {
-    return s->tohost;
-}
-
-void processor_write_tohost(machine_state *s, uint64_t val) {
-    s->tohost = val;
-}
-
-uint64_t processor_read_fromhost(const machine_state *s) {
-    return s->fromhost;
-}
-
-void processor_write_fromhost(machine_state *s, uint64_t val) {
-    s->fromhost = val;
-}
-
-uint64_t processor_read_mtimecmp(const machine_state *s) {
-    return s->mtimecmp;
-}
-
-void processor_write_mtimecmp(machine_state *s, uint64_t val) {
-    s->mtimecmp = val;
-}
-
-uint64_t processor_read_misa(const machine_state *s) {
-    return s->misa;
-}
-
-static bool update_memory_merkle_tree(CryptoPP::Keccak_256 &kc, const pma_entry *entry, merkle_tree *t) {
-    uint64_t offset = 0;
-    // Complete initial pages
-    while (offset + merkle_tree::get_page_size() <= entry->length) {
-        if (t->is_error(t->update_page(kc, entry->start + offset, entry->memory.host_memory + offset))) {
-            return false;
-        }
-        offset += merkle_tree::get_page_size();
-    }
-    // Potentially partial final page
-    if (offset < entry->length) {
-        uint8_t buf[merkle_tree::get_page_size()];
-        memset(buf, 0, sizeof(buf));
-        memcpy(buf, entry->memory.host_memory+offset, entry->length-offset);
-        if (t->is_error(t->update_page(kc, entry->start+offset, entry->memory.host_memory+offset))) {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
-    CryptoPP::Keccak_256 kc;
-    t->begin_update(kc);
-    bool status = true;
-    for (int i = 0; i < s->pma_count; i++) {
-        pma_entry *entry = &s->physical_memory[i];
-        if (pma_is_memory(entry)) {
-            if (!update_memory_merkle_tree(kc, entry, t)) {
-                status = false;
-                break;
-            }
-        } else {
-            if (!entry->device.update_merkle_tree(s, entry->device.context,
-                    entry->start, entry->length, t)) {
-                fprintf(stderr, "failing on device\n");
-                status = false;
-                break;
-            }
-        }
-    }
-    t->end_update(kc);
-    return status;
-}

@@ -436,21 +436,21 @@ public:
     }
 
     /// \brief Logs read from memory.
-    /// \tparam entry PMA for memory range.
+    /// \tparam pma PMA for memory range.
     /// \tparam paddr Target physical address.
     /// \tparam val Value read.
     /// \tparam size_log2 log<sub>2</sub> of width of memory access.
-    void read_memory(pma_entry *entry, uint64_t paddr, uint64_t val, int size_log2) {
-        return derived().do_write_memory(entry, paddr, val, size_log2);
+    void read_memory(pma_entry *pma, uint64_t paddr, uint64_t val, int size_log2) {
+        return derived().do_write_memory(pma, paddr, val, size_log2);
     }
 
     /// \brief Logs write to memory.
-    /// \tparam entry PMA for memory range.
+    /// \tparam pma PMA for memory range.
     /// \tparam paddr Target physical address.
     /// \tparam val Value written.
     /// \tparam size_log2 log<sub>2</sub> of width of memory access.
-    void write_memory(pma_entry *entry, uint64_t paddr, uint64_t val, int size_log2) {
-        return derived().do_write_memory(entry, paddr, val, size_log2);
+    void write_memory(pma_entry *pma, uint64_t paddr, uint64_t val, int size_log2) {
+        return derived().do_write_memory(pma, paddr, val, size_log2);
     }
 };
 

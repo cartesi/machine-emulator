@@ -273,12 +273,12 @@ private:
         return &m_s->physical_memory[i];
     }
 
-    void do_read_memory(pma_entry *entry, uint64_t paddr, uint64_t val, int size_log2) {
-        (void) entry; (void) paddr; (void) val; (void) size_log2;
+    void do_read_memory(pma_entry *pma, uint64_t paddr, uint64_t val, int size_log2) {
+        (void) pma; (void) paddr; (void) val; (void) size_log2;
     }
 
-    void do_write_memory(pma_entry *entry, uint64_t paddr, uint64_t val, int size_log2) {
-        (void) entry; (void) paddr; (void) val; (void) size_log2;
+    void do_write_memory(pma_entry *pma, uint64_t paddr, uint64_t val, int size_log2) {
+        (void) pma; (void) paddr; (void) val; (void) size_log2;
     }
 
     machine_state *do_naked(void) {

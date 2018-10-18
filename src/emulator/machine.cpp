@@ -502,9 +502,9 @@ static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t va
     pma_entry *entry = get_pma(a, paddr);
     if (!entry || !pma_is_ram(entry))
         return false;
-    // log writes to memory BEFORE actually modifying the state
-    a.write_memory(entry, paddr, val, size_log2<uint64_t>::value);
+    // log writes to memory
     *reinterpret_cast<uint64_t *>(entry->memory.host_memory + (uintptr_t)(paddr - entry->start)) = val;
+    a.write_memory(entry, paddr, val, size_log2<uint64_t>::value);
     return true;
 }
 
@@ -1318,6 +1318,8 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
         } else if (pma_is_memory(entry)) {
             uint64_t mem_addend = tlb_add(a.naked()->tlb_write, entry, vaddr, paddr);
             *reinterpret_cast<T *>(mem_addend + (uintptr_t)vaddr) = static_cast<T>(val);
+            // log write to memory
+            a.write_memory(entry, paddr, val, size_log2<U>::value);
             return true;
         } else {
             uint64_t offset = paddr - entry->start;
@@ -3522,7 +3524,6 @@ uint64_t processor_read_misa(const machine_state *s) {
 }
 
 static bool update_memory_merkle_tree(CryptoPP::Keccak_256 &kc, const pma_entry *entry, merkle_tree *t) {
-fprintf(stderr, "updating %lx\n", entry->start);
     uint64_t offset = 0;
     // Complete initial pages
     while (offset + merkle_tree::get_page_size() <= entry->length) {
@@ -3540,7 +3541,6 @@ fprintf(stderr, "updating %lx\n", entry->start);
             return false;
         }
     }
-fprintf(stderr, "done updating %lx\n", entry->start);
     return true;
 }
 

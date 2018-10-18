@@ -1,6 +1,7 @@
 #include "machine.h"
 #include "machine-state.h"
 #include "htif.h"
+#include "i-device-state-access.h"
 
 #include <signal.h>
 #include <termios.h>
@@ -57,6 +58,7 @@ static void htif_console_poll(htif_state *htif) {
     }
 }
 
+/// \brief HTIF device read callback. See ::pma_device_read.
 bool htif_read(i_device_state_access *a, void *context, uint64_t offset, uint64_t *pval, int size_log2) {
     (void) context;
 
@@ -76,6 +78,7 @@ bool htif_read(i_device_state_access *a, void *context, uint64_t offset, uint64_
     }
 }
 
+/// \brief HTIF device write callback. See ::pma_device_peek.
 bool htif_peek(const machine_state *s, void *context, uint64_t offset, uint64_t *pval, int size_log2) {
     (void) context;
 
@@ -95,6 +98,7 @@ bool htif_peek(const machine_state *s, void *context, uint64_t offset, uint64_t 
     }
 }
 
+/// \brief HTIF device update_merkle_tree callback. See ::pma_device_update_merkle_tree.
 bool htif_update_merkle_tree(const machine_state *s, void *context, uint64_t start, uint64_t length,
     CryptoPP::Keccak_256 &kc, merkle_tree *t) {
     (void) context; (void) length;
@@ -159,6 +163,7 @@ static bool htif_write_fromhost(i_device_state_access *a, htif_state *htif, uint
     return true;
 }
 
+/// \brief HTIF device write callback. See ::pma_device_write.
 bool htif_write(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2) {
     htif_state *htif = reinterpret_cast<htif_state *>(context);
 
@@ -239,3 +244,10 @@ void htif_interact(htif_state *htif) {
         htif_console_poll(htif);
     }
 }
+
+pma_device_driver htif_driver {
+    htif_read,
+    htif_write,
+    htif_peek,
+    htif_update_merkle_tree
+};

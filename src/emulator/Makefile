@@ -72,6 +72,7 @@ OBJS:= \
 	emulator.o \
 	clint.o \
 	htif.o \
+	pma.o \
 	machine.o \
 	luaemu.o
 

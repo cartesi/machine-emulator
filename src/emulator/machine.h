@@ -4,50 +4,11 @@
 /// \file
 /// \brief Cartesi machine implementation
 
-/// \brief The opaque machine_state structure stores the
-/// entire machine state.
-typedef struct machine_state machine_state;
-
-#include "i-device-state-access.h"
 #include "merkle-tree.h"
 
-/// \brief Prototype for callback invoked when machine wants
-/// to read from a device.
-/// \param da Object through which the machine state can be accessed by device.
-/// \param context Device context (set during device initialization).
-/// \param offset Offset of requested value from device base address.
-/// \param val Pointer to word where value should be stored.
-/// \param size_log2 log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
-typedef bool (*pma_device_read)(i_device_state_access *da, void *context, uint64_t offset, uint64_t *val, int size_log2);
-
-/// \brief Prototype for callback invoked when machine wants
-/// to write to a device.
-/// \param da Object through which the machine state can be accessed by device.
-/// \param context Device context (set during device initialization).
-/// \param offset Offset of requested value from device base address.
-/// \param val Word to be written at \p offset.
-/// \param size_log2 log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
-typedef bool (*pma_device_write)(i_device_state_access *da, void *context, uint64_t offset, uint64_t val, int size_log2);
-
-/// \brief Prototype for callback invoked when machine wants
-/// to peek into a device with no side-effects.
-/// \param s Machine state for naked read-only access.
-/// \param context Device context (set during device initialization).
-/// \param offset Offset of requested value from device base address.
-/// \param val Pointer to word where value should be stored.
-/// \param size_log2 log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
-typedef bool (*pma_device_peek)(const machine_state *s, void *context, uint64_t offset, uint64_t *val, int size_log2);
-
-/// \brief Prototype for callback invoked when machine needs
-/// the device to update its mapped range into a Merkle tree.
-/// \param s Machine state for naked read-only access.
-/// \param context Device context (set during device initialization).
-/// \param start Base address for device.
-/// \param length Length of memory region mapped to device.
-/// \param kc Keccak hasher object.
-/// \param t Merkle tree to be updated.
-typedef bool (*pma_device_update_merkle_tree)(const machine_state *s, void *context, uint64_t start, uint64_t length,
-    CryptoPP::Keccak_256 &kc, merkle_tree *t);
+// Forward definitions
+struct machine_state;
+struct pma_device_driver;
 
 /// \name Interrupt pending flags for use with set/reset mip
 /// \{
@@ -229,16 +190,9 @@ bool board_register_ram(machine_state *s, uint64_t start, uint64_t length);
 /// \param length Length of physical memory range in the
 /// target address space on which to map the device.
 /// \param context Pointer to context to be passed to callbacks.
-/// \param read Callback for read operations.
-/// \param write Callback for write operations.
-/// \param peek Callback for peek operations.
-/// \param update_merkle_tree Callback for Merkle tree update operations.
+/// \param driver Pointer to driver with callbacks.
 /// \returns true if successful, false otherwise.
-bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context,
-    pma_device_read read,
-    pma_device_write write,
-    pma_device_peek peek = nullptr,
-    pma_device_update_merkle_tree update_merkle_tree = nullptr);
+bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, pma_device_driver *driver);
 
 /// \brief Register a new shadow device.
 /// \param s Machine state.
@@ -247,12 +201,9 @@ bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void
 /// \param length Length of physical memory range in the
 /// target address space on which to map the shadow device.
 /// \param context Pointer to context to be passed to callbacks.
-/// \param peek Callback for peek operations.
-/// \param update_merkle_tree Callback for Merkle tree update operations.
+/// \param driver Pointer to driver with callbacks.
 /// \returns true if successful, false otherwise.
 bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length,
-    void *context,
-    pma_device_peek peek,
-    pma_device_update_merkle_tree update_merkle_tree);
+    void *context, pma_device_driver *driver);
 
 #endif

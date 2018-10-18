@@ -6,6 +6,7 @@
 
 #include <cstdint>
 
+#include "i-device-state-access.h"
 #include "machine.h"
 
 /// \class device_state_access

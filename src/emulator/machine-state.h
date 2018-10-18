@@ -2,38 +2,11 @@
 #define STATE_H
 
 /// \file
-/// \brief Cartesi machine state.
+/// \brief Cartesi machine state structure definition.
 
 #include <cstdint>
 
-/// \brief Data for memory ranges.
-struct pma_memory {
-    uint8_t *host_memory;      ///< Start of associated memory region in host.
-    int backing_file;          ///< File descryptor for backed memory.
-} ;
-
-//??D change this to a class with a virtual interface
-/// \brief Data for device ranges.
-struct pma_device {
-    void *context;            ///< Device context set during initialization.
-    pma_device_read read;     ///< Callback for read operations.
-    pma_device_write write;   ///< Callback for write operations.
-    pma_device_peek peek;     ///< Callback for peek operations.
-    pma_device_update_merkle_tree update_merkle_tree; ///< Callback for Merkle tree updates.
-};
-
-/// \brief Physical Memory Attribute entry.
-/// \details The target's physical memory layout is described by an
-/// array of PMA entries.
-struct pma_entry {
-    uint64_t start;        ///< Start of physical memory range in target.
-    uint64_t length;       ///< Length of physical memory range in target.
-    uint32_t type_flags;   ///< Type and flags of range.
-    union {
-        pma_memory memory; ///< Memory-specific data.
-        pma_device device; ///< Device-specific data.
-    }; // anonymous union
-};
+#include "pma.h"
 
 #define PMA_SIZE 32 ///< Maximum number of PMAs
 

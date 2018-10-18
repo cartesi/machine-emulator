@@ -1,4 +1,5 @@
 #include "clint.h"
+#include "i-device-state-access.h"
 #include "machine.h"
 #include "machine-state.h"
 #include "rtc.h"
@@ -32,6 +33,7 @@ static bool clint_read_mtimecmp(i_device_state_access *a, uint64_t *val, int siz
     return false;
 }
 
+/// \brief CLINT device read callback. See ::pma_device_read.
 bool clint_read(i_device_state_access *a, void *context, uint64_t offset, uint64_t *val, int size_log2) {
     (void) context;
 
@@ -48,6 +50,7 @@ bool clint_read(i_device_state_access *a, void *context, uint64_t offset, uint64
     }
 }
 
+/// \brief CLINT device read callback. See ::pma_device_write.
 bool clint_write(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2) {
     (void) context;
 
@@ -103,6 +106,7 @@ static bool clint_peek_mtimecmp(const machine_state *s, uint64_t *val, int size_
     return false;
 }
 
+/// \brief CLINT device peek callback. See ::pma_device_peek.
 bool clint_peek(const machine_state *s, void *context, uint64_t offset, uint64_t *val, int size_log2) {
     (void) context;
 
@@ -121,6 +125,7 @@ bool clint_peek(const machine_state *s, void *context, uint64_t offset, uint64_t
 
 #define base(v) ((v) - ((v) % merkle_tree::get_page_size()))
 #define offset(v) ((v) % merkle_tree::get_page_size())
+/// \brief CLINT device update_merkle_tree callback. See ::pma_device_update_merkle_tree.
 bool clint_update_merkle_tree(const machine_state *s, void *context, uint64_t start, uint64_t length,
     CryptoPP::Keccak_256 &kc, merkle_tree *t) {
     (void) context; (void) length;
@@ -147,3 +152,10 @@ bool clint_update_merkle_tree(const machine_state *s, void *context, uint64_t st
 }
 #undef base
 #undef offset
+
+pma_device_driver clint_driver = {
+    clint_read,
+    clint_write,
+    clint_peek,
+    clint_update_merkle_tree
+};

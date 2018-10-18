@@ -44,8 +44,10 @@ typedef bool (*pma_device_peek)(const machine_state *s, void *context, uint64_t 
 /// \param context Device context (set during device initialization).
 /// \param start Base address for device.
 /// \param length Length of memory region mapped to device.
+/// \param kc Keccak hasher object.
 /// \param t Merkle tree to be updated.
-typedef bool (*pma_device_update_merkle_tree)(const machine_state *s, void *context, uint64_t start, uint64_t length, merkle_tree *t);
+typedef bool (*pma_device_update_merkle_tree)(const machine_state *s, void *context, uint64_t start, uint64_t length,
+    CryptoPP::Keccak_256 &kc, merkle_tree *t);
 
 /// \name Interrupt pending flags for use with set/reset mip
 /// \{

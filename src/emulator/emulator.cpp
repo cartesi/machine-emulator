@@ -409,7 +409,8 @@ emulator *emulator_init(const emulator_config *c) {
         }
     }
 
-    if (!board_register_mmio(emu->machine, CLINT_BASE_ADDR, CLINT_SIZE, nullptr, clint_read, clint_write)) {
+    if (!board_register_mmio(emu->machine, CLINT_BASE_ADDR, CLINT_SIZE, nullptr,
+            clint_read, clint_write, clint_peek, clint_update_merkle_tree)) {
         fprintf(stderr, "Unable to initialize CLINT device\n");
         goto failed;
     }
@@ -420,7 +421,8 @@ emulator *emulator_init(const emulator_config *c) {
         goto failed;
     }
 
-    if (!board_register_mmio(emu->machine, HTIF_BASE_ADDR, HTIF_SIZE, emu->htif, htif_read, htif_write)) {
+    if (!board_register_mmio(emu->machine, HTIF_BASE_ADDR, HTIF_SIZE, emu->htif,
+            htif_read, htif_write, htif_peek, htif_update_merkle_tree)) {
         fprintf(stderr, "Unable to initialize HTIF device\n");
         goto failed;
     }

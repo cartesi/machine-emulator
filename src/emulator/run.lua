@@ -220,7 +220,7 @@ machine:update_merkle_tree()
 print((string.gsub(machine:get_merkle_tree_root_hash(), ".", function(c)
     return string.format("%02x", string.byte(c))
 end)))
-]]
+--]]
 
 local step = 500000
 local cycles_end = step

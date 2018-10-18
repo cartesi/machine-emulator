@@ -1,4 +1,5 @@
 #include "machine.h"
+#include "machine-state.h"
 #include "htif.h"
 
 #include <signal.h>
@@ -73,6 +74,37 @@ bool htif_read(i_device_state_access *a, void *context, uint64_t offset, uint64_
             // other reads are exceptions
             return false;
     }
+}
+
+bool htif_peek(const machine_state *s, void *context, uint64_t offset, uint64_t *pval, int size_log2) {
+    (void) context;
+
+    // Our HTIF only supports aligned 64-bit reads
+    if (size_log2 != 3 || offset & 7) return false;
+
+    switch (offset) {
+        case 0: // tohost
+            *pval = s->tohost;
+            return true;
+        case 8: // fromhost
+            *pval = s->fromhost;
+            return true;
+        default:
+            // other reads are exceptions
+            return false;
+    }
+}
+
+bool htif_update_merkle_tree(const machine_state *s, void *context, uint64_t start, uint64_t length,
+    CryptoPP::Keccak_256 &kc, merkle_tree *t) {
+    (void) context; (void) length;
+    auto page = reinterpret_cast<uint64_t *>(calloc(1, merkle_tree::get_page_size()));
+    if (!page) return false;
+    page[0] = s->tohost;
+    page[1] = s->fromhost;
+    auto ret = !t->is_error(t->update_page(kc, start, reinterpret_cast<uint8_t *>(page)));
+    free(page);
+    return ret;
 }
 
 static bool htif_getchar(i_device_state_access *a, htif_state *htif, uint64_t payload) {

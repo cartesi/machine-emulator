@@ -148,7 +148,8 @@ static bool pma_device_peek_error(const machine_state *, void *, uint64_t, uint6
 }
 
 /// \brief Default device update_merkle_tree callback issues error on updates.
-static bool pma_device_update_merkle_tree_error(const machine_state *, void *, uint64_t, uint64_t, merkle_tree *) {
+static bool pma_device_update_merkle_tree_error(const machine_state *, void *, uint64_t, uint64_t,
+    CryptoPP::Keccak_256 &, merkle_tree *) {
     return false;
 }
 
@@ -903,7 +904,7 @@ uint64_t processor_read_misa(const machine_state *s) {
     return s->misa;
 }
 
-static bool update_memory_merkle_tree(CryptoPP::Keccak_256 &kc, const pma_entry *pma, merkle_tree *t) {
+static bool update_memory_merkle_tree(const pma_entry *pma, CryptoPP::Keccak_256 &kc, merkle_tree *t) {
     uint64_t offset = 0;
     // Complete initial pages
     while (offset + merkle_tree::get_page_size() <= pma->length) {
@@ -931,14 +932,13 @@ bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
     for (int i = 0; i < s->pma_count; i++) {
         pma_entry *pma = &s->physical_memory[i];
         if (pma_is_memory(pma)) {
-            if (!update_memory_merkle_tree(kc, pma, t)) {
+            if (!update_memory_merkle_tree(pma, kc, t)) {
                 status = false;
                 break;
             }
         } else {
             if (!pma->device.update_merkle_tree(s, pma->device.context,
-                    pma->start, pma->length, t)) {
-                fprintf(stderr, "failing on device\n");
+                    pma->start, pma->length, kc, t)) {
                 status = false;
                 break;
             }

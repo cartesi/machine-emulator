@@ -18,6 +18,13 @@ bool htif_read(i_device_state_access *a, void *context, uint64_t offset, uint64_
 /// \brief HTIF device write callback. See ::pma_device_write.
 bool htif_write(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2);
 
+/// \brief HTIF device write callback. See ::pma_device_peek.
+bool htif_peek(const machine_state *s, void *context, uint64_t offset, uint64_t *pval, int size_log2);
+
+/// \brief HTIF device update_merkle_tree callback. See ::pma_device_update_merkle_tree.
+bool htif_update_merkle_tree(const machine_state *s, void *context, uint64_t start, uint64_t length,
+    CryptoPP::Keccak_256 &kc, merkle_tree *t);
+
 /// \brief Creates and returns a new HTIF device
 /// \param s The machine state.
 /// \param interactive This is an interactive session with terminal support.

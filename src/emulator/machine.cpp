@@ -12,58 +12,58 @@
 
 /// \file
 /// \brief Cartesi machine implementation.
-
-//??D
-//
-// This code assumes the host's byte-ordering is the same as RISC-V's.
-// RISC-V is little endian, and so is x86.
-// There is a static_assert to prevent the code from compiling otherwise.
-//
-// This code assumes the modulo operator is such that
-//
-//      (a/b)*b + a%b = a
-//
-// i.e., the sign of the result is the sign of a.
-// This is only guaranteed from C++11 forward.
-//
-//   https://en.cppreference.com/w/cpp/language/operator_arithmetic
-//
-// RISC-V does not define this (at least I have not found it
-// in the documentation), but the tests seem assume this behavior.
-//
-//   https://github.com/riscv/riscv-tests/blob/master/isa/rv64um/rem.S
-//
-// EVM defines the same behavior. See the yellowpaper.
-//
-// This code assumes right-shifts of negative values are arithmetic shifts.
-// This is implementation-defined in C and C++.
-// Most compilers indeed do arithmetic shifts:
-//
-//   https://docs.microsoft.com/en-us/cpp/c-language/right-shifts
-//   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Integers-implementation.html#Integers-implementation
-//   (clang should behave the same as gcc, but does not document it)
-//   (I have not found documentation for icc)
-//
-// EVM does not have a shift operator.
-// Solidity defines shift as division, which means it rounds negative numbers towards zero.
-// WARNING: An arithmetic shift right would "round" a negative number away from zero!
-//
-// The code assumes narrowing conversions of signed types are modulo operations.
-// This is implementation-defined in C and C++.
-// Most compilers indeed do modulo narrowing:
-//
-//   https://docs.microsoft.com/en-us/cpp/c-language/demotion-of-integers
-//   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Integers-implementation.html#Integers-implementation
-//   (clang should behave the same as gcc, but does not document it)
-//   (I have not found documentation for icc)
-//
-// Signed integer overflows are UNDEFINED according to C and C++.
-// We do not assume signed integers handle overflow with modulo arithmetic.
-// Detecting and preventing overflows is awkward and costly.
-// Fortunately, GCC offers intrinsics that have well-defined overflow behavior.
-//
-//   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Integer-Overflow-Builtins.html#Integer-Overflow-Builtins
-//
+/// \details \{
+/// This code assumes the host's byte-ordering is the same as RISC-V's.
+/// RISC-V is little endian, and so is x86.
+/// There is a static_assert to prevent the code from compiling otherwise.
+///
+/// This code assumes the modulo operator is such that
+///
+///      (a/b)*b + a%b = a
+///
+/// i.e., the sign of the result is the sign of a.
+/// This is only guaranteed from C++11 forward.
+///
+///   https://en.cppreference.com/w/cpp/language/operator_arithmetic
+///
+/// RISC-V does not define this (at least I have not found it
+/// in the documentation), but the tests seem assume this behavior.
+///
+///   https://github.com/riscv/riscv-tests/blob/master/isa/rv64um/rem.S
+///
+/// EVM defines the same behavior. See the yellowpaper.
+///
+/// This code assumes right-shifts of negative values are arithmetic shifts.
+/// This is implementation-defined in C and C++.
+/// Most compilers indeed do arithmetic shifts:
+///
+///   https://docs.microsoft.com/en-us/cpp/c-language/right-shifts
+///
+///   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Integers-implementation.html#Integers-implementation
+///   (clang should behave the same as gcc, but does not document it)
+///   (I have not found documentation for icc)
+///
+/// EVM does not have a shift operator.
+/// Solidity defines shift as division, which means it rounds negative numbers towards zero.
+/// WARNING: An arithmetic shift right would "round" a negative number away from zero!
+///
+/// The code assumes narrowing conversions of signed types are modulo operations.
+/// This is implementation-defined in C and C++.
+/// Most compilers indeed do modulo narrowing:
+///
+///   https://docs.microsoft.com/en-us/cpp/c-language/demotion-of-integers
+///
+///   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Integers-implementation.html#Integers-implementation
+///   (clang should behave the same as gcc, but does not document it)
+///   (I have not found documentation for icc)
+///
+/// Signed integer overflows are UNDEFINED according to C and C++.
+/// We do not assume signed integers handle overflow with modulo arithmetic.
+/// Detecting and preventing overflows is awkward and costly.
+/// Fortunately, GCC offers intrinsics that have well-defined overflow behavior.
+///
+///   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Integer-Overflow-Builtins.html#Integer-Overflow-Builtins
+/// \}
 
 // GCC complains about __int128 with -pedantic or -pedantic-errors
 #pragma GCC diagnostic push

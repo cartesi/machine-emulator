@@ -3,6 +3,9 @@
 
 #include "emulator.h"
 
+/// \file
+/// \brief Scripting interface for the emulator in the Lua language.
+
 #ifdef GPERF
 #include "gperftools/profiler.h"
 #endif

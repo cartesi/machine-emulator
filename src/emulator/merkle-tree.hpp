@@ -1,3 +1,6 @@
+/// \file
+/// \brief Merkle tree implementation.
+
 template <int T, int P>
 constexpr uint64_t
 merkle_tree_t<T,P>::

@@ -2,7 +2,7 @@
 #define MERKLE_TREE_H
 
 /// \file
-/// \brief Certified memory implementation.
+/// \brief Merkle tree interface.
 
 #include <cstdint>
 #include <cstdlib>

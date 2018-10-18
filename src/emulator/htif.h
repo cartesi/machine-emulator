@@ -6,24 +6,7 @@
 /// \file
 /// \brief Host-Target interface device.
 
-#include "i-device-state-access.h"
-#include "machine.h"
-
-/// \brief Opaque HTIF device state.
-typedef struct htif_state htif_state;
-
-/// \brief HTIF device read callback. See ::pma_device_read.
-bool htif_read(i_device_state_access *a, void *context, uint64_t offset, uint64_t *pval, int size_log2);
-
-/// \brief HTIF device write callback. See ::pma_device_write.
-bool htif_write(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2);
-
-/// \brief HTIF device write callback. See ::pma_device_peek.
-bool htif_peek(const machine_state *s, void *context, uint64_t offset, uint64_t *pval, int size_log2);
-
-/// \brief HTIF device update_merkle_tree callback. See ::pma_device_update_merkle_tree.
-bool htif_update_merkle_tree(const machine_state *s, void *context, uint64_t start, uint64_t length,
-    CryptoPP::Keccak_256 &kc, merkle_tree *t);
+struct htif_state;
 
 /// \brief Creates and returns a new HTIF device
 /// \param s The machine state.
@@ -38,5 +21,8 @@ void htif_interact(htif_state *htif);
 /// \brief Destroys an HTIF device
 /// \param htif Pointer to HTIF state
 void htif_end(htif_state *htif);
+
+struct pma_device_driver;
+extern pma_device_driver htif_driver;
 
 #endif

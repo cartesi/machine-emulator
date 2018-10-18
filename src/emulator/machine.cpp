@@ -83,108 +83,6 @@ typedef unsigned __int128 uint128_t;
 #include "meta.h"
 #include "riscv-constants.h"
 
-/// log<sub>2</sub> of physical memory page size.
-#define PMA_PAGE_SIZE_LOG2 12
-/// Physical memory page size.
-#define PMA_PAGE_SIZE      (1 << PMA_PAGE_SIZE_LOG2)
-
-/// \name PMA target flags
-/// \{
-#define PMA_FLAGS_M         (1u << 0) ///< Memory range
-#define PMA_FLAGS_IO        (1u << 1) ///< IO mapped range
-#define PMA_FLAGS_E         (1u << 2) ///< Empty range
-#define PMA_FLAGS_R         (1u << 3) ///< Readable
-#define PMA_FLAGS_W         (1u << 4) ///< Writable
-#define PMA_FLAGS_X         (1u << 5) ///< Executable
-#define PMA_FLAGS_IR        (1u << 6) ///< Idempotent reads
-#define PMA_FLAGS_IW        (1u << 7) ///< Idempotent writes
-/// \}
-
-/// \name PMA host type
-#define PMA_TYPE_MEMORY     (1u << 31) ///< Mapped to host memory
-#define PMA_TYPE_DEVICE     (1u << 30) ///< Mapped to device
-/// \}
-
-/// RAM type-flags combination
-#define PMA_TYPE_FLAGS_RAM  ( \
-    PMA_TYPE_MEMORY | \
-    PMA_FLAGS_M     | \
-    PMA_FLAGS_X     | \
-    PMA_FLAGS_W     | \
-    PMA_FLAGS_R     | \
-    PMA_FLAGS_IR    | \
-    PMA_FLAGS_IW    \
-)
-
-/// Flash memory type-flags combination
-#define PMA_TYPE_FLAGS_FLASH  ( \
-    PMA_TYPE_MEMORY | \
-    PMA_FLAGS_M     | \
-    PMA_FLAGS_W     | \
-    PMA_FLAGS_R     | \
-    PMA_FLAGS_IR    | \
-    PMA_FLAGS_IW    \
-)
-
-/// Memory mapped device type-flags combination
-#define PMA_TYPE_FLAGS_MMIO       (PMA_TYPE_DEVICE | PMA_FLAGS_IO | PMA_FLAGS_W | PMA_FLAGS_R )
-
-/// Shadow device type-flags combination
-#define PMA_TYPE_FLAGS_SHADOW      (PMA_TYPE_DEVICE | PMA_FLAGS_E )
-
-/// \brief Default device write callback issues error on write.
-static bool pma_device_write_error(i_device_state_access *, void *, uint64_t, uint64_t, int) {
-    return false;
-}
-
-/// \brief Default device read callback issues error on reads.
-static bool pma_device_read_error(i_device_state_access *, void *, uint64_t, uint64_t *, int) {
-    return false;
-}
-
-/// \brief Default device peek callback issues error on peeks.
-static bool pma_device_peek_error(const machine_state *, void *, uint64_t, uint64_t *, int) {
-    return false;
-}
-
-/// \brief Default device update_merkle_tree callback issues error on updates.
-static bool pma_device_update_merkle_tree_error(const machine_state *, void *, uint64_t, uint64_t,
-    CryptoPP::Keccak_256 &, merkle_tree *) {
-    return false;
-}
-
-/// \brief Checks if a PMA entry describes a memory range
-/// \param pma Pointer to entry of interest.
-static inline bool pma_is_memory(const pma_entry *pma) {
-    return pma->type_flags & PMA_TYPE_MEMORY;
-}
-
-/// \brief Checks if a PMA entry describes a device range
-/// \param pma Pointer to entry of interest.
-static inline bool pma_is_device(const pma_entry *pma) {
-    return pma->type_flags & PMA_TYPE_DEVICE;
-}
-
-/// \brief Checks if a PMA entry is RAM
-/// \param pma Pointer to entry of interest.
-static inline bool pma_is_ram(const pma_entry *pma) {
-    return pma->type_flags == PMA_TYPE_FLAGS_RAM;
-}
-
-#if 0
-static inline bool pma_is_flash(const pma_entry *pma) {
-    return pma->type_flags == PMA_TYPE_FLAGS_FLASH;
-}
-
-static inline bool pma_is_mmio(const pma_entry *pma) {
-    return pma->type_flags == PMA_TYPE_FLAGS_MMIO;
-}
-
-static inline bool pma_is_shadow(const pma_entry *pma) {
-    return pma->type_flags == PMA_TYPE_FLAGS_SHADOW;
-}
-#endif
-
 /// \brief Initializes the board PMA entries
 /// \param s Pointer to machine state.
 static void board_init(machine_state *s) {
@@ -213,7 +111,7 @@ static void board_end(machine_state *s) {
 /// \param paddr Target physical address.
 /// \returns Corresponding entry, or nullptr if no PMA
 /// matches \p paddr.
-static pma_entry *pma_get_entry(machine_state *s, uint64_t paddr) {
+static pma_entry *board_get_pma_entry(machine_state *s, uint64_t paddr) {
     for (int i = 0; i < s->pma_count; i++) {
         pma_entry *pma = &s->physical_memory[i];
         if (paddr >= pma->start && paddr < pma->start + pma->length)
@@ -227,7 +125,7 @@ static pma_entry *pma_get_entry(machine_state *s, uint64_t paddr) {
 /// \param start Start of range in target physical memory.
 /// \param length Length of range in target physical memory.
 /// \returns Corresponding entry, or nullptr if no room for new PMA.
-static pma_entry *pma_allocate_entry(machine_state *s, uint64_t start, uint64_t length) {
+static pma_entry *board_allocate_pma_entry(machine_state *s, uint64_t start, uint64_t length) {
     assert(s->pma_count < PMA_SIZE); // check for too many entries
     if (s->pma_count >= PMA_SIZE)
         return nullptr;
@@ -235,8 +133,8 @@ static pma_entry *pma_allocate_entry(machine_state *s, uint64_t start, uint64_t 
     if ((start & (PMA_PAGE_SIZE - 1)) != 0 || length == 0)
         return nullptr;
     //??D Should test for *any* overlapping, not just the start
-    assert(!pma_get_entry(s, start)); // check for overlapping entries
-    if (pma_get_entry(s, start))
+    assert(!board_get_pma_entry(s, start)); // check for overlapping entries
+    if (board_get_pma_entry(s, start))
         return nullptr;
     return &s->physical_memory[s->pma_count++];
 }
@@ -246,8 +144,8 @@ static pma_entry *pma_allocate_entry(machine_state *s, uint64_t start, uint64_t 
 /// \param start Start of range in target physical memory.
 /// \param length Length of range in target physical memory.
 /// \returns Corresponding entry, or nullptr if no room for new PMA.
-static pma_entry *pma_allocate_memory_entry(machine_state *s, uint64_t start, uint64_t length) {
-    pma_entry *pma = pma_allocate_entry(s, start, length);
+static pma_entry *board_allocate_pma_memory_entry(machine_state *s, uint64_t start, uint64_t length) {
+    pma_entry *pma = board_allocate_pma_entry(s, start, length);
     if (!pma) return nullptr;
     pma->start = start;
     pma->length = length;
@@ -266,17 +164,13 @@ static pma_entry *pma_allocate_memory_entry(machine_state *s, uint64_t start, ui
 /// \param peek Callback for peek operations.
 /// \param update_merkle_tree Callback for Merkle tree update operations.
 /// \returns Corresponding entry, or nullptr if no room for new PMA.
-static pma_entry *pma_allocate_device_entry(machine_state *s, uint64_t start, uint64_t length, void *context,
-    pma_device_read read, pma_device_write write, pma_device_peek peek, pma_device_update_merkle_tree update_merkle_tree) {
-    pma_entry *pma = pma_allocate_entry(s, start, length);
+static pma_entry *board_allocate_pma_device_entry(machine_state *s, uint64_t start, uint64_t length, void *context, pma_device_driver *driver) {
+    pma_entry *pma = board_allocate_pma_entry(s, start, length);
     if (!pma) return nullptr;
     pma->start = start;
     pma->length = length;
     pma->device.context = context;
-    pma->device.read = read? read: pma_device_read_error;
-    pma->device.write = write? write: pma_device_write_error;
-    pma->device.peek = peek? peek: pma_device_peek_error;
-    pma->device.update_merkle_tree = update_merkle_tree? update_merkle_tree: pma_device_update_merkle_tree_error;
+    pma->device.driver = driver;
     return pma;
 }
 
@@ -294,7 +188,7 @@ bool board_register_flash(machine_state *s, uint64_t start, uint64_t length, con
     int oflag = shared? O_RDWR: O_RDONLY;
     int mflag = shared? MAP_SHARED: MAP_PRIVATE;
 
-    pma_entry *pma = pma_allocate_memory_entry(s, start, length);
+    pma_entry *pma = board_allocate_pma_memory_entry(s, start, length);
     if (!pma) return false;
 
     // Try to open backing file
@@ -332,7 +226,7 @@ bool board_register_flash(machine_state *s, uint64_t start, uint64_t length, con
 }
 
 bool board_register_ram(machine_state *s, uint64_t start, uint64_t length) {
-    pma_entry *pma = pma_allocate_memory_entry(s, start, length);
+    pma_entry *pma = board_allocate_pma_memory_entry(s, start, length);
     if (!pma) return false;
 
     pma->memory.host_memory = reinterpret_cast<uint8_t *>(calloc(1, length));
@@ -346,17 +240,15 @@ bool board_register_ram(machine_state *s, uint64_t start, uint64_t length) {
     return true;
 }
 
-bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context,
-    pma_device_read read, pma_device_write write, pma_device_peek peek, pma_device_update_merkle_tree update_merkle_tree) {
-    pma_entry *pma = pma_allocate_device_entry(s, start, length, context, read, write, peek, update_merkle_tree);
+bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, pma_device_driver *driver) {
+    pma_entry *pma = board_allocate_pma_device_entry(s, start, length, context, driver);
     if (!pma) return false;
     pma->type_flags = PMA_TYPE_FLAGS_MMIO;
     return true;
 }
 
-bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context,
-    pma_device_peek peek, pma_device_update_merkle_tree update_merkle_tree) {
-    pma_entry *pma = pma_allocate_device_entry(s, start, length, context, nullptr, nullptr, peek, update_merkle_tree);
+bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, pma_device_driver *driver) {
+    pma_entry *pma = board_allocate_pma_device_entry(s, start, length, context, driver);
     if (!pma) return false;
     pma->type_flags = PMA_TYPE_FLAGS_SHADOW;
     return true;
@@ -411,6 +303,8 @@ static pma_entry *get_pma(STATE_ACCESS &a, uint64_t paddr) {
         pma_entry *pma = a.read_pma(i);
         if (paddr >= pma->start && paddr < pma->start + pma->length)
             return pma;
+        if (pma->length == 0)
+            break;
     }
     return nullptr;
 }
@@ -937,7 +831,7 @@ bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
                 break;
             }
         } else {
-            if (!pma->device.update_merkle_tree(s, pma->device.context,
+            if (!pma->device.driver->update_merkle_tree(s, pma->device.context,
                     pma->start, pma->length, kc, t)) {
                 status = false;
                 break;
@@ -1095,7 +989,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             assert(pma_is_device(pma));
             device_state_access<STATE_ACCESS> da(a);
             // If we do not know how to read, we treat this as a PMA violation
-            if (!pma->device.read(&da, pma->device.context, offset, &val, size_log2<U>::value)) {
+            if (!pma->device.driver->read(&da, pma->device.context, offset, &val, size_log2<U>::value)) {
                 raise_exception(a, CAUSE_LOAD_FAULT, vaddr);
                 return false;
             }
@@ -1140,7 +1034,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             device_state_access<STATE_ACCESS> da(a);
             assert(pma_is_device(pma));
             // If we do not know how to write, we treat this as a PMA violation
-            if (!pma->device.write(&da, pma->device.context, offset, val, size_log2<U>::value)) {
+            if (!pma->device.driver->write(&da, pma->device.context, offset, val, size_log2<U>::value)) {
                 raise_exception(a, CAUSE_STORE_AMO_FAULT, vaddr);
                 return false;
             }

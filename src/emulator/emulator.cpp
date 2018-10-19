@@ -16,19 +16,22 @@ extern "C" {
 #include "machine.h"
 #include "clint.h"
 #include "htif.h"
+#include "shadow.h"
 #include "rtc.h"
 
 #define Ki(n) (((uint64_t)n) << 10)
 #define Mi(n) (((uint64_t)n) << 20)
 #define Gi(n) (((uint64_t)n) << 30)
 
+#define SHADOW_BASE_ADDR       0
+#define SHADOW_SIZE            Ki(4)
 #define ROM_BASE_ADDR          Ki(4)
 #define ROM_SIZE               Ki(64)
 #define RAM_BASE_ADDR          Gi(2)
 #define CLINT_BASE_ADDR        Mi(32)
 #define CLINT_SIZE             Ki(768)
 #define HTIF_BASE_ADDR         (Gi(1)+Ki(32))
-#define HTIF_SIZE              4096
+#define HTIF_SIZE              Ki(4)
 
 #define CLOCK_FREQ 1000000000 // 1 GHz (arbitrary)
 
@@ -384,7 +387,9 @@ emulator *emulator_init(const emulator_config *c) {
 
     emulator *emu = reinterpret_cast<emulator *>(calloc(1, sizeof(*emu)));
 
-    emu->machine = machine_init();
+    emu->machine = machine_init(CARTESI_VENDORID, CARTESI_ARCHID,
+        CARTESI_IMPID);
+
     if (!emu->machine) {
         fprintf(stderr, "Unable to initialize machine\n");
         goto failed;
@@ -428,12 +433,16 @@ emulator *emulator_init(const emulator_config *c) {
         goto failed;
     }
 
+    if (!board_register_mmio(emu->machine, SHADOW_BASE_ADDR, SHADOW_SIZE,
+            emu->machine, &shadow_driver)) {
+        fprintf(stderr, "Unable to initialize shadow device\n");
+        goto failed;
+    }
+
     if (!init_ram_and_rom(c, emu)) {
         fprintf(stderr, "Unable to initialize RAM and ROM contents\n");
         goto failed;
     }
-
-    //??D still need to initialize shadows for processor and board
 
     emu->tree = new merkle_tree;
 

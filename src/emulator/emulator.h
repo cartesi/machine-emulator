@@ -8,6 +8,10 @@
 
 #define VM_CONFIG_VERSION 1
 
+#define CARTESI_VENDORID UINT64_C(0x6361727465736920)
+#define CARTESI_ARCHID 1
+#define CARTESI_IMPID 1
+
 typedef struct {
     char *filename;
     uint8_t *buf;

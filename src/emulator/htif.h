@@ -23,6 +23,6 @@ void htif_interact(htif_state *htif);
 void htif_end(htif_state *htif);
 
 struct pma_device_driver;
-extern pma_device_driver htif_driver;
+extern const pma_device_driver htif_driver;
 
 #endif

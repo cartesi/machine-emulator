@@ -59,7 +59,7 @@ static void htif_console_poll(htif_state *htif) {
 }
 
 /// \brief HTIF device read callback. See ::pma_device_read.
-bool htif_read(i_device_state_access *a, void *context, uint64_t offset, uint64_t *pval, int size_log2) {
+static bool htif_read(i_device_state_access *a, void *context, uint64_t offset, uint64_t *pval, int size_log2) {
     (void) context;
 
     // Our HTIF only supports aligned 64-bit reads
@@ -79,7 +79,7 @@ bool htif_read(i_device_state_access *a, void *context, uint64_t offset, uint64_
 }
 
 /// \brief HTIF device write callback. See ::pma_device_peek.
-bool htif_peek(const machine_state *s, void *context, uint64_t offset, uint64_t *pval, int size_log2) {
+static bool htif_peek(const machine_state *s, void *context, uint64_t offset, uint64_t *pval, int size_log2) {
     (void) context;
 
     // Our HTIF only supports aligned 64-bit reads
@@ -99,7 +99,7 @@ bool htif_peek(const machine_state *s, void *context, uint64_t offset, uint64_t 
 }
 
 /// \brief HTIF device update_merkle_tree callback. See ::pma_device_update_merkle_tree.
-bool htif_update_merkle_tree(const machine_state *s, void *context, uint64_t start, uint64_t length,
+static bool htif_update_merkle_tree(const machine_state *s, void *context, uint64_t start, uint64_t length,
     CryptoPP::Keccak_256 &kc, merkle_tree *t) {
     (void) context; (void) length;
     auto page = reinterpret_cast<uint64_t *>(calloc(1, merkle_tree::get_page_size()));
@@ -164,7 +164,7 @@ static bool htif_write_fromhost(i_device_state_access *a, htif_state *htif, uint
 }
 
 /// \brief HTIF device write callback. See ::pma_device_write.
-bool htif_write(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2) {
+static bool htif_write(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2) {
     htif_state *htif = reinterpret_cast<htif_state *>(context);
 
     // Our HTIF only supports aligned 64-bit writes
@@ -245,7 +245,7 @@ void htif_interact(htif_state *htif) {
     }
 }
 
-pma_device_driver htif_driver {
+const pma_device_driver htif_driver {
     htif_read,
     htif_write,
     htif_peek,

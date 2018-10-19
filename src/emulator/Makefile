@@ -69,9 +69,10 @@ ALL=emu.so
 all: $(ALL)
 
 OBJS:= \
-	emulator.o \
 	clint.o \
 	htif.o \
+	shadow.o \
+	emulator.o \
 	pma.o \
 	machine.o \
 	luaemu.o

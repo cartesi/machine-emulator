@@ -34,7 +34,7 @@ static bool clint_read_mtimecmp(i_device_state_access *a, uint64_t *val, int siz
 }
 
 /// \brief CLINT device read callback. See ::pma_device_read.
-bool clint_read(i_device_state_access *a, void *context, uint64_t offset, uint64_t *val, int size_log2) {
+static bool clint_read(i_device_state_access *a, void *context, uint64_t offset, uint64_t *val, int size_log2) {
     (void) context;
 
     switch (offset) {
@@ -51,7 +51,7 @@ bool clint_read(i_device_state_access *a, void *context, uint64_t offset, uint64
 }
 
 /// \brief CLINT device read callback. See ::pma_device_write.
-bool clint_write(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2) {
+static bool clint_write(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2) {
     (void) context;
 
     switch (offset) {
@@ -107,7 +107,7 @@ static bool clint_peek_mtimecmp(const machine_state *s, uint64_t *val, int size_
 }
 
 /// \brief CLINT device peek callback. See ::pma_device_peek.
-bool clint_peek(const machine_state *s, void *context, uint64_t offset, uint64_t *val, int size_log2) {
+static bool clint_peek(const machine_state *s, void *context, uint64_t offset, uint64_t *val, int size_log2) {
     (void) context;
 
     switch (offset) {
@@ -126,7 +126,7 @@ bool clint_peek(const machine_state *s, void *context, uint64_t offset, uint64_t
 #define base(v) ((v) - ((v) % merkle_tree::get_page_size()))
 #define offset(v) ((v) % merkle_tree::get_page_size())
 /// \brief CLINT device update_merkle_tree callback. See ::pma_device_update_merkle_tree.
-bool clint_update_merkle_tree(const machine_state *s, void *context, uint64_t start, uint64_t length,
+static bool clint_update_merkle_tree(const machine_state *s, void *context, uint64_t start, uint64_t length,
     CryptoPP::Keccak_256 &kc, merkle_tree *t) {
     (void) context; (void) length;
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
@@ -153,7 +153,7 @@ bool clint_update_merkle_tree(const machine_state *s, void *context, uint64_t st
 #undef base
 #undef offset
 
-pma_device_driver clint_driver = {
+const pma_device_driver clint_driver = {
     clint_read,
     clint_write,
     clint_peek,

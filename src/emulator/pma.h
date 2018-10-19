@@ -125,11 +125,11 @@ struct pma_device_driver {
     pma_device_update_merkle_tree update_merkle_tree; ///< Callback for Merkle tree updates.
 };
 
-//??D change this to a class with a virtual interface
+//??D change this to a class with a virtual interface.
 /// \brief Data for device ranges.
 struct pma_device {
     void *context;            ///< Device context set during initialization.
-    pma_device_driver *driver;
+    const pma_device_driver *driver; ///< Device driver with callbacks.
 };
 
 /// \brief Physical Memory Attribute entry.
@@ -163,10 +163,14 @@ static inline bool pma_is_ram(const pma_entry *pma) {
     return pma->type_flags == PMA_TYPE_FLAGS_RAM;
 }
 
-/// \brief Encodes PMA entry into two 64-bit integers as per whitepaper
-static inline void pma_encode(const pma_entry *pma, uint64_t *istart, uint64_t *ilength) {
-    *istart = pma->start | (pma->type_flags & PMA_FLAGS_MASK);
-    *ilength = pma->length;
+/// \brief Encodes PMA istart as per whitepaper
+static inline uint64_t pma_get_istart(const pma_entry *pma) {
+    return pma->start | (pma->type_flags & PMA_FLAGS_MASK);
+}
+
+/// \brief Encodes PMA ilength as per whitepaper
+static inline uint64_t pma_get_ilength(const pma_entry *pma) {
+    return pma->length;
 }
 
 static inline bool pma_is_flash(const pma_entry *pma) {

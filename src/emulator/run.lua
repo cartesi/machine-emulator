@@ -24,6 +24,8 @@ where options are:
                                (default: false)
   --cmdline                    pass additional command-line arguments to kernel
   --batch                      run in batch mode
+  --initial-hash               prints initial hash before running
+  --final-hash                 prints final hash after running
 ]=])
     os.exit()
 end
@@ -35,6 +37,8 @@ local rom_image
 local cmdline = ""
 local memory_size = 64
 local batch = false
+local initial_hash = false
+local final_hash = false
 
 -- List of supported options
 -- Options are processed in order
@@ -88,6 +92,16 @@ local options = {
     { "^%-%-cmdline%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         cmdline = o
+        return true
+    end },
+    { "^%-%-initial%-hash$", function(all)
+        if not all then return false end
+        initial_hash = true
+        return true
+    end },
+    { "^%-%-final%-hash$", function(all)
+        if not all then return false end
+        final_hash = true
         return true
     end },
     { ".*", function(all)
@@ -213,14 +227,19 @@ for label, file in pairs(backing) do
     end
 end
 
+local function print_hash(machine)
+    print("Updating merkle tree: please wait")
+    machine:update_merkle_tree()
+    print((string.gsub(machine:get_merkle_tree_root_hash(), ".", function(c)
+        return string.format("%02x", string.byte(c))
+    end)))
+end
+
 local machine = emu.create(config)
 
---[[
-machine:update_merkle_tree()
-print((string.gsub(machine:get_merkle_tree_root_hash(), ".", function(c)
-    return string.format("%02x", string.byte(c))
-end)))
---]]
+if initial_hash then
+    print_hash(machine)
+end
 
 local step = 500000
 local cycles_end = step
@@ -236,5 +255,10 @@ while true do
 end
 io.stdout:write("cycles: ", cycles, "\n")
 io.stdout:write("payload: ", payload, "\n")
+
+if final_hash then
+    print_hash(machine)
+end
+
 machine:destroy()
 os.exit(payload)

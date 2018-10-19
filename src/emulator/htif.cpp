@@ -78,37 +78,20 @@ static bool htif_read(i_device_state_access *a, void *context, uint64_t offset, 
     }
 }
 
-/// \brief HTIF device write callback. See ::pma_device_peek.
-static bool htif_peek(const machine_state *s, void *context, uint64_t offset, uint64_t *pval, int size_log2) {
+/// \brief HTIF device peek callback. See ::pma_device_peek.
+static device_peek_status htif_peek(const machine_state *s, void *context, uint64_t page_index, uint8_t *page_data) {
     (void) context;
-
-    // Our HTIF only supports aligned 64-bit reads
-    if (size_log2 != 3 || offset & 7) return false;
-
-    switch (offset) {
-        case 0: // tohost
-            *pval = s->tohost;
-            return true;
-        case 8: // fromhost
-            *pval = s->fromhost;
-            return true;
-        default:
-            // other reads are exceptions
-            return false;
-    }
-}
-
-/// \brief HTIF device update_merkle_tree callback. See ::pma_device_update_merkle_tree.
-static bool htif_update_merkle_tree(const machine_state *s, void *context, uint64_t start, uint64_t length,
-    CryptoPP::Keccak_256 &kc, merkle_tree *t) {
-    (void) context; (void) length;
-    auto page = reinterpret_cast<uint64_t *>(calloc(1, merkle_tree::get_page_size()));
-    if (!page) return false;
-    page[0] = s->tohost;
-    page[1] = s->fromhost;
-    auto ret = !t->is_error(t->update_page(kc, start, reinterpret_cast<uint8_t *>(page)));
-    free(page);
-    return ret;
+    // There is a single non-pristine page: 0;
+    if (page_index % PMA_PAGE_SIZE != 0)
+        return device_peek_status::invalid_page;
+    if (page_index != 0)
+        return device_peek_status::pristine_page;
+    // Clear entire page.
+    memset(page_data, 0, PMA_PAGE_SIZE);
+    // Copy tohost and fromhost to their places within page.
+    reinterpret_cast<uint64_t *>(page_data)[0] = s->tohost;
+    reinterpret_cast<uint64_t *>(page_data)[1] = s->fromhost;
+    return device_peek_status::success;
 }
 
 static bool htif_getchar(i_device_state_access *a, htif_state *htif, uint64_t payload) {
@@ -246,8 +229,8 @@ void htif_interact(htif_state *htif) {
 }
 
 const pma_device_driver htif_driver {
+    "HTIF",
     htif_read,
     htif_write,
-    htif_peek,
-    htif_update_merkle_tree
+    htif_peek
 };

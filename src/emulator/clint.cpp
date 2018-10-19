@@ -82,80 +82,42 @@ static bool clint_write(i_device_state_access *a, void *context, uint64_t offset
     }
 }
 
-static bool clint_peek_msip(const machine_state *s, uint64_t *val, int size_log2) {
-    if (size_log2 == 2) {
-        *val = ((s->mip & MIP_MSIP) == MIP_MSIP);
-        return true;
-    }
-    return false;
-}
-
-static bool clint_peek_mtime(const machine_state *s, uint64_t *val, int size_log2) {
-    if (size_log2 == 3) {
-        *val = rtc_cycle_to_time(s->mcycle);
-        return true;
-    }
-    return false;
-}
-
-static bool clint_peek_mtimecmp(const machine_state *s, uint64_t *val, int size_log2) {
-    if (size_log2 == 3) {
-        *val = s->mtimecmp;
-        return true;
-    }
-    return false;
-}
-
+#define base(v) ((v) - ((v) % (PMA_PAGE_SIZE)))
+#define offset(v) ((v) % (PMA_PAGE_SIZE))
 /// \brief CLINT device peek callback. See ::pma_device_peek.
-static bool clint_peek(const machine_state *s, void *context, uint64_t offset, uint64_t *val, int size_log2) {
+static device_peek_status clint_peek(const machine_state *s, void *context, uint64_t page_index, uint8_t *page_data) {
     (void) context;
-
-    switch (offset) {
-        case CLINT_MSIP0:    // Machine software interrupt for hart 0
-            return clint_peek_msip(s, val, size_log2);
-        case CLINT_MTIMECMP: // mtimecmp
-            return clint_peek_mtimecmp(s, val, size_log2);
-        case CLINT_MTIME: // mtime
-            return clint_peek_mtime(s, val, size_log2);
-        default:
-            // other reads are exceptions
-            return false;
-    }
-}
-
-#define base(v) ((v) - ((v) % merkle_tree::get_page_size()))
-#define offset(v) ((v) % merkle_tree::get_page_size())
-/// \brief CLINT device update_merkle_tree callback. See ::pma_device_update_merkle_tree.
-static bool clint_update_merkle_tree(const machine_state *s, void *context, uint64_t start, uint64_t length,
-    CryptoPP::Keccak_256 &kc, merkle_tree *t) {
-    (void) context; (void) length;
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
         "code assumes little-endian byte ordering");
-    auto page = reinterpret_cast<uint8_t *>(calloc(1, merkle_tree::get_page_size()));
-    if (!page) return false;
-    // There are 3 pages to be updated: 0, 4, and 11
-    // Page 0 contains only msip (which is either 0 or 1)
-    // Since we are little-endian, we can simply write the byte
-    page[offset(CLINT_MSIP0)] = ((s->mip & MIP_MSIP) == MIP_MSIP);
-    bool err = t->is_error(t->update_page(kc, start+base(CLINT_MSIP0), page));
-    page[offset(CLINT_MSIP0)] = 0;
-    // Page 4 contains only mtimecmp, which is an uint64_t
-    *reinterpret_cast<uint64_t *>(page+offset(CLINT_MTIMECMP)) = s->mtimecmp;
-    err |= t->is_error(t->update_page(kc, start+base(CLINT_MTIMECMP), page));
-    *reinterpret_cast<uint64_t *>(page+offset(CLINT_MTIMECMP)) = 0;
-    // The third page contains only mtime, which is an uint64_t
-    *reinterpret_cast<uint64_t *>(page+offset(CLINT_MTIME)) = rtc_cycle_to_time(s->mcycle);
-    err |= t->is_error(t->update_page(kc, start+base(CLINT_MTIME), page));
-    *reinterpret_cast<uint64_t *>(page+offset(CLINT_MTIME)) = 0;
-    free(page);
-    return !err;
+    // There are 3 non-pristine pages: base(CLINT_MSIP0), base(CLINT_MTIMECMP), and base(CLINT_MTIME)
+    switch (page_index) {
+        case base(CLINT_MSIP0):
+            // This page contains only msip (which is either 0 or 1)
+            // Since we are little-endian, we can simply write the byte
+            memset(page_data, 0, PMA_PAGE_SIZE);
+            *reinterpret_cast<uint64_t *>(page_data + offset(CLINT_MSIP0)) = ((s->mip & MIP_MSIP) == MIP_MSIP);
+            return device_peek_status::success;
+        case base(CLINT_MTIMECMP):
+            memset(page_data, 0, PMA_PAGE_SIZE);
+            *reinterpret_cast<uint64_t *>(page_data + offset(CLINT_MTIMECMP)) = s->mtimecmp;
+            return device_peek_status::success;
+        case base(CLINT_MTIME):
+            memset(page_data, 0, PMA_PAGE_SIZE);
+            *reinterpret_cast<uint64_t*>(page_data + offset(CLINT_MTIME)) = rtc_cycle_to_time(s->mcycle);
+            return device_peek_status::success;
+        default:
+            if (page_index % PMA_PAGE_SIZE == 0)
+                return device_peek_status::pristine_page;
+            else
+                return device_peek_status::invalid_page;
+    }
 }
 #undef base
 #undef offset
 
 const pma_device_driver clint_driver = {
+    "CLINT",
     clint_read,
     clint_write,
-    clint_peek,
-    clint_update_merkle_tree
+    clint_peek
 };

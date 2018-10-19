@@ -63,6 +63,9 @@ struct machine_state;
 /// Shadow device type-flags combination
 #define PMA_TYPE_FLAGS_SHADOW      (PMA_TYPE_DEVICE | PMA_FLAGS_E )
 
+//??D Maybe change the callbacks to receive the pma_entry
+//    instead of a context pointer?
+
 /// \brief Prototype for callback invoked when machine wants
 /// to read from a device.
 /// \param da Object through which the machine state can be accessed by device.
@@ -81,24 +84,21 @@ typedef bool (*pma_device_read)(i_device_state_access *da, void *context, uint64
 /// \param size_log2 log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
 typedef bool (*pma_device_write)(i_device_state_access *da, void *context, uint64_t offset, uint64_t val, int size_log2);
 
+/// \brief Return status for device peek callback.
+enum class device_peek_status {
+    success, ///< Peek succeeded and returned data.
+    invalid_page, ///< Page index is out of range or misaligned.
+    pristine_page ///< Page is in range, but is always pristine.
+};
+
 /// \brief Prototype for callback invoked when machine wants
 /// to peek into a device with no side-effects.
 /// \param s Machine state for naked read-only access.
 /// \param context Device context (set during device initialization).
-/// \param offset Offset of requested value from device base address.
-/// \param val Pointer to word where value should be stored.
-/// \param size_log2 log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
-typedef bool (*pma_device_peek)(const machine_state *s, void *context, uint64_t offset, uint64_t *val, int size_log2);
-
-/// \brief Prototype for callback invoked when machine needs
-/// the device to update its mapped range into a Merkle tree.
-/// \param s Machine state for naked read-only access.
-/// \param context Device context (set during device initialization).
-/// \param start Base address for device.
-/// \param length Length of memory region mapped to device.
-/// \param kc Keccak hasher object.
-/// \param t Merkle tree to be updated.
-typedef bool (*pma_device_update_merkle_tree)(const machine_state *s, void *context, uint64_t start, uint64_t length, CryptoPP::Keccak_256 &kc, merkle_tree *t);
+/// \param page_index Index of page within device range. Must be aligned to PMA_PAGE_SIZE.
+/// \param page_data Pointer to buffer that will receive page data. Must be able to hold PMA_PAGE_SIZE bytes.
+/// \returns device_peek_status.
+typedef device_peek_status (*pma_device_peek)(const machine_state *s, void *context, uint64_t page_index, uint8_t *page_data);
 
 /// \brief Default device write callback issues error on write.
 bool pma_device_write_error(i_device_state_access *, void *, uint64_t, uint64_t, int);
@@ -107,10 +107,7 @@ bool pma_device_write_error(i_device_state_access *, void *, uint64_t, uint64_t,
 bool pma_device_read_error(i_device_state_access *, void *, uint64_t, uint64_t *, int);
 
 /// \brief Default device peek callback issues error on peeks.
-bool pma_device_peek_error(const machine_state *, void *, uint64_t, uint64_t *, int);
-
-/// \brief Default device update_merkle_tree callback issues error on updates.
-bool pma_device_update_merkle_tree_error(const machine_state *, void *, uint64_t, uint64_t, CryptoPP::Keccak_256 &, merkle_tree *);
+device_peek_status pma_device_peek_error(const machine_state *, void *, uint64_t, uint8_t *);
 
 /// \brief Data for memory ranges.
 struct pma_memory {
@@ -119,10 +116,10 @@ struct pma_memory {
 };
 
 struct pma_device_driver {
+    const char *name;         ///< Driver name.
     pma_device_read read;     ///< Callback for read operations.
     pma_device_write write;   ///< Callback for write operations.
     pma_device_peek peek;     ///< Callback for peek operations.
-    pma_device_update_merkle_tree update_merkle_tree; ///< Callback for Merkle tree updates.
 };
 
 //??D change this to a class with a virtual interface.
@@ -163,6 +160,24 @@ static inline bool pma_is_ram(const pma_entry *pma) {
     return pma->type_flags == PMA_TYPE_FLAGS_RAM;
 }
 
+/// \brief Checks if a PMA entry is a flash drive
+/// \param pma Pointer to entry of interest.
+static inline bool pma_is_flash(const pma_entry *pma) {
+    return pma->type_flags == PMA_TYPE_FLAGS_FLASH;
+}
+
+/// \brief Checks if a PMA entry is a memory-mapped IO device
+/// \param pma Pointer to entry of interest.
+static inline bool pma_is_mmio(const pma_entry *pma) {
+    return pma->type_flags == PMA_TYPE_FLAGS_MMIO;
+}
+
+/// \brief Checks if a PMA entry is a shadow device.
+/// \param pma Pointer to entry of interest.
+static inline bool pma_is_shadow(const pma_entry *pma) {
+    return pma->type_flags == PMA_TYPE_FLAGS_SHADOW;
+}
+
 /// \brief Encodes PMA istart as per whitepaper
 static inline uint64_t pma_get_istart(const pma_entry *pma) {
     return pma->start | (pma->type_flags & PMA_FLAGS_MASK);
@@ -171,18 +186,6 @@ static inline uint64_t pma_get_istart(const pma_entry *pma) {
 /// \brief Encodes PMA ilength as per whitepaper
 static inline uint64_t pma_get_ilength(const pma_entry *pma) {
     return pma->length;
-}
-
-static inline bool pma_is_flash(const pma_entry *pma) {
-    return pma->type_flags == PMA_TYPE_FLAGS_FLASH;
-}
-
-static inline bool pma_is_mmio(const pma_entry *pma) {
-    return pma->type_flags == PMA_TYPE_FLAGS_MMIO;
-}
-
-static inline bool pma_is_shadow(const pma_entry *pma) {
-    return pma->type_flags == PMA_TYPE_FLAGS_SHADOW;
 }
 
 #endif

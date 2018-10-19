@@ -3,173 +3,60 @@
 #include "machine-state.h"
 #include "pma.h"
 
-#define PROCESSOR_SHADOW_BASE 0x000
-#define PROCESSOR_SHADOW_SIZE 0x800
 #define BOARD_SHADOW_BASE     0x800
-#define BOARD_SHADOW_SIZE     0x800
-
-/// \brief Address of registers in processor's shadow
-enum class processor_shadow: int {
-    pc = 0x100,
-    mvendorid = 0x108,
-    marchid = 0x110,
-    mimpid = 0x118,
-    mcycle = 0x120,
-    minstret = 0x128,
-    mstatus = 0x130,
-    mtvec = 0x138,
-    mscratch = 0x140,
-    mepc = 0x148,
-    mcause = 0x150,
-    mtval = 0x158,
-    misa = 0x160,
-    mie = 0x168,
-    mip = 0x170,
-    medeleg = 0x178,
-    mideleg = 0x180,
-    mcounteren = 0x188,
-    stvec = 0x190,
-    sscratch = 0x198,
-    sepc = 0x1a0,
-    scause = 0x1a8,
-    stval = 0x1b0,
-    satp = 0x1b8,
-    scounteren = 0x1c0,
-    ilrsc = 0x1c8,
-    iflags = 0x1d0,
-};
 
 /// \brief Shadow device peek callback. See ::pma_device_peek.
-static bool shadow_peek(const machine_state *s, void *context, uint64_t offset, uint64_t *val, int size_log2) {
+static device_peek_status shadow_peek(const machine_state *s, void *context, uint64_t page_index, uint8_t *page_data) {
     (void) context;
-
-    if (size_log2 != 3 || offset & 7) return false;
-
-    // Deal with general-purpose register file
-    int r = offset >> 3;
-    if (r >= 0 && r < 32) {
-        *val = s->reg[r];
-        return true;
+    // There is only one page: 0
+    if (page_index != 0)
+        return device_peek_status::invalid_page;
+    // Clear page
+    memset(page_data, 0, PMA_PAGE_SIZE);
+    // Copy general-purpose registers
+    memcpy(page_data, s->reg, sizeof(s->reg));
+    // Copy named registers
+    *reinterpret_cast<uint64_t *>(page_data + 0x100) = s->pc;
+    *reinterpret_cast<uint64_t *>(page_data + 0x108) = s->mvendorid;
+    *reinterpret_cast<uint64_t *>(page_data + 0x110) = s->marchid;
+    *reinterpret_cast<uint64_t *>(page_data + 0x118) = s->mimpid;
+    *reinterpret_cast<uint64_t *>(page_data + 0x120) = s->mcycle;
+    *reinterpret_cast<uint64_t *>(page_data + 0x128) = s->minstret;
+    *reinterpret_cast<uint64_t *>(page_data + 0x130) = s->mstatus;
+    *reinterpret_cast<uint64_t *>(page_data + 0x138) = s->mtvec;
+    *reinterpret_cast<uint64_t *>(page_data + 0x140) = s->mscratch;
+    *reinterpret_cast<uint64_t *>(page_data + 0x148) = s->mepc;
+    *reinterpret_cast<uint64_t *>(page_data + 0x150) = s->mcause;
+    *reinterpret_cast<uint64_t *>(page_data + 0x158) = s->mtval;
+    *reinterpret_cast<uint64_t *>(page_data + 0x160) = s->misa;
+    *reinterpret_cast<uint64_t *>(page_data + 0x168) = s->mie;
+    *reinterpret_cast<uint64_t *>(page_data + 0x170) = s->mip;
+    *reinterpret_cast<uint64_t *>(page_data + 0x178) = s->medeleg;
+    *reinterpret_cast<uint64_t *>(page_data + 0x180) = s->mideleg;
+    *reinterpret_cast<uint64_t *>(page_data + 0x188) = s->mcounteren;
+    *reinterpret_cast<uint64_t *>(page_data + 0x190) = s->stvec;
+    *reinterpret_cast<uint64_t *>(page_data + 0x198) = s->sscratch;
+    *reinterpret_cast<uint64_t *>(page_data + 0x1a0) = s->sepc;
+    *reinterpret_cast<uint64_t *>(page_data + 0x1a8) = s->scause;
+    *reinterpret_cast<uint64_t *>(page_data + 0x1b0) = s->stval;
+    *reinterpret_cast<uint64_t *>(page_data + 0x1b8) = s->satp;
+    *reinterpret_cast<uint64_t *>(page_data + 0x1c0) = s->scounteren;
+    *reinterpret_cast<uint64_t *>(page_data + 0x1c8) = s->ilrsc;
+    *reinterpret_cast<uint64_t *>(page_data + 0x1d0) = processor_read_iflags(s);
+    // Copy PMAs
+    uint64_t *shadow_pma = reinterpret_cast<uint64_t *>(page_data
+        + BOARD_SHADOW_BASE);
+    for (int i = 0; i < s->pma_count; ++i) {
+        auto pma = &s->physical_memory[i];
+        shadow_pma[2*i] = pma_get_istart(pma);
+        shadow_pma[2*i+1] = pma_get_ilength(pma);
     }
-
-    // Deal with other named registers
-    if (offset < PROCESSOR_SHADOW_SIZE) {
-        switch (static_cast<processor_shadow>(offset)) {
-            case processor_shadow::pc:
-                *val = s->pc;
-                return true;
-            case processor_shadow::mvendorid:
-                *val = s->mvendorid;
-                return true;
-            case processor_shadow::marchid:
-                *val = s->marchid;
-                return true;
-            case processor_shadow::mimpid:
-                *val = s->mimpid;
-                return true;
-            case processor_shadow::mcycle:
-                *val = s->mcycle;
-                return true;
-            case processor_shadow::minstret:
-                *val = s->minstret;
-                return true;
-            case processor_shadow::mstatus:
-                *val = s->mstatus;
-                return true;
-            case processor_shadow::mtvec:
-                *val = s->mtvec;
-                return true;
-            case processor_shadow::mscratch:
-                *val = s->mscratch;
-                return true;
-            case processor_shadow::mepc:
-                *val = s->mepc;
-                return true;
-            case processor_shadow::mcause:
-                *val = s->mcause;
-                return true;
-            case processor_shadow::mtval:
-                *val = s->mtval;
-                return true;
-            case processor_shadow::misa:
-                *val = s->misa;
-                return true;
-            case processor_shadow::mie:
-                *val = s->mie;
-                return true;
-            case processor_shadow::mip:
-                *val = s->mip;
-                return true;
-            case processor_shadow::medeleg:
-                *val = s->medeleg;
-                return true;
-            case processor_shadow::mideleg:
-                *val = s->mideleg;
-                return true;
-            case processor_shadow::mcounteren:
-                *val = s->mcounteren;
-                return true;
-            case processor_shadow::stvec:
-                *val = s->stvec;
-                return true;
-            case processor_shadow::sscratch:
-                *val = s->sscratch;
-                return true;
-            case processor_shadow::sepc:
-                *val = s->sepc;
-                return true;
-            case processor_shadow::scause:
-                *val = s->scause;
-                return true;
-            case processor_shadow::stval:
-                *val = s->stval;
-                return true;
-            case processor_shadow::satp:
-                *val = s->satp;
-                return true;
-            case processor_shadow::scounteren:
-                *val = s->scounteren;
-                return true;
-            case processor_shadow::ilrsc:
-                *val = s->ilrsc;
-                return true;
-            case processor_shadow::iflags:
-                *val = processor_read_iflags(s);
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    // Deal with PMAs
-    offset -= BOARD_SHADOW_BASE;
-    int i = offset >> 4;
-    if (i < 0 || i >= PMA_SIZE) return false;
-    auto pma = s->physical_memory + i;
-    bool ilength = offset & 1;
-    if (ilength) *val = pma_get_ilength(pma);
-    else *val = pma_get_istart(pma);
-    return true;
-}
-
-/// \brief Shadow device update_merkle_tree callback. See ::pma_device_update_merkle_tree.
-static bool shadow_update_merkle_tree(const machine_state *s, void *context, uint64_t start, uint64_t length, CryptoPP::Keccak_256 &kc, merkle_tree *t) {
-    (void) length;
-    assert(length == merkle_tree::get_page_size());
-    auto page = reinterpret_cast<uint8_t *>(calloc(1, merkle_tree::get_page_size()));
-    if (!page) return false;
-    // There is 1 page to be updated
-    for (int offset = 0; offset < merkle_tree::get_page_size(); offset += sizeof(uint64_t)) {
-        shadow_peek(s, context, offset, reinterpret_cast<uint64_t *>(page + offset), 3);
-    }
-    bool err = t->is_error(t->update_page(kc, start, page));
-    free(page);
-    return !err;
+    return device_peek_status::success;
 }
 
 const pma_device_driver shadow_driver = {
+    "SHADOW",
     pma_device_read_error,
     pma_device_write_error,
-    shadow_peek,
-    shadow_update_merkle_tree
+    shadow_peek
 };

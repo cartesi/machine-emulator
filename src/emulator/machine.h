@@ -167,15 +167,15 @@ void processor_set_brk_from_iflags_H(machine_state *s);
 /// paddr, or nullptr if there is no such address.
 uint8_t *board_get_host_memory(machine_state *s, uint64_t paddr);
 
-/// \brief Register a new flash device.
+/// \brief Register a new flash drive.
 /// \param s Machine state.
 /// \param start Start of physical memory range in the target address
-/// space on which to map the flash device.
+/// space on which to map the flash drive.
 /// \param length Length of physical memory range in the
-/// target address space on which to map the flash device.
+/// target address space on which to map the flash drive.
 /// \param path Pointer to a string containing the filename
-/// for the backing file in the host with the contents of the flash device.
-/// \param shared Whether target modifications to the flash device are
+/// for the backing file in the host with the contents of the flash drive.
+/// \param shared Whether target modifications to the flash drive are
 /// reflected in the host's backing file.
 /// \details \p length must match the size of the backing file.
 /// \returns true if successful, false otherwise.
@@ -211,7 +211,6 @@ bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void
 /// \param context Pointer to context to be passed to callbacks.
 /// \param driver Pointer to driver with callbacks.
 /// \returns true if successful, false otherwise.
-bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length,
-    void *context, const pma_device_driver *driver);
+bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver);
 
 #endif

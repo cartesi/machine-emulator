@@ -5,6 +5,6 @@
 /// \brief Clock interruptor device.
 
 struct pma_device_driver;
-extern pma_device_driver clint_driver;
+extern const pma_device_driver clint_driver;
 
 #endif

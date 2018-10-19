@@ -258,7 +258,7 @@ private:
     /// \param address Address of target node.
     /// \param parent_diverged Parent node corresponding to \p node_data
     /// is not not in path from root to target node.
-    /// \param diverged Node corresponding to \p node_data is not in 
+    /// \param diverged Node corresponding to \p node_data is not in
     /// path from root to target node.
     /// \param node_data Pointer to start of contiguous node data.
     /// \param log2_size log<sub>2</sub> of size subintended by target \p node.

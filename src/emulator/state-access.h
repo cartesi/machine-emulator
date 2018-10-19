@@ -49,6 +49,30 @@ private:
 		m_s->minstret = val;
 	}
 
+	uint64_t do_read_mvendorid(void) {
+		return m_s->mvendorid;
+	}
+
+	void do_write_mvendorid(uint64_t val) {
+		m_s->mvendorid = val;
+	}
+
+	uint64_t do_read_marchid(void) {
+		return m_s->marchid;
+	}
+
+	void do_write_marchid(uint64_t val) {
+		m_s->marchid = val;
+	}
+
+	uint64_t do_read_mimpid(void) {
+		return m_s->mimpid;
+	}
+
+	void do_write_mimpid(uint64_t val) {
+		m_s->mimpid = val;
+	}
+
 	uint64_t do_read_mcycle(void) {
 		return m_s->mcycle;
 	}

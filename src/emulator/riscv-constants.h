@@ -209,7 +209,7 @@ enum class CSR_address: uint32_t {
 
     mvendorid = 0xf11,
     marchid = 0xf12,
-    mimplid = 0xf13,
+    mimpid = 0xf13,
     mhartid = 0xf14,
 
     mstatus = 0x300,

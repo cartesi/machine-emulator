@@ -164,7 +164,7 @@ static pma_entry *board_allocate_pma_memory_entry(machine_state *s, uint64_t sta
 /// \param peek Callback for peek operations.
 /// \param update_merkle_tree Callback for Merkle tree update operations.
 /// \returns Corresponding entry, or nullptr if no room for new PMA.
-static pma_entry *board_allocate_pma_device_entry(machine_state *s, uint64_t start, uint64_t length, void *context, pma_device_driver *driver) {
+static pma_entry *board_allocate_pma_device_entry(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver) {
     pma_entry *pma = board_allocate_pma_entry(s, start, length);
     if (!pma) return nullptr;
     pma->start = start;
@@ -240,14 +240,14 @@ bool board_register_ram(machine_state *s, uint64_t start, uint64_t length) {
     return true;
 }
 
-bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, pma_device_driver *driver) {
+bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver) {
     pma_entry *pma = board_allocate_pma_device_entry(s, start, length, context, driver);
     if (!pma) return false;
     pma->type_flags = PMA_TYPE_FLAGS_MMIO;
     return true;
 }
 
-bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, pma_device_driver *driver) {
+bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver) {
     pma_entry *pma = board_allocate_pma_device_entry(s, start, length, context, driver);
     if (!pma) return false;
     pma->type_flags = PMA_TYPE_FLAGS_SHADOW;
@@ -673,16 +673,23 @@ static void raise_interrupt_if_any(STATE_ACCESS &a) {
 
 /// \brief Initializes the processor state.
 /// \param s Pointer to machine state.
-static void processor_init(machine_state *s) {
+/// \param mvendorid Constant CRS value.
+/// \param marchid Constant CRS value.
+/// \param mimpid Constant CRS value.
+static void processor_init(machine_state *s, uint64_t mvendorid,
+    uint64_t marchid, uint64_t mimpid) {
     s->iflags_I = false;
     s->iflags_H = false;
+    s->iflags_PRV = PRV_M;
     s->pc = 0x1000;
     s->ilrsc = -1;
-    s->iflags_PRV = PRV_M;
     s->mstatus = ((uint64_t)MXL << MSTATUS_UXL_SHIFT) |
         ((uint64_t)MXL << MSTATUS_SXL_SHIFT);
     s->misa = MXL; s->misa <<= (XLEN-2); /* set xlen to 64 */
     s->misa |= MISAEXT_S | MISAEXT_U | MISAEXT_I | MISAEXT_M | MISAEXT_A;
+    s->mvendorid = mvendorid;
+    s->marchid = marchid;
+    s->mimpid = mimpid;
 
     tlb_init(s);
     s->brk = false;
@@ -694,11 +701,11 @@ static void processor_end(machine_state *s) {
     (void) s;
 }
 
-machine_state *machine_init(void) {
+machine_state *machine_init(uint64_t mvendorid, uint64_t marchid, uint64_t mimpid) {
     machine_state *s = reinterpret_cast<machine_state *>(calloc(1, sizeof(*s)));
     if (s) {
         board_init(s);
-        processor_init(s);
+        processor_init(s, mvendorid, marchid, mimpid);
     }
     return s;
 }
@@ -760,6 +767,10 @@ void processor_set_iflags_H(machine_state *s) {
 
 int processor_get_max_xlen(const machine_state *) {
     return XLEN;
+}
+
+uint64_t processor_read_iflags(const machine_state *s) {
+    return (s->iflags_PRV << 2) | (s->iflags_I << 1) | s->iflags_H;
 }
 
 void processor_set_brk_from_mip_mie(machine_state *s) {
@@ -825,6 +836,7 @@ bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
     bool status = true;
     for (int i = 0; i < s->pma_count; i++) {
         pma_entry *pma = &s->physical_memory[i];
+std::cerr << "updating " << std::hex << pma->start << '\n';
         if (pma_is_memory(pma)) {
             if (!update_memory_merkle_tree(pma, kc, t)) {
                 status = false;
@@ -837,6 +849,7 @@ bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
                 break;
             }
         }
+std::cerr << "  done with " << std::hex << pma->start << '\n';
     }
     t->end_update(kc);
     return status;
@@ -1594,6 +1607,21 @@ static inline uint64_t read_csr_minstret(STATE_ACCESS &a, bool *status) {
 }
 
 template <typename STATE_ACCESS>
+static inline uint64_t read_csr_mvendorid(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_mvendorid(), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_marchid(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_marchid(), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_mimpid(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_mimpid(), status);
+}
+
+template <typename STATE_ACCESS>
 static inline uint64_t read_csr_utime(STATE_ACCESS &a, bool *status) {
     uint64_t mtime = rtc_cycle_to_time(a.read_mcycle());
     return read_csr_success(mtime, status);
@@ -1626,7 +1654,6 @@ static uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
         case CSR_address::sip: return read_csr_sip(a, status);
         case CSR_address::satp: return read_csr_satp(a, status);
 
-
         case CSR_address::mstatus: return read_csr_mstatus(a, status);
         case CSR_address::misa: return read_csr_misa(a, status);
         case CSR_address::medeleg: return read_csr_medeleg(a, status);
@@ -1634,7 +1661,6 @@ static uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
         case CSR_address::mie: return read_csr_mie(a, status);
         case CSR_address::mtvec: return read_csr_mtvec(a, status);
         case CSR_address::mcounteren: return read_csr_mcounteren(a, status);
-
 
         case CSR_address::mscratch: return read_csr_mscratch(a, status);
         case CSR_address::mepc: return read_csr_mepc(a, status);
@@ -1645,14 +1671,15 @@ static uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
         case CSR_address::mcycle: return read_csr_mcycle(a, status);
         case CSR_address::minstret: return read_csr_minstret(a, status);
 
+        case CSR_address::mvendorid: return read_csr_mvendorid(a, status);
+        case CSR_address::marchid: return read_csr_marchid(a, status);
+        case CSR_address::mimpid: return read_csr_mimpid(a, status);
+
         // All hardwired to zero
         case CSR_address::tselect:
         case CSR_address::tdata1:
         case CSR_address::tdata2:
         case CSR_address::tdata3:
-        case CSR_address::mvendorid:
-        case CSR_address::marchid:
-        case CSR_address::mimplid:
         case CSR_address::mhartid:
            return read_csr_success(0, status);
 
@@ -1938,7 +1965,7 @@ static bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t val) {
         //case CSR_address::sideleg: // no U-mode traps
         //case CSR_address::mvendorid: // read-only
         //case CSR_address::marchid: // read-only
-        //case CSR_address::mimplid: // read-only
+        //case CSR_address::mimpid: // read-only
         //case CSR_address::mhartid: // read-only
         //case CSR_address::mcycleh: // 32-bit only
         //case CSR_address::minstreth: // 32-bit only

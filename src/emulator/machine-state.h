@@ -34,6 +34,10 @@ struct machine_state {
     uint64_t minstret;  ///< CSR minstret.
     uint64_t mcycle;
 
+    uint64_t mvendorid; ///< CSR mvendorid;
+    uint64_t marchid;   ///< CSR marchid;
+    uint64_t mimpid;    ///< CSR mimpid;
+
     uint64_t mstatus; ///< CSR mstatus.
     uint64_t mtvec; ///< CSR mtvec.
     uint64_t mscratch; ///< CSR mscratch.

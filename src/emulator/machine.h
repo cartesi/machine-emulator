@@ -27,8 +27,11 @@ struct pma_device_driver;
 /// \}
 
 /// \brief Creates and initializes a new machine.
+/// \param mvendorid Constant CRS value.
+/// \param marchid Constant CRS value.
+/// \param mimpid Constant CRS value.
 /// \returns State of newly created machine.
-machine_state *machine_init(void);
+machine_state *machine_init(uint64_t mvendorid, uint64_t marchid, uint64_t mimpid);
 
 /// \brief Runs the machine until mcycle reaches *at most* \p mcycle_end.
 /// \param s Machine state.
@@ -69,6 +72,11 @@ int processor_get_max_xlen(const machine_state *s);
 /// \param s Machine state.
 /// \returns The value of the register.
 uint64_t processor_read_misa(const machine_state *s);
+
+/// \brief Reads the value of the iflags register.
+/// \param s Machine state.
+/// \returns The value of the register.
+uint64_t processor_read_iflags(const machine_state *s);
 
 /// \brief Reads the value of the mcycle register.
 /// \param s Machine state.
@@ -192,7 +200,7 @@ bool board_register_ram(machine_state *s, uint64_t start, uint64_t length);
 /// \param context Pointer to context to be passed to callbacks.
 /// \param driver Pointer to driver with callbacks.
 /// \returns true if successful, false otherwise.
-bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, pma_device_driver *driver);
+bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver);
 
 /// \brief Register a new shadow device.
 /// \param s Machine state.
@@ -204,6 +212,6 @@ bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void
 /// \param driver Pointer to driver with callbacks.
 /// \returns true if successful, false otherwise.
 bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length,
-    void *context, pma_device_driver *driver);
+    void *context, const pma_device_driver *driver);
 
 #endif

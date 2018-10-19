@@ -93,6 +93,42 @@ public:
 		return derived().do_write_minstret(val);
 	}
 
+    /// \brief Reads CSR mvendorid.
+    /// \returns Register value.
+	uint64_t read_mvendorid(void) {
+		return derived().do_read_mvendorid();
+	}
+
+    /// \brief Writes CSR mvendorid.
+    /// \param val New register value.
+	void write_mvendorid(uint64_t val) {
+		return derived().do_write_mvendorid(val);
+	}
+
+    /// \brief Reads CSR marchid.
+    /// \returns Register value.
+	uint64_t read_marchid(void) {
+		return derived().do_read_marchid();
+	}
+
+    /// \brief Writes CSR marchid.
+    /// \param val New register value.
+	void write_marchid(uint64_t val) {
+		return derived().do_write_marchid(val);
+	}
+
+    /// \brief Reads CSR mimpid.
+    /// \returns Register value.
+	uint64_t read_mimpid(void) {
+		return derived().do_read_mimpid();
+	}
+
+    /// \brief Writes CSR mimpid.
+    /// \param val New register value.
+	void write_mimpid(uint64_t val) {
+		return derived().do_write_mimpid(val);
+	}
+
     /// \brief Reads CSR mcycle.
     /// \returns Register value.
 	uint64_t read_mcycle(void) {

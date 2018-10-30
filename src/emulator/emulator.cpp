@@ -470,14 +470,11 @@ int emulator_update_merkle_tree(emulator *emu) {
     return 1;
 }
 
-int emulator_get_merkle_tree_root_hash(emulator *emu, uint8_t *buf, int len) {
-    merkle_tree::keccak_256_hash h;
-    if (!emu->tree->is_error(emu->tree->get_merkle_tree_root_hash(h))) {
-        memcpy(buf, h.data(), std::min(len, static_cast<int>(h.size())));
-        return 1;
-    } else {
-        return 0;
-    }
+int emulator_get_merkle_tree_root_hash(emulator *emu, uint8_t *data, size_t len) {
+    merkle_tree::digest_type hash;
+    int ret = !emu->tree->is_error(emu->tree->get_merkle_tree_root_hash(hash));
+    memcpy(data, hash.data(), std::min(len, hash.size()));
+    return ret;
 }
 
 int emulator_run(emulator *emu, uint64_t mcycle_end) {

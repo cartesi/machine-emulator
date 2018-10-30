@@ -1,0 +1,16 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+
+package CartesiCore;
+
+service Machine {
+  rpc Inc (google.protobuf.Empty) returns (Integer) {}
+  rpc Print (google.protobuf.Empty) returns (Integer) {}
+  rpc Snapshot (google.protobuf.Empty) returns (Integer) {}
+  rpc Rollback (google.protobuf.Empty) returns (Integer) {}
+  rpc Shutdown (google.protobuf.Empty) returns (google.protobuf.Empty) {}
+}
+
+message Integer {
+  int32 value = 1;
+}

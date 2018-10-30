@@ -810,13 +810,13 @@ uint64_t processor_read_misa(const machine_state *s) {
     return s->misa;
 }
 
-static bool update_memory_merkle_tree(const machine_state *s, const pma_entry *pma, uint8_t *page_data, CryptoPP::Keccak_256 &kc, merkle_tree *t) {
+static bool update_memory_merkle_tree(const machine_state *s, const pma_entry *pma, uint8_t *page_data, merkle_tree::hasher_type &h, merkle_tree *t) {
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
     (void) s;
     uint64_t page_index = 0;
     // Complete initial pages
     while (page_index + merkle_tree::get_page_size() <= pma->length) {
-        if (t->is_error(t->update_page(kc, pma->start + page_index, pma->memory.host_memory + page_index))) {
+        if (t->is_error(t->update_page(h, pma->start + page_index, pma->memory.host_memory + page_index))) {
             return false;
         }
         page_index += merkle_tree::get_page_size();
@@ -825,20 +825,20 @@ static bool update_memory_merkle_tree(const machine_state *s, const pma_entry *p
     if (page_index < pma->length) {
         memset(page_data, 0, PMA_PAGE_SIZE);
         memcpy(page_data, pma->memory.host_memory+page_index, pma->length-page_index);
-        if (t->is_error(t->update_page(kc, pma->start+page_index, page_data))) {
+        if (t->is_error(t->update_page(h, pma->start+page_index, page_data))) {
             return false;
         }
     }
     return true;
 }
 
-static bool update_device_merkle_tree(const machine_state *s, const pma_entry *pma, uint8_t *page_data, CryptoPP::Keccak_256 &kc, merkle_tree *t) {
+static bool update_device_merkle_tree(const machine_state *s, const pma_entry *pma, uint8_t *page_data, merkle_tree::hasher_type &h, merkle_tree *t) {
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
     // Complete initial pages
     for (uint64_t page_index = 0; page_index < pma->length; page_index += PMA_PAGE_SIZE) {
         auto status = pma->device.driver->peek(s, pma->device.context, page_index, page_data);
         if (status == device_peek_status::success) {
-            if (t->is_error(t->update_page(kc, pma->start + page_index, page_data))) {
+            if (t->is_error(t->update_page(h, pma->start + page_index, page_data))) {
                 return false;
             }
         } else if (status != device_peek_status::pristine_page) {
@@ -849,26 +849,26 @@ static bool update_device_merkle_tree(const machine_state *s, const pma_entry *p
 }
 
 bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
-    CryptoPP::Keccak_256 kc;
+    merkle_tree::hasher_type h;
     uint8_t *page_data = reinterpret_cast<uint8_t *>(calloc(1, merkle_tree::get_page_size()));
     if (!page_data) return false;
-    t->begin_update(kc);
+    t->begin_update(h);
     bool status = true;
     for (int i = 0; i < s->pma_count; i++) {
         pma_entry *pma = &s->physical_memory[i];
         if (pma_is_memory(pma)) {
-            if (!update_memory_merkle_tree(s, pma, page_data, kc, t)) {
+            if (!update_memory_merkle_tree(s, pma, page_data, h, t)) {
                 status = false;
                 break;
             }
         } else {
-            if (!update_device_merkle_tree(s, pma, page_data, kc, t)) {
+            if (!update_device_merkle_tree(s, pma, page_data, h, t)) {
                 status = false;
                 break;
             }
         }
     }
-    t->end_update(kc);
+    t->end_update(h);
     free(page_data);
     return status;
 }

@@ -4,6 +4,11 @@ LUA_INC:=$(shell pkg-config --cflags lua53)
 LUA_LIB:=$(shell pkg-config --libs lua53)
 FDT_LIB:=-lfdt
 CRYPTOPP_LIB:=-lcryptopp
+GRPC_INC:=$(shell pkg-config --cflags protobuf grpc)
+GRPC_LIB:=$(shell pkg-config --libs protobuf grpc++ grpc)
+
+PROTOC:=protoc
+GRPC_CPP_PLUGIN=$(shell which grpc_cpp_plugin)
 
 # So we can use gcc to check if there are unused symbols
 ifeq ($(gc),yes)
@@ -11,13 +16,20 @@ GCFLAGS= -fno-inline-small-functions -fno-inline -fdata-sections -ffunction-sect
 GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
 endif
 
-LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB)
+EMU_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB)
 
 # Common setup
 # cryptopp
 #   git clone git@github.com:cartesi/cryptopp.git
 #   cd cryptopp
 #   git checkout cartesi
+#   make
+#   sudo make install
+# grpc
+#   git clone --branch v1.16.0 --depth 1 https://github.com/grpc/grpc.git
+#   cd grpc
+#   git checkout v1.16.0
+#   git submodule update --init
 #   make
 #   sudo make install
 
@@ -53,8 +65,12 @@ INCS=-I/usr/local/include $(LUA_INC) $(FDT_INC)
 
 ifeq ($(dump),yes)
 #DEFS+=-DUMP_ILLEGAL_INSN
-#DEFS+=-DDUMP_EXCEPTIONS -DDUMP_MMU_EXCEPTIONS -DDUMP_INVALID_MEM_ACCESS -DDUMP_INVALID_CSR -DUMP_ILLEGAL_INSN
-DEFS+=-DDUMP_INSN
+#DEFS+=-DDUMP_EXCEPTIONS
+#DEFS+=-DDUMP_MMU_EXCEPTIONS
+#DEFS+=-DDUMP_INVALID_MEM_ACCESS
+#DEFS+=-DDUMP_INVALID_CSR
+#DEFS+=-DUMP_ILLEGAL_INSN
+#DEFS+=-DDUMP_INSN
 #DEFS+=-DDUMP_COUNTERS
 #DEFS+=-DDUMP_EXCEPTIONS
 endif
@@ -64,11 +80,11 @@ CXXFLAGS=-Ofast -std=c++14 -march=native -fpic -fvisibility=hidden -MMD $(INCS) 
 
 ALL=emu.so
 
-.PHONY: all generate use clean test
+.PHONY: all generate use clean test grpc
 
 all: $(ALL)
 
-OBJS:= \
+EMU_OBJS:= \
 	clint.o \
 	htif.o \
 	shadow.o \
@@ -82,8 +98,8 @@ DEFS+=-DGPERF
 LIBS+=-lprofiler
 endif
 
-emu.so: $(OBJS)
-	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LIBS)
+emu.so: $(EMU_OBJS)
+	$(CXX) $(SOLDFLAGS) -o $@ $^ $(EMU_LIBS)
 
 test: emu.so
 	lua tests.lua
@@ -106,6 +122,29 @@ use: CXXFLAGS += -fprofile-use
 use: SOLDFLAGS += -fprofile-use
 
 use: emu.so
+
+grpc: server client
+
+GRPC_OBJS:= \
+	core.pb.o \
+	core.grpc.pb.o
+
+server: $(GRPC_OBJS) server.o
+	$(CXX) -o $@ $^ $(GRPC_LIB)
+
+client: $(GRPC_OBJS) client.o
+	$(CXX) -o $@ $^ $(GRPC_LIB)
+
+server: CFLAGS+= $(GRPC_INC)
+client: CFLAGS+= $(GRPC_INC)
+
+.PRECIOUS: %.grpc.pb.cc
+%.grpc.pb.cc: %.proto
+	$(PROTOC) --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN) $<
+
+.PRECIOUS: %.pb.cc
+%.pb.cc: %.proto
+	$(PROTOC) --cpp_out=. $<
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<

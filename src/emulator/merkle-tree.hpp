@@ -1,16 +1,16 @@
 /// \file
 /// \brief Merkle tree implementation.
 
-template <int T, int P>
+template <int T, int P, typename H>
 constexpr uint64_t
-merkle_tree_t<T,P>::
+merkle_tree_t<T,P,H>::
 get_page_index(uint64_t address) {
     return address & m_page_index_mask;
 }
 
-template <int T, int P>
-typename merkle_tree_t<T,P>::tree_node *
-merkle_tree_t<T,P>::
+template <int T, int P, typename H>
+typename merkle_tree_t<T,P,H>::tree_node *
+merkle_tree_t<T,P,H>::
 get_page_node(uint64_t page_index) const {
     // Look for entry in page map hash table
     auto it = m_page_node_map.find(page_index);
@@ -21,41 +21,41 @@ get_page_node(uint64_t page_index) const {
     }
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 constexpr uint64_t
-merkle_tree_t<T,P>::
+merkle_tree_t<T,P,H>::
 get_offset_in_page(uint64_t address) {
     return address & m_page_offset_mask;
 }
 
-template <int T, int P>
-const typename merkle_tree_t<T,P>::keccak_256_hash &
-merkle_tree_t<T,P>::
+template <int T, int P, typename H>
+const typename merkle_tree_t<T,P,H>::digest_type &
+merkle_tree_t<T,P,H>::
 get_proof_hash(const word_value_proof &proof, int log2_size) const {
     log2_size -= get_log2_word_size();
     return proof[log2_size];
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 void
-merkle_tree_t<T,P>::
+merkle_tree_t<T,P,H>::
 set_proof_hash(word_value_proof &proof, int log2_size,
-    const keccak_256_hash &hash) const {
+    const digest_type &hash) const {
     log2_size -= get_log2_word_size();
     proof[log2_size] = hash;
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 int
-merkle_tree_t<T,P>::
+merkle_tree_t<T,P,H>::
 set_page_node_map(uint64_t page_index, tree_node *node) {
     m_page_node_map[page_index] = node;
     return 1;
 }
 
-template <int T, int P>
-typename merkle_tree_t<T,P>::tree_node *
-merkle_tree_t<T,P>::
+template <int T, int P, typename H>
+typename merkle_tree_t<T,P,H>::tree_node *
+merkle_tree_t<T,P,H>::
 create_node(void) const {
 #ifdef MERKLE_DUMP_STATS
     m_num_nodes++;
@@ -63,9 +63,9 @@ create_node(void) const {
     return reinterpret_cast<tree_node *>(calloc(1, sizeof(tree_node)));
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 void
-merkle_tree_t<T,P>::
+merkle_tree_t<T,P,H>::
 destroy_node(tree_node *node) const {
 #ifdef MERKLE_DUMP_STATS
     --m_num_nodes;
@@ -73,9 +73,9 @@ destroy_node(tree_node *node) const {
     free(node);
 }
 
-template <int T, int P>
-typename merkle_tree_t<T,P>::tree_node *
-merkle_tree_t<T,P>::
+template <int T, int P, typename H>
+typename merkle_tree_t<T,P,H>::tree_node *
+merkle_tree_t<T,P,H>::
 new_page_node(uint64_t page_index) {
     // Start with the first bit in the address space
     uint64_t bit_mask = 1ull << (get_log2_tree_size() - 1);
@@ -106,51 +106,48 @@ new_page_node(uint64_t page_index) {
     return node;
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 void
-merkle_tree_t<T,P>::
-update_page_node_hash(CryptoPP::Keccak_256 &kc,
-    const uint8_t *start, int log2_size, keccak_256_hash &hash) const {
+merkle_tree_t<T,P,H>::
+update_page_node_hash(H &h, const uint8_t *start, int log2_size, digest_type &hash) const {
     if (log2_size > get_log2_word_size()) {
-        keccak_256_hash child0, child1;
+        digest_type child0, child1;
         --log2_size;
         uint64_t size = 1ull << log2_size;
-        update_page_node_hash(kc, start, log2_size, child0);
-        update_page_node_hash(kc, start+size, log2_size, child1);
-        get_concat_hash(kc, child0, child1, hash);
+        update_page_node_hash(h, start, log2_size, child0);
+        update_page_node_hash(h, start+size, log2_size, child1);
+        get_concat_hash(h, child0, child1, hash);
     } else {
-        kc.Restart();
-        //??D Make sure this is what EVM does
-        kc.Update(start, get_word_size());
-        kc.Final(hash.data());
+        h.begin();
+        h.add_data(start, get_word_size());
+        h.end(hash);
     }
 }
 
-template <int T, int P>
-const typename merkle_tree_t<T,P>::keccak_256_hash &
-merkle_tree_t<T,P>::
+template <int T, int P, typename H>
+const typename merkle_tree_t<T,P,H>::digest_type &
+merkle_tree_t<T,P,H>::
 get_inner_child_hash(int child_log2_size, const tree_node *node,
     int bit) const {
     const tree_node *child = node->child[bit];
     return child? child->hash: get_pristine_hash(child_log2_size);
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 void
-merkle_tree_t<T,P>::
-update_inner_node_hash(CryptoPP::Keccak_256 &kc,
-    int log2_size, tree_node *node) {
-    get_concat_hash(kc, get_inner_child_hash(log2_size-1, node, 0),
+merkle_tree_t<T,P,H>::
+update_inner_node_hash(H &h, int log2_size, tree_node *node) {
+    get_concat_hash(h, get_inner_child_hash(log2_size-1, node, 0),
         get_inner_child_hash(log2_size-1, node, 1), node->hash);
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 void
-merkle_tree_t<T,P>::
-dump_hash(const uint8_t *hash) const {
+merkle_tree_t<T,P,H>::
+dump_hash(const digest_type &hash) const {
     auto f = std::cerr.flags();
     std::cerr << std::hex << std::setfill('0') << std::setw(2);
-    for (unsigned i = 0; i < m_hash_size; ++i) {
+    for (unsigned i = 0; i < hash.size(); ++i) {
         unsigned b = hash[i];
         std::cerr << b;
     }
@@ -158,39 +155,39 @@ dump_hash(const uint8_t *hash) const {
     std::cerr.flags(f);
 }
 
-template <int T, int P>
-const typename merkle_tree_t<T,P>::keccak_256_hash &
-merkle_tree_t<T,P>::
+template <int T, int P, typename H>
+const typename merkle_tree_t<T,P,H>::digest_type &
+merkle_tree_t<T,P,H>::
 get_pristine_hash(int log2_size) const {
     return get_proof_hash(m_pristine_hashes, log2_size);
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 void
-merkle_tree_t<T,P>::
+merkle_tree_t<T,P,H>::
 initialize_pristine_hashes(void) {
-    CryptoPP::Keccak_256 kc;
+    H h;
     //??D change this to the crazy EVM hash
     constexpr int nzeros = 32;
     uint8_t zeros[nzeros];
     memset(zeros, 0, nzeros);
-    kc.Restart();
+    h.begin();
     int todo = m_word_size;
     while (todo > 0) {
         int now = std::min(nzeros, todo);
-        kc.Update(zeros, now);
+        h.add_data(zeros, now);
         todo -= now;
     }
-    kc.Final(m_pristine_hashes[0].data());
+    h.end(m_pristine_hashes[0]);
     for (unsigned i = 1; i < m_pristine_hashes.size(); ++i) {
-        get_concat_hash(kc, m_pristine_hashes[i-1],
+        get_concat_hash(h, m_pristine_hashes[i-1],
             m_pristine_hashes[i-1], m_pristine_hashes[i]);
     }
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 void
-merkle_tree_t<T,P>::
+merkle_tree_t<T,P,H>::
 dump_merkle_tree(tree_node *node, int log2_size) const {
     std::cerr << log2_size << ": ";
     if (node) {
@@ -204,9 +201,9 @@ dump_merkle_tree(tree_node *node, int log2_size) const {
     }
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 void
-merkle_tree_t<T,P>::
+merkle_tree_t<T,P,H>::
 destroy_merkle_tree(tree_node *node, int log2_size) {
     if (node) {
         // If this is an inner node, invoke recursively
@@ -218,9 +215,9 @@ destroy_merkle_tree(tree_node *node, int log2_size) {
     }
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 void
-merkle_tree_t<T,P>::
+merkle_tree_t<T,P,H>::
 destroy_merkle_tree(void) {
     destroy_merkle_tree(m_root_storage.child[0],
         get_log2_tree_size()-1);
@@ -229,29 +226,28 @@ destroy_merkle_tree(void) {
     memset(&m_root_storage, 0, sizeof(m_root_storage));
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 void
-merkle_tree_t<T,P>::
-get_inside_page_word_value_proof(CryptoPP::Keccak_256 &kc,
-    uint64_t address, int parent_diverged, int diverged,
+merkle_tree_t<T,P,H>::
+get_inside_page_word_value_proof(H &h, uint64_t address, int parent_diverged, int diverged,
     const uint8_t *node_data, int log2_size,
-    word_value_proof &proof, keccak_256_hash &hash) {
+    word_value_proof &proof, digest_type &hash) {
     if (log2_size > get_log2_word_size()) {
         int log2_child_size = log2_size-1;
         uint64_t child_size = 1ull << log2_child_size;
-        keccak_256_hash first, second;
+        digest_type first, second;
         int bit = (address & child_size) != 0;
-        get_inside_page_word_value_proof(kc, address,
+        get_inside_page_word_value_proof(h, address,
             parent_diverged || diverged, bit != 0,
             node_data, log2_child_size, proof, first);
-        get_inside_page_word_value_proof(kc, address,
+        get_inside_page_word_value_proof(h, address,
             parent_diverged || diverged, bit != 1,
             node_data+child_size, log2_child_size, proof, second);
-        get_concat_hash(kc, first, second, hash);
+        get_concat_hash(h, first, second, hash);
     } else {
-        kc.Restart();
-        kc.Update(node_data, get_word_size());
-        kc.Final(hash.data());
+        h.begin();
+        h.add_data(node_data, get_word_size());
+        h.end(hash.data());
     }
     // We only store siblings of nodes along the path. So if
     // the parent belongs to the path, but the node doesn't,
@@ -261,38 +257,38 @@ get_inside_page_word_value_proof(CryptoPP::Keccak_256 &kc,
     }
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 void
-merkle_tree_t<T,P>::
+merkle_tree_t<T,P,H>::
 get_inside_page_word_value_proof(uint64_t address,
     const uint8_t *page_data, word_value_proof &proof) {
-    keccak_256_hash hash;
-    CryptoPP::Keccak_256 kc;
-    get_inside_page_word_value_proof(kc, address, 0, 0,
+    digest_type hash;
+    H h;
+    get_inside_page_word_value_proof(h, address, 0, 0,
         page_data, get_log2_page_size(), proof, hash);
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 void
-merkle_tree_t<T,P>::
+merkle_tree_t<T,P,H>::
 dump_merkle_tree(void) const {
     dump_merkle_tree(m_root, get_log2_tree_size());
 }
 
-template <int T, int P>
-typename merkle_tree_t<T,P>::status_code
-merkle_tree_t<T,P>::
-begin_update(CryptoPP::Keccak_256 &kc) {
-    (void) kc;
+template <int T, int P, typename H>
+typename merkle_tree_t<T,P,H>::status_code
+merkle_tree_t<T,P,H>::
+begin_update(H &h) {
+    (void) h;
     m_merkle_update_fifo.clear();
     return status_code::success;
 }
 
 
-template <int T, int P>
-typename merkle_tree_t<T,P>::status_code
-merkle_tree_t<T,P>::
-update_page(CryptoPP::Keccak_256 &kc, uint64_t page_index, uint8_t *page_data) {
+template <int T, int P, typename H>
+typename merkle_tree_t<T,P,H>::status_code
+merkle_tree_t<T,P,H>::
+update_page(H &h, uint64_t page_index, uint8_t *page_data) {
     assert(get_page_index(page_index) == page_index);
     tree_node *node = get_page_node(page_index);
     // If there is no page node for this page index, allocate a fresh one
@@ -302,7 +298,7 @@ update_page(CryptoPP::Keccak_256 &kc, uint64_t page_index, uint8_t *page_data) {
             return status_code::error_out_of_memory;
         }
     }
-    update_page_node_hash(kc, page_data, get_log2_page_size(), node->hash);
+    update_page_node_hash(h, page_data, get_log2_page_size(), node->hash);
     if (node->parent && node->parent->mark != m_merkle_update_nonce) {
         m_merkle_update_fifo.push_back(
             std::make_pair(get_log2_page_size()+1, node->parent));
@@ -311,17 +307,17 @@ update_page(CryptoPP::Keccak_256 &kc, uint64_t page_index, uint8_t *page_data) {
     return status_code::success;
 }
 
-template <int T, int P>
-typename merkle_tree_t<T,P>::status_code
-merkle_tree_t<T,P>::
-end_update(CryptoPP::Keccak_256 &kc) {
+template <int T, int P, typename H>
+typename merkle_tree_t<T,P,H>::status_code
+merkle_tree_t<T,P,H>::
+end_update(H &h) {
     // Now go over the queue of inner nodes updating their hashes and
     // enqueueing their parents until the queue is empty
     while (!m_merkle_update_fifo.empty()) {
         int log2_size;
         tree_node *node;
         std::tie(log2_size, node) = m_merkle_update_fifo.front();
-        update_inner_node_hash(kc, log2_size, node);
+        update_inner_node_hash(h, log2_size, node);
         m_merkle_update_fifo.pop_front();
         if (node->parent && node->parent->mark != m_merkle_update_nonce) {
             m_merkle_update_fifo.push_back(
@@ -333,8 +329,8 @@ end_update(CryptoPP::Keccak_256 &kc) {
     return status_code::success;
 }
 
-template <int T, int P>
-merkle_tree_t<T,P>::
+template <int T, int P, typename H>
+merkle_tree_t<T,P,H>::
 merkle_tree_t(void) {
     memset(&m_root_storage, 0, sizeof(m_root_storage));
     m_root = &m_root_storage;
@@ -346,8 +342,8 @@ merkle_tree_t(void) {
 #endif
 }
 
-template <int T, int P>
-merkle_tree_t<T,P>::
+template <int T, int P, typename H>
+merkle_tree_t<T,P,H>::
 ~merkle_tree_t() {
 #ifdef MERKLE_DUMP_STATS
     std::cerr << "before destruction\n";
@@ -360,46 +356,44 @@ merkle_tree_t<T,P>::
 #endif
 }
 
-template <int T, int P>
-typename merkle_tree_t<T,P>::status_code
-merkle_tree_t<T,P>::
-get_merkle_tree_root_hash(keccak_256_hash &hash) {
+template <int T, int P, typename H>
+typename merkle_tree_t<T,P,H>::status_code
+merkle_tree_t<T,P,H>::
+get_merkle_tree_root_hash(digest_type &hash) {
     hash = m_root->hash;
     return status_code::success;
 }
 
-template <int T, int P>
-typename merkle_tree_t<T,P>::status_code
-merkle_tree_t<T,P>::
+template <int T, int P, typename H>
+typename merkle_tree_t<T,P,H>::status_code
+merkle_tree_t<T,P,H>::
 get_pristine_proof(word_value_proof &proof) {
     proof = m_pristine_hashes;
     return status_code::success;
 }
 
-template <int T, int P>
-typename merkle_tree_t<T,P>::status_code
-merkle_tree_t<T,P>::
+template <int T, int P, typename H>
+typename merkle_tree_t<T,P,H>::status_code
+merkle_tree_t<T,P,H>::
 verify_merkle_tree(void) const {
-    CryptoPP::Keccak_256 kc;
-    return verify_merkle_tree(kc, m_root, get_log2_tree_size());
+    return verify_merkle_tree(H(), m_root, get_log2_tree_size());
 }
 
-template <int T, int P>
+template <int T, int P, typename H>
 void
-merkle_tree_t<T,P>::
-get_concat_hash(CryptoPP::Keccak_256 &kc, const keccak_256_hash &child0,
-    const keccak_256_hash &child1, keccak_256_hash &parent) const {
-    kc.Restart();
-    kc.Update(child0.data(), get_hash_size());
-    kc.Update(child1.data(), get_hash_size());
-    kc.Final(parent.data());
+merkle_tree_t<T,P,H>::
+get_concat_hash(H &h, const digest_type &child0,
+    const digest_type &child1, digest_type &parent) const {
+    h.begin();
+    h.add_data(child0.data(), child0.size());
+    h.add_data(child1.data(), child1.size());
+    h.end(parent);
 }
 
-template <int T, int P>
-typename merkle_tree_t<T,P>::status_code
-merkle_tree_t<T,P>::
-verify_merkle_tree(CryptoPP::Keccak_256 &kc,
-    tree_node *node, int log2_size) const {
+template <int T, int P, typename H>
+typename merkle_tree_t<T,P,H>::status_code
+merkle_tree_t<T,P,H>::
+verify_merkle_tree(H &h, tree_node *node, int log2_size) const {
     // pristine node is always correct
     if (!node) {
         return status_code::success;
@@ -407,15 +401,15 @@ verify_merkle_tree(CryptoPP::Keccak_256 &kc,
     // verify inner node
     if (log2_size > get_log2_page_size()) {
         int child_log2_size = log2_size-1;
-        auto first = verify_merkle_tree(kc, node->child[0],
+        auto first = verify_merkle_tree(h, node->child[0],
             child_log2_size);
-        auto second = verify_merkle_tree(kc, node->child[1],
+        auto second = verify_merkle_tree(h, node->child[1],
             child_log2_size);
         if (is_error(first) || is_error(second)) {
             return status_code::error;
         }
-        keccak_256_hash hash;
-        get_concat_hash(kc, get_inner_child_hash(child_log2_size, node, 0),
+        digest_type hash;
+        get_concat_hash(h, get_inner_child_hash(child_log2_size, node, 0),
             get_inner_child_hash(child_log2_size, node, 1), hash);
         if (hash != node->hash) {
             return status_code::error;
@@ -428,9 +422,9 @@ verify_merkle_tree(CryptoPP::Keccak_256 &kc,
     }
 }
 
-template <int T, int P>
-typename merkle_tree_t<T,P>::status_code
-merkle_tree_t<T,P>::
+template <int T, int P, typename H>
+typename merkle_tree_t<T,P,H>::status_code
+merkle_tree_t<T,P,H>::
 get_word_value_proof(uint64_t address, uint64_t *page_data,
     word_value_proof &proof) {
     // Descend on the tree until we either hit a pristine subtree or a page

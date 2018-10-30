@@ -16,7 +16,8 @@
 #include <array>
 #include <vector>
 #include <unordered_map>
-#include <cryptopp/keccak.h>
+
+#include "keccak-256-hasher.h"
 
 /// \class merkle_tree_t
 /// \brief Merkle tree implementation.
@@ -46,9 +47,11 @@
 /// \tparam LOG2_PAGE_SIZE Number of bits covered by a page.
 /// I.e., log<sub>2</sub> of number of bytes subintended by the
 /// the deepest explicitly represented nodes.
+/// \tparam H Hasher class implementing the i_hasher interface.
 template <
     int LOG2_TREE_SIZE = 64,
-    int LOG2_PAGE_SIZE = 12
+    int LOG2_PAGE_SIZE = 12,
+    typename H = keccak_256_hasher
 >
 class merkle_tree_t final {
 private:
@@ -61,8 +64,6 @@ private:
         ((~0ull) >> (64-LOG2_TREE_SIZE)) << LOG2_PAGE_SIZE;
     static constexpr uint64_t m_page_offset_mask = ~m_page_index_mask;
     static constexpr size_t m_page_size = 1 << LOG2_PAGE_SIZE;
-
-    static constexpr size_t m_hash_size = 32;
 
 public:
     /// \brief Error codes.
@@ -91,26 +92,26 @@ public:
     static constexpr int get_page_size(void) { return m_page_size; }
     /// \brief Returns the word size.
     static constexpr int get_word_size(void) { return m_word_size; }
-    /// \brief Returns the hash size.
-    static constexpr int get_hash_size(void) { return m_hash_size; }
 
-    /// \brief Storage for a Keccak 256 hash.
-    using keccak_256_hash = std::array<uint8_t, get_hash_size()>;
+    /// \brief Storage for a hash.
+    using digest_type = typename H::digest_type;
+
+    using hasher_type = H;
 
     /// \brief Storage for the proof of a word value.
     /// \details The proof for a word value contains the
     /// hashes for all siblings in the path from the word
     /// node to the root, followed by the hash for the root,
     /// in that order.
-    using word_value_proof = std::array<keccak_256_hash,
-        LOG2_TREE_SIZE-LOG2_WORD_SIZE+1>;
+    using word_value_proof = std::array<digest_type,
+          LOG2_TREE_SIZE-LOG2_WORD_SIZE+1>;
 
 private:
     /// \brief Merkle tree node structure.
     /// \details A node is known to be an inner-node or a page-node implicitly
     /// based on its height in the tree.
     struct tree_node {
-        keccak_256_hash hash; ///< Keccak 256 hash of subintended data.
+        digest_type hash; ///< Hash of subintended data.
         tree_node *parent;    ///< Pointer to parent node (nullptr for root).
         tree_node *child[2];  ///< Children nodes.
         uint64_t mark;        ///< Helper for traversal algorithms.
@@ -148,7 +149,7 @@ private:
     /// \param proof Input proof.
     /// \param log2_size log<sub>2</sub> of size subintended by hash.
     /// \return Reference to hash inside proof.
-    const keccak_256_hash &get_proof_hash(const word_value_proof &proof,
+    const digest_type &get_proof_hash(const word_value_proof &proof,
         int log2_size) const;
 
     /// \brief Set hash corresponding to log2_size in proof.
@@ -156,7 +157,7 @@ private:
     /// \param log2_size log<sub>2</sub> of size subintended by hash.
     /// \param hash New hash for log2_size in proof.
     void set_proof_hash(word_value_proof &proof,
-        int log2_size, const keccak_256_hash &hash) const;
+        int log2_size, const digest_type &hash) const;
 
     /// \brief Maps a page_index to a node.
     /// \param page_index Page index.
@@ -181,27 +182,25 @@ private:
 
     /// \brief Recursively builds hash for log2_size node
     /// from contiguous memory.
-    /// \param kc Keccak hasher object.
+    /// \param h Hasher object.
     /// \param start Start of contiguous memory subintended by node.
     /// \param log2_size log<sub>2</sub> of size subintended by node.
     /// \param hash Receives the hash.
-    void update_page_node_hash(CryptoPP::Keccak_256 &kc,
-        const uint8_t *start, int log2_size, keccak_256_hash &hash) const;
+    void update_page_node_hash(H &h, const uint8_t *start, int log2_size, digest_type &hash) const;
 
     /// \brief Updates an inner node hash from its children.
-    /// \param kc Keccak hasher object.
+    /// \param h Hasher object.
     /// \param log2_size log<sub>2</sub> of size subintended by node.
     /// \param node Node to be updated.
-    void update_inner_node_hash(CryptoPP::Keccak_256 &kc,
-        int log2_size, tree_node *node);
+    void update_inner_node_hash(H &h, int log2_size, tree_node *node);
 
     /// \brief Dumps a hash to std::cerr.
     /// \param hash Hash to be dumped.
-    void dump_hash(const uint8_t *hash) const;
+    void dump_hash(const digest_type &hash) const;
 
     /// \brief Returns the hash for a log2_size pristine node.
     /// \return Reference to precomputed hash.
-    const keccak_256_hash &get_pristine_hash(int log2_size) const;
+    const digest_type &get_pristine_hash(int log2_size) const;
 
     /// \brief Returns the hash for a child of a given node.
     /// \param child_log2_size log2_size of child node.
@@ -209,7 +208,7 @@ private:
     /// \param bit Bit corresponding to child_log2_size in child node address.
     /// \return Reference to child hash. If child pointer is null,
     /// returns a pristine hash.
-    const keccak_256_hash &get_inner_child_hash(int child_log2_size,
+    const digest_type &get_inner_child_hash(int child_log2_size,
         const tree_node *node, int bit) const;
 
     /// \brief Precomputes hashes for pristine nodes of all sizes.
@@ -232,11 +231,10 @@ private:
     void destroy_merkle_tree(void);
 
     /// \brief Verifies tree rooted at node.
-    /// \param kc Keccak hasher object.
+    /// \param h Hasher object.
     /// \param node Root of subtree.
     /// \param  log2_size log<sub>2</sub> of size subintended by \p node.
-    status_code verify_merkle_tree(CryptoPP::Keccak_256 &kc,
-        tree_node *node, int log2_size) const;
+    status_code verify_merkle_tree(H &h, tree_node *node, int log2_size) const;
 
     /// \brief Computes the page index for a memory address.
     /// \param address Memory address.
@@ -254,7 +252,7 @@ private:
     tree_node *get_page_node(uint64_t page_index) const;
 
     /// \brief Obtains the proof for target node at \p address and \p log2_size.
-    /// \param kc Keccak hasher object.
+    /// \param h Hasher object.
     /// \param address Address of target node.
     /// \param parent_diverged Parent node corresponding to \p node_data
     /// is not not in path from root to target node.
@@ -264,10 +262,9 @@ private:
     /// \param log2_size log<sub>2</sub> of size subintended by target \p node.
     /// \param proof Receives the proof.
     /// \param hash Temporary storage for hashes.
-    void get_inside_page_word_value_proof(CryptoPP::Keccak_256 &kc,
-        uint64_t address, int parent_diverged, int diverged,
+    void get_inside_page_word_value_proof(H &h, uint64_t address, int parent_diverged, int diverged,
         const uint8_t *node_data, int log2_size,
-        word_value_proof &proof, keccak_256_hash &hash);
+        word_value_proof &proof, digest_type &hash);
 
     /// \brief Obtains the proof for target node at \p address and \p log2_size.
     /// \param address Address of target node.
@@ -278,13 +275,12 @@ private:
 
     /// \brief Obtains hash of a \p parent node from the
     /// handles of its children nodes.
-    /// \param kc Keccak hasher object.
+    /// \param h Hasher object.
     /// \param child0 Hash of first child.
     /// \param child1 Hash of second child.
     /// \param parent Receives parent hash.
-    void get_concat_hash(CryptoPP::Keccak_256 &kc,
-        const keccak_256_hash &child0, const keccak_256_hash &child1,
-        keccak_256_hash &parent) const;
+    void get_concat_hash(H &h, const digest_type &child0, const digest_type &child1,
+        digest_type &parent) const;
 
 public:
 
@@ -304,7 +300,7 @@ public:
     /// \brief Returns the root hash.
     /// \param hash Receives the hash.
     /// \returns status_code::success.
-    status_code get_merkle_tree_root_hash(keccak_256_hash &hash);
+    status_code get_merkle_tree_root_hash(digest_type &hash);
 
     /// \brief Returns a pristine proof.
     /// \param proof Receives proof.
@@ -314,23 +310,22 @@ public:
     status_code get_pristine_proof(word_value_proof &proof);
 
     /// \brief Start tree update.
-    /// \param kc Keccak hasher object.
+    /// \param h Hasher object.
     /// \returns status_code::success.
-    status_code begin_update(CryptoPP::Keccak_256 &kc);
+    status_code begin_update(H &h);
 
     /// \brief Update tree with new data for a page node.
-    /// \param kc Keccak hasher object.
+    /// \param h Hasher object.
     /// \param page_address Address of start of page.
     /// \param page_data Pointer to start of contiguous page data.
     /// \returns status_code::success if update completed,
     /// status_code::out_of_memory if it failed.
-    status_code update_page(CryptoPP::Keccak_256 &kc,
-		uint64_t page_address, uint8_t *page_data);
+    status_code update_page(H &h, uint64_t page_address, uint8_t *page_data);
 
     /// \brief End tree update.
-    /// \param kc Keccak hasher object.
+    /// \param h Hasher object.
     /// \returns status_code::success.
-    status_code end_update(CryptoPP::Keccak_256 &kc);
+    status_code end_update(H &h);
 
     /// \brief Returns a word value and its proof.
     /// \param word_address Address of aligned word.

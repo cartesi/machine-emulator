@@ -100,8 +100,8 @@ int main(void) {
     kc.Final(hash_b);
     dump(hash_b);
     kc.Restart();
-    kc.Update(hash_a, sizeof(a));
-    kc.Update(hash_b, sizeof(b));
+    kc.Update(hash_a, sizeof(hash_a));
+    kc.Update(hash_b, sizeof(hash_b));
     kc.Final(hash_hash_a_hash_b);
     dump(hash_hash_a_hash_b);
     return 0;

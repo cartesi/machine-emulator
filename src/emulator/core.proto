@@ -1,16 +1,131 @@
 syntax = "proto3";
-import "google/protobuf/empty.proto";
 
 package CartesiCore;
 
 service Machine {
-  rpc Inc (google.protobuf.Empty) returns (Integer) {}
-  rpc Print (google.protobuf.Empty) returns (Integer) {}
-  rpc Snapshot (google.protobuf.Empty) returns (Integer) {}
-  rpc Rollback (google.protobuf.Empty) returns (Integer) {}
-  rpc Shutdown (google.protobuf.Empty) returns (google.protobuf.Empty) {}
+    rpc Run (RunRequest) returns (RunResponse) {}
+    rpc Machine(MachineRequest) returns (Void) {}
+    rpc Snapshot (Void) returns (Void) {}
+    rpc Rollback (Void) returns (Void) {}
+    rpc Shutdown (Void) returns (Void) {}
+    rpc Inc (Void) returns (Void) {}
+    rpc Print (Void) returns (Void) {}
 }
 
-message Integer {
-  int32 value = 1;
+message Void { }
+
+message Processor {
+    uint64 x1         = 1;
+    uint64 x2         = 2;
+    uint64 x3         = 3;
+    uint64 x4         = 4;
+    uint64 x5         = 5;
+    uint64 x6         = 6;
+    uint64 x7         = 7;
+    uint64 x8         = 8;
+    uint64 x9         = 9;
+    uint64 x10        = 10;
+    uint64 x11        = 11;
+    uint64 x12        = 12;
+    uint64 x13        = 13;
+    uint64 x14        = 14;
+    uint64 x15        = 15;
+    uint64 x16        = 16;
+    uint64 x17        = 17;
+    uint64 x18        = 18;
+    uint64 x19        = 19;
+    uint64 x20        = 20;
+    uint64 x21        = 21;
+    uint64 x22        = 22;
+    uint64 x23        = 23;
+    uint64 x24        = 24;
+    uint64 x25        = 25;
+    uint64 x26        = 26;
+    uint64 x27        = 27;
+    uint64 x28        = 28;
+    uint64 x29        = 29;
+    uint64 x30        = 30;
+    uint64 x31        = 31;
+    uint64 pc         = 32;
+    uint64 mvendorid  = 33;
+    uint64 marchid    = 34;
+    uint64 mimpid     = 35;
+    uint64 mcycle     = 36;
+    uint64 minstret   = 37;
+    uint64 mstatus    = 38;
+    uint64 mtvec      = 39;
+    uint64 mscratch   = 40;
+    uint64 mepc       = 41;
+    uint64 mcause     = 42;
+    uint64 mtval      = 43;
+    uint64 misa       = 44;
+    uint64 mie        = 45;
+    uint64 mip        = 46;
+    uint64 medeleg    = 47;
+    uint64 mideleg    = 48;
+    uint64 mcounteren = 49;
+    uint64 stvec      = 50;
+    uint64 sscratch   = 51;
+    uint64 sepc       = 52;
+    uint64 scause     = 53;
+    uint64 stval      = 54;
+    uint64 satp       = 55;
+    uint64 scounteren = 56;
+    uint64 ilrsc      = 57;
+    uint64 iflags     = 58;
+    string backing    = 60;
+}
+
+message ROM {
+    string cmdline = 1;
+    string backing = 2;
+}
+
+message RAM {
+    uint64 ilength = 1;
+    string backing = 2;
+}
+
+message Drive {
+    uint64 istart = 1;
+    uint64 ilength = 2;
+    string backing = 3;
+    bool shared = 4;
+    string label = 5;
+}
+
+message CLINT {
+    uint64 mtime = 1;
+    uint64 mtimecmp = 2;
+    string backing = 3;
+}
+
+message HTIF {
+    uint64 fromhost = 1;
+    uint64 tohost = 2;
+    string backing = 3;
+}
+
+message MachineRequest {
+    Processor processor = 1;
+    ROM rom = 2;
+    RAM ram = 3;
+    repeated Drive flash = 4;
+    CLINT clint = 5;
+    HTIF htif = 6;
+}
+
+message RunRequest {
+    uint64 limit = 1;
+}
+
+message RunResponse {
+    uint64 mcycle = 1;
+    uint64 tohost = 2;
+    enum Status {
+        LIMITED = 0;
+        HALTED = 1;
+        SUSPENDED = 2;
+    }
+    Status status = 3;
 }

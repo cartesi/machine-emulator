@@ -10,82 +10,67 @@
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
-using CartesiCore::Integer;
+using CartesiCore::Void;
 using CartesiCore::Machine;
 
 class MachineClient {
+
+    void reconnect(void) {
+        stub_ = Machine::NewStub(grpc::CreateChannel(address_,
+                grpc::InsecureChannelCredentials()));
+    }
+
+    void check_status(const Status &status) {
+        if (!status.ok()) {
+            std::cerr << "Error " << status.error_code() <<
+                ": " << status.error_message() << std::endl;
+        } else {
+            std::cerr << "Ok\n";
+        }
+    }
+
 public:
-    MachineClient(std::shared_ptr<Channel> channel):
-        stub_(Machine::NewStub(channel)) {}
 
-    int Inc(void) {
-        google::protobuf::Empty request;
-        Integer response;
-        ClientContext context;
-        Status status = stub_->Inc(&context, request, &response);
-        if (status.ok()) {
-            return response.value();
-        } else {
-            std::cerr << status.error_code() << ": " << status.error_message()
-                << std::endl;
-            return 0;
-        }
+    MachineClient(std::string address): address_(address) {
+        reconnect();
     }
 
-    int Print(void) {
-        google::protobuf::Empty request;
-        Integer response;
+    void Inc(void) {
+        Void request, response;
         ClientContext context;
-        Status status = stub_->Print(&context, request, &response);
-        if (status.ok()) {
-            return response.value();
-        } else {
-            std::cerr << status.error_code() << ": " << status.error_message()
-                << std::endl;
-            return 0;
-        }
+        return check_status(stub_->Inc(&context, request, &response));
     }
 
-    int Snapshot(void) {
-        google::protobuf::Empty request;
-        Integer response;
+    void Print(void) {
+        Void request, response;
         ClientContext context;
-        Status status = stub_->Snapshot(&context, request, &response);
-        if (status.ok()) {
-            return response.value();
-        } else {
-            std::cerr << status.error_code() << ": " << status.error_message()
-                << std::endl;
-            return 0;
-        }
+        return check_status(stub_->Print(&context, request, &response));
     }
 
-    int Rollback(void) {
-        google::protobuf::Empty request;
-        Integer response;
+    void Snapshot(void) {
+        Void request, response;
         ClientContext context;
-        Status status = stub_->Rollback(&context, request, &response);
-        if (status.ok()) {
-            return response.value();
-        } else {
-            std::cerr << status.error_code() << ": " << status.error_message()
-                << std::endl;
-            return 0;
-        }
+        auto status = stub_->Snapshot(&context, request, &response);
+        reconnect();
+        return check_status(status);
+    }
+
+    void Rollback(void) {
+        Void request, response;
+        ClientContext context;
+        auto status = stub_->Rollback(&context, request, &response);
+        reconnect();
+        return check_status(status);
     }
 
     void Shutdown(void) {
-        google::protobuf::Empty request, reply;
+        Void request, response;
         ClientContext context;
-        Status status = stub_->Shutdown(&context, request, &reply);
-        // Act upon its status.
-        if (!status.ok()) {
-            std::cerr << status.error_code() << ": " << status.error_message()
-                << std::endl;
-        }
+        return check_status(stub_->Shutdown(&context, request, &response));
     }
 
 private:
+    std::string address_;
     std::unique_ptr<Machine::Stub> stub_;
 };
 
@@ -96,30 +81,24 @@ int main(int argc, char** argv) {
         exit(1);
     }
     address += argv[1];
-    MachineClient machine(
-        grpc::CreateChannel(address, grpc::InsecureChannelCredentials()));
+    MachineClient machine(address);
     std::string line;
     while (std::getline(std::cin, line)) {
         if (line == "inc") {
-            std::cerr << machine.Inc() << '\n';
+            machine.Inc();
         } else if (line == "print") {
-            std::cerr << machine.Print() << '\n';
+            machine.Print();
         } else if (line == "snapshot") {
-            std::cerr << machine.Snapshot() << '\n';
-            machine.~MachineClient();
-            new (&machine) MachineClient(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()));
+            machine.Snapshot();
         } else if (line == "rollback") {
-            std::cerr << machine.Rollback() << '\n';
-            machine.~MachineClient();
-            new (&machine) MachineClient(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()));
+            machine.Rollback();
         } else if (line == "shutdown") {
             machine.Shutdown();
-            machine.~MachineClient();
-            new (&machine) MachineClient(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()));
+            break;
         } else if (line == "help") {
             std::cerr << "inc print snapshot rollback shutdown\n";
         } else {
-            std::cerr << "invalid command\n";
+            std::cerr << "invalid command '" << line << "'\n";
         }
     }
     return 0;

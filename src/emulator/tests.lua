@@ -205,11 +205,12 @@ for _, test in ipairs(tests) do
     local ram_image = test[1]
     local expected_cycles = test[2]
     io.write(ram_image, " ")
-    local machine = emu.create{
-        version = 1,
-        machine = "riscv64",
-        memory_size = 128,
-        ram_image = "tests/" .. ram_image
+    local machine = emu.machine{
+        machine = emu.get_name(),
+        ram = {
+            length = 128 << 20,
+            backing = "tests/" .. ram_image
+        }
     }
     local cycles, payload = run(machine)
     if payload ~= 0 then

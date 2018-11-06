@@ -4,6 +4,26 @@
 /// \file
 /// \brief RISC-V constants
 
+#define XLEN 64
+#define MXL   2
+
+/// \name Interrupt pending flags for use with set/reset mip
+/// \{
+#define MIP_USIP   (1 << 0) ///< User software interrupt
+#define MIP_SSIP   (1 << 1) ///< Supervisor software interrupt
+#define MIP_HSIP   (1 << 2) ///< Reserved
+#define MIP_MSIP   (1 << 3) ///< Machine software interrupt
+#define MIP_UTIP   (1 << 4) ///< User timer interrupt
+#define MIP_STIP   (1 << 5) ///< Supervisor timer interrupt
+#define MIP_HTIP   (1 << 6) ///< Reserved
+#define MIP_MTIP   (1 << 7) ///< Machine timer interrupt
+#define MIP_UEIP   (1 << 8) ///< User external interrupt
+#define MIP_SEIP   (1 << 9) ///< Supervisor external interrupt
+#define MIP_HEIP   (1 << 10) ///< Reserved
+#define MIP_MEIP   (1 << 11) ///< Machine external interrupt
+/// \}
+
+
 /// \name mcause for exceptions
 /// \{
 #define CAUSE_MISALIGNED_FETCH              0x0
@@ -40,6 +60,13 @@
 #define MISAEXT_F            (1 << ('F' - 'A'))
 #define MISAEXT_D            (1 << ('D' - 'A'))
 #define MISAEXT_C            (1 << ('C' - 'A'))
+/// \}
+
+/// \name mstatus shifts
+/// \{
+#define IFLAGS_H_SHIFT   0
+#define IFLAGS_I_SHIFT   1
+#define IFLAGS_PRV_SHIFT 2
 /// \}
 
 /// \name mstatus shifts

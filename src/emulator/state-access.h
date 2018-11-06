@@ -25,12 +25,12 @@ private:
     friend i_state_access<state_access>;
 
     uint64_t do_read_register(uint32_t reg) {
-        return m_s->reg[reg];
+        return m_s->x[reg];
     }
 
     void do_write_register(uint32_t reg, uint64_t val) {
         assert(reg != 0);
-        m_s->reg[reg] = val;
+        m_s->x[reg] = val;
     }
 
     uint64_t do_read_pc(void) {

@@ -55,9 +55,9 @@ SOLDFLAGS_Linux:= -L/usr/local/lib -shared -fpic
 CC_Linux=gcc
 CXX_Linux=g++
 
-CC?=$(CC_$(UNAME))
-CXX?=$(CXX_$(UNAME))
-SOLDFLAGS?=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
+CC:=$(CC_$(UNAME))
+CXX:=$(CXX_$(UNAME))
+SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 
 WARNS=-W -Wall -pedantic
 
@@ -75,10 +75,9 @@ ifeq ($(dump),yes)
 #DEFS+=-DDUMP_EXCEPTIONS
 endif
 
-CFLAGS=-Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 CXXFLAGS=-Ofast -std=c++14 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
-ALL=emu.so
+ALL=emu.so grpc
 
 .PHONY: all generate use clean test grpc
 
@@ -110,14 +109,19 @@ fs.ext2: fs/*
 hash: hash.o
 	$(CXX) $(CXXFLAGS) -o $@ $^ -L/usr/local/lib $(LIBS)
 
-generate: CFLAGS += -fprofile-generate
 generate: CXXFLAGS += -fprofile-generate
 generate: SOLDFLAGS += -fprofile-generate
 
 generate: emu.so
 	lua run.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
 
-use: CFLAGS += -fprofile-use
+print:
+	echo CXXFLAGS=$(CXXFLAGS)
+	echo CXX=$(CXX)
+	echo UNAME=$(UNAME)
+	echo $(CC_$(UNAME))
+	echo $(CXX_$(UNAME))
+
 use: CXXFLAGS += -fprofile-use
 use: SOLDFLAGS += -fprofile-use
 
@@ -135,8 +139,7 @@ server: $(GRPC_OBJS) server.o
 client: $(GRPC_OBJS) client.o
 	$(CXX) -o $@ $^ $(GRPC_LIB)
 
-server: CFLAGS+= $(GRPC_INC)
-client: CFLAGS+= $(GRPC_INC)
+server client: CXXFLAGS := $(filter-out -fpic -fvisibility=hidden,$(CXXFLAGS) $(GRPC_INC))
 
 .PRECIOUS: %.grpc.pb.cc
 %.grpc.pb.cc: %.proto
@@ -145,9 +148,6 @@ client: CFLAGS+= $(GRPC_INC)
 .PRECIOUS: %.pb.cc
 %.pb.cc: %.proto
 	$(PROTOC) --cpp_out=. $<
-
-%.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<

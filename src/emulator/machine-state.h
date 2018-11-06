@@ -25,7 +25,7 @@ struct tlb_entry {
 /// state of a Cartesi machine.
 struct machine_state {
     uint64_t pc;        ///< Program counter.
-    uint64_t reg[32];   ///< Register file.
+    uint64_t x[32];     ///< Register file.
 
     uint8_t iflags_PRV; ///< Privilege level.
     bool iflags_I;      ///< CPU is idle (waiting for interrupts).

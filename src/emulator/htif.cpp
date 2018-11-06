@@ -13,6 +13,8 @@
 #define HTIF_INTERACT_DIVISOR 10
 #define HTIF_CONSOLE_BUF_SIZE 1024
 
+//??D Maybe the console behavior should change if STDIN is not a TTY?
+
 struct htif_state {
     struct termios oldtty;
     int old_fd0_flags;
@@ -29,6 +31,7 @@ static void htif_console_poll(htif_state *htif) {
     //    the console is always disabled during verifiable execution
 
     // Check for input from console, if requested by HTIF
+    // Obviously, somethind different must be done in blockchain
     if (!htif->fromhost_pending) {
         // If we don't have any characters left in buffer, try to obtain more
         if (htif->buf_pos >= htif->buf_len) {
@@ -36,13 +39,13 @@ static void htif_console_poll(htif_state *htif) {
             int fd_max;
             struct timeval tv;
             FD_ZERO(&rfds);
-            FD_SET(0, &rfds);
+            FD_SET(STDIN_FILENO, &rfds);
             fd_max = 0;
             tv.tv_sec = 0;
             tv.tv_usec = 0;
             if (select(fd_max+1, &rfds, nullptr, nullptr, &tv) > 0 && FD_ISSET(0, &rfds)) {
                 htif->buf_pos = 0;
-                htif->buf_len = read(0, htif->buf, HTIF_CONSOLE_BUF_SIZE);
+                htif->buf_len = read(STDIN_FILENO, htif->buf, HTIF_CONSOLE_BUF_SIZE);
                 // If stdin is closed, pass EOF to client
                 if (htif->buf_len <= 0) {
                     htif->buf_len = 1;
@@ -52,7 +55,7 @@ static void htif_console_poll(htif_state *htif) {
         }
         // If we have data to return
         if (htif->buf_pos < htif->buf_len) {
-            processor_write_fromhost(htif->machine, ((uint64_t)1 << 56) | ((uint64_t)0 << 48) | htif->buf[htif->buf_pos++]);
+            machine_write_fromhost(htif->machine, ((uint64_t)1 << 56) | ((uint64_t)0 << 48) | htif->buf[htif->buf_pos++]);
             htif->fromhost_pending = true;
         }
     }
@@ -106,7 +109,8 @@ static bool htif_putchar(i_device_state_access *a, htif_state *htif, uint64_t pa
     (void) htif;
     a->write_tohost(0); // Acknowledge command
     uint8_t ch = payload & 0xff;
-    if (write(1, &ch, 1) < 1) { ; } // Obviously, this is not done in blockchain
+    // Obviously, somethind different must be done in blockchain
+    if (write(STDOUT_FILENO, &ch, 1) < 1) { ; }
     a->write_fromhost(((uint64_t)1 << 56) | ((uint64_t)1 << 48));
     return true;
 }
@@ -177,27 +181,50 @@ static void set_nonblocking(int fd) {
 }
 
 static void htif_console_init(htif_state *htif) {
-    struct termios tty;
-    memset(&tty, 0, sizeof(tty));
-    tcgetattr (0, &tty);
-    htif->oldtty = tty;
-    htif->old_fd0_flags = fcntl(0, F_GETFL);
-    tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
-    tty.c_oflag |= OPOST;
-    tty.c_lflag &= ~(ECHO|ECHONL|ICANON|IEXTEN);
-    tty.c_lflag &= ~ISIG;
-    tty.c_cflag &= ~(CSIZE|PARENB);
-    tty.c_cflag |= CS8;
-    tty.c_cc[VMIN] = 1;
-    tty.c_cc[VTIME] = 0;
-    tcsetattr (0, TCSANOW, &tty);
-    set_nonblocking(0);
+    if (isatty(STDIN_FILENO)) {
+        struct termios tty;
+        memset(&tty, 0, sizeof(tty));
+        tcgetattr (STDIN_FILENO, &tty);
+        htif->oldtty = tty;
+        htif->old_fd0_flags = fcntl(STDIN_FILENO, F_GETFL);
+        // Set terminal to "raw" mode
+        tty.c_lflag &= ~(
+            ECHO   | // Echo off
+            ICANON | // Canonical mode off
+            ECHONL | // Do not echo NL (redundant with ECHO and ICANON)
+            ISIG   | // Signal chars off
+            IEXTEN   // Extended input processing off
+        );
+        tty.c_iflag &= ~(
+            IGNBRK | // Generate \377 \0 \0 on BREAK
+            BRKINT | //
+            PARMRK | //
+            ICRNL  | // No CR-to-NL
+            ISTRIP | // Do not strip off 8th bit
+            INLCR  | // No NL-to-CR
+            IGNCR  | // Do not ignore CR
+            IXON     // Disable XON/XOFF flow control on output
+        );
+        tty.c_oflag |=
+            OPOST;   // Enable output processing
+        // Enable parity generation on output and checking for input
+        tty.c_cflag &= ~(CSIZE|PARENB);
+        tty.c_cflag |= CS8;
+        // Read returns with 1 char and no delay
+        tty.c_cc[VMIN] = 1;
+        tty.c_cc[VTIME] = 0;
+        tcsetattr (STDIN_FILENO, TCSANOW, &tty);
+        //??D Should we check to see if changes stuck?
+    }
+    set_nonblocking(STDIN_FILENO);
 }
 
 static void htif_console_end(htif_state *htif) {
-    tcsetattr (0, TCSANOW, &htif->oldtty);
-    fcntl(0, F_SETFL, htif->old_fd0_flags);
-    set_blocking(0);
+    if (isatty(STDIN_FILENO)) {
+        tcsetattr (STDIN_FILENO, TCSANOW, &htif->oldtty);
+        fcntl(STDIN_FILENO, F_SETFL, htif->old_fd0_flags);
+    }
+    set_blocking(STDIN_FILENO);
 }
 
 htif_state *htif_init(machine_state *machine, bool interactive) {

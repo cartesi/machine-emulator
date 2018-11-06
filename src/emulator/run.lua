@@ -118,7 +118,7 @@ for i, a in ipairs(arg) do
     end
 end
 
-local function get_file_size(filename)
+local function get_file_length(filename)
     local file = io.open(filename, "rb")
     if not file then return nil end
     local size = file:seek("end")    -- get file size
@@ -135,40 +135,30 @@ local function next_power_of_2(value)
 end
 
 local config_meta = {
-    __index = {
-        version = 1,
-        machine = "riscv64",
-        interactive = true,
-        cmdline = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw",
-        flash_base = 1 << 63,
-        flash_id = 0,
-    }
+    __index = { }
 }
 
 function config_meta.__index:append_drive(t)
-    if t.backing then
-        assert(self.flash_id < 8, "too many flash devices")
-        local size = assert(get_file_size(
-            assert(t.backing, "no backing file specified")),
-                "unable to compute backing file size")
-        local flash = {
-            address = self.flash_base,
-            size = size,
-            backing = t.backing,
-            shared = t.shared,
-            label = assert(t.label, "no label specified")
-        }
-        self["flash" .. self.flash_id] = flash
-        self.flash_id = self.flash_id+1
-        -- make sure flash drives are separated by a power of two and at least 1MB
-        self.flash_base = self.flash_base + math.max(next_power_of_2(size), 1024*1024)
-    end
+    local length = assert(get_file_length(
+        assert(t.backing, "no backing file specified")),
+            "unable to compute backing file length")
+    local flash = {
+        start = self._flash_base,
+        length = length,
+        backing = t.backing,
+        shared = t.shared,
+        label = assert(t.label, "no label specified")
+    }
+    self.flash[self._flash_id] = flash
+    self._flash_id = self._flash_id+1
+    -- make sure flash drives are separated by a power of two and at least 1MB
+    self._flash_base = self._flash_base + math.max(next_power_of_2(length), 1024*1024)
     return self
 end
 
 function config_meta.__index:append_cmdline(cmdline)
     if cmdline and cmdline ~= "" then
-        self.cmdline = self.cmdline .. " " .. cmdline
+        self.rom.bootargs = self.rom.bootargs .. " " .. cmdline
     end
     return self
 end
@@ -179,32 +169,40 @@ function config_meta.__index:set_interactive(interactive)
 end
 
 function config_meta.__index:set_memory_size(memory_size)
-    self.memory_size = memory_size
+    self.ram.length = memory_size << 20
     return self
 end
 
 function config_meta.__index:set_ram_image(ram_image)
-    self.ram_image = ram_image
+    self.ram.backing = ram_image
     return self
 end
 
 function config_meta.__index:set_rom_image(rom_image)
-    self.rom_image = rom_image
+    self.rom.backing = rom_image
     return self
 end
 
-local function new_config(t)
-    local config = setmetatable({}, config_meta)
-    return config:append_drive{
-        backing = t.root_backing,
-        shared = t.root_shared,
-        label = "root"
-    }
+local function new_config()
+    return setmetatable({
+        machine = emu.get_name(),
+        ram = {
+            length = 64 << 20
+        },
+        rom = {
+            bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw",
+        },
+        interactive = true,
+        flash = {},
+        _flash_base = 1 << 63,
+        _flash_id = 1,
+    }, config_meta)
 end
 
-local config = new_config{
-    root_backing = backing.root,
-    root_shared = shared.root
+local config = new_config():append_drive{
+    backing = backing.root,
+    shared = shared.root,
+    label = "root"
 }:set_ram_image(
     ram_image
 ):set_rom_image(
@@ -235,7 +233,7 @@ local function print_hash(machine)
     end)))
 end
 
-local machine = emu.create(config)
+local machine = emu.machine(config)
 
 if initial_hash then
     print_hash(machine)

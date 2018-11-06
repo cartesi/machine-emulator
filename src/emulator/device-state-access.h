@@ -35,7 +35,7 @@ private:
         m_a.reset_iflags_I();
         // Tell inner loop mip/mie have been modified, so it
         // may break out if need be
-        processor_set_brk_from_mip_mie(m_a.naked());
+        machine_set_brk_from_mip_mie(m_a.naked());
     }
 
     void do_reset_mip(uint32_t mask) override {
@@ -44,7 +44,7 @@ private:
         m_a.write_mip(mip);
         // Tell inner loop mip/mie have been modified, so it
         // may break out if need be
-        processor_set_brk_from_mip_mie(m_a.naked());
+        machine_set_brk_from_mip_mie(m_a.naked());
     }
 
     uint32_t do_read_mip(void) override {
@@ -59,7 +59,7 @@ private:
         m_a.set_iflags_H();
         // Tell inner loop H has been modified, so it
         // may break out if need be
-        processor_set_brk_from_iflags_H(m_a.naked());
+        machine_set_brk_from_iflags_H(m_a.naked());
     }
 
     uint64_t do_read_mtimecmp(void) override {

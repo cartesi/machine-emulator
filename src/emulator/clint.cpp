@@ -3,6 +3,7 @@
 #include "machine.h"
 #include "machine-state.h"
 #include "rtc.h"
+#include "riscv-constants.h"
 
 #define CLINT_MSIP0    0
 #define CLINT_MTIMECMP 0x4000

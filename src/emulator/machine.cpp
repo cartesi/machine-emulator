@@ -72,9 +72,6 @@ typedef __int128 int128_t;
 typedef unsigned __int128 uint128_t;
 #pragma GCC diagnostic pop
 
-#define XLEN 64
-#define MXL   2
-
 #include "machine.h"
 #include "machine-state.h"
 #include "state-access.h"
@@ -83,35 +80,12 @@ typedef unsigned __int128 uint128_t;
 #include "meta.h"
 #include "riscv-constants.h"
 
-/// \brief Initializes the board PMA entries
-/// \param s Pointer to machine state.
-static void board_init(machine_state *s) {
-    memset(s->physical_memory, 0, sizeof(s->physical_memory));
-    s->pma_count = 0;
-}
-
-/// \brief Destroys the board PMA entries
-/// \param s Pointer to machine state.
-static void board_end(machine_state *s) {
-    for (int i = 0; i < s->pma_count; i++) {
-        pma_entry *pma = &s->physical_memory[i];
-        if (pma_is_memory(pma)) {
-            if (pma->memory.backing_file >= 0) {
-                munmap(pma->memory.host_memory, pma->length);
-                close(pma->memory.backing_file);
-            } else {
-                free(pma->memory.host_memory);
-            }
-        }
-    }
-}
-
 /// \brief Obtain PMA entry overlapping with target physical address
 /// \param s Pointer to machine state.
 /// \param paddr Target physical address.
 /// \returns Corresponding entry, or nullptr if no PMA
 /// matches \p paddr.
-static pma_entry *board_get_pma_entry(machine_state *s, uint64_t paddr) {
+static pma_entry *get_pma_entry(machine_state *s, uint64_t paddr) {
     for (int i = 0; i < s->pma_count; i++) {
         pma_entry *pma = &s->physical_memory[i];
         if (paddr >= pma->start && paddr < pma->start + pma->length)
@@ -125,7 +99,7 @@ static pma_entry *board_get_pma_entry(machine_state *s, uint64_t paddr) {
 /// \param start Start of range in target physical memory.
 /// \param length Length of range in target physical memory.
 /// \returns Corresponding entry, or nullptr if no room for new PMA.
-static pma_entry *board_allocate_pma_entry(machine_state *s, uint64_t start, uint64_t length) {
+static pma_entry *allocate_pma_entry(machine_state *s, uint64_t start, uint64_t length) {
     assert(s->pma_count < PMA_SIZE); // check for too many entries
     if (s->pma_count >= PMA_SIZE)
         return nullptr;
@@ -133,8 +107,8 @@ static pma_entry *board_allocate_pma_entry(machine_state *s, uint64_t start, uin
     if ((start & (PMA_PAGE_SIZE - 1)) != 0 || length == 0)
         return nullptr;
     //??D Should test for *any* overlapping, not just the start
-    assert(!board_get_pma_entry(s, start)); // check for overlapping entries
-    if (board_get_pma_entry(s, start))
+    assert(!get_pma_entry(s, start)); // check for overlapping entries
+    if (get_pma_entry(s, start))
         return nullptr;
     return &s->physical_memory[s->pma_count++];
 }
@@ -144,8 +118,8 @@ static pma_entry *board_allocate_pma_entry(machine_state *s, uint64_t start, uin
 /// \param start Start of range in target physical memory.
 /// \param length Length of range in target physical memory.
 /// \returns Corresponding entry, or nullptr if no room for new PMA.
-static pma_entry *board_allocate_pma_memory_entry(machine_state *s, uint64_t start, uint64_t length) {
-    pma_entry *pma = board_allocate_pma_entry(s, start, length);
+static pma_entry *allocate_pma_memory_entry(machine_state *s, uint64_t start, uint64_t length) {
+    pma_entry *pma = allocate_pma_entry(s, start, length);
     if (!pma) return nullptr;
     pma->start = start;
     pma->length = length;
@@ -164,8 +138,8 @@ static pma_entry *board_allocate_pma_memory_entry(machine_state *s, uint64_t sta
 /// \param peek Callback for peek operations.
 /// \param update_merkle_tree Callback for Merkle tree update operations.
 /// \returns Corresponding entry, or nullptr if no room for new PMA or invalid driver.
-static pma_entry *board_allocate_pma_device_entry(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver) {
-    pma_entry *pma = board_allocate_pma_entry(s, start, length);
+static pma_entry *allocate_pma_device_entry(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver) {
+    pma_entry *pma = allocate_pma_entry(s, start, length);
     if (!pma || !driver) return nullptr;
     if (!driver->read || !driver->write || !driver->peek) return nullptr;
     pma->start = start;
@@ -175,7 +149,7 @@ static pma_entry *board_allocate_pma_device_entry(machine_state *s, uint64_t sta
     return pma;
 }
 
-uint8_t *board_get_host_memory(machine_state *s, uint64_t paddr) {
+uint8_t *machine_get_host_memory(machine_state *s, uint64_t paddr) {
     for (int i = 0; i < s->pma_count; i++) {
         pma_entry *pma = &s->physical_memory[i];
         if (paddr >= pma->start && paddr < pma->start + pma->length && pma_is_memory(pma)) {
@@ -185,11 +159,11 @@ uint8_t *board_get_host_memory(machine_state *s, uint64_t paddr) {
     return nullptr;
 }
 
-bool board_register_flash(machine_state *s, uint64_t start, uint64_t length, const char *path, bool shared) {
+bool machine_register_flash(machine_state *s, uint64_t start, uint64_t length, const char *path, bool shared) {
     int oflag = shared? O_RDWR: O_RDONLY;
     int mflag = shared? MAP_SHARED: MAP_PRIVATE;
 
-    pma_entry *pma = board_allocate_pma_memory_entry(s, start, length);
+    pma_entry *pma = allocate_pma_memory_entry(s, start, length);
     if (!pma) return false;
 
     // Try to open backing file
@@ -226,8 +200,8 @@ bool board_register_flash(machine_state *s, uint64_t start, uint64_t length, con
     return true;
 }
 
-bool board_register_ram(machine_state *s, uint64_t start, uint64_t length) {
-    pma_entry *pma = board_allocate_pma_memory_entry(s, start, length);
+bool machine_register_ram(machine_state *s, uint64_t start, uint64_t length) {
+    pma_entry *pma = allocate_pma_memory_entry(s, start, length);
     if (!pma) return false;
 
     pma->memory.host_memory = reinterpret_cast<uint8_t *>(calloc(1, length));
@@ -241,15 +215,15 @@ bool board_register_ram(machine_state *s, uint64_t start, uint64_t length) {
     return true;
 }
 
-bool board_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver) {
-    pma_entry *pma = board_allocate_pma_device_entry(s, start, length, context, driver);
+bool machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver) {
+    pma_entry *pma = allocate_pma_device_entry(s, start, length, context, driver);
     if (!pma) return false;
     pma->type_flags = PMA_TYPE_FLAGS_MMIO;
     return true;
 }
 
-bool board_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver) {
-    pma_entry *pma = board_allocate_pma_device_entry(s, start, length, context, driver);
+bool machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver) {
+    pma_entry *pma = allocate_pma_device_entry(s, start, length, context, driver);
     if (!pma) return false;
     pma->type_flags = PMA_TYPE_FLAGS_SHADOW;
     return true;
@@ -275,7 +249,7 @@ void dump_regs(machine_state *s) {
     fprintf(stderr, " ");
     for(i = 1; i < 32; i++) {
         fprintf(stderr, "%-3s= ", reg_name[i]);
-        print_uint64_t(s->reg[i]);
+        print_uint64_t(s->x[i]);
         if ((i & (cols - 1)) == (cols - 1))
             fprintf(stderr, "\n");
         else
@@ -672,41 +646,13 @@ static void raise_interrupt_if_any(STATE_ACCESS &a) {
     }
 }
 
-/// \brief Initializes the processor state.
-/// \param s Pointer to machine state.
-/// \param mvendorid Constant CRS value.
-/// \param marchid Constant CRS value.
-/// \param mimpid Constant CRS value.
-static void processor_init(machine_state *s, uint64_t mvendorid,
-    uint64_t marchid, uint64_t mimpid) {
-    s->iflags_I = false;
-    s->iflags_H = false;
-    s->iflags_PRV = PRV_M;
-    s->pc = 0x1000;
-    s->ilrsc = -1;
-    s->mstatus = ((uint64_t)MXL << MSTATUS_UXL_SHIFT) |
-        ((uint64_t)MXL << MSTATUS_SXL_SHIFT);
-    s->misa = MXL; s->misa <<= (XLEN-2); /* set xlen to 64 */
-    s->misa |= MISAEXT_S | MISAEXT_U | MISAEXT_I | MISAEXT_M | MISAEXT_A;
-    s->mvendorid = mvendorid;
-    s->marchid = marchid;
-    s->mimpid = mimpid;
-
-    tlb_init(s);
-    s->brk = false;
-}
-
-/// \brief Deinitializes the processor state.
-/// \param s Pointer to machine state.
-static void processor_end(machine_state *s) {
-    (void) s;
-}
-
-machine_state *machine_init(uint64_t mvendorid, uint64_t marchid, uint64_t mimpid) {
+machine_state *machine_init(void) {
     machine_state *s = reinterpret_cast<machine_state *>(calloc(1, sizeof(*s)));
     if (s) {
-        board_init(s);
-        processor_init(s, mvendorid, marchid, mimpid);
+        tlb_init(s);
+        s->brk = false;
+        memset(s->physical_memory, 0, sizeof(s->physical_memory));
+        s->pma_count = 0;
     }
     return s;
 }
@@ -721,93 +667,311 @@ void machine_end(machine_state *s) {
     fprintf(stderr, "me: %" PRIu64 "\n", s->count_me);
     fprintf(stderr, "amo: %" PRIu64 "\n", s->count_amo);
 #endif
-    processor_end(s);
-    board_end(s);
+    for (int i = 0; i < s->pma_count; i++) {
+        pma_entry *pma = &s->physical_memory[i];
+        if (pma_is_memory(pma)) {
+            if (pma->memory.backing_file >= 0) {
+                munmap(pma->memory.host_memory, pma->length);
+                close(pma->memory.backing_file);
+            } else {
+                free(pma->memory.host_memory);
+            }
+        }
+    }
     free(s);
 }
 
-uint64_t processor_read_mcycle(const machine_state *s) {
+uint64_t machine_read_register(const machine_state *s, int i) {
+    return s->x[i];
+}
+
+void machine_write_register(machine_state *s, int i, uint64_t val) {
+    if (i > 0) s->x[i] = val;
+}
+
+uint64_t machine_read_pc(const machine_state *s) {
+    return s->pc;
+}
+
+void machine_write_pc(machine_state *s, uint64_t val) {
+    s->pc = val;
+}
+
+uint64_t machine_read_mvendorid(const machine_state *s) {
+    return s->mvendorid;
+}
+
+void machine_write_mvendorid(machine_state *s, uint64_t val) {
+    s->mvendorid = val;
+}
+
+uint64_t machine_read_marchid(const machine_state *s) {
+    return s->marchid;
+}
+
+void machine_write_marchid(machine_state *s, uint64_t val) {
+    s->marchid = val;
+}
+
+uint64_t machine_read_mimpid(const machine_state *s) {
+    return s->mimpid;
+}
+
+void machine_write_mimpid(machine_state *s, uint64_t val) {
+    s->mimpid = val;
+}
+
+uint64_t machine_read_mcycle(const machine_state *s) {
     return s->mcycle;
 }
 
-void processor_write_mcycle(machine_state *s, uint64_t cycles) {
-    s->mcycle = cycles;
+void machine_write_mcycle(machine_state *s, uint64_t val) {
+    s->mcycle = val;
 }
 
-void processor_set_mip(machine_state *s, uint32_t mask) {
-    s->mip |= mask;
-    s->iflags_I = false;
-    processor_set_brk_from_mip_mie(s);
+uint64_t machine_read_minstret(const machine_state *s) {
+    return s->minstret;
 }
 
-void processor_reset_mip(machine_state *s, uint32_t mask) {
-    s->mip &= ~mask;
-    processor_set_brk_from_mip_mie(s);
+void machine_write_minstret(machine_state *s, uint64_t val) {
+    s->minstret = val;
 }
 
-uint32_t processor_read_mip(const machine_state *s) {
+uint64_t machine_read_mstatus(const machine_state *s) {
+    return s->mstatus;
+}
+
+void machine_write_mstatus(machine_state *s, uint64_t val) {
+    s->mstatus = val;
+}
+
+uint64_t machine_read_mtvec(const machine_state *s) {
+    return s->mtvec;
+}
+
+void machine_write_mtvec(machine_state *s, uint64_t val) {
+    s->mtvec = val;
+}
+
+uint64_t machine_read_mscratch(const machine_state *s) {
+    return s->mscratch;
+}
+
+void machine_write_mscratch(machine_state *s, uint64_t val) {
+    s->mscratch = val;
+}
+
+uint64_t machine_read_mepc(const machine_state *s) {
+    return s->mepc;
+}
+
+void machine_write_mepc(machine_state *s, uint64_t val) {
+    s->mepc = val;
+}
+
+uint64_t machine_read_mcause(const machine_state *s) {
+    return s->mcause;
+}
+
+void machine_write_mcause(machine_state *s, uint64_t val) {
+    s->mcause = val;
+}
+
+uint64_t machine_read_mtval(const machine_state *s) {
+    return s->mtval;
+}
+
+void machine_write_mtval(machine_state *s, uint64_t val) {
+    s->mtval = val;
+}
+
+uint64_t machine_read_misa(const machine_state *s) {
+    return s->misa;
+}
+
+void machine_write_misa(machine_state *s, uint64_t val) {
+    s->misa = val;
+}
+
+uint32_t machine_read_mip(const machine_state *s) {
     return s->mip;
 }
 
-bool processor_read_iflags_I(const machine_state *s) {
-    return s->iflags_I;
+void machine_write_mip(machine_state *s, uint32_t mip) {
+    s->mip = mip;
+    machine_set_brk_from_mip_mie(s);
 }
 
-void processor_reset_iflags_I(machine_state *s) {
-    s->iflags_I = false;
+uint32_t machine_read_mie(const machine_state *s) {
+    return s->mie;
 }
 
-bool processor_read_iflags_H(const machine_state *s) {
-    return s->iflags_H;
+void machine_write_mie(machine_state *s, uint32_t val) {
+    s->mie = val;
+    machine_set_brk_from_mip_mie(s);
 }
 
-void processor_set_iflags_H(machine_state *s) {
-    s->iflags_H = true;
-    processor_set_brk_from_iflags_H(s);
+uint64_t machine_read_medeleg(const machine_state *s) {
+    return s->medeleg;
 }
 
-int processor_get_max_xlen(const machine_state *) {
-    return XLEN;
+void machine_write_medeleg(machine_state *s, uint64_t val) {
+    s->medeleg = val;
 }
 
-uint64_t processor_read_iflags(const machine_state *s) {
+uint64_t machine_read_mideleg(const machine_state *s) {
+    return s->mideleg;
+}
+
+void machine_write_mideleg(machine_state *s, uint64_t val) {
+    s->mideleg = val;
+}
+
+uint64_t machine_read_mcounteren(const machine_state *s) {
+    return s->mcounteren;
+}
+
+void machine_write_mcounteren(machine_state *s, uint64_t val) {
+    s->mcounteren = val;
+}
+
+uint64_t machine_read_stvec(const machine_state *s) {
+    return s->stvec;
+}
+
+void machine_write_stvec(machine_state *s, uint64_t val) {
+    s->stvec = val;
+}
+
+uint64_t machine_read_sscratch(const machine_state *s) {
+    return s->sscratch;
+}
+
+void machine_write_sscratch(machine_state *s, uint64_t val) {
+    s->sscratch = val;
+}
+
+uint64_t machine_read_sepc(const machine_state *s) {
+    return s->sepc;
+}
+
+void machine_write_sepc(machine_state *s, uint64_t val) {
+    s->sepc = val;
+}
+
+uint64_t machine_read_scause(const machine_state *s) {
+    return s->scause;
+}
+
+void machine_write_scause(machine_state *s, uint64_t val) {
+    s->scause = val;
+}
+
+uint64_t machine_read_stval(const machine_state *s) {
+    return s->stval;
+}
+
+void machine_write_stval(machine_state *s, uint64_t val) {
+    s->stval = val;
+}
+
+uint64_t machine_read_satp(const machine_state *s) {
+    return s->satp;
+}
+
+void machine_write_satp(machine_state *s, uint64_t val) {
+    s->satp = val;
+}
+
+uint64_t machine_read_scounteren(const machine_state *s) {
+    return s->scounteren;
+}
+
+void machine_write_scounteren(machine_state *s, uint64_t val) {
+    s->scounteren = val;
+}
+
+uint64_t machine_read_ilrsc(const machine_state *s) {
+    return s->ilrsc;
+}
+
+void machine_write_ilrsc(machine_state *s, uint64_t val) {
+    s->ilrsc = val;
+}
+
+uint64_t machine_read_iflags(const machine_state *s) {
     return (s->iflags_PRV << 2) | (s->iflags_I << 1) | s->iflags_H;
 }
 
-void processor_set_brk_from_mip_mie(machine_state *s) {
-    s->brk = s->mip & s->mie;
+void machine_write_iflags(machine_state *s, uint64_t val) {
+    s->iflags_H = val & 1;
+    s->iflags_I = (val >> 1) & 1;
+    s->iflags_PRV = (val >> 2) & 3;
+    machine_set_brk_from_iflags_H(s);
 }
 
-void processor_set_brk_from_iflags_H(machine_state *s) {
-    s->brk = true;
-}
-
-uint64_t processor_read_tohost(const machine_state *s) {
+uint64_t machine_read_tohost(const machine_state *s) {
     return s->tohost;
 }
 
-void processor_write_tohost(machine_state *s, uint64_t val) {
+void machine_write_tohost(machine_state *s, uint64_t val) {
     s->tohost = val;
 }
 
-uint64_t processor_read_fromhost(const machine_state *s) {
+uint64_t machine_read_fromhost(const machine_state *s) {
     return s->fromhost;
 }
 
-void processor_write_fromhost(machine_state *s, uint64_t val) {
+void machine_write_fromhost(machine_state *s, uint64_t val) {
     s->fromhost = val;
 }
 
-uint64_t processor_read_mtimecmp(const machine_state *s) {
+uint64_t machine_read_mtimecmp(const machine_state *s) {
     return s->mtimecmp;
 }
 
-void processor_write_mtimecmp(machine_state *s, uint64_t val) {
+void machine_write_mtimecmp(machine_state *s, uint64_t val) {
     s->mtimecmp = val;
 }
 
-uint64_t processor_read_misa(const machine_state *s) {
-    return s->misa;
+void machine_set_mip(machine_state *s, uint32_t mask) {
+    s->mip |= mask;
+    s->iflags_I = false;
+    machine_set_brk_from_mip_mie(s);
+}
+
+void machine_reset_mip(machine_state *s, uint32_t mask) {
+    s->mip &= ~mask;
+    machine_set_brk_from_mip_mie(s);
+}
+
+bool machine_read_iflags_I(const machine_state *s) {
+    return s->iflags_I;
+}
+
+void machine_reset_iflags_I(machine_state *s) {
+    s->iflags_I = false;
+}
+
+bool machine_read_iflags_H(const machine_state *s) {
+    return s->iflags_H;
+}
+
+void machine_set_iflags_H(machine_state *s) {
+    s->iflags_H = true;
+    machine_set_brk_from_iflags_H(s);
+}
+
+int machine_get_max_xlen(const machine_state *) {
+    return XLEN;
+}
+
+void machine_set_brk_from_mip_mie(machine_state *s) {
+    s->brk = s->mip & s->mie;
+}
+
+void machine_set_brk_from_iflags_H(machine_state *s) {
+    s->brk = true;
 }
 
 static bool update_memory_merkle_tree(const machine_state *s, const pma_entry *pma, uint8_t *page_data, merkle_tree::hasher_type &h, merkle_tree *t) {
@@ -1736,7 +1900,7 @@ static bool write_csr_sie(STATE_ACCESS &a, uint64_t val) {
     uint64_t mask = a.read_mideleg();
     uint64_t mie = a.read_mie();
     a.write_mie((mie & ~mask) | (val & mask));
-    processor_set_brk_from_mip_mie(a.naked());
+    machine_set_brk_from_mip_mie(a.naked());
     return true;
 }
 
@@ -1782,7 +1946,7 @@ static bool write_csr_sip(STATE_ACCESS &a, uint64_t val) {
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
-    processor_set_brk_from_mip_mie(a.naked());
+    machine_set_brk_from_mip_mie(a.naked());
     return true;
 }
 
@@ -1840,7 +2004,7 @@ template <typename STATE_ACCESS>
 static bool write_csr_mie(STATE_ACCESS &a, uint64_t val) {
     const uint64_t mask = MIP_MSIP | MIP_MTIP | MIP_SSIP | MIP_STIP | MIP_SEIP;
     a.write_mie((a.read_mie() & ~mask) | (val & mask));
-    processor_set_brk_from_mip_mie(a.naked());
+    machine_set_brk_from_mip_mie(a.naked());
     return true;
 }
 
@@ -1906,7 +2070,7 @@ static bool write_csr_mip(STATE_ACCESS &a, uint64_t val) {
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
-    processor_set_brk_from_mip_mie(a.naked());
+    machine_set_brk_from_mip_mie(a.naked());
     return true;
 }
 
@@ -2752,7 +2916,7 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
         if (rs1 == 0) {
             tlb_flush_all(a.naked());
         } else {
-            tlb_flush_vaddr(a.naked(), a.naked()->reg[rs1]);
+            tlb_flush_vaddr(a.naked(), a.naked()->x[rs1]);
         }
         //??D The current code TLB may have been flushed
         // a.naked()->brk = true;

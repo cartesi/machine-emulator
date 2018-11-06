@@ -75,13 +75,13 @@ private:
 };
 
 int main(int argc, char** argv) {
-    std::string address = "localhost:";
-    if (argc < 1) {
-        std::cerr << "client <port>\n";
-        exit(1);
+    std::string address;
+    if (argc != 2) {
+        std::cerr << argv[0] << " <ip>:<port>\n";
+        std::cerr << argv[0] << " unix:<path>\n";
+        exit(0);
     }
-    address += argv[1];
-    MachineClient machine(address);
+    MachineClient machine(argv[1]);
     std::string line;
     while (std::getline(std::cin, line)) {
         if (line == "inc") {

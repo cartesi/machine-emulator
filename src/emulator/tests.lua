@@ -1,4 +1,4 @@
-local emu = require"emu"
+local cartesi = require"cartesi"
 
 local tests = {
   {"rv64mi-p-access.bin", 111},
@@ -187,15 +187,15 @@ local tests = {
 local function run(machine)
     local step = 500000
     local cycles_end = step
-    local cycles, success, payload
     while true do
-        cycles, not_halted, payload = machine:run(cycles_end)
-        if not_halted then
-            cycles_end = cycles_end + step
-        else
+        machine:run(cycles_end)
+        if machine:read_iflags_H() then
             break
         end
+        cycles_end = cycles_end + step
     end
+    local payload = (machine:read_tohost() & (~1 >> 16)) >> 1
+    local cycles = machine:read_mcycle()
     return cycles, payload
 end
 
@@ -205,8 +205,8 @@ for _, test in ipairs(tests) do
     local ram_image = test[1]
     local expected_cycles = test[2]
     io.write(ram_image, " ")
-    local machine = emu.machine{
-        machine = emu.get_name(),
+    local machine = cartesi.machine{
+        machine = cartesi.get_name(),
         ram = {
             length = 128 << 20,
             backing = "tests/" .. ram_image

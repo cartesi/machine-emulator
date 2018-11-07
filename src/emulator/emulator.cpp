@@ -459,33 +459,28 @@ failed:
     return nullptr;
 }
 
-uint64_t emulator_read_mcycle(emulator *emu) {
-    return machine_read_mcycle(emu->machine);
-}
-
-uint64_t emulator_read_tohost(emulator *emu) {
-    return machine_read_tohost(emu->machine);
-}
-
 std::string emulator_get_name(void) {
     std::ostringstream os;
     os << CARTESI_VENDORID << ':' << CARTESI_ARCHID << ':' << CARTESI_IMPID;
     return os.str();
 }
 
-int emulator_update_merkle_tree(emulator *emu) {
-    machine_update_merkle_tree(emu->machine, emu->tree);
-    return 1;
+bool emulator_update_merkle_tree(emulator *emu) {
+    return machine_update_merkle_tree(emu->machine, emu->tree);
 }
 
-int emulator_get_merkle_tree_root_hash(emulator *emu, uint8_t *data, size_t len) {
+bool emulator_get_merkle_tree_root_hash(emulator *emu, uint8_t *data, size_t len) {
     merkle_tree::digest_type hash;
     int ret = !emu->tree->is_error(emu->tree->get_merkle_tree_root_hash(hash));
     memcpy(data, hash.data(), std::min(len, hash.size()));
     return ret;
 }
 
-int emulator_run(emulator *emu, uint64_t mcycle_end) {
+machine_state *emulator_get_machine(emulator *emu) {
+    return emu->machine;
+}
+
+void emulator_run(emulator *emu, uint64_t mcycle_end) {
 
     // The emulator outer loop breaks only when the machine is halted
     // or when mcycle hits mcycle_end
@@ -495,7 +490,7 @@ int emulator_run(emulator *emu, uint64_t mcycle_end) {
 
         // If we are halted, do nothing
         if (machine_read_iflags_H(s)) {
-            return 1;
+            return;
         }
 
         // Run the emulator inner loop until we reach the next multiple of RISCV_RTC_FREQ_DIV
@@ -508,7 +503,7 @@ int emulator_run(emulator *emu, uint64_t mcycle_end) {
         // If we hit mcycle_end, we are done
         mcycle = machine_read_mcycle(s);
         if (mcycle >= mcycle_end) {
-            return 0;
+            return;
         }
 
         // If we managed to run until the next possible frequency divisor

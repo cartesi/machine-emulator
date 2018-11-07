@@ -16,7 +16,7 @@ GCFLAGS= -fno-inline-small-functions -fno-inline -fdata-sections -ffunction-sect
 GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
 endif
 
-EMU_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB)
+LUACARTESI_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB)
 
 # Common setup
 # cryptopp
@@ -77,30 +77,30 @@ endif
 
 CXXFLAGS=-Ofast -std=c++14 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
-ALL=emu.so grpc
+ALL=cartesi.so grpc
 
 .PHONY: all generate use clean test grpc
 
 all: $(ALL)
 
-EMU_OBJS:= \
+LUACARTESI_OBJS:= \
 	clint.o \
 	htif.o \
 	shadow.o \
 	emulator.o \
 	pma.o \
 	machine.o \
-	luaemu.o
+	luacartesi.o
 
 ifeq ($(gperf),yes)
 DEFS+=-DGPERF
 LIBS+=-lprofiler
 endif
 
-emu.so: $(EMU_OBJS)
-	$(CXX) $(SOLDFLAGS) -o $@ $^ $(EMU_LIBS)
+cartesi.so: $(LUACARTESI_OBJS)
+	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LUACARTESI_LIBS)
 
-test: emu.so
+test: cartesi.so
 	lua tests.lua
 
 fs.ext2: fs/*
@@ -112,7 +112,7 @@ hash: hash.o
 generate: CXXFLAGS += -fprofile-generate
 generate: SOLDFLAGS += -fprofile-generate
 
-generate: emu.so
+generate: cartesi.so
 	lua run.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
 
 print:
@@ -125,7 +125,7 @@ print:
 use: CXXFLAGS += -fprofile-use
 use: SOLDFLAGS += -fprofile-use
 
-use: emu.so
+use: cartesi.so
 
 grpc: server client
 
@@ -153,6 +153,6 @@ server client: CXXFLAGS := $(filter-out -fpic -fvisibility=hidden,$(CXXFLAGS) $(
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 clean:
-	rm -f *.o *.d $(ALL)
+	rm -f *.o *.d cartesi.so server client
 
 -include $(wildcard *.d)

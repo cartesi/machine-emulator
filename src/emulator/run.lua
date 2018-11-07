@@ -1,4 +1,4 @@
-local emu = require"emu"
+local cartesi = require"cartesi"
 
 -- Print help and exit
 local function help()
@@ -26,6 +26,7 @@ where options are:
   --batch                      run in batch mode
   --initial-hash               prints initial hash before running
   --final-hash                 prints final hash after running
+  --ignore-payload             do not report error on non-zero payload
 ]=])
     os.exit()
 end
@@ -39,6 +40,7 @@ local memory_size = 64
 local batch = false
 local initial_hash = false
 local final_hash = false
+local ignore_payload = false
 
 -- List of supported options
 -- Options are processed in order
@@ -64,6 +66,11 @@ local options = {
     { "^%-%-(%w+)-backing%=(.+)$", function(d, f)
         if not d or not f then return false end
         backing[d] = f
+        return true
+    end },
+    { "^%-%-ignore%-payload$", function(all)
+        if not all then return false end
+        ignore_payload = true
         return true
     end },
     { "^%-%-(%w+)%-shared$", function(d)
@@ -185,7 +192,7 @@ end
 
 local function new_config()
     return setmetatable({
-        machine = emu.get_name(),
+        machine = cartesi.get_name(),
         ram = {
             length = 64 << 20
         },
@@ -233,7 +240,7 @@ local function print_hash(machine)
     end)))
 end
 
-local machine = emu.machine(config)
+local machine = cartesi.machine(config)
 
 if initial_hash then
     print_hash(machine)
@@ -241,16 +248,15 @@ end
 
 local step = 500000
 local cycles_end = step
-local cycles = 0
-local not_halted, payload
 while true do
-    cycles, not_halted, payload = machine:run(cycles_end)
-    if not_halted then
-        cycles_end = cycles_end + step
-    else
+    machine:run(cycles_end)
+    if machine:read_iflags_H() then
         break
     end
+    cycles_end = cycles_end + step
 end
+local payload = (machine:read_tohost() & (~1 >> 16)) >> 1
+local cycles = machine:read_mcycle()
 io.stdout:write("cycles: ", cycles, "\n")
 io.stdout:write("payload: ", payload, "\n")
 
@@ -258,5 +264,6 @@ if final_hash then
     print_hash(machine)
 end
 
-machine:destroy()
-os.exit(payload)
+machine:destroy() -- redundant: garbage collector would take care of this
+
+os.exit(payload, true)

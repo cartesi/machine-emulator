@@ -4,6 +4,7 @@
 
 #include "emulator.h"
 #include "machine.h"
+#include "keccak-256-hasher.h"
 
 //??D I am not happy with the names "emulator" and "machine" for the modules
 
@@ -293,7 +294,7 @@ static void load_clint_config(lua_State *L, int tabidx, emulator_config *c) {
 /// \brief Creates a Lua machine object, potentially throwing errors.
 /// \param L Lua state.
 /// \details This function must be called from Lua. It expects to receive the machine configuration, a pointer to the emulator_config to be filled out from it, and the machine metatable in the Lua stack.
-static int unprotected_create(lua_State *L) {
+static int unprotected_mod_machine(lua_State *L) {
     int tabidx = 1;
     emulator_config *c = reinterpret_cast<emulator_config *>(lua_touserdata(L, 2));
     int meta = 3;
@@ -326,6 +327,60 @@ static int mod_get_name(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the cartesi.keccak() function implementation.
+/// \param L Lua state.
+static int mod_keccak(lua_State *L) {
+    switch (lua_gettop(L)) {
+        case 0:
+            luaL_argerror(L, 1, "too few arguments");
+            break;
+        case 1: {
+            uint64_t word = luaL_checkinteger(L, 1);
+            keccak_256_hasher h;
+            keccak_256_hasher::digest_type hash;
+            h.begin();
+            h.add_data(reinterpret_cast<uint8_t *>(&word), sizeof(word));
+            h.end(hash);
+            //??D there is a chance this will throw an error
+            // due to lack of memory and we will end up
+            // leaking any memory allocated by the h and hash variables
+            // This is so unlikely that I am letting it go
+            lua_pushlstring(L, reinterpret_cast<char *>(hash.data()),
+                hash.size());
+            break;
+        }
+        case 2: {
+            size_t len1 = 0;
+            const char *hash1 = luaL_checklstring(L, 1, &len1);
+            if (len1 != keccak_256_hasher::digest_size) {
+                luaL_argerror(L, 1, "invalid hash size");
+            }
+            size_t len2 = 0;
+            const char *hash2 = luaL_checklstring(L, 2, &len2);
+            if (len2 != keccak_256_hasher::digest_size) {
+                luaL_argerror(L, 2, "invalid hash size");
+            }
+            keccak_256_hasher h;
+            keccak_256_hasher::digest_type hash;
+            h.begin();
+            h.add_data(reinterpret_cast<const uint8_t *>(hash1), len1);
+            h.add_data(reinterpret_cast<const uint8_t *>(hash2), len2);
+            h.end(hash);
+            //??D there is a chance this will throw an error
+            // due to lack of memory and we will end up
+            // leaking any memory allocated by the h and hash variables
+            // This is so unlikely that I am letting it go
+            lua_pushlstring(L, reinterpret_cast<char *>(hash.data()),
+                hash.size());
+            break;
+        }
+        default:
+            luaL_argerror(L, 3, "too many arguments");
+            break;
+    }
+    return 1;
+}
+
 /// \brief This is the cartesi.machine() function implementation.
 /// \param L Lua state.
 static int mod_machine(lua_State *L) {
@@ -340,7 +395,7 @@ static int mod_machine(lua_State *L) {
 	// errors thrown by Lua. This allows us to free the memory
 	// in the emulator_config before rethrowing the error, preventing
 	// memory leaks.
-    lua_pushcfunction(L, unprotected_create);
+    lua_pushcfunction(L, unprotected_mod_machine);
     lua_pushvalue(L, 1);
     lua_pushlightuserdata(L, c);
     lua_pushvalue(L, lua_upvalueindex(1));
@@ -354,6 +409,7 @@ static int mod_machine(lua_State *L) {
 
 /// \brief Contents of the cartesi module table.
 static const luaL_Reg mod[] = {
+    {"keccak", mod_keccak},
     {"machine", mod_machine},
     {"get_name", mod_get_name},
     { NULL, NULL }
@@ -510,6 +566,8 @@ static const luaL_Reg gperf_meta[] = {
 };
 #endif
 
+/// \brief Entrypoint to the Cartesi Lua library.
+/// \param L Lua state.
 extern "C"
 __attribute__((visibility("default")))
 int luaopen_cartesi(lua_State *L) {

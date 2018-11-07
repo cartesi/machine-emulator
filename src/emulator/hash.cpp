@@ -75,10 +75,9 @@ int main(int argc, char *argv[]) {
 
 static void dump(const uint8_t *hash) {
     auto f = std::cerr.flags();
-    std::cerr << std::hex << std::setfill('0') << std::setw(2);
     for (unsigned i = 0; i < 32; ++i) {
         unsigned b = hash[i];
-        std::cerr << b;
+        std::cerr << std::hex << std::setfill('0') << std::setw(2) << b;
     }
     std::cerr << '\n';
     std::cerr.flags(f);

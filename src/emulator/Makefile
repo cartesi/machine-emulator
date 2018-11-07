@@ -17,6 +17,7 @@ GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
 endif
 
 LUACARTESI_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB)
+HASH_LIBS:=$(CRYPTOPP_LIB)
 
 # Common setup
 # cryptopp
@@ -94,7 +95,7 @@ LUACARTESI_OBJS:= \
 
 ifeq ($(gperf),yes)
 DEFS+=-DGPERF
-LIBS+=-lprofiler
+LUACARTESI_LIBS+=-lprofiler
 endif
 
 cartesi.so: $(LUACARTESI_OBJS)
@@ -107,7 +108,7 @@ fs.ext2: fs/*
 	genext2fs -i 512 -b 8192 -d fs fs.ext2
 
 hash: hash.o
-	$(CXX) $(CXXFLAGS) -o $@ $^ -L/usr/local/lib $(LIBS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ -L/usr/local/lib $(HASH_LIBS)
 
 generate: CXXFLAGS += -fprofile-generate
 generate: SOLDFLAGS += -fprofile-generate

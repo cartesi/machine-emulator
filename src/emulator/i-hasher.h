@@ -27,6 +27,8 @@ public:
 
     using digest_type = std::array<uint8_t, DIGEST_SIZE>;
 
+    constexpr static size_t digest_size = DIGEST_SIZE;
+
     void begin(void) {
         return derived().do_begin();
     }

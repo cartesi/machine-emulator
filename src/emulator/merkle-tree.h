@@ -261,17 +261,21 @@ private:
     /// \param node_data Pointer to start of contiguous node data.
     /// \param log2_size log<sub>2</sub> of size subintended by target \p node.
     /// \param proof Receives the proof.
-    /// \param hash Temporary storage for hashes.
-    void get_inside_page_word_value_proof(H &h, uint64_t address, int parent_diverged, int diverged,
-        const uint8_t *node_data, int log2_size,
-        word_value_proof &proof, digest_type &hash);
+    /// \param page_hash
+    /// \param page_hash Receives the hash for the page. (Also used to store
+    /// temporary hashes during computation.)
+    void get_inside_page_word_value_proof(H &h, uint64_t address,
+        int parent_diverged, int diverged, const uint8_t *node_data,
+        int log2_size, word_value_proof &proof, digest_type &page_hash) const;
 
     /// \brief Obtains the proof for target node at \p address and \p log2_size.
     /// \param address Address of target node.
     /// \param page_data Pointer to start of contiguous page data.
     /// \param proof Receives the proof.
+    /// \param page_hash Receives the hash for the page.
     void get_inside_page_word_value_proof(uint64_t address,
-        const uint8_t *page_data, word_value_proof &proof);
+        const uint8_t *page_data, word_value_proof &proof,
+        digest_type &page_hash) const;
 
     /// \brief Obtains hash of a \p parent node from the
     /// handles of its children nodes.
@@ -330,10 +334,10 @@ public:
     /// \brief Returns a word value and its proof.
     /// \param word_address Address of aligned word.
     /// \param page_data Pointer to start of contiguous page data where word
-    /// resides.
+    /// resides, or nullptr if page is pristine.
     /// \param proof Receives proof.
-    status_code get_word_value_proof(uint64_t word_address, uint64_t *page_data,
-        word_value_proof &proof);
+    status_code get_word_value_proof(uint64_t word_address, uint8_t *page_data,
+        word_value_proof &proof) const;
 
 };
 

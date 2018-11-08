@@ -42,7 +42,7 @@ bool machine_update_merkle_tree(machine_state *s, merkle_tree *t);
 /// \param address Address of *aligned* word.
 /// \param proof Receives the proof.
 /// \returns true if succeeded, false otherwise.
-bool machine_get_word_value_proof(machine_state *s, merkle_tree *t, uint64_t address, merkle_tree::word_value_proof &proof);
+bool machine_get_word_value_proof(const machine_state *s, merkle_tree *t, uint64_t address, merkle_tree::word_value_proof &proof);
 
 /// \brief Reads the value of a general-purpose register.
 /// \param s Machine state.
@@ -450,5 +450,10 @@ bool machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, vo
 /// \param driver Pointer to driver with callbacks.
 /// \returns true if successful, false otherwise.
 bool machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver);
+
+/// \brief Dump all memory ranges to files.
+/// \param s Machine state.
+/// \returns true if successful, false otherwise.
+bool machine_dump(const machine_state *s);
 
 #endif

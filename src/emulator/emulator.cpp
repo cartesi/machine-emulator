@@ -26,7 +26,7 @@ extern "C" {
 #define SHADOW_BASE_ADDR       0
 #define SHADOW_SIZE            Ki(4)
 #define ROM_BASE_ADDR          Ki(4)
-#define ROM_SIZE               Ki(64)
+#define ROM_SIZE               Ki(60)
 #define RAM_BASE_ADDR          Gi(2)
 #define CLINT_BASE_ADDR        Mi(32)
 #define CLINT_SIZE             Ki(768)

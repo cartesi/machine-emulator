@@ -27,11 +27,13 @@ where options are:
   --initial-hash               prints initial hash before running
   --final-hash                 prints final hash after running
   --ignore-payload             do not report error on non-zero payload
+  --dump                       dump non-pristine pages to disk
 ]=])
     os.exit()
 end
 
-local backing = { root = "rootfs.ext2"}
+local backing = { root = "rootfs.ext2" }
+local backing_order = { "root" }
 local shared = { }
 local ram_image = "kernel.bin"
 local rom_image
@@ -41,6 +43,7 @@ local batch = false
 local initial_hash = false
 local final_hash = false
 local ignore_payload = false
+local dump = false
 
 -- List of supported options
 -- Options are processed in order
@@ -63,14 +66,26 @@ local options = {
         batch = true
         return true
     end },
+    { "^%-%-root-backing%=(.+)$", function(f)
+        if not f then return false end
+        backing.root = f
+        return true
+    end },
     { "^%-%-(%w+)-backing%=(.+)$", function(d, f)
         if not d or not f then return false end
+        assert(not backing[d], "repeated backing")
         backing[d] = f
+        backing_order[#backing_order+1] = d
         return true
     end },
     { "^%-%-ignore%-payload$", function(all)
         if not all then return false end
         ignore_payload = true
+        return true
+    end },
+    { "^%-%-dump$", function(all)
+        if not all then return false end
+        dump = true
         return true
     end },
     { "^%-%-(%w+)%-shared$", function(d)
@@ -206,11 +221,8 @@ local function new_config()
     }, config_meta)
 end
 
-local config = new_config():append_drive{
-    backing = backing.root,
-    shared = shared.root,
-    label = "root"
-}:set_ram_image(
+local config = new_config(
+):set_ram_image(
     ram_image
 ):set_rom_image(
     rom_image
@@ -222,14 +234,12 @@ local config = new_config():append_drive{
     not batch
 )
 
-for label, file in pairs(backing) do
-    if label ~= "root" then
-        config = config:append_drive{
-            backing = file,
-            shared = shared[label],
-            label = label
-        }
-    end
+for i, label in ipairs(backing_order) do
+    config = config:append_drive{
+        backing = backing[label],
+        shared = shared[label],
+        label = label
+    }
 end
 
 local function print_hash(machine)
@@ -241,6 +251,10 @@ local function print_hash(machine)
 end
 
 local machine = cartesi.machine(config)
+
+if dump then
+    machine:dump()
+end
 
 if initial_hash then
     print_hash(machine)

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cassert>
 #include <type_traits>
+#include <iostream>
 
 #include <sys/mman.h> /* mmap, munmap */
 #include <sys/stat.h> /* fstat */
@@ -85,6 +86,15 @@ typedef unsigned __int128 uint128_t;
 /// \param paddr Target physical address.
 /// \returns Corresponding entry, or nullptr if no PMA
 /// matches \p paddr.
+static const pma_entry *get_pma_entry(const machine_state *s, uint64_t paddr) {
+    for (int i = 0; i < s->pma_count; i++) {
+        const pma_entry *pma = &s->physical_memory[i];
+        if (paddr >= pma->start && paddr < pma->start + pma->length)
+            return pma;
+    }
+    return nullptr;
+}
+
 static pma_entry *get_pma_entry(machine_state *s, uint64_t paddr) {
     for (int i = 0; i < s->pma_count; i++) {
         pma_entry *pma = &s->physical_memory[i];
@@ -975,21 +985,20 @@ void machine_set_brk_from_iflags_H(machine_state *s) {
 }
 
 static bool update_memory_merkle_tree(const machine_state *s, const pma_entry *pma, uint8_t *page_data, merkle_tree::hasher_type &h, merkle_tree *t) {
-    static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
     (void) s;
-    uint64_t page_index = 0;
+    uint64_t page_start_in_range = 0;
     // Complete initial pages
-    while (page_index + merkle_tree::get_page_size() <= pma->length) {
-        if (t->is_error(t->update_page(h, pma->start + page_index, pma->memory.host_memory + page_index))) {
+    while (page_start_in_range + PMA_PAGE_SIZE <= pma->length) {
+        if (t->is_error(t->update_page(h, pma->start + page_start_in_range, pma->memory.host_memory + page_start_in_range))) {
             return false;
         }
-        page_index += merkle_tree::get_page_size();
+        page_start_in_range += PMA_PAGE_SIZE;
     }
     // Potentially partial final page
-    if (page_index < pma->length) {
+    if (page_start_in_range < pma->length) {
         memset(page_data, 0, PMA_PAGE_SIZE);
-        memcpy(page_data, pma->memory.host_memory+page_index, pma->length-page_index);
-        if (t->is_error(t->update_page(h, pma->start+page_index, page_data))) {
+        memcpy(page_data, pma->memory.host_memory + page_start_in_range, pma->length-page_start_in_range);
+        if (t->is_error(t->update_page(h, pma->start+page_start_in_range, page_data))) {
             return false;
         }
     }
@@ -997,14 +1006,16 @@ static bool update_memory_merkle_tree(const machine_state *s, const pma_entry *p
 }
 
 static bool update_device_merkle_tree(const machine_state *s, const pma_entry *pma, uint8_t *page_data, merkle_tree::hasher_type &h, merkle_tree *t) {
-    static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
-    // Complete initial pages
-    for (uint64_t page_index = 0; page_index < pma->length; page_index += PMA_PAGE_SIZE) {
-        auto status = pma->device.driver->peek(s, pma->device.context, page_index, page_data);
+    // For all pages in range
+    for (uint64_t page_start_in_range = 0; page_start_in_range < pma->length; page_start_in_range += PMA_PAGE_SIZE) {
+        auto status = pma->device.driver->peek(s, pma->device.context, page_start_in_range, page_data);
+        // Device actually filled page with data
         if (status == device_peek_status::success) {
-            if (t->is_error(t->update_page(h, pma->start + page_index, page_data))) {
+            if (t->is_error(t->update_page(h, pma->start + page_start_in_range, page_data))) {
                 return false;
             }
+        // If the device told us page is always pristine, we
+        // can proceed, otherwise there was an error
         } else if (status != device_peek_status::pristine_page) {
             return false;
         }
@@ -1013,6 +1024,7 @@ static bool update_device_merkle_tree(const machine_state *s, const pma_entry *p
 }
 
 bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
+    static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
     merkle_tree::hasher_type h;
     uint8_t *page_data = reinterpret_cast<uint8_t *>(calloc(1, merkle_tree::get_page_size()));
     if (!page_data) return false;
@@ -1033,6 +1045,120 @@ bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
         }
     }
     t->end_update(h);
+    free(page_data);
+    return status;
+}
+
+static bool dump_memory(const pma_entry *pma, FILE *fp) {
+    return fwrite(pma->memory.host_memory, 1, pma->length, fp) == pma->length;
+}
+
+static std::ostream &operator<<(std::ostream &out, const merkle_tree::digest_type &hash) {
+    auto f = out.flags();
+    for (unsigned b: hash) {
+        out << std::hex << std::setfill('0') << std::setw(2) << b;
+    }
+    out.flags(f);
+    return out;
+}
+
+static bool dump_device(const machine_state *s, const pma_entry *pma, uint8_t *page_data, FILE *fp) {
+    merkle_tree::hasher_type h;
+    merkle_tree::digest_type hash;
+    h.begin();
+    // For all pages in range
+    for (uint64_t page_start_in_range = 0; page_start_in_range < pma->length; page_start_in_range += PMA_PAGE_SIZE) {
+        auto status = pma->device.driver->peek(s, pma->device.context, page_start_in_range, page_data);
+        // Device actually filled page with data
+        if (status == device_peek_status::success) {
+            if (fwrite(page_data, 1, PMA_PAGE_SIZE, fp) == PMA_PAGE_SIZE) {
+                return false;
+            }
+        } else if (status != device_peek_status::pristine_page) {
+            return false;
+        }
+    }
+    h.end(hash);
+    return true;
+}
+
+bool machine_dump(const machine_state *s) {
+    uint8_t *page_data = reinterpret_cast<uint8_t *>(calloc(1, merkle_tree::get_page_size()));
+    if (!page_data) return false;
+    bool status = true;
+    for (int i = 0; i < s->pma_count; i++) {
+        char filename[256];
+        const pma_entry *pma = &s->physical_memory[i];
+        sprintf(filename, "%016" PRIx64 "--%016" PRIx64 ".bin", pma->start, pma->length);
+        fprintf(stderr, "dumping '%s'\n", filename);
+        FILE *fp = fopen(filename, "wb");
+        if (!fp) {
+            status = false;
+            break;
+        }
+        if (pma_is_memory(pma)) {
+            if (!dump_memory(pma, fp)) {
+                status = false;
+                break;
+            }
+        } else {
+            if (!dump_device(s, pma, page_data, fp)) {
+                status = false;
+                break;
+            }
+        }
+        fclose(fp);
+    }
+    free(page_data);
+    return status;
+}
+
+static bool get_pristine_word_value_proof(const machine_state *s, uint64_t word_address, const merkle_tree *t, merkle_tree::word_value_proof &proof) {
+    (void) s;
+    return !t->is_error(t->get_word_value_proof(word_address, nullptr, proof));
+}
+
+static bool get_memory_word_value_proof(const machine_state *s, uint64_t word_address, const merkle_tree *t, const pma_entry *pma,
+    uint8_t *page_data, merkle_tree::word_value_proof &proof) {
+    (void) s;
+    uint64_t page_start_in_range = (word_address - pma->start) & (~(PMA_PAGE_SIZE - 1));
+    // Entire page inside host memory
+    if (page_start_in_range + PMA_PAGE_SIZE < pma->length) {
+        return !t->is_error(t->get_word_value_proof(word_address, pma->memory.host_memory + page_start_in_range, proof));
+    // Potentially partial final page
+    } else {
+        memset(page_data, 0, PMA_PAGE_SIZE);
+        memcpy(page_data, pma->memory.host_memory+page_start_in_range, pma->length-page_start_in_range);
+        return !t->is_error(t->get_word_value_proof(word_address, page_data, proof));
+    }
+}
+
+static bool get_device_word_value_proof(const machine_state *s, uint64_t word_address, const merkle_tree *t, const pma_entry *pma,
+    uint8_t *page_data, merkle_tree::word_value_proof &proof) {
+    uint64_t page_start_in_range = (word_address - pma->start) & (~(PMA_PAGE_SIZE - 1));
+    auto status = pma->device.driver->peek(s, pma->device.context, page_start_in_range, page_data);
+    if (status == device_peek_status::success) {
+        return !t->is_error(t->get_word_value_proof(word_address, page_data, proof));
+    } else if (status == device_peek_status::pristine_page) {
+        return get_pristine_word_value_proof(s, word_address, t, proof);
+    } else {
+        return false;
+    }
+}
+
+bool machine_get_word_value_proof(const machine_state *s, const merkle_tree *t, uint64_t word_address, merkle_tree::word_value_proof &proof) {
+    static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
+    uint8_t *page_data = reinterpret_cast<uint8_t *>(calloc(1, merkle_tree::get_page_size()));
+    if (!page_data) return false;
+    const pma_entry *pma = get_pma_entry(s, word_address);
+    bool status = true;
+    if (!pma) {
+        status = get_pristine_word_value_proof(s, word_address, t, proof);
+    } else if (pma_is_memory(pma)) {
+        status = get_memory_word_value_proof(s, word_address, t, pma, page_data, proof);
+    } else {
+        status = get_device_word_value_proof(s, word_address, t, pma, page_data, proof);
+    }
     free(page_data);
     return status;
 }

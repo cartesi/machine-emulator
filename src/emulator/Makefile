@@ -78,7 +78,7 @@ endif
 
 CXXFLAGS=-Ofast -std=c++14 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
-ALL=cartesi.so grpc
+ALL=cartesi.so
 
 .PHONY: all generate use clean test grpc
 

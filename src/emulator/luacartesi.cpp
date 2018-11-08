@@ -517,9 +517,19 @@ static int meta__index_read_iflags_H(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:dump() method implementation.
+/// \param L Lua state.
+static int meta__index_dump(lua_State *L) {
+    emulator *e = check_machine(L, 1);
+    auto m = emulator_get_machine(e);
+    lua_pushboolean(L, machine_dump(m));
+    return 1;
+}
+
 /// \brief Contents of the machine metatable __index table.
 static const luaL_Reg meta__index[] = {
     {"run", meta__index_run},
+    {"dump", meta__index_dump},
     {"read_mcycle", meta__index_read_mcycle},
     {"read_tohost", meta__index_read_tohost},
     {"read_iflags_H", meta__index_read_iflags_H},

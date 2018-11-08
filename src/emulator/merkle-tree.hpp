@@ -229,9 +229,9 @@ destroy_merkle_tree(void) {
 template <int T, int P, typename H>
 void
 merkle_tree_t<T,P,H>::
-get_inside_page_word_value_proof(H &h, uint64_t address, int parent_diverged, int diverged,
-    const uint8_t *node_data, int log2_size,
-    word_value_proof &proof, digest_type &hash) {
+get_inside_page_word_value_proof(H &h, uint64_t address, int parent_diverged,
+    int diverged, const uint8_t *node_data, int log2_size,
+    word_value_proof &proof, digest_type &hash) const {
     if (log2_size > get_log2_word_size()) {
         int log2_child_size = log2_size-1;
         uint64_t child_size = 1ull << log2_child_size;
@@ -247,7 +247,7 @@ get_inside_page_word_value_proof(H &h, uint64_t address, int parent_diverged, in
     } else {
         h.begin();
         h.add_data(node_data, get_word_size());
-        h.end(hash.data());
+        h.end(hash);
     }
     // We only store siblings of nodes along the path. So if
     // the parent belongs to the path, but the node doesn't,
@@ -261,11 +261,11 @@ template <int T, int P, typename H>
 void
 merkle_tree_t<T,P,H>::
 get_inside_page_word_value_proof(uint64_t address,
-    const uint8_t *page_data, word_value_proof &proof) {
-    digest_type hash;
+    const uint8_t *page_data, word_value_proof &proof,
+    digest_type &page_hash) const {
     H h;
     get_inside_page_word_value_proof(h, address, 0, 0,
-        page_data, get_log2_page_size(), proof, hash);
+        page_data, get_log2_page_size(), proof, page_hash);
 }
 
 template <int T, int P, typename H>
@@ -425,8 +425,7 @@ verify_merkle_tree(H &h, tree_node *node, int log2_size) const {
 template <int T, int P, typename H>
 typename merkle_tree_t<T,P,H>::status_code
 merkle_tree_t<T,P,H>::
-get_word_value_proof(uint64_t address, uint64_t *page_data,
-    word_value_proof &proof) {
+get_word_value_proof(uint64_t address, uint8_t *page_data, word_value_proof &proof) const {
     // Descend on the tree until we either hit a pristine subtree or a page
     tree_node *node = m_root;
     int child_log2_size = get_log2_tree_size()-1;
@@ -439,10 +438,18 @@ get_word_value_proof(uint64_t address, uint64_t *page_data,
         --child_log2_size;
     }
     int log2_size = child_log2_size+1;
-    // If we hit a page, compute hashes inside page
-    if (log2_size == get_log2_page_size()) {
+    // If we hit a non-pristine page, compute hashes inside page
+    // (page_data = nullptr means a pristine page)
+    if (log2_size == get_log2_page_size() && page_data) {
+        digest_type page_hash;
         // Get inside-page hashes by computing them directly from the page
-        get_inside_page_word_value_proof(address, page_data, proof);
+        get_inside_page_word_value_proof(address, page_data, proof, page_hash);
+        // Check that, indeed, the newly computed hash for the page matches
+        // the hash we have stored in the tree
+        if (page_hash != node->hash) {
+            // Caller probably forgot to update the Merkle tree
+            return status_code::error;
+        }
     // Otherwise, everything is pristine up to the current child_log2_size
     } else {
         // Copy pristine hashes

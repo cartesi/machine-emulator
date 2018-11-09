@@ -12,8 +12,8 @@
 /// \name Cartesi machine identification
 /// \{
 #define CARTESI_VENDORID UINT64_C(0x6361727465736920) ///< Value of mvendorid
-#define CARTESI_ARCHID 1 ///< Value of marchid
-#define CARTESI_IMPID 1 ///< Value of mimpid
+#define CARTESI_ARCHID UINT64_C(1) ///< Value of marchid
+#define CARTESI_IMPID UINT64_C(1) ///< Value of mimpid
 /// \}
 
 struct emulator;

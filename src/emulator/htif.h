@@ -6,6 +6,7 @@
 /// \file
 /// \brief Host-Target interface device.
 
+struct machine_state;
 struct htif_state;
 
 /// \brief Creates and returns a new HTIF device
@@ -18,11 +19,15 @@ htif_state *htif_init(machine_state *s, bool interactive);
 /// \param htif Pointer to HTIF state
 void htif_interact(htif_state *htif);
 
+/// \brief Registers an HTIF device with the machine
+/// \param htif Pointer to HTIF state
+/// \param start Start of memory range mapped to HTIF device
+/// \param length Length of memory range mapped to HTIF device
+/// \returns True if succeeded, false otherwise
+bool htif_register_mmio(htif_state *htif, uint64_t start, uint64_t length);
+
 /// \brief Destroys an HTIF device
 /// \param htif Pointer to HTIF state
 void htif_end(htif_state *htif);
-
-struct pma_device_driver;
-extern const pma_device_driver htif_driver;
 
 #endif

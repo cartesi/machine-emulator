@@ -1,29 +1,30 @@
-#ifndef I_DEVICE_STATE_ACCESS
-#define I_DEVICE_STATE_ACCESS
+#ifndef I_VIRTUAL_STATE_ACCESS
+#define i_VIRTUAL_STATE_ACCESS
 
 #include <cstdint>
 
 /// \file
-/// \brief Device state access interface
+/// \brief Virtual interface for state access
 
-/// \class i_device_state_access
-/// \brief Interface for machine state access by devices.
+/// \class
+/// \brief Virtual interface for state access
 /// \details \{
 /// Memory mapped devices must be able to modify the state.
 /// However, the prototype for the read/write callbacks
 /// cannot change depending on the different classes implementing the
 /// i_state_access interface (which is not virtual).
 ///
-/// Since device access to state is not time critical, the i_device_state_access
-/// interace uses virtual methods.
-/// A template class device_state_access implements this virtual interface on top
-/// of any class that implements the i_state_access.
+/// Since device access to state is not time critical, the
+/// i_virtual_state_access interace uses virtual methods.  A
+/// template class virtual_state_access implements this
+/// virtual interface on top of any class that implements the
+/// i_state_access.
 /// \}
-class i_device_state_access {
+class i_virtual_state_access {
 public:
 
     /// \brief Virtual destructor.
-    virtual ~i_device_state_access(void) {
+    virtual ~i_virtual_state_access(void) {
         ;
     }
 

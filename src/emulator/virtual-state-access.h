@@ -1,26 +1,26 @@
-#ifndef DEVICE_STATE_ACCESS
-#define DEVICE_STATE_ACCESS
+#ifndef VIRTUAL_STATE_ACCESS
+#define VIRTUAL_STATE_ACCESS
 
 /// \file
-/// \brief Device state access implementation
+/// \brief Virtual state access implementation
 
 #include <cstdint>
 
-#include "i-device-state-access.h"
+#include "i-virtual-state-access.h"
 #include "machine.h"
 
-/// \class device_state_access
-/// \details The device_state_access class implements a
+/// \class
+/// \details The virtual_state_access class implements a
 /// virtual interface to the state on top of the static
 /// interface provided by any class implementing the
 /// i_state_access interface.
 /// \tparam STATE_ACCESS Class implementing the
 /// i_state_access interface.
 template <typename STATE_ACCESS>
-class device_state_access: public i_device_state_access {
+class virtual_state_access: public i_virtual_state_access {
 public:
 
-    device_state_access(STATE_ACCESS &a): m_a(a) {
+    virtual_state_access(STATE_ACCESS &a): m_a(a) {
         static_assert(is_an_i_state_access<STATE_ACCESS>::value, "not an i_state_access");
     }
 

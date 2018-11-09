@@ -288,7 +288,7 @@ begin_update(H &h) {
 template <int T, int P, typename H>
 typename merkle_tree_t<T,P,H>::status_code
 merkle_tree_t<T,P,H>::
-update_page(H &h, uint64_t page_index, uint8_t *page_data) {
+update_page(H &h, uint64_t page_index, const uint8_t *page_data) {
     assert(get_page_index(page_index) == page_index);
     tree_node *node = get_page_node(page_index);
     // If there is no page node for this page index, allocate a fresh one
@@ -298,7 +298,8 @@ update_page(H &h, uint64_t page_index, uint8_t *page_data) {
             return status_code::error_out_of_memory;
         }
     }
-    update_page_node_hash(h, page_data, get_log2_page_size(), node->hash);
+    if (page_data) update_page_node_hash(h, page_data, get_log2_page_size(), node->hash);
+    else node->hash = get_pristine_hash(get_log2_page_size());
     if (node->parent && node->parent->mark != m_merkle_update_nonce) {
         m_merkle_update_fifo.push_back(
             std::make_pair(get_log2_page_size()+1, node->parent));
@@ -425,7 +426,7 @@ verify_merkle_tree(H &h, tree_node *node, int log2_size) const {
 template <int T, int P, typename H>
 typename merkle_tree_t<T,P,H>::status_code
 merkle_tree_t<T,P,H>::
-get_word_value_proof(uint64_t address, uint8_t *page_data, word_value_proof &proof) const {
+get_word_value_proof(uint64_t address, const uint8_t *page_data, word_value_proof &proof) const {
     // Descend on the tree until we either hit a pristine subtree or a page
     tree_node *node = m_root;
     int child_log2_size = get_log2_tree_size()-1;

@@ -8,7 +8,8 @@
 
 // Forward definitions
 struct machine_state;
-struct pma_device_driver;
+struct pma_driver;
+struct pma_entry;
 
 /// \brief Creates and initializes a new machine.
 /// \returns State of newly created machine.
@@ -39,10 +40,17 @@ bool machine_update_merkle_tree(machine_state *s, merkle_tree *t);
 /// in the machine state.
 /// \param s Machine state.
 /// \param t Merkle tree.
-/// \param address Address of *aligned* word.
+/// \param word_address Word address (aligned to 64-bit boundary).
 /// \param proof Receives the proof.
 /// \returns true if succeeded, false otherwise.
-bool machine_get_word_value_proof(const machine_state *s, merkle_tree *t, uint64_t address, merkle_tree::word_value_proof &proof);
+bool machine_get_word_value_proof(const machine_state *s, merkle_tree *t, uint64_t word_address, merkle_tree::word_value_proof &proof);
+
+/// \brief Read the value of a word in the machine state.
+/// \param s Machine state.
+/// \param word_address Word address (aligned to 64-bit boundary).
+/// \param word_value Pointer to word receiving value.
+/// \returns true if succeeded, false otherwise.
+bool machine_read_word(const machine_state *s, uint64_t word_address, uint64_t *word_value);
 
 /// \brief Reads the value of a general-purpose register.
 /// \param s Machine state.
@@ -438,7 +446,7 @@ bool machine_register_ram(machine_state *s, uint64_t start, uint64_t length);
 /// \param context Pointer to context to be passed to callbacks.
 /// \param driver Pointer to driver with callbacks.
 /// \returns true if successful, false otherwise.
-bool machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver);
+bool machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_driver *driver);
 
 /// \brief Register a new shadow device.
 /// \param s Machine state.
@@ -449,11 +457,17 @@ bool machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, vo
 /// \param context Pointer to context to be passed to callbacks.
 /// \param driver Pointer to driver with callbacks.
 /// \returns true if successful, false otherwise.
-bool machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver);
+bool machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_driver *driver);
 
 /// \brief Dump all memory ranges to files.
 /// \param s Machine state.
 /// \returns true if successful, false otherwise.
 bool machine_dump(const machine_state *s);
+
+/// \brief Get PMA entry by index.
+/// \param s Machine state.
+/// \param i PMA index.
+/// \returns Pointer to entry, or nullptr if out of bounds
+const pma_entry *machine_get_pma(const machine_state *s, int i);
 
 #endif

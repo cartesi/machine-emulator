@@ -426,8 +426,7 @@ emulator *emulator_init(const emulator_config *c) {
         }
     }
 
-    if (!machine_register_mmio(emu->machine, CLINT_BASE_ADDR,
-            CLINT_SIZE, nullptr, &clint_driver) && !init_clint_state(c, emu)) {
+    if (!clint_register_mmio(emu->machine, CLINT_BASE_ADDR, CLINT_SIZE) && !init_clint_state(c, emu)) {
         fprintf(stderr, "Unable to initialize CLINT device\n");
         goto failed;
     }
@@ -438,14 +437,12 @@ emulator *emulator_init(const emulator_config *c) {
         goto failed;
     }
 
-    if (!machine_register_mmio(emu->machine, HTIF_BASE_ADDR, HTIF_SIZE,
-            emu->htif, &htif_driver) && !init_htif_state(c, emu)) {
+    if (!htif_register_mmio(emu->htif, HTIF_BASE_ADDR, HTIF_SIZE) && !init_htif_state(c, emu)) {
         fprintf(stderr, "Unable to initialize HTIF device\n");
         goto failed;
     }
 
-    if (!machine_register_mmio(emu->machine, SHADOW_BASE_ADDR, SHADOW_SIZE,
-            emu->machine, &shadow_driver)) {
+    if (!shadow_register_mmio(emu->machine, SHADOW_BASE_ADDR, SHADOW_SIZE)) {
         fprintf(stderr, "Unable to initialize shadow device\n");
         goto failed;
     }

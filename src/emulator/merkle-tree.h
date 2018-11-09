@@ -321,10 +321,10 @@ public:
     /// \brief Update tree with new data for a page node.
     /// \param h Hasher object.
     /// \param page_address Address of start of page.
-    /// \param page_data Pointer to start of contiguous page data.
+    /// \param page_data Pointer to start of contiguous page data, or nullptr if page is pristine.
     /// \returns status_code::success if update completed,
     /// status_code::out_of_memory if it failed.
-    status_code update_page(H &h, uint64_t page_address, uint8_t *page_data);
+    status_code update_page(H &h, uint64_t page_address, const uint8_t *page_data);
 
     /// \brief End tree update.
     /// \param h Hasher object.
@@ -336,7 +336,7 @@ public:
     /// \param page_data Pointer to start of contiguous page data where word
     /// resides, or nullptr if page is pristine.
     /// \param proof Receives proof.
-    status_code get_word_value_proof(uint64_t word_address, uint8_t *page_data,
+    status_code get_word_value_proof(uint64_t word_address, const uint8_t *page_data,
         word_value_proof &proof) const;
 
 };

@@ -526,10 +526,25 @@ static int meta__index_dump(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:read_word() method implementation.
+/// \param L Lua state.
+static int meta__index_read_word(lua_State *L) {
+    emulator *e = check_machine(L, 1);
+    auto m = emulator_get_machine(e);
+    uint64_t word_value = 0;
+    if (machine_read_word(m, luaL_checkinteger(L, 2), &word_value)) {
+        lua_pushinteger(L, word_value);
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 /// \brief Contents of the machine metatable __index table.
 static const luaL_Reg meta__index[] = {
     {"run", meta__index_run},
     {"dump", meta__index_dump},
+    {"read_word", meta__index_read_word},
     {"read_mcycle", meta__index_read_mcycle},
     {"read_tohost", meta__index_read_tohost},
     {"read_iflags_H", meta__index_read_iflags_H},

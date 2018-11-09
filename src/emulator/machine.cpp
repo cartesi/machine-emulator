@@ -76,104 +76,109 @@ typedef unsigned __int128 uint128_t;
 #include "machine.h"
 #include "machine-state.h"
 #include "state-access.h"
-#include "device-state-access.h"
+#include "virtual-state-access.h"
 #include "rtc.h"
 #include "meta.h"
 #include "riscv-constants.h"
+#include "unique-c-ptr.h"
 
 /// \brief Obtain PMA entry overlapping with target physical address
 /// \param s Pointer to machine state.
 /// \param paddr Target physical address.
 /// \returns Corresponding entry, or nullptr if no PMA
 /// matches \p paddr.
-static const pma_entry *get_pma_entry(const machine_state *s, uint64_t paddr) {
-    for (int i = 0; i < s->pma_count; i++) {
-        const pma_entry *pma = &s->physical_memory[i];
-        if (paddr >= pma->start && paddr < pma->start + pma->length)
-            return pma;
-    }
-    return nullptr;
-}
-
-static pma_entry *get_pma_entry(machine_state *s, uint64_t paddr) {
+static pma_entry *find_pma_entry(machine_state *s, uint64_t paddr) {
     for (int i = 0; i < s->pma_count; i++) {
         pma_entry *pma = &s->physical_memory[i];
         if (paddr >= pma->start && paddr < pma->start + pma->length)
             return pma;
     }
     return nullptr;
+}
+
+static const pma_entry *find_pma_entry(const machine_state *s, uint64_t paddr) {
+    return const_cast<const pma_entry *>(find_pma_entry(
+        const_cast<machine_state *>(s), paddr));
+}
+
+/// \brief Checks if a range is unoccupied.
+/// \param s Pointer to machine state.
+/// \param start Start of range in target physical memory.
+/// \param length Length of range in target physical memory.
+/// \returns true if unoccupied, false otherwise.
+static bool is_unoccupied(const machine_state *s, uint64_t start, uint64_t length) {
+    // Range A overlaps with B if A starts before B ends and A ends after B starts
+    for (int i = 0; i < s->pma_count; i++) {
+        const pma_entry *pma = &s->physical_memory[i];
+        if (start < pma->start+pma->length && start+length > pma->start) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /// \brief Allocates a new PMA entry.
 /// \param s Pointer to machine state.
 /// \param start Start of range in target physical memory.
+/// Must be aligned to a PMA_PAGE_SIZE.
 /// \param length Length of range in target physical memory.
+/// \param context Pointer to range context.
+/// \param driver Range driver.
 /// \returns Corresponding entry, or nullptr if no room for new PMA.
-static pma_entry *allocate_pma_entry(machine_state *s, uint64_t start, uint64_t length) {
-    assert(s->pma_count < PMA_SIZE); // check for too many entries
+static pma_entry *allocate_pma_entry(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_driver *driver) {
+    assert(s->pma_count < PMA_SIZE);
+    // check for too many entries
     if (s->pma_count >= PMA_SIZE)
         return nullptr;
-    assert((start & (PMA_PAGE_SIZE - 1)) == 0 && length != 0); // check for alignment
-    if ((start & (PMA_PAGE_SIZE - 1)) != 0 || length == 0)
+    assert((start & (PMA_PAGE_SIZE-1)) == 0 && length != 0 && (length & (PMA_WORD_SIZE-1)) == 0);
+    // check for alignment
+    if ((start & (PMA_PAGE_SIZE-1)) != 0 || length == 0 || (length & (PMA_WORD_SIZE-1)) != 0)
         return nullptr;
-    //??D Should test for *any* overlapping, not just the start
-    assert(!get_pma_entry(s, start)); // check for overlapping entries
-    if (get_pma_entry(s, start))
+    assert(is_unoccupied(s, start, length));
+    // check for overlapping entries
+    if (!is_unoccupied(s, start, length))
         return nullptr;
-    return &s->physical_memory[s->pma_count++];
-}
-
-/// \brief Allocates a new PMA memory entry.
-/// \param s Pointer to machine state.
-/// \param start Start of range in target physical memory.
-/// \param length Length of range in target physical memory.
-/// \returns Corresponding entry, or nullptr if no room for new PMA.
-static pma_entry *allocate_pma_memory_entry(machine_state *s, uint64_t start, uint64_t length) {
-    pma_entry *pma = allocate_pma_entry(s, start, length);
-    if (!pma) return nullptr;
+    pma_entry *pma = &s->physical_memory[s->pma_count++];
     pma->start = start;
     pma->length = length;
     pma->memory.host_memory = nullptr;
     pma->memory.backing_file = -1;
+    pma->context = context;
+    pma->driver = driver;
     return pma;
 }
 
-/// \brief Allocates a new PMA device entry.
-/// \param s Pointer to machine state.
-/// \param start Start of range in target physical memory.
-/// \param length Length of range in target physical memory.
-/// \param context Pointer to context to be passed to callbacks.
-/// \param read Callback for read operations.
-/// \param write Callback for write operations.
-/// \param peek Callback for peek operations.
-/// \param update_merkle_tree Callback for Merkle tree update operations.
-/// \returns Corresponding entry, or nullptr if no room for new PMA or invalid driver.
-static pma_entry *allocate_pma_device_entry(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver) {
-    pma_entry *pma = allocate_pma_entry(s, start, length);
-    if (!pma || !driver) return nullptr;
-    if (!driver->read || !driver->write || !driver->peek) return nullptr;
-    pma->start = start;
-    pma->length = length;
-    pma->device.context = context;
-    pma->device.driver = driver;
-    return pma;
-}
-
-uint8_t *machine_get_host_memory(machine_state *s, uint64_t paddr) {
-    for (int i = 0; i < s->pma_count; i++) {
-        pma_entry *pma = &s->physical_memory[i];
-        if (paddr >= pma->start && paddr < pma->start + pma->length && pma_is_memory(pma)) {
-            return pma->memory.host_memory;
-        }
+static bool memory_peek(const pma_entry *pma, uint64_t page_address, const uint8_t **page_data, uint8_t *scratch) {
+    // If page_address is not aligned, or if it is out of range, return error
+    if ((page_address & (PMA_PAGE_SIZE-1)) != 0 || page_address > pma->length) {
+        *page_data = nullptr;
+        return false;
     }
-    return nullptr;
+    // If page is only partially inside range, copy to scratch
+    if (page_address + PMA_PAGE_SIZE > pma->length) {
+        memset(scratch, 0, PMA_PAGE_SIZE);
+        memcpy(scratch, pma->memory.host_memory + page_address, pma->length-page_address);
+        *page_data = scratch;
+        return true;
+    // Otherwise, directly return pointer to host memory
+    } else {
+        *page_data = pma->memory.host_memory + page_address;
+        return true;
+    }
 }
+
+const pma_driver flash_driver = {
+    "FLASH",
+    pma_read_error,
+    pma_write_error,
+    memory_peek
+};
 
 bool machine_register_flash(machine_state *s, uint64_t start, uint64_t length, const char *path, bool shared) {
     int oflag = shared? O_RDWR: O_RDONLY;
     int mflag = shared? MAP_SHARED: MAP_PRIVATE;
 
-    pma_entry *pma = allocate_pma_memory_entry(s, start, length);
+    pma_entry *pma = allocate_pma_entry(s, start, length, nullptr, &flash_driver);
     if (!pma) return false;
 
     // Try to open backing file
@@ -210,8 +215,15 @@ bool machine_register_flash(machine_state *s, uint64_t start, uint64_t length, c
     return true;
 }
 
+const pma_driver ram_driver = {
+    "RAM",
+    pma_read_error,
+    pma_write_error,
+    memory_peek
+};
+
 bool machine_register_ram(machine_state *s, uint64_t start, uint64_t length) {
-    pma_entry *pma = allocate_pma_memory_entry(s, start, length);
+    pma_entry *pma = allocate_pma_entry(s, start, length, nullptr, &ram_driver);
     if (!pma) return false;
 
     pma->memory.host_memory = reinterpret_cast<uint8_t *>(calloc(1, length));
@@ -225,18 +237,27 @@ bool machine_register_ram(machine_state *s, uint64_t start, uint64_t length) {
     return true;
 }
 
-bool machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver) {
-    pma_entry *pma = allocate_pma_device_entry(s, start, length, context, driver);
+bool machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_driver *driver) {
+    pma_entry *pma = allocate_pma_entry(s, start, length, context, driver);
     if (!pma) return false;
     pma->type_flags = PMA_TYPE_FLAGS_MMIO;
     return true;
 }
 
-bool machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_device_driver *driver) {
-    pma_entry *pma = allocate_pma_device_entry(s, start, length, context, driver);
+bool machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_driver *driver) {
+    pma_entry *pma = allocate_pma_entry(s, start, length, context, driver);
     if (!pma) return false;
     pma->type_flags = PMA_TYPE_FLAGS_SHADOW;
     return true;
+}
+
+uint8_t *machine_get_host_memory(machine_state *s, uint64_t paddr) {
+    pma_entry *pma = find_pma_entry(s, paddr);
+    if (pma && pma_is_memory(pma)) {
+        return pma->memory.host_memory;
+    } else {
+        return nullptr;
+    }
 }
 
 static void print_uint64_t(uint64_t a) {
@@ -283,7 +304,7 @@ void dump_regs(machine_state *s) {
 }
 
 template <typename STATE_ACCESS>
-static pma_entry *get_pma(STATE_ACCESS &a, uint64_t paddr) {
+static pma_entry *find_pma_entry_through_state_access(STATE_ACCESS &a, uint64_t paddr) {
     for (int i = 0; i < PMA_SIZE; i++) {
         pma_entry *pma = a.read_pma(i);
         if (paddr >= pma->start && paddr < pma->start + pma->length)
@@ -296,7 +317,7 @@ static pma_entry *get_pma(STATE_ACCESS &a, uint64_t paddr) {
 
 template <typename STATE_ACCESS>
 static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t val) {
-    pma_entry *pma = get_pma(a, paddr);
+    pma_entry *pma = find_pma_entry_through_state_access(a, paddr);
     if (!pma || !pma_is_ram(pma))
         return false;
     // log writes to memory
@@ -307,7 +328,7 @@ static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t va
 
 template <typename STATE_ACCESS>
 static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pval) {
-    pma_entry *pma = get_pma(a, paddr);
+    pma_entry *pma = find_pma_entry_through_state_access(a, paddr);
     if (!pma || !pma_is_ram(pma)) return false;
     *pval = *reinterpret_cast<uint64_t *>(pma->memory.host_memory + (uintptr_t)(paddr - pma->start));
     // log read from memory
@@ -984,73 +1005,26 @@ void machine_set_brk_from_iflags_H(machine_state *s) {
     s->brk = true;
 }
 
-static bool update_memory_merkle_tree(const machine_state *s, const pma_entry *pma, uint8_t *page_data, merkle_tree::hasher_type &h, merkle_tree *t) {
-    (void) s;
-    uint64_t page_start_in_range = 0;
-    // Complete initial pages
-    while (page_start_in_range + PMA_PAGE_SIZE <= pma->length) {
-        if (t->is_error(t->update_page(h, pma->start + page_start_in_range, pma->memory.host_memory + page_start_in_range))) {
-            return false;
-        }
-        page_start_in_range += PMA_PAGE_SIZE;
-    }
-    // Potentially partial final page
-    if (page_start_in_range < pma->length) {
-        memset(page_data, 0, PMA_PAGE_SIZE);
-        memcpy(page_data, pma->memory.host_memory + page_start_in_range, pma->length-page_start_in_range);
-        if (t->is_error(t->update_page(h, pma->start+page_start_in_range, page_data))) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool update_device_merkle_tree(const machine_state *s, const pma_entry *pma, uint8_t *page_data, merkle_tree::hasher_type &h, merkle_tree *t) {
-    // For all pages in range
-    for (uint64_t page_start_in_range = 0; page_start_in_range < pma->length; page_start_in_range += PMA_PAGE_SIZE) {
-        auto status = pma->device.driver->peek(s, pma->device.context, page_start_in_range, page_data);
-        // Device actually filled page with data
-        if (status == device_peek_status::success) {
-            if (t->is_error(t->update_page(h, pma->start + page_start_in_range, page_data))) {
-                return false;
-            }
-        // If the device told us page is always pristine, we
-        // can proceed, otherwise there was an error
-        } else if (status != device_peek_status::pristine_page) {
-            return false;
-        }
-    }
-    return true;
-}
-
 bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
     merkle_tree::hasher_type h;
-    uint8_t *page_data = reinterpret_cast<uint8_t *>(calloc(1, merkle_tree::get_page_size()));
-    if (!page_data) return false;
+    auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+    if (!scratch) return false;
     t->begin_update(h);
-    bool status = true;
     for (int i = 0; i < s->pma_count; i++) {
         pma_entry *pma = &s->physical_memory[i];
-        if (pma_is_memory(pma)) {
-            if (!update_memory_merkle_tree(s, pma, page_data, h, t)) {
-                status = false;
-                break;
-            }
-        } else {
-            if (!update_device_merkle_tree(s, pma, page_data, h, t)) {
-                status = false;
-                break;
+        for (uint64_t page_start_in_range = 0; page_start_in_range < pma->length; page_start_in_range += PMA_PAGE_SIZE) {
+            const uint8_t *page_data = nullptr;
+            if (!pma->driver->peek(pma, page_start_in_range, &page_data, scratch.get())) {
+                t->end_update(h);
+                return false;
+            } else if (page_data && t->is_error(t->update_page(h, pma->start + page_start_in_range, page_data))) {
+                t->end_update(h);
+                return false;
             }
         }
     }
-    t->end_update(h);
-    free(page_data);
-    return status;
-}
-
-static bool dump_memory(const pma_entry *pma, FILE *fp) {
-    return fwrite(pma->memory.host_memory, 1, pma->length, fp) == pma->length;
+    return !t->is_error(t->end_update(h));
 }
 
 static std::ostream &operator<<(std::ostream &out, const merkle_tree::digest_type &hash) {
@@ -1062,105 +1036,76 @@ static std::ostream &operator<<(std::ostream &out, const merkle_tree::digest_typ
     return out;
 }
 
-static bool dump_device(const machine_state *s, const pma_entry *pma, uint8_t *page_data, FILE *fp) {
-    merkle_tree::hasher_type h;
-    merkle_tree::digest_type hash;
-    h.begin();
-    // For all pages in range
-    for (uint64_t page_start_in_range = 0; page_start_in_range < pma->length; page_start_in_range += PMA_PAGE_SIZE) {
-        auto status = pma->device.driver->peek(s, pma->device.context, page_start_in_range, page_data);
-        // Device actually filled page with data
-        if (status == device_peek_status::success) {
-            if (fwrite(page_data, 1, PMA_PAGE_SIZE, fp) == PMA_PAGE_SIZE) {
-                return false;
-            }
-        } else if (status != device_peek_status::pristine_page) {
-            return false;
-        }
-    }
-    h.end(hash);
-    return true;
+const pma_entry *machine_get_pma(const machine_state *s, int i) {
+    if (i < 0 || i >= s->pma_count) return nullptr;
+    return &s->physical_memory[i];
 }
 
 bool machine_dump(const machine_state *s) {
-    uint8_t *page_data = reinterpret_cast<uint8_t *>(calloc(1, merkle_tree::get_page_size()));
-    if (!page_data) return false;
-    bool status = true;
+    auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+    if (!scratch) return false;
     for (int i = 0; i < s->pma_count; i++) {
         char filename[256];
         const pma_entry *pma = &s->physical_memory[i];
         sprintf(filename, "%016" PRIx64 "--%016" PRIx64 ".bin", pma->start, pma->length);
         fprintf(stderr, "dumping '%s'\n", filename);
-        FILE *fp = fopen(filename, "wb");
-        if (!fp) {
-            status = false;
-            break;
-        }
-        if (pma_is_memory(pma)) {
-            if (!dump_memory(pma, fp)) {
-                status = false;
-                break;
-            }
-        } else {
-            if (!dump_device(s, pma, page_data, fp)) {
-                status = false;
-                break;
+        auto fp = unique_fopen(filename, "wb");
+        if (!fp) return false;
+        for (uint64_t page_start_in_range = 0; page_start_in_range < pma->length; page_start_in_range += PMA_PAGE_SIZE) {
+            const uint8_t *page_data = nullptr;
+            if (!pma->driver->peek(pma, page_start_in_range, &page_data, scratch.get())) {
+                return false;
+            } else if (page_data && fwrite(page_data, 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
+                return false;
             }
         }
-        fclose(fp);
     }
-    free(page_data);
-    return status;
-}
-
-static bool get_pristine_word_value_proof(const machine_state *s, uint64_t word_address, const merkle_tree *t, merkle_tree::word_value_proof &proof) {
-    (void) s;
-    return !t->is_error(t->get_word_value_proof(word_address, nullptr, proof));
-}
-
-static bool get_memory_word_value_proof(const machine_state *s, uint64_t word_address, const merkle_tree *t, const pma_entry *pma,
-    uint8_t *page_data, merkle_tree::word_value_proof &proof) {
-    (void) s;
-    uint64_t page_start_in_range = (word_address - pma->start) & (~(PMA_PAGE_SIZE - 1));
-    // Entire page inside host memory
-    if (page_start_in_range + PMA_PAGE_SIZE < pma->length) {
-        return !t->is_error(t->get_word_value_proof(word_address, pma->memory.host_memory + page_start_in_range, proof));
-    // Potentially partial final page
-    } else {
-        memset(page_data, 0, PMA_PAGE_SIZE);
-        memcpy(page_data, pma->memory.host_memory+page_start_in_range, pma->length-page_start_in_range);
-        return !t->is_error(t->get_word_value_proof(word_address, page_data, proof));
-    }
-}
-
-static bool get_device_word_value_proof(const machine_state *s, uint64_t word_address, const merkle_tree *t, const pma_entry *pma,
-    uint8_t *page_data, merkle_tree::word_value_proof &proof) {
-    uint64_t page_start_in_range = (word_address - pma->start) & (~(PMA_PAGE_SIZE - 1));
-    auto status = pma->device.driver->peek(s, pma->device.context, page_start_in_range, page_data);
-    if (status == device_peek_status::success) {
-        return !t->is_error(t->get_word_value_proof(word_address, page_data, proof));
-    } else if (status == device_peek_status::pristine_page) {
-        return get_pristine_word_value_proof(s, word_address, t, proof);
-    } else {
-        return false;
-    }
+    return true;
 }
 
 bool machine_get_word_value_proof(const machine_state *s, const merkle_tree *t, uint64_t word_address, merkle_tree::word_value_proof &proof) {
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
-    uint8_t *page_data = reinterpret_cast<uint8_t *>(calloc(1, merkle_tree::get_page_size()));
-    if (!page_data) return false;
-    const pma_entry *pma = get_pma_entry(s, word_address);
-    bool status = true;
+    word_address &= ~(PMA_WORD_SIZE-1); // Make sure address is aligned
+    auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+    if (!scratch) return false;
+    const pma_entry *pma = find_pma_entry(s, word_address);
+    const uint8_t *page_data = nullptr;
     if (!pma) {
-        status = get_pristine_word_value_proof(s, word_address, t, proof);
-    } else if (pma_is_memory(pma)) {
-        status = get_memory_word_value_proof(s, word_address, t, pma, page_data, proof);
-    } else {
-        status = get_device_word_value_proof(s, word_address, t, pma, page_data, proof);
+        uint64_t page_start_in_range = (word_address - pma->start) & (~(PMA_PAGE_SIZE-1));
+        if (!pma->driver->peek(pma, page_start_in_range, &page_data, scratch.get())) {
+            return false;
+        }
     }
-    free(page_data);
-    return status;
+    return !t->is_error(t->get_word_value_proof(word_address, page_data, proof));
+}
+
+bool machine_read_word(const machine_state *s, uint64_t word_address, uint64_t *word_value) {
+    word_address &= ~(PMA_WORD_SIZE-1); // Make sure address is aligned
+    const pma_entry *pma = find_pma_entry(s, word_address);
+    // If no entry is found, we are outside of every range
+    if (!pma) {
+        *word_value = 0;
+        return true;
+    // ??D We should split peek into peek_word and peek_page
+    } else {
+        auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+        if (!scratch) return false;
+        const uint8_t *page_data = nullptr;
+        uint64_t page_start_in_range = (word_address - pma->start) & (~(PMA_PAGE_SIZE-1));
+        if (!pma->driver->peek(pma, page_start_in_range, &page_data, scratch.get())) {
+            return false;
+        }
+        // If peek returns a page, read from it
+        if (page_data) {
+            uint64_t word_start_in_range = (word_address - pma->start) & (PMA_PAGE_SIZE-1);
+            *word_value = *reinterpret_cast<const uint64_t *>(page_data + word_start_in_range);
+            return true;
+        // Otherwise, page is always pristine
+        } else {
+            *word_value = 0;
+            return true;
+        }
+    }
 }
 
 /// \brief Instruction fetch status code
@@ -1294,7 +1239,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             raise_exception(a, CAUSE_LOAD_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry *pma = get_pma(a, paddr);
+        pma_entry *pma = find_pma_entry_through_state_access(a, paddr);
         if (!pma) {
             // If we do not have the range in our map, we treat this as a PMA violation
             raise_exception(a, CAUSE_LOAD_FAULT, vaddr);
@@ -1308,9 +1253,9 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             uint64_t offset = paddr - pma->start;
             uint64_t val;
             assert(pma_is_device(pma));
-            device_state_access<STATE_ACCESS> da(a);
+            virtual_state_access<STATE_ACCESS> da(a);
             // If we do not know how to read, we treat this as a PMA violation
-            if (!pma->device.driver->read(&da, pma->device.context, offset, &val, size_log2<U>::value)) {
+            if (!pma->driver->read(pma, &da, offset, &val, size_log2<U>::value)) {
                 raise_exception(a, CAUSE_LOAD_FAULT, vaddr);
                 return false;
             }
@@ -1339,7 +1284,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             raise_exception(a, CAUSE_STORE_AMO_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry *pma = get_pma(a, paddr);
+        pma_entry *pma = find_pma_entry_through_state_access(a, paddr);
         if (!pma) {
             // If we do not have the range in our map, we treat this as a PMA violation
             raise_exception(a, CAUSE_STORE_AMO_FAULT, vaddr);
@@ -1352,10 +1297,10 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             return true;
         } else {
             uint64_t offset = paddr - pma->start;
-            device_state_access<STATE_ACCESS> da(a);
+            virtual_state_access<STATE_ACCESS> da(a);
             assert(pma_is_device(pma));
             // If we do not know how to write, we treat this as a PMA violation
-            if (!pma->device.driver->write(&da, pma->device.context, offset, val, size_log2<U>::value)) {
+            if (!pma->driver->write(pma, &da, offset, val, size_log2<U>::value)) {
                 raise_exception(a, CAUSE_STORE_AMO_FAULT, vaddr);
                 return false;
             }
@@ -3389,7 +3334,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
             return fetch_status::exception;
         }
         // Walk memory map to find the range that contains the physical address
-        pma_entry *pma = get_pma(a, paddr);
+        pma_entry *pma = find_pma_entry_through_state_access(a, paddr);
         // We only execute directly from RAM (as in "random access memory", which includes ROM)
         // If we are not in RAM or if we are not in any range, we treat this as a PMA violation
         if (!pma || !pma_is_ram(pma)) {

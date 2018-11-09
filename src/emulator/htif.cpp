@@ -1,7 +1,7 @@
 #include "machine.h"
-#include "machine-state.h"
 #include "htif.h"
-#include "i-device-state-access.h"
+#include "i-virtual-state-access.h"
+#include "pma.h"
 
 #include <signal.h>
 #include <termios.h>
@@ -61,9 +61,9 @@ static void htif_console_poll(htif_state *htif) {
     }
 }
 
-/// \brief HTIF device read callback. See ::pma_device_read.
-static bool htif_read(i_device_state_access *a, void *context, uint64_t offset, uint64_t *pval, int size_log2) {
-    (void) context;
+/// \brief HTIF device read callback. See ::pma_read.
+static bool htif_read(const pma_entry *pma, i_virtual_state_access *a, uint64_t offset, uint64_t *pval, int size_log2) {
+    (void) pma;
 
     // Our HTIF only supports aligned 64-bit reads
     if (size_log2 != 3 || offset & 7) return false;
@@ -81,23 +81,29 @@ static bool htif_read(i_device_state_access *a, void *context, uint64_t offset, 
     }
 }
 
-/// \brief HTIF device peek callback. See ::pma_device_peek.
-static device_peek_status htif_peek(const machine_state *s, void *context, uint64_t page_index, uint8_t *page_data) {
-    (void) context;
+/// \brief HTIF device peek callback. See ::pma_peek.
+static bool htif_peek(const pma_entry *pma, uint64_t page_index, const uint8_t **page_data, uint8_t *scratch) {
+    const htif_state *htif = reinterpret_cast<htif_state *>(pma_get_context(pma));
+    const machine_state *s = htif->machine;
     // There is a single non-pristine page: 0;
-    if (page_index % PMA_PAGE_SIZE != 0)
-        return device_peek_status::invalid_page;
-    if (page_index != 0)
-        return device_peek_status::pristine_page;
+    if (page_index % PMA_PAGE_SIZE != 0) {
+        *page_data = nullptr;
+        return false;
+    }
+    if (page_index != 0) {
+        *page_data = nullptr;
+        return true;
+    }
     // Clear entire page.
-    memset(page_data, 0, PMA_PAGE_SIZE);
+    memset(scratch, 0, PMA_PAGE_SIZE);
     // Copy tohost and fromhost to their places within page.
-    reinterpret_cast<uint64_t *>(page_data)[0] = s->tohost;
-    reinterpret_cast<uint64_t *>(page_data)[1] = s->fromhost;
-    return device_peek_status::success;
+    reinterpret_cast<uint64_t *>(scratch)[0] = machine_read_tohost(s);
+    reinterpret_cast<uint64_t *>(scratch)[1] = machine_read_fromhost(s);
+    *page_data = scratch;
+    return true;
 }
 
-static bool htif_getchar(i_device_state_access *a, htif_state *htif, uint64_t payload) {
+static bool htif_getchar(i_virtual_state_access *a, htif_state *htif, uint64_t payload) {
     //??D Not sure exactly what role this command plays
     (void) htif; (void) payload;
     a->write_tohost(0); // Acknowledge command
@@ -105,7 +111,7 @@ static bool htif_getchar(i_device_state_access *a, htif_state *htif, uint64_t pa
     return true;
 }
 
-static bool htif_putchar(i_device_state_access *a, htif_state *htif, uint64_t payload) {
+static bool htif_putchar(i_virtual_state_access *a, htif_state *htif, uint64_t payload) {
     (void) htif;
     a->write_tohost(0); // Acknowledge command
     uint8_t ch = payload & 0xff;
@@ -115,14 +121,14 @@ static bool htif_putchar(i_device_state_access *a, htif_state *htif, uint64_t pa
     return true;
 }
 
-static bool htif_halt(i_device_state_access *a, htif_state *htif, uint64_t payload) {
+static bool htif_halt(i_virtual_state_access *a, htif_state *htif, uint64_t payload) {
     (void) htif; (void) payload;
     a->set_iflags_H();
     // Leave tohost value alone so the payload can be read afterwards
     return true;
 }
 
-static bool htif_write_tohost(i_device_state_access *a, htif_state *htif, uint64_t tohost) {
+static bool htif_write_tohost(i_virtual_state_access *a, htif_state *htif, uint64_t tohost) {
     // Decode tohost
     uint32_t device = tohost >> 56;
     uint32_t cmd = (tohost >> 48) & 0xff;
@@ -141,7 +147,7 @@ static bool htif_write_tohost(i_device_state_access *a, htif_state *htif, uint64
     return true;
 }
 
-static bool htif_write_fromhost(i_device_state_access *a, htif_state *htif, uint64_t val) {
+static bool htif_write_fromhost(i_virtual_state_access *a, htif_state *htif, uint64_t val) {
     a->write_fromhost(val);
     if (htif->interactive) {
         htif->fromhost_pending = false;
@@ -150,9 +156,9 @@ static bool htif_write_fromhost(i_device_state_access *a, htif_state *htif, uint
     return true;
 }
 
-/// \brief HTIF device write callback. See ::pma_device_write.
-static bool htif_write(i_device_state_access *a, void *context, uint64_t offset, uint64_t val, int size_log2) {
-    htif_state *htif = reinterpret_cast<htif_state *>(context);
+/// \brief HTIF device write callback. See ::pma_write.
+static bool htif_write(const pma_entry *pma, i_virtual_state_access *a, uint64_t offset, uint64_t val, int size_log2) {
+    htif_state *htif = reinterpret_cast<htif_state *>(pma_get_context(pma));
 
     // Our HTIF only supports aligned 64-bit writes
     if (size_log2 != 3 || offset & 7) return false;
@@ -255,9 +261,13 @@ void htif_interact(htif_state *htif) {
     }
 }
 
-const pma_device_driver htif_driver {
+static const pma_driver htif_driver {
     "HTIF",
     htif_read,
     htif_write,
     htif_peek
 };
+
+bool htif_register_mmio(htif_state *htif, uint64_t start, uint64_t length) {
+    return machine_register_mmio(htif->machine, start, length, htif, &htif_driver);
+}

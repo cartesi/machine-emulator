@@ -6,7 +6,7 @@
 
 #include "merkle-tree.h"
 
-// Forward definitions
+// Forward declarations
 struct machine_state;
 struct pma_driver;
 struct pma_entry;
@@ -43,13 +43,15 @@ bool machine_update_merkle_tree(machine_state *s, merkle_tree *t);
 /// \param word_address Word address (aligned to 64-bit boundary).
 /// \param proof Receives the proof.
 /// \returns true if succeeded, false otherwise.
-bool machine_get_word_value_proof(const machine_state *s, merkle_tree *t, uint64_t word_address, merkle_tree::word_value_proof &proof);
+bool machine_get_word_value_proof(const machine_state *s, merkle_tree *t, uint64_t word_address,
+    merkle_tree::word_value_proof &proof);
 
 /// \brief Read the value of a word in the machine state.
 /// \param s Machine state.
 /// \param word_address Word address (aligned to 64-bit boundary).
 /// \param word_value Pointer to word receiving value.
 /// \returns true if succeeded, false otherwise.
+/// \warning The current implementation of this function is very slow!
 bool machine_read_word(const machine_state *s, uint64_t word_address, uint64_t *word_value);
 
 /// \brief Reads the value of a general-purpose register.
@@ -410,7 +412,7 @@ void machine_set_brk_from_iflags_H(machine_state *s);
 /// \param s Machine state.
 /// \param paddr Physical memory address in target.
 /// \returns Pointer to host memory corresponding to \p
-/// paddr, or nullptr if there is no such address.
+/// paddr, or nullptr if no memory range covers \p paddr
 uint8_t *machine_get_host_memory(machine_state *s, uint64_t paddr);
 
 /// \brief Register a new flash drive.
@@ -459,7 +461,7 @@ bool machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, vo
 /// \returns true if successful, false otherwise.
 bool machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_driver *driver);
 
-/// \brief Dump all memory ranges to files.
+/// \brief Dump all memory ranges to files in current working directory.
 /// \param s Machine state.
 /// \returns true if successful, false otherwise.
 bool machine_dump(const machine_state *s);
@@ -469,5 +471,10 @@ bool machine_dump(const machine_state *s);
 /// \param i PMA index.
 /// \returns Pointer to entry, or nullptr if out of bounds
 const pma_entry *machine_get_pma(const machine_state *s, int i);
+
+/// \brief Get number of PMA entries.
+/// \param s Machine state.
+/// \returns Pointer to entry, or nullptr if out of bounds
+int machine_get_pma_count(const machine_state *s);
 
 #endif

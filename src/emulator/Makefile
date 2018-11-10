@@ -105,7 +105,7 @@ test: cartesi.so
 	lua tests.lua
 
 fs.ext2: fs/*
-	genext2fs -i 512 -b 8192 -d fs fs.ext2
+	genext2fs -f -i 512 -b 8192 -d fs fs.ext2
 
 hash: hash.o
 	$(CXX) $(CXXFLAGS) -o $@ $^ -L/usr/local/lib $(HASH_LIBS)

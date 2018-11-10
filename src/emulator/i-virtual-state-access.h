@@ -1,5 +1,5 @@
 #ifndef I_VIRTUAL_STATE_ACCESS
-#define i_VIRTUAL_STATE_ACCESS
+#define I_VIRTUAL_STATE_ACCESS
 
 #include <cstdint>
 

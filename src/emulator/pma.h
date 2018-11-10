@@ -92,7 +92,7 @@ bool pma_write_error(const pma_entry *, i_virtual_state_access *, uint64_t, uint
 /// \brief Prototype for callback invoked when machine wants to peek into a range with no side-effects.
 /// \param pma Pointer to corresponding PMA entry.
 /// \param page_address Offset of page start within range. Must be aligned to PMA_PAGE_SIZE.
-/// \param page_data Receives pointer to start of page data, or nullptr if page is pristine.
+/// \param page_data Receives pointer to start of page data, or nullptr if page is constant *and* pristine.
 /// \param scratch Pointer to memory buffer that must be able to hold PMA_PAGE_SIZE bytes.
 /// \returns True if operation succeeded, false otherwise.
 typedef bool (*pma_peek)(const pma_entry *, uint64_t page_address, const uint8_t **page_data, uint8_t *scratch);

@@ -85,9 +85,8 @@ typedef unsigned __int128 uint128_t;
 /// \brief Obtain PMA entry overlapping with target physical address
 /// \param s Pointer to machine state.
 /// \param paddr Target physical address.
-/// \returns Corresponding entry, or nullptr if no PMA
-/// matches \p paddr.
-static pma_entry *find_pma_entry(machine_state *s, uint64_t paddr) {
+/// \returns Corresponding entry, or nullptr if no PMA matches \p paddr.
+static pma_entry *naked_find_pma_entry(machine_state *s, uint64_t paddr) {
     for (int i = 0; i < s->pma_count; i++) {
         pma_entry *pma = &s->physical_memory[i];
         if (paddr >= pma->start && paddr < pma->start + pma->length)
@@ -96,8 +95,8 @@ static pma_entry *find_pma_entry(machine_state *s, uint64_t paddr) {
     return nullptr;
 }
 
-static const pma_entry *find_pma_entry(const machine_state *s, uint64_t paddr) {
-    return const_cast<const pma_entry *>(find_pma_entry(
+static const pma_entry *naked_find_pma_entry(const machine_state *s, uint64_t paddr) {
+    return const_cast<const pma_entry *>(naked_find_pma_entry(
         const_cast<machine_state *>(s), paddr));
 }
 
@@ -106,7 +105,7 @@ static const pma_entry *find_pma_entry(const machine_state *s, uint64_t paddr) {
 /// \param start Start of range in target physical memory.
 /// \param length Length of range in target physical memory.
 /// \returns true if unoccupied, false otherwise.
-static bool is_unoccupied(const machine_state *s, uint64_t start, uint64_t length) {
+static bool pma_range_is_unoccupied(const machine_state *s, uint64_t start, uint64_t length) {
     // Range A overlaps with B if A starts before B ends and A ends after B starts
     for (int i = 0; i < s->pma_count; i++) {
         const pma_entry *pma = &s->physical_memory[i];
@@ -130,13 +129,15 @@ static pma_entry *allocate_pma_entry(machine_state *s, uint64_t start, uint64_t 
     // check for too many entries
     if (s->pma_count >= PMA_SIZE)
         return nullptr;
-    assert((start & (PMA_PAGE_SIZE-1)) == 0 && length != 0 && (length & (PMA_WORD_SIZE-1)) == 0);
     // check for alignment
-    if ((start & (PMA_PAGE_SIZE-1)) != 0 || length == 0 || (length & (PMA_WORD_SIZE-1)) != 0)
+    bool is_aligned = (start & (PMA_PAGE_SIZE-1)) == 0 && length != 0 && (length & (PMA_WORD_SIZE-1)) == 0;
+    assert(is_aligned);
+    if (!is_aligned)
         return nullptr;
-    assert(is_unoccupied(s, start, length));
     // check for overlapping entries
-    if (!is_unoccupied(s, start, length))
+    bool is_unoccupied = pma_range_is_unoccupied(s, start, length);
+    assert(is_unoccupied);
+    if (!is_unoccupied)
         return nullptr;
     pma_entry *pma = &s->physical_memory[s->pma_count++];
     pma->start = start;
@@ -148,6 +149,7 @@ static pma_entry *allocate_pma_entry(machine_state *s, uint64_t start, uint64_t 
     return pma;
 }
 
+/// \brief Memory range peek callback. See ::pma_peek.
 static bool memory_peek(const pma_entry *pma, uint64_t page_address, const uint8_t **page_data, uint8_t *scratch) {
     // If page_address is not aligned, or if it is out of range, return error
     if ((page_address & (PMA_PAGE_SIZE-1)) != 0 || page_address > pma->length) {
@@ -160,7 +162,7 @@ static bool memory_peek(const pma_entry *pma, uint64_t page_address, const uint8
         memcpy(scratch, pma->memory.host_memory + page_address, pma->length-page_address);
         *page_data = scratch;
         return true;
-    // Otherwise, directly return pointer to host memory
+    // Otherwise, return pointer direclty into host memory
     } else {
         *page_data = pma->memory.host_memory + page_address;
         return true;
@@ -177,6 +179,11 @@ const pma_driver flash_driver = {
 bool machine_register_flash(machine_state *s, uint64_t start, uint64_t length, const char *path, bool shared) {
     int oflag = shared? O_RDWR: O_RDONLY;
     int mflag = shared? MAP_SHARED: MAP_PRIVATE;
+
+    //??D Obviously these can't print to stderr.
+    //    Still deciding on a way to convey these errors.
+    //    The obvious solution is to use exceptions, but
+    //    only after we are done migrating to RAII
 
     pma_entry *pma = allocate_pma_entry(s, start, length, nullptr, &flash_driver);
     if (!pma) return false;
@@ -226,6 +233,11 @@ bool machine_register_ram(machine_state *s, uint64_t start, uint64_t length) {
     pma_entry *pma = allocate_pma_entry(s, start, length, nullptr, &ram_driver);
     if (!pma) return false;
 
+    //??D Obviously these can't print to stderr.
+    //    Still deciding on a way to convey these errors.
+    //    The obvious solution is to use exceptions, but
+    //    only after we are done migrating to RAII
+
     pma->memory.host_memory = reinterpret_cast<uint8_t *>(calloc(1, length));
     if (!pma->memory.host_memory) {
         fprintf(stderr, "Could not allocate host memory\n");
@@ -252,7 +264,7 @@ bool machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, 
 }
 
 uint8_t *machine_get_host_memory(machine_state *s, uint64_t paddr) {
-    pma_entry *pma = find_pma_entry(s, paddr);
+    pma_entry *pma = naked_find_pma_entry(s, paddr);
     if (pma && pma_is_memory(pma)) {
         return pma->memory.host_memory;
     } else {
@@ -303,8 +315,17 @@ void dump_regs(machine_state *s) {
 #endif
 }
 
+/// \brief Obtain PMA entry overlapping with target physical address.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param paddr Target physical address.
+/// \returns Corresponding entry, or nullptr if no PMA matches \p paddr.
+/// \details This is the same as ::naked_find_pma_entry, except it
+/// does not perform naked accesses to the machine state.
+/// Rather, it goes through the state accessor object so all
+/// accesses can be recorded if need be.
 template <typename STATE_ACCESS>
-static pma_entry *find_pma_entry_through_state_access(STATE_ACCESS &a, uint64_t paddr) {
+static pma_entry *find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
     for (int i = 0; i < PMA_SIZE; i++) {
         pma_entry *pma = a.read_pma(i);
         if (paddr >= pma->start && paddr < pma->start + pma->length)
@@ -315,20 +336,32 @@ static pma_entry *find_pma_entry_through_state_access(STATE_ACCESS &a, uint64_t 
     return nullptr;
 }
 
+/// \brief Write an aligned word to RAM.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param paddr Physical address of word.
+/// \param val Value to write.
+/// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t val) {
-    pma_entry *pma = find_pma_entry_through_state_access(a, paddr);
+    pma_entry *pma = find_pma_entry(a, paddr);
     if (!pma || !pma_is_ram(pma))
         return false;
-    // log writes to memory
     *reinterpret_cast<uint64_t *>(pma->memory.host_memory + (uintptr_t)(paddr - pma->start)) = val;
+    // log writes to memory
     a.write_memory(pma, paddr, val, size_log2<uint64_t>::value);
     return true;
 }
 
+/// \brief Read an aligned word from RAM.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param paddr Physical address of word.
+/// \param pval Pointer to word.
+/// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pval) {
-    pma_entry *pma = find_pma_entry_through_state_access(a, paddr);
+    pma_entry *pma = find_pma_entry(a, paddr);
     if (!pma || !pma_is_ram(pma)) return false;
     *pval = *reinterpret_cast<uint64_t *>(pma->memory.host_memory + (uintptr_t)(paddr - pma->start));
     // log read from memory
@@ -336,6 +369,14 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
     return true;
 }
 
+/// \brief Walk the page table and translate a virtual address to the corresponding physical address
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param vaddr Virtual address
+/// \param ppaddr Pointer to physical address.
+/// \param xwr_shift Encodes the access mode by the shift to the XWR triad (PTE_XWR_READ_SHIFT,
+///  PTE_XWR_READ_SHIFT, or PTE_XWR_READ_SHIFT)
+/// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
     int priv = a.read_iflags_PRV();
@@ -931,10 +972,12 @@ void machine_write_ilrsc(machine_state *s, uint64_t val) {
 }
 
 uint64_t machine_read_iflags(const machine_state *s) {
+    //??D Remove magic constants from this function
     return (s->iflags_PRV << 2) | (s->iflags_I << 1) | s->iflags_H;
 }
 
 void machine_write_iflags(machine_state *s, uint64_t val) {
+    //??D Remove magic constants from this function
     s->iflags_H = val & 1;
     s->iflags_I = (val >> 1) & 1;
     s->iflags_PRV = (val >> 2) & 3;
@@ -1041,6 +1084,10 @@ const pma_entry *machine_get_pma(const machine_state *s, int i) {
     return &s->physical_memory[i];
 }
 
+int machine_get_pma_count(const machine_state *s) {
+    return s->pma_count;
+}
+
 bool machine_dump(const machine_state *s) {
     auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
@@ -1068,7 +1115,7 @@ bool machine_get_word_value_proof(const machine_state *s, const merkle_tree *t, 
     word_address &= ~(PMA_WORD_SIZE-1); // Make sure address is aligned
     auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
-    const pma_entry *pma = find_pma_entry(s, word_address);
+    const pma_entry *pma = naked_find_pma_entry(s, word_address);
     const uint8_t *page_data = nullptr;
     if (!pma) {
         uint64_t page_start_in_range = (word_address - pma->start) & (~(PMA_PAGE_SIZE-1));
@@ -1081,12 +1128,14 @@ bool machine_get_word_value_proof(const machine_state *s, const merkle_tree *t, 
 
 bool machine_read_word(const machine_state *s, uint64_t word_address, uint64_t *word_value) {
     word_address &= ~(PMA_WORD_SIZE-1); // Make sure address is aligned
-    const pma_entry *pma = find_pma_entry(s, word_address);
-    // If no entry is found, we are outside of every range
+    const pma_entry *pma = naked_find_pma_entry(s, word_address);
+    // If no entry is found, we are outside of every range, and therefore pristine
     if (!pma) {
         *word_value = 0;
         return true;
     // ??D We should split peek into peek_word and peek_page
+    // for performance. On the other hand, this function
+    // will almost never be used, so one wonders if it is worth it...
     } else {
         auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
         if (!scratch) return false;
@@ -1107,12 +1156,6 @@ bool machine_read_word(const machine_state *s, uint64_t word_address, uint64_t *
         }
     }
 }
-
-/// \brief Instruction fetch status code
-enum class execute_status: int {
-    illegal, ///< Illegal instruction: exception raised
-    retired ///< Instruction was retired: exception may or may not have been raised
-};
 
 /// \brief Obtains the RD field from an instruction.
 /// \param insn Instruction.
@@ -1221,6 +1264,13 @@ static inline uint32_t insn_get_funct6(uint32_t insn) {
     return (insn >> 26) & 0b111111;
 }
 
+/// \brief Read an aligned word from virtual memory.
+/// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param vaddr Virtual address for word.
+/// \param pval Pointer to word receiving value.
+/// \returns True if succeeded, false otherwise.
 template <typename T, typename STATE_ACCESS>
 static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)  {
     using U = std::make_unsigned_t<T>;
@@ -1239,7 +1289,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             raise_exception(a, CAUSE_LOAD_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry *pma = find_pma_entry_through_state_access(a, paddr);
+        pma_entry *pma = find_pma_entry(a, paddr);
         if (!pma) {
             // If we do not have the range in our map, we treat this as a PMA violation
             raise_exception(a, CAUSE_LOAD_FAULT, vaddr);
@@ -1266,6 +1316,13 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
     }
 }
 
+/// \brief Writes an aligned word to virtual memory.
+/// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param vaddr Virtual address for word.
+/// \param val Value to write.
+/// \returns True if succeeded, false otherwise.
 template <typename T, typename STATE_ACCESS>
 static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_t val) {
     using U = std::make_unsigned_t<T>;
@@ -1284,7 +1341,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             raise_exception(a, CAUSE_STORE_AMO_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry *pma = find_pma_entry_through_state_access(a, paddr);
+        pma_entry *pma = find_pma_entry(a, paddr);
         if (!pma) {
             // If we do not have the range in our map, we treat this as a PMA violation
             raise_exception(a, CAUSE_STORE_AMO_FAULT, vaddr);
@@ -1331,10 +1388,20 @@ static void dump_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const char *n
 #endif
 }
 
-// An execute_OP function is only invoked when the opcode
-// has been decoded enough to preclude any other instruction.
-// In some cases, further checks are needed to ensure the
-// instruction is valid.
+/// \brief Instruction fetch status code
+enum class execute_status: int {
+    illegal, ///< Illegal instruction: exception raised
+    retired ///< Instruction was retired: exception may or may not have been raised
+};
+
+
+/// \brief Raises an illegal instruction exception.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return execute_status::illegal
+/// \details This function is tail-called whenever the caller decoded enough of the instruction to identify it as illegal.
 template <typename STATE_ACCESS>
 static inline execute_status execute_illegal_insn_exception(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) a; (void) pc;
@@ -1342,6 +1409,13 @@ static inline execute_status execute_illegal_insn_exception(STATE_ACCESS &a, uin
     return execute_status::illegal;
 }
 
+/// \brief Raises an misaligned-fetch exception.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return execute_status::retired
+/// \details This function is tail-called whenever the caller identified that the next value of pc is misaligned.
 template <typename STATE_ACCESS>
 static inline execute_status execute_misaligned_fetch_exception(STATE_ACCESS &a, uint64_t pc) {
     (void) a;
@@ -1349,24 +1423,50 @@ static inline execute_status execute_misaligned_fetch_exception(STATE_ACCESS &a,
     return execute_status::retired;
 }
 
+/// \brief Returns from execution due to raised exception.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return execute_status::retired
+/// \details This function is tail-called whenever the caller identified a raised exception.
 template <typename STATE_ACCESS>
 static inline execute_status execute_raised_exception(STATE_ACCESS &a, uint64_t pc) {
     (void) a; (void) pc;
     return execute_status::retired;
 }
 
-template <typename STATE_ACCESS>
-static inline execute_status execute_jump(STATE_ACCESS &a, uint64_t pc) {
-    a.write_pc(pc);
-    return execute_status::retired;
-}
-
+/// \brief Advances pc to the next instruction.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return execute_status::retired
+/// \details This function is tail-called whenever the caller wants move to the next instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_next_insn(STATE_ACCESS &a, uint64_t pc) {
     a.write_pc(pc + 4);
     return execute_status::retired;
 }
 
+/// \brief Changes pc arbitrarily, potentially causing a jump.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param pc Current pc.
+/// \param insn Instruction.
+/// \return execute_status::retired
+/// \details This function is tail-called whenever the caller wants to jump.
+template <typename STATE_ACCESS>
+static inline execute_status execute_jump(STATE_ACCESS &a, uint64_t pc) {
+    a.write_pc(pc);
+    return execute_status::retired;
+}
+
+/// \brief Execute the LR instruction.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param pc Current pc.
+/// \param insn Instruction.
 template <typename T, typename STATE_ACCESS>
 static inline execute_status execute_LR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     uint64_t vaddr = a.read_register(insn_get_rs1(insn));
@@ -1380,6 +1480,11 @@ static inline execute_status execute_LR(STATE_ACCESS &a, uint64_t pc, uint32_t i
     return execute_next_insn(a, pc);
 }
 
+/// \brief Execute the SC instruction.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param pc Current pc.
+/// \param insn Instruction.
 template <typename T, typename STATE_ACCESS>
 static inline execute_status execute_SC(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     uint64_t val = 0;
@@ -1397,6 +1502,7 @@ static inline execute_status execute_SC(STATE_ACCESS &a, uint64_t pc, uint32_t i
     return execute_next_insn(a, pc);
 }
 
+/// \brief Implementation of the LR.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LR_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) a; (void) pc; (void) insn;
@@ -1408,6 +1514,7 @@ static inline execute_status execute_LR_W(STATE_ACCESS &a, uint64_t pc, uint32_t
     }
 }
 
+/// \brief Implementation of the SC.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SC_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SC_W");
@@ -1430,12 +1537,14 @@ static inline execute_status execute_AMO(STATE_ACCESS &a, uint64_t pc, uint32_t 
     return execute_next_insn(a, pc);
 }
 
+/// \brief Implementation of the AMOSWAP.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOSWAP_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOSWAP_W");
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { (void) valm; return valr; });
 }
 
+/// \brief Implementation of the AMOADD.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOADD_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOADD_W");
@@ -1447,30 +1556,35 @@ static inline execute_status execute_AMOXOR_W(STATE_ACCESS &a, uint64_t pc, uint
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm ^ valr; });
 }
 
+/// \brief Implementation of the AMOAND.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOAND_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOAND_W");
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm & valr; });
 }
 
+/// \brief Implementation of the AMOOR.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOOR_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOOR_W");
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm | valr; });
 }
 
+/// \brief Implementation of the AMOMIN.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMIN_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOMIN_W");
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm < valr? valm: valr; });
 }
 
+/// \brief Implementation of the AMOMAX.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMAX_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOMAX_W");
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm > valr? valm: valr; });
 }
 
+/// \brief Implementation of the AMOMINU.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMINU_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOMINU_W");
@@ -1479,6 +1593,7 @@ static inline execute_status execute_AMOMINU_W(STATE_ACCESS &a, uint64_t pc, uin
     });
 }
 
+/// \brief Implementation of the AMOMAXU.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMAXU_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOMAXU_W");
@@ -1487,6 +1602,7 @@ static inline execute_status execute_AMOMAXU_W(STATE_ACCESS &a, uint64_t pc, uin
     });
 }
 
+/// \brief Implementation of the LR.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LR_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     if ((insn & 0b00000001111100000000000000000000) == 0 ) {
@@ -1497,18 +1613,21 @@ static inline execute_status execute_LR_D(STATE_ACCESS &a, uint64_t pc, uint32_t
     }
 }
 
+/// \brief Implementation of the SC.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SC_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SC_D");
     return execute_SC<uint64_t>(a, pc, insn);
 }
 
+/// \brief Implementation of the AMOSWAP.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOSWAP_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOSWAP_D");
     return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { (void) valm; return valr; });
 }
 
+/// \brief Implementation of the AMOADD.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOADD_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOADD_D");
@@ -1520,30 +1639,35 @@ static inline execute_status execute_AMOXOR_D(STATE_ACCESS &a, uint64_t pc, uint
     return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm ^ valr; });
 }
 
+/// \brief Implementation of the AMOAND.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOAND_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOAND_D");
     return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm & valr; });
 }
 
+/// \brief Implementation of the AMOOR.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOOR_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOOR_D");
     return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm | valr; });
 }
 
+/// \brief Implementation of the AMOMIN.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMIN_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOMIN_D");
     return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm < valr? valm: valr; });
 }
 
+/// \brief Implementation of the AMOMAX.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMAX_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOMAX_D");
     return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm > valr? valm: valr; });
 }
 
+/// \brief Implementation of the AMOMINU.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMINU_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOMINU_D");
@@ -1551,6 +1675,7 @@ static inline execute_status execute_AMOMINU_D(STATE_ACCESS &a, uint64_t pc, uin
         [](uint64_t valm, uint64_t valr) -> uint64_t { return valm < valr? valm: valr; });
 }
 
+/// \brief Implementation of the AMOMAXU.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMAXU_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AMOMAXU_D");
@@ -1558,6 +1683,7 @@ static inline execute_status execute_AMOMAXU_D(STATE_ACCESS &a, uint64_t pc, uin
         [](uint64_t valm, uint64_t valr) -> uint64_t { return valm > valr? valm: valr; });
 }
 
+/// \brief Implementation of the ADDW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_ADDW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "ADDW");
@@ -1571,6 +1697,7 @@ static inline execute_status execute_ADDW(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the SUBW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SUBW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SUBW");
@@ -1584,6 +1711,7 @@ static inline execute_status execute_SUBW(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the SLLW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLLW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SLLW");
@@ -1593,6 +1721,7 @@ static inline execute_status execute_SLLW(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the SRLW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRLW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SRLW");
@@ -1602,6 +1731,7 @@ static inline execute_status execute_SRLW(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the SRAW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRAW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SRAW");
@@ -1611,6 +1741,7 @@ static inline execute_status execute_SRAW(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the MULW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_MULW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "MULW");
@@ -1623,6 +1754,7 @@ static inline execute_status execute_MULW(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the DIVW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_DIVW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "DIVW");
@@ -1639,6 +1771,7 @@ static inline execute_status execute_DIVW(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the DIVUW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_DIVUW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "DIVUW");
@@ -1653,6 +1786,7 @@ static inline execute_status execute_DIVUW(STATE_ACCESS &a, uint64_t pc, uint32_
     });
 }
 
+/// \brief Implementation of the REMW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_REMW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "REMW");
@@ -1669,6 +1803,7 @@ static inline execute_status execute_REMW(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the REMUW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_REMUW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) a; (void) pc; (void) insn;
@@ -2254,6 +2389,7 @@ static inline execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t pc, uint32
 
 }
 
+/// \brief Implementation of the CSRRW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_CSRRW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "CSRRW");
@@ -2262,6 +2398,7 @@ static inline execute_status execute_CSRRW(STATE_ACCESS &a, uint64_t pc, uint32_
     );
 }
 
+/// \brief Implementation of the CSRRWI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_CSRRWI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "CSRRWI");
@@ -2296,12 +2433,14 @@ static inline execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, uint32
     return execute_next_insn(a, pc);
 }
 
+/// \brief Implementation of the CSRRS instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_CSRRS(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "CSRRS");
     return execute_csr_SC(a, pc, insn, [](uint64_t csr, uint64_t rs1) -> uint64_t { return csr | rs1; });
 }
 
+/// \brief Implementation of the CSRRC instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_CSRRC(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "CSRRC");
@@ -2333,18 +2472,21 @@ static inline execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc, uint3
     return execute_next_insn(a, pc);
 }
 
+/// \brief Implementation of the CSRRSI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_CSRRSI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "CSRRSI");
     return execute_csr_SCI(a, pc, insn, [](uint64_t csr, uint32_t rs1) -> uint64_t { return csr | rs1; });
 }
 
+/// \brief Implementation of the CSRRCI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_CSRRCI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "CSRRCI");
     return execute_csr_SCI(a, pc, insn, [](uint64_t csr, uint32_t rs1) -> uint64_t { return csr & ~rs1; });
 }
 
+/// \brief Implementation of the ECALL instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_ECALL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "ECALL");
@@ -2355,6 +2497,7 @@ static inline execute_status execute_ECALL(STATE_ACCESS &a, uint64_t pc, uint32_
     return execute_status::retired;
 }
 
+/// \brief Implementation of the EBREAK instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) a;
@@ -2364,12 +2507,14 @@ static inline execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t pc, uint32
     return execute_status::retired;
 }
 
+/// \brief Implementation of the URET instruction. // no U-mode traps
 template <typename STATE_ACCESS>
 static inline execute_status execute_URET(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a, pc, insn, "URET"); // no U-mode traps
+    dump_insn(a, pc, insn, "URET");
     return execute_illegal_insn_exception(a, pc, insn);
 }
 
+/// \brief Implementation of the SRET instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRET(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SRET");
@@ -2393,6 +2538,7 @@ static inline execute_status execute_SRET(STATE_ACCESS &a, uint64_t pc, uint32_t
     }
 }
 
+/// \brief Implementation of the MRET instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_MRET(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "MRET");
@@ -2416,6 +2562,7 @@ static inline execute_status execute_MRET(STATE_ACCESS &a, uint64_t pc, uint32_t
     }
 }
 
+/// \brief Implementation of the WFI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "WFI");
@@ -2433,6 +2580,7 @@ static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t 
     return execute_next_insn(a, pc);
 }
 
+/// \brief Implementation of the FENCE instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_FENCE(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) insn;
@@ -2441,6 +2589,7 @@ static inline execute_status execute_FENCE(STATE_ACCESS &a, uint64_t pc, uint32_
     return execute_next_insn(a, pc);
 }
 
+/// \brief Implementation of the FENCE.I instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_FENCE_I(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) insn;
@@ -2463,6 +2612,7 @@ static inline execute_status execute_arithmetic(STATE_ACCESS &a, uint64_t pc, ui
     return execute_next_insn(a, pc);
 }
 
+/// \brief Implementation of the ADD instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_ADD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "ADD");
@@ -2473,6 +2623,7 @@ static inline execute_status execute_ADD(STATE_ACCESS &a, uint64_t pc, uint32_t 
     });
 }
 
+/// \brief Implementation of the SUB instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SUB");
@@ -2483,6 +2634,7 @@ static inline execute_status execute_SUB(STATE_ACCESS &a, uint64_t pc, uint32_t 
     });
 }
 
+/// \brief Implementation of the SLL instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SLL");
@@ -2491,6 +2643,7 @@ static inline execute_status execute_SLL(STATE_ACCESS &a, uint64_t pc, uint32_t 
     });
 }
 
+/// \brief Implementation of the SLT instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLT(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SLT");
@@ -2499,6 +2652,7 @@ static inline execute_status execute_SLT(STATE_ACCESS &a, uint64_t pc, uint32_t 
     });
 }
 
+/// \brief Implementation of the SLTU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLTU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SLTU");
@@ -2507,6 +2661,7 @@ static inline execute_status execute_SLTU(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the XOR instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_XOR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "XOR");
@@ -2515,6 +2670,7 @@ static inline execute_status execute_XOR(STATE_ACCESS &a, uint64_t pc, uint32_t 
     });
 }
 
+/// \brief Implementation of the SRL instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SRL");
@@ -2523,6 +2679,7 @@ static inline execute_status execute_SRL(STATE_ACCESS &a, uint64_t pc, uint32_t 
     });
 }
 
+/// \brief Implementation of the SRA instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRA(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SRA");
@@ -2531,6 +2688,7 @@ static inline execute_status execute_SRA(STATE_ACCESS &a, uint64_t pc, uint32_t 
     });
 }
 
+/// \brief Implementation of the OR instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_OR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "OR");
@@ -2539,6 +2697,7 @@ static inline execute_status execute_OR(STATE_ACCESS &a, uint64_t pc, uint32_t i
     });
 }
 
+/// \brief Implementation of the AND instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AND(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AND");
@@ -2547,6 +2706,7 @@ static inline execute_status execute_AND(STATE_ACCESS &a, uint64_t pc, uint32_t 
     });
 }
 
+/// \brief Implementation of the MUL instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_MUL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "MUL");
@@ -2559,6 +2719,7 @@ static inline execute_status execute_MUL(STATE_ACCESS &a, uint64_t pc, uint32_t 
     });
 }
 
+/// \brief Implementation of the MULH instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_MULH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "MULH");
@@ -2569,6 +2730,7 @@ static inline execute_status execute_MULH(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the MULHSU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_MULHSU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "MULHSU");
@@ -2578,6 +2740,7 @@ static inline execute_status execute_MULHSU(STATE_ACCESS &a, uint64_t pc, uint32
     });
 }
 
+/// \brief Implementation of the MULHU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_MULHU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "MULHU");
@@ -2586,6 +2749,7 @@ static inline execute_status execute_MULHU(STATE_ACCESS &a, uint64_t pc, uint32_
     });
 }
 
+/// \brief Implementation of the DIV instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_DIV(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "DIV");
@@ -2602,6 +2766,7 @@ static inline execute_status execute_DIV(STATE_ACCESS &a, uint64_t pc, uint32_t 
     });
 }
 
+/// \brief Implementation of the DIVU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_DIVU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "DIVU");
@@ -2614,6 +2779,7 @@ static inline execute_status execute_DIVU(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the REM instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_REM(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "REM");
@@ -2630,6 +2796,7 @@ static inline execute_status execute_REM(STATE_ACCESS &a, uint64_t pc, uint32_t 
     });
 }
 
+/// \brief Implementation of the REMU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_REMU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "REMU");
@@ -2653,6 +2820,7 @@ static inline execute_status execute_arithmetic_immediate(STATE_ACCESS &a, uint6
     return execute_next_insn(a, pc);
 }
 
+/// \brief Implementation of the SRLI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRLI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SRLI");
@@ -2661,6 +2829,7 @@ static inline execute_status execute_SRLI(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the SRAI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRAI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SRAI");
@@ -2669,6 +2838,7 @@ static inline execute_status execute_SRAI(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the ADDI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_ADDI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "ADDI");
@@ -2677,6 +2847,7 @@ static inline execute_status execute_ADDI(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the SLTI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLTI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SLTI");
@@ -2685,6 +2856,7 @@ static inline execute_status execute_SLTI(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the SLTIU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLTIU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SLTIU");
@@ -2693,6 +2865,7 @@ static inline execute_status execute_SLTIU(STATE_ACCESS &a, uint64_t pc, uint32_
     });
 }
 
+/// \brief Implementation of the XORI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_XORI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "XORI");
@@ -2701,6 +2874,7 @@ static inline execute_status execute_XORI(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the ORI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_ORI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "ORI");
@@ -2709,6 +2883,7 @@ static inline execute_status execute_ORI(STATE_ACCESS &a, uint64_t pc, uint32_t 
     });
 }
 
+/// \brief Implementation of the ANDI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_ANDI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "ANDI");
@@ -2717,6 +2892,7 @@ static inline execute_status execute_ANDI(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the SLLI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLLI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     if ((insn & (0b111111 << 26)) == 0) {
@@ -2731,6 +2907,7 @@ static inline execute_status execute_SLLI(STATE_ACCESS &a, uint64_t pc, uint32_t
     }
 }
 
+/// \brief Implementation of the ADDIW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_ADDIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "ADDIW");
@@ -2739,6 +2916,7 @@ static inline execute_status execute_ADDIW(STATE_ACCESS &a, uint64_t pc, uint32_
     });
 }
 
+/// \brief Implementation of the SLLIW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     if (insn_get_funct7(insn) == 0) {
@@ -2754,6 +2932,7 @@ static inline execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t pc, uint32_
     }
 }
 
+/// \brief Implementation of the SRLIW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRLIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SRLIW");
@@ -2765,6 +2944,7 @@ static inline execute_status execute_SRLIW(STATE_ACCESS &a, uint64_t pc, uint32_
     });
 }
 
+/// \brief Implementation of the SRAIW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRAIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SRAIW");
@@ -2786,24 +2966,28 @@ static inline execute_status execute_S(STATE_ACCESS &a, uint64_t pc, uint32_t in
     }
 }
 
+/// \brief Implementation of the SB instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SB");
     return execute_S<uint8_t>(a, pc, insn);
 }
 
+/// \brief Implementation of the SH instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SH");
     return execute_S<uint16_t>(a, pc, insn);
 }
 
+/// \brief Implementation of the SW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SW");
     return execute_S<uint32_t>(a, pc, insn);
 }
 
+/// \brief Implementation of the SD instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "SD");
@@ -2828,42 +3012,49 @@ static inline execute_status execute_L(STATE_ACCESS &a, uint64_t pc, uint32_t in
     }
 }
 
+/// \brief Implementation of the LB instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "LB");
     return execute_L<int8_t>(a, pc, insn);
 }
 
+/// \brief Implementation of the LH instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "LH");
     return execute_L<int16_t>(a, pc, insn);
 }
 
+/// \brief Implementation of the LW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "LW");
     return execute_L<int32_t>(a, pc, insn);
 }
 
+/// \brief Implementation of the LD instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "LD");
     return execute_L<int64_t>(a, pc, insn);
 }
 
+/// \brief Implementation of the LBU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LBU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "LBU");
     return execute_L<uint8_t>(a, pc, insn);
 }
 
+/// \brief Implementation of the LHU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LHU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "LHU");
     return execute_L<uint16_t>(a, pc, insn);
 }
 
+/// \brief Implementation of the LWU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LWU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "LWU");
@@ -2885,6 +3076,7 @@ static inline execute_status execute_branch(STATE_ACCESS &a, uint64_t pc, uint32
     return execute_next_insn(a, pc);
 }
 
+/// \brief Implementation of the BEQ instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_BEQ(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "BEQ");
@@ -2892,12 +3084,14 @@ static inline execute_status execute_BEQ(STATE_ACCESS &a, uint64_t pc, uint32_t 
 }
 
 
+/// \brief Implementation of the BNE instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_BNE(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "BNE");
     return execute_branch(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 != rs2; });
 }
 
+/// \brief Implementation of the BLT instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_BLT(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "BLT");
@@ -2906,6 +3100,7 @@ static inline execute_status execute_BLT(STATE_ACCESS &a, uint64_t pc, uint32_t 
     });
 }
 
+/// \brief Implementation of the BGE instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_BGE(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "BGE");
@@ -2914,6 +3109,7 @@ static inline execute_status execute_BGE(STATE_ACCESS &a, uint64_t pc, uint32_t 
     });
 }
 
+/// \brief Implementation of the BLTU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_BLTU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "BLTU");
@@ -2922,6 +3118,7 @@ static inline execute_status execute_BLTU(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the BGEU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_BGEU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "BGEU");
@@ -2930,6 +3127,7 @@ static inline execute_status execute_BGEU(STATE_ACCESS &a, uint64_t pc, uint32_t
     });
 }
 
+/// \brief Implementation of the LUI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LUI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "LUI");
@@ -2939,6 +3137,7 @@ static inline execute_status execute_LUI(STATE_ACCESS &a, uint64_t pc, uint32_t 
     return execute_next_insn(a, pc);
 }
 
+/// \brief Implementation of the AUIPC instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AUIPC(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "AUIPC");
@@ -2948,6 +3147,7 @@ static inline execute_status execute_AUIPC(STATE_ACCESS &a, uint64_t pc, uint32_
     return execute_next_insn(a, pc);
 }
 
+/// \brief Implementation of the JAL instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_JAL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "JAL");
@@ -2961,6 +3161,7 @@ static inline execute_status execute_JAL(STATE_ACCESS &a, uint64_t pc, uint32_t 
     return execute_jump(a, new_pc);
 }
 
+/// \brief Implementation of the JALR instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_JALR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "JALR");
@@ -2974,6 +3175,7 @@ static inline execute_status execute_JALR(STATE_ACCESS &a, uint64_t pc, uint32_t
     return execute_jump(a, new_pc);
 }
 
+/// \brief Implementation of the SFENCE.VMA instruction.
 template <typename STATE_ACCESS>
 static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     // rs1 and rs2 are arbitrary, rest is set
@@ -3003,6 +3205,8 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+/// \details See [Load-Reserved/Store-Conditional Instructions](riscv-spec-v2.2.pdf#section.7.2) and
+///  [Atomic Memory Operations](riscv-spec-v2.2.pdf#section.7.3).
 template <typename STATE_ACCESS>
 static inline execute_status execute_atomic_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
 #ifdef DUMP_COUNTERS
@@ -3041,6 +3245,7 @@ static inline execute_status execute_atomic_group(STATE_ACCESS &a, uint64_t pc, 
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+/// \details See [Integer Computational Instructions](riscv-spec-v2.2.pdf#section.2.4).
 template <typename STATE_ACCESS>
 static inline execute_status execute_arithmetic_32_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_arithmetic_32_funct3_funct7>(insn_get_funct3_funct7(insn))) {
@@ -3079,6 +3284,7 @@ static inline execute_status execute_shift_right_immediate_32_group(STATE_ACCESS
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+/// \details See [Integer Computational Instructions](riscv-spec-v2.2.pdf#section.2.4).
 template <typename STATE_ACCESS>
 static inline execute_status execute_arithmetic_immediate_32_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_arithmetic_immediate_32_funct3>(insn_get_funct3(insn))) {
@@ -3096,6 +3302,9 @@ static inline execute_status execute_arithmetic_immediate_32_group(STATE_ACCESS 
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+/// \details See [Environment Call and Breakpoints](riscv-spec-v2.2.pdf#section.2.9),
+///  [Machine-Mode Privileged Instructions](riscv-privileged-v1.10.pdf#section.3.2), and
+///  [Supervisor Instructions](riscv-privileged-v1.10.pdf#section.4.2).
 template <typename STATE_ACCESS>
 static inline execute_status execute_env_trap_int_mm_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_env_trap_int_group_insn>(insn)) {
@@ -3115,6 +3324,10 @@ static inline execute_status execute_env_trap_int_mm_group(STATE_ACCESS &a, uint
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+///  \details See [Control and Status Register Instructions](riscv-spec-v2.2.pdf#section.2.8),
+///  [Environment Call and Breakpoints](riscv-spec-v2.2.pdf#section.2.9),
+///  [Machine-Mode Privileged Instructions](riscv-privileged-v1.10.pdf#section.3.2), and
+///  [Supervisor Instructions](riscv-privileged-v1.10.pdf#section.4.2).
 template <typename STATE_ACCESS>
 static inline execute_status execute_csr_env_trap_int_mm_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_csr_env_trap_int_mm_funct3>(insn_get_funct3(insn))) {
@@ -3136,6 +3349,7 @@ static inline execute_status execute_csr_env_trap_int_mm_group(STATE_ACCESS &a, 
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+///  See [Memory Model](riscv-spec-v2.2.pdf#section.2.7).
 template <typename STATE_ACCESS>
 static inline execute_status execute_fence_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     if (insn == 0x0000100f) {
@@ -3168,6 +3382,7 @@ static inline execute_status execute_shift_right_immediate_group(STATE_ACCESS &a
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+///  See [Integer Computational Instructions](riscv-spec-v2.2.pdf#section.2.4).
 template <typename STATE_ACCESS>
 static inline execute_status execute_arithmetic_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     //std::cerr << "funct3_funct7: " << std::bitset<10>(insn_get_funct3_funct7(insn)) << '\n';
@@ -3200,6 +3415,7 @@ static inline execute_status execute_arithmetic_group(STATE_ACCESS &a, uint64_t 
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+///  See [Integer Computational Instructions](riscv-spec-v2.2.pdf#section.2.4).
 template <typename STATE_ACCESS>
 static inline execute_status execute_arithmetic_immediate_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_arithmetic_immediate_funct3>(insn_get_funct3(insn))) {
@@ -3222,6 +3438,7 @@ static inline execute_status execute_arithmetic_immediate_group(STATE_ACCESS &a,
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+/// \details See [Load and Store Instructions](riscv-spec-v2.2.pdf#section.2.6).
 template <typename STATE_ACCESS>
 static inline execute_status execute_store_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_store_funct3>(insn_get_funct3(insn))) {
@@ -3239,6 +3456,7 @@ static inline execute_status execute_store_group(STATE_ACCESS &a, uint64_t pc, u
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+/// \details See [Load and Store Instructions](riscv-spec-v2.2.pdf#section.2.6).
 template <typename STATE_ACCESS>
 static inline execute_status execute_load_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_load_funct3>(insn_get_funct3(insn))) {
@@ -3259,6 +3477,7 @@ static inline execute_status execute_load_group(STATE_ACCESS &a, uint64_t pc, ui
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+/// \details See [Control Transfer Instructions](riscv-spec-v2.2.pdf#section.2.5).
 template <typename STATE_ACCESS>
 static inline execute_status execute_branch_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_branch_funct3>(insn_get_funct3(insn))) {
@@ -3272,12 +3491,17 @@ static inline execute_status execute_branch_group(STATE_ACCESS &a, uint64_t pc, 
     }
 }
 
-/// \brief Executes an instruction.
+/// \brief Decodes and executes an instruction.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param pc Current pc.
 /// \param insn Instruction.
-/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
+/// \return execute_status::illegal if and illegal instruction exception was raised, or
+///  execute_status::retired otherwise (Note that some other exception may or may not have been raised)
+/// \details The execute_insn function decodes the instruction in multiple levels. When we know for sure that
+///  the instruction could only be a &lt;FOO&gt;, a function with the name execute_&lt;FOO&gt; will be called.
+///  See [RV32/64G Instruction Set Listings](riscv-spec-v2.2.pdf#chapter.19) and
+///  [Instruction listings for RISC-V](riscv-spec-v2.2.pdf#table.19.2).
 template <typename STATE_ACCESS>
 static inline execute_status execute_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
 //std::cerr << "insn: " << std::bitset<32>(insn) << '\n';
@@ -3334,7 +3558,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
             return fetch_status::exception;
         }
         // Walk memory map to find the range that contains the physical address
-        pma_entry *pma = find_pma_entry_through_state_access(a, paddr);
+        pma_entry *pma = find_pma_entry(a, paddr);
         // We only execute directly from RAM (as in "random access memory", which includes ROM)
         // If we are not in RAM or if we are not in any range, we treat this as a PMA violation
         if (!pma || !pma_is_ram(pma)) {

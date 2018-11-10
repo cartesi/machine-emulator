@@ -6,6 +6,7 @@
 /// \file
 /// \brief Host-Target interface device.
 
+// Forward declarations
 struct machine_state;
 struct htif_state;
 

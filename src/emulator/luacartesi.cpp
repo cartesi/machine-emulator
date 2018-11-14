@@ -155,6 +155,11 @@ static bool opt_table_field(lua_State *L, int tabidx, const char *field) {
     }
 }
 
+void push_hash(lua_State *L, const merkle_tree::hash_type hash) {
+    lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()),
+        hash.size());
+}
+
 /// \brief Checks if the machine field in config matches the emulator name.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
@@ -337,41 +342,43 @@ static int mod_keccak(lua_State *L) {
         case 1: {
             uint64_t word = luaL_checkinteger(L, 1);
             keccak_256_hasher h;
-            keccak_256_hasher::digest_type hash;
+            keccak_256_hasher::hash_type hash;
             h.begin();
             h.add_data(reinterpret_cast<uint8_t *>(&word), sizeof(word));
             h.end(hash);
             //??D there is a chance this will throw an error
             // due to lack of memory and we will end up
-            // leaking any memory allocated by the h and hash variables
-            // This is so unlikely that I am letting it go
-            lua_pushlstring(L, reinterpret_cast<char *>(hash.data()),
-                hash.size());
+            // leaking any memory allocated by the h and hash variables.
+            // Both seem not to perform any dynamic memory
+            // allocation. Even if they did, failing here would be so
+            // unlikely that I am letting this go
+            push_hash(L, hash);
             break;
         }
         case 2: {
             size_t len1 = 0;
             const char *hash1 = luaL_checklstring(L, 1, &len1);
-            if (len1 != keccak_256_hasher::digest_size) {
+            if (len1 != keccak_256_hasher::hash_size) {
                 luaL_argerror(L, 1, "invalid hash size");
             }
             size_t len2 = 0;
             const char *hash2 = luaL_checklstring(L, 2, &len2);
-            if (len2 != keccak_256_hasher::digest_size) {
+            if (len2 != keccak_256_hasher::hash_size) {
                 luaL_argerror(L, 2, "invalid hash size");
             }
             keccak_256_hasher h;
-            keccak_256_hasher::digest_type hash;
+            keccak_256_hasher::hash_type hash;
             h.begin();
             h.add_data(reinterpret_cast<const uint8_t *>(hash1), len1);
             h.add_data(reinterpret_cast<const uint8_t *>(hash2), len2);
             h.end(hash);
             //??D there is a chance this will throw an error
             // due to lack of memory and we will end up
-            // leaking any memory allocated by the h and hash variables
-            // This is so unlikely that I am letting it go
-            lua_pushlstring(L, reinterpret_cast<char *>(hash.data()),
-                hash.size());
+            // leaking any memory allocated by the h and hash variables.
+            // Both seem not to perform any dynamic memory
+            // allocation. Even if they did, failing here would be so
+            // unlikely that I am letting this go
+            push_hash(L, hash);
             break;
         }
         default:
@@ -472,6 +479,14 @@ static int meta__index_update_merkle_tree(lua_State *L) {
     return 0;
 }
 
+/// \brief This is the machine:verify_merkle_tree() method implementation.
+/// \param L Lua state.
+static int meta__index_verify_merkle_tree(lua_State *L) {
+    emulator *e = check_machine(L, 1);
+    lua_pushboolean(L, emulator_verify_merkle_tree(e));
+    return 1;
+}
+
 /// \brief This is the machine:get_merkle_tree_root_hash() method implementation.
 /// \param L Lua state.
 static int meta__index_get_merkle_tree_root_hash(lua_State *L) {
@@ -540,15 +555,43 @@ static int meta__index_read_word(lua_State *L) {
     }
 }
 
+/// \brief This is the machine:get_proof() method implementation.
+/// \param L Lua state.
+static int meta__index_get_proof(lua_State *L) {
+    emulator *e = check_machine(L, 1);
+    auto m = emulator_get_machine(e);
+    auto t = emulator_get_merkle_tree(e);
+    merkle_tree::proof_type proof;
+    if (machine_get_proof(m, t, luaL_checkinteger(L, 2), luaL_checkinteger(L, 3), proof)) {
+        lua_newtable(L); // proof
+        lua_newtable(L); // proof siblings
+        for (int log2_size = t->get_log2_word_size(); log2_size < t->get_log2_tree_size(); ++log2_size) {
+            const auto &hash = t->get_sibling_hash(proof.sibling_hashes, log2_size);
+            push_hash(L, hash);
+            lua_rawseti(L, -2, log2_size);
+        }
+        lua_setfield(L, -2, "sibling_hashes"); // proof
+        lua_pushinteger(L, proof.address); lua_setfield(L, -2, "address"); // proof
+        lua_pushinteger(L, proof.log2_size); lua_setfield(L, -2, "log2_size"); // proof
+        push_hash(L, proof.root_hash); lua_setfield(L, -2, "root_hash"); // proof
+        push_hash(L, proof.target_hash); lua_setfield(L, -2, "target_hash"); // proof
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 /// \brief Contents of the machine metatable __index table.
 static const luaL_Reg meta__index[] = {
     {"run", meta__index_run},
     {"dump", meta__index_dump},
+    {"get_proof", meta__index_get_proof},
     {"read_word", meta__index_read_word},
     {"read_mcycle", meta__index_read_mcycle},
     {"read_tohost", meta__index_read_tohost},
     {"read_iflags_H", meta__index_read_iflags_H},
     {"update_merkle_tree", meta__index_update_merkle_tree},
+    {"verify_merkle_tree", meta__index_verify_merkle_tree},
     {"get_merkle_tree_root_hash", meta__index_get_merkle_tree_root_hash},
     {"destroy", meta__index_destroy},
     { NULL, NULL }

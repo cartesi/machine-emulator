@@ -89,6 +89,7 @@ LUACARTESI_OBJS:= \
 	htif.o \
 	shadow.o \
 	emulator.o \
+	merkle-tree.o \
 	pma.o \
 	machine.o \
 	luacartesi.o

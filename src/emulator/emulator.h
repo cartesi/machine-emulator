@@ -18,6 +18,7 @@
 
 struct emulator;
 struct machine_state;
+class merkle_tree;
 
 /// \brief Returns VENDORID:ARCHID:IMPID as a string.
 /// \returns The identifying string.
@@ -49,7 +50,17 @@ void emulator_run(emulator *emu, uint64_t mcycle_end);
 /// \brief Returns the machine state within the emulator.
 /// \params emu Pointer to emulator.
 /// \returns Pointer to machine state.
-machine_state *emulator_get_machine(emulator *emu);
+const machine_state *emulator_get_machine(const emulator *emu);
+
+/// \brief Returns the Merkle tree within the emulator.
+/// \params emu Pointer to emulator.
+/// \returns Pointer to Merkle tree.
+const merkle_tree *emulator_get_merkle_tree(const emulator *emu);
+
+/// \brief Verifies the Merkle tree within the emulator.
+/// \params emu Pointer to emulator.
+/// \returns True if verification passed, false otherwise.
+bool emulator_verify_merkle_tree(const emulator *emu);
 
 /// \brief Updates the Merkle tree for the entire machine state.
 /// \params emu Pointer to emulator.

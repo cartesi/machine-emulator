@@ -1070,15 +1070,6 @@ bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
     return !t->is_error(t->end_update(h));
 }
 
-static std::ostream &operator<<(std::ostream &out, const merkle_tree::digest_type &hash) {
-    auto f = out.flags();
-    for (unsigned b: hash) {
-        out << std::hex << std::setfill('0') << std::setw(2) << b;
-    }
-    out.flags(f);
-    return out;
-}
-
 const pma_entry *machine_get_pma(const machine_state *s, int i) {
     if (i < 0 || i >= s->pma_count) return nullptr;
     return &s->physical_memory[i];
@@ -1110,24 +1101,25 @@ bool machine_dump(const machine_state *s) {
     return true;
 }
 
-bool machine_get_word_value_proof(const machine_state *s, const merkle_tree *t, uint64_t word_address, merkle_tree::word_value_proof &proof) {
+bool machine_get_proof(const machine_state *s, const merkle_tree *t, uint64_t address, int log2_size, merkle_tree::proof_type &proof) {
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
-    word_address &= ~(PMA_WORD_SIZE-1); // Make sure address is aligned
     auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
-    const pma_entry *pma = naked_find_pma_entry(s, word_address);
+    const pma_entry *pma = naked_find_pma_entry(s, address);
     const uint8_t *page_data = nullptr;
-    if (!pma) {
-        uint64_t page_start_in_range = (word_address - pma->start) & (~(PMA_PAGE_SIZE-1));
+    if (pma) {
+        uint64_t page_start_in_range = (address - pma->start) & (~(PMA_PAGE_SIZE-1));
         if (!pma->driver->peek(pma, page_start_in_range, &page_data, scratch.get())) {
             return false;
         }
     }
-    return !t->is_error(t->get_word_value_proof(word_address, page_data, proof));
+    return !t->is_error(t->get_proof(address, log2_size, page_data, proof));
 }
 
 bool machine_read_word(const machine_state *s, uint64_t word_address, uint64_t *word_value) {
-    word_address &= ~(PMA_WORD_SIZE-1); // Make sure address is aligned
+    // Make sure address is aligned
+    if (word_address & (PMA_WORD_SIZE-1))
+        return false;
     const pma_entry *pma = naked_find_pma_entry(s, word_address);
     // If no entry is found, we are outside of every range, and therefore pristine
     if (!pma) {

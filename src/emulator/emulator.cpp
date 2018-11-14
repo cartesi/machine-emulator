@@ -269,6 +269,7 @@ static bool init_ram_and_rom(const emulator_config *c, emulator *emu) {
         }
     }
 
+    // Initialize RAM
     if (!c->ram.backing.empty()) {
         int len = get_file_size(c->ram.backing.c_str());
         if (len < 0) {
@@ -279,14 +280,12 @@ static bool init_ram_and_rom(const emulator_config *c, emulator *emu) {
                 (int) len, (int) c->ram.length);
             return false;
         }
-    }
-
-    // Initialize RAM
-    uint8_t *ram_ptr = machine_get_host_memory(emu->machine, RAM_BASE_ADDR);
-    if (!ram_ptr) return false;
-    if (load_file(c->ram.backing.c_str(), ram_ptr, c->ram.length) < 0) {
-        fprintf(stderr, "Unable to load RAM image\n");
-        return false;
+        uint8_t *ram_ptr = machine_get_host_memory(emu->machine, RAM_BASE_ADDR);
+        if (!ram_ptr) return false;
+        if (load_file(c->ram.backing.c_str(), ram_ptr, c->ram.length) < 0) {
+            fprintf(stderr, "Unable to load RAM image\n");
+            return false;
+        }
     }
 
     // Initialize ROM
@@ -466,15 +465,23 @@ bool emulator_update_merkle_tree(emulator *emu) {
     return machine_update_merkle_tree(emu->machine, emu->tree);
 }
 
+bool emulator_verify_merkle_tree(const emulator *emu) {
+    return !emu->tree->is_error(emu->tree->verify());
+}
+
 bool emulator_get_merkle_tree_root_hash(emulator *emu, uint8_t *data, size_t len) {
-    merkle_tree::digest_type hash;
+    merkle_tree::hash_type hash;
     int ret = !emu->tree->is_error(emu->tree->get_merkle_tree_root_hash(hash));
     memcpy(data, hash.data(), std::min(len, hash.size()));
     return ret;
 }
 
-machine_state *emulator_get_machine(emulator *emu) {
+const machine_state *emulator_get_machine(const emulator *emu) {
     return emu->machine;
+}
+
+const merkle_tree *emulator_get_merkle_tree(const emulator *emu) {
+    return emu->tree;
 }
 
 void emulator_run(emulator *emu, uint64_t mcycle_end) {

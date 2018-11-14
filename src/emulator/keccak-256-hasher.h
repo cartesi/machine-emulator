@@ -20,8 +20,8 @@ friend i_hasher<keccak_256_hasher, CryptoPP::Keccak_256::DIGESTSIZE>;
         return kc.Update(data, length);
     }
 
-    void do_end(digest_type &digest) {
-        return kc.Final(digest.data());
+    void do_end(hash_type &hash) {
+        return kc.Final(hash.data());
     }
 };
 

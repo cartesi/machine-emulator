@@ -5,24 +5,18 @@
 /// \brief Merkle tree interface.
 
 #include <cstdint>
-#include <cstdlib>
-#include <cassert>
-#include <cstring>
-#include <functional>
-#include <iostream>
-#include <iomanip>
+#include <iosfwd>
 #include <type_traits>
 #include <deque>
 #include <array>
-#include <vector>
 #include <unordered_map>
 
 #include "keccak-256-hasher.h"
 
-/// \class merkle_tree_t
+/// \class merkle_tree
 /// \brief Merkle tree implementation.
 ///
-/// \details The merkle_tree_t class implements a Merkle tree
+/// \details The merkle_tree class implements a Merkle tree
 /// covering LOG2_TREE_SIZE bits of address space.
 ///
 /// Upon creation, the memory is *pristine*, i.e., completely
@@ -39,33 +33,39 @@
 /// Tree leaves contain Keccak-256 hashes of individual words.
 ///
 /// Tree contents are updated page-by-page using calls to
-/// merkle_tree_t#begin_update, merkle_tree_t#update_page, ...,
-/// merkle_tree_t#update_page, merkle_tree_t#end_update.
-///
-/// \tparam LOG2_TREE_SIZE Number of bits covered by the address space.
-/// I.e., log<sub>2</sub> of number of bytes subintended by the tree root.
-/// \tparam LOG2_PAGE_SIZE Number of bits covered by a page.
-/// I.e., log<sub>2</sub> of number of bytes subintended by the
-/// the deepest explicitly represented nodes.
-/// \tparam H Hasher class implementing the i_hasher interface.
-template <
-    int LOG2_TREE_SIZE = 64,
-    int LOG2_PAGE_SIZE = 12,
-    typename H = keccak_256_hasher
->
-class merkle_tree_t final {
+/// merkle_tree#begin_update, merkle_tree#update_page, ...,
+/// merkle_tree#update_page, merkle_tree#end_update.
+class merkle_tree final {
+public:
+
+    using word_type = uint64_t;
+
+    using address_type = uint64_t;
+
 private:
+    /// \brief LOG2_TREE_SIZE Number of bits covered by the address space.
+    /// I.e., log<sub>2</sub> of number of bytes subintended by the tree root.
+    static constexpr int LOG2_TREE_SIZE = 64;
+    /// \brief LOG2_PAGE_SIZE Number of bits covered by a page.
+    /// I.e., log<sub>2</sub> of number of bytes subintended by the
+    /// the deepest explicitly represented nodes.
+    static constexpr int LOG2_PAGE_SIZE = 12;
+    /// \brief LOG2_WORD_SIZE Number of bits covered by a word.
+    /// I.e., log<sub>2</sub> of number of bytes subintended by the
+    /// the deepest tree nodes.
+    static constexpr int LOG2_WORD_SIZE = 3;
 
-    using word = uint64_t;
-    static constexpr int LOG2_WORD_SIZE = 3; // Must match word size
-    static constexpr size_t m_word_size = 1 << LOG2_WORD_SIZE;
+    static constexpr size_t m_word_size = size_t(1) << LOG2_WORD_SIZE;
 
-    static constexpr uint64_t m_page_index_mask =
-        ((~0ull) >> (64-LOG2_TREE_SIZE)) << LOG2_PAGE_SIZE;
-    static constexpr uint64_t m_page_offset_mask = ~m_page_index_mask;
-    static constexpr size_t m_page_size = 1 << LOG2_PAGE_SIZE;
+    static constexpr address_type m_page_index_mask =
+        ((~UINT64_C(0)) >> (64-LOG2_TREE_SIZE)) << LOG2_PAGE_SIZE;
+
+    static constexpr address_type m_page_offset_mask = ~m_page_index_mask;
+
+    static constexpr size_t m_page_size = size_t(1) << LOG2_PAGE_SIZE;
 
 public:
+
     /// \brief Error codes.
     /// \details All public methods return an error code with a descriptive
     /// name.  These error codes can be cast to int. The result is positive
@@ -89,29 +89,36 @@ public:
     /// \brief Returns the LOG2_WORD_SIZE template parameter.
     static constexpr int get_log2_word_size(void) { return LOG2_WORD_SIZE; }
     /// \brief Returns the page size.
-    static constexpr int get_page_size(void) { return m_page_size; }
+    static constexpr size_t get_page_size(void) { return m_page_size; }
     /// \brief Returns the word size.
-    static constexpr int get_word_size(void) { return m_word_size; }
+    static constexpr size_t get_word_size(void) { return m_word_size; }
+
+    /// \brief Hasher class.
+    using hasher_type = keccak_256_hasher;
 
     /// \brief Storage for a hash.
-    using digest_type = typename H::digest_type;
+    using hash_type = hasher_type::hash_type;
 
-    using hasher_type = H;
+    /// \brief Storage for the hashes of the siblings of all nodes along
+    /// the path from the root to target node.
+    using siblings_type = std::array<hash_type,
+          LOG2_TREE_SIZE-LOG2_WORD_SIZE>;
 
     /// \brief Storage for the proof of a word value.
-    /// \details The proof for a word value contains the
-    /// hashes for all siblings in the path from the word
-    /// node to the root, followed by the hash for the root,
-    /// in that order.
-    using word_value_proof = std::array<digest_type,
-          LOG2_TREE_SIZE-LOG2_WORD_SIZE+1>;
+    struct proof_type {
+        address_type address;           ///< Address of target node
+        int log2_size;                  ///< log<sub>2</sub> of size subintended by target node.
+        hash_type target_hash;          ///< Hash of target node
+        siblings_type sibling_hashes;   ///< Hashes of siblings
+        hash_type root_hash;            ///< Hash of root node
+    };
 
 private:
     /// \brief Merkle tree node structure.
     /// \details A node is known to be an inner-node or a page-node implicitly
     /// based on its height in the tree.
     struct tree_node {
-        digest_type hash; ///< Hash of subintended data.
+        hash_type hash; ///< Hash of subintended data.
         tree_node *parent;    ///< Pointer to parent node (nullptr for root).
         tree_node *child[2];  ///< Children nodes.
         uint64_t mark;        ///< Helper for traversal algorithms.
@@ -120,7 +127,7 @@ private:
     // Sparse map from virtual page index to the
     // corresponding page node in the Merkle tree.
     std::unordered_map<
-        uint64_t,
+        address_type,
         tree_node *
     > m_page_node_map;
 
@@ -131,7 +138,7 @@ private:
     // Precomputed hashes of spans of zero bytes with
     // increasing power-of-two sizes, from 2^LOG2_WORD_SIZE
     // to 2^LOG2_TREE_SIZE bytes.
-    word_value_proof m_pristine_hashes;
+    std::array<hash_type, LOG2_TREE_SIZE - LOG2_WORD_SIZE+1> m_pristine_hashes;
 
     // Used to mark visited nodes when traversing the tree
     // bottom up in breadth to propagate changes from dirty
@@ -145,25 +152,17 @@ private:
     mutable uint64_t m_num_nodes;
 #endif
 
-    /// \brief Get hash corresponding to log2_size in proof.
-    /// \param proof Input proof.
+    /// \brief Modify hash corresponding to log2_size in the list of siblings.
+    /// \param hash New hash.
     /// \param log2_size log<sub>2</sub> of size subintended by hash.
-    /// \return Reference to hash inside proof.
-    const digest_type &get_proof_hash(const word_value_proof &proof,
-        int log2_size) const;
-
-    /// \brief Set hash corresponding to log2_size in proof.
-    /// \param proof Proof to modify.
-    /// \param log2_size log<sub>2</sub> of size subintended by hash.
-    /// \param hash New hash for log2_size in proof.
-    void set_proof_hash(word_value_proof &proof,
-        int log2_size, const digest_type &hash) const;
+    /// \param sibling_hashes List of siblings.
+    void set_sibling_hash(const hash_type &hash, int log2_size, siblings_type &sibling_hashes) const;
 
     /// \brief Maps a page_index to a node.
     /// \param page_index Page index.
     /// \param node Node subintending page.
     /// \return 1 if succeeded, 0 othewise.
-	int set_page_node_map(uint64_t page_index, tree_node *node);
+	int set_page_node_map(address_type page_index, tree_node *node);
 
     /// \brief Creates and returns a new tree node.
     /// \return Newly created node or nullptr if out-of-memory.
@@ -178,7 +177,7 @@ private:
     /// \return Newly created node.
     /// \details Does *not* check if a node already exists for that page index.
     /// Maps new node to the page index.
-    tree_node *new_page_node(uint64_t page_index);
+    tree_node *new_page_node(address_type page_index);
 
     /// \brief Recursively builds hash for log2_size node
     /// from contiguous memory.
@@ -186,21 +185,28 @@ private:
     /// \param start Start of contiguous memory subintended by node.
     /// \param log2_size log<sub>2</sub> of size subintended by node.
     /// \param hash Receives the hash.
-    void update_page_node_hash(H &h, const uint8_t *start, int log2_size, digest_type &hash) const;
+    void update_page_node_hash(hasher_type &h, const uint8_t *start,
+            int log2_size, hash_type &hash) const;
 
     /// \brief Updates an inner node hash from its children.
     /// \param h Hasher object.
     /// \param log2_size log<sub>2</sub> of size subintended by node.
     /// \param node Node to be updated.
-    void update_inner_node_hash(H &h, int log2_size, tree_node *node);
+    void update_inner_node_hash(hasher_type &h, int log2_size, tree_node *node);
 
     /// \brief Dumps a hash to std::cerr.
     /// \param hash Hash to be dumped.
-    void dump_hash(const digest_type &hash) const;
+    void dump_hash(const hash_type &hash) const;
 
     /// \brief Returns the hash for a log2_size pristine node.
+    /// \param log2_size log<sub>2</sub> of size subintended by node.
     /// \return Reference to precomputed hash.
-    const digest_type &get_pristine_hash(int log2_size) const;
+    const hash_type &get_pristine_hash(int log2_size) const;
+
+    /// \brief Defines the hash for a log2_size pristine node.
+    /// \param hash New hash.
+    /// \param log2_size log<sub>2</sub> of size subintended by node.
+    void set_pristine_hash(const hash_type &hash, int log2_size);
 
     /// \brief Returns the hash for a child of a given node.
     /// \param child_log2_size log2_size of child node.
@@ -208,7 +214,7 @@ private:
     /// \param bit Bit corresponding to child_log2_size in child node address.
     /// \return Reference to child hash. If child pointer is null,
     /// returns a pristine hash.
-    const digest_type &get_inner_child_hash(int child_log2_size,
+    const hash_type &get_child_hash(int child_log2_size,
         const tree_node *node, int bit) const;
 
     /// \brief Precomputes hashes for pristine nodes of all sizes.
@@ -234,48 +240,59 @@ private:
     /// \param h Hasher object.
     /// \param node Root of subtree.
     /// \param  log2_size log<sub>2</sub> of size subintended by \p node.
-    status_code verify_merkle_tree(H &h, tree_node *node, int log2_size) const;
+    status_code verify(hasher_type &h, tree_node *node,
+            int log2_size) const;
 
     /// \brief Computes the page index for a memory address.
     /// \param address Memory address.
     /// \return The page index.
-    constexpr uint64_t get_page_index(uint64_t address);
+    constexpr address_type get_page_index(address_type address) const;
 
     /// \brief Computes the offset of a memory address within its page.
     /// \param address Memory address.
     /// \return The offset.
-	constexpr uint64_t get_offset_in_page(uint64_t address);
+	constexpr address_type get_offset_in_page(address_type address) const;
 
     /// \brief Computes the offset of a memory address within its page.
     /// \param page_index Page index associated to node.
     /// \return The node, if found, or nullptr otherwise.
-    tree_node *get_page_node(uint64_t page_index) const;
+    tree_node *get_page_node(address_type page_index) const;
 
-    /// \brief Obtains the proof for target node at \p address and \p log2_size.
+    /// \brief Gets the sibling hashes along the path from
+    /// the node currently being visited and a target node.
     /// \param h Hasher object.
     /// \param address Address of target node.
-    /// \param parent_diverged Parent node corresponding to \p node_data
-    /// is not not in path from root to target node.
-    /// \param diverged Node corresponding to \p node_data is not in
-    /// path from root to target node.
-    /// \param node_data Pointer to start of contiguous node data.
-    /// \param log2_size log<sub>2</sub> of size subintended by target \p node.
-    /// \param proof Receives the proof.
-    /// \param page_hash
-    /// \param page_hash Receives the hash for the page. (Also used to store
-    /// temporary hashes during computation.)
-    void get_inside_page_word_value_proof(H &h, uint64_t address,
-        int parent_diverged, int diverged, const uint8_t *node_data,
-        int log2_size, word_value_proof &proof, digest_type &page_hash) const;
+    /// \param log2_size log<sub>2</sub> of size subintended by target node.
+    /// \param hash Receives the target node hash if it is a
+    /// subnode of the node currently being visited.
+    /// \param curr_data Pointer to contiguous data for node currently
+    /// being visited.
+    /// \param log2_curr_size log<sub>2</sub> of size subintended by node
+    /// currently being visited.
+    /// \param curr_hash Receives the hash for node currently being visited.
+    /// \param parent_diverged True if parent of node currently being visited
+    /// is not in path from root to target node.
+    /// \param curr_diverged True if node currently being visited is
+    /// itself not in path from root to target node.
+    /// \param sibling_hashes Receives the sibling hashes.
+    void get_inside_page_sibling_hashes(hasher_type &h,
+        address_type address, int log2_size, hash_type &hash,
+        const uint8_t *curr_data, int log2_curr_size, hash_type &curr_hash,
+        int parent_diverged, int curr_diverged,
+        siblings_type &sibling_hashes) const;
 
-    /// \brief Obtains the proof for target node at \p address and \p log2_size.
+    /// \brief Gets the sibling hashes along the path from a
+    /// page node towards a target node.
     /// \param address Address of target node.
+    /// \param log2_size log<sub>2</sub> of size subintended by target node.
+    /// \param hash Receives target node hash.
     /// \param page_data Pointer to start of contiguous page data.
-    /// \param proof Receives the proof.
     /// \param page_hash Receives the hash for the page.
-    void get_inside_page_word_value_proof(uint64_t address,
-        const uint8_t *page_data, word_value_proof &proof,
-        digest_type &page_hash) const;
+    /// \param sibling_hashes Receives the sibling hashes.
+    void get_inside_page_sibling_hashes(
+        address_type address, int log2_size, hash_type &hash,
+        const uint8_t *page_data, hash_type &page_hash,
+        siblings_type &sibling_hashes) const;
 
     /// \brief Obtains hash of a \p parent node from the
     /// handles of its children nodes.
@@ -283,40 +300,41 @@ private:
     /// \param child0 Hash of first child.
     /// \param child1 Hash of second child.
     /// \param parent Receives parent hash.
-    void get_concat_hash(H &h, const digest_type &child0, const digest_type &child1,
-        digest_type &parent) const;
+    /// \details It is safe to use the same hash variable as both input and output to this function.
+    void get_concat_hash(hasher_type &h, const hash_type &child0,
+            const hash_type &child1, hash_type &parent) const;
 
 public:
+
+    /// \brief Get hash corresponding to log2_size from the list of siblings.
+    /// \param sibling_hashes List of siblings.
+    /// \param log2_size log<sub>2</sub> of size subintended by hash.
+    /// \return Reference to hash inside list of siblings.
+    const hash_type &get_sibling_hash(const siblings_type &sibling_hashes,
+        int log2_size) const;
 
     /// \brief Verifies the entire Merkle tree.
     /// \return status_code::success if tree is consistent,
     /// or status_code::error otherwise.
-    status_code verify_merkle_tree(void) const;
+    status_code verify(void) const;
 
     /// \brief Default constructor.
     /// \details Initializes memory to zero.
-    merkle_tree_t(void);
+    merkle_tree(void);
 
     /// \brief Destructor
     /// \details Releases all used memory
-    ~merkle_tree_t();
+    ~merkle_tree();
 
     /// \brief Returns the root hash.
     /// \param hash Receives the hash.
     /// \returns status_code::success.
-    status_code get_merkle_tree_root_hash(digest_type &hash);
-
-    /// \brief Returns a pristine proof.
-    /// \param proof Receives proof.
-    /// \details A pristine proof contains the hashes for
-    ///  nodes in all levels of a pristine tree.
-    /// \returns status_code::success.
-    status_code get_pristine_proof(word_value_proof &proof);
+    status_code get_merkle_tree_root_hash(hash_type &hash);
 
     /// \brief Start tree update.
     /// \param h Hasher object.
     /// \returns status_code::success.
-    status_code begin_update(H &h);
+    status_code begin_update(hasher_type &h);
 
     /// \brief Update tree with new data for a page node.
     /// \param h Hasher object.
@@ -324,25 +342,27 @@ public:
     /// \param page_data Pointer to start of contiguous page data, or nullptr if page is pristine.
     /// \returns status_code::success if update completed,
     /// status_code::out_of_memory if it failed.
-    status_code update_page(H &h, uint64_t page_address, const uint8_t *page_data);
+    status_code update_page(hasher_type &h, address_type page_address,
+            const uint8_t *page_data);
 
     /// \brief End tree update.
     /// \param h Hasher object.
     /// \returns status_code::success.
-    status_code end_update(H &h);
+    status_code end_update(hasher_type &h);
 
-    /// \brief Returns a word value and its proof.
-    /// \param word_address Address of aligned word.
-    /// \param page_data Pointer to start of contiguous page data where word
-    /// resides, or nullptr if page is pristine.
+    /// \brief Returns the proof for a node in the tree.
+    /// \param address Address of target node. Must be aligned
+    /// to a 2<sup>log2_size</sup> boundary.
+    /// \param log2_size log<sub>2</sub> of size subintended by target node.
+    /// Must be between LOG2_WORD_SIZE and LOG2_TREE_SIZE, inclusive.
+    /// \param page_data When log2_size smaller than LOG2_PAGE_SIZE,
+    /// \p page_data must point to start of contiguous page containing
+    /// the node, or nullptr if is the page is pristine (i.e., filled with zeros).
     /// \param proof Receives proof.
-    status_code get_word_value_proof(uint64_t word_address, const uint8_t *page_data,
-        word_value_proof &proof) const;
-
+    status_code get_proof(address_type address, int log2_size,
+            const uint8_t *page_data, proof_type &proof) const;
 };
 
-#include "merkle-tree.hpp"
-
-using merkle_tree = merkle_tree_t<64,12>;
+std::ostream &operator<<(std::ostream &out, const merkle_tree::hash_type &hash);
 
 #endif

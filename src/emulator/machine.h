@@ -36,15 +36,15 @@ void machine_end(machine_state *s);
 /// \returns true if succeeded, false otherwise.
 bool machine_update_merkle_tree(machine_state *s, merkle_tree *t);
 
-/// \brief Obtains the proof for the word at a given address
-/// in the machine state.
+/// \brief Obtains the proof for a node in the Merkle tree.
 /// \param s Machine state.
 /// \param t Merkle tree.
-/// \param word_address Word address (aligned to 64-bit boundary).
+/// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
+/// \param log2_size log<sub>2</sub> of size subintended by target node.
+/// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
 /// \param proof Receives the proof.
 /// \returns true if succeeded, false otherwise.
-bool machine_get_word_value_proof(const machine_state *s, merkle_tree *t, uint64_t word_address,
-    merkle_tree::word_value_proof &proof);
+bool machine_get_proof(const machine_state *s, const merkle_tree *t, uint64_t address, int log2_size, merkle_tree::proof_type &proof);
 
 /// \brief Read the value of a word in the machine state.
 /// \param s Machine state.

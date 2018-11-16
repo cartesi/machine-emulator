@@ -4,6 +4,7 @@
 
 #include "emulator.h"
 #include "machine.h"
+#include "access-log.h"
 #include "keccak-256-hasher.h"
 
 //??D I am not happy with the names "emulator" and "machine" for the modules
@@ -155,9 +156,109 @@ static bool opt_table_field(lua_State *L, int tabidx, const char *field) {
     }
 }
 
-void push_hash(lua_State *L, const merkle_tree::hash_type hash) {
+/// \brief Pushes a hash to the Lua stack
+/// \param L Lua state.
+/// \param hash Hash to be pushed.
+static void push_hash(lua_State *L, const merkle_tree::hash_type hash) {
     lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()),
         hash.size());
+}
+
+/// \brief Pushes a proof to the Lua stack
+/// \param L Lua state.
+/// \param proof Proof to be pushed.
+static void push_proof(lua_State *L, const merkle_tree::proof_type proof) {
+    lua_newtable(L); // proof
+    lua_newtable(L); // proof siblings
+    for (int log2_size = merkle_tree::get_log2_word_size(); log2_size < merkle_tree::get_log2_tree_size(); ++log2_size) {
+        const auto &hash = merkle_tree::get_sibling_hash(proof.sibling_hashes, log2_size);
+        push_hash(L, hash);
+        lua_rawseti(L, -2, log2_size);
+    }
+    lua_setfield(L, -2, "sibling_hashes"); // proof
+    lua_pushinteger(L, proof.address); lua_setfield(L, -2, "address"); // proof
+    lua_pushinteger(L, proof.log2_size); lua_setfield(L, -2, "log2_size"); // proof
+    push_hash(L, proof.root_hash); lua_setfield(L, -2, "root_hash"); // proof
+    push_hash(L, proof.target_hash); lua_setfield(L, -2, "target_hash"); // proof
+}
+
+/// \brief Converts an access type to a string.
+/// \param type Access type.
+/// \returns String with access type name.
+static const char *access_name(access_type type) {
+    switch (type) {
+        case access_type::read:
+            return "read";
+        case access_type::write:
+            return "write";
+        default:
+            return nullptr;
+    }
+}
+
+/// \brief Converts a note type to a string
+/// \param type Note type.
+/// \returns String with note type name.
+static const char *note_name(note_type type) {
+    switch (type) {
+        case note_type::begin:
+            return "begin";
+        case note_type::end:
+            return "end";
+        case note_type::point:
+            return "point";
+        default:
+            return nullptr;
+    }
+}
+
+/// \brief Pushes an access log to the Lua stack
+/// \param L Lua state.
+/// \param log Access log to be pushed.
+static void push_log(lua_State *L, access_log &log) {
+    lua_newtable(L); // log
+    // Add all accesses
+    lua_newtable(L); // log accesses
+    int i = 1; // convert from 0- to 1-based index
+    for (const auto &a: log.accesses) {
+        lua_newtable(L); // log accesses wordaccess
+        auto at = access_name(a.type);
+        if (at) {
+            lua_pushstring(L, at);
+            lua_setfield(L, -2, "type");
+        }
+        lua_pushinteger(L, a.read);
+        lua_setfield(L, -2, "read");
+        if (a.type == access_type::write) {
+            lua_pushinteger(L, a.written);
+            lua_setfield(L, -2, "written");
+        }
+        lua_pushlstring(L, a.text.data(), a.text.size());
+        lua_setfield(L, -2, "text");
+        push_proof(L, a.proof);
+        lua_setfield(L, -2, "proof");
+        lua_rawseti(L, -2, i);
+        ++i;
+    }
+    lua_setfield(L, -2, "accesses"); // log
+    // Add all notes
+    lua_newtable(L); // log notes
+    i = 1; // convert from 0- to 1-based index
+    for (const auto &n: log.notes) {
+        lua_newtable(L); // log notes note
+        auto nt = note_name(n.type);
+        if (nt) {
+            lua_pushstring(L, nt);
+            lua_setfield(L, -2, "type");
+        }
+        lua_pushinteger(L, n.where+1); // convert from 0- to 1-based index
+        lua_setfield(L, -2, "where");
+        lua_pushlstring(L, n.text.data(), n.text.size());
+        lua_setfield(L, -2, "text");
+        lua_rawseti(L, -2, i);
+        ++i;
+    }
+    lua_setfield(L, -2, "notes"); // log
 }
 
 /// \brief Checks if the machine field in config matches the emulator name.
@@ -239,7 +340,6 @@ static void load_processor_config(lua_State *L, int tabidx, emulator_config *c) 
         luaL_error(L, "invalid processor.x (expected table)");
     }
     lua_pop(L, 1);
-
     p.pc = opt_uint_field(L, -1, "pc", p.pc);
     p.mvendorid = opt_uint_field(L, -1, "mvendorid", p.mvendorid);
     p.marchid = opt_uint_field(L, -1, "marchid", p.marchid);
@@ -328,7 +428,8 @@ static int unprotected_mod_machine(lua_State *L) {
 /// \brief This is the cartesi.get_name() function implementation.
 /// \param L Lua state.
 static int mod_get_name(lua_State *L) {
-    lua_pushstring(L, emulator_get_name().c_str());
+    auto name = emulator_get_name();
+    lua_pushlstring(L, name.data(), name.size());
     return 1;
 }
 
@@ -487,15 +588,18 @@ static int meta__index_verify_merkle_tree(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine:get_merkle_tree_root_hash() method implementation.
+/// \brief This is the machine:get_root_hash() method implementation.
 /// \param L Lua state.
-static int meta__index_get_merkle_tree_root_hash(lua_State *L) {
+static int meta__index_get_root_hash(lua_State *L) {
     emulator *e = check_machine(L, 1);
-    uint8_t buf[32];
-    memset(buf, 0, sizeof(buf));
-    emulator_get_merkle_tree_root_hash(e, buf, sizeof(buf));
-    lua_pushlstring(L, reinterpret_cast<char *>(buf), sizeof(buf));
-    return 1;
+    auto t = emulator_get_merkle_tree(e);
+    merkle_tree::hash_type hash;
+    if (!t->is_error(t->get_root_hash(hash))) {
+        push_hash(L, hash);
+        return 1;
+    } else {
+        return 0;
+    }
 }
 
 /// \brief This is the machine:run() method implementation.
@@ -519,7 +623,7 @@ static int meta__index_read_mcycle(lua_State *L) {
 static int meta__index_read_tohost(lua_State *L) {
     emulator *e = check_machine(L, 1);
     auto m = emulator_get_machine(e);
-    lua_pushinteger(L, machine_read_tohost(m));
+    lua_pushinteger(L, machine_read_htif_tohost(m));
     return 1;
 }
 
@@ -563,22 +667,23 @@ static int meta__index_get_proof(lua_State *L) {
     auto t = emulator_get_merkle_tree(e);
     merkle_tree::proof_type proof;
     if (machine_get_proof(m, t, luaL_checkinteger(L, 2), luaL_checkinteger(L, 3), proof)) {
-        lua_newtable(L); // proof
-        lua_newtable(L); // proof siblings
-        for (int log2_size = t->get_log2_word_size(); log2_size < t->get_log2_tree_size(); ++log2_size) {
-            const auto &hash = t->get_sibling_hash(proof.sibling_hashes, log2_size);
-            push_hash(L, hash);
-            lua_rawseti(L, -2, log2_size);
-        }
-        lua_setfield(L, -2, "sibling_hashes"); // proof
-        lua_pushinteger(L, proof.address); lua_setfield(L, -2, "address"); // proof
-        lua_pushinteger(L, proof.log2_size); lua_setfield(L, -2, "log2_size"); // proof
-        push_hash(L, proof.root_hash); lua_setfield(L, -2, "root_hash"); // proof
-        push_hash(L, proof.target_hash); lua_setfield(L, -2, "target_hash"); // proof
+        push_proof(L, proof);
         return 1;
     } else {
         return 0;
     }
+}
+
+/// \brief This is the machine:step() method implementation.
+/// \param L Lua state.
+static int meta__index_step(lua_State *L) {
+    emulator *e = check_machine(L, 1);
+    auto m = emulator_get_machine(e);
+    auto t = emulator_get_merkle_tree(e);
+    access_log log;
+    machine_step(m, t, log);
+    push_log(L, log);
+    return 1;
 }
 
 /// \brief Contents of the machine metatable __index table.
@@ -592,7 +697,8 @@ static const luaL_Reg meta__index[] = {
     {"read_iflags_H", meta__index_read_iflags_H},
     {"update_merkle_tree", meta__index_update_merkle_tree},
     {"verify_merkle_tree", meta__index_verify_merkle_tree},
-    {"get_merkle_tree_root_hash", meta__index_get_merkle_tree_root_hash},
+    {"get_root_hash", meta__index_get_root_hash},
+    {"step", meta__index_step},
     {"destroy", meta__index_destroy},
     { NULL, NULL }
 };

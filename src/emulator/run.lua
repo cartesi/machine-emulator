@@ -8,25 +8,44 @@ Usage:
 where options are:
   --ram-image=<filename>       binary image for RAM
                                (default: "kernel.bin")
+
+  --no-ram-image               forget settings for ram-image
+
   --rom-image=<filename>       binary image for ROM
                                (default: none)
+
   --memory-size=<number>       target memory in MiB
                                (default: 64)
+
   --root-backing=<filename>    backing storage for root filesystem
                                corresponding to /dev/mtdblock0 mounted as /
                                (default: rootfs.ext2)
+
+  --no-root-backing            forget (default) backing settings for root
+
   --<label>-backing=<filename> backing storage for <label> filesystem
                                corresponding to /dev/mtdblock[1-7]
                                and mounted by init as /mnt/<label>
                                (default: none)
+
   --<label>-shared             target modifications to <label> filesystem
                                modify backing storage as well
                                (default: false)
+
+  --max-mcycle                 stop at a given mcycle
+
+  --step                       run a step after stopping
+
   --cmdline                    pass additional command-line arguments to kernel
+
   --batch                      run in batch mode
+
   --initial-hash               prints initial hash before running
+
   --final-hash                 prints final hash after running
+
   --ignore-payload             do not report error on non-zero payload
+
   --dump                       dump non-pristine pages to disk
 ]=])
     os.exit()
@@ -44,6 +63,8 @@ local initial_hash = false
 local final_hash = false
 local ignore_payload = false
 local dump = false
+local max_mcycle
+local step = false
 
 -- List of supported options
 -- Options are processed in order
@@ -66,16 +87,21 @@ local options = {
         batch = true
         return true
     end },
-    { "^%-%-root-backing%=(.+)$", function(f)
-        if not f then return false end
-        backing.root = f
-        return true
-    end },
     { "^%-%-(%w+)-backing%=(.+)$", function(d, f)
         if not d or not f then return false end
-        assert(not backing[d], "repeated backing")
+		if not backing[d] then
+			backing_order[#backing_order+1] = d
+		end
         backing[d] = f
-        backing_order[#backing_order+1] = d
+        return true
+    end },
+    { "^%-%-no%-root%-backing$", function(all)
+        if not all then return false end
+		assert(backing.root and backing_order[1] == "root",
+			"no root backing to remove")
+		backing.root = nil
+		shared.root = nil
+		table.remove(backing_order, 1)
         return true
     end },
     { "^%-%-ignore%-payload$", function(all)
@@ -88,6 +114,11 @@ local options = {
         dump = true
         return true
     end },
+    { "^%-%-step$", function(all)
+        if not all then return false end
+        step = true
+        return true
+    end },
     { "^%-%-(%w+)%-shared$", function(d)
         if not d then return false end
         shared[d] = true
@@ -97,13 +128,26 @@ local options = {
         if not n then return false end
         assert(e == "", "invalid option " .. all)
         n = assert(tonumber(n), "invalid option " .. all)
-        assert(n >= 16, "invalid option " .. all)
+        assert(n >= 0, "not enough memory " .. all)
         memory_size = math.ceil(n)
+        return true
+    end },
+    { "^(%-%-max%-mcycle%=(%d+)(.*))$", function(all, n, e)
+        if not n then return false end
+        assert(e == "", "invalid option " .. all)
+        n = assert(tonumber(n), "invalid option " .. all)
+        assert(n >= 0, "invalid option " .. all)
+        max_mcycle = math.ceil(n)
         return true
     end },
     { "^%-%-ram%-image%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         ram_image = o
+        return true
+    end },
+    { "^%-%-no%-ram%-image$", function(all)
+        if not all then return false end
+		ram_image = nil
         return true
     end },
     { "^%-%-rom%-image%=(.*)$", function(o)
@@ -242,12 +286,55 @@ for i, label in ipairs(backing_order) do
     }
 end
 
-local function print_hash(machine)
+local function hexhash(hash)
+    return (string.gsub(hash, ".", function(c)
+        return string.format("%02x", string.byte(c))
+    end))
+end
+
+local function print_root_hash(machine)
     print("Updating merkle tree: please wait")
     machine:update_merkle_tree()
-    print((string.gsub(machine:get_merkle_tree_root_hash(), ".", function(c)
-        return string.format("%02x", string.byte(c))
-    end)))
+    print(hexhash(machine:get_root_hash()))
+end
+
+local function print_log(log)
+    local indent_step = "  "
+    local indent_level = 0
+    local j = 1
+    local i = 1
+    while true do
+        local nj = log.notes[j]
+        local ai = log.accesses[i]
+        if not nj and not ai then break end
+        if nj and nj.where <= i then
+            if nj.type == "begin" then
+                io.stdout:write(string.rep(indent_step, indent_level), "begin ", nj.text, "\n")
+                indent_level = indent_level + 1
+            elseif nj.type == "end" then
+                indent_level = indent_level - 1
+                io.stdout:write(string.rep(indent_step, indent_level), "end ", nj.text, "\n")
+            else
+                assert(nj.type == "point")
+                io.stdout:write(string.rep(indent_step, indent_level), nj.text, "\n")
+            end
+            j = j + 1
+        elseif ai then
+            local ai = log.accesses[i]
+            io.stdout:write(string.rep(indent_step, indent_level), "hash ", hexhash(ai.proof.root_hash), "\n")
+            if ai.type == "read" then
+                io.stdout:write(string.rep(indent_step, indent_level), "read ", ai.text,
+                    string.format("@%x", ai.proof.address), ": ",
+                    ai.read, "\n")
+            else
+                assert(ai.type == "write")
+                io.stdout:write(string.rep(indent_step, indent_level), "write ", ai.text,
+                    string.format("@%x", ai.proof.address), ": ",
+                    ai.read, " -> ", ai.written, "\n")
+            end
+            i = i + 1
+        end
+    end
 end
 
 local machine = cartesi.machine(config)
@@ -257,25 +344,38 @@ if dump then
 end
 
 if initial_hash then
-    print_hash(machine)
+    print_root_hash(machine)
 end
 
-local step = 500000
-local cycles_end = step
-while true do
-    machine:run(cycles_end)
-    if machine:read_iflags_H() then
-        break
+if not max_mcycle then
+    local mcycle_incr = 500000
+    local mcycle_end = mcycle_incr
+    while true do
+        machine:run(mcycle_end)
+        if machine:read_iflags_H() then
+            break
+        end
+        mcycle_end = mcycle_end + mcycle_incr
     end
-    cycles_end = cycles_end + step
+else
+    machine:run(max_mcycle)
 end
-local payload = (machine:read_tohost() & (~1 >> 16)) >> 1
+
+local payload = 0
+
+if machine:read_iflags_H() then
+    payload = (machine:read_tohost() & (~1 >> 16)) >> 1
+    io.stderr:write("payload: ", payload, "\n")
+elseif step then
+    io.stderr:write("Gathering step proof: please wait\n")
+    print_log(machine:step())
+end
+
 local cycles = machine:read_mcycle()
-io.stdout:write("cycles: ", cycles, "\n")
-io.stdout:write("payload: ", payload, "\n")
+io.stderr:write("cycles: ", cycles, "\n")
 
 if final_hash then
-    print_hash(machine)
+    print_root_hash(machine)
 end
 
 machine:destroy() -- redundant: garbage collector would take care of this

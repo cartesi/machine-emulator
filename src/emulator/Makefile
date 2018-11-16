@@ -72,11 +72,12 @@ ifeq ($(dump),yes)
 #DEFS+=-DDUMP_INVALID_CSR
 #DEFS+=-DUMP_ILLEGAL_INSN
 #DEFS+=-DDUMP_INSN
-#DEFS+=-DDUMP_COUNTERS
+DEFS+=-DDUMP_COUNTERS
 #DEFS+=-DDUMP_EXCEPTIONS
 endif
 
 CXXFLAGS=-Ofast -std=c++14 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
+CFLAGS=-Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
 ALL=cartesi.so
 
@@ -154,7 +155,10 @@ server client: CXXFLAGS := $(filter-out -fpic -fvisibility=hidden,$(CXXFLAGS) $(
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 clean:
-	rm -f *.o *.d cartesi.so server client
+	rm -f dis/*.o dis/*.d *.o *.d cartesi.so server client
 
 -include $(wildcard *.d)

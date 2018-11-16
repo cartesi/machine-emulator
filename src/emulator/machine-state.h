@@ -46,11 +46,11 @@ struct machine_state {
     uint64_t mtval; ///< CSR mtval.
     uint64_t misa; ///< CSR misa.
 
-    uint32_t mie; ///< CSR mie.
-    uint32_t mip; ///< CSR mip.
-    uint32_t medeleg; ///< CSR medeleg.
-    uint32_t mideleg; ///< CSR mideleg.
-    uint32_t mcounteren; ///< CSR mcounteren.
+    uint64_t mie; ///< CSR mie.
+    uint64_t mip; ///< CSR mip.
+    uint64_t medeleg; ///< CSR medeleg.
+    uint64_t mideleg; ///< CSR mideleg.
+    uint64_t mcounteren; ///< CSR mcounteren.
 
     uint64_t stvec; ///< CSR stvec.
     uint64_t sscratch; ///< CSR sscratch.
@@ -58,16 +58,20 @@ struct machine_state {
     uint64_t scause; ///< CSR scause.
     uint64_t stval; ///< CSR stval.
     uint64_t satp; ///< CSR satp.
-    uint32_t scounteren; ///< CSR scounteren.
+    uint64_t scounteren; ///< CSR scounteren.
 
     uint64_t ilrsc; ///< For LR/SC instructions
 
-    uint64_t mtimecmp; ///< CLINT register mtimecmp.
-    uint64_t tohost; ///< HTIF register tohost.
-    uint64_t fromhost; ///< HTIF register fromhost.
+    uint64_t clint_mtimecmp; ///< CLINT CSR mtimecmp.
+    uint64_t htif_tohost;    ///< HTIF CSR tohost.
+    uint64_t htif_fromhost;  ///< HTIF CSR fromhost.
 
     pma_entry physical_memory[PMA_SIZE]; ///< Physical memory map
     int pma_count;             ///< Number of entries in map
+
+    const pma_entry *shadow_pma; ///< PMA for shadow device
+    const pma_entry *htif_pma; ///< PMA for HTIF device
+    const pma_entry *clint_pma; ///< PMA for CLINT device
 
     // Entries below this mark are not needed in the blockchain
 

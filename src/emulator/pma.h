@@ -91,11 +91,11 @@ bool pma_write_error(const pma_entry *, i_virtual_state_access *, uint64_t, uint
 
 /// \brief Prototype for callback invoked when machine wants to peek into a range with no side-effects.
 /// \param pma Pointer to corresponding PMA entry.
-/// \param page_address Offset of page start within range. Must be aligned to PMA_PAGE_SIZE.
+/// \param page_offset Offset of page start within range. Must be aligned to PMA_PAGE_SIZE.
 /// \param page_data Receives pointer to start of page data, or nullptr if page is constant *and* pristine.
 /// \param scratch Pointer to memory buffer that must be able to hold PMA_PAGE_SIZE bytes.
 /// \returns True if operation succeeded, false otherwise.
-typedef bool (*pma_peek)(const pma_entry *, uint64_t page_address, const uint8_t **page_data, uint8_t *scratch);
+typedef bool (*pma_peek)(const pma_entry *, uint64_t page_offset, const uint8_t **page_data, uint8_t *scratch);
 
 /// \brief Default peek callback issues error on peeks.
 bool pma_peek_error(const pma_entry *, uint64_t, const uint8_t **, uint8_t *);
@@ -168,13 +168,21 @@ static inline bool pma_is_shadow(const pma_entry *pma) {
 }
 
 /// \brief Encodes PMA encoded start field as per whitepaper
-static inline uint64_t pma_get_encoded_start(const pma_entry *pma) {
-    return (pma->start & ~PMA_FLAGS_MASK) | (pma->type_flags & PMA_FLAGS_MASK);
+static inline uint64_t pma_get_istart(const pma_entry *pma) {
+    if (pma) {
+        return (pma->start & ~PMA_FLAGS_MASK) | (pma->type_flags & PMA_FLAGS_MASK);
+    } else {
+        return 0;
+    }
 }
 
 /// \brief Encodes PMA encoded length field as per whitepaper
-static inline uint64_t pma_get_encoded_length(const pma_entry *pma) {
-    return pma->length;
+static inline uint64_t pma_get_ilength(const pma_entry *pma) {
+    if (pma) {
+        return pma->length;
+    } else {
+        return 0;
+    }
 }
 
 /// \brief Returns context associated to PMA entry

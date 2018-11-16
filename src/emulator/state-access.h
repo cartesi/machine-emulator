@@ -14,21 +14,32 @@
 /// access to the machine state. No logs are kept.
 class state_access: public i_state_access<state_access> {
 
-    machine_state *m_s;
+    machine_state *m_s; ///< Pointer to machine state
 
 public:
 
+    /// \brief Constructor from machine state.
+    /// \param s Pointer to machine state.
     state_access(machine_state *s): m_s(s) { ; }
 
 private:
     // Declare interface as friend to it can forward calls to the "overriden" methods.
     friend i_state_access<state_access>;
 
-    uint64_t do_read_register(uint32_t reg) {
+    void do_annotate(note_type type, const char *text) {
+        (void) type; (void) text;
+    }
+
+    int do_make_scoped_note(const char *text) {
+        (void) text;
+        return 0;
+    }
+
+    uint64_t do_read_register(int reg) {
         return m_s->x[reg];
     }
 
-    void do_write_register(uint32_t reg, uint64_t val) {
+    void do_write_register(int reg, uint64_t val) {
         assert(reg != 0);
         m_s->x[reg] = val;
     }
@@ -269,47 +280,51 @@ private:
         m_s->iflags_PRV = val;
     }
 
-    uint64_t do_read_mtimecmp(void) {
-		return m_s->mtimecmp;
+    uint64_t do_read_clint_mtimecmp(void) {
+		return m_s->clint_mtimecmp;
     }
 
-    void do_write_mtimecmp(uint64_t val) {
-        m_s->mtimecmp = val;
+    void do_write_clint_mtimecmp(uint64_t val) {
+        m_s->clint_mtimecmp = val;
     }
 
-    uint64_t do_read_fromhost(void) {
-        return m_s->fromhost;
+    uint64_t do_read_htif_fromhost(void) {
+        return m_s->htif_fromhost;
     }
 
-    void do_write_fromhost(uint64_t val) {
-        m_s->fromhost = val;
+    void do_write_htif_fromhost(uint64_t val) {
+        m_s->htif_fromhost = val;
     }
 
-    uint64_t do_read_tohost(void) {
-        return m_s->tohost;
+    uint64_t do_read_htif_tohost(void) {
+        return m_s->htif_tohost;
     }
 
-    void do_write_tohost(uint64_t val) {
-        m_s->tohost = val;
+    void do_write_htif_tohost(uint64_t val) {
+        m_s->htif_tohost = val;
     }
 
     pma_entry *do_read_pma(int i) {
         return &m_s->physical_memory[i];
     }
 
-    void do_read_memory(pma_entry *pma, uint64_t paddr, uint64_t val, int size_log2) {
-        (void) pma; (void) paddr; (void) val; (void) size_log2;
+    template <typename T>
+    void do_read_memory(uint64_t paddr, uintptr_t haddr, T *val) {
+        (void) paddr;
+        *val = *reinterpret_cast<T *>(haddr);
     }
 
-    void do_write_memory(pma_entry *pma, uint64_t paddr, uint64_t val, int size_log2) {
-        (void) pma; (void) paddr; (void) val; (void) size_log2;
+    template <typename T>
+    void do_write_memory(uint64_t paddr, uintptr_t haddr, T val) {
+        (void) paddr;
+        *reinterpret_cast<T *>(haddr) = val;
     }
 
-    machine_state *do_naked(void) {
+    machine_state *do_get_naked_state(void) {
         return m_s;
     }
 
-    const machine_state *do_naked(void) const {
+    const machine_state *do_get_naked_state(void) const {
         return m_s;
     }
 

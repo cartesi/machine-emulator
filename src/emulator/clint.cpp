@@ -5,9 +5,13 @@
 #include "rtc.h"
 #include "riscv-constants.h"
 
-#define CLINT_MSIP0    0
-#define CLINT_MTIMECMP 0x4000
-#define CLINT_MTIME    0xbff8
+#define CLINT_MSIP0_REL_ADDR (static_cast<uint64_t>(clint_csr::msip0))
+#define CLINT_MTIME_REL_ADDR (static_cast<uint64_t>(clint_csr::mtime))
+#define CLINT_MTIMECMP_REL_ADDR (static_cast<uint64_t>(clint_csr::mtimecmp))
+
+uint64_t clint_get_csr_rel_addr(clint_csr reg) {
+    return static_cast<uint64_t>(reg);
+}
 
 static bool clint_read_msip(i_virtual_state_access *a, uint64_t *val,
     int size_log2) {
@@ -28,7 +32,7 @@ static bool clint_read_mtime(i_virtual_state_access *a, uint64_t *val, int size_
 
 static bool clint_read_mtimecmp(i_virtual_state_access *a, uint64_t *val, int size_log2) {
     if (size_log2 == 3) {
-        *val = a->read_mtimecmp();
+        *val = a->read_clint_mtimecmp();
         return true;
     }
     return false;
@@ -39,11 +43,11 @@ static bool clint_read(const pma_entry *pma, i_virtual_state_access *a, uint64_t
     (void) pma;
 
     switch (offset) {
-        case CLINT_MSIP0:    // Machine software interrupt for hart 0
+        case CLINT_MSIP0_REL_ADDR:    
             return clint_read_msip(a, val, size_log2);
-        case CLINT_MTIMECMP: // mtimecmp
+        case CLINT_MTIMECMP_REL_ADDR:
             return clint_read_mtimecmp(a, val, size_log2);
-        case CLINT_MTIME:    // mtime
+        case CLINT_MTIME_REL_ADDR:
             return clint_read_mtime(a, val, size_log2);
         default:
             // other reads are exceptions
@@ -56,7 +60,7 @@ static bool clint_write(const pma_entry *pma, i_virtual_state_access *a, uint64_
     (void) pma;
 
     switch (offset) {
-        case CLINT_MSIP0: // Machine software interrupt for hart 0
+        case CLINT_MSIP0_REL_ADDR:
             if (size_log2 == 2) {
                 //??D I don't yet know why Linux tries to raise MSIP when we only have a single hart
                 //    It does so repeatedly before and after every command run in the shell
@@ -69,9 +73,9 @@ static bool clint_write(const pma_entry *pma, i_virtual_state_access *a, uint64_
                 return true;
             }
             return false;
-        case CLINT_MTIMECMP: // mtimecmp
+        case CLINT_MTIMECMP_REL_ADDR:
             if (size_log2 == 3) {
-                a->write_mtimecmp(val);
+                a->write_clint_mtimecmp(val);
                 a->reset_mip(MIP_MTIP);
                 return true;
             }
@@ -86,32 +90,37 @@ static bool clint_write(const pma_entry *pma, i_virtual_state_access *a, uint64_
 #define base(v) ((v) - ((v) % (PMA_PAGE_SIZE)))
 #define offset(v) ((v) % (PMA_PAGE_SIZE))
 /// \brief CLINT device peek callback. See ::pma_peek.
-static bool clint_peek(const pma_entry *pma, uint64_t page_index, const uint8_t **page_data, uint8_t *scratch) {
+static bool clint_peek(const pma_entry *pma, uint64_t page_offset, const uint8_t **page_data, uint8_t *scratch) {
     const machine_state *s = reinterpret_cast<const machine_state *>(pma_get_context(pma));
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
         "code assumes little-endian byte ordering");
-    // There are 3 non-pristine pages: base(CLINT_MSIP0), base(CLINT_MTIMECMP), and base(CLINT_MTIME)
-    switch (page_index) {
-        case base(CLINT_MSIP0):
+    static_assert(base(CLINT_MSIP0_REL_ADDR) != base(CLINT_MTIMECMP_REL_ADDR) &&
+        base(CLINT_MTIMECMP_REL_ADDR) != base(CLINT_MTIME_REL_ADDR) &&
+        base(CLINT_MTIME_REL_ADDR) != base(CLINT_MSIP0_REL_ADDR),
+        "code expects msip0, mtimcmp, and mtime to be in different pages");
+    // There are 3 non-pristine pages: base(CLINT_MSIP0_REL_ADDR), base(CLINT_MTIMECMP_REL_ADDR), and base(CLINT_MTIME_REL_ADDR)
+    switch (page_offset) {
+        case base(CLINT_MSIP0_REL_ADDR):
             // This page contains only msip (which is either 0 or 1)
             // Since we are little-endian, we can simply write the bytes
             memset(scratch, 0, PMA_PAGE_SIZE);
-            *reinterpret_cast<uint64_t *>(scratch + offset(CLINT_MSIP0)) = ((machine_read_mip(s) & MIP_MSIP) == MIP_MSIP);
+            *reinterpret_cast<uint64_t *>(scratch + 
+                offset(CLINT_MSIP0_REL_ADDR)) = ((machine_read_mip(s) & MIP_MSIP) == MIP_MSIP);
             *page_data = scratch;
             return true;
-        case base(CLINT_MTIMECMP):
+        case base(CLINT_MTIMECMP_REL_ADDR):
             memset(scratch, 0, PMA_PAGE_SIZE);
-            *reinterpret_cast<uint64_t *>(scratch + offset(CLINT_MTIMECMP)) = machine_read_mtimecmp(s);
+            *reinterpret_cast<uint64_t *>(scratch + offset(CLINT_MTIMECMP_REL_ADDR)) = machine_read_clint_mtimecmp(s);
             *page_data = scratch;
             return true;
-        case base(CLINT_MTIME):
+        case base(CLINT_MTIME_REL_ADDR):
             memset(scratch, 0, PMA_PAGE_SIZE);
-            *reinterpret_cast<uint64_t*>(scratch + offset(CLINT_MTIME)) = rtc_cycle_to_time(machine_read_mcycle(s));
+            *reinterpret_cast<uint64_t*>(scratch + offset(CLINT_MTIME_REL_ADDR)) = rtc_cycle_to_time(machine_read_mcycle(s));
             *page_data = scratch;
             return true;
         default:
             *page_data = nullptr;
-            if (page_index % PMA_PAGE_SIZE == 0) return true;
+            if (page_offset % PMA_PAGE_SIZE == 0 && page_offset < pma->length) return true;
             else return false;
     }
 }
@@ -126,5 +135,6 @@ static const pma_driver clint_driver = {
 };
 
 bool clint_register_mmio(machine_state *s, uint64_t start, uint64_t length) {
-    return machine_register_mmio(s, start, length, s, &clint_driver);
+    auto pma = machine_register_mmio(s, start, length, s, &clint_driver);
+    return pma && machine_set_clint_pma(s, pma);
 }

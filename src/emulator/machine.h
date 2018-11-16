@@ -4,12 +4,15 @@
 /// \file
 /// \brief Cartesi machine implementation
 
+#include <memory>
+
 #include "merkle-tree.h"
 
 // Forward declarations
 struct machine_state;
 struct pma_driver;
 struct pma_entry;
+struct access_log;
 
 /// \brief Creates and initializes a new machine.
 /// \returns State of newly created machine.
@@ -25,16 +28,28 @@ machine_state *machine_init(void);
 ///  before reaching \p mcycle_end.
 void machine_run(machine_state *s, uint64_t mcycle_end);
 
+/// \brief Runs the machine for one cycle logging all accesses to the state.
+/// \param s Machine state.
+/// \param t Merkle tree.
+/// \param log Returns log of state accesses.
+void machine_step(machine_state *s, merkle_tree *t, access_log &log);
+
 /// \brief Destroys a machine.
 /// \param s Machine state.
 void machine_end(machine_state *s);
 
-/// \brief Update the Merkle tree so it matches the contents
-/// of the machine state.
+/// \brief Update the Merkle tree so it matches the contents of the machine state.
 /// \param s Machine state.
 /// \param t Merkle tree.
 /// \returns true if succeeded, false otherwise.
 bool machine_update_merkle_tree(machine_state *s, merkle_tree *t);
+
+/// \brief Update the Merkle tree after a page has been modified in the machine state.
+/// \param s Machine state.
+/// \param address Any address inside modified page.
+/// \param t Merkle tree.
+/// \returns true if succeeded, false otherwise.
+bool machine_update_merkle_tree_page(machine_state *s, uint64_t address, merkle_tree *t);
 
 /// \brief Obtains the proof for a node in the Merkle tree.
 /// \param s Machine state.
@@ -331,6 +346,11 @@ void machine_write_ilrsc(machine_state *s, uint64_t val);
 /// \returns The value of the register.
 uint64_t machine_read_iflags(const machine_state *s);
 
+/// \brief Returns encodes iflags from its component fields.
+/// \param s Machine state.
+/// \returns The value of the register.
+uint64_t machine_encoded_iflags(int PRV, int I, int H);
+
 /// \brief Reads the value of the iflags register.
 /// \param s Machine state.
 /// \param val New register value.
@@ -344,32 +364,32 @@ int machine_get_max_xlen(const machine_state *s);
 /// \brief Reads the value of HTIF's tohost register.
 /// \param s Machine state.
 /// \returns The value of the register.
-uint64_t machine_read_tohost(const machine_state *s);
+uint64_t machine_read_htif_tohost(const machine_state *s);
 
 /// \brief Writes the value of HTIF's tohost register.
 /// \param s Machine state.
 /// \param val New register value.
-void machine_write_tohost(machine_state *s, uint64_t val);
+void machine_write_htif_tohost(machine_state *s, uint64_t val);
 
 /// \brief Reads the value of HTIF's fromhost register.
 /// \param s Machine state.
 /// \returns The value of the register.
-uint64_t machine_read_fromhost(const machine_state *s);
+uint64_t machine_read_htif_fromhost(const machine_state *s);
 
 /// \brief Writes the value of HTIF's fromhost register.
 /// \param s Machine state.
 /// \param val New register value.
-void machine_write_fromhost(machine_state *s, uint64_t val);
+void machine_write_htif_fromhost(machine_state *s, uint64_t val);
 
 /// \brief Reads the value of CLINT's mtimecmp register.
 /// \param s Machine state.
 /// \returns The value of the register.
-uint64_t machine_read_mtimecmp(const machine_state *s);
+uint64_t machine_read_clint_mtimecmp(const machine_state *s);
 
 /// \brief Writes the value of CLINT's mtimecmp register.
 /// \param s Machine state.
 /// \param val New register value.
-void machine_write_mtimecmp(machine_state *s, uint64_t val);
+void machine_write_clint_mtimecmp(machine_state *s, uint64_t val);
 
 /// \brief Checks the value of the iflags_I flag.
 /// \param s Machine state.
@@ -399,6 +419,11 @@ void machine_set_brk_from_mip_mie(machine_state *s);
 /// \returns The flag value.
 bool machine_read_iflags_H(const machine_state *s);
 
+/// \brief Checks the value of the iflags_PRV field.
+/// \param s Machine state.
+/// \returns The field value.
+uint8_t machine_read_iflags_PRV(const machine_state *s);
+
 /// \brief Sets the iflags_H flag.
 /// \param s Machine state.
 void machine_set_iflags_H(machine_state *s);
@@ -426,8 +451,8 @@ uint8_t *machine_get_host_memory(machine_state *s, uint64_t paddr);
 /// \param shared Whether target modifications to the flash drive are
 /// reflected in the host's backing file.
 /// \details \p length must match the size of the backing file.
-/// \returns true if successful, false otherwise.
-bool machine_register_flash(machine_state *s, uint64_t start, uint64_t length,
+/// \returns Pointer to PMA entry if successful, nullptr otherwise.
+const pma_entry *machine_register_flash(machine_state *s, uint64_t start, uint64_t length,
     const char *path, bool shared);
 
 /// \brief Register a new RAM memory range.
@@ -436,8 +461,8 @@ bool machine_register_flash(machine_state *s, uint64_t start, uint64_t length,
 /// space on which to map the RAM memory.
 /// \param length Length of physical memory range in the
 /// target address space on which to map the RAM memory.
-/// \returns true if successful, false otherwise.
-bool machine_register_ram(machine_state *s, uint64_t start, uint64_t length);
+/// \returns Pointer to PMA entry if successful, nullptr otherwise.
+const pma_entry *machine_register_ram(machine_state *s, uint64_t start, uint64_t length);
 
 /// \brief Register a new memory-mapped IO device.
 /// \param s Machine state.
@@ -447,8 +472,8 @@ bool machine_register_ram(machine_state *s, uint64_t start, uint64_t length);
 /// target address space on which to map the device.
 /// \param context Pointer to context to be passed to callbacks.
 /// \param driver Pointer to driver with callbacks.
-/// \returns true if successful, false otherwise.
-bool machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_driver *driver);
+/// \returns Pointer to PMA entry if successful, nullptr otherwise.
+const pma_entry *machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_driver *driver);
 
 /// \brief Register a new shadow device.
 /// \param s Machine state.
@@ -458,8 +483,8 @@ bool machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, vo
 /// target address space on which to map the shadow device.
 /// \param context Pointer to context to be passed to callbacks.
 /// \param driver Pointer to driver with callbacks.
-/// \returns true if successful, false otherwise.
-bool machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_driver *driver);
+/// \returns Pointer to PMA entry if successful, nullptr otherwise.
+const pma_entry *machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_driver *driver);
 
 /// \brief Dump all memory ranges to files in current working directory.
 /// \param s Machine state.
@@ -476,5 +501,38 @@ const pma_entry *machine_get_pma(const machine_state *s, int i);
 /// \param s Machine state.
 /// \returns Pointer to entry, or nullptr if out of bounds
 int machine_get_pma_count(const machine_state *s);
+
+/// \brief Sets PMA used for shadow, if not previously set.
+/// \param s Machine state.
+/// \param pma Pointer to PMA entry.
+/// \returns True if not previously set, false otherwise.
+bool machine_set_shadow_pma(machine_state *s, const pma_entry *pma);
+
+/// \brief Returns the PMA used for shadow.
+/// \param s Machine state.
+/// \returns Pointer to PMA entry, or nullptr if not yet set.
+const pma_entry *machine_get_shadow_pma(const machine_state *s);
+
+/// \brief Set PMA used for the CLINT device, if not previously set.
+/// \param s Machine state.
+/// \param pma Pointer to PMA entry.
+/// \returns True if not previously set, false otherwise.
+bool machine_set_clint_pma(machine_state *s, const pma_entry *pma);
+
+/// \brief Returns the PMA used for the CLINT device.
+/// \param s Machine state.
+/// \returns Pointer to PMA entry, or nullptr if not yet set.
+const pma_entry *machine_get_clint_pma(const machine_state *s);
+
+/// \brief Set PMA used for the HTIF device, if not previously set.
+/// \param s Machine state.
+/// \param pma Pointer to PMA entry.
+/// \returns True if not previously set, false otherwise.
+bool machine_set_htif_pma(machine_state *s, const pma_entry *pma);
+
+/// \brief Returns the PMA used for the HTIF device.
+/// \param s Machine state.
+/// \returns Pointer to PMA entry, or nullptr if not yet set.
+const pma_entry *machine_get_htif_pma(const machine_state *s);
 
 #endif

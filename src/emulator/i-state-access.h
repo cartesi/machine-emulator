@@ -5,9 +5,11 @@
 /// \brief State access interface
 
 #include <cstdint>
+#include <type_traits>
 
 #include "meta.h"
 #include "machine.h"
+#include "access-note.h"
 
 /// \class i_state_access
 /// \brief Interface for machine state access.
@@ -45,19 +47,33 @@ template <typename DERIVED> class i_state_access { // CRTP
 public:
 
     /// \brief Returns pointer to Machine state for direct access.
-    machine_state *naked(void) {
-        return derived().do_naked();
+    machine_state *get_naked_state(void) {
+        return derived().do_get_naked_state();
     }
 
     /// \brief Returns pointer to Machine state for direct read-only access.
-    const machine_state *naked(void) const {
-        return derived().do_naked();
+    const machine_state *get_naked_state(void) const {
+        return derived().do_get_naked_state();
+    }
+
+    /// \brief Adds an annotation to the state
+    /// \param note_type Type of note to add
+    /// \param text String with the text for the annotation
+    void annotate(note_type type, const char *text) {
+        return derived().do_annotate(type, text);
+    }
+
+    /// \brief Adds annotations to the state, bracketing a scope
+    /// \param text String with the text for the annotation
+    /// \returns An object that, when constructed and destroyed issues an annonation.
+    auto make_scoped_note(const char *text) {
+        return derived().do_make_scoped_note(text);
     }
 
     /// \brief Reads register from file.
     /// \tparam reg Register index in file.
     /// \returns Register value.
-    uint64_t read_register(uint32_t reg) {
+    uint64_t read_register(int reg) {
         return derived().do_read_register(reg);
     }
 
@@ -65,7 +81,7 @@ public:
     /// \tparam reg Register index.
     /// \tparam val New register value.
     /// \details Writes to register zero *break* the machine. There is an assertion to catch this, but NDEBUG will let the value pass through.
-    void write_register(uint32_t reg, uint64_t val) {
+    void write_register(int reg, uint64_t val) {
         return derived().do_write_register(reg, val);
     }
 
@@ -430,38 +446,38 @@ public:
 
     /// \brief Reads CLINT's mtimecmp.
     /// \returns Register value.
-	uint64_t read_mtimecmp(void) {
-		return derived().do_read_mtimecmp();
+	uint64_t read_clint_mtimecmp(void) {
+		return derived().do_read_clint_mtimecmp();
 	}
 
     /// \brief Writes CLINT's mtimecmp.
     /// \param val New register value.
-	void write_mtimecmp(uint64_t val) {
-		return derived().do_write_mtimecmp(val);
+	void write_clint_mtimecmp(uint64_t val) {
+		return derived().do_write_clint_mtimecmp(val);
 	}
 
     /// \brief Reads HTIF's fromhost.
     /// \returns Register value.
-	uint64_t read_fromhost(void) {
-		return derived().do_read_fromhost();
+	uint64_t read_htif_fromhost(void) {
+		return derived().do_read_htif_fromhost();
 	}
 
     /// \brief Writes HTIF's fromhost.
     /// \param val New register value.
-	void write_fromhost(uint64_t val) {
-		return derived().do_write_fromhost(val);
+	void write_htif_fromhost(uint64_t val) {
+		return derived().do_write_htif_fromhost(val);
 	}
 
     /// \brief Reads HTIF's tohost.
     /// \returns Register value.
-	uint64_t read_tohost(void) {
-		return derived().do_read_tohost();
+	uint64_t read_htif_tohost(void) {
+		return derived().do_read_htif_tohost();
 	}
 
     /// \brief Writes HTIF's tohost.
     /// \param val New register value.
-	void write_tohost(uint64_t val) {
-		return derived().do_write_tohost(val);
+	void write_htif_tohost(uint64_t val) {
+		return derived().do_write_htif_tohost(val);
 	}
 
     /// \brief Reads PMA at a given index.
@@ -471,22 +487,26 @@ public:
         return derived().do_read_pma(i);
     }
 
-    /// \brief Logs read from memory.
-    /// \tparam pma PMA for memory range.
-    /// \tparam paddr Target physical address.
-    /// \tparam val Value read.
-    /// \tparam size_log2 log<sub>2</sub> of width of memory access.
-    void read_memory(pma_entry *pma, uint64_t paddr, uint64_t val, int size_log2) {
-        return derived().do_write_memory(pma, paddr, val, size_log2);
+    /// \brief Read from memory.
+    /// \tparam T Type of word to read.
+    /// \param paddr Target physical address.
+    /// \param haddr Corresponding host address.
+    /// \returns Value read.
+    template <typename T>
+    void read_memory(uint64_t paddr, uintptr_t haddr, T *val) {
+        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        return derived().template do_read_memory<T>(paddr, haddr, val);
     }
 
-    /// \brief Logs write to memory.
-    /// \tparam pma PMA for memory range.
-    /// \tparam paddr Target physical address.
-    /// \tparam val Value written.
-    /// \tparam size_log2 log<sub>2</sub> of width of memory access.
-    void write_memory(pma_entry *pma, uint64_t paddr, uint64_t val, int size_log2) {
-        return derived().do_write_memory(pma, paddr, val, size_log2);
+    /// \brief Write to memory.
+    /// \tparam T Type of word to write.
+    /// \param paddr Target physical address.
+    /// \param haddr Corresponding host address.
+    /// \param val Value to be written.
+    template <typename T>
+    void write_memory(uint64_t paddr, uintptr_t haddr, T val) {
+        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        return derived().template do_write_memory<T>(paddr, haddr, val);
     }
 };
 

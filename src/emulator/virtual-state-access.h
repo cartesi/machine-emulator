@@ -35,7 +35,7 @@ private:
         m_a.reset_iflags_I();
         // Tell inner loop mip/mie have been modified, so it
         // may break out if need be
-        machine_set_brk_from_mip_mie(m_a.naked());
+        machine_set_brk_from_mip_mie(m_a.get_naked_state());
     }
 
     void do_reset_mip(uint32_t mask) override {
@@ -44,7 +44,7 @@ private:
         m_a.write_mip(mip);
         // Tell inner loop mip/mie have been modified, so it
         // may break out if need be
-        machine_set_brk_from_mip_mie(m_a.naked());
+        machine_set_brk_from_mip_mie(m_a.get_naked_state());
     }
 
     uint32_t do_read_mip(void) override {
@@ -57,33 +57,32 @@ private:
 
     void do_set_iflags_H(void) override {
         m_a.set_iflags_H();
-        // Tell inner loop H has been modified, so it
-        // may break out if need be
-        machine_set_brk_from_iflags_H(m_a.naked());
+        // Tell inner loop H has been modified, so it can break out
+        machine_set_brk_from_iflags_H(m_a.get_naked_state());
     }
 
-    uint64_t do_read_mtimecmp(void) override {
-        return m_a.read_mtimecmp();
+    uint64_t do_read_clint_mtimecmp(void) override {
+        return m_a.read_clint_mtimecmp();
     }
 
-    void do_write_mtimecmp(uint64_t val) override {
-        return m_a.write_mtimecmp(val);
+    void do_write_clint_mtimecmp(uint64_t val) override {
+        return m_a.write_clint_mtimecmp(val);
     }
 
-    uint64_t do_read_fromhost(void) override {
-        return m_a.read_fromhost();
+    uint64_t do_read_htif_fromhost(void) override {
+        return m_a.read_htif_fromhost();
     }
 
-    void do_write_fromhost(uint64_t val) override {
-        return m_a.write_fromhost(val);
+    void do_write_htif_fromhost(uint64_t val) override {
+        return m_a.write_htif_fromhost(val);
     }
 
-    uint64_t do_read_tohost(void) override {
-        return m_a.read_tohost();
+    uint64_t do_read_htif_tohost(void) override {
+        return m_a.read_htif_tohost();
     }
 
-    void do_write_tohost(uint64_t val) override {
-        return m_a.write_tohost(val);
+    void do_write_htif_tohost(uint64_t val) override {
+        return m_a.write_htif_tohost(val);
     }
 };
 

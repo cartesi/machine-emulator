@@ -152,12 +152,6 @@ private:
     mutable uint64_t m_num_nodes;
 #endif
 
-    /// \brief Modify hash corresponding to log2_size in the list of siblings.
-    /// \param hash New hash.
-    /// \param log2_size log<sub>2</sub> of size subintended by hash.
-    /// \param sibling_hashes List of siblings.
-    void set_sibling_hash(const hash_type &hash, int log2_size, siblings_type &sibling_hashes) const;
-
     /// \brief Maps a page_index to a node.
     /// \param page_index Page index.
     /// \param node Node subintending page.
@@ -310,8 +304,14 @@ public:
     /// \param sibling_hashes List of siblings.
     /// \param log2_size log<sub>2</sub> of size subintended by hash.
     /// \return Reference to hash inside list of siblings.
-    const hash_type &get_sibling_hash(const siblings_type &sibling_hashes,
-        int log2_size) const;
+    static const hash_type &get_sibling_hash(const siblings_type &sibling_hashes,
+        int log2_size);
+
+    /// \brief Modify hash corresponding to log2_size in the list of siblings.
+    /// \param hash New hash.
+    /// \param log2_size log<sub>2</sub> of size subintended by hash.
+    /// \param sibling_hashes List of siblings.
+    static void set_sibling_hash(const hash_type &hash, int log2_size, siblings_type &sibling_hashes);
 
     /// \brief Verifies the entire Merkle tree.
     /// \return status_code::success if tree is consistent,
@@ -329,7 +329,7 @@ public:
     /// \brief Returns the root hash.
     /// \param hash Receives the hash.
     /// \returns status_code::success.
-    status_code get_merkle_tree_root_hash(hash_type &hash);
+    status_code get_root_hash(hash_type &hash) const;
 
     /// \brief Start tree update.
     /// \param h Hasher object.

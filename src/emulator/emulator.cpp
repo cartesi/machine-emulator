@@ -19,19 +19,16 @@ extern "C" {
 #include "rtc.h"
 #include "riscv-constants.h"
 
-#define Ki(n) (((uint64_t)n) << 10)
-#define Mi(n) (((uint64_t)n) << 20)
-#define Gi(n) (((uint64_t)n) << 30)
 
-#define SHADOW_BASE_ADDR       0
-#define SHADOW_SIZE            Ki(4)
-#define ROM_BASE_ADDR          Ki(4)
-#define ROM_SIZE               Ki(60)
-#define RAM_BASE_ADDR          Gi(2)
-#define CLINT_BASE_ADDR        Mi(32)
-#define CLINT_SIZE             Ki(768)
-#define HTIF_BASE_ADDR         (Gi(1)+Ki(32))
-#define HTIF_SIZE              Ki(4)
+#define SHADOW_START       UINT64_C(0)
+#define SHADOW_LENGTH      UINT64_C(0x1000)
+#define ROM_START          UINT64_C(0x1000)
+#define ROM_LENGTH         UINT64_C(0xF000)
+#define CLINT_START        UINT64_C(0x2000000)
+#define CLINT_LENGTH       UINT64_C(0xC0000)
+#define HTIF_START         UINT64_C(0x40008000)
+#define HTIF_LENGTH        UINT64_C(0x1000)
+#define RAM_START          UINT64_C(0x80000000)
 
 #define CLOCK_FREQ 1000000000 // 1 GHz (arbitrary)
 
@@ -180,9 +177,9 @@ static bool fdt_build_riscv(const emulator_config *c, const emulator *emu, void 
       FDT_CHECK(fdt_end_node(buf)); /* cpu */
      FDT_CHECK(fdt_end_node(buf)); /* cpus */
 
-     FDT_CHECK(fdt_begin_node_num(buf, "memory", RAM_BASE_ADDR));
+     FDT_CHECK(fdt_begin_node_num(buf, "memory", RAM_START));
       FDT_CHECK(fdt_property_string(buf, "device_type", "memory"));
-      FDT_CHECK(fdt_property_u64_u64(buf, "reg", RAM_BASE_ADDR, c->ram.length));
+      FDT_CHECK(fdt_property_u64_u64(buf, "reg", RAM_START, c->ram.length));
      FDT_CHECK(fdt_end_node(buf)); /* memory */
 
      /* flash */
@@ -207,7 +204,7 @@ static bool fdt_build_riscv(const emulator_config *c, const emulator *emu, void 
       FDT_CHECK(fdt_property(buf, "compatible", comp, sizeof(comp)));
       FDT_CHECK(fdt_property(buf, "ranges", NULL, 0));
 
-      FDT_CHECK(fdt_begin_node_num(buf, "clint", CLINT_BASE_ADDR));
+      FDT_CHECK(fdt_begin_node_num(buf, "clint", CLINT_START));
        FDT_CHECK(fdt_property_string(buf, "compatible", "riscv,clint0"));
        uint32_t clint[] = {
 	       cpu_to_fdt32(intc_phandle),
@@ -216,12 +213,12 @@ static bool fdt_build_riscv(const emulator_config *c, const emulator *emu, void 
 	       cpu_to_fdt32(7) /* M timer irq */
        };
        FDT_CHECK(fdt_property(buf, "interrupts-extended", clint, sizeof(clint)));
-       FDT_CHECK(fdt_property_u64_u64(buf, "reg", CLINT_BASE_ADDR, CLINT_SIZE));
+       FDT_CHECK(fdt_property_u64_u64(buf, "reg", CLINT_START, CLINT_LENGTH));
       FDT_CHECK(fdt_end_node(buf)); /* clint */
 
-      FDT_CHECK(fdt_begin_node_num(buf, "htif", HTIF_BASE_ADDR));
+      FDT_CHECK(fdt_begin_node_num(buf, "htif", HTIF_START));
        FDT_CHECK(fdt_property_string(buf, "compatible", "ucb,htif0"));
-       FDT_CHECK(fdt_property_u64_u64(buf, "reg", HTIF_BASE_ADDR, HTIF_SIZE));
+       FDT_CHECK(fdt_property_u64_u64(buf, "reg", HTIF_START, HTIF_LENGTH));
        uint32_t htif[] = {
            cpu_to_fdt32(intc_phandle),
            cpu_to_fdt32(13) // X HOST
@@ -262,9 +259,9 @@ static bool init_ram_and_rom(const emulator_config *c, emulator *emu) {
         if (len < 0) {
             fprintf(stderr, "Unable to open ROM image\n");
             return false;
-        } else if (len > (int) ROM_SIZE) {
+        } else if (len > (int) ROM_LENGTH) {
             fprintf(stderr, "ROM image too big (%d vs %d)\n",
-                (int) len, (int) ROM_SIZE);
+                (int) len, (int) ROM_LENGTH);
             return false;
         }
     }
@@ -280,7 +277,7 @@ static bool init_ram_and_rom(const emulator_config *c, emulator *emu) {
                 (int) len, (int) c->ram.length);
             return false;
         }
-        uint8_t *ram_ptr = machine_get_host_memory(emu->machine, RAM_BASE_ADDR);
+        uint8_t *ram_ptr = machine_get_host_memory(emu->machine, RAM_START);
         if (!ram_ptr) return false;
         if (load_file(c->ram.backing.c_str(), ram_ptr, c->ram.length) < 0) {
             fprintf(stderr, "Unable to load RAM image\n");
@@ -289,23 +286,23 @@ static bool init_ram_and_rom(const emulator_config *c, emulator *emu) {
     }
 
     // Initialize ROM
-    uint8_t *rom_ptr = machine_get_host_memory(emu->machine, ROM_BASE_ADDR);
+    uint8_t *rom_ptr = machine_get_host_memory(emu->machine, ROM_START);
     if (!rom_ptr) return false;
     if (c->rom.backing.empty()) {
         uint32_t fdt_addr = 8 * 8;
-        if (!fdt_build_riscv(c, emu, rom_ptr + fdt_addr, ROM_SIZE-fdt_addr))
+        if (!fdt_build_riscv(c, emu, rom_ptr + fdt_addr, ROM_LENGTH-fdt_addr))
             return false;
-        /* jump_addr = RAM_BASE_ADDR */
+        /* jump_addr = RAM_START */
         uint32_t *q = (uint32_t *)(rom_ptr);
         /* la t0, jump_addr */
-        q[0] = 0x297 + RAM_BASE_ADDR - ROM_BASE_ADDR; /* auipc t0, 0x80000000-0x1000 */
+        q[0] = 0x297 + RAM_START - ROM_START; /* auipc t0, 0x80000000-0x1000 */
         /* la a1, fdt_addr */
           q[1] = 0x597; /* auipc a1, 0  (a1 := 0x1004) */
-          q[2] = 0x58593 + ((fdt_addr - (ROM_BASE_ADDR+4)) << 20); /* addi a1, a1, 60 */
+          q[2] = 0x58593 + ((fdt_addr - (ROM_START+4)) << 20); /* addi a1, a1, 60 */
         q[3] = 0xf1402573; /* csrr a0, mhartid */
         q[4] = 0x00028067; /* jr t0 */
     } else {
-        if (load_file(c->rom.backing.c_str(), rom_ptr, ROM_SIZE) < 0) {
+        if (load_file(c->rom.backing.c_str(), rom_ptr, ROM_LENGTH) < 0) {
             fprintf(stderr, "Unable to load ROM image\n");
             return false;
         }
@@ -315,7 +312,7 @@ static bool init_ram_and_rom(const emulator_config *c, emulator *emu) {
     {
         FILE *f;
         f = fopen("bootstrap.bin", "wb");
-        fwrite(rom_ptr, 1, ROM_SIZE, f);
+        fwrite(rom_ptr, 1, ROM_LENGTH, f);
         fclose(f);
     }
 #endif
@@ -324,9 +321,9 @@ static bool init_ram_and_rom(const emulator_config *c, emulator *emu) {
 }
 
 void emulator_end(emulator *emu) {
-    htif_end(emu->htif);
-    machine_end(emu->machine);
-    delete emu->tree;
+    if (emu->htif) htif_end(emu->htif);
+    if (emu->machine) machine_end(emu->machine);
+    if (emu->tree) delete emu->tree;
     free(emu);
 }
 
@@ -371,19 +368,24 @@ static bool init_processor_state(const emulator_config *c, emulator *emu) {
 static bool init_htif_state(const emulator_config *c, emulator *emu) {
     //??D implement load from backing file
 	assert(c->htif.backing.empty());
-    machine_write_tohost(emu->machine, c->htif.tohost);
-    machine_write_fromhost(emu->machine, c->htif.fromhost);
+    machine_write_htif_tohost(emu->machine, c->htif.tohost);
+    machine_write_htif_fromhost(emu->machine, c->htif.fromhost);
     return true;
 }
 
 static bool init_clint_state(const emulator_config *c, emulator *emu) {
     //??D implement load from backing file
 	assert(c->clint.backing.empty());
-    machine_write_mtimecmp(emu->machine, c->clint.mtimecmp);
+    machine_write_clint_mtimecmp(emu->machine, c->clint.mtimecmp);
     return true;
 }
 
 emulator *emulator_init(const emulator_config *c) {
+
+    //??D Obviously these can't print to stderr.
+    //    Still deciding on a way to convey these errors.
+    //    The obvious solution is to use exceptions, but
+    //    only after we are done migrating to RAII
 
     emulator *emu = reinterpret_cast<emulator *>(calloc(1, sizeof(*emu)));
 
@@ -400,12 +402,12 @@ emulator *emulator_init(const emulator_config *c) {
     }
 
     // RAM and ROM
-    if (!machine_register_ram(emu->machine, RAM_BASE_ADDR, c->ram.length)) {
+    if (!machine_register_ram(emu->machine, RAM_START, c->ram.length)) {
         fprintf(stderr, "Unable to allocate RAM\n");
         goto failed;
     }
 
-    if (!machine_register_ram(emu->machine, ROM_BASE_ADDR, ROM_SIZE)) {
+    if (!machine_register_ram(emu->machine, ROM_START, ROM_LENGTH)) {
         fprintf(stderr, "Unable to allocate ROM\n");
         goto failed;
     }
@@ -425,7 +427,8 @@ emulator *emulator_init(const emulator_config *c) {
         }
     }
 
-    if (!clint_register_mmio(emu->machine, CLINT_BASE_ADDR, CLINT_SIZE) && !init_clint_state(c, emu)) {
+    if (!clint_register_mmio(emu->machine, CLINT_START, CLINT_LENGTH) ||
+        !init_clint_state(c, emu)) {
         fprintf(stderr, "Unable to initialize CLINT device\n");
         goto failed;
     }
@@ -436,12 +439,13 @@ emulator *emulator_init(const emulator_config *c) {
         goto failed;
     }
 
-    if (!htif_register_mmio(emu->htif, HTIF_BASE_ADDR, HTIF_SIZE) && !init_htif_state(c, emu)) {
+    if (!htif_register_mmio(emu->htif, HTIF_START, HTIF_LENGTH) || 
+        !init_htif_state(c, emu)) {
         fprintf(stderr, "Unable to initialize HTIF device\n");
         goto failed;
     }
 
-    if (!shadow_register_mmio(emu->machine, SHADOW_BASE_ADDR, SHADOW_SIZE)) {
+    if (!shadow_register_mmio(emu->machine, SHADOW_START, SHADOW_LENGTH)) {
         fprintf(stderr, "Unable to initialize shadow device\n");
         goto failed;
     }
@@ -469,18 +473,19 @@ bool emulator_verify_merkle_tree(const emulator *emu) {
     return !emu->tree->is_error(emu->tree->verify());
 }
 
-bool emulator_get_merkle_tree_root_hash(emulator *emu, uint8_t *data, size_t len) {
-    merkle_tree::hash_type hash;
-    int ret = !emu->tree->is_error(emu->tree->get_merkle_tree_root_hash(hash));
-    memcpy(data, hash.data(), std::min(len, hash.size()));
-    return ret;
-}
-
 const machine_state *emulator_get_machine(const emulator *emu) {
     return emu->machine;
 }
 
+machine_state *emulator_get_machine(emulator *emu) {
+    return emu->machine;
+}
+
 const merkle_tree *emulator_get_merkle_tree(const emulator *emu) {
+    return emu->tree;
+}
+
+merkle_tree *emulator_get_merkle_tree(emulator *emu) {
     return emu->tree;
 }
 
@@ -513,7 +518,7 @@ void emulator_run(emulator *emu, uint64_t mcycle_end) {
         // If we managed to run until the next possible frequency divisor
         if (mcycle == next_rtc_freq_div) {
             // Get the mcycle corresponding to mtimecmp
-            uint64_t timecmp_mcycle = rtc_time_to_cycle(machine_read_mtimecmp(s));
+            uint64_t timecmp_mcycle = rtc_time_to_cycle(machine_read_clint_mtimecmp(s));
 
             // If the processor is waiting for interrupts, we can skip until time hits timecmp
             // CLINT is the only interrupt source external to the inner loop

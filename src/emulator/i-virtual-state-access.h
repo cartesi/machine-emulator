@@ -60,38 +60,38 @@ public:
 
     /// \brief Reads CLINT's mtimecmp.
     /// \returns Register value.
-    uint64_t read_mtimecmp(void) {
-        return do_read_mtimecmp();
+    uint64_t read_clint_mtimecmp(void) {
+        return do_read_clint_mtimecmp();
     }
 
     /// \brief Writes CLINT's mtimecmp.
     /// \param val New register value.
-    void write_mtimecmp(uint64_t val) {
-        return do_write_mtimecmp(val);
+    void write_clint_mtimecmp(uint64_t val) {
+        return do_write_clint_mtimecmp(val);
     }
 
     /// \brief Reads HTIF's fromhost.
     /// \returns Register value.
-    uint64_t read_fromhost(void) {
-        return do_read_fromhost();
+    uint64_t read_htif_fromhost(void) {
+        return do_read_htif_fromhost();
     }
 
     /// \brief Writes HTIF's fromhost.
     /// \param val New register value.
-    void write_fromhost(uint64_t val) {
-        return do_write_fromhost(val);
+    void write_htif_fromhost(uint64_t val) {
+        return do_write_htif_fromhost(val);
     }
 
     /// \brief Reads HTIF's tohost.
     /// \returns Register value.
-    uint64_t read_tohost(void) {
-        return do_read_tohost();
+    uint64_t read_htif_tohost(void) {
+        return do_read_htif_tohost();
     }
 
     /// \brief Writes HTIF's tohost.
     /// \param val New register value.
-    void write_tohost(uint64_t val) {
-        return do_write_tohost(val);
+    void write_htif_tohost(uint64_t val) {
+        return do_write_htif_tohost(val);
     }
 
 private:
@@ -101,12 +101,12 @@ private:
     virtual uint32_t do_read_mip(void) = 0;
     virtual uint64_t do_read_mcycle(void) = 0;
     virtual void do_set_iflags_H(void) = 0;
-    virtual uint64_t do_read_mtimecmp(void) = 0;
-    virtual void do_write_mtimecmp(uint64_t val) = 0;
-    virtual uint64_t do_read_fromhost(void) = 0;
-    virtual void do_write_fromhost(uint64_t val) = 0;
-    virtual uint64_t do_read_tohost(void) = 0;
-    virtual void do_write_tohost(uint64_t val) = 0;
+    virtual uint64_t do_read_clint_mtimecmp(void) = 0;
+    virtual void do_write_clint_mtimecmp(uint64_t val) = 0;
+    virtual uint64_t do_read_htif_fromhost(void) = 0;
+    virtual void do_write_htif_fromhost(uint64_t val) = 0;
+    virtual uint64_t do_read_htif_tohost(void) = 0;
+    virtual void do_write_htif_tohost(uint64_t val) = 0;
 };
 
 #endif

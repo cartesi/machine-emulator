@@ -37,7 +37,7 @@ get_offset_in_page(address_type address) const {
 
 const merkle_tree::hash_type &
 merkle_tree::
-get_sibling_hash(const siblings_type &sibling_hashes, int log2_size) const {
+get_sibling_hash(const siblings_type &sibling_hashes, int log2_size) {
     int index = get_log2_tree_size()-1-log2_size;
     assert(index >= 0 && index < (int) sibling_hashes.size());
     return sibling_hashes[index];
@@ -45,7 +45,7 @@ get_sibling_hash(const siblings_type &sibling_hashes, int log2_size) const {
 
 void
 merkle_tree::
-set_sibling_hash(const hash_type &hash, int log2_size, siblings_type &sibling_hashes) const {
+set_sibling_hash(const hash_type &hash, int log2_size, siblings_type &sibling_hashes) {
     int index = get_log2_tree_size()-1-log2_size;
     assert(index >= 0 && index < (int) sibling_hashes.size());
     sibling_hashes[index] = hash;
@@ -366,7 +366,7 @@ merkle_tree::
 
 merkle_tree::status_code
 merkle_tree::
-get_merkle_tree_root_hash(hash_type &hash) {
+get_root_hash(hash_type &hash) const {
     hash = m_root->hash;
     return status_code::success;
 }

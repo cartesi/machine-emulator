@@ -52,10 +52,14 @@ void emulator_run(emulator *emu, uint64_t mcycle_end);
 /// \returns Pointer to machine state.
 const machine_state *emulator_get_machine(const emulator *emu);
 
+machine_state *emulator_get_machine(emulator *emu);
+
 /// \brief Returns the Merkle tree within the emulator.
 /// \params emu Pointer to emulator.
 /// \returns Pointer to Merkle tree.
 const merkle_tree *emulator_get_merkle_tree(const emulator *emu);
+
+merkle_tree *emulator_get_merkle_tree(emulator *emu);
 
 /// \brief Verifies the Merkle tree within the emulator.
 /// \params emu Pointer to emulator.
@@ -66,12 +70,5 @@ bool emulator_verify_merkle_tree(const emulator *emu);
 /// \params emu Pointer to emulator.
 /// \returns True if successful, false otherwise.
 bool emulator_update_merkle_tree(emulator *emu);
-
-/// \brief Obtains the Merkle tree root hash for the entire machine state.
-/// \params emu Pointer to emulator.
-/// \params buf Pointer to buffer to receive hash.
-/// \params len Buffer size in bytes.
-/// \returns True if successful, false otherwise.
-bool emulator_get_merkle_tree_root_hash(emulator *emu, uint8_t *buf, size_t len);
 
 #endif

@@ -62,7 +62,7 @@ static int load_file(const char *name, void *buf, int len) {
 }
 
 emulator_config *emulator_config_init(void) {
-    emulator_config *c = new emulator_config;
+    emulator_config *c = new emulator_config{};
     // First, initialize all registers with zeros
     memset(c->processor.x, 0, sizeof(c->processor.x));
     c->processor.pc = 0;
@@ -450,7 +450,7 @@ emulator *emulator_init(const emulator_config *c) {
         goto failed;
     }
 
-    emu->tree = new merkle_tree;
+    emu->tree = new merkle_tree{};
 
     return emu;
 

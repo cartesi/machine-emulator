@@ -53,7 +53,7 @@ public:
     public:
         /// \brief Constructor adds the "begin" bracketting note
         /// \param log Pointer to access log receiving annotations
-        /// \param log Pointer to annotation text
+        /// \param text Pointer to annotation text
         /// \details A note is added at the moment of construction
         scoped_note(std::shared_ptr<access_log> log, const char *text):
             m_log(log),

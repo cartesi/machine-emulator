@@ -594,7 +594,7 @@ static int meta__index_get_root_hash(lua_State *L) {
     emulator *e = check_machine(L, 1);
     auto t = emulator_get_merkle_tree(e);
     merkle_tree::hash_type hash;
-    if (!t->is_error(t->get_root_hash(hash))) {
+    if (t->get_root_hash(hash)) {
         push_hash(L, hash);
         return 1;
     } else {

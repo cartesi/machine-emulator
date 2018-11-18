@@ -470,7 +470,7 @@ bool emulator_update_merkle_tree(emulator *emu) {
 }
 
 bool emulator_verify_merkle_tree(const emulator *emu) {
-    return !emu->tree->is_error(emu->tree->verify());
+    return emu->tree->verify_tree();
 }
 
 const machine_state *emulator_get_machine(const emulator *emu) {

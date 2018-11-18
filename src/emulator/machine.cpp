@@ -1109,13 +1109,14 @@ bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
             if (!pma->driver->peek(pma, page_start_in_range, &page_data, scratch.get())) {
                 t->end_update(h);
                 return false;
-            } else if (page_data && t->is_error(t->update_page(h, pma->start + page_start_in_range, page_data))) {
+            } else if (page_data && !t->update_page(h, pma->start + page_start_in_range, page_data)) {
                 t->end_update(h);
                 return false;
-            }
+            } // ??D else page is pristine and we do nothing.
+              // Maybe add a check here to make sure it is also pristine in the tree?
         }
     }
-    return !t->is_error(t->end_update(h));
+    return t->end_update(h);
 }
 
 bool machine_update_merkle_tree_page(machine_state *s, uint64_t address, merkle_tree *t) {
@@ -1133,11 +1134,12 @@ bool machine_update_merkle_tree_page(machine_state *s, uint64_t address, merkle_
     if (!pma->driver->peek(pma, page_start_in_range, &page_data, scratch.get())) {
         t->end_update(h);
         return false;
-    } else if (page_data && t->is_error(t->update_page(h, pma->start + page_start_in_range, page_data))) {
+    } else if (page_data && !t->update_page(h, pma->start + page_start_in_range, page_data)) {
         t->end_update(h);
         return false;
-    }
-    return !t->is_error(t->end_update(h));
+    } // ??D else page is pristine and we do nothing.
+      // Maybe add a check here to make sure it is also pristine in the tree?
+    return t->end_update(h);
 }
 
 const pma_entry *machine_get_pma(const machine_state *s, int i) {
@@ -1183,7 +1185,7 @@ bool machine_get_proof(const machine_state *s, const merkle_tree *t, uint64_t ad
             return false;
         }
     }
-    return !t->is_error(t->get_proof(address, log2_size, page_data, proof));
+    return t->get_proof(address, log2_size, page_data, proof);
 }
 
 bool machine_read_word(const machine_state *s, uint64_t word_address, uint64_t *word_value) {

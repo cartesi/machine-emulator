@@ -1,32 +1,52 @@
 local cartesi = require"cartesi"
 
+local function hexhash(hash)
+    return (string.gsub(hash, ".", function(c)
+        return string.format("%02x", string.byte(c))
+    end))
+end
+
 local function print_log(log)
-print("before")
-for i,v in ipairs(log) do print(i,v) end
-print("after")
+    local indent_step = "  "
+    local indent_level = 0
     local j = 1
-    local indent = 0
-    for i, ai in ipairs(log.accesses) do
-        while log.notes[j] and j <= i do
-            local nj = log.notes[j]
+    local i = 1
+    while true do
+        local nj = log.notes[j]
+        local ai = log.accesses[i]
+        if not nj and not ai then break end
+        if nj and nj.where <= i then
             if nj.type == "begin" then
-                io.stdout:write(string.rep(" ", indent), "begin ", nj.text, "\n")
-                indent = indent + 1
+                io.stdout:write(string.rep(indent_step, indent_level), "begin ", nj.text, "\n")
+                indent_level = indent_level + 1
             elseif nj.type == "end" then
-                indent = indent - 1
-                io.stdout:write(string.rep(" ", indent), "end ", nj.text, "\n")
+                indent_level = indent_level - 1
+                io.stdout:write(string.rep(indent_step, indent_level), "end ", nj.text, "\n")
             else
-                io.stdout:write(string.rep(" ", indent), nj.text, "\n")
+                assert(nj.type == "point")
+                io.stdout:write(string.rep(indent_step, indent_level), nj.text, "\n")
             end
+            j = j + 1
+        elseif ai then
+            local ai = log.accesses[i]
+            io.stdout:write(string.rep(indent_step, indent_level), "hash ", hexhash(ai.proof.root_hash), "\n")
+            if ai.type == "read" then
+                io.stdout:write(string.rep(indent_step, indent_level), "read ", ai.text,
+                    string.format("@%x", ai.proof.address), ": ",
+                    ai.read, "\n")
+            else
+                assert(ai.type == "write")
+                io.stdout:write(string.rep(indent_step, indent_level), "write ", ai.text,
+                    string.format("@%x", ai.proof.address), ": ",
+                    ai.read, " -> ", ai.written, "\n")
+            end
+            i = i + 1
         end
-        io.stdout:write(ai.type, " ", ai.proof.address, "\n")
     end
 end
 
 local function print_hash(h)
-    print((string.gsub(h, ".", function(c)
-        return string.format("%02x", string.byte(c))
-    end)))
+    print(hexhash(h))
 end
 
 local function check_proof(proof)

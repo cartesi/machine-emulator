@@ -66,22 +66,6 @@ private:
 
 public:
 
-    /// \brief Error codes.
-    /// \details All public methods return an error code with a descriptive
-    /// name.  These error codes can be cast to int. The result is positive
-    /// for success and negative for failure.
-    enum class status_code {
-        success = 1, ///< Success
-        error = -1, ///< Error
-        error_should_not_happen = -2, ///< Unexpected error
-        error_out_of_memory = -3, ///< Failure due to lack of memory
-    };
-
-    /// \brief Checks if error code is an error
-    static constexpr int is_error(status_code code) {
-        return static_cast<int>(code) < 0;
-    }
-
     /// \brief Returns the LOG2_TREE_SIZE template parameter.
     static constexpr int get_log2_tree_size(void) { return LOG2_TREE_SIZE; }
     /// \brief Returns the LOG2_PAGE_SIZE template parameter.
@@ -234,8 +218,8 @@ private:
     /// \param h Hasher object.
     /// \param node Root of subtree.
     /// \param  log2_size log<sub>2</sub> of size subintended by \p node.
-    status_code verify(hasher_type &h, tree_node *node,
-            int log2_size) const;
+    /// \returns True if tree is consistent, false otherwise.
+    bool verify_tree(hasher_type &h, tree_node *node, int log2_size) const;
 
     /// \brief Computes the page index for a memory address.
     /// \param address Memory address.
@@ -295,8 +279,8 @@ private:
     /// \param child1 Hash of second child.
     /// \param parent Receives parent hash.
     /// \details It is safe to use the same hash variable as both input and output to this function.
-    void get_concat_hash(hasher_type &h, const hash_type &child0,
-            const hash_type &child1, hash_type &parent) const;
+    static void get_concat_hash(hasher_type &h, const hash_type &child0,
+            const hash_type &child1, hash_type &parent);
 
 public:
 
@@ -314,9 +298,8 @@ public:
     static void set_sibling_hash(const hash_type &hash, int log2_size, siblings_type &sibling_hashes);
 
     /// \brief Verifies the entire Merkle tree.
-    /// \return status_code::success if tree is consistent,
-    /// or status_code::error otherwise.
-    status_code verify(void) const;
+    /// \return True if tree is consistent, false otherwise.
+    bool verify_tree(void) const;
 
     /// \brief Default constructor.
     /// \details Initializes memory to zero.
@@ -328,27 +311,26 @@ public:
 
     /// \brief Returns the root hash.
     /// \param hash Receives the hash.
-    /// \returns status_code::success.
-    status_code get_root_hash(hash_type &hash) const;
+    /// \returns True.
+    bool get_root_hash(hash_type &hash) const;
 
     /// \brief Start tree update.
     /// \param h Hasher object.
-    /// \returns status_code::success.
-    status_code begin_update(hasher_type &h);
+    /// \returns True.
+    bool begin_update(hasher_type &h);
 
     /// \brief Update tree with new data for a page node.
     /// \param h Hasher object.
     /// \param page_address Address of start of page.
     /// \param page_data Pointer to start of contiguous page data, or nullptr if page is pristine.
-    /// \returns status_code::success if update completed,
-    /// status_code::out_of_memory if it failed.
-    status_code update_page(hasher_type &h, address_type page_address,
+    /// \returns True if succeeded, false otherwise.
+    bool update_page(hasher_type &h, address_type page_address,
             const uint8_t *page_data);
 
     /// \brief End tree update.
     /// \param h Hasher object.
-    /// \returns status_code::success.
-    status_code end_update(hasher_type &h);
+    /// \returns True if succeeded, false otherwise.
+    bool end_update(hasher_type &h);
 
     /// \brief Returns the proof for a node in the tree.
     /// \param address Address of target node. Must be aligned
@@ -359,8 +341,14 @@ public:
     /// \p page_data must point to start of contiguous page containing
     /// the node, or nullptr if is the page is pristine (i.e., filled with zeros).
     /// \param proof Receives proof.
-    status_code get_proof(address_type address, int log2_size,
+    /// \returns True if succeeded, false otherwise.
+    bool get_proof(address_type address, int log2_size,
             const uint8_t *page_data, proof_type &proof) const;
+
+    /// \brief Verifies a proof.
+    /// \param proof Proof to be verified.
+    /// \return True if proof is consistent, false otherwise.
+    static bool verify_proof(const proof_type &proof);
 };
 
 std::ostream &operator<<(std::ostream &out, const merkle_tree::hash_type &hash);

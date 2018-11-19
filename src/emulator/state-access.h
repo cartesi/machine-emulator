@@ -305,7 +305,7 @@ private:
     }
 
     pma_entry *do_read_pma(int i) {
-        return &m_s->physical_memory[i];
+        return &m_s->pmas[i];
     }
 
     template <typename T>

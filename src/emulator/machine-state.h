@@ -66,7 +66,7 @@ struct machine_state {
     uint64_t htif_tohost;    ///< HTIF CSR tohost.
     uint64_t htif_fromhost;  ///< HTIF CSR fromhost.
 
-    pma_entry physical_memory[PMA_SIZE]; ///< Physical memory map
+    pma_entry pmas[PMA_SIZE];  ///< Map of physical memory ranges
     int pma_count;             ///< Number of entries in map
 
     const pma_entry *shadow_pma; ///< PMA for shadow device

@@ -451,7 +451,7 @@ private:
     }
 
     pma_entry *do_read_pma(int i) {
-        auto pma = &m_s->physical_memory[i];
+        auto pma = &m_s->pmas[i];
         auto istart = pma_get_istart(pma);
         auto ilength = pma_get_ilength(pma);
         auto rel_addr = shadow_get_pma_rel_addr(i);

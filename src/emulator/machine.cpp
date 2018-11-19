@@ -89,7 +89,7 @@ typedef unsigned __int128 uint128_t;
 /// \returns Corresponding entry, or nullptr if no PMA matches \p paddr.
 static pma_entry *naked_find_pma_entry(machine_state *s, uint64_t paddr) {
     for (int i = 0; i < s->pma_count; i++) {
-        pma_entry *pma = &s->physical_memory[i];
+        pma_entry *pma = &s->pmas[i];
         if (paddr >= pma->start && paddr < pma->start + pma->length)
             return pma;
     }
@@ -109,7 +109,7 @@ static const pma_entry *naked_find_pma_entry(const machine_state *s, uint64_t pa
 static bool pma_range_is_unoccupied(const machine_state *s, uint64_t start, uint64_t length) {
     // Range A overlaps with B if A starts before B ends and A ends after B starts
     for (int i = 0; i < s->pma_count; i++) {
-        const pma_entry *pma = &s->physical_memory[i];
+        const pma_entry *pma = &s->pmas[i];
         if (start < pma->start+pma->length && start+length > pma->start) {
             return false;
         }
@@ -140,7 +140,7 @@ static pma_entry *allocate_pma_entry(machine_state *s, uint64_t start, uint64_t 
     assert(is_unoccupied);
     if (!is_unoccupied)
         return nullptr;
-    pma_entry *pma = &s->physical_memory[s->pma_count++];
+    pma_entry *pma = &s->pmas[s->pma_count++];
     pma->start = start;
     pma->length = length;
     pma->memory.host_memory = nullptr;
@@ -367,6 +367,7 @@ void dump_regs(machine_state *s) {
 /// accesses can be recorded if need be.
 template <typename STATE_ACCESS>
 static pma_entry *find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
+    auto note = a.make_scoped_note("find_pma_entry"); (void) note;
     for (int i = 0; i < PMA_SIZE; i++) {
         pma_entry *pma = a.read_pma(i);
         if (paddr >= pma->start && paddr < pma->start + pma->length)
@@ -419,6 +420,7 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
+    auto note = a.make_scoped_note("translate_virtual_address"); (void) note;
     int priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
 
@@ -603,6 +605,9 @@ static void set_priv(STATE_ACCESS &a, int previous_prv, int new_prv) {
     if (previous_prv != new_prv) {
         tlb_flush_all(a.get_naked_state());
         a.write_iflags_PRV(new_prv);
+        //??D new priv 1.11 draft says invalidation should
+        //happen within a trap handler, although it could
+        //also happen in xRET insn.
         a.write_ilrsc(-1); // invalidate reserved address
     }
 }
@@ -613,6 +618,7 @@ static void set_priv(STATE_ACCESS &a, int previous_prv, int new_prv) {
 /// \param tval Associated tval.
 template <typename STATE_ACCESS>
 static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
+    auto note = a.make_scoped_note("raise_exception"); (void) note;
 #if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS)
     {
         int flag;
@@ -751,6 +757,7 @@ static inline uint32_t ilog2(uint32_t v) {
 /// \param a Machine state accessor object.
 template <typename STATE_ACCESS>
 static void raise_interrupt_if_any(STATE_ACCESS &a) {
+    auto note = a.make_scoped_note("raise_interrupt_if_any"); (void) note;
     uint32_t mask = get_pending_irq_mask(a);
     if (mask != 0) {
         uint64_t irq_num = ilog2(mask);
@@ -763,7 +770,7 @@ machine_state *machine_init(void) {
     if (s) {
         tlb_init(s);
         s->brk = false;
-        memset(s->physical_memory, 0, sizeof(s->physical_memory));
+        memset(s->pmas, 0, sizeof(s->pmas));
         s->pma_count = 0;
     }
     return s;
@@ -780,7 +787,7 @@ void machine_end(machine_state *s) {
     fprintf(stderr, "amo: %" PRIu64 "\n", s->count_amo);
 #endif
     for (int i = 0; i < s->pma_count; i++) {
-        pma_entry *pma = &s->physical_memory[i];
+        pma_entry *pma = &s->pmas[i];
         if (pma_is_memory(pma)) {
             if (pma->memory.backing_file >= 0) {
                 munmap(pma->memory.host_memory, pma->length);
@@ -1103,7 +1110,7 @@ bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
     if (!scratch) return false;
     t->begin_update(h);
     for (int i = 0; i < s->pma_count; i++) {
-        pma_entry *pma = &s->physical_memory[i];
+        pma_entry *pma = &s->pmas[i];
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma->length; page_start_in_range += PMA_PAGE_SIZE) {
             const uint8_t *page_data = nullptr;
             if (!pma->driver->peek(pma, page_start_in_range, &page_data, scratch.get())) {
@@ -1144,7 +1151,7 @@ bool machine_update_merkle_tree_page(machine_state *s, uint64_t address, merkle_
 
 const pma_entry *machine_get_pma(const machine_state *s, int i) {
     if (i < 0 || i >= s->pma_count) return nullptr;
-    return &s->physical_memory[i];
+    return &s->pmas[i];
 }
 
 int machine_get_pma_count(const machine_state *s) {
@@ -1156,7 +1163,7 @@ bool machine_dump(const machine_state *s) {
     if (!scratch) return false;
     for (int i = 0; i < s->pma_count; i++) {
         char filename[256];
-        const pma_entry *pma = &s->physical_memory[i];
+        const pma_entry *pma = &s->pmas[i];
         sprintf(filename, "%016" PRIx64 "--%016" PRIx64 ".bin", pma->start, pma->length);
         fprintf(stderr, "dumping '%s'\n", filename);
         auto fp = unique_fopen(filename, "wb");
@@ -1339,7 +1346,7 @@ template <typename T, typename STATE_ACCESS>
 static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)  {
     using U = std::make_unsigned_t<T>;
     int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
-    if (!avoid_tlb<STATE_ACCESS>::value && 
+    if (!avoid_tlb<STATE_ACCESS>::value &&
         (a.get_naked_state()->tlb_read[tlb_idx].vaddr == (vaddr & ~(PG_MASK & ~(sizeof(T) - 1))))) {
         *pval = *reinterpret_cast<T *>(a.get_naked_state()->tlb_read[tlb_idx].mem_addend + (uintptr_t)vaddr);
         return true;
@@ -1387,7 +1394,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
 /// \param a Machine state accessor object.
 /// \param vaddr Virtual address for word.
 /// \param val Value to write.
-/// \returns True if succeeded, false otherwise.
+/// \returns True if succeeded, false if exception raised.
 template <typename T, typename STATE_ACCESS>
 static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_t val) {
     using U = std::make_unsigned_t<T>;
@@ -1460,7 +1467,6 @@ enum class execute_status: int {
     retired ///< Instruction was retired: exception may or may not have been raised
 };
 
-
 /// \brief Raises an illegal instruction exception.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
@@ -1492,13 +1498,12 @@ static inline execute_status execute_misaligned_fetch_exception(STATE_ACCESS &a,
 /// \brief Returns from execution due to raised exception.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
-/// \param pc Current pc.
 /// \param insn Instruction.
 /// \return execute_status::retired
 /// \details This function is tail-called whenever the caller identified a raised exception.
 template <typename STATE_ACCESS>
-static inline execute_status execute_raised_exception(STATE_ACCESS &a, uint64_t pc) {
-    (void) a; (void) pc;
+static inline execute_status execute_raised_exception(STATE_ACCESS &a) {
+    (void) a;
     return execute_status::retired;
 }
 
@@ -1538,7 +1543,7 @@ static inline execute_status execute_LR(STATE_ACCESS &a, uint64_t pc, uint32_t i
     uint64_t vaddr = a.read_register(insn_get_rs1(insn));
     T val = 0;
     if (!read_virtual_memory<T>(a, vaddr, &val))
-        return execute_status::retired;
+        return execute_raised_exception(a);
     a.write_ilrsc(vaddr);
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
@@ -1557,7 +1562,7 @@ static inline execute_status execute_SC(STATE_ACCESS &a, uint64_t pc, uint32_t i
     uint64_t vaddr = a.read_register(insn_get_rs1(insn));
     if (a.read_ilrsc() == vaddr) {
         if (!write_virtual_memory<T>(a, vaddr, static_cast<T>(a.read_register(insn_get_rs2(insn)))))
-            return execute_status::retired;
+            return execute_raised_exception(a);
         a.write_ilrsc(-1);
     } else {
         val = 1;
@@ -3103,7 +3108,7 @@ static inline execute_status execute_S(STATE_ACCESS &a, uint64_t pc, uint32_t in
     if (write_virtual_memory<T>(a, vaddr+imm, val)) {
         return execute_next_insn(a, pc);
     } else {
-        return execute_raised_exception(a, pc);
+        return execute_raised_exception(a);
     }
 }
 
@@ -3153,7 +3158,7 @@ static inline execute_status execute_L(STATE_ACCESS &a, uint64_t pc, uint32_t in
         }
         return execute_next_insn(a, pc);
     } else {
-        return execute_raised_exception(a, pc);
+        return execute_raised_exception(a);
     }
 }
 
@@ -3704,7 +3709,7 @@ enum class fetch_status: int {
 //          In that case, raise the exception.
 template <typename STATE_ACCESS>
 static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
-    auto note = a.make_scoped_note("fetch"); (void) note;
+    auto note = a.make_scoped_note("fetch_insn"); (void) note;
     // Get current pc from state
     uint64_t vaddr = *pc = a.read_pc();
     // Check TLB for hit

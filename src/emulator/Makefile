@@ -33,6 +33,8 @@ HASH_LIBS:=$(CRYPTOPP_LIB)
 #   git submodule update --init
 #   make
 #   sudo make install
+#   cd third_party/protobuf
+#   sudo make install
 
 # Mac OS X specific setup
 # Lua

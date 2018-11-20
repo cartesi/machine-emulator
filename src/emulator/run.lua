@@ -304,7 +304,7 @@ end
 
 local function indentout(level, ...)
     local step = "  "
-    io.stderr:write(string.rep(step, level), ...)
+    io.stdout:write(string.rep(step, level), ...)
 end
 
 local function print_log(log)

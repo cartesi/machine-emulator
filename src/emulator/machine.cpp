@@ -1475,7 +1475,7 @@ enum class execute_status: int {
 /// \return execute_status::illegal
 /// \details This function is tail-called whenever the caller decoded enough of the instruction to identify it as illegal.
 template <typename STATE_ACCESS>
-static inline execute_status execute_illegal_insn_exception(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static inline execute_status raise_illegal_insn_exception(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) a; (void) pc;
     raise_exception(a, CAUSE_ILLEGAL_INSTRUCTION, insn);
     return execute_status::illegal;
@@ -1489,7 +1489,7 @@ static inline execute_status execute_illegal_insn_exception(STATE_ACCESS &a, uin
 /// \return execute_status::retired
 /// \details This function is tail-called whenever the caller identified that the next value of pc is misaligned.
 template <typename STATE_ACCESS>
-static inline execute_status execute_misaligned_fetch_exception(STATE_ACCESS &a, uint64_t pc) {
+static inline execute_status raise_misaligned_fetch_exception(STATE_ACCESS &a, uint64_t pc) {
     (void) a;
     raise_exception(a, CAUSE_MISALIGNED_FETCH, pc);
     return execute_status::retired;
@@ -1502,7 +1502,7 @@ static inline execute_status execute_misaligned_fetch_exception(STATE_ACCESS &a,
 /// \return execute_status::retired
 /// \details This function is tail-called whenever the caller identified a raised exception.
 template <typename STATE_ACCESS>
-static inline execute_status execute_raised_exception(STATE_ACCESS &a) {
+static inline execute_status advance_to_raised_exception(STATE_ACCESS &a) {
     (void) a;
     return execute_status::retired;
 }
@@ -1515,7 +1515,7 @@ static inline execute_status execute_raised_exception(STATE_ACCESS &a) {
 /// \return execute_status::retired
 /// \details This function is tail-called whenever the caller wants move to the next instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_next_insn(STATE_ACCESS &a, uint64_t pc) {
+static inline execute_status advance_to_next_insn(STATE_ACCESS &a, uint64_t pc) {
     a.write_pc(pc + 4);
     return execute_status::retired;
 }
@@ -1543,12 +1543,12 @@ static inline execute_status execute_LR(STATE_ACCESS &a, uint64_t pc, uint32_t i
     uint64_t vaddr = a.read_register(insn_get_rs1(insn));
     T val = 0;
     if (!read_virtual_memory<T>(a, vaddr, &val))
-        return execute_raised_exception(a);
+        return advance_to_raised_exception(a);
     a.write_ilrsc(vaddr);
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         a.write_register(rd, static_cast<uint64_t>(val));
-    return execute_next_insn(a, pc);
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Execute the SC instruction.
@@ -1562,7 +1562,7 @@ static inline execute_status execute_SC(STATE_ACCESS &a, uint64_t pc, uint32_t i
     uint64_t vaddr = a.read_register(insn_get_rs1(insn));
     if (a.read_ilrsc() == vaddr) {
         if (!write_virtual_memory<T>(a, vaddr, static_cast<T>(a.read_register(insn_get_rs2(insn)))))
-            return execute_raised_exception(a);
+            return advance_to_raised_exception(a);
         a.write_ilrsc(-1);
     } else {
         val = 1;
@@ -1570,7 +1570,7 @@ static inline execute_status execute_SC(STATE_ACCESS &a, uint64_t pc, uint32_t i
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         a.write_register(rd, val);
-    return execute_next_insn(a, pc);
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the LR.W instruction.
@@ -1582,7 +1582,7 @@ static inline execute_status execute_LR_W(STATE_ACCESS &a, uint64_t pc, uint32_t
         auto note = a.make_scoped_note("lr.w"); (void) note;
         return execute_LR<int32_t>(a, pc, insn);
     } else {
-        return execute_illegal_insn_exception(a, pc, insn);
+        return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -1607,7 +1607,7 @@ static inline execute_status execute_AMO(STATE_ACCESS &a, uint64_t pc, uint32_t 
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         a.write_register(rd, static_cast<uint64_t>(valm));
-    return execute_next_insn(a, pc);
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the AMOSWAP.W instruction.
@@ -1691,7 +1691,7 @@ static inline execute_status execute_LR_D(STATE_ACCESS &a, uint64_t pc, uint32_t
         auto note = a.make_scoped_note("lr.d"); (void) note;
         return execute_LR<uint64_t>(a, pc, insn);
     } else {
-        return execute_illegal_insn_exception(a, pc, insn);
+        return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -2476,17 +2476,17 @@ static inline execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t pc, uint32
     if (rd != 0)
         csrval = read_csr(a, csraddr, &status);
     if (!status)
-        return execute_illegal_insn_exception(a, pc, insn);
+        return raise_illegal_insn_exception(a, pc, insn);
     // Try to write new CSR value
     //??D When we optimize the inner interpreter loop, we
     //    will have to check if there was a change to the
     //    memory manager and report back from here so we
     //    break out of the inner loop
     if (!write_csr(a, csraddr, rs1val(a, insn)))
-        return execute_illegal_insn_exception(a, pc, insn);
+        return raise_illegal_insn_exception(a, pc, insn);
     if (rd != 0)
         a.write_register(rd, csrval);
-    return execute_next_insn(a, pc);
+    return advance_to_next_insn(a, pc);
 
 }
 
@@ -2517,7 +2517,7 @@ static inline execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, uint32
     bool status = false;
     uint64_t csrval = read_csr(a, csraddr, &status);
     if (!status)
-        return execute_illegal_insn_exception(a, pc, insn);
+        return raise_illegal_insn_exception(a, pc, insn);
     // Load value of rs1 before potentially overwriting it
     // with the value of the csr when rd=rs1
     uint32_t rs1 = insn_get_rs1(insn);
@@ -2531,9 +2531,9 @@ static inline execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, uint32
         //    memory manager and report back from here so we
         //    break out of the inner loop
         if (!write_csr(a, csraddr, f(csrval, rs1val)))
-            return execute_illegal_insn_exception(a, pc, insn);
+            return raise_illegal_insn_exception(a, pc, insn);
     }
-    return execute_next_insn(a, pc);
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the CSRRS instruction.
@@ -2561,7 +2561,7 @@ static inline execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc, uint3
     bool status = false;
     uint64_t csrval = read_csr(a, csraddr, &status);
     if (!status)
-        return execute_illegal_insn_exception(a, pc, insn);
+        return raise_illegal_insn_exception(a, pc, insn);
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         a.write_register(rd, csrval);
@@ -2572,9 +2572,9 @@ static inline execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc, uint3
         //    memory manager and report back from here so we
         //    break out of the inner loop
         if (!write_csr(a, csraddr, f(csrval, rs1)))
-            return execute_illegal_insn_exception(a, pc, insn);
+            return raise_illegal_insn_exception(a, pc, insn);
     }
-    return execute_next_insn(a, pc);
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the CSRRSI instruction.
@@ -2621,7 +2621,7 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_URET(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a.get_naked_state(), pc, insn, "uret");
     auto note = a.make_scoped_note("uret"); (void) note;
-    return execute_illegal_insn_exception(a, pc, insn);
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 /// \brief Implementation of the SRET instruction.
@@ -2632,7 +2632,7 @@ static inline execute_status execute_SRET(STATE_ACCESS &a, uint64_t pc, uint32_t
     int priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
     if (priv < PRV_S || (priv == PRV_S && (mstatus & MSTATUS_TSR))) {
-        return execute_illegal_insn_exception(a, pc, insn);
+        return raise_illegal_insn_exception(a, pc, insn);
     } else {
         int spp = (mstatus >> MSTATUS_SPP_SHIFT) & 1;
         /* set the IE state to previous IE state */
@@ -2656,7 +2656,7 @@ static inline execute_status execute_MRET(STATE_ACCESS &a, uint64_t pc, uint32_t
     auto note = a.make_scoped_note("mret"); (void) note;
     int priv = a.read_iflags_PRV();
     if (priv < PRV_M) {
-        return execute_illegal_insn_exception(a, pc, insn);
+        return raise_illegal_insn_exception(a, pc, insn);
     } else {
         uint64_t mstatus = a.read_mstatus();
         int mpp = (mstatus >> MSTATUS_MPP_SHIFT) & 3;
@@ -2682,7 +2682,7 @@ static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t 
     int priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
     if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TW)))
-        return execute_illegal_insn_exception(a, pc, insn);
+        return raise_illegal_insn_exception(a, pc, insn);
     uint64_t mip = a.read_mip();
     uint64_t mie = a.read_mie();
     // Go to power down if no enabled interrupts are pending
@@ -2690,7 +2690,7 @@ static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t 
         a.set_iflags_I();
         a.get_naked_state()->brk = true; // set brk so the outer loop can skip time if it wants too
     }
-    return execute_next_insn(a, pc);
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the FENCE instruction.
@@ -2700,7 +2700,7 @@ static inline execute_status execute_FENCE(STATE_ACCESS &a, uint64_t pc, uint32_
     dump_insn(a.get_naked_state(), pc, insn, "fence");
     auto note = a.make_scoped_note("fence"); (void) note;
     // Really do nothing
-    return execute_next_insn(a, pc);
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the FENCE.I instruction.
@@ -2710,7 +2710,7 @@ static inline execute_status execute_FENCE_I(STATE_ACCESS &a, uint64_t pc, uint3
     dump_insn(a.get_naked_state(), pc, insn, "fence.i");
     auto note = a.make_scoped_note("fence.i"); (void) note;
     // Really do nothing
-    return execute_next_insn(a, pc);
+    return advance_to_next_insn(a, pc);
 }
 
 template <typename STATE_ACCESS, typename F>
@@ -2724,7 +2724,7 @@ static inline execute_status execute_arithmetic(STATE_ACCESS &a, uint64_t pc, ui
         // Now we can safely invoke f()
         a.write_register(rd, f(rs1, rs2));
     }
-    return execute_next_insn(a, pc);
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the ADD instruction.
@@ -2950,7 +2950,7 @@ static inline execute_status execute_arithmetic_immediate(STATE_ACCESS &a, uint6
         int32_t imm = insn_I_get_imm(insn);
         a.write_register(rd, f(rs1, imm));
     }
-    return execute_next_insn(a, pc);
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the SRLI instruction.
@@ -3045,7 +3045,7 @@ static inline execute_status execute_SLLI(STATE_ACCESS &a, uint64_t pc, uint32_t
             return rs1 << (imm & 0b111111);
         });
     } else {
-        return execute_illegal_insn_exception(a, pc, insn);
+        return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -3072,7 +3072,7 @@ static inline execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t pc, uint32_
             return static_cast<uint64_t>(rs1w);
         });
     } else {
-        return execute_illegal_insn_exception(a, pc, insn);
+        return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -3106,9 +3106,9 @@ static inline execute_status execute_S(STATE_ACCESS &a, uint64_t pc, uint32_t in
     int32_t imm = insn_S_get_imm(insn);
     uint64_t val = a.read_register(insn_get_rs2(insn));
     if (write_virtual_memory<T>(a, vaddr+imm, val)) {
-        return execute_next_insn(a, pc);
+        return advance_to_next_insn(a, pc);
     } else {
-        return execute_raised_exception(a);
+        return advance_to_raised_exception(a);
     }
 }
 
@@ -3156,9 +3156,9 @@ static inline execute_status execute_L(STATE_ACCESS &a, uint64_t pc, uint32_t in
         } else {
             a.write_register(insn_get_rd(insn), static_cast<uint64_t>(val));
         }
-        return execute_next_insn(a, pc);
+        return advance_to_next_insn(a, pc);
     } else {
-        return execute_raised_exception(a);
+        return advance_to_raised_exception(a);
     }
 }
 
@@ -3225,12 +3225,12 @@ static inline execute_status execute_branch(STATE_ACCESS &a, uint64_t pc, uint32
     if (f(rs1, rs2)) {
         uint64_t new_pc = (int64_t)(pc + insn_B_get_imm(insn));
         if (new_pc & 3) {
-            return execute_misaligned_fetch_exception(a, new_pc);
+            return raise_misaligned_fetch_exception(a, new_pc);
         } else {
             return execute_jump(a, new_pc);
         }
     }
-    return execute_next_insn(a, pc);
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the BEQ instruction.
@@ -3298,7 +3298,7 @@ static inline execute_status execute_LUI(STATE_ACCESS &a, uint64_t pc, uint32_t 
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         a.write_register(rd, insn_U_get_imm(insn));
-    return execute_next_insn(a, pc);
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the AUIPC instruction.
@@ -3309,7 +3309,7 @@ static inline execute_status execute_AUIPC(STATE_ACCESS &a, uint64_t pc, uint32_
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         a.write_register(rd, pc + insn_U_get_imm(insn));
-    return execute_next_insn(a, pc);
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the JAL instruction.
@@ -3319,7 +3319,7 @@ static inline execute_status execute_JAL(STATE_ACCESS &a, uint64_t pc, uint32_t 
     auto note = a.make_scoped_note("jal"); (void) note;
     uint64_t new_pc = pc + insn_J_get_imm(insn);
     if (new_pc & 3) {
-        return execute_misaligned_fetch_exception(a, new_pc);
+        return raise_misaligned_fetch_exception(a, new_pc);
     }
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
@@ -3335,7 +3335,7 @@ static inline execute_status execute_JALR(STATE_ACCESS &a, uint64_t pc, uint32_t
     uint64_t val = pc + 4;
     uint64_t new_pc = static_cast<int64_t>(a.read_register(insn_get_rs1(insn)) + insn_I_get_imm(insn)) & ~static_cast<uint64_t>(1);
     if (new_pc & 3)
-        return execute_misaligned_fetch_exception(a, new_pc);
+        return raise_misaligned_fetch_exception(a, new_pc);
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
         a.write_register(rd, val);
@@ -3352,7 +3352,7 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
         int priv = a.read_iflags_PRV();
         uint64_t mstatus = a.read_mstatus();
         if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM)))
-            return execute_illegal_insn_exception(a, pc, insn);
+            return raise_illegal_insn_exception(a, pc, insn);
         uint32_t rs1 = insn_get_rs1(insn);
         if (rs1 == 0) {
             tlb_flush_all(a.get_naked_state());
@@ -3361,9 +3361,9 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
         }
         //??D The current code TLB may have been flushed
         // a.get_naked_state()->brk = true;
-        return execute_next_insn(a, pc);
+        return advance_to_next_insn(a, pc);
     } else {
-        return execute_illegal_insn_exception(a, pc, insn);
+        return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -3403,7 +3403,7 @@ static inline execute_status execute_atomic_group(STATE_ACCESS &a, uint64_t pc, 
         case insn_atomic_funct3_funct5::AMOMAX_D: return execute_AMOMAX_D(a, pc, insn);
         case insn_atomic_funct3_funct5::AMOMINU_D: return execute_AMOMINU_D(a, pc, insn);
         case insn_atomic_funct3_funct5::AMOMAXU_D: return execute_AMOMAXU_D(a, pc, insn);
-        default: return execute_illegal_insn_exception(a, pc, insn);
+        default: return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -3427,7 +3427,7 @@ static inline execute_status execute_arithmetic_32_group(STATE_ACCESS &a, uint64
         case insn_arithmetic_32_funct3_funct7::DIVUW: return execute_DIVUW(a, pc, insn);
         case insn_arithmetic_32_funct3_funct7::REMW: return execute_REMW(a, pc, insn);
         case insn_arithmetic_32_funct3_funct7::REMUW: return execute_REMUW(a, pc, insn);
-        default: return execute_illegal_insn_exception(a, pc, insn);
+        default: return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -3442,7 +3442,7 @@ static inline execute_status execute_shift_right_immediate_32_group(STATE_ACCESS
     switch (static_cast<insn_shift_right_immediate_32_funct7>(insn_get_funct7(insn))) {
         case insn_shift_right_immediate_32_funct7::SRLIW: return execute_SRLIW(a, pc, insn);
         case insn_shift_right_immediate_32_funct7::SRAIW: return execute_SRAIW(a, pc, insn);
-        default: return execute_illegal_insn_exception(a, pc, insn);
+        default: return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -3460,7 +3460,7 @@ static inline execute_status execute_arithmetic_immediate_32_group(STATE_ACCESS 
         case insn_arithmetic_immediate_32_funct3::SLLIW: return execute_SLLIW(a, pc, insn);
         case insn_arithmetic_immediate_32_funct3::shift_right_immediate_32_group:
             return execute_shift_right_immediate_32_group(a, pc, insn);
-        default: return execute_illegal_insn_exception(a, pc, insn);
+        default: return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -3507,7 +3507,7 @@ static inline execute_status execute_csr_env_trap_int_mm_group(STATE_ACCESS &a, 
         case insn_csr_env_trap_int_mm_funct3::CSRRCI: return execute_CSRRCI(a, pc, insn);
         case insn_csr_env_trap_int_mm_funct3::env_trap_int_mm_group:
              return execute_env_trap_int_mm_group(a, pc, insn);
-        default: return execute_illegal_insn_exception(a, pc, insn);
+        default: return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -3523,7 +3523,7 @@ static inline execute_status execute_fence_group(STATE_ACCESS &a, uint64_t pc, u
     if (insn == 0x0000100f) {
         return execute_FENCE_I(a, pc, insn);
     } else if (insn & 0xf00fff80) {
-        return execute_illegal_insn_exception(a, pc, insn);
+        return raise_illegal_insn_exception(a, pc, insn);
     } else {
         return execute_FENCE(a, pc, insn);
     }
@@ -3540,7 +3540,7 @@ static inline execute_status execute_shift_right_immediate_group(STATE_ACCESS &a
     switch (static_cast<insn_shift_right_immediate_funct6>(insn_get_funct6(insn))) {
         case insn_shift_right_immediate_funct6::SRLI: return execute_SRLI(a, pc, insn);
         case insn_shift_right_immediate_funct6::SRAI: return execute_SRAI(a, pc, insn);
-        default: return execute_illegal_insn_exception(a, pc, insn);
+        default: return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -3573,7 +3573,7 @@ static inline execute_status execute_arithmetic_group(STATE_ACCESS &a, uint64_t 
         case insn_arithmetic_funct3_funct7::DIVU: return execute_DIVU(a, pc, insn);
         case insn_arithmetic_funct3_funct7::REM: return execute_REM(a, pc, insn);
         case insn_arithmetic_funct3_funct7::REMU: return execute_REMU(a, pc, insn);
-        default: return execute_illegal_insn_exception(a, pc, insn);
+        default: return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -3596,7 +3596,7 @@ static inline execute_status execute_arithmetic_immediate_group(STATE_ACCESS &a,
         case insn_arithmetic_immediate_funct3::SLLI: return execute_SLLI(a, pc, insn);
         case insn_arithmetic_immediate_funct3::shift_right_immediate_group:
             return execute_shift_right_immediate_group(a, pc, insn);
-        default: return execute_illegal_insn_exception(a, pc, insn);
+        default: return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -3614,7 +3614,7 @@ static inline execute_status execute_store_group(STATE_ACCESS &a, uint64_t pc, u
         case insn_store_funct3::SH: return execute_SH(a, pc, insn);
         case insn_store_funct3::SW: return execute_SW(a, pc, insn);
         case insn_store_funct3::SD: return execute_SD(a, pc, insn);
-        default: return execute_illegal_insn_exception(a, pc, insn);
+        default: return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -3635,7 +3635,7 @@ static inline execute_status execute_load_group(STATE_ACCESS &a, uint64_t pc, ui
         case insn_load_funct3::LBU: return execute_LBU(a, pc, insn);
         case insn_load_funct3::LHU: return execute_LHU(a, pc, insn);
         case insn_load_funct3::LWU: return execute_LWU(a, pc, insn);
-        default: return execute_illegal_insn_exception(a, pc, insn);
+        default: return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -3655,7 +3655,7 @@ static inline execute_status execute_branch_group(STATE_ACCESS &a, uint64_t pc, 
         case insn_branch_funct3::BGE: return execute_BGE(a, pc, insn);
         case insn_branch_funct3::BLTU: return execute_BLTU(a, pc, insn);
         case insn_branch_funct3::BGEU: return execute_BGEU(a, pc, insn);
-        default: return execute_illegal_insn_exception(a, pc, insn);
+        default: return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -3690,7 +3690,7 @@ static inline execute_status execute_insn(STATE_ACCESS &a, uint64_t pc, uint32_t
         case insn_opcode::arithmetic_immediate_32_group: return execute_arithmetic_immediate_32_group(a, pc, insn);
         case insn_opcode::arithmetic_32_group: return execute_arithmetic_32_group(a, pc, insn);
         case insn_opcode::atomic_group: return execute_atomic_group(a, pc, insn);
-        default: return execute_illegal_insn_exception(a, pc, insn);
+        default: return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 

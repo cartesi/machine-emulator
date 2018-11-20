@@ -1,3 +1,5 @@
+#!/usr/local/bin/luapp
+
 local cartesi = require"cartesi"
 
 -- Print help and exit

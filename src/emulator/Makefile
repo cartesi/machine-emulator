@@ -1,7 +1,7 @@
 UNAME:=$(shell uname)
 
-LUA_INC:=$(shell pkg-config --cflags lua53)
-LUA_LIB:=$(shell pkg-config --libs lua53)
+LUA_INC:=$(shell pkg-config --cflags luapp53)
+LUA_LIB:=$(shell pkg-config --libs luapp53)
 FDT_LIB:=-lfdt
 CRYPTOPP_LIB:=-lcryptopp
 GRPC_INC:=$(shell pkg-config --cflags protobuf grpc)
@@ -20,6 +20,15 @@ LUACARTESI_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB)
 HASH_LIBS:=$(CRYPTOPP_LIB)
 
 # Common setup
+# Lua for C++
+#    wget https://www.lua.org/ftp/lua-5.3.5.tar.gz
+#    tar -zxvf lua-5.3.5.tar.gz
+#    cd lua-5.3.5
+#    patch -p1 < image-ci/luapp.patch
+#    make linux
+#    sudo make install
+#    sudo cp image-ci/luapp53.pc /usr/local/lib/pkgconfig
+#    sudo ln -s /usr/local/lib/luapp5.3 /usr/local/bin/luapp
 # cryptopp
 #   git clone git@github.com:cartesi/cryptopp.git
 #   cd cryptopp
@@ -37,10 +46,30 @@ HASH_LIBS:=$(CRYPTOPP_LIB)
 #   sudo make install
 
 # Mac OS X specific setup
-# Lua
-#   port install lua
-# lua53.pc is missing.
-#   Link from lua.pc to lua53.pc in /opt/local/lib/pkgconfig
+# Lua for C++
+#    wget https://www.lua.org/ftp/lua-5.3.5.tar.gz
+#    tar -zxvf lua-5.3.5.tar.gz
+#    cd lua-5.3.5
+#    patch -p1 < image-ci/luapp.patch
+#    make macosx
+#    sudo make install
+#    sudo cp image-ci/luapp53.pc /usr/local/lib/pkgconfig
+#    sudo ln -s /usr/local/lib/luapp5.3 /usr/local/bin/luapp
+# cryptopp
+#   git clone git@github.com:cartesi/cryptopp.git
+#   cd cryptopp
+#   git checkout cartesi
+#   make
+#   sudo make install
+# grpc
+#   git clone --branch v1.16.0 --depth 1 https://github.com/grpc/grpc.git
+#   cd grpc
+#   git checkout v1.16.0
+#   git submodule update --init
+#   make
+#   sudo make install
+#   cd third_party/protobuf
+#   sudo make install
 # libfdt
 #   git clone https://git.kernel.org/pub/scm/utils/dtc/dtc.git
 #   cd dtc
@@ -83,7 +112,7 @@ CFLAGS=-Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(
 
 ALL=cartesi.so
 
-.PHONY: all generate use clean test grpc
+.PHONY: all generate use clean test grpc docker
 
 all: $(ALL)
 
@@ -106,7 +135,7 @@ cartesi.so: $(LUACARTESI_OBJS)
 	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LUACARTESI_LIBS)
 
 test: cartesi.so
-	lua tests.lua
+	luapp tests.lua
 
 fs.ext2: fs/*
 	genext2fs -f -i 512 -b 8192 -d fs fs.ext2
@@ -118,7 +147,7 @@ generate: CXXFLAGS += -fprofile-generate
 generate: SOLDFLAGS += -fprofile-generate
 
 generate: cartesi.so
-	lua run.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
+	luapp run.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
 
 print:
 	echo CXXFLAGS=$(CXXFLAGS)
@@ -131,6 +160,9 @@ use: CXXFLAGS += -fprofile-use
 use: SOLDFLAGS += -fprofile-use
 
 use: cartesi.so
+
+docker:
+	 docker run -it --rm -v `pwd`:/root/emulator -w /root/emulator cartesi/image-ci
 
 grpc: server client
 

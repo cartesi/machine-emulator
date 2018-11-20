@@ -1,5 +1,6 @@
 #include <cstring>
-#include <lua.hpp>
+#include "lua.h"
+#include "lauxlib.h"
 #include <iostream>
 
 #include "emulator.h"

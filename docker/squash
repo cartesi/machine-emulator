@@ -1,8 +1,0 @@
-docker build -t diegonehab/cartesi:use .
-docker run --name tosquash -it diegonehab/cartesi:use
-docker export --output=latest.tar tosquash
-docker container rm tosquash
-docker rmi diegonehab/cartesi:use
-cat latest.tar | docker import - diegonehab/cartesi:latest
-rm latest.tar
-docker push diegonehab/cartesi:latest

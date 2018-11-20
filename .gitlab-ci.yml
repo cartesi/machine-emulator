@@ -6,4 +6,4 @@ before_script:
 
 test:
   script:
-  - ./tests.sh
+  - ./tests.lua

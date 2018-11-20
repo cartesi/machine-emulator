@@ -1,3 +1,5 @@
+#!/usr/local/bin/luapp
+
 local cartesi = require"cartesi"
 
 local tests = {
@@ -232,6 +234,8 @@ if #errors > 0 then
     for i, e in ipairs(errors) do
         io.write("\t", e, "\n")
     end
+    os.exit(1, true)
 else
     print("passed all tests")
+    os.exit(0, true)
 end

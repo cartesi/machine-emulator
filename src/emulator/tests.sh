@@ -7,4 +7,4 @@ errors_count=0
 
 cd $root_dir
 
-lua tests.lua
+luapp tests.lua

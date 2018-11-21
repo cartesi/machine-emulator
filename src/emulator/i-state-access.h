@@ -481,10 +481,10 @@ public:
 	}
 
     /// \brief Reads PMA at a given index.
-    /// \param i PMA index.
-    /// \returns Pointer to PMA entry, or nullptr if index is out of bounds.
-    pma_entry *read_pma(int i) {
-        return derived().do_read_pma(i);
+    /// \param pma PMA entry.
+    /// \param i Index of PMA index.
+    void read_pma(const pma_entry &pma, int i) {
+        return derived().do_read_pma(pma, i);
     }
 
     /// \brief Read from memory.

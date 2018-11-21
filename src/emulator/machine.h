@@ -7,11 +7,9 @@
 #include <memory>
 
 #include "merkle-tree.h"
+#include "machine-state.h"
 
 // Forward declarations
-struct machine_state;
-struct pma_driver;
-struct pma_entry;
 struct access_log;
 
 /// \brief Creates and initializes a new machine.
@@ -491,16 +489,10 @@ const pma_entry *machine_register_shadow(machine_state *s, uint64_t start, uint6
 /// \returns true if successful, false otherwise.
 bool machine_dump(const machine_state *s);
 
-/// \brief Get PMA entry by index.
+/// \brief Get read-only access to container with all PMA entries.
 /// \param s Machine state.
-/// \param i PMA index.
-/// \returns Pointer to entry, or nullptr if out of bounds
-const pma_entry *machine_get_pma(const machine_state *s, int i);
-
-/// \brief Get number of PMA entries.
-/// \param s Machine state.
-/// \returns Pointer to entry, or nullptr if out of bounds
-int machine_get_pma_count(const machine_state *s);
+/// \returns The container.
+const pma_entries &machine_get_pmas(const machine_state *s);
 
 /// \brief Sets PMA used for shadow, if not previously set.
 /// \param s Machine state.

@@ -2,7 +2,6 @@
 
 #include "shadow.h"
 #include "machine.h"
-#include "pma.h"
 
 static void write_shadow(uint8_t *base, uint64_t offset, uint64_t value) {
     assert((offset & (sizeof(uint64_t)-1)) == 0);
@@ -97,11 +96,12 @@ static bool shadow_peek(const pma_entry *pma, uint64_t page_offset, const uint8_
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::iflags),
         machine_read_iflags(s));
     // Copy PMAs
-    for (int i = 0; i < machine_get_pma_count(s); ++i) {
-        auto pi = machine_get_pma(s, i);
-        auto ai = shadow_get_pma_rel_addr(i);
-        write_shadow(shadow, ai, pma_get_istart(pi));
-        write_shadow(shadow, ai + sizeof(uint64_t), pma_get_ilength(pi));
+    int i = 0;
+    for (const auto &pma: machine_get_pmas(s)) {
+        auto rel_addr = shadow_get_pma_rel_addr(i);
+        write_shadow(shadow, rel_addr, pma_get_istart(pma));
+        write_shadow(shadow, rel_addr + sizeof(uint64_t), pma_get_ilength(pma));
+        ++i;
     }
     *page_data = shadow;
     return true;

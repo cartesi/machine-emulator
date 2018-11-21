@@ -8,8 +8,6 @@
 
 #include "pma.h"
 
-#define PMA_SIZE 32 ///< Maximum number of PMAs
-
 /// \brief Translation Lookaside Buffer entry.
 /// \details The TLB is a small cache used to speed up translation between
 /// virtual target addresses and the corresponding memory address in the host.
@@ -66,8 +64,8 @@ struct machine_state {
     uint64_t htif_tohost;    ///< HTIF CSR tohost.
     uint64_t htif_fromhost;  ///< HTIF CSR fromhost.
 
-    pma_entry pmas[PMA_SIZE];  ///< Map of physical memory ranges
-    int pma_count;             ///< Number of entries in map
+    /// Map of physical memory ranges
+    pma_entries pmas;
 
     const pma_entry *shadow_pma; ///< PMA for shadow device
     const pma_entry *htif_pma; ///< PMA for HTIF device

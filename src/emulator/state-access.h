@@ -304,8 +304,8 @@ private:
         m_s->htif_tohost = val;
     }
 
-    pma_entry *do_read_pma(int i) {
-        return &m_s->pmas[i];
+    void do_read_pma(const pma_entry &pma, int i) {
+        (void) i; (void) pma;
     }
 
     template <typename T>

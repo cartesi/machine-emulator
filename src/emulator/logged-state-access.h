@@ -450,14 +450,12 @@ private:
         log_before_write_write_and_update(m_s->htif_pma->start + htif_get_csr_rel_addr(htif_csr::tohost), m_s->htif_tohost, val, "htif_tohost");
     }
 
-    pma_entry *do_read_pma(int i) {
-        auto pma = &m_s->pmas[i];
+    void do_read_pma(const pma_entry &pma, int i) {
         auto istart = pma_get_istart(pma);
         auto ilength = pma_get_ilength(pma);
         auto rel_addr = shadow_get_pma_rel_addr(i);
-        log_read(m_s->shadow_pma->start + rel_addr, istart, "pma");
-        log_read(m_s->shadow_pma->start + rel_addr + sizeof(uint64_t), ilength, "pma");
-        return pma;
+        log_read(m_s->shadow_pma->start + rel_addr, istart, "pma.istart");
+        log_read(m_s->shadow_pma->start + rel_addr + sizeof(uint64_t), ilength, "pma.ilength");
     }
 
     template <typename T>

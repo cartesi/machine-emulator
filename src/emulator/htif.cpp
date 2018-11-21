@@ -1,7 +1,6 @@
 #include "machine.h"
 #include "htif.h"
 #include "i-virtual-state-access.h"
-#include "pma.h"
 
 #include <signal.h>
 #include <termios.h>

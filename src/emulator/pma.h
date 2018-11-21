@@ -2,6 +2,8 @@
 #define PMA_H
 
 #include <cstdint>
+#include <boost/container/static_vector.hpp>
+
 #include "merkle-tree.h"
 
 // Forward definitions
@@ -131,6 +133,9 @@ struct pma_entry {
     const pma_driver *driver; ///< Driver with callbacks for range.
 };
 
+#define PMA_SIZE 32 ///< Maximum number of PMAs
+using pma_entries = boost::container::static_vector<pma_entry, PMA_SIZE>;
+
 /// \brief Checks if a PMA entry describes a memory range
 /// \param pma Pointer to entry of interest.
 static inline bool pma_is_memory(const pma_entry *pma) {
@@ -168,21 +173,13 @@ static inline bool pma_is_shadow(const pma_entry *pma) {
 }
 
 /// \brief Encodes PMA encoded start field as per whitepaper
-static inline uint64_t pma_get_istart(const pma_entry *pma) {
-    if (pma) {
-        return (pma->start & ~PMA_FLAGS_MASK) | (pma->type_flags & PMA_FLAGS_MASK);
-    } else {
-        return 0;
-    }
+static inline uint64_t pma_get_istart(const pma_entry &pma) {
+    return (pma.start & ~PMA_FLAGS_MASK) | (pma.type_flags & PMA_FLAGS_MASK);
 }
 
 /// \brief Encodes PMA encoded length field as per whitepaper
-static inline uint64_t pma_get_ilength(const pma_entry *pma) {
-    if (pma) {
-        return pma->length;
-    } else {
-        return 0;
-    }
+static inline uint64_t pma_get_ilength(const pma_entry &pma) {
+    return pma.length;
 }
 
 /// \brief Returns context associated to PMA entry

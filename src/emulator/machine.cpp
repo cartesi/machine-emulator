@@ -88,10 +88,9 @@ typedef unsigned __int128 uint128_t;
 /// \param paddr Target physical address.
 /// \returns Corresponding entry, or nullptr if no PMA matches \p paddr.
 static pma_entry *naked_find_pma_entry(machine_state *s, uint64_t paddr) {
-    for (int i = 0; i < s->pma_count; i++) {
-        pma_entry *pma = &s->pmas[i];
-        if (paddr >= pma->start && paddr < pma->start + pma->length)
-            return pma;
+    for (auto &pma: s->pmas) {
+        if (paddr >= pma.start && paddr < pma.start + pma.length)
+            return &pma;
     }
     return nullptr;
 }
@@ -108,9 +107,8 @@ static const pma_entry *naked_find_pma_entry(const machine_state *s, uint64_t pa
 /// \returns true if unoccupied, false otherwise.
 static bool pma_range_is_unoccupied(const machine_state *s, uint64_t start, uint64_t length) {
     // Range A overlaps with B if A starts before B ends and A ends after B starts
-    for (int i = 0; i < s->pma_count; i++) {
-        const pma_entry *pma = &s->pmas[i];
-        if (start < pma->start+pma->length && start+length > pma->start) {
+    for (const auto &pma: s->pmas) {
+        if (start < pma.start + pma.length && start+length > pma.start) {
             return false;
         }
     }
@@ -126,9 +124,9 @@ static bool pma_range_is_unoccupied(const machine_state *s, uint64_t start, uint
 /// \param driver Range driver.
 /// \returns Corresponding entry, or nullptr if no room for new PMA.
 static pma_entry *allocate_pma_entry(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_driver *driver) {
-    assert(s->pma_count < PMA_SIZE);
+    assert(s->pmas.size() < s->pmas.capacity());
     // check for too many entries
-    if (s->pma_count >= PMA_SIZE)
+    if (s->pmas.size() >= s->pmas.capacity())
         return nullptr;
     // check for alignment
     bool is_aligned = (start & (PMA_PAGE_SIZE-1)) == 0 && length != 0 && (length & (PMA_WORD_SIZE-1)) == 0;
@@ -140,14 +138,15 @@ static pma_entry *allocate_pma_entry(machine_state *s, uint64_t start, uint64_t 
     assert(is_unoccupied);
     if (!is_unoccupied)
         return nullptr;
-    pma_entry *pma = &s->pmas[s->pma_count++];
-    pma->start = start;
-    pma->length = length;
-    pma->memory.host_memory = nullptr;
-    pma->memory.backing_file = -1;
-    pma->context = context;
-    pma->driver = driver;
-    return pma;
+    pma_entry pma;
+    pma.start = start;
+    pma.length = length;
+    pma.memory.host_memory = nullptr;
+    pma.memory.backing_file = -1;
+    pma.context = context;
+    pma.driver = driver;
+    s->pmas.push_back(pma);
+    return &s->pmas.back();
 }
 
 /// \brief Memory range peek callback. See ::pma_peek.
@@ -368,11 +367,12 @@ void dump_regs(machine_state *s) {
 template <typename STATE_ACCESS>
 static pma_entry *find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
     auto note = a.make_scoped_note("find_pma_entry"); (void) note;
-    for (int i = 0; i < PMA_SIZE; i++) {
-        pma_entry *pma = a.read_pma(i);
-        if (paddr >= pma->start && paddr < pma->start + pma->length)
-            return pma;
-        if (pma->length == 0)
+    int i = 0;
+    for (auto &pma: a.get_naked_state()->pmas) {
+        a.read_pma(pma, i++);
+        if (paddr >= pma.start && paddr < pma.start + pma.length)
+            return &pma;
+        if (pma.length == 0)
             break;
     }
     return nullptr;
@@ -766,17 +766,16 @@ static void raise_interrupt_if_any(STATE_ACCESS &a) {
 }
 
 machine_state *machine_init(void) {
-    machine_state *s = reinterpret_cast<machine_state *>(calloc(1, sizeof(*s)));
+    machine_state *s = ::new (std::nothrow) machine_state{};
     if (s) {
         tlb_init(s);
-        s->brk = false;
-        memset(s->pmas, 0, sizeof(s->pmas));
-        s->pma_count = 0;
     }
     return s;
 }
 
 void machine_end(machine_state *s) {
+    assert(s);
+    if (!s) return;
 #if DUMP_COUNTERS
     fprintf(stderr, "inner loops: %" PRIu64 "\n", s->count_inners);
     fprintf(stderr, "outers loops: %" PRIu64 "\n", s->count_outers);
@@ -786,18 +785,17 @@ void machine_end(machine_state *s) {
     fprintf(stderr, "me: %" PRIu64 "\n", s->count_me);
     fprintf(stderr, "amo: %" PRIu64 "\n", s->count_amo);
 #endif
-    for (int i = 0; i < s->pma_count; i++) {
-        pma_entry *pma = &s->pmas[i];
-        if (pma_is_memory(pma)) {
-            if (pma->memory.backing_file >= 0) {
-                munmap(pma->memory.host_memory, pma->length);
-                close(pma->memory.backing_file);
+    for (auto &pma: s->pmas) {
+        if (pma_is_memory(&pma)) {
+            if (pma.memory.backing_file >= 0) {
+                munmap(pma.memory.host_memory, pma.length);
+                close(pma.memory.backing_file);
             } else {
-                free(pma->memory.host_memory);
+                free(pma.memory.host_memory);
             }
         }
     }
-    free(s);
+    delete s;
 }
 
 uint64_t machine_read_register(const machine_state *s, int i) {
@@ -1109,14 +1107,13 @@ bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
     auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
     t->begin_update(h);
-    for (int i = 0; i < s->pma_count; i++) {
-        pma_entry *pma = &s->pmas[i];
-        for (uint64_t page_start_in_range = 0; page_start_in_range < pma->length; page_start_in_range += PMA_PAGE_SIZE) {
+    for (auto &pma: s->pmas) {
+        for (uint64_t page_start_in_range = 0; page_start_in_range < pma.length; page_start_in_range += PMA_PAGE_SIZE) {
             const uint8_t *page_data = nullptr;
-            if (!pma->driver->peek(pma, page_start_in_range, &page_data, scratch.get())) {
+            if (!pma.driver->peek(&pma, page_start_in_range, &page_data, scratch.get())) {
                 t->end_update(h);
                 return false;
-            } else if (page_data && !t->update_page(h, pma->start + page_start_in_range, page_data)) {
+            } else if (page_data && !t->update_page(h, pma.start + page_start_in_range, page_data)) {
                 t->end_update(h);
                 return false;
             } // ??D else page is pristine and we do nothing.
@@ -1149,28 +1146,22 @@ bool machine_update_merkle_tree_page(machine_state *s, uint64_t address, merkle_
     return t->end_update(h);
 }
 
-const pma_entry *machine_get_pma(const machine_state *s, int i) {
-    if (i < 0 || i >= s->pma_count) return nullptr;
-    return &s->pmas[i];
-}
-
-int machine_get_pma_count(const machine_state *s) {
-    return s->pma_count;
+const pma_entries &machine_get_pmas(const machine_state *s) {
+    return s->pmas;
 }
 
 bool machine_dump(const machine_state *s) {
     auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
-    for (int i = 0; i < s->pma_count; i++) {
+    for (auto &pma: s->pmas) {
         char filename[256];
-        const pma_entry *pma = &s->pmas[i];
-        sprintf(filename, "%016" PRIx64 "--%016" PRIx64 ".bin", pma->start, pma->length);
+        sprintf(filename, "%016" PRIx64 "--%016" PRIx64 ".bin", pma.start, pma.length);
         fprintf(stderr, "dumping '%s'\n", filename);
         auto fp = unique_fopen(filename, "wb");
         if (!fp) return false;
-        for (uint64_t page_start_in_range = 0; page_start_in_range < pma->length; page_start_in_range += PMA_PAGE_SIZE) {
+        for (uint64_t page_start_in_range = 0; page_start_in_range < pma.length; page_start_in_range += PMA_PAGE_SIZE) {
             const uint8_t *page_data = nullptr;
-            if (!pma->driver->peek(pma, page_start_in_range, &page_data, scratch.get())) {
+            if (!pma.driver->peek(&pma, page_start_in_range, &page_data, scratch.get())) {
                 return false;
             } else if (page_data && fwrite(page_data, 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
                 return false;

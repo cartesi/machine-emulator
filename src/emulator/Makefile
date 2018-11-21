@@ -20,15 +20,6 @@ LUACARTESI_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB)
 HASH_LIBS:=$(CRYPTOPP_LIB)
 
 # Common setup
-# Lua for C++
-#    wget https://www.lua.org/ftp/lua-5.3.5.tar.gz
-#    tar -zxvf lua-5.3.5.tar.gz
-#    cd lua-5.3.5
-#    patch -p1 < image-ci/luapp.patch
-#    make linux
-#    sudo make install
-#    sudo cp image-ci/luapp53.pc /usr/local/lib/pkgconfig
-#    sudo ln -s /usr/local/lib/luapp5.3 /usr/local/bin/luapp
 # cryptopp
 #   git clone git@github.com:cartesi/cryptopp.git
 #   cd cryptopp
@@ -55,37 +46,37 @@ HASH_LIBS:=$(CRYPTOPP_LIB)
 #    sudo make install
 #    sudo cp image-ci/luapp53.pc /usr/local/lib/pkgconfig
 #    sudo ln -s /usr/local/lib/luapp5.3 /usr/local/bin/luapp
-# cryptopp
-#   git clone git@github.com:cartesi/cryptopp.git
-#   cd cryptopp
-#   git checkout cartesi
-#   make
-#   sudo make install
-# grpc
-#   git clone --branch v1.16.0 --depth 1 https://github.com/grpc/grpc.git
-#   cd grpc
-#   git checkout v1.16.0
-#   git submodule update --init
-#   make
-#   sudo make install
-#   cd third_party/protobuf
-#   sudo make install
 # libfdt
 #   git clone https://git.kernel.org/pub/scm/utils/dtc/dtc.git
 #   cd dtc
 #   sudo make NO_PYTHON=1 PREFIX=/usr/local install
+# Boost
+#   port install boost
 #
 SOLDFLAGS_Darwin:= -L/usr/local/lib -L/opt/local/lib -bundle -undefined dynamic_lookup
 CC_Darwin=clang
 CXX_Darwin=clang++
+INCS_Darwin=-I/opt/local/include
 
 # Linux specific setup
+# Lua for C++
+#    wget https://www.lua.org/ftp/lua-5.3.5.tar.gz
+#    tar -zxvf lua-5.3.5.tar.gz
+#    cd lua-5.3.5
+#    patch -p1 < image-ci/luapp.patch
+#    make linux
+#    sudo make install
+#    sudo cp image-ci/luapp53.pc /usr/local/lib/pkgconfig
+#    sudo ln -s /usr/local/lib/luapp5.3 /usr/local/bin/luapp
 # libfdt
 #   apt-get install libfdt-dev
+# Boost
+#   apt-get install libboost-dev
 #
 SOLDFLAGS_Linux:= -L/usr/local/lib -shared -fpic
 CC_Linux=gcc
 CXX_Linux=g++
+INCS_Linux=
 
 CC:=$(CC_$(UNAME))
 CXX:=$(CXX_$(UNAME))
@@ -93,7 +84,7 @@ SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 
 WARNS=-W -Wall -pedantic
 
-INCS=-I/usr/local/include $(LUA_INC) $(FDT_INC)
+INCS=$(INCS_$(UNAME)) -I/usr/local/include $(LUA_INC) $(FDT_INC)
 
 ifeq ($(dump),yes)
 #DEFS+=-DUMP_ILLEGAL_INSN

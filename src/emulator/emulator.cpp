@@ -32,12 +32,6 @@ extern "C" {
 
 #define CLOCK_FREQ 1000000000 // 1 GHz (arbitrary)
 
-struct emulator {
-    machine_state *machine;
-    htif_state *htif;
-    merkle_tree *tree;
-};
-
 static int get_file_size(const char *name) {
     FILE *f = fopen(name, "rb");
     if (!f) {
@@ -61,62 +55,6 @@ static int load_file(const char *name, void *buf, int len) {
     return len;
 }
 
-emulator_config *emulator_config_init(void) {
-    emulator_config *c = new emulator_config{};
-    // First, initialize all registers with zeros
-    memset(c->processor.x, 0, sizeof(c->processor.x));
-    c->processor.pc = 0;
-    c->processor.mvendorid = 0;
-    c->processor.marchid = 0;
-    c->processor.mimpid = 0;
-    c->processor.mcycle = 0;
-    c->processor.minstret = 0;
-    c->processor.mstatus = 0;
-    c->processor.mtvec = 0;
-    c->processor.mscratch = 0;
-    c->processor.mepc = 0;
-    c->processor.mcause = 0;
-    c->processor.mtval = 0;
-    c->processor.misa = 0;
-    c->processor.mie = 0;
-    c->processor.mip = 0;
-    c->processor.medeleg = 0;
-    c->processor.mideleg = 0;
-    c->processor.mcounteren = 0;
-    c->processor.stvec = 0;
-    c->processor.sscratch = 0;
-    c->processor.sepc = 0;
-    c->processor.scause = 0;
-    c->processor.stval = 0;
-    c->processor.satp = 0;
-    c->processor.scounteren = 0;
-    c->processor.ilrsc = 0;
-    c->processor.iflags = 0;
-    // Now fill in values different from zero
-    // Starting address is 4k
-    c->processor.pc = 0x1000;
-    // M-mode
-    c->processor.iflags = PRV_M << IFLAGS_PRV_SHIFT;
-    // No reservation
-    c->processor.ilrsc = -1;
-    c->processor.mstatus = ((uint64_t)MXL << MSTATUS_UXL_SHIFT) |
-        ((uint64_t)MXL << MSTATUS_SXL_SHIFT);
-    // Set our extensions in misa
-    c->processor.misa = MXL;
-    c->processor.misa <<= (XLEN-2); /* set xlen to 64 */
-    c->processor.misa |= MISAEXT_S | MISAEXT_U | MISAEXT_I |
-        MISAEXT_M | MISAEXT_A;
-    // Set our ids
-    c->processor.mvendorid = CARTESI_VENDORID;
-    c->processor.marchid = CARTESI_ARCHID;
-    c->processor.mimpid = CARTESI_IMPID;
-    return c;
-}
-
-void emulator_config_end(emulator_config *c) {
-    delete c;
-}
-
 #define FDT_CHECK(func_call) do { \
     if ((func_call) != 0) return false; \
 } while (0);
@@ -136,7 +74,7 @@ static int fdt_property_u64_u64(void *fdt, const char *name, uint64_t v0, uint64
 	return fdt_property(fdt, name, tab, sizeof(tab));
 }
 
-static bool fdt_build_riscv(const emulator_config *c, const emulator *emu, void *buf, int bufsize) {
+static bool fdt_build_riscv(const emulator_config &c, const machine_state *s, void *buf, int bufsize) {
     int cur_phandle = 1;
     FDT_CHECK(fdt_create(buf, bufsize));
     FDT_CHECK(fdt_add_reservemap_entry(buf, 0, 0));
@@ -155,8 +93,8 @@ static bool fdt_build_riscv(const emulator_config *c, const emulator *emu, void 
        FDT_CHECK(fdt_property_u32(buf, "reg", 0));
        FDT_CHECK(fdt_property_string(buf, "status", "okay"));
        FDT_CHECK(fdt_property_string(buf, "compatible", "riscv"));
-       int max_xlen = machine_get_max_xlen(emu->machine);
-       uint32_t misa = machine_read_misa(emu->machine);
+       int max_xlen = machine_get_max_xlen(s);
+       uint32_t misa = machine_read_misa(s);
        char isa_string[128], *q = isa_string;
        q += snprintf(isa_string, sizeof(isa_string), "rv%d", max_xlen);
        for(int i = 0; i < 26; i++) {
@@ -179,11 +117,11 @@ static bool fdt_build_riscv(const emulator_config *c, const emulator *emu, void 
 
      FDT_CHECK(fdt_begin_node_num(buf, "memory", RAM_START));
       FDT_CHECK(fdt_property_string(buf, "device_type", "memory"));
-      FDT_CHECK(fdt_property_u64_u64(buf, "reg", RAM_START, c->ram.length));
+      FDT_CHECK(fdt_property_u64_u64(buf, "reg", RAM_START, c.ram.length));
      FDT_CHECK(fdt_end_node(buf)); /* memory */
 
      /* flash */
-     for (const auto &f: c->flash) {
+     for (const auto &f: c.flash) {
          FDT_CHECK(fdt_begin_node_num(buf, "flash", f.start));
           FDT_CHECK(fdt_property_u32(buf, "#address-cells", 2));
           FDT_CHECK(fdt_property_u32(buf, "#size-cells", 2));
@@ -229,7 +167,7 @@ static bool fdt_build_riscv(const emulator_config *c, const emulator *emu, void 
      FDT_CHECK(fdt_end_node(buf)); /* soc */
 
      FDT_CHECK(fdt_begin_node(buf, "chosen"));
-      FDT_CHECK(fdt_property_string(buf, "bootargs", c->rom.bootargs.c_str()));
+      FDT_CHECK(fdt_property_string(buf, "bootargs", c.rom.bootargs.c_str()));
      FDT_CHECK(fdt_end_node(buf));
 
     FDT_CHECK(fdt_end_node(buf)); /* root */
@@ -247,15 +185,15 @@ static bool fdt_build_riscv(const emulator_config *c, const emulator *emu, void 
     return true;
 }
 
-static bool init_ram_and_rom(const emulator_config *c, emulator *emu) {
+static bool init_ram_and_rom(const emulator_config &c, machine_state *s) {
 
-    if (c->ram.backing.empty() && c->rom.backing.empty()) {
+    if (c.ram.backing.empty() && c.rom.backing.empty()) {
         fprintf(stderr, "No ROM or RAM images\n");
         return false;
     }
 
-    if (!c->rom.backing.empty()) {
-        int len = get_file_size(c->rom.backing.c_str());
+    if (!c.rom.backing.empty()) {
+        int len = get_file_size(c.rom.backing.c_str());
         if (len < 0) {
             fprintf(stderr, "Unable to open ROM image\n");
             return false;
@@ -267,30 +205,30 @@ static bool init_ram_and_rom(const emulator_config *c, emulator *emu) {
     }
 
     // Initialize RAM
-    if (!c->ram.backing.empty()) {
-        int len = get_file_size(c->ram.backing.c_str());
+    if (!c.ram.backing.empty()) {
+        int len = get_file_size(c.ram.backing.c_str());
         if (len < 0) {
             fprintf(stderr, "Unable to open RAM image\n");
             return false;
-        } else if (len > (int) c->ram.length) {
+        } else if (len > (int) c.ram.length) {
             fprintf(stderr, "RAM image too big (%d vs %d)\n",
-                (int) len, (int) c->ram.length);
+                (int) len, (int) c.ram.length);
             return false;
         }
-        uint8_t *ram_ptr = machine_get_host_memory(emu->machine, RAM_START);
+        uint8_t *ram_ptr = machine_get_host_memory(s, RAM_START);
         if (!ram_ptr) return false;
-        if (load_file(c->ram.backing.c_str(), ram_ptr, c->ram.length) < 0) {
+        if (load_file(c.ram.backing.c_str(), ram_ptr, c.ram.length) < 0) {
             fprintf(stderr, "Unable to load RAM image\n");
             return false;
         }
     }
 
     // Initialize ROM
-    uint8_t *rom_ptr = machine_get_host_memory(emu->machine, ROM_START);
+    uint8_t *rom_ptr = machine_get_host_memory(s, ROM_START);
     if (!rom_ptr) return false;
-    if (c->rom.backing.empty()) {
+    if (c.rom.backing.empty()) {
         uint32_t fdt_addr = 8 * 8;
-        if (!fdt_build_riscv(c, emu, rom_ptr + fdt_addr, ROM_LENGTH-fdt_addr))
+        if (!fdt_build_riscv(c, s, rom_ptr + fdt_addr, ROM_LENGTH-fdt_addr))
             return false;
         /* jump_addr = RAM_START */
         uint32_t *q = (uint32_t *)(rom_ptr);
@@ -302,7 +240,7 @@ static bool init_ram_and_rom(const emulator_config *c, emulator *emu) {
         q[3] = 0xf1402573; /* csrr a0, mhartid */
         q[4] = 0x00028067; /* jr t0 */
     } else {
-        if (load_file(c->rom.backing.c_str(), rom_ptr, ROM_LENGTH) < 0) {
+        if (load_file(c.rom.backing.c_str(), rom_ptr, ROM_LENGTH) < 0) {
             fprintf(stderr, "Unable to load ROM image\n");
             return false;
         }
@@ -320,182 +258,156 @@ static bool init_ram_and_rom(const emulator_config *c, emulator *emu) {
     return true;
 }
 
-void emulator_end(emulator *emu) {
-    if (emu->htif) htif_end(emu->htif);
-    if (emu->machine) machine_end(emu->machine);
-    if (emu->tree) delete emu->tree;
-    free(emu);
+emulator::~emulator() {
+	// Nothing to do: all members are destroyed automatically
 }
 
-static bool init_processor_state(const emulator_config *c, emulator *emu) {
+static bool init_processor_state(const emulator_config &c, machine_state *s) {
     //??D implement load from backing file
-    assert(c->processor.backing.empty());
+    assert(c.processor.backing.empty());
     // General purpose registers
     for (int i = 1; i < 32; i++) {
-        machine_write_register(emu->machine, i, c->processor.x[i]);
+        machine_write_register(s, i, c.processor.x[i]);
     }
     // Named registers
-    machine_write_pc(emu->machine, c->processor.pc);
-    machine_write_mvendorid(emu->machine, c->processor.mvendorid);
-    machine_write_marchid(emu->machine, c->processor.marchid);
-    machine_write_mimpid(emu->machine, c->processor.mimpid);
-    machine_write_mcycle(emu->machine, c->processor.mcycle);
-    machine_write_minstret(emu->machine, c->processor.minstret);
-    machine_write_mstatus(emu->machine, c->processor.mstatus);
-    machine_write_mtvec(emu->machine, c->processor.mtvec);
-    machine_write_mscratch(emu->machine, c->processor.mscratch);
-    machine_write_mepc(emu->machine, c->processor.mepc);
-    machine_write_mcause(emu->machine, c->processor.mcause);
-    machine_write_mtval(emu->machine, c->processor.mtval);
-    machine_write_misa(emu->machine, c->processor.misa);
-    machine_write_mie(emu->machine, c->processor.mie);
-    machine_write_mip(emu->machine, c->processor.mip);
-    machine_write_medeleg(emu->machine, c->processor.medeleg);
-    machine_write_mideleg(emu->machine, c->processor.mideleg);
-    machine_write_mcounteren(emu->machine, c->processor.mcounteren);
-    machine_write_stvec(emu->machine, c->processor.stvec);
-    machine_write_sscratch(emu->machine, c->processor.sscratch);
-    machine_write_sepc(emu->machine, c->processor.sepc);
-    machine_write_scause(emu->machine, c->processor.scause);
-    machine_write_stval(emu->machine, c->processor.stval);
-    machine_write_satp(emu->machine, c->processor.satp);
-    machine_write_scounteren(emu->machine, c->processor.scounteren);
-    machine_write_ilrsc(emu->machine, c->processor.ilrsc);
-    machine_write_iflags(emu->machine, c->processor.iflags);
+    machine_write_pc(s, c.processor.pc);
+    machine_write_mvendorid(s, c.processor.mvendorid);
+    machine_write_marchid(s, c.processor.marchid);
+    machine_write_mimpid(s, c.processor.mimpid);
+    machine_write_mcycle(s, c.processor.mcycle);
+    machine_write_minstret(s, c.processor.minstret);
+    machine_write_mstatus(s, c.processor.mstatus);
+    machine_write_mtvec(s, c.processor.mtvec);
+    machine_write_mscratch(s, c.processor.mscratch);
+    machine_write_mepc(s, c.processor.mepc);
+    machine_write_mcause(s, c.processor.mcause);
+    machine_write_mtval(s, c.processor.mtval);
+    machine_write_misa(s, c.processor.misa);
+    machine_write_mie(s, c.processor.mie);
+    machine_write_mip(s, c.processor.mip);
+    machine_write_medeleg(s, c.processor.medeleg);
+    machine_write_mideleg(s, c.processor.mideleg);
+    machine_write_mcounteren(s, c.processor.mcounteren);
+    machine_write_stvec(s, c.processor.stvec);
+    machine_write_sscratch(s, c.processor.sscratch);
+    machine_write_sepc(s, c.processor.sepc);
+    machine_write_scause(s, c.processor.scause);
+    machine_write_stval(s, c.processor.stval);
+    machine_write_satp(s, c.processor.satp);
+    machine_write_scounteren(s, c.processor.scounteren);
+    machine_write_ilrsc(s, c.processor.ilrsc);
+    machine_write_iflags(s, c.processor.iflags);
 	return true;
 }
 
-static bool init_htif_state(const emulator_config *c, emulator *emu) {
+static bool init_htif_state(const emulator_config &c, machine_state *s) {
     //??D implement load from backing file
-	assert(c->htif.backing.empty());
-    machine_write_htif_tohost(emu->machine, c->htif.tohost);
-    machine_write_htif_fromhost(emu->machine, c->htif.fromhost);
+	assert(c.htif.backing.empty());
+    machine_write_htif_tohost(s, c.htif.tohost);
+    machine_write_htif_fromhost(s, c.htif.fromhost);
     return true;
 }
 
-static bool init_clint_state(const emulator_config *c, emulator *emu) {
+static bool init_clint_state(const emulator_config &c, machine_state *s) {
     //??D implement load from backing file
-	assert(c->clint.backing.empty());
-    machine_write_clint_mtimecmp(emu->machine, c->clint.mtimecmp);
+	assert(c.clint.backing.empty());
+    machine_write_clint_mtimecmp(s, c.clint.mtimecmp);
     return true;
 }
 
-emulator *emulator_init(const emulator_config *c) {
+emulator::emulator(const emulator_config &c): 
+    m_machine(machine_init()),
+    m_htif(nullptr),
+    m_tree(nullptr) {
 
-    //??D Obviously these can't print to stderr.
-    //    Still deciding on a way to convey these errors.
-    //    The obvious solution is to use exceptions, but
-    //    only after we are done migrating to RAII
-
-    emulator *emu = reinterpret_cast<emulator *>(calloc(1, sizeof(*emu)));
-
-    emu->machine = machine_init();
-
-    if (!emu->machine) {
-        fprintf(stderr, "Unable to initialize machine\n");
-        goto failed;
+    if (!m_machine) {
+		throw std::runtime_error("machine initialization failed");
     }
 
-    if (!init_processor_state(c, emu)) {
-        fprintf(stderr, "Unable to initialize processor\n");
-        goto failed;
+    if (!init_processor_state(c, m_machine.get())) {
+		throw std::runtime_error("processor initialization failed");
     }
 
     // RAM and ROM
-    if (!machine_register_ram(emu->machine, RAM_START, c->ram.length)) {
-        fprintf(stderr, "Unable to allocate RAM\n");
-        goto failed;
+    if (!machine_register_ram(m_machine.get(), RAM_START, c.ram.length)) {
+        throw std::runtime_error("RAM registration failed");
     }
 
-    if (!machine_register_ram(emu->machine, ROM_START, ROM_LENGTH)) {
-        fprintf(stderr, "Unable to allocate ROM\n");
-        goto failed;
+    if (!machine_register_ram(m_machine.get(), ROM_START, ROM_LENGTH)) {
+        throw std::runtime_error("ROM registration failed");
     }
 
-    if (!init_ram_and_rom(c, emu)) {
-        fprintf(stderr, "Unable to initialize RAM and ROM contents\n");
-        goto failed;
+    if (!init_ram_and_rom(c, m_machine.get())) {
+        throw std::runtime_error("RAM/ROM initialization failed");
     }
 
-    /* flash */
-    for (const auto &f: c->flash) {
-        if (!machine_register_flash(emu->machine, f.start,
+    for (const auto &f: c.flash) {
+        if (!machine_register_flash(m_machine.get(), f.start,
             f.length, f.backing.c_str(), f.shared)) {
-            fprintf(stderr, "Unable to initialize flash drive '%s'\n",
-                f.label.c_str());
-            goto failed;
+            throw std::runtime_error("unable to initialize '"
+				+ f.label + "' flash drive");
         }
     }
 
-    if (!clint_register_mmio(emu->machine, CLINT_START, CLINT_LENGTH) ||
-        !init_clint_state(c, emu)) {
-        fprintf(stderr, "Unable to initialize CLINT device\n");
-        goto failed;
+    if (!clint_register_mmio(m_machine.get(), CLINT_START, CLINT_LENGTH) ||
+        !init_clint_state(c, m_machine.get())) {
+        throw std::runtime_error("unable to initialize CLINT device");
     }
 
-    emu->htif = htif_init(emu->machine, c->interactive);
-    if (!emu->htif) {
-        fprintf(stderr, "Unable to initialize HTIF device\n");
-        goto failed;
+    m_htif.reset(htif_init(m_machine.get(), c.interactive));
+    if (!m_htif) {
+        throw std::runtime_error("unable to initialize HTIF device");
     }
 
-    if (!htif_register_mmio(emu->htif, HTIF_START, HTIF_LENGTH) || 
-        !init_htif_state(c, emu)) {
-        fprintf(stderr, "Unable to initialize HTIF device\n");
-        goto failed;
+    if (!htif_register_mmio(m_htif.get(), HTIF_START, HTIF_LENGTH) || 
+        !init_htif_state(c, m_machine.get())) {
+        throw std::runtime_error("unable to initialize HTIF device");
     }
 
-    if (!shadow_register_mmio(emu->machine, SHADOW_START, SHADOW_LENGTH)) {
-        fprintf(stderr, "Unable to initialize shadow device\n");
-        goto failed;
+    if (!shadow_register_mmio(m_machine.get(), SHADOW_START, SHADOW_LENGTH)) {
+        throw std::runtime_error("unable to initialize shadow device");
     }
 
-    emu->tree = new merkle_tree{};
-
-    return emu;
-
-failed:
-    emulator_end(emu);
-    return nullptr;
 }
 
-std::string emulator_get_name(void) {
+std::string emulator::get_name(void) {
     std::ostringstream os;
     os << CARTESI_VENDORID << ':' << CARTESI_ARCHID << ':' << CARTESI_IMPID;
     return os.str();
 }
 
-bool emulator_update_merkle_tree(emulator *emu) {
-    return machine_update_merkle_tree(emu->machine, emu->tree);
+bool emulator::update_merkle_tree(void) {
+    return machine_update_merkle_tree(m_machine.get(), m_tree.get());
 }
 
-bool emulator_verify_merkle_tree(const emulator *emu) {
-    return emu->tree->verify_tree();
+bool emulator::verify_merkle_tree(void) {
+    return m_tree->verify_tree();
 }
 
-const machine_state *emulator_get_machine(const emulator *emu) {
-    return emu->machine;
+const machine_state *emulator::get_machine(void) const {
+    return m_machine.get();
 }
 
-machine_state *emulator_get_machine(emulator *emu) {
-    return emu->machine;
+machine_state *emulator::get_machine(void) {
+    return m_machine.get();
 }
 
-const merkle_tree *emulator_get_merkle_tree(const emulator *emu) {
-    return emu->tree;
+const merkle_tree *emulator::get_merkle_tree(void) const {
+    return m_tree.get();
 }
 
-merkle_tree *emulator_get_merkle_tree(emulator *emu) {
-    return emu->tree;
+merkle_tree *emulator::get_merkle_tree(void) {
+    return m_tree.get();
 }
 
-void emulator_run(emulator *emu, uint64_t mcycle_end) {
+void emulator::run(uint64_t mcycle_end) {
+
+    machine_state *s = m_machine.get();
 
     // The emulator outer loop breaks only when the machine is halted
     // or when mcycle hits mcycle_end
     for ( ;; ) {
 
-        machine_state *s = emu->machine;
 
         // If we are halted, do nothing
         if (machine_read_iflags_H(s)) {
@@ -534,7 +446,7 @@ void emulator_run(emulator *emu, uint64_t mcycle_end) {
             }
 
             // Perform interactive actions
-            htif_interact(emu->htif);
+            htif_interact(m_htif.get());
         }
     }
 }

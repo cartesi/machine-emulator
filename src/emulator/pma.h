@@ -133,8 +133,8 @@ struct pma_entry {
     const pma_driver *driver; ///< Driver with callbacks for range.
 };
 
-#define PMA_SIZE 32 ///< Maximum number of PMAs
-using pma_entries = boost::container::static_vector<pma_entry, PMA_SIZE>;
+#define PMA_MAX 32 ///< Maximum number of PMAs
+using pma_entries = boost::container::static_vector<pma_entry, PMA_MAX>;
 
 /// \brief Checks if a PMA entry describes a memory range
 /// \param pma Pointer to entry of interest.

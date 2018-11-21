@@ -112,6 +112,7 @@ LUACARTESI_OBJS:= \
 	htif.o \
 	shadow.o \
 	emulator.o \
+	emulator-config.o \
 	merkle-tree.o \
 	pma.o \
 	machine.o \
@@ -138,7 +139,11 @@ generate: CXXFLAGS += -fprofile-generate
 generate: SOLDFLAGS += -fprofile-generate
 
 generate: cartesi.so
-	luapp run.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
+	./run.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
+
+valgrind: cartesi.so
+	valgrind --leak-check=full --tool=memcheck --show-leak-kinds=all luapp tests.lua
+	valgrind --leak-check=full --tool=memcheck --track-origins=yes luapp run.lua --batch --cmdline="-- /bin/true"
 
 print:
 	echo CXXFLAGS=$(CXXFLAGS)

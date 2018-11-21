@@ -1,7 +1,8 @@
 #include <cstring>
-#include "lua.h"
-#include "lauxlib.h"
+#include <lua.h>
+#include <lauxlib.h>
 #include <iostream>
+#include <new>
 
 #include "emulator.h"
 #include "machine.h"
@@ -267,7 +268,7 @@ static void push_log(lua_State *L, access_log &log) {
 /// \param tabidx Config stack index.
 static void check_machine_config(lua_State *L, int tabidx) {
     std::string machine_name = check_string_field(L, tabidx, "machine");
-    auto emulator_name = emulator_get_name();
+    auto emulator_name = emulator::get_name();
     if (emulator_name != machine_name) {
         luaL_error(L, "machine-emulator mismatch (%s running in %s)",
             machine_name.c_str(), emulator_name.c_str());
@@ -278,10 +279,10 @@ static void check_machine_config(lua_State *L, int tabidx) {
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param c Pointer to emulator config structure.
-static void load_ram_config(lua_State *L, int tabidx, emulator_config *c) {
+static void load_ram_config(lua_State *L, int tabidx, emulator_config &c) {
     check_table_field(L, tabidx, "ram");
-    c->ram.length = check_uint_field(L, -1, "length");
-    c->ram.backing = opt_string_field(L, -1, "backing");
+    c.ram.length = check_uint_field(L, -1, "length");
+    c.ram.backing = opt_string_field(L, -1, "backing");
     lua_pop(L, 1);
 }
 
@@ -289,11 +290,11 @@ static void load_ram_config(lua_State *L, int tabidx, emulator_config *c) {
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param c Pointer to emulator config structure.
-static void load_rom_config(lua_State *L, int tabidx, emulator_config *c) {
+static void load_rom_config(lua_State *L, int tabidx, emulator_config &c) {
     if (!opt_table_field(L, tabidx, "rom"))
         return;
-    c->rom.backing = opt_string_field(L, -1, "backing");
-    c->rom.bootargs = opt_string_field(L, -1, "bootargs");
+    c.rom.backing = opt_string_field(L, -1, "backing");
+    c.rom.bootargs = opt_string_field(L, -1, "bootargs");
     lua_pop(L, 1);
 }
 
@@ -301,23 +302,25 @@ static void load_rom_config(lua_State *L, int tabidx, emulator_config *c) {
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param c Pointer to emulator config structure.
-static void load_flash_config(lua_State *L, int tabidx, emulator_config *c) {
+static void load_flash_config(lua_State *L, int tabidx, emulator_config &c) {
     if (!opt_table_field(L, tabidx, "flash"))
         return;
     int len = luaL_len(L, -1);
-    c->flash.reserve(len);
+    if (len > (int) c.flash.capacity()) {
+        luaL_error(L, "too many flash drives");
+    }
     for (int i = 1; i <= len; i++) {
         lua_geti(L, -1, i);
         if (!lua_istable(L, -1)) {
             luaL_error(L, "flash[%d] not a table", i);
         }
         flash_config flash;
-        flash.shared = opt_boolean_field(L, -1, "shared", 0);
+        flash.shared = opt_boolean_field(L, -1, "shared", false);
         flash.backing = check_string_field(L, -1, "backing");
         flash.label = check_string_field(L, -1, "label");
         flash.start = check_uint_field(L, -1, "start");
         flash.length = check_uint_field(L, -1, "length");
-        c->flash.push_back(std::move(flash));
+        c.flash.push_back(std::move(flash));
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
@@ -327,14 +330,14 @@ static void load_flash_config(lua_State *L, int tabidx, emulator_config *c) {
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param c Pointer to emulator config structure.
-static void load_processor_config(lua_State *L, int tabidx, emulator_config *c) {
+static void load_processor_config(lua_State *L, int tabidx, emulator_config &c) {
     if (!opt_table_field(L, tabidx, "processor"))
         return;
     lua_getfield(L, -1, "x");
-    auto &p = c->processor;
+    auto &p = c.processor;
     if (lua_istable(L, -1)) {
         int len = luaL_len(L, -1);
-        for (int i = 1; i <= std::min(len, 32); i++) {
+        for (int i = 1; i < std::min(len, 32); i++) {
             p.x[i] = opt_uint_field(L, -1, i, p.x[i]);
         }
     } else if (!lua_isnil(L, -1)) {
@@ -376,12 +379,12 @@ static void load_processor_config(lua_State *L, int tabidx, emulator_config *c) 
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param c Pointer to emulator config structure.
-static void load_htif_config(lua_State *L, int tabidx, emulator_config *c) {
+static void load_htif_config(lua_State *L, int tabidx, emulator_config &c) {
     if (!opt_table_field(L, tabidx, "htif"))
         return;
-    c->htif.tohost = opt_uint_field(L, -1, "tohost", c->htif.tohost);
-    c->htif.fromhost = opt_uint_field(L, -1, "fromhost", c->htif.fromhost);
-    c->htif.backing = opt_string_field(L, -1, "backing");
+    c.htif.tohost = opt_uint_field(L, -1, "tohost", c.htif.tohost);
+    c.htif.fromhost = opt_uint_field(L, -1, "fromhost", c.htif.fromhost);
+    c.htif.backing = opt_string_field(L, -1, "backing");
     lua_pop(L, 1);
 }
 
@@ -389,47 +392,18 @@ static void load_htif_config(lua_State *L, int tabidx, emulator_config *c) {
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param c Pointer to emulator config structure.
-static void load_clint_config(lua_State *L, int tabidx, emulator_config *c) {
+static void load_clint_config(lua_State *L, int tabidx, emulator_config &c) {
     if (!opt_table_field(L, tabidx, "clint"))
         return;
-    c->clint.mtimecmp = opt_uint_field(L, -1, "mtimecmp", c->clint.mtimecmp);
-    c->clint.backing = opt_string_field(L, -1, "backing");
+    c.clint.mtimecmp = opt_uint_field(L, -1, "mtimecmp", c.clint.mtimecmp);
+    c.clint.backing = opt_string_field(L, -1, "backing");
     lua_pop(L, 1);
-}
-
-/// \brief Creates a Lua machine object, potentially throwing errors.
-/// \param L Lua state.
-/// \details This function must be called from Lua. It expects to receive the machine configuration, a pointer to the emulator_config to be filled out from it, and the machine metatable in the Lua stack.
-static int unprotected_mod_machine(lua_State *L) {
-    int tabidx = 1;
-    emulator_config *c = reinterpret_cast<emulator_config *>(lua_touserdata(L, 2));
-    int meta = 3;
-    // Check all parameters from Lua initialization table
-    // and copy them to the emulator_config object
-    check_machine_config(L, tabidx);
-    load_processor_config(L, tabidx, c);
-    load_ram_config(L, tabidx, c);
-    load_rom_config(L, tabidx, c);
-    load_flash_config(L, tabidx, c);
-    load_htif_config(L, tabidx, c);
-    load_clint_config(L, tabidx, c);
-    c->interactive = opt_boolean_field(L, tabidx, "interactive", 0);
-    // Initialize machine and create corresponding Lua object
-    emulator **pemu = reinterpret_cast<emulator **>(
-        lua_newuserdata(L, sizeof(emulator *)));
-    lua_pushvalue(L, meta);
-    lua_setmetatable(L, -2);
-    *pemu = emulator_init(c);
-    if (!(*pemu)) {
-        luaL_error(L, "machine initialization failed");
-    }
-    return 1;
 }
 
 /// \brief This is the cartesi.get_name() function implementation.
 /// \param L Lua state.
 static int mod_get_name(lua_State *L) {
-    auto name = emulator_get_name();
+    auto name = emulator::get_name();
     lua_pushlstring(L, name.data(), name.size());
     return 1;
 }
@@ -437,23 +411,17 @@ static int mod_get_name(lua_State *L) {
 /// \brief This is the cartesi.keccak() function implementation.
 /// \param L Lua state.
 static int mod_keccak(lua_State *L) {
+    keccak_256_hasher h;
+    keccak_256_hasher::hash_type hash;
     switch (lua_gettop(L)) {
         case 0:
             luaL_argerror(L, 1, "too few arguments");
             break;
         case 1: {
             uint64_t word = luaL_checkinteger(L, 1);
-            keccak_256_hasher h;
-            keccak_256_hasher::hash_type hash;
             h.begin();
             h.add_data(reinterpret_cast<uint8_t *>(&word), sizeof(word));
             h.end(hash);
-            //??D there is a chance this will throw an error
-            // due to lack of memory and we will end up
-            // leaking any memory allocated by the h and hash variables.
-            // Both seem not to perform any dynamic memory
-            // allocation. Even if they did, failing here would be so
-            // unlikely that I am letting this go
             push_hash(L, hash);
             break;
         }
@@ -468,18 +436,10 @@ static int mod_keccak(lua_State *L) {
             if (len2 != keccak_256_hasher::hash_size) {
                 luaL_argerror(L, 2, "invalid hash size");
             }
-            keccak_256_hasher h;
-            keccak_256_hasher::hash_type hash;
             h.begin();
             h.add_data(reinterpret_cast<const uint8_t *>(hash1), len1);
             h.add_data(reinterpret_cast<const uint8_t *>(hash2), len2);
             h.end(hash);
-            //??D there is a chance this will throw an error
-            // due to lack of memory and we will end up
-            // leaking any memory allocated by the h and hash variables.
-            // Both seem not to perform any dynamic memory
-            // allocation. Even if they did, failing here would be so
-            // unlikely that I am letting this go
             push_hash(L, hash);
             break;
         }
@@ -492,28 +452,31 @@ static int mod_keccak(lua_State *L) {
 
 /// \brief This is the cartesi.machine() function implementation.
 /// \param L Lua state.
-static int mod_machine(lua_State *L) {
-    if (!lua_checkstack(L, 4)) {
-        luaL_error(L, "stack overflow");
-    }
-    emulator_config *c = emulator_config_init();
-    if (!c) {
-        luaL_error(L, "machine config allocation failed");
-    }
-	// By calling unprotected_create using pcall, we catch any
-	// errors thrown by Lua. This allows us to free the memory
-	// in the emulator_config before rethrowing the error, preventing
-	// memory leaks.
-    lua_pushcfunction(L, unprotected_mod_machine);
-    lua_pushvalue(L, 1);
-    lua_pushlightuserdata(L, c);
-    lua_pushvalue(L, lua_upvalueindex(1));
-    if (lua_pcall(L, 3, 1, 0) != 0) {
-        emulator_config_end(c);
-        lua_error(L);
-    }
-    emulator_config_end(c);
+static int mod_machine(lua_State *L) try {
+    int tabidx = 1;
+    int meta = lua_upvalueindex(1);
+    emulator_config c{};
+    // Check all parameters from Lua initialization table
+    // and copy them to the emulator_config object
+    check_machine_config(L, tabidx);
+    load_processor_config(L, tabidx, c);
+    load_ram_config(L, tabidx, c);
+    load_rom_config(L, tabidx, c);
+    load_flash_config(L, tabidx, c);
+    load_htif_config(L, tabidx, c);
+    load_clint_config(L, tabidx, c);
+    c.interactive = opt_boolean_field(L, tabidx, "interactive", false);
+    // Allocate room for emulator object as a Lua userdata
+    // and invoke placement new to construct it in place
+    void *p = lua_newuserdata(L, sizeof(emulator));
+    new (p) emulator{c};
+    // Set metatable so Lua recognizes userdata as a machine object
+    lua_pushvalue(L, meta);
+    lua_setmetatable(L, -2);
     return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
 }
 
 /// \brief Contents of the cartesi module table.
@@ -536,64 +499,52 @@ static int is_emulator(lua_State *L, int idx) {
     return ret;
 }
 
-enum class check {
-    metatable_only,
-    metatable_and_nullptr
-};
-
 /// \brief Checks if object is a machine.
 /// \param L Lua state.
 /// \param idx Stack index.
 /// \returns 1 if it is a machine, 0 otherwise.
-static emulator *check_machine(lua_State *L, int idx,
-    check what = check::metatable_and_nullptr) {
+static emulator *check_machine(lua_State *L, int idx) {
     if (!is_emulator(L, idx)) {
         luaL_argerror(L, idx, "expected machine");
     }
-    emulator **pv = (emulator **) lua_touserdata(L, idx);
-    if (what == check::metatable_and_nullptr && !*pv) {
-        luaL_argerror(L, idx, "expected active machine");
-    }
-    return *pv;
-}
-
-/// \brief Clears the pointer in a userdata.
-/// \param L Lua state.
-/// \param idx Stack index.
-static void clear_ptr(lua_State *L, int idx) {
-    *reinterpret_cast<emulator **>(lua_touserdata(L, idx)) = nullptr;
+    return reinterpret_cast<emulator *>(lua_touserdata(L, idx));
 }
 
 /// \brief This is the machine:destroy() method implementation.
 /// \param L Lua state.
 static int meta__index_destroy(lua_State *L) {
     emulator *e = check_machine(L, 1);
-    emulator_end(e);
-    clear_ptr(L, 1); // Set emulator pointer to nullptr so check_machine can detect it has been destroyed
+    lua_pushnil(L); // Remove metatable from object
+    lua_setmetatable(L, 1);
+    e->~emulator(); // Explicitly invoke object destructor
     return 0;
 }
 
 /// \brief This is the machine:update_merkle_tree() method implementation.
 /// \param L Lua state.
-static int meta__index_update_merkle_tree(lua_State *L) {
-    emulator *e = check_machine(L, 1);
-    emulator_update_merkle_tree(e);
+static int meta__index_update_merkle_tree(lua_State *L) try {
+    check_machine(L, 1)->update_merkle_tree();
+    return 0;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
     return 0;
 }
 
 /// \brief This is the machine:verify_merkle_tree() method implementation.
 /// \param L Lua state.
-static int meta__index_verify_merkle_tree(lua_State *L) {
-    emulator *e = check_machine(L, 1);
-    lua_pushboolean(L, emulator_verify_merkle_tree(e));
+static int meta__index_verify_merkle_tree(lua_State *L) try {
+    lua_pushboolean(L, check_machine(L, 1)->verify_merkle_tree());
     return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
 }
 
 /// \brief This is the machine:get_root_hash() method implementation.
 /// \param L Lua state.
-static int meta__index_get_root_hash(lua_State *L) {
+static int meta__index_get_root_hash(lua_State *L) try {
     emulator *e = check_machine(L, 1);
-    auto t = emulator_get_merkle_tree(e);
+    auto t = e->get_merkle_tree();
     merkle_tree::hash_type hash;
     if (t->get_root_hash(hash)) {
         push_hash(L, hash);
@@ -601,56 +552,74 @@ static int meta__index_get_root_hash(lua_State *L) {
     } else {
         return 0;
     }
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
 }
 
 /// \brief This is the machine:run() method implementation.
 /// \param L Lua state.
-static int meta__index_run(lua_State *L) {
-    emulator_run(check_machine(L, 1), luaL_checkinteger(L, 2));
+static int meta__index_run(lua_State *L) try {
+    check_machine(L, 1)->run(luaL_checkinteger(L, 2));
+    return 0;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
     return 0;
 }
 
 /// \brief This is the machine:read_mcycle() method implementation.
 /// \param L Lua state.
-static int meta__index_read_mcycle(lua_State *L) {
+static int meta__index_read_mcycle(lua_State *L) try {
     emulator *e = check_machine(L, 1);
-    auto m = emulator_get_machine(e);
+    auto m = e->get_machine();
     lua_pushinteger(L, machine_read_mcycle(m));
     return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
 }
 
 /// \brief This is the machine:read_tohost() method implementation.
 /// \param L Lua state.
-static int meta__index_read_tohost(lua_State *L) {
+static int meta__index_read_tohost(lua_State *L) try {
     emulator *e = check_machine(L, 1);
-    auto m = emulator_get_machine(e);
+    auto m = e->get_machine();
     lua_pushinteger(L, machine_read_htif_tohost(m));
     return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
 }
 
 /// \brief This is the machine:read_tohost() method implementation.
 /// \param L Lua state.
-static int meta__index_read_iflags_H(lua_State *L) {
+static int meta__index_read_iflags_H(lua_State *L) try {
     emulator *e = check_machine(L, 1);
-    auto m = emulator_get_machine(e);
+    auto m = e->get_machine();
     lua_pushboolean(L, machine_read_iflags_H(m));
     return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
 }
 
 /// \brief This is the machine:dump() method implementation.
 /// \param L Lua state.
-static int meta__index_dump(lua_State *L) {
+static int meta__index_dump(lua_State *L) try {
     emulator *e = check_machine(L, 1);
-    auto m = emulator_get_machine(e);
+    auto m = e->get_machine();
     lua_pushboolean(L, machine_dump(m));
     return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
 }
 
 /// \brief This is the machine:read_word() method implementation.
 /// \param L Lua state.
-static int meta__index_read_word(lua_State *L) {
+static int meta__index_read_word(lua_State *L) try {
     emulator *e = check_machine(L, 1);
-    auto m = emulator_get_machine(e);
+    auto m = e->get_machine();
     uint64_t word_value = 0;
     if (machine_read_word(m, luaL_checkinteger(L, 2), &word_value)) {
         lua_pushinteger(L, word_value);
@@ -658,14 +627,17 @@ static int meta__index_read_word(lua_State *L) {
     } else {
         return 0;
     }
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
 }
 
 /// \brief This is the machine:get_proof() method implementation.
 /// \param L Lua state.
-static int meta__index_get_proof(lua_State *L) {
+static int meta__index_get_proof(lua_State *L) try {
     emulator *e = check_machine(L, 1);
-    auto m = emulator_get_machine(e);
-    auto t = emulator_get_merkle_tree(e);
+    auto m = e->get_machine();
+    auto t = e->get_merkle_tree();
     merkle_tree::proof_type proof;
     if (machine_get_proof(m, t, luaL_checkinteger(L, 2), luaL_checkinteger(L, 3), proof)) {
         push_proof(L, proof);
@@ -673,18 +645,24 @@ static int meta__index_get_proof(lua_State *L) {
     } else {
         return 0;
     }
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
 }
 
 /// \brief This is the machine:step() method implementation.
 /// \param L Lua state.
-static int meta__index_step(lua_State *L) {
+static int meta__index_step(lua_State *L) try {
     emulator *e = check_machine(L, 1);
-    auto m = emulator_get_machine(e);
-    auto t = emulator_get_merkle_tree(e);
+    auto m = e->get_machine();
+    auto t = e->get_merkle_tree();
     access_log log;
     machine_step(m, t, log);
     push_log(L, log);
     return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
 }
 
 /// \brief Contents of the machine metatable __index table.
@@ -714,11 +692,8 @@ static int meta__tostring(lua_State *L) {
 /// \brief Machine __gc metamethod.
 /// \param L Lua state.
 static int meta__gc(lua_State *L) {
-    emulator *e = check_machine(L, 1, check::metatable_only);
-    if (e) {
-        emulator_end(e);
-        clear_ptr(L, 1);
-    }
+    emulator *e = check_machine(L, 1);
+    e->~emulator(); // Explicitly invoke object destructor
     return 0;
 }
 

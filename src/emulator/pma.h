@@ -2,6 +2,7 @@
 #define PMA_H
 
 #include <cstdint>
+#include <variant>
 #include <boost/container/static_vector.hpp>
 
 #include "merkle-tree.h"
@@ -104,9 +105,9 @@ struct pma_entry {
     uint64_t start;           ///< Start of physical memory range in target.
     uint64_t length;          ///< Length of physical memory range in target.
     struct flags {
-        bool M;
-        bool IO;
-        bool E;
+        // bool M = std::holds_alternative<pma_memory>(data);
+        // bool IO = std::holds_alternative<pma_device>(data);
+        // bool E = std::holds_alternative<pma_empty>(data);
         bool R;
         bool W;
         bool X;
@@ -114,11 +115,11 @@ struct pma_entry {
         bool IW;
     } istart;                  ///< Exploded flags for PMA entry.
     pma_peek peek;             ///< Callback for peek operations.
-    union {
-        pma_memory M;          ///< Data specific to M ranges
-        pma_device IO;         ///< Data specific to IO ranges
-        pma_empty E;           ///< Data specific to E ranges
-    } data;
+    std::variant<
+        pma_memory,            ///< Data specific to M ranges
+        pma_device,            ///< Data specific to IO ranges
+        pma_empty              ///< Data specific to E ranges
+    > data;
 };
 
 #define PMA_MAX 32 ///< Maximum number of PMAs
@@ -127,9 +128,12 @@ using pma_entries = boost::container::static_vector<pma_entry, PMA_MAX>;
 /// \brief Encodes PMA encoded start field as per whitepaper
 static inline uint64_t pma_get_istart(const pma_entry &pma) {
     uint64_t istart = pma.start;
-    istart |= (static_cast<uint64_t>(pma.istart.M) << PMA_ISTART_M_SHIFT);
-    istart |= (static_cast<uint64_t>(pma.istart.IO) << PMA_ISTART_IO_SHIFT);
-    istart |= (static_cast<uint64_t>(pma.istart.E) << PMA_ISTART_E_SHIFT);
+    bool M = std::holds_alternative<pma_memory>(pma.data);
+    istart |= (static_cast<uint64_t>(M) << PMA_ISTART_M_SHIFT);
+    bool IO = std::holds_alternative<pma_device>(pma.data);
+    istart |= (static_cast<uint64_t>(IO) << PMA_ISTART_IO_SHIFT);
+    bool E = std::holds_alternative<pma_empty>(pma.data);
+    istart |= (static_cast<uint64_t>(E) << PMA_ISTART_E_SHIFT);
     istart |= (static_cast<uint64_t>(pma.istart.R) << PMA_ISTART_R_SHIFT);
     istart |= (static_cast<uint64_t>(pma.istart.W) << PMA_ISTART_W_SHIFT);
     istart |= (static_cast<uint64_t>(pma.istart.X) << PMA_ISTART_X_SHIFT);
@@ -145,11 +149,11 @@ static inline uint64_t pma_get_ilength(const pma_entry &pma) {
 
 /// \brief Returns context associated to PMA entry
 static inline void *pma_get_context(pma_entry &pma) {
-    return pma.data.IO.context;
+    return std::get<pma_device>(pma.data).context;
 }
 
 static inline void *pma_get_context(const pma_entry &pma) {
-    return const_cast<void *>(pma.data.IO.context);
+    return const_cast<void *>(std::get<pma_device>(pma.data).context);
 }
 
 #endif

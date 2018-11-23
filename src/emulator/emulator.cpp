@@ -315,10 +315,10 @@ static bool init_clint_state(const emulator_config &c, machine_state *s) {
     return true;
 }
 
-emulator::emulator(const emulator_config &c): 
+emulator::emulator(const emulator_config &c):
     m_machine(machine_init()),
     m_htif(nullptr),
-    m_tree(nullptr) {
+    m_tree{} {
 
     if (!m_machine) {
 		throw std::runtime_error("machine initialization failed");
@@ -333,7 +333,7 @@ emulator::emulator(const emulator_config &c):
         throw std::runtime_error("RAM registration failed");
     }
 
-    if (!machine_register_ram(m_machine.get(), ROM_START, ROM_LENGTH)) {
+    if (!machine_register_rom(m_machine.get(), ROM_START, ROM_LENGTH)) {
         throw std::runtime_error("ROM registration failed");
     }
 
@@ -359,7 +359,7 @@ emulator::emulator(const emulator_config &c):
         throw std::runtime_error("unable to initialize HTIF device");
     }
 
-    if (!htif_register_mmio(m_htif.get(), HTIF_START, HTIF_LENGTH) || 
+    if (!htif_register_mmio(m_htif.get(), HTIF_START, HTIF_LENGTH) ||
         !init_htif_state(c, m_machine.get())) {
         throw std::runtime_error("unable to initialize HTIF device");
     }
@@ -367,7 +367,6 @@ emulator::emulator(const emulator_config &c):
     if (!shadow_register_mmio(m_machine.get(), SHADOW_START, SHADOW_LENGTH)) {
         throw std::runtime_error("unable to initialize shadow device");
     }
-
 }
 
 std::string emulator::get_name(void) {
@@ -377,11 +376,11 @@ std::string emulator::get_name(void) {
 }
 
 bool emulator::update_merkle_tree(void) {
-    return machine_update_merkle_tree(m_machine.get(), m_tree.get());
+    return machine_update_merkle_tree(m_machine.get(), m_tree);
 }
 
 bool emulator::verify_merkle_tree(void) {
-    return m_tree->verify_tree();
+    return m_tree.verify_tree();
 }
 
 const machine_state *emulator::get_machine(void) const {
@@ -392,12 +391,12 @@ machine_state *emulator::get_machine(void) {
     return m_machine.get();
 }
 
-const merkle_tree *emulator::get_merkle_tree(void) const {
-    return m_tree.get();
+const merkle_tree &emulator::get_merkle_tree(void) const {
+    return m_tree;
 }
 
-merkle_tree *emulator::get_merkle_tree(void) {
-    return m_tree.get();
+merkle_tree &emulator::get_merkle_tree(void) {
+    return m_tree;
 }
 
 void emulator::run(uint64_t mcycle_end) {
@@ -407,7 +406,6 @@ void emulator::run(uint64_t mcycle_end) {
     // The emulator outer loop breaks only when the machine is halted
     // or when mcycle hits mcycle_end
     for ( ;; ) {
-
 
         // If we are halted, do nothing
         if (machine_read_iflags_H(s)) {

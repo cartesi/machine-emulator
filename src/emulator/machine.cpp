@@ -86,17 +86,18 @@ typedef unsigned __int128 uint128_t;
 /// \brief Obtain PMA entry overlapping with target physical address
 /// \param s Pointer to machine state.
 /// \param paddr Target physical address.
-/// \returns Corresponding entry, or nullptr if no PMA matches \p paddr.
-static pma_entry *naked_find_pma_entry(machine_state *s, uint64_t paddr) {
+/// \returns Corresponding entry if found, or a sentinel entry
+/// for an empty range.
+static pma_entry &naked_find_pma_entry(machine_state *s, uint64_t paddr) {
     for (auto &pma: s->pmas) {
         if (paddr >= pma.start && paddr < pma.start + pma.length)
-            return &pma;
+            return pma;
     }
-    return nullptr;
+    return s->empty_pma;
 }
 
-static const pma_entry *naked_find_pma_entry(const machine_state *s, uint64_t paddr) {
-    return const_cast<const pma_entry *>(naked_find_pma_entry(
+static const pma_entry &naked_find_pma_entry(const machine_state *s, uint64_t paddr) {
+    return const_cast<const pma_entry &>(naked_find_pma_entry(
         const_cast<machine_state *>(s), paddr));
 }
 
@@ -120,10 +121,9 @@ static bool pma_range_is_unoccupied(const machine_state *s, uint64_t start, uint
 /// \param start Start of range in target physical memory.
 /// Must be aligned to a PMA_PAGE_SIZE.
 /// \param length Length of range in target physical memory.
-/// \param context Pointer to range context.
-/// \param driver Range driver.
+/// \param peek Peek callback for range.
 /// \returns Corresponding entry, or nullptr if no room for new PMA.
-static pma_entry *allocate_pma_entry(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_driver *driver) {
+static pma_entry *allocate_empty_pma_entry(machine_state *s, uint64_t start, uint64_t length, pma_peek peek) {
     assert(s->pmas.size() < s->pmas.capacity());
     // check for too many entries
     if (s->pmas.size() >= s->pmas.capacity())
@@ -140,31 +140,36 @@ static pma_entry *allocate_pma_entry(machine_state *s, uint64_t start, uint64_t 
         return nullptr;
     pma_entry pma;
     pma.start = start;
+    pma.peek = peek;
     pma.length = length;
-    pma.memory.host_memory = nullptr;
-    pma.memory.backing_file = -1;
-    pma.context = context;
-    pma.driver = driver;
+    pma.istart.M = false;
+    pma.istart.IO = false;
+    pma.istart.E = true;
+    pma.istart.R = false;
+    pma.istart.W = false;
+    pma.istart.X = false;
+    pma.istart.IR = false;
+    pma.istart.IW = false;
     s->pmas.push_back(pma);
     return &s->pmas.back();
 }
 
 /// \brief Memory range peek callback. See ::pma_peek.
-static bool memory_peek(const pma_entry *pma, uint64_t page_address, const uint8_t **page_data, uint8_t *scratch) {
+static bool memory_peek(const pma_entry &pma, uint64_t page_address, const uint8_t **page_data, uint8_t *scratch) {
     // If page_address is not aligned, or if it is out of range, return error
-    if ((page_address & (PMA_PAGE_SIZE-1)) != 0 || page_address > pma->length) {
+    if ((page_address & (PMA_PAGE_SIZE-1)) != 0 || page_address > pma.length) {
         *page_data = nullptr;
         return false;
     }
     // If page is only partially inside range, copy to scratch
-    if (page_address + PMA_PAGE_SIZE > pma->length) {
+    if (page_address + PMA_PAGE_SIZE > pma.length) {
         memset(scratch, 0, PMA_PAGE_SIZE);
-        memcpy(scratch, pma->memory.host_memory + page_address, pma->length-page_address);
+        memcpy(scratch, pma.data.M.host_memory + page_address, pma.length-page_address);
         *page_data = scratch;
         return true;
     // Otherwise, return pointer direclty into host memory
     } else {
-        *page_data = pma->memory.host_memory + page_address;
+        *page_data = pma.data.M.host_memory + page_address;
         return true;
     }
 }
@@ -172,12 +177,10 @@ static bool memory_peek(const pma_entry *pma, uint64_t page_address, const uint8
 const pma_driver flash_driver = {
     "FLASH",
     pma_read_error,
-    pma_write_error,
-    memory_peek
+    pma_write_error
 };
 
-const pma_entry *machine_register_flash(machine_state *s, uint64_t start, uint64_t length,
-    const char *path, bool shared) {
+const pma_entry *machine_register_flash(machine_state *s, uint64_t start, uint64_t length, const char *path, bool shared) {
     int oflag = shared? O_RDWR: O_RDONLY;
     int mflag = shared? MAP_SHARED: MAP_PRIVATE;
 
@@ -215,26 +218,28 @@ const pma_entry *machine_register_flash(machine_state *s, uint64_t start, uint64
         return nullptr;
     }
 
-    pma_entry *pma = allocate_pma_entry(s, start, length, nullptr, &flash_driver);
+    pma_entry *pma = allocate_empty_pma_entry(s, start, length, memory_peek);
     if (!pma) {
         close(backing_file);
         munmap(host_memory, length);
         return nullptr;
     }
-    pma->type_flags = PMA_TYPE_FLAGS_FLASH;
-    pma->memory.backing_file = backing_file;
-    pma->memory.host_memory = host_memory;
+
+    pma->istart.M = true;
+    pma->istart.IO = false;
+    pma->istart.E = false;
+    pma->istart.R = true;
+    pma->istart.W = true;
+    pma->istart.X = false;
+    pma->istart.IR = true;
+    pma->istart.IW = true;
+    pma->data.M.backing_file = backing_file;
+    pma->data.M.host_memory = host_memory;
+    pma->data.M.length = length;
     return pma;
 }
 
-const pma_driver ram_driver = {
-    "RAM",
-    pma_read_error,
-    pma_write_error,
-    memory_peek
-};
-
-const pma_entry *machine_register_ram(machine_state *s, uint64_t start, uint64_t length) {
+static const pma_entry *register_memory(machine_state *s, uint64_t start, uint64_t length, bool W) {
     //??D Obviously these can't print to stderr.
     //    Still deciding on a way to convey these errors.
     //    The obvious solution is to use exceptions, but
@@ -244,29 +249,62 @@ const pma_entry *machine_register_ram(machine_state *s, uint64_t start, uint64_t
         fprintf(stderr, "Could not allocate host memory\n");
         return nullptr;
     }
-    pma_entry *pma = allocate_pma_entry(s, start, length, nullptr, &ram_driver);
+    pma_entry *pma = allocate_empty_pma_entry(s, start, length, memory_peek);
     if (!pma) {
         free(host_memory);
         return nullptr;
     }
-    pma->memory.host_memory  = host_memory;
-    pma->type_flags = PMA_TYPE_FLAGS_RAM;
+    pma->istart.M = true;
+    pma->istart.IO = false;
+    pma->istart.E = false;
+    pma->istart.R = true;
+    pma->istart.W = W;
+    pma->istart.X = true;
+    pma->istart.IR = true;
+    pma->istart.IW = true;
+    pma->data.M.backing_file = -1;
+    pma->data.M.host_memory = host_memory;
+    pma->data.M.length = length;
     return pma;
 }
 
-const pma_entry *machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context,
-    const pma_driver *driver) {
-    pma_entry *pma = allocate_pma_entry(s, start, length, context, driver);
+const pma_entry *machine_register_ram(machine_state *s, uint64_t start, uint64_t length) {
+    return register_memory(s, start, length, true);
+}
+
+const pma_entry *machine_register_rom(machine_state *s, uint64_t start, uint64_t length) {
+    return register_memory(s, start, length, false);
+}
+
+const pma_entry *machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver) {
+    pma_entry *pma = allocate_empty_pma_entry(s, start, length, peek);
     if (!pma) return nullptr;
-    pma->type_flags = PMA_TYPE_FLAGS_MMIO;
+    pma->istart.M = false;
+    pma->istart.IO = true;
+    pma->istart.E = false;
+    pma->istart.R = true;
+    pma->istart.W = true;
+    pma->istart.X = false;
+    pma->istart.IR = false;
+    pma->istart.IW = false;
+    pma->data.IO.context = context;
+    pma->data.IO.driver = driver;
     return pma;
 }
 
-const pma_entry *machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context,
-    const pma_driver *driver) {
-    pma_entry *pma = allocate_pma_entry(s, start, length, context, driver);
+const pma_entry *machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver) {
+    pma_entry *pma = allocate_empty_pma_entry(s, start, length, peek);
     if (!pma) return nullptr;
-    pma->type_flags = PMA_TYPE_FLAGS_SHADOW;
+    pma->istart.M = false;
+    pma->istart.IO = true;
+    pma->istart.E = false;
+    pma->istart.R = false;
+    pma->istart.W = false;
+    pma->istart.X = false;
+    pma->istart.IR = false;
+    pma->istart.IW = false;
+    pma->data.IO.context = context;
+    pma->data.IO.driver = driver;
     return pma;
 }
 
@@ -304,9 +342,9 @@ const pma_entry *machine_get_htif_pma(const machine_state *s) {
 }
 
 uint8_t *machine_get_host_memory(machine_state *s, uint64_t paddr) {
-    pma_entry *pma = naked_find_pma_entry(s, paddr);
-    if (pma && pma_is_memory(pma)) {
-        return pma->memory.host_memory;
+    pma_entry &pma = naked_find_pma_entry(s, paddr);
+    if (pma.istart.M) {
+        return pma.data.M.host_memory;
     } else {
         return nullptr;
     }
@@ -359,26 +397,27 @@ void dump_regs(machine_state *s) {
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param paddr Target physical address.
-/// \returns Corresponding entry, or nullptr if no PMA matches \p paddr.
+/// \returns Corresponding entry if found, or a sentinel entry
+/// for an empty range.
 /// \details This is the same as ::naked_find_pma_entry, except it
 /// does not perform naked accesses to the machine state.
 /// Rather, it goes through the state accessor object so all
 /// accesses can be recorded if need be.
 template <typename STATE_ACCESS>
-static pma_entry *find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
+static pma_entry &find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
     auto note = a.make_scoped_note("find_pma_entry"); (void) note;
     int i = 0;
     for (auto &pma: a.get_naked_state()->pmas) {
         a.read_pma(pma, i++);
         if (paddr >= pma.start && paddr < pma.start + pma.length)
-            return &pma;
+            return pma;
         if (pma.length == 0)
             break;
     }
-    return nullptr;
+    return a.get_naked_state()->empty_pma;
 }
 
-/// \brief Write an aligned word to RAM.
+/// \brief Write an aligned word to memory.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param paddr Physical address of word.
@@ -386,16 +425,16 @@ static pma_entry *find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t val) {
-    pma_entry *pma = find_pma_entry(a, paddr);
-    if (!pma || !pma_is_ram(pma))
+    pma_entry &pma = find_pma_entry(a, paddr);
+    if (!pma.istart.M || !pma.istart.W)
         return false;
-    uintptr_t haddr = reinterpret_cast<uintptr_t>(pma->memory.host_memory + (paddr - pma->start));
+    uintptr_t haddr = reinterpret_cast<uintptr_t>(pma.data.M.host_memory + (paddr - pma.start));
     // log writes to memory
     a.write_memory(paddr, haddr, val);
     return true;
 }
 
-/// \brief Read an aligned word from RAM.
+/// \brief Read an aligned word from memory.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param paddr Physical address of word.
@@ -403,9 +442,9 @@ static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t va
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pval) {
-    pma_entry *pma = find_pma_entry(a, paddr);
-    if (!pma || !pma_is_ram(pma)) return false;
-    uintptr_t haddr = reinterpret_cast<uintptr_t>(pma->memory.host_memory + (paddr - pma->start));
+    pma_entry &pma = find_pma_entry(a, paddr);
+    if (!pma.istart.M || !pma.istart.R) return false;
+    uintptr_t haddr = reinterpret_cast<uintptr_t>(pma.data.M.host_memory + (paddr - pma.start));
     a.read_memory(paddr, haddr, pval);
     return true;
 }
@@ -556,11 +595,11 @@ static void tlb_init(machine_state *s) {
 /// \param vaddr Target virtual address.
 /// \param paddr Target physical address.
 /// \returns Offset from Target virtual address to host address
-static inline uintptr_t tlb_add(tlb_entry *tlb, const pma_entry *pma, uint64_t vaddr, uint64_t paddr) {
+static inline uintptr_t tlb_add(tlb_entry *tlb, const pma_entry &pma, uint64_t vaddr, uint64_t paddr) {
     // Update TLB with the new mapping between virtual and physical
     int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
     tlb[tlb_idx].vaddr = vaddr & ~PG_MASK;
-    uint8_t *ptr = pma->memory.host_memory + (uintptr_t)(paddr - pma->start);
+    uint8_t *ptr = pma.data.M.host_memory + (uintptr_t)(paddr - pma.start);
     tlb[tlb_idx].mem_addend = (uintptr_t)ptr - vaddr;
     return tlb[tlb_idx].mem_addend;
 }
@@ -765,10 +804,26 @@ static void raise_interrupt_if_any(STATE_ACCESS &a) {
     }
 }
 
+static bool empty_peek(const pma_entry &, uint64_t, const uint8_t **page_data, uint8_t *) {
+    *page_data = nullptr;
+    return true;
+}
+
 machine_state *machine_init(void) {
     machine_state *s = ::new (std::nothrow) machine_state{};
     if (s) {
         tlb_init(s);
+        s->empty_pma.start = 0;
+        s->empty_pma.length = -1;
+        s->empty_pma.istart.M = false;
+        s->empty_pma.istart.IO = false;
+        s->empty_pma.istart.E = true;
+        s->empty_pma.istart.R = false;
+        s->empty_pma.istart.W = false;
+        s->empty_pma.istart.X = false;
+        s->empty_pma.istart.IR = false;
+        s->empty_pma.istart.IW = false;
+        s->empty_pma.peek = empty_peek;
     }
     return s;
 }
@@ -786,12 +841,12 @@ void machine_end(machine_state *s) {
     fprintf(stderr, "amo: %" PRIu64 "\n", s->count_amo);
 #endif
     for (auto &pma: s->pmas) {
-        if (pma_is_memory(&pma)) {
-            if (pma.memory.backing_file >= 0) {
-                munmap(pma.memory.host_memory, pma.length);
-                close(pma.memory.backing_file);
+        if (pma.istart.M) {
+            if (pma.data.M.backing_file >= 0) {
+                munmap(pma.data.M.host_memory, pma.length);
+                close(pma.data.M.backing_file);
             } else {
-                free(pma.memory.host_memory);
+                free(pma.data.M.host_memory);
             }
         }
     }
@@ -1101,49 +1156,48 @@ void machine_set_brk_from_iflags_H(machine_state *s) {
     s->brk = s->iflags_H;
 }
 
-bool machine_update_merkle_tree(machine_state *s, merkle_tree *t) {
+bool machine_update_merkle_tree(machine_state *s, merkle_tree &t) {
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
     merkle_tree::hasher_type h;
     auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
-    t->begin_update(h);
+    t.begin_update(h);
     for (auto &pma: s->pmas) {
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.length; page_start_in_range += PMA_PAGE_SIZE) {
             const uint8_t *page_data = nullptr;
-            if (!pma.driver->peek(&pma, page_start_in_range, &page_data, scratch.get())) {
-                t->end_update(h);
+            if (!pma.peek(pma, page_start_in_range, &page_data, scratch.get())) {
+                t.end_update(h);
                 return false;
-            } else if (page_data && !t->update_page(h, pma.start + page_start_in_range, page_data)) {
-                t->end_update(h);
+            } else if (page_data && !t.update_page(h, pma.start + page_start_in_range, page_data)) {
+                t.end_update(h);
                 return false;
             } // ??D else page is pristine and we do nothing.
               // Maybe add a check here to make sure it is also pristine in the tree?
         }
     }
-    return t->end_update(h);
+    return t.end_update(h);
 }
 
-bool machine_update_merkle_tree_page(machine_state *s, uint64_t address, merkle_tree *t) {
+bool machine_update_merkle_tree_page(machine_state *s, uint64_t address, merkle_tree &t) {
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
     merkle_tree::hasher_type h;
     auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
-    t->begin_update(h);
+    t.begin_update(h);
     // Align address to begining of page
     address &= ~(PMA_PAGE_SIZE-1);
-    const pma_entry *pma = naked_find_pma_entry(s, address);
-    if (!pma) return true; // Nothing to do for pristine pages
-    uint64_t page_start_in_range = address - pma->start;
+    const pma_entry &pma = naked_find_pma_entry(s, address);
+    uint64_t page_start_in_range = address - pma.start;
     const uint8_t *page_data = nullptr;
-    if (!pma->driver->peek(pma, page_start_in_range, &page_data, scratch.get())) {
-        t->end_update(h);
+    if (!pma.peek(pma, page_start_in_range, &page_data, scratch.get())) {
+        t.end_update(h);
         return false;
-    } else if (page_data && !t->update_page(h, pma->start + page_start_in_range, page_data)) {
-        t->end_update(h);
+    } else if (page_data && !t.update_page(h, pma.start + page_start_in_range, page_data)) {
+        t.end_update(h);
         return false;
     } // ??D else page is pristine and we do nothing.
       // Maybe add a check here to make sure it is also pristine in the tree?
-    return t->end_update(h);
+    return t.end_update(h);
 }
 
 const pma_entries &machine_get_pmas(const machine_state *s) {
@@ -1161,7 +1215,7 @@ bool machine_dump(const machine_state *s) {
         if (!fp) return false;
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.length; page_start_in_range += PMA_PAGE_SIZE) {
             const uint8_t *page_data = nullptr;
-            if (!pma.driver->peek(&pma, page_start_in_range, &page_data, scratch.get())) {
+            if (!pma.peek(pma, page_start_in_range, &page_data, scratch.get())) {
                 return false;
             } else if (page_data && fwrite(page_data, 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
                 return false;
@@ -1171,51 +1225,43 @@ bool machine_dump(const machine_state *s) {
     return true;
 }
 
-bool machine_get_proof(const machine_state *s, const merkle_tree *t, uint64_t address, int log2_size, merkle_tree::proof_type &proof) {
+bool machine_get_proof(const machine_state *s, const merkle_tree &t, uint64_t address, int log2_size, merkle_tree::proof_type &proof) {
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
     auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
-    const pma_entry *pma = naked_find_pma_entry(s, address);
+    const pma_entry &pma = naked_find_pma_entry(s, address);
     const uint8_t *page_data = nullptr;
-    if (pma) {
-        uint64_t page_start_in_range = (address - pma->start) & (~(PMA_PAGE_SIZE-1));
-        if (!pma->driver->peek(pma, page_start_in_range, &page_data, scratch.get())) {
-            return false;
-        }
+    uint64_t page_start_in_range = (address - pma.start) & (~(PMA_PAGE_SIZE-1));
+    if (!pma.peek(pma, page_start_in_range, &page_data, scratch.get())) {
+        return false;
     }
-    return t->get_proof(address, log2_size, page_data, proof);
+    return t.get_proof(address, log2_size, page_data, proof);
 }
 
 bool machine_read_word(const machine_state *s, uint64_t word_address, uint64_t *word_value) {
     // Make sure address is aligned
     if (word_address & (PMA_WORD_SIZE-1))
         return false;
-    const pma_entry *pma = naked_find_pma_entry(s, word_address);
-    // If no entry is found, we are outside of every range, and therefore pristine
-    if (!pma) {
-        *word_value = 0;
-        return true;
+    const pma_entry &pma = naked_find_pma_entry(s, word_address);
     // ??D We should split peek into peek_word and peek_page
     // for performance. On the other hand, this function
     // will almost never be used, so one wonders if it is worth it...
+    auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+    if (!scratch) return false;
+    const uint8_t *page_data = nullptr;
+    uint64_t page_start_in_range = (word_address - pma.start) & (~(PMA_PAGE_SIZE-1));
+    if (!pma.peek(pma, page_start_in_range, &page_data, scratch.get())) {
+        return false;
+    }
+    // If peek returns a page, read from it
+    if (page_data) {
+        uint64_t word_start_in_range = (word_address - pma.start) & (PMA_PAGE_SIZE-1);
+        *word_value = *reinterpret_cast<const uint64_t *>(page_data + word_start_in_range);
+        return true;
+    // Otherwise, page is always pristine
     } else {
-        auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
-        if (!scratch) return false;
-        const uint8_t *page_data = nullptr;
-        uint64_t page_start_in_range = (word_address - pma->start) & (~(PMA_PAGE_SIZE-1));
-        if (!pma->driver->peek(pma, page_start_in_range, &page_data, scratch.get())) {
-            return false;
-        }
-        // If peek returns a page, read from it
-        if (page_data) {
-            uint64_t word_start_in_range = (word_address - pma->start) & (PMA_PAGE_SIZE-1);
-            *word_value = *reinterpret_cast<const uint64_t *>(page_data + word_start_in_range);
-            return true;
-        // Otherwise, page is always pristine
-        } else {
-            *word_value = 0;
-            return true;
-        }
+        *word_value = 0;
+        return true;
     }
 }
 
@@ -1352,23 +1398,23 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             raise_exception(a, CAUSE_LOAD_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry *pma = find_pma_entry(a, paddr);
-        if (!pma) {
+        pma_entry &pma = find_pma_entry(a, paddr);
+        if (pma.istart.E) {
             // If we do not have the range in our map, we treat this as a PMA violation
             raise_exception(a, CAUSE_LOAD_FAULT, vaddr);
             return false;
-        } else if (pma_is_memory(pma)) {
+        } else if (pma.istart.M) {
             uintptr_t mem_addend = tlb_add(a.get_naked_state()->tlb_read, pma, vaddr, paddr);
             uintptr_t haddr = mem_addend + static_cast<uintptr_t>(vaddr);
             a.read_memory(paddr, haddr, pval);
             return true;
         } else {
-            uint64_t offset = paddr - pma->start;
+            uint64_t offset = paddr - pma.start;
             uint64_t val;
-            assert(pma_is_device(pma));
+            assert(pma.istart.IO);
             virtual_state_access<STATE_ACCESS> da(a);
             // If we do not know how to read, we treat this as a PMA violation
-            if (!pma->driver->read(pma, &da, offset, &val, size_log2<U>::value)) {
+            if (!pma.data.IO.driver->read(pma, &da, offset, &val, size_log2<U>::value)) {
                 raise_exception(a, CAUSE_LOAD_FAULT, vaddr);
                 return false;
             }
@@ -1405,23 +1451,23 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             raise_exception(a, CAUSE_STORE_AMO_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry *pma = find_pma_entry(a, paddr);
-        if (!pma) {
+        pma_entry &pma = find_pma_entry(a, paddr);
+        if (pma.istart.E) {
             // If we do not have the range in our map, we treat this as a PMA violation
             raise_exception(a, CAUSE_STORE_AMO_FAULT, vaddr);
             return false;
-        } else if (pma_is_memory(pma)) {
+        } else if (pma.istart.M) {
             uintptr_t mem_addend = tlb_add(a.get_naked_state()->tlb_write, pma, vaddr, paddr);
             uintptr_t haddr = mem_addend + (uintptr_t) vaddr;
             // write to memory
             a.write_memory(paddr, haddr, static_cast<T>(val));
             return true;
         } else {
-            uint64_t offset = paddr - pma->start;
+            uint64_t offset = paddr - pma.start;
             virtual_state_access<STATE_ACCESS> da(a);
-            assert(pma_is_device(pma));
+            assert(pma.istart.IO);
             // If we do not know how to write, we treat this as a PMA violation
-            if (!pma->driver->write(pma, &da, offset, val, size_log2<U>::value)) {
+            if (!pma.data.IO.driver->write(pma, &da, offset, val, size_log2<U>::value)) {
                 raise_exception(a, CAUSE_STORE_AMO_FAULT, vaddr);
                 return false;
             }
@@ -3703,6 +3749,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
     auto note = a.make_scoped_note("fetch_insn"); (void) note;
     // Get current pc from state
     uint64_t vaddr = *pc = a.read_pc();
+    if (vaddr == 0) exit(0);
     // Check TLB for hit
     int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
     if (!avoid_tlb<STATE_ACCESS>::value &&
@@ -3719,10 +3766,10 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
             return fetch_status::exception;
         }
         // Walk memory map to find the range that contains the physical address
-        pma_entry *pma = find_pma_entry(a, paddr);
+        pma_entry &pma = find_pma_entry(a, paddr);
         // We only execute directly from RAM (as in "random access memory", which includes ROM)
-        // If we are not in RAM or if we are not in any range, we treat this as a PMA violation
-        if (!pma || !pma_is_ram(pma)) {
+        // If the range is not memory or not executable, this as a PMA violation
+        if (!pma.istart.M || !pma.istart.X) {
             raise_exception(a, CAUSE_FETCH_FAULT, vaddr);
             return fetch_status::exception;
         }
@@ -3832,7 +3879,7 @@ void machine_run(machine_state *s, uint64_t mcycle_end) {
     interpret(a, mcycle_end);
 }
 
-void machine_step(machine_state *s, merkle_tree *t, access_log &log) {
+void machine_step(machine_state *s, merkle_tree &t, access_log &log) {
     machine_update_merkle_tree(s, t);
     // Call interpret with a logged state access object
     logged_state_access a(s, t);

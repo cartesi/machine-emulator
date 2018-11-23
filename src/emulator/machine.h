@@ -30,7 +30,7 @@ void machine_run(machine_state *s, uint64_t mcycle_end);
 /// \param s Machine state.
 /// \param t Merkle tree.
 /// \param log Returns log of state accesses.
-void machine_step(machine_state *s, merkle_tree *t, access_log &log);
+void machine_step(machine_state *s, merkle_tree &t, access_log &log);
 
 /// \brief Destroys a machine.
 /// \param s Machine state.
@@ -40,14 +40,14 @@ void machine_end(machine_state *s);
 /// \param s Machine state.
 /// \param t Merkle tree.
 /// \returns true if succeeded, false otherwise.
-bool machine_update_merkle_tree(machine_state *s, merkle_tree *t);
+bool machine_update_merkle_tree(machine_state *s, merkle_tree &t);
 
 /// \brief Update the Merkle tree after a page has been modified in the machine state.
 /// \param s Machine state.
 /// \param address Any address inside modified page.
 /// \param t Merkle tree.
 /// \returns true if succeeded, false otherwise.
-bool machine_update_merkle_tree_page(machine_state *s, uint64_t address, merkle_tree *t);
+bool machine_update_merkle_tree_page(machine_state *s, uint64_t address, merkle_tree &t);
 
 /// \brief Obtains the proof for a node in the Merkle tree.
 /// \param s Machine state.
@@ -57,7 +57,7 @@ bool machine_update_merkle_tree_page(machine_state *s, uint64_t address, merkle_
 /// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
 /// \param proof Receives the proof.
 /// \returns true if succeeded, false otherwise.
-bool machine_get_proof(const machine_state *s, const merkle_tree *t, uint64_t address, int log2_size, merkle_tree::proof_type &proof);
+bool machine_get_proof(const machine_state *s, const merkle_tree &t, uint64_t address, int log2_size, merkle_tree::proof_type &proof);
 
 /// \brief Read the value of a word in the machine state.
 /// \param s Machine state.
@@ -450,8 +450,7 @@ uint8_t *machine_get_host_memory(machine_state *s, uint64_t paddr);
 /// reflected in the host's backing file.
 /// \details \p length must match the size of the backing file.
 /// \returns Pointer to PMA entry if successful, nullptr otherwise.
-const pma_entry *machine_register_flash(machine_state *s, uint64_t start, uint64_t length,
-    const char *path, bool shared);
+const pma_entry *machine_register_flash(machine_state *s, uint64_t start, uint64_t length, const char *path, bool shared);
 
 /// \brief Register a new RAM memory range.
 /// \param s Machine state.
@@ -462,16 +461,26 @@ const pma_entry *machine_register_flash(machine_state *s, uint64_t start, uint64
 /// \returns Pointer to PMA entry if successful, nullptr otherwise.
 const pma_entry *machine_register_ram(machine_state *s, uint64_t start, uint64_t length);
 
+/// \brief Register a new ROM memory range.
+/// \param s Machine state.
+/// \param start Start of physical memory range in the target address
+/// space on which to map the ROM memory.
+/// \param length Length of physical memory range in the
+/// target address space on which to map the ROM memory.
+/// \returns Pointer to PMA entry if successful, nullptr otherwise.
+const pma_entry *machine_register_rom(machine_state *s, uint64_t start, uint64_t length);
+
 /// \brief Register a new memory-mapped IO device.
 /// \param s Machine state.
 /// \param start Start of physical memory range in the target address
 /// space on which to map the device.
 /// \param length Length of physical memory range in the
 /// target address space on which to map the device.
+/// \param peek Peek callback for the range.
 /// \param context Pointer to context to be passed to callbacks.
 /// \param driver Pointer to driver with callbacks.
 /// \returns Pointer to PMA entry if successful, nullptr otherwise.
-const pma_entry *machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_driver *driver);
+const pma_entry *machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver);
 
 /// \brief Register a new shadow device.
 /// \param s Machine state.
@@ -479,10 +488,11 @@ const pma_entry *machine_register_mmio(machine_state *s, uint64_t start, uint64_
 /// space on which to map the shadow device.
 /// \param length Length of physical memory range in the
 /// target address space on which to map the shadow device.
+/// \param peek Peek callback for the range.
 /// \param context Pointer to context to be passed to callbacks.
 /// \param driver Pointer to driver with callbacks.
 /// \returns Pointer to PMA entry if successful, nullptr otherwise.
-const pma_entry *machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, void *context, const pma_driver *driver);
+const pma_entry *machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver);
 
 /// \brief Dump all memory ranges to files in current working directory.
 /// \param s Machine state.

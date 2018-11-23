@@ -68,7 +68,7 @@ static void htif_console_poll(htif_state *htif) {
 }
 
 /// \brief HTIF device read callback. See ::pma_read.
-static bool htif_read(const pma_entry *pma, i_virtual_state_access *a, uint64_t offset, uint64_t *pval, int size_log2) {
+static bool htif_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t offset, uint64_t *pval, int size_log2) {
     (void) pma;
 
     // Our HTIF only supports aligned 64-bit reads
@@ -88,11 +88,11 @@ static bool htif_read(const pma_entry *pma, i_virtual_state_access *a, uint64_t 
 }
 
 /// \brief HTIF device peek callback. See ::pma_peek.
-static bool htif_peek(const pma_entry *pma, uint64_t page_offset, const uint8_t **page_data, uint8_t *scratch) {
+static bool htif_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t **page_data, uint8_t *scratch) {
     const htif_state *htif = reinterpret_cast<htif_state *>(pma_get_context(pma));
     const machine_state *s = htif->machine;
     // Check for alignment and range
-    if (page_offset % PMA_PAGE_SIZE != 0 || page_offset >= pma->length) {
+    if (page_offset % PMA_PAGE_SIZE != 0 || page_offset >= pma.length) {
         *page_data = nullptr;
         return false;
     }
@@ -166,7 +166,7 @@ static bool htif_write_fromhost(i_virtual_state_access *a, htif_state *htif, uin
 }
 
 /// \brief HTIF device write callback. See ::pma_write.
-static bool htif_write(const pma_entry *pma, i_virtual_state_access *a, uint64_t offset, uint64_t val, int size_log2) {
+static bool htif_write(const pma_entry &pma, i_virtual_state_access *a, uint64_t offset, uint64_t val, int size_log2) {
     htif_state *htif = reinterpret_cast<htif_state *>(pma_get_context(pma));
 
     // Our HTIF only supports aligned 64-bit writes
@@ -273,12 +273,11 @@ void htif_interact(htif_state *htif) {
 static const pma_driver htif_driver {
     "HTIF",
     htif_read,
-    htif_write,
-    htif_peek
+    htif_write
 };
 
 bool htif_register_mmio(htif_state *htif, uint64_t start, uint64_t length) {
-    auto pma = machine_register_mmio(htif->machine, start, length,
+    auto pma = machine_register_mmio(htif->machine, start, length, htif_peek,
         htif, &htif_driver);
     return pma && machine_set_htif_pma(htif->machine, pma);
 }

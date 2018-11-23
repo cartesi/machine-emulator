@@ -337,7 +337,7 @@ static void load_processor_config(lua_State *L, int tabidx, emulator_config &c) 
     auto &p = c.processor;
     if (lua_istable(L, -1)) {
         int len = luaL_len(L, -1);
-        for (int i = 1; i < std::min(len, 32); i++) {
+        for (int i = 1; i <= std::min(len, 31); i++) {
             p.x[i] = opt_uint_field(L, -1, i, p.x[i]);
         }
     } else if (!lua_isnil(L, -1)) {
@@ -544,9 +544,9 @@ static int meta__index_verify_merkle_tree(lua_State *L) try {
 /// \param L Lua state.
 static int meta__index_get_root_hash(lua_State *L) try {
     emulator *e = check_machine(L, 1);
-    auto t = e->get_merkle_tree();
+    const auto &t = e->get_merkle_tree();
     merkle_tree::hash_type hash;
-    if (t->get_root_hash(hash)) {
+    if (t.get_root_hash(hash)) {
         push_hash(L, hash);
         return 1;
     } else {
@@ -637,7 +637,7 @@ static int meta__index_read_word(lua_State *L) try {
 static int meta__index_get_proof(lua_State *L) try {
     emulator *e = check_machine(L, 1);
     auto m = e->get_machine();
-    auto t = e->get_merkle_tree();
+    const auto &t = e->get_merkle_tree();
     merkle_tree::proof_type proof;
     if (machine_get_proof(m, t, luaL_checkinteger(L, 2), luaL_checkinteger(L, 3), proof)) {
         push_proof(L, proof);
@@ -655,7 +655,7 @@ static int meta__index_get_proof(lua_State *L) try {
 static int meta__index_step(lua_State *L) try {
     emulator *e = check_machine(L, 1);
     auto m = e->get_machine();
-    auto t = e->get_merkle_tree();
+    auto &t = e->get_merkle_tree();
     access_log log;
     machine_step(m, t, log);
     push_log(L, log);

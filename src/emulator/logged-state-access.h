@@ -21,15 +21,15 @@
 class logged_state_access: public i_state_access<logged_state_access> {
 
     machine_state *m_s; ///< Pointer to machine state
-    merkle_tree *m_t;   ///< Pointer to Merkle tree
+    merkle_tree &m_t;   ///< Merkle tree used for proofs
     std::shared_ptr<access_log> m_log; ///< Pointer to access log
 
 public:
 
     /// \brief Constructor from machine state and Merkle tree.
     /// \param s Pointer to machine state.
-    /// \param t Pointer to Merkle tree.
-    logged_state_access(machine_state *s, merkle_tree *t):
+    /// \param t Merkle tree used for proofs.
+    logged_state_access(machine_state *s, merkle_tree &t):
         m_s(s),
         m_t(t),
         m_log(std::make_shared<access_log>()) { ; }

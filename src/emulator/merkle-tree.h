@@ -305,6 +305,12 @@ public:
     /// \details Initializes memory to zero.
     merkle_tree(void);
 
+    // No copy or move constructor or assignment
+    merkle_tree(const merkle_tree &) = delete;
+    merkle_tree& operator=(const merkle_tree &) = delete;
+    merkle_tree(merkle_tree &&) = delete;
+    merkle_tree& operator=(merkle_tree &&) = delete;
+
     /// \brief Destructor
     /// \details Releases all used memory
     ~merkle_tree();

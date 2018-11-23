@@ -43,9 +43,11 @@ namespace detail {
 
 class emulator final {
     //??D There really is no need to store these as pointers
+    //    as soon as they are proper objects
     detail::unique_machine_state_ptr m_machine;
     detail::unique_htif_ptr m_htif;
-    std::unique_ptr<merkle_tree> m_tree;
+
+    merkle_tree m_tree;
 
 public:
 
@@ -72,9 +74,9 @@ public:
     machine_state *get_machine(void);
 
     /// \brief Returns the Merkle tree within the emulator.
-    /// \returns Pointer to Merkle tree.
-    const merkle_tree *get_merkle_tree(void) const;
-    merkle_tree *get_merkle_tree(void);
+    /// \returns Merkle tree.
+    const merkle_tree &get_merkle_tree(void) const;
+    merkle_tree &get_merkle_tree(void);
 
     /// \brief Verifies the Merkle tree within the emulator.
     /// \returns True if verification passed, false otherwise.

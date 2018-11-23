@@ -26,7 +26,7 @@ uint64_t shadow_get_pma_rel_addr(int p) {
 }
 
 /// \brief Shadow device peek callback. See ::pma_peek.
-static bool shadow_peek(const pma_entry *pma, uint64_t page_offset, const uint8_t **page_data, uint8_t *shadow) {
+static bool shadow_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t **page_data, uint8_t *shadow) {
     const machine_state *s = reinterpret_cast<const machine_state *>(pma_get_context(pma));
     // There is only one page: 0
     if (page_offset != 0) {
@@ -110,11 +110,11 @@ static bool shadow_peek(const pma_entry *pma, uint64_t page_offset, const uint8_
 static const pma_driver shadow_driver = {
     "SHADOW",
     pma_read_error,
-    pma_write_error,
-    shadow_peek
+    pma_write_error
 };
 
 bool shadow_register_mmio(machine_state *s, uint64_t start, uint64_t length) {
-    auto pma = machine_register_shadow(s, start, length, s, &shadow_driver);
+    auto pma = machine_register_shadow(s, start, length, shadow_peek,
+        s, &shadow_driver);
     return pma && machine_set_shadow_pma(s, pma);
 }

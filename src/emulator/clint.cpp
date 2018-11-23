@@ -39,7 +39,7 @@ static bool clint_read_mtimecmp(i_virtual_state_access *a, uint64_t *val, int si
 }
 
 /// \brief CLINT device read callback. See ::pma_read.
-static bool clint_read(const pma_entry *pma, i_virtual_state_access *a, uint64_t offset, uint64_t *val, int size_log2) {
+static bool clint_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t offset, uint64_t *val, int size_log2) {
     (void) pma;
 
     switch (offset) {
@@ -56,7 +56,7 @@ static bool clint_read(const pma_entry *pma, i_virtual_state_access *a, uint64_t
 }
 
 /// \brief CLINT device read callback. See ::pma_write.
-static bool clint_write(const pma_entry *pma, i_virtual_state_access *a, uint64_t offset, uint64_t val, int size_log2) {
+static bool clint_write(const pma_entry &pma, i_virtual_state_access *a, uint64_t offset, uint64_t val, int size_log2) {
     (void) pma;
 
     switch (offset) {
@@ -90,7 +90,7 @@ static bool clint_write(const pma_entry *pma, i_virtual_state_access *a, uint64_
 #define base(v) ((v) - ((v) % (PMA_PAGE_SIZE)))
 #define offset(v) ((v) % (PMA_PAGE_SIZE))
 /// \brief CLINT device peek callback. See ::pma_peek.
-static bool clint_peek(const pma_entry *pma, uint64_t page_offset, const uint8_t **page_data, uint8_t *scratch) {
+static bool clint_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t **page_data, uint8_t *scratch) {
     const machine_state *s = reinterpret_cast<const machine_state *>(pma_get_context(pma));
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
         "code assumes little-endian byte ordering");
@@ -120,7 +120,7 @@ static bool clint_peek(const pma_entry *pma, uint64_t page_offset, const uint8_t
             return true;
         default:
             *page_data = nullptr;
-            if (page_offset % PMA_PAGE_SIZE == 0 && page_offset < pma->length) return true;
+            if (page_offset % PMA_PAGE_SIZE == 0 && page_offset < pma.length) return true;
             else return false;
     }
 }
@@ -130,11 +130,11 @@ static bool clint_peek(const pma_entry *pma, uint64_t page_offset, const uint8_t
 static const pma_driver clint_driver = {
     "CLINT",
     clint_read,
-    clint_write,
-    clint_peek
+    clint_write
 };
 
 bool clint_register_mmio(machine_state *s, uint64_t start, uint64_t length) {
-    auto pma = machine_register_mmio(s, start, length, s, &clint_driver);
+    auto pma = machine_register_mmio(s, start, length, clint_peek,
+        s, &clint_driver);
     return pma && machine_set_clint_pma(s, pma);
 }

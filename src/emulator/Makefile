@@ -98,7 +98,7 @@ DEFS+=-DDUMP_INSN
 #DEFS+=-DDUMP_EXCEPTIONS
 endif
 
-CXXFLAGS=-Ofast -std=c++14 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
+CXXFLAGS=-Ofast -std=c++17 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 CFLAGS=-Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
 ALL=cartesi.so

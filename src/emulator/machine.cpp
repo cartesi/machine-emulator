@@ -142,14 +142,12 @@ static pma_entry *allocate_empty_pma_entry(machine_state *s, uint64_t start, uin
     pma.start = start;
     pma.peek = peek;
     pma.length = length;
-    pma.istart.M = false;
-    pma.istart.IO = false;
-    pma.istart.E = true;
     pma.istart.R = false;
     pma.istart.W = false;
     pma.istart.X = false;
     pma.istart.IR = false;
     pma.istart.IW = false;
+    pma.data = pma_empty{};
     s->pmas.push_back(pma);
     return &s->pmas.back();
 }
@@ -164,12 +162,12 @@ static bool memory_peek(const pma_entry &pma, uint64_t page_address, const uint8
     // If page is only partially inside range, copy to scratch
     if (page_address + PMA_PAGE_SIZE > pma.length) {
         memset(scratch, 0, PMA_PAGE_SIZE);
-        memcpy(scratch, pma.data.M.host_memory + page_address, pma.length-page_address);
+        memcpy(scratch, std::get<pma_memory>(pma.data).host_memory + page_address, pma.length-page_address);
         *page_data = scratch;
         return true;
     // Otherwise, return pointer direclty into host memory
     } else {
-        *page_data = pma.data.M.host_memory + page_address;
+        *page_data = std::get<pma_memory>(pma.data).host_memory + page_address;
         return true;
     }
 }
@@ -224,18 +222,12 @@ const pma_entry *machine_register_flash(machine_state *s, uint64_t start, uint64
         munmap(host_memory, length);
         return nullptr;
     }
-
-    pma->istart.M = true;
-    pma->istart.IO = false;
-    pma->istart.E = false;
     pma->istart.R = true;
     pma->istart.W = true;
     pma->istart.X = false;
     pma->istart.IR = true;
     pma->istart.IW = true;
-    pma->data.M.backing_file = backing_file;
-    pma->data.M.host_memory = host_memory;
-    pma->data.M.length = length;
+    pma->data = pma_memory{host_memory, backing_file, length};
     return pma;
 }
 
@@ -254,17 +246,12 @@ static const pma_entry *register_memory(machine_state *s, uint64_t start, uint64
         free(host_memory);
         return nullptr;
     }
-    pma->istart.M = true;
-    pma->istart.IO = false;
-    pma->istart.E = false;
     pma->istart.R = true;
     pma->istart.W = W;
     pma->istart.X = true;
     pma->istart.IR = true;
     pma->istart.IW = true;
-    pma->data.M.backing_file = -1;
-    pma->data.M.host_memory = host_memory;
-    pma->data.M.length = length;
+    pma->data = pma_memory{host_memory, -1, length};
     return pma;
 }
 
@@ -279,32 +266,24 @@ const pma_entry *machine_register_rom(machine_state *s, uint64_t start, uint64_t
 const pma_entry *machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver) {
     pma_entry *pma = allocate_empty_pma_entry(s, start, length, peek);
     if (!pma) return nullptr;
-    pma->istart.M = false;
-    pma->istart.IO = true;
-    pma->istart.E = false;
     pma->istart.R = true;
     pma->istart.W = true;
     pma->istart.X = false;
     pma->istart.IR = false;
     pma->istart.IW = false;
-    pma->data.IO.context = context;
-    pma->data.IO.driver = driver;
+    pma->data = pma_device{context, driver};
     return pma;
 }
 
 const pma_entry *machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver) {
     pma_entry *pma = allocate_empty_pma_entry(s, start, length, peek);
     if (!pma) return nullptr;
-    pma->istart.M = false;
-    pma->istart.IO = true;
-    pma->istart.E = false;
     pma->istart.R = false;
     pma->istart.W = false;
     pma->istart.X = false;
     pma->istart.IR = false;
     pma->istart.IW = false;
-    pma->data.IO.context = context;
-    pma->data.IO.driver = driver;
+    pma->data = pma_device{context, driver};
     return pma;
 }
 
@@ -343,8 +322,8 @@ const pma_entry *machine_get_htif_pma(const machine_state *s) {
 
 uint8_t *machine_get_host_memory(machine_state *s, uint64_t paddr) {
     pma_entry &pma = naked_find_pma_entry(s, paddr);
-    if (pma.istart.M) {
-        return pma.data.M.host_memory;
+    if (std::holds_alternative<pma_memory>(pma.data)) {
+        return std::get<pma_memory>(pma.data).host_memory;
     } else {
         return nullptr;
     }
@@ -426,9 +405,9 @@ static pma_entry &find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
 template <typename STATE_ACCESS>
 static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t val) {
     pma_entry &pma = find_pma_entry(a, paddr);
-    if (!pma.istart.M || !pma.istart.W)
+    if (!std::holds_alternative<pma_memory>(pma.data) || !pma.istart.W)
         return false;
-    uintptr_t haddr = reinterpret_cast<uintptr_t>(pma.data.M.host_memory + (paddr - pma.start));
+    uintptr_t haddr = reinterpret_cast<uintptr_t>(std::get<pma_memory>(pma.data).host_memory + (paddr - pma.start));
     // log writes to memory
     a.write_memory(paddr, haddr, val);
     return true;
@@ -443,8 +422,8 @@ static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t va
 template <typename STATE_ACCESS>
 static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pval) {
     pma_entry &pma = find_pma_entry(a, paddr);
-    if (!pma.istart.M || !pma.istart.R) return false;
-    uintptr_t haddr = reinterpret_cast<uintptr_t>(pma.data.M.host_memory + (paddr - pma.start));
+    if (!std::holds_alternative<pma_memory>(pma.data) || !pma.istart.R) return false;
+    uintptr_t haddr = reinterpret_cast<uintptr_t>(std::get<pma_memory>(pma.data).host_memory + (paddr - pma.start));
     a.read_memory(paddr, haddr, pval);
     return true;
 }
@@ -599,7 +578,7 @@ static inline uintptr_t tlb_add(tlb_entry *tlb, const pma_entry &pma, uint64_t v
     // Update TLB with the new mapping between virtual and physical
     int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
     tlb[tlb_idx].vaddr = vaddr & ~PG_MASK;
-    uint8_t *ptr = pma.data.M.host_memory + (uintptr_t)(paddr - pma.start);
+    uint8_t *ptr = std::get<pma_memory>(pma.data).host_memory + (uintptr_t)(paddr - pma.start);
     tlb[tlb_idx].mem_addend = (uintptr_t)ptr - vaddr;
     return tlb[tlb_idx].mem_addend;
 }
@@ -815,15 +794,13 @@ machine_state *machine_init(void) {
         tlb_init(s);
         s->empty_pma.start = 0;
         s->empty_pma.length = -1;
-        s->empty_pma.istart.M = false;
-        s->empty_pma.istart.IO = false;
-        s->empty_pma.istart.E = true;
         s->empty_pma.istart.R = false;
         s->empty_pma.istart.W = false;
         s->empty_pma.istart.X = false;
         s->empty_pma.istart.IR = false;
         s->empty_pma.istart.IW = false;
         s->empty_pma.peek = empty_peek;
+        s->empty_pma.data = pma_empty{};
     }
     return s;
 }
@@ -841,12 +818,13 @@ void machine_end(machine_state *s) {
     fprintf(stderr, "amo: %" PRIu64 "\n", s->count_amo);
 #endif
     for (auto &pma: s->pmas) {
-        if (pma.istart.M) {
-            if (pma.data.M.backing_file >= 0) {
-                munmap(pma.data.M.host_memory, pma.length);
-                close(pma.data.M.backing_file);
+        if (std::holds_alternative<pma_memory>(pma.data)) {
+            const auto &memory = std::get<pma_memory>(pma.data);
+            if (memory.backing_file >= 0) {
+                munmap(memory.host_memory, memory.length);
+                close(memory.backing_file);
             } else {
-                free(pma.data.M.host_memory);
+                free(memory.host_memory);
             }
         }
     }
@@ -1399,11 +1377,11 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             return false;
         }
         pma_entry &pma = find_pma_entry(a, paddr);
-        if (pma.istart.E) {
+        if (std::holds_alternative<pma_empty>(pma.data)) {
             // If we do not have the range in our map, we treat this as a PMA violation
             raise_exception(a, CAUSE_LOAD_FAULT, vaddr);
             return false;
-        } else if (pma.istart.M) {
+        } else if (std::holds_alternative<pma_memory>(pma.data)) {
             uintptr_t mem_addend = tlb_add(a.get_naked_state()->tlb_read, pma, vaddr, paddr);
             uintptr_t haddr = mem_addend + static_cast<uintptr_t>(vaddr);
             a.read_memory(paddr, haddr, pval);
@@ -1411,10 +1389,10 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
         } else {
             uint64_t offset = paddr - pma.start;
             uint64_t val;
-            assert(pma.istart.IO);
+            assert(std::holds_alternative<pma_device>(pma.data));
             virtual_state_access<STATE_ACCESS> da(a);
             // If we do not know how to read, we treat this as a PMA violation
-            if (!pma.data.IO.driver->read(pma, &da, offset, &val, size_log2<U>::value)) {
+            if (!std::get<pma_device>(pma.data).driver->read(pma, &da, offset, &val, size_log2<U>::value)) {
                 raise_exception(a, CAUSE_LOAD_FAULT, vaddr);
                 return false;
             }
@@ -1452,11 +1430,11 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             return false;
         }
         pma_entry &pma = find_pma_entry(a, paddr);
-        if (pma.istart.E) {
+        if (std::holds_alternative<pma_empty>(pma.data)) {
             // If we do not have the range in our map, we treat this as a PMA violation
             raise_exception(a, CAUSE_STORE_AMO_FAULT, vaddr);
             return false;
-        } else if (pma.istart.M) {
+        } else if (std::holds_alternative<pma_memory>(pma.data)) {
             uintptr_t mem_addend = tlb_add(a.get_naked_state()->tlb_write, pma, vaddr, paddr);
             uintptr_t haddr = mem_addend + (uintptr_t) vaddr;
             // write to memory
@@ -1465,9 +1443,9 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
         } else {
             uint64_t offset = paddr - pma.start;
             virtual_state_access<STATE_ACCESS> da(a);
-            assert(pma.istart.IO);
+            assert(std::holds_alternative<pma_device>(pma.data));
             // If we do not know how to write, we treat this as a PMA violation
-            if (!pma.data.IO.driver->write(pma, &da, offset, val, size_log2<U>::value)) {
+            if (!std::get<pma_device>(pma.data).driver->write(pma, &da, offset, val, size_log2<U>::value)) {
                 raise_exception(a, CAUSE_STORE_AMO_FAULT, vaddr);
                 return false;
             }
@@ -3769,7 +3747,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
         pma_entry &pma = find_pma_entry(a, paddr);
         // We only execute directly from RAM (as in "random access memory", which includes ROM)
         // If the range is not memory or not executable, this as a PMA violation
-        if (!pma.istart.M || !pma.istart.X) {
+        if (!std::holds_alternative<pma_memory>(pma.data) || !pma.istart.X) {
             raise_exception(a, CAUSE_FETCH_FAULT, vaddr);
             return fetch_status::exception;
         }

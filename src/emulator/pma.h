@@ -24,7 +24,7 @@ struct pma_entry;
 /// \name PMA istart flags
 /// \{
 #define PMA_ISTART_M_SHIFT   (0) ///< Memory range
-#define PMA_ISTART_IO_SHIFT  (1) ///< IO mapped range
+#define PMA_ISTART_IO_SHIFT  (1) ///< Device range
 #define PMA_ISTART_E_SHIFT   (2) ///< Empty range
 #define PMA_ISTART_R_SHIFT   (3) ///< Readable
 #define PMA_ISTART_W_SHIFT   (4) ///< Writable
@@ -69,17 +69,44 @@ typedef bool (*pma_write)(const pma_entry &pma, i_virtual_state_access *da, uint
 /// \brief Default write callback issues error on write.
 bool pma_write_error(const pma_entry &, i_virtual_state_access *, uint64_t, uint64_t, int);
 
-/// \brief Driver for range.
-struct pma_driver {
+/// \brief Driver for device ranges.
+struct pma_driver final {
     const char *name;         ///< Driver name.
     pma_read read;            ///< Callback for read operations.
     pma_write write;          ///< Callback for write operations.
 };
 
 /// \brief Data for IO ranges.
-struct pma_device {
-    void *context;             ///< Context set during initialization.
-    const pma_driver *driver;  ///< Driver with callbacks.
+class pma_device final {
+
+    void *m_context;             ///< Context to pass to callbacks.
+    const pma_driver *m_driver;  ///< Driver with callbacks.
+
+public:
+    /// \brief Constructor from entries.
+    /// \param context Context to pass to callbacks.
+    /// \param driver Driver with callbacks.
+    pma_device(void *context, const pma_driver *driver):
+        m_context{context},
+        m_driver{driver} {
+        ;
+    }
+
+    /// \brief Returns context to pass to callbacks.
+    void *get_context(void) {
+        return m_context;
+    }
+
+    void *get_context(void) const {
+        // Discard qualifier on purpose because the context
+        // is none of our business.
+        return const_cast<void *>(m_context);
+    }
+
+    /// \brief Returns driver with callbacks
+    const pma_driver *get_driver(void) const {
+        return m_driver;
+    }
 };
 
 // For performance reasons, we can't possibly invoke a
@@ -88,22 +115,80 @@ struct pma_device {
 // IO ranges do. So we use naked pointers to host memory.
 
 /// \brief Data for memory ranges.
-struct pma_memory {
-    uint8_t *host_memory;      ///< Start of associated memory region in host.
-    int backing_file;          ///< File descryptor for backed memory.
-    uint64_t length;           ///< Copy of PMA length field
+class pma_memory final {
+
+    uint64_t m_length;      ///< Length of memory range (copy of PMA length field).
+    uint8_t *m_host_memory; ///< Start of associated memory region in host.
+    int m_backing_file;     ///< File descryptor for mmaped memory.
+
+public:
+
+    /// \brief Mmap'd range data (shared or not).
+    struct mmapd {
+        bool shared;
+    };
+
+    /// \brief Constructor for mmap'd ranges.
+    /// \param length of range;
+    /// \param path Path for backing file.
+    /// \param m Mmap'd range data (shared or not).
+    pma_memory(uint64_t length, const std::string &path, mmapd m);
+
+    /// \brief Calloc'd range data (just a tag).
+    struct callocd {
+    };
+
+    /// \brief Constructor for calloc'd ranges.
+    /// \param length of range;
+    /// \param c Calloc'd range data (just a tag).
+    pma_memory(uint64_t length, callocd c);
+
+    /// \brief No copy constructor
+    pma_memory(const pma_memory &) = delete;
+
+    /// \brief No copy assignment
+    pma_memory &operator=(const pma_memory &) = delete;
+
+    /// \brief Move assignment
+    pma_memory(pma_memory &&);
+
+    /// \brief Move constructor
+    pma_memory &operator=(pma_memory &&);
+
+    /// \brief Destructor
+    ~pma_memory(void);
+
+    /// \brief Returns start of associated memory region in host
+    uint8_t *get_host_memory(void) {
+        return m_host_memory;
+    }
+
+    const uint8_t *get_host_memory(void) const {
+        return m_host_memory;
+    }
+
+    /// \brief Returns file descryptor for mmaped memory.
+    int get_backing_file(void) const {
+        return m_backing_file;
+    }
+
+    /// \brief Returns copy of PMA length field (needed for munmap).
+    int get_length(void) const {
+        return m_length;
+    }
 };
 
-/// \brief Data for empty memory ranges
-struct pma_empty {
+/// \brief Data for empty memory ranges (nothing, really)
+struct pma_empty final {
 };
 
 /// \brief Physical Memory Attribute entry.
 /// \details The target's physical memory layout is described by an
 /// array of PMA entries.
-struct pma_entry {
-    uint64_t start;           ///< Start of physical memory range in target.
-    uint64_t length;          ///< Length of physical memory range in target.
+class pma_entry final {
+public:
+
+    ///< Exploded flags for PMA entry.
     struct flags {
         // bool M = std::holds_alternative<pma_memory>(data);
         // bool IO = std::holds_alternative<pma_device>(data);
@@ -113,47 +198,168 @@ struct pma_entry {
         bool X;
         bool IR;
         bool IW;
-    } istart;                  ///< Exploded flags for PMA entry.
-    pma_peek peek;             ///< Callback for peek operations.
+    };
+
+private:
+
+    uint64_t m_start;   ///< Start of physical memory range in target.
+    uint64_t m_length;  ///< Length of physical memory range in target.
+    flags m_flags;      ///< PMA Flags
+
+    pma_peek m_peek;    ///< Callback for peek operations.
+
     std::variant<
-        pma_memory,            ///< Data specific to M ranges
-        pma_device,            ///< Data specific to IO ranges
-        pma_empty              ///< Data specific to E ranges
-    > data;
+        pma_empty,      ///< Data specific to E ranges
+        pma_device,     ///< Data specific to IO ranges
+        pma_memory      ///< Data specific to M ranges
+    > m_data;
+
+public:
+    /// \brief No copy constructor
+    pma_entry(const pma_entry &) = delete;
+    /// \brief No copy assignment
+    pma_entry &operator=(const pma_entry &) = delete;
+    /// \brief Move constructor
+    pma_entry(pma_entry &&) = default;
+    /// \brief Move assignment
+    pma_entry &operator=(pma_entry &&) = default;
+
+    /// \brief Constructor for empty entry
+    pma_entry(uint64_t start, uint64_t length):
+        m_start{start},
+        m_length{length},
+        m_flags{},
+        m_peek{pma_peek_error},
+        m_data{pma_empty{}} {
+        ;
+    }
+
+    /// \brief Default constructor creates an empty entry
+    /// spanning an empty range
+    pma_entry(void): pma_entry(0, 0) { ; }
+
+    /// \brief Constructor for memory entry
+    explicit pma_entry(uint64_t start, uint64_t length, pma_memory &&memory,
+        pma_peek peek = pma_peek_error):
+        m_start{start},
+        m_length{length},
+        m_flags{},
+        m_peek{peek},
+        m_data{std::move(memory)} { ; }
+
+    /// \brief Constructor for device entry
+    explicit pma_entry(uint64_t start, uint64_t length, pma_device &&device,
+        pma_peek peek = pma_peek_error):
+        m_start{start},
+        m_length{length},
+        m_flags{},
+        m_peek{peek},
+        m_data{std::move(device)} { ; }
+
+    /// \brief Set flags for lvalue references
+    /// \params f New flags.
+    pma_entry &set_flags(flags f) & {
+        m_flags = f;
+        return *this;
+    }
+
+    /// \brief Set flags for rvalue references
+    /// \params f New flags.
+    pma_entry &&set_flags(flags f) && {
+        m_flags = f;
+        return std::move(*this);
+    }
+
+    /// \brief Returns the peek callback for the range.
+    pma_peek get_peek(void) const {
+        return m_peek;
+    }
+
+    /// \Returns data specific to E ranges
+    const pma_empty &get_empty(void) const {
+        return std::get<pma_empty>(m_data);
+    }
+
+    pma_empty &get_empty(void) {
+        return std::get<pma_empty>(m_data);
+    }
+
+    /// \Returns data specific to M ranges
+    const pma_memory &get_memory(void) const {
+        return std::get<pma_memory>(m_data);
+    }
+
+    pma_memory &get_memory(void) {
+        return std::get<pma_memory>(m_data);
+    }
+
+    /// \Returns data specific to IO ranges
+    const pma_device &get_device(void) const {
+        return std::get<pma_device>(m_data);
+    }
+
+    pma_device &get_device(void) {
+        return std::get<pma_device>(m_data);
+    }
+
+    /// \brief Returns encoded PMA istart field as per whitepaper
+    uint64_t get_istart(void) const;
+
+    /// \brief Returns start of physical memory range in target.
+    uint64_t get_start(void) const {
+        return m_start;
+    }
+    /// \brief Returns length of physical memory range in target.
+    uint64_t get_length(void) const {
+        return m_length;
+    }
+
+    /// \brief Returns encoded PMA ilength field as per whitepaper
+    uint64_t get_ilength(void) const;
+
+    /// \brief Tells if PMA is a memory range
+    bool get_istart_M(void) const {
+        return std::holds_alternative<pma_memory>(m_data);
+    }
+
+    /// \brief Tells if PMA is a device range
+    bool get_istart_IO(void) const {
+        return std::holds_alternative<pma_device>(m_data);
+    }
+
+    /// \brief Tells if PMA is an empty range
+    bool get_istart_E(void) const {
+        return std::holds_alternative<pma_empty>(m_data);
+    }
+
+    /// \brief Tells if PMA range is readable
+    bool get_istart_R(void) const {
+        return m_flags.R;
+    }
+
+    /// \brief Tells if PMA range is writable
+    bool get_istart_W(void) const {
+        return m_flags.W;
+    }
+
+    /// \brief Tells if PMA range is executable
+    bool get_istart_X(void) const {
+        return m_flags.X;
+    }
+
+    /// \brief Tells if reads to PMA range are idempotent
+    bool get_istart_IR(void) const {
+        return m_flags.IR;
+    }
+
+    /// \brief Tells if writes to PMA range are idempotent
+    bool get_istart_IW(void) const {
+        return m_flags.IW;
+    }
+
 };
 
 #define PMA_MAX 32 ///< Maximum number of PMAs
 using pma_entries = boost::container::static_vector<pma_entry, PMA_MAX>;
-
-/// \brief Encodes PMA encoded start field as per whitepaper
-static inline uint64_t pma_get_istart(const pma_entry &pma) {
-    uint64_t istart = pma.start;
-    bool M = std::holds_alternative<pma_memory>(pma.data);
-    istart |= (static_cast<uint64_t>(M) << PMA_ISTART_M_SHIFT);
-    bool IO = std::holds_alternative<pma_device>(pma.data);
-    istart |= (static_cast<uint64_t>(IO) << PMA_ISTART_IO_SHIFT);
-    bool E = std::holds_alternative<pma_empty>(pma.data);
-    istart |= (static_cast<uint64_t>(E) << PMA_ISTART_E_SHIFT);
-    istart |= (static_cast<uint64_t>(pma.istart.R) << PMA_ISTART_R_SHIFT);
-    istart |= (static_cast<uint64_t>(pma.istart.W) << PMA_ISTART_W_SHIFT);
-    istart |= (static_cast<uint64_t>(pma.istart.X) << PMA_ISTART_X_SHIFT);
-    istart |= (static_cast<uint64_t>(pma.istart.IR) << PMA_ISTART_IR_SHIFT);
-    istart |= (static_cast<uint64_t>(pma.istart.IW) << PMA_ISTART_IW_SHIFT);
-    return istart;
-}
-
-/// \brief Encodes PMA encoded length field as per whitepaper
-static inline uint64_t pma_get_ilength(const pma_entry &pma) {
-    return pma.length;
-}
-
-/// \brief Returns context associated to PMA entry
-static inline void *pma_get_context(pma_entry &pma) {
-    return std::get<pma_device>(pma.data).context;
-}
-
-static inline void *pma_get_context(const pma_entry &pma) {
-    return const_cast<void *>(std::get<pma_device>(pma.data).context);
-}
 
 #endif

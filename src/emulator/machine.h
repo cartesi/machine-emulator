@@ -449,8 +449,8 @@ uint8_t *machine_get_host_memory(machine_state *s, uint64_t paddr);
 /// \param shared Whether target modifications to the flash drive are
 /// reflected in the host's backing file.
 /// \details \p length must match the size of the backing file.
-/// \returns Pointer to PMA entry if successful, nullptr otherwise.
-const pma_entry *machine_register_flash(machine_state *s, uint64_t start, uint64_t length, const char *path, bool shared);
+/// \returns Newly allocated PMA entry.
+const pma_entry &machine_register_flash(machine_state *s, uint64_t start, uint64_t length, const char *path, bool shared);
 
 /// \brief Register a new RAM memory range.
 /// \param s Machine state.
@@ -458,8 +458,8 @@ const pma_entry *machine_register_flash(machine_state *s, uint64_t start, uint64
 /// space on which to map the RAM memory.
 /// \param length Length of physical memory range in the
 /// target address space on which to map the RAM memory.
-/// \returns Pointer to PMA entry if successful, nullptr otherwise.
-const pma_entry *machine_register_ram(machine_state *s, uint64_t start, uint64_t length);
+/// \returns Newly allocated PMA entry.
+const pma_entry &machine_register_ram(machine_state *s, uint64_t start, uint64_t length);
 
 /// \brief Register a new ROM memory range.
 /// \param s Machine state.
@@ -467,8 +467,8 @@ const pma_entry *machine_register_ram(machine_state *s, uint64_t start, uint64_t
 /// space on which to map the ROM memory.
 /// \param length Length of physical memory range in the
 /// target address space on which to map the ROM memory.
-/// \returns Pointer to PMA entry if successful, nullptr otherwise.
-const pma_entry *machine_register_rom(machine_state *s, uint64_t start, uint64_t length);
+/// \returns Newly allocated PMA entry.
+const pma_entry &machine_register_rom(machine_state *s, uint64_t start, uint64_t length);
 
 /// \brief Register a new memory-mapped IO device.
 /// \param s Machine state.
@@ -479,8 +479,8 @@ const pma_entry *machine_register_rom(machine_state *s, uint64_t start, uint64_t
 /// \param peek Peek callback for the range.
 /// \param context Pointer to context to be passed to callbacks.
 /// \param driver Pointer to driver with callbacks.
-/// \returns Pointer to PMA entry if successful, nullptr otherwise.
-const pma_entry *machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver);
+/// \returns Newly allocated PMA entry.
+const pma_entry &machine_register_mmio(machine_state *s, uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver);
 
 /// \brief Register a new shadow device.
 /// \param s Machine state.
@@ -491,8 +491,8 @@ const pma_entry *machine_register_mmio(machine_state *s, uint64_t start, uint64_
 /// \param peek Peek callback for the range.
 /// \param context Pointer to context to be passed to callbacks.
 /// \param driver Pointer to driver with callbacks.
-/// \returns Pointer to PMA entry if successful, nullptr otherwise.
-const pma_entry *machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver);
+/// \returns Newly allocated PMA entry.
+const pma_entry &machine_register_shadow(machine_state *s, uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver);
 
 /// \brief Dump all memory ranges to files in current working directory.
 /// \param s Machine state.
@@ -517,7 +517,7 @@ const pma_entry *machine_get_shadow_pma(const machine_state *s);
 
 /// \brief Set PMA used for the CLINT device, if not previously set.
 /// \param s Machine state.
-/// \param pma Pointer to PMA entry.
+/// \param pma PMA entry.
 /// \returns True if not previously set, false otherwise.
 bool machine_set_clint_pma(machine_state *s, const pma_entry *pma);
 

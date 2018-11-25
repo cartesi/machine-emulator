@@ -27,7 +27,8 @@ uint64_t shadow_get_pma_rel_addr(int p) {
 
 /// \brief Shadow device peek callback. See ::pma_peek.
 static bool shadow_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t **page_data, uint8_t *shadow) {
-    const machine_state *s = reinterpret_cast<const machine_state *>(pma_get_context(pma));
+    const machine_state *s = reinterpret_cast<const machine_state *>(
+        pma.get_device().get_context());
     // There is only one page: 0
     if (page_offset != 0) {
         *page_data = nullptr;
@@ -99,8 +100,8 @@ static bool shadow_peek(const pma_entry &pma, uint64_t page_offset, const uint8_
     int i = 0;
     for (const auto &pma: machine_get_pmas(s)) {
         auto rel_addr = shadow_get_pma_rel_addr(i);
-        write_shadow(shadow, rel_addr, pma_get_istart(pma));
-        write_shadow(shadow, rel_addr + sizeof(uint64_t), pma_get_ilength(pma));
+        write_shadow(shadow, rel_addr, pma.get_istart());
+        write_shadow(shadow, rel_addr + sizeof(uint64_t), pma.get_ilength());
         ++i;
     }
     *page_data = shadow;
@@ -113,8 +114,9 @@ static const pma_driver shadow_driver = {
     pma_write_error
 };
 
-bool shadow_register_mmio(machine_state *s, uint64_t start, uint64_t length) {
-    auto pma = machine_register_shadow(s, start, length, shadow_peek,
+void shadow_register_mmio(machine_state *s, uint64_t start, uint64_t length) {
+    auto &pma = machine_register_shadow(s, start, length, shadow_peek,
         s, &shadow_driver);
-    return pma && machine_set_shadow_pma(s, pma);
+    if (!machine_set_shadow_pma(s, &pma))
+        throw std::runtime_error("shadow already registered");
 }

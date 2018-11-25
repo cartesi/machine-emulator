@@ -39,7 +39,6 @@ uint64_t htif_get_csr_rel_addr(htif_csr reg);
 /// \param htif Pointer to HTIF state
 /// \param start Start address for memory range.
 /// \param length Length of memory range.
-/// \returns True if succeeded, false otherwise
-bool htif_register_mmio(htif_state *htif, uint64_t start, uint64_t length);
+void htif_register_mmio(htif_state *htif, uint64_t start, uint64_t length);
 
 #endif

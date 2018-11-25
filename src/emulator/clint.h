@@ -24,7 +24,6 @@ uint64_t clint_get_csr_rel_addr(clint_csr reg);
 /// \param s Machine state.
 /// \param start Start address for memory range.
 /// \param length Length of memory range.
-/// \returns True if succeeded, false otherwise
-bool clint_register_mmio(machine_state *s, uint64_t start, uint64_t length);
+void clint_register_mmio(machine_state *s, uint64_t start, uint64_t length);
 
 #endif

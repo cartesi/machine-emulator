@@ -91,7 +91,8 @@ static bool clint_write(const pma_entry &pma, i_virtual_state_access *a, uint64_
 #define offset(v) ((v) % (PMA_PAGE_SIZE))
 /// \brief CLINT device peek callback. See ::pma_peek.
 static bool clint_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t **page_data, uint8_t *scratch) {
-    const machine_state *s = reinterpret_cast<const machine_state *>(pma_get_context(pma));
+    const machine_state *s = reinterpret_cast<const machine_state *>(
+        pma.get_device().get_context());
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
         "code assumes little-endian byte ordering");
     static_assert(base(CLINT_MSIP0_REL_ADDR) != base(CLINT_MTIMECMP_REL_ADDR) &&
@@ -120,7 +121,8 @@ static bool clint_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t
             return true;
         default:
             *page_data = nullptr;
-            if (page_offset % PMA_PAGE_SIZE == 0 && page_offset < pma.length) return true;
+            if (page_offset % PMA_PAGE_SIZE == 0 && page_offset <
+                pma.get_length()) return true;
             else return false;
     }
 }
@@ -133,8 +135,9 @@ static const pma_driver clint_driver = {
     clint_write
 };
 
-bool clint_register_mmio(machine_state *s, uint64_t start, uint64_t length) {
-    auto pma = machine_register_mmio(s, start, length, clint_peek,
+void clint_register_mmio(machine_state *s, uint64_t start, uint64_t length) {
+    auto &pma = machine_register_mmio(s, start, length, clint_peek,
         s, &clint_driver);
-    return pma && machine_set_clint_pma(s, pma);
+    if (!machine_set_clint_pma(s, &pma))
+        throw std::runtime_error("CLINT already registered");
 }

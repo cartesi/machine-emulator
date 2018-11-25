@@ -60,7 +60,6 @@ uint64_t shadow_get_pma_rel_addr(int p);
 /// \param s Machine state.
 /// \param start Start address for memory range.
 /// \param length Length of memory range.
-/// \returns True if succeeded, false otherwise
-bool shadow_register_mmio(machine_state *s, uint64_t start, uint64_t length);
+void shadow_register_mmio(machine_state *s, uint64_t start, uint64_t length);
 
 #endif

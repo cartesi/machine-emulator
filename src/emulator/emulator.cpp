@@ -329,28 +329,20 @@ emulator::emulator(const emulator_config &c):
     }
 
     // RAM and ROM
-    if (!machine_register_ram(m_machine.get(), RAM_START, c.ram.length)) {
-        throw std::runtime_error("RAM registration failed");
-    }
-
-    if (!machine_register_rom(m_machine.get(), ROM_START, ROM_LENGTH)) {
-        throw std::runtime_error("ROM registration failed");
-    }
+    machine_register_ram(m_machine.get(), RAM_START, c.ram.length);
+    machine_register_rom(m_machine.get(), ROM_START, ROM_LENGTH);
 
     if (!init_ram_and_rom(c, m_machine.get())) {
         throw std::runtime_error("RAM/ROM initialization failed");
     }
 
     for (const auto &f: c.flash) {
-        if (!machine_register_flash(m_machine.get(), f.start,
-            f.length, f.backing.c_str(), f.shared)) {
-            throw std::runtime_error("unable to initialize '"
-				+ f.label + "' flash drive");
-        }
+        machine_register_flash(m_machine.get(), f.start, f.length,
+            f.backing.c_str(), f.shared);
     }
 
-    if (!clint_register_mmio(m_machine.get(), CLINT_START, CLINT_LENGTH) ||
-        !init_clint_state(c, m_machine.get())) {
+    clint_register_mmio(m_machine.get(), CLINT_START, CLINT_LENGTH);
+    if (!init_clint_state(c, m_machine.get())) {
         throw std::runtime_error("unable to initialize CLINT device");
     }
 
@@ -359,14 +351,12 @@ emulator::emulator(const emulator_config &c):
         throw std::runtime_error("unable to initialize HTIF device");
     }
 
-    if (!htif_register_mmio(m_htif.get(), HTIF_START, HTIF_LENGTH) ||
-        !init_htif_state(c, m_machine.get())) {
+    htif_register_mmio(m_htif.get(), HTIF_START, HTIF_LENGTH);
+    if (!init_htif_state(c, m_machine.get())) {
         throw std::runtime_error("unable to initialize HTIF device");
     }
 
-    if (!shadow_register_mmio(m_machine.get(), SHADOW_START, SHADOW_LENGTH)) {
-        throw std::runtime_error("unable to initialize shadow device");
-    }
+    shadow_register_mmio(m_machine.get(), SHADOW_START, SHADOW_LENGTH);
 }
 
 std::string emulator::get_name(void) {

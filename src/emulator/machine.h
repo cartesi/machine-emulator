@@ -502,7 +502,7 @@ bool machine_dump(const machine_state *s);
 /// \brief Get read-only access to container with all PMA entries.
 /// \param s Machine state.
 /// \returns The container.
-const pma_entries &machine_get_pmas(const machine_state *s);
+const boost::container::static_vector<pma_entry, PMA_MAX> &machine_get_pmas(const machine_state *s);
 
 /// \brief Sets PMA used for shadow, if not previously set.
 /// \param s Machine state.

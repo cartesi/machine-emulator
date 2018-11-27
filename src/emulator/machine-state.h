@@ -6,6 +6,8 @@
 
 #include <cstdint>
 
+#include <boost/container/static_vector.hpp>
+
 #include "pma.h"
 
 /// \brief Translation Lookaside Buffer entry.
@@ -22,6 +24,9 @@ struct tlb_entry {
 /// \details The machine_state structure contains the entire
 /// state of a Cartesi machine.
 struct machine_state {
+
+    ~machine_state () { ; } // Due to bug in clang++
+
     uint64_t pc;        ///< Program counter.
     uint64_t x[32];     ///< Register file.
 
@@ -65,7 +70,7 @@ struct machine_state {
     uint64_t htif_fromhost;  ///< HTIF CSR fromhost.
 
     /// Map of physical memory ranges
-    pma_entries pmas;
+    boost::container::static_vector<pma_entry, PMA_MAX> pmas;
 
     const pma_entry *shadow_pma; ///< PMA for shadow device
     const pma_entry *htif_pma;   ///< PMA for HTIF device

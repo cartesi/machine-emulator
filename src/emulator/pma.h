@@ -3,13 +3,12 @@
 
 #include <cstdint>
 #include <variant>
-#include <boost/container/static_vector.hpp>
 
 #include "merkle-tree.h"
 
 // Forward definitions
 class i_virtual_state_access;
-struct pma_entry;
+class pma_entry;
 
 /// \file
 /// \brief Physical memory attributes
@@ -360,6 +359,5 @@ public:
 };
 
 #define PMA_MAX 32 ///< Maximum number of PMAs
-using pma_entries = boost::container::static_vector<pma_entry, PMA_MAX>;
 
 #endif

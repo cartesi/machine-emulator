@@ -43,7 +43,7 @@ pma_memory::pma_memory(uint64_t length, const std::string &path, mmapd m):
     // Try to open backing file
     int backing_file = open(path.c_str(), oflag);
     if (backing_file < 0)
-        throw std::system_error(errno, std::generic_category(), 
+        throw std::system_error(errno, std::generic_category(),
             "could not open backing file '" + path + "'");
 
     // Try to get file size

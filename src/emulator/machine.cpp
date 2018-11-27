@@ -83,17 +83,20 @@ typedef unsigned __int128 uint128_t;
 /// \param paddr Target physical address.
 /// \returns Corresponding entry if found, or a sentinel entry
 /// for an empty range.
-static pma_entry &naked_find_pma_entry(machine_state *s, uint64_t paddr) {
+/// \tparam T Type used for memory access
+template <typename T>
+static inline pma_entry &naked_find_pma_entry(machine_state *s, uint64_t paddr) {
     for (auto &pma: s->pmas) {
         if (paddr >= pma.get_start() &&
-            paddr < pma.get_start() + pma.get_length())
+            paddr + sizeof(T) <= pma.get_start() + pma.get_length())
             return pma;
     }
     return s->empty_pma;
 }
 
-static const pma_entry &naked_find_pma_entry(const machine_state *s, uint64_t paddr) {
-    return const_cast<const pma_entry &>(naked_find_pma_entry(
+template <typename T>
+static inline const pma_entry &naked_find_pma_entry(const machine_state *s, uint64_t paddr) {
+    return const_cast<const pma_entry &>(naked_find_pma_entry<T>(
         const_cast<machine_state *>(s), paddr));
 }
 
@@ -108,8 +111,8 @@ static pma_entry &allocate_pma_entry(machine_state *s, pma_entry &&pma) {
     if ((start & (PMA_PAGE_SIZE-1)) != 0)
         throw std::invalid_argument("PMA start must be aligned to page boundary");
     auto length = pma.get_length();
-    if ((length & (PMA_WORD_SIZE-1)) != 0)
-        throw std::invalid_argument("PMA length must be multiple of word size");
+    if ((length & (PMA_PAGE_SIZE-1)) != 0)
+        throw std::invalid_argument("PMA length must be multiple of page size");
     // Range A overlaps with B if A starts before B ends and A ends after B starts
     for (const auto &existing_pma: s->pmas) {
         if (start < existing_pma.get_start() + existing_pma.get_length() &&
@@ -141,12 +144,6 @@ static bool memory_peek(const pma_entry &pma, uint64_t page_address, const uint8
         return true;
     }
 }
-
-const pma_driver flash_driver = {
-    "FLASH",
-    pma_read_error,
-    pma_write_error
-};
 
 const pma_entry &machine_register_flash(machine_state *s, uint64_t start,
     uint64_t length, const char *path, bool shared) {
@@ -256,7 +253,7 @@ const pma_entry *machine_get_htif_pma(const machine_state *s) {
 }
 
 uint8_t *machine_get_host_memory(machine_state *s, uint64_t paddr) {
-    pma_entry &pma = naked_find_pma_entry(s, paddr);
+    pma_entry &pma = naked_find_pma_entry<uint8_t>(s, paddr);
     if (pma.get_istart_M()) {
         return pma.get_memory().get_host_memory();
     } else {
@@ -317,14 +314,14 @@ void dump_regs(machine_state *s) {
 /// does not perform naked accesses to the machine state.
 /// Rather, it goes through the state accessor object so all
 /// accesses can be recorded if need be.
-template <typename STATE_ACCESS>
+template <typename T, typename STATE_ACCESS>
 static pma_entry &find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
     auto note = a.make_scoped_note("find_pma_entry"); (void) note;
     int i = 0;
     for (auto &pma: a.get_naked_state()->pmas) {
         a.read_pma(pma, i++);
         if (paddr >= pma.get_start() &&
-            paddr < pma.get_start() + pma.get_length())
+            paddr + sizeof(T) <= pma.get_start() + pma.get_length())
             return pma;
         if (pma.get_length() == 0)
             break;
@@ -340,7 +337,7 @@ static pma_entry &find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t val) {
-    pma_entry &pma = find_pma_entry(a, paddr);
+    pma_entry &pma = find_pma_entry<uint64_t>(a, paddr);
     if (!pma.get_istart_M() || !pma.get_istart_W())
         return false;
     uintptr_t haddr = reinterpret_cast<uintptr_t>(pma.get_memory().get_host_memory() + (paddr - pma.get_start()));
@@ -357,7 +354,7 @@ static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t va
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pval) {
-    pma_entry &pma = find_pma_entry(a, paddr);
+    pma_entry &pma = find_pma_entry<uint64_t>(a, paddr);
     if (!pma.get_istart_M() || !pma.get_istart_R()) return false;
     uintptr_t haddr = reinterpret_cast<uintptr_t>(pma.get_memory().get_host_memory() + (paddr - pma.get_start()));
     a.read_memory(paddr, haddr, pval);
@@ -504,19 +501,31 @@ static void tlb_init(machine_state *s) {
     }
 }
 
-/// \brief Add a new entry to the TLB.
-/// \param tlb Pointer to TLB.
-/// \param pma Pointer to PMA entry.
+/// \brief Replaces an entry in the TLB with a new one.
+/// \param pma PMA entry for range.
 /// \param vaddr Target virtual address.
 /// \param paddr Target physical address.
+/// \param tlb TLB entry to replace.
 /// \returns Offset from Target virtual address to host address
-static inline uintptr_t tlb_add(tlb_entry *tlb, pma_entry &pma, uint64_t vaddr, uint64_t paddr) {
-    // Update TLB with the new mapping between virtual and physical
-    int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
-    tlb[tlb_idx].vaddr = vaddr & ~PG_MASK;
+static inline uintptr_t tlb_replace(pma_entry &pma, uint64_t vaddr, uint64_t paddr, tlb_entry &tlb) {
+    tlb.vaddr = vaddr & ~PG_MASK;
     uint8_t *ptr = pma.get_memory().get_host_memory() + (uintptr_t)(paddr - pma.get_start());
-    tlb[tlb_idx].mem_addend = (uintptr_t)ptr - vaddr;
-    return tlb[tlb_idx].mem_addend;
+    tlb.mem_addend = (uintptr_t)ptr - vaddr;
+    return tlb.mem_addend;
+}
+
+/// \brief Checks for a TLB hit.
+/// \tparam T Type of access needed (uint8_t, uint16_t, uint32_t, uint64_t).
+/// \param tlb TLB entry to check.
+/// \param vaddr Target virtual address.
+/// \returns True on hit, false otherwise.
+template <typename T>
+static inline bool tlb_hit(const tlb_entry &tlb, uint64_t vaddr) {
+    // Make sure misaligned accesses are always considered a miss
+    // Otherwise, we could report a hit for a word that goes past the end of the PMA range.
+    // Aligned accesses cannot do so because the PMA ranges
+    // are always page-aligned.
+    return (tlb.vaddr == (vaddr & ~(PG_MASK & ~(sizeof(T) - 1))));
 }
 
 /// \brief Invalidates all TLB entries.
@@ -1081,7 +1090,7 @@ bool machine_update_merkle_tree_page(machine_state *s, uint64_t address, merkle_
     t.begin_update(h);
     // Align address to begining of page
     address &= ~(PMA_PAGE_SIZE-1);
-    const pma_entry &pma = naked_find_pma_entry(s, address);
+    const pma_entry &pma = naked_find_pma_entry<uint64_t>(s, address);
     uint64_t page_start_in_range = address - pma.get_start();
     const uint8_t *page_data = nullptr;
     auto peek = pma.get_peek();
@@ -1096,7 +1105,7 @@ bool machine_update_merkle_tree_page(machine_state *s, uint64_t address, merkle_
     return t.end_update(h);
 }
 
-const pma_entries &machine_get_pmas(const machine_state *s) {
+const boost::container::static_vector<pma_entry, PMA_MAX> &machine_get_pmas(const machine_state *s) {
     return s->pmas;
 }
 
@@ -1126,7 +1135,7 @@ bool machine_get_proof(const machine_state *s, const merkle_tree &t, uint64_t ad
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
     auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
-    const pma_entry &pma = naked_find_pma_entry(s, address);
+    const pma_entry &pma = naked_find_pma_entry<uint64_t>(s, address);
     const uint8_t *page_data = nullptr;
     uint64_t page_start_in_range = (address - pma.get_start()) & (~(PMA_PAGE_SIZE-1));
     auto peek = pma.get_peek();
@@ -1140,7 +1149,7 @@ bool machine_read_word(const machine_state *s, uint64_t word_address, uint64_t *
     // Make sure address is aligned
     if (word_address & (PMA_WORD_SIZE-1))
         return false;
-    const pma_entry &pma = naked_find_pma_entry(s, word_address);
+    const pma_entry &pma = naked_find_pma_entry<uint64_t>(s, word_address);
     // ??D We should split peek into peek_word and peek_page
     // for performance. On the other hand, this function
     // will almost never be used, so one wonders if it is worth it...
@@ -1282,9 +1291,9 @@ template <typename T, typename STATE_ACCESS>
 static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)  {
     using U = std::make_unsigned_t<T>;
     int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
-    if (!avoid_tlb<STATE_ACCESS>::value &&
-        (a.get_naked_state()->tlb_read[tlb_idx].vaddr == (vaddr & ~(PG_MASK & ~(sizeof(T) - 1))))) {
-        *pval = *reinterpret_cast<T *>(a.get_naked_state()->tlb_read[tlb_idx].mem_addend + (uintptr_t)vaddr);
+    tlb_entry &tlb = a.get_naked_state()->tlb_read[tlb_idx];
+    if (!avoid_tlb<STATE_ACCESS>::value && tlb_hit<T>(tlb, vaddr)) {
+        *pval = *reinterpret_cast<T *>(tlb.mem_addend + (uintptr_t)vaddr);
         return true;
     // No support for misaligned accesses: They are handled by a trap in BBL
     } else if (vaddr & (sizeof(T)-1)) {
@@ -1297,12 +1306,12 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             raise_exception(a, CAUSE_LOAD_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry &pma = find_pma_entry(a, paddr);
+        pma_entry &pma = find_pma_entry<T>(a, paddr);
         if (pma.get_istart_E() || !pma.get_istart_R()) {
             raise_exception(a, CAUSE_LOAD_FAULT, vaddr);
             return false;
         } else if (pma.get_istart_M()) {
-            uintptr_t mem_addend = tlb_add(a.get_naked_state()->tlb_read, pma, vaddr, paddr);
+            uintptr_t mem_addend = tlb_replace(pma, vaddr, paddr, tlb);
             uintptr_t haddr = mem_addend + static_cast<uintptr_t>(vaddr);
             a.read_memory(paddr, haddr, pval);
             return true;
@@ -1334,9 +1343,9 @@ template <typename T, typename STATE_ACCESS>
 static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_t val) {
     using U = std::make_unsigned_t<T>;
     uint32_t tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
-    if (!avoid_tlb<STATE_ACCESS>::value &&
-        (a.get_naked_state()->tlb_write[tlb_idx].vaddr == (vaddr & ~(PG_MASK & ~(sizeof(T) - 1))))) {
-        *reinterpret_cast<T *>(a.get_naked_state()->tlb_write[tlb_idx].mem_addend + (uintptr_t)vaddr) = static_cast<T>(val);
+    tlb_entry &tlb = a.get_naked_state()->tlb_write[tlb_idx];
+    if (!avoid_tlb<STATE_ACCESS>::value && tlb_hit<T>(tlb, vaddr)) {
+        *reinterpret_cast<T *>(tlb.mem_addend + (uintptr_t)vaddr) = static_cast<T>(val);
         return true;
     // No support for misaligned accesses: They are handled by a trap in BBL
     } else if (vaddr & (sizeof(T)-1)) {
@@ -1349,12 +1358,12 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             raise_exception(a, CAUSE_STORE_AMO_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry &pma = find_pma_entry(a, paddr);
+        pma_entry &pma = find_pma_entry<T>(a, paddr);
         if (pma.get_istart_E() || !pma.get_istart_W()) {
             raise_exception(a, CAUSE_STORE_AMO_FAULT, vaddr);
             return false;
         } else if (pma.get_istart_M()) {
-            uintptr_t mem_addend = tlb_add(a.get_naked_state()->tlb_write, pma, vaddr, paddr);
+            uintptr_t mem_addend = tlb_replace(pma, vaddr, paddr, tlb);
             uintptr_t haddr = mem_addend + (uintptr_t) vaddr;
             // write to memory
             a.write_memory(paddr, haddr, static_cast<T>(val));
@@ -3649,10 +3658,9 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
     if (vaddr == 0) exit(0);
     // Check TLB for hit
     int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
-    if (!avoid_tlb<STATE_ACCESS>::value &&
-        (a.get_naked_state()->tlb_code[tlb_idx].vaddr == (vaddr & ~PG_MASK))) {
-        uintptr_t mem_addend = a.get_naked_state()->tlb_code[tlb_idx].mem_addend;
-        *insn = *reinterpret_cast<uint32_t *>(mem_addend + (uintptr_t)vaddr);
+    tlb_entry &tlb = a.get_naked_state()->tlb_code[tlb_idx];
+    if (!avoid_tlb<STATE_ACCESS>::value && tlb_hit<uint32_t>(tlb, vaddr)) {
+        *insn = *reinterpret_cast<uint32_t *>(tlb.mem_addend + (uintptr_t)vaddr);
         return fetch_status::success;
     // TLB miss
     } else {
@@ -3663,14 +3671,14 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
             return fetch_status::exception;
         }
         // Walk memory map to find the range that contains the physical address
-        pma_entry &pma = find_pma_entry(a, paddr);
+        pma_entry &pma = find_pma_entry<uint32_t>(a, paddr);
         // We only execute directly from RAM (as in "random access memory", which includes ROM)
         // If the range is not memory or not executable, this as a PMA violation
         if (!pma.get_istart_M() || !pma.get_istart_X()) {
             raise_exception(a, CAUSE_FETCH_FAULT, vaddr);
             return fetch_status::exception;
         }
-        uintptr_t mem_addend = tlb_add(a.get_naked_state()->tlb_code, pma, vaddr, paddr);
+        uintptr_t mem_addend = tlb_replace(pma, vaddr, paddr, tlb);
         uintptr_t haddr = mem_addend + static_cast<uintptr_t>(vaddr);
         a.read_memory(paddr, haddr, insn);
         return fetch_status::success;

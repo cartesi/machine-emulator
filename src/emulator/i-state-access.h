@@ -8,8 +8,10 @@
 #include <type_traits>
 
 #include "meta.h"
-#include "machine.h"
-#include "access-note.h"
+
+// Forward declarations
+class machine;
+enum class note_type;
 
 /// \class i_state_access
 /// \brief Interface for machine state access.
@@ -46,14 +48,24 @@ template <typename DERIVED> class i_state_access { // CRTP
 
 public:
 
-    /// \brief Returns pointer to Machine state for direct access.
-    machine_state *get_naked_state(void) {
-        return derived().do_get_naked_state();
+    /// \brief Returns associated machine.
+    machine &get_naked_machine(void) {
+        return derived().do_get_naked_machine();
     }
 
-    /// \brief Returns pointer to Machine state for direct read-only access.
-    const machine_state *get_naked_state(void) const {
-        return derived().do_get_naked_state();
+    /// \brief Returns associated machine for read-only access.
+    const machine &get_naked_machine(void) const {
+        return derived().do_get_naked_machine();
+    }
+
+    /// \brief Returns machine state for direct access.
+    machine_state &get_naked_state(void) {
+        return get_naked_machine().get_state();
+    }
+
+    /// \brief Returns machine state for direct read-only access.
+    const machine_state &get_naked_state(void) const {
+        return get_naked_machine().get_state();
     }
 
     /// \brief Adds an annotation to the state
@@ -70,19 +82,19 @@ public:
         return derived().do_make_scoped_note(text);
     }
 
-    /// \brief Reads register from file.
-    /// \tparam reg Register index in file.
+    /// \brief Reads from general-purpose register.
+    /// \tparam reg Register index.
     /// \returns Register value.
-    uint64_t read_register(int reg) {
-        return derived().do_read_register(reg);
+    uint64_t read_x(int reg) {
+        return derived().do_read_x(reg);
     }
 
-    /// \brief Writes register to file.
+    /// \brief Writes register to general-purpose register.
     /// \tparam reg Register index.
     /// \tparam val New register value.
     /// \details Writes to register zero *break* the machine. There is an assertion to catch this, but NDEBUG will let the value pass through.
-    void write_register(int reg, uint64_t val) {
-        return derived().do_write_register(reg, val);
+    void write_x(int reg, uint64_t val) {
+        return derived().do_write_x(reg, val);
     }
 
     /// \brief Reads the program counter.

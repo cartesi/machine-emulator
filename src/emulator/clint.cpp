@@ -91,7 +91,7 @@ static bool clint_write(const pma_entry &pma, i_virtual_state_access *a, uint64_
 #define offset(v) ((v) % (PMA_PAGE_SIZE))
 /// \brief CLINT device peek callback. See ::pma_peek.
 static bool clint_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t **page_data, uint8_t *scratch) {
-    const machine_state *s = reinterpret_cast<const machine_state *>(
+    const machine *m = reinterpret_cast<const machine *>(
         pma.get_device().get_context());
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
         "code assumes little-endian byte ordering");
@@ -106,17 +106,17 @@ static bool clint_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t
             // Since we are little-endian, we can simply write the bytes
             memset(scratch, 0, PMA_PAGE_SIZE);
             *reinterpret_cast<uint64_t *>(scratch + 
-                offset(CLINT_MSIP0_REL_ADDR)) = ((machine_read_mip(s) & MIP_MSIP) == MIP_MSIP);
+                offset(CLINT_MSIP0_REL_ADDR)) = ((m->read_mip() & MIP_MSIP) == MIP_MSIP);
             *page_data = scratch;
             return true;
         case base(CLINT_MTIMECMP_REL_ADDR):
             memset(scratch, 0, PMA_PAGE_SIZE);
-            *reinterpret_cast<uint64_t *>(scratch + offset(CLINT_MTIMECMP_REL_ADDR)) = machine_read_clint_mtimecmp(s);
+            *reinterpret_cast<uint64_t *>(scratch + offset(CLINT_MTIMECMP_REL_ADDR)) = m->read_clint_mtimecmp();
             *page_data = scratch;
             return true;
         case base(CLINT_MTIME_REL_ADDR):
             memset(scratch, 0, PMA_PAGE_SIZE);
-            *reinterpret_cast<uint64_t*>(scratch + offset(CLINT_MTIME_REL_ADDR)) = rtc_cycle_to_time(machine_read_mcycle(s));
+            *reinterpret_cast<uint64_t*>(scratch + offset(CLINT_MTIME_REL_ADDR)) = rtc_cycle_to_time(m->read_mcycle());
             *page_data = scratch;
             return true;
         default:
@@ -135,9 +135,8 @@ static const pma_driver clint_driver = {
     clint_write
 };
 
-void clint_register_mmio(machine_state *s, uint64_t start, uint64_t length) {
-    auto &pma = machine_register_mmio(s, start, length, clint_peek,
-        s, &clint_driver);
-    if (!machine_set_clint_pma(s, &pma))
+void clint_register_mmio(machine &m, uint64_t start, uint64_t length) {
+    auto &pma = m.register_mmio(start, length, clint_peek, &m, &clint_driver);
+    if (!m.set_clint_pma(&pma))
         throw std::runtime_error("CLINT already registered");
 }

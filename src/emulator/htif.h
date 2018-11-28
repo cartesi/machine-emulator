@@ -8,7 +8,7 @@
 /// \brief Host-Target interface device.
 
 // Forward declarations
-struct machine_state;
+class machine;
 
 #define HTIF_INTERACT_DIVISOR 10
 #define HTIF_CONSOLE_BUF_SIZE 1024
@@ -16,12 +16,12 @@ struct machine_state;
 /// \brief Host-Target interface implementation
 class htif {
 
+    machine &m_machine;                    ///< Associated machine.
+    bool m_interactive;                    ///< Running in interactive mode.
     uint8_t m_buf[HTIF_CONSOLE_BUF_SIZE];  ///< Console buffer.
     ssize_t m_buf_pos;                     ///< Next character in buffer.
     ssize_t m_buf_len;                     ///< Last character in buffer.
     bool m_fromhost_pending;               ///< fromhost is pending.
-    machine_state *m_machine;              ///< Associated machine state.
-    bool m_interactive;                    ///< Running in interactive mode.
     int m_divisor_counter;                 ///< Ignored calls to interact.
     int m_old_fd0_flags;                   ///< Saved stdout flags.
     struct termios m_oldtty;               ///< Saved termios values.
@@ -40,9 +40,9 @@ public:
     static uint64_t get_csr_rel_addr(csr reg);
 
     /// \brief Constructor
-    /// \param s Pointer to associated machine state.
+    /// \param s Associated machine.
     /// \param interactive This is an interactive session with terminal support.
-    htif(machine_state *s, bool interactive);
+    htif(machine &m, bool interactive);
 
     /// \brief Registers device with the machine
     /// \param start Start address for memory range.
@@ -65,8 +65,8 @@ public:
     /// \brief Checks the if HTIF is interactive
     bool is_interactive(void) const;
 
-    /// \brief Returns associated machine state
-    const machine_state *get_machine_state(void) const;
+    /// \brief Returns the associated machine
+    const machine &get_machine(void) const;
 
     /// \brief Checks if there is input available from console.
     void poll_console(void);

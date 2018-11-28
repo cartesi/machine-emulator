@@ -64,7 +64,7 @@ static int fdt_property_u64_u64(void *fdt, const char *name, uint64_t v0, uint64
 	return fdt_property(fdt, name, tab, sizeof(tab));
 }
 
-static bool fdt_build_riscv(const emulator_config &c, const machine_state *s, void *buf, int bufsize) {
+static bool fdt_build_riscv(const machine_config &c, const machine &m, void *buf, int bufsize) {
     int cur_phandle = 1;
     FDT_CHECK(fdt_create(buf, bufsize));
     FDT_CHECK(fdt_add_reservemap_entry(buf, 0, 0));
@@ -83,8 +83,8 @@ static bool fdt_build_riscv(const emulator_config &c, const machine_state *s, vo
        FDT_CHECK(fdt_property_u32(buf, "reg", 0));
        FDT_CHECK(fdt_property_string(buf, "status", "okay"));
        FDT_CHECK(fdt_property_string(buf, "compatible", "riscv"));
-       int max_xlen = machine_get_max_xlen(s);
-       uint32_t misa = machine_read_misa(s);
+       int max_xlen = m.get_max_xlen();
+       uint32_t misa = m.read_misa();
        char isa_string[128], *q = isa_string;
        q += snprintf(isa_string, sizeof(isa_string), "rv%d", max_xlen);
        for(int i = 0; i < 26; i++) {
@@ -175,7 +175,7 @@ static bool fdt_build_riscv(const emulator_config &c, const machine_state *s, vo
     return true;
 }
 
-static bool init_ram_and_rom(const emulator_config &c, machine_state *s) {
+static bool init_ram_and_rom(const machine_config &c, machine &m) {
 
     if (c.ram.backing.empty() && c.rom.backing.empty()) {
         fprintf(stderr, "No ROM or RAM images\n");
@@ -205,7 +205,7 @@ static bool init_ram_and_rom(const emulator_config &c, machine_state *s) {
                 (int) len, (int) c.ram.length);
             return false;
         }
-        uint8_t *ram_ptr = machine_get_host_memory(s, PMA_RAM_START);
+        uint8_t *ram_ptr = m.get_host_memory(PMA_RAM_START);
         if (!ram_ptr) return false;
         if (load_file(c.ram.backing.c_str(), ram_ptr, c.ram.length) < 0) {
             fprintf(stderr, "Unable to load RAM image\n");
@@ -214,11 +214,11 @@ static bool init_ram_and_rom(const emulator_config &c, machine_state *s) {
     }
 
     // Initialize ROM
-    uint8_t *rom_ptr = machine_get_host_memory(s, PMA_ROM_START);
+    uint8_t *rom_ptr = m.get_host_memory(PMA_ROM_START);
     if (!rom_ptr) return false;
     if (c.rom.backing.empty()) {
         uint32_t fdt_addr = 8 * 8;
-        if (!fdt_build_riscv(c, s, rom_ptr + fdt_addr, PMA_ROM_LENGTH-fdt_addr))
+        if (!fdt_build_riscv(c, m, rom_ptr + fdt_addr, PMA_ROM_LENGTH-fdt_addr))
             return false;
         /* jump_addr = PMA_RAM_START */
         uint32_t *q = (uint32_t *)(rom_ptr);
@@ -252,150 +252,135 @@ emulator::~emulator() {
 	// Nothing to do: all members are destroyed automatically
 }
 
-static bool init_processor_state(const emulator_config &c, machine_state *s) {
+static bool init_processor_state(const machine_config &c, machine &m) {
     //??D implement load from backing file
     assert(c.processor.backing.empty());
     // General purpose registers
     for (int i = 1; i < 32; i++) {
-        machine_write_register(s, i, c.processor.x[i]);
+        m.write_x(i, c.processor.x[i]);
     }
     // Named registers
-    machine_write_pc(s, c.processor.pc);
-    machine_write_mvendorid(s, c.processor.mvendorid);
-    machine_write_marchid(s, c.processor.marchid);
-    machine_write_mimpid(s, c.processor.mimpid);
-    machine_write_mcycle(s, c.processor.mcycle);
-    machine_write_minstret(s, c.processor.minstret);
-    machine_write_mstatus(s, c.processor.mstatus);
-    machine_write_mtvec(s, c.processor.mtvec);
-    machine_write_mscratch(s, c.processor.mscratch);
-    machine_write_mepc(s, c.processor.mepc);
-    machine_write_mcause(s, c.processor.mcause);
-    machine_write_mtval(s, c.processor.mtval);
-    machine_write_misa(s, c.processor.misa);
-    machine_write_mie(s, c.processor.mie);
-    machine_write_mip(s, c.processor.mip);
-    machine_write_medeleg(s, c.processor.medeleg);
-    machine_write_mideleg(s, c.processor.mideleg);
-    machine_write_mcounteren(s, c.processor.mcounteren);
-    machine_write_stvec(s, c.processor.stvec);
-    machine_write_sscratch(s, c.processor.sscratch);
-    machine_write_sepc(s, c.processor.sepc);
-    machine_write_scause(s, c.processor.scause);
-    machine_write_stval(s, c.processor.stval);
-    machine_write_satp(s, c.processor.satp);
-    machine_write_scounteren(s, c.processor.scounteren);
-    machine_write_ilrsc(s, c.processor.ilrsc);
-    machine_write_iflags(s, c.processor.iflags);
+    m.write_pc(c.processor.pc);
+    m.write_mvendorid(c.processor.mvendorid);
+    m.write_marchid(c.processor.marchid);
+    m.write_mimpid(c.processor.mimpid);
+    m.write_mcycle(c.processor.mcycle);
+    m.write_minstret(c.processor.minstret);
+    m.write_mstatus(c.processor.mstatus);
+    m.write_mtvec(c.processor.mtvec);
+    m.write_mscratch(c.processor.mscratch);
+    m.write_mepc(c.processor.mepc);
+    m.write_mcause(c.processor.mcause);
+    m.write_mtval(c.processor.mtval);
+    m.write_misa(c.processor.misa);
+    m.write_mie(c.processor.mie);
+    m.write_mip(c.processor.mip);
+    m.write_medeleg(c.processor.medeleg);
+    m.write_mideleg(c.processor.mideleg);
+    m.write_mcounteren(c.processor.mcounteren);
+    m.write_stvec(c.processor.stvec);
+    m.write_sscratch(c.processor.sscratch);
+    m.write_sepc(c.processor.sepc);
+    m.write_scause(c.processor.scause);
+    m.write_stval(c.processor.stval);
+    m.write_satp(c.processor.satp);
+    m.write_scounteren(c.processor.scounteren);
+    m.write_ilrsc(c.processor.ilrsc);
+    m.write_iflags(c.processor.iflags);
 	return true;
 }
 
-static bool init_htif_state(const emulator_config &c, machine_state *s) {
+static bool init_htif_state(const machine_config &c, machine &m) {
     //??D implement load from backing file
 	assert(c.htif.backing.empty());
-    machine_write_htif_tohost(s, c.htif.tohost);
-    machine_write_htif_fromhost(s, c.htif.fromhost);
+    m.write_htif_tohost(c.htif.tohost);
+    m.write_htif_fromhost(c.htif.fromhost);
     return true;
 }
 
-static bool init_clint_state(const emulator_config &c, machine_state *s) {
+static bool init_clint_state(const machine_config &c, machine &m) {
     //??D implement load from backing file
 	assert(c.clint.backing.empty());
-    machine_write_clint_mtimecmp(s, c.clint.mtimecmp);
+    m.write_clint_mtimecmp(c.clint.mtimecmp);
     return true;
 }
 
-emulator::emulator(const emulator_config &c):
-    m_machine(machine_init()),
-    m_htif{m_machine.get(), c.interactive},
-    m_tree{} {
+emulator::emulator(const machine_config &c):
+    m_machine{},
+    m_htif{m_machine, c.interactive} {
 
-    if (!m_machine) {
-		throw std::runtime_error("machine initialization failed");
-    }
-
-    if (!init_processor_state(c, m_machine.get())) {
+    if (!init_processor_state(c, m_machine)) {
 		throw std::runtime_error("processor initialization failed");
     }
 
     // RAM and ROM
-    machine_register_ram(m_machine.get(), PMA_RAM_START, c.ram.length);
-    machine_register_rom(m_machine.get(), PMA_ROM_START, PMA_ROM_LENGTH);
+    m_machine.register_ram(PMA_RAM_START, c.ram.length);
+    m_machine.register_rom(PMA_ROM_START, PMA_ROM_LENGTH);
 
-    if (!init_ram_and_rom(c, m_machine.get())) {
+    if (!init_ram_and_rom(c, m_machine)) {
         throw std::runtime_error("RAM/ROM initialization failed");
     }
 
     for (const auto &f: c.flash) {
-        machine_register_flash(m_machine.get(), f.start, f.length,
+        m_machine.register_flash(f.start, f.length,
             f.backing.c_str(), f.shared);
     }
 
-    clint_register_mmio(m_machine.get(), PMA_CLINT_START, PMA_CLINT_LENGTH);
-    if (!init_clint_state(c, m_machine.get())) {
+    clint_register_mmio(m_machine, PMA_CLINT_START, PMA_CLINT_LENGTH);
+    if (!init_clint_state(c, m_machine)) {
         throw std::runtime_error("unable to initialize CLINT device");
     }
 
     m_htif.register_mmio(PMA_HTIF_START, PMA_HTIF_LENGTH);
-    if (!init_htif_state(c, m_machine.get())) {
+    if (!init_htif_state(c, m_machine)) {
         throw std::runtime_error("unable to initialize HTIF device");
     }
 
-    shadow_register_mmio(m_machine.get(), PMA_SHADOW_START, PMA_SHADOW_LENGTH);
+    shadow_register_mmio(m_machine, PMA_SHADOW_START, PMA_SHADOW_LENGTH);
 }
 
 std::string emulator::get_name(void) {
     std::ostringstream os;
-    os << CARTESI_VENDORID << ':' << CARTESI_ARCHID << ':' << CARTESI_IMPID;
+    os << VENDORID << ':' << ARCHID << ':' << IMPID;
     return os.str();
 }
 
 bool emulator::update_merkle_tree(void) {
-    return machine_update_merkle_tree(m_machine.get(), m_tree);
+    return m_machine.update_merkle_tree();
 }
 
 bool emulator::verify_merkle_tree(void) {
-    return m_tree.verify_tree();
+    return m_machine.get_merkle_tree().verify_tree();
 }
 
-const machine_state *emulator::get_machine(void) const {
-    return m_machine.get();
+const machine &emulator::get_machine(void) const {
+    return m_machine;
 }
 
-machine_state *emulator::get_machine(void) {
-    return m_machine.get();
-}
-
-const merkle_tree &emulator::get_merkle_tree(void) const {
-    return m_tree;
-}
-
-merkle_tree &emulator::get_merkle_tree(void) {
-    return m_tree;
+machine &emulator::get_machine(void) {
+    return m_machine;
 }
 
 void emulator::run(uint64_t mcycle_end) {
-
-    machine_state *s = m_machine.get();
 
     // The emulator outer loop breaks only when the machine is halted
     // or when mcycle hits mcycle_end
     for ( ;; ) {
 
         // If we are halted, do nothing
-        if (machine_read_iflags_H(s)) {
+        if (m_machine.read_iflags_H()) {
             return;
         }
 
         // Run the emulator inner loop until we reach the next multiple of RISCV_RTC_FREQ_DIV
         // ??D This is enough for us to be inside the inner loop for about 98% of the time,
         // according to measurement, so it is not a good target for further optimization
-        uint64_t mcycle = machine_read_mcycle(s);
+        uint64_t mcycle = m_machine.read_mcycle();
         uint64_t next_rtc_freq_div = mcycle + RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV;
-        machine_run(s, std::min(next_rtc_freq_div, mcycle_end));
+        m_machine.run_inner_loop(std::min(next_rtc_freq_div, mcycle_end));
 
         // If we hit mcycle_end, we are done
-        mcycle = machine_read_mcycle(s);
+        mcycle = m_machine.read_mcycle();
         if (mcycle >= mcycle_end) {
             return;
         }
@@ -403,19 +388,19 @@ void emulator::run(uint64_t mcycle_end) {
         // If we managed to run until the next possible frequency divisor
         if (mcycle == next_rtc_freq_div) {
             // Get the mcycle corresponding to mtimecmp
-            uint64_t timecmp_mcycle = rtc_time_to_cycle(machine_read_clint_mtimecmp(s));
+            uint64_t timecmp_mcycle = rtc_time_to_cycle(m_machine.read_clint_mtimecmp());
 
             // If the processor is waiting for interrupts, we can skip until time hits timecmp
             // CLINT is the only interrupt source external to the inner loop
             // IPI (inter-processor interrupt) via MSIP can only be raised internally
-            if (machine_read_iflags_I(s)) {
+            if (m_machine.read_iflags_I()) {
                 mcycle = std::min(timecmp_mcycle, mcycle_end);
-                machine_write_mcycle(s, mcycle);
+                m_machine.write_mcycle(mcycle);
             }
 
             // If the timer is expired, set interrupt as pending
             if (timecmp_mcycle && timecmp_mcycle <= mcycle) {
-                machine_set_mip(s, MIP_MTIP);
+                m_machine.set_mip(MIP_MTIP);
             }
 
             // Perform interactive actions

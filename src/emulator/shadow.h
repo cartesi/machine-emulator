@@ -7,7 +7,7 @@
 /// \brief Shadow device.
 
 // Forward declarations
-struct machine_state;
+class machine;
 
 /// \brief Mapping between CSRs and their relative addresses in shadow memory
 enum class shadow_csr {
@@ -57,9 +57,9 @@ uint64_t shadow_get_register_rel_addr(int reg);
 uint64_t shadow_get_pma_rel_addr(int p);
 
 /// \brief Registers a shadow device with the machine
-/// \param s Machine state.
+/// \param m Associated machine.
 /// \param start Start address for memory range.
 /// \param length Length of memory range.
-void shadow_register_mmio(machine_state *s, uint64_t start, uint64_t length);
+void shadow_register_mmio(machine &m, uint64_t start, uint64_t length);
 
 #endif

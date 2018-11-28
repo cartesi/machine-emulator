@@ -23,7 +23,7 @@ bool htif::fromhost_pending(void) const {
     return m_fromhost_pending;
 }
 
-const machine_state *htif::get_machine_state(void) const {
+const machine &htif::get_machine(void) const {
     return m_machine;
 }
 
@@ -109,7 +109,7 @@ void htif::poll_console(void) {
         }
         // If we have data to return
         if (m_buf_pos < m_buf_len) {
-            machine_write_htif_fromhost(m_machine,
+            m_machine.write_htif_fromhost(
                 ((uint64_t)1 << 56) | ((uint64_t)0 << 48) | m_buf[m_buf_pos++]);
             m_fromhost_pending = true;
         }
@@ -132,15 +132,15 @@ void htif::end_console(void) {
     set_blocking(STDIN_FILENO);
 }
 
-htif::htif(machine_state *machine, bool interactive): 
-    m_buf{}, m_buf_pos{}, m_buf_len{}, 
-    m_fromhost_pending{}, 
-    m_machine{machine}, 
-    m_interactive{interactive},
+htif::htif(machine &m, bool i):
+    m_machine{m},
+    m_interactive{i},
+    m_buf{}, m_buf_pos{}, m_buf_len{},
+    m_fromhost_pending{false},
     m_divisor_counter{},
     m_old_fd0_flags{} {
     memset(&m_oldtty, 0, sizeof(m_oldtty));
-    if (interactive) {
+    if (i) {
         init_console();
     }
 }
@@ -182,7 +182,7 @@ static bool htif_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t 
 /// \brief HTIF device peek callback. See ::pma_peek.
 static bool htif_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t **page_data, uint8_t *scratch) {
     const htif *h = reinterpret_cast<htif *>(pma.get_device().get_context());
-    const machine_state *s = h->get_machine_state();
+    const machine &m = h->get_machine();
     // Check for alignment and range
     if (page_offset % PMA_PAGE_SIZE != 0 || page_offset >= pma.get_length()) {
         *page_data = nullptr;
@@ -197,9 +197,9 @@ static bool htif_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t 
     memset(scratch, 0, PMA_PAGE_SIZE);
     // Copy tohost and fromhost to their places within page.
     *reinterpret_cast<uint64_t *>(scratch +
-        htif::get_csr_rel_addr(htif::csr::tohost)) = machine_read_htif_tohost(s);
+        htif::get_csr_rel_addr(htif::csr::tohost)) = m.read_htif_tohost();
     *reinterpret_cast<uint64_t *>(scratch +
-        htif::get_csr_rel_addr(htif::csr::fromhost)) = machine_read_htif_fromhost(s);
+        htif::get_csr_rel_addr(htif::csr::fromhost)) = m.read_htif_fromhost();
     *page_data = scratch;
     return true;
 }
@@ -282,8 +282,8 @@ static const pma_driver htif_driver {
 };
 
 void htif::register_mmio(uint64_t start, uint64_t length) {
-    auto &pma = machine_register_mmio(m_machine, start, length, htif_peek,
+    auto &pma = m_machine.register_mmio(start, length, htif_peek,
         this, &htif_driver);
-    if (!machine_set_htif_pma(m_machine, &pma))
+    if (!m_machine.set_htif_pma(&pma))
         throw std::runtime_error("HTIF already registered");
 }

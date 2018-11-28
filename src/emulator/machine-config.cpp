@@ -1,10 +1,10 @@
 #include <cstring>
 
-#include "emulator.h"
+#include "cartesi-constants.h"
 #include "riscv-constants.h"
-#include "emulator-config.h"
+#include "machine-config.h"
 
-emulator_config::emulator_config(void):
+machine_config::machine_config(void):
     processor{},
     ram{},
     rom{},
@@ -26,7 +26,7 @@ emulator_config::emulator_config(void):
     processor.misa |= MISAEXT_S | MISAEXT_U | MISAEXT_I |
         MISAEXT_M | MISAEXT_A;
     // Set our ids
-    processor.mvendorid = CARTESI_VENDORID;
-    processor.marchid = CARTESI_ARCHID;
-    processor.mimpid = CARTESI_IMPID;
+    processor.mvendorid = VENDORID;
+    processor.marchid = ARCHID;
+    processor.mimpid = IMPID;
 }

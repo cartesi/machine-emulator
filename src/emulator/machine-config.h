@@ -1,5 +1,5 @@
-#ifndef EMULATOR_CONFIG_H
-#define EMULATOR_CONFIG_H
+#ifndef MACHINE_CONFIG_H
+#define MACHINE_CONFIG_H
 
 #include <cstdint>
 #include <string>
@@ -106,8 +106,8 @@ struct htif_config final {
 
 #define FLASH_MAX 8
 
-struct emulator_config final {
-    emulator_config();
+struct machine_config final {
+    machine_config();
     processor_config processor;
     ram_config ram;
     rom_config rom;

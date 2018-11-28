@@ -8,6 +8,7 @@
 
 #include <boost/container/static_vector.hpp>
 
+#include "cartesi-constants.h"
 #include "pma.h"
 
 /// \brief Translation Lookaside Buffer entry.
@@ -25,14 +26,22 @@ struct tlb_entry {
 /// state of a Cartesi machine.
 struct machine_state {
 
-    ~machine_state () { ; } // Due to bug in clang++
+    ~machine_state() { ; } // Due to bug in clang++
+
+    /// \brief No copy or move constructor or assignment
+    machine_state(const machine_state &other) = delete;
+    machine_state(machine_state &&other) = delete;
+    machine_state &operator=(const machine_state &other) = delete;
+    machine_state &operator=(machine_state &&other) = delete;
 
     uint64_t pc;        ///< Program counter.
     uint64_t x[32];     ///< Register file.
 
-    uint8_t iflags_PRV; ///< Privilege level.
-    bool iflags_I;      ///< CPU is idle (waiting for interrupts).
-    bool iflags_H;      ///< CPU has been permanently halted.
+    struct {
+        uint8_t PRV; ///< Privilege level.
+        bool I;      ///< CPU is idle (waiting for interrupts).
+        bool H;      ///< CPU has been permanently halted.
+    } iflags;        ///< Cartesi-specific CSR iflags.
 
     uint64_t minstret;  ///< CSR minstret.
     uint64_t mcycle;
@@ -63,7 +72,7 @@ struct machine_state {
     uint64_t satp; ///< CSR satp.
     uint64_t scounteren; ///< CSR scounteren.
 
-    uint64_t ilrsc; ///< For LR/SC instructions
+    uint64_t ilrsc; ///< Cartesi-specific (For LR/SC instructions)
 
     uint64_t clint_mtimecmp; ///< CLINT CSR mtimecmp.
     uint64_t htif_tohost;    ///< HTIF CSR tohost.
@@ -96,6 +105,35 @@ struct machine_state {
     uint64_t count_amo;    ///< Counts atomic memory operations
 #endif
 
+    /// \brief Updates the brk flag from changes in mip and mie registers.
+    void set_brk_from_mip_mie(void) {
+        brk = mip & mie;
+    }
+
+    /// \brief Updates the brk flag from changes in the iflags_H flag.
+    void set_brk_from_iflags_H(void) {
+        brk = iflags.H;
+    }
+
+    /// \brief Reads the value of the iflags register.
+    /// \returns The value of the register.
+    uint64_t read_iflags(void) const {
+        return encoded_iflags(iflags.PRV, iflags.I, iflags.H);
+    }
+
+    /// \brief Reads the value of the iflags register.
+    /// \param val New register value.
+    void write_iflags(uint64_t val) {
+        iflags.H = (val >> IFLAGS_H_SHIFT) & 1;
+        iflags.I = (val >> IFLAGS_I_SHIFT) & 1;
+        iflags.PRV = (val >> IFLAGS_PRV_SHIFT) & 3;
+    }
+
+    static uint64_t encoded_iflags(int PRV, int I, int H) {
+        return (PRV << IFLAGS_PRV_SHIFT) |
+               (I << IFLAGS_I_SHIFT) |
+               (H << IFLAGS_H_SHIFT);
+    }
 };
 
 #endif

@@ -6,7 +6,7 @@
 /// \file
 /// \brief Clock interruptor device.
 
-struct machine_state;
+class machine;
 
 /// \brief Mapping between CSRs and their relative addresses in CLINT memory
 enum class clint_csr {
@@ -21,9 +21,9 @@ enum class clint_csr {
 uint64_t clint_get_csr_rel_addr(clint_csr reg);
 
 /// \brief Registers a CLINT device with the machine
-/// \param s Machine state.
+/// \param m Associated machine.
 /// \param start Start address for memory range.
 /// \param length Length of memory range.
-void clint_register_mmio(machine_state *s, uint64_t start, uint64_t length);
+void clint_register_mmio(machine &m, uint64_t start, uint64_t length);
 
 #endif

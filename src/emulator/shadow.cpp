@@ -27,7 +27,7 @@ uint64_t shadow_get_pma_rel_addr(int p) {
 
 /// \brief Shadow device peek callback. See ::pma_peek.
 static bool shadow_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t **page_data, uint8_t *shadow) {
-    const machine_state *s = reinterpret_cast<const machine_state *>(
+    const machine *m = reinterpret_cast<const machine *>(
         pma.get_device().get_context());
     // There is only one page: 0
     if (page_offset != 0) {
@@ -38,67 +38,66 @@ static bool shadow_peek(const pma_entry &pma, uint64_t page_offset, const uint8_
     memset(shadow, 0, PMA_PAGE_SIZE);
     // Copy general-purpose registers
     for (int i = 0; i < 32; ++i) {
-        write_shadow(shadow, shadow_get_register_rel_addr(i),
-            machine_read_register(s, i));
+        write_shadow(shadow, shadow_get_register_rel_addr(i), m->read_x(i));
     }
     // Copy named registers
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::pc),
-        machine_read_pc(s));
+        m->read_pc());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::mvendorid),
-        machine_read_mvendorid(s));
+        m->read_mvendorid());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::marchid),
-        machine_read_marchid(s));
+        m->read_marchid());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::mimpid),
-        machine_read_mimpid(s));
+        m->read_mimpid());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::mcycle),
-        machine_read_mcycle(s));
+        m->read_mcycle());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::minstret),
-        machine_read_minstret(s));
+        m->read_minstret());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::mstatus),
-        machine_read_mstatus(s));
+        m->read_mstatus());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::mtvec),
-        machine_read_mtvec(s));
+        m->read_mtvec());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::mscratch),
-        machine_read_mscratch(s));
+        m->read_mscratch());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::mepc),
-        machine_read_mepc(s));
+        m->read_mepc());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::mcause),
-        machine_read_mcause(s));
+        m->read_mcause());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::mtval),
-        machine_read_mtval(s));
+        m->read_mtval());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::misa),
-        machine_read_misa(s));
+        m->read_misa());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::mie),
-        machine_read_mie(s));
+        m->read_mie());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::mip),
-        machine_read_mip(s));
+        m->read_mip());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::medeleg),
-        machine_read_medeleg(s));
+        m->read_medeleg());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::mideleg),
-        machine_read_mideleg(s));
+        m->read_mideleg());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::mcounteren),
-        machine_read_mcounteren(s));
+        m->read_mcounteren());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::stvec),
-        machine_read_stvec(s));
+        m->read_stvec());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::sscratch),
-        machine_read_sscratch(s));
+        m->read_sscratch());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::sepc),
-        machine_read_sepc(s));
+        m->read_sepc());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::scause),
-        machine_read_scause(s));
+        m->read_scause());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::stval),
-        machine_read_stval(s));
+        m->read_stval());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::satp),
-        machine_read_satp(s));
+        m->read_satp());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::scounteren),
-        machine_read_scounteren(s));
+        m->read_scounteren());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::ilrsc),
-        machine_read_ilrsc(s));
+        m->read_ilrsc());
     write_shadow(shadow, shadow_get_csr_rel_addr(shadow_csr::iflags),
-        machine_read_iflags(s));
+        m->read_iflags());
     // Copy PMAs
     int i = 0;
-    for (const auto &pma: machine_get_pmas(s)) {
+    for (const auto &pma: m->get_pmas()) {
         auto rel_addr = shadow_get_pma_rel_addr(i);
         write_shadow(shadow, rel_addr, pma.get_istart());
         write_shadow(shadow, rel_addr + sizeof(uint64_t), pma.get_ilength());
@@ -114,9 +113,9 @@ static const pma_driver shadow_driver = {
     pma_write_error
 };
 
-void shadow_register_mmio(machine_state *s, uint64_t start, uint64_t length) {
-    auto &pma = machine_register_shadow(s, start, length, shadow_peek,
-        s, &shadow_driver);
-    if (!machine_set_shadow_pma(s, &pma))
+void shadow_register_mmio(machine &m, uint64_t start, uint64_t length) {
+    auto &pma = m.register_shadow(start, length, shadow_peek,
+        &m, &shadow_driver);
+    if (!m.set_shadow_pma(&pma))
         throw std::runtime_error("shadow already registered");
 }

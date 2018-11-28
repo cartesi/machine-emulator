@@ -8,9 +8,17 @@ local function hexhash(hash)
     end))
 end
 
+local function hexhash8(hash)
+    return string.sub(hexhash(hash), 1, 8)
+end
+
+local function indentout(level, ...)
+    local step = "  "
+    io.stdout:write(string.rep(step, level), ...)
+end
+
 local function print_log(log)
-    local indent_step = "  "
-    local indent_level = 0
+    local d = 0
     local j = 1
     local i = 1
     while true do
@@ -19,36 +27,30 @@ local function print_log(log)
         if not nj and not ai then break end
         if nj and nj.where <= i then
             if nj.type == "begin" then
-                io.stdout:write(string.rep(indent_step, indent_level), "begin ", nj.text, "\n")
-                indent_level = indent_level + 1
+                indentout(d, "begin ", nj.text, "\n")
+                d = d + 1
             elseif nj.type == "end" then
-                indent_level = indent_level - 1
-                io.stdout:write(string.rep(indent_step, indent_level), "end ", nj.text, "\n")
+                d = d - 1
+                indentout(d, "end ", nj.text, "\n")
             else
                 assert(nj.type == "point")
-                io.stdout:write(string.rep(indent_step, indent_level), nj.text, "\n")
+                indentout(d, nj.text, "\n")
             end
             j = j + 1
         elseif ai then
             local ai = log.accesses[i]
-            io.stdout:write(string.rep(indent_step, indent_level), "hash ", hexhash(ai.proof.root_hash), "\n")
+            indentout(d, "hash ", hexhash8(ai.proof.root_hash), "\n")
             if ai.type == "read" then
-                io.stdout:write(string.rep(indent_step, indent_level), "read ", ai.text,
-                    string.format("@%x", ai.proof.address), ": ",
-                    ai.read, "\n")
+                indentout(d, "read ", ai.text, string.format("@%x",
+                    ai.proof.address), ": ", ai.read, "\n")
             else
                 assert(ai.type == "write")
-                io.stdout:write(string.rep(indent_step, indent_level), "write ", ai.text,
-                    string.format("@%x", ai.proof.address), ": ",
-                    ai.read, " -> ", ai.written, "\n")
+                indentout(d, "write ", ai.text, string.format("@%x",
+                    ai.proof.address), ": ", ai.read, " -> ", ai.written, "\n")
             end
             i = i + 1
         end
     end
-end
-
-local function print_hash(h)
-    print(hexhash(h))
 end
 
 local function check_proof(proof)

@@ -1,6 +1,8 @@
 #ifndef RISCV_CONSTANTS_H
 #define RISCV_CONSTANTS_H
 
+#include <cstdint>
+
 /// \file
 /// \brief RISC-V constants
 
@@ -60,13 +62,6 @@
 #define MISAEXT_F            (1 << ('F' - 'A'))
 #define MISAEXT_D            (1 << ('D' - 'A'))
 #define MISAEXT_C            (1 << ('C' - 'A'))
-/// \}
-
-/// \name mstatus shifts
-/// \{
-#define IFLAGS_H_SHIFT   0
-#define IFLAGS_I_SHIFT   1
-#define IFLAGS_PRV_SHIFT 2
 /// \}
 
 /// \name mstatus shifts

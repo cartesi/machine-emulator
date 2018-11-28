@@ -4,14 +4,25 @@
 #include <cstdint>
 #include <variant>
 
-#include "merkle-tree.h"
-
-// Forward definitions
-class i_virtual_state_access;
+// Forward declarations
 class pma_entry;
+class i_virtual_state_access;
 
 /// \file
-/// \brief Physical memory attributes
+/// \brief Physical memory attributes.
+
+/// \name Fixed PMA ranges.
+/// \{
+#define PMA_SHADOW_START  UINT64_C(0)           ///< Start of shadow range
+#define PMA_SHADOW_LENGTH UINT64_C(0x1000)      ///< Length of shadow range
+#define PMA_ROM_START     UINT64_C(0x1000)      ///< Start of ROM range
+#define PMA_ROM_LENGTH    UINT64_C(0xF000)      ///< Length of ROM range
+#define PMA_CLINT_START   UINT64_C(0x2000000)   ///< Start of CLINT range
+#define PMA_CLINT_LENGTH  UINT64_C(0xC0000)     ///< Length of CLINT range
+#define PMA_HTIF_START    UINT64_C(0x40008000)  ///< Start of HTIF range
+#define PMA_HTIF_LENGTH   UINT64_C(0x1000)      ///< Length of HTIF range
+#define PMA_RAM_START     UINT64_C(0x80000000)  ///< Start of RAM range
+/// \}
 
 /// log<sub>2</sub> of physical memory page size.
 #define PMA_PAGE_SIZE_LOG2 12

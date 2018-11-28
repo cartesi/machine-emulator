@@ -3,7 +3,9 @@
 #include <sys/stat.h> // fstat
 #include <fcntl.h> // open
 #include <errno.h>
-#include <cstdio>
+
+#include <string>
+#include <system_error>
 
 #include "pma.h"
 

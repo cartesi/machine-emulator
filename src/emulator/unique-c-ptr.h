@@ -2,6 +2,7 @@
 #define UNIQUE_C_PTR
 
 #include <memory>
+#include <new>
 #include <cstdlib>
 #include <cstdio>
 
@@ -27,7 +28,25 @@ using unique_file_ptr = std::unique_ptr<FILE, detail::fclose_deleter>;
 
 template <typename T>
 static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb, size_t size) {
+    T *ptr = reinterpret_cast<T *>(calloc(nmemb, size));
+    if (!ptr) throw std::bad_alloc{};
+    return unique_calloc_ptr<T>(ptr);
+}
+
+template <typename T>
+static inline unique_calloc_ptr<T> unique_calloc(void) {
+    return unique_calloc<T>(1, sizeof(T));
+}
+
+template <typename T>
+static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb, size_t size, const std::nothrow_t &tag) {
+    (void) tag;
     return unique_calloc_ptr<T>(reinterpret_cast<T *>(calloc(nmemb, size)));
+}
+
+template <typename T>
+static inline unique_calloc_ptr<T> unique_calloc(const std::nothrow_t &tag) {
+    return unique_calloc<T>(1, sizeof(T), tag);
 }
 
 static inline unique_file_ptr unique_fopen(const char *pathname, const char *mode) {

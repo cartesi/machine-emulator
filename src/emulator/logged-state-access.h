@@ -435,19 +435,19 @@ private:
     }
 
     uint64_t do_read_htif_fromhost(void) {
-        return log_read(m_s->htif_pma->get_start() + htif_get_csr_rel_addr(htif_csr::fromhost), m_s->htif_fromhost, "htif_fromhost");
+        return log_read(m_s->htif_pma->get_start() + htif::get_csr_rel_addr(htif::csr::fromhost), m_s->htif_fromhost, "htif_fromhost");
     }
 
     void do_write_htif_fromhost(uint64_t val) {
-        log_before_write_write_and_update(m_s->htif_pma->get_start() + htif_get_csr_rel_addr(htif_csr::fromhost), m_s->htif_fromhost, val, "htif_fromhost");
+        log_before_write_write_and_update(m_s->htif_pma->get_start() + htif::get_csr_rel_addr(htif::csr::fromhost), m_s->htif_fromhost, val, "htif_fromhost");
     }
 
     uint64_t do_read_htif_tohost(void) {
-        return log_read(m_s->htif_pma->get_start() + htif_get_csr_rel_addr(htif_csr::tohost), m_s->htif_tohost, "htif_tohost");
+        return log_read(m_s->htif_pma->get_start() + htif::get_csr_rel_addr(htif::csr::tohost), m_s->htif_tohost, "htif_tohost");
     }
 
     void do_write_htif_tohost(uint64_t val) {
-        log_before_write_write_and_update(m_s->htif_pma->get_start() + htif_get_csr_rel_addr(htif_csr::tohost), m_s->htif_tohost, val, "htif_tohost");
+        log_before_write_write_and_update(m_s->htif_pma->get_start() + htif::get_csr_rel_addr(htif::csr::tohost), m_s->htif_tohost, val, "htif_tohost");
     }
 
     void do_read_pma(const pma_entry &pma, int i) {

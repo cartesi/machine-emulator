@@ -23,14 +23,6 @@
 // these classes as members rather than pointers
 namespace detail {
 
-    struct htif_deleter {
-        void operator()(htif_state *htif) const {
-			htif_end(htif);
-        }
-    };
-
-	using unique_htif_ptr = std::unique_ptr<htif_state, htif_deleter>;
-
     struct machine_state_deleter {
         void operator()(machine_state *s) const {
 			machine_end(s);
@@ -45,7 +37,8 @@ class emulator final {
     //??D There really is no need to store these as pointers
     //    as soon as they are proper objects
     detail::unique_machine_state_ptr m_machine;
-    detail::unique_htif_ptr m_htif;
+
+    htif m_htif;
 
     merkle_tree m_tree;
 

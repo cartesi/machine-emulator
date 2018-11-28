@@ -5,10 +5,6 @@
 #include <cstring>
 #include <sstream>
 
-extern "C" {
-#include <libfdt.h>
-}
-
 #include "machine.h"
 #include "merkle-tree.h"
 #include "emulator.h"
@@ -17,18 +13,12 @@ extern "C" {
 #include "htif.h"
 #include "shadow.h"
 #include "rtc.h"
+#include "pma.h"
 #include "riscv-constants.h"
 
-
-#define SHADOW_START       UINT64_C(0)
-#define SHADOW_LENGTH      UINT64_C(0x1000)
-#define ROM_START          UINT64_C(0x1000)
-#define ROM_LENGTH         UINT64_C(0xF000)
-#define CLINT_START        UINT64_C(0x2000000)
-#define CLINT_LENGTH       UINT64_C(0xC0000)
-#define HTIF_START         UINT64_C(0x40008000)
-#define HTIF_LENGTH        UINT64_C(0x1000)
-#define RAM_START          UINT64_C(0x80000000)
+extern "C" {
+#include <libfdt.h>
+}
 
 #define CLOCK_FREQ 1000000000 // 1 GHz (arbitrary)
 
@@ -115,9 +105,9 @@ static bool fdt_build_riscv(const emulator_config &c, const machine_state *s, vo
       FDT_CHECK(fdt_end_node(buf)); /* cpu */
      FDT_CHECK(fdt_end_node(buf)); /* cpus */
 
-     FDT_CHECK(fdt_begin_node_num(buf, "memory", RAM_START));
+     FDT_CHECK(fdt_begin_node_num(buf, "memory", PMA_RAM_START));
       FDT_CHECK(fdt_property_string(buf, "device_type", "memory"));
-      FDT_CHECK(fdt_property_u64_u64(buf, "reg", RAM_START, c.ram.length));
+      FDT_CHECK(fdt_property_u64_u64(buf, "reg", PMA_RAM_START, c.ram.length));
      FDT_CHECK(fdt_end_node(buf)); /* memory */
 
      /* flash */
@@ -142,7 +132,7 @@ static bool fdt_build_riscv(const emulator_config &c, const machine_state *s, vo
       FDT_CHECK(fdt_property(buf, "compatible", comp, sizeof(comp)));
       FDT_CHECK(fdt_property(buf, "ranges", NULL, 0));
 
-      FDT_CHECK(fdt_begin_node_num(buf, "clint", CLINT_START));
+      FDT_CHECK(fdt_begin_node_num(buf, "clint", PMA_CLINT_START));
        FDT_CHECK(fdt_property_string(buf, "compatible", "riscv,clint0"));
        uint32_t clint[] = {
 	       cpu_to_fdt32(intc_phandle),
@@ -151,12 +141,12 @@ static bool fdt_build_riscv(const emulator_config &c, const machine_state *s, vo
 	       cpu_to_fdt32(7) /* M timer irq */
        };
        FDT_CHECK(fdt_property(buf, "interrupts-extended", clint, sizeof(clint)));
-       FDT_CHECK(fdt_property_u64_u64(buf, "reg", CLINT_START, CLINT_LENGTH));
+       FDT_CHECK(fdt_property_u64_u64(buf, "reg", PMA_CLINT_START, PMA_CLINT_LENGTH));
       FDT_CHECK(fdt_end_node(buf)); /* clint */
 
-      FDT_CHECK(fdt_begin_node_num(buf, "htif", HTIF_START));
+      FDT_CHECK(fdt_begin_node_num(buf, "htif", PMA_HTIF_START));
        FDT_CHECK(fdt_property_string(buf, "compatible", "ucb,htif0"));
-       FDT_CHECK(fdt_property_u64_u64(buf, "reg", HTIF_START, HTIF_LENGTH));
+       FDT_CHECK(fdt_property_u64_u64(buf, "reg", PMA_HTIF_START, PMA_HTIF_LENGTH));
        uint32_t htif[] = {
            cpu_to_fdt32(intc_phandle),
            cpu_to_fdt32(13) // X HOST
@@ -197,9 +187,9 @@ static bool init_ram_and_rom(const emulator_config &c, machine_state *s) {
         if (len < 0) {
             fprintf(stderr, "Unable to open ROM image\n");
             return false;
-        } else if (len > (int) ROM_LENGTH) {
+        } else if (len > (int) PMA_ROM_LENGTH) {
             fprintf(stderr, "ROM image too big (%d vs %d)\n",
-                (int) len, (int) ROM_LENGTH);
+                (int) len, (int) PMA_ROM_LENGTH);
             return false;
         }
     }
@@ -215,7 +205,7 @@ static bool init_ram_and_rom(const emulator_config &c, machine_state *s) {
                 (int) len, (int) c.ram.length);
             return false;
         }
-        uint8_t *ram_ptr = machine_get_host_memory(s, RAM_START);
+        uint8_t *ram_ptr = machine_get_host_memory(s, PMA_RAM_START);
         if (!ram_ptr) return false;
         if (load_file(c.ram.backing.c_str(), ram_ptr, c.ram.length) < 0) {
             fprintf(stderr, "Unable to load RAM image\n");
@@ -224,23 +214,23 @@ static bool init_ram_and_rom(const emulator_config &c, machine_state *s) {
     }
 
     // Initialize ROM
-    uint8_t *rom_ptr = machine_get_host_memory(s, ROM_START);
+    uint8_t *rom_ptr = machine_get_host_memory(s, PMA_ROM_START);
     if (!rom_ptr) return false;
     if (c.rom.backing.empty()) {
         uint32_t fdt_addr = 8 * 8;
-        if (!fdt_build_riscv(c, s, rom_ptr + fdt_addr, ROM_LENGTH-fdt_addr))
+        if (!fdt_build_riscv(c, s, rom_ptr + fdt_addr, PMA_ROM_LENGTH-fdt_addr))
             return false;
-        /* jump_addr = RAM_START */
+        /* jump_addr = PMA_RAM_START */
         uint32_t *q = (uint32_t *)(rom_ptr);
         /* la t0, jump_addr */
-        q[0] = 0x297 + RAM_START - ROM_START; /* auipc t0, 0x80000000-0x1000 */
+        q[0] = 0x297 + PMA_RAM_START - PMA_ROM_START; /* auipc t0, 0x80000000-0x1000 */
         /* la a1, fdt_addr */
           q[1] = 0x597; /* auipc a1, 0  (a1 := 0x1004) */
-          q[2] = 0x58593 + ((fdt_addr - (ROM_START+4)) << 20); /* addi a1, a1, 60 */
+          q[2] = 0x58593 + ((fdt_addr - (PMA_ROM_START+4)) << 20); /* addi a1, a1, 60 */
         q[3] = 0xf1402573; /* csrr a0, mhartid */
         q[4] = 0x00028067; /* jr t0 */
     } else {
-        if (load_file(c.rom.backing.c_str(), rom_ptr, ROM_LENGTH) < 0) {
+        if (load_file(c.rom.backing.c_str(), rom_ptr, PMA_ROM_LENGTH) < 0) {
             fprintf(stderr, "Unable to load ROM image\n");
             return false;
         }
@@ -250,7 +240,7 @@ static bool init_ram_and_rom(const emulator_config &c, machine_state *s) {
     {
         FILE *f;
         f = fopen("bootstrap.bin", "wb");
-        fwrite(rom_ptr, 1, ROM_LENGTH, f);
+        fwrite(rom_ptr, 1, PMA_ROM_LENGTH, f);
         fclose(f);
     }
 #endif
@@ -317,7 +307,7 @@ static bool init_clint_state(const emulator_config &c, machine_state *s) {
 
 emulator::emulator(const emulator_config &c):
     m_machine(machine_init()),
-    m_htif(nullptr),
+    m_htif{m_machine.get(), c.interactive},
     m_tree{} {
 
     if (!m_machine) {
@@ -329,8 +319,8 @@ emulator::emulator(const emulator_config &c):
     }
 
     // RAM and ROM
-    machine_register_ram(m_machine.get(), RAM_START, c.ram.length);
-    machine_register_rom(m_machine.get(), ROM_START, ROM_LENGTH);
+    machine_register_ram(m_machine.get(), PMA_RAM_START, c.ram.length);
+    machine_register_rom(m_machine.get(), PMA_ROM_START, PMA_ROM_LENGTH);
 
     if (!init_ram_and_rom(c, m_machine.get())) {
         throw std::runtime_error("RAM/ROM initialization failed");
@@ -341,22 +331,17 @@ emulator::emulator(const emulator_config &c):
             f.backing.c_str(), f.shared);
     }
 
-    clint_register_mmio(m_machine.get(), CLINT_START, CLINT_LENGTH);
+    clint_register_mmio(m_machine.get(), PMA_CLINT_START, PMA_CLINT_LENGTH);
     if (!init_clint_state(c, m_machine.get())) {
         throw std::runtime_error("unable to initialize CLINT device");
     }
 
-    m_htif.reset(htif_init(m_machine.get(), c.interactive));
-    if (!m_htif) {
-        throw std::runtime_error("unable to initialize HTIF device");
-    }
-
-    htif_register_mmio(m_htif.get(), HTIF_START, HTIF_LENGTH);
+    m_htif.register_mmio(PMA_HTIF_START, PMA_HTIF_LENGTH);
     if (!init_htif_state(c, m_machine.get())) {
         throw std::runtime_error("unable to initialize HTIF device");
     }
 
-    shadow_register_mmio(m_machine.get(), SHADOW_START, SHADOW_LENGTH);
+    shadow_register_mmio(m_machine.get(), PMA_SHADOW_START, PMA_SHADOW_LENGTH);
 }
 
 std::string emulator::get_name(void) {
@@ -434,7 +419,7 @@ void emulator::run(uint64_t mcycle_end) {
             }
 
             // Perform interactive actions
-            htif_interact(m_htif.get());
+            m_htif.interact();
         }
     }
 }

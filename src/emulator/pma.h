@@ -107,6 +107,7 @@ public:
         return m_context;
     }
 
+    /// \brief Returns context to pass to callbacks.
     void *get_context(void) const {
         // Discard qualifier on purpose because the context
         // is none of our business.
@@ -173,6 +174,7 @@ public:
         return m_host_memory;
     }
 
+    /// \brief Returns start of associated memory region in host
     const uint8_t *get_host_memory(void) const {
         return m_host_memory;
     }
@@ -290,6 +292,7 @@ public:
         return std::get<pma_empty>(m_data);
     }
 
+    /// \Returns data specific to E ranges
     pma_empty &get_empty(void) {
         return std::get<pma_empty>(m_data);
     }
@@ -299,6 +302,7 @@ public:
         return std::get<pma_memory>(m_data);
     }
 
+    /// \Returns data specific to M ranges
     pma_memory &get_memory(void) {
         return std::get<pma_memory>(m_data);
     }
@@ -308,11 +312,12 @@ public:
         return std::get<pma_device>(m_data);
     }
 
+    /// \Returns data specific to IO ranges
     pma_device &get_device(void) {
         return std::get<pma_device>(m_data);
     }
 
-    /// \brief Returns encoded PMA istart field as per whitepaper
+    /// \brief Returns packed PMA istart field as per whitepaper
     uint64_t get_istart(void) const;
 
     /// \brief Returns start of physical memory range in target.

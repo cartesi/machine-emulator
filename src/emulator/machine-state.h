@@ -37,12 +37,6 @@ struct machine_state {
     uint64_t pc;        ///< Program counter.
     uint64_t x[32];     ///< Register file.
 
-    struct {
-        uint8_t PRV; ///< Privilege level.
-        bool I;      ///< CPU is idle (waiting for interrupts).
-        bool H;      ///< CPU has been permanently halted.
-    } iflags;        ///< Cartesi-specific CSR iflags.
-
     uint64_t minstret;  ///< CSR minstret.
     uint64_t mcycle;
 
@@ -72,11 +66,24 @@ struct machine_state {
     uint64_t satp; ///< CSR satp.
     uint64_t scounteren; ///< CSR scounteren.
 
-    uint64_t ilrsc; ///< Cartesi-specific (For LR/SC instructions)
+    // Cartesi-specific state
+    uint64_t ilrsc;  ///< Cartesi-specific CSR ilrsc (For LR/SC instructions).
+    struct {
+        uint8_t PRV; ///< Privilege level.
+        bool I;      ///< CPU is idle (waiting for interrupts).
+        bool H;      ///< CPU has been permanently halted.
+    } iflags;        ///< Cartesi-specific unpacked CSR iflags.
 
-    uint64_t clint_mtimecmp; ///< CLINT CSR mtimecmp.
-    uint64_t htif_tohost;    ///< HTIF CSR tohost.
-    uint64_t htif_fromhost;  ///< HTIF CSR fromhost.
+    /// \brief CLINT state
+    struct {
+        uint64_t mtimecmp; ///< CSR mtimecmp.
+    } clint;
+
+    /// \brief HTIF state
+    struct {
+        uint64_t tohost;    ///< CSR tohost.
+        uint64_t fromhost;  ///< CSR fromhost.
+    } htif;
 
     /// Map of physical memory ranges
     boost::container::static_vector<pma_entry, PMA_MAX> pmas;
@@ -118,7 +125,11 @@ struct machine_state {
     /// \brief Reads the value of the iflags register.
     /// \returns The value of the register.
     uint64_t read_iflags(void) const {
-        return encoded_iflags(iflags.PRV, iflags.I, iflags.H);
+        return packed_iflags(
+            iflags.PRV,
+            iflags.I,
+            iflags.H
+        );
     }
 
     /// \brief Reads the value of the iflags register.
@@ -129,7 +140,7 @@ struct machine_state {
         iflags.PRV = (val >> IFLAGS_PRV_SHIFT) & 3;
     }
 
-    static uint64_t encoded_iflags(int PRV, int I, int H) {
+    static uint64_t packed_iflags(int PRV, int I, int H) {
         return (PRV << IFLAGS_PRV_SHIFT) |
                (I << IFLAGS_I_SHIFT) |
                (H << IFLAGS_H_SHIFT);

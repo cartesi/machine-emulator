@@ -132,6 +132,8 @@ void htif::end_console(void) {
     set_blocking(STDIN_FILENO);
 }
 
+// The constructor for the associated machine is typically done
+// yet when the constructor for the HTIF device is invoked.
 htif::htif(machine &m, bool i):
     m_machine{m},
     m_interactive{i},

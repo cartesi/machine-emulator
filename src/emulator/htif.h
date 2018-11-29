@@ -42,6 +42,7 @@ public:
     /// \brief Constructor
     /// \param s Associated machine.
     /// \param interactive This is an interactive session with terminal support.
+    /// \details The constructor for the associated machine is typically done yet when the constructor for the HTIF device is invoked.
     htif(machine &m, bool interactive);
 
     /// \brief Registers device with the machine

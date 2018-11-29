@@ -6,8 +6,10 @@
 
 #include <memory>
 
-#include "merkle-tree.h"
 #include "machine-state.h"
+#include "machine-config.h"
+#include "merkle-tree.h"
+#include "htif.h"
 
 // Forward declarations
 struct access_log;
@@ -22,19 +24,29 @@ class machine final {
     //    should test this.
     machine_state m_s;   ///< Opaque machine state
     merkle_tree m_t;     ///< Merkle tree of state
+    htif m_h;            ///< HTIF device
 
 public:
 
-    /// \brief Default constructor
-    machine(void);
+    /// \brief Constructor from machine configuration
+    explicit machine(const machine_config &c);
 
-    /// \brief No copy or move constructor or assignment
-    /// \{
+    /// \brief No default constructor
+    machine(void) = delete;
+    /// \brief No copy constructor
     machine(const machine &other) = delete;
+    /// \brief No move constructor
     machine(machine &&other) = delete;
+    /// \brief No copy assignment
     machine &operator=(const machine &other) = delete;
+    /// \brief No move assignment
     machine &operator=(machine &&other) = delete;
-    /// \}
+
+    /// \brief Returns the associated HTIF device
+    htif &get_htif(void) { return m_h; }
+
+    /// \brief Returns the associated HTIF device
+    const htif &get_htif(void) const { return m_h; }
 
     /// \brief Runs the machine until mcycle reaches *at most* \p mcycle_end.
     /// \param mcycle_end Maximum value of mcycle before function returns.
@@ -59,10 +71,9 @@ public:
     ~machine();
 
     /// \brief Returns the associated Merkle tree.
-    /// \{
     const merkle_tree &get_merkle_tree(void) const;
+    /// \brief Returns the associated Merkle tree.
     merkle_tree &get_merkle_tree(void);
-    /// \}
 
     /// \brief Update the Merkle tree so it matches the contents of the machine state.
     /// \returns true if succeeded, false otherwise.
@@ -310,9 +321,9 @@ public:
     /// \returns The value of the register.
     uint64_t read_iflags(void) const;
 
-    /// \brief Returns encodes iflags from its component fields.
+    /// \brief Returns packed iflags from its component fields.
     /// \returns The value of the register.
-    uint64_t encoded_iflags(int PRV, int I, int H);
+    uint64_t packed_iflags(int PRV, int I, int H);
 
     /// \brief Reads the value of the iflags register.
     /// \param val New register value.

@@ -15,7 +15,6 @@
 class emulator final {
 
     machine m_machine;
-    htif m_htif;
 
 public:
 
@@ -51,10 +50,13 @@ public:
     /// \returns True if successful, false otherwise.
     bool update_merkle_tree(void);
 
-    //??D No move or copy construction or assignment yet
+    /// \brief No copy constructor
     emulator(const emulator &) = delete;
+    /// \brief No copy assignment
     emulator& operator=(const emulator &) = delete;
+    /// \brief No move constructor
     emulator(emulator &&) = delete;
+    /// \brief No move assignment
     emulator& operator=(emulator &&) = delete;
 };
 

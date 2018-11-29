@@ -734,7 +734,18 @@ static bool empty_peek(const pma_entry &, uint64_t, const uint8_t **page_data, u
     return true;
 }
 
-machine::machine(void): m_s{}, m_t{} {
+machine::machine(const machine_config &c):
+    m_s{},
+    m_t{},
+    m_h{*this, c.interactive} {
+
+    if (!c.htif.backing.empty())
+        throw std::runtime_error("HTIF backing not implemented");
+
+    // Copy HTIF state to from config to machine
+    m_s.htif.tohost = c.htif.tohost;
+    m_s.htif.fromhost = c.htif.fromhost;
+
     tlb_init(m_s);
 }
 
@@ -978,27 +989,27 @@ void machine::write_iflags(uint64_t val) {
 }
 
 uint64_t machine::read_htif_tohost(void) const {
-    return m_s.htif_tohost;
+    return m_s.htif.tohost;
 }
 
 void machine::write_htif_tohost(uint64_t val) {
-    m_s.htif_tohost = val;
+    m_s.htif.tohost = val;
 }
 
 uint64_t machine::read_htif_fromhost(void) const {
-    return m_s.htif_fromhost;
+    return m_s.htif.fromhost;
 }
 
 void machine::write_htif_fromhost(uint64_t val) {
-    m_s.htif_fromhost = val;
+    m_s.htif.fromhost = val;
 }
 
 uint64_t machine::read_clint_mtimecmp(void) const {
-    return m_s.clint_mtimecmp;
+    return m_s.clint.mtimecmp;
 }
 
 void machine::write_clint_mtimecmp(uint64_t val) {
-    m_s.clint_mtimecmp = val;
+    m_s.clint.mtimecmp = val;
 }
 
 void machine::set_mip(uint32_t mask) {

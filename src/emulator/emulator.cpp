@@ -10,7 +10,6 @@
 #include "emulator.h"
 #include "machine.h"
 #include "clint.h"
-#include "htif.h"
 #include "shadow.h"
 #include "rtc.h"
 #include "pma.h"
@@ -290,14 +289,6 @@ static bool init_processor_state(const machine_config &c, machine &m) {
 	return true;
 }
 
-static bool init_htif_state(const machine_config &c, machine &m) {
-    //??D implement load from backing file
-	assert(c.htif.backing.empty());
-    m.write_htif_tohost(c.htif.tohost);
-    m.write_htif_fromhost(c.htif.fromhost);
-    return true;
-}
-
 static bool init_clint_state(const machine_config &c, machine &m) {
     //??D implement load from backing file
 	assert(c.clint.backing.empty());
@@ -306,8 +297,7 @@ static bool init_clint_state(const machine_config &c, machine &m) {
 }
 
 emulator::emulator(const machine_config &c):
-    m_machine{},
-    m_htif{m_machine, c.interactive} {
+    m_machine{c} {
 
     if (!init_processor_state(c, m_machine)) {
 		throw std::runtime_error("processor initialization failed");
@@ -331,10 +321,7 @@ emulator::emulator(const machine_config &c):
         throw std::runtime_error("unable to initialize CLINT device");
     }
 
-    m_htif.register_mmio(PMA_HTIF_START, PMA_HTIF_LENGTH);
-    if (!init_htif_state(c, m_machine)) {
-        throw std::runtime_error("unable to initialize HTIF device");
-    }
+    m_machine.get_htif().register_mmio(PMA_HTIF_START, PMA_HTIF_LENGTH);
 
     shadow_register_mmio(m_machine, PMA_SHADOW_START, PMA_SHADOW_LENGTH);
 }
@@ -404,7 +391,7 @@ void emulator::run(uint64_t mcycle_end) {
             }
 
             // Perform interactive actions
-            m_htif.interact();
+            m_machine.get_htif().interact();
         }
     }
 }

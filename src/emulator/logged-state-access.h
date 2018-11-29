@@ -369,15 +369,15 @@ private:
         // The proof in the log uses the Merkle tree before the state is modified.
         // But log needs the word value before and after the change.
         auto old_iflags = m_m.get_state().read_iflags();
-        auto new_iflags = machine_state::encoded_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.I, true);
+        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.I, true);
         uint64_t iflags_addr = m_m.get_state().shadow_pma->get_start() + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_before_write(iflags_addr, old_iflags, new_iflags, "iflags_H");
+        log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.H");
         m_m.get_state().iflags.H = true;
         update_after_write(iflags_addr);
     }
 
     bool do_read_iflags_H(void) {
-        log_read(m_m.get_state().shadow_pma->get_start() + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags_H");
+        log_read(m_m.get_state().shadow_pma->get_start() + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.H");
         return m_m.get_state().iflags.H;
     }
 
@@ -385,9 +385,9 @@ private:
         // The proof in the log uses the Merkle tree before the state is modified.
         // But log needs the word value before and after the change.
         auto old_iflags = m_m.get_state().read_iflags();
-        auto new_iflags = machine_state::encoded_iflags(m_m.get_state().iflags.PRV, true, m_m.get_state().iflags.H);
+        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, true, m_m.get_state().iflags.H);
         uint64_t iflags_addr = m_m.get_state().shadow_pma->get_start() + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_before_write_write_and_update(iflags_addr, old_iflags, new_iflags, "iflags_I");
+        log_before_write_write_and_update(iflags_addr, old_iflags, new_iflags, "iflags.I");
         m_m.get_state().iflags.I = true;
         update_after_write(iflags_addr);
     }
@@ -396,20 +396,20 @@ private:
         // The proof in the log uses the Merkle tree before the state is modified.
         // But log needs the word value before and after the change.
         auto old_iflags = m_m.get_state().read_iflags();
-        auto new_iflags = machine_state::encoded_iflags(m_m.get_state().iflags.PRV, false, m_m.get_state().iflags.H);
+        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, false, m_m.get_state().iflags.H);
         uint64_t iflags_addr = m_m.get_state().shadow_pma->get_start() + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_before_write_write_and_update(iflags_addr, old_iflags, new_iflags, "iflags_I");
+        log_before_write_write_and_update(iflags_addr, old_iflags, new_iflags, "iflags.I");
         m_m.get_state().iflags.I = false;
         update_after_write(iflags_addr);
     }
 
     bool do_read_iflags_I(void) {
-        log_read(m_m.get_state().shadow_pma->get_start() + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags_I");
+        log_read(m_m.get_state().shadow_pma->get_start() + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.I");
         return m_m.get_state().iflags.I;
     }
 
     uint8_t do_read_iflags_PRV(void) {
-        log_read(m_m.get_state().shadow_pma->get_start() + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags_PRV");
+        log_read(m_m.get_state().shadow_pma->get_start() + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.PRV");
         return m_m.get_state().iflags.PRV;
     }
 
@@ -417,35 +417,35 @@ private:
         // The proof in the log uses the Merkle tree before the state is modified.
         // But log needs the word value before and after the change.
         auto old_iflags = m_m.get_state().read_iflags();
-        auto new_iflags = machine_state::encoded_iflags(val, m_m.get_state().iflags.I, m_m.get_state().iflags.H);
+        auto new_iflags = machine_state::packed_iflags(val, m_m.get_state().iflags.I, m_m.get_state().iflags.H);
         uint64_t iflags_addr = m_m.get_state().shadow_pma->get_start() + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_before_write_write_and_update(iflags_addr, old_iflags, new_iflags, "iflags_PRV");
+        log_before_write_write_and_update(iflags_addr, old_iflags, new_iflags, "iflags.PRV");
         m_m.get_state().iflags.PRV = val;
         update_after_write(iflags_addr);
     }
 
     uint64_t do_read_clint_mtimecmp(void) {
-		return log_read(m_m.get_state().clint_pma->get_start() + clint_get_csr_rel_addr(clint_csr::mtimecmp), m_m.get_state().clint_mtimecmp, "clint_mtimecmp");
+		return log_read(m_m.get_state().clint_pma->get_start() + clint_get_csr_rel_addr(clint_csr::mtimecmp), m_m.get_state().clint.mtimecmp, "clint.mtimecmp");
     }
 
     void do_write_clint_mtimecmp(uint64_t val) {
-        log_before_write_write_and_update(m_m.get_state().clint_pma->get_start() + clint_get_csr_rel_addr(clint_csr::mtimecmp), m_m.get_state().clint_mtimecmp, val, "clint_mtimecmp");
+        log_before_write_write_and_update(m_m.get_state().clint_pma->get_start() + clint_get_csr_rel_addr(clint_csr::mtimecmp), m_m.get_state().clint.mtimecmp, val, "clint.mtimecmp");
     }
 
     uint64_t do_read_htif_fromhost(void) {
-        return log_read(m_m.get_state().htif_pma->get_start() + htif::get_csr_rel_addr(htif::csr::fromhost), m_m.get_state().htif_fromhost, "htif_fromhost");
+        return log_read(m_m.get_state().htif_pma->get_start() + htif::get_csr_rel_addr(htif::csr::fromhost), m_m.get_state().htif.fromhost, "htif.fromhost");
     }
 
     void do_write_htif_fromhost(uint64_t val) {
-        log_before_write_write_and_update(m_m.get_state().htif_pma->get_start() + htif::get_csr_rel_addr(htif::csr::fromhost), m_m.get_state().htif_fromhost, val, "htif_fromhost");
+        log_before_write_write_and_update(m_m.get_state().htif_pma->get_start() + htif::get_csr_rel_addr(htif::csr::fromhost), m_m.get_state().htif.fromhost, val, "htif.fromhost");
     }
 
     uint64_t do_read_htif_tohost(void) {
-        return log_read(m_m.get_state().htif_pma->get_start() + htif::get_csr_rel_addr(htif::csr::tohost), m_m.get_state().htif_tohost, "htif_tohost");
+        return log_read(m_m.get_state().htif_pma->get_start() + htif::get_csr_rel_addr(htif::csr::tohost), m_m.get_state().htif.tohost, "htif.tohost");
     }
 
     void do_write_htif_tohost(uint64_t val) {
-        log_before_write_write_and_update(m_m.get_state().htif_pma->get_start() + htif::get_csr_rel_addr(htif::csr::tohost), m_m.get_state().htif_tohost, val, "htif_tohost");
+        log_before_write_write_and_update(m_m.get_state().htif_pma->get_start() + htif::get_csr_rel_addr(htif::csr::tohost), m_m.get_state().htif.tohost, val, "htif.tohost");
     }
 
     void do_read_pma(const pma_entry &pma, int i) {

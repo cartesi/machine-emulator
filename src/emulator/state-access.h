@@ -281,27 +281,27 @@ private:
     }
 
     uint64_t do_read_clint_mtimecmp(void) {
-		return m_m.get_state().clint_mtimecmp;
+		return m_m.get_state().clint.mtimecmp;
     }
 
     void do_write_clint_mtimecmp(uint64_t val) {
-        m_m.get_state().clint_mtimecmp = val;
+        m_m.get_state().clint.mtimecmp = val;
     }
 
     uint64_t do_read_htif_fromhost(void) {
-        return m_m.get_state().htif_fromhost;
+        return m_m.get_state().htif.fromhost;
     }
 
     void do_write_htif_fromhost(uint64_t val) {
-        m_m.get_state().htif_fromhost = val;
+        m_m.get_state().htif.fromhost = val;
     }
 
     uint64_t do_read_htif_tohost(void) {
-        return m_m.get_state().htif_tohost;
+        return m_m.get_state().htif.tohost;
     }
 
     void do_write_htif_tohost(uint64_t val) {
-        m_m.get_state().htif_tohost = val;
+        m_m.get_state().htif.tohost = val;
     }
 
     void do_read_pma(const pma_entry &pma, int i) {

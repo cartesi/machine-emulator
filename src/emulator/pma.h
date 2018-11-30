@@ -140,19 +140,25 @@ public:
     };
 
     /// \brief Constructor for mmap'd ranges.
-    /// \param length of range;
+    /// \param length of range.
     /// \param path Path for backing file.
     /// \param m Mmap'd range data (shared or not).
-    pma_memory(uint64_t length, const std::string &path, mmapd m);
+    pma_memory(uint64_t length, const std::string &path, const mmapd &m);
 
     /// \brief Calloc'd range data (just a tag).
     struct callocd {
     };
 
     /// \brief Constructor for calloc'd ranges.
-    /// \param length of range;
+    /// \param length of range.
+    /// \param path Path for backing file.
     /// \param c Calloc'd range data (just a tag).
-    pma_memory(uint64_t length, callocd c);
+    pma_memory(uint64_t length, const std::string &path, const callocd &c);
+
+    /// \brief Constructor for calloc'd ranges.
+    /// \param length of range.
+    /// \param c Calloc'd range data (just a tag).
+    pma_memory(uint64_t length, const callocd &c);
 
     /// \brief No copy constructor
     pma_memory(const pma_memory &) = delete;

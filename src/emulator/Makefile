@@ -109,9 +109,9 @@ all: $(ALL)
 
 LUACARTESI_OBJS:= \
 	clint.o \
+	rom.o \
 	htif.o \
 	shadow.o \
-	emulator.o \
 	machine-config.o \
 	merkle-tree.o \
 	pma.o \

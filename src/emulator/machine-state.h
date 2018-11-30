@@ -88,10 +88,6 @@ struct machine_state {
     /// Map of physical memory ranges
     boost::container::static_vector<pma_entry, PMA_MAX> pmas;
 
-    const pma_entry *shadow_pma; ///< PMA for shadow device
-    const pma_entry *htif_pma;   ///< PMA for HTIF device
-    const pma_entry *clint_pma;  ///< PMA for CLINT device
-
     pma_entry empty_pma;         ///< fallback to PMA for empty range
 
     // Entries below this mark are not needed in the blockchain

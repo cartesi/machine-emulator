@@ -284,8 +284,5 @@ static const pma_driver htif_driver {
 };
 
 void htif::register_mmio(uint64_t start, uint64_t length) {
-    auto &pma = m_machine.register_mmio(start, length, htif_peek,
-        this, &htif_driver);
-    if (!m_machine.set_htif_pma(&pma))
-        throw std::runtime_error("HTIF already registered");
+    m_machine.register_mmio(start, length, htif_peek, this, &htif_driver);
 }

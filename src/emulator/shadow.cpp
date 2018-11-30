@@ -114,8 +114,5 @@ static const pma_driver shadow_driver = {
 };
 
 void shadow_register_mmio(machine &m, uint64_t start, uint64_t length) {
-    auto &pma = m.register_shadow(start, length, shadow_peek,
-        &m, &shadow_driver);
-    if (!m.set_shadow_pma(&pma))
-        throw std::runtime_error("shadow already registered");
+    m.register_shadow(start, length, shadow_peek, &m, &shadow_driver);
 }

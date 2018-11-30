@@ -50,7 +50,17 @@ static inline unique_calloc_ptr<T> unique_calloc(const std::nothrow_t &tag) {
 }
 
 static inline unique_file_ptr unique_fopen(const char *pathname, const char *mode) {
-    return unique_file_ptr(fopen(pathname, mode));
+    FILE *fp = fopen(pathname, mode);
+    if (!fp)
+        throw std::system_error(errno, std::generic_category(),
+            "unable to open '" + std::string{pathname} +
+            "' in mode '" + std::string{mode} + "'");
+    return unique_file_ptr{fp};
+}
+
+static inline unique_file_ptr unique_fopen(const char *pathname, const char *mode, const std::nothrow_t &tag) {
+    (void) tag;
+    return unique_file_ptr{fopen(pathname, mode)};
 }
 
 #endif

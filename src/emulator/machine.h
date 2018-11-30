@@ -26,7 +26,40 @@ class machine final {
     merkle_tree m_t;     ///< Merkle tree of state
     htif m_h;            ///< HTIF device
 
+    /// \brief Allocates a new PMA entry.
+    /// \param pma PMA entry to add to machine.
+    /// \returns Reference to corresponding entry in machine state.
+    pma_entry &allocate_pma_entry(pma_entry &&pma);
+
+    /// \brief Register a new memory range initially filled with zeros.
+    /// \param start Start of PMA range.
+    /// \param length Length of PMA range.
+    /// \param W Value of PMA W flag.
+    /// \returns Reference to corresponding entry in machine state.
+    pma_entry &register_memory(uint64_t start, uint64_t length, bool W);
+
+    /// \brief Register a new memory range initially filled with the
+    /// contents of a backing file.
+    /// \param start Start of PMA range.
+    /// \param length Length of PMA range.
+    /// \param path Path to backing file.
+    /// \param W Value of PMA W flag.
+    /// \returns Reference to corresponding entry in machine state.
+    pma_entry &register_memory(uint64_t start, uint64_t length,
+        const std::string &name, bool W);
+
+    /// \brief Runs the machine until mcycle reaches *at most* \p mcycle_end.
+    /// \param mcycle_end Maximum value of mcycle before function returns.
+    /// \details Several conditions can cause the function to
+    ///  break before mcycle reaches \p mcycle_end. The most
+    ///  frequent scenario is when the program executes a WFI
+    ///  instruction. Another example is when the machine halts.
+    void run_inner_loop(uint64_t mcycle_end);
+
 public:
+
+    /// \brief Returns a string describing the implementation
+    static std::string get_name(void);
 
     /// \brief Constructor from machine configuration
     explicit machine(const machine_config &c);
@@ -42,19 +75,8 @@ public:
     /// \brief No move assignment
     machine &operator=(machine &&other) = delete;
 
-    /// \brief Returns the associated HTIF device
-    htif &get_htif(void) { return m_h; }
-
-    /// \brief Returns the associated HTIF device
-    const htif &get_htif(void) const { return m_h; }
-
-    /// \brief Runs the machine until mcycle reaches *at most* \p mcycle_end.
-    /// \param mcycle_end Maximum value of mcycle before function returns.
-    /// \details Several conditions can cause the function to
-    ///  break before mcycle reaches \p mcycle_end. The most
-    ///  frequent scenario is when the program executes a WFI
-    ///  instruction. Another example is when the machine halts.
-    void run_inner_loop(uint64_t mcycle_end);
+    /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
+    void run(uint64_t mcycle_end);
 
     /// \brief Runs the machine for one cycle logging all accesses to the state.
     /// \param t Merkle tree.
@@ -331,8 +353,6 @@ public:
 
     /// \brief Returns the maximum XLEN for the machine.
     /// \returns The value for XLEN.
-    static int get_max_xlen(void);
-
     /// \brief Reads the value of HTIF's tohost register.
     /// \returns The value of the register.
     uint64_t read_htif_tohost(void) const;
@@ -400,24 +420,7 @@ public:
     /// \param shared Whether target modifications to the flash drive are
     /// reflected in the host's backing file.
     /// \details \p length must match the size of the backing file.
-    /// \returns Newly allocated PMA entry.
-    const pma_entry &register_flash(uint64_t start, uint64_t length, const char *path, bool shared);
-
-    /// \brief Register a new RAM memory range.
-    /// \param start Start of physical memory range in the target address
-    /// space on which to map the RAM memory.
-    /// \param length Length of physical memory range in the
-    /// target address space on which to map the RAM memory.
-    /// \returns Newly allocated PMA entry.
-    const pma_entry &register_ram(uint64_t start, uint64_t length);
-
-    /// \brief Register a new ROM memory range.
-    /// \param start Start of physical memory range in the target address
-    /// space on which to map the ROM memory.
-    /// \param length Length of physical memory range in the
-    /// target address space on which to map the ROM memory.
-    /// \returns Newly allocated PMA entry.
-    const pma_entry &register_rom(uint64_t start, uint64_t length);
+    void register_flash(uint64_t start, uint64_t length, const char *path, bool shared);
 
     /// \brief Register a new memory-mapped IO device.
     /// \param start Start of physical memory range in the target address
@@ -427,8 +430,7 @@ public:
     /// \param peek Peek callback for the range.
     /// \param context Pointer to context to be passed to callbacks.
     /// \param driver Pointer to driver with callbacks.
-    /// \returns Newly allocated PMA entry.
-    const pma_entry &register_mmio(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver);
+    void register_mmio(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver);
 
     /// \brief Register a new shadow device.
     /// \param start Start of physical memory range in the target address
@@ -438,43 +440,18 @@ public:
     /// \param peek Peek callback for the range.
     /// \param context Pointer to context to be passed to callbacks.
     /// \param driver Pointer to driver with callbacks.
-    /// \returns Newly allocated PMA entry.
-    const pma_entry &register_shadow(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver);
+    void register_shadow(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver);
 
     /// \brief Dump all memory ranges to files in current working directory.
     /// \returns true if successful, false otherwise.
-    bool dump(void) const;
+    void dump(void) const;
 
     /// \brief Get read-only access to container with all PMA entries.
     /// \returns The container.
     const boost::container::static_vector<pma_entry, PMA_MAX> &get_pmas(void) const;
 
-    /// \brief Sets PMA used for shadow, if not previously set.
-    /// \param pma Pointer to PMA entry.
-    /// \returns True if not previously set, false otherwise.
-    bool set_shadow_pma(const pma_entry *pma);
-
-    /// \brief Returns the PMA used for shadow.
-    /// \returns Pointer to PMA entry, or nullptr if not yet set.
-    const pma_entry *get_shadow_pma(void) const;
-
-    /// \brief Set PMA used for the CLINT device, if not previously set.
-    /// \param pma PMA entry.
-    /// \returns True if not previously set, false otherwise.
-    bool set_clint_pma(const pma_entry *pma);
-
-    /// \brief Returns the PMA used for the CLINT device.
-    /// \returns Pointer to PMA entry, or nullptr if not yet set.
-    const pma_entry *get_clint_pma(void) const;
-
-    /// \brief Set PMA used for the HTIF device, if not previously set.
-    /// \param pma Pointer to PMA entry.
-    /// \returns True if not previously set, false otherwise.
-    bool set_htif_pma(const pma_entry *pma);
-
-    /// \brief Returns the PMA used for the HTIF device.
-    /// \returns Pointer to PMA entry, or nullptr if not yet set.
-    const pma_entry *get_htif_pma(void) const;
+    /// \brief Interact with console
+    void interact(void);
 };
 
 #endif

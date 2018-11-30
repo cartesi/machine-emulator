@@ -136,7 +136,5 @@ static const pma_driver clint_driver = {
 };
 
 void clint_register_mmio(machine &m, uint64_t start, uint64_t length) {
-    auto &pma = m.register_mmio(start, length, clint_peek, &m, &clint_driver);
-    if (!m.set_clint_pma(&pma))
-        throw std::runtime_error("CLINT already registered");
+    m.register_mmio(start, length, clint_peek, &m, &clint_driver);
 }

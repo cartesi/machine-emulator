@@ -2,6 +2,7 @@
 #include <cstring>
 #include <cinttypes>
 #include <cstdint>
+#include <sstream>
 #include <cassert>
 #include <type_traits>
 #include <iostream>
@@ -77,6 +78,7 @@ typedef unsigned __int128 uint128_t;
 #include "meta.h"
 #include "riscv-constants.h"
 #include "unique-c-ptr.h"
+#include "rom.h"
 
 /// \brief Obtain PMA entry overlapping with target physical address
 /// \param s Pointer to machine state.
@@ -100,29 +102,6 @@ static inline const pma_entry &naked_find_pma_entry(const machine_state &s, uint
         const_cast<machine_state &>(s), paddr));
 }
 
-/// \brief Allocates a new PMA entry.
-/// \param s Pointer to machine state.
-/// \param pma PMA entry to add to machine.
-/// \returns Reference to corresponding entry in machine.
-static pma_entry &allocate_pma_entry(machine_state &s, pma_entry &&pma) {
-    if (s.pmas.capacity() <= s.pmas.size())
-        throw std::runtime_error("too many PMAs");
-    auto start = pma.get_start();
-    if ((start & (PMA_PAGE_SIZE-1)) != 0)
-        throw std::invalid_argument("PMA start must be aligned to page boundary");
-    auto length = pma.get_length();
-    if ((length & (PMA_PAGE_SIZE-1)) != 0)
-        throw std::invalid_argument("PMA length must be multiple of page size");
-    // Range A overlaps with B if A starts before B ends and A ends after B starts
-    for (const auto &existing_pma: s.pmas) {
-        if (start < existing_pma.get_start() + existing_pma.get_length() &&
-            start+length > existing_pma.get_start()) {
-            throw std::invalid_argument("PMA overlaps with existing PMA");
-        }
-    }
-    s.pmas.push_back(std::move(pma));
-    return s.pmas.back();
-}
 
 /// \brief Memory range peek callback. See ::pma_peek.
 static bool memory_peek(const pma_entry &pma, uint64_t page_address, const uint8_t **page_data, uint8_t *scratch) {
@@ -145,11 +124,31 @@ static bool memory_peek(const pma_entry &pma, uint64_t page_address, const uint8
     }
 }
 
-const pma_entry &machine::register_flash(uint64_t start,
+pma_entry &machine::allocate_pma_entry(pma_entry &&pma) {
+    if (m_s.pmas.capacity() <= m_s.pmas.size())
+        throw std::runtime_error("too many PMAs");
+    auto start = pma.get_start();
+    if ((start & (PMA_PAGE_SIZE-1)) != 0)
+        throw std::invalid_argument("PMA start must be aligned to page boundary");
+    auto length = pma.get_length();
+    if ((length & (PMA_PAGE_SIZE-1)) != 0)
+        throw std::invalid_argument("PMA length must be multiple of page size");
+    // Range A overlaps with B if A starts before B ends and A ends after B starts
+    for (const auto &existing_pma: m_s.pmas) {
+        if (start < existing_pma.get_start() + existing_pma.get_length() &&
+            start+length > existing_pma.get_start()) {
+            throw std::invalid_argument("PMA overlaps with existing PMA");
+        }
+    }
+    m_s.pmas.push_back(std::move(pma));
+    return m_s.pmas.back();
+}
+
+void machine::register_flash(uint64_t start,
     uint64_t length, const char *path, bool shared) {
     pma_entry::flags f;
     f.R = true; f.W = true; f.X = false; f.IR = true; f.IW = true;
-    return allocate_pma_entry(m_s,
+    allocate_pma_entry(
         pma_entry{
             start,
             length,
@@ -163,10 +162,10 @@ const pma_entry &machine::register_flash(uint64_t start,
     );
 }
 
-static const pma_entry &register_memory(machine_state &s, uint64_t start, uint64_t length, bool W) {
+pma_entry &machine::register_memory(uint64_t start, uint64_t length, bool W) {
     pma_entry::flags f;
     f.R = true; f.W = W; f.X = true; f.IR = true; f.IW = true;
-    return allocate_pma_entry(s,
+    return allocate_pma_entry(
         pma_entry{
             start,
             length,
@@ -179,18 +178,28 @@ static const pma_entry &register_memory(machine_state &s, uint64_t start, uint64
     );
 }
 
-const pma_entry &machine::register_ram(uint64_t start, uint64_t length) {
-    return register_memory(m_s, start, length, true);
+pma_entry &machine::register_memory(uint64_t start, uint64_t length,
+    const std::string &path, bool W) {
+    pma_entry::flags f;
+    f.R = true; f.W = W; f.X = true; f.IR = true; f.IW = true;
+    return allocate_pma_entry(
+        pma_entry{
+            start,
+            length,
+            pma_memory{
+                length,
+                path,
+                pma_memory::callocd{}
+            },
+            memory_peek
+        }.set_flags(f)
+    );
 }
 
-const pma_entry &machine::register_rom(uint64_t start, uint64_t length) {
-    return register_memory(m_s, start, length, false);
-}
-
-const pma_entry &machine::register_mmio(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver) {
+void machine::register_mmio(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver) {
     pma_entry::flags f;
     f.R = true; f.W = true; f.X = false; f.IR = false; f.IW = false;
-    return allocate_pma_entry(m_s,
+    allocate_pma_entry(
         pma_entry{
             start,
             length,
@@ -203,10 +212,10 @@ const pma_entry &machine::register_mmio(uint64_t start, uint64_t length, pma_pee
     );
 }
 
-const pma_entry &machine::register_shadow(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver) {
+void machine::register_shadow(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver) {
     pma_entry::flags f;
     f.R = false; f.W = false; f.X = false; f.IR = false; f.IW = false;
-    return allocate_pma_entry(m_s,
+    allocate_pma_entry(
         pma_entry{
             start,
             length,
@@ -219,37 +228,10 @@ const pma_entry &machine::register_shadow(uint64_t start, uint64_t length, pma_p
     );
 }
 
-bool machine::set_shadow_pma(const pma_entry *pma) {
-    if (pma && !m_s.shadow_pma) {
-        m_s.shadow_pma = pma;
-        return true;
-    } else return false;
-}
-
-const pma_entry *machine::get_shadow_pma(void) const {
-    return m_s.shadow_pma;
-}
-
-bool machine::set_clint_pma(const pma_entry *pma) {
-    if (pma && !m_s.clint_pma) {
-        m_s.clint_pma = pma;
-        return true;
-    } else return false;
-}
-
-const pma_entry *machine::get_clint_pma(void) const {
-    return m_s.clint_pma;
-}
-
-bool machine::set_htif_pma(const pma_entry *pma) {
-    if (pma && !m_s.htif_pma) {
-        m_s.htif_pma = pma;
-        return true;
-    } else return false;
-}
-
-const pma_entry *machine::get_htif_pma(void) const {
-    return m_s.htif_pma;
+std::string machine::get_name(void) {
+    std::ostringstream os;
+    os << VENDORID << ':' << ARCHID << ':' << IMPID;
+    return os.str();
 }
 
 uint8_t *machine::get_host_memory(uint64_t paddr) {
@@ -734,18 +716,94 @@ static bool empty_peek(const pma_entry &, uint64_t, const uint8_t **page_data, u
     return true;
 }
 
+void machine::interact(void) {
+    m_h.interact();
+}
+
 machine::machine(const machine_config &c):
     m_s{},
     m_t{},
     m_h{*this, c.interactive} {
 
-    if (!c.htif.backing.empty())
-        throw std::runtime_error("HTIF backing not implemented");
+    if (!c.processor.backing.empty())
+        throw std::runtime_error("processor backing not implemented");
+
+    // General purpose registers
+    for (int i = 1; i < 32; i++) {
+        write_x(i, c.processor.x[i]);
+    }
+
+    write_pc(c.processor.pc);
+    write_mvendorid(c.processor.mvendorid);
+    write_marchid(c.processor.marchid);
+    write_mimpid(c.processor.mimpid);
+    write_mcycle(c.processor.mcycle);
+    write_minstret(c.processor.minstret);
+    write_mstatus(c.processor.mstatus);
+    write_mtvec(c.processor.mtvec);
+    write_mscratch(c.processor.mscratch);
+    write_mepc(c.processor.mepc);
+    write_mcause(c.processor.mcause);
+    write_mtval(c.processor.mtval);
+    write_misa(c.processor.misa);
+    write_mie(c.processor.mie);
+    write_mip(c.processor.mip);
+    write_medeleg(c.processor.medeleg);
+    write_mideleg(c.processor.mideleg);
+    write_mcounteren(c.processor.mcounteren);
+    write_stvec(c.processor.stvec);
+    write_sscratch(c.processor.sscratch);
+    write_sepc(c.processor.sepc);
+    write_scause(c.processor.scause);
+    write_stval(c.processor.stval);
+    write_satp(c.processor.satp);
+    write_scounteren(c.processor.scounteren);
+    write_ilrsc(c.processor.ilrsc);
+    write_iflags(c.processor.iflags);
+
+    if (c.ram.backing.empty() && c.rom.backing.empty())
+        throw std::invalid_argument{"ROM and RAM backing are undefined"};
+
+    // Register RAM
+    if (c.ram.backing.empty()) {
+        register_memory(PMA_RAM_START, c.ram.length, true);
+    } else {
+        register_memory(PMA_RAM_START, c.ram.length, c.ram.backing, true);
+    }
+
+    // Register ROM
+    if (c.rom.backing.empty()) {
+        auto &rom = register_memory(PMA_ROM_START, PMA_ROM_LENGTH, false);
+        rom_init(c, c.processor.misa, XLEN, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
+    } else {
+        register_memory(PMA_ROM_START, PMA_ROM_LENGTH, c.rom.backing, false);
+    }
+
+    // Register all flash drives
+    for (const auto &f: c.flash) {
+        register_flash(f.start, f.length, f.backing.c_str(), f.shared);
+    }
+
+    // Register HTIF device
+    m_h.register_mmio(PMA_HTIF_START, PMA_HTIF_LENGTH);
 
     // Copy HTIF state to from config to machine
-    m_s.htif.tohost = c.htif.tohost;
-    m_s.htif.fromhost = c.htif.fromhost;
+    if (!c.htif.backing.empty())
+        throw std::runtime_error("HTIF backing not implemented");
+    write_htif_tohost(c.htif.tohost);
+    write_htif_fromhost(c.htif.fromhost);
 
+    // Resiter CLINT device
+    clint_register_mmio(*this, PMA_CLINT_START, PMA_CLINT_LENGTH);
+    // Copy CLINT state to from config to machine
+    if (!c.clint.backing.empty())
+        throw std::runtime_error("CLINT backing not implemented");
+    write_clint_mtimecmp(c.clint.mtimecmp);
+
+    // Register shadow device
+    shadow_register_mmio(*this, PMA_SHADOW_START, PMA_SHADOW_LENGTH);
+
+    // Clear all TLB entries
     tlb_init(m_s);
 }
 
@@ -1044,10 +1102,6 @@ void machine::set_iflags_H(void) {
     m_s.set_brk_from_iflags_H();
 }
 
-int machine::get_max_xlen(void) {
-    return XLEN;
-}
-
 bool machine::update_merkle_tree(void) {
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
     merkle_tree::hasher_type h;
@@ -1106,26 +1160,23 @@ merkle_tree &machine::get_merkle_tree(void) {
     return m_t;
 }
 
-bool machine::dump(void) const {
+void machine::dump(void) const {
     auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
-    if (!scratch) return false;
     for (auto &pma: m_s.pmas) {
         char filename[256];
         sprintf(filename, "%016" PRIx64 "--%016" PRIx64 ".bin", pma.get_start(), pma.get_length());
-        fprintf(stderr, "dumping '%s'\n", filename);
         auto fp = unique_fopen(filename, "wb");
-        if (!fp) return false;
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length(); page_start_in_range += PMA_PAGE_SIZE) {
             const uint8_t *page_data = nullptr;
             auto peek = pma.get_peek();
             if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
-                return false;
+                throw std::runtime_error{"peek failed"};
             } else if (page_data && fwrite(page_data, 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
-                return false;
+                throw std::system_error{errno, std::generic_category(),
+                    "error writing to '" + std::string{filename} + "'"};
             }
         }
     }
-    return true;
 }
 
 bool machine::get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) const {
@@ -3790,4 +3841,52 @@ void machine::step(access_log &log) {
     interpret(a, m_s.mcycle+1);
     a.annotate(note_type::end, "step");
     log = std::move(*a.get_log());
+}
+
+void machine::run(uint64_t mcycle_end) {
+
+    // The outer loop breaks only when the machine is halted
+    // or when mcycle hits mcycle_end
+    for ( ;; ) {
+
+        // If we are halted, do nothing
+        if (read_iflags_H()) {
+            return;
+        }
+
+        // Run the emulator inner loop until we reach the next multiple of RISCV_RTC_FREQ_DIV
+        // ??D This is enough for us to be inside the inner loop for about 98% of the time,
+        // according to measurement, so it is not a good target for further optimization
+        uint64_t mcycle = read_mcycle();
+        uint64_t next_rtc_freq_div = mcycle + RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV;
+        run_inner_loop(std::min(next_rtc_freq_div, mcycle_end));
+
+        // If we hit mcycle_end, we are done
+        mcycle = read_mcycle();
+        if (mcycle >= mcycle_end) {
+            return;
+        }
+
+        // If we managed to run until the next possible frequency divisor
+        if (mcycle == next_rtc_freq_div) {
+            // Get the mcycle corresponding to mtimecmp
+            uint64_t timecmp_mcycle = rtc_time_to_cycle(read_clint_mtimecmp());
+
+            // If the processor is waiting for interrupts, we can skip until time hits timecmp
+            // CLINT is the only interrupt source external to the inner loop
+            // IPI (inter-processor interrupt) via MSIP can only be raised internally
+            if (read_iflags_I()) {
+                mcycle = std::min(timecmp_mcycle, mcycle_end);
+                write_mcycle(mcycle);
+            }
+
+            // If the timer is expired, set interrupt as pending
+            if (timecmp_mcycle && timecmp_mcycle <= mcycle) {
+                set_mip(MIP_MTIP);
+            }
+
+            // Perform interactive actions
+            interact();
+        }
+    }
 }

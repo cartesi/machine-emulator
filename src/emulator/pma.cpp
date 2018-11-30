@@ -7,6 +7,7 @@
 #include <string>
 #include <system_error>
 
+#include "unique-c-ptr.h"
 #include "pma.h"
 
 pma_memory::~pma_memory() {
@@ -27,18 +28,46 @@ pma_memory::pma_memory(pma_memory &&other):
     other.m_length = 0;
 }
 
-pma_memory::pma_memory(uint64_t length, callocd c):
-    m_length{length}, m_host_memory{nullptr}, m_backing_file{-1}
-{
+pma_memory::pma_memory(uint64_t length, const callocd &c):
+    m_length{length},
+    m_host_memory{nullptr},
+    m_backing_file{-1} {
     (void) c;
     m_host_memory = reinterpret_cast<uint8_t *>(calloc(1, length));
     if (!m_host_memory)
         throw std::bad_alloc();
 }
 
-pma_memory::pma_memory(uint64_t length, const std::string &path, mmapd m):
-    m_length{length}, m_host_memory{nullptr}, m_backing_file{-1}
-{
+pma_memory::pma_memory(uint64_t length, const std::string &path,
+    const callocd &c):
+    pma_memory{length, c} {
+    // Try to load backing file, if any
+    if (!path.empty()) {
+        auto fp = unique_fopen(path.c_str(), "rb", std::nothrow_t{});
+        if (!fp) {
+            throw std::system_error{errno, std::generic_category(),
+                "error opening backing file '" + path + "'"};
+        }
+        auto read = fread(m_host_memory, 1, length, fp.get()); (void) read;
+        if (ferror(fp.get())) {
+            throw std::system_error{errno, std::generic_category(),
+                "error reading from backing file '" + path + "'"};
+        }
+        if (!feof(fp.get())) {
+            throw std::runtime_error{
+                "backing file '" + path + "' too large for range"};
+        }
+    }
+}
+
+pma_memory::pma_memory(uint64_t length, const std::string &path,
+    const mmapd &m):
+    m_length{length},
+    m_host_memory{nullptr},
+    m_backing_file{-1} {
+    if (path.empty())
+        throw std::runtime_error("backing file required");
+
     int oflag = m.shared? O_RDWR: O_RDONLY;
     int mflag = m.shared? MAP_SHARED: MAP_PRIVATE;
 

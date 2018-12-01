@@ -141,6 +141,16 @@ struct machine_state {
                (I << IFLAGS_I_SHIFT) |
                (H << IFLAGS_H_SHIFT);
     }
+
+    /// \brief Initializes all TLBs with invalid entries.
+    void init_tlb(void) {
+        for (int i = 0; i < TLB_SIZE; i++) {
+            tlb_read[i].vaddr = -1;
+            tlb_write[i].vaddr = -1;
+            tlb_code[i].vaddr = -1;
+        }
+    }
+
 };
 
 #endif

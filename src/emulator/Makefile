@@ -116,6 +116,7 @@ LUACARTESI_OBJS:= \
 	merkle-tree.o \
 	pma.o \
 	machine.o \
+	interpret.o \
 	luacartesi.o
 
 ifeq ($(gperf),yes)

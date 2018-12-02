@@ -6,6 +6,8 @@
 /// \file
 /// \brief Shadow device.
 
+namespace cartesi {
+
 // Forward declarations
 class machine;
 
@@ -61,5 +63,8 @@ uint64_t shadow_get_pma_rel_addr(int p);
 /// \param start Start address for memory range.
 /// \param length Length of memory range.
 void shadow_register_mmio(machine &m, uint64_t start, uint64_t length);
+
+} // namespace cartesi
+
 
 #endif

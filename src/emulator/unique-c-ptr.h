@@ -6,6 +6,8 @@
 #include <cstdlib>
 #include <cstdio>
 
+namespace cartesi {
+
 namespace detail {
     struct free_deleter {
         template <typename T>
@@ -62,5 +64,7 @@ static inline unique_file_ptr unique_fopen(const char *pathname, const char *mod
     (void) tag;
     return unique_file_ptr{fopen(pathname, mode)};
 }
+
+} // namespace cartesi
 
 #endif

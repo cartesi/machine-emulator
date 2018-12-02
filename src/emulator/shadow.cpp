@@ -3,6 +3,8 @@
 #include "shadow.h"
 #include "machine.h"
 
+namespace cartesi {
+
 static void write_shadow(uint8_t *base, uint64_t offset, uint64_t value) {
     assert((offset & (sizeof(uint64_t)-1)) == 0);
     *reinterpret_cast<uint64_t *>(base + offset) = value;
@@ -116,3 +118,5 @@ static const pma_driver shadow_driver = {
 void shadow_register_mmio(machine &m, uint64_t start, uint64_t length) {
     m.register_shadow(start, length, shadow_peek, &m, &shadow_driver);
 }
+
+} // namespace cartesi

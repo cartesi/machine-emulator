@@ -8,6 +8,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+namespace cartesi {
+
 #define HTIF_TOHOST_REL_ADDR (static_cast<uint64_t>(htif::csr::tohost))
 #define HTIF_FROMHOST_REL_ADDR (static_cast<uint64_t>(htif::csr::fromhost))
 
@@ -286,3 +288,5 @@ static const pma_driver htif_driver {
 void htif::register_mmio(uint64_t start, uint64_t length) {
     m_machine.register_mmio(start, length, htif_peek, this, &htif_driver);
 }
+
+} // namespace cartesi

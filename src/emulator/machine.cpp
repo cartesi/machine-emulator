@@ -15,6 +15,14 @@
 #include "state-access.h"
 #include "logged-state-access.h"
 
+namespace cartesi {
+
+std::string get_name(void) {
+    std::ostringstream os;
+    os << VENDORID << ':' << ARCHID << ':' << IMPID;
+    return os.str();
+}
+
 /// \brief Obtain PMA entry overlapping with target physical address
 /// \param s Pointer to machine state.
 /// \param paddr Target physical address.
@@ -160,12 +168,6 @@ void machine::register_shadow(uint64_t start, uint64_t length, pma_peek peek, vo
             peek
         }.set_flags(f)
     );
-}
-
-std::string machine::get_name(void) {
-    std::ostringstream os;
-    os << VENDORID << ':' << ARCHID << ':' << IMPID;
-    return os.str();
 }
 
 uint8_t *machine::get_host_memory(uint64_t paddr) {
@@ -750,3 +752,5 @@ void machine::run(uint64_t mcycle_end) {
         }
     }
 }
+
+} // namespace cartesi

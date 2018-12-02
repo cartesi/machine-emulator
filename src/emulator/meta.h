@@ -6,6 +6,8 @@
 /// \file
 /// \brief Meta-programming helper functions.
 
+namespace cartesi {
+
 /// \brief Converts a strongly typed constant to its underlying integer type
 template <typename E>
 constexpr auto to_underlying(E e) noexcept {
@@ -78,5 +80,7 @@ struct size_log2<uint64_t> {
 };
 
 /// \endcond
+
+} // namespace cartesi
 
 #endif

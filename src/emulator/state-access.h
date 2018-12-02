@@ -9,6 +9,8 @@
 #include "i-state-access.h"
 #include "machine.h"
 
+namespace cartesi {
+
 /// \class state_access
 /// \details The state_access class implements fast, direct
 /// access to the machine state. No logs are kept.
@@ -329,5 +331,8 @@ private:
     }
 
 };
+
+} // namespace cartesi
+
 
 #endif

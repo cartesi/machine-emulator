@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <array>
 
+namespace cartesi {
+
 /// \class
 /// \brief Hasher interface.
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
@@ -43,5 +45,7 @@ public:
     }
 
 };
+
+} // namespace cartesi
 
 #endif

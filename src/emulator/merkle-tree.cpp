@@ -11,6 +11,8 @@
 /// \file
 /// \brief Merkle tree implementation.
 
+namespace cartesi {
+
 constexpr merkle_tree::address_type
 merkle_tree::
 get_page_index(address_type address) const {
@@ -522,3 +524,5 @@ std::ostream &operator<<(std::ostream &out, const merkle_tree::hash_type &hash) 
     out.flags(f);
     return out;
 }
+
+} // namespace cartesi

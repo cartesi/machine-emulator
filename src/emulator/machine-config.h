@@ -6,6 +6,8 @@
 #include <vector>
 #include <boost/container/static_vector.hpp>
 
+namespace cartesi {
+
 struct processor_config final {
     processor_config():
         x{},
@@ -116,5 +118,7 @@ struct machine_config final {
     htif_config htif;
     bool interactive;
 };
+
+} // namespace cartesi
 
 #endif

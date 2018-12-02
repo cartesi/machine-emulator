@@ -5,6 +5,8 @@
 #include <cryptopp/keccak.h>
 #include "i-hasher.h"
 
+namespace cartesi {
+
 class keccak_256_hasher final:
     public i_hasher<keccak_256_hasher, CryptoPP::Keccak_256::DIGESTSIZE> {
 
@@ -24,5 +26,7 @@ friend i_hasher<keccak_256_hasher, CryptoPP::Keccak_256::DIGESTSIZE>;
         return kc.Final(hash.data());
     }
 };
+
+} // namespace cartesi
 
 #endif

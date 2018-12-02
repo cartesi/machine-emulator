@@ -13,6 +13,8 @@
 
 #include "keccak-256-hasher.h"
 
+namespace cartesi {
+
 /// \class merkle_tree
 /// \brief Merkle tree implementation.
 ///
@@ -361,5 +363,7 @@ public:
 };
 
 std::ostream &operator<<(std::ostream &out, const merkle_tree::hash_type &hash);
+
+} // namespace cartesi
 
 #endif

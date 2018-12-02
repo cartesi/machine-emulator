@@ -11,6 +11,8 @@
 #include "merkle-tree.h"
 #include "access-note.h"
 
+namespace cartesi {
+
 /// \brief Type of state access
 enum class access_type {
     read, ///< Read operation
@@ -44,5 +46,7 @@ struct access_log {
         notes.push_back(access_note{type, accesses.size(), text});
     }
 };
+
+} // namespace cartesi
 
 #endif

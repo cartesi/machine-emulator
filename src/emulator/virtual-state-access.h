@@ -9,6 +9,8 @@
 #include "i-virtual-state-access.h"
 #include "machine.h"
 
+namespace cartesi {
+
 /// \class
 /// \details The virtual_state_access class implements a
 /// virtual interface to the state on top of the static
@@ -85,5 +87,7 @@ private:
         return m_a.write_htif_tohost(val);
     }
 };
+
+} // namespace cartesi
 
 #endif

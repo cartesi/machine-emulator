@@ -4,6 +4,8 @@
 #include "riscv-constants.h"
 #include "machine-config.h"
 
+namespace cartesi {
+
 machine_config::machine_config(void):
     processor{},
     ram{},
@@ -34,3 +36,5 @@ machine_config::machine_config(void):
     processor.marchid = ARCHID;
     processor.mimpid = IMPID;
 }
+
+} // namespace cartesi

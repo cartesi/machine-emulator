@@ -3,6 +3,8 @@
 
 #include <cstdint>
 
+namespace cartesi {
+
 /// \file
 /// \brief Virtual interface for state access
 
@@ -108,5 +110,7 @@ private:
     virtual uint64_t do_read_htif_tohost(void) = 0;
     virtual void do_write_htif_tohost(uint64_t val) = 0;
 };
+
+} // namespace cartesi
 
 #endif

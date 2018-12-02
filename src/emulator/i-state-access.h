@@ -9,6 +9,8 @@
 
 #include "meta.h"
 
+namespace cartesi {
+
 // Forward declarations
 class machine;
 enum class note_type;
@@ -537,5 +539,7 @@ template <typename STATE_ACCESS>
 struct avoid_tlb {
     static constexpr bool value = false;
 };
+
+} // namespace cartesi
 
 #endif

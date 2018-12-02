@@ -6,6 +6,8 @@
 
 #include <cstdint>
 
+namespace cartesi {
+
 // Forward declarations
 struct machine_config;
 
@@ -17,5 +19,7 @@ struct machine_config;
 /// \param length Maximum amount of ROM to use from start.
 void rom_init(const machine_config &c, uint64_t misa, int max_xlen,
     uint8_t *rom_start, uint64_t length);
+
+} // namesmpace cartesi
 
 #endif

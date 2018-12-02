@@ -5,6 +5,8 @@
 #include "rtc.h"
 #include "riscv-constants.h"
 
+namespace cartesi {
+
 #define CLINT_MSIP0_REL_ADDR (static_cast<uint64_t>(clint_csr::msip0))
 #define CLINT_MTIME_REL_ADDR (static_cast<uint64_t>(clint_csr::mtime))
 #define CLINT_MTIMECMP_REL_ADDR (static_cast<uint64_t>(clint_csr::mtimecmp))
@@ -138,3 +140,5 @@ static const pma_driver clint_driver = {
 void clint_register_mmio(machine &m, uint64_t start, uint64_t length) {
     m.register_mmio(start, length, clint_peek, &m, &clint_driver);
 }
+
+} // namespace cartesi

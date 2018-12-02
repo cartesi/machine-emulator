@@ -11,6 +11,8 @@
 #include "merkle-tree.h"
 #include "htif.h"
 
+namespace cartesi {
+
 // Forward declarations
 struct access_log;
 
@@ -57,9 +59,6 @@ class machine final {
     void run_inner_loop(uint64_t mcycle_end);
 
 public:
-
-    /// \brief Returns a string describing the implementation
-    static std::string get_name(void);
 
     /// \brief Constructor from machine configuration
     explicit machine(const machine_config &c);
@@ -453,5 +452,10 @@ public:
     /// \brief Interact with console
     void interact(void);
 };
+
+/// \brief Returns a string describing the implementation
+std::string get_name(void);
+
+} // namespace cartesi
 
 #endif

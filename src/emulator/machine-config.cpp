@@ -15,16 +15,20 @@ machine_config::machine_config(void):
     // Starting address is 4k
     processor.pc = 0x1000;
     // M-mode
-    processor.iflags = PRV_M << IFLAGS_PRV_SHIFT;
+    processor.iflags = static_cast<uint64_t>(PRV_M) << IFLAGS_PRV_SHIFT;
     // No reservation
     processor.ilrsc = -1;
-    processor.mstatus = ((uint64_t)MXL << MSTATUS_UXL_SHIFT) |
-        ((uint64_t)MXL << MSTATUS_SXL_SHIFT);
+    // Set S and U XLEN in mstatus
+    processor.mstatus = (MISA_MXL_VALUE << MSTATUS_UXL_SHIFT) |
+        (MISA_MXL_VALUE << MSTATUS_SXL_SHIFT);
     // Set our extensions in misa
-    processor.misa = MXL;
-    processor.misa <<= (XLEN-2); /* set xlen to 64 */
-    processor.misa |= MISAEXT_S | MISAEXT_U | MISAEXT_I |
-        MISAEXT_M | MISAEXT_A;
+    processor.misa = MISA_MXL_VALUE << MISA_MXL_SHIFT;
+    processor.misa |=
+        MISA_EXT_S_MASK |
+        MISA_EXT_U_MASK |
+        MISA_EXT_I_MASK |
+        MISA_EXT_M_MASK |
+        MISA_EXT_A_MASK;
     // Set our ids
     processor.mvendorid = VENDORID;
     processor.marchid = ARCHID;

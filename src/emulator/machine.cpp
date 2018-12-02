@@ -742,7 +742,7 @@ void machine::run(uint64_t mcycle_end) {
 
             // If the timer is expired, set interrupt as pending
             if (timecmp_mcycle && timecmp_mcycle <= mcycle) {
-                set_mip(MIP_MTIP);
+                set_mip(MIP_MTIP_MASK);
             }
 
             // Perform interactive actions

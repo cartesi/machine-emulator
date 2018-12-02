@@ -16,7 +16,7 @@ uint64_t clint_get_csr_rel_addr(clint_csr reg) {
 static bool clint_read_msip(i_virtual_state_access *a, uint64_t *val,
     int size_log2) {
     if (size_log2 == 2) {
-        *val = ((a->read_mip() & MIP_MSIP) == MIP_MSIP);
+        *val = ((a->read_mip() & MIP_MSIP_MASK) == MIP_MSIP_MASK);
         return true;
     }
     return false;
@@ -66,9 +66,9 @@ static bool clint_write(const pma_entry &pma, i_virtual_state_access *a, uint64_
                 //    It does so repeatedly before and after every command run in the shell
                 //    Will investigate.
                 if (val & 1) {
-                    a->set_mip(MIP_MSIP);
+                    a->set_mip(MIP_MSIP_MASK);
                 } else {
-                    a->reset_mip(MIP_MSIP);
+                    a->reset_mip(MIP_MSIP_MASK);
                 }
                 return true;
             }
@@ -76,7 +76,7 @@ static bool clint_write(const pma_entry &pma, i_virtual_state_access *a, uint64_
         case CLINT_MTIMECMP_REL_ADDR:
             if (size_log2 == 3) {
                 a->write_clint_mtimecmp(val);
-                a->reset_mip(MIP_MTIP);
+                a->reset_mip(MIP_MTIP_MASK);
                 return true;
             }
             // partial mtimecmp is not supported
@@ -106,7 +106,7 @@ static bool clint_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t
             // Since we are little-endian, we can simply write the bytes
             memset(scratch, 0, PMA_PAGE_SIZE);
             *reinterpret_cast<uint64_t *>(scratch + 
-                offset(CLINT_MSIP0_REL_ADDR)) = ((m->read_mip() & MIP_MSIP) == MIP_MSIP);
+                offset(CLINT_MSIP0_REL_ADDR)) = ((m->read_mip() & MIP_MSIP_MASK) == MIP_MSIP_MASK);
             *page_data = scratch;
             return true;
         case base(CLINT_MTIMECMP_REL_ADDR):

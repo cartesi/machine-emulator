@@ -6,6 +6,8 @@
 /// \file
 /// \brief Clock interruptor device.
 
+namespace cartesi {
+
 class machine;
 
 /// \brief Mapping between CSRs and their relative addresses in CLINT memory
@@ -25,5 +27,7 @@ uint64_t clint_get_csr_rel_addr(clint_csr reg);
 /// \param start Start address for memory range.
 /// \param length Length of memory range.
 void clint_register_mmio(machine &m, uint64_t start, uint64_t length);
+
+} // namespace cartesi
 
 #endif

@@ -9,6 +9,23 @@
 #include "access-log.h"
 #include "keccak-256-hasher.h"
 
+using cartesi::merkle_tree;
+using cartesi::access_type;
+using cartesi::note_type;
+using cartesi::access_log;
+using cartesi::machine_config;
+using cartesi::processor_config;
+using cartesi::flash_config;
+using cartesi::rom_config;
+using cartesi::ram_config;
+using cartesi::htif_config;
+using cartesi::clint_config;
+using cartesi::machine_config;
+using cartesi::machine_config;
+using cartesi::machine_config;
+using cartesi::machine;
+using cartesi::keccak_256_hasher;
+
 /// \file
 /// \brief Scripting interface for the Cartesi machine in the Lua language.
 
@@ -266,10 +283,10 @@ static void push_log(lua_State *L, access_log &log) {
 /// \param tabidx Config stack index.
 static void check_machine_config(lua_State *L, int tabidx) {
     std::string config_name = check_string_field(L, tabidx, "machine");
-    auto machine_name = machine::get_name();
-    if (config_name != machine_name) {
-        luaL_error(L, "machine-config mismatch (%s running in %s)",
-            config_name.c_str(), machine_name.c_str());
+    auto cartesi_name = cartesi::get_name();
+    if (config_name != cartesi_name) {
+        luaL_error(L, "Cartesi machine-config mismatch (%s running in %s)",
+            config_name.c_str(), cartesi_name.c_str());
     }
 }
 
@@ -401,7 +418,7 @@ static void load_clint_config(lua_State *L, int tabidx, machine_config &c) {
 /// \brief This is the cartesi.get_name() function implementation.
 /// \param L Lua state.
 static int mod_get_name(lua_State *L) {
-    auto name = machine::get_name();
+    auto name = cartesi::get_name();
     lua_pushlstring(L, name.data(), name.size());
     return 1;
 }

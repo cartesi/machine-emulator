@@ -6,6 +6,8 @@
 /// \file
 /// \brief RISC-V constants
 
+namespace cartesi {
+
 /// \brief Global RISC-V constants
 enum RISCV_constants {
     XLEN = 64       ///< Maximum XLEN
@@ -490,5 +492,7 @@ enum class insn_atomic_funct3_funct5 {
     AMOMINU_D = 0b01111000,
     AMOMAXU_D = 0b01111100
 };
+
+} // namespace cartesi
 
 #endif

@@ -4,6 +4,8 @@
 /// \file
 /// \brief Annotation for access log
 
+namespace cartesi {
+
 /// \brief Note type
 enum class note_type {
     begin, ///< Start of scope
@@ -17,5 +19,7 @@ struct access_note {
     size_t where;   ///< Where it points to in the log
     std::string text; ///< Note text
 };
+
+} // namespace cartesi
 
 #endif

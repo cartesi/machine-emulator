@@ -14,6 +14,8 @@ extern "C" {
 #include "pma.h"
 #include "machine-config.h"
 
+namespace cartesi {
+
 #define CLOCK_FREQ 1000000000 // 1 GHz (arbitrary)
 
 #define FDT_CHECK(func_call) do { \
@@ -164,3 +166,5 @@ void rom_init(const machine_config &c, uint64_t misa, int max_xlen,
     q[4] = 0x00028067; // jr t0
     build_device_tree(c, misa, max_xlen, rom_start + fdt_addr, length-fdt_addr);
 }
+
+} // namespace cartesi

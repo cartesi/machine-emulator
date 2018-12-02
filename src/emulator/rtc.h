@@ -6,7 +6,12 @@
 /// \file
 /// \brief Real Time Clock
 
-#define RTC_FREQ_DIV 100  ///< Clock divisor is set stone in whitepaper
+namespace cartesi {
+
+/// \brief RTC constants
+enum RTC_constants {
+    RTC_FREQ_DIV  = 100  ///< Clock divisor is set stone in whitepaper
+};
 
 /// \brief Converts from cycle count to time count
 /// \param cycle Cycle count
@@ -21,5 +26,7 @@ static inline uint64_t rtc_cycle_to_time(uint64_t cycle) {
 static inline uint64_t rtc_time_to_cycle(uint64_t time) {
     return time * RTC_FREQ_DIV;
 }
+
+} // namespace cartesi
 
 #endif

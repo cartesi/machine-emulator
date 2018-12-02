@@ -7,6 +7,8 @@
 /// \file
 /// \brief Host-Target interface device.
 
+namespace cartesi {
+
 // Forward declarations
 class machine;
 
@@ -81,5 +83,7 @@ private:
     void end_console(void);
 
 };
+
+} // namespace cartesi
 
 #endif

@@ -11,6 +11,8 @@
 #include "cartesi-constants.h"
 #include "pma.h"
 
+namespace cartesi {
+
 /// \brief Translation Lookaside Buffer entry.
 /// \details The TLB is a small cache used to speed up translation between
 /// virtual target addresses and the corresponding memory address in the host.
@@ -152,5 +154,7 @@ struct machine_state {
     }
 
 };
+
+} // namespace cartesi
 
 #endif

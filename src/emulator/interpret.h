@@ -6,6 +6,8 @@
 /// \file
 /// \brief Interpreter implementation.
 
+namespace cartesi {
+
 // Forward declarations
 class state_access;
 class logged_state_access;
@@ -35,5 +37,7 @@ interpret(state_access &a, uint64_t mcycle_end);
 extern template
 interpreter_status
 interpret(state_access &a, uint64_t mcycle_end);
+
+} // namespace cartesi
 
 #endif

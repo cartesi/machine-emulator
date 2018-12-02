@@ -10,6 +10,8 @@
 #include "unique-c-ptr.h"
 #include "pma.h"
 
+namespace cartesi {
+
 pma_memory::~pma_memory() {
     if (m_backing_file >= 0) {
         munmap(m_host_memory, m_length);
@@ -146,3 +148,5 @@ bool pma_read_error(const pma_entry &, i_virtual_state_access *, uint64_t, uint6
 bool pma_peek_error(const pma_entry &, uint64_t, const uint8_t **, uint8_t *) {
     return false;
 }
+
+} // namespace cartesi

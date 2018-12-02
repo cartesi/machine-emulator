@@ -2,9 +2,6 @@
 #include <cinttypes>
 #include <cstdint>
 
-#include "meta.h"
-#include "interpret.h"
-
 /// \file
 /// \brief Interpreter implementation.
 /// \details \{
@@ -77,6 +74,9 @@ typedef unsigned __int128 uint128_t;
 #include "riscv-constants.h"
 #include "unique-c-ptr.h"
 #include "rom.h"
+#include "interpret.h"
+
+namespace cartesi {
 
 /// \brief Memory range peek callback. See ::pma_peek.
 static bool memory_peek(const pma_entry &pma, uint64_t page_address, const uint8_t **page_data, uint8_t *scratch) {
@@ -3161,3 +3161,5 @@ interpret(state_access &a, uint64_t mcycle_end);
 template
 interpreter_status
 interpret(logged_state_access &a, uint64_t mcycle_end);
+
+} // namespace cartesi

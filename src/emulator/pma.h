@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <variant>
 
+namespace cartesi {
+
 // Forward declarations
 class pma_entry;
 class i_virtual_state_access;
@@ -11,38 +13,37 @@ class i_virtual_state_access;
 /// \file
 /// \brief Physical memory attributes.
 
-/// \name Fixed PMA ranges.
-/// \{
-#define PMA_SHADOW_START  UINT64_C(0)           ///< Start of shadow range
-#define PMA_SHADOW_LENGTH UINT64_C(0x1000)      ///< Length of shadow range
-#define PMA_ROM_START     UINT64_C(0x1000)      ///< Start of ROM range
-#define PMA_ROM_LENGTH    UINT64_C(0xF000)      ///< Length of ROM range
-#define PMA_CLINT_START   UINT64_C(0x2000000)   ///< Start of CLINT range
-#define PMA_CLINT_LENGTH  UINT64_C(0xC0000)     ///< Length of CLINT range
-#define PMA_HTIF_START    UINT64_C(0x40008000)  ///< Start of HTIF range
-#define PMA_HTIF_LENGTH   UINT64_C(0x1000)      ///< Length of HTIF range
-#define PMA_RAM_START     UINT64_C(0x80000000)  ///< Start of RAM range
-/// \}
+/// \brief Fixed PMA ranges.
+enum PMA_ranges: uint64_t {
+    PMA_SHADOW_START  = UINT64_C(0),           ///< Start of shadow range
+    PMA_SHADOW_LENGTH = UINT64_C(0x1000),      ///< Length of shadow range
+    PMA_ROM_START     = UINT64_C(0x1000),      ///< Start of ROM range
+    PMA_ROM_LENGTH    = UINT64_C(0xF000),      ///< Length of ROM range
+    PMA_CLINT_START   = UINT64_C(0x2000000),   ///< Start of CLINT range
+    PMA_CLINT_LENGTH  = UINT64_C(0xC0000),     ///< Length of CLINT range
+    PMA_HTIF_START    = UINT64_C(0x40008000),  ///< Start of HTIF range
+    PMA_HTIF_LENGTH   = UINT64_C(0x1000),      ///< Length of HTIF range
+    PMA_RAM_START     = UINT64_C(0x80000000),  ///< Start of RAM range
+};
 
-/// log<sub>2</sub> of physical memory page size.
-#define PMA_PAGE_SIZE_LOG2 12
-/// Physical memory page size.
-#define PMA_PAGE_SIZE       (UINT64_C(1) << PMA_PAGE_SIZE_LOG2)
-/// Physical memory word size.
-#define PMA_WORD_SIZE       UINT64_C(8)
+/// \brief PMA constants.
+enum PMA_constants {
+    PMA_PAGE_SIZE_LOG2 = 12, ///< log<sub>2</sub> of physical memory page size.
+    PMA_PAGE_SIZE      = (UINT64_C(1) << PMA_PAGE_SIZE_LOG2), ///< Physical memory page size.
+    PMA_WORD_SIZE      = UINT64_C(8) ///< Physical memory word size.
+};
 
-/// \name PMA istart flags
-/// \{
-#define PMA_ISTART_M_SHIFT   (0) ///< Memory range
-#define PMA_ISTART_IO_SHIFT  (1) ///< Device range
-#define PMA_ISTART_E_SHIFT   (2) ///< Empty range
-#define PMA_ISTART_R_SHIFT   (3) ///< Readable
-#define PMA_ISTART_W_SHIFT   (4) ///< Writable
-#define PMA_ISTART_X_SHIFT   (5) ///< Executable
-#define PMA_ISTART_IR_SHIFT  (6) ///< Idempotent reads
-#define PMA_ISTART_IW_SHIFT  (7) ///< Idempotent writes
-/// \}
-
+/// \brief PMA istart shifts
+enum PMA_ISTART_shifts {
+    PMA_ISTART_M_SHIFT  = 0, ///< Memory range
+    PMA_ISTART_IO_SHIFT = 1, ///< Device range
+    PMA_ISTART_E_SHIFT  = 2, ///< Empty range
+    PMA_ISTART_R_SHIFT  = 3, ///< Readable
+    PMA_ISTART_W_SHIFT  = 4, ///< Writable
+    PMA_ISTART_X_SHIFT  = 5, ///< Executable
+    PMA_ISTART_IR_SHIFT = 6, ///< Idempotent reads
+    PMA_ISTART_IW_SHIFT = 7, ///< Idempotent writes
+};
 
 /// \brief Prototype for callback invoked when machine wants to peek into a range with no side-effects.
 /// \param pma Pointer to corresponding PMA entry.
@@ -381,5 +382,7 @@ public:
 };
 
 #define PMA_MAX 32 ///< Maximum number of PMAs
+
+} // namespace
 
 #endif

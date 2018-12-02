@@ -17,6 +17,8 @@
 #include "merkle-tree.h"
 #include "pma.h"
 
+namespace cartesi {
+
 /// \class
 /// \details The logged_state_access logs all access to the machine state.
 class logged_state_access: public i_state_access<logged_state_access> {
@@ -506,5 +508,6 @@ struct avoid_tlb<logged_state_access> {
     static constexpr bool value = true;
 };
 
+} // namespace cartesi
 
 #endif

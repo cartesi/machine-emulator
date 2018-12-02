@@ -2,6 +2,7 @@
 #include <cinttypes>
 #include <cstdint>
 
+#include "meta.h"
 #include "interpret.h"
 
 /// \file
@@ -203,19 +204,19 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
 /// \param a Machine state accessor object.
 /// \param vaddr Virtual address
 /// \param ppaddr Pointer to physical address.
-/// \param xwr_shift Encodes the access mode by the shift to the XWR triad (PTE_XWR_READ_SHIFT,
-///  PTE_XWR_READ_SHIFT, or PTE_XWR_READ_SHIFT)
+/// \param xwr_shift Encodes the access mode by the shift to the XWR triad (PTE_XWR_R_SHIFT,
+///  PTE_XWR_R_SHIFT, or PTE_XWR_R_SHIFT)
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
     auto note = a.make_scoped_note("translate_virtual_address"); (void) note;
-    int priv = a.read_iflags_PRV();
+    auto priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
 
     // When MPRV is set, data loads and stores use privilege in MPP
     // instead of the current privilege level (code access is unaffected)
-    if ((mstatus & MSTATUS_MPRV) && xwr_shift != PTE_XWR_CODE_SHIFT) {
-        priv = (mstatus >> MSTATUS_MPP_SHIFT) & 3;
+    if ((mstatus & MSTATUS_MPRV_MASK) && xwr_shift != PTE_XWR_C_SHIFT) {
+        priv = (mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
     }
 
     // M-mode code does not use virtual memory
@@ -250,14 +251,14 @@ static bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t
     // The rest of vaddr must be filled with copies of the
     // most significant bit in VPN[levels]
     // Hence, the use of arithmetic shifts here
-    int vaddr_shift = XLEN - (PG_SHIFT + levels * 9);
+    int vaddr_shift = XLEN - (PAGE_NUMBER_SHIFT + levels * 9);
     if ((((int64_t)vaddr << vaddr_shift) >> vaddr_shift) != (int64_t) vaddr)
         return false;
 
     // The least significant 44 bits of satp contain the physical page number for the root page table
     const int satp_ppn_bits = 44;
     // Initialize pte_addr with the base address for the root page table
-    uint64_t pte_addr = (satp & (((uint64_t)1 << satp_ppn_bits) - 1)) << PG_SHIFT;
+    uint64_t pte_addr = (satp & (((uint64_t)1 << satp_ppn_bits) - 1)) << PAGE_NUMBER_SHIFT;
     // All page table entries have 8 bytes
     const int pte_size_log2 = 3;
     // Each page table has 4k/pte_size entries
@@ -266,7 +267,7 @@ static bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t
     uint64_t vpn_mask = (1 << vpn_bits) - 1;
     for (int i = 0; i < levels; i++) {
         // Mask out VPN[levels-i-1]
-        vaddr_shift = PG_SHIFT + vpn_bits * (levels - 1 - i);
+        vaddr_shift = PAGE_NUMBER_SHIFT + vpn_bits * (levels - 1 - i);
         uint64_t vpn = (vaddr >> vaddr_shift) & vpn_mask;
         // Add offset to find physical address of page table entry
         pte_addr += vpn << pte_size_log2; //??D we can probably save this shift here
@@ -280,7 +281,7 @@ static bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t
         if (!(pte & PTE_V_MASK))
             return false;
         // Clear all flags in least significant bits, then shift back to multiple of page size to form physical address
-        uint64_t ppn = (pte >> 10) << PG_SHIFT;
+        uint64_t ppn = (pte >> 10) << PAGE_NUMBER_SHIFT;
         // Obtain X, W, R protection bits
         int xwr = (pte >> 1) & 7;
         // xwr != 0 means we are done walking the page tables
@@ -291,7 +292,7 @@ static bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t
             // (We know we are not PRV_M if we reached here)
             if (priv == PRV_S) {
                 // If SUM is set, forbid S-mode code from accessing U-mode memory
-                if ((pte & PTE_U_MASK) && !(mstatus & MSTATUS_SUM))
+                if ((pte & PTE_U_MASK) && !(mstatus & MSTATUS_SUM_MASK))
                     return false;
             } else {
                 // Forbid U-mode code from accessing S-mode memory
@@ -299,7 +300,7 @@ static bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t
                     return false;
             }
             // MXR allows read access to execute-only pages
-            if (mstatus & MSTATUS_MXR)
+            if (mstatus & MSTATUS_MXR_MASK)
                 // Set R bit if X bit is set
                 xwr |= (xwr >> 2);
             // Check protection bits against requested access
@@ -310,9 +311,9 @@ static bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t
             if (ppn & vaddr_mask)
                 return false;
             // Decide if we need to update access bits in pte
-            bool update_pte = !(pte & PTE_A_MASK) || (!(pte & PTE_D_MASK) && xwr_shift == PTE_XWR_WRITE_SHIFT);
+            bool update_pte = !(pte & PTE_A_MASK) || (!(pte & PTE_D_MASK) && xwr_shift == PTE_XWR_W_SHIFT);
             pte |= PTE_A_MASK;
-            if (xwr_shift == PTE_XWR_WRITE_SHIFT)
+            if (xwr_shift == PTE_XWR_W_SHIFT)
                 pte |= PTE_D_MASK;
             // If so, update pte
             if (update_pte)
@@ -335,7 +336,7 @@ static bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t
 /// \param tlb TLB entry to replace.
 /// \returns Offset from Target virtual address to host address
 static inline uintptr_t tlb_replace(pma_entry &pma, uint64_t vaddr, uint64_t paddr, tlb_entry &tlb) {
-    tlb.vaddr = vaddr & ~PG_MASK;
+    tlb.vaddr = vaddr & ~PAGE_OFFSET_MASK;
     uint8_t *ptr = pma.get_memory().get_host_memory() + (uintptr_t)(paddr - pma.get_start());
     tlb.mem_addend = (uintptr_t)ptr - vaddr;
     return tlb.mem_addend;
@@ -352,7 +353,7 @@ static inline bool tlb_hit(const tlb_entry &tlb, uint64_t vaddr) {
     // Otherwise, we could report a hit for a word that goes past the end of the PMA range.
     // Aligned accesses cannot do so because the PMA ranges
     // are always page-aligned.
-    return (tlb.vaddr == (vaddr & ~(PG_MASK & ~(sizeof(T) - 1))));
+    return (tlb.vaddr == (vaddr & ~(PAGE_OFFSET_MASK & ~(sizeof(T) - 1))));
 }
 
 /// \brief Invalidates all TLB entries.
@@ -376,14 +377,14 @@ static void tlb_flush_vaddr(machine_state &s, uint64_t vaddr) {
 static inline bool csr_is_read_only(CSR_address csraddr) {
     // 0xc00--0xcff, 0xd00--0xdff, and 0xf00--0xfff are all read-only.
     // so as long as bits 0xc00 are set, the register is read-only
-    return ((static_cast<uint32_t>(csraddr) & 0xc00) == 0xc00);
+    return ((to_underlying(csraddr) & 0xc00) == 0xc00);
 }
 
 /// \brief Extract privilege level from CSR address.
 /// \param CSR_address Address of CSR in file.
 /// \returns Privilege level.
 static inline uint32_t csr_priv(CSR_address csr) {
-    return (static_cast<uint32_t>(csr) >> 8) & 3;
+    return (to_underlying(csr) >> 8) & 3;
 }
 
 /// \brief Changes privilege level.
@@ -414,19 +415,19 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
         int flag;
         flag = 0;
 #ifdef DUMP_MMU_EXCEPTIONS
-        if (cause == CAUSE_FETCH_FAULT ||
-            cause == CAUSE_LOAD_FAULT ||
-            cause == CAUSE_STORE_AMO_FAULT ||
-            cause == CAUSE_FETCH_PAGE_FAULT ||
-            cause == CAUSE_LOAD_PAGE_FAULT ||
-            cause == CAUSE_STORE_AMO_PAGE_FAULT)
+        if (cause == MCAUSE_INSN_ACCESS_FAULT ||
+            cause == MCAUSE_LOAD_ACCESS_FAULT ||
+            cause == MCAUSE_STORE_AMO_ACCESS_FAULT ||
+            cause == MCAUSE_FETCH_PAGE_FAULT ||
+            cause == MCAUSE_LOAD_PAGE_FAULT ||
+            cause == MCAUSE_STORE_AMO_PAGE_FAULT)
             flag = 1;
 #endif
 #ifdef DUMP_INTERRUPTS
-        flag |= (cause & CAUSE_INTERRUPT) != 0;
+        flag |= (cause & MCAUSE_INTERRUPT_FLAG) != 0;
 #endif
 #ifdef DUMP_EXCEPTIONS
-        flag |= (cause & CAUSE_INTERRUPT) == 0;
+        flag |= (cause & MCAUSE_INTERRUPT_FLAG) == 0;
 #endif
         if (flag) {
             fprintf(stderr, "raise_exception: cause=0x");
@@ -443,10 +444,10 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
     // For each interrupt or exception number, there is a bit at mideleg
     // or medeleg saying if it should be delegated
     bool deleg = false;
-    int priv = a.read_iflags_PRV();
+    auto priv = a.read_iflags_PRV();
     if (priv <= PRV_S) {
-        if (cause & CAUSE_INTERRUPT) {
-            // Clear the CAUSE_INTERRUPT bit before shifting
+        if (cause & MCAUSE_INTERRUPT_FLAG) {
+            // Clear the MCAUSE_INTERRUPT_FLAG bit before shifting
             deleg = (a.read_mideleg() >> (cause & (XLEN - 1))) & 1;
         } else {
             deleg = (a.read_medeleg() >> cause) & 1;
@@ -458,18 +459,18 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
         a.write_sepc(a.read_pc());
         a.write_stval(tval);
         uint64_t mstatus = a.read_mstatus();
-        mstatus = (mstatus & ~MSTATUS_SPIE) | (((mstatus >> priv) & 1) << MSTATUS_SPIE_SHIFT);
-        mstatus = (mstatus & ~MSTATUS_SPP) | (priv << MSTATUS_SPP_SHIFT);
-        mstatus &= ~MSTATUS_SIE;
+        mstatus = (mstatus & ~MSTATUS_SPIE_MASK) | (((mstatus >> priv) & 1) << MSTATUS_SPIE_SHIFT);
+        mstatus = (mstatus & ~MSTATUS_SPP_MASK) | (priv << MSTATUS_SPP_SHIFT);
+        mstatus &= ~MSTATUS_SIE_MASK;
         a.write_mstatus(mstatus);
         set_priv(a, priv, PRV_S);
         a.write_pc(a.read_stvec());
 #ifdef DUMP_COUNTERS
-        if (cause & CAUSE_INTERRUPT) {
+        if (cause & MCAUSE_INTERRUPT_FLAG) {
             a.get_naked_state().count_si++;
         } else {
             // Do not count environment calls
-            if (cause >= CAUSE_ECALL_BASE && cause <= CAUSE_ECALL_BASE + PRV_M)
+            if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M)
                 a.get_naked_state().count_se++;
         }
 #endif
@@ -478,18 +479,18 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
         a.write_mepc(a.read_pc());
         a.write_mtval(tval);
         uint64_t mstatus = a.read_mstatus();
-        mstatus = (mstatus & ~MSTATUS_MPIE) | (((mstatus >> priv) & 1) << MSTATUS_MPIE_SHIFT);
-        mstatus = (mstatus & ~MSTATUS_MPP) | (priv << MSTATUS_MPP_SHIFT);
-        mstatus &= ~MSTATUS_MIE;
+        mstatus = (mstatus & ~MSTATUS_MPIE_MASK) | (((mstatus >> priv) & 1) << MSTATUS_MPIE_SHIFT);
+        mstatus = (mstatus & ~MSTATUS_MPP_MASK) | (priv << MSTATUS_MPP_SHIFT);
+        mstatus &= ~MSTATUS_MIE_MASK;
         a.write_mstatus(mstatus);
         set_priv(a, priv, PRV_M);
         a.write_pc(a.read_mtvec());
 #ifdef DUMP_COUNTERS
-        if (cause & CAUSE_INTERRUPT) {
+        if (cause & MCAUSE_INTERRUPT_FLAG) {
             a.get_naked_state().count_mi++;
         } else {
             // Do not count environment calls
-            if (cause >= CAUSE_ECALL_BASE && cause <= CAUSE_ECALL_BASE + PRV_M)
+            if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M)
                 a.get_naked_state().count_me++;
         }
 #endif
@@ -514,7 +515,7 @@ static inline uint32_t get_pending_irq_mask(STATE_ACCESS &a) {
     switch (priv) {
         case PRV_M: {
             uint64_t mstatus = a.read_mstatus();
-            if (mstatus & MSTATUS_MIE) {
+            if (mstatus & MSTATUS_MIE_MASK) {
                 enabled_ints = ~a.read_mideleg();
             }
             break;
@@ -525,7 +526,7 @@ static inline uint32_t get_pending_irq_mask(STATE_ACCESS &a) {
             // Interrupts not set in mideleg are machine-mode
             // and cannot be masked by supervisor mode
             enabled_ints = ~mideleg;
-            if (mstatus & MSTATUS_SIE)
+            if (mstatus & MSTATUS_SIE_MASK)
                 enabled_ints |= mideleg;
             break;
         }
@@ -552,7 +553,7 @@ static void raise_interrupt_if_any(STATE_ACCESS &a) {
     uint32_t mask = get_pending_irq_mask(a);
     if (mask != 0) {
         uint64_t irq_num = ilog2(mask);
-        raise_exception(a, irq_num | CAUSE_INTERRUPT, 0);
+        raise_exception(a, irq_num | MCAUSE_INTERRUPT_FLAG, 0);
     }
 }
 
@@ -673,25 +674,25 @@ static inline uint32_t insn_get_funct6(uint32_t insn) {
 template <typename T, typename STATE_ACCESS>
 static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)  {
     using U = std::make_unsigned_t<T>;
-    int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
+    int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
     tlb_entry &tlb = a.get_naked_state().tlb_read[tlb_idx];
     if (!avoid_tlb<STATE_ACCESS>::value && tlb_hit<T>(tlb, vaddr)) {
         *pval = *reinterpret_cast<T *>(tlb.mem_addend + (uintptr_t)vaddr);
         return true;
     // No support for misaligned accesses: They are handled by a trap in BBL
     } else if (vaddr & (sizeof(T)-1)) {
-        raise_exception(a, CAUSE_LOAD_ADDRESS_MISALIGNED, vaddr);
+        raise_exception(a, MCAUSE_LOAD_ADDRESS_MISALIGNED, vaddr);
         return false;
     // Deal with aligned accesses
     } else {
         uint64_t paddr;
-        if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_READ_SHIFT)) {
-            raise_exception(a, CAUSE_LOAD_PAGE_FAULT, vaddr);
+        if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) {
+            raise_exception(a, MCAUSE_LOAD_PAGE_FAULT, vaddr);
             return false;
         }
         pma_entry &pma = find_pma_entry<T>(a, paddr);
         if (pma.get_istart_E() || !pma.get_istart_R()) {
-            raise_exception(a, CAUSE_LOAD_FAULT, vaddr);
+            raise_exception(a, MCAUSE_LOAD_ACCESS_FAULT, vaddr);
             return false;
         } else if (pma.get_istart_M()) {
             uintptr_t mem_addend = tlb_replace(pma, vaddr, paddr, tlb);
@@ -705,7 +706,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             // If we do not know how to read, we treat this as a PMA violation
             if (!pma.get_device().get_driver()->
                 read(pma, &da, offset, &val, size_log2<U>::value)) {
-                raise_exception(a, CAUSE_LOAD_FAULT, vaddr);
+                raise_exception(a, MCAUSE_LOAD_ACCESS_FAULT, vaddr);
                 return false;
             }
             *pval = static_cast<T>(val);
@@ -725,25 +726,25 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
 template <typename T, typename STATE_ACCESS>
 static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_t val) {
     using U = std::make_unsigned_t<T>;
-    uint32_t tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
+    uint32_t tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
     tlb_entry &tlb = a.get_naked_state().tlb_write[tlb_idx];
     if (!avoid_tlb<STATE_ACCESS>::value && tlb_hit<T>(tlb, vaddr)) {
         *reinterpret_cast<T *>(tlb.mem_addend + (uintptr_t)vaddr) = static_cast<T>(val);
         return true;
     // No support for misaligned accesses: They are handled by a trap in BBL
     } else if (vaddr & (sizeof(T)-1)) {
-        raise_exception(a, CAUSE_STORE_AMO_ADDRESS_MISALIGNED, vaddr);
+        raise_exception(a, MCAUSE_STORE_AMO_ADDRESS_MISALIGNED, vaddr);
         return false;
     // Deal with aligned accesses
     } else {
         uint64_t paddr;
-        if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_WRITE_SHIFT)) {
-            raise_exception(a, CAUSE_STORE_AMO_PAGE_FAULT, vaddr);
+        if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_W_SHIFT)) {
+            raise_exception(a, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
             return false;
         }
         pma_entry &pma = find_pma_entry<T>(a, paddr);
         if (pma.get_istart_E() || !pma.get_istart_W()) {
-            raise_exception(a, CAUSE_STORE_AMO_FAULT, vaddr);
+            raise_exception(a, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
             return false;
         } else if (pma.get_istart_M()) {
             uintptr_t mem_addend = tlb_replace(pma, vaddr, paddr, tlb);
@@ -757,7 +758,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             // If we do not know how to write, we treat this as a PMA violation
             if (!pma.get_device().get_driver()->
                 write(pma, &da, offset, val, size_log2<U>::value)) {
-                raise_exception(a, CAUSE_STORE_AMO_FAULT, vaddr);
+                raise_exception(a, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
                 return false;
             }
             return true;
@@ -770,7 +771,7 @@ static void dump_insn(machine &m, uint64_t pc, uint32_t insn, const char *name) 
 #ifdef DUMP_INSN
     fprintf(stderr, "%s\n", name);
     uint64_t ppc;
-    if (!translate_virtual_address(a, &ppc, pc, PTE_XWR_CODE_SHIFT)) {
+    if (!translate_virtual_address(a, &ppc, pc, PTE_XWR_C_SHIFT)) {
         ppc = pc;
         fprintf(stderr, "v    %08" PRIx64, ppc);
     } else {
@@ -803,7 +804,7 @@ enum class execute_status: int {
 template <typename STATE_ACCESS>
 static inline execute_status raise_illegal_insn_exception(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) a; (void) pc;
-    raise_exception(a, CAUSE_ILLEGAL_INSTRUCTION, insn);
+    raise_exception(a, MCAUSE_ILLEGAL_INSN, insn);
     return execute_status::illegal;
 }
 
@@ -817,7 +818,7 @@ static inline execute_status raise_illegal_insn_exception(STATE_ACCESS &a, uint6
 template <typename STATE_ACCESS>
 static inline execute_status raise_misaligned_fetch_exception(STATE_ACCESS &a, uint64_t pc) {
     (void) a;
-    raise_exception(a, CAUSE_MISALIGNED_FETCH, pc);
+    raise_exception(a, MCAUSE_INSN_ADDRESS_MISALIGNED, pc);
     return execute_status::retired;
 }
 
@@ -1257,42 +1258,49 @@ static inline uint64_t read_csr_success(uint64_t val, bool *status) {
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_cycle(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
-    int priv = a.read_iflags_PRV();
+static inline bool rdcounteren(STATE_ACCESS &a, CSR_address csraddr) {
+    uint64_t counteren = MCOUNTEREN_RW_MASK;
+    auto priv = a.read_iflags_PRV();
     if (priv < PRV_M) {
-        uint32_t counteren = 0;
+        counteren &= a.read_mcounteren();
         if (priv < PRV_S) {
-            counteren = a.read_scounteren();
-        } else {
-            counteren = a.read_mcounteren();
-        }
-        if (((counteren >> (static_cast<int>(csraddr) & 0x1f)) & 1) == 0) {
-            return read_csr_fail(status);
+            counteren &= a.read_scounteren();
         }
     }
-    return read_csr_success(a.read_mcycle(), status);
+    return (((counteren >> (static_cast<int>(csraddr) & 0x1f)) & 1) != 0);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_cycle(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
+    if (rdcounteren(a, csraddr)) {
+        return read_csr_success(a.read_mcycle(), status);
+    } else {
+        return read_csr_fail(status);
+    }
 }
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_instret(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
-    int priv = a.read_iflags_PRV();
-    if (priv < PRV_M) {
-        uint32_t counteren = 0;
-        if (priv < PRV_S) {
-            counteren = a.read_scounteren();
-        } else {
-            counteren = a.read_mcounteren();
-        }
-        if (((counteren >> (static_cast<int>(csraddr) & 0x1f)) & 1) == 0) {
-            return read_csr_fail(status);
-        }
+    if (rdcounteren(a, csraddr)) {
+        return read_csr_success(a.read_minstret(), status);
+    } else {
+        return read_csr_fail(status);
     }
-    return read_csr_success(a.read_minstret(), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_time(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
+    if (rdcounteren(a, csraddr)) {
+        uint64_t mtime = rtc_cycle_to_time(a.read_mcycle());
+        return read_csr_success(mtime, status);
+    } else {
+        return read_csr_fail(status);
+    }
 }
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_sstatus(STATE_ACCESS &a, bool *status) {
-    return read_csr_success(a.read_mstatus() & SSTATUS_READ_MASK, status);
+    return read_csr_success(a.read_mstatus() & SSTATUS_R_MASK, status);
 }
 
 template <typename STATE_ACCESS>
@@ -1343,8 +1351,8 @@ static inline uint64_t read_csr_sip(STATE_ACCESS &a, bool *status) {
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_satp(STATE_ACCESS &a, bool *status) {
     uint64_t mstatus = a.read_mstatus();
-    int priv = a.read_iflags_PRV();
-    if (priv == PRV_S && mstatus & MSTATUS_TVM) {
+    auto priv = a.read_iflags_PRV();
+    if (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK)) {
         return read_csr_fail(status);
     } else {
         return read_csr_success(a.read_satp(), status);
@@ -1353,7 +1361,7 @@ static inline uint64_t read_csr_satp(STATE_ACCESS &a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_mstatus(STATE_ACCESS &a, bool *status) {
-    return read_csr_success(a.read_mstatus() & MSTATUS_READ_MASK, status);
+    return read_csr_success(a.read_mstatus() & MSTATUS_R_MASK, status);
 }
 
 template <typename STATE_ACCESS>
@@ -1436,12 +1444,6 @@ static inline uint64_t read_csr_mimpid(STATE_ACCESS &a, bool *status) {
     return read_csr_success(a.read_mimpid(), status);
 }
 
-template <typename STATE_ACCESS>
-static inline uint64_t read_csr_utime(STATE_ACCESS &a, bool *status) {
-    uint64_t mtime = rtc_cycle_to_time(a.read_mcycle());
-    return read_csr_success(mtime, status);
-}
-
 /// \brief Reads the value of a CSR given its address
 /// \param a Machine state accessor object.
 /// \param csraddr Address of CSR in file.
@@ -1456,7 +1458,7 @@ static uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
     switch (csraddr) {
         case CSR_address::ucycle: return read_csr_cycle(a, csraddr, status);
         case CSR_address::uinstret: return read_csr_instret(a, csraddr, status);
-        case CSR_address::utime: return read_csr_utime(a, status);
+        case CSR_address::utime: return read_csr_time(a, csraddr, status);
 
         case CSR_address::sstatus: return read_csr_sstatus(a, status);
         case CSR_address::sie: return read_csr_sie(a, status);
@@ -1525,7 +1527,7 @@ static uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
 template <typename STATE_ACCESS>
 static bool write_csr_sstatus(STATE_ACCESS &a, uint64_t val) {
     uint64_t mstatus = a.read_mstatus();
-    return write_csr_mstatus(a, (mstatus & ~SSTATUS_WRITE_MASK) | (val & SSTATUS_WRITE_MASK));
+    return write_csr_mstatus(a, (mstatus & ~SSTATUS_W_MASK) | (val & SSTATUS_W_MASK));
 }
 
 template <typename STATE_ACCESS>
@@ -1545,7 +1547,7 @@ static bool write_csr_stvec(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static bool write_csr_scounteren(STATE_ACCESS &a, uint64_t val) {
-    a.write_scounteren(val & COUNTEREN_MASK);
+    a.write_scounteren(val & SCOUNTEREN_RW_MASK);
     return true;
 }
 
@@ -1600,20 +1602,20 @@ static bool write_csr_satp(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static bool write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
-    uint64_t mstatus = a.read_mstatus() & MSTATUS_READ_MASK;
+    uint64_t mstatus = a.read_mstatus() & MSTATUS_R_MASK;
 
     // If MMU configuration was changed, flush the TLBs
     // This does not need to be done within the blockchain
     uint64_t mod = mstatus ^ val;
-    if ((mod & (MSTATUS_MPRV | MSTATUS_SUM | MSTATUS_MXR)) != 0 ||
-        ((mstatus & MSTATUS_MPRV) && (mod & MSTATUS_MPP) != 0)) {
+    if ((mod & (MSTATUS_MPRV_MASK | MSTATUS_SUM_MASK | MSTATUS_MXR_MASK)) != 0 ||
+        ((mstatus & MSTATUS_MPRV_MASK) && (mod & MSTATUS_MPP_MASK) != 0)) {
         tlb_flush_all(a.get_naked_state());
     }
 
     // Modify only bits that can be written to
-    mstatus = (mstatus & ~MSTATUS_WRITE_MASK) | (val & MSTATUS_WRITE_MASK);
+    mstatus = (mstatus & ~MSTATUS_W_MASK) | (val & MSTATUS_W_MASK);
     // Update the SD bit
-    if ((mstatus & MSTATUS_FS) == MSTATUS_FS) mstatus |= MSTATUS_SD;
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_MASK) mstatus |= MSTATUS_SD_MASK;
     // Store results
     a.write_mstatus(mstatus);
     return true;
@@ -1621,21 +1623,21 @@ static bool write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static bool write_csr_medeleg(STATE_ACCESS &a, uint64_t val) {
-    const uint64_t mask = (1 << (CAUSE_STORE_AMO_PAGE_FAULT + 1)) - 1;
+    const uint64_t mask = (1 << (MCAUSE_STORE_AMO_PAGE_FAULT + 1)) - 1;
     a.write_medeleg((a.read_medeleg() & ~mask) | (val & mask));
     return true;
 }
 
 template <typename STATE_ACCESS>
 static bool write_csr_mideleg(STATE_ACCESS &a, uint64_t val) {
-    const uint64_t mask = MIP_SSIP | MIP_STIP | MIP_SEIP;
+    const uint64_t mask = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
     a.write_mideleg((a.read_mideleg() & ~mask) | (val & mask));
     return true;
 }
 
 template <typename STATE_ACCESS>
 static bool write_csr_mie(STATE_ACCESS &a, uint64_t val) {
-    const uint64_t mask = MIP_MSIP | MIP_MTIP | MIP_SSIP | MIP_STIP | MIP_SEIP;
+    const uint64_t mask = MIP_MSIP_MASK | MIP_MTIP_MASK | MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
     a.write_mie((a.read_mie() & ~mask) | (val & mask));
     a.get_naked_state().set_brk_from_mip_mie();
     return true;
@@ -1649,7 +1651,7 @@ static bool write_csr_mtvec(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static bool write_csr_mcounteren(STATE_ACCESS &a, uint64_t val) {
-    a.write_mcounteren(val & COUNTEREN_MASK);
+    a.write_mcounteren(val & MCOUNTEREN_RW_MASK);
     return true;
 }
 
@@ -1699,7 +1701,7 @@ static bool write_csr_mtval(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static bool write_csr_mip(STATE_ACCESS &a, uint64_t val) {
-    const uint64_t mask = MIP_SSIP | MIP_STIP;
+    const uint64_t mask = MIP_SSIP_MASK | MIP_STIP_MASK;
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
@@ -1722,7 +1724,7 @@ static bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t val) {
     if (csr_is_read_only(csraddr)) return false;
     if (csr_priv(csraddr) > a.read_iflags_PRV()) return false;
 
-    switch(csraddr) {
+    switch (csraddr) {
         case CSR_address::sstatus: return write_csr_sstatus(a, val);
         case CSR_address::sie: return write_csr_sie(a, val);
         case CSR_address::stvec: return write_csr_stvec(a, val);
@@ -1925,9 +1927,9 @@ static inline execute_status execute_ECALL(STATE_ACCESS &a, uint64_t pc, uint32_
     dump_insn(a.get_naked_machine(), pc, insn, "ecall");
     auto note = a.make_scoped_note("ecall"); (void) note;
     //??D Need another version of raise_exception that does not modify mtval
-    int priv = a.read_iflags_PRV();
+    auto priv = a.read_iflags_PRV();
     uint64_t mtval = a.read_mtval();
-    raise_exception(a, CAUSE_ECALL_BASE + priv, mtval);
+    raise_exception(a, MCAUSE_ECALL_BASE + priv, mtval);
     return execute_status::retired;
 }
 
@@ -1938,7 +1940,7 @@ static inline execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t pc, uint32
     dump_insn(a.get_naked_machine(), pc, insn, "ebreak");
     auto note = a.make_scoped_note("ebreak"); (void) note;
     //??D Need another version of raise_exception that does not modify mtval
-    raise_exception(a, CAUSE_BREAKPOINT, a.read_mtval());
+    raise_exception(a, MCAUSE_BREAKPOINT, a.read_mtval());
     return execute_status::retired;
 }
 
@@ -1955,19 +1957,19 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_SRET(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a.get_naked_machine(), pc, insn, "sret");
     auto note = a.make_scoped_note("sret"); (void) note;
-    int priv = a.read_iflags_PRV();
+    auto priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
-    if (priv < PRV_S || (priv == PRV_S && (mstatus & MSTATUS_TSR))) {
+    if (priv < PRV_S || (priv == PRV_S && (mstatus & MSTATUS_TSR_MASK))) {
         return raise_illegal_insn_exception(a, pc, insn);
     } else {
-        int spp = (mstatus >> MSTATUS_SPP_SHIFT) & 1;
+        int spp = (mstatus & MSTATUS_SPP_MASK) >> MSTATUS_SPP_SHIFT;
         /* set the IE state to previous IE state */
-        int spie = (mstatus >> MSTATUS_SPIE_SHIFT) & 1;
-        mstatus = (mstatus & ~(1 << MSTATUS_SIE_SHIFT)) | (spie << MSTATUS_SIE_SHIFT);
+        int spie = (mstatus & MSTATUS_SPIE_MASK) >> MSTATUS_SPIE_SHIFT;
+        mstatus = (mstatus & ~MSTATUS_SIE_MASK) | (spie << MSTATUS_SIE_SHIFT);
         /* set SPIE to 1 */
-        mstatus |= MSTATUS_SPIE;
+        mstatus |= MSTATUS_SPIE_MASK;
         /* set SPP to U */
-        mstatus &= ~MSTATUS_SPP;
+        mstatus &= ~MSTATUS_SPP_MASK;
         a.write_mstatus( mstatus);
         set_priv(a, priv, spp);
         a.write_pc(a.read_sepc());
@@ -1980,19 +1982,19 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_MRET(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a.get_naked_machine(), pc, insn, "mret");
     auto note = a.make_scoped_note("mret"); (void) note;
-    int priv = a.read_iflags_PRV();
+    auto priv = a.read_iflags_PRV();
     if (priv < PRV_M) {
         return raise_illegal_insn_exception(a, pc, insn);
     } else {
         uint64_t mstatus = a.read_mstatus();
-        int mpp = (mstatus >> MSTATUS_MPP_SHIFT) & 3;
+        int mpp = (mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
         /* set the IE state to previous IE state */
-        int mpie = (mstatus >> MSTATUS_MPIE_SHIFT) & 1;
-        mstatus = (mstatus & ~(1 << MSTATUS_MIE_SHIFT)) | (mpie << MSTATUS_MIE_SHIFT);
+        int mpie = (mstatus & MSTATUS_MPIE_MASK) >> MSTATUS_MPIE_SHIFT;
+        mstatus = (mstatus & ~MSTATUS_MIE_MASK) | (mpie << MSTATUS_MIE_SHIFT);
         /* set MPIE to 1 */
-        mstatus |= MSTATUS_MPIE;
+        mstatus |= MSTATUS_MPIE_MASK;
         /* set MPP to U */
-        mstatus &= ~MSTATUS_MPP;
+        mstatus &= ~MSTATUS_MPP_MASK;
         a.write_mstatus(mstatus);
         set_priv(a, priv, mpp);
         a.write_pc(a.read_mepc());
@@ -2005,9 +2007,9 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a.get_naked_machine(), pc, insn, "wfi");
     auto note = a.make_scoped_note("wfi"); (void) note;
-    int priv = a.read_iflags_PRV();
+    auto priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
-    if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TW)))
+    if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TW_MASK)))
         return raise_illegal_insn_exception(a, pc, insn);
     uint64_t mip = a.read_mip();
     uint64_t mie = a.read_mie();
@@ -2675,9 +2677,9 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
     if ((insn & 0b11111110000000000111111111111111) == 0b00010010000000000000000001110011) {
         dump_insn(a.get_naked_machine(), pc, insn, "sfence.vma");
         auto note = a.make_scoped_note("sfence.vma"); (void) note;
-        int priv = a.read_iflags_PRV();
+        auto priv = a.read_iflags_PRV();
         uint64_t mstatus = a.read_mstatus();
-        if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM)))
+        if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK)))
             return raise_illegal_insn_exception(a, pc, insn);
         uint32_t rs1 = insn_get_rs1(insn);
         if (rs1 == 0) {
@@ -3040,7 +3042,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
     uint64_t vaddr = *pc = a.read_pc();
     if (vaddr == 0) exit(0);
     // Check TLB for hit
-    int tlb_idx = (vaddr >> PG_SHIFT) & (TLB_SIZE - 1);
+    int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
     tlb_entry &tlb = a.get_naked_state().tlb_code[tlb_idx];
     if (!avoid_tlb<STATE_ACCESS>::value && tlb_hit<uint32_t>(tlb, vaddr)) {
         *insn = *reinterpret_cast<uint32_t *>(tlb.mem_addend + (uintptr_t)vaddr);
@@ -3049,8 +3051,8 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
     } else {
         uint64_t paddr;
         // Walk page table and obtain the physical address
-        if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_CODE_SHIFT)) {
-            raise_exception(a, CAUSE_FETCH_PAGE_FAULT, vaddr);
+        if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_C_SHIFT)) {
+            raise_exception(a, MCAUSE_FETCH_PAGE_FAULT, vaddr);
             return fetch_status::exception;
         }
         // Walk memory map to find the range that contains the physical address
@@ -3058,7 +3060,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
         // We only execute directly from RAM (as in "random access memory", which includes ROM)
         // If the range is not memory or not executable, this as a PMA violation
         if (!pma.get_istart_M() || !pma.get_istart_X()) {
-            raise_exception(a, CAUSE_FETCH_FAULT, vaddr);
+            raise_exception(a, MCAUSE_INSN_ACCESS_FAULT, vaddr);
             return fetch_status::exception;
         }
         uintptr_t mem_addend = tlb_replace(pma, vaddr, paddr, tlb);

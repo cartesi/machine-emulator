@@ -6,194 +6,261 @@
 /// \file
 /// \brief RISC-V constants
 
-#define XLEN 64
-#define MXL   2
+/// \brief Global RISC-V constants
+enum RISCV_constants {
+    XLEN = 64       ///< Maximum XLEN
+};
 
-/// \name Interrupt pending flags for use with set/reset mip
-/// \{
-#define MIP_USIP   (1 << 0) ///< User software interrupt
-#define MIP_SSIP   (1 << 1) ///< Supervisor software interrupt
-#define MIP_HSIP   (1 << 2) ///< Reserved
-#define MIP_MSIP   (1 << 3) ///< Machine software interrupt
-#define MIP_UTIP   (1 << 4) ///< User timer interrupt
-#define MIP_STIP   (1 << 5) ///< Supervisor timer interrupt
-#define MIP_HTIP   (1 << 6) ///< Reserved
-#define MIP_MTIP   (1 << 7) ///< Machine timer interrupt
-#define MIP_UEIP   (1 << 8) ///< User external interrupt
-#define MIP_SEIP   (1 << 9) ///< Supervisor external interrupt
-#define MIP_HEIP   (1 << 10) ///< Reserved
-#define MIP_MEIP   (1 << 11) ///< Machine external interrupt
-/// \}
+/// \brief MIP shifts
+enum MIP_shifts {
+    MIP_USIP_SHIFT = 0,
+    MIP_SSIP_SHIFT = 1,
+    MIP_MSIP_SHIFT = 3,
+    MIP_UTIP_SHIFT = 4,
+    MIP_STIP_SHIFT = 5,
+    MIP_MTIP_SHIFT = 7,
+    MIP_UEIP_SHIFT = 8,
+    MIP_SEIP_SHIFT = 9,
+    MIP_MEIP_SHIFT = 11
+};
 
+/// \brief MIP masks
+enum MIP_masks: uint64_t {
+    MIP_USIP_MASK = UINT64_C(1) << MIP_USIP_SHIFT,  ///< User software interrupt
+    MIP_SSIP_MASK = UINT64_C(1) << MIP_SSIP_SHIFT,  ///< Supervisor software interrupt
+    MIP_MSIP_MASK = UINT64_C(1) << MIP_MSIP_SHIFT,  ///< Machine software interrupt
+    MIP_UTIP_MASK = UINT64_C(1) << MIP_UTIP_SHIFT,  ///< User timer interrupt
+    MIP_STIP_MASK = UINT64_C(1) << MIP_STIP_SHIFT,  ///< Supervisor timer interrupt
+    MIP_MTIP_MASK = UINT64_C(1) << MIP_MTIP_SHIFT,  ///< Machine timer interrupt
+    MIP_UEIP_MASK = UINT64_C(1) << MIP_UEIP_SHIFT,  ///< User external interrupt
+    MIP_SEIP_MASK = UINT64_C(1) << MIP_SEIP_SHIFT,  ///< Supervisor external interrupt
+    MIP_MEIP_MASK = UINT64_C(1) << MIP_MEIP_SHIFT   ///< Machine external interrupt
+};
 
-/// \name mcause for exceptions
-/// \{
-#define CAUSE_MISALIGNED_FETCH              0x0
-#define CAUSE_FETCH_FAULT                   0x1
-#define CAUSE_ILLEGAL_INSTRUCTION           0x2
-#define CAUSE_BREAKPOINT                    0x3
-#define CAUSE_LOAD_ADDRESS_MISALIGNED       0x4
-#define CAUSE_LOAD_FAULT                    0x5
-#define CAUSE_STORE_AMO_ADDRESS_MISALIGNED  0x6
-#define CAUSE_STORE_AMO_FAULT               0x7
-#define CAUSE_ECALL_BASE                    0x8
-#define CAUSE_FETCH_PAGE_FAULT              0xc
-#define CAUSE_LOAD_PAGE_FAULT               0xd
-#define CAUSE_STORE_AMO_PAGE_FAULT          0xf
-#define CAUSE_INTERRUPT                     ((uint64_t)1 << 63)
-/// \}
+/// \brief mcause for exceptions
+enum MCAUSE_constants: uint64_t {
+    MCAUSE_INSN_ADDRESS_MISALIGNED      = 0x0, ///< Instruction address misaligned
+    MCAUSE_INSN_ACCESS_FAULT            = 0x1, ///< Instruction access fault
+    MCAUSE_ILLEGAL_INSN                 = 0x2, ///< Illegal instruction
+    MCAUSE_BREAKPOINT                   = 0x3, ///< Breakpoint
+    MCAUSE_LOAD_ADDRESS_MISALIGNED      = 0x4, ///< Load address misaligned
+    MCAUSE_LOAD_ACCESS_FAULT            = 0x5, ///< Load access fault
+    MCAUSE_STORE_AMO_ADDRESS_MISALIGNED = 0x6, ///< Store/AMO address misaligned
+    MCAUSE_STORE_AMO_ACCESS_FAULT       = 0x7, ///< Store/AMO access fault
+    MCAUSE_ECALL_BASE                   = 0x8, ///< Environment call (+0: from U-mode, +1: from S-mode, +3: from M-mode)
+    MCAUSE_FETCH_PAGE_FAULT             = 0xc, ///< Instruction page fault
+    MCAUSE_LOAD_PAGE_FAULT              = 0xd, ///< Load page fault
+    MCAUSE_STORE_AMO_PAGE_FAULT         = 0xf, ///< Store/AMO page fault
 
+    MCAUSE_INTERRUPT_FLAG               = UINT64_C(1) << (XLEN-1) ///< Interrupt flag
+};
 
-/// \name Privilege levels
-/// \{
-#define PRV_U               0  ///< User
-#define PRV_S               1  ///< Supervisor
-#define PRV_H               2  ///< Reserved
-#define PRV_M               3  ///< Machine
-/// \}
+/// \brief Privilege modes
+enum PRV_constants: uint8_t {
+    PRV_U = 0,  ///< User mode
+    PRV_S = 1,  ///< Supervisor mode
+    PRV_H = 2,  ///< Reserved
+    PRV_M = 3   ///< Machine mode
+};
 
-/// \name misa extensions
-/// \{
-#define MISAEXT_S            (1 << ('S' - 'A'))
-#define MISAEXT_U            (1 << ('U' - 'A'))
-#define MISAEXT_I            (1 << ('I' - 'A'))
-#define MISAEXT_M            (1 << ('M' - 'A'))
-#define MISAEXT_A            (1 << ('A' - 'A'))
-#define MISAEXT_F            (1 << ('F' - 'A'))
-#define MISAEXT_D            (1 << ('D' - 'A'))
-#define MISAEXT_C            (1 << ('C' - 'A'))
-/// \}
+/// \brief misa shifts
+enum MISA_shifts {
+    MISA_EXT_S_SHIFT = ('S' - 'A'),
+    MISA_EXT_U_SHIFT = ('U' - 'A'),
+    MISA_EXT_I_SHIFT = ('I' - 'A'),
+    MISA_EXT_M_SHIFT = ('M' - 'A'),
+    MISA_EXT_A_SHIFT = ('A' - 'A'),
+    MISA_EXT_F_SHIFT = ('F' - 'A'),
+    MISA_EXT_D_SHIFT = ('D' - 'A'),
+    MISA_EXT_C_SHIFT = ('C' - 'A'),
 
-/// \name mstatus shifts
-/// \{
-#define MSTATUS_UIE_SHIFT   0
-#define MSTATUS_SIE_SHIFT   1
-#define MSTATUS_HIE_SHIFT   2
-#define MSTATUS_MIE_SHIFT   3
-#define MSTATUS_UPIE_SHIFT  4
-#define MSTATUS_SPIE_SHIFT  5
-#define MSTATUS_MPIE_SHIFT  7
-#define MSTATUS_SPP_SHIFT   8
-#define MSTATUS_MPP_SHIFT   11
-#define MSTATUS_FS_SHIFT    13
-#define MSTATUS_SD_SHIFT    31
-#define MSTATUS_UXL_SHIFT   32
-#define MSTATUS_SXL_SHIFT   34
-/// \}
+    MISA_MXL_SHIFT = (XLEN-2)
+};
 
-/// \name mstatus flags
-/// \{
-#define MSTATUS_UIE         (1 << 0)
-#define MSTATUS_SIE         (1 << 1)
-#define MSTATUS_HIE         (1 << 2)
-#define MSTATUS_MIE         (1 << 3)
-#define MSTATUS_UPIE        (1 << 4)
-#define MSTATUS_SPIE        (1 << MSTATUS_SPIE_SHIFT)
-#define MSTATUS_HPIE        (1 << 6)
-#define MSTATUS_MPIE        (1 << MSTATUS_MPIE_SHIFT)
-#define MSTATUS_SPP         (1 << MSTATUS_SPP_SHIFT)
-#define MSTATUS_HPP         (3 << 9)
-#define MSTATUS_MPP         (3 << MSTATUS_MPP_SHIFT)
-#define MSTATUS_FS          (3 << MSTATUS_FS_SHIFT)
-#define MSTATUS_XS          (3 << 15)
-#define MSTATUS_MPRV        (1 << 17)
-#define MSTATUS_SUM         (1 << 18)
-#define MSTATUS_MXR         (1 << 19)
-#define MSTATUS_TVM         (1 << 20)
-#define MSTATUS_TW          (1 << 21)
-#define MSTATUS_TSR         (1 << 22)
-#define MSTATUS_SD          ((uint64_t)1 << MSTATUS_SD_SHIFT)
-#define MSTATUS_UXL         ((uint64_t)3 << MSTATUS_UXL_SHIFT)
-#define MSTATUS_SXL         ((uint64_t)3 << MSTATUS_SXL_SHIFT)
-/// \}
+/// \brief misa masks
+enum MISA_masks: uint64_t {
+    MISA_EXT_S_MASK = UINT64_C(1) << MISA_EXT_S_SHIFT, ///< Supervisor mode implemented
+    MISA_EXT_U_MASK = UINT64_C(1) << MISA_EXT_U_SHIFT, ///< User mode implemented
+    MISA_EXT_I_MASK = UINT64_C(1) << MISA_EXT_I_SHIFT, ///< RV32I/64I/128I base ISA
+    MISA_EXT_M_MASK = UINT64_C(1) << MISA_EXT_M_SHIFT, ///< Integer Multiply/Divide extension
+    MISA_EXT_A_MASK = UINT64_C(1) << MISA_EXT_A_SHIFT, ///< Atomic extension
+    MISA_EXT_F_MASK = UINT64_C(1) << MISA_EXT_F_SHIFT, ///< Single-precision floating-point extension
+    MISA_EXT_D_MASK = UINT64_C(1) << MISA_EXT_D_SHIFT, ///< Double-precision floating-point extension
+    MISA_EXT_C_MASK = UINT64_C(1) << MISA_EXT_C_SHIFT, ///< Compressed extension
+};
 
-/// \name Paging constants
-/// \{
-#define PG_SHIFT            12
-#define PG_MASK             ((1 << PG_SHIFT) - 1)
+/// \brief misa constants
+enum MISA_constants: uint64_t {
+    MISA_MXL_VALUE = UINT64_C(2)
+};
 
-#define PTE_V_MASK (1 << 0)
-#define PTE_U_MASK (1 << 4)
-#define PTE_A_MASK (1 << 6)
-#define PTE_D_MASK (1 << 7)
-#define PTE_XWR_READ_SHIFT  0
-#define PTE_XWR_WRITE_SHIFT 1
-#define PTE_XWR_CODE_SHIFT  2
-/// \}
+/// \brief mstatus shifts
+enum MSTATUS_shifts {
+    MSTATUS_UIE_SHIFT  = 0,
+    MSTATUS_SIE_SHIFT  = 1,
+    MSTATUS_MIE_SHIFT  = 3,
+    MSTATUS_UPIE_SHIFT = 4,
+    MSTATUS_SPIE_SHIFT = 5,
+    MSTATUS_MPIE_SHIFT = 7,
+    MSTATUS_SPP_SHIFT  = 8,
+    MSTATUS_MPP_SHIFT  = 11,
+    MSTATUS_FS_SHIFT   = 13,
+    MSTATUS_XS_SHIFT   = 15,
+    MSTATUS_MPRV_SHIFT = 17,
+    MSTATUS_SUM_SHIFT  = 18,
+    MSTATUS_MXR_SHIFT  = 19,
+    MSTATUS_TVM_SHIFT  = 20,
+    MSTATUS_TW_SHIFT   = 21,
+    MSTATUS_TSR_SHIFT  = 22,
 
-/// \name mstatus read/write masks
-/// \{
+    MSTATUS_UXL_SHIFT  = 32,
+    MSTATUS_SXL_SHIFT  = 34,
+    MSTATUS_SD_SHIFT   = XLEN-1
+};
 
-/// \brief Write mask for sstatus
-#define SSTATUS_WRITE_MASK ( \
-    MSTATUS_UIE  | \
-    MSTATUS_SIE  | \
-    MSTATUS_UPIE | \
-    MSTATUS_SPIE | \
-    MSTATUS_SPP  | \
-    MSTATUS_FS   | \
-    MSTATUS_SUM  | \
-    MSTATUS_MXR  \
-)
+/// \brief mstatus masks
+enum MSTATUS_masks: uint64_t {
+    MSTATUS_UIE_MASK  = UINT64_C(1) << MSTATUS_UIE_SHIFT,
+    MSTATUS_SIE_MASK  = UINT64_C(1) << MSTATUS_SIE_SHIFT,
+    MSTATUS_MIE_MASK  = UINT64_C(1) << MSTATUS_MIE_SHIFT,
+    MSTATUS_UPIE_MASK = UINT64_C(1) << MSTATUS_UPIE_SHIFT,
+    MSTATUS_SPIE_MASK = UINT64_C(1) << MSTATUS_SPIE_SHIFT,
+    MSTATUS_MPIE_MASK = UINT64_C(1) << MSTATUS_MPIE_SHIFT,
+    MSTATUS_SPP_MASK  = UINT64_C(1) << MSTATUS_SPP_SHIFT,
+    MSTATUS_MPP_MASK  = UINT64_C(3) << MSTATUS_MPP_SHIFT,
+    MSTATUS_FS_MASK   = UINT64_C(3) << MSTATUS_FS_SHIFT,
+    MSTATUS_XS_MASK   = UINT64_C(3) << MSTATUS_XS_SHIFT,
+    MSTATUS_MPRV_MASK = UINT64_C(1) << MSTATUS_MPRV_SHIFT,
+    MSTATUS_SUM_MASK  = UINT64_C(1) << MSTATUS_SUM_SHIFT,
+    MSTATUS_MXR_MASK  = UINT64_C(1) << MSTATUS_MXR_SHIFT,
+    MSTATUS_TVM_MASK  = UINT64_C(1) << MSTATUS_TVM_SHIFT,
+    MSTATUS_TW_MASK   = UINT64_C(1) << MSTATUS_TW_SHIFT,
+    MSTATUS_TSR_MASK  = UINT64_C(1) << MSTATUS_TSR_SHIFT,
 
-/// \brief Read mask for sstatus
-#define SSTATUS_READ_MASK ( \
-    MSTATUS_UIE  | \
-    MSTATUS_SIE  | \
-    MSTATUS_UPIE | \
-    MSTATUS_SPIE | \
-    MSTATUS_SPP  | \
-    MSTATUS_FS   | \
-    MSTATUS_SUM  | \
-    MSTATUS_MXR  | \
-    MSTATUS_UXL  | \
-    MSTATUS_SD  \
-)
+    MSTATUS_UXL_MASK  = UINT64_C(3) << MSTATUS_UXL_SHIFT,
+    MSTATUS_SXL_MASK  = UINT64_C(3) << MSTATUS_SXL_SHIFT,
+    MSTATUS_SD_MASK   = UINT64_C(1) << MSTATUS_SD_SHIFT
+};
 
-/// \brief Write mask for mstatus
-#define MSTATUS_WRITE_MASK ( \
-    MSTATUS_UIE  | \
-    MSTATUS_SIE  | \
-    MSTATUS_MIE  | \
-    MSTATUS_UPIE | \
-    MSTATUS_SPIE | \
-    MSTATUS_MPIE | \
-    MSTATUS_SPP  | \
-    MSTATUS_MPP  | \
-    MSTATUS_FS   | \
-    MSTATUS_MPRV | \
-    MSTATUS_SUM  | \
-    MSTATUS_MXR  | \
-    MSTATUS_TVM  | \
-    MSTATUS_TW   | \
-    MSTATUS_TSR  \
-)
+/// \brief mstatus read-write masks
+enum MSTATUS_RW_masks: uint64_t {
+    MSTATUS_W_MASK = (
+        MSTATUS_UIE_MASK  |
+        MSTATUS_SIE_MASK  |
+        MSTATUS_MIE_MASK  |
+        MSTATUS_UPIE_MASK |
+        MSTATUS_SPIE_MASK |
+        MSTATUS_MPIE_MASK |
+        MSTATUS_SPP_MASK  |
+        MSTATUS_MPP_MASK  |
+        MSTATUS_FS_MASK   |
+        MSTATUS_MPRV_MASK |
+        MSTATUS_SUM_MASK  |
+        MSTATUS_MXR_MASK  |
+        MSTATUS_TVM_MASK  |
+        MSTATUS_TW_MASK   |
+        MSTATUS_TSR_MASK), ///< Write mask for mstatus
+    MSTATUS_R_MASK = (
+        MSTATUS_UIE_MASK  |
+        MSTATUS_SIE_MASK  |
+        MSTATUS_MIE_MASK  |
+        MSTATUS_UPIE_MASK |
+        MSTATUS_SPIE_MASK |
+        MSTATUS_MPIE_MASK |
+        MSTATUS_SPP_MASK  |
+        MSTATUS_MPP_MASK  |
+        MSTATUS_FS_MASK   |
+        MSTATUS_MPRV_MASK |
+        MSTATUS_SUM_MASK  |
+        MSTATUS_MXR_MASK  |
+        MSTATUS_TVM_MASK  |
+        MSTATUS_TW_MASK   |
+        MSTATUS_TSR_MASK  |
+        MSTATUS_UXL_MASK  |
+        MSTATUS_SXL_MASK  |
+        MSTATUS_SD_MASK) ///< Read mask for mstatus
+};
 
-/// \brief Read mask for mstatus
-#define MSTATUS_READ_MASK ( \
-    MSTATUS_UIE  | \
-    MSTATUS_SIE  | \
-    MSTATUS_MIE  | \
-    MSTATUS_UPIE | \
-    MSTATUS_SPIE | \
-    MSTATUS_MPIE | \
-    MSTATUS_SPP  | \
-    MSTATUS_MPP  | \
-    MSTATUS_FS   | \
-    MSTATUS_MPRV | \
-    MSTATUS_SUM  | \
-    MSTATUS_MXR  | \
-    MSTATUS_TVM  | \
-    MSTATUS_TW   | \
-    MSTATUS_TSR  | \
-    MSTATUS_UXL  | \
-    MSTATUS_SXL  | \
-    MSTATUS_SD  \
-)
-/// \}
+/// \brief sstatus read/write masks
+enum SSTATUS_rw_masks: uint64_t {
+    SSTATUS_W_MASK = (
+        MSTATUS_UIE_MASK  |
+        MSTATUS_SIE_MASK  |
+        MSTATUS_UPIE_MASK |
+        MSTATUS_SPIE_MASK |
+        MSTATUS_SPP_MASK  |
+        MSTATUS_FS_MASK   |
+        MSTATUS_SUM_MASK  |
+        MSTATUS_MXR_MASK ), ///< Write mask for sstatus
+    SSTATUS_R_MASK = (
+        MSTATUS_UIE_MASK  |
+        MSTATUS_SIE_MASK  |
+        MSTATUS_UPIE_MASK |
+        MSTATUS_SPIE_MASK |
+        MSTATUS_SPP_MASK  |
+        MSTATUS_FS_MASK   |
+        MSTATUS_SUM_MASK  |
+        MSTATUS_MXR_MASK  |
+        MSTATUS_UXL_MASK  |
+        MSTATUS_SD_MASK)  ///< Read mask for sstatus
+};
 
-/// \brief mcycle and minstret masks in counteren
-#define COUNTEREN_MASK ((1 << 0) | (1 << 2))
+/// \brief Page-table entry shifts
+enum PTE_shifts {
+    PTE_XWR_R_SHIFT = 0,
+    PTE_XWR_W_SHIFT = 1,
+    PTE_XWR_C_SHIFT = 2,
+    PTE_V_SHIFT     = 0,
+    PTE_R_SHIFT     = 1,
+    PTE_W_SHIFT     = 2,
+    PTE_X_SHIFT     = 3,
+    PTE_U_SHIFT     = 4,
+    PTE_G_SHIFT     = 5,
+    PTE_A_SHIFT     = 6,
+    PTE_D_SHIFT     = 7
+};
+
+/// \brief Page-table entry masks
+enum PTE_masks: uint64_t {
+    PTE_V_MASK = UINT64_C(1) << PTE_V_SHIFT, ///< Valid
+    PTE_R_MASK = UINT64_C(1) << PTE_R_SHIFT, ///< Readable
+    PTE_W_MASK = UINT64_C(1) << PTE_W_SHIFT, ///< Writable
+    PTE_X_MASK = UINT64_C(1) << PTE_X_SHIFT, ///< Executable
+    PTE_U_MASK = UINT64_C(1) << PTE_U_SHIFT, ///< Accessible to user mode
+    PTE_G_MASK = UINT64_C(1) << PTE_G_SHIFT, ///< Global mapping
+    PTE_A_MASK = UINT64_C(1) << PTE_A_SHIFT, ///< Accessed
+    PTE_D_MASK = UINT64_C(1) << PTE_D_SHIFT  ///< Dirty
+};
+
+/// \brief Paging shifts
+enum PAGE_shifts {
+    PAGE_NUMBER_SHIFT = 12,
+};
+
+/// \brief Paging masks
+enum PAGE_masks: uint64_t {
+    PAGE_OFFSET_MASK = (UINT64_C(1) << PAGE_NUMBER_SHIFT)-1
+};
+
+/// \brief mcounteren shifts
+enum MCOUNTEREN_shifts {
+    MCOUNTEREN_CY_SHIFT = 0,
+    MCOUNTEREN_TM_SHIFT = 1,
+    MCOUNTEREN_IR_SHIFT = 2
+};
+
+/// \brief mcounteren masks
+enum MCOUNTEREN_masks: uint64_t {
+    MCOUNTEREN_CY_MASK = UINT64_C(1) << MCOUNTEREN_CY_SHIFT, ///< Enable rdcycle
+    MCOUNTEREN_TM_MASK = UINT64_C(1) << MCOUNTEREN_TM_SHIFT, ///< Enable rdtime
+    MCOUNTEREN_IR_MASK = UINT64_C(1) << MCOUNTEREN_IR_SHIFT, ///< Enable rdinstret
+};
+
+/// \brief counteren write masks
+enum COUNTEREN_rw_masks: uint64_t {
+    MCOUNTEREN_RW_MASK = MCOUNTEREN_CY_MASK | MCOUNTEREN_TM_MASK | MCOUNTEREN_IR_MASK,
+    SCOUNTEREN_RW_MASK = MCOUNTEREN_RW_MASK
+};
 
 /// \brief Mapping between CSR names and addresses
 enum class CSR_address: uint32_t {

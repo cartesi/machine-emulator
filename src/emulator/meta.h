@@ -6,6 +6,12 @@
 /// \file
 /// \brief Meta-programming helper functions.
 
+/// \brief Converts a strongly typed constant to its underlying integer type
+template <typename E>
+constexpr auto to_underlying(E e) noexcept {
+    return static_cast<std::underlying_type_t<E>>(e);
+}
+
 namespace detail {
     template <template<typename...> class BASE, typename DERIVED>
     struct is_template_base_of_helper {

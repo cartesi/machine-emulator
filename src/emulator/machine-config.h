@@ -3,44 +3,11 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
 #include <boost/container/static_vector.hpp>
 
 namespace cartesi {
 
 struct processor_config final {
-    processor_config():
-        x{},
-        pc{0},
-        mvendorid{0},
-        marchid{0},
-        mimpid{0},
-        mcycle{0},
-        minstret{0},
-        mstatus{0},
-        mtvec{0},
-        mscratch{0},
-        mepc{0},
-        mcause{0},
-        mtval{0},
-        misa{0},
-        mie{0},
-        mip{0},
-        medeleg{0},
-        mideleg{0},
-        mcounteren{0},
-        stvec{0},
-        sscratch{0},
-        sepc{0},
-        scause{0},
-        stval{0},
-        satp{0},
-        scounteren{0},
-        ilrsc{0},
-        iflags{0},
-        backing{} {
-        ;
-    }
     uint64_t x[32];
     uint64_t pc;
     uint64_t mvendorid;
@@ -73,19 +40,16 @@ struct processor_config final {
 };
 
 struct ram_config final {
-    ram_config(): length{0}, backing{} { ; }
     uint64_t length;
     std::string backing;
 };
 
 struct rom_config final {
-    rom_config(): bootargs{}, backing{} { ; }
     std::string bootargs;
     std::string backing;
 };
 
 struct flash_config final {
-    flash_config(): start{0}, length{0}, shared{false}, label{}, backing{} { ; }
     uint64_t start;
     uint64_t length;
     bool shared;
@@ -94,13 +58,11 @@ struct flash_config final {
 };
 
 struct clint_config final {
-    clint_config(): mtimecmp{0}, backing{} { ; }
     uint64_t mtimecmp;
     std::string backing;
 };
 
 struct htif_config final {
-    htif_config(): fromhost{0}, tohost{0}, backing{} { ; }
     uint64_t fromhost;
     uint64_t tohost;
     std::string backing;
@@ -109,6 +71,10 @@ struct htif_config final {
 #define FLASH_MAX 8
 
 struct machine_config final {
+    /// \brief Default constructor
+    /// \details Fills out machine with important non-default values to
+    /// several processor registers, and default (zero/empty/false)
+    //value
     machine_config();
     processor_config processor;
     ram_config ram;

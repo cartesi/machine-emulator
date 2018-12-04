@@ -16,12 +16,14 @@ extern "C" {
 
 namespace cartesi {
 
+using namespace std::string_literals;
+
 #define CLOCK_FREQ 1000000000 // 1 GHz (arbitrary)
 
 #define FDT_CHECK(func_call) do { \
     auto errval = (func_call); \
     if (errval != 0) \
-        throw std::runtime_error{std::string{"device tree error: "} + fdt_strerror(errval)}; \
+        throw std::runtime_error{"device tree error: "s + fdt_strerror(errval)}; \
 } while (0);
 
 static int fdt_begin_node_num(void *fdt, const char *name, uint64_t num) {

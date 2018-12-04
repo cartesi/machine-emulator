@@ -12,6 +12,8 @@
 
 namespace cartesi {
 
+using namespace std::string_literals;
+
 pma_memory::~pma_memory() {
     if (m_backing_file >= 0) {
         munmap(m_host_memory, m_length);
@@ -37,7 +39,7 @@ pma_memory::pma_memory(uint64_t length, const callocd &c):
     (void) c;
     m_host_memory = reinterpret_cast<uint8_t *>(calloc(1, length));
     if (!m_host_memory)
-        throw std::bad_alloc();
+        throw std::bad_alloc{};
 }
 
 pma_memory::pma_memory(uint64_t length, const std::string &path,
@@ -48,12 +50,12 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
         auto fp = unique_fopen(path.c_str(), "rb", std::nothrow_t{});
         if (!fp) {
             throw std::system_error{errno, std::generic_category(),
-                "error opening backing file '" + path + "'"};
+                "error opening backing file '"s + path + "'"s};
         }
         auto read = fread(m_host_memory, 1, length, fp.get()); (void) read;
         if (ferror(fp.get())) {
             throw std::system_error{errno, std::generic_category(),
-                "error reading from backing file '" + path + "'"};
+                "error reading from backing file '"s + path + "'"s};
         }
         if (!feof(fp.get())) {
             throw std::runtime_error{
@@ -68,7 +70,7 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
     m_host_memory{nullptr},
     m_backing_file{-1} {
     if (path.empty())
-        throw std::runtime_error("backing file required");
+        throw std::runtime_error{"backing file required"};
 
     int oflag = m.shared? O_RDWR: O_RDONLY;
     int mflag = m.shared? MAP_SHARED: MAP_PRIVATE;
@@ -76,21 +78,21 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
     // Try to open backing file
     int backing_file = open(path.c_str(), oflag);
     if (backing_file < 0)
-        throw std::system_error(errno, std::generic_category(),
-            "could not open backing file '" + path + "'");
+        throw std::system_error{errno, std::generic_category(),
+            "could not open backing file '"s + path + "'"s};
 
     // Try to get file size
     struct stat statbuf;
     if (fstat(backing_file, &statbuf) < 0) {
         close(backing_file);
-        throw std::system_error(errno, std::generic_category(),
-            "unable to stat backing file '" + path + "'");
+        throw std::system_error{errno, std::generic_category(),
+            "unable to stat backing file '"s + path + "'"s};
     }
 
     // Check that it matches range length
     if (static_cast<uint64_t>(statbuf.st_size) != length) {
         close(backing_file);
-        throw std::invalid_argument("backing file size does not match range length");
+        throw std::invalid_argument{"backing file size does not match range length"};
     }
 
     // Try to map backing file to host memory
@@ -98,8 +100,8 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
         mmap(nullptr, length, PROT_READ | PROT_WRITE, mflag, backing_file, 0));
     if (host_memory == MAP_FAILED) {
         close(backing_file);
-        throw std::system_error(errno, std::generic_category(),
-            "could not map backing file '" + path + "' to memory");
+        throw std::system_error{errno, std::generic_category(),
+            "could not map backing file '"s + path + "' to memory"s};
     }
 
     // Finally store everything in object

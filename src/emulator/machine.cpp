@@ -17,6 +17,8 @@
 
 namespace cartesi {
 
+using namespace std::string_literals;
+
 std::string get_name(void) {
     std::ostringstream os;
     os << VENDORID << ':' << ARCHID << ':' << IMPID;
@@ -68,18 +70,18 @@ static bool memory_peek(const pma_entry &pma, uint64_t page_address, const uint8
 
 pma_entry &machine::allocate_pma_entry(pma_entry &&pma) {
     if (m_s.pmas.capacity() <= m_s.pmas.size())
-        throw std::runtime_error("too many PMAs");
+        throw std::runtime_error{"too many PMAs"};
     auto start = pma.get_start();
     if ((start & (PMA_PAGE_SIZE-1)) != 0)
-        throw std::invalid_argument("PMA start must be aligned to page boundary");
+        throw std::invalid_argument{"PMA start must be aligned to page boundary"};
     auto length = pma.get_length();
     if ((length & (PMA_PAGE_SIZE-1)) != 0)
-        throw std::invalid_argument("PMA length must be multiple of page size");
+        throw std::invalid_argument{"PMA length must be multiple of page size"};
     // Range A overlaps with B if A starts before B ends and A ends after B starts
     for (const auto &existing_pma: m_s.pmas) {
         if (start < existing_pma.get_start() + existing_pma.get_length() &&
             start+length > existing_pma.get_start()) {
-            throw std::invalid_argument("PMA overlaps with existing PMA");
+            throw std::invalid_argument{"PMA overlaps with existing PMA"};
         }
     }
     m_s.pmas.push_back(std::move(pma));
@@ -194,7 +196,7 @@ machine::machine(const machine_config &c):
     m_h{*this, c.interactive} {
 
     if (!c.processor.backing.empty())
-        throw std::runtime_error("processor backing not implemented");
+        throw std::runtime_error{"processor backing not implemented"};
 
     // General purpose registers
     for (int i = 1; i < 32; i++) {
@@ -257,7 +259,7 @@ machine::machine(const machine_config &c):
 
     // Copy HTIF state to from config to machine
     if (!c.htif.backing.empty())
-        throw std::runtime_error("HTIF backing not implemented");
+        throw std::runtime_error{"HTIF backing not implemented"};
     write_htif_tohost(c.htif.tohost);
     write_htif_fromhost(c.htif.fromhost);
 
@@ -265,7 +267,7 @@ machine::machine(const machine_config &c):
     clint_register_mmio(*this, PMA_CLINT_START, PMA_CLINT_LENGTH);
     // Copy CLINT state to from config to machine
     if (!c.clint.backing.empty())
-        throw std::runtime_error("CLINT backing not implemented");
+        throw std::runtime_error{"CLINT backing not implemented"};
     write_clint_mtimecmp(c.clint.mtimecmp);
 
     // Register shadow device
@@ -641,7 +643,7 @@ void machine::dump(void) const {
                 throw std::runtime_error{"peek failed"};
             } else if (page_data && fwrite(page_data, 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
                 throw std::system_error{errno, std::generic_category(),
-                    "error writing to '" + std::string{filename} + "'"};
+                    "error writing to '"s + filename + "'"s};
             }
         }
     }

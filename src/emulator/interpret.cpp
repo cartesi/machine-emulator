@@ -3040,7 +3040,6 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
     auto note = a.make_scoped_note("fetch_insn"); (void) note;
     // Get current pc from state
     uint64_t vaddr = *pc = a.read_pc();
-    if (vaddr == 0) exit(0);
     // Check TLB for hit
     int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
     tlb_entry &tlb = a.get_naked_state().tlb_code[tlb_idx];

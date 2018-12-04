@@ -140,6 +140,17 @@ hash: hash.o
 generate: CXXFLAGS += -fprofile-generate
 generate: SOLDFLAGS += -fprofile-generate
 
+cov: CXXFLAGS += -O0 -g -fprofile-arcs -ftest-coverage
+cov: SOLDFLAGS += -fprofile-arcs
+
+cov: cartesi.so
+	./tests.lua
+	./test-machine.lua
+	./run.lua --cmdline='-- /bin/true'
+	gcov *.cpp
+	lcov --capture --directory . --output-file cartesi.info
+	genhtml cartesi.info --output-directory coverage
+
 generate: cartesi.so
 	./run.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
 
@@ -191,6 +202,6 @@ server client: CXXFLAGS := $(filter-out -fpic -fvisibility=hidden,$(CXXFLAGS) $(
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.o *.d cartesi.so server client
+	rm -f dis/*.o dis/*.d *.gcda *.gcno *.o *.d cartesi.so server client
 
 -include $(wildcard *.d)

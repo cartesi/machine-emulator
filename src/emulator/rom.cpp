@@ -18,7 +18,10 @@ namespace cartesi {
 
 using namespace std::string_literals;
 
-#define CLOCK_FREQ 1000000000 // 1 GHz (arbitrary)
+/// \brief ROM constants
+enum ROM_constants {
+    CLOCK_FREQ = 1000000000 ///< 1 GHz frequency is arbitrary
+};
 
 #define FDT_CHECK(func_call) do { \
     auto errval = (func_call); \

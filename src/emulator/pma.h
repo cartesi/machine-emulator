@@ -27,10 +27,11 @@ enum PMA_ranges: uint64_t {
 };
 
 /// \brief PMA constants.
-enum PMA_constants {
+enum PMA_constants: uint64_t {
     PMA_PAGE_SIZE_LOG2 = 12, ///< log<sub>2</sub> of physical memory page size.
     PMA_PAGE_SIZE      = (UINT64_C(1) << PMA_PAGE_SIZE_LOG2), ///< Physical memory page size.
-    PMA_WORD_SIZE      = UINT64_C(8) ///< Physical memory word size.
+    PMA_WORD_SIZE      = UINT64_C(8), ///< Physical memory word size.
+    PMA_MAX            = UINT64_C(32) ///< Maximum number of PMAs
 };
 
 /// \brief PMA istart shifts
@@ -82,9 +83,9 @@ bool pma_write_error(const pma_entry &, i_virtual_state_access *, uint64_t, uint
 
 /// \brief Driver for device ranges.
 struct pma_driver final {
-    const char *name;         ///< Driver name.
-    pma_read read;            ///< Callback for read operations.
-    pma_write write;          ///< Callback for write operations.
+    const char *name{""};             ///< Driver name.
+    pma_read read{pma_read_error};    ///< Callback for read operations.
+    pma_write write{pma_write_error}; ///< Callback for write operations.
 };
 
 /// \brief Data for IO ranges.
@@ -238,9 +239,9 @@ public:
     pma_entry(const pma_entry &) = delete;
     /// \brief No copy assignment
     pma_entry &operator=(const pma_entry &) = delete;
-    /// \brief Move constructor
+    /// \brief Default move constructor
     pma_entry(pma_entry &&) = default;
-    /// \brief Move assignment
+    /// \brief Default move assignment
     pma_entry &operator=(pma_entry &&) = default;
 
     /// \brief Constructor for empty entry
@@ -380,8 +381,6 @@ public:
     }
 
 };
-
-#define PMA_MAX 32 ///< Maximum number of PMAs
 
 } // namespace
 

@@ -208,7 +208,7 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
 ///  PTE_XWR_R_SHIFT, or PTE_XWR_R_SHIFT)
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
-static bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
+static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
     auto note = a.make_scoped_note("translate_virtual_address"); (void) note;
     auto priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
@@ -1834,7 +1834,7 @@ static inline execute_status execute_CSRRWI(STATE_ACCESS &a, uint64_t pc, uint32
     dump_insn(a.get_naked_machine(), pc, insn, "csrrwi");
     auto note = a.make_scoped_note("csrrwi"); (void) note;
     return execute_csr_RW(a, pc, insn,
-        [](STATE_ACCESS, uint32_t insn) -> uint64_t { return static_cast<uint64_t>(insn_get_rs1(insn)); }
+        [](STATE_ACCESS &, uint32_t insn) -> uint64_t { return static_cast<uint64_t>(insn_get_rs1(insn)); }
     );
 }
 

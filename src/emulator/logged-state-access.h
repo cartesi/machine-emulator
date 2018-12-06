@@ -30,10 +30,18 @@ public:
 
     /// \brief Constructor from machine state and Merkle tree.
     /// \param s Pointer to machine state.
-    /// \param t Merkle tree used for proofs.
-    logged_state_access(machine &m):
+    explicit logged_state_access(machine &m):
         m_m(m),
         m_log(std::make_shared<access_log>()) { ; }
+
+    /// \brief No copy constructor
+    logged_state_access(const logged_state_access &) = delete;
+    /// \brief No move constructor
+    logged_state_access(logged_state_access &&) = delete;
+    /// \brief No copy assignment
+    logged_state_access& operator=(const logged_state_access &) = delete;
+    /// \brief No move assignment
+    logged_state_access& operator=(logged_state_access &&) = delete;
 
     /// \brief Returns const pointer to access log.
     std::shared_ptr<const access_log> get_log(void) const {
@@ -64,16 +72,26 @@ public:
             }
         }
 
-        // No copy constructors or assignment
+        /// \brief No copy constructors
         scoped_note(const scoped_note &) = delete;
+
+        /// \brief No copy assignment
         scoped_note &operator=(const scoped_note &) = delete;
-        // Moves are OK, because the shared_ptr to log will be
-        // empty afterwards and we explicitly test for this
-        // condition before writing
+
+        /// \brief Default move constructor
+        /// \detail This is OK because the shared_ptr to log will be
+        /// empty afterwards and we explicitly test for this
+        /// condition before writing the "end" bracketting note
         scoped_note(scoped_note &&) = default;
+
+        /// \brief Default move assignment
+        /// \detail This is OK because the shared_ptr to log will be
+        /// empty afterwards and we explicitly test for this
+        /// condition before writing the "end" bracketting note
         scoped_note &operator=(scoped_note &&) = default;
 
         /// \brief Destructor adds the "end" bracketting note
+        /// if the log shared_ptr is not empty
         ~scoped_note() {
             if (m_log)
                 m_log->annotate(note_type::end, m_text.c_str());

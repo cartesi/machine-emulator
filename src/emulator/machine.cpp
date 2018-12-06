@@ -3,7 +3,6 @@
 #include <cinttypes>
 
 #include "riscv-constants.h"
-#include "cartesi-constants.h"
 #include "machine.h"
 #include "interpret.h"
 #include "clint.h"
@@ -21,7 +20,7 @@ using namespace std::string_literals;
 
 std::string get_name(void) {
     std::ostringstream os;
-    os << VENDORID << ':' << ARCHID << ':' << IMPID;
+    os << MVENDORID_INIT << ':' << MARCHID_INIT << ':' << MIMPID_INIT;
     return os.str();
 }
 

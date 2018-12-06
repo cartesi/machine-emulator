@@ -19,8 +19,10 @@ uint64_t shadow_get_register_rel_addr(int reg) {
     return reg*sizeof(uint64_t);
 }
 
-/// \name Base of board shadow, where PMAs start
-#define SHADOW_PMA_BASE     UINT64_C(0x800)
+/// \brief Shadow constants
+enum SHADOW_constants: uint64_t {
+    SHADOW_PMA_BASE = UINT64_C(0x800) ///< Base of board shadow, where PMAs start
+};
 
 uint64_t shadow_get_pma_rel_addr(int p) {
     assert(p >= 0 && p < 32);

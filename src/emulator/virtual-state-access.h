@@ -22,9 +22,18 @@ template <typename STATE_ACCESS>
 class virtual_state_access: public i_virtual_state_access {
 public:
 
-    virtual_state_access(STATE_ACCESS &a): m_a(a) {
+    explicit virtual_state_access(STATE_ACCESS &a): m_a(a) {
         static_assert(is_an_i_state_access<STATE_ACCESS>::value, "not an i_state_access");
     }
+
+    /// \brief No copy constructor
+    virtual_state_access(const virtual_state_access &) = delete;
+    /// \brief No copy assignment
+    virtual_state_access& operator=(const virtual_state_access &) = delete;
+    /// \brief No move constructor
+    virtual_state_access(virtual_state_access &&) = delete;
+    /// \brief No move assignment
+    virtual_state_access& operator=(virtual_state_access &&) = delete;
 
 private:
 

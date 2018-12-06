@@ -92,19 +92,20 @@ public:
 
     /// \brief Storage for the proof of a word value.
     struct proof_type {
-        address_type address;           ///< Address of target node
-        int log2_size;                  ///< log<sub>2</sub> of size subintended by target node.
-        hash_type target_hash;          ///< Hash of target node
-        siblings_type sibling_hashes;   ///< Hashes of siblings
-        hash_type root_hash;            ///< Hash of root node
+        address_type address{0};        ///< Address of target node
+        int log2_size{0};               ///< log<sub>2</sub> of size subintended by target node.
+        hash_type target_hash{};        ///< Hash of target node
+        siblings_type sibling_hashes{}; ///< Hashes of siblings
+        hash_type root_hash{};          ///< Hash of root node
     };
 
 private:
     /// \brief Merkle tree node structure.
     /// \details A node is known to be an inner-node or a page-node implicitly
     /// based on its height in the tree.
+    //??D This is assumed to be a POD type in the implementation
     struct tree_node {
-        hash_type hash; ///< Hash of subintended data.
+        hash_type hash;       ///< Hash of subintended data.
         tree_node *parent;    ///< Pointer to parent node (nullptr for root).
         tree_node *child[2];  ///< Children nodes.
         uint64_t mark;        ///< Helper for traversal algorithms.

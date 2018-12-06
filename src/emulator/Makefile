@@ -112,7 +112,6 @@ LUACARTESI_OBJS:= \
 	rom.o \
 	htif.o \
 	shadow.o \
-	machine-config.o \
 	merkle-tree.o \
 	pma.o \
 	machine.o \

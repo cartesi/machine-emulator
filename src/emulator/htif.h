@@ -12,11 +12,14 @@ namespace cartesi {
 // Forward declarations
 class machine;
 
-#define HTIF_INTERACT_DIVISOR 10
-#define HTIF_CONSOLE_BUF_SIZE 1024
+/// \brief HTIF constants
+enum HTIF_constants {
+    HTIF_INTERACT_DIVISOR = 10, ///< Proportion of interacts to ignore
+    HTIF_CONSOLE_BUF_SIZE = 1024 ///< Number of characters in console input buffer
+};
 
 /// \brief Host-Target interface implementation
-class htif {
+class htif final {
 
     machine &m_machine;                    ///< Associated machine.
     bool m_interactive;                    ///< Running in interactive mode.
@@ -30,16 +33,16 @@ class htif {
 
 public:
 
-    /// \brief Mapping between CSRs and their relative addresses in HTIF memory
-    enum class csr {
-        tohost   = UINT64_C(0x0),
-        fromhost = UINT64_C(0x8)
-    };
-
-    /// \brief Obtains the relative address of a CSR in HTIF memory.
-    /// \param reg CSR name.
-    /// \returns The address.
-    static uint64_t get_csr_rel_addr(csr reg);
+    /// \brief No default constructor
+    htif(void) = delete;
+    /// \brief No copy constructor
+    htif(const htif &) = delete;
+    /// \brief No move constructor
+    htif(htif &&) = delete;
+    /// \brief No copy assignment
+    htif &operator=(const htif &) = delete;
+    /// \brief No move assignment
+    htif &operator=(htif &&) = delete;
 
     /// \brief Constructor
     /// \param s Associated machine.
@@ -73,6 +76,17 @@ public:
 
     /// \brief Checks if there is input available from console.
     void poll_console(void);
+
+    /// \brief Mapping between CSRs and their relative addresses in HTIF memory
+    enum class csr {
+        tohost   = UINT64_C(0x0),
+        fromhost = UINT64_C(0x8)
+    };
+
+    /// \brief Obtains the relative address of a CSR in HTIF memory.
+    /// \param reg CSR name.
+    /// \returns The address.
+    static uint64_t get_csr_rel_addr(csr reg);
 
 private:
 

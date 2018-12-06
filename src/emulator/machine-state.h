@@ -8,8 +8,8 @@
 
 #include <boost/container/static_vector.hpp>
 
-#include "cartesi-constants.h"
 #include "pma.h"
+#include "riscv-constants.h"
 
 namespace cartesi {
 
@@ -21,7 +21,10 @@ struct tlb_entry {
     uintptr_t mem_addend; ///< Value added to translate from virtual to physical addresses in page
 };
 
-#define TLB_SIZE 256 ///< Number of entries in TLB
+/// \brief TLB constants
+enum TLB_constants {
+    TLB_SIZE = 256 ///< Number of entries in TLB
+};
 
 /// \brief Machine state.
 /// \details The machine_state structure contains the entire

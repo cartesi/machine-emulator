@@ -22,7 +22,16 @@ public:
 
     /// \brief Constructor from machine state.
     /// \param s Pointer to machine state.
-    state_access(machine &m): m_m(m) { ; }
+    explicit state_access(machine &m): m_m(m) { ; }
+
+    /// \brief No copy constructor
+    state_access(const state_access &) = delete;
+    /// \brief No copy assignment
+    state_access& operator=(const state_access &) = delete;
+    /// \brief No move constructor
+    state_access(state_access &&) = delete;
+    /// \brief No move assignment
+    state_access& operator=(state_access &&) = delete;
 
 private:
     // Declare interface as friend to it can forward calls to the "overriden" methods.

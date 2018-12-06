@@ -15,9 +15,9 @@ enum class note_type {
 
 /// \brief Access note
 struct access_note {
-    note_type type; ///< Note type
-    size_t where;   ///< Where it points to in the log
-    std::string text; ///< Note text
+    note_type type{note_type::point}; ///< Note type
+    size_t where{0};                  ///< Where it points to in the log
+    std::string text{};               ///< Note text
 };
 
 } // namespace cartesi

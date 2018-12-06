@@ -264,6 +264,47 @@ enum COUNTEREN_rw_masks: uint64_t {
     SCOUNTEREN_RW_MASK = MCOUNTEREN_RW_MASK
 };
 
+/// \brief Cartesi-specific iflags shifts
+enum IFLAGS_shifts {
+    IFLAGS_H_SHIFT  = 0,
+    IFLAGS_I_SHIFT  = 1,
+    IFLAGS_PRV_SHIFT= 2
+};
+
+/// \brief Initial values for Cartesi machines
+enum CARTESI_init: uint64_t {
+    PC_INIT         = UINT64_C(0x1000), ///< Initial value for pc
+    MVENDORID_INIT  = UINT64_C(0x6361727465736920), ///< Initial value for mvendorid
+    MARCHID_INIT    = UINT64_C(1), ///< Initial value for marchid
+    MIMPID_INIT     = UINT64_C(1), ///< Initial value for mimpid
+    MCYCLE_INIT     = UINT64_C(0), ///< Initial value for mcycle
+    MINSTRET_INIT   = UINT64_C(0), ///< Initial value for minstret
+    MSTATUS_INIT    = (MISA_MXL_VALUE << MSTATUS_UXL_SHIFT) |
+        (MISA_MXL_VALUE << MSTATUS_SXL_SHIFT), ///< Initial value for mstatus
+    MTVEC_INIT      = UINT64_C(0), ///< Initial value for mtvec
+    MSCRATCH_INIT   = UINT64_C(0), ///< Initial value for mscratch
+    MEPC_INIT       = UINT64_C(0), ///< Initial value for mepc
+    MCAUSE_INIT     = UINT64_C(0), ///< Initial value for mcause
+    MTVAL_INIT      = UINT64_C(0), ///< Initial value for mtval
+    MISA_INIT       = (MISA_MXL_VALUE << MISA_MXL_SHIFT) |
+        MISA_EXT_S_MASK | MISA_EXT_U_MASK | MISA_EXT_I_MASK |
+        MISA_EXT_M_MASK | MISA_EXT_A_MASK,  ///< Initial value for misa
+    MIE_INIT        = UINT64_C(0), ///< Initial value for mie
+    MIP_INIT        = UINT64_C(0), ///< Initial value for mip
+    MEDELEG_INIT    = UINT64_C(0), ///< Initial value for medeleg
+    MIDELEG_INIT    = UINT64_C(0), ///< Initial value for mideleg
+    MCOUNTEREN_INIT = UINT64_C(0), ///< Initial value for mcounteren
+    STVEC_INIT      = UINT64_C(0), ///< Initial value for stvec
+    SSCRATCH_INIT   = UINT64_C(0), ///< Initial value for sscratch
+    SEPC_INIT       = UINT64_C(0), ///< Initial value for sepc
+    SCAUSE_INIT     = UINT64_C(0), ///< Initial value for scause
+    STVAL_INIT      = UINT64_C(0), ///< Initial value for stval
+    SATP_INIT       = UINT64_C(0), ///< Initial value for satp
+    SCOUNTEREN_INIT = UINT64_C(0), ///< Initial value for scounteren
+    ILRSC_INIT      = UINT64_C(-1), ///< Initial value for ilrsc
+    IFLAGS_INIT    = static_cast<uint64_t>(PRV_M) << IFLAGS_PRV_SHIFT, ///< Initial value for iflags
+};
+
 /// \brief Mapping between CSR names and addresses
 enum class CSR_address: uint32_t {
     ustatus = 0x000,
@@ -492,6 +533,7 @@ enum class insn_atomic_funct3_funct5 {
     AMOMINU_D = 0b01111000,
     AMOMAXU_D = 0b01111100
 };
+
 
 } // namespace cartesi
 

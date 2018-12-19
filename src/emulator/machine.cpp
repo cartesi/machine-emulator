@@ -89,8 +89,9 @@ pma_entry &machine::allocate_pma_entry(pma_entry &&pma) {
 
 void machine::register_flash(uint64_t start,
     uint64_t length, const char *path, bool shared) {
-    pma_entry::flags f;
+    pma_entry::flags f{};
     f.R = true; f.W = true; f.X = false; f.IR = true; f.IW = true;
+    f.DID = PMA_ISTART_DID::memory;
     allocate_pma_entry(
         pma_entry{
             start,
@@ -106,8 +107,9 @@ void machine::register_flash(uint64_t start,
 }
 
 pma_entry &machine::register_memory(uint64_t start, uint64_t length, bool W) {
-    pma_entry::flags f;
+    pma_entry::flags f{};
     f.R = true; f.W = W; f.X = true; f.IR = true; f.IW = true;
+    f.DID = PMA_ISTART_DID::memory;
     return allocate_pma_entry(
         pma_entry{
             start,
@@ -123,8 +125,9 @@ pma_entry &machine::register_memory(uint64_t start, uint64_t length, bool W) {
 
 pma_entry &machine::register_memory(uint64_t start, uint64_t length,
     const std::string &path, bool W) {
-    pma_entry::flags f;
+    pma_entry::flags f{};
     f.R = true; f.W = W; f.X = true; f.IR = true; f.IW = true;
+    f.DID = PMA_ISTART_DID::memory;
     return allocate_pma_entry(
         pma_entry{
             start,
@@ -139,9 +142,10 @@ pma_entry &machine::register_memory(uint64_t start, uint64_t length,
     );
 }
 
-void machine::register_mmio(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver) {
-    pma_entry::flags f;
+void machine::register_mmio(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver, PMA_ISTART_DID DID) {
+    pma_entry::flags f{};
     f.R = true; f.W = true; f.X = false; f.IR = false; f.IW = false;
+    f.DID = DID;
     allocate_pma_entry(
         pma_entry{
             start,
@@ -156,8 +160,9 @@ void machine::register_mmio(uint64_t start, uint64_t length, pma_peek peek, void
 }
 
 void machine::register_shadow(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver) {
-    pma_entry::flags f;
+    pma_entry::flags f{};
     f.R = false; f.W = false; f.X = false; f.IR = false; f.IW = false;
+    f.DID = PMA_ISTART_DID::shadow;
     allocate_pma_entry(
         pma_entry{
             start,

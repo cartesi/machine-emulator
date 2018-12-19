@@ -36,14 +36,36 @@ enum PMA_constants: uint64_t {
 
 /// \brief PMA istart shifts
 enum PMA_ISTART_shifts {
-    PMA_ISTART_M_SHIFT  = 0, ///< Memory range
-    PMA_ISTART_IO_SHIFT = 1, ///< Device range
-    PMA_ISTART_E_SHIFT  = 2, ///< Empty range
-    PMA_ISTART_R_SHIFT  = 3, ///< Readable
-    PMA_ISTART_W_SHIFT  = 4, ///< Writable
-    PMA_ISTART_X_SHIFT  = 5, ///< Executable
-    PMA_ISTART_IR_SHIFT = 6, ///< Idempotent reads
-    PMA_ISTART_IW_SHIFT = 7, ///< Idempotent writes
+    PMA_ISTART_M_SHIFT  = 0,
+    PMA_ISTART_IO_SHIFT = 1,
+    PMA_ISTART_E_SHIFT  = 2,
+    PMA_ISTART_R_SHIFT  = 3,
+    PMA_ISTART_W_SHIFT  = 4,
+    PMA_ISTART_X_SHIFT  = 5,
+    PMA_ISTART_IR_SHIFT = 6,
+    PMA_ISTART_IW_SHIFT = 7,
+    PMA_ISTART_DID_SHIFT = 8,
+};
+
+/// \brief PMA istart masks
+enum PMA_ISTART_masks: uint64_t {
+    PMA_ISTART_M_MASK   = UINT64_C(1)  << PMA_ISTART_M_SHIFT,  ///< Memory range
+    PMA_ISTART_IO_MASK  = UINT64_C(1)  << PMA_ISTART_IO_SHIFT, ///< Device range
+    PMA_ISTART_E_MASK   = UINT64_C(1)  << PMA_ISTART_E_SHIFT,  ///< Empty range
+    PMA_ISTART_R_MASK   = UINT64_C(1)  << PMA_ISTART_R_SHIFT,  ///< Readable
+    PMA_ISTART_W_MASK   = UINT64_C(1)  << PMA_ISTART_W_SHIFT,  ///< Writable
+    PMA_ISTART_X_MASK   = UINT64_C(1)  << PMA_ISTART_X_SHIFT,  ///< Executable
+    PMA_ISTART_IR_MASK  = UINT64_C(1)  << PMA_ISTART_IR_SHIFT, ///< Idempotent reads
+    PMA_ISTART_IW_MASK  = UINT64_C(1)  << PMA_ISTART_IW_SHIFT, ///< Idempotent writes
+    PMA_ISTART_DID_MASK = UINT64_C(15) << PMA_ISTART_DID_SHIFT ///< Device id
+};
+
+/// \brief PMA device ids
+enum class PMA_ISTART_DID {
+    memory = 0, ///< DID for memory
+    shadow = 1, ///< DID for shadow device
+    CLINT  = 2, ///< DID for CLINT device
+    HTIF   = 3  ///< DID for HTIF device
 };
 
 /// \brief Prototype for callback invoked when machine wants to peek into a range with no side-effects.
@@ -218,6 +240,7 @@ public:
         bool X;
         bool IR;
         bool IW;
+        PMA_ISTART_DID DID;
     };
 
 private:
@@ -378,6 +401,11 @@ public:
     /// \brief Tells if writes to PMA range are idempotent
     bool get_istart_IW(void) const {
         return m_flags.IW;
+    }
+
+    /// \brief Returns the id of the device that owns the range
+    PMA_ISTART_DID get_istart_DID(void) const {
+        return m_flags.DID;
     }
 
 };

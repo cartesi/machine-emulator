@@ -129,6 +129,7 @@ uint64_t pma_entry::get_istart(void) const {
     istart |= (static_cast<uint64_t>(get_istart_X()) << PMA_ISTART_X_SHIFT);
     istart |= (static_cast<uint64_t>(get_istart_IR()) << PMA_ISTART_IR_SHIFT);
     istart |= (static_cast<uint64_t>(get_istart_IW()) << PMA_ISTART_IW_SHIFT);
+    istart |= (static_cast<uint64_t>(get_istart_DID()) << PMA_ISTART_DID_SHIFT);
     return istart;
 }
 

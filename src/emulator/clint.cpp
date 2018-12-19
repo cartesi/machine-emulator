@@ -138,7 +138,7 @@ static const pma_driver clint_driver = {
 };
 
 void clint_register_mmio(machine &m, uint64_t start, uint64_t length) {
-    m.register_mmio(start, length, clint_peek, &m, &clint_driver);
+    m.register_mmio(start, length, clint_peek, &m, &clint_driver, PMA_ISTART_DID::CLINT);
 }
 
 } // namespace cartesi

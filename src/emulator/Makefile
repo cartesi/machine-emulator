@@ -2,7 +2,9 @@ UNAME:=$(shell uname)
 
 LUA_INC:=$(shell pkg-config --cflags luapp53)
 LUA_LIB:=$(shell pkg-config --libs luapp53)
-FDT_LIB:=-lfdt
+# Make sure we are using a static libfdt
+FDT_LIB:=/usr/local/lib/libfdt.a
+FDT_INC:=-I/usr/local/include
 CRYPTOPP_LIB:=-lcryptopp
 GRPC_INC:=$(shell pkg-config --cflags protobuf grpc)
 GRPC_LIB:=$(shell pkg-config --libs protobuf grpc++ grpc)
@@ -20,6 +22,11 @@ LUACARTESI_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB)
 HASH_LIBS:=$(CRYPTOPP_LIB)
 
 # Common setup
+# libfdt
+#   git clone git@github.com:cartesi/dtc.git
+#   cd dtc
+#   git checkout cartesi
+#   sudo make NO_PYTHON=1 PREFIX=/usr/local install
 # cryptopp
 #   git clone git@github.com:cartesi/cryptopp.git
 #   cd cryptopp
@@ -46,10 +53,6 @@ HASH_LIBS:=$(CRYPTOPP_LIB)
 #    sudo make install
 #    sudo cp image-ci/luapp53.pc /usr/local/lib/pkgconfig
 #    sudo ln -s /usr/local/lib/luapp5.3 /usr/local/bin/luapp
-# libfdt
-#   git clone https://git.kernel.org/pub/scm/utils/dtc/dtc.git
-#   cd dtc
-#   sudo make NO_PYTHON=1 PREFIX=/usr/local install
 # Boost
 #   port install boost
 #
@@ -154,8 +157,8 @@ generate: cartesi.so
 	./run.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
 
 valgrind: cartesi.so
-	valgrind --leak-check=full --tool=memcheck --show-leak-kinds=all luapp tests.lua
-	valgrind --leak-check=full --tool=memcheck --track-origins=yes luapp run.lua --batch --cmdline="-- /bin/true"
+	valgrind --leak-check=full --tool=memcheck --track-origins=yes luapp tests.lua
+	valgrind --leak-check=full --tool=memcheck --track-origins=yes luapp run.lua --initial-hash --final-hash --memory-size=16 --batch --cmdline="-- /bin/true"
 
 print:
 	echo CXXFLAGS=$(CXXFLAGS)

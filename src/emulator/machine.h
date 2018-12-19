@@ -429,7 +429,8 @@ public:
     /// \param peek Peek callback for the range.
     /// \param context Pointer to context to be passed to callbacks.
     /// \param driver Pointer to driver with callbacks.
-    void register_mmio(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver);
+    /// \param DID PMA device id.
+    void register_mmio(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver, PMA_ISTART_DID DID);
 
     /// \brief Register a new shadow device.
     /// \param start Start of physical memory range in the target address

@@ -21,8 +21,6 @@ using cartesi::ram_config;
 using cartesi::htif_config;
 using cartesi::clint_config;
 using cartesi::machine_config;
-using cartesi::machine_config;
-using cartesi::machine_config;
 using cartesi::machine;
 using cartesi::keccak_256_hasher;
 

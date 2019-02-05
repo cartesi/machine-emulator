@@ -30,6 +30,7 @@ using grpc::ClientContext;
 using grpc::Status;
 using CartesiCore::Void;
 using CartesiCore::Machine;
+using CartesiCore::MachineRequest;
 
 class MachineClient {
 
@@ -87,6 +88,13 @@ public:
         return check_status(stub_->Shutdown(&context, request, &response));
     }
 
+    void Machine(void) {
+        MachineRequest request;
+        Void response;
+        ClientContext context;
+        return check_status(stub_->Machine(&context, request, &response));
+    }
+
 private:
     std::string address_;
     std::unique_ptr<Machine::Stub> stub_;
@@ -113,6 +121,8 @@ int main(int argc, char** argv) {
         } else if (line == "shutdown") {
             machine.Shutdown();
             break;
+        } else if (line == "machine") {
+            machine.Machine();
         } else if (line == "help") {
             std::cerr << "inc print snapshot rollback shutdown\n";
         } else {

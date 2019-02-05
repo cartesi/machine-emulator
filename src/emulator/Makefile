@@ -6,6 +6,7 @@ LUA_LIB:=$(shell pkg-config --libs luapp53)
 FDT_LIB:=/usr/local/lib/libfdt.a
 FDT_INC:=-I/usr/local/include
 CRYPTOPP_LIB:=-lcryptopp
+STDCPPFS_LIB:=-lstdc++fs
 GRPC_INC:=$(shell pkg-config --cflags protobuf grpc)
 GRPC_LIB:=$(shell pkg-config --libs protobuf grpc++ grpc)
 
@@ -19,6 +20,8 @@ GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
 endif
 
 LUACARTESI_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB)
+GRPC_SRV_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB) $(GRPC_LIB) $(STDCPPFS_LIB)
+
 HASH_LIBS:=$(CRYPTOPP_LIB)
 
 # Common setup
@@ -177,14 +180,28 @@ docker:
 
 grpc: server client
 
-GRPC_OBJS:= \
+GRPC_CLT_OBJS:= \
 	core.pb.o \
-	core.grpc.pb.o
+	core.grpc.pb.o \
+    client.o
 
-server: $(GRPC_OBJS) server.o
-	$(CXX) -o $@ $^ $(GRPC_LIB)
+GRPC_SRV_OBJS:= \
+	core.pb.o \
+	core.grpc.pb.o \
+    server.o \
+    clint.o \
+	rom.o \
+	htif.o \
+	shadow.o \
+	merkle-tree.o \
+	pma.o \
+	machine.o \
+	interpret.o 
 
-client: $(GRPC_OBJS) client.o
+server: $(GRPC_SRV_OBJS)
+	$(CXX) -o $@ $^ $(GRPC_SRV_LIBS)
+
+client: $(GRPC_CLT_OBJS)
 	$(CXX) -o $@ $^ $(GRPC_LIB)
 
 server client: CXXFLAGS := $(filter-out -fpic -fvisibility=hidden,$(CXXFLAGS) $(GRPC_INC))

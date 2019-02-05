@@ -78,7 +78,6 @@ public:
     void run(uint64_t mcycle_end);
 
     /// \brief Runs the machine for one cycle logging all accesses to the state.
-    /// \param t Merkle tree.
     /// \param log Receives log of all state accesses.
     void step(access_log &log);
 

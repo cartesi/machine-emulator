@@ -15,65 +15,186 @@ service Machine {
 message Void { }
 
 message Processor {
-    uint64 x1         = 1;
-    uint64 x2         = 2;
-    uint64 x3         = 3;
-    uint64 x4         = 4;
-    uint64 x5         = 5;
-    uint64 x6         = 6;
-    uint64 x7         = 7;
-    uint64 x8         = 8;
-    uint64 x9         = 9;
-    uint64 x10        = 10;
-    uint64 x11        = 11;
-    uint64 x12        = 12;
-    uint64 x13        = 13;
-    uint64 x14        = 14;
-    uint64 x15        = 15;
-    uint64 x16        = 16;
-    uint64 x17        = 17;
-    uint64 x18        = 18;
-    uint64 x19        = 19;
-    uint64 x20        = 20;
-    uint64 x21        = 21;
-    uint64 x22        = 22;
-    uint64 x23        = 23;
-    uint64 x24        = 24;
-    uint64 x25        = 25;
-    uint64 x26        = 26;
-    uint64 x27        = 27;
-    uint64 x28        = 28;
-    uint64 x29        = 29;
-    uint64 x30        = 30;
-    uint64 x31        = 31;
-    uint64 pc         = 32;
-    uint64 mvendorid  = 33;
-    uint64 marchid    = 34;
-    uint64 mimpid     = 35;
-    uint64 mcycle     = 36;
-    uint64 minstret   = 37;
-    uint64 mstatus    = 38;
-    uint64 mtvec      = 39;
-    uint64 mscratch   = 40;
-    uint64 mepc       = 41;
-    uint64 mcause     = 42;
-    uint64 mtval      = 43;
-    uint64 misa       = 44;
-    uint64 mie        = 45;
-    uint64 mip        = 46;
-    uint64 medeleg    = 47;
-    uint64 mideleg    = 48;
-    uint64 mcounteren = 49;
-    uint64 stvec      = 50;
-    uint64 sscratch   = 51;
-    uint64 sepc       = 52;
-    uint64 scause     = 53;
-    uint64 stval      = 54;
-    uint64 satp       = 55;
-    uint64 scounteren = 56;
-    uint64 ilrsc      = 57;
-    uint64 iflags     = 58;
-    string backing    = 60;
+    oneof x1_oneof{
+        uint64 x1           = 1;
+    }
+    oneof x2_oneof{
+        uint64 x2           = 2;
+    }
+    oneof x3_oneof{
+        uint64 x3           = 3;
+    }
+    oneof x4_oneof{
+        uint64 x4           = 4;
+    }
+    oneof x5_oneof{
+        uint64 x5           = 5;
+    }
+    oneof x6_oneof{
+        uint64 x6           = 6;
+    }
+    oneof x7_oneof{
+        uint64 x7           = 7;
+    }
+    oneof x8_oneof{
+        uint64 x8           = 8;
+    }
+    oneof x9_oneof{
+        uint64 x9           = 9;
+    }
+    oneof x10_oneof{
+        uint64 x10          = 10;
+    }
+    oneof x11_oneof{
+        uint64 x11          = 11;
+    }
+    oneof x12_oneof{
+        uint64 x12          = 12;
+    }
+    oneof x13_oneof{
+        uint64 x13          = 13;
+    }
+    oneof x14_oneof{
+        uint64 x14          = 14;
+    }
+    oneof x15_oneof{
+        uint64 x15          = 15;
+    }
+    oneof x16_oneof{
+        uint64 x16          = 16;
+    }
+    oneof x17_oneof{
+        uint64 x17          = 17;
+    }
+    oneof x18_oneof{
+        uint64 x18          = 18;
+    }
+    oneof x19_oneof{
+        uint64 x19          = 19;
+    }
+    oneof x20_oneof{
+        uint64 x20          = 20;
+    }
+    oneof x21_oneof{
+        uint64 x21          = 21;
+    }
+    oneof x22_oneof{
+        uint64 x22          = 22;
+    }
+    oneof x23_oneof{
+        uint64 x23          = 23;
+    }
+    oneof x24_oneof{
+        uint64 x24          = 24;
+    }
+    oneof x25_oneof{
+        uint64 x25          = 25;
+    }
+    oneof x26_oneof{
+        uint64 x26          = 26;
+    }
+    oneof x27_oneof{
+        uint64 x27          = 27;
+    }
+    oneof x28_oneof{
+        uint64 x28          = 28;
+    }
+    oneof x29_oneof{
+        uint64 x29          = 29;
+    }
+    oneof x30_oneof{
+        uint64 x30          = 30;
+    }
+    oneof x31_oneof{
+        uint64 x31          = 31;
+    }
+    oneof x32_oneof{
+        uint64 x32          = 32;
+    }
+    oneof pc_oneof{
+        uint64 pc           = 33;
+    }
+    oneof mvendorid_oneof{
+        uint64 mvendorid    = 34;
+    }
+    oneof marchid_oneof{
+        uint64 marchid      = 35;
+    }
+    oneof mimpid_oneof{
+        uint64 mimpid    	= 36;
+    }
+    oneof mcycle_oneof{
+        uint64 mcycle       = 37;
+    }
+    oneof minstret_oneof{
+        uint64 minstret     = 38;
+    }
+    oneof mstatus_oneof{
+        uint64 mstatus      = 39;
+    }
+    oneof mtvec_oneof{
+        uint64 mtvec        = 40;
+    }
+    oneof mscratch_oneof{
+        uint64 mscratch     = 41;
+    }
+    oneof mepc_oneof{
+        uint64 mepc         = 42;
+    }
+    oneof mcause_oneof{
+        uint64 mcause       = 43;
+    }
+    oneof mtval_oneof{
+        uint64 mtval        = 44;
+    }
+    oneof misa_oneof{
+        uint64 misa         = 45;
+    }
+    oneof mie_oneof{
+        uint64 mie          = 46;
+    }
+    oneof mip_oneof{
+        uint64 mip          = 47;
+    }
+    oneof medeleg_oneof{
+        uint64 medeleg      = 48;
+    }
+    oneof mideleg_oneof{
+        uint64 mideleg      = 49;
+    }
+    oneof mcounteren_oneof{
+        uint64 mcounteren   = 50;
+    }
+    oneof stvec_oneof{
+        uint64 stvec        = 51;
+    }
+    oneof sscratch_oneof{
+        uint64 sscratch     = 52;
+    }
+    oneof sepc_oneof{
+        uint64 sepc         = 53;
+    }
+    oneof scause_oneof{
+        uint64 scause       = 54;
+    }
+    oneof stval_oneof{
+        uint64 stval        = 55;
+    }
+    oneof satp_oneof{
+        uint64 satp         = 56;
+    }
+    oneof scounteren_oneof{
+        uint64 scounteren   = 57;
+    }
+    oneof ilrsc_oneof{
+        uint64 ilrsc        = 58;
+    }
+    oneof iflags_oneof{
+        uint64 iflags       = 59;
+    }
+    oneof backing_oneof{
+        string backing      = 60;
+    }
 }
 
 message ROM {
@@ -90,7 +211,7 @@ message Drive {
     uint64 istart = 1;
     uint64 ilength = 2;
     string backing = 3;
-    bool shared = 4;
+    bool shared = 4;    
     string label = 5;
 }
 
@@ -107,7 +228,9 @@ message HTIF {
 }
 
 message MachineRequest {
-    Processor processor = 1;
+    oneof processor_oneof {
+        Processor processor = 1;
+    }
     ROM rom = 2;
     RAM ram = 3;
     repeated Drive flash = 4;
@@ -127,5 +250,4 @@ message RunResponse {
         HALTED = 1;
         SUSPENDED = 2;
     }
-    Status status = 3;
 }

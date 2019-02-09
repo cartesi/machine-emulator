@@ -19,7 +19,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   package='CartesiCore',
   syntax='proto3',
   serialized_options=None,
-  serialized_pb=_b('\n\ncore.proto\x12\x0b\x43\x61rtesiCore\"\x06\n\x04Void\"\xaf\x0e\n\tProcessor\x12\x0c\n\x02x1\x18\x01 \x01(\x04H\x00\x12\x0c\n\x02x2\x18\x02 \x01(\x04H\x01\x12\x0c\n\x02x3\x18\x03 \x01(\x04H\x02\x12\x0c\n\x02x4\x18\x04 \x01(\x04H\x03\x12\x0c\n\x02x5\x18\x05 \x01(\x04H\x04\x12\x0c\n\x02x6\x18\x06 \x01(\x04H\x05\x12\x0c\n\x02x7\x18\x07 \x01(\x04H\x06\x12\x0c\n\x02x8\x18\x08 \x01(\x04H\x07\x12\x0c\n\x02x9\x18\t \x01(\x04H\x08\x12\r\n\x03x10\x18\n \x01(\x04H\t\x12\r\n\x03x11\x18\x0b \x01(\x04H\n\x12\r\n\x03x12\x18\x0c \x01(\x04H\x0b\x12\r\n\x03x13\x18\r \x01(\x04H\x0c\x12\r\n\x03x14\x18\x0e \x01(\x04H\r\x12\r\n\x03x15\x18\x0f \x01(\x04H\x0e\x12\r\n\x03x16\x18\x10 \x01(\x04H\x0f\x12\r\n\x03x17\x18\x11 \x01(\x04H\x10\x12\r\n\x03x18\x18\x12 \x01(\x04H\x11\x12\r\n\x03x19\x18\x13 \x01(\x04H\x12\x12\r\n\x03x20\x18\x14 \x01(\x04H\x13\x12\r\n\x03x21\x18\x15 \x01(\x04H\x14\x12\r\n\x03x22\x18\x16 \x01(\x04H\x15\x12\r\n\x03x23\x18\x17 \x01(\x04H\x16\x12\r\n\x03x24\x18\x18 \x01(\x04H\x17\x12\r\n\x03x25\x18\x19 \x01(\x04H\x18\x12\r\n\x03x26\x18\x1a \x01(\x04H\x19\x12\r\n\x03x27\x18\x1b \x01(\x04H\x1a\x12\r\n\x03x28\x18\x1c \x01(\x04H\x1b\x12\r\n\x03x29\x18\x1d \x01(\x04H\x1c\x12\r\n\x03x30\x18\x1e \x01(\x04H\x1d\x12\r\n\x03x31\x18\x1f \x01(\x04H\x1e\x12\r\n\x03x32\x18  \x01(\x04H\x1f\x12\x0c\n\x02pc\x18! \x01(\x04H \x12\x13\n\tmvendorid\x18\" \x01(\x04H!\x12\x11\n\x07marchid\x18# \x01(\x04H\"\x12\x10\n\x06mimpid\x18$ \x01(\x04H#\x12\x10\n\x06mcycle\x18% \x01(\x04H$\x12\x12\n\x08minstret\x18& \x01(\x04H%\x12\x11\n\x07mstatus\x18\' \x01(\x04H&\x12\x0f\n\x05mtvec\x18( \x01(\x04H\'\x12\x12\n\x08mscratch\x18) \x01(\x04H(\x12\x0e\n\x04mepc\x18* \x01(\x04H)\x12\x10\n\x06mcause\x18+ \x01(\x04H*\x12\x0f\n\x05mtval\x18, \x01(\x04H+\x12\x0e\n\x04misa\x18- \x01(\x04H,\x12\r\n\x03mie\x18. \x01(\x04H-\x12\r\n\x03mip\x18/ \x01(\x04H.\x12\x11\n\x07medeleg\x18\x30 \x01(\x04H/\x12\x11\n\x07mideleg\x18\x31 \x01(\x04H0\x12\x14\n\nmcounteren\x18\x32 \x01(\x04H1\x12\x0f\n\x05stvec\x18\x33 \x01(\x04H2\x12\x12\n\x08sscratch\x18\x34 \x01(\x04H3\x12\x0e\n\x04sepc\x18\x35 \x01(\x04H4\x12\x10\n\x06scause\x18\x36 \x01(\x04H5\x12\x0f\n\x05stval\x18\x37 \x01(\x04H6\x12\x0e\n\x04satp\x18\x38 \x01(\x04H7\x12\x14\n\nscounteren\x18\x39 \x01(\x04H8\x12\x0f\n\x05ilrsc\x18: \x01(\x04H9\x12\x10\n\x06iflags\x18; \x01(\x04H:\x12\x11\n\x07\x62\x61\x63king\x18< \x01(\tH;B\n\n\x08x1_oneofB\n\n\x08x2_oneofB\n\n\x08x3_oneofB\n\n\x08x4_oneofB\n\n\x08x5_oneofB\n\n\x08x6_oneofB\n\n\x08x7_oneofB\n\n\x08x8_oneofB\n\n\x08x9_oneofB\x0b\n\tx10_oneofB\x0b\n\tx11_oneofB\x0b\n\tx12_oneofB\x0b\n\tx13_oneofB\x0b\n\tx14_oneofB\x0b\n\tx15_oneofB\x0b\n\tx16_oneofB\x0b\n\tx17_oneofB\x0b\n\tx18_oneofB\x0b\n\tx19_oneofB\x0b\n\tx20_oneofB\x0b\n\tx21_oneofB\x0b\n\tx22_oneofB\x0b\n\tx23_oneofB\x0b\n\tx24_oneofB\x0b\n\tx25_oneofB\x0b\n\tx26_oneofB\x0b\n\tx27_oneofB\x0b\n\tx28_oneofB\x0b\n\tx29_oneofB\x0b\n\tx30_oneofB\x0b\n\tx31_oneofB\x0b\n\tx32_oneofB\n\n\x08pc_oneofB\x11\n\x0fmvendorid_oneofB\x0f\n\rmarchid_oneofB\x0e\n\x0cmimpid_oneofB\x0e\n\x0cmcycle_oneofB\x10\n\x0eminstret_oneofB\x0f\n\rmstatus_oneofB\r\n\x0bmtvec_oneofB\x10\n\x0emscratch_oneofB\x0c\n\nmepc_oneofB\x0e\n\x0cmcause_oneofB\r\n\x0bmtval_oneofB\x0c\n\nmisa_oneofB\x0b\n\tmie_oneofB\x0b\n\tmip_oneofB\x0f\n\rmedeleg_oneofB\x0f\n\rmideleg_oneofB\x12\n\x10mcounteren_oneofB\r\n\x0bstvec_oneofB\x10\n\x0esscratch_oneofB\x0c\n\nsepc_oneofB\x0e\n\x0cscause_oneofB\r\n\x0bstval_oneofB\x0c\n\nsatp_oneofB\x12\n\x10scounteren_oneofB\r\n\x0bilrsc_oneofB\x0e\n\x0ciflags_oneofB\x0f\n\rbacking_oneof\"\'\n\x03ROM\x12\x0f\n\x07\x63mdline\x18\x01 \x01(\t\x12\x0f\n\x07\x62\x61\x63king\x18\x02 \x01(\t\"\'\n\x03RAM\x12\x0f\n\x07ilength\x18\x01 \x01(\x04\x12\x0f\n\x07\x62\x61\x63king\x18\x02 \x01(\t\"X\n\x05\x44rive\x12\x0e\n\x06istart\x18\x01 \x01(\x04\x12\x0f\n\x07ilength\x18\x02 \x01(\x04\x12\x0f\n\x07\x62\x61\x63king\x18\x03 \x01(\t\x12\x0e\n\x06shared\x18\x04 \x01(\x08\x12\r\n\x05label\x18\x05 \x01(\t\"9\n\x05\x43LINT\x12\r\n\x05mtime\x18\x01 \x01(\x04\x12\x10\n\x08mtimecmp\x18\x02 \x01(\x04\x12\x0f\n\x07\x62\x61\x63king\x18\x03 \x01(\t\"9\n\x04HTIF\x12\x10\n\x08\x66romhost\x18\x01 \x01(\x04\x12\x0e\n\x06tohost\x18\x02 \x01(\x04\x12\x0f\n\x07\x62\x61\x63king\x18\x03 \x01(\t\"\xf5\x01\n\x0eMachineRequest\x12+\n\tprocessor\x18\x01 \x01(\x0b\x32\x16.CartesiCore.ProcessorH\x00\x12\x1d\n\x03rom\x18\x02 \x01(\x0b\x32\x10.CartesiCore.ROM\x12\x1d\n\x03ram\x18\x03 \x01(\x0b\x32\x10.CartesiCore.RAM\x12!\n\x05\x66lash\x18\x04 \x03(\x0b\x32\x12.CartesiCore.Drive\x12!\n\x05\x63lint\x18\x05 \x01(\x0b\x32\x12.CartesiCore.CLINT\x12\x1f\n\x04htif\x18\x06 \x01(\x0b\x32\x11.CartesiCore.HTIFB\x11\n\x0fprocessor_oneof\"\x1b\n\nRunRequest\x12\r\n\x05limit\x18\x01 \x01(\x04\"_\n\x0bRunResponse\x12\x0e\n\x06mcycle\x18\x01 \x01(\x04\x12\x0e\n\x06tohost\x18\x02 \x01(\x04\"0\n\x06Status\x12\x0b\n\x07LIMITED\x10\x00\x12\n\n\x06HALTED\x10\x01\x12\r\n\tSUSPENDED\x10\x02\x32\xfe\x02\n\x07Machine\x12:\n\x03Run\x12\x17.CartesiCore.RunRequest\x1a\x18.CartesiCore.RunResponse\"\x00\x12;\n\x07Machine\x12\x1b.CartesiCore.MachineRequest\x1a\x11.CartesiCore.Void\"\x00\x12\x32\n\x08Snapshot\x12\x11.CartesiCore.Void\x1a\x11.CartesiCore.Void\"\x00\x12\x32\n\x08Rollback\x12\x11.CartesiCore.Void\x1a\x11.CartesiCore.Void\"\x00\x12\x32\n\x08Shutdown\x12\x11.CartesiCore.Void\x1a\x11.CartesiCore.Void\"\x00\x12-\n\x03Inc\x12\x11.CartesiCore.Void\x1a\x11.CartesiCore.Void\"\x00\x12/\n\x05Print\x12\x11.CartesiCore.Void\x1a\x11.CartesiCore.Void\"\x00\x62\x06proto3')
+  serialized_pb=_b('\n\ncore.proto\x12\x0b\x43\x61rtesiCore\"\x06\n\x04Void\"\xaf\x0e\n\tProcessor\x12\x0c\n\x02x1\x18\x01 \x01(\x04H\x00\x12\x0c\n\x02x2\x18\x02 \x01(\x04H\x01\x12\x0c\n\x02x3\x18\x03 \x01(\x04H\x02\x12\x0c\n\x02x4\x18\x04 \x01(\x04H\x03\x12\x0c\n\x02x5\x18\x05 \x01(\x04H\x04\x12\x0c\n\x02x6\x18\x06 \x01(\x04H\x05\x12\x0c\n\x02x7\x18\x07 \x01(\x04H\x06\x12\x0c\n\x02x8\x18\x08 \x01(\x04H\x07\x12\x0c\n\x02x9\x18\t \x01(\x04H\x08\x12\r\n\x03x10\x18\n \x01(\x04H\t\x12\r\n\x03x11\x18\x0b \x01(\x04H\n\x12\r\n\x03x12\x18\x0c \x01(\x04H\x0b\x12\r\n\x03x13\x18\r \x01(\x04H\x0c\x12\r\n\x03x14\x18\x0e \x01(\x04H\r\x12\r\n\x03x15\x18\x0f \x01(\x04H\x0e\x12\r\n\x03x16\x18\x10 \x01(\x04H\x0f\x12\r\n\x03x17\x18\x11 \x01(\x04H\x10\x12\r\n\x03x18\x18\x12 \x01(\x04H\x11\x12\r\n\x03x19\x18\x13 \x01(\x04H\x12\x12\r\n\x03x20\x18\x14 \x01(\x04H\x13\x12\r\n\x03x21\x18\x15 \x01(\x04H\x14\x12\r\n\x03x22\x18\x16 \x01(\x04H\x15\x12\r\n\x03x23\x18\x17 \x01(\x04H\x16\x12\r\n\x03x24\x18\x18 \x01(\x04H\x17\x12\r\n\x03x25\x18\x19 \x01(\x04H\x18\x12\r\n\x03x26\x18\x1a \x01(\x04H\x19\x12\r\n\x03x27\x18\x1b \x01(\x04H\x1a\x12\r\n\x03x28\x18\x1c \x01(\x04H\x1b\x12\r\n\x03x29\x18\x1d \x01(\x04H\x1c\x12\r\n\x03x30\x18\x1e \x01(\x04H\x1d\x12\r\n\x03x31\x18\x1f \x01(\x04H\x1e\x12\r\n\x03x32\x18  \x01(\x04H\x1f\x12\x0c\n\x02pc\x18! \x01(\x04H \x12\x13\n\tmvendorid\x18\" \x01(\x04H!\x12\x11\n\x07marchid\x18# \x01(\x04H\"\x12\x10\n\x06mimpid\x18$ \x01(\x04H#\x12\x10\n\x06mcycle\x18% \x01(\x04H$\x12\x12\n\x08minstret\x18& \x01(\x04H%\x12\x11\n\x07mstatus\x18\' \x01(\x04H&\x12\x0f\n\x05mtvec\x18( \x01(\x04H\'\x12\x12\n\x08mscratch\x18) \x01(\x04H(\x12\x0e\n\x04mepc\x18* \x01(\x04H)\x12\x10\n\x06mcause\x18+ \x01(\x04H*\x12\x0f\n\x05mtval\x18, \x01(\x04H+\x12\x0e\n\x04misa\x18- \x01(\x04H,\x12\r\n\x03mie\x18. \x01(\x04H-\x12\r\n\x03mip\x18/ \x01(\x04H.\x12\x11\n\x07medeleg\x18\x30 \x01(\x04H/\x12\x11\n\x07mideleg\x18\x31 \x01(\x04H0\x12\x14\n\nmcounteren\x18\x32 \x01(\x04H1\x12\x0f\n\x05stvec\x18\x33 \x01(\x04H2\x12\x12\n\x08sscratch\x18\x34 \x01(\x04H3\x12\x0e\n\x04sepc\x18\x35 \x01(\x04H4\x12\x10\n\x06scause\x18\x36 \x01(\x04H5\x12\x0f\n\x05stval\x18\x37 \x01(\x04H6\x12\x0e\n\x04satp\x18\x38 \x01(\x04H7\x12\x14\n\nscounteren\x18\x39 \x01(\x04H8\x12\x0f\n\x05ilrsc\x18: \x01(\x04H9\x12\x10\n\x06iflags\x18; \x01(\x04H:\x12\x11\n\x07\x62\x61\x63king\x18< \x01(\tH;B\n\n\x08x1_oneofB\n\n\x08x2_oneofB\n\n\x08x3_oneofB\n\n\x08x4_oneofB\n\n\x08x5_oneofB\n\n\x08x6_oneofB\n\n\x08x7_oneofB\n\n\x08x8_oneofB\n\n\x08x9_oneofB\x0b\n\tx10_oneofB\x0b\n\tx11_oneofB\x0b\n\tx12_oneofB\x0b\n\tx13_oneofB\x0b\n\tx14_oneofB\x0b\n\tx15_oneofB\x0b\n\tx16_oneofB\x0b\n\tx17_oneofB\x0b\n\tx18_oneofB\x0b\n\tx19_oneofB\x0b\n\tx20_oneofB\x0b\n\tx21_oneofB\x0b\n\tx22_oneofB\x0b\n\tx23_oneofB\x0b\n\tx24_oneofB\x0b\n\tx25_oneofB\x0b\n\tx26_oneofB\x0b\n\tx27_oneofB\x0b\n\tx28_oneofB\x0b\n\tx29_oneofB\x0b\n\tx30_oneofB\x0b\n\tx31_oneofB\x0b\n\tx32_oneofB\n\n\x08pc_oneofB\x11\n\x0fmvendorid_oneofB\x0f\n\rmarchid_oneofB\x0e\n\x0cmimpid_oneofB\x0e\n\x0cmcycle_oneofB\x10\n\x0eminstret_oneofB\x0f\n\rmstatus_oneofB\r\n\x0bmtvec_oneofB\x10\n\x0emscratch_oneofB\x0c\n\nmepc_oneofB\x0e\n\x0cmcause_oneofB\r\n\x0bmtval_oneofB\x0c\n\nmisa_oneofB\x0b\n\tmie_oneofB\x0b\n\tmip_oneofB\x0f\n\rmedeleg_oneofB\x0f\n\rmideleg_oneofB\x12\n\x10mcounteren_oneofB\r\n\x0bstvec_oneofB\x10\n\x0esscratch_oneofB\x0c\n\nsepc_oneofB\x0e\n\x0cscause_oneofB\r\n\x0bstval_oneofB\x0c\n\nsatp_oneofB\x12\n\x10scounteren_oneofB\r\n\x0bilrsc_oneofB\x0e\n\x0ciflags_oneofB\x0f\n\rbacking_oneof\"\'\n\x03ROM\x12\x0f\n\x07\x63mdline\x18\x01 \x01(\t\x12\x0f\n\x07\x62\x61\x63king\x18\x02 \x01(\t\"\'\n\x03RAM\x12\x0f\n\x07ilength\x18\x01 \x01(\x04\x12\x0f\n\x07\x62\x61\x63king\x18\x02 \x01(\t\"X\n\x05\x44rive\x12\x0e\n\x06istart\x18\x01 \x01(\x04\x12\x0f\n\x07ilength\x18\x02 \x01(\x04\x12\x0f\n\x07\x62\x61\x63king\x18\x03 \x01(\t\x12\x0e\n\x06shared\x18\x04 \x01(\x08\x12\r\n\x05label\x18\x05 \x01(\t\"9\n\x05\x43LINT\x12\r\n\x05mtime\x18\x01 \x01(\x04\x12\x10\n\x08mtimecmp\x18\x02 \x01(\x04\x12\x0f\n\x07\x62\x61\x63king\x18\x03 \x01(\t\"9\n\x04HTIF\x12\x10\n\x08\x66romhost\x18\x01 \x01(\x04\x12\x0e\n\x06tohost\x18\x02 \x01(\x04\x12\x0f\n\x07\x62\x61\x63king\x18\x03 \x01(\t\"\xf5\x01\n\x0eMachineRequest\x12+\n\tprocessor\x18\x01 \x01(\x0b\x32\x16.CartesiCore.ProcessorH\x00\x12\x1d\n\x03rom\x18\x02 \x01(\x0b\x32\x10.CartesiCore.ROM\x12\x1d\n\x03ram\x18\x03 \x01(\x0b\x32\x10.CartesiCore.RAM\x12!\n\x05\x66lash\x18\x04 \x03(\x0b\x32\x12.CartesiCore.Drive\x12!\n\x05\x63lint\x18\x05 \x01(\x0b\x32\x12.CartesiCore.CLINT\x12\x1f\n\x04htif\x18\x06 \x01(\x0b\x32\x11.CartesiCore.HTIFB\x11\n\x0fprocessor_oneof\"\x1b\n\nRunRequest\x12\r\n\x05limit\x18\x01 \x01(\x04\"_\n\x0bRunResponse\x12\x0e\n\x06mcycle\x18\x01 \x01(\x04\x12\x0e\n\x06tohost\x18\x02 \x01(\x04\"0\n\x06Status\x12\x0b\n\x07LIMITED\x10\x00\x12\n\n\x06HALTED\x10\x01\x12\r\n\tSUSPENDED\x10\x02\"o\n\tProofType\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\x04\x12\x11\n\tlog2_size\x18\x02 \x01(\x05\x12\x13\n\x0btarget_hash\x18\x03 \x01(\x0c\x12\x16\n\x0esibling_hashes\x18\x04 \x03(\x0c\x12\x11\n\troot_hash\x18\x05 \x01(\x0c\"\xb5\x01\n\nWordAccess\x12\x30\n\x04type\x18\x01 \x01(\x0e\x32\".CartesiCore.WordAccess.AccessType\x12\x0c\n\x04read\x18\x02 \x01(\x04\x12\x0f\n\x07written\x18\x03 \x01(\x04\x12\x0c\n\x04text\x18\x04 \x01(\t\x12%\n\x05proof\x18\x05 \x01(\x0b\x32\x16.CartesiCore.ProofType\"!\n\nAccessType\x12\x08\n\x04READ\x10\x00\x12\t\n\x05WRITE\x10\x01\"\x8f\x01\n\nAccessNote\x12.\n\x04type\x18\x01 \x01(\x0e\x32 .CartesiCore.AccessNote.NoteType\x12\r\n\x05where\x18\x02 \x01(\x04\x12\x0c\n\x04text\x18\x03 \x01(\t\"4\n\x08NoteType\x12\t\n\x05\x44UMMY\x10\x00\x12\t\n\x05\x42\x45GIN\x10\x01\x12\x07\n\x03\x45ND\x10\x02\x12\t\n\x05POINT\x10\x03\"^\n\tAccessLog\x12)\n\x08\x61\x63\x63\x65sses\x18\x01 \x03(\x0b\x32\x17.CartesiCore.WordAccess\x12&\n\x05notes\x18\x02 \x03(\x0b\x32\x17.CartesiCore.AccessNote2\xb3\x03\n\x07Machine\x12:\n\x03Run\x12\x17.CartesiCore.RunRequest\x1a\x18.CartesiCore.RunResponse\"\x00\x12;\n\x07Machine\x12\x1b.CartesiCore.MachineRequest\x1a\x11.CartesiCore.Void\"\x00\x12\x32\n\x08Snapshot\x12\x11.CartesiCore.Void\x1a\x11.CartesiCore.Void\"\x00\x12\x32\n\x08Rollback\x12\x11.CartesiCore.Void\x1a\x11.CartesiCore.Void\"\x00\x12\x32\n\x08Shutdown\x12\x11.CartesiCore.Void\x1a\x11.CartesiCore.Void\"\x00\x12-\n\x03Inc\x12\x11.CartesiCore.Void\x1a\x11.CartesiCore.Void\"\x00\x12/\n\x05Print\x12\x11.CartesiCore.Void\x1a\x11.CartesiCore.Void\"\x00\x12\x33\n\x04Step\x12\x11.CartesiCore.Void\x1a\x16.CartesiCore.AccessLog\"\x00\x62\x06proto3')
 )
 
 
@@ -49,6 +49,58 @@ _RUNRESPONSE_STATUS = _descriptor.EnumDescriptor(
   serialized_end=2539,
 )
 _sym_db.RegisterEnumDescriptor(_RUNRESPONSE_STATUS)
+
+_WORDACCESS_ACCESSTYPE = _descriptor.EnumDescriptor(
+  name='AccessType',
+  full_name='CartesiCore.WordAccess.AccessType',
+  filename=None,
+  file=DESCRIPTOR,
+  values=[
+    _descriptor.EnumValueDescriptor(
+      name='READ', index=0, number=0,
+      serialized_options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='WRITE', index=1, number=1,
+      serialized_options=None,
+      type=None),
+  ],
+  containing_type=None,
+  serialized_options=None,
+  serialized_start=2803,
+  serialized_end=2836,
+)
+_sym_db.RegisterEnumDescriptor(_WORDACCESS_ACCESSTYPE)
+
+_ACCESSNOTE_NOTETYPE = _descriptor.EnumDescriptor(
+  name='NoteType',
+  full_name='CartesiCore.AccessNote.NoteType',
+  filename=None,
+  file=DESCRIPTOR,
+  values=[
+    _descriptor.EnumValueDescriptor(
+      name='DUMMY', index=0, number=0,
+      serialized_options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='BEGIN', index=1, number=1,
+      serialized_options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='END', index=2, number=2,
+      serialized_options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='POINT', index=3, number=3,
+      serialized_options=None,
+      type=None),
+  ],
+  containing_type=None,
+  serialized_options=None,
+  serialized_start=2930,
+  serialized_end=2982,
+)
+_sym_db.RegisterEnumDescriptor(_ACCESSNOTE_NOTETYPE)
 
 
 _VOID = _descriptor.Descriptor(
@@ -1062,6 +1114,209 @@ _RUNRESPONSE = _descriptor.Descriptor(
   serialized_end=2539,
 )
 
+
+_PROOFTYPE = _descriptor.Descriptor(
+  name='ProofType',
+  full_name='CartesiCore.ProofType',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='address', full_name='CartesiCore.ProofType.address', index=0,
+      number=1, type=4, cpp_type=4, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='log2_size', full_name='CartesiCore.ProofType.log2_size', index=1,
+      number=2, type=5, cpp_type=1, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='target_hash', full_name='CartesiCore.ProofType.target_hash', index=2,
+      number=3, type=12, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b(""),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='sibling_hashes', full_name='CartesiCore.ProofType.sibling_hashes', index=3,
+      number=4, type=12, cpp_type=9, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='root_hash', full_name='CartesiCore.ProofType.root_hash', index=4,
+      number=5, type=12, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b(""),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=2541,
+  serialized_end=2652,
+)
+
+
+_WORDACCESS = _descriptor.Descriptor(
+  name='WordAccess',
+  full_name='CartesiCore.WordAccess',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='type', full_name='CartesiCore.WordAccess.type', index=0,
+      number=1, type=14, cpp_type=8, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='read', full_name='CartesiCore.WordAccess.read', index=1,
+      number=2, type=4, cpp_type=4, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='written', full_name='CartesiCore.WordAccess.written', index=2,
+      number=3, type=4, cpp_type=4, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='text', full_name='CartesiCore.WordAccess.text', index=3,
+      number=4, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='proof', full_name='CartesiCore.WordAccess.proof', index=4,
+      number=5, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+    _WORDACCESS_ACCESSTYPE,
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=2655,
+  serialized_end=2836,
+)
+
+
+_ACCESSNOTE = _descriptor.Descriptor(
+  name='AccessNote',
+  full_name='CartesiCore.AccessNote',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='type', full_name='CartesiCore.AccessNote.type', index=0,
+      number=1, type=14, cpp_type=8, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='where', full_name='CartesiCore.AccessNote.where', index=1,
+      number=2, type=4, cpp_type=4, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='text', full_name='CartesiCore.AccessNote.text', index=2,
+      number=3, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+    _ACCESSNOTE_NOTETYPE,
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=2839,
+  serialized_end=2982,
+)
+
+
+_ACCESSLOG = _descriptor.Descriptor(
+  name='AccessLog',
+  full_name='CartesiCore.AccessLog',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='accesses', full_name='CartesiCore.AccessLog.accesses', index=0,
+      number=1, type=11, cpp_type=10, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='notes', full_name='CartesiCore.AccessLog.notes', index=1,
+      number=2, type=11, cpp_type=10, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=2984,
+  serialized_end=3078,
+)
+
 _PROCESSOR.oneofs_by_name['x1_oneof'].fields.append(
   _PROCESSOR.fields_by_name['x1'])
 _PROCESSOR.fields_by_name['x1'].containing_oneof = _PROCESSOR.oneofs_by_name['x1_oneof']
@@ -1252,6 +1507,13 @@ _MACHINEREQUEST.oneofs_by_name['processor_oneof'].fields.append(
   _MACHINEREQUEST.fields_by_name['processor'])
 _MACHINEREQUEST.fields_by_name['processor'].containing_oneof = _MACHINEREQUEST.oneofs_by_name['processor_oneof']
 _RUNRESPONSE_STATUS.containing_type = _RUNRESPONSE
+_WORDACCESS.fields_by_name['type'].enum_type = _WORDACCESS_ACCESSTYPE
+_WORDACCESS.fields_by_name['proof'].message_type = _PROOFTYPE
+_WORDACCESS_ACCESSTYPE.containing_type = _WORDACCESS
+_ACCESSNOTE.fields_by_name['type'].enum_type = _ACCESSNOTE_NOTETYPE
+_ACCESSNOTE_NOTETYPE.containing_type = _ACCESSNOTE
+_ACCESSLOG.fields_by_name['accesses'].message_type = _WORDACCESS
+_ACCESSLOG.fields_by_name['notes'].message_type = _ACCESSNOTE
 DESCRIPTOR.message_types_by_name['Void'] = _VOID
 DESCRIPTOR.message_types_by_name['Processor'] = _PROCESSOR
 DESCRIPTOR.message_types_by_name['ROM'] = _ROM
@@ -1262,6 +1524,10 @@ DESCRIPTOR.message_types_by_name['HTIF'] = _HTIF
 DESCRIPTOR.message_types_by_name['MachineRequest'] = _MACHINEREQUEST
 DESCRIPTOR.message_types_by_name['RunRequest'] = _RUNREQUEST
 DESCRIPTOR.message_types_by_name['RunResponse'] = _RUNRESPONSE
+DESCRIPTOR.message_types_by_name['ProofType'] = _PROOFTYPE
+DESCRIPTOR.message_types_by_name['WordAccess'] = _WORDACCESS
+DESCRIPTOR.message_types_by_name['AccessNote'] = _ACCESSNOTE
+DESCRIPTOR.message_types_by_name['AccessLog'] = _ACCESSLOG
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
 Void = _reflection.GeneratedProtocolMessageType('Void', (_message.Message,), dict(
@@ -1334,6 +1600,34 @@ RunResponse = _reflection.GeneratedProtocolMessageType('RunResponse', (_message.
   ))
 _sym_db.RegisterMessage(RunResponse)
 
+ProofType = _reflection.GeneratedProtocolMessageType('ProofType', (_message.Message,), dict(
+  DESCRIPTOR = _PROOFTYPE,
+  __module__ = 'core_pb2'
+  # @@protoc_insertion_point(class_scope:CartesiCore.ProofType)
+  ))
+_sym_db.RegisterMessage(ProofType)
+
+WordAccess = _reflection.GeneratedProtocolMessageType('WordAccess', (_message.Message,), dict(
+  DESCRIPTOR = _WORDACCESS,
+  __module__ = 'core_pb2'
+  # @@protoc_insertion_point(class_scope:CartesiCore.WordAccess)
+  ))
+_sym_db.RegisterMessage(WordAccess)
+
+AccessNote = _reflection.GeneratedProtocolMessageType('AccessNote', (_message.Message,), dict(
+  DESCRIPTOR = _ACCESSNOTE,
+  __module__ = 'core_pb2'
+  # @@protoc_insertion_point(class_scope:CartesiCore.AccessNote)
+  ))
+_sym_db.RegisterMessage(AccessNote)
+
+AccessLog = _reflection.GeneratedProtocolMessageType('AccessLog', (_message.Message,), dict(
+  DESCRIPTOR = _ACCESSLOG,
+  __module__ = 'core_pb2'
+  # @@protoc_insertion_point(class_scope:CartesiCore.AccessLog)
+  ))
+_sym_db.RegisterMessage(AccessLog)
+
 
 
 _MACHINE = _descriptor.ServiceDescriptor(
@@ -1342,8 +1636,8 @@ _MACHINE = _descriptor.ServiceDescriptor(
   file=DESCRIPTOR,
   index=0,
   serialized_options=None,
-  serialized_start=2542,
-  serialized_end=2924,
+  serialized_start=3081,
+  serialized_end=3516,
   methods=[
   _descriptor.MethodDescriptor(
     name='Run',
@@ -1406,6 +1700,15 @@ _MACHINE = _descriptor.ServiceDescriptor(
     containing_service=None,
     input_type=_VOID,
     output_type=_VOID,
+    serialized_options=None,
+  ),
+  _descriptor.MethodDescriptor(
+    name='Step',
+    full_name='CartesiCore.Machine.Step',
+    index=7,
+    containing_service=None,
+    input_type=_VOID,
+    output_type=_ACCESSLOG,
     serialized_options=None,
   ),
 ])

@@ -1,5 +1,7 @@
 #include <iostream>
 #include <fstream>
+#include <sstream>
+#include <iomanip>
 #include <string>
 #include <thread>
 #include <chrono>
@@ -43,6 +45,9 @@ using cartesi::clint_config;
 using cartesi::machine_config;
 using cartesi::machine;
 using cartesi::keccak_256_hasher;
+using cartesi::word_access;
+using cartesi::access_note;
+using hash_type = keccak_256_hasher::hash_type;
 
 #define dbg(...) syslog(LOG_DEBUG, __VA_ARGS__)
 
@@ -78,12 +83,87 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     using RunRequest = CartesiCore::RunRequest;
     using RunResponse = CartesiCore::RunResponse;
     using Processor = CartesiCore::Processor;
+    using AccessLog = CartesiCore::AccessLog;
+    using AccessNote = CartesiCore::AccessNote;
+    using WordAccess = CartesiCore::WordAccess;
+    using ProofType = CartesiCore::ProofType;
 
     std::mutex barrier_;
     std::thread breaker_;
     grpc::Server *server_;
     Context &context_;
     BreakReason reason_;
+
+    std::string convert_hash_type_to_hex_string(const hash_type &h){
+        std::ostringstream ss;
+        ss << "0x" << std::setfill('0');
+        for (unsigned int i=0; i < h.size(); ++i) {
+            ss << std::setw(2) << std::hex << static_cast<int>(h[i]);
+        }
+        //std::cout << ss.str() << "\n"; //Debug
+        return ss.str();
+    }
+
+    void set_resp_from_access_log(AccessLog *response, access_log &al) {
+        //Building word access grpc objects with equivalent content
+        for (std::vector<word_access>::iterator wai = al.accesses.begin(); wai != al.accesses.end(); ++wai){
+            WordAccess *wa = response->add_accesses();
+
+            //Setting type
+            switch (wai->type) {
+                case cartesi::access_type::read :
+                    wa->set_type(CartesiCore::WordAccess_AccessType_READ);
+                    break;
+                case cartesi::access_type::write :
+                    wa->set_type(CartesiCore::WordAccess_AccessType_WRITE);
+                    break;
+            }
+
+            //Setting read, written and text fields
+            wa->set_read(wai->read);
+            wa->set_written(wai->written);
+            wa->set_text(wai->text);
+            
+            //Building proof object
+            ProofType *pt = wa->mutable_proof();
+            pt->set_address(wai->proof.address);
+            pt->set_log2_size(wai->proof.log2_size);
+
+            //Building target hash
+            pt->set_target_hash(convert_hash_type_to_hex_string(wai->proof.target_hash));
+
+            //Building root hash
+            pt->set_root_hash(convert_hash_type_to_hex_string(wai->proof.root_hash));
+
+            //Setting all sibling hashes
+            for (unsigned int i=0; i < wai->proof.sibling_hashes.size(); ++i) {
+                std::string *sh = pt->add_sibling_hashes();
+                sh->assign(convert_hash_type_to_hex_string(wai->proof.sibling_hashes[i]));    
+            }
+        }
+
+        //Building acess note grpc objects with equivalent content
+        for (std::vector<access_note>::iterator ani = al.notes.begin(); ani != al.notes.end(); ++ani){
+            AccessNote *an = response->add_notes();
+
+            //Setting type
+            switch (ani->type) {
+                case cartesi::note_type::begin :
+                    an->set_type(CartesiCore::AccessNote_NoteType_BEGIN);
+                    break;
+                case cartesi::note_type::end :
+                    an->set_type(CartesiCore::AccessNote_NoteType_END);
+                    break;
+                case cartesi::note_type::point :
+                    an->set_type(CartesiCore::AccessNote_NoteType_POINT);
+                    break;                               
+            }
+            
+            //Setting where and text
+            an->set_where(ani->where);
+            an->set_text(ani->text);
+        }
+    }
 
     void set_processor_config_from_grpc(machine_config &c, Processor &p) {
         if (p.x1_oneof_case() == Processor::kX1){            
@@ -268,7 +348,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         }
 
     }
-    
+
     void set_config_from_req(machine_config &c, const MachineRequest *mr) {
         //TODO: set other alternative fields that could be desirable to customize
         //also load some arguments hardcode bellow form machine request
@@ -401,6 +481,34 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             //There isn't, notifying and doing nothing
             dbg("There is no active Cartesi machine, create one before executing run");
             return Status(StatusCode::FAILED_PRECONDITION, "There is no active Cartesi machine, create one before executing run");
+        }
+    }
+
+    Status Step(ServerContext *, const Void *, AccessLog *response) override {
+        //Checking if there is already a Cartesi machine created
+        if (context_.cartesimachine){
+            //There is
+
+            //Debug
+            std::cout << "Stepping\n";
+
+            //Recovering cartesi machine instance reference
+            machine *cm = context_.cartesimachine.get();
+
+            //Creating an access log instance to hold step execution information and stepping
+            access_log al{};
+            cm->step(al);
+
+            //Setting response
+            set_resp_from_access_log(response, al);
+            
+            dbg("Step executed");
+            return Status::OK;
+        }
+        else {
+            //There isn't, notifying and doing nothing
+            dbg("There is no active Cartesi machine, create one before executing step");
+            return Status(StatusCode::FAILED_PRECONDITION, "There is no active Cartesi machine, create one before executing step");
         }
     }
 

@@ -49,6 +49,11 @@ class MachineStub(object):
         request_serializer=core__pb2.Void.SerializeToString,
         response_deserializer=core__pb2.Void.FromString,
         )
+    self.Step = channel.unary_unary(
+        '/CartesiCore.Machine/Step',
+        request_serializer=core__pb2.Void.SerializeToString,
+        response_deserializer=core__pb2.AccessLog.FromString,
+        )
 
 
 class MachineServicer(object):
@@ -104,6 +109,13 @@ class MachineServicer(object):
     context.set_details('Method not implemented!')
     raise NotImplementedError('Method not implemented!')
 
+  def Step(self, request, context):
+    # missing associated documentation comment in .proto file
+    pass
+    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+    context.set_details('Method not implemented!')
+    raise NotImplementedError('Method not implemented!')
+
 
 def add_MachineServicer_to_server(servicer, server):
   rpc_method_handlers = {
@@ -141,6 +153,11 @@ def add_MachineServicer_to_server(servicer, server):
           servicer.Print,
           request_deserializer=core__pb2.Void.FromString,
           response_serializer=core__pb2.Void.SerializeToString,
+      ),
+      'Step': grpc.unary_unary_rpc_method_handler(
+          servicer.Step,
+          request_deserializer=core__pb2.Void.FromString,
+          response_serializer=core__pb2.AccessLog.SerializeToString,
       ),
   }
   generic_handler = grpc.method_handlers_generic_handler(

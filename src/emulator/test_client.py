@@ -6,6 +6,7 @@ import core_pb2
 import core_pb2_grpc
 import traceback
 import argparse
+from IPython import embed
 
 def address(add):
     #TODO: validate address
@@ -48,16 +49,22 @@ def run():
             rom_msg = core_pb2.ROM(cmdline="-- /bin/echo nice")
             processor_msg = core_pb2.Processor(x1=5)
             response = stub.Machine(core_pb2.MachineRequest(rom=rom_msg, processor=processor_msg))
-            run_msg = core_pb2.RunRequest(limit=50000000)
-            response2 = stub.Run(run_msg)
-            response3 = stub.Shutdown(core_pb2.Void())
+            run_msg = core_pb2.RunRequest(limit=500)
+            response2 = stub.Run(run_msg)            
+            response3 = stub.Step(core_pb2.Void())
+            embed()
+            response4 = stub.Shutdown(core_pb2.Void())
         except Exception as e:
             print("An exception occurred:")
             print(e)
             print(type(e))
     if (response):
-        print("Core client received: " + str(response2))
-
-
+        print("Core client received: " + str(response))
+    if (response2):
+        print("Core client received2: " + str(response2))
+    if (response3):
+        print("Core client received3: " + str(response3))
+    if (response4):
+        print("Core client received4: " + str(response4))
 if __name__ == '__main__':
     run()

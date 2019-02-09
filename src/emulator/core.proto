@@ -10,6 +10,7 @@ service Machine {
     rpc Shutdown (Void) returns (Void) {}
     rpc Inc (Void) returns (Void) {}
     rpc Print (Void) returns (Void) {}
+    rpc Step (Void) returns (AccessLog) {}
 }
 
 message Void { }
@@ -251,3 +252,42 @@ message RunResponse {
         SUSPENDED = 2;
     }
 }
+
+message ProofType {
+    uint64 address = 1;
+    int32 log2_size = 2;
+    bytes target_hash = 3;
+    repeated bytes sibling_hashes = 4;
+    bytes root_hash = 5; 
+}
+
+message WordAccess {
+    enum AccessType {
+        READ = 0;
+        WRITE = 1;
+    }
+    AccessType type = 1;
+    uint64 read = 2;
+    uint64 written = 3;
+    string text = 4;
+    ProofType proof = 5;
+}
+
+message AccessNote {
+    enum NoteType {
+        DUMMY = 0;
+        BEGIN = 1;
+        END = 2;
+        POINT = 3;
+    }
+    NoteType type = 1;
+    uint64 where = 2;
+    string text = 3;
+}
+
+message AccessLog {
+    repeated WordAccess accesses = 1;
+    repeated AccessNote notes = 2;
+}
+
+

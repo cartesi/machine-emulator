@@ -1,4 +1,4 @@
-image: cartesi/image-ci
+image: registry.gitlab.com/cartesi/core/cartesi/image-ci
 
 before_script:
 - cd src/emulator

@@ -700,6 +700,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             a.read_memory(paddr, haddr, pval);
             return true;
         } else {
+            assert(pma.get_istart_IO());
             uint64_t offset = paddr - pma.get_start();
             uint64_t val;
             virtual_state_access<STATE_ACCESS> da(a);
@@ -753,6 +754,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             a.write_memory(paddr, haddr, static_cast<T>(val));
             return true;
         } else {
+            assert(pma.get_istart_IO());
             uint64_t offset = paddr - pma.get_start();
             virtual_state_access<STATE_ACCESS> da(a);
             // If we do not know how to write, we treat this as a PMA violation
@@ -950,7 +952,11 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_AMOADD_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a.get_naked_machine(), pc, insn, "amoadd.w");
     auto note = a.make_scoped_note("amoadd.w"); (void) note;
-    return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm + valr; });
+    return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t {
+        int32_t val = 0;
+        __builtin_add_overflow(valm, valr, &val);
+        return val;
+    });
 }
 
 template <typename STATE_ACCESS>
@@ -1043,7 +1049,11 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_AMOADD_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a.get_naked_machine(), pc, insn, "amoadd.d");
     auto note = a.make_scoped_note("amoadd.d"); (void) note;
-    return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm + valr; });
+    return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t {
+        int64_t val = 0;
+        __builtin_add_overflow(valm, valr, &val);
+        return val;
+    });
 }
 
 template <typename STATE_ACCESS>
@@ -2202,7 +2212,7 @@ static inline execute_status execute_MULHU(STATE_ACCESS &a, uint64_t pc, uint32_
     dump_insn(a.get_naked_machine(), pc, insn, "mulhu");
     auto note = a.make_scoped_note("mulhu"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        return static_cast<uint64_t>((static_cast<int128_t>(rs1) * static_cast<int128_t>(rs2)) >> 64);
+        return static_cast<uint64_t>((static_cast<uint128_t>(rs1) * static_cast<uint128_t>(rs2)) >> 64);
     });
 }
 
@@ -2307,7 +2317,9 @@ static inline execute_status execute_ADDI(STATE_ACCESS &a, uint64_t pc, uint32_t
     dump_insn(a.get_naked_machine(), pc, insn, "addi");
     auto note = a.make_scoped_note("addi"); (void) note;
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
-        return rs1+imm;
+        int64_t val = 0;
+        __builtin_add_overflow(static_cast<int64_t>(rs1), static_cast<int64_t>(imm), &val);
+        return static_cast<uint64_t>(val);
     });
 }
 
@@ -2383,7 +2395,9 @@ static inline execute_status execute_ADDIW(STATE_ACCESS &a, uint64_t pc, uint32_
     dump_insn(a.get_naked_machine(), pc, insn, "addiw");
     auto note = a.make_scoped_note("addiw"); (void) note;
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
-        return static_cast<uint64_t>(static_cast<int32_t>(rs1) + imm);
+        int32_t val = 0;
+        __builtin_add_overflow(static_cast<int32_t>(rs1), imm, &val);
+        return static_cast<uint64_t>(val);
     });
 }
 

@@ -79,6 +79,7 @@ INCS_Darwin=-I/opt/local/include
 # Boost
 #   apt-get install libboost-dev
 #
+# -fsanitize=undefined
 SOLDFLAGS_Linux:= -L/usr/local/lib -shared -fpic
 CC_Linux=gcc
 CXX_Linux=g++
@@ -104,6 +105,7 @@ DEFS+=-DDUMP_INSN
 #DEFS+=-DDUMP_EXCEPTIONS
 endif
 
+# -fsanitize=undefined
 CXXFLAGS=-Ofast -std=c++17 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 CFLAGS=-Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 

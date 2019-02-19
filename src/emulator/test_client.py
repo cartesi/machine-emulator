@@ -3,6 +3,7 @@ from __future__ import print_function
 import grpc
 
 import core_pb2
+import cartesi_base_pb2
 import core_pb2_grpc
 import traceback
 import argparse
@@ -46,14 +47,15 @@ def run():
     with grpc.insecure_channel(conn_str) as channel:
         stub = core_pb2_grpc.MachineStub(channel)
         try:
-            rom_msg = core_pb2.ROM(cmdline="-- /bin/echo nice")
-            processor_msg = core_pb2.Processor(x1=5)
-            response = stub.Machine(core_pb2.MachineRequest(rom=rom_msg, processor=processor_msg))
-            run_msg = core_pb2.RunRequest(limit=500)
+            rom_msg = cartesi_base_pb2.ROM(cmdline="-- /bin/echo nice")
+            processor_state_msg = cartesi_base_pb2.ProcessorState(x1=5)
+            processor_msg = cartesi_base_pb2.Processor(state=processor_state_msg)
+            response = stub.Machine(cartesi_base_pb2.MachineRequest(rom=rom_msg, processor=processor_msg))
+            run_msg = cartesi_base_pb2.RunRequest(limit=500)
             response2 = stub.Run(run_msg)            
-            response3 = stub.Step(core_pb2.Void())
+            response3 = stub.Step(cartesi_base_pb2.Void())
             embed()
-            response4 = stub.Shutdown(core_pb2.Void())
+            response4 = stub.Shutdown(cartesi_base_pb2.Void())
         except Exception as e:
             print("An exception occurred:")
             print(e)

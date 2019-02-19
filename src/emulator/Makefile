@@ -183,11 +183,13 @@ docker:
 grpc: server client
 
 GRPC_CLT_OBJS:= \
+    cartesi-base.pb.o \
 	core.pb.o \
 	core.grpc.pb.o \
     client.o
 
 GRPC_SRV_OBJS:= \
+    cartesi-base.pb.o \
 	core.pb.o \
 	core.grpc.pb.o \
     server.o \

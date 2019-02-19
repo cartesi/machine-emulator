@@ -1,0 +1,295 @@
+syntax = "proto3";
+
+package CartesiCore;
+
+message Void { }
+
+message ProcessorState {
+    oneof x1_oneof{
+        uint64 x1           = 1;
+    }
+    oneof x2_oneof{
+        uint64 x2           = 2;
+    }
+    oneof x3_oneof{
+        uint64 x3           = 3;
+    }
+    oneof x4_oneof{
+        uint64 x4           = 4;
+    }
+    oneof x5_oneof{
+        uint64 x5           = 5;
+    }
+    oneof x6_oneof{
+        uint64 x6           = 6;
+    }
+    oneof x7_oneof{
+        uint64 x7           = 7;
+    }
+    oneof x8_oneof{
+        uint64 x8           = 8;
+    }
+    oneof x9_oneof{
+        uint64 x9           = 9;
+    }
+    oneof x10_oneof{
+        uint64 x10          = 10;
+    }
+    oneof x11_oneof{
+        uint64 x11          = 11;
+    }
+    oneof x12_oneof{
+        uint64 x12          = 12;
+    }
+    oneof x13_oneof{
+        uint64 x13          = 13;
+    }
+    oneof x14_oneof{
+        uint64 x14          = 14;
+    }
+    oneof x15_oneof{
+        uint64 x15          = 15;
+    }
+    oneof x16_oneof{
+        uint64 x16          = 16;
+    }
+    oneof x17_oneof{
+        uint64 x17          = 17;
+    }
+    oneof x18_oneof{
+        uint64 x18          = 18;
+    }
+    oneof x19_oneof{
+        uint64 x19          = 19;
+    }
+    oneof x20_oneof{
+        uint64 x20          = 20;
+    }
+    oneof x21_oneof{
+        uint64 x21          = 21;
+    }
+    oneof x22_oneof{
+        uint64 x22          = 22;
+    }
+    oneof x23_oneof{
+        uint64 x23          = 23;
+    }
+    oneof x24_oneof{
+        uint64 x24          = 24;
+    }
+    oneof x25_oneof{
+        uint64 x25          = 25;
+    }
+    oneof x26_oneof{
+        uint64 x26          = 26;
+    }
+    oneof x27_oneof{
+        uint64 x27          = 27;
+    }
+    oneof x28_oneof{
+        uint64 x28          = 28;
+    }
+    oneof x29_oneof{
+        uint64 x29          = 29;
+    }
+    oneof x30_oneof{
+        uint64 x30          = 30;
+    }
+    oneof x31_oneof{
+        uint64 x31          = 31;
+    }
+    oneof pc_oneof{
+        uint64 pc           = 32;
+    }
+    oneof mvendorid_oneof{
+        uint64 mvendorid    = 33;
+    }
+    oneof marchid_oneof{
+        uint64 marchid      = 34;
+    }
+    oneof mimpid_oneof{
+        uint64 mimpid       = 35;
+    }
+    oneof mcycle_oneof{
+        uint64 mcycle       = 36;
+    }
+    oneof minstret_oneof{
+        uint64 minstret     = 37;
+    }
+    oneof mstatus_oneof{
+        uint64 mstatus      = 38;
+    }
+    oneof mtvec_oneof{
+        uint64 mtvec        = 39;
+    }
+    oneof mscratch_oneof{
+        uint64 mscratch     = 40;
+    }
+    oneof mepc_oneof{
+        uint64 mepc         = 41;
+    }
+    oneof mcause_oneof{
+        uint64 mcause       = 42;
+    }
+    oneof mtval_oneof{
+        uint64 mtval        = 43;
+    }
+    oneof misa_oneof{
+        uint64 misa         = 44;
+    }
+    oneof mie_oneof{
+        uint64 mie          = 45;
+    }
+    oneof mip_oneof{
+        uint64 mip          = 46;
+    }
+    oneof medeleg_oneof{
+        uint64 medeleg      = 47;
+    }
+    oneof mideleg_oneof{
+        uint64 mideleg      = 48;
+    }
+    oneof mcounteren_oneof{
+        uint64 mcounteren   = 49;
+    }
+    oneof stvec_oneof{
+        uint64 stvec        = 50;
+    }
+    oneof sscratch_oneof{
+        uint64 sscratch     = 51;
+    }
+    oneof sepc_oneof{
+        uint64 sepc         = 52;
+    }
+    oneof scause_oneof{
+        uint64 scause       = 53;
+    }
+    oneof stval_oneof{
+        uint64 stval        = 54;
+    }
+    oneof satp_oneof{
+        uint64 satp         = 55;
+    }
+    oneof scounteren_oneof{
+        uint64 scounteren   = 56;
+    }
+    oneof ilrsc_oneof{
+        uint64 ilrsc        = 57;
+    }
+    oneof iflags_oneof{
+        uint64 iflags       = 58;
+    }
+}
+
+message Processor {
+    oneof processor_oneof{
+		ProcessorState state = 1;
+        string backing       = 2;
+    }
+}
+
+message ROM {
+	oneof rom_oneof {
+    	string cmdline = 1;
+    	string backing = 2;
+	}
+}
+
+message RAM {
+    uint64 ilength = 1;
+    string backing = 2;
+}
+
+message Drive {
+    uint64 istart = 1;
+    uint64 ilength = 2;
+    string backing = 3;
+    bool shared = 4;    
+    string label = 5;
+}
+
+message CLINTState {
+    uint64 mtime = 1;
+    uint64 mtimecmp = 2;
+}
+
+message CLINT {
+	oneof clint_oneof {
+		CLINTState state = 1;
+		string backing = 2;
+	}
+}
+
+message HTIFState {
+    uint64 fromhost = 1;
+    uint64 tohost = 2;
+}
+
+message HTIF {
+	oneof htif_oneof {
+		HTIFState state = 1;
+		string backing = 2;
+	}
+}
+
+message MachineRequest {
+    Processor processor = 1;
+    ROM rom = 2;
+    RAM ram = 3;
+    repeated Drive flash = 4;
+    CLINT clint = 5;
+    HTIF htif = 6;
+}
+
+message RunRequest {
+    uint64 limit = 1;
+}
+
+message RunResponse {
+    uint64 mcycle = 1;
+    uint64 tohost = 2;
+    enum Status {
+        LIMITED = 0;
+        HALTED = 1;
+        SUSPENDED = 2;
+    }
+}
+
+message ProofType {
+    uint64 address = 1;
+    int32 log2_size = 2;
+    bytes target_hash = 3;
+    repeated bytes sibling_hashes = 4;
+    bytes root_hash = 5; 
+}
+
+message WordAccess {
+    enum AccessType {
+        READ = 0;
+        WRITE = 1;
+    }
+    AccessType type = 1;
+    uint64 read = 2;
+    uint64 written = 3;
+    string text = 4;
+    ProofType proof = 5;
+}
+
+message AccessNote {
+    enum NoteType {
+        DUMMY = 0;
+        BEGIN = 1;
+        END = 2;
+        POINT = 3;
+    }
+    NoteType type = 1;
+    uint64 where = 2;
+    string text = 3;
+}
+
+message AccessLog {
+    repeated WordAccess accesses = 1;
+    repeated AccessNote notes = 2;
+}
+
+

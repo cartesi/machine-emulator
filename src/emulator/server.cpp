@@ -83,6 +83,11 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     using RunRequest = CartesiCore::RunRequest;
     using RunResponse = CartesiCore::RunResponse;
     using Processor = CartesiCore::Processor;
+    using ProcessorState = CartesiCore::ProcessorState;
+    using HTIF = CartesiCore::HTIF;
+    using HTIFState = CartesiCore::HTIFState;
+    using CLINT = CartesiCore::CLINT;
+    using CLINTState = CartesiCore::CLINTState;
     using AccessLog = CartesiCore::AccessLog;
     using AccessNote = CartesiCore::AccessNote;
     using WordAccess = CartesiCore::WordAccess;
@@ -165,188 +170,181 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         }
     }
 
-    void set_processor_config_from_grpc(machine_config &c, Processor &p) {
-        if (p.x1_oneof_case() == Processor::kX1){            
-            c.processor.x[0] = p.x1();
+    void set_processor_config_from_grpc(machine_config &c, ProcessorState &ps) {
+		if (ps.x1_oneof_case() == ProcessorState::kX1){            
+            c.processor.x[1] = ps.x1();
         }
-        if (p.x2_oneof_case() == Processor::kX2){            
-            c.processor.x[1] = p.x2();
+        if (ps.x2_oneof_case() == ProcessorState::kX2){            
+            c.processor.x[2] = ps.x2();
         }
-        if (p.x3_oneof_case() == Processor::kX3){            
-            c.processor.x[2] = p.x3();
+        if (ps.x3_oneof_case() == ProcessorState::kX3){            
+            c.processor.x[3] = ps.x3();
         }
-        if (p.x4_oneof_case() == Processor::kX4){            
-            c.processor.x[3] = p.x4();
+        if (ps.x4_oneof_case() == ProcessorState::kX4){            
+            c.processor.x[4] = ps.x4();
         }
-        if (p.x5_oneof_case() == Processor::kX5){            
-            c.processor.x[4] = p.x5();
+        if (ps.x5_oneof_case() == ProcessorState::kX5){            
+            c.processor.x[5] = ps.x5();
         }
-        if (p.x6_oneof_case() == Processor::kX6){            
-            c.processor.x[5] = p.x6();
+        if (ps.x6_oneof_case() == ProcessorState::kX6){            
+            c.processor.x[6] = ps.x6();
         }
-        if (p.x7_oneof_case() == Processor::kX7){            
-            c.processor.x[6] = p.x7();
+        if (ps.x7_oneof_case() == ProcessorState::kX7){            
+            c.processor.x[7] = ps.x7();
         }
-        if (p.x8_oneof_case() == Processor::kX8){            
-            c.processor.x[7] = p.x8();
+        if (ps.x8_oneof_case() == ProcessorState::kX8){            
+            c.processor.x[8] = ps.x8();
         }
-        if (p.x9_oneof_case() == Processor::kX9){            
-            c.processor.x[8] = p.x9();
+        if (ps.x9_oneof_case() == ProcessorState::kX9){            
+            c.processor.x[9] = ps.x9();
         }
-        if (p.x10_oneof_case() == Processor::kX10){            
-            c.processor.x[9] = p.x10();
+        if (ps.x10_oneof_case() == ProcessorState::kX10){            
+            c.processor.x[10] = ps.x10();
         }
-        if (p.x11_oneof_case() == Processor::kX11){            
-            c.processor.x[10] = p.x11();
+        if (ps.x11_oneof_case() == ProcessorState::kX11){            
+            c.processor.x[11] = ps.x11();
         }
-        if (p.x12_oneof_case() == Processor::kX12){            
-            c.processor.x[11] = p.x12();
+        if (ps.x12_oneof_case() == ProcessorState::kX12){            
+            c.processor.x[12] = ps.x12();
         }
-        if (p.x13_oneof_case() == Processor::kX13){            
-            c.processor.x[12] = p.x13();
+        if (ps.x13_oneof_case() == ProcessorState::kX13){            
+            c.processor.x[13] = ps.x13();
         }
-        if (p.x14_oneof_case() == Processor::kX14){            
-            c.processor.x[13] = p.x14();
+        if (ps.x14_oneof_case() == ProcessorState::kX14){            
+            c.processor.x[14] = ps.x14();
         }
-        if (p.x15_oneof_case() == Processor::kX15){            
-            c.processor.x[14] = p.x15();
+        if (ps.x15_oneof_case() == ProcessorState::kX15){            
+            c.processor.x[15] = ps.x15();
         }
-        if (p.x16_oneof_case() == Processor::kX16){            
-            c.processor.x[15] = p.x16();
+        if (ps.x16_oneof_case() == ProcessorState::kX16){            
+            c.processor.x[16] = ps.x16();
         }
-        if (p.x17_oneof_case() == Processor::kX17){            
-            c.processor.x[16] = p.x17();
+        if (ps.x17_oneof_case() == ProcessorState::kX17){            
+            c.processor.x[17] = ps.x17();
         }
-        if (p.x18_oneof_case() == Processor::kX18){            
-            c.processor.x[17] = p.x18();
+        if (ps.x18_oneof_case() == ProcessorState::kX18){            
+            c.processor.x[18] = ps.x18();
         }
-        if (p.x19_oneof_case() == Processor::kX19){            
-            c.processor.x[18] = p.x19();
+        if (ps.x19_oneof_case() == ProcessorState::kX19){            
+            c.processor.x[19] = ps.x19();
         }
-        if (p.x20_oneof_case() == Processor::kX20){            
-            c.processor.x[19] = p.x20();
+        if (ps.x20_oneof_case() == ProcessorState::kX20){            
+            c.processor.x[20] = ps.x20();
         }
-        if (p.x21_oneof_case() == Processor::kX21){            
-            c.processor.x[20] = p.x21();
+        if (ps.x21_oneof_case() == ProcessorState::kX21){            
+            c.processor.x[21] = ps.x21();
         }
-        if (p.x22_oneof_case() == Processor::kX22){            
-            c.processor.x[21] = p.x22();
+        if (ps.x22_oneof_case() == ProcessorState::kX22){            
+            c.processor.x[22] = ps.x22();
         }
-        if (p.x23_oneof_case() == Processor::kX23){            
-            c.processor.x[22] = p.x23();
+        if (ps.x23_oneof_case() == ProcessorState::kX23){            
+            c.processor.x[23] = ps.x23();
         }
-        if (p.x24_oneof_case() == Processor::kX24){            
-            c.processor.x[23] = p.x24();
+        if (ps.x24_oneof_case() == ProcessorState::kX24){            
+            c.processor.x[24] = ps.x24();
         }
-        if (p.x25_oneof_case() == Processor::kX25){            
-            c.processor.x[24] = p.x25();
+        if (ps.x25_oneof_case() == ProcessorState::kX25){            
+            c.processor.x[25] = ps.x25();
         }
-        if (p.x26_oneof_case() == Processor::kX26){            
-            c.processor.x[25] = p.x26();
+        if (ps.x26_oneof_case() == ProcessorState::kX26){            
+            c.processor.x[26] = ps.x26();
         }
-        if (p.x27_oneof_case() == Processor::kX27){            
-            c.processor.x[26] = p.x27();
+        if (ps.x27_oneof_case() == ProcessorState::kX27){            
+            c.processor.x[27] = ps.x27();
         }
-        if (p.x28_oneof_case() == Processor::kX28){            
-            c.processor.x[27] = p.x28();
+        if (ps.x28_oneof_case() == ProcessorState::kX28){            
+            c.processor.x[28] = ps.x28();
         }
-        if (p.x29_oneof_case() == Processor::kX29){            
-            c.processor.x[28] = p.x29();
+        if (ps.x29_oneof_case() == ProcessorState::kX29){            
+            c.processor.x[29] = ps.x29();
         }
-        if (p.x30_oneof_case() == Processor::kX30){            
-            c.processor.x[29] = p.x30();
+        if (ps.x30_oneof_case() == ProcessorState::kX30){            
+            c.processor.x[30] = ps.x30();
         }
-        if (p.x31_oneof_case() == Processor::kX31){            
-            c.processor.x[30] = p.x31();
+        if (ps.x31_oneof_case() == ProcessorState::kX31){            
+            c.processor.x[31] = ps.x31();
         }
-        if (p.x32_oneof_case() == Processor::kX32){            
-            c.processor.x[31] = p.x32();
+        if (ps.pc_oneof_case() == ProcessorState::kPc){            
+            c.processor.pc = ps.pc();
         }
-        if (p.pc_oneof_case() == Processor::kPc){            
-            c.processor.pc = p.pc();
+        if (ps.mvendorid_oneof_case() == ProcessorState::kMvendorid){            
+            c.processor.mvendorid = ps.mvendorid();
         }
-        if (p.mvendorid_oneof_case() == Processor::kMvendorid){            
-            c.processor.mvendorid = p.mvendorid();
+        if (ps.marchid_oneof_case() == ProcessorState::kMarchid){            
+            c.processor.marchid = ps.marchid();
         }
-        if (p.marchid_oneof_case() == Processor::kMarchid){            
-            c.processor.marchid = p.marchid();
+        if (ps.mimpid_oneof_case() == ProcessorState::kMimpid){            
+            c.processor.mimpid = ps.mimpid();
         }
-        if (p.mimpid_oneof_case() == Processor::kMimpid){            
-            c.processor.mimpid = p.mimpid();
+        if (ps.mcycle_oneof_case() == ProcessorState::kMcycle){            
+            c.processor.mcycle = ps.mcycle();
         }
-        if (p.mcycle_oneof_case() == Processor::kMcycle){            
-            c.processor.mcycle = p.mcycle();
+        if (ps.minstret_oneof_case() == ProcessorState::kMinstret){            
+            c.processor.minstret = ps.minstret();
         }
-        if (p.minstret_oneof_case() == Processor::kMinstret){            
-            c.processor.minstret = p.minstret();
+        if (ps.mstatus_oneof_case() == ProcessorState::kMstatus){            
+            c.processor.mstatus = ps.mstatus();
         }
-        if (p.mstatus_oneof_case() == Processor::kMstatus){            
-            c.processor.mstatus = p.mstatus();
+        if (ps.mtvec_oneof_case() == ProcessorState::kMtvec){            
+            c.processor.mtvec = ps.mtvec();
         }
-        if (p.mtvec_oneof_case() == Processor::kMtvec){            
-            c.processor.mtvec = p.mtvec();
+        if (ps.mscratch_oneof_case() == ProcessorState::kMscratch){            
+            c.processor.mscratch = ps.mscratch();
         }
-        if (p.mscratch_oneof_case() == Processor::kMscratch){            
-            c.processor.mscratch = p.mscratch();
+        if (ps.mepc_oneof_case() == ProcessorState::kMepc){            
+            c.processor.mepc = ps.mepc();
         }
-        if (p.mepc_oneof_case() == Processor::kMepc){            
-            c.processor.mepc = p.mepc();
+        if (ps.mcause_oneof_case() == ProcessorState::kMcause){            
+            c.processor.mcause = ps.mcause();
         }
-        if (p.mcause_oneof_case() == Processor::kMcause){            
-            c.processor.mcause = p.mcause();
+        if (ps.mtval_oneof_case() == ProcessorState::kMtval){            
+            c.processor.mtval = ps.mtval();
         }
-        if (p.mtval_oneof_case() == Processor::kMtval){            
-            c.processor.mtval = p.mtval();
+        if (ps.misa_oneof_case() == ProcessorState::kMisa){            
+            c.processor.misa = ps.misa();
         }
-        if (p.misa_oneof_case() == Processor::kMisa){            
-            c.processor.misa = p.misa();
+        if (ps.mie_oneof_case() == ProcessorState::kMie){            
+            c.processor.mie = ps.mie();
         }
-        if (p.mie_oneof_case() == Processor::kMie){            
-            c.processor.mie = p.mie();
+        if (ps.mip_oneof_case() == ProcessorState::kMip){            
+            c.processor.mip = ps.mip();
         }
-        if (p.mip_oneof_case() == Processor::kMip){            
-            c.processor.mip = p.mip();
+        if (ps.medeleg_oneof_case() == ProcessorState::kMedeleg){            
+            c.processor.medeleg = ps.medeleg();
         }
-        if (p.medeleg_oneof_case() == Processor::kMedeleg){            
-            c.processor.medeleg = p.medeleg();
+        if (ps.mideleg_oneof_case() == ProcessorState::kMideleg){            
+            c.processor.mideleg = ps.mideleg();
         }
-        if (p.mideleg_oneof_case() == Processor::kMideleg){            
-            c.processor.mideleg = p.mideleg();
+        if (ps.mcounteren_oneof_case() == ProcessorState::kMcounteren){            
+            c.processor.mcounteren = ps.mcounteren();
         }
-        if (p.mcounteren_oneof_case() == Processor::kMcounteren){            
-            c.processor.mcounteren = p.mcounteren();
+        if (ps.stvec_oneof_case() == ProcessorState::kStvec){            
+            c.processor.stvec = ps.stvec();
         }
-        if (p.stvec_oneof_case() == Processor::kStvec){            
-            c.processor.stvec = p.stvec();
+        if (ps.sscratch_oneof_case() == ProcessorState::kSscratch){            
+            c.processor.sscratch = ps.sscratch();
         }
-        if (p.sscratch_oneof_case() == Processor::kSscratch){            
-            c.processor.sscratch = p.sscratch();
+        if (ps.sepc_oneof_case() == ProcessorState::kSepc){            
+            c.processor.sepc = ps.sepc();
         }
-        if (p.sepc_oneof_case() == Processor::kSepc){            
-            c.processor.sepc = p.sepc();
+        if (ps.scause_oneof_case() == ProcessorState::kScause){            
+            c.processor.scause = ps.scause();
         }
-        if (p.scause_oneof_case() == Processor::kScause){            
-            c.processor.scause = p.scause();
+        if (ps.stval_oneof_case() == ProcessorState::kStval){            
+            c.processor.stval = ps.stval();
         }
-        if (p.stval_oneof_case() == Processor::kStval){            
-            c.processor.stval = p.stval();
+        if (ps.satp_oneof_case() == ProcessorState::kSatp){            
+            c.processor.satp = ps.satp();
         }
-        if (p.satp_oneof_case() == Processor::kSatp){            
-            c.processor.satp = p.satp();
+        if (ps.scounteren_oneof_case() == ProcessorState::kScounteren){            
+            c.processor.scounteren = ps.scounteren();
         }
-        if (p.scounteren_oneof_case() == Processor::kScounteren){            
-            c.processor.scounteren = p.scounteren();
+        if (ps.ilrsc_oneof_case() == ProcessorState::kIlrsc){            
+            c.processor.ilrsc = ps.ilrsc();
         }
-        if (p.ilrsc_oneof_case() == Processor::kIlrsc){            
-            c.processor.ilrsc = p.ilrsc();
+        if (ps.iflags_oneof_case() == ProcessorState::kIflags){            
+            c.processor.iflags = ps.iflags();
         }
-        if (p.iflags_oneof_case() == Processor::kIflags){            
-            c.processor.iflags = p.iflags();
-        }
-        if (p.backing_oneof_case() == Processor::kBacking){            
-            c.processor.backing = p.backing();
-        }
-
     }
 
     void set_config_from_req(machine_config &c, const MachineRequest *mr) {
@@ -355,18 +353,23 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         c.rom.bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw";
 
         //Checking if custom processor values were set on request parameters
-        if (mr->processor_oneof_case() == MachineRequest::kProcessor){
-            dbg("Processor config set");
-            if (mr->has_processor()){
-                auto processor = mr->processor();
-                set_processor_config_from_grpc(c, processor);
+        if (mr->has_processor()){
+            auto p = mr->processor();
+
+            switch (p.processor_oneof_case()) {
+                case Processor::kState: {
+                        auto ps = p.state();
+                        set_processor_config_from_grpc(c, ps);
+                    }
+                    break;
+                case Processor::kBacking:
+                    c.processor.backing = p.backing();
+                    break;
+                case Processor::PROCESSOR_ONEOF_NOT_SET:
+                    dbg("No processor config set");
+                    break;    
             }
         }
-        else if (mr->processor_oneof_case() == MachineRequest::PROCESSOR_ONEOF_NOT_SET){
-            dbg("No config set");
-        }
-
-        
 
         //Getting cmdline if any and appending to bootargs
         if (mr->has_rom()){

@@ -14,10 +14,13 @@ src/mm/test-mm
 src/emulator/.ipynb_checkpoints/*
 src/emulator/__pycache__/*
 src/emulator/client
+src/emulator/server
 src/emulator/core.grpc.pb.cc
 src/emulator/core.grpc.pb.h
 src/emulator/core.pb.cc
 src/emulator/core.pb.h
+src/emulator/cartesi-base.pb.cc
+src/emulator/cartesi-base.pb.h
 src/emulator/rom/code/rom
 src/emulator/rom/code/rom.dump
 

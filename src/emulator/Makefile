@@ -7,7 +7,9 @@ FDT_LIB:=/usr/local/lib/libfdt.a
 FDT_INC:=-I/usr/local/include
 CRYPTOPP_LIB:=-lcryptopp
 STDCPPFS_LIB:=-lstdc++fs
-GRPC_INC:=$(shell pkg-config --cflags protobuf grpc)
+GRPC_DIR:=../../cartesi-grpc
+GRPC_OUT_DIR:=$(GRPC_DIR)/cpp
+GRPC_INC:=$(shell pkg-config --cflags protobuf grpc) 
 GRPC_LIB:=$(shell pkg-config --libs protobuf grpc++ grpc)
 
 PROTOC:=protoc
@@ -91,7 +93,7 @@ SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 
 WARNS=-W -Wall -pedantic
 
-INCS=$(INCS_$(UNAME)) -I/usr/local/include $(LUA_INC) $(FDT_INC)
+INCS=$(INCS_$(UNAME)) -I/usr/local/include $(LUA_INC) $(FDT_INC) -I$(GRPC_OUT_DIR)
 
 ifeq ($(dump),yes)
 #DEFS+=-DUMP_ILLEGAL_INSN
@@ -183,15 +185,19 @@ docker:
 grpc: server client
 
 GRPC_CLT_OBJS:= \
-    cartesi-base.pb.o \
-	core.pb.o \
-	core.grpc.pb.o \
+    $(GRPC_OUT_DIR)/cartesi-base.pb.o \
+	$(GRPC_OUT_DIR)/core.pb.o \
+	$(GRPC_OUT_DIR)/core.grpc.pb.o \
+    $(GRPC_OUT_DIR)/manager.pb.o \
+    $(GRPC_OUT_DIR)/manager.grpc.pb.o \
     client.o
 
 GRPC_SRV_OBJS:= \
-    cartesi-base.pb.o \
-	core.pb.o \
-	core.grpc.pb.o \
+    $(GRPC_OUT_DIR)/cartesi-base.pb.o \
+	$(GRPC_OUT_DIR)/core.pb.o \
+	$(GRPC_OUT_DIR)/core.grpc.pb.o \
+    $(GRPC_OUT_DIR)/manager.pb.o \
+    $(GRPC_OUT_DIR)/manager.grpc.pb.o \
     server.o \
     clint.o \
 	rom.o \
@@ -211,12 +217,14 @@ client: $(GRPC_CLT_OBJS)
 server client: CXXFLAGS := $(filter-out -fpic -fvisibility=hidden,$(CXXFLAGS) $(GRPC_INC))
 
 .PRECIOUS: %.grpc.pb.cc
-%.grpc.pb.cc: %.proto
-	$(PROTOC) --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN) $<
+%.grpc.pb.cc: $(GRPC_DIR)/%.proto
+	$(eval FILENAME:=$(GRPC_DIR)/$(notdir $<))
+	$(PROTOC) -I$(GRPC_DIR) --grpc_out=$(GRPC_OUT_DIR) --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN) $(FILENAME)
 
 .PRECIOUS: %.pb.cc
-%.pb.cc: %.proto
-	$(PROTOC) --cpp_out=. $<
+%.pb.cc: $(GRPC_DIR)/%.proto
+	$(eval FILENAME:=$(GRPC_DIR)/$(notdir $<))
+	$(PROTOC) -I$(GRPC_DIR) --cpp_out=$(GRPC_OUT_DIR) $(FILENAME)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
@@ -225,6 +233,7 @@ server client: CXXFLAGS := $(filter-out -fpic -fvisibility=hidden,$(CXXFLAGS) $(
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.gcda *.gcno *.o *.d cartesi.so server client
+	rm -f dis/*.o dis/*.d *.gcda *.gcno *.o *.d $(GRPC_OUT_DIR)/*.o \
+    cartesi.so server client
 
 -include $(wildcard *.d)

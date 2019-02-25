@@ -406,6 +406,9 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     }
 
     Status Machine(ServerContext *, const MachineRequest * request, Void *) override {
+        //Acquiring lock
+        std::lock_guard<std::mutex> lock(barrier_);
+
         //Checking if there is already a Cartesi machine created
         if (!context_.cartesimachine){
             //There isn't, creating a new one
@@ -436,6 +439,9 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     }
 
     Status Run(ServerContext *, const RunRequest *request, RunResponse *response) override {
+        //Acquiring lock
+        std::lock_guard<std::mutex> lock(barrier_);
+
         //Checking if there is already a Cartesi machine created
         if (context_.cartesimachine){
             //There is
@@ -488,6 +494,9 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     }
 
     Status Step(ServerContext *, const Void *, AccessLog *response) override {
+        //Acquiring lock
+        std::lock_guard<std::mutex> lock(barrier_);
+
         //Checking if there is already a Cartesi machine created
         if (context_.cartesimachine){
             //There is

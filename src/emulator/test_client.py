@@ -1,10 +1,17 @@
 from __future__ import print_function
 
 import grpc
+import sys
+
+#So the cartesi GRPC modules are in path
+import sys
+sys.path.insert(0,'../../cartesi-grpc/py')
 
 import core_pb2
 import cartesi_base_pb2
 import core_pb2_grpc
+import manager_pb2
+import manager_pb2_grpc
 import traceback
 import argparse
 from IPython import embed
@@ -40,7 +47,7 @@ def get_args():
     return (srv_add, srv_port) 
 
 def run():
-    response = None
+    response, response2, response3, response4 = (None, None, None, None)
     srv_add, srv_port = get_args()
     conn_str = srv_add + ':' + srv_port
     print("Connecting to server in " + conn_str)

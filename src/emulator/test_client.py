@@ -10,8 +10,8 @@ sys.path.insert(0,'../../cartesi-grpc/py')
 import core_pb2
 import cartesi_base_pb2
 import core_pb2_grpc
-import manager_pb2
-import manager_pb2_grpc
+import manager_low_pb2
+import manager_low_pb2_grpc
 import traceback
 import argparse
 from IPython import embed

@@ -20,6 +20,7 @@
 
 #include "core.grpc.pb.h"
 #include "core.pb.h"
+#include "manager-client.h"
 
 #include <chrono>
 #include <thread>
@@ -54,9 +55,12 @@ using hash_type = keccak_256_hasher::hash_type;
 struct Context {
     int value;
     std::string address;
-    bool forked;
+    std::string session_id;
+    bool auto_port;
+    bool report_to_manager;
+    bool forked;    
     std::unique_ptr<machine> cartesimachine;
-    Context(void): value(0), address(), forked(false), cartesimachine(nullptr) { }
+    Context(void): value(0), address(), session_id(), auto_port(false), report_to_manager(false), forked(false), cartesimachine(nullptr) { }
 };
 
 // Move this to static member function of MachingServiceImpl?
@@ -90,8 +94,9 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     using CLINTState = CartesiCore::CLINTState;
     using AccessLog = CartesiCore::AccessLog;
     using AccessNote = CartesiCore::AccessNote;
-    using WordAccess = CartesiCore::WordAccess;
-    using ProofType = CartesiCore::ProofType;
+    using Access = CartesiCore::Access;
+    using Proof = CartesiCore::Proof;
+    using Hash = CartesiCore::Hash;
 
     std::mutex barrier_;
     std::thread breaker_;
@@ -112,38 +117,39 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     void set_resp_from_access_log(AccessLog *response, access_log &al) {
         //Building word access grpc objects with equivalent content
         for (std::vector<word_access>::iterator wai = al.accesses.begin(); wai != al.accesses.end(); ++wai){
-            WordAccess *wa = response->add_accesses();
+            Access *a = response->add_accesses();
 
             //Setting type
             switch (wai->type) {
                 case cartesi::access_type::read :
-                    wa->set_type(CartesiCore::WordAccess_AccessType_READ);
+                    a->set_operation(CartesiCore::AccessOperation::READ);
                     break;
                 case cartesi::access_type::write :
-                    wa->set_type(CartesiCore::WordAccess_AccessType_WRITE);
+                    a->set_operation(CartesiCore::AccessOperation::WRITE);
                     break;
             }
 
             //Setting read, written and text fields
-            wa->set_read(wai->read);
-            wa->set_written(wai->written);
-            wa->set_text(wai->text);
+            a->set_read(wai->read);
+            a->set_written(wai->written);
             
             //Building proof object
-            ProofType *pt = wa->mutable_proof();
-            pt->set_address(wai->proof.address);
-            pt->set_log2_size(wai->proof.log2_size);
+            Proof *p = a->mutable_proof();
+            p->set_address(wai->proof.address);
+            p->set_log2_size(wai->proof.log2_size);
 
             //Building target hash
-            pt->set_target_hash(convert_hash_type_to_hex_string(wai->proof.target_hash));
+            Hash *th = p->mutable_target_hash();
+            th->set_content(convert_hash_type_to_hex_string(wai->proof.target_hash));
 
             //Building root hash
-            pt->set_root_hash(convert_hash_type_to_hex_string(wai->proof.root_hash));
+            Hash *rh = p->mutable_root_hash();
+            rh->set_content(convert_hash_type_to_hex_string(wai->proof.root_hash));
 
             //Setting all sibling hashes
             for (unsigned int i=0; i < wai->proof.sibling_hashes.size(); ++i) {
-                std::string *sh = pt->add_sibling_hashes();
-                sh->assign(convert_hash_type_to_hex_string(wai->proof.sibling_hashes[i]));    
+                Hash *sh = p->add_sibling_hashes();
+                sh->set_content(convert_hash_type_to_hex_string(wai->proof.sibling_hashes[i]));    
             }
         }
 
@@ -588,6 +594,12 @@ public:
 
 };
 
+void report_to_manager_server(Context &context){
+    dbg("Reporting address to manager\n");
+    std::unique_ptr<cartesi::manager_client> mc = std::make_unique<cartesi::manager_client>();
+    mc->register_on_manager(context.session_id, context.address);
+}
+
 static BreakReason server_loop(Context &context) {
     using grpc::ServerBuilder;
     using grpc::Server;
@@ -596,14 +608,26 @@ static BreakReason server_loop(Context &context) {
     builder.SetSyncServerOption(ServerBuilder::SyncServerOption::MIN_POLLERS, 1);
     builder.SetSyncServerOption(ServerBuilder::SyncServerOption::MAX_POLLERS, 1);
     builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
-    builder.AddListeningPort(context.address, grpc::InsecureServerCredentials());
+    std::unique_ptr<int> bound_port_pointer = std::make_unique<int>(); 
+    builder.AddListeningPort(context.address, grpc::InsecureServerCredentials(), bound_port_pointer.get());
     MachineServiceImpl service(context);
     builder.RegisterService(&service);
     std::unique_ptr<Server> server(builder.BuildAndStart());
     if (!server)
         return BreakReason::error;
-    dbg("Server %d listening to %s", getpid(), context.address.c_str());
+    
     service.set_server(server.get());
+
+    if (context.auto_port){
+        dbg("Auto port\n");
+        context.address = "localhost:";
+        context.address += std::to_string(*bound_port_pointer);
+    }
+    dbg("Server %d listening to %s", getpid(), context.address.c_str());
+    if (context.report_to_manager){
+        report_to_manager_server(context);
+    }
+
     server->Wait();
     return service.reason();
 }
@@ -712,14 +736,54 @@ static void daemonize(void) {
     }
 }
 
+std::string get_unix_socket_filename() {
+    char templ[] = "/tmp/cartesi-unix-socket-XXXXXX";
+    char *tmp_dirname = mkdtemp(templ);
+
+    if(tmp_dirname == NULL) {
+        dbg("Error creating tmp directory");
+        exit(1);
+    }
+
+    std::ostringstream ss;
+    ss << tmp_dirname << "/grpc-unix-socket";
+    return ss.str();    
+}
+
 int main(int argc, char** argv) {
     Context context;
-    if (argc != 2) {
-        std::cerr << argv[0] << " <ip>:<port>\n";
-        std::cerr << argv[0] << " unix:<path>\n";
+    if ((argc != 2) && (argc != 3)) {
+        std::cerr << argv[0] << " <ip>:<port> [session-id]\n";
+        std::cerr << argv[0] << " unix:<path> [session-id]\n";
+        std::cerr << argv[0] << " tcp <session-id>\n";
+        std::cerr << argv[0] << " unix <session-id>\n";
         exit(0);
     }
-    context.address = argv[1];
+    else if (argc == 2){
+        //Setting to listen on provided address
+        context.address = argv[1];
+    }
+    else{
+        //Set flag to report to manager
+        context.report_to_manager = true;
+        auto argv1 = std::string(argv[1]);
+        if (argv1 == "unix") {
+            //Using unix socket on a dynamically generated filename
+            dbg("Dynamically generated filename for unix socket\n");
+            context.address = "unix:";
+            context.address += get_unix_socket_filename();
+            dbg(context.address.c_str());
+        }
+        else if (argv1 == "tcp") {
+            //System allocated port
+            context.auto_port = true;
+            context.address = "localhost:0";
+        }
+        else {
+            context.address = argv1;
+        }
+        context.session_id = argv[2];
+    }
     daemonize();
     openlog("cartesi-grpc", LOG_PID, LOG_USER);
     //??D I am nervous about using a multi-threaded GRPC

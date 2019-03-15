@@ -188,16 +188,16 @@ GRPC_CLT_OBJS:= \
     $(GRPC_OUT_DIR)/cartesi-base.pb.o \
 	$(GRPC_OUT_DIR)/core.pb.o \
 	$(GRPC_OUT_DIR)/core.grpc.pb.o \
-    $(GRPC_OUT_DIR)/manager.pb.o \
-    $(GRPC_OUT_DIR)/manager.grpc.pb.o \
+    $(GRPC_OUT_DIR)/manager-low.pb.o \
+    $(GRPC_OUT_DIR)/manager-low.grpc.pb.o \
     client.o
 
 GRPC_SRV_OBJS:= \
     $(GRPC_OUT_DIR)/cartesi-base.pb.o \
 	$(GRPC_OUT_DIR)/core.pb.o \
 	$(GRPC_OUT_DIR)/core.grpc.pb.o \
-    $(GRPC_OUT_DIR)/manager.pb.o \
-    $(GRPC_OUT_DIR)/manager.grpc.pb.o \
+    $(GRPC_OUT_DIR)/manager-low.pb.o \
+    $(GRPC_OUT_DIR)/manager-low.grpc.pb.o \
     server.o \
     clint.o \
 	rom.o \
@@ -206,7 +206,8 @@ GRPC_SRV_OBJS:= \
 	merkle-tree.o \
 	pma.o \
 	machine.o \
-	interpret.o 
+	interpret.o \
+    manager-client.o 
 
 server: $(GRPC_SRV_OBJS)
 	$(CXX) -o $@ $^ $(GRPC_SRV_LIBS)
@@ -233,7 +234,7 @@ server client: CXXFLAGS := $(filter-out -fpic -fvisibility=hidden,$(CXXFLAGS) $(
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.gcda *.gcno *.o *.d $(GRPC_OUT_DIR)/*.o \
+	rm -f dis/*.o dis/*.d *.gcda *.gcno *.o *.d $(GRPC_OUT_DIR)/* \
     cartesi.so server client
 
 -include $(wildcard *.d)

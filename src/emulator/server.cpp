@@ -32,9 +32,10 @@
 #include "keccak-256-hasher.h"
 #include "pma.h"
 
+using cartesi::word_access;
 using cartesi::merkle_tree;
 using cartesi::access_type;
-using cartesi::note_type;
+using cartesi::bracket_type;
 using cartesi::access_log;
 using cartesi::machine_config;
 using cartesi::processor_config;
@@ -46,8 +47,7 @@ using cartesi::clint_config;
 using cartesi::machine_config;
 using cartesi::machine;
 using cartesi::keccak_256_hasher;
-using cartesi::word_access;
-using cartesi::access_note;
+using cartesi::bracket_note;
 using hash_type = keccak_256_hasher::hash_type;
 
 #define dbg(...) syslog(LOG_DEBUG, __VA_ARGS__)
@@ -93,7 +93,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     using CLINT = CartesiCore::CLINT;
     using CLINTState = CartesiCore::CLINTState;
     using AccessLog = CartesiCore::AccessLog;
-    using AccessNote = CartesiCore::AccessNote;
+    using BracketNote = CartesiCore::BracketNote;
     using Access = CartesiCore::Access;
     using Proof = CartesiCore::Proof;
     using Hash = CartesiCore::Hash;
@@ -116,7 +116,8 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
 
     void set_resp_from_access_log(AccessLog *response, access_log &al) {
         //Building word access grpc objects with equivalent content
-        for (std::vector<word_access>::iterator wai = al.accesses.begin(); wai != al.accesses.end(); ++wai){
+        auto accesses = al.get_accesses();
+        for (std::vector<word_access>::iterator wai = accesses.begin(); wai != accesses.end(); ++wai){
             Access *a = response->add_accesses();
 
             //Setting type
@@ -153,27 +154,35 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             }
         }
 
-        //Building acess note grpc objects with equivalent content
-        for (std::vector<access_note>::iterator ani = al.notes.begin(); ani != al.notes.end(); ++ani){
-            AccessNote *an = response->add_notes();
+        //Building bracket note grpc objects with equivalent content
+        auto brackets = al.get_brackets();
+        for (std::vector<bracket_note>::iterator bni = brackets.begin(); bni != brackets.end(); ++bni){
+            BracketNote *bn = response->add_brackets();
 
             //Setting type
-            switch (ani->type) {
-                case cartesi::note_type::begin :
-                    an->set_type(CartesiCore::AccessNote_NoteType_BEGIN);
+            switch (bni->type) {
+                case cartesi::bracket_type::begin :
+                    bn->set_type(CartesiCore::BracketNote_BracketNoteType_BEGIN);
                     break;
-                case cartesi::note_type::end :
-                    an->set_type(CartesiCore::AccessNote_NoteType_END);
+                case cartesi::bracket_type::end :
+                    bn->set_type(CartesiCore::BracketNote_BracketNoteType_END);
                     break;
-                case cartesi::note_type::point :
-                    an->set_type(CartesiCore::AccessNote_NoteType_POINT);
+                case cartesi::bracket_type::invalid :
+                    bn->set_type(CartesiCore::BracketNote_BracketNoteType_INVALID);
                     break;                               
             }
             
             //Setting where and text
-            an->set_where(ani->where);
-            an->set_text(ani->text);
+            bn->set_where(bni->where);
+            bn->set_text(bni->text);
         }
+
+        //Building notes
+        auto notes = al.get_notes();
+        for (std::vector<std::string>::iterator ni = notes.begin(); ni != notes.end(); ++ni){
+            std::string *n = response->add_notes();
+            n->assign(*ni);
+        }  
     }
 
     void set_processor_config_from_grpc(machine_config &c, ProcessorState &ps) {

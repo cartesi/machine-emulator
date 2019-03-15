@@ -13,7 +13,7 @@ namespace cartesi {
 
 // Forward declarations
 class machine;
-enum class note_type;
+enum class bracket_type;
 
 /// \class i_state_access
 /// \brief Interface for machine state access.
@@ -70,11 +70,11 @@ public:
         return get_naked_machine().get_state();
     }
 
-    /// \brief Adds an annotation to the state
-    /// \param note_type Type of note to add
+    /// \brief Adds an annotation bracket to the log
+    /// \param type Type of bracket
     /// \param text String with the text for the annotation
-    void annotate(note_type type, const char *text) {
-        return derived().do_annotate(type, text);
+    void push_bracket(bracket_type type, const char *text) {
+        return derived().do_push_bracket(type, text);
     }
 
     /// \brief Adds annotations to the state, bracketing a scope

@@ -705,9 +705,9 @@ void machine::step(access_log &log) {
     update_merkle_tree();
     // Call interpret with a logged state access object
     logged_state_access a(*this);
-    a.annotate(note_type::begin, "step");
+    a.push_bracket(bracket_type::begin, "step");
     interpret(a, m_s.mcycle+1);
-    a.annotate(note_type::end, "step");
+    a.push_bracket(bracket_type::end, "step");
     log = std::move(*a.get_log());
 }
 

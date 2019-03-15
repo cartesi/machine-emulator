@@ -37,7 +37,7 @@ private:
     // Declare interface as friend to it can forward calls to the "overriden" methods.
     friend i_state_access<state_access>;
 
-    void do_annotate(note_type type, const char *text) {
+    void do_push_bracket(bracket_type type, const char *text) {
         (void) type; (void) text;
     }
 

@@ -314,30 +314,27 @@ local function print_log(log)
     local j = 1
     local i = 1
     while true do
-        local nj = log.notes[j]
+        local bj = log.brackets[j]
         local ai = log.accesses[i]
-        if not nj and not ai then break end
-        if nj and nj.where <= i then
-            if nj.type == "begin" then
-                indentout(d, "begin ", nj.text, "\n")
+        if not bj and not ai then break end
+        if bj and bj.where <= i then
+            if bj.type == "begin" then
+                indentout(d, "begin ", bj.text, "\n")
                 d = d + 1
-            elseif nj.type == "end" then
+            elseif bj.type == "end" then
                 d = d - 1
-                indentout(d, "end ", nj.text, "\n")
-            else
-                assert(nj.type == "point")
-                indentout(d, nj.text, "\n")
+                indentout(d, "end ", bj.text, "\n")
             end
             j = j + 1
         elseif ai then
             local ai = log.accesses[i]
             indentout(d, "hash ", hexhash8(ai.proof.root_hash), "\n")
             if ai.type == "read" then
-                indentout(d, "read ", ai.text, string.format("@%x",
+                indentout(d, "read ", log.notes[i], string.format("@%x",
                     ai.proof.address), ": ", ai.read, "\n")
             else
                 assert(ai.type == "write")
-                indentout(d, "write ", ai.text, string.format("@%x",
+                indentout(d, "write ", log.notes[i], string.format("@%x",
                     ai.proof.address), ": ", ai.read, " -> ", ai.written, "\n")
             end
             i = i + 1

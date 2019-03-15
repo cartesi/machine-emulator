@@ -11,7 +11,7 @@
 
 using cartesi::merkle_tree;
 using cartesi::access_type;
-using cartesi::note_type;
+using cartesi::bracket_type;
 using cartesi::access_log;
 using cartesi::machine_config;
 using cartesi::processor_config;
@@ -207,23 +207,22 @@ static const char *access_name(access_type type) {
         case access_type::write:
             return "write";
         default:
-            return nullptr;
+            return "invalid";
     }
 }
 
 /// \brief Converts a note type to a string
 /// \param type Note type.
 /// \returns String with note type name.
-static const char *note_name(note_type type) {
+static const char *bracket_name(bracket_type type) {
     switch (type) {
-        case note_type::begin:
+        case bracket_type::begin:
             return "begin";
-        case note_type::end:
+        case bracket_type::end:
             return "end";
-        case note_type::point:
-            return "point";
+        case bracket_type::invalid:
         default:
-            return nullptr;
+            return "invalid";
     }
 }
 
@@ -235,43 +234,44 @@ static void push_log(lua_State *L, access_log &log) {
     // Add all accesses
     lua_newtable(L); // log accesses
     int i = 1; // convert from 0- to 1-based index
-    for (const auto &a: log.accesses) {
+    for (const auto &a: log.get_accesses()) {
         lua_newtable(L); // log accesses wordaccess
-        auto at = access_name(a.type);
-        if (at) {
-            lua_pushstring(L, at);
-            lua_setfield(L, -2, "type");
-        }
+        lua_pushstring(L, access_name(a.type));
+        lua_setfield(L, -2, "type");
         lua_pushinteger(L, a.read);
         lua_setfield(L, -2, "read");
         if (a.type == access_type::write) {
             lua_pushinteger(L, a.written);
             lua_setfield(L, -2, "written");
         }
-        lua_pushlstring(L, a.text.data(), a.text.size());
-        lua_setfield(L, -2, "text");
         push_proof(L, a.proof);
         lua_setfield(L, -2, "proof");
         lua_rawseti(L, -2, i);
         ++i;
     }
     lua_setfield(L, -2, "accesses"); // log
-    // Add all notes
-    lua_newtable(L); // log notes
+    // Add all brackets
+    lua_newtable(L); // log brackets
     i = 1; // convert from 0- to 1-based index
-    for (const auto &n: log.notes) {
-        lua_newtable(L); // log notes note
-        auto nt = note_name(n.type);
-        if (nt) {
-            lua_pushstring(L, nt);
-            lua_setfield(L, -2, "type");
-        }
-        lua_pushinteger(L, n.where+1); // convert from 0- to 1-based index
+    for (const auto &b: log.get_brackets()) {
+        lua_newtable(L); // log brackets bracket
+        lua_pushstring(L, bracket_name(b.type));
+        lua_setfield(L, -2, "type");
+        lua_pushinteger(L, b.where+1); // convert from 0- to 1-based index
         lua_setfield(L, -2, "where");
-        lua_pushlstring(L, n.text.data(), n.text.size());
+        lua_pushlstring(L, b.text.data(), b.text.size());
         lua_setfield(L, -2, "text");
         lua_rawseti(L, -2, i);
         ++i;
+    }
+    lua_setfield(L, -2, "brackets"); // log
+
+    lua_newtable(L); // log notes
+    i = 1; // convert from 0- to 1-based index
+    for (const auto &n: log.get_notes()) {
+        lua_pushlstring(L, n.data(), n.size());
+        lua_rawseti(L, -2, i);
+        i++;
     }
     lua_setfield(L, -2, "notes"); // log
 }

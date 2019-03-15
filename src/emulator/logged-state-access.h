@@ -68,7 +68,7 @@ public:
             m_log(log),
             m_text(text) {
             if (m_log) {
-                m_log->annotate(note_type::begin, text);
+                m_log->push_bracket(bracket_type::begin, text);
             }
         }
 
@@ -94,7 +94,7 @@ public:
         /// if the log shared_ptr is not empty
         ~scoped_note() {
             if (m_log)
-                m_log->annotate(note_type::end, m_text.c_str());
+                m_log->push_bracket(bracket_type::end, m_text.c_str());
         }
     };
 
@@ -113,9 +113,8 @@ private:
         assert(proven);
         wa.type = access_type::read;
         wa.read = val;
-        wa.text = text;
         wa.written = 0;
-        m_log->accesses.push_back(wa);
+        m_log->push_access(wa, text);
         return val;
     }
 
@@ -134,8 +133,7 @@ private:
         wa.type = access_type::write;
         wa.read = dest;
         wa.written = val;
-        wa.text = text;
-        m_log->accesses.push_back(wa);
+        m_log->push_access(wa, text);
     }
 
     /// \brief Updates the Merkle tree after the modification of a word in the machine state.
@@ -161,8 +159,8 @@ private:
     // Declare interface as friend to it can forward calls to the "overriden" methods.
     friend i_state_access<logged_state_access>;
 
-    void do_annotate(note_type &type, const char *text) {
-        m_log->annotate(type, text);
+    void do_push_bracket(bracket_type &type, const char *text) {
+        m_log->push_bracket(type, text);
     }
 
     scoped_note do_make_scoped_note(const char *text) {

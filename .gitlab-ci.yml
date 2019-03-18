@@ -1,4 +1,4 @@
-iamge: registry.gitlab.com/cartesi/core/cartesi/image-ci:latest
+image: registry.gitlab.com/cartesi/core/cartesi/image-ci:latest
 
 before_script:
 - cd src/emulator

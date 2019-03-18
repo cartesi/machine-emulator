@@ -617,8 +617,8 @@ static BreakReason server_loop(Context &context) {
     builder.SetSyncServerOption(ServerBuilder::SyncServerOption::MIN_POLLERS, 1);
     builder.SetSyncServerOption(ServerBuilder::SyncServerOption::MAX_POLLERS, 1);
     builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
-    std::unique_ptr<int> bound_port_pointer = std::make_unique<int>(); 
-    builder.AddListeningPort(context.address, grpc::InsecureServerCredentials(), bound_port_pointer.get());
+    int bound_port;
+    builder.AddListeningPort(context.address, grpc::InsecureServerCredentials(), &bound_port);
     MachineServiceImpl service(context);
     builder.RegisterService(&service);
     std::unique_ptr<Server> server(builder.BuildAndStart());
@@ -630,7 +630,7 @@ static BreakReason server_loop(Context &context) {
     if (context.auto_port){
         dbg("Auto port\n");
         context.address = "localhost:";
-        context.address += std::to_string(*bound_port_pointer);
+        context.address += std::to_string(bound_port);
     }
     dbg("Server %d listening to %s", getpid(), context.address.c_str());
     if (context.report_to_manager){

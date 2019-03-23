@@ -88,6 +88,9 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     using RunResponse = CartesiCore::RunResponse;
     using Processor = CartesiCore::Processor;
     using ProcessorState = CartesiCore::ProcessorState;
+    using ROM = CartesiCore::ROM;
+    using RAM = CartesiCore::RAM;
+    using Drive = CartesiCore::Drive;
     using HTIF = CartesiCore::HTIF;
     using HTIFState = CartesiCore::HTIFState;
     using CLINT = CartesiCore::CLINT;
@@ -97,6 +100,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     using Access = CartesiCore::Access;
     using Proof = CartesiCore::Proof;
     using Hash = CartesiCore::Hash;
+    using Word = CartesiCore::Word;
 
     std::mutex barrier_;
     std::thread breaker_;
@@ -130,9 +134,16 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
                     break;
             }
 
-            //Setting read, written and text fields
-            a->set_read(wai->read);
-            a->set_written(wai->written);
+            //Setting read, and written fields
+            Word *r = a->mutable_read();
+            auto read = wai->read; 
+            std::string read_s(reinterpret_cast<char *>(&read), sizeof(read));
+            r->set_content(read_s);
+
+            Word *w = a->mutable_written();
+            auto written = wai->written;
+            std::string written_s(reinterpret_cast<char *>(&written), sizeof(written));
+            w->set_content(written_s);
             
             //Building proof object
             Proof *p = a->mutable_proof();
@@ -363,10 +374,8 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     }
 
     void set_config_from_req(machine_config &c, const MachineRequest *mr) {
-        //TODO: set other alternative fields that could be desirable to customize
-        //also load some arguments hardcode bellow form machine request
-        c.rom.bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw";
-
+        
+        
         //Checking if custom processor values were set on request parameters
         if (mr->has_processor()){
             auto p = mr->processor();
@@ -386,27 +395,86 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             }
         }
 
-        //Getting cmdline if any and appending to bootargs
+        //Setting ROM configs
         if (mr->has_rom()){
             auto rom = mr->rom();
-            std::string tmp = rom.cmdline();
-            if (!tmp.empty()) {
-                c.rom.bootargs += " " + tmp;
+
+            switch (rom.rom_oneof_case()) {
+                case ROM::kCmdline: {
+                    c.rom.bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw";
+                    std::string tmp = rom.cmdline();
+                    if (!tmp.empty()) {
+                        c.rom.bootargs += " " + tmp;
+                    }
+                    break;
+                }
+                case ROM::kBacking: {
+                    c.rom.backing = rom.backing();
+                    break;
+                }
+                case ROM::ROM_ONEOF_NOT_SET: {
+                    dbg("No rom config set");
+                    break;
+                }
             }
         }
 
         //Setting ram configs
-        c.ram.length = 64 << 20;
-        c.ram.backing = "/home/carlo/crashlabs/core/src/emulator/kernel.bin";
+        if (mr->has_ram()){
+            c.ram.length = mr->ram().ilength();
+            c.ram.backing = mr->ram().backing();
+        }
 
         //Setting flash configs
-        flash_config flash{};
-        flash.start = cartesi::PMA_RAM_START + c.ram.length;// 1<< 63 originally
-        flash.backing = "/home/carlo/crashlabs/core/src/emulator/rootfs.ext2";
-        flash.label = "root filesystem";
-        flash.length = std::experimental::filesystem::file_size(flash.backing); 
-        //flash.length = 46223360; //size manually checked from os terminal for test only, use above solution or other ASAP as this cannot be shipped liked this
-        c.flash.push_back(std::move(flash));
+        for (const Drive &drive: mr->flash()){
+            flash_config flash{};
+            flash.start = drive.istart();
+            flash.backing = drive.backing();
+            flash.label = drive.label();
+            flash.length = drive.ilength(); 
+            c.flash.push_back(std::move(flash));
+        }
+
+        //Setting CLINT configs
+        if (mr->has_clint()){
+            auto clint = mr->clint();
+
+            switch (clint.clint_oneof_case()) {
+                case CLINT::kState: {
+                    c.clint.mtimecmp = clint.state().mtimecmp();
+                    //c.clint.mtime = clint.state().mtime(); //TODO:Ask Diego if this should exist, since it's specified in the protobuf side but not in the C side
+                    break;
+                }
+                case CLINT::kBacking: {
+                    c.clint.backing = clint.backing();
+                    break;
+                }
+                case CLINT::CLINT_ONEOF_NOT_SET: {
+                    dbg("No clint config set");
+                    break;
+                }
+            }
+        }
+        //Setting HTIF configs
+        if (mr->has_htif()){
+            auto htif = mr->htif();
+
+            switch (htif.htif_oneof_case()) {
+                case HTIF::kState: {
+                    c.htif.fromhost = htif.state().fromhost();
+                    c.htif.tohost = htif.state().tohost();
+                    break;
+                }
+                case HTIF::kBacking: {
+                    c.htif.backing = htif.backing();
+                    break;
+                }
+                case HTIF::HTIF_ONEOF_NOT_SET: {
+                    dbg("No htif config set");
+                    break;
+                }
+            }
+        }
     }
 
     void Break(BreakReason reason) {

@@ -2,9 +2,9 @@ from __future__ import print_function
 
 import grpc
 import sys
+import os
 
 #So the cartesi GRPC modules are in path
-import sys
 sys.path.insert(0,'../../cartesi-grpc/py')
 
 import core_pb2
@@ -15,6 +15,47 @@ import manager_low_pb2_grpc
 import traceback
 import argparse
 from IPython import embed
+
+START = "start" 
+BACKING = "backing"
+LENGTH = "length"
+SHARED = "shared"
+LABEL = "label"
+CMD_LINE = "cmdline"
+
+TEST_ROM = {
+    CMD_LINE: "-- /bin/echo nice"
+}
+
+TEST_RAM = {
+    LENGTH: 64 << 20, #2**26 or 67108864
+    BACKING: "/home/carlo/crashlabs/core/src/emulator/kernel.bin"
+    
+}
+
+BACKING_TEST_DRIVE_FILEPATH = "/home/carlo/crashlabs/core/src/emulator/rootfs.ext2"
+
+TEST_DRIVES = [
+    {
+        START: 1 << 63, #2**63 or ~ 9*10**18
+        LENGTH: os.path.getsize(BACKING_TEST_DRIVE_FILEPATH),
+        BACKING: BACKING_TEST_DRIVE_FILEPATH,
+        SHARED: False,
+        LABEL: "root filesystem"
+    }
+]
+
+def make_new_machine_request():
+    rom_msg = cartesi_base_pb2.ROM(cmdline=TEST_ROM[CMD_LINE])
+    ram_msg = cartesi_base_pb2.RAM(ilength=TEST_RAM[LENGTH], backing=TEST_RAM[BACKING])
+    drives_msg = []
+    for drive in TEST_DRIVES:
+        drive_msg = cartesi_base_pb2.Drive(istart=drive[START], ilength=drive[LENGTH], backing=drive[BACKING], 
+                                           shared=drive[SHARED], label=drive[LABEL])
+        drives_msg.append(drive_msg)
+    processor_state_msg = cartesi_base_pb2.ProcessorState(x1=5)
+    processor_msg = cartesi_base_pb2.Processor(state=processor_state_msg)
+    return cartesi_base_pb2.MachineRequest(processor=processor_msg, rom=rom_msg, ram=ram_msg, flash=drives_msg)
 
 def address(add):
     #TODO: validate address
@@ -54,11 +95,8 @@ def run():
     with grpc.insecure_channel(conn_str) as channel:
         stub = core_pb2_grpc.MachineStub(channel)
         try:
-            rom_msg = cartesi_base_pb2.ROM(cmdline="-- /bin/echo nice")
-            processor_state_msg = cartesi_base_pb2.ProcessorState(x1=5)
-            processor_msg = cartesi_base_pb2.Processor(state=processor_state_msg)
-            response = stub.Machine(cartesi_base_pb2.MachineRequest(rom=rom_msg, processor=processor_msg))
-            run_msg = cartesi_base_pb2.RunRequest(limit=500)
+            response = stub.Machine(make_new_machine_request())
+            run_msg = cartesi_base_pb2.RunRequest(limit=500000000)
             response2 = stub.Run(run_msg)            
             response3 = stub.Step(cartesi_base_pb2.Void())
             embed()

@@ -136,14 +136,9 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
 
             //Setting read, and written fields
             Word *r = a->mutable_read();
-            auto read = wai->read; 
-            std::string read_s(reinterpret_cast<char *>(&read), sizeof(read));
-            r->set_content(read_s);
-
             Word *w = a->mutable_written();
-            auto written = wai->written;
-            std::string written_s(reinterpret_cast<char *>(&written), sizeof(written));
-            w->set_content(written_s);
+            r->set_content(reinterpret_cast<char *>(&wai->read), sizeof(wai->read));
+            w->set_content(reinterpret_cast<char *>(&wai->written), sizeof(wai->written));
             
             //Building proof object
             Proof *p = a->mutable_proof();
@@ -400,12 +395,8 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             auto rom = mr->rom();
 
             switch (rom.rom_oneof_case()) {
-                case ROM::kCmdline: {
-                    c.rom.bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw";
-                    std::string tmp = rom.cmdline();
-                    if (!tmp.empty()) {
-                        c.rom.bootargs += " " + tmp;
-                    }
+                case ROM::kBootargs: {
+                    c.rom.bootargs = rom.bootargs();
                     break;
                 }
                 case ROM::kBacking: {
@@ -421,17 +412,17 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
 
         //Setting ram configs
         if (mr->has_ram()){
-            c.ram.length = mr->ram().ilength();
+            c.ram.length = mr->ram().length();
             c.ram.backing = mr->ram().backing();
         }
 
         //Setting flash configs
         for (const Drive &drive: mr->flash()){
             flash_config flash{};
-            flash.start = drive.istart();
+            flash.start = drive.start();
             flash.backing = drive.backing();
             flash.label = drive.label();
-            flash.length = drive.ilength(); 
+            flash.length = drive.length(); 
             c.flash.push_back(std::move(flash));
         }
 
@@ -442,7 +433,6 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             switch (clint.clint_oneof_case()) {
                 case CLINT::kState: {
                     c.clint.mtimecmp = clint.state().mtimecmp();
-                    //c.clint.mtime = clint.state().mtime(); //TODO:Ask Diego if this should exist, since it's specified in the protobuf side but not in the C side
                     break;
                 }
                 case CLINT::kBacking: {
@@ -604,6 +594,40 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             //There isn't, notifying and doing nothing
             dbg("There is no active Cartesi machine, create one before executing step");
             return Status(StatusCode::FAILED_PRECONDITION, "There is no active Cartesi machine, create one before executing step");
+        }
+    }
+
+    Status GetRootHash(ServerContext *, const Void *, Hash *response) override {
+        //Acquiring lock
+        std::lock_guard<std::mutex> lock(barrier_);
+
+        //Checking if there is already a Cartesi machine created
+        if (context_.cartesimachine){
+            //There is
+
+            //Debug
+            std::cout << "Getting root hash\n";
+
+            //Recovering cartesi machine instance reference
+            machine *cm = context_.cartesimachine.get();
+
+            //Updating merkle tree
+            cm->update_merkle_tree();
+
+            //Creating a merkle tree hash to hold the root hash and populating it
+            merkle_tree::hash_type rh;
+            cm->get_merkle_tree().get_root_hash(rh);
+
+            //Setting response
+            response->set_content(convert_hash_type_to_hex_string(rh));
+            
+            dbg("Getting root hash executed");
+            return Status::OK;
+        }
+        else {
+            //There isn't, notifying and doing nothing
+            dbg("There is no active Cartesi machine, create one before executing get root hash");
+            return Status(StatusCode::FAILED_PRECONDITION, "There is no active Cartesi machine, create one before executing get root hash");
         }
     }
 

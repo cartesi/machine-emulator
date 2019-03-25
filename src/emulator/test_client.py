@@ -21,10 +21,10 @@ BACKING = "backing"
 LENGTH = "length"
 SHARED = "shared"
 LABEL = "label"
-CMD_LINE = "cmdline"
+BOOTARGS = "bootargs"
 
 TEST_ROM = {
-    CMD_LINE: "-- /bin/echo nice"
+    BOOTARGS: "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw -- /bin/echo nice"
 }
 
 TEST_RAM = {
@@ -46,11 +46,11 @@ TEST_DRIVES = [
 ]
 
 def make_new_machine_request():
-    rom_msg = cartesi_base_pb2.ROM(cmdline=TEST_ROM[CMD_LINE])
-    ram_msg = cartesi_base_pb2.RAM(ilength=TEST_RAM[LENGTH], backing=TEST_RAM[BACKING])
+    rom_msg = cartesi_base_pb2.ROM(bootargs=TEST_ROM[BOOTARGS])
+    ram_msg = cartesi_base_pb2.RAM(length=TEST_RAM[LENGTH], backing=TEST_RAM[BACKING])
     drives_msg = []
     for drive in TEST_DRIVES:
-        drive_msg = cartesi_base_pb2.Drive(istart=drive[START], ilength=drive[LENGTH], backing=drive[BACKING], 
+        drive_msg = cartesi_base_pb2.Drive(start=drive[START], length=drive[LENGTH], backing=drive[BACKING], 
                                            shared=drive[SHARED], label=drive[LABEL])
         drives_msg.append(drive_msg)
     processor_state_msg = cartesi_base_pb2.ProcessorState(x1=5)
@@ -96,11 +96,12 @@ def run():
         stub = core_pb2_grpc.MachineStub(channel)
         try:
             response = stub.Machine(make_new_machine_request())
+            response2 = stub.GetRootHash(cartesi_base_pb2.Void())
             run_msg = cartesi_base_pb2.RunRequest(limit=500000000)
-            response2 = stub.Run(run_msg)            
-            response3 = stub.Step(cartesi_base_pb2.Void())
+            response3 = stub.Run(run_msg)            
+            response4 = stub.Step(cartesi_base_pb2.Void())
             embed()
-            response4 = stub.Shutdown(cartesi_base_pb2.Void())
+            response5 = stub.Shutdown(cartesi_base_pb2.Void())
         except Exception as e:
             print("An exception occurred:")
             print(e)
@@ -113,5 +114,8 @@ def run():
         print("Core client received3: " + str(response3))
     if (response4):
         print("Core client received4: " + str(response4))
+    if (response5):
+        print("Core client received5: " + str(response5))
+
 if __name__ == '__main__':
     run()

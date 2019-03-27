@@ -13,13 +13,7 @@
 
 namespace cartesi {
 
-std::unique_ptr<CartesiManagerLow::MachineManagerLow::Stub> stub_;
-
-manager_client::manager_client() {
-    stub_ = CartesiManagerLow::MachineManagerLow::NewStub(grpc::CreateChannel("localhost:50051", 
-            grpc::InsecureChannelCredentials()));
-    dbg("Initiated manager server connection");
-}
+manager_client::manager_client() {}
 
 void manager_client::register_on_manager(std::string &session_id, std::string &address){
     CartesiManagerLow::AddressRequest request;
@@ -28,10 +22,18 @@ void manager_client::register_on_manager(std::string &session_id, std::string &a
 
     request.set_address(address);
     request.set_session_id(session_id);
-    grpc::Status status = stub_->CommunicateAddress(&context, request, &response);
+    
+    dbg("Creating manager server connection stub");
+    std::unique_ptr<CartesiManagerLow::MachineManagerLow::Stub> mml_stub = CartesiManagerLow::MachineManagerLow::NewStub(grpc::CreateChannel("localhost:50051", 
+            grpc::InsecureChannelCredentials()));
+    dbg("Initiated manager server connection stub");
+
+    dbg("Communicating address to manager server");
+    grpc::Status status = mml_stub->CommunicateAddress(&context, request, &response);
+    dbg("Address communicated");
 
     if (!status.ok()){
-        std::cout << "Error trying to communicate reference to manager\n";
+        dbg("Error trying to communicate reference to manager\n");
     }    
 }
 

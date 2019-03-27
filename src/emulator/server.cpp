@@ -572,10 +572,8 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
 
         //Checking if there is already a Cartesi machine created
         if (context_.cartesimachine){
-            //There is
-
-            //Debug
-            std::cout << "Stepping\n";
+            //There is        
+            dbg("Stepping");
 
             //Recovering cartesi machine instance reference
             machine *cm = context_.cartesimachine.get();
@@ -603,10 +601,8 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
 
         //Checking if there is already a Cartesi machine created
         if (context_.cartesimachine){
-            //There is
-
-            //Debug
-            std::cout << "Getting root hash\n";
+            //There is         
+            dbg("Getting root hash");
 
             //Recovering cartesi machine instance reference
             machine *cm = context_.cartesimachine.get();
@@ -699,6 +695,9 @@ void report_to_manager_server(Context &context){
     dbg("Reporting address to manager\n");
     std::unique_ptr<cartesi::manager_client> mc = std::make_unique<cartesi::manager_client>();
     mc->register_on_manager(context.session_id, context.address);
+    context.report_to_manager = false;
+    dbg("Address reported to manager\n");
+
 }
 
 static BreakReason server_loop(Context &context) {

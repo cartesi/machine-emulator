@@ -108,6 +108,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     Context &context_;
     BreakReason reason_;
 
+    //This method is not being used, by might be useful for debugging
     std::string convert_hash_type_to_hex_string(const hash_type &h){
         std::ostringstream ss;
         ss << "0x" << std::setfill('0');
@@ -115,6 +116,14 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             ss << std::setw(2) << std::hex << static_cast<int>(h[i]);
         }
         //std::cout << ss.str() << "\n"; //Debug
+        return ss.str();
+    }
+
+    std::string convert_hash_type_to_string(const hash_type &h){
+        std::ostringstream ss;
+        for (unsigned int i=0; i < h.size(); ++i) {
+            ss << h[i];
+        }
         return ss.str();
     }
 
@@ -147,16 +156,16 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
 
             //Building target hash
             Hash *th = p->mutable_target_hash();
-            th->set_content(convert_hash_type_to_hex_string(wai->proof.target_hash));
+            th->set_content( convert_hash_type_to_string(wai->proof.target_hash));
 
             //Building root hash
             Hash *rh = p->mutable_root_hash();
-            rh->set_content(convert_hash_type_to_hex_string(wai->proof.root_hash));
+            rh->set_content(convert_hash_type_to_string(wai->proof.root_hash));
 
             //Setting all sibling hashes
             for (unsigned int i=0; i < wai->proof.sibling_hashes.size(); ++i) {
                 Hash *sh = p->add_sibling_hashes();
-                sh->set_content(convert_hash_type_to_hex_string(wai->proof.sibling_hashes[i]));    
+                sh->set_content(convert_hash_type_to_string(wai->proof.sibling_hashes[i]));    
             }
         }
 
@@ -615,7 +624,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             cm->get_merkle_tree().get_root_hash(rh);
 
             //Setting response
-            response->set_content(convert_hash_type_to_hex_string(rh));
+            response->set_content(convert_hash_type_to_string(rh));
             
             dbg("Getting root hash executed");
             return Status::OK;

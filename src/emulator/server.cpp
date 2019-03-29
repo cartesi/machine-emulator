@@ -696,7 +696,6 @@ void report_to_manager_server(Context &context){
     dbg("Reporting address to manager\n");
     std::unique_ptr<cartesi::manager_client> mc = std::make_unique<cartesi::manager_client>();
     mc->register_on_manager(context.session_id, context.address);
-    context.report_to_manager = false;
     dbg("Address reported to manager\n");
 
 }

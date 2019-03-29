@@ -118,15 +118,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         //std::cout << ss.str() << "\n"; //Debug
         return ss.str();
     }
-
-    std::string convert_hash_type_to_string(const hash_type &h){
-        std::ostringstream ss;
-        for (unsigned int i=0; i < h.size(); ++i) {
-            ss << h[i];
-        }
-        return ss.str();
-    }
-
+    
     void set_resp_from_access_log(AccessLog *response, access_log &al) {
         //Building word access grpc objects with equivalent content
         auto accesses = al.get_accesses();
@@ -156,16 +148,16 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
 
             //Building target hash
             Hash *th = p->mutable_target_hash();
-            th->set_content( convert_hash_type_to_string(wai->proof.target_hash));
+            th->set_content(wai->proof.target_hash.data(), wai->proof.target_hash.size());
 
             //Building root hash
             Hash *rh = p->mutable_root_hash();
-            rh->set_content(convert_hash_type_to_string(wai->proof.root_hash));
+            rh->set_content(wai->proof.root_hash.data(), wai->proof.root_hash.size());
 
             //Setting all sibling hashes
             for (unsigned int i=0; i < wai->proof.sibling_hashes.size(); ++i) {
                 Hash *sh = p->add_sibling_hashes();
-                sh->set_content(convert_hash_type_to_string(wai->proof.sibling_hashes[i]));    
+                sh->set_content(wai->proof.sibling_hashes[i].data(), wai->proof.sibling_hashes[i].size());    
             }
         }
 
@@ -624,7 +616,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             cm->get_merkle_tree().get_root_hash(rh);
 
             //Setting response
-            response->set_content(convert_hash_type_to_string(rh));
+            response->set_content(rh.data(), rh.size());
             
             dbg("Getting root hash executed");
             return Status::OK;

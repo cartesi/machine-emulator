@@ -838,7 +838,7 @@ static void daemonize(void) {
 
 std::string get_unix_socket_filename() {
     char tmp[] = "/tmp/cartesi-unix-socket-XXXXXX";
-    if(mkdtemp(tmp)) {
+    if(!mkdtemp(tmp)) {
         dbg("Error creating tmp directory");
         exit(1);
     }

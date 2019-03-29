@@ -58,7 +58,7 @@ struct Context {
     std::string session_id;
     bool auto_port;
     bool report_to_manager;
-    bool forked;    
+    bool forked;
     std::unique_ptr<machine> cartesimachine;
     Context(void): value(0), address(), session_id(), auto_port(false), report_to_manager(false), forked(false), cartesimachine(nullptr) { }
 };
@@ -118,7 +118,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         //std::cout << ss.str() << "\n"; //Debug
         return ss.str();
     }
-    
+
     void set_resp_from_access_log(AccessLog *response, access_log &al) {
         //Building word access grpc objects with equivalent content
         auto accesses = al.get_accesses();
@@ -140,7 +140,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             Word *w = a->mutable_written();
             r->set_content(reinterpret_cast<char *>(&wai->read), sizeof(wai->read));
             w->set_content(reinterpret_cast<char *>(&wai->written), sizeof(wai->written));
-            
+
             //Building proof object
             Proof *p = a->mutable_proof();
             p->set_address(wai->proof.address);
@@ -176,9 +176,9 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
                     break;
                 case cartesi::bracket_type::invalid :
                     bn->set_type(CartesiCore::BracketNote_BracketNoteType_INVALID);
-                    break;                               
+                    break;
             }
-            
+
             //Setting where and text
             bn->set_where(bni->where);
             bn->set_text(bni->text);
@@ -189,189 +189,189 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         for (std::vector<std::string>::iterator ni = notes.begin(); ni != notes.end(); ++ni){
             std::string *n = response->add_notes();
             n->assign(*ni);
-        }  
+        }
     }
 
     void set_processor_config_from_grpc(machine_config &c, ProcessorState &ps) {
-		if (ps.x1_oneof_case() == ProcessorState::kX1){            
+		if (ps.x1_oneof_case() == ProcessorState::kX1){
             c.processor.x[1] = ps.x1();
         }
-        if (ps.x2_oneof_case() == ProcessorState::kX2){            
+        if (ps.x2_oneof_case() == ProcessorState::kX2){
             c.processor.x[2] = ps.x2();
         }
-        if (ps.x3_oneof_case() == ProcessorState::kX3){            
+        if (ps.x3_oneof_case() == ProcessorState::kX3){
             c.processor.x[3] = ps.x3();
         }
-        if (ps.x4_oneof_case() == ProcessorState::kX4){            
+        if (ps.x4_oneof_case() == ProcessorState::kX4){
             c.processor.x[4] = ps.x4();
         }
-        if (ps.x5_oneof_case() == ProcessorState::kX5){            
+        if (ps.x5_oneof_case() == ProcessorState::kX5){
             c.processor.x[5] = ps.x5();
         }
-        if (ps.x6_oneof_case() == ProcessorState::kX6){            
+        if (ps.x6_oneof_case() == ProcessorState::kX6){
             c.processor.x[6] = ps.x6();
         }
-        if (ps.x7_oneof_case() == ProcessorState::kX7){            
+        if (ps.x7_oneof_case() == ProcessorState::kX7){
             c.processor.x[7] = ps.x7();
         }
-        if (ps.x8_oneof_case() == ProcessorState::kX8){            
+        if (ps.x8_oneof_case() == ProcessorState::kX8){
             c.processor.x[8] = ps.x8();
         }
-        if (ps.x9_oneof_case() == ProcessorState::kX9){            
+        if (ps.x9_oneof_case() == ProcessorState::kX9){
             c.processor.x[9] = ps.x9();
         }
-        if (ps.x10_oneof_case() == ProcessorState::kX10){            
+        if (ps.x10_oneof_case() == ProcessorState::kX10){
             c.processor.x[10] = ps.x10();
         }
-        if (ps.x11_oneof_case() == ProcessorState::kX11){            
+        if (ps.x11_oneof_case() == ProcessorState::kX11){
             c.processor.x[11] = ps.x11();
         }
-        if (ps.x12_oneof_case() == ProcessorState::kX12){            
+        if (ps.x12_oneof_case() == ProcessorState::kX12){
             c.processor.x[12] = ps.x12();
         }
-        if (ps.x13_oneof_case() == ProcessorState::kX13){            
+        if (ps.x13_oneof_case() == ProcessorState::kX13){
             c.processor.x[13] = ps.x13();
         }
-        if (ps.x14_oneof_case() == ProcessorState::kX14){            
+        if (ps.x14_oneof_case() == ProcessorState::kX14){
             c.processor.x[14] = ps.x14();
         }
-        if (ps.x15_oneof_case() == ProcessorState::kX15){            
+        if (ps.x15_oneof_case() == ProcessorState::kX15){
             c.processor.x[15] = ps.x15();
         }
-        if (ps.x16_oneof_case() == ProcessorState::kX16){            
+        if (ps.x16_oneof_case() == ProcessorState::kX16){
             c.processor.x[16] = ps.x16();
         }
-        if (ps.x17_oneof_case() == ProcessorState::kX17){            
+        if (ps.x17_oneof_case() == ProcessorState::kX17){
             c.processor.x[17] = ps.x17();
         }
-        if (ps.x18_oneof_case() == ProcessorState::kX18){            
+        if (ps.x18_oneof_case() == ProcessorState::kX18){
             c.processor.x[18] = ps.x18();
         }
-        if (ps.x19_oneof_case() == ProcessorState::kX19){            
+        if (ps.x19_oneof_case() == ProcessorState::kX19){
             c.processor.x[19] = ps.x19();
         }
-        if (ps.x20_oneof_case() == ProcessorState::kX20){            
+        if (ps.x20_oneof_case() == ProcessorState::kX20){
             c.processor.x[20] = ps.x20();
         }
-        if (ps.x21_oneof_case() == ProcessorState::kX21){            
+        if (ps.x21_oneof_case() == ProcessorState::kX21){
             c.processor.x[21] = ps.x21();
         }
-        if (ps.x22_oneof_case() == ProcessorState::kX22){            
+        if (ps.x22_oneof_case() == ProcessorState::kX22){
             c.processor.x[22] = ps.x22();
         }
-        if (ps.x23_oneof_case() == ProcessorState::kX23){            
+        if (ps.x23_oneof_case() == ProcessorState::kX23){
             c.processor.x[23] = ps.x23();
         }
-        if (ps.x24_oneof_case() == ProcessorState::kX24){            
+        if (ps.x24_oneof_case() == ProcessorState::kX24){
             c.processor.x[24] = ps.x24();
         }
-        if (ps.x25_oneof_case() == ProcessorState::kX25){            
+        if (ps.x25_oneof_case() == ProcessorState::kX25){
             c.processor.x[25] = ps.x25();
         }
-        if (ps.x26_oneof_case() == ProcessorState::kX26){            
+        if (ps.x26_oneof_case() == ProcessorState::kX26){
             c.processor.x[26] = ps.x26();
         }
-        if (ps.x27_oneof_case() == ProcessorState::kX27){            
+        if (ps.x27_oneof_case() == ProcessorState::kX27){
             c.processor.x[27] = ps.x27();
         }
-        if (ps.x28_oneof_case() == ProcessorState::kX28){            
+        if (ps.x28_oneof_case() == ProcessorState::kX28){
             c.processor.x[28] = ps.x28();
         }
-        if (ps.x29_oneof_case() == ProcessorState::kX29){            
+        if (ps.x29_oneof_case() == ProcessorState::kX29){
             c.processor.x[29] = ps.x29();
         }
-        if (ps.x30_oneof_case() == ProcessorState::kX30){            
+        if (ps.x30_oneof_case() == ProcessorState::kX30){
             c.processor.x[30] = ps.x30();
         }
-        if (ps.x31_oneof_case() == ProcessorState::kX31){            
+        if (ps.x31_oneof_case() == ProcessorState::kX31){
             c.processor.x[31] = ps.x31();
         }
-        if (ps.pc_oneof_case() == ProcessorState::kPc){            
+        if (ps.pc_oneof_case() == ProcessorState::kPc){
             c.processor.pc = ps.pc();
         }
-        if (ps.mvendorid_oneof_case() == ProcessorState::kMvendorid){            
+        if (ps.mvendorid_oneof_case() == ProcessorState::kMvendorid){
             c.processor.mvendorid = ps.mvendorid();
         }
-        if (ps.marchid_oneof_case() == ProcessorState::kMarchid){            
+        if (ps.marchid_oneof_case() == ProcessorState::kMarchid){
             c.processor.marchid = ps.marchid();
         }
-        if (ps.mimpid_oneof_case() == ProcessorState::kMimpid){            
+        if (ps.mimpid_oneof_case() == ProcessorState::kMimpid){
             c.processor.mimpid = ps.mimpid();
         }
-        if (ps.mcycle_oneof_case() == ProcessorState::kMcycle){            
+        if (ps.mcycle_oneof_case() == ProcessorState::kMcycle){
             c.processor.mcycle = ps.mcycle();
         }
-        if (ps.minstret_oneof_case() == ProcessorState::kMinstret){            
+        if (ps.minstret_oneof_case() == ProcessorState::kMinstret){
             c.processor.minstret = ps.minstret();
         }
-        if (ps.mstatus_oneof_case() == ProcessorState::kMstatus){            
+        if (ps.mstatus_oneof_case() == ProcessorState::kMstatus){
             c.processor.mstatus = ps.mstatus();
         }
-        if (ps.mtvec_oneof_case() == ProcessorState::kMtvec){            
+        if (ps.mtvec_oneof_case() == ProcessorState::kMtvec){
             c.processor.mtvec = ps.mtvec();
         }
-        if (ps.mscratch_oneof_case() == ProcessorState::kMscratch){            
+        if (ps.mscratch_oneof_case() == ProcessorState::kMscratch){
             c.processor.mscratch = ps.mscratch();
         }
-        if (ps.mepc_oneof_case() == ProcessorState::kMepc){            
+        if (ps.mepc_oneof_case() == ProcessorState::kMepc){
             c.processor.mepc = ps.mepc();
         }
-        if (ps.mcause_oneof_case() == ProcessorState::kMcause){            
+        if (ps.mcause_oneof_case() == ProcessorState::kMcause){
             c.processor.mcause = ps.mcause();
         }
-        if (ps.mtval_oneof_case() == ProcessorState::kMtval){            
+        if (ps.mtval_oneof_case() == ProcessorState::kMtval){
             c.processor.mtval = ps.mtval();
         }
-        if (ps.misa_oneof_case() == ProcessorState::kMisa){            
+        if (ps.misa_oneof_case() == ProcessorState::kMisa){
             c.processor.misa = ps.misa();
         }
-        if (ps.mie_oneof_case() == ProcessorState::kMie){            
+        if (ps.mie_oneof_case() == ProcessorState::kMie){
             c.processor.mie = ps.mie();
         }
-        if (ps.mip_oneof_case() == ProcessorState::kMip){            
+        if (ps.mip_oneof_case() == ProcessorState::kMip){
             c.processor.mip = ps.mip();
         }
-        if (ps.medeleg_oneof_case() == ProcessorState::kMedeleg){            
+        if (ps.medeleg_oneof_case() == ProcessorState::kMedeleg){
             c.processor.medeleg = ps.medeleg();
         }
-        if (ps.mideleg_oneof_case() == ProcessorState::kMideleg){            
+        if (ps.mideleg_oneof_case() == ProcessorState::kMideleg){
             c.processor.mideleg = ps.mideleg();
         }
-        if (ps.mcounteren_oneof_case() == ProcessorState::kMcounteren){            
+        if (ps.mcounteren_oneof_case() == ProcessorState::kMcounteren){
             c.processor.mcounteren = ps.mcounteren();
         }
-        if (ps.stvec_oneof_case() == ProcessorState::kStvec){            
+        if (ps.stvec_oneof_case() == ProcessorState::kStvec){
             c.processor.stvec = ps.stvec();
         }
-        if (ps.sscratch_oneof_case() == ProcessorState::kSscratch){            
+        if (ps.sscratch_oneof_case() == ProcessorState::kSscratch){
             c.processor.sscratch = ps.sscratch();
         }
-        if (ps.sepc_oneof_case() == ProcessorState::kSepc){            
+        if (ps.sepc_oneof_case() == ProcessorState::kSepc){
             c.processor.sepc = ps.sepc();
         }
-        if (ps.scause_oneof_case() == ProcessorState::kScause){            
+        if (ps.scause_oneof_case() == ProcessorState::kScause){
             c.processor.scause = ps.scause();
         }
-        if (ps.stval_oneof_case() == ProcessorState::kStval){            
+        if (ps.stval_oneof_case() == ProcessorState::kStval){
             c.processor.stval = ps.stval();
         }
-        if (ps.satp_oneof_case() == ProcessorState::kSatp){            
+        if (ps.satp_oneof_case() == ProcessorState::kSatp){
             c.processor.satp = ps.satp();
         }
-        if (ps.scounteren_oneof_case() == ProcessorState::kScounteren){            
+        if (ps.scounteren_oneof_case() == ProcessorState::kScounteren){
             c.processor.scounteren = ps.scounteren();
         }
-        if (ps.ilrsc_oneof_case() == ProcessorState::kIlrsc){            
+        if (ps.ilrsc_oneof_case() == ProcessorState::kIlrsc){
             c.processor.ilrsc = ps.ilrsc();
         }
-        if (ps.iflags_oneof_case() == ProcessorState::kIflags){            
+        if (ps.iflags_oneof_case() == ProcessorState::kIflags){
             c.processor.iflags = ps.iflags();
         }
     }
 
     void set_config_from_req(machine_config &c, const MachineRequest *mr) {
-        
-        
+
+
         //Checking if custom processor values were set on request parameters
         if (mr->has_processor()){
             auto p = mr->processor();
@@ -387,7 +387,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
                     break;
                 case Processor::PROCESSOR_ONEOF_NOT_SET:
                     dbg("No processor config set");
-                    break;    
+                    break;
             }
         }
 
@@ -423,7 +423,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             flash.start = drive.start();
             flash.backing = drive.backing();
             flash.label = drive.label();
-            flash.length = drive.length(); 
+            flash.length = drive.length();
             c.flash.push_back(std::move(flash));
         }
 
@@ -490,7 +490,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             //Creating a standard machine config
             machine_config mconfig{};
             set_config_from_req(mconfig, request);
-             
+
             //Creating machine
             dbg("Creating Cartesi machine");
             try {
@@ -499,7 +499,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             catch (std::exception& e) {
                 std::string errormsg = "An exception happened when instantiating a Cartesi machine: ";
                 errormsg += e.what();
-                dbg(errormsg.c_str());
+                dbg("%s", errormsg.c_str());
                 return Status(StatusCode::UNKNOWN, errormsg);
             }
             dbg("Cartesi machine created");
@@ -521,7 +521,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             //There is
 
             //Debug
-            std::cout << "Running\n";
+            dbg("Running");
 
             //Reading desired CPU cycles limit to execute
             uint64_t reqlimit = (uint64_t) request->limit();
@@ -549,14 +549,14 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             catch (std::exception& e){
                 std::string errormsg = "An exception happened when running the Cartesi machine: ";
                 errormsg += e.what();
-                dbg(errormsg.c_str());
+                dbg("%s", errormsg.c_str());
                 return Status(StatusCode::UNKNOWN, errormsg);
             }
-        
+
             //Setting response
             response->set_mcycle(cm->read_mcycle());
             response->set_tohost(cm->read_htif_tohost());
-            
+
             dbg("Run executed");
             return Status::OK;
         }
@@ -573,7 +573,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
 
         //Checking if there is already a Cartesi machine created
         if (context_.cartesimachine){
-            //There is        
+            //There is
             dbg("Stepping");
 
             //Recovering cartesi machine instance reference
@@ -585,7 +585,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
 
             //Setting response
             set_resp_from_access_log(response, al);
-            
+
             dbg("Step executed");
             return Status::OK;
         }
@@ -602,7 +602,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
 
         //Checking if there is already a Cartesi machine created
         if (context_.cartesimachine){
-            //There is         
+            //There is
             dbg("Getting root hash");
 
             //Recovering cartesi machine instance reference
@@ -617,8 +617,8 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
 
             //Setting response
             response->set_content(rh.data(), rh.size());
-            
             dbg("Getting root hash executed");
+
             return Status::OK;
         }
         else {
@@ -716,7 +716,7 @@ static BreakReason server_loop(Context &context) {
     std::unique_ptr<Server> server(builder.BuildAndStart());
     if (!server)
         return BreakReason::error;
-    
+
     service.set_server(server.get());
 
     if (context.auto_port){
@@ -838,17 +838,12 @@ static void daemonize(void) {
 }
 
 std::string get_unix_socket_filename() {
-    char templ[] = "/tmp/cartesi-unix-socket-XXXXXX";
-    char *tmp_dirname = mkdtemp(templ);
-
-    if(tmp_dirname == NULL) {
+    char tmp[] = "/tmp/cartesi-unix-socket-XXXXXX";
+    if(mkdtemp(tmp)) {
         dbg("Error creating tmp directory");
         exit(1);
     }
-
-    std::ostringstream ss;
-    ss << tmp_dirname << "/grpc-unix-socket";
-    return ss.str();    
+    return std::string{tmp} + "/grpc-unix-socket";
 }
 
 int main(int argc, char** argv) {
@@ -873,7 +868,7 @@ int main(int argc, char** argv) {
             dbg("Dynamically generated filename for unix socket\n");
             context.address = "unix:";
             context.address += get_unix_socket_filename();
-            dbg(context.address.c_str());
+            dbg("%s", context.address.c_str());
         }
         else if (argv1 == "tcp") {
             //System allocated port

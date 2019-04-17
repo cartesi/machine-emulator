@@ -14,7 +14,7 @@
 namespace cartesi {
 
 // Forward declarations
-struct access_log;
+class access_log;
 
 class machine final {
 

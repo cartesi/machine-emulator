@@ -49,6 +49,9 @@ where options are:
   --ignore-payload             do not report error on non-zero payload
 
   --dump                       dump non-pristine pages to disk
+
+  --json-steps=<filename>      output json file with steps
+                               (default: none)
 ]=])
     os.exit()
 end
@@ -66,6 +69,7 @@ local final_hash = false
 local ignore_payload = false
 local dump = false
 local max_mcycle
+local json_steps
 local step = false
 
 -- List of supported options
@@ -145,6 +149,11 @@ local options = {
     { "^%-%-ram%-image%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         ram_image = o
+        return true
+    end },
+    { "^%-%-json%-steps%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        json_steps = o
         return true
     end },
     { "^%-%-no%-ram%-image$", function(all)
@@ -267,27 +276,6 @@ local function new_config()
     }, config_meta)
 end
 
-local config = new_config(
-):set_ram_image(
-    ram_image
-):set_rom_image(
-    rom_image
-):set_memory_size(
-    memory_size
-):append_cmdline(
-    cmdline
-):set_interactive(
-    not batch
-)
-
-for i, label in ipairs(backing_order) do
-    config = config:append_drive{
-        backing = backing[label],
-        shared = shared[label],
-        label = label
-    }
-end
-
 local function hexhash(hash)
     return (string.gsub(hash, ".", function(c)
         return string.format("%02x", string.byte(c))
@@ -342,47 +330,159 @@ local function print_log(log)
     end
 end
 
+local function intstring(i)
+    local a = ""
+    for i = 0, 7 do
+        a = a .. string.format("%02x", (i >> i*8) & 0xff)
+    end
+    return a
+end
+
+local function print_json_log_sibling_hashes(sibling_hashes, log2_size, out, indent)
+    out:write('[\n')
+    local i = 1
+    while i < log2_size do
+        out:write(indent, '"",\n')
+        i = i + 1
+    end
+    while sibling_hashes[i] do
+        out:write(indent,'"', hexhash(sibling_hashes[i]), '"')
+        i = i + 1
+        if sibling_hashes[i] then out:write(',\n') end
+    end
+    out:write(' ]')
+end
+
+local function print_json_log_proof(proof, out, indent)
+    out:write('{\n')
+    out:write(indent, '"address": ', proof.address, ',\n')
+    out:write(indent, '"log2_size": ', proof.log2_size, ',\n')
+    out:write(indent, '"target_hash": "', hexhash(proof.target_hash), '",\n')
+    out:write(indent, '"sibling_hashes": ')
+    print_json_log_sibling_hashes(proof.sibling_hashes, proof.log2_size, out,
+        indent .. "  ")
+    out:write(",\n", indent, '"root_hash": "', hexhash(proof.root_hash), '" }')
+end
+
+local function print_json_log_notes(notes, out, indent)
+    local indent2 = indent .. "  "
+    local n = #notes
+    out:write('[\n')
+    for i, note in ipairs(notes) do
+        out:write(indent2, '"', note, '"')
+        if i < n then out:write(',\n') end
+    end
+    out:write(indent, '],\n')
+end
+
+local function print_json_log_brackets(brackets, out, indent)
+    local n = #brackets
+    out:write('[ ')
+    for i, bracket in ipairs(brackets) do
+        out:write('{\n')
+        out:write(indent, '  "type": "', bracket.type, '",\n')
+        out:write(indent, '  "where": ', bracket.where, ',\n')
+        out:write(indent, '  "text": "', bracket.text, '"')
+        out:write(' }\n')
+        if i < n then out:write(', ') end
+    end
+    out:write(' ]')
+end
+
+local function print_json_log_access(access, out, indent)
+    out:write('{\n')
+    out:write(indent, '"type": "', access.type, '",\n')
+    out:write(indent, '"read": "', intstring(access.read), '",\n')
+    out:write(indent, '"written": "', intstring(access.written) or 0, '",\n')
+    out:write(indent, '"proof": ')
+    print_json_log_proof(access.proof, out, indent .. "  ")
+    out:write(' }')
+end
+
+local function print_json_log_accesses(accesses, out, indent)
+    local indent2 = indent .. "  "
+    local n = #accesses
+    out:write('[ ')
+    for i, access in ipairs(accesses) do
+        print_json_log_access(access, out, indent2)
+        if i < n then out:write(',\n', indent) end
+    end
+    out:write(indent, ' ],\n')
+end
+
+local function print_json_log(log, init_cycles, final_cycles, out, indent)
+    out:write('{\n')
+    out:write(indent, '"init_cycles": ', init_cycles, ',\n')
+    out:write(indent, '"final_cycles": ', final_cycles, ',\n')
+    out:write(indent, '"accesses": ')
+    print_json_log_accesses(log.accesses, out, indent)
+    out:write(indent, '"notes": ')
+    print_json_log_notes(log.notes, out, indent)
+    out:write('  "brackets": ')
+    print_json_log_brackets(log.brackets, out, indent)
+    out:write(' }')
+end
+
+local config = new_config(
+):set_ram_image(
+    ram_image
+):set_rom_image(
+    rom_image
+):set_memory_size(
+    memory_size
+):append_cmdline(
+    cmdline
+):set_interactive(
+    not batch
+)
+
+for i, label in ipairs(backing_order) do
+    config = config:append_drive{
+        backing = backing[label],
+        shared = shared[label],
+        label = label
+    }
+end
+
 local machine = cartesi.machine(config)
 
-if dump then
-    machine:dump()
-end
-
-if initial_hash then
-    print_root_hash(machine)
-end
-
-if not max_mcycle then
-    local mcycle_incr = 500000
-    local mcycle_end = mcycle_incr
-    while true do
-        machine:run(mcycle_end)
+if not json_steps then
+    if dump then
+        machine:dump()
+    end
+    if initial_hash then
+        print_root_hash(machine)
+    end
+    machine:run(max_mcycle or 2^63)
+    local payload = 0
+    if machine:read_iflags_H() then
+        payload = (machine:read_tohost() & (~1 >> 16)) >> 1
+        io.stderr:write("payload: ", payload, "\n")
+    elseif step then
+        io.stderr:write("Gathering step proof: please wait\n")
+        print_log(machine:step())
+    end
+    local cycles = machine:read_mcycle()
+    io.stderr:write("cycles: ", cycles, "\n")
+    if final_hash then
+        print_root_hash(machine)
+    end
+    machine:destroy() -- redundant: garbage collector would take care of this
+    os.exit(payload, true)
+else
+    json_steps = assert(io.open(json_steps, "w"))
+    json_steps:write("[ ")
+    for i = 0, (max_mcycle or 2^63) do
         if machine:read_iflags_H() then
             break
         end
-        mcycle_end = mcycle_end + mcycle_incr
+		local init_cycles = machine:read_mcycle()
+		local log = machine:step()
+		local final_cycles = machine:read_mcycle()
+        print_json_log(log, init_cycles, final_cycles, json_steps, "  ")
+		io.stderr:write(init_cycles, " -> ", final_cycles, "\n")
+        if i ~= max_mcycle then json_steps:write(', ') end
     end
-else
-    machine:run(max_mcycle)
+    json_steps:write(' ]\n')
+    json_steps:close()
 end
-
-local payload = 0
-
-if machine:read_iflags_H() then
-    payload = (machine:read_tohost() & (~1 >> 16)) >> 1
-    io.stderr:write("payload: ", payload, "\n")
-elseif step then
-    io.stderr:write("Gathering step proof: please wait\n")
-    print_log(machine:step())
-end
-
-local cycles = machine:read_mcycle()
-io.stderr:write("cycles: ", cycles, "\n")
-
-if final_hash then
-    print_root_hash(machine)
-end
-
-machine:destroy() -- redundant: garbage collector would take care of this
-
-os.exit(payload, true)

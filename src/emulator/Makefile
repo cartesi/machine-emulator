@@ -6,6 +6,7 @@ LUA_LIB:=$(shell pkg-config --libs luapp53)
 FDT_LIB:=/usr/local/lib/libfdt.a
 FDT_INC:=-I/usr/local/include
 CRYPTOPP_LIB:=-lcryptopp
+BOOST_PO_LIB:=-lboost_program_options
 GRPC_DIR:=../../cartesi-grpc
 GRPC_INC:=$(shell pkg-config --cflags protobuf grpc)
 GRPC_LIB:=$(shell pkg-config --libs protobuf grpc++ grpc)
@@ -20,8 +21,7 @@ GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
 endif
 
 LUACARTESI_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB)
-GRPC_SRV_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB)
-
+GRPC_SRV_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_PO_LIB)
 HASH_LIBS:=$(CRYPTOPP_LIB)
 
 # Common setup

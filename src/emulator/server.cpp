@@ -32,6 +32,9 @@
 #include "keccak-256-hasher.h"
 #include "pma.h"
 
+#include <boost/program_options.hpp>
+namespace po = boost::program_options;
+
 using cartesi::word_access;
 using cartesi::merkle_tree;
 using cartesi::access_type;
@@ -55,12 +58,13 @@ using hash_type = keccak_256_hasher::hash_type;
 struct Context {
     int value;
     std::string address;
+    std::string manager_address;
     std::string session_id;
     bool auto_port;
     bool report_to_manager;
     bool forked;
     std::unique_ptr<machine> cartesimachine;
-    Context(void): value(0), address(), session_id(), auto_port(false), report_to_manager(false), forked(false), cartesimachine(nullptr) { }
+    Context(void): value(0), address(), manager_address(), session_id(), auto_port(false), report_to_manager(false), forked(false), cartesimachine(nullptr) { }
 };
 
 // Move this to static member function of MachingServiceImpl?
@@ -532,15 +536,9 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             auto curmcycle = cm->read_mcycle();
 
             //Checking if provided limit is valid
-            if (reqlimit){
-                if (reqlimit < curmcycle){
-                    dbg("Must provide a CPU cycles limit greater than current Cartesi machine CPU cycle to issue running the machine");
-                    return Status(StatusCode::INVALID_ARGUMENT, "Must provide a CPU cycles limit greater than current Cartesi machine CPU cycle to issue running the machine");
-                }
-            }
-            else {
-                dbg("Must provide a CPU cycles limit to issue running the Cartesi machine");
-                return Status(StatusCode::INVALID_ARGUMENT, "Must provide a CPU cycles limit to issue running the Cartesi machine");
+            if (reqlimit < curmcycle){
+                dbg("Must provide a CPU cycles limit greater than current Cartesi machine CPU cycle to issue running the machine");
+                return Status(StatusCode::INVALID_ARGUMENT, "Must provide a CPU cycles limit greater than current Cartesi machine CPU cycle to issue running the machine");
             }
 
             try {
@@ -695,7 +693,7 @@ public:
 void report_to_manager_server(Context &context){
     dbg("Reporting address to manager\n");
     std::unique_ptr<cartesi::manager_client> mc = std::make_unique<cartesi::manager_client>();
-    mc->register_on_manager(context.session_id, context.address);
+    mc->register_on_manager(context.session_id, context.address, context.manager_address);
     dbg("Address reported to manager\n");
 
 }
@@ -836,6 +834,17 @@ static void daemonize(void) {
     }
 }
 
+void conflicting_options(const po::variables_map & vm,
+                         const std::string & opt1, const std::string & opt2) {
+    if (vm.count(opt1) && !vm[opt1].defaulted() &&
+        vm.count(opt2) && !vm[opt2].defaulted())
+    {
+        std::cout << std::string("Conflicting options '") +
+                               opt1 + "' and '" + opt2 + "'.\n";
+        exit(1);
+    }
+}
+
 std::string get_unix_socket_filename() {
     char tmp[] = "/tmp/cartesi-unix-socket-XXXXXX";
     if(!mkdtemp(tmp)) {
@@ -847,38 +856,72 @@ std::string get_unix_socket_filename() {
 
 int main(int argc, char** argv) {
     Context context;
-    if ((argc != 2) && (argc != 3)) {
-        std::cerr << argv[0] << " <ip>:<port> [session-id]\n";
-        std::cerr << argv[0] << " unix:<path> [session-id]\n";
-        std::cerr << argv[0] << " tcp <session-id>\n";
-        std::cerr << argv[0] << " unix <session-id>\n";
+    
+    //Defining cli options
+    po::options_description desc("Allowed options");
+    desc.add_options()
+        ("help,h", "exhibits help message with usage")
+        ("socket-type,t", po::value<std::string>(), "socket type to listen to, options are tcp and unix, mutually exclusive with address option")
+        ("address,a", po::value<std::string>(), "unix path or ip:port to listen to, mutually exclusive with socket-type option")
+        ("session-id,s", po::value<std::string>(), "session id of this instance, triggers reporting address to core-manager server")
+        ("manager-address,m", po::value<std::string>(), "unix path or ip:port of the core-manager server, defaults to localhost:50051, only used when providing a session-id");
+
+    po::variables_map vm;
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+    conflicting_options(vm, "socket-type", "address");
+    po::notify(vm);
+
+    //Help
+    if (vm.count("help") || argc==1) {
+        std::cout << desc << "\n";
         exit(0);
     }
-    else if (argc == 2){
-        //Setting to listen on provided address
-        context.address = argv[1];
+
+    //Checking if both socket type and address weren't defined
+    if (!vm.count("address") && !vm.count("socket-type")){
+        std::cout << "Must provide address or socket-type, but not both\n";
+        exit(1);
     }
-    else{
-        //Set flag to report to manager
-        context.report_to_manager = true;
-        auto argv1 = std::string(argv[1]);
-        if (argv1 == "unix") {
+  
+    //If manager address was provided, checking that session id was given
+    if (vm.count("manager-address")){
+        if (!vm.count("session-id")){
+            std::cout << "Must provide a session-id when setting manager-address\n";
+            exit(1);
+        }
+        //It was, setting manager-address
+        context.manager_address = vm["manager-address"].as<std::string>();
+    }
+
+    //Setting address to the given one or an auto-generated
+    if (vm.count("address")){
+        //Setting to listen on provided address
+        context.address = vm["address"].as<std::string>();
+    }
+    if (vm.count("socket-type")){
+        auto socket_type = vm["socket-type"].as<std::string>();
+        if (socket_type == "unix"){
             //Using unix socket on a dynamically generated filename
-            dbg("Dynamically generated filename for unix socket\n");
             context.address = "unix:";
             context.address += get_unix_socket_filename();
             dbg("%s", context.address.c_str());
         }
-        else if (argv1 == "tcp") {
+        else if (socket_type == "tcp") {
             //System allocated port
             context.auto_port = true;
             context.address = "localhost:0";
         }
         else {
-            context.address = argv1;
-        }
-        context.session_id = argv[2];
+            std::cout << "Invalid option, provide either unix or tcp as socket-type\n";
+            exit(1);
+        }        
     }
+
+    if (vm.count("session-id")){
+        context.report_to_manager = true;
+        context.session_id = vm["session-id"].as<std::string>();
+    }
+   
     daemonize();
     openlog("cartesi-grpc", LOG_PID, LOG_USER);
     //??D I am nervous about using a multi-threaded GRPC

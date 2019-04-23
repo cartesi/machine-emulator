@@ -188,7 +188,7 @@ static void push_proof(lua_State *L, const merkle_tree::proof_type proof) {
     for (int log2_size = merkle_tree::get_log2_word_size(); log2_size < merkle_tree::get_log2_tree_size(); ++log2_size) {
         const auto &hash = merkle_tree::get_sibling_hash(proof.sibling_hashes, log2_size);
         push_hash(L, hash);
-        lua_rawseti(L, -2, log2_size);
+        lua_rawseti(L, -2, merkle_tree::get_log2_tree_size()-log2_size);
     }
     lua_setfield(L, -2, "sibling_hashes"); // proof
     lua_pushinteger(L, proof.address); lua_setfield(L, -2, "address"); // proof

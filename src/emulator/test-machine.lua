@@ -56,9 +56,9 @@ local function check_proof(proof)
         local bit = (proof.address & (1 << log2_size)) ~= 0
         local first, second
         if bit then
-            first, second = proof.sibling_hashes[log2_size], hash
+            first, second = proof.sibling_hashes[64-log2_size], hash
         else
-            first, second = hash, proof.sibling_hashes[log2_size]
+            first, second = hash, proof.sibling_hashes[64-log2_size]
         end
         hash = cartesi.keccak(first, second)
     end

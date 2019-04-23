@@ -340,15 +340,9 @@ end
 
 local function print_json_log_sibling_hashes(sibling_hashes, log2_size, out, indent)
     out:write('[\n')
-    local i = 1
-    while i < log2_size do
-        out:write(indent, '"",\n')
-        i = i + 1
-    end
-    while sibling_hashes[i] do
-        out:write(indent,'"', hexhash(sibling_hashes[i]), '"')
-        i = i + 1
-        if sibling_hashes[i] then out:write(',\n') end
+    for i, h in ipairs(sibling_hashes) do
+        out:write(indent,'"', hexhash(h), '"')
+        if sibling_hashes[i+1] then out:write(',\n') end
     end
     out:write(' ]')
 end

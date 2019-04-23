@@ -68,7 +68,7 @@ local initial_hash = false
 local final_hash = false
 local ignore_payload = false
 local dump = false
-local max_mcycle
+local max_mcycle = 2^61
 local json_steps
 local step = false
 
@@ -453,7 +453,7 @@ if not json_steps then
     if initial_hash then
         print_root_hash(machine)
     end
-    machine:run(max_mcycle or 2^63)
+    machine:run(max_mcycle)
     local payload = 0
     if machine:read_iflags_H() then
         payload = (machine:read_tohost() & (~1 >> 16)) >> 1
@@ -472,7 +472,7 @@ if not json_steps then
 else
     json_steps = assert(io.open(json_steps, "w"))
     json_steps:write("[ ")
-    for i = 0, (max_mcycle or 2^63) do
+    for i = 0, max_mcycle do
         if machine:read_iflags_H() then
             break
         end

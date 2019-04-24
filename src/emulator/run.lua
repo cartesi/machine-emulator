@@ -330,10 +330,10 @@ local function print_log(log)
     end
 end
 
-local function intstring(i)
+local function intstring(v)
     local a = ""
     for i = 0, 7 do
-        a = a .. string.format("%02x", (i >> i*8) & 0xff)
+        a = a .. string.format("%02x", (v >> i*8) & 0xff)
     end
     return a
 end
@@ -387,7 +387,7 @@ local function print_json_log_access(access, out, indent)
     out:write('{\n')
     out:write(indent, '"type": "', access.type, '",\n')
     out:write(indent, '"read": "', intstring(access.read), '",\n')
-    out:write(indent, '"written": "', intstring(access.written) or 0, '",\n')
+    out:write(indent, '"written": "', intstring(access.written or 0), '",\n')
     out:write(indent, '"proof": ')
     print_json_log_proof(access.proof, out, indent .. "  ")
     out:write(' }')

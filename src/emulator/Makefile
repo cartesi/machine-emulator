@@ -6,10 +6,8 @@ LUA_LIB:=$(shell pkg-config --libs luapp53)
 FDT_LIB:=/usr/local/lib/libfdt.a
 FDT_INC:=-I/usr/local/include
 CRYPTOPP_LIB:=-lcryptopp
-STDCPPFS_LIB:=-lstdc++fs
 GRPC_DIR:=../../cartesi-grpc
-GRPC_OUT_DIR:=$(GRPC_DIR)/cpp
-GRPC_INC:=$(shell pkg-config --cflags protobuf grpc) 
+GRPC_INC:=$(shell pkg-config --cflags protobuf grpc)
 GRPC_LIB:=$(shell pkg-config --libs protobuf grpc++ grpc)
 
 PROTOC:=protoc
@@ -22,7 +20,7 @@ GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
 endif
 
 LUACARTESI_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB)
-GRPC_SRV_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB) $(GRPC_LIB) $(STDCPPFS_LIB)
+GRPC_SRV_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB)
 
 HASH_LIBS:=$(CRYPTOPP_LIB)
 
@@ -86,10 +84,12 @@ SOLDFLAGS_Linux:= -L/usr/local/lib -shared -fpic
 CC_Linux=gcc
 CXX_Linux=g++
 INCS_Linux=
+FS_LIB_Linux=-lstdc++fs
 
 CC:=$(CC_$(UNAME))
 CXX:=$(CXX_$(UNAME))
 SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
+FS_LIB=$(FS_LIB_$(UNAME))
 
 WARNS=-W -Wall -pedantic
 
@@ -184,20 +184,19 @@ docker:
 
 grpc: server client
 
+PROTO_OBJS:= \
+    cartesi-base.pb.o \
+	core.pb.o \
+	core.grpc.pb.o \
+    manager-low.pb.o \
+    manager-low.grpc.pb.o
+
 GRPC_CLT_OBJS:= \
-    $(GRPC_OUT_DIR)/cartesi-base.pb.o \
-	$(GRPC_OUT_DIR)/core.pb.o \
-	$(GRPC_OUT_DIR)/core.grpc.pb.o \
-    $(GRPC_OUT_DIR)/manager-low.pb.o \
-    $(GRPC_OUT_DIR)/manager-low.grpc.pb.o \
+	$(PROTO_OBJS) \
     client.o
 
 GRPC_SRV_OBJS:= \
-    $(GRPC_OUT_DIR)/cartesi-base.pb.o \
-	$(GRPC_OUT_DIR)/core.pb.o \
-	$(GRPC_OUT_DIR)/core.grpc.pb.o \
-    $(GRPC_OUT_DIR)/manager-low.pb.o \
-    $(GRPC_OUT_DIR)/manager-low.grpc.pb.o \
+	$(PROTO_OBJS) \
     server.o \
     clint.o \
 	rom.o \
@@ -207,7 +206,7 @@ GRPC_SRV_OBJS:= \
 	pma.o \
 	machine.o \
 	interpret.o \
-    manager-client.o 
+    manager-client.o
 
 server: $(GRPC_SRV_OBJS)
 	$(CXX) -o $@ $^ $(GRPC_SRV_LIBS)
@@ -217,24 +216,24 @@ client: $(GRPC_CLT_OBJS)
 
 server client: CXXFLAGS := $(filter-out -fpic -fvisibility=hidden,$(CXXFLAGS) $(GRPC_INC))
 
-.PRECIOUS: %.grpc.pb.cc
-%.grpc.pb.cc: $(GRPC_DIR)/%.proto
-	$(eval FILENAME:=$(GRPC_DIR)/$(notdir $<))
-	$(PROTOC) -I$(GRPC_DIR) --grpc_out=$(GRPC_OUT_DIR) --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN) $(FILENAME)
+.PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 
-.PRECIOUS: %.pb.cc
+%.grpc.pb.cc: $(GRPC_DIR)/%.proto
+	$(PROTOC) -I$(GRPC_DIR) --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN) $<
+
 %.pb.cc: $(GRPC_DIR)/%.proto
-	$(eval FILENAME:=$(GRPC_DIR)/$(notdir $<))
-	$(PROTOC) -I$(GRPC_DIR) --cpp_out=$(GRPC_OUT_DIR) $(FILENAME)
+	$(PROTOC) -I$(GRPC_DIR) --cpp_out=. $<
 
 %.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+%.o: %.cc
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.gcda *.gcno *.o *.d $(GRPC_OUT_DIR)/* \
-    cartesi.so server client
+	rm -f dis/*.o dis/*.d *.gcda *.pb.cc *.gcno *.o *.d cartesi.so server client
 
 -include $(wildcard *.d)

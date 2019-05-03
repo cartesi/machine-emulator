@@ -854,9 +854,7 @@ std::string get_unix_socket_filename() {
     return std::string{tmp} + "/grpc-unix-socket";
 }
 
-int main(int argc, char** argv) {
-    Context context;
-    
+void set_context_with_cli_arguments(Context &context, int &argc, char** &argv) {
     //Defining cli options
     po::options_description desc("Allowed options");
     desc.add_options()
@@ -864,10 +862,19 @@ int main(int argc, char** argv) {
         ("socket-type,t", po::value<std::string>(), "socket type to listen to, options are tcp and unix, mutually exclusive with address option")
         ("address,a", po::value<std::string>(), "unix path or ip:port to listen to, mutually exclusive with socket-type option")
         ("session-id,s", po::value<std::string>(), "session id of this instance, triggers reporting address to core-manager server")
-        ("manager-address,m", po::value<std::string>(), "unix path or ip:port of the core-manager server, defaults to localhost:50051, only used when providing a session-id");
+        ("manager-address,m", po::value<std::string>(), "unix path or ip:port of the core-manager server, only used when providing a session-id");
 
     po::variables_map vm;
+    try {
     po::store(po::parse_command_line(argc, argv, desc), vm);
+    } catch (boost::exception_detail::clone_impl<boost::exception_detail::error_info_injector<boost::program_options::invalid_command_line_syntax>> &ex){
+        std::cout << ex.what() << '\n';
+        exit(1);
+    } catch (boost::exception_detail::clone_impl<boost::exception_detail::error_info_injector<boost::program_options::unknown_option>> &ex){
+        std::cout << ex.what() << '\n';
+        exit(1);
+    }
+
     conflicting_options(vm, "socket-type", "address");
     po::notify(vm);
 
@@ -883,14 +890,16 @@ int main(int argc, char** argv) {
         exit(1);
     }
   
-    //If manager address was provided, checking that session id was given
-    if (vm.count("manager-address")){
-        if (!vm.count("session-id")){
-            std::cout << "Must provide a session-id when setting manager-address\n";
+    //If manager address or session if were provided, they must both be provided
+    if (vm.count("manager-address") || vm.count("session-id")){
+        if (!(vm.count("session-id") && vm.count("manager-address"))){
+            std::cout << "Must provide both session-id and setting manager-address when desired to report session-id to core-manager server\n";
             exit(1);
         }
-        //It was, setting manager-address
+        //They were, setting manager-address and session-id
         context.manager_address = vm["manager-address"].as<std::string>();
+        context.report_to_manager = true;
+        context.session_id = vm["session-id"].as<std::string>();
     }
 
     //Setting address to the given one or an auto-generated
@@ -916,12 +925,13 @@ int main(int argc, char** argv) {
             exit(1);
         }        
     }
+}
 
-    if (vm.count("session-id")){
-        context.report_to_manager = true;
-        context.session_id = vm["session-id"].as<std::string>();
-    }
+int main(int argc, char** argv) {
+    Context context;
    
+    set_context_with_cli_arguments(context, argc, argv);
+
     daemonize();
     openlog("cartesi-grpc", LOG_PID, LOG_USER);
     //??D I am nervous about using a multi-threaded GRPC

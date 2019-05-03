@@ -24,7 +24,6 @@ void manager_client::register_on_manager(std::string &session_id, std::string &a
     request.set_session_id(session_id);
     
     dbg("Creating manager server connection stub");
-    //Setting default value if no manager address provided
     std::unique_ptr<CartesiManagerLow::MachineManagerLow::Stub> mml_stub = CartesiManagerLow::MachineManagerLow::NewStub(grpc::CreateChannel(manager_address, 
             grpc::InsecureChannelCredentials()));
     dbg("Initiated manager server connection stub");

@@ -25,9 +25,6 @@ void manager_client::register_on_manager(std::string &session_id, std::string &a
     
     dbg("Creating manager server connection stub");
     //Setting default value if no manager address provided
-    if (manager_address == ""){
-        manager_address = "localhost:50051";
-    }
     std::unique_ptr<CartesiManagerLow::MachineManagerLow::Stub> mml_stub = CartesiManagerLow::MachineManagerLow::NewStub(grpc::CreateChannel(manager_address, 
             grpc::InsecureChannelCredentials()));
     dbg("Initiated manager server connection stub");

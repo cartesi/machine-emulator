@@ -161,7 +161,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             //Setting all sibling hashes
             for (unsigned int i=0; i < wai->proof.sibling_hashes.size(); ++i) {
                 Hash *sh = p->add_sibling_hashes();
-                sh->set_content(wai->proof.sibling_hashes[i].data(), wai->proof.sibling_hashes[i].size());    
+                sh->set_content(wai->proof.sibling_hashes[i].data(), wai->proof.sibling_hashes[i].size());
             }
         }
 
@@ -889,7 +889,7 @@ void set_context_with_cli_arguments(Context &context, int &argc, char** &argv) {
         std::cout << "Must provide address or socket-type, but not both\n";
         exit(1);
     }
-  
+
     //If manager address or session if were provided, they must both be provided
     if (vm.count("manager-address") || vm.count("session-id")){
         if (!(vm.count("session-id") && vm.count("manager-address"))){
@@ -923,13 +923,13 @@ void set_context_with_cli_arguments(Context &context, int &argc, char** &argv) {
         else {
             std::cout << "Invalid option, provide either unix or tcp as socket-type\n";
             exit(1);
-        }        
+        }
     }
 }
 
 int main(int argc, char** argv) {
     Context context;
-   
+
     set_context_with_cli_arguments(context, argc, argv);
 
     daemonize();

@@ -151,7 +151,7 @@ static void build_device_tree(const machine_config &c, uint64_t misa, int max_xl
     {
         FILE *f;
         f = fopen("emu.dtb", "wb");
-        fwrite(buf, 1, size, f);
+        fwrite(buf, 1, fdt_totalsize(buf), f);
         fclose(f);
     }
 #endif

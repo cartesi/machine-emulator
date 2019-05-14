@@ -158,11 +158,12 @@ static pma_entry &find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
     int i = 0;
     for (auto &pma: a.get_naked_state().pmas) {
         a.read_pma(pma, i++);
-        if (paddr >= pma.get_start() &&
-            paddr + sizeof(T) <= pma.get_start() + pma.get_length())
-            return pma;
-        if (pma.get_length() == 0)
+        if (pma.get_length() < PMA_PAGE_SIZE)
             break;
+        if (paddr >= pma.get_start() &&
+            paddr - pma.get_start() <= pma.get_length() - sizeof(T)) {
+            return pma;
+        }
     }
     return a.get_naked_state().empty_pma;
 }

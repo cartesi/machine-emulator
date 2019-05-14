@@ -24,9 +24,11 @@
 
     // Your code goes here
     // In the example, we are simply adding two immediates
-    li a0, 1;
-    addi a0, a0, 1;
-	exit_reg(a0);
+//    li a0, 1;
+ //   addi a0, a0, 1;
+//	exit_reg(a0);
+      addi sp,sp,-16;
+      sd s0,8(sp);
 
     // Exits with exit code 0
     exit_imm(0);

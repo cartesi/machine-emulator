@@ -95,6 +95,15 @@ private:
     void do_write_htif_tohost(uint64_t val) override {
         return m_a.write_htif_tohost(val);
     }
+
+    uint64_t do_read_pma_istart(int p) override {
+        return m_a.read_pma_istart(p);
+    }
+
+    uint64_t do_read_pma_ilength(int p) override {
+        return m_a.read_pma_ilength(p);
+    }
+
 };
 
 } // namespace cartesi

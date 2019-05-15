@@ -96,6 +96,18 @@ public:
         return do_write_htif_tohost(val);
     }
 
+    /// \brief Reads the istart field of a PMA entry
+    /// \param p Index of PMA
+    uint64_t read_pma_istart(int p) {
+        return do_read_pma_istart(p);
+    }
+
+    /// \brief Reads the ilength field of a PMA entry
+    /// \param p Index of PMA
+    uint64_t read_pma_ilength(int p) {
+        return do_read_pma_ilength(p);
+    }
+
 private:
 
     virtual void do_set_mip(uint32_t mask) = 0;
@@ -109,6 +121,8 @@ private:
     virtual void do_write_htif_fromhost(uint64_t val) = 0;
     virtual uint64_t do_read_htif_tohost(void) = 0;
     virtual void do_write_htif_tohost(uint64_t val) = 0;
+    virtual uint64_t do_read_pma_istart(int p) = 0;
+    virtual uint64_t do_read_pma_ilength(int p) = 0;
 };
 
 } // namespace cartesi

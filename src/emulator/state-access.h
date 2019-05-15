@@ -319,6 +319,26 @@ private:
         (void) i; (void) pma;
     }
 
+    uint64_t do_read_pma_istart(int i) {
+        assert(i >= 0 && i < 32);
+        const auto &pmas = m_m.get_pmas();
+        auto istart = 0;
+        if (i >= 0 && i < static_cast<int>(pmas.size())) {
+            istart = pmas[i].get_istart();
+        }
+        return istart;
+    }
+
+    uint64_t do_read_pma_ilength(int i) {
+        assert(i >= 0 && i < 32);
+        const auto &pmas = m_m.get_pmas();
+        auto ilength = 0;
+        if (i >= 0 && i < static_cast<int>(pmas.size())) {
+            ilength = pmas[i].get_ilength();
+        }
+        return ilength;
+    }
+
     template <typename T>
     void do_read_memory(uint64_t paddr, uintptr_t haddr, T *val) {
         (void) paddr;

@@ -475,6 +475,30 @@ private:
         log_read(PMA_SHADOW_START + rel_addr + sizeof(uint64_t), ilength, "pma.ilength");
     }
 
+    uint64_t do_read_pma_istart(int i) {
+        assert(i >= 0 && i < 32);
+        const auto &pmas = m_m.get_pmas();
+        auto istart = 0;
+        if (i >= 0 && i < static_cast<int>(pmas.size())) {
+            istart = pmas[i].get_istart();
+        }
+        auto rel_addr = shadow_get_pma_rel_addr(i);
+        log_read(PMA_SHADOW_START + rel_addr, istart, "pma.istart");
+        return istart;
+    }
+
+    uint64_t do_read_pma_ilength(int i) {
+        assert(i >= 0 && i < 32);
+        const auto &pmas = m_m.get_pmas();
+        auto ilength = 0;
+        if (i >= 0 && i < static_cast<int>(pmas.size())) {
+            ilength = pmas[i].get_ilength();
+        }
+        auto rel_addr = shadow_get_pma_rel_addr(i);
+        log_read(PMA_SHADOW_START + rel_addr + sizeof(uint64_t), ilength, "pma.ilength");
+        return ilength;
+    }
+
     template <typename T>
     void do_read_memory(uint64_t paddr, uintptr_t haddr, T *val) {
         // Log access to aligned 64-bit word that contains T value

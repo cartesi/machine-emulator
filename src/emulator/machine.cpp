@@ -161,7 +161,7 @@ void machine::register_mmio(uint64_t start, uint64_t length, pma_peek peek, void
 
 void machine::register_shadow(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver) {
     pma_entry::flags f{};
-    f.R = false; f.W = false; f.X = false; f.IR = false; f.IW = false;
+    f.R = true; f.W = false; f.X = false; f.IR = false; f.IW = false;
     f.DID = PMA_ISTART_DID::shadow;
     allocate_pma_entry(
         pma_entry{

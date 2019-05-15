@@ -2,6 +2,7 @@
 
 #include "shadow.h"
 #include "machine.h"
+#include "i-virtual-state-access.h"
 
 namespace cartesi {
 
@@ -111,9 +112,36 @@ static bool shadow_peek(const pma_entry &pma, uint64_t page_offset, const uint8_
     return true;
 }
 
+/// \brief Shadow device read callback. See ::pma_read.
+static bool shadow_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t offset, uint64_t *pval, int size_log2) {
+    (void) pma;
+
+    // Our shadow only supports aligned 64-bit reads
+    if (size_log2 != 3 || offset & 7) return false;
+
+    // If offset is past start of PMA range
+    if (offset > static_cast<uint64_t>(SHADOW_constants::SHADOW_PMA_BASE)) {
+        offset -= static_cast<uint64_t>(SHADOW_constants::SHADOW_PMA_BASE);
+        offset >>= 3;
+        // If offset within PMA range
+        if (offset < 32*2) {
+            int p = static_cast<int>(offset >> 1);
+            if (offset & 1) {
+                *pval = a->read_pma_ilength(p);
+            } else {
+                *pval = a->read_pma_istart(p);
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
 static const pma_driver shadow_driver = {
     "SHADOW",
-    pma_read_error,
+    shadow_read,
     pma_write_error
 };
 

@@ -501,6 +501,18 @@ public:
         return derived().do_read_pma(pma, i);
     }
 
+    /// \brief Reads the istart field of a PMA entry
+    /// \param p Index of PMA
+    uint64_t read_pma_istart(int p) {
+        return derived().do_read_pma_istart(p);
+    }
+
+    /// \brief Reads the ilength field of a PMA entry
+    /// \param p Index of PMA
+    uint64_t read_pma_ilength(int p) {
+        return derived().do_read_pma_ilength(p);
+    }
+
     /// \brief Read from memory.
     /// \tparam T Type of word to read.
     /// \param paddr Target physical address.
@@ -522,6 +534,7 @@ public:
         static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
         return derived().template do_write_memory<T>(paddr, haddr, val);
     }
+
 };
 
 /// \brief SFINAE test implementation of the i_state_access interface

@@ -783,6 +783,9 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
 
 static void dump_insn(machine &m, uint64_t pc, uint32_t insn, const char *name) {
     state_access a(m);
+#ifdef DUMP_REGS
+    dump_regs(m.get_state());
+#endif
 #ifdef DUMP_INSN
     //fprintf(stderr, "%s\n", name);
     (void) name;
@@ -795,7 +798,6 @@ static void dump_insn(machine &m, uint64_t pc, uint32_t insn, const char *name) 
     }
     fprintf(stderr, ":   %08" PRIx32 "   ", insn);
     fprintf(stderr, "\n");
-//    dump_regs(s);
 #else
     (void) a;
     (void) pc;

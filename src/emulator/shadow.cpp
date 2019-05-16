@@ -4,6 +4,8 @@
 #include "machine.h"
 #include "i-virtual-state-access.h"
 
+#include <cinttypes>
+
 namespace cartesi {
 
 static void write_shadow(uint8_t *base, uint64_t offset, uint64_t value) {
@@ -120,7 +122,7 @@ static bool shadow_read(const pma_entry &pma, i_virtual_state_access *a, uint64_
     if (size_log2 != 3 || offset & 7) return false;
 
     // If offset is past start of PMA range
-    if (offset > static_cast<uint64_t>(SHADOW_constants::SHADOW_PMA_BASE)) {
+    if (offset >= static_cast<uint64_t>(SHADOW_constants::SHADOW_PMA_BASE)) {
         offset -= static_cast<uint64_t>(SHADOW_constants::SHADOW_PMA_BASE);
         offset >>= 3;
         // If offset within PMA range

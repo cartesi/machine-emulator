@@ -2,6 +2,7 @@
 #define PMA_H
 
 #include <cstdint>
+#include <vector>
 #include <variant>
 
 namespace cartesi {
@@ -152,9 +153,10 @@ public:
 /// \brief Data for memory ranges.
 class pma_memory final {
 
-    uint64_t m_length;      ///< Length of memory range (copy of PMA length field).
-    uint8_t *m_host_memory; ///< Start of associated memory region in host.
-    int m_backing_file;     ///< File descryptor for mmaped memory.
+    uint64_t m_length;             ///< Length of memory range (copy of PMA length field).
+    uint8_t *m_host_memory;        ///< Start of associated memory region in host.
+    int m_backing_file;            ///< File descryptor for mmaped memory.
+    std::vector<uint8_t> m_dirty_page_map;  ///< Map of dirty pages.
 
 public:
 
@@ -217,6 +219,33 @@ public:
     /// \brief Returns copy of PMA length field (needed for munmap).
     int get_length(void) const {
         return m_length;
+    }
+
+    /// \brief Mark a given page as dirty
+    /// \param page_number Number of page in range
+    void mark_dirty_page(uint64_t page_start_in_range) {
+        auto page_number = page_start_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
+        m_dirty_page_map[page_number >> 3] |= (1 << (page_number & 3));
+    }
+
+    /// \brief Mark a given page as clean
+    /// \param page_number Number of page in range
+    void mark_clean_page(uint64_t page_start_in_range) {
+        auto page_number = page_start_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
+        m_dirty_page_map[page_number >> 3] &= ~(1 << (page_number & 3));
+    }
+
+    /// \brief Checks if a given page is marked dirty
+    /// \param page_number Number of page in range
+    /// \regurns true if dirty, false if clean
+    bool is_page_marked_dirty(uint64_t page_start_in_range) const {
+        auto page_number = page_start_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
+        return m_dirty_page_map[page_number >> 3] & (1 << (page_number & 3));
+    }
+
+    /// \brief Marks all pages in range as clean
+    void mark_pages_clean(void) {
+        return std::fill(m_dirty_page_map.begin(), m_dirty_page_map.end(), 0);
     }
 };
 
@@ -406,6 +435,36 @@ public:
     /// \brief Returns the id of the device that owns the range
     PMA_ISTART_DID get_istart_DID(void) const {
         return m_flags.DID;
+    }
+
+    /// \brief Mark a given page as dirty
+    /// \param page_number Number of page in range
+    void mark_dirty_page(uint64_t page_number) {
+        if (std::holds_alternative<pma_memory>(m_data))
+            return get_memory().mark_dirty_page(page_number);
+    }
+
+    /// \brief Mark a given page as clean
+    /// \param page_number Number of page in range
+    void mark_clean_page(uint64_t page_number) {
+        if (std::holds_alternative<pma_memory>(m_data))
+            return get_memory().mark_clean_page(page_number);
+    }
+
+    /// \brief Checks if a given page is marked dirty
+    /// \param page_number Number of page in range
+    /// \regurns true if dirty, false if clean
+    bool is_page_marked_dirty(uint64_t page_number) const {
+        if (std::holds_alternative<pma_memory>(m_data))
+            return get_memory().is_page_marked_dirty(page_number);
+        else 
+            return true;
+    }
+
+    /// \brief Marks all pages in range as clean
+    void mark_pages_clean(void) {
+        if (std::holds_alternative<pma_memory>(m_data))
+            return get_memory().mark_pages_clean();
     }
 
 };

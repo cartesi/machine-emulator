@@ -26,7 +26,8 @@ pma_memory::~pma_memory() {
 pma_memory::pma_memory(pma_memory &&other):
     m_length{std::move(other.m_length)},
     m_host_memory{std::move(other.m_host_memory)},
-    m_backing_file{std::move(other.m_backing_file)} {
+    m_backing_file{std::move(other.m_backing_file)},
+    m_dirty_page_map{std::move(other.m_dirty_page_map)} {
     other.m_host_memory = nullptr;
     other.m_backing_file = -1;
     other.m_length = 0;
@@ -40,6 +41,8 @@ pma_memory::pma_memory(uint64_t length, const callocd &c):
     m_host_memory = reinterpret_cast<uint8_t *>(calloc(1, length));
     if (!m_host_memory)
         throw std::bad_alloc{};
+    // allocate dirty page map and mark all as dirty
+    m_dirty_page_map.resize(length/(8*PMA_PAGE_SIZE)+1, 0xff);
 }
 
 pma_memory::pma_memory(uint64_t length, const std::string &path,
@@ -107,12 +110,15 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
     // Finally store everything in object
     m_host_memory = host_memory;
     m_backing_file = backing_file;
+    // allocate dirty page map and mark all as dirty
+    m_dirty_page_map.resize(length/(8*PMA_PAGE_SIZE)+1, 0xff);
 }
 
 pma_memory& pma_memory::operator=(pma_memory &&other) {
     m_host_memory = std::move(other.m_host_memory);
     m_backing_file = std::move(other.m_backing_file);
     m_length = std::move(other.m_length);
+    m_dirty_page_map = std::move(other.m_dirty_page_map);
     other.m_host_memory = nullptr;
     other.m_backing_file = -1;
     other.m_length = 0;

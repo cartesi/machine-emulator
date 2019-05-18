@@ -185,10 +185,12 @@ uint8_t *machine::get_host_memory(uint64_t paddr) {
     }
 }
 
+#if 0
 static bool empty_peek(const pma_entry &, uint64_t, const uint8_t **page_data, uint8_t *) {
     *page_data = nullptr;
     return true;
 }
+#endif
 
 void machine::interact(void) {
     m_h.interact();
@@ -584,6 +586,8 @@ bool machine::update_merkle_tree(void) {
     m_t.begin_update(h);
     for (auto &pma: m_s.pmas) {
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length(); page_start_in_range += PMA_PAGE_SIZE) {
+            if (!pma.is_page_marked_dirty(page_start_in_range))
+                continue;
             const uint8_t *page_data = nullptr;
             auto peek = pma.get_peek();
             if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
@@ -592,23 +596,25 @@ bool machine::update_merkle_tree(void) {
             } else if (page_data && !m_t.update_page(h, pma.get_start() + page_start_in_range, page_data)) {
                 m_t.end_update(h);
                 return false;
-            } // ??D else page is pristine and we do nothing.
-              // Maybe add a check here to make sure it is also pristine in the tree?
+			} // ??D else page is pristine and we do nothing.
+			  // Maybe add a check here to make sure it is also pristine in the tree
         }
+        pma.mark_pages_clean();
     }
     return m_t.end_update(h);
 }
 
 bool machine::update_merkle_tree_page(uint64_t address) {
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
+    // Align address to begining of page
+    address &= ~(PMA_PAGE_SIZE-1);
+    pma_entry &pma = naked_find_pma_entry<uint64_t>(m_s, address);
+    uint64_t page_start_in_range = address - pma.get_start();
+    if (!pma.is_page_marked_dirty(page_start_in_range)) return true;
     merkle_tree::hasher_type h;
     auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
     m_t.begin_update(h);
-    // Align address to begining of page
-    address &= ~(PMA_PAGE_SIZE-1);
-    const pma_entry &pma = naked_find_pma_entry<uint64_t>(m_s, address);
-    uint64_t page_start_in_range = address - pma.get_start();
     const uint8_t *page_data = nullptr;
     auto peek = pma.get_peek();
     if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
@@ -617,8 +623,9 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     } else if (page_data && !m_t.update_page(h, pma.get_start() + page_start_in_range, page_data)) {
         m_t.end_update(h);
         return false;
-    } // ??D else page is pristine and we do nothing.
-      // Maybe add a check here to make sure it is also pristine in the tree?
+	} // ??D else page is pristine and we do nothing.
+	  // Maybe add a check here to make sure it is also pristine in the tree
+	pma.mark_clean_page(page_start_in_range);
     return m_t.end_update(h);
 }
 

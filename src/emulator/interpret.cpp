@@ -78,6 +78,7 @@ typedef unsigned __int128 uint128_t;
 
 namespace cartesi {
 
+#if 0
 /// \brief Memory range peek callback. See ::pma_peek.
 static bool memory_peek(const pma_entry &pma, uint64_t page_address, const uint8_t **page_data, uint8_t *scratch) {
     // If page_address is not aligned, or if it is out of range, return error
@@ -98,6 +99,7 @@ static bool memory_peek(const pma_entry &pma, uint64_t page_address, const uint8
         return true;
     }
 }
+#endif
 
 static void print_uint64_t(uint64_t a) {
     fprintf(stderr, "%016" PRIx64, a);
@@ -182,6 +184,8 @@ static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t va
     uintptr_t haddr = reinterpret_cast<uintptr_t>(pma.get_memory().get_host_memory() + (paddr - pma.get_start()));
     // log writes to memory
     a.write_memory(paddr, haddr, val);
+    // mark page as dirty so we know to update the Merkle tree
+    pma.mark_dirty_page(paddr - pma.get_start());
     return true;
 }
 
@@ -330,17 +334,30 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
     return false;
 }
 
-/// \brief Replaces an entry in the TLB with a new one.
+/// \brief Replaces an entry in the TLB with a new one when reading.
 /// \param pma PMA entry for range.
 /// \param vaddr Target virtual address.
 /// \param paddr Target physical address.
 /// \param tlb TLB entry to replace.
 /// \returns Offset from Target virtual address to host address
-static inline uintptr_t tlb_replace(pma_entry &pma, uint64_t vaddr, uint64_t paddr, tlb_entry &tlb) {
+static inline uintptr_t tlb_replace_read(pma_entry &pma, uint64_t vaddr, uint64_t paddr, tlb_entry &tlb) {
     tlb.vaddr = vaddr & ~PAGE_OFFSET_MASK;
     uint8_t *ptr = pma.get_memory().get_host_memory() + (uintptr_t)(paddr - pma.get_start());
     tlb.mem_addend = (uintptr_t)ptr - vaddr;
     return tlb.mem_addend;
+}
+
+/// \brief Replaces an entry in the TLB with a new one when writing.
+/// \param pma PMA entry for range.
+/// \param vaddr Target virtual address.
+/// \param paddr Target physical address.
+/// \param tlb TLB entry to replace.
+/// \returns Offset from Target virtual address to host address
+static inline uintptr_t tlb_replace_write(pma_entry &pma, uint64_t vaddr, uint64_t paddr, tlb_entry &tlb) {
+    // mark page as dirty so we know to update the Merkle tree
+    pma.mark_dirty_page(paddr - pma.get_start());
+    // the rest is the same as reading
+    return tlb_replace_read(pma, vaddr, paddr, tlb);
 }
 
 /// \brief Checks for a TLB hit.
@@ -696,7 +713,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             raise_exception(a, MCAUSE_LOAD_ACCESS_FAULT, vaddr);
             return false;
         } else if (pma.get_istart_M()) {
-            uintptr_t mem_addend = tlb_replace(pma, vaddr, paddr, tlb);
+            uintptr_t mem_addend = tlb_replace_read(pma, vaddr, paddr, tlb);
             uintptr_t haddr = mem_addend + static_cast<uintptr_t>(vaddr);
             a.read_memory(paddr, haddr, pval);
             return true;
@@ -749,7 +766,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             raise_exception(a, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
             return false;
         } else if (pma.get_istart_M()) {
-            uintptr_t mem_addend = tlb_replace(pma, vaddr, paddr, tlb);
+            uintptr_t mem_addend = tlb_replace_write(pma, vaddr, paddr, tlb);
             uintptr_t haddr = mem_addend + (uintptr_t) vaddr;
             // write to memory
             a.write_memory(paddr, haddr, static_cast<T>(val));
@@ -3077,7 +3094,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
             raise_exception(a, MCAUSE_INSN_ACCESS_FAULT, vaddr);
             return fetch_status::exception;
         }
-        uintptr_t mem_addend = tlb_replace(pma, vaddr, paddr, tlb);
+        uintptr_t mem_addend = tlb_replace_read(pma, vaddr, paddr, tlb);
         uintptr_t haddr = mem_addend + static_cast<uintptr_t>(vaddr);
         a.read_memory(paddr, haddr, insn);
         return fetch_status::success;

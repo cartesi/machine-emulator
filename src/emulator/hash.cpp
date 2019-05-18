@@ -8,6 +8,8 @@
 #include <cinttypes>
 #include <vector>
 
+#include "cryptopp-keccak-256-hasher.h"
+#include "xkcp-keccak-256-hasher.h"
 #include "merkle-tree.h"
 
 static int prefix(const char *pre, const char *str) {
@@ -84,24 +86,20 @@ static void dump(const uint8_t *hash) {
 }
 
 int main(void) {
-    CryptoPP::Keccak_256 kc;
     uint8_t a[] = {0, 0, 0, 0, 0, 0, 0, 1};
-    uint8_t hash_a[32];
-    uint8_t b[] = {1, 0, 0, 0, 0, 0, 0, 0};
-    uint8_t hash_b[32];
-    uint8_t hash_hash_a_hash_b[32];
-    kc.Restart();
-    kc.Update(a, sizeof(a));
-    kc.Final(hash_a);
-    dump(hash_a);
-    kc.Restart();
-    kc.Update(b, sizeof(b));
-    kc.Final(hash_b);
-    dump(hash_b);
-    kc.Restart();
-    kc.Update(hash_a, sizeof(hash_a));
-    kc.Update(hash_b, sizeof(hash_b));
-    kc.Final(hash_hash_a_hash_b);
-    dump(hash_hash_a_hash_b);
+    using C = cartesi::cryptopp_keccak_256_hasher;
+    C HC;
+    C::hash_type hc;
+    HC.begin();
+    HC.add_data(a, sizeof(a));
+    HC.end(hc);
+    dump(hc.data());
+    using X = cartesi::xkcp_keccak_256_hasher;
+    X HX;
+    X::hash_type hx;
+    HX.begin();
+    HX.add_data(a, sizeof(a));
+    HX.end(hx);
+    dump(hx.data());
     return 0;
 }

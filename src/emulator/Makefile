@@ -20,10 +20,6 @@ GCFLAGS= -fno-inline-small-functions -fno-inline -fdata-sections -ffunction-sect
 GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
 endif
 
-LUACARTESI_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB)
-GRPC_SRV_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_PO_LIB)
-HASH_LIBS:=$(CRYPTOPP_LIB)
-
 # Common setup
 # libfdt
 #   git clone git@github.com:cartesi/dtc.git
@@ -85,15 +81,26 @@ CC_Linux=gcc
 CXX_Linux=g++
 INCS_Linux=
 FS_LIB_Linux=-lstdc++fs
+#XKCP_LIB_Linux:= -Lthird_party/XKCP/Haswell/lib -lkeccak
+#XKCP_INC_Linux:= -Ithird_party/XKCP/Haswell/include
 
 CC:=$(CC_$(UNAME))
 CXX:=$(CXX_$(UNAME))
 SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 FS_LIB=$(FS_LIB_$(UNAME))
 
+XKCP_LIB:=$(XKCP_LIB_$(UNAME))
+XKCP_INC:=$(XKCP_INC_$(UNAME))
+
+LUACARTESI_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB) $(XKCP_LIB)
+GRPC_SRV_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_PO_LIB)
+HASH_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB)
+
+#DEFS+= -DMT_ALL_DIRTY
+
 WARNS=-W -Wall -pedantic
 
-INCS=$(INCS_$(UNAME)) -I/usr/local/include $(LUA_INC) $(FDT_INC) -I$(GRPC_OUT_DIR)
+INCS=$(INCS_$(UNAME)) -I/usr/local/include $(LUA_INC) $(FDT_INC) $(XKCP_INC)
 
 ifeq ($(dump),yes)
 #DEFS+=-DUMP_ILLEGAL_INSN

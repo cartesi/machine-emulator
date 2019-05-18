@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <new>
+#include <system_error>
 #include <cstdlib>
 #include <cstdio>
 

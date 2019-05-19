@@ -1,6 +1,9 @@
 #include <sstream>
 #include <cstring>
 #include <cinttypes>
+#include <chrono>
+#include <iostream>
+#include <omp.h>
 
 #include "riscv-constants.h"
 #include "machine.h"
@@ -578,30 +581,60 @@ void machine::set_iflags_H(void) {
     m_s.set_brk_from_iflags_H();
 }
 
+static double now(void) {
+    using namespace std::chrono;
+    return static_cast<double>(
+        duration_cast<microseconds>(
+            high_resolution_clock::now().time_since_epoch()).count())*1.e-6;
+}
+
 bool machine::update_merkle_tree(void) {
+    double begin = now();
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
-    merkle_tree::hasher_type h;
-    auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
-    if (!scratch) return false;
-    m_t.begin_update(h);
+    // Array with hasher and scratch pointers for each thread
+    std::vector<
+        std::pair<
+            merkle_tree::hasher_type,
+            unique_calloc_ptr<uint8_t>
+        >
+    > thread_context(omp_get_max_threads());
+    //??D We could try to allocate each hasher and scratch in the
+    // appropriate thread, to ensure thread affinity, but we are unlikely to be
+    // in a NUMA configuration, so this would be overkill
+    for (auto &c: thread_context) {
+        c.second = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+        if (!static_cast<bool>(c.second))
+            return false;
+    }
+    m_t.begin_update();
+    bool any_failed = false;
     for (auto &pma: m_s.pmas) {
+        if (any_failed) break;
+        auto peek = pma.get_peek();
+#pragma omp parallel for
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length(); page_start_in_range += PMA_PAGE_SIZE) {
-            if (!pma.is_page_marked_dirty(page_start_in_range))
-                continue;
-            const uint8_t *page_data = nullptr;
-            auto peek = pma.get_peek();
-            if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
-                m_t.end_update(h);
-                return false;
-            } else if (page_data && !m_t.update_page(h, pma.get_start() + page_start_in_range, page_data)) {
-                m_t.end_update(h);
-                return false;
-			} // ??D else page is pristine and we do nothing.
-			  // Maybe add a check here to make sure it is also pristine in the tree
+            if (!any_failed && pma.is_page_marked_dirty(page_start_in_range)) {
+                auto &c = thread_context[omp_get_thread_num()];
+                auto &h = c.first;
+                uint8_t *scratch = c.second.get();
+                const uint8_t *page_data = nullptr;
+                if (!peek(pma, page_start_in_range, &page_data, scratch)) {
+#pragma omp atomic write
+                    any_failed = true;
+                } else if (page_data &&
+                    !m_t.update_page(h, pma.get_start() + page_start_in_range, page_data)) {
+#pragma omp atomic write
+                    any_failed = true;
+                }
+			}
         }
         pma.mark_pages_clean();
     }
-    return m_t.end_update(h);
+    std::cerr << "page updates done in " << now()-begin << "s\n";
+    begin = now();
+    bool ret = m_t.end_update(thread_context[0].first);
+    std::cerr << "inner tree updates done in " << now()-begin << "s\n";
+    return ret;
 }
 
 bool machine::update_merkle_tree_page(uint64_t address) {
@@ -614,7 +647,7 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     merkle_tree::hasher_type h;
     auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
-    m_t.begin_update(h);
+    m_t.begin_update();
     const uint8_t *page_data = nullptr;
     auto peek = pma.get_peek();
     if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {

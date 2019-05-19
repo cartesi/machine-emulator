@@ -2,7 +2,6 @@
 #include <cstring>
 #include <cinttypes>
 #include <chrono>
-#include <iostream>
 #include <omp.h>
 
 #include "riscv-constants.h"
@@ -589,7 +588,7 @@ static double now(void) {
 }
 
 bool machine::update_merkle_tree(void) {
-    double begin = now();
+    // double begin = now();
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
     // Array with hasher and scratch pointers for each thread
     std::vector<
@@ -607,20 +606,27 @@ bool machine::update_merkle_tree(void) {
             return false;
     }
     m_t.begin_update();
+    // If any thread fails, it sets this flag
     bool any_failed = false;
     for (auto &pma: m_s.pmas) {
+        // If any thread has failed, we stop all updates
         if (any_failed) break;
         auto peek = pma.get_peek();
 #pragma omp parallel for
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length(); page_start_in_range += PMA_PAGE_SIZE) {
+            // If any thread failed, we skip until end of for
+            // Otherwise, we only update if the page is dirty
             if (!any_failed && pma.is_page_marked_dirty(page_start_in_range)) {
                 auto &c = thread_context[omp_get_thread_num()];
                 auto &h = c.first;
                 uint8_t *scratch = c.second.get();
                 const uint8_t *page_data = nullptr;
+                // If the peek failed, set the flag
                 if (!peek(pma, page_start_in_range, &page_data, scratch)) {
 #pragma omp atomic write
                     any_failed = true;
+                // Otherwise, if there is data to process and we fail processing
+                // it, set the flag
                 } else if (page_data &&
                     !m_t.update_page(h, pma.get_start() + page_start_in_range, page_data)) {
 #pragma omp atomic write
@@ -630,10 +636,10 @@ bool machine::update_merkle_tree(void) {
         }
         pma.mark_pages_clean();
     }
-    std::cerr << "page updates done in " << now()-begin << "s\n";
-    begin = now();
+    // std::cerr << "page updates done in " << now()-begin << "s\n";
+    // begin = now();
     bool ret = m_t.end_update(thread_context[0].first);
-    std::cerr << "inner tree updates done in " << now()-begin << "s\n";
+    // std::cerr << "inner tree updates done in " << now()-begin << "s\n";
     return ret;
 }
 

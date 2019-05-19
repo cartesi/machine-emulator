@@ -290,8 +290,7 @@ dump_merkle_tree(void) const {
 
 bool
 merkle_tree::
-begin_update(hasher_type &h) {
-    (void) h;
+begin_update(void) {
     m_merkle_update_fifo.clear();
     return true;
 }
@@ -301,21 +300,33 @@ bool
 merkle_tree::
 update_page(hasher_type &h, address_type page_index, const uint8_t *page_data) {
     assert(get_page_index(page_index) == page_index);
-    tree_node *node = get_page_node(page_index);
-    // If there is no page node for this page index, allocate a fresh one
-    if (!node) {
-        node = new_page_node(page_index);
+    tree_node *node = nullptr;
+#pragma omp critical
+    {
+        node = get_page_node(page_index);
+        // If there is no page node for this page index, allocate a fresh one
         if (!node) {
-            return false;
+            node = new_page_node(page_index);
         }
     }
-    if (page_data) update_page_node_hash(h, page_data, get_log2_page_size(), node->hash);
-    else node->hash = get_pristine_hash(get_log2_page_size());
+
+    if (!node) {
+        return false;
+    }
+
+    if (page_data) {
+        update_page_node_hash(h, page_data, get_log2_page_size(), node->hash);
+    } else {
+        node->hash = get_pristine_hash(get_log2_page_size());
+    }
+
+#pragma omp critical
     if (node->parent && node->parent->mark != m_merkle_update_nonce) {
         m_merkle_update_fifo.push_back(
             std::make_pair(get_log2_page_size()+1, node->parent));
         node->parent->mark = m_merkle_update_nonce;
     }
+
     return true;
 }
 

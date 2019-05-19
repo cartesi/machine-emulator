@@ -327,9 +327,8 @@ public:
     bool get_root_hash(hash_type &hash) const;
 
     /// \brief Start tree update.
-    /// \param h Hasher object.
     /// \returns True.
-    bool begin_update(hasher_type &h);
+    bool begin_update(void);
 
     /// \brief Update tree with new data for a page node.
     /// \param h Hasher object.

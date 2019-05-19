@@ -92,8 +92,8 @@ FS_LIB=$(FS_LIB_$(UNAME))
 XKCP_LIB:=$(XKCP_LIB_$(UNAME))
 XKCP_INC:=$(XKCP_INC_$(UNAME))
 
-LUACARTESI_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB) $(XKCP_LIB)
-GRPC_SRV_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_PO_LIB)
+LUACARTESI_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB) $(XKCP_LIB) -fopenmp -lgomp
+GRPC_SRV_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_PO_LIB) -fopenmp -lgomp
 HASH_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
@@ -115,8 +115,8 @@ DEFS+=-DDUMP_INSN
 endif
 
 # -fsanitize=undefined
-CXXFLAGS=-Ofast -std=c++17 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
-CFLAGS=-Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
+CXXFLAGS=-Ofast -std=c++17 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS) -fopenmp
+CFLAGS=-Ofast -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS) -fopenmp
 
 ALL=cartesi.so
 

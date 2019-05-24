@@ -60,7 +60,7 @@ local backing = { root = "rootfs.ext2" }
 local backing_order = { "root" }
 local shared = { }
 local ram_image = "kernel.bin"
-local rom_image
+local rom_image = "rom.bin"
 local cmdline = ""
 local memory_size = 64
 local batch = false

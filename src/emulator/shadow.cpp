@@ -22,14 +22,9 @@ uint64_t shadow_get_register_rel_addr(int reg) {
     return reg*sizeof(uint64_t);
 }
 
-/// \brief Shadow constants
-enum SHADOW_constants: uint64_t {
-    SHADOW_PMA_BASE = UINT64_C(0x800) ///< Base of board shadow, where PMAs start
-};
-
 uint64_t shadow_get_pma_rel_addr(int p) {
     assert(p >= 0 && p < 32);
-    return SHADOW_PMA_BASE + 2*p*sizeof(uint64_t);
+    return PMA_BOARD_SHADOW_START + 2*p*sizeof(uint64_t);
 }
 
 /// \brief Shadow device peek callback. See ::pma_peek.
@@ -122,8 +117,8 @@ static bool shadow_read(const pma_entry &pma, i_virtual_state_access *a, uint64_
     if (size_log2 != 3 || offset & 7) return false;
 
     // If offset is past start of PMA range
-    if (offset >= static_cast<uint64_t>(SHADOW_constants::SHADOW_PMA_BASE)) {
-        offset -= static_cast<uint64_t>(SHADOW_constants::SHADOW_PMA_BASE);
+    if (offset >= PMA_constants::PMA_BOARD_SHADOW_START) {
+        offset -= PMA_constants::PMA_BOARD_SHADOW_START;
         offset >>= 3;
         // If offset within PMA range
         if (offset < 32*2) {

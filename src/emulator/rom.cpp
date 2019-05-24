@@ -9,6 +9,7 @@ extern "C" {
 #include <libfdt.h>
 }
 
+#include "pma-defines.h"
 #include "rom.h"
 #include "rtc.h"
 #include "pma.h"
@@ -18,10 +19,6 @@ namespace cartesi {
 
 using namespace std::string_literals;
 
-/// \brief ROM constants
-enum ROM_constants {
-    CLOCK_FREQ = 1000000000 ///< 1 GHz frequency is arbitrary
-};
 
 #define FDT_CHECK(func_call) do { \
     auto errval = (func_call); \
@@ -170,11 +167,26 @@ void rom_init(const machine_config &c, uint64_t misa, int max_xlen,
     // la t0, jump_addr
     q[0] = 0x297 + PMA_RAM_START - PMA_ROM_START; // auipc t0, 0x80000000-0x1000
     // la a1, fdt_addr
-      q[1] = 0x597; // auipc a1, 0  (a1 := 0x1004)
-      q[2] = 0x58593 + ((fdt_addr - (PMA_ROM_START+4)) << 20); // addi a1, a1, 60
+    q[1] = 0x597; // auipc a1, 0  (a1 := 0x1004)
+    q[2] = 0x58593 + ((fdt_addr - (PMA_ROM_START+4)) << 20); // addi a1, a1, 60
     q[3] = 0xf1402573; // csrr a0, mhartid
     q[4] = 0x00028067; // jr t0
     build_device_tree(c, misa, max_xlen, rom_start + fdt_addr, length-fdt_addr);
+}
+
+void rom_init_pma_ext(const machine_config &c, uint8_t *rom_start, uint64_t length) {
+    if (length < PMA_EXT_LENGTH_DEF)
+        throw std::runtime_error{"Not enough space on ROM for PMA extension data"};
+
+    struct pma_ext_hdr *hdr = (struct pma_ext_hdr *)(rom_start + length - PMA_EXT_LENGTH_DEF);
+    hdr->version = PMA_EXT_VERSION;
+
+    if (!c.rom.bootargs.empty()) {
+        strncpy(hdr->bootargs, c.rom.bootargs.c_str(), PMA_EXT_BOOTARGS_SIZE);
+        hdr->bootargs[PMA_EXT_BOOTARGS_SIZE - 1] = '\0';
+    } else {
+        memset(hdr->bootargs, 0, PMA_EXT_BOOTARGS_SIZE);
+    }
 }
 
 } // namespace cartesi

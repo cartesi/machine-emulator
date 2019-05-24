@@ -9,6 +9,7 @@
 #include <future>
 #include <thread>
 
+#include "pma-ext.h"
 #include "riscv-constants.h"
 #include "machine.h"
 #include "interpret.h"
@@ -95,12 +96,12 @@ pma_entry &machine::allocate_pma_entry(pma_entry &&pma) {
     return m_s.pmas.back();
 }
 
-void machine::register_flash(uint64_t start,
+pma_entry &machine::register_flash(uint64_t start,
     uint64_t length, const char *path, bool shared) {
     pma_entry::flags f{};
     f.R = true; f.W = true; f.X = false; f.IR = true; f.IW = true;
-    f.DID = PMA_ISTART_DID::memory;
-    allocate_pma_entry(
+    f.DID = PMA_ISTART_DID::drive;
+    return allocate_pma_entry(
         pma_entry{
             start,
             length,
@@ -256,11 +257,12 @@ machine::machine(const machine_config &c):
     }
 
     // Register ROM
+    pma_entry *rom = nullptr;
     if (c.rom.backing.empty()) {
-        auto &rom = register_memory(PMA_ROM_START, PMA_ROM_LENGTH, false);
-        rom_init(c, c.processor.misa, XLEN, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
+        rom = &register_memory(PMA_ROM_START, PMA_ROM_LENGTH, false);
+        rom_init(c, c.processor.misa, XLEN, rom->get_memory().get_host_memory(), PMA_ROM_LENGTH);
     } else {
-        register_memory(PMA_ROM_START, PMA_ROM_LENGTH, c.rom.backing, false);
+        rom = &register_memory(PMA_ROM_START, PMA_ROM_LENGTH, c.rom.backing, false);
     }
 
     // Register all flash drives
@@ -286,6 +288,10 @@ machine::machine(const machine_config &c):
 
     // Register shadow device
     shadow_register_mmio(*this, PMA_SHADOW_START, PMA_SHADOW_LENGTH);
+
+    // Initialize PMA extension metadata on ROM
+    if (!c.rom.backing.empty() && rom != nullptr)
+        rom_init_pma_ext(c, rom->get_memory().get_host_memory(), PMA_ROM_LENGTH);
 
     // Clear all TLB entries
     m_s.init_tlb();

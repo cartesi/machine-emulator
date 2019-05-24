@@ -418,7 +418,8 @@ public:
     /// \param shared Whether target modifications to the flash drive are
     /// reflected in the host's backing file.
     /// \details \p length must match the size of the backing file.
-    void register_flash(uint64_t start, uint64_t length, const char *path, bool shared);
+    /// \returns Reference to corresponding entry in machine state.
+    pma_entry &register_flash(uint64_t start, uint64_t length, const char *path, bool shared);
 
     /// \brief Register a new memory-mapped IO device.
     /// \param start Start of physical memory range in the target address

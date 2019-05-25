@@ -320,7 +320,7 @@ begin_update(void) {
 
 bool
 merkle_tree::
-update_page(hasher_type &h, address_type page_index, const uint8_t *page_data) {
+update_page_node_hash(address_type page_index, const hash_type &hash) {
     assert(get_page_index(page_index) == page_index);
     tree_node *node = get_page_node(page_index);
     // If there is no page node for this page index, allocate a fresh one
@@ -331,13 +331,8 @@ update_page(hasher_type &h, address_type page_index, const uint8_t *page_data) {
     if (!node) {
         return false;
     }
-    // If page is not pristine, get new hash
-    if (page_data) {
-        get_page_node_hash(h, page_data, node->hash);
-    // Otherwise, copy precomputed
-    } else {
-        node->hash = get_pristine_hash(get_log2_page_size());
-    }
+    // Copy new hash value to node
+    node->hash = hash;
     // Add parent to fifo so we propagate changes
     if (node->parent && node->parent->mark != m_merkle_update_nonce) {
         m_merkle_update_fifo.push_back(

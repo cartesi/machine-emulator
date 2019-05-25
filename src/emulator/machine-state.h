@@ -17,8 +17,10 @@ namespace cartesi {
 /// \details The TLB is a small cache used to speed up translation between
 /// virtual target addresses and the corresponding memory address in the host.
 struct tlb_entry {
-    uint64_t vaddr;       ///< Virtual address of page start
-    uintptr_t mem_addend; ///< Value added to translate from virtual to physical addresses in page
+    uint64_t paddr;       ///< Target physical address of page start
+    pma_entry *pma;       ///< PMA entry for corresponding range
+    uint64_t vaddr;       ///< Target virtual address of page start
+    uintptr_t mem_addend; ///< Value added to translate from virtual address to to host's physical addresses in page
 };
 
 /// \brief TLB constants
@@ -149,10 +151,16 @@ struct machine_state {
 
     /// \brief Initializes all TLBs with invalid entries.
     void init_tlb(void) {
-        for (int i = 0; i < TLB_SIZE; i++) {
-            tlb_read[i].vaddr = -1;
-            tlb_write[i].vaddr = -1;
-            tlb_code[i].vaddr = -1;
+        for (int i = 0; i < TLB_SIZE; ++i) {
+            tlb_read[i].vaddr = UINT64_C(-1);
+            tlb_read[i].paddr = UINT64_C(-1);
+            tlb_read[i].pma = nullptr;
+            tlb_write[i].vaddr = UINT64_C(-1);
+            tlb_write[i].paddr = UINT64_C(-1);
+            tlb_write[i].pma = nullptr;
+            tlb_code[i].vaddr = UINT64_C(-1);
+            tlb_code[i].paddr = UINT64_C(-1);
+            tlb_code[i].pma = nullptr;
         }
     }
 

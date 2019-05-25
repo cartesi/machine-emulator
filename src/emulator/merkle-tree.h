@@ -160,15 +160,6 @@ private:
     /// Maps new node to the page index.
     tree_node *new_page_node(address_type page_index);
 
-    /// \brief Recursively builds hash for log2_size node
-    /// from contiguous memory.
-    /// \param h Hasher object.
-    /// \param start Start of contiguous memory subintended by node.
-    /// \param log2_size log<sub>2</sub> of size subintended by node.
-    /// \param hash Receives the hash.
-    void update_page_node_hash(hasher_type &h, const uint8_t *start,
-            int log2_size, hash_type &hash) const;
-
     /// \brief Updates an inner node hash from its children.
     /// \param h Hasher object.
     /// \param log2_size log<sub>2</sub> of size subintended by node.
@@ -178,11 +169,6 @@ private:
     /// \brief Dumps a hash to std::cerr.
     /// \param hash Hash to be dumped.
     void dump_hash(const hash_type &hash) const;
-
-    /// \brief Returns the hash for a log2_size pristine node.
-    /// \param log2_size log<sub>2</sub> of size subintended by node.
-    /// \return Reference to precomputed hash.
-    const hash_type &get_pristine_hash(int log2_size) const;
 
     /// \brief Defines the hash for a log2_size pristine node.
     /// \param hash New hash.
@@ -238,6 +224,15 @@ private:
     /// \param page_index Page index associated to node.
     /// \return The node, if found, or nullptr otherwise.
     tree_node *get_page_node(address_type page_index) const;
+
+    /// \brief Recursively builds hash for log2_size node
+    /// from contiguous memory.
+    /// \param h Hasher object.
+    /// \param start Start of contiguous memory subintended by node.
+    /// \param log2_size log<sub>2</sub> of size subintended by node.
+    /// \param hash Receives the hash.
+    void get_page_node_hash(hasher_type &h, const uint8_t *start,
+            int log2_size, hash_type &hash) const;
 
     /// \brief Gets the sibling hashes along the path from
     /// the node currently being visited and a target node.
@@ -332,10 +327,10 @@ public:
 
     /// \brief Update tree with new data for a page node.
     /// \param h Hasher object.
-    /// \param page_address Address of start of page.
+    /// \param page_index Page index for node.
     /// \param page_data Pointer to start of contiguous page data, or nullptr if page is pristine.
     /// \returns True if succeeded, false otherwise.
-    bool update_page(hasher_type &h, address_type page_address,
+    bool update_page(hasher_type &h, address_type page_index,
             const uint8_t *page_data);
 
     /// \brief End tree update.
@@ -355,6 +350,24 @@ public:
     /// \returns True if succeeded, false otherwise.
     bool get_proof(address_type address, int log2_size,
             const uint8_t *page_data, proof_type &proof) const;
+
+    /// \brief Recursively builds hash for page node from contiguous memory.
+    /// \param h Hasher object.
+    /// \param page_data Pointer to start of contiguous page data.
+    /// \param hash Receives the hash.
+    void get_page_node_hash(hasher_type &h, const uint8_t *page_data,
+        hash_type &hash) const;
+
+    /// \brief Returns the hash for a log2_size pristine node.
+    /// \param log2_size log<sub>2</sub> of size subintended by node.
+    /// \return Reference to precomputed hash.
+    const hash_type &get_pristine_hash(int log2_size) const;
+
+    /// \brief Gets currently stored hash for page node.
+    /// \param h Hasher object.
+    /// \param page_index Page index for node.
+    /// \param hash Receives the hash.
+    void get_page_node_hash(address_type page_index, hash_type &hash) const;
 
     /// \brief Verifies a proof.
     /// \param proof Proof to be verified.

@@ -112,18 +112,40 @@ new_page_node(address_type page_index) {
 
 void
 merkle_tree::
-update_page_node_hash(hasher_type &h, const uint8_t *start, int log2_size, hash_type &hash) const {
+get_page_node_hash(hasher_type &h, const uint8_t *start, int log2_size, hash_type &hash) const {
     if (log2_size > get_log2_word_size()) {
         hash_type child0, child1;
         --log2_size;
         address_type size = UINT64_C(1) << log2_size;
-        update_page_node_hash(h, start, log2_size, child0);
-        update_page_node_hash(h, start+size, log2_size, child1);
+        get_page_node_hash(h, start, log2_size, child0);
+        get_page_node_hash(h, start+size, log2_size, child1);
         get_concat_hash(h, child0, child1, hash);
     } else {
         h.begin();
         h.add_data(start, get_word_size());
         h.end(hash);
+    }
+}
+
+void
+merkle_tree::
+get_page_node_hash(hasher_type &h, const uint8_t *page_data, hash_type &hash) const {
+    if (page_data) {
+        get_page_node_hash(h, page_data, get_log2_page_size(), hash);
+    } else {
+        hash = get_pristine_hash(get_log2_page_size());
+    }
+}
+
+void
+merkle_tree::
+get_page_node_hash(address_type page_index, hash_type &hash) const {
+    assert(page_index == get_page_index(page_index));
+    tree_node *node = get_page_node(page_index);
+    if (!node) {
+        hash = get_pristine_hash(get_log2_page_size());
+    } else {
+        hash = node->hash;
     }
 }
 
@@ -300,33 +322,28 @@ bool
 merkle_tree::
 update_page(hasher_type &h, address_type page_index, const uint8_t *page_data) {
     assert(get_page_index(page_index) == page_index);
-    tree_node *node = nullptr;
-#pragma omp critical
-    {
-        node = get_page_node(page_index);
-        // If there is no page node for this page index, allocate a fresh one
-        if (!node) {
-            node = new_page_node(page_index);
-        }
+    tree_node *node = get_page_node(page_index);
+    // If there is no page node for this page index, allocate a fresh one
+    if (!node) {
+        node = new_page_node(page_index);
     }
-
+    // If allocation failed, we fail
     if (!node) {
         return false;
     }
-
+    // If page is not pristine, get new hash
     if (page_data) {
-        update_page_node_hash(h, page_data, get_log2_page_size(), node->hash);
+        get_page_node_hash(h, page_data, node->hash);
+    // Otherwise, copy precomputed
     } else {
         node->hash = get_pristine_hash(get_log2_page_size());
     }
-
-#pragma omp critical
+    // Add parent to fifo so we propagate changes
     if (node->parent && node->parent->mark != m_merkle_update_nonce) {
         m_merkle_update_fifo.push_back(
             std::make_pair(get_log2_page_size()+1, node->parent));
         node->parent->mark = m_merkle_update_nonce;
     }
-
     return true;
 }
 

@@ -60,7 +60,8 @@ static uint64_t check_uint_field(lua_State *L, int tabidx, const char *field) {
     lua_Integer ival;
     lua_getfield(L, tabidx, field);
     if (!lua_isinteger(L, -1))
-        luaL_error(L, "invalid %s (expected unsigned integer)", field);
+        luaL_error(L, "invalid %s (expected unsigned integer, got %s)", field,
+            lua_typename(L, lua_type(L, -1)));
     ival = lua_tointeger(L, -1);
     lua_pop(L, 1);
     return (uint64_t) ival;
@@ -695,6 +696,17 @@ static int meta__index_get_proof(lua_State *L) try {
     return 0;
 }
 
+/// \brief This is the machine:verify_dirty_page_maps() method implementation.
+/// \param L Lua state.
+static int meta__index_verify_dirty_page_maps(lua_State *L) try {
+    machine *m = check_machine(L, 1);
+    lua_pushboolean(L, m->verify_dirty_page_maps());
+    return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
 /// \brief This is the machine:step() method implementation.
 /// \param L Lua state.
 static int meta__index_step(lua_State *L) try {
@@ -723,6 +735,7 @@ static const luaL_Reg meta__index[] = {
     {"get_root_hash", meta__index_get_root_hash},
     {"step", meta__index_step},
     {"destroy", meta__index_destroy},
+    {"verify_dirty_page_maps", meta__index_verify_dirty_page_maps},
     { NULL, NULL }
 };
 

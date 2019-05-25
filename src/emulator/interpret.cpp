@@ -1,6 +1,8 @@
 #include <cstdio>
 #include <cinttypes>
 #include <cstdint>
+#include <iostream>
+#include <iomanip>
 
 /// \file
 /// \brief Interpreter implementation.
@@ -77,29 +79,6 @@ typedef unsigned __int128 uint128_t;
 #include "interpret.h"
 
 namespace cartesi {
-
-#if 0
-/// \brief Memory range peek callback. See ::pma_peek.
-static bool memory_peek(const pma_entry &pma, uint64_t page_address, const uint8_t **page_data, uint8_t *scratch) {
-    // If page_address is not aligned, or if it is out of range, return error
-    if ((page_address & (PMA_PAGE_SIZE-1)) != 0 ||
-        page_address > pma.get_length()) {
-        *page_data = nullptr;
-        return false;
-    }
-    // If page is only partially inside range, copy to scratch
-    if (page_address + PMA_PAGE_SIZE > pma.get_length()) {
-        memset(scratch, 0, PMA_PAGE_SIZE);
-        memcpy(scratch, pma.get_memory().get_host_memory() + page_address, pma.get_length() - page_address);
-        *page_data = scratch;
-        return true;
-    // Otherwise, return pointer direclty into host memory
-    } else {
-        *page_data = pma.get_memory().get_host_memory() + page_address;
-        return true;
-    }
-}
-#endif
 
 static void print_uint64_t(uint64_t a) {
     fprintf(stderr, "%016" PRIx64, a);
@@ -334,6 +313,14 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
     return false;
 }
 
+/// \brief Mark TLB entry as dirty in dirty page map.
+/// \param tlb TLB entry to mark.
+static void tlb_mark_dirty_page(tlb_entry &tlb) {
+    if (tlb.vaddr != UINT64_C(-1)) {
+        tlb.pma->mark_dirty_page(tlb.paddr - tlb.pma->get_start());
+    }
+}
+
 /// \brief Replaces an entry in the TLB with a new one when reading.
 /// \param pma PMA entry for range.
 /// \param vaddr Target virtual address.
@@ -342,6 +329,8 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
 /// \returns Offset from Target virtual address to host address
 static inline uintptr_t tlb_replace_read(pma_entry &pma, uint64_t vaddr, uint64_t paddr, tlb_entry &tlb) {
     tlb.vaddr = vaddr & ~PAGE_OFFSET_MASK;
+    tlb.pma = &pma;
+    tlb.paddr = paddr & ~PAGE_OFFSET_MASK;
     uint8_t *ptr = pma.get_memory().get_host_memory() + (uintptr_t)(paddr - pma.get_start());
     tlb.mem_addend = (uintptr_t)ptr - vaddr;
     return tlb.mem_addend;
@@ -354,9 +343,9 @@ static inline uintptr_t tlb_replace_read(pma_entry &pma, uint64_t vaddr, uint64_
 /// \param tlb TLB entry to replace.
 /// \returns Offset from Target virtual address to host address
 static inline uintptr_t tlb_replace_write(pma_entry &pma, uint64_t vaddr, uint64_t paddr, tlb_entry &tlb) {
-    // mark page as dirty so we know to update the Merkle tree
-    pma.mark_dirty_page(paddr - pma.get_start());
-    // the rest is the same as reading
+    // Mark page that was on TLB as dirty so we know to update the Merkle tree
+    tlb_mark_dirty_page(tlb);
+    // The rest is the same as reading
     return tlb_replace_read(pma, vaddr, paddr, tlb);
 }
 
@@ -377,7 +366,13 @@ static inline bool tlb_hit(const tlb_entry &tlb, uint64_t vaddr) {
 /// \brief Invalidates all TLB entries.
 /// \param s Pointer to machine state.
 static void tlb_flush_all(machine_state &s) {
-    s.init_tlb();
+    // Clear all TLB entries
+    for (int i = 0; i < TLB_SIZE; ++i) {
+        tlb_mark_dirty_page(s.tlb_write[i]);
+        s.tlb_write[i].vaddr = UINT64_C(-1);
+        s.tlb_read[i].vaddr = UINT64_C(-1);
+        s.tlb_code[i].vaddr = UINT64_C(-1);
+    }
 }
 
 /// \brief Invalidates a specific mapping.
@@ -789,7 +784,8 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
 static void dump_insn(machine &m, uint64_t pc, uint32_t insn, const char *name) {
     state_access a(m);
 #ifdef DUMP_INSN
-    fprintf(stderr, "%s\n", name);
+    //fprintf(stderr, "%s\n", name);
+    (void) name;
     uint64_t ppc;
     if (!translate_virtual_address(a, &ppc, pc, PTE_XWR_C_SHIFT)) {
         ppc = pc;
@@ -3091,6 +3087,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
         // We only execute directly from RAM (as in "random access memory", which includes ROM)
         // If the range is not memory or not executable, this as a PMA violation
         if (!pma.get_istart_M() || !pma.get_istart_X()) {
+            std::cerr << "vaddr:" << vaddr << '\n';
             raise_exception(a, MCAUSE_INSN_ACCESS_FAULT, vaddr);
             return fetch_status::exception;
         }

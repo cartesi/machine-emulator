@@ -2,7 +2,9 @@
 #include <cstring>
 #include <cinttypes>
 #include <chrono>
-#include <omp.h>
+#include <iostream>
+#include <iomanip>
+#include <cstdio>
 
 #include "riscv-constants.h"
 #include "machine.h"
@@ -15,6 +17,7 @@
 #include "unique-c-ptr.h"
 #include "state-access.h"
 #include "logged-state-access.h"
+
 
 namespace cartesi {
 
@@ -587,60 +590,97 @@ static double now(void) {
             high_resolution_clock::now().time_since_epoch()).count())*1.e-6;
 }
 
+bool machine::verify_dirty_page_maps(void) const {
+    // double begin = now();
+    static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
+    merkle_tree::hasher_type h;
+    auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+    if (!scratch) return false;
+    bool broken = false;
+    merkle_tree::hash_type pristine = m_t.get_pristine_hash(
+        m_t.get_log2_page_size());
+    // Go over the write TLB and mark as dirty all pages currently there
+    for (int i = 0; i < TLB_SIZE; ++i) {
+        auto &write = m_s.tlb_write[i];
+        if (write.vaddr != UINT64_C(-1)) {
+            write.pma->mark_dirty_page(write.paddr - write.pma->get_start());
+        }
+    }
+    // Now go over all PMAs verifying dirty pages are marked
+    for (auto &pma: m_s.pmas) {
+        auto peek = pma.get_peek();
+        for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length(); page_start_in_range += PMA_PAGE_SIZE) {
+            const uint8_t *page_data = nullptr;
+            uint64_t page_address = pma.get_start() + page_start_in_range;
+            peek(pma, page_start_in_range, &page_data, scratch.get());
+            merkle_tree::hash_type stored, real;
+            m_t.get_page_node_hash(page_address, stored);
+            m_t.get_page_node_hash(h, page_data, real);
+            bool marked_dirty = pma.is_page_marked_dirty(page_start_in_range);
+            bool is_dirty = (real != stored);
+            if (marked_dirty != is_dirty && pma.get_istart_M()) {
+                broken = true;
+                if (is_dirty) {
+                    std::cerr << std::setfill('0') << std::setw(8) << std::hex << page_address << " should have been dirty\n";
+                    std::cerr << "  expected " << stored << '\n';
+                    std::cerr << "  got " << real << '\n';
+                } else if (real != pristine) {
+                    std::cerr << std::setfill('0') << std::setw(8) << std::hex << page_address << " could have been clean\n";
+                    std::cerr << "  still " << stored << '\n';
+                }
+            }
+        }
+    }
+    return broken;
+}
+
 bool machine::update_merkle_tree(void) {
     // double begin = now();
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
-    // Array with hasher and scratch pointers for each thread
-    std::vector<
-        std::pair<
-            merkle_tree::hasher_type,
-            unique_calloc_ptr<uint8_t>
-        >
-    > thread_context(omp_get_max_threads());
-    //??D We could try to allocate each hasher and scratch in the
-    // appropriate thread, to ensure thread affinity, but we are unlikely to be
-    // in a NUMA configuration, so this would be overkill
-    for (auto &c: thread_context) {
-        c.second = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
-        if (!static_cast<bool>(c.second))
-            return false;
+    merkle_tree::hasher_type h;
+    auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+    if (!scratch) return false;
+    // Go over the write TLB and mark as dirty all pages currently there
+    for (int i = 0; i < TLB_SIZE; ++i) {
+        auto &write = m_s.tlb_write[i];
+        if (write.vaddr != UINT64_C(-1)) {
+            write.pma->mark_dirty_page(write.paddr - write.pma->get_start());
+        }
     }
+    // Now go over all PMAs and update the Merkle tree
     m_t.begin_update();
-    // If any thread fails, it sets this flag
-    bool any_failed = false;
     for (auto &pma: m_s.pmas) {
-        // If any thread has failed, we stop all updates
-        if (any_failed) break;
         auto peek = pma.get_peek();
-#pragma omp parallel for
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length(); page_start_in_range += PMA_PAGE_SIZE) {
-            // If any thread failed, we skip until end of for
-            // Otherwise, we only update if the page is dirty
-            if (!any_failed && pma.is_page_marked_dirty(page_start_in_range)) {
-                auto &c = thread_context[omp_get_thread_num()];
-                auto &h = c.first;
-                uint8_t *scratch = c.second.get();
-                const uint8_t *page_data = nullptr;
-                // If the peek failed, set the flag
-                if (!peek(pma, page_start_in_range, &page_data, scratch)) {
-#pragma omp atomic write
-                    any_failed = true;
-                // Otherwise, if there is data to process and we fail processing
-                // it, set the flag
-                } else if (page_data &&
-                    !m_t.update_page(h, pma.get_start() + page_start_in_range, page_data)) {
-#pragma omp atomic write
-                    any_failed = true;
+            const uint8_t *page_data = nullptr;
+            uint64_t page_address = pma.get_start() + page_start_in_range;
+            // Skip any clean pages
+            //if (!pma.is_page_marked_dirty(page_start_in_range)) continue;
+            // If the peek failed, or if it returned a page for update but
+            // we failed updating it, the entire process failed
+            if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
+                m_t.end_update(h);
+                return false;
+            }
+            if (page_data) {
+                //if (pma.get_istart_M()) {
+                    //std::cerr << std::setfill('0') << std::setw(8) << std::hex << page_address << " updated\n";
+                    //merkle_tree::hash_type real;
+                    //m_t.get_page_node_hash(h, page_data, real);
+                    //std::cerr << "  to " << real << '\n';
+                //}
+                if (!m_t.update_page(h, page_address, page_data)) {
+                    m_t.end_update(h);
+                    return false;
                 }
-			}
+            }
         }
         pma.mark_pages_clean();
     }
     // std::cerr << "page updates done in " << now()-begin << "s\n";
     // begin = now();
-    bool ret = m_t.end_update(thread_context[0].first);
+    return m_t.end_update(h);
     // std::cerr << "inner tree updates done in " << now()-begin << "s\n";
-    return ret;
 }
 
 bool machine::update_merkle_tree_page(uint64_t address) {

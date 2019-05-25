@@ -451,6 +451,11 @@ public:
 
     /// \brief Interact with console
     void interact(void);
+
+    /// \brief Verify if dirty page maps are consistent.
+    /// \returns true if they are, false if there is an error.
+    bool verify_dirty_page_maps(void) const;
+
 };
 
 /// \brief Returns a string describing the implementation

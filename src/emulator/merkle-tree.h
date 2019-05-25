@@ -323,19 +323,23 @@ public:
 
     /// \brief Start tree update.
     /// \returns True.
+    /// \details This method is not thread safe, so be careful when using
+    /// parallelization to compute Merkle trees
     bool begin_update(void);
 
-    /// \brief Update tree with new data for a page node.
-    /// \param h Hasher object.
+    /// \brief Update tree with new hash for a page node.
     /// \param page_index Page index for node.
-    /// \param page_data Pointer to start of contiguous page data, or nullptr if page is pristine.
+    /// \param hash New hash for node.
     /// \returns True if succeeded, false otherwise.
-    bool update_page(hasher_type &h, address_type page_index,
-            const uint8_t *page_data);
+    /// \details This method is not thread safe, so be careful when using
+    /// parallelization to compute Merkle trees
+    bool update_page_node_hash(address_type page_index, const hash_type &hash);
 
     /// \brief End tree update.
     /// \param h Hasher object.
     /// \returns True if succeeded, false otherwise.
+    /// \details This method is not thread safe, so be careful when using
+    /// parallelization to compute Merkle trees
     bool end_update(hasher_type &h);
 
     /// \brief Returns the proof for a node in the tree.

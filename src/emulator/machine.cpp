@@ -5,6 +5,9 @@
 #include <iostream>
 #include <iomanip>
 #include <cstdio>
+#include <mutex>
+#include <future>
+#include <thread>
 
 #include "riscv-constants.h"
 #include "machine.h"
@@ -635,11 +638,9 @@ bool machine::verify_dirty_page_maps(void) const {
 }
 
 bool machine::update_merkle_tree(void) {
-    // double begin = now();
+    merkle_tree::hasher_type gh;
+    //double begin = now();
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
-    merkle_tree::hasher_type h;
-    auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
-    if (!scratch) return false;
     // Go over the write TLB and mark as dirty all pages currently there
     for (int i = 0; i < TLB_SIZE; ++i) {
         auto &write = m_s.tlb_write[i];
@@ -647,40 +648,71 @@ bool machine::update_merkle_tree(void) {
             write.pma->mark_dirty_page(write.paddr - write.pma->get_start());
         }
     }
-    // Now go over all PMAs and update the Merkle tree
+    // Now go over all PMAs and updating the Merkle tree
     m_t.begin_update();
     for (auto &pma: m_s.pmas) {
         auto peek = pma.get_peek();
-        for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length(); page_start_in_range += PMA_PAGE_SIZE) {
-            const uint8_t *page_data = nullptr;
-            uint64_t page_address = pma.get_start() + page_start_in_range;
-            // Skip any clean pages
-            //if (!pma.is_page_marked_dirty(page_start_in_range)) continue;
-            // If the peek failed, or if it returned a page for update but
-            // we failed updating it, the entire process failed
-            if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
-                m_t.end_update(h);
-                return false;
-            }
-            if (page_data) {
-                //if (pma.get_istart_M()) {
-                    //std::cerr << std::setfill('0') << std::setw(8) << std::hex << page_address << " updated\n";
-                    //merkle_tree::hash_type real;
-                    //m_t.get_page_node_hash(h, page_data, real);
-                    //std::cerr << "  to " << real << '\n';
-                //}
-                if (!m_t.update_page(h, page_address, page_data)) {
-                    m_t.end_update(h);
-                    return false;
+        // Each PMA has a number of pages
+        auto pages_in_range = (pma.get_length()+PMA_PAGE_SIZE-1)/PMA_PAGE_SIZE;
+        // For each PMA, we launch as many threads (n) as the hardware supports.
+        const int n = (int) std::thread::hardware_concurrency();
+        // The update_page_node_hash function in the merkle_tree is not thread
+        // safe, so we protect it with a mutex
+        std::mutex updatex;
+        // Each thread is launched as a future, whose value tells if the
+        // computation succeeded
+        std::vector<std::future<bool>> futures;
+        futures.reserve(n);
+        for (int j = 0; j < n; ++j) {
+            futures.emplace_back(std::async(std::launch::async, [&](int j) -> bool {
+                auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+                if (!scratch) return false;
+                merkle_tree::hasher_type h;
+                // Thread j is responsible for page i if i % n == j.
+                for (int i = j; i < (int) pages_in_range; i+=n) {
+                    uint64_t page_start_in_range = i*PMA_PAGE_SIZE;
+                    uint64_t page_address = pma.get_start() + page_start_in_range;
+                    const uint8_t *page_data = nullptr;
+                    // Skip any clean pages
+                    if (!pma.is_page_marked_dirty(page_start_in_range))
+                        continue;
+                    // If the peek failed, or if it returned a page for update but
+                    // we failed updating it, the entire process failed
+                    if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
+                        return false;
+                    }
+                    if (page_data) {
+                        merkle_tree::hash_type hash;
+                        m_t.get_page_node_hash(h, page_data, hash);
+                        {
+                            std::lock_guard<std::mutex> lock(updatex);
+                            if (!m_t.update_page_node_hash(page_address, hash)) {
+                                return false;
+                            }
+                        }
+                    }
                 }
-            }
+                return true;
+            }, j));
         }
+        // Check if any thread failed
+        bool failed = false;
+        for (auto &f: futures) {
+            failed &= f.get();
+        }
+        // If so, we also failed
+        if (failed) {
+            m_t.end_update(gh);
+            return false;
+        }
+        // Otherwise, mark all pages in PMA as clean and move on to next
         pma.mark_pages_clean();
     }
-    // std::cerr << "page updates done in " << now()-begin << "s\n";
-    // begin = now();
-    return m_t.end_update(h);
-    // std::cerr << "inner tree updates done in " << now()-begin << "s\n";
+    //std::cerr << "page updates done in " << now()-begin << "s\n";
+    //begin = now();
+    bool ret = m_t.end_update(gh);
+    //std::cerr << "inner tree updates done in " << now()-begin << "s\n";
+    return ret;
 }
 
 bool machine::update_merkle_tree_page(uint64_t address) {
@@ -699,11 +731,16 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
         m_t.end_update(h);
         return false;
-    } else if (page_data && !m_t.update_page(h, pma.get_start() + page_start_in_range, page_data)) {
-        m_t.end_update(h);
-        return false;
-	} // ??D else page is pristine and we do nothing.
-	  // Maybe add a check here to make sure it is also pristine in the tree
+    }
+    if (page_data) {
+        uint64_t page_address = pma.get_start() + page_start_in_range;
+        merkle_tree::hash_type hash;
+        m_t.get_page_node_hash(h, page_data, hash);
+        if (!m_t.update_page_node_hash(page_address, hash)) {
+            m_t.end_update(h);
+            return false;
+        }
+	}
 	pma.mark_clean_page(page_start_in_range);
     return m_t.end_update(h);
 }

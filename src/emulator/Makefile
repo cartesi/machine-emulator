@@ -113,8 +113,8 @@ DEFS+=-DDUMP_INSN
 endif
 
 # -fsanitize=undefined
-CXXFLAGS=-O0 -g -std=c++17 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
-CFLAGS=-O0 -g -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
+CXXFLAGS=-O2 -std=c++17 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
+CFLAGS=-O2 -g -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
 ALL=cartesi.so
 

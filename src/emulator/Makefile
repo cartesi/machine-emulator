@@ -2,9 +2,6 @@ UNAME:=$(shell uname)
 
 LUA_INC:=$(shell pkg-config --cflags luapp53)
 LUA_LIB:=$(shell pkg-config --libs luapp53)
-# Make sure we are using a static libfdt
-FDT_LIB:=/usr/local/lib/libfdt.a
-FDT_INC:=-I/usr/local/include
 CRYPTOPP_LIB:=-lcryptopp
 BOOST_PO_LIB:=-lboost_program_options
 GRPC_DIR:=../../cartesi-grpc
@@ -21,11 +18,6 @@ GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
 endif
 
 # Common setup
-# libfdt
-#   git clone git@github.com:cartesi/dtc.git
-#   cd dtc
-#   git checkout cartesi
-#   sudo make NO_PYTHON=1 PREFIX=/usr/local install
 # cryptopp
 #   git clone git@github.com:cartesi/cryptopp.git
 #   cd cryptopp
@@ -70,8 +62,6 @@ INCS_Darwin=-I/opt/local/include
 #    sudo make install
 #    sudo cp image-ci/luapp53.pc /usr/local/lib/pkgconfig
 #    sudo ln -s /usr/local/lib/luapp5.3 /usr/local/bin/luapp
-# libfdt
-#   apt-get install libfdt-dev
 # Boost
 #   apt-get install libboost-dev
 #
@@ -92,15 +82,15 @@ FS_LIB=$(FS_LIB_$(UNAME))
 XKCP_LIB:=$(XKCP_LIB_$(UNAME))
 XKCP_INC:=$(XKCP_INC_$(UNAME))
 
-LUACARTESI_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB) $(XKCP_LIB)
-GRPC_SRV_LIBS:=$(FDT_LIB) $(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_PO_LIB)
+LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB)
+GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_PO_LIB)
 HASH_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
 
 WARNS=-W -Wall -pedantic
 
-INCS=$(INCS_$(UNAME)) -I/usr/local/include $(LUA_INC) $(FDT_INC) $(XKCP_INC)
+INCS=$(INCS_$(UNAME)) -I/usr/local/include $(LUA_INC) $(XKCP_INC)
 
 ifeq ($(dump),yes)
 DEFS+=-DUMP_ILLEGAL_INSN

@@ -246,7 +246,7 @@ machine::machine(const machine_config &c):
     write_ilrsc(c.processor.ilrsc);
     write_iflags(c.processor.iflags);
 
-    if (c.ram.backing.empty() && c.rom.backing.empty())
+    if (c.rom.backing.empty())
         throw std::invalid_argument{"ROM and RAM backing are undefined"};
 
     // Register RAM
@@ -257,13 +257,7 @@ machine::machine(const machine_config &c):
     }
 
     // Register ROM
-    pma_entry *rom = nullptr;
-    if (c.rom.backing.empty()) {
-        rom = &register_memory(PMA_ROM_START, PMA_ROM_LENGTH, false);
-        rom_init(c, c.processor.misa, XLEN, rom->get_memory().get_host_memory(), PMA_ROM_LENGTH);
-    } else {
-        rom = &register_memory(PMA_ROM_START, PMA_ROM_LENGTH, c.rom.backing, false);
-    }
+    pma_entry &rom = register_memory(PMA_ROM_START, PMA_ROM_LENGTH, c.rom.backing, false);
 
     // Register all flash drives
     for (const auto &f: c.flash) {
@@ -290,8 +284,7 @@ machine::machine(const machine_config &c):
     shadow_register_mmio(*this, PMA_SHADOW_START, PMA_SHADOW_LENGTH);
 
     // Initialize PMA extension metadata on ROM
-    if (!c.rom.backing.empty() && rom != nullptr)
-        rom_init_pma_ext(c, rom->get_memory().get_host_memory(), PMA_ROM_LENGTH);
+    rom_init(c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
 
     // Clear all TLB entries
     m_s.init_tlb();

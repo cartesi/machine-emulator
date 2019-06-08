@@ -1,8 +1,6 @@
 #ifndef PMA_DEFINES_H
 #define PMA_DEFINES_H
 
-#define CLOCK_FREQ             1000000000 ///< 1 GHz frequency is arbitrary
-#define DEVICE_TREE_MAX_SIZE   0x10000 ///< Device tree buffer size
 #define PMA_HTIF_START_DEF     0x40008000 ///< HTIF base address (to_host)
 #define PMA_RAM_START_DEF      0x80000000 ///< RAM start address
 #define PMA_ROM_LENGTH_DEF     0xF000 ///< ROM length in bytes

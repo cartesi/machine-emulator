@@ -6,6 +6,7 @@ extern "C" {
 #include <libfdt.h>
 };
 
+#include "rom-defines.h"
 #include "device-tree.h"
 #include "util.h"
 
@@ -17,8 +18,6 @@ extern "C" {
 
 #define PMA_VALUE(x) ((x >> 12) << 12)
 #define PMA_DID(x) ((x << 52) >> 60)
-
-
 
 using namespace cartesi;
 

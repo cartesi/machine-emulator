@@ -1,4 +1,5 @@
 #include <pma-defines.h>
+#include "rom-defines.h"
 
 // Define HTIF's tohost and fromhost
 .section .tohost

@@ -521,8 +521,14 @@ private:
         *reinterpret_cast<T *>(haddr) = val;
         uint64_t new_val64 = *reinterpret_cast<uint64_t *>(haligned);
         *reinterpret_cast<T *>(haddr) = old_val;
-        // Log the access
+        // ??D At the moment, the blockchain implementation does not know
+        // how to use the old_val64 we already send along with the write
+        // access to build the new_val64 when writing at smaller granularities.
+        // We therefore log a superfluous read access.
         uint64_t paligned = paddr & (~(sizeof(uint64_t)-1));
+        if (sizeof(T) < sizeof(uint64_t))
+            log_read(paligned, old_val64, "memory (superfluous)");
+        // Log the real write access
         log_before_write(paligned, old_val64, new_val64, "memory");
         // Actually modify the state
         *reinterpret_cast<T *>(haddr) = val;

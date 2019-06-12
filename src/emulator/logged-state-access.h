@@ -390,6 +390,7 @@ private:
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.I, true);
         uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
+        log_read(iflags_addr, old_iflags, "iflags.H (superfluous)");
         log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.H");
         m_m.get_state().iflags.H = true;
         update_after_write(iflags_addr);
@@ -406,7 +407,8 @@ private:
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, true, m_m.get_state().iflags.H);
         uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_before_write_write_and_update(iflags_addr, old_iflags, new_iflags, "iflags.I");
+        log_read(iflags_addr, old_iflags, "iflags.I (superfluous)");
+        log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.I");
         m_m.get_state().iflags.I = true;
         update_after_write(iflags_addr);
     }
@@ -417,7 +419,8 @@ private:
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, false, m_m.get_state().iflags.H);
         uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_before_write_write_and_update(iflags_addr, old_iflags, new_iflags, "iflags.I");
+        log_read(iflags_addr, old_iflags, "iflags.I (superfluous)");
+        log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.I");
         m_m.get_state().iflags.I = false;
         update_after_write(iflags_addr);
     }
@@ -438,7 +441,7 @@ private:
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(val, m_m.get_state().iflags.I, m_m.get_state().iflags.H);
         uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_before_write_write_and_update(iflags_addr, old_iflags, new_iflags, "iflags.PRV");
+        log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.PRV");
         m_m.get_state().iflags.PRV = val;
         update_after_write(iflags_addr);
     }

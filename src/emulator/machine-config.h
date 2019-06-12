@@ -55,7 +55,6 @@ struct flash_config final {
     uint64_t start{0};
     uint64_t length{0};
     bool shared{false};
-    std::string label{};
     std::string backing{};
 };
 

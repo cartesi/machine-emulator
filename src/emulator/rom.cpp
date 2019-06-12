@@ -95,6 +95,7 @@ static void build_device_tree(const machine_config &c, uint64_t misa, int max_xl
      FDT_CHECK(fdt_end_node(buf)); /* memory */
 
      /* flash */
+     int i = 0;
      for (const auto &f: c.flash) {
          FDT_CHECK(fdt_begin_node_num(buf, "flash", f.start));
           FDT_CHECK(fdt_property_u32(buf, "#address-cells", 2));
@@ -102,11 +103,15 @@ static void build_device_tree(const machine_config &c, uint64_t misa, int max_xl
           FDT_CHECK(fdt_property_string(buf, "compatible", "mtd-ram"));
           FDT_CHECK(fdt_property_u32(buf, "bank-width", 4));
           FDT_CHECK(fdt_property_u64_u64(buf, "reg", f.start, f.length));
-          FDT_CHECK(fdt_begin_node_num(buf, "fs0", 0));
-           FDT_CHECK(fdt_property_string(buf, "label", f.label.c_str()));
-           FDT_CHECK(fdt_property_u64_u64(buf, "reg", 0, f.length));
-          FDT_CHECK(fdt_end_node(buf)); /* fs */
+          char mtd_name[64];
+          snprintf(mtd_name, sizeof(mtd_name), "flash.%d", i);
+          FDT_CHECK(fdt_property_string(buf, "linux,mtd-name", mtd_name));
+          //FDT_CHECK(fdt_begin_node_num(buf, "fs0", 0));
+           //FDT_CHECK(fdt_property_string(buf, "label", f.label.c_str()));
+           //FDT_CHECK(fdt_property_u64_u64(buf, "reg", 0, f.length));
+          //FDT_CHECK(fdt_end_node(buf)); /* fs */
          FDT_CHECK(fdt_end_node(buf)); /* flash */
+         i++;
      }
 
      FDT_CHECK(fdt_begin_node(buf, "soc"));

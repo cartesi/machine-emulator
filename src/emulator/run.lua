@@ -223,8 +223,7 @@ function config_meta.__index:append_drive(t)
         start = self._flash_base,
         length = length,
         backing = t.backing,
-        shared = t.shared,
-        label = assert(t.label, "no label specified")
+        shared = t.shared
     }
     self.flash[self._flash_id] = flash
     self._flash_id = self._flash_id+1
@@ -424,19 +423,23 @@ local config = new_config(
     rom_image
 ):set_memory_size(
     memory_size
-):append_cmdline(
-    cmdline
-):set_interactive(
-    not batch
 )
 
+
+local mtdparts = {}
 for i, label in ipairs(backing_order) do
     config = config:append_drive{
         backing = backing[label],
-        shared = shared[label],
-        label = label
+        shared = shared[label]
     }
+    mtdparts[#mtdparts+1] = string.format("flash.%d:-(%s)", i-1, label)
 end
+
+config = config:append_cmdline(
+    "mtdparts=" .. table.concat(mtdparts, ";") .. cmdline
+):set_interactive(
+    not batch
+)
 
 local machine = cartesi.machine(config)
 

@@ -426,7 +426,6 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             flash_config flash{};
             flash.start = drive.start();
             flash.backing = drive.backing();
-            flash.label = drive.label();
             flash.length = drive.length();
             flash.shared = drive.shared();
             c.flash.push_back(std::move(flash));

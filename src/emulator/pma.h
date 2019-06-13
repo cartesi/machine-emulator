@@ -23,10 +23,10 @@ class i_virtual_state_access;
 /// \param page_data Receives pointer to start of page data, or nullptr if page is constant *and* pristine.
 /// \param scratch Pointer to memory buffer that must be able to hold PMA_PAGE_SIZE bytes.
 /// \returns True if operation succeeded, false otherwise.
-typedef bool (*pma_peek)(const pma_entry &, uint64_t page_offset, const uint8_t **page_data, uint8_t *scratch);
+typedef bool (*pma_peek)(const pma_entry &, uint64_t page_offset, const unsigned char **page_data, unsigned char *scratch);
 
 /// \brief Default peek callback issues error on peeks.
-bool pma_peek_error(const pma_entry &, uint64_t, const uint8_t **, uint8_t *);
+bool pma_peek_error(const pma_entry &, uint64_t, const unsigned char **, unsigned char *);
 
 /// \brief Prototype for callback invoked when machine wants to read from a range.
 /// \param pma Pointer to corresponding PMA entry.
@@ -102,7 +102,7 @@ public:
 class pma_memory final {
 
     uint64_t m_length;             ///< Length of memory range (copy of PMA length field).
-    uint8_t *m_host_memory;        ///< Start of associated memory region in host.
+    unsigned char *m_host_memory;  ///< Start of associated memory region in host.
     int m_backing_file;            ///< File descryptor for mmaped memory.
 
 public:
@@ -149,12 +149,12 @@ public:
     ~pma_memory(void);
 
     /// \brief Returns start of associated memory region in host
-    uint8_t *get_host_memory(void) {
+    unsigned char *get_host_memory(void) {
         return m_host_memory;
     }
 
     /// \brief Returns start of associated memory region in host
-    const uint8_t *get_host_memory(void) const {
+    const unsigned char *get_host_memory(void) const {
         return m_host_memory;
     }
 

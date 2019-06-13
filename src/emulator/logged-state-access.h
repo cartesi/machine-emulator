@@ -16,6 +16,7 @@
 #include "access-log.h"
 #include "merkle-tree.h"
 #include "pma.h"
+#include "strict-aliasing.h"
 
 namespace cartesi {
 
@@ -503,27 +504,31 @@ private:
     }
 
     template <typename T>
-    void do_read_memory(uint64_t paddr, uintptr_t haddr, T *val) {
+    void do_read_memory(uint64_t paddr, const unsigned char *hpage,
+        uint64_t hoffset, T *pval) {
         // Log access to aligned 64-bit word that contains T value
-        uintptr_t haligned = haddr & (~(sizeof(uint64_t)-1));
-        uint64_t val64 = *reinterpret_cast<uint64_t *>(haligned);
+        uint64_t haligned_offset = hoffset & (~(sizeof(uint64_t)-1));
+        uint64_t val64 = aliased_aligned_read<uint64_t>(hpage+haligned_offset);
         uint64_t paligned = paddr & (~(sizeof(uint64_t)-1));
         log_read(paligned, val64, "memory");
-        *val = *reinterpret_cast<T *>(haddr);
+        *pval = aliased_aligned_read<T>(hpage+hoffset);
     }
 
     template <typename T>
-    void do_write_memory(uint64_t paddr, uintptr_t haddr, T val) {
+    void do_write_memory(uint64_t paddr, unsigned char *hpage,
+        uint64_t hoffset, T val) {
         // The proof in the log uses the Merkle tree before the state is modified.
         // But log needs the word value before and after the change.
-        // So we get value before the write
-        uintptr_t haligned = haddr & (~(sizeof(uint64_t)-1));
-        uint64_t old_val64 = *reinterpret_cast<uint64_t *>(haligned);
-        // Get the value after the write, leaving no trace of our dirty changes
-        T old_val = *reinterpret_cast<T *>(haddr);
-        *reinterpret_cast<T *>(haddr) = val;
-        uint64_t new_val64 = *reinterpret_cast<uint64_t *>(haligned);
-        *reinterpret_cast<T *>(haddr) = old_val;
+        // So we first get value before the write
+        uint64_t haligned_offset = hoffset & (~(sizeof(uint64_t)-1));
+        void *hval64 = hpage+haligned_offset;
+        uint64_t old_val64 = aliased_aligned_read<uint64_t>(hval64);
+        // Then the value after the write, leaving no trace of our dirty changes
+        void *hval = hpage+hoffset;
+        T old_val = aliased_aligned_read<T>(hval);
+        aliased_aligned_write<T>(hval, val);
+        uint64_t new_val64 = aliased_aligned_read<uint64_t>(hval64);
+        aliased_aligned_write<T>(hval, old_val);
         // ??D At the moment, the blockchain implementation does not know
         // how to use the old_val64 we already send along with the write
         // access to build the new_val64 when writing at smaller granularities.
@@ -534,7 +539,7 @@ private:
         // Log the real write access
         log_before_write(paligned, old_val64, new_val64, "memory");
         // Actually modify the state
-        *reinterpret_cast<T *>(haddr) = val;
+        aliased_aligned_write<T>(hval, val);
         // Finaly update the Merkle tree
         update_after_write(paligned);
     }

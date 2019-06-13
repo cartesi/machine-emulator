@@ -29,14 +29,14 @@ public:
 
     constexpr static size_t hash_size = HASH_SIZE;
 
-    using hash_type = std::array<uint8_t, hash_size>;
+    using hash_type = std::array<unsigned char, hash_size>;
 
 
     void begin(void) {
         return derived().do_begin();
     }
 
-    void add_data(const uint8_t *data, size_t length) {
+    void add_data(const unsigned char *data, size_t length) {
         return derived().do_add_data(data, length);
     }
 

@@ -8,6 +8,7 @@
 
 #include "i-state-access.h"
 #include "machine.h"
+#include "strict-aliasing.h"
 
 namespace cartesi {
 
@@ -340,15 +341,17 @@ private:
     }
 
     template <typename T>
-    void do_read_memory(uint64_t paddr, uintptr_t haddr, T *val) {
+    void do_read_memory(uint64_t paddr, const unsigned char *hpage,
+        uint64_t hoffset, T *pval) {
         (void) paddr;
-        *val = *reinterpret_cast<T *>(haddr);
+        *pval = aliased_aligned_read<T>(hpage+hoffset);
     }
 
     template <typename T>
-    void do_write_memory(uint64_t paddr, uintptr_t haddr, T val) {
+    void do_write_memory(uint64_t paddr, unsigned char *hpage,
+        uint64_t hoffset, T val) {
         (void) paddr;
-        *reinterpret_cast<T *>(haddr) = val;
+        aliased_aligned_write(hpage+hoffset, val);
     }
 
     machine &do_get_naked_machine(void) {

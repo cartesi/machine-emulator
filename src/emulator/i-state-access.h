@@ -516,23 +516,28 @@ public:
     /// \brief Read from memory.
     /// \tparam T Type of word to read.
     /// \param paddr Target physical address.
-    /// \param haddr Corresponding host address.
-    /// \returns Value read.
+    /// \param hpage Pointer to page start in host memory.
+    /// \param hoffset Offset in page (must be aligned to sizeof(T)).
+    /// \param pval Pointer to word receiving value.
     template <typename T>
-    void read_memory(uint64_t paddr, uintptr_t haddr, T *val) {
+    void read_memory(uint64_t paddr, const unsigned char *hpage,
+        uint64_t hoffset, T *pval) {
         static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
-        return derived().template do_read_memory<T>(paddr, haddr, val);
+        return derived().template do_read_memory<T>(paddr, hpage, hoffset, pval);
     }
 
     /// \brief Write to memory.
     /// \tparam T Type of word to write.
     /// \param paddr Target physical address.
-    /// \param haddr Corresponding host address.
+    /// \param hpage Pointer to page start in host memory.
+    /// \param hoffset Offset in page (must be aligned to sizeof(T)).
     /// \param val Value to be written.
     template <typename T>
-    void write_memory(uint64_t paddr, uintptr_t haddr, T val) {
+    void write_memory(uint64_t paddr, unsigned char *hpage, uint64_t hoffset,
+        T val) {
         static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
-        return derived().template do_write_memory<T>(paddr, haddr, val);
+        return derived().template do_write_memory<T>(paddr, hpage, hoffset,
+            val);
     }
 
 };

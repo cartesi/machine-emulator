@@ -112,7 +112,7 @@ new_page_node(address_type page_index) {
 
 void
 merkle_tree::
-get_page_node_hash(hasher_type &h, const uint8_t *start, int log2_size, hash_type &hash) const {
+get_page_node_hash(hasher_type &h, const unsigned char *start, int log2_size, hash_type &hash) const {
     if (log2_size > get_log2_word_size()) {
         hash_type child0, child1;
         --log2_size;
@@ -129,7 +129,7 @@ get_page_node_hash(hasher_type &h, const uint8_t *start, int log2_size, hash_typ
 
 void
 merkle_tree::
-get_page_node_hash(hasher_type &h, const uint8_t *page_data, hash_type &hash) const {
+get_page_node_hash(hasher_type &h, const unsigned char *page_data, hash_type &hash) const {
     if (page_data) {
         get_page_node_hash(h, page_data, get_log2_page_size(), hash);
     } else {
@@ -199,7 +199,7 @@ initialize_pristine_hashes(void) {
     word_type zero = 0;
     hash_type hash;
     h.begin();
-    h.add_data(reinterpret_cast<uint8_t *>(&zero), sizeof(zero));
+    h.add_data(reinterpret_cast<unsigned char *>(&zero), sizeof(zero));
     h.end(hash);
     set_pristine_hash(hash, get_log2_word_size());
     for (unsigned i = get_log2_word_size()+1; i <= get_log2_tree_size(); ++i) {
@@ -250,7 +250,7 @@ void
 merkle_tree::
 get_inside_page_sibling_hashes(hasher_type &h,
     address_type address, int log2_size, hash_type &hash,
-    const uint8_t *curr_data, int log2_curr_size, hash_type &curr_hash,
+    const unsigned char *curr_data, int log2_curr_size, hash_type &curr_hash,
     int parent_diverged, int curr_diverged,
     siblings_type &sibling_hashes) const {
     // If node currently being visited is larger than a
@@ -294,7 +294,7 @@ void
 merkle_tree::
 get_inside_page_sibling_hashes(
     address_type address, int log2_size, hash_type &hash,
-    const uint8_t *page_data, hash_type &page_hash,
+    const unsigned char *page_data, hash_type &page_hash,
     siblings_type &sibling_hashes) const {
     hasher_type h;
     get_inside_page_sibling_hashes(h,
@@ -443,7 +443,7 @@ verify_tree(hasher_type &h, tree_node *node, int log2_size) const {
 
 bool
 merkle_tree::
-get_proof(address_type address, int log2_size, const uint8_t *page_data, proof_type &proof) const {
+get_proof(address_type address, int log2_size, const unsigned char *page_data, proof_type &proof) const {
     // Check for valid target node size
     if (log2_size > get_log2_tree_size() || log2_size < get_log2_word_size()) {
         return false;

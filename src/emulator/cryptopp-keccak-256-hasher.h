@@ -27,7 +27,7 @@ friend i_hasher<cryptopp_keccak_256_hasher, CryptoPP::Keccak_256::DIGESTSIZE>;
         return kc.Restart();
     }
 
-    void do_add_data(const uint8_t *data, size_t length) {
+    void do_add_data(const unsigned char *data, size_t length) {
         return kc.Update(data, length);
     }
 

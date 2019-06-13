@@ -604,8 +604,9 @@ bool machine::verify_dirty_page_maps(void) const {
     // Go over the write TLB and mark as dirty all pages currently there
     for (int i = 0; i < TLB_SIZE; ++i) {
         auto &write = m_s.tlb_write[i];
-        if (write.vaddr != UINT64_C(-1)) {
-            write.pma->mark_dirty_page(write.paddr - write.pma->get_start());
+        if (write.vaddr_page != UINT64_C(-1)) {
+            write.pma->mark_dirty_page(write.paddr_page -
+                write.pma->get_start());
         }
     }
     // Now go over all PMAs verifying dirty pages are marked
@@ -643,8 +644,9 @@ bool machine::update_merkle_tree(void) {
     // Go over the write TLB and mark as dirty all pages currently there
     for (int i = 0; i < TLB_SIZE; ++i) {
         auto &write = m_s.tlb_write[i];
-        if (write.vaddr != UINT64_C(-1)) {
-            write.pma->mark_dirty_page(write.paddr - write.pma->get_start());
+        if (write.vaddr_page != UINT64_C(-1)) {
+            write.pma->mark_dirty_page(write.paddr_page -
+                write.pma->get_start());
         }
     }
     // Now go over all PMAs and updating the Merkle tree

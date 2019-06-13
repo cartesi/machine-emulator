@@ -29,7 +29,7 @@ friend i_hasher<xkcp_keccak_256_hasher, 32>;
         KeccakWidth1600_SpongeInitialize(&m_state, 1088, 512);
     }
 
-    void do_add_data(const uint8_t *data, size_t length) {
+    void do_add_data(const unsigned char *data, size_t length) {
         KeccakWidth1600_SpongeAbsorb(&m_state, data, length);
     }
 

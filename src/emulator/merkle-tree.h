@@ -231,7 +231,7 @@ private:
     /// \param start Start of contiguous memory subintended by node.
     /// \param log2_size log<sub>2</sub> of size subintended by node.
     /// \param hash Receives the hash.
-    void get_page_node_hash(hasher_type &h, const uint8_t *start,
+    void get_page_node_hash(hasher_type &h, const unsigned char *start,
             int log2_size, hash_type &hash) const;
 
     /// \brief Gets the sibling hashes along the path from
@@ -253,8 +253,8 @@ private:
     /// \param sibling_hashes Receives the sibling hashes.
     void get_inside_page_sibling_hashes(hasher_type &h,
         address_type address, int log2_size, hash_type &hash,
-        const uint8_t *curr_data, int log2_curr_size, hash_type &curr_hash,
-        int parent_diverged, int curr_diverged,
+        const unsigned char *curr_data, int log2_curr_size,
+        hash_type &curr_hash, int parent_diverged, int curr_diverged,
         siblings_type &sibling_hashes) const;
 
     /// \brief Gets the sibling hashes along the path from a
@@ -267,7 +267,7 @@ private:
     /// \param sibling_hashes Receives the sibling hashes.
     void get_inside_page_sibling_hashes(
         address_type address, int log2_size, hash_type &hash,
-        const uint8_t *page_data, hash_type &page_hash,
+        const unsigned char *page_data, hash_type &page_hash,
         siblings_type &sibling_hashes) const;
 
     /// \brief Obtains hash of a \p parent node from the
@@ -353,13 +353,13 @@ public:
     /// \param proof Receives proof.
     /// \returns True if succeeded, false otherwise.
     bool get_proof(address_type address, int log2_size,
-            const uint8_t *page_data, proof_type &proof) const;
+            const unsigned char *page_data, proof_type &proof) const;
 
     /// \brief Recursively builds hash for page node from contiguous memory.
     /// \param h Hasher object.
     /// \param page_data Pointer to start of contiguous page data.
     /// \param hash Receives the hash.
-    void get_page_node_hash(hasher_type &h, const uint8_t *page_data,
+    void get_page_node_hash(hasher_type &h, const unsigned char *page_data,
         hash_type &hash) const;
 
     /// \brief Returns the hash for a log2_size pristine node.

@@ -21,6 +21,7 @@
 #include "unique-c-ptr.h"
 #include "state-access.h"
 #include "logged-state-access.h"
+#include "strict-aliasing.h"
 
 
 namespace cartesi {
@@ -56,7 +57,7 @@ static inline const pma_entry &naked_find_pma_entry(const machine_state &s, uint
 }
 
 /// \brief Memory range peek callback. See ::pma_peek.
-static bool memory_peek(const pma_entry &pma, uint64_t page_address, const uint8_t **page_data, uint8_t *scratch) {
+static bool memory_peek(const pma_entry &pma, uint64_t page_address, const unsigned char **page_data, unsigned char *scratch) {
     // If page_address is not aligned, or if it is out of range, return error
     if ((page_address & (PMA_PAGE_SIZE-1)) != 0 ||
         page_address > pma.get_length()) {
@@ -185,8 +186,8 @@ void machine::register_shadow(uint64_t start, uint64_t length, pma_peek peek, vo
     );
 }
 
-uint8_t *machine::get_host_memory(uint64_t paddr) {
-    pma_entry &pma = naked_find_pma_entry<uint8_t>(m_s, paddr);
+unsigned char *machine::get_host_memory(uint64_t paddr) {
+    pma_entry &pma = naked_find_pma_entry<unsigned char>(m_s, paddr);
     if (pma.get_istart_M()) {
         return pma.get_memory().get_host_memory();
     } else {
@@ -195,7 +196,7 @@ uint8_t *machine::get_host_memory(uint64_t paddr) {
 }
 
 #if 0
-static bool empty_peek(const pma_entry &, uint64_t, const uint8_t **page_data, uint8_t *) {
+static bool empty_peek(const pma_entry &, uint64_t, const unsigned char **page_data, unsigned char *) {
     *page_data = nullptr;
     return true;
 }
@@ -596,7 +597,7 @@ bool machine::verify_dirty_page_maps(void) const {
     // double begin = now();
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
     merkle_tree::hasher_type h;
-    auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+    auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
     bool broken = false;
     merkle_tree::hash_type pristine = m_t.get_pristine_hash(
@@ -613,7 +614,7 @@ bool machine::verify_dirty_page_maps(void) const {
     for (auto &pma: m_s.pmas) {
         auto peek = pma.get_peek();
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length(); page_start_in_range += PMA_PAGE_SIZE) {
-            const uint8_t *page_data = nullptr;
+            const unsigned char *page_data = nullptr;
             uint64_t page_address = pma.get_start() + page_start_in_range;
             peek(pma, page_start_in_range, &page_data, scratch.get());
             merkle_tree::hash_type stored, real;
@@ -666,14 +667,14 @@ bool machine::update_merkle_tree(void) {
         futures.reserve(n);
         for (int j = 0; j < n; ++j) {
             futures.emplace_back(std::async(std::launch::async, [&](int j) -> bool {
-                auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+                auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
                 if (!scratch) return false;
                 merkle_tree::hasher_type h;
                 // Thread j is responsible for page i if i % n == j.
                 for (int i = j; i < (int) pages_in_range; i+=n) {
                     uint64_t page_start_in_range = i*PMA_PAGE_SIZE;
                     uint64_t page_address = pma.get_start() + page_start_in_range;
-                    const uint8_t *page_data = nullptr;
+                    const unsigned char *page_data = nullptr;
                     // Skip any clean pages
                     if (!pma.is_page_marked_dirty(page_start_in_range))
                         continue;
@@ -724,10 +725,10 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     uint64_t page_start_in_range = address - pma.get_start();
     if (!pma.is_page_marked_dirty(page_start_in_range)) return true;
     merkle_tree::hasher_type h;
-    auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+    auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
     m_t.begin_update();
-    const uint8_t *page_data = nullptr;
+    const unsigned char *page_data = nullptr;
     auto peek = pma.get_peek();
     if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
         m_t.end_update(h);
@@ -759,13 +760,13 @@ merkle_tree &machine::get_merkle_tree(void) {
 }
 
 void machine::dump(void) const {
-    auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+    auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
     for (auto &pma: m_s.pmas) {
         char filename[256];
         sprintf(filename, "%016" PRIx64 "--%016" PRIx64 ".bin", pma.get_start(), pma.get_length());
         auto fp = unique_fopen(filename, "wb");
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length(); page_start_in_range += PMA_PAGE_SIZE) {
-            const uint8_t *page_data = nullptr;
+            const unsigned char *page_data = nullptr;
             auto peek = pma.get_peek();
             if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
                 throw std::runtime_error{"peek failed"};
@@ -779,10 +780,10 @@ void machine::dump(void) const {
 
 bool machine::get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) const {
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
-    auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+    auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
     const pma_entry &pma = naked_find_pma_entry<uint64_t>(m_s, address);
-    const uint8_t *page_data = nullptr;
+    const unsigned char *page_data = nullptr;
     uint64_t page_start_in_range = (address - pma.get_start()) & (~(PMA_PAGE_SIZE-1));
     auto peek = pma.get_peek();
     if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
@@ -799,9 +800,9 @@ bool machine::read_word(uint64_t word_address, uint64_t &word_value) const {
     // ??D We should split peek into peek_word and peek_page
     // for performance. On the other hand, this function
     // will almost never be used, so one wonders if it is worth it...
-    auto scratch = unique_calloc<uint8_t>(1, PMA_PAGE_SIZE);
+    auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
-    const uint8_t *page_data = nullptr;
+    const unsigned char *page_data = nullptr;
     uint64_t page_start_in_range = (word_address - pma.get_start()) & (~(PMA_PAGE_SIZE-1));
     auto peek = pma.get_peek();
     if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
@@ -810,7 +811,8 @@ bool machine::read_word(uint64_t word_address, uint64_t &word_value) const {
     // If peek returns a page, read from it
     if (page_data) {
         uint64_t word_start_in_range = (word_address - pma.get_start()) & (PMA_PAGE_SIZE-1);
-        word_value = *reinterpret_cast<const uint64_t *>(page_data + word_start_in_range);
+        word_value = aliased_aligned_read<uint64_t>(page_data +
+            word_start_in_range);
         return true;
     // Otherwise, page is always pristine
     } else {

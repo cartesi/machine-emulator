@@ -15,7 +15,8 @@ struct machine_config;
 /// \param c Machine configuration.
 /// \param rom_start Pointer to start of ROM contiguous range in host memory
 /// \param length Maximum amount of ROM to use from start.
-void rom_init(const machine_config &c, uint8_t *rom_start, uint64_t length);
+void rom_init(const machine_config &c, unsigned char *rom_start,
+    uint64_t length);
 
 } // namesmpace cartesi
 

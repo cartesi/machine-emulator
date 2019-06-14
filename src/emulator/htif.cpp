@@ -1,6 +1,7 @@
 #include "machine.h"
 #include "htif.h"
 #include "i-virtual-state-access.h"
+#include "strict-aliasing.h"
 
 #include <signal.h>
 #include <fcntl.h>
@@ -184,7 +185,8 @@ static bool htif_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t 
 }
 
 /// \brief HTIF device peek callback. See ::pma_peek.
-static bool htif_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t **page_data, uint8_t *scratch) {
+static bool htif_peek(const pma_entry &pma, uint64_t page_offset,
+    const unsigned char **page_data, unsigned char *scratch) {
     const htif *h = reinterpret_cast<htif *>(pma.get_device().get_context());
     const machine &m = h->get_machine();
     // Check for alignment and range
@@ -200,10 +202,10 @@ static bool htif_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t 
     // Clear entire page.
     memset(scratch, 0, PMA_PAGE_SIZE);
     // Copy tohost and fromhost to their places within page.
-    *reinterpret_cast<uint64_t *>(scratch +
-        htif::get_csr_rel_addr(htif::csr::tohost)) = m.read_htif_tohost();
-    *reinterpret_cast<uint64_t *>(scratch +
-        htif::get_csr_rel_addr(htif::csr::fromhost)) = m.read_htif_fromhost();
+    aliased_aligned_write<uint64_t>(scratch +
+        htif::get_csr_rel_addr(htif::csr::tohost), m.read_htif_tohost());
+    aliased_aligned_write<uint64_t>(scratch +
+        htif::get_csr_rel_addr(htif::csr::fromhost), m.read_htif_fromhost());
     *page_data = scratch;
     return true;
 }

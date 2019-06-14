@@ -406,7 +406,7 @@ public:
     /// \param paddr Physical memory address in target.
     /// \returns Pointer to host memory corresponding to \p
     /// paddr, or nullptr if no memory range covers \p paddr
-    uint8_t *get_host_memory(uint64_t paddr);
+    unsigned char *get_host_memory(uint64_t paddr);
 
     /// \brief Register a new flash drive.
     /// \param start Start of physical memory range in the target address

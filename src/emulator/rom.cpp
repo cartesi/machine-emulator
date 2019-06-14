@@ -9,7 +9,7 @@
 
 namespace cartesi {
 
-void rom_init(const machine_config &c, uint8_t *rom_start, uint64_t length) {
+void rom_init(const machine_config &c, unsigned char *rom_start, uint64_t length) {
     if (length < PMA_EXT_LENGTH_DEF)
         throw std::runtime_error{"Not enough space on ROM for PMA extension data"};
 

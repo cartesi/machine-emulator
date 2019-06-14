@@ -4,6 +4,7 @@
 #include "pma.h"
 #include "rtc.h"
 #include "riscv-constants.h"
+#include "strict-aliasing.h"
 
 namespace cartesi {
 
@@ -92,7 +93,8 @@ static bool clint_write(const pma_entry &pma, i_virtual_state_access *a, uint64_
 #define base(v) ((v) - ((v) % (PMA_PAGE_SIZE)))
 #define offset(v) ((v) % (PMA_PAGE_SIZE))
 /// \brief CLINT device peek callback. See ::pma_peek.
-static bool clint_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t **page_data, uint8_t *scratch) {
+static bool clint_peek(const pma_entry &pma, uint64_t page_offset,
+    const unsigned char **page_data, unsigned char *scratch) {
     const machine *m = reinterpret_cast<const machine *>(
         pma.get_device().get_context());
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
@@ -107,18 +109,22 @@ static bool clint_peek(const pma_entry &pma, uint64_t page_offset, const uint8_t
             // This page contains only msip (which is either 0 or 1)
             // Since we are little-endian, we can simply write the bytes
             memset(scratch, 0, PMA_PAGE_SIZE);
-            *reinterpret_cast<uint64_t *>(scratch + 
-                offset(CLINT_MSIP0_REL_ADDR)) = ((m->read_mip() & MIP_MSIP_MASK) == MIP_MSIP_MASK);
+            aliased_aligned_write<uint64_t>(scratch +
+                offset(CLINT_MSIP0_REL_ADDR),
+                (m->read_mip() & MIP_MSIP_MASK) == MIP_MSIP_MASK);
             *page_data = scratch;
             return true;
         case base(CLINT_MTIMECMP_REL_ADDR):
             memset(scratch, 0, PMA_PAGE_SIZE);
-            *reinterpret_cast<uint64_t *>(scratch + offset(CLINT_MTIMECMP_REL_ADDR)) = m->read_clint_mtimecmp();
+            aliased_aligned_write<uint64_t>(scratch +
+                offset(CLINT_MTIMECMP_REL_ADDR), m->read_clint_mtimecmp());
             *page_data = scratch;
             return true;
         case base(CLINT_MTIME_REL_ADDR):
             memset(scratch, 0, PMA_PAGE_SIZE);
-            *reinterpret_cast<uint64_t*>(scratch + offset(CLINT_MTIME_REL_ADDR)) = rtc_cycle_to_time(m->read_mcycle());
+            aliased_aligned_write<uint64_t>(scratch +
+                offset(CLINT_MTIME_REL_ADDR),
+                rtc_cycle_to_time(m->read_mcycle()));
             *page_data = scratch;
             return true;
         default:

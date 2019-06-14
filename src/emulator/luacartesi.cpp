@@ -433,7 +433,8 @@ static int mod_keccak(lua_State *L) {
         case 1: {
             uint64_t word = luaL_checkinteger(L, 1);
             h.begin();
-            h.add_data(reinterpret_cast<uint8_t *>(&word), sizeof(word));
+            h.add_data(reinterpret_cast<const unsigned char *>(&word),
+                sizeof(word));
             h.end(hash);
             push_hash(L, hash);
             break;
@@ -450,8 +451,8 @@ static int mod_keccak(lua_State *L) {
                 luaL_argerror(L, 2, "invalid hash size");
             }
             h.begin();
-            h.add_data(reinterpret_cast<const uint8_t *>(hash1), len1);
-            h.add_data(reinterpret_cast<const uint8_t *>(hash2), len2);
+            h.add_data(reinterpret_cast<const unsigned char *>(hash1), len1);
+            h.add_data(reinterpret_cast<const unsigned char *>(hash2), len2);
             h.end(hash);
             push_hash(L, hash);
             break;

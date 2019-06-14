@@ -37,7 +37,7 @@ pma_memory::pma_memory(uint64_t length, const callocd &c):
     m_host_memory{nullptr},
     m_backing_file{-1} {
     (void) c;
-    m_host_memory = reinterpret_cast<uint8_t *>(calloc(1, length));
+    m_host_memory = reinterpret_cast<unsigned char *>(calloc(1, length));
     if (!m_host_memory)
         throw std::bad_alloc{};
 }
@@ -96,7 +96,7 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
     }
 
     // Try to map backing file to host memory
-    uint8_t *host_memory = reinterpret_cast<uint8_t *>(
+    unsigned char *host_memory = reinterpret_cast<unsigned char *>(
         mmap(nullptr, length, PROT_READ | PROT_WRITE, mflag, backing_file, 0));
     if (host_memory == MAP_FAILED) {
         close(backing_file);
@@ -148,7 +148,7 @@ bool pma_read_error(const pma_entry &, i_virtual_state_access *, uint64_t, uint6
 }
 
 /// \brief Default device peek callback issues error on peeks.
-bool pma_peek_error(const pma_entry &, uint64_t, const uint8_t **, uint8_t *) {
+bool pma_peek_error(const pma_entry &, uint64_t, const unsigned char **, unsigned char *) {
     return false;
 }
 

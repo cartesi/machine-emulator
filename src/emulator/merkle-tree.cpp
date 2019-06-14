@@ -199,7 +199,7 @@ initialize_pristine_hashes(void) {
     word_type zero = 0;
     hash_type hash;
     h.begin();
-    h.add_data(reinterpret_cast<unsigned char *>(&zero), sizeof(zero));
+    h.add_data(reinterpret_cast<const unsigned char *>(&zero), sizeof(zero));
     h.end(hash);
     set_pristine_hash(hash, get_log2_word_size());
     for (unsigned i = get_log2_word_size()+1; i <= get_log2_tree_size(); ++i) {

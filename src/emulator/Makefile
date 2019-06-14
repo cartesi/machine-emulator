@@ -230,6 +230,6 @@ server client: CXXFLAGS := $(filter-out -fpic -fvisibility=hidden,$(CXXFLAGS) $(
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.gcda *.pb.cc *.gcno *.o *.d cartesi.so server client
+	rm -f dis/*.o dis/*.d *.gcda *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so server client
 
 -include $(wildcard *.d)

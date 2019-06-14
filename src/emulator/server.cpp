@@ -142,8 +142,8 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             //Setting read, and written fields
             Word *r = a->mutable_read();
             Word *w = a->mutable_written();
-            r->set_content(reinterpret_cast<char *>(&wai->read), sizeof(wai->read));
-            w->set_content(reinterpret_cast<char *>(&wai->written), sizeof(wai->written));
+            r->set_content(&wai->read, sizeof(wai->read));
+            w->set_content(&wai->written, sizeof(wai->written));
 
             //Building proof object
             Proof *p = a->mutable_proof();

@@ -23,7 +23,7 @@ class htif final {
 
     machine &m_machine;                    ///< Associated machine.
     bool m_interactive;                    ///< Running in interactive mode.
-    uint8_t m_buf[HTIF_CONSOLE_BUF_SIZE];  ///< Console buffer.
+    char m_buf[HTIF_CONSOLE_BUF_SIZE];     ///< Console buffer.
     ssize_t m_buf_pos;                     ///< Next character in buffer.
     ssize_t m_buf_len;                     ///< Last character in buffer.
     bool m_fromhost_pending;               ///< fromhost is pending.

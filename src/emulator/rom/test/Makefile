@@ -7,14 +7,36 @@ OBJDUMP=$(COMPILER_PATH)/riscv64-unknown-linux-gnu-objdump
 OBJSTRIP=$(COMPILER_PATH)/riscv64-unknown-linux-gnu-strip
 CFLAGS=-static -mcmodel=medany -fvisibility=hidden -nostdlib -nostartfiles -I$(BASE)/emulator
 
-bootstrap.bin: bootstrap
-	$(OBJCOPY) -S -O binary bootstrap bootstrap.bin
-	$(OBJDUMP) -d bootstrap > bootstrap.dump
+BUILD_DIR ?= ./build
 
-bootstrap: bootstrap.S bootstrap.ld
-	$(CC) $(CFLAGS) -Tbootstrap.ld -o bootstrap bootstrap.S
+SRCS  := $(wildcard *.S)
+TMPS  := $(SRCS:.S=.out)
+BINS  := $(TMPS:%.out=$(BUILD_DIR)/%.bin)
+DUMPS := $(TMPS:%.out=$(BUILD_DIR)/%.dump)
 
-.PHONY: clean
+.DEFAULT_GOAL := all
+
+$(BUILD_DIR)/%.bin: $(BUILD_DIR)/%.out
+	$(OBJCOPY) -S -O binary $< $@
+
+$(BUILD_DIR)/%.dump: $(BUILD_DIR)/%.out
+	$(OBJDUMP) -d $< > $@
+
+$(BUILD_DIR):
+	$(MKDIR_P) $(BUILD_DIR)
+
+# assembly
+$(BUILD_DIR)/%.out: %.S $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(patsubst %.ld,-T%.ld,$(wildcard $(patsubst %.S,%.ld,$<))) -o $@ $<
+
+.PHONY: all clean copy
+all: $(BINS) $(DUMPS)
 
 clean:
-	$(RM) -rf bootstrap bootstrap.bin bootstrap.dump
+	@$(RM) -r $(BUILD_DIR)
+
+# Should be run inside docker container
+copy: all
+	cp $(BUILD_DIR)/*.bin $(BUILD_DIR)/*.dump ../emulator/tests/
+
+MKDIR_P ?= mkdir -p

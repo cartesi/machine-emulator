@@ -184,6 +184,8 @@ local tests = {
   {"rv64um-v-remu.bin", 6491},
   {"rv64um-v-remuw.bin", 6486},
   {"rv64um-v-remw.bin", 6492},
+-- regression tests
+  {"sd_pma_overflow.bin", 16},
 }
 
 local function run(machine)

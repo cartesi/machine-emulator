@@ -212,11 +212,11 @@ for _, test in ipairs(tests) do
     local machine = cartesi.machine{
         machine = cartesi.get_name(),
         rom = {
-            backing = "tests/bootstrap.bin"
+            backing = "../tests/bootstrap.bin"
         },
         ram = {
             length = 128 << 20,
-            backing = "tests/" .. ram_image
+            backing = "../tests/" .. ram_image
         }
     }
     local cycles, payload = run(machine)

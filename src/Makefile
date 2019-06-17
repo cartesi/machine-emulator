@@ -4,7 +4,7 @@ LUA_INC:=$(shell pkg-config --cflags luapp53)
 LUA_LIB:=$(shell pkg-config --libs luapp53)
 CRYPTOPP_LIB:=-lcryptopp
 BOOST_PO_LIB:=-lboost_program_options
-GRPC_DIR:=../../cartesi-grpc
+GRPC_DIR:=../lib/cartesi-grpc
 GRPC_INC:=$(shell pkg-config --cflags protobuf grpc)
 GRPC_LIB:=$(shell pkg-config --libs protobuf grpc++ grpc)
 

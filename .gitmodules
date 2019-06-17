@@ -1,3 +1,3 @@
 [submodule "cartesi-grpc"]
-	path = cartesi-grpc
+	path = lib/cartesi-grpc
 	url = git@github.com:cartesi/cartesi-grpc.git

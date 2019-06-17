@@ -1,2 +1,2 @@
-html
-latex
+*.pb.h
+*.pb.cc

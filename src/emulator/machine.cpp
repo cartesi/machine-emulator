@@ -723,7 +723,6 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     address &= ~(PMA_PAGE_SIZE-1);
     pma_entry &pma = naked_find_pma_entry<uint64_t>(m_s, address);
     uint64_t page_start_in_range = address - pma.get_start();
-    if (!pma.is_page_marked_dirty(page_start_in_range)) return true;
     merkle_tree::hasher_type h;
     auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
@@ -827,6 +826,60 @@ void machine::run_inner_loop(uint64_t mcycle_end) {
     interpret(a, mcycle_end);
 }
 
+static void roll_hash_up_tree(merkle_tree::hasher_type &hasher,
+    const merkle_tree::proof_type &proof,
+    merkle_tree::hash_type &rolling_hash
+) {
+    for (int log2_size = proof.log2_size; log2_size < 64; ++log2_size) {
+       int bit = (proof.address & (UINT64_C(1) << log2_size)) != 0;
+       const auto &sibling_hash = proof.sibling_hashes[63-log2_size];
+       hasher.begin();
+       if (bit) {
+           hasher.add_data(sibling_hash.data(), sibling_hash.size());
+           hasher.add_data(rolling_hash.data(), rolling_hash.size());
+       } else {
+           hasher.add_data(rolling_hash.data(), rolling_hash.size());
+           hasher.add_data(sibling_hash.data(), sibling_hash.size());
+       }
+       hasher.end(rolling_hash);
+    }
+}
+
+static void get_word_hash(merkle_tree::hasher_type &hasher,
+    const uint64_t &word, merkle_tree::hash_type &word_hash) {
+    hasher.begin();
+    hasher.add_data(reinterpret_cast<const unsigned char *>(&word),
+        sizeof(word));
+    hasher.end(word_hash);
+}
+
+bool machine::verify_access_log(const access_log &log) const {
+    const auto &accesses = log.get_accesses();
+    if (accesses.empty()) return true;
+    auto prev_root_hash = accesses[0].proof.root_hash;
+    merkle_tree::hasher_type hasher;
+    for (const auto &access: accesses) {
+        const auto &proof = access.proof;
+        if (proof.root_hash != prev_root_hash) {
+            return false;
+        }
+        merkle_tree::hash_type rolling_hash;
+        get_word_hash(hasher, access.read, rolling_hash);
+        if (rolling_hash != proof.target_hash) {
+            return false;
+        }
+        roll_hash_up_tree(hasher, proof, rolling_hash);
+        if (rolling_hash != proof.root_hash) {
+            return false;
+        }
+        if (access.type == access_type::write) {
+            get_word_hash(hasher, access.written, prev_root_hash);
+            roll_hash_up_tree(hasher, proof, prev_root_hash);
+        }
+    }
+    return true;
+}
+
 void machine::step(access_log &log) {
     update_merkle_tree();
     // Call interpret with a logged state access object
@@ -835,6 +888,7 @@ void machine::step(access_log &log) {
     interpret(a, m_s.mcycle+1);
     a.push_bracket(bracket_type::end, "step");
     log = std::move(*a.get_log());
+    assert(verify_access_log(log));
 }
 
 void machine::run(uint64_t mcycle_end) {

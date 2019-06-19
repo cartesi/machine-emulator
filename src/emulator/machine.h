@@ -81,6 +81,10 @@ public:
     /// \param log Receives log of all state accesses.
     void step(access_log &log);
 
+    /// \brief Checks the integrity of an access log.
+    /// \param log State access log to be verified.
+    bool verify_access_log(const access_log &log) const;
+
     /// \brief Returns machine state for direct access.
     machine_state &get_state(void) { return m_s; }
 

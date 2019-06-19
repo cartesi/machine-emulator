@@ -129,8 +129,7 @@ void dump_regs(const machine_state &s) {
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param paddr Target physical address.
-/// \returns Corresponding entry if found, or a sentinel entry
-/// for an empty range.
+/// \returns Corresponding entry if found, or the sentinel empty entry.
 /// \details This is the same as ::naked_find_pma_entry, except it
 /// does not perform naked accesses to the machine state.
 /// Rather, it goes through the state accessor object so all
@@ -139,16 +138,26 @@ template <typename T, typename STATE_ACCESS>
 static pma_entry &find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
     auto note = a.make_scoped_note("find_pma_entry"); (void) note;
     int i = 0;
-    for (auto &pma: a.get_naked_state().pmas) {
-        a.read_pma(pma, i++);
-        if (pma.get_length() < PMA_PAGE_SIZE)
-            break;
+    while (1) {
+        auto &pma = a.get_naked_state().pmas[i];
+        a.read_pma(pma, i);
+        // The pmas array always contain a sentinel. It is an entry with
+        // zero length. If we hit it, return it
+        if (pma.get_length() == 0)
+            return pma;
+        // Otherwise, if we found an entry where the access fits, return it
+        // Note the "strange" order of arithmetic operations.
+        // This is to ensure there is no overflow.
+        // Since we know paddr >= start, there is no chance of overflow in the
+        // first subtraction.
+        // Since length is at least 4096 (an entire page), there is no
+        // chance of overflow in the second subtraction.
         if (paddr >= pma.get_start() &&
             paddr - pma.get_start() <= pma.get_length() - sizeof(T)) {
             return pma;
         }
+        i++;
     }
-    return a.get_naked_state().empty_pma;
 }
 
 /// \brief Write an aligned word to memory.

@@ -42,12 +42,13 @@ std::string get_name(void) {
 /// \tparam T Type used for memory access
 template <typename T>
 static inline pma_entry &naked_find_pma_entry(machine_state &s, uint64_t paddr) {
+    static pma_entry empty{};
     for (auto &pma: s.pmas) {
         if (paddr >= pma.get_start() &&
             paddr + sizeof(T) <= pma.get_start() + pma.get_length())
             return pma;
     }
-    return s.empty_pma;
+    return empty;
 }
 
 template <typename T>
@@ -289,6 +290,9 @@ machine::machine(const machine_config &c):
 
     // Clear all TLB entries
     m_s.init_tlb();
+
+    // Add sentinel to PMA vector
+    allocate_pma_entry(pma_entry{});
 }
 
 machine::~machine() {

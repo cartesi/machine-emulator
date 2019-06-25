@@ -1,15 +1,19 @@
 UNAME:=$(shell uname)
 
-LUA_INC:=$(shell pkg-config --cflags luapp53)
-LUA_LIB:=$(shell pkg-config --libs luapp53)
-CRYPTOPP_LIB:=-lcryptopp
-BOOST_PO_LIB:=-lboost_program_options
-GRPC_DIR:=../lib/cartesi-grpc
-GRPC_INC:=$(shell pkg-config --cflags protobuf grpc)
-GRPC_LIB:=$(shell pkg-config --libs protobuf grpc++ grpc)
+BUILDDIR ?= $(abspath ../build/$(UNAME)_$(shell uname -m))
 
-PROTOC:=protoc
-GRPC_CPP_PLUGIN=$(shell which grpc_cpp_plugin)
+LUA_DIR:=$(BUILDDIR)
+LUA_INC:=-I$(LUA_DIR)/include/luapp/5.3
+LUA_LIB:=-L$(LUA_DIR)/lib -lluapp5.3
+LUA_BIN?=$(LUA_DIR)/bin/luapp5.3
+CRYPTOPP_LIB:=-L$(BUILDDIR)/lib -lcryptopp
+CRYPTOPP_INC:=-I$(BUILDDIR)/include
+GRPC_DIR:=../lib/cartesi-grpc
+GRPC_INC:=-pthread -I$(BUILDDIR)/include
+GRPC_LIB:=-L$(BUILDDIR)/lib -lprotobuf -pthread -lgrpc++ -lgrpc
+
+PROTOC:=$(BUILDDIR)/bin/protoc
+GRPC_CPP_PLUGIN=$(BUILDDIR)/bin/grpc_cpp_plugin
 
 # So we can use gcc to check if there are unused symbols
 ifeq ($(gc),yes)
@@ -17,65 +21,23 @@ GCFLAGS= -fno-inline-small-functions -fno-inline -fdata-sections -ffunction-sect
 GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
 endif
 
-# Common setup
-# cryptopp
-#   git clone git@github.com:cartesi/cryptopp.git
-#   cd cryptopp
-#   git checkout cartesi
-#   make
-#   sudo make install
-# grpc
-#   git clone --branch v1.16.0 --depth 1 https://github.com/grpc/grpc.git
-#   cd grpc
-#   git checkout v1.16.0
-#   git submodule update --init
-#   make
-#   sudo make install
-#   cd third_party/protobuf
-#   sudo make install
-
 # Mac OS X specific setup
-# Lua for C++
-#    wget https://www.lua.org/ftp/lua-5.3.5.tar.gz
-#    tar -zxvf lua-5.3.5.tar.gz
-#    cd lua-5.3.5
-#    patch -p1 < image-ci/luapp.patch
-#    make macosx
-#    sudo make install
-#    sudo cp image-ci/luapp53.pc /usr/local/lib/pkgconfig
-#    sudo ln -s /usr/local/lib/luapp5.3 /usr/local/bin/luapp
-# Boost
-#   port install boost
-#
 SOLDFLAGS_Darwin:= -L/usr/local/lib -L/opt/local/lib -bundle -undefined dynamic_lookup
 CC_Darwin=clang
 CXX_Darwin=clang++
 INCS_Darwin=-I/opt/local/include
+BOOST_PO_LIB_Darwin=-L/opt/local/lib -lboost_program_options-mt
 
 # Linux specific setup
-# Lua for C++
-#    wget https://www.lua.org/ftp/lua-5.3.5.tar.gz
-#    tar -zxvf lua-5.3.5.tar.gz
-#    cd lua-5.3.5
-#    patch -p1 < image-ci/luapp.patch
-#    make linux
-#    sudo make install
-#    sudo cp image-ci/luapp53.pc /usr/local/lib/pkgconfig
-#    sudo ln -s /usr/local/lib/luapp5.3 /usr/local/bin/luapp
-# Boost
-#   apt-get install libboost-dev
-#
-# -fsanitize=undefined
-SOLDFLAGS_Linux:= -L/usr/local/lib -shared -fpic
+SOLDFLAGS_Linux:=-L/usr/local/lib -shared -fpic -pthread
 CC_Linux=gcc
 CXX_Linux=g++
-INCS_Linux=
+INCS_Linux=-I/usr/include
 FS_LIB_Linux=-lstdc++fs
-#XKCP_LIB_Linux:= -Lthird_party/XKCP/Haswell/lib -lkeccak
-#XKCP_INC_Linux:= -Ithird_party/XKCP/Haswell/include
+BOOST_PO_LIB_Linux=-lboost_program_options
 
-CC:=$(CC_$(UNAME))
-CXX:=$(CXX_$(UNAME))
+CC=$(CC_$(UNAME))
+CXX=$(CXX_$(UNAME))
 SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 FS_LIB=$(FS_LIB_$(UNAME))
 
@@ -83,14 +45,14 @@ XKCP_LIB:=$(XKCP_LIB_$(UNAME))
 XKCP_INC:=$(XKCP_INC_$(UNAME))
 
 LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB)
-GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_PO_LIB)
+GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_PO_LIB_$(UNAME))
 HASH_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
 
 WARNS=-W -Wall -pedantic
 
-INCS=$(INCS_$(UNAME)) -I/usr/local/include $(LUA_INC) $(XKCP_INC)
+INCS=$(INCS_$(UNAME)) $(LUA_INC) $(XKCP_INC) $(CRYPTOPP_INC)
 
 ifeq ($(dump),yes)
 DEFS+=-DUMP_ILLEGAL_INSN
@@ -133,7 +95,7 @@ cartesi.so: $(LUACARTESI_OBJS)
 	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LUACARTESI_LIBS)
 
 test: cartesi.so
-	luapp tests.lua
+	$(LUA_BIN) tests.lua
 
 fs.ext2: fs/*
 	genext2fs -f -i 512 -b 8192 -d fs fs.ext2
@@ -149,19 +111,19 @@ cov: CXXFLAGS += -O0 -g -fprofile-arcs -ftest-coverage
 cov: SOLDFLAGS += -fprofile-arcs
 
 cov: cartesi.so
-	./tests.lua
-	./test-machine.lua
-	./run.lua --cmdline='-- /bin/true'
+	$(LUA_BIN) ./tests.lua
+	$(LUA_BIN) ./test-machine.lua
+	$(LUA_BIN) ./run.lua --cmdline='-- /bin/true'
 	gcov *.cpp
 	lcov --capture --directory . --output-file cartesi.info
 	genhtml cartesi.info --output-directory coverage
 
 generate: cartesi.so
-	./run.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
+	$(LUA_BIN) ./run.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
 
 valgrind: cartesi.so
-	valgrind --leak-check=full --tool=memcheck --track-origins=yes luapp tests.lua
-	valgrind --leak-check=full --tool=memcheck --track-origins=yes luapp run.lua --initial-hash --final-hash --memory-size=16 --batch --cmdline="-- /bin/true"
+	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) tests.lua
+	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) run.lua --initial-hash --final-hash --memory-size=16 --batch --cmdline="-- /bin/true"
 
 print:
 	echo CXXFLAGS=$(CXXFLAGS)
@@ -175,26 +137,23 @@ use: SOLDFLAGS += -fprofile-use
 
 use: cartesi.so
 
-docker:
-	 docker run -it --rm -v `pwd`:/root/emulator -w /root/emulator cartesi/image-ci
-
 grpc: server client
 
 PROTO_OBJS:= \
-    cartesi-base.pb.o \
+	cartesi-base.pb.o \
 	core.pb.o \
 	core.grpc.pb.o \
-    manager-low.pb.o \
-    manager-low.grpc.pb.o
+	manager-low.pb.o \
+	manager-low.grpc.pb.o
 
 GRPC_CLT_OBJS:= \
 	$(PROTO_OBJS) \
-    client.o
+	client.o
 
 GRPC_SRV_OBJS:= \
 	$(PROTO_OBJS) \
-    server.o \
-    clint.o \
+	server.o \
+	clint.o \
 	rom.o \
 	htif.o \
 	shadow.o \
@@ -202,7 +161,7 @@ GRPC_SRV_OBJS:= \
 	pma.o \
 	machine.o \
 	interpret.o \
-    manager-client.o
+	manager-client.o
 
 server: $(GRPC_SRV_OBJS)
 	$(CXX) -o $@ $^ $(GRPC_SRV_LIBS)

@@ -2,7 +2,7 @@
 #include <string>
 #include <syslog.h>
 
-#include <grpcpp/grpcpp.h>
+#include <grpc++/grpc++.h>
 
 #include "manager-client.h"
 #include "manager-low.grpc.pb.h"

@@ -15,8 +15,8 @@
 #include <syslog.h>
 #include <fcntl.h>
 
-#include <grpcpp/grpcpp.h>
-#include <grpcpp/resource_quota.h>
+#include <grpc++/grpc++.h>
+#include <grpc++/resource_quota.h>
 
 #include "core.grpc.pb.h"
 #include "core.pb.h"

@@ -21,7 +21,7 @@
 #include <string>
 #include <new>
 
-#include <grpcpp/grpcpp.h>
+#include <grpc++/grpc++.h>
 
 #include "core.grpc.pb.h"
 

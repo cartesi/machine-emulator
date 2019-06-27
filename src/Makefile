@@ -9,8 +9,9 @@ LUA_BIN?=$(LUA_DIR)/bin/luapp5.3
 CRYPTOPP_LIB:=-L$(BUILDDIR)/lib -lcryptopp
 CRYPTOPP_INC:=-I$(BUILDDIR)/include
 GRPC_DIR:=../lib/cartesi-grpc
-GRPC_INC:=-pthread -I$(BUILDDIR)/include
-GRPC_LIB:=-L$(BUILDDIR)/lib -lprotobuf -pthread -lgrpc++ -lgrpc
+
+GRPC_INC:=-I$(BUILDDIR)/include
+GRPC_LIB:=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lprotobuf -lpthread
 
 PROTOC:=$(BUILDDIR)/bin/protoc
 GRPC_CPP_PLUGIN=$(BUILDDIR)/bin/grpc_cpp_plugin
@@ -22,37 +23,38 @@ GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
 endif
 
 # Mac OS X specific setup
-SOLDFLAGS_Darwin:= -L/usr/local/lib -L/opt/local/lib -bundle -undefined dynamic_lookup
+SOLDFLAGS_Darwin:=-bundle -undefined dynamic_lookup
 CC_Darwin=clang
 CXX_Darwin=clang++
-INCS_Darwin=-I/opt/local/include
-BOOST_PO_LIB_Darwin=-L/opt/local/lib -lboost_program_options-mt
+INCS_Darwin=
+BOOST_LIB_Darwin=-L/opt/local/lib -lboost_program_options-mt
+BOOST_INC_Darwin=-I/opt/local/include
 
 # Linux specific setup
-SOLDFLAGS_Linux:=-L/usr/local/lib -shared -fpic -pthread
+SOLDFLAGS_Linux:=-shared -fPIC -pthread
 CC_Linux=gcc
 CXX_Linux=g++
-INCS_Linux=-I/usr/include
+INCS_Linux=
 FS_LIB_Linux=-lstdc++fs
-BOOST_PO_LIB_Linux=-lboost_program_options
+BOOST_LIB_Linux=-lboost_program_options
+BOOST_INC_Linux=
 
 CC=$(CC_$(UNAME))
 CXX=$(CXX_$(UNAME))
 SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 FS_LIB=$(FS_LIB_$(UNAME))
+BOOST_LIB=$(BOOST_LIB_$(UNAME))
+BOOST_INC=$(BOOST_INC_$(UNAME))
 
-XKCP_LIB:=$(XKCP_LIB_$(UNAME))
-XKCP_INC:=$(XKCP_INC_$(UNAME))
-
-LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB)
-GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_PO_LIB_$(UNAME))
-HASH_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB)
+LUACARTESI_LIBS:=$(CRYPTOPP_LIB)
+GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
 
 WARNS=-W -Wall -pedantic
 
-INCS=$(INCS_$(UNAME)) $(LUA_INC) $(XKCP_INC) $(CRYPTOPP_INC)
+# Place our include directories before the system's
+INCS=$(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 DEFS+=-DUMP_ILLEGAL_INSN
@@ -66,14 +68,12 @@ DEFS+=-DDUMP_REGS
 endif
 
 # -fsanitize=undefined
-CXXFLAGS=-O2 -std=c++17 -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
-CFLAGS=-O2 -g -march=native -fpic -fvisibility=hidden -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
+CXXFLAGS=-O2 -std=c++17 -march=native -fvisibility=hidden -fPIC -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
+CFLAGS=-O2 -g -march=native -fvisibility=hidden -fPIC -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
-ALL=cartesi.so
+all: luacartesi grpc
 
-.PHONY: all generate use clean test grpc docker
-
-all: $(ALL)
+.PHONY: all generate use clean test luacartesi grpc docker
 
 LUACARTESI_OBJS:= \
 	clint.o \
@@ -94,15 +94,12 @@ endif
 cartesi.so: $(LUACARTESI_OBJS)
 	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LUACARTESI_LIBS)
 
-test: cartesi.so
+test: luacartesi
 	$(LUA_BIN) tests.lua
 
 fs.ext2: fs/*
 	genext2fs -f -i 512 -b 8192 -d fs fs.ext2
 	truncate -s %4096 fs.ext2
-
-hash: hash.o
-	$(CXX) $(CXXFLAGS) -o $@ $^ -L/usr/local/lib $(HASH_LIBS)
 
 generate: CXXFLAGS += -fprofile-generate
 generate: SOLDFLAGS += -fprofile-generate
@@ -110,7 +107,7 @@ generate: SOLDFLAGS += -fprofile-generate
 cov: CXXFLAGS += -O0 -g -fprofile-arcs -ftest-coverage
 cov: SOLDFLAGS += -fprofile-arcs
 
-cov: cartesi.so
+cov: luacartesi
 	$(LUA_BIN) ./tests.lua
 	$(LUA_BIN) ./test-machine.lua
 	$(LUA_BIN) ./run.lua --cmdline='-- /bin/true'
@@ -118,10 +115,10 @@ cov: cartesi.so
 	lcov --capture --directory . --output-file cartesi.info
 	genhtml cartesi.info --output-directory coverage
 
-generate: cartesi.so
+generate: luacartesi
 	$(LUA_BIN) ./run.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
 
-valgrind: cartesi.so
+valgrind: luacartesi
 	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) tests.lua
 	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) run.lua --initial-hash --final-hash --memory-size=16 --batch --cmdline="-- /bin/true"
 
@@ -135,9 +132,19 @@ print:
 use: CXXFLAGS += -fprofile-use
 use: SOLDFLAGS += -fprofile-use
 
-use: cartesi.so
+use: luacartesi
+
+luacartesi: cartesi.so
 
 grpc: server client
+
+#??D
+# On Mac OS, use "install_name_tool -change <rel-dylib> <abs-dylib> <binary>"
+# on the executables to make sure the dylibs linked are the ones we built
+# in third_party?
+# On Linux, use "patchelf --set-rpath <lib-path> <binary>" on all .so we built
+# and also on the executables?
+# Then change again after we run install?
 
 PROTO_OBJS:= \
 	cartesi-base.pb.o \
@@ -169,7 +176,7 @@ server: $(GRPC_SRV_OBJS)
 client: $(GRPC_CLT_OBJS)
 	$(CXX) -o $@ $^ $(GRPC_LIB)
 
-server client: CXXFLAGS := $(filter-out -fpic -fvisibility=hidden,$(CXXFLAGS) $(GRPC_INC))
+server client: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 

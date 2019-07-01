@@ -7,19 +7,5 @@ third-party/lua/lua-5.3.5*
 src/client
 src/server
 
-# LaTeX
-
-*.aux
-*.idx
-*.log
-*.ist
-*.bbl
-*.blg
-*.dvi
-*.ind
-*.out
-*.pdf
-
 *.so
-*.bin
 *.dtb

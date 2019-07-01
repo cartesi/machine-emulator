@@ -1,4 +1,4 @@
-#!/usr/local/bin/luapp
+#!/usr/bin/env luapp5.3
 
 local cartesi = require"cartesi"
 

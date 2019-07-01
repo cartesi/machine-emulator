@@ -122,13 +122,6 @@ valgrind: luacartesi
 	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) tests.lua
 	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) run.lua --initial-hash --final-hash --memory-size=16 --batch --cmdline="-- /bin/true"
 
-print:
-	echo CXXFLAGS=$(CXXFLAGS)
-	echo CXX=$(CXX)
-	echo UNAME=$(UNAME)
-	echo $(CC_$(UNAME))
-	echo $(CXX_$(UNAME))
-
 use: CXXFLAGS += -fprofile-use
 use: SOLDFLAGS += -fprofile-use
 

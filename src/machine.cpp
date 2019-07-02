@@ -765,6 +765,7 @@ merkle_tree &machine::get_merkle_tree(void) {
 void machine::dump(void) const {
     auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
     for (auto &pma: m_s.pmas) {
+        if (pma.get_length() == 0) break;
         char filename[256];
         sprintf(filename, "%016" PRIx64 "--%016" PRIx64 ".bin", pma.get_start(), pma.get_length());
         auto fp = unique_fopen(filename, "wb");

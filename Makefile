@@ -26,7 +26,7 @@ depclean: $(DEPCLEAN) clean
 	rm -rf $(BUILDDIR)
 
 distclean: clean
-	rm -rf $(BUILDDIR) $(DOWNLOADDIR) $(filter-out %grpc,$(DEPDIRS))
+	rm -rf $(BUILDDIR) $(DOWNLOADDIR) $(DEPDIRS)
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)

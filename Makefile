@@ -10,10 +10,10 @@ DEPCLEAN := $(addsuffix .clean,$(DEPDIRS))
 
 ifeq ($(UNAME),Darwin)
 LUA_PLAT ?= macosx
-LIBRARY_PATH := "export DYLD_LIBRARY_PATH=\"$(BUILDDIR)/lib\""
+LIBRARY_PATH := "export DYLD_LIBRARY_PATH=$(BUILDDIR)/lib"
 else ifeq ($(UNAME),Linux)
 LUA_PLAT ?= linux
-LIBRARY_PATH := "export LD_LIBRARY_PATH=\"$(BUILDDIR)/lib\""
+LIBRARY_PATH := "export LD_LIBRARY_PATH=$(BUILDDIR)/lib"
 else
 LUA_PLAT ?= none
 endif

@@ -2,7 +2,8 @@ UNAME:=$(shell uname)
 
 DEPDIR := third-party
 SRCDIR := $(abspath src)
-BUILDDIR=$(abspath build/$(UNAME)_$(shell uname -m))
+BUILDBASE := $(abspath build)
+BUILDDIR = $(BUILDBASE)/$(UNAME)_$(shell uname -m)
 DOWNLOADDIR := $(DEPDIR)/downloads
 SUBCLEAN := $(addsuffix .clean,$(SRCDIR))
 DEPDIRS := $(addprefix $(DEPDIR)/,cryptopp-CRYPTOPP_7_0_0 grpc lua-5.3.5)
@@ -11,6 +12,7 @@ DEPCLEAN := $(addsuffix .clean,$(DEPDIRS))
 ifeq ($(UNAME),Darwin)
 LUA_PLAT ?= macosx
 LIBRARY_PATH := "export DYLD_LIBRARY_PATH=$(BUILDDIR)/lib"
+LUACC = "CC=clang++ -std=c++17 -fopenmp"
 else ifeq ($(UNAME),Linux)
 LUA_PLAT ?= linux
 LIBRARY_PATH := "export LD_LIBRARY_PATH=$(BUILDDIR)/lib"
@@ -26,7 +28,7 @@ depclean: $(DEPCLEAN) clean
 	rm -rf $(BUILDDIR)
 
 distclean: clean
-	rm -rf $(BUILDDIR) $(DOWNLOADDIR) $(DEPDIRS)
+	rm -rf $(BUILDBASE) $(DOWNLOADDIR) $(DEPDIRS)
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
@@ -56,7 +58,7 @@ $(SRCDIR):
 $(DEPDIR)/lua-5.3.5:
 	tar -xzf $(DOWNLOADDIR)/lua-5.3.5.tar.gz -C $(DEPDIR)
 	cd $@ && patch -p1 < ../luapp.patch
-	$(MAKE) -C $@ $(LUA_PLAT)
+	$(MAKE) -C $@ $(LUA_PLAT) $(LUACC)
 	$(MAKE) -C $@ INSTALL_TOP=$(BUILDDIR) install
 
 $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0:

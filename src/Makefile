@@ -8,7 +8,7 @@ LUA_LIB:=-L$(LUA_DIR)/lib -lluapp5.3
 LUA_BIN?=$(LUA_DIR)/bin/luapp5.3
 CRYPTOPP_LIB:=-L$(BUILDDIR)/lib -lcryptopp
 CRYPTOPP_INC:=-I$(BUILDDIR)/include
-GRPC_DIR:=../lib/cartesi-grpc
+GRPC_DIR:=../lib/grpc-interfaces
 
 GRPC_INC:=-I$(BUILDDIR)/include
 GRPC_LIB:=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lprotobuf -lpthread

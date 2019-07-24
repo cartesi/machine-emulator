@@ -261,14 +261,14 @@ public:
     }
 
     /// \brief Set flags for lvalue references
-    /// \params f New flags.
+    /// \param f New flags.
     pma_entry &set_flags(flags f) & {
         m_flags = f;
         return *this;
     }
 
     /// \brief Set flags for rvalue references
-    /// \params f New flags.
+    /// \param f New flags.
     pma_entry &&set_flags(flags f) && {
         m_flags = f;
         return std::move(*this);
@@ -279,32 +279,32 @@ public:
         return m_peek;
     }
 
-    /// \Returns data specific to E ranges
+    /// \returns data specific to E ranges
     const pma_empty &get_empty(void) const {
         return std::get<pma_empty>(m_data);
     }
 
-    /// \Returns data specific to E ranges
+    /// \returns data specific to E ranges
     pma_empty &get_empty(void) {
         return std::get<pma_empty>(m_data);
     }
 
-    /// \Returns data specific to M ranges
+    /// \returns data specific to M ranges
     const pma_memory &get_memory(void) const {
         return std::get<pma_memory>(m_data);
     }
 
-    /// \Returns data specific to M ranges
+    /// \returns data specific to M ranges
     pma_memory &get_memory(void) {
         return std::get<pma_memory>(m_data);
     }
 
-    /// \Returns data specific to IO ranges
+    /// \returns data specific to IO ranges
     const pma_device &get_device(void) const {
         return std::get<pma_device>(m_data);
     }
 
-    /// \Returns data specific to IO ranges
+    /// \returns data specific to IO ranges
     pma_device &get_device(void) {
         return std::get<pma_device>(m_data);
     }
@@ -389,7 +389,7 @@ public:
 
     /// \brief Checks if a given page is marked dirty
     /// \param address_in_range Any address within page in range
-    /// \regurns true if dirty, false if clean
+    /// \returns true if dirty, false if clean
     bool is_page_marked_dirty(uint64_t address_in_range) const {
         if (!m_dirty_page_map.empty()) {
             auto page_number = address_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;

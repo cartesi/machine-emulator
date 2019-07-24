@@ -8,7 +8,6 @@ namespace cartesi {
 /// \file
 /// \brief Virtual interface for state access
 
-/// \class
 /// \brief Virtual interface for state access
 /// \details \{
 /// Memory mapped devices must be able to modify the state.

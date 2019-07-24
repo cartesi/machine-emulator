@@ -48,7 +48,7 @@ class machine final {
     /// \param W Value of PMA W flag.
     /// \returns Reference to corresponding entry in machine state.
     pma_entry &register_memory(uint64_t start, uint64_t length,
-        const std::string &name, bool W);
+        const std::string &path, bool W);
 
     /// \brief Runs the machine until mcycle reaches *at most* \p mcycle_end.
     /// \param mcycle_end Maximum value of mcycle before function returns.

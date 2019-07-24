@@ -404,7 +404,7 @@ static void tlb_flush_vaddr(machine_state &s, uint64_t vaddr) {
 }
 
 /// \brief Checks if CSR is read-only.
-/// \param CSR_address Address of CSR in file.
+/// \param csraddr Address of CSR in file.
 /// \returns true if read-only, false otherwise.
 static inline bool csr_is_read_only(CSR_address csraddr) {
     // 0xc00--0xcff, 0xd00--0xdff, and 0xf00--0xfff are all read-only.
@@ -413,7 +413,7 @@ static inline bool csr_is_read_only(CSR_address csraddr) {
 }
 
 /// \brief Extract privilege level from CSR address.
-/// \param CSR_address Address of CSR in file.
+/// \param csr Address of CSR in file.
 /// \returns Privilege level.
 static inline uint32_t csr_priv(CSR_address csr) {
     return (to_underlying(csr) >> 8) & 3;
@@ -754,7 +754,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param vaddr Virtual address for word.
-/// \param val Value to write.
+/// \param val64 Value to write.
 /// \returns True if succeeded, false if exception raised.
 template <typename T, typename STATE_ACCESS>
 static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_t val64) {
@@ -850,7 +850,6 @@ static inline execute_status raise_illegal_insn_exception(STATE_ACCESS &a, uint6
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param pc Current pc.
-/// \param insn Instruction.
 /// \return execute_status::retired
 /// \details This function is tail-called whenever the caller identified that the next value of pc is misaligned.
 template <typename STATE_ACCESS>
@@ -863,7 +862,6 @@ static inline execute_status raise_misaligned_fetch_exception(STATE_ACCESS &a, u
 /// \brief Returns from execution due to raised exception.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
-/// \param insn Instruction.
 /// \return execute_status::retired
 /// \details This function is tail-called whenever the caller identified a raised exception.
 template <typename STATE_ACCESS>
@@ -876,7 +874,6 @@ static inline execute_status advance_to_raised_exception(STATE_ACCESS &a) {
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param pc Current pc.
-/// \param insn Instruction.
 /// \return execute_status::retired
 /// \details This function is tail-called whenever the caller wants move to the next instruction.
 template <typename STATE_ACCESS>
@@ -889,7 +886,6 @@ static inline execute_status advance_to_next_insn(STATE_ACCESS &a, uint64_t pc) 
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param pc Current pc.
-/// \param insn Instruction.
 /// \return execute_status::retired
 /// \details This function is tail-called whenever the caller wants to jump.
 template <typename STATE_ACCESS>

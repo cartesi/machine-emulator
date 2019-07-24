@@ -2751,8 +2751,8 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-/// \details See [Load-Reserved/Store-Conditional Instructions](riscv-spec-v2.2.pdf#section.7.2) and
-///  [Atomic Memory Operations](riscv-spec-v2.2.pdf#section.7.3).
+/// \details See [Load-Reserved/Store-Conditional Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.7.2) and
+///  [Atomic Memory Operations](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.7.3).
 template <typename STATE_ACCESS>
 static inline execute_status execute_atomic_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
 #ifdef DUMP_COUNTERS
@@ -2791,7 +2791,7 @@ static inline execute_status execute_atomic_group(STATE_ACCESS &a, uint64_t pc, 
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-/// \details See [Integer Computational Instructions](riscv-spec-v2.2.pdf#section.2.4).
+/// \details See [Integer Computational Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.4).
 template <typename STATE_ACCESS>
 static inline execute_status execute_arithmetic_32_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_arithmetic_32_funct3_funct7>(insn_get_funct3_funct7(insn))) {
@@ -2830,7 +2830,7 @@ static inline execute_status execute_shift_right_immediate_32_group(STATE_ACCESS
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-/// \details See [Integer Computational Instructions](riscv-spec-v2.2.pdf#section.2.4).
+/// \details See [Integer Computational Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.4).
 template <typename STATE_ACCESS>
 static inline execute_status execute_arithmetic_immediate_32_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_arithmetic_immediate_32_funct3>(insn_get_funct3(insn))) {
@@ -2848,9 +2848,9 @@ static inline execute_status execute_arithmetic_immediate_32_group(STATE_ACCESS 
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-/// \details See [Environment Call and Breakpoints](riscv-spec-v2.2.pdf#section.2.9),
-///  [Machine-Mode Privileged Instructions](riscv-privileged-v1.10.pdf#section.3.2), and
-///  [Supervisor Instructions](riscv-privileged-v1.10.pdf#section.4.2).
+/// \details See [Environment Call and Breakpoints](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.9),
+///  [Machine-Mode Privileged Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-privileged-v1.10.pdf#section.3.2), and
+///  [Supervisor Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-privileged-v1.10.pdf#section.4.2).
 template <typename STATE_ACCESS>
 static inline execute_status execute_env_trap_int_mm_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_env_trap_int_group_insn>(insn)) {
@@ -2870,10 +2870,10 @@ static inline execute_status execute_env_trap_int_mm_group(STATE_ACCESS &a, uint
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-///  \details See [Control and Status Register Instructions](riscv-spec-v2.2.pdf#section.2.8),
-///  [Environment Call and Breakpoints](riscv-spec-v2.2.pdf#section.2.9),
-///  [Machine-Mode Privileged Instructions](riscv-privileged-v1.10.pdf#section.3.2), and
-///  [Supervisor Instructions](riscv-privileged-v1.10.pdf#section.4.2).
+///  \details See [Control and Status Register Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.8),
+///  [Environment Call and Breakpoints](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.9),
+///  [Machine-Mode Privileged Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-privileged-v1.10.pdf#section.3.2), and
+///  [Supervisor Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-privileged-v1.10.pdf#section.4.2).
 template <typename STATE_ACCESS>
 static inline execute_status execute_csr_env_trap_int_mm_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_csr_env_trap_int_mm_funct3>(insn_get_funct3(insn))) {
@@ -2895,7 +2895,7 @@ static inline execute_status execute_csr_env_trap_int_mm_group(STATE_ACCESS &a, 
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-///  See [Memory Model](riscv-spec-v2.2.pdf#section.2.7).
+///  See [Memory Model](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.7).
 template <typename STATE_ACCESS>
 static inline execute_status execute_fence_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     if (insn == 0x0000100f) {
@@ -2928,7 +2928,7 @@ static inline execute_status execute_shift_right_immediate_group(STATE_ACCESS &a
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-///  See [Integer Computational Instructions](riscv-spec-v2.2.pdf#section.2.4).
+///  See [Integer Computational Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.4).
 template <typename STATE_ACCESS>
 static inline execute_status execute_arithmetic_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     //std::cerr << "funct3_funct7: " << std::bitset<10>(insn_get_funct3_funct7(insn)) << '\n';
@@ -2961,7 +2961,7 @@ static inline execute_status execute_arithmetic_group(STATE_ACCESS &a, uint64_t 
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-///  See [Integer Computational Instructions](riscv-spec-v2.2.pdf#section.2.4).
+///  See [Integer Computational Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.4).
 template <typename STATE_ACCESS>
 static inline execute_status execute_arithmetic_immediate_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_arithmetic_immediate_funct3>(insn_get_funct3(insn))) {
@@ -2984,7 +2984,7 @@ static inline execute_status execute_arithmetic_immediate_group(STATE_ACCESS &a,
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-/// \details See [Load and Store Instructions](riscv-spec-v2.2.pdf#section.2.6).
+/// \details See [Load and Store Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.6).
 template <typename STATE_ACCESS>
 static inline execute_status execute_store_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_store_funct3>(insn_get_funct3(insn))) {
@@ -3002,7 +3002,7 @@ static inline execute_status execute_store_group(STATE_ACCESS &a, uint64_t pc, u
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-/// \details See [Load and Store Instructions](riscv-spec-v2.2.pdf#section.2.6).
+/// \details See [Load and Store Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.6).
 template <typename STATE_ACCESS>
 static inline execute_status execute_load_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_load_funct3>(insn_get_funct3(insn))) {
@@ -3023,7 +3023,7 @@ static inline execute_status execute_load_group(STATE_ACCESS &a, uint64_t pc, ui
 /// \param pc Current pc.
 /// \param insn Instruction.
 /// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-/// \details See [Control Transfer Instructions](riscv-spec-v2.2.pdf#section.2.5).
+/// \details See [Control Transfer Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.5).
 template <typename STATE_ACCESS>
 static inline execute_status execute_branch_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_branch_funct3>(insn_get_funct3(insn))) {
@@ -3046,8 +3046,8 @@ static inline execute_status execute_branch_group(STATE_ACCESS &a, uint64_t pc, 
 ///  execute_status::retired otherwise (Note that some other exception may or may not have been raised)
 /// \details The execute_insn function decodes the instruction in multiple levels. When we know for sure that
 ///  the instruction could only be a &lt;FOO&gt;, a function with the name execute_&lt;FOO&gt; will be called.
-///  See [RV32/64G Instruction Set Listings](riscv-spec-v2.2.pdf#chapter.19) and
-///  [Instruction listings for RISC-V](riscv-spec-v2.2.pdf#table.19.2).
+///  See [RV32/64G Instruction Set Listings](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#chapter.19) and
+///  [Instruction listings for RISC-V](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#table.19.2).
 template <typename STATE_ACCESS>
 static inline execute_status execute_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
 //std::cerr << "insn: " << std::bitset<32>(insn) << '\n';

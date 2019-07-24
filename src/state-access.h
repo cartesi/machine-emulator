@@ -22,7 +22,7 @@ class state_access: public i_state_access<state_access> {
 public:
 
     /// \brief Constructor from machine state.
-    /// \param s Pointer to machine state.
+    /// \param m Pointer to machine state.
     explicit state_access(machine &m): m_m(m) { ; }
 
     /// \brief No copy constructor

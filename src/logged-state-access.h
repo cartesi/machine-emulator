@@ -20,7 +20,6 @@
 
 namespace cartesi {
 
-/// \class
 /// \details The logged_state_access logs all access to the machine state.
 class logged_state_access: public i_state_access<logged_state_access> {
 
@@ -30,7 +29,7 @@ class logged_state_access: public i_state_access<logged_state_access> {
 public:
 
     /// \brief Constructor from machine state and Merkle tree.
-    /// \param s Pointer to machine state.
+    /// \param m Pointer to machine state.
     explicit logged_state_access(machine &m):
         m_m(m),
         m_log(std::make_shared<access_log>()) { ; }
@@ -80,13 +79,13 @@ public:
         scoped_note &operator=(const scoped_note &) = delete;
 
         /// \brief Default move constructor
-        /// \detail This is OK because the shared_ptr to log will be
+        /// \details This is OK because the shared_ptr to log will be
         /// empty afterwards and we explicitly test for this
         /// condition before writing the "end" bracketting note
         scoped_note(scoped_note &&) = default;
 
         /// \brief Default move assignment
-        /// \detail This is OK because the shared_ptr to log will be
+        /// \details This is OK because the shared_ptr to log will be
         /// empty afterwards and we explicitly test for this
         /// condition before writing the "end" bracketting note
         scoped_note &operator=(scoped_note &&) = default;

@@ -368,7 +368,6 @@ public:
     const hash_type &get_pristine_hash(int log2_size) const;
 
     /// \brief Gets currently stored hash for page node.
-    /// \param h Hasher object.
     /// \param page_index Page index for node.
     /// \param hash Receives the hash.
     void get_page_node_hash(address_type page_index, hash_type &hash) const;

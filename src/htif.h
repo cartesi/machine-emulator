@@ -45,7 +45,7 @@ public:
     htif &operator=(htif &&) = delete;
 
     /// \brief Constructor
-    /// \param s Associated machine.
+    /// \param m Associated machine.
     /// \param interactive This is an interactive session with terminal support.
     /// \details The constructor for the associated machine is typically done yet when the constructor for the HTIF device is invoked.
     htif(machine &m, bool interactive);
@@ -56,7 +56,6 @@ public:
     void register_mmio(uint64_t start, uint64_t length);
 
     /// \brief Interact with the hosts's terminal.
-    /// \param htif Pointer to HTIF state
     void interact(void);
 
     /// \brief Destructor

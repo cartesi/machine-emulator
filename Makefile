@@ -42,6 +42,9 @@ env:
 	@echo $(LIBRARY_PATH)
 	@echo export PATH=$(SRCDIR):$(BUILDDIR)/bin:$${PATH}
 
+doc:
+	cd doc && doxygen Doxyfile
+
 dep: $(BUILDDIR) $(DEPDIRS)
 
 submodules:
@@ -87,5 +90,5 @@ build-linux-env:
 	docker build -t cartesi/linux-env:v1 tools/docker
 
 
-.PHONY: all submodules clean distclean downloads src test luacartesi library_path grpc\
+.PHONY: all submodules doc clean distclean downloads src test luacartesi grpc\
 	$(DEPDIRS) $(SUBDIRS) $(SUBCLEAN) $(DEPCLEAN) $(DEPDIR)/lua.clean

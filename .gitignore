@@ -3,9 +3,14 @@
 *.d
 
 build
-third-party/lua/lua-5.3.5*
+third-party/cryptopp-CRYPTOPP_7_0_0
+third-party/downloads
+third-party/grpc
+third-party/lua-5.3.5
 src/client
 src/server
+
+doc/html
 
 *.so
 *.dtb

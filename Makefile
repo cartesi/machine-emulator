@@ -42,9 +42,7 @@ env:
 	@echo $(LIBRARY_PATH)
 	@echo export PATH=$(SRCDIR):$(BUILDDIR)/bin:$${PATH}
 
-$(DEPDIRS): downloads
-
-dep: submodules $(BUILDDIR) $(DEPDIRS)
+dep: $(BUILDDIR) $(DEPDIRS)
 
 submodules:
 	git submodule update --init --recursive

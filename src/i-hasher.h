@@ -9,7 +9,6 @@
 
 namespace cartesi {
 
-/// \class
 /// \brief Hasher interface.
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
 /// \tparam HASH_SIZE Size of hash.

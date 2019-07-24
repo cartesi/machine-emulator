@@ -11,7 +11,6 @@
 
 namespace cartesi {
 
-/// \class
 /// \details The virtual_state_access class implements a
 /// virtual interface to the state on top of the static
 /// interface provided by any class implementing the

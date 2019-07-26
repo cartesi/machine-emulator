@@ -46,8 +46,16 @@ $ make clean
 
 ## Running Tests
 
+Copy the tests binaries to a directory called `tests` and run: (Eg.: )
+
 ```bash
 $ make test
+```
+
+The default search path for binaries is `machine-emulator/tests`. Alternatively you can specify the binaries path using the `TEST_PATH` variable as in:
+
+```bash
+$ make test TEST_PATH=/full/path/to/test/binaries
 ```
 
 ## Usage

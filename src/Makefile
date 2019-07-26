@@ -95,7 +95,7 @@ cartesi.so: $(LUACARTESI_OBJS)
 	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LUACARTESI_LIBS)
 
 test: luacartesi
-	$(LUA_BIN) tests.lua
+	$(LUA_BIN) cartesi-machine-tests.lua $(TEST_PATH)
 
 fs.ext2: fs/*
 	genext2fs -f -i 512 -b 8192 -d fs fs.ext2
@@ -108,19 +108,19 @@ cov: CXXFLAGS += -O0 -g -fprofile-arcs -ftest-coverage
 cov: SOLDFLAGS += -fprofile-arcs
 
 cov: luacartesi
-	$(LUA_BIN) ./tests.lua
+	$(LUA_BIN) ./cartesi-machine-tests.lua
 	$(LUA_BIN) ./test-machine.lua
-	$(LUA_BIN) ./run.lua --cmdline='-- /bin/true'
+	$(LUA_BIN) ./cartesi-machine.lua --cmdline='-- /bin/true'
 	gcov *.cpp
 	lcov --capture --directory . --output-file cartesi.info
 	genhtml cartesi.info --output-directory coverage
 
 generate: luacartesi
-	$(LUA_BIN) ./run.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
+	$(LUA_BIN) ./cartesi-machine.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
 
 valgrind: luacartesi
-	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) tests.lua
-	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) run.lua --initial-hash --final-hash --memory-size=16 --batch --cmdline="-- /bin/true"
+	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) cartesi-machine-tests.lua
+	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) cartesi-machine.lua --initial-hash --final-hash --memory-size=16 --batch --cmdline="-- /bin/true"
 
 use: CXXFLAGS += -fprofile-use
 use: SOLDFLAGS += -fprofile-use
@@ -129,15 +129,7 @@ use: luacartesi
 
 luacartesi: cartesi.so
 
-grpc: server client
-
-#??D
-# On Mac OS, use "install_name_tool -change <rel-dylib> <abs-dylib> <binary>"
-# on the executables to make sure the dylibs linked are the ones we built
-# in third_party?
-# On Linux, use "patchelf --set-rpath <lib-path> <binary>" on all .so we built
-# and also on the executables?
-# Then change again after we run install?
+grpc: cartesi-machine-server cartesi-machine-client
 
 PROTO_OBJS:= \
 	cartesi-base.pb.o \
@@ -163,13 +155,13 @@ GRPC_SRV_OBJS:= \
 	interpret.o \
 	manager-client.o
 
-server: $(GRPC_SRV_OBJS)
+cartesi-machine-server: $(GRPC_SRV_OBJS)
 	$(CXX) -o $@ $^ $(GRPC_SRV_LIBS)
 
-client: $(GRPC_CLT_OBJS)
+cartesi-machine-client: $(GRPC_CLT_OBJS)
 	$(CXX) -o $@ $^ $(GRPC_LIB)
 
-server client: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
+cartesi-machine-server cartesi-machine-client: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 
@@ -189,6 +181,6 @@ server client: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.gcda *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so server client
+	rm -f dis/*.o dis/*.d *.gcda *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi-machine-server cartesi-machine-client
 
 -include $(wildcard *.d)

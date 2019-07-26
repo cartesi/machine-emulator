@@ -204,6 +204,7 @@ local function run(machine)
 end
 
 local errors = {}
+local tests_path = arg[1] or "../tests"
 
 for _, test in ipairs(tests) do
     local ram_image = test[1]
@@ -212,11 +213,11 @@ for _, test in ipairs(tests) do
     local machine = cartesi.machine{
         machine = cartesi.get_name(),
         rom = {
-            backing = "../tests/bootstrap.bin"
+            backing = tests_path .. "/bootstrap.bin"
         },
         ram = {
             length = 128 << 20,
-            backing = "../tests/" .. ram_image
+            backing = tests_path .. "/" .. ram_image
         }
     }
     local cycles, payload = run(machine)

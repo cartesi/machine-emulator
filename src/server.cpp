@@ -197,7 +197,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     }
 
     void set_processor_config_from_grpc(machine_config &c, ProcessorState &ps) {
-		if (ps.x1_oneof_case() == ProcessorState::kX1){
+        if (ps.x1_oneof_case() == ProcessorState::kX1){
             c.processor.x[1] = ps.x1();
         }
         if (ps.x2_oneof_case() == ProcessorState::kX2){
@@ -624,19 +624,6 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             dbg("There is no active Cartesi machine, create one before executing get root hash");
             return Status(StatusCode::FAILED_PRECONDITION, "There is no active Cartesi machine, create one before executing get root hash");
         }
-    }
-
-    Status Inc(ServerContext *, const Void *, Void *) override {
-        std::lock_guard<std::mutex> lock(barrier_);
-        ++context_.value;
-        dbg("%d", context_.value);
-        return Status::OK;
-    }
-
-    Status Print(ServerContext *, const Void *, Void *) override {
-        std::lock_guard<std::mutex> lock(barrier_);
-        dbg("%d", context_.value);
-        return Status::OK;
     }
 
     Status Snapshot(ServerContext *, const Void *, Void *) override {

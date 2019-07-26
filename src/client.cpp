@@ -36,18 +36,6 @@ public:
         reconnect();
     }
 
-    void Inc(void) {
-        Void request, response;
-        ClientContext context;
-        return check_status(stub_->Inc(&context, request, &response));
-    }
-
-    void Print(void) {
-        Void request, response;
-        ClientContext context;
-        return check_status(stub_->Print(&context, request, &response));
-    }
-
     void Snapshot(void) {
         Void request, response;
         ClientContext context;
@@ -92,11 +80,7 @@ int main(int argc, char** argv) {
     MachineClient machine(argv[1]);
     std::string line;
     while (std::getline(std::cin, line)) {
-        if (line == "inc") {
-            machine.Inc();
-        } else if (line == "print") {
-            machine.Print();
-        } else if (line == "snapshot") {
+        if (line == "snapshot") {
             machine.Snapshot();
         } else if (line == "rollback") {
             machine.Rollback();

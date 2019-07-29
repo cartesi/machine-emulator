@@ -11,6 +11,10 @@ src/client
 src/server
 
 doc/html
+doc/api.md
+doc/html/
+doc/xml/
+
 
 *.so
 *.dtb

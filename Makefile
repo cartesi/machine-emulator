@@ -66,7 +66,7 @@ downloads:
 env:
 	@echo $(LIBRARY_PATH)
 	@echo export PATH=$(SRCDIR):$(BUILDDIR)/bin:$${PATH}
-	@echo export LUA_CPATH=$(SRCDIR)/?.so
+	@echo export LUA_CPATH='$(SRCDIR)/?.so;'$${LUA_CPATH}
 
 doc:
 	cd doc && doxygen Doxyfile

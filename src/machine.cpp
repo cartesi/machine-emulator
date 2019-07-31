@@ -313,13 +313,25 @@ machine::machine(const machine_config &c):
 
 machine::~machine() {
 #if DUMP_COUNTERS
-    fprintf(stderr, "inner loops: %" PRIu64 "\n", m_s.count_inners);
-    fprintf(stderr, "outers loops: %" PRIu64 "\n", m_s.count_outers);
-    fprintf(stderr, "si: %" PRIu64 "\n", m_s.count_si);
-    fprintf(stderr, "se: %" PRIu64 "\n", m_s.count_se);
-    fprintf(stderr, "mi: %" PRIu64 "\n", m_s.count_mi);
-    fprintf(stderr, "me: %" PRIu64 "\n", m_s.count_me);
-    fprintf(stderr, "amo: %" PRIu64 "\n", m_s.count_amo);
+#define TLB_HIT_RATIO(s, a, b) (((double)s.stats.b)/(s.stats.a + s.stats.b))
+    fprintf(stderr, "inner loops: %" PRIu64 "\n", m_s.stats.inner_loop);
+    fprintf(stderr, "outers loops: %" PRIu64 "\n", m_s.stats.outer_loop);
+    fprintf(stderr, "supervisor ints: %" PRIu64 "\n", m_s.stats.sv_int);
+    fprintf(stderr, "supervisor ex: %" PRIu64 "\n", m_s.stats.sv_ex);
+    fprintf(stderr, "machine ints: %" PRIu64 "\n", m_s.stats.m_int);
+    fprintf(stderr, "machine ex: %" PRIu64 "\n", m_s.stats.m_ex);
+    fprintf(stderr, "atomic mem ops: %" PRIu64 "\n", m_s.stats.atomic_mop);
+    fprintf(stderr, "tlb read hit ratio: %.2f\n", TLB_HIT_RATIO(m_s, tlb_rmiss, tlb_rhit));
+    fprintf(stderr, "tlb write hit ratio: %.2f\n", TLB_HIT_RATIO(m_s, tlb_wmiss, tlb_whit));
+    fprintf(stderr, "tlb code hit ratio: %.2f\n", TLB_HIT_RATIO(m_s, tlb_cmiss, tlb_chit));
+    fprintf(stderr, "flush_all: %" PRIu64 "\n", m_s.stats.flush_all);
+    fprintf(stderr, "flush_vaddr: %" PRIu64 "\n", m_s.stats.flush_va);
+    fprintf(stderr, "fence: %" PRIu64 "\n", m_s.stats.fence);
+    fprintf(stderr, "fence.i: %" PRIu64 "\n", m_s.stats.fence_i);
+    fprintf(stderr, "fence.vma: %" PRIu64 "\n", m_s.stats.fence_vma);
+    fprintf(stderr, "User mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_U]);
+    fprintf(stderr, "Supervisor mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_S]);
+    fprintf(stderr, "Machine mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_M]);
 #endif
 }
 

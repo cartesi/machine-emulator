@@ -196,6 +196,7 @@ static inline bool tlb_hit(const tlb_entry &tlb, uint64_t vaddr) {
 /// \brief Invalidates all TLB entries.
 /// \param s Pointer to machine state.
 static void tlb_flush_all(machine_state &s) {
+    INC_COUNTER(s, flush_all);
     // Clear all TLB entries
     for (int i = 0; i < TLB_SIZE; ++i) {
         tlb_mark_dirty_page(s.tlb_write[i]);
@@ -210,6 +211,7 @@ static void tlb_flush_all(machine_state &s) {
 /// \param vaddr Target virtual address.
 static void tlb_flush_vaddr(machine_state &s, uint64_t vaddr) {
     (void) vaddr;
+    INC_COUNTER(s, flush_va);
     //??D Optimize depending on how often it is used
     tlb_flush_all(s);
 }
@@ -237,6 +239,7 @@ static inline uint32_t csr_priv(CSR_address csr) {
 template <typename STATE_ACCESS>
 static void set_priv(STATE_ACCESS &a, int previous_prv, int new_prv) {
     if (previous_prv != new_prv) {
+        INC_COUNTER(a.get_naked_state(), priv_level[new_prv]);
         tlb_flush_all(a.get_naked_state());
         a.write_iflags_PRV(new_prv);
         //??D new priv 1.11 draft says invalidation should
@@ -309,13 +312,10 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
         set_priv(a, priv, PRV_S);
         a.write_pc(a.read_stvec());
 #ifdef DUMP_COUNTERS
-        if (cause & MCAUSE_INTERRUPT_FLAG) {
-            a.get_naked_state().count_si++;
-        } else {
-            // Do not count environment calls
-            if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M)
-                a.get_naked_state().count_se++;
-        }
+        if (cause & MCAUSE_INTERRUPT_FLAG)
+            INC_COUNTER(a.get_naked_state(), sv_int);
+        else if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M) // Do not count environment calls
+            INC_COUNTER(a.get_naked_state(), sv_ex);
 #endif
     } else {
         a.write_mcause(cause);
@@ -329,13 +329,10 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
         set_priv(a, priv, PRV_M);
         a.write_pc(a.read_mtvec());
 #ifdef DUMP_COUNTERS
-        if (cause & MCAUSE_INTERRUPT_FLAG) {
-            a.get_naked_state().count_mi++;
-        } else {
-            // Do not count environment calls
-            if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M)
-                a.get_naked_state().count_me++;
-        }
+        if (cause & MCAUSE_INTERRUPT_FLAG)
+            INC_COUNTER(a.get_naked_state(), m_int);
+        else if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M) // Do not count environment calls
+            INC_COUNTER(a.get_naked_state(), m_ex);
 #endif
     }
 }
@@ -521,6 +518,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
     tlb_entry &tlb = a.get_naked_state().tlb_read[tlb_idx];
     if (!avoid_tlb<STATE_ACCESS>::value && tlb_hit<T>(tlb, vaddr)) {
         *pval = aliased_aligned_read<T>(tlb.hpage + (vaddr & PAGE_OFFSET_MASK));
+        INC_COUNTER(a.get_naked_state(), tlb_rhit);
         return true;
     // No support for misaligned accesses: They are handled by a trap in BBL
     } else if (vaddr & (sizeof(T)-1)) {
@@ -529,6 +527,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
     // Deal with aligned accesses
     } else {
         uint64_t paddr;
+        INC_COUNTER(a.get_naked_state(), tlb_rmiss);
         if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) {
             raise_exception(a, MCAUSE_LOAD_PAGE_FAULT, vaddr);
             return false;
@@ -575,6 +574,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
     if (!avoid_tlb<STATE_ACCESS>::value && tlb_hit<T>(tlb, vaddr)) {
         aliased_aligned_write<T>(tlb.hpage + (vaddr & PAGE_OFFSET_MASK),
             static_cast<T>(val64));
+        INC_COUNTER(a.get_naked_state(), tlb_whit);
         return true;
     // No support for misaligned accesses: They are handled by a trap in BBL
     } else if (vaddr & (sizeof(T)-1)) {
@@ -583,6 +583,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
     // Deal with aligned accesses
     } else {
         uint64_t paddr;
+        INC_COUNTER(a.get_naked_state(), tlb_wmiss);
         if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_W_SHIFT)) {
             raise_exception(a, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
             return false;
@@ -1878,6 +1879,7 @@ static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t 
 template <typename STATE_ACCESS>
 static inline execute_status execute_FENCE(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) insn;
+    INC_COUNTER(a.get_naked_state(), fence);
     dump_insn(a.get_naked_machine(), pc, insn, "fence");
     auto note = a.make_scoped_note("fence"); (void) note;
     // Really do nothing
@@ -1888,6 +1890,7 @@ static inline execute_status execute_FENCE(STATE_ACCESS &a, uint64_t pc, uint32_
 template <typename STATE_ACCESS>
 static inline execute_status execute_FENCE_I(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) insn;
+    INC_COUNTER(a.get_naked_state(), fence_i);
     dump_insn(a.get_naked_machine(), pc, insn, "fence.i");
     auto note = a.make_scoped_note("fence.i"); (void) note;
     // Really do nothing
@@ -2532,6 +2535,7 @@ template <typename STATE_ACCESS>
 static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     // rs1 and rs2 are arbitrary, rest is set
     if ((insn & 0b11111110000000000111111111111111) == 0b00010010000000000000000001110011) {
+        INC_COUNTER(a.get_naked_state(), fence_vma);
         dump_insn(a.get_naked_machine(), pc, insn, "sfence.vma");
         auto note = a.make_scoped_note("sfence.vma"); (void) note;
         auto priv = a.read_iflags_PRV();
@@ -2562,9 +2566,7 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
 ///  [Atomic Memory Operations](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.7.3).
 template <typename STATE_ACCESS>
 static inline execute_status execute_atomic_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-#ifdef DUMP_COUNTERS
-    a.get_naked_state().count_amo++;
-#endif
+    INC_COUNTER(a.get_naked_state(), atomic_mop);
     switch (static_cast<insn_atomic_funct3_funct5>(insn_get_funct3_funct5(insn))) {
         case insn_atomic_funct3_funct5::LR_W: return execute_LR_W(a, pc, insn);
         case insn_atomic_funct3_funct5::SC_W: return execute_SC_W(a, pc, insn);
@@ -2902,10 +2904,12 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
     tlb_entry &tlb = a.get_naked_state().tlb_code[tlb_idx];
     if (!avoid_tlb<STATE_ACCESS>::value && tlb_hit<uint32_t>(tlb, vaddr)) {
         *pinsn = aliased_aligned_read<uint32_t>(tlb.hpage + (vaddr & PAGE_OFFSET_MASK));
+        INC_COUNTER(a.get_naked_state(), tlb_chit);
         return fetch_status::success;
     // TLB miss
     } else {
         uint64_t paddr;
+        INC_COUNTER(a.get_naked_state(), tlb_cmiss);
         // Walk page table and obtain the physical address
         if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_C_SHIFT)) {
             raise_exception(a, MCAUSE_FETCH_PAGE_FAULT, vaddr);
@@ -2955,9 +2959,7 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     uint64_t pc = 0;
     uint32_t insn = 0;
 
-#ifdef DUMP_COUNTERS
-    a.get_naked_state().count_outers++;
-#endif
+    INC_COUNTER(a.get_naked_state(), outer_loop);
 
     // The inner loops continues until there is an interrupt condition
     // or mcycle reaches mcycle_end
@@ -3001,9 +3003,7 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         if (mcycle >= mcycle_end) {
             return interpreter_status::success;
         }
-#ifdef DUMP_COUNTERS
-        a.get_naked_state().count_inners++;
-#endif
+        INC_COUNTER(a.get_naked_state(), inner_loop);
     }
 }
 

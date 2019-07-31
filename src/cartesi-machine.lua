@@ -452,7 +452,9 @@ for i, label in ipairs(backing_order) do
 end
 
 config = config:append_cmdline(
-    "mtdparts=" .. table.concat(mtdparts, ";") .. cmdline
+    "mtdparts=" .. table.concat(mtdparts, ";")
+):append_cmdline(
+    cmdline
 ):set_interactive(
     not batch
 )

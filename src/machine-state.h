@@ -27,6 +27,12 @@
 #include "pma.h"
 #include "riscv-constants.h"
 
+#ifdef DUMP_COUNTERS
+#define INC_COUNTER(state, counter) do {state.stats.counter++;} while (0)
+#else
+#define INC_COUNTER(state, counter) do {} while (0)
+#endif
+
 namespace cartesi {
 
 /// \brief Translation Lookaside Buffer entry.
@@ -43,6 +49,31 @@ struct tlb_entry {
 enum TLB_constants {
     TLB_SIZE = 256 ///< Number of entries in TLB
 };
+
+#ifdef DUMP_COUNTERS
+/// \brief Machine statistics
+struct machine_statistics {
+    uint64_t inner_loop;       ///< Counts executions of inner loop
+    uint64_t outer_loop;       ///< Counts executions of outer loop
+    uint64_t sv_int;           ///< Counts supervisor interrupts
+    uint64_t sv_ex;            ///< Counts supervisor exceptions (except ECALL)
+    uint64_t m_int;            ///< Counts machine interrupts
+    uint64_t m_ex;             ///< Counts machine exceptions (except ECALL)
+    uint64_t atomic_mop;       ///< Counts atomic memory operations
+    uint64_t tlb_rhit;         ///< Counts TLB read access hits
+    uint64_t tlb_rmiss;        ///< Counts TLB read access misses
+    uint64_t tlb_whit;         ///< Counts TLB write access hits
+    uint64_t tlb_wmiss;        ///< Counts TLB write access misses
+    uint64_t tlb_chit;         ///< Counts TLB code access hits
+    uint64_t tlb_cmiss;        ///< Counts TLB code access misses
+    uint64_t flush_all;        ///< Counts flush all calls
+    uint64_t flush_va;         ///< Counts flush virtual address calls
+    uint64_t fence;            ///< Counts fence calls
+    uint64_t fence_i;          ///< Counts fence.i calls
+    uint64_t fence_vma;        ///< Counts fence.vma calls
+    uint64_t priv_level[4];    ///< Counts changes to privilege levels
+};
+#endif
 
 /// \brief Machine state.
 /// \details The machine_state structure contains the entire
@@ -122,13 +153,7 @@ struct machine_state {
     tlb_entry tlb_code[TLB_SIZE]; ///< Code TLB
 
 #ifdef DUMP_COUNTERS
-    uint64_t count_inners; ///< Counts executions of inner loop
-    uint64_t count_outers; ///< Counts executions of outer loop
-    uint64_t count_si;     ///< Counts supervisor interrupts
-    uint64_t count_se;     ///< Counts supervisor exceptions (except ECALL)
-    uint64_t count_mi;     ///< Counts machine interrupts
-    uint64_t count_me;     ///< Counts machine exceptions (except ECALL)
-    uint64_t count_amo;    ///< Counts atomic memory operations
+    struct machine_statistics stats;
 #endif
 
     /// \brief Updates the brk flag from changes in mip and mie registers.

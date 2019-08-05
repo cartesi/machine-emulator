@@ -147,6 +147,9 @@ luacartesi: cartesi.so
 
 grpc: cartesi-machine-server cartesi-machine-client
 
+HASH_OBJS:= \
+	hash.o
+
 PROTO_OBJS:= \
 	cartesi-base.pb.o \
 	core.pb.o \
@@ -160,7 +163,7 @@ GRPC_CLT_OBJS:= \
 
 GRPC_SRV_OBJS:= \
 	$(PROTO_OBJS) \
-	server.o \
+    server.o \
 	clint.o \
 	rom.o \
 	htif.o \
@@ -170,6 +173,9 @@ GRPC_SRV_OBJS:= \
 	machine.o \
 	interpret.o \
 	manager-client.o
+
+hash: $(HASH_OBJS)
+	$(CXX) -o $@ $^ $(CRYPTOPP_LIB)
 
 cartesi-machine-server: $(GRPC_SRV_OBJS)
 	$(CXX) -o $@ $^ $(GRPC_SRV_LIBS)

@@ -76,7 +76,7 @@ dep: $(BUILDDIR) $(DEPDIRS)
 submodules:
 	git submodule update --init --recursive
 
-luacartesi grpc test:
+hash luacartesi grpc test:
 	$(MAKE) -C $(SRCDIR) $@
 
 $(SRCDIR):

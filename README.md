@@ -76,7 +76,8 @@ Please note we have a code of conduct, please follow it in all your interactions
 
 ## License
 
-- TODO
+The machine-emulator repository and all contributions are licensed under
+[LGPL 3.0](https://www.gnu.org/licenses/lgpl-3.0.html). Please review our [LICENSE](https://github.com/cartesi/machine-emulator/blob/master/LICENSE) file.
 
 ## Acknowledgments
 

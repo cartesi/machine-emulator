@@ -4,8 +4,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include "strict-aliasing.h"
-
 /// \file
 /// \brief Interpreter implementation.
 /// \details \{
@@ -79,6 +77,8 @@ typedef unsigned __int128 uint128_t;
 #include "unique-c-ptr.h"
 #include "rom.h"
 #include "interpret.h"
+#include "translate-virtual-address.h"
+#include "strict-aliasing.h"
 
 namespace cartesi {
 
@@ -123,211 +123,6 @@ void dump_regs(const machine_state &s) {
     print_uint64_t(s.mip);
     fprintf(stderr, "\n");
 #endif
-}
-
-/// \brief Obtain PMA entry overlapping with target physical address.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param paddr Target physical address.
-/// \returns Corresponding entry if found, or the sentinel empty entry.
-/// \details This is the same as ::naked_find_pma_entry, except it
-/// does not perform naked accesses to the machine state.
-/// Rather, it goes through the state accessor object so all
-/// accesses can be recorded if need be.
-template <typename T, typename STATE_ACCESS>
-static pma_entry &find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
-    auto note = a.make_scoped_note("find_pma_entry"); (void) note;
-    int i = 0;
-    while (1) {
-        auto &pma = a.get_naked_state().pmas[i];
-        a.read_pma(pma, i);
-        // The pmas array always contain a sentinel. It is an entry with
-        // zero length. If we hit it, return it
-        if (pma.get_length() == 0)
-            return pma;
-        // Otherwise, if we found an entry where the access fits, return it
-        // Note the "strange" order of arithmetic operations.
-        // This is to ensure there is no overflow.
-        // Since we know paddr >= start, there is no chance of overflow in the
-        // first subtraction.
-        // Since length is at least 4096 (an entire page), there is no
-        // chance of overflow in the second subtraction.
-        if (paddr >= pma.get_start() &&
-            paddr - pma.get_start() <= pma.get_length() - sizeof(T)) {
-            return pma;
-        }
-        i++;
-    }
-}
-
-/// \brief Write an aligned word to memory.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param paddr Physical address of word.
-/// \param val Value to write.
-/// \returns True if succeeded, false otherwise.
-template <typename STATE_ACCESS>
-static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t val) {
-    pma_entry &pma = find_pma_entry<uint64_t>(a, paddr);
-    if (!pma.get_istart_M() || !pma.get_istart_W())
-        return false;
-    uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-    unsigned char *hpage = pma.get_memory().get_host_memory() +
-        (paddr_page - pma.get_start());
-    uint64_t hoffset = paddr - paddr_page;
-    // log writes to memory
-    a.write_memory(paddr, hpage, hoffset, val);
-    // mark page as dirty so we know to update the Merkle tree
-    pma.mark_dirty_page(paddr - pma.get_start());
-    return true;
-}
-
-/// \brief Read an aligned word from memory.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param paddr Physical address of word.
-/// \param pval Pointer to word.
-/// \returns True if succeeded, false otherwise.
-template <typename STATE_ACCESS>
-static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pval) {
-    pma_entry &pma = find_pma_entry<uint64_t>(a, paddr);
-    if (!pma.get_istart_M() || !pma.get_istart_R()) return false;
-    uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-    unsigned char *hpage = pma.get_memory().get_host_memory() +
-        (paddr_page - pma.get_start());
-    uint64_t hoffset = paddr - paddr_page;
-    a.read_memory(paddr, hpage, hoffset, pval);
-    return true;
-}
-
-/// \brief Walk the page table and translate a virtual address to the corresponding physical address
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param vaddr Virtual address
-/// \param ppaddr Pointer to physical address.
-/// \param xwr_shift Encodes the access mode by the shift to the XWR triad (PTE_XWR_R_SHIFT,
-///  PTE_XWR_R_SHIFT, or PTE_XWR_R_SHIFT)
-/// \returns True if succeeded, false otherwise.
-template <typename STATE_ACCESS>
-static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
-    auto note = a.make_scoped_note("translate_virtual_address"); (void) note;
-    auto priv = a.read_iflags_PRV();
-    uint64_t mstatus = a.read_mstatus();
-
-    // When MPRV is set, data loads and stores use privilege in MPP
-    // instead of the current privilege level (code access is unaffected)
-    if ((mstatus & MSTATUS_MPRV_MASK) && xwr_shift != PTE_XWR_C_SHIFT) {
-        priv = (mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
-    }
-
-    // M-mode code does not use virtual memory
-    if (priv == PRV_M) {
-        *ppaddr = vaddr;
-        return true;
-    }
-
-    uint64_t satp = a.read_satp();
-
-    // In RV64, mode can be
-    //   0: Bare: No translation or protection
-    //   8: sv39: Page-based 39-bit virtual addressing
-    //   9: sv48: Page-based 48-bit virtual addressing
-    int mode = (satp >> 60) & 0xf;
-    if (mode == 0) {
-        *ppaddr = vaddr;
-        return true;
-    } else if (mode < 8 || mode > 9) {
-        return false;
-    }
-    // Here we know we are in sv39 or sv48 modes
-
-    // Page table hierarchy of sv39 has 3 levels, and sv48 has 4 levels
-    // ??D It doesn't seem like restricting to one or the other will
-    //     simplify the code much. However, we may want to use sv39
-    //     to reduce the size of the log sent to the blockchain
-    int levels = mode - 8 + 3;
-
-    // The least significant 12 bits of vaddr are the page offset
-    // Then come levels virtual page numbers (VPN)
-    // The rest of vaddr must be filled with copies of the
-    // most significant bit in VPN[levels]
-    // Hence, the use of arithmetic shifts here
-    int vaddr_shift = XLEN - (PAGE_NUMBER_SHIFT + levels * 9);
-    if ((((int64_t)vaddr << vaddr_shift) >> vaddr_shift) != (int64_t) vaddr)
-        return false;
-
-    // The least significant 44 bits of satp contain the physical page number for the root page table
-    const int satp_ppn_bits = 44;
-    // Initialize pte_addr with the base address for the root page table
-    uint64_t pte_addr = (satp & (((uint64_t)1 << satp_ppn_bits) - 1)) << PAGE_NUMBER_SHIFT;
-    // All page table entries have 8 bytes
-    const int pte_size_log2 = 3;
-    // Each page table has 4k/pte_size entries
-    // To index all entries, we need vpn_bits
-    const int vpn_bits = 12 - pte_size_log2;
-    uint64_t vpn_mask = (1 << vpn_bits) - 1;
-    for (int i = 0; i < levels; i++) {
-        // Mask out VPN[levels-i-1]
-        vaddr_shift = PAGE_NUMBER_SHIFT + vpn_bits * (levels - 1 - i);
-        uint64_t vpn = (vaddr >> vaddr_shift) & vpn_mask;
-        // Add offset to find physical address of page table entry
-        pte_addr += vpn << pte_size_log2; //??D we can probably save this shift here
-        // Read page table entry from physical memory
-        uint64_t pte = 0;
-        if (!read_ram_uint64(a, pte_addr, &pte)) {
-            return false;
-        }
-        // The OS can mark page table entries as invalid,
-        // but these entries shouldn't be reached during page lookups
-        if (!(pte & PTE_V_MASK))
-            return false;
-        // Clear all flags in least significant bits, then shift back to multiple of page size to form physical address
-        uint64_t ppn = (pte >> 10) << PAGE_NUMBER_SHIFT;
-        // Obtain X, W, R protection bits
-        int xwr = (pte >> 1) & 7;
-        // xwr != 0 means we are done walking the page tables
-        if (xwr != 0) {
-            // These protection bit combinations are reserved for future use
-            if (xwr == 2 || xwr == 6)
-                return false;
-            // (We know we are not PRV_M if we reached here)
-            if (priv == PRV_S) {
-                // If SUM is set, forbid S-mode code from accessing U-mode memory
-                if ((pte & PTE_U_MASK) && !(mstatus & MSTATUS_SUM_MASK))
-                    return false;
-            } else {
-                // Forbid U-mode code from accessing S-mode memory
-                if (!(pte & PTE_U_MASK))
-                    return false;
-            }
-            // MXR allows read access to execute-only pages
-            if (mstatus & MSTATUS_MXR_MASK)
-                // Set R bit if X bit is set
-                xwr |= (xwr >> 2);
-            // Check protection bits against requested access
-            if (((xwr >> xwr_shift) & 1) == 0)
-                return false;
-            // Check page, megapage, and gigapage alignment
-            uint64_t vaddr_mask = ((uint64_t)1 << vaddr_shift) - 1;
-            if (ppn & vaddr_mask)
-                return false;
-            // Decide if we need to update access bits in pte
-            bool update_pte = !(pte & PTE_A_MASK) || (!(pte & PTE_D_MASK) && xwr_shift == PTE_XWR_W_SHIFT);
-            pte |= PTE_A_MASK;
-            if (xwr_shift == PTE_XWR_W_SHIFT)
-                pte |= PTE_D_MASK;
-            // If so, update pte
-            if (update_pte)
-                write_ram_uint64(a, pte_addr, pte); // Can't fail since read succeeded earlier
-            // Add page offset in vaddr to ppn to form physical address
-            *ppaddr = (vaddr & vaddr_mask) | (ppn & ~vaddr_mask);
-            return true;
-        // xwr == 0 means we have a pointer to the start of the next page table
-        } else {
-            pte_addr = ppn;
-        }
-    }
-    return false;
 }
 
 /// \brief Mark TLB entry as dirty in dirty page map.
@@ -722,7 +517,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             raise_exception(a, MCAUSE_LOAD_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry &pma = find_pma_entry<T>(a, paddr);
+        pma_entry &pma = a.template find_pma_entry<T>(paddr);
         if (pma.get_istart_E() || !pma.get_istart_R()) {
             raise_exception(a, MCAUSE_LOAD_ACCESS_FAULT, vaddr);
             return false;
@@ -776,7 +571,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             raise_exception(a, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry &pma = find_pma_entry<T>(a, paddr);
+        pma_entry &pma = a.template find_pma_entry<T>(paddr);
         if (pma.get_istart_E() || !pma.get_istart_W()) {
             raise_exception(a, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
             return false;
@@ -3101,11 +2896,10 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
             return fetch_status::exception;
         }
         // Walk memory map to find the range that contains the physical address
-        pma_entry &pma = find_pma_entry<uint32_t>(a, paddr);
+        pma_entry &pma = a.template find_pma_entry<uint32_t>(paddr);
         // We only execute directly from RAM (as in "random access memory", which includes ROM)
         // If the range is not memory or not executable, this as a PMA violation
         if (!pma.get_istart_M() || !pma.get_istart_X()) {
-            std::cerr << "vaddr:" << vaddr << '\n';
             raise_exception(a, MCAUSE_INSN_ACCESS_FAULT, vaddr);
             return fetch_status::exception;
         }
@@ -3134,7 +2928,6 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     if (a.get_naked_state().mcycle >= mcycle_end) {
         return interpreter_status::success;
     }
-
 
     // Set break flag considering only interrupts, since we
     // know we are not halted

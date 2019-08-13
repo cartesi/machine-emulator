@@ -540,6 +540,41 @@ public:
             val);
     }
 
+
+    /// \brief Obtain PMA entry overlapping with target physical address.
+    /// \tparam T type of access (so we know the size)
+    /// \param paddr Target physical address.
+    /// \returns Corresponding entry if found, or the sentinel empty entry.
+    /// \details This is the same as ::naked_find_pma_entry, except it
+    /// does not perform naked accesses to the machine state.
+    /// Rather, it goes through the state accessor object so all
+    /// accesses can be recorded if need be.
+    template <typename T>
+    pma_entry &find_pma_entry(uint64_t paddr) {
+        auto note = this->make_scoped_note("find_pma_entry");
+        (void) note;
+        int i = 0;
+        while (1) {
+            auto &pma = this->get_naked_state().pmas[i];
+            this->read_pma(pma, i);
+            // The pmas array always contain a sentinel. It is an entry with
+            // zero length. If we hit it, return it
+            if (pma.get_length() == 0)
+                return pma;
+            // Otherwise, if we found an entry where the access fits, return it
+            // Note the "strange" order of arithmetic operations.
+            // This is to ensure there is no overflow.
+            // Since we know paddr >= start, there is no chance of overflow in the
+            // first subtraction.
+            // Since length is at least 4096 (an entire page), there is no
+            // chance of overflow in the second subtraction.
+            if (paddr >= pma.get_start() &&
+                paddr - pma.get_start() <= pma.get_length() - sizeof(T)) {
+                return pma;
+            }
+            i++;
+        }
+    }
 };
 
 /// \brief SFINAE test implementation of the i_state_access interface

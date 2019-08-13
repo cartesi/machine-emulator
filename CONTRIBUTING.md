@@ -9,8 +9,7 @@ this for you via DocuSign upon request in the Google Form as well.
 ## Basic Contributing Guidelines
 
 We use the same guidelines for contributing code to any of our repositories, any developers wanting to contribute to Cartesi 
-must create pull requests. This process is described in the [GitHub documentation]
-(https://help.github.com/en/articles/creating-a-pull-request). Each pull request should be started against the master branch 
+must create pull requests. This process is described in the [GitHub documentation](https://help.github.com/en/articles/creating-a-pull-request). Each pull request should be started against the master branch 
 in the respective Cartesi repository. After a pull request is submitted the Cartesi team will review the submission and 
 give feedback via the comments section of the pull request. After the submission is reviewed and approved, it will be merged 
 into the master branch of the source. 

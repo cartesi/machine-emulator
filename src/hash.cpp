@@ -219,6 +219,18 @@ struct merkle_proof {
     hash_type page_hash{};   ///< Hash of page data
     hash_type root_hash{};   ///< Hash of tree root
     std::vector<hash_type> sibling_hashes; ///< Hash of all siblings in the path from root to page
+    bool operator==(const merkle_proof &other) const {
+        if (page_number != other.page_number) return false;
+        if (page_log2_size != other.page_log2_size) return false;
+        if (tree_log2_size != other.tree_log2_size) return false;
+        if (page_hash != other.page_hash) return false;
+        if (root_hash != other.root_hash) return false;
+        if (sibling_hashes != other.sibling_hashes) return false;
+        return true;
+    }
+    bool operator!=(const merkle_proof &other) const {
+        return !(operator==(other));
+    }
 };
 
 /// \brief Full Merkle tree of pages
@@ -331,10 +343,10 @@ public:
         proof.page_hash = m_tree[max_pages+page_number];
         proof.sibling_hashes.reserve(m_tree_log2_size-m_page_log2_size);
         int index = 1;
-        for (int log2_child_size = m_tree_log2_size-m_page_log2_size-1;
-            log2_child_size >= 0; --log2_child_size) {
+        for (int child_log2_size = m_tree_log2_size-m_page_log2_size-1;
+            child_log2_size >= 0; --child_log2_size) {
             index *= 2;
-            int bit = (page_number & (UINT64_C(1) << log2_child_size)) != 0;
+            int bit = (page_number & (UINT64_C(1) << child_log2_size)) != 0;
             proof.sibling_hashes.push_back(m_tree[index+!bit]);
             index += bit;
         }
@@ -385,6 +397,12 @@ public:
 
 /// \brief Incremental way of maintaining a Merkle tree for a stream of
 /// page hashes
+/// \details This is surprisingly efficient in both time and space.
+/// Adding the next page takes O(log(n)) in the worst case, but is
+/// this is amortized to O(1) time when adding n pages.
+/// Obtaining the proof for the current page takes \theta(log(n)) time.
+/// Computing the tree root hash also takes \theta(log(n)) time.
+/// The class only ever stores log(n) hashes (1 for each tree level).
 class incremental_merkle_tree_of_pages {
     pristine_hashes m_pristine_hashes; ///< Hash of pristine subtrees of all sizes
     std::vector<hash_type> m_context;  ///< Hashes of bits set in page_count
@@ -442,7 +460,8 @@ public:
         hasher_type h;
         hash_type right = page_hash;
         assert(m_page_count < m_max_pages);
-        for (int i = 0; i <= m_tree_log2_size-m_page_log2_size; ++i) {
+        int depth = m_tree_log2_size-m_page_log2_size;
+        for (int i = 0; i <= depth; ++i) {
             if (m_page_count & (UINT64_C(1) << i)) {
                 const auto &left = m_context[i];
                 get_concat_hash(h, left, right, right);
@@ -478,9 +497,10 @@ public:
     hash_type get_root_hash(void) const {
         hasher_type h;
         assert(m_page_count <= m_max_pages);
+        int depth = m_tree_log2_size-m_page_log2_size;
         if (m_page_count < m_max_pages) {
             auto root = m_pristine_hashes.get_hash(m_page_log2_size);
-            for (int i = 0; i < m_tree_log2_size-m_page_log2_size; ++i) {
+            for (int i = 0; i < depth; ++i) {
                 if (m_page_count & (UINT64_C(1) << i)) {
                     const auto &left = m_context[i];
                     get_concat_hash(h, left, root, root);
@@ -492,8 +512,39 @@ public:
             }
             return root;
         } else {
-            return m_context[m_tree_log2_size-m_page_log2_size];
+            return m_context[depth];
         }
+    }
+
+    /// \brief Returns proof for the next pristine page
+    /// \returns Proof for page at given index, or nothing if index is invalid
+    /// \details This is basically the same algorithm as
+    /// incremental_merkle_tree_of_pages::get_root_hash.
+    std::optional<merkle_proof> get_next_page_proof(void) const {
+        int depth = m_tree_log2_size-m_page_log2_size;
+        uint64_t max_pages = UINT64_C(1) << depth;
+        if (m_page_count >= max_pages) return {};
+        hasher_type h;
+        merkle_proof proof;
+        proof.page_number = m_page_count;
+        proof.page_log2_size = m_page_log2_size;
+        proof.tree_log2_size = m_tree_log2_size;
+        proof.page_hash = m_pristine_hashes.get_hash(m_page_log2_size);
+        proof.sibling_hashes.resize(depth);
+        proof.root_hash = m_pristine_hashes.get_hash(m_page_log2_size);
+        for (int i = 0; i < depth; ++i) {
+            if (m_page_count & (UINT64_C(1) << i)) {
+                const auto &left = m_context[i];
+                proof.sibling_hashes[depth-i-1] = left;
+                get_concat_hash(h, left, proof.root_hash, proof.root_hash);
+            } else {
+                const auto &right = m_pristine_hashes.get_hash(
+                    m_page_log2_size+i);
+                proof.sibling_hashes[depth-i-1] = right;
+                get_concat_hash(h, proof.root_hash, right, proof.root_hash);
+            }
+        }
+        return proof;
     }
 };
 
@@ -593,7 +644,13 @@ int main(int argc, char *argv[]) {
         page_hashes.push_back(page_hash);
         // Print page hash
         print_hash(page_hash, stderr);
-        // Add to incremental tree
+        // Get value proof for position of new page from incremental tree
+        auto incremental_page_proof = incremental_tree.get_next_page_proof();
+        if (!incremental_page_proof.has_value()) {
+            error("incremental proof failed\n");
+            return 1;
+        }
+        // Directly add page to incremental tree
         incremental_tree.add_page(page_hash);
         // Build full tree from array of page hashes
         full_merkle_tree_of_pages tree_from_scratch(page_log2_size,
@@ -611,6 +668,11 @@ int main(int argc, char *argv[]) {
         auto page_proof = proof_by_proof_tree.get_page_proof(page_count);
         if (!page_proof.has_value()) {
             error("proof failed\n");
+            return 1;
+        }
+        // Compare proof with incremental proof
+        if (page_proof.value() != incremental_page_proof.value()) {
+            error("proof and incremental proof differ\n");
             return 1;
         }
         // Use proof to replace pristine page that was there with the

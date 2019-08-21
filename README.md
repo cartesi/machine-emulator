@@ -42,7 +42,9 @@ $ make clean
 
 ### Install
 
-- TODO
+```bash
+$ make install
+```
 
 ## Running Tests
 
@@ -80,6 +82,3 @@ Please note we have a [Code of Conduct](https://github.com/cartesi/machine-emula
 The machine-emulator repository and all contributions are licensed under
 [LGPL 3.0](https://www.gnu.org/licenses/lgpl-3.0.html). Please review our [COPYING](https://github.com/cartesi/machine-emulator/blob/master/COPYING) file.
 
-## Acknowledgments
-
-- Original work 

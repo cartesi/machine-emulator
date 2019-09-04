@@ -44,7 +44,7 @@ class htif final {
     ssize_t m_buf_len;                     ///< Last character in buffer.
     bool m_fromhost_pending;               ///< fromhost is pending.
     int m_divisor_counter;                 ///< Ignored calls to interact.
-    int m_old_fd0_flags;                   ///< Saved stdout flags.
+    int m_ttyfd;                           ///< The tty file descriptor.
     struct termios m_oldtty;               ///< Saved termios values.
 
 public:

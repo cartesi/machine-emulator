@@ -50,22 +50,35 @@ uint64_t htif::get_csr_rel_addr(csr reg) {
     return static_cast<uint64_t>(reg);
 }
 
-/// \brief Sets descriptor to non-blocking mode
-/// \param fd File descritor.
-static void set_nonblocking(int fd) {
-    int flags = fcntl(fd, F_GETFL, 0);
-    flags |= O_NONBLOCK;
-    fcntl(fd, F_SETFL, flags);
+static int new_ttyfd(const char *path) {
+    int fd;
+    do {
+        fd = open(path, O_RDWR | O_NOCTTY | O_NONBLOCK);
+    } while (fd == -1 && errno == EINTR);
+    return fd;
 }
 
-//??D Maybe the console behavior should change if STDIN is not a TTY?
+static int get_ttyfd(void) {
+    char *path;
+    if ((path = ttyname(STDERR_FILENO)) != nullptr)
+        return new_ttyfd(path);
+    else if ((path = ttyname(STDOUT_FILENO)) != nullptr)
+        return new_ttyfd(path);
+    else if ((path = ttyname(STDIN_FILENO)) != nullptr)
+        return new_ttyfd(path);
+    else if ((path = ctermid(nullptr)) != nullptr)
+        return new_ttyfd(path);
+    else
+        errno = ENOTTY; /* No terminal */
+    return -1;
+}
+
 void htif::init_console(void) {
-    if (isatty(STDIN_FILENO)) {
+    if ((m_ttyfd = get_ttyfd()) >= 0) {
         struct termios tty;
         memset(&tty, 0, sizeof(tty));
-        tcgetattr (STDIN_FILENO, &tty);
+        tcgetattr(m_ttyfd, &tty);
         m_oldtty = tty;
-        m_old_fd0_flags = fcntl(STDIN_FILENO, F_GETFL);
         // Set terminal to "raw" mode
         tty.c_lflag &= ~(
             ECHO   | // Echo off
@@ -92,10 +105,9 @@ void htif::init_console(void) {
         // Read returns with 1 char and no delay
         tty.c_cc[VMIN] = 1;
         tty.c_cc[VTIME] = 0;
-        tcsetattr (STDIN_FILENO, TCSANOW, &tty);
+        tcsetattr(m_ttyfd, TCSANOW, &tty);
         //??D Should we check to see if changes stuck?
     }
-    set_nonblocking(STDIN_FILENO);
 }
 
 void htif::poll_console(void) {
@@ -135,20 +147,11 @@ void htif::poll_console(void) {
     }
 }
 
-/// \brief Sets descriptor to blocking mode
-/// \param fd File descritor.
-static void set_blocking(int fd) {
-    int flags = fcntl(fd, F_GETFL, 0);
-    flags &= (~(O_NONBLOCK));
-    fcntl(fd, F_SETFL, flags);
-}
-
 void htif::end_console(void) {
-    if (isatty(STDIN_FILENO)) {
-        tcsetattr (STDIN_FILENO, TCSANOW, &m_oldtty);
-        fcntl(STDIN_FILENO, F_SETFL, m_old_fd0_flags);
+    if (m_ttyfd >= 0) {
+        tcsetattr(m_ttyfd, TCSANOW, &m_oldtty);
+        close(m_ttyfd);
     }
-    set_blocking(STDIN_FILENO);
 }
 
 // The constructor for the associated machine is typically done
@@ -159,9 +162,9 @@ htif::htif(machine &m, bool i):
     m_buf{}, m_buf_pos{}, m_buf_len{},
     m_fromhost_pending{false},
     m_divisor_counter{},
-    m_old_fd0_flags{} {
+    m_ttyfd{-1} {
     memset(&m_oldtty, 0, sizeof(m_oldtty));
-    if (i) {
+    if (m_interactive) {
         init_console();
     }
 }

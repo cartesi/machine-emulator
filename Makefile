@@ -65,8 +65,8 @@ downloads:
 
 env:
 	@echo $(LIBRARY_PATH)
-	@echo export PATH=$(SRCDIR):$(BUILDDIR)/bin:$${PATH}
-	@echo export LUA_CPATH='$(SRCDIR)/?.so;'$${LUA_CPATH}
+	@echo "export PATH=$(SRCDIR):$(BUILDDIR)/bin:${PATH}"
+	@echo "export LUA_CPATH='$(SRCDIR)/?.so;$(subst $\',,${LUA_CPATH})'"
 
 doc:
 	cd doc && doxygen Doxyfile
@@ -77,7 +77,7 @@ submodules:
 	git submodule update --init --recursive
 
 hash luacartesi grpc test:
-	$(MAKE) -C $(SRCDIR) $@
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 
 $(SRCDIR):
 	$(MAKE) -C $@ $(TARGET)

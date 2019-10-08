@@ -42,7 +42,7 @@ DIR_PATH = os.path.dirname(os.path.realpath(__file__))
 
 TEST_ROM = {
     BOOTARGS: "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw {} -- /bin/echo nice && ls /mnt",
-    BACKING: "rom-linux.bin"
+    BACKING: "rom.bin"
 }
 
 TEST_RAM = {
@@ -64,12 +64,9 @@ TEST_DRIVES = [
 ]
 
 def build_mtdparts_str(drives):
-
     mtdparts_str = "mtdparts="
-
     for i,drive in enumerate(drives):
         mtdparts_str += "flash.%d:-(%s)".format(i, drive[LABEL])
-
     return mtdparts_str
 
 def make_new_machine_request():
@@ -85,48 +82,40 @@ def make_new_machine_request():
     processor_msg = cartesi_base_pb2.Processor(state=processor_state_msg)
     return cartesi_base_pb2.MachineRequest(processor=processor_msg, rom=rom_msg, ram=ram_msg, flash=drives_msg)
 
-def get_args():
+def request(stub, func, *args):
+    print("Executing {} request..".format(func) )
+    response = getattr(stub, func)(*args)
+    if not response:
+        raise Exception("Unexpected {} response: {}".format(func, str(response)))
+    print(func + " response: " + str(response))
+    return response
+
+def get_server_address():
     parser = argparse.ArgumentParser(description='GRPC client to the low level emulator API')
-    parser.add_argument('server_add', help="Emulator GRPC server address")
+    parser.add_argument('server', nargs='?', default="127.0.0.1:50000",
+            help="Emulator GRPC server address (Default: 127.0.0.1:50000)")
     args = parser.parse_args()
-
-    srv_add = "localhost:50000"
-
-    if args.server_add:
-        srv_add = args.server_add
-
-    return srv_add
+    return args.server
 
 def run():
-    response, response2, response3, response4 = (None, None, None, None)
-    srv_add = get_args()
-
-    print("Connecting to server in " + srv_add)
-    with grpc.insecure_channel(srv_add) as channel:
+    server_address = get_server_address()
+    print("Connecting to cartesi-machine-server at " + server_address)
+    with grpc.insecure_channel(server_address) as channel:
         stub = core_pb2_grpc.MachineStub(channel)
+        content = bytes("Hello World!", "iso8859-1")
+        mem_address = TEST_DRIVES[0][START]
         try:
-            response = stub.Machine(make_new_machine_request())
-            response2 = stub.GetRootHash(cartesi_base_pb2.Void())
-            run_msg = cartesi_base_pb2.RunRequest(limit=500000000)
-            response3 = stub.Run(run_msg)
-            response4 = stub.Step(cartesi_base_pb2.Void())
-            #DEBUG
-            #embed()
-            response5 = stub.Shutdown(cartesi_base_pb2.Void())
+            request(stub, "Machine", make_new_machine_request())
+            request(stub, "GetRootHash", cartesi_base_pb2.Void())
+            request(stub, "Run", cartesi_base_pb2.RunRequest(limit=500000000))
+            request(stub, "Step", cartesi_base_pb2.Void())
+            request(stub, "WriteMemory", cartesi_base_pb2.WriteMemoryRequest(address=mem_address, data=content))
+            request(stub, "ReadMemory", cartesi_base_pb2.ReadMemoryRequest(address=mem_address, length=len(content)))
+            request(stub, "Shutdown", cartesi_base_pb2.Void())
         except Exception as e:
             print("An exception occurred:")
             print(e)
             print(type(e))
-    if (response):
-        print("Core client received: " + str(response))
-    if (response2):
-        print("Core client received2: " + str(response2))
-    if (response3):
-        print("Core client received3: " + str(response3))
-    if (response4):
-        print("Core client received4: " + str(response4))
-    if (response5):
-        print("Core client received5: " + str(response5))
 
 if __name__ == '__main__':
     run()

@@ -47,8 +47,10 @@
 #include "access-log.h"
 #include "keccak-256-hasher.h"
 #include "pma.h"
+#include "unique-c-ptr.h"
 
 #include <boost/program_options.hpp>
+
 namespace po = boost::program_options;
 
 using cartesi::word_access;
@@ -64,7 +66,6 @@ using cartesi::ram_config;
 using cartesi::htif_config;
 using cartesi::clint_config;
 using cartesi::machine_config;
-using cartesi::machine;
 using cartesi::keccak_256_hasher;
 using cartesi::bracket_note;
 using hash_type = keccak_256_hasher::hash_type;
@@ -79,8 +80,7 @@ struct Context {
     bool auto_port;
     bool report_to_manager;
     bool forked;
-    std::unique_ptr<machine> cartesimachine;
-    Context(void): value(0), address(), manager_address(), session_id(), auto_port(false), report_to_manager(false), forked(false), cartesimachine(nullptr) { }
+    std::unique_ptr<cartesi::machine> machine;
 };
 
 // Move this to static member function of MachingServiceImpl?
@@ -106,6 +106,9 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     using MachineRequest = CartesiCore::MachineRequest;
     using RunRequest = CartesiCore::RunRequest;
     using RunResponse = CartesiCore::RunResponse;
+    using ReadMemoryRequest = CartesiCore::ReadMemoryRequest;
+    using ReadMemoryResponse = CartesiCore::ReadMemoryResponse;
+    using WriteMemoryRequest = CartesiCore::WriteMemoryRequest;
     using Processor = CartesiCore::Processor;
     using ProcessorState = CartesiCore::ProcessorState;
     using ROM = CartesiCore::ROM;
@@ -128,272 +131,263 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     Context &context_;
     BreakReason reason_;
 
-    //This method is not being used, by might be useful for debugging
-    std::string convert_hash_type_to_hex_string(const hash_type &h){
-        std::ostringstream ss;
-        ss << "0x" << std::setfill('0');
-        for (unsigned int i=0; i < h.size(); ++i) {
-            ss << std::setw(2) << std::hex << static_cast<int>(h[i]);
-        }
-        //std::cout << ss.str() << "\n"; //Debug
-        return ss.str();
+    Status error_no_machine(void) const {
+        dbg("No machine");
+        return Status(StatusCode::FAILED_PRECONDITION, "No machine");
     }
 
-    void set_resp_from_access_log(AccessLog *response, access_log &al) {
+    Status error_exception(const std::exception& e) const {
+        dbg("Caught exception %s", e.what());
+        return Status(StatusCode::ABORTED, e.what());
+    }
+
+    void set_resp_from_access_log(const access_log &al,
+        AccessLog *response) const {
         //Building word access grpc objects with equivalent content
         auto accesses = al.get_accesses();
-        for (std::vector<word_access>::iterator wai = accesses.begin(); wai != accesses.end(); ++wai){
+        for (const auto &wa: al.get_accesses()) {
             Access *a = response->add_accesses();
-
             //Setting type
-            switch (wai->type) {
-                case cartesi::access_type::read :
+            switch (wa.type) {
+                case access_type::read:
                     a->set_operation(CartesiCore::AccessOperation::READ);
                     break;
-                case cartesi::access_type::write :
+                case access_type::write:
                     a->set_operation(CartesiCore::AccessOperation::WRITE);
                     break;
             }
 
             //Setting read, and written fields
-            Word *r = a->mutable_read();
-            Word *w = a->mutable_written();
-            r->set_content(&wai->read, sizeof(wai->read));
-            w->set_content(&wai->written, sizeof(wai->written));
+            a->mutable_read()->set_content(&wa.read, sizeof(wa.read));
+            a->mutable_written()->set_content(&wa.written, sizeof(wa.written));
 
             //Building proof object
             Proof *p = a->mutable_proof();
-            p->set_address(wai->proof.address);
-            p->set_log2_size(wai->proof.log2_size);
+            p->set_address(wa.proof.address);
+            p->set_log2_size(wa.proof.log2_size);
 
             //Building target hash
-            Hash *th = p->mutable_target_hash();
-            th->set_content(wai->proof.target_hash.data(), wai->proof.target_hash.size());
+            p->mutable_target_hash()->set_content(wa.proof.target_hash.data(),
+                wa.proof.target_hash.size());
 
             //Building root hash
-            Hash *rh = p->mutable_root_hash();
-            rh->set_content(wai->proof.root_hash.data(), wai->proof.root_hash.size());
+            p->mutable_root_hash()->set_content(wa.proof.root_hash.data(),
+                wa.proof.root_hash.size());
 
             //Setting all sibling hashes
-            for (unsigned int i=0; i < wai->proof.sibling_hashes.size(); ++i) {
+            for (const auto &h: wa.proof.sibling_hashes) {
                 Hash *sh = p->add_sibling_hashes();
-                sh->set_content(wai->proof.sibling_hashes[i].data(), wai->proof.sibling_hashes[i].size());
+                sh->set_content(h.data(), h.size());
             }
         }
 
         //Building bracket note grpc objects with equivalent content
-        auto brackets = al.get_brackets();
-        for (std::vector<bracket_note>::iterator bni = brackets.begin(); bni != brackets.end(); ++bni){
+        for (const auto &bni: al.get_brackets()) {
             BracketNote *bn = response->add_brackets();
-
             //Setting type
-            switch (bni->type) {
-                case cartesi::bracket_type::begin :
+            switch (bni.type) {
+                case bracket_type::begin:
                     bn->set_type(CartesiCore::BracketNote_BracketNoteType_BEGIN);
                     break;
-                case cartesi::bracket_type::end :
+                case bracket_type::end:
                     bn->set_type(CartesiCore::BracketNote_BracketNoteType_END);
                     break;
-                case cartesi::bracket_type::invalid :
+                case bracket_type::invalid:
                     bn->set_type(CartesiCore::BracketNote_BracketNoteType_INVALID);
                     break;
             }
-
             //Setting where and text
-            bn->set_where(bni->where);
-            bn->set_text(bni->text);
+            bn->set_where(bni.where);
+            bn->set_text(bni.text);
         }
 
         //Building notes
-        auto notes = al.get_notes();
-        for (std::vector<std::string>::iterator ni = notes.begin(); ni != notes.end(); ++ni){
-            std::string *n = response->add_notes();
-            n->assign(*ni);
+        for (const auto &ni: al.get_notes()) {
+            response->add_notes()->assign(ni);
         }
     }
 
-    void set_processor_config_from_grpc(machine_config &c, ProcessorState &ps) {
-        if (ps.x1_oneof_case() == ProcessorState::kX1){
+    void set_processor_config_from_grpc(machine_config &c, const ProcessorState &ps) const {
+        if (ps.x1_oneof_case() == ProcessorState::kX1) {
             c.processor.x[1] = ps.x1();
         }
-        if (ps.x2_oneof_case() == ProcessorState::kX2){
+        if (ps.x2_oneof_case() == ProcessorState::kX2) {
             c.processor.x[2] = ps.x2();
         }
-        if (ps.x3_oneof_case() == ProcessorState::kX3){
+        if (ps.x3_oneof_case() == ProcessorState::kX3) {
             c.processor.x[3] = ps.x3();
         }
-        if (ps.x4_oneof_case() == ProcessorState::kX4){
+        if (ps.x4_oneof_case() == ProcessorState::kX4) {
             c.processor.x[4] = ps.x4();
         }
-        if (ps.x5_oneof_case() == ProcessorState::kX5){
+        if (ps.x5_oneof_case() == ProcessorState::kX5) {
             c.processor.x[5] = ps.x5();
         }
-        if (ps.x6_oneof_case() == ProcessorState::kX6){
+        if (ps.x6_oneof_case() == ProcessorState::kX6) {
             c.processor.x[6] = ps.x6();
         }
-        if (ps.x7_oneof_case() == ProcessorState::kX7){
+        if (ps.x7_oneof_case() == ProcessorState::kX7) {
             c.processor.x[7] = ps.x7();
         }
-        if (ps.x8_oneof_case() == ProcessorState::kX8){
+        if (ps.x8_oneof_case() == ProcessorState::kX8) {
             c.processor.x[8] = ps.x8();
         }
-        if (ps.x9_oneof_case() == ProcessorState::kX9){
+        if (ps.x9_oneof_case() == ProcessorState::kX9) {
             c.processor.x[9] = ps.x9();
         }
-        if (ps.x10_oneof_case() == ProcessorState::kX10){
+        if (ps.x10_oneof_case() == ProcessorState::kX10) {
             c.processor.x[10] = ps.x10();
         }
-        if (ps.x11_oneof_case() == ProcessorState::kX11){
+        if (ps.x11_oneof_case() == ProcessorState::kX11) {
             c.processor.x[11] = ps.x11();
         }
-        if (ps.x12_oneof_case() == ProcessorState::kX12){
+        if (ps.x12_oneof_case() == ProcessorState::kX12) {
             c.processor.x[12] = ps.x12();
         }
-        if (ps.x13_oneof_case() == ProcessorState::kX13){
+        if (ps.x13_oneof_case() == ProcessorState::kX13) {
             c.processor.x[13] = ps.x13();
         }
-        if (ps.x14_oneof_case() == ProcessorState::kX14){
+        if (ps.x14_oneof_case() == ProcessorState::kX14) {
             c.processor.x[14] = ps.x14();
         }
-        if (ps.x15_oneof_case() == ProcessorState::kX15){
+        if (ps.x15_oneof_case() == ProcessorState::kX15) {
             c.processor.x[15] = ps.x15();
         }
-        if (ps.x16_oneof_case() == ProcessorState::kX16){
+        if (ps.x16_oneof_case() == ProcessorState::kX16) {
             c.processor.x[16] = ps.x16();
         }
-        if (ps.x17_oneof_case() == ProcessorState::kX17){
+        if (ps.x17_oneof_case() == ProcessorState::kX17) {
             c.processor.x[17] = ps.x17();
         }
-        if (ps.x18_oneof_case() == ProcessorState::kX18){
+        if (ps.x18_oneof_case() == ProcessorState::kX18) {
             c.processor.x[18] = ps.x18();
         }
-        if (ps.x19_oneof_case() == ProcessorState::kX19){
+        if (ps.x19_oneof_case() == ProcessorState::kX19) {
             c.processor.x[19] = ps.x19();
         }
-        if (ps.x20_oneof_case() == ProcessorState::kX20){
+        if (ps.x20_oneof_case() == ProcessorState::kX20) {
             c.processor.x[20] = ps.x20();
         }
-        if (ps.x21_oneof_case() == ProcessorState::kX21){
+        if (ps.x21_oneof_case() == ProcessorState::kX21) {
             c.processor.x[21] = ps.x21();
         }
-        if (ps.x22_oneof_case() == ProcessorState::kX22){
+        if (ps.x22_oneof_case() == ProcessorState::kX22) {
             c.processor.x[22] = ps.x22();
         }
-        if (ps.x23_oneof_case() == ProcessorState::kX23){
+        if (ps.x23_oneof_case() == ProcessorState::kX23) {
             c.processor.x[23] = ps.x23();
         }
-        if (ps.x24_oneof_case() == ProcessorState::kX24){
+        if (ps.x24_oneof_case() == ProcessorState::kX24) {
             c.processor.x[24] = ps.x24();
         }
-        if (ps.x25_oneof_case() == ProcessorState::kX25){
+        if (ps.x25_oneof_case() == ProcessorState::kX25) {
             c.processor.x[25] = ps.x25();
         }
-        if (ps.x26_oneof_case() == ProcessorState::kX26){
+        if (ps.x26_oneof_case() == ProcessorState::kX26) {
             c.processor.x[26] = ps.x26();
         }
-        if (ps.x27_oneof_case() == ProcessorState::kX27){
+        if (ps.x27_oneof_case() == ProcessorState::kX27) {
             c.processor.x[27] = ps.x27();
         }
-        if (ps.x28_oneof_case() == ProcessorState::kX28){
+        if (ps.x28_oneof_case() == ProcessorState::kX28) {
             c.processor.x[28] = ps.x28();
         }
-        if (ps.x29_oneof_case() == ProcessorState::kX29){
+        if (ps.x29_oneof_case() == ProcessorState::kX29) {
             c.processor.x[29] = ps.x29();
         }
-        if (ps.x30_oneof_case() == ProcessorState::kX30){
+        if (ps.x30_oneof_case() == ProcessorState::kX30) {
             c.processor.x[30] = ps.x30();
         }
-        if (ps.x31_oneof_case() == ProcessorState::kX31){
+        if (ps.x31_oneof_case() == ProcessorState::kX31) {
             c.processor.x[31] = ps.x31();
         }
-        if (ps.pc_oneof_case() == ProcessorState::kPc){
+        if (ps.pc_oneof_case() == ProcessorState::kPc) {
             c.processor.pc = ps.pc();
         }
-        if (ps.mvendorid_oneof_case() == ProcessorState::kMvendorid){
+        if (ps.mvendorid_oneof_case() == ProcessorState::kMvendorid) {
             c.processor.mvendorid = ps.mvendorid();
         }
-        if (ps.marchid_oneof_case() == ProcessorState::kMarchid){
+        if (ps.marchid_oneof_case() == ProcessorState::kMarchid) {
             c.processor.marchid = ps.marchid();
         }
-        if (ps.mimpid_oneof_case() == ProcessorState::kMimpid){
+        if (ps.mimpid_oneof_case() == ProcessorState::kMimpid) {
             c.processor.mimpid = ps.mimpid();
         }
-        if (ps.mcycle_oneof_case() == ProcessorState::kMcycle){
+        if (ps.mcycle_oneof_case() == ProcessorState::kMcycle) {
             c.processor.mcycle = ps.mcycle();
         }
-        if (ps.minstret_oneof_case() == ProcessorState::kMinstret){
+        if (ps.minstret_oneof_case() == ProcessorState::kMinstret) {
             c.processor.minstret = ps.minstret();
         }
-        if (ps.mstatus_oneof_case() == ProcessorState::kMstatus){
+        if (ps.mstatus_oneof_case() == ProcessorState::kMstatus) {
             c.processor.mstatus = ps.mstatus();
         }
-        if (ps.mtvec_oneof_case() == ProcessorState::kMtvec){
+        if (ps.mtvec_oneof_case() == ProcessorState::kMtvec) {
             c.processor.mtvec = ps.mtvec();
         }
-        if (ps.mscratch_oneof_case() == ProcessorState::kMscratch){
+        if (ps.mscratch_oneof_case() == ProcessorState::kMscratch) {
             c.processor.mscratch = ps.mscratch();
         }
-        if (ps.mepc_oneof_case() == ProcessorState::kMepc){
+        if (ps.mepc_oneof_case() == ProcessorState::kMepc) {
             c.processor.mepc = ps.mepc();
         }
-        if (ps.mcause_oneof_case() == ProcessorState::kMcause){
+        if (ps.mcause_oneof_case() == ProcessorState::kMcause) {
             c.processor.mcause = ps.mcause();
         }
-        if (ps.mtval_oneof_case() == ProcessorState::kMtval){
+        if (ps.mtval_oneof_case() == ProcessorState::kMtval) {
             c.processor.mtval = ps.mtval();
         }
-        if (ps.misa_oneof_case() == ProcessorState::kMisa){
+        if (ps.misa_oneof_case() == ProcessorState::kMisa) {
             c.processor.misa = ps.misa();
         }
-        if (ps.mie_oneof_case() == ProcessorState::kMie){
+        if (ps.mie_oneof_case() == ProcessorState::kMie) {
             c.processor.mie = ps.mie();
         }
-        if (ps.mip_oneof_case() == ProcessorState::kMip){
+        if (ps.mip_oneof_case() == ProcessorState::kMip) {
             c.processor.mip = ps.mip();
         }
-        if (ps.medeleg_oneof_case() == ProcessorState::kMedeleg){
+        if (ps.medeleg_oneof_case() == ProcessorState::kMedeleg) {
             c.processor.medeleg = ps.medeleg();
         }
-        if (ps.mideleg_oneof_case() == ProcessorState::kMideleg){
+        if (ps.mideleg_oneof_case() == ProcessorState::kMideleg) {
             c.processor.mideleg = ps.mideleg();
         }
-        if (ps.mcounteren_oneof_case() == ProcessorState::kMcounteren){
+        if (ps.mcounteren_oneof_case() == ProcessorState::kMcounteren) {
             c.processor.mcounteren = ps.mcounteren();
         }
-        if (ps.stvec_oneof_case() == ProcessorState::kStvec){
+        if (ps.stvec_oneof_case() == ProcessorState::kStvec) {
             c.processor.stvec = ps.stvec();
         }
-        if (ps.sscratch_oneof_case() == ProcessorState::kSscratch){
+        if (ps.sscratch_oneof_case() == ProcessorState::kSscratch) {
             c.processor.sscratch = ps.sscratch();
         }
-        if (ps.sepc_oneof_case() == ProcessorState::kSepc){
+        if (ps.sepc_oneof_case() == ProcessorState::kSepc) {
             c.processor.sepc = ps.sepc();
         }
-        if (ps.scause_oneof_case() == ProcessorState::kScause){
+        if (ps.scause_oneof_case() == ProcessorState::kScause) {
             c.processor.scause = ps.scause();
         }
-        if (ps.stval_oneof_case() == ProcessorState::kStval){
+        if (ps.stval_oneof_case() == ProcessorState::kStval) {
             c.processor.stval = ps.stval();
         }
-        if (ps.satp_oneof_case() == ProcessorState::kSatp){
+        if (ps.satp_oneof_case() == ProcessorState::kSatp) {
             c.processor.satp = ps.satp();
         }
-        if (ps.scounteren_oneof_case() == ProcessorState::kScounteren){
+        if (ps.scounteren_oneof_case() == ProcessorState::kScounteren) {
             c.processor.scounteren = ps.scounteren();
         }
-        if (ps.ilrsc_oneof_case() == ProcessorState::kIlrsc){
+        if (ps.ilrsc_oneof_case() == ProcessorState::kIlrsc) {
             c.processor.ilrsc = ps.ilrsc();
         }
-        if (ps.iflags_oneof_case() == ProcessorState::kIflags){
+        if (ps.iflags_oneof_case() == ProcessorState::kIflags) {
             c.processor.iflags = ps.iflags();
         }
     }
 
     void set_config_from_req(machine_config &c, const MachineRequest *mr) {
 
-
         //Checking if custom processor values were set on request parameters
-        if (mr->has_processor()){
+        if (mr->has_processor()) {
             auto p = mr->processor();
 
             switch (p.processor_oneof_case()) {
@@ -412,7 +406,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         }
 
         //Setting ROM configs
-        if (mr->has_rom()){
+        if (mr->has_rom()) {
             auto rom = mr->rom();
 
             switch (rom.rom_oneof_case()) {
@@ -432,23 +426,23 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         }
 
         //Setting ram configs
-        if (mr->has_ram()){
+        if (mr->has_ram()) {
             c.ram.length = mr->ram().length();
             c.ram.backing = mr->ram().backing();
         }
 
         //Setting flash configs
-        for (const Drive &drive: mr->flash()){
+        for (const auto &drive: mr->flash()) {
             flash_config flash{};
             flash.start = drive.start();
             flash.backing = drive.backing();
             flash.length = drive.length();
             flash.shared = drive.shared();
-            c.flash.push_back(std::move(flash));
+            c.flash.emplace_back(std::move(flash));
         }
 
         //Setting CLINT configs
-        if (mr->has_clint()){
+        if (mr->has_clint()) {
             auto clint = mr->clint();
 
             switch (clint.clint_oneof_case()) {
@@ -467,7 +461,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             }
         }
         //Setting HTIF configs
-        if (mr->has_htif()){
+        if (mr->has_htif()) {
             auto htif = mr->htif();
 
             switch (htif.htif_oneof_case()) {
@@ -499,146 +493,118 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
            breaker_ = std::thread(shutdown_server, server_);
     }
 
-    Status Machine(ServerContext *, const MachineRequest * request, Void *) override {
-        //Acquiring lock
+    Status Machine(ServerContext *, const MachineRequest * request, Void *)
+        override {
         std::lock_guard<std::mutex> lock(barrier_);
-
-        //Checking if there is already a Cartesi machine created
-        if (!context_.cartesimachine){
-            //There isn't, creating a new one
-
-            //Creating a standard machine config
+        // If machine already exists, abort
+        if (context_.machine) {
+            constexpr char *msg = "Machine already exists";
+            dbg(msg);
+            return Status(StatusCode::FAILED_PRECONDITION, msg);
+        }
+        // Otherwise, try to create a new one
+        try {
             machine_config mconfig{};
             set_config_from_req(mconfig, request);
-
-            //Creating machine
-            dbg("Creating Cartesi machine");
-            try {
-                context_.cartesimachine = std::make_unique<machine>(mconfig);
-            }
-            catch (std::exception& e) {
-                std::string errormsg = "An exception happened when instantiating a Cartesi machine: ";
-                errormsg += e.what();
-                dbg("%s", errormsg.c_str());
-                return Status(StatusCode::UNKNOWN, errormsg);
-            }
-            dbg("Cartesi machine created");
+            context_.machine = std::make_unique<cartesi::machine>(mconfig);
             return Status::OK;
-        }
-        else {
-            //There is, notifying and doing nothing
-            dbg("There is already an active Cartesi machine");
-            return Status(StatusCode::FAILED_PRECONDITION, "There is already a Cartesi machine");
+        } catch (std::exception& e) {
+            return error_exception(e);
         }
     }
 
-    Status Run(ServerContext *, const RunRequest *request, RunResponse *response) override {
-        //Acquiring lock
+    Status Run(ServerContext *, const RunRequest *request,
+        RunResponse *response) override {
         std::lock_guard<std::mutex> lock(barrier_);
-
-        //Checking if there is already a Cartesi machine created
-        if (context_.cartesimachine){
-            //There is
-
-            //Debug
-            dbg("Running");
-
-            //Reading desired CPU cycles limit to execute
-            uint64_t reqlimit = (uint64_t) request->limit();
-
-            machine *cm = context_.cartesimachine.get();
-
-            //Reading mcycle
-            auto curmcycle = cm->read_mcycle();
-
-            //Checking if provided limit is valid
-            if (reqlimit < curmcycle){
-                dbg("Must provide a CPU cycles limit greater than current Cartesi machine CPU cycle to issue running the machine");
-                return Status(StatusCode::INVALID_ARGUMENT, "Must provide a CPU cycles limit greater than current Cartesi machine CPU cycle to issue running the machine");
-            }
-
-            try {
-                cm->run(reqlimit);
-            }
-            catch (std::exception& e){
-                std::string errormsg = "An exception happened when running the Cartesi machine: ";
-                errormsg += e.what();
-                dbg("%s", errormsg.c_str());
-                return Status(StatusCode::UNKNOWN, errormsg);
-            }
-
-            //Setting response
-            response->set_mcycle(cm->read_mcycle());
-            response->set_tohost(cm->read_htif_tohost());
-
-            dbg("Run executed");
-            return Status::OK;
+        if (!context_.machine) {
+            return error_no_machine();
         }
-        else {
-            //There isn't, notifying and doing nothing
-            dbg("There is no active Cartesi machine, create one before executing run");
-            return Status(StatusCode::FAILED_PRECONDITION, "There is no active Cartesi machine, create one before executing run");
+        uint64_t limit = (uint64_t) request->limit();
+        // Limit can't be in the past
+        if (limit < context_.machine->read_mcycle()) {
+            const char *msg = "Requested mcycle limit is already past";
+            dbg(msg);
+            return Status(StatusCode::INVALID_ARGUMENT, msg);
+        }
+        // If it is not in the past, try running running towards it
+        try {
+            dbg("Run started");
+            context_.machine->run(limit);
+            response->set_mcycle(context_.machine->read_mcycle());
+            response->set_tohost(context_.machine->read_htif_tohost());
+            dbg("Run finished");
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
         }
     }
 
     Status Step(ServerContext *, const Void *, AccessLog *response) override {
-        //Acquiring lock
         std::lock_guard<std::mutex> lock(barrier_);
-
-        //Checking if there is already a Cartesi machine created
-        if (context_.cartesimachine){
-            //There is
-            dbg("Stepping");
-
-            //Recovering cartesi machine instance reference
-            machine *cm = context_.cartesimachine.get();
-
-            //Creating an access log instance to hold step execution information and stepping
+        if (!context_.machine) {
+            return error_no_machine();
+        }
+        try {
             access_log al{};
-            cm->step(al);
-
-            //Setting response
-            set_resp_from_access_log(response, al);
-
+            context_.machine->step(al);
+            set_resp_from_access_log(al, response);
             dbg("Step executed");
             return Status::OK;
-        }
-        else {
-            //There isn't, notifying and doing nothing
-            dbg("There is no active Cartesi machine, create one before executing step");
-            return Status(StatusCode::FAILED_PRECONDITION, "There is no active Cartesi machine, create one before executing step");
+        } catch (std::exception &e) {
+            return error_exception(e);
         }
     }
 
     Status GetRootHash(ServerContext *, const Void *, Hash *response) override {
-        //Acquiring lock
         std::lock_guard<std::mutex> lock(barrier_);
-
-        //Checking if there is already a Cartesi machine created
-        if (context_.cartesimachine){
-            //There is
-            dbg("Getting root hash");
-
-            //Recovering cartesi machine instance reference
-            machine *cm = context_.cartesimachine.get();
-
-            //Updating merkle tree
-            cm->update_merkle_tree();
-
-            //Creating a merkle tree hash to hold the root hash and populating it
-            merkle_tree::hash_type rh;
-            cm->get_merkle_tree().get_root_hash(rh);
-
-            //Setting response
-            response->set_content(rh.data(), rh.size());
-            dbg("Getting root hash executed");
-
-            return Status::OK;
+        if (!context_.machine) {
+            return error_no_machine();
         }
-        else {
-            //There isn't, notifying and doing nothing
-            dbg("There is no active Cartesi machine, create one before executing get root hash");
-            return Status(StatusCode::FAILED_PRECONDITION, "There is no active Cartesi machine, create one before executing get root hash");
+        try {
+            context_.machine->update_merkle_tree();
+            merkle_tree::hash_type rh;
+            context_.machine->get_merkle_tree().get_root_hash(rh);
+            response->set_content(rh.data(), rh.size());
+            return Status::OK;
+        } catch (std::exception &e) {
+            return error_exception(e);
+        }
+    }
+
+
+    Status ReadMemory(ServerContext *, const ReadMemoryRequest *request,
+        ReadMemoryResponse *response) override {
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine) {
+            return error_no_machine();
+        }
+        try {
+            uint64_t address = request->address();
+            uint64_t length = request->length();
+            auto data = cartesi::unique_calloc<unsigned char>(1, length);
+            context_.machine->read_memory(address, data.get(), length);
+            response->set_data(data.get(), length);
+            return Status::OK;
+        } catch (std::exception &e) {
+            return error_exception(e);
+        }
+    }
+
+    Status WriteMemory(ServerContext *, const WriteMemoryRequest *request,
+        Void *) override {
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine) {
+            return error_no_machine();
+        }
+        try {
+            uint64_t address = request->address();
+            const auto &data = request->data();
+            context_.machine->write_memory(address,
+                reinterpret_cast<const unsigned char *>(data.data()),
+                data.size());
+            return Status::OK;
+        } catch (std::exception &e) {
+            return error_exception(e);
         }
     }
 
@@ -693,7 +659,7 @@ public:
 
 };
 
-void report_to_manager_server(Context &context){
+static void report_to_manager_server(Context &context) {
     dbg("Reporting address to manager\n");
     std::unique_ptr<cartesi::manager_client> mc = std::make_unique<cartesi::manager_client>();
     mc->register_on_manager(context.session_id, context.address, context.manager_address);
@@ -719,13 +685,13 @@ static BreakReason server_loop(Context &context) {
 
     service.set_server(server.get());
 
-    if (context.auto_port){
+    if (context.auto_port) {
         dbg("Auto port\n");
         context.address = "localhost:";
         context.address += std::to_string(bound_port);
     }
     dbg("Server %d listening to %s", getpid(), context.address.c_str());
-    if (context.report_to_manager){
+    if (context.report_to_manager) {
         report_to_manager_server(context);
     }
 
@@ -837,18 +803,17 @@ static void daemonize(void) {
     }
 }
 
-void conflicting_options(const po::variables_map & vm,
-                         const std::string & opt1, const std::string & opt2) {
+static void check_conflicting_options(const po::variables_map & vm,
+    const std::string & opt1, const std::string & opt2) {
     if (vm.count(opt1) && !vm[opt1].defaulted() &&
-        vm.count(opt2) && !vm[opt2].defaulted())
-    {
+        vm.count(opt2) && !vm[opt2].defaulted()) {
         std::cout << std::string("Conflicting options '") +
                                opt1 + "' and '" + opt2 + "'.\n";
         exit(1);
     }
 }
 
-std::string get_unix_socket_filename() {
+static std::string get_unix_socket_filename() {
     char tmp[] = "/tmp/cartesi-unix-socket-XXXXXX";
     if(!mkdtemp(tmp)) {
         dbg("Error creating tmp directory");
@@ -857,7 +822,8 @@ std::string get_unix_socket_filename() {
     return std::string{tmp} + "/grpc-unix-socket";
 }
 
-void set_context_with_cli_arguments(Context &context, int &argc, char** &argv) {
+static void set_context_with_cli_arguments(Context &context, int &argc, 
+    char** &argv) {
     //Defining cli options
     po::options_description desc("Allowed options");
     desc.add_options()
@@ -869,16 +835,16 @@ void set_context_with_cli_arguments(Context &context, int &argc, char** &argv) {
 
     po::variables_map vm;
     try {
-    po::store(po::parse_command_line(argc, argv, desc), vm);
-    } catch (boost::exception_detail::clone_impl<boost::exception_detail::error_info_injector<boost::program_options::invalid_command_line_syntax>> &ex){
+        po::store(po::parse_command_line(argc, argv, desc), vm);
+    } catch (boost::exception_detail::clone_impl<boost::exception_detail::error_info_injector<boost::program_options::invalid_command_line_syntax>> &ex) {
         std::cout << ex.what() << '\n';
         exit(1);
-    } catch (boost::exception_detail::clone_impl<boost::exception_detail::error_info_injector<boost::program_options::unknown_option>> &ex){
+    } catch (boost::exception_detail::clone_impl<boost::exception_detail::error_info_injector<boost::program_options::unknown_option>> &ex) {
         std::cout << ex.what() << '\n';
         exit(1);
     }
 
-    conflicting_options(vm, "socket-type", "address");
+    check_conflicting_options(vm, "socket-type", "address");
     po::notify(vm);
 
     //Help
@@ -888,14 +854,14 @@ void set_context_with_cli_arguments(Context &context, int &argc, char** &argv) {
     }
 
     //Checking if both socket type and address weren't defined
-    if (!vm.count("address") && !vm.count("socket-type")){
+    if (!vm.count("address") && !vm.count("socket-type")) {
         std::cout << "Must provide address or socket-type, but not both\n";
         exit(1);
     }
 
     //If manager address or session if were provided, they must both be provided
-    if (vm.count("manager-address") || vm.count("session-id")){
-        if (!(vm.count("session-id") && vm.count("manager-address"))){
+    if (vm.count("manager-address") || vm.count("session-id")) {
+        if (!(vm.count("session-id") && vm.count("manager-address"))) {
             std::cout << "Must provide both session-id and setting manager-address when desired to report session-id to core-manager server\n";
             exit(1);
         }
@@ -906,24 +872,22 @@ void set_context_with_cli_arguments(Context &context, int &argc, char** &argv) {
     }
 
     //Setting address to the given one or an auto-generated
-    if (vm.count("address")){
+    if (vm.count("address")) {
         //Setting to listen on provided address
         context.address = vm["address"].as<std::string>();
     }
-    if (vm.count("socket-type")){
+    if (vm.count("socket-type")) {
         auto socket_type = vm["socket-type"].as<std::string>();
-        if (socket_type == "unix"){
+        if (socket_type == "unix") {
             //Using unix socket on a dynamically generated filename
             context.address = "unix:";
             context.address += get_unix_socket_filename();
             dbg("%s", context.address.c_str());
-        }
-        else if (socket_type == "tcp") {
+        } else if (socket_type == "tcp") {
             //System allocated port
             context.auto_port = true;
             context.address = "localhost:0";
-        }
-        else {
+        } else {
             std::cout << "Invalid option, provide either unix or tcp as socket-type\n";
             exit(1);
         }
@@ -931,7 +895,7 @@ void set_context_with_cli_arguments(Context &context, int &argc, char** &argv) {
 }
 
 int main(int argc, char** argv) {
-    Context context;
+    Context context{};
 
     set_context_with_cli_arguments(context, argc, argv);
 

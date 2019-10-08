@@ -306,8 +306,16 @@ static const pma_driver htif_driver {
     htif_write
 };
 
-void htif::register_mmio(uint64_t start, uint64_t length) {
-    m_machine.register_mmio(start, length, htif_peek, this, &htif_driver, PMA_ISTART_DID::HTIF);
+void htif::register_device(uint64_t start, uint64_t length) {
+    pma_entry::flags f{
+        true,                   // R
+        true,                   // W
+        false,                  // X
+        false,                  // IR
+        false,                  // IW
+        PMA_ISTART_DID::HTIF    // DID
+    };
+    m_machine.register_device(start, length, f, htif_peek, this, &htif_driver);
 }
 
 } // namespace cartesi

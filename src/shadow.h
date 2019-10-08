@@ -78,7 +78,7 @@ uint64_t shadow_get_pma_rel_addr(int p);
 /// \param m Associated machine.
 /// \param start Start address for memory range.
 /// \param length Length of memory range.
-void shadow_register_mmio(machine &m, uint64_t start, uint64_t length);
+void shadow_register_device(machine &m, uint64_t start, uint64_t length);
 
 } // namespace cartesi
 

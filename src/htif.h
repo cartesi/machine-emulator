@@ -69,7 +69,7 @@ public:
     /// \brief Registers device with the machine
     /// \param start Start address for memory range.
     /// \param length Length of memory range.
-    void register_mmio(uint64_t start, uint64_t length);
+    void register_device(uint64_t start, uint64_t length);
 
     /// \brief Interact with the hosts's terminal.
     void interact(void);

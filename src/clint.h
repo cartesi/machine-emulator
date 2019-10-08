@@ -42,7 +42,7 @@ uint64_t clint_get_csr_rel_addr(clint_csr reg);
 /// \param m Associated machine.
 /// \param start Start address for memory range.
 /// \param length Length of memory range.
-void clint_register_mmio(machine &m, uint64_t start, uint64_t length);
+void clint_register_device(machine &m, uint64_t start, uint64_t length);
 
 } // namespace cartesi
 

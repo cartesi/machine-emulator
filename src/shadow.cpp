@@ -157,8 +157,16 @@ static const pma_driver shadow_driver = {
     pma_write_error
 };
 
-void shadow_register_mmio(machine &m, uint64_t start, uint64_t length) {
-    m.register_shadow(start, length, shadow_peek, &m, &shadow_driver);
+void shadow_register_device(machine &m, uint64_t start, uint64_t length) {
+    pma_entry::flags f{
+        true,                   // R
+        false,                  // W
+        false,                  // X
+        false,                  // IR
+        false,                  // IW
+        PMA_ISTART_DID::shadow  // DID
+    };
+    m.register_device(start, length, f, shadow_peek, &m, &shadow_driver);
 }
 
 } // namespace cartesi

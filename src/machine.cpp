@@ -44,6 +44,33 @@ namespace cartesi {
 
 using namespace std::string_literals;
 
+pma_entry::flags machine::m_ram_flags{
+    true,                   // R
+    true,                   // W
+    true,                   // X
+    true,                   // IR
+    true,                   // IW
+    PMA_ISTART_DID::memory  // DID
+};
+
+pma_entry::flags machine::m_rom_flags{
+    true,                   // R
+    false,                  // W
+    true,                   // X
+    true,                   // IR
+    false,                  // IW
+    PMA_ISTART_DID::memory  // DID
+};
+
+pma_entry::flags machine::m_flash_flags{
+    true,                   // R
+    true,                   // W
+    false,                  // X
+    true,                   // IR
+    true,                   // IW
+    PMA_ISTART_DID::drive  // DID
+};
+
 std::string get_name(void) {
     std::ostringstream os;
     os << MVENDORID_INIT << ':' << MARCHID_INIT << ':' << MIMPID_INIT;
@@ -63,7 +90,7 @@ static inline pma_entry &naked_find_pma_entry(machine_state &s, uint64_t paddr,
         if (pma.get_length() == 0)
             return pma;
         // Check if data is in range
-        if (paddr >= pma.get_start() && pma.get_length() > length &&
+        if (paddr >= pma.get_start() && pma.get_length() >= length &&
             paddr - pma.get_start() <= pma.get_length() - length) {
             return pma;
         }
@@ -137,10 +164,7 @@ pma_entry &machine::allocate_pma_entry(pma_entry &&pma) {
 }
 
 pma_entry &machine::register_host_mmapd_memory(uint64_t start, uint64_t length,
-    const char *path, bool shared) {
-    pma_entry::flags f{};
-    f.R = true; f.W = true; f.X = false; f.IR = true; f.IW = true;
-    f.DID = PMA_ISTART_DID::drive;
+    const pma_entry::flags &f, const char *path, bool shared) {
     return allocate_pma_entry(
         pma_entry{
             start,
@@ -156,10 +180,7 @@ pma_entry &machine::register_host_mmapd_memory(uint64_t start, uint64_t length,
 }
 
 pma_entry &machine::register_host_callocd_memory(uint64_t start,
-    uint64_t length, bool W) {
-    pma_entry::flags f{};
-    f.R = true; f.W = W; f.X = true; f.IR = true; f.IW = true;
-    f.DID = PMA_ISTART_DID::memory;
+    uint64_t length, const pma_entry::flags &f) {
     return allocate_pma_entry(
         pma_entry{
             start,
@@ -174,10 +195,7 @@ pma_entry &machine::register_host_callocd_memory(uint64_t start,
 }
 
 pma_entry &machine::register_host_callocd_memory(uint64_t start,
-    uint64_t length, const std::string &path, bool W) {
-    pma_entry::flags f{};
-    f.R = true; f.W = W; f.X = true; f.IR = true; f.IW = true;
-    f.DID = PMA_ISTART_DID::memory;
+    uint64_t length, const pma_entry::flags &f, const std::string &path) {
     return allocate_pma_entry(
         pma_entry{
             start,
@@ -192,27 +210,7 @@ pma_entry &machine::register_host_callocd_memory(uint64_t start,
     );
 }
 
-void machine::register_mmio(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver, PMA_ISTART_DID DID) {
-    pma_entry::flags f{};
-    f.R = true; f.W = true; f.X = false; f.IR = false; f.IW = false;
-    f.DID = DID;
-    allocate_pma_entry(
-        pma_entry{
-            start,
-            length,
-            pma_device{
-                context,
-                driver
-            },
-            peek
-        }.set_flags(f)
-    );
-}
-
-void machine::register_shadow(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver) {
-    pma_entry::flags f{};
-    f.R = true; f.W = false; f.X = false; f.IR = false; f.IW = false;
-    f.DID = PMA_ISTART_DID::shadow;
+void machine::register_device(uint64_t start, uint64_t length, const pma_entry::flags &f, pma_peek peek, void *context, const pma_driver *driver) {
     allocate_pma_entry(
         pma_entry{
             start,
@@ -272,33 +270,34 @@ machine::machine(const machine_config &c):
     write_iflags(c.processor.iflags);
 
     if (c.rom.backing.empty())
-        throw std::invalid_argument{"ROM and RAM backing are undefined"};
+        throw std::invalid_argument{"ROM backing is undefined"};
 
     // Register RAM
     if (c.ram.backing.empty()) {
-        register_host_callocd_memory(PMA_RAM_START, c.ram.length, true);
+        register_host_callocd_memory(PMA_RAM_START, c.ram.length, m_ram_flags);
     } else {
-        register_host_callocd_memory(PMA_RAM_START, c.ram.length,
-            c.ram.backing, true);
+        register_host_callocd_memory(PMA_RAM_START, c.ram.length, m_ram_flags,
+            c.ram.backing);
     }
 
     // Register ROM
     pma_entry &rom = register_host_callocd_memory(PMA_ROM_START, PMA_ROM_LENGTH,
-        c.rom.backing, false);
+        m_rom_flags, c.rom.backing);
 
     // Register all flash drives
     for (const auto &f: c.flash) {
-        // Flash drive with no backing behaves just like memory
+        // Flash drive with no backing behaves just like memory, but with
+        // different flags
         if (f.backing.empty()) {
-            register_host_callocd_memory(f.start, f.length, true);
+            register_host_callocd_memory(f.start, f.length, m_flash_flags);
         } else {
-            register_host_mmapd_memory(f.start, f.length, f.backing.c_str(),
-                f.shared);
+            register_host_mmapd_memory(f.start, f.length, m_flash_flags,
+                f.backing.c_str(), f.shared);
         }
     }
 
     // Register HTIF device
-    m_h.register_mmio(PMA_HTIF_START, PMA_HTIF_LENGTH);
+    m_h.register_device(PMA_HTIF_START, PMA_HTIF_LENGTH);
 
     // Copy HTIF state to from config to machine
     if (!c.htif.backing.empty())
@@ -307,14 +306,14 @@ machine::machine(const machine_config &c):
     write_htif_fromhost(c.htif.fromhost);
 
     // Resiter CLINT device
-    clint_register_mmio(*this, PMA_CLINT_START, PMA_CLINT_LENGTH);
+    clint_register_device(*this, PMA_CLINT_START, PMA_CLINT_LENGTH);
     // Copy CLINT state to from config to machine
     if (!c.clint.backing.empty())
         throw std::runtime_error{"CLINT backing not implemented"};
     write_clint_mtimecmp(c.clint.mtimecmp);
 
     // Register shadow device
-    shadow_register_mmio(*this, PMA_SHADOW_START, PMA_SHADOW_LENGTH);
+    shadow_register_device(*this, PMA_SHADOW_START, PMA_SHADOW_LENGTH);
 
     // Initialize PMA extension metadata on ROM
     rom_init(c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);

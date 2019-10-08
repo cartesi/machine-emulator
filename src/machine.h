@@ -44,6 +44,10 @@ class machine final {
     merkle_tree m_t;     ///< Merkle tree of state
     htif m_h;            ///< HTIF device
 
+    static pma_entry::flags m_rom_flags;    ///< PMA flags used for ROM
+    static pma_entry::flags m_ram_flags;    ///< PMA flags used for RAM
+    static pma_entry::flags m_flash_flags;  ///< PMA flags used for flash drives
+
     /// \brief Allocates a new PMA entry.
     /// \param pma PMA entry to add to machine.
     /// \returns Reference to corresponding entry in machine state.
@@ -52,20 +56,20 @@ class machine final {
     /// \brief Register a new memory range initially filled with zeros.
     /// \param start Start of PMA range.
     /// \param length Length of PMA range.
-    /// \param W Value of PMA W flag.
+    /// \param f PMA flags for range.
     /// \returns Reference to corresponding entry in machine state.
     pma_entry &register_host_callocd_memory(uint64_t start, uint64_t length,
-        bool W);
+        const pma_entry::flags &f);
 
     /// \brief Register a new memory range initially filled with the
     /// contents of a backing file.
     /// \param start Start of PMA range.
     /// \param length Length of PMA range.
+    /// \param f PMA flags for range.
     /// \param path Path to backing file.
-    /// \param W Value of PMA W flag.
     /// \returns Reference to corresponding entry in machine state.
     pma_entry &register_host_callocd_memory(uint64_t start, uint64_t length,
-        const std::string &path, bool W);
+        const pma_entry::flags &f, const std::string &path);
 
     /// \brief Runs the machine until mcycle reaches *at most* \p mcycle_end.
     /// \param mcycle_end Maximum value of mcycle before function returns.
@@ -445,6 +449,7 @@ public:
     /// space on which to map the memory region.
     /// \param length Length of physical memory range in the
     /// target address space on which to map the memory region.
+    /// \param f PMA flags for range.
     /// \param path Pointer to a string containing the filename
     /// for the backing file in the host with the contents of the memory region.
     /// \param shared Whether target modifications to the memory region are
@@ -453,18 +458,19 @@ public:
     /// \details \p length must match the size of the backing file.
     /// This function is typically used to map flash drives.
     pma_entry &register_host_mmapd_memory(uint64_t start, uint64_t length,
-        const char *path, bool shared);
+        const pma_entry::flags &f, const char *path, bool shared);
 
     /// \brief Register a new memory-mapped IO device.
     /// \param start Start of physical memory range in the target address
     /// space on which to map the device.
     /// \param length Length of physical memory range in the
     /// target address space on which to map the device.
+    /// \param f PMA flags for range.
     /// \param peek Peek callback for the range.
     /// \param context Pointer to context to be passed to callbacks.
     /// \param driver Pointer to driver with callbacks.
     /// \param DID PMA device id.
-    void register_mmio(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver, PMA_ISTART_DID DID);
+    void register_device(uint64_t start, uint64_t length, const pma_entry::flags &f, pma_peek peek, void *context, const pma_driver *driver);
 
     /// \brief Register a new shadow device.
     /// \param start Start of physical memory range in the target address

@@ -50,21 +50,43 @@ std::string get_name(void) {
     return os.str();
 }
 
-/// \brief Obtain PMA entry overlapping with target physical address
+/// \brief Obtain PMA entry that covers a given physical memory region
+/// \param s Pointer to machine state.
+/// \param paddr Start of physical memory region.
+/// \param length Length of physical memory region.
+/// \returns Corresponding entry if found, or a sentinel entry
+/// for an empty range.
+static inline pma_entry &naked_find_pma_entry(machine_state &s, uint64_t paddr,
+    size_t length) {
+    for (auto &pma: s.pmas) {
+        // Stop at first empty PMA
+        if (pma.get_length() == 0)
+            return pma;
+        // Check if data is in range
+        if (paddr >= pma.get_start() && pma.get_length() > length &&
+            paddr - pma.get_start() <= pma.get_length() - length) {
+            return pma;
+        }
+    }
+    // Last PMA is always the empty range
+    return s.pmas.back();
+}
+
+static inline const pma_entry &naked_find_pma_entry(const machine_state &s,
+    uint64_t paddr, size_t length) {
+    return const_cast<const pma_entry &>(naked_find_pma_entry(
+        const_cast<machine_state &>(s), paddr, length));
+}
+
+/// \brief Obtain PMA entry covering a physical memory word
 /// \param s Pointer to machine state.
 /// \param paddr Target physical address.
 /// \returns Corresponding entry if found, or a sentinel entry
 /// for an empty range.
-/// \tparam T Type used for memory access
+/// \tparam T Type of word.
 template <typename T>
 static inline pma_entry &naked_find_pma_entry(machine_state &s, uint64_t paddr) {
-    static pma_entry empty{};
-    for (auto &pma: s.pmas) {
-        if (paddr >= pma.get_start() &&
-            paddr + sizeof(T) <= pma.get_start() + pma.get_length())
-            return pma;
-    }
-    return empty;
+    return naked_find_pma_entry(s, paddr, sizeof(T));
 }
 
 template <typename T>
@@ -203,22 +225,6 @@ void machine::register_shadow(uint64_t start, uint64_t length, pma_peek peek, vo
         }.set_flags(f)
     );
 }
-
-unsigned char *machine::get_host_memory(uint64_t paddr) {
-    pma_entry &pma = naked_find_pma_entry<unsigned char>(m_s, paddr);
-    if (pma.get_istart_M()) {
-        return pma.get_memory().get_host_memory();
-    } else {
-        return nullptr;
-    }
-}
-
-#if 0
-static bool empty_peek(const pma_entry &, uint64_t, const unsigned char **page_data, unsigned char *) {
-    *page_data = nullptr;
-    return true;
-}
-#endif
 
 void machine::interact(void) {
     m_h.interact();
@@ -831,6 +837,24 @@ bool machine::get_proof(uint64_t address, int log2_size, merkle_tree::proof_type
         return false;
     }
     return m_t.get_proof(address, log2_size, page_data, proof);
+}
+
+void machine::read_memory(uint64_t address, unsigned char *data,
+    uint64_t length) const {
+    const pma_entry &pma = naked_find_pma_entry(m_s, address, length);
+    if (!pma.get_istart_M() || pma.get_istart_E())
+        throw std::invalid_argument{"address range not entirely in memory PMA"};
+    memcpy(data, pma.get_memory().get_host_memory()+(address-pma.get_start()),
+            length);
+}
+
+void machine::write_memory(uint64_t address, const unsigned char *data,
+    size_t length) {
+    pma_entry &pma = naked_find_pma_entry(m_s, address, length);
+    if (!pma.get_istart_M() || pma.get_istart_E())
+        throw std::invalid_argument{"address range not entirely in memory PMA"};
+    memcpy(pma.get_memory().get_host_memory()+(address-pma.get_start()), data,
+            length);
 }
 
 bool machine::read_word(uint64_t word_address, uint64_t &word_value) const {

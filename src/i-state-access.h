@@ -556,11 +556,12 @@ public:
             val);
     }
 
-
-    /// \brief Obtain PMA entry overlapping with target physical address.
-    /// \tparam T type of access (so we know the size)
+    /// \brief Obtain PMA entry covering a physical memory word
+    /// \param s Pointer to machine state.
     /// \param paddr Target physical address.
-    /// \returns Corresponding entry if found, or the sentinel empty entry.
+    /// \returns Corresponding entry if found, or a sentinel entry
+    /// for an empty range.
+    /// \tparam T Type of word.
     /// \details This is the same as ::naked_find_pma_entry, except it
     /// does not perform naked accesses to the machine state.
     /// Rather, it goes through the state accessor object so all

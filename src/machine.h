@@ -140,6 +140,24 @@ public:
     /// \warning The current implementation of this function is very slow!
     bool read_word(uint64_t word_address, uint64_t &word_value) const;
 
+    /// \brief Reads a chunk of data from the machine memory.
+    /// \param word_address Address to start reading.
+    /// \param data Receives chunk of memory.
+    /// \param length Size of chunk.
+    /// \detail The entire chunk, from \p address to \p address + \p length must
+    /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
+    /// and not a device PMA.
+    void read_memory(uint64_t address, unsigned char *data, uint64_t length) const;
+
+    /// \brief Writes a chunk of data to the machine memory.
+    /// \param word_address Address to start writing.
+    /// \param data Source for chunk of data.
+    /// \param length Size of chunk.
+    /// \detail The entire chunk, from \p address to \p address + \p length must
+    /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
+    /// and not a device PMA.
+    void write_memory(uint64_t address, const unsigned char *data, size_t length);
+
     /// \brief Reads the value of a general-purpose register.
     /// \param i Register index.
     /// \returns The value of the register.
@@ -421,13 +439,6 @@ public:
 
     /// \brief Sets the iflags_H flag.
     void set_iflags_H(void);
-
-    /// \brief Obtain a pointer into the host memory
-    /// corresponding to the target memory at a given address
-    /// \param paddr Physical memory address in target.
-    /// \returns Pointer to host memory corresponding to \p
-    /// paddr, or nullptr if no memory range covers \p paddr
-    unsigned char *get_host_memory(uint64_t paddr);
 
     /// \brief Register a new memory region using the host's mmap functionality.
     /// \param start Start of physical memory range in the target address

@@ -24,6 +24,7 @@
 #include "machine.h"
 #include "access-log.h"
 #include "keccak-256-hasher.h"
+#include "unique-c-ptr.h"
 
 using cartesi::merkle_tree;
 using cartesi::access_type;
@@ -680,6 +681,35 @@ static int meta__index_dump_regs(lua_State *L) {
     return 0;
 }
 
+/// \brief This is the machine:write_memory() method implementation.
+/// \param L Lua state.
+static int meta__index_write_memory(lua_State *L) try {
+    machine *m = check_machine(L, 1);
+    size_t length = 0;
+    const unsigned char *data = reinterpret_cast<const unsigned char *>(
+        luaL_checklstring(L, 3, &length));
+    m->write_memory(luaL_checkinteger(L, 2), data, length);
+    return 0;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+/// \brief This is the machine:read_memory() method implementation.
+/// \param L Lua state.
+static int meta__index_read_memory(lua_State *L) try {
+    machine *m = check_machine(L, 1);
+    size_t length = luaL_checkinteger(L, 3);
+    auto data = cartesi::unique_calloc<unsigned char>(1, length);
+    m->read_memory(luaL_checkinteger(L, 2), data.get(), length);
+    lua_pushlstring(L, reinterpret_cast<const char *>(data.get()), length);
+    return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+
 /// \brief This is the machine:read_word() method implementation.
 /// \param L Lua state.
 static int meta__index_read_word(lua_State *L) try {
@@ -743,6 +773,8 @@ static const luaL_Reg meta__index[] = {
     {"dump_regs", meta__index_dump_regs},
     {"get_proof", meta__index_get_proof},
     {"read_word", meta__index_read_word},
+    {"read_memory", meta__index_read_memory},
+    {"write_memory", meta__index_write_memory},
     {"read_mcycle", meta__index_read_mcycle},
     {"read_tohost", meta__index_read_tohost},
     {"read_iflags_H", meta__index_read_iflags_H},

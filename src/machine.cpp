@@ -114,8 +114,8 @@ pma_entry &machine::allocate_pma_entry(pma_entry &&pma) {
     return m_s.pmas.back();
 }
 
-pma_entry &machine::register_flash(uint64_t start,
-    uint64_t length, const char *path, bool shared) {
+pma_entry &machine::register_host_mmapd_memory(uint64_t start, uint64_t length,
+    const char *path, bool shared) {
     pma_entry::flags f{};
     f.R = true; f.W = true; f.X = false; f.IR = true; f.IW = true;
     f.DID = PMA_ISTART_DID::drive;
@@ -133,7 +133,8 @@ pma_entry &machine::register_flash(uint64_t start,
     );
 }
 
-pma_entry &machine::register_memory(uint64_t start, uint64_t length, bool W) {
+pma_entry &machine::register_host_callocd_memory(uint64_t start,
+    uint64_t length, bool W) {
     pma_entry::flags f{};
     f.R = true; f.W = W; f.X = true; f.IR = true; f.IW = true;
     f.DID = PMA_ISTART_DID::memory;
@@ -150,8 +151,8 @@ pma_entry &machine::register_memory(uint64_t start, uint64_t length, bool W) {
     );
 }
 
-pma_entry &machine::register_memory(uint64_t start, uint64_t length,
-    const std::string &path, bool W) {
+pma_entry &machine::register_host_callocd_memory(uint64_t start,
+    uint64_t length, const std::string &path, bool W) {
     pma_entry::flags f{};
     f.R = true; f.W = W; f.X = true; f.IR = true; f.IW = true;
     f.DID = PMA_ISTART_DID::memory;
@@ -269,17 +270,25 @@ machine::machine(const machine_config &c):
 
     // Register RAM
     if (c.ram.backing.empty()) {
-        register_memory(PMA_RAM_START, c.ram.length, true);
+        register_host_callocd_memory(PMA_RAM_START, c.ram.length, true);
     } else {
-        register_memory(PMA_RAM_START, c.ram.length, c.ram.backing, true);
+        register_host_callocd_memory(PMA_RAM_START, c.ram.length,
+            c.ram.backing, true);
     }
 
     // Register ROM
-    pma_entry &rom = register_memory(PMA_ROM_START, PMA_ROM_LENGTH, c.rom.backing, false);
+    pma_entry &rom = register_host_callocd_memory(PMA_ROM_START, PMA_ROM_LENGTH,
+        c.rom.backing, false);
 
     // Register all flash drives
     for (const auto &f: c.flash) {
-        register_flash(f.start, f.length, f.backing.c_str(), f.shared);
+        // Flash drive with no backing behaves just like memory
+        if (f.backing.empty()) {
+            register_host_callocd_memory(f.start, f.length, true);
+        } else {
+            register_host_mmapd_memory(f.start, f.length, f.backing.c_str(),
+                f.shared);
+        }
     }
 
     // Register HTIF device

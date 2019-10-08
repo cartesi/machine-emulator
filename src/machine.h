@@ -54,7 +54,8 @@ class machine final {
     /// \param length Length of PMA range.
     /// \param W Value of PMA W flag.
     /// \returns Reference to corresponding entry in machine state.
-    pma_entry &register_memory(uint64_t start, uint64_t length, bool W);
+    pma_entry &register_host_callocd_memory(uint64_t start, uint64_t length,
+        bool W);
 
     /// \brief Register a new memory range initially filled with the
     /// contents of a backing file.
@@ -63,7 +64,7 @@ class machine final {
     /// \param path Path to backing file.
     /// \param W Value of PMA W flag.
     /// \returns Reference to corresponding entry in machine state.
-    pma_entry &register_memory(uint64_t start, uint64_t length,
+    pma_entry &register_host_callocd_memory(uint64_t start, uint64_t length,
         const std::string &path, bool W);
 
     /// \brief Runs the machine until mcycle reaches *at most* \p mcycle_end.
@@ -428,18 +429,20 @@ public:
     /// paddr, or nullptr if no memory range covers \p paddr
     unsigned char *get_host_memory(uint64_t paddr);
 
-    /// \brief Register a new flash drive.
+    /// \brief Register a new memory region using the host's mmap functionality.
     /// \param start Start of physical memory range in the target address
-    /// space on which to map the flash drive.
+    /// space on which to map the memory region.
     /// \param length Length of physical memory range in the
-    /// target address space on which to map the flash drive.
+    /// target address space on which to map the memory region.
     /// \param path Pointer to a string containing the filename
-    /// for the backing file in the host with the contents of the flash drive.
-    /// \param shared Whether target modifications to the flash drive are
+    /// for the backing file in the host with the contents of the memory region.
+    /// \param shared Whether target modifications to the memory region are
     /// reflected in the host's backing file.
-    /// \details \p length must match the size of the backing file.
     /// \returns Reference to corresponding entry in machine state.
-    pma_entry &register_flash(uint64_t start, uint64_t length, const char *path, bool shared);
+    /// \details \p length must match the size of the backing file.
+    /// This function is typically used to map flash drives.
+    pma_entry &register_host_mmapd_memory(uint64_t start, uint64_t length,
+        const char *path, bool shared);
 
     /// \brief Register a new memory-mapped IO device.
     /// \param start Start of physical memory range in the target address

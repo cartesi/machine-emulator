@@ -347,7 +347,7 @@ static void load_flash_config(lua_State *L, int tabidx, machine_config &c) {
         }
         flash_config flash;
         flash.shared = opt_boolean_field(L, -1, "shared", false);
-        flash.backing = check_string_field(L, -1, "backing");
+        flash.backing = opt_string_field(L, -1, "backing");
         flash.start = check_uint_field(L, -1, "start");
         flash.length = check_uint_field(L, -1, "length");
         c.flash.push_back(std::move(flash));

@@ -1,0 +1,59 @@
+name: Build and Test
+on: [push]
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Fix up git URLs
+        run: echo -e '[url "https://github.com/"]\n  insteadOf = "git@github.com:"' >> ~/.gitconfig
+        
+      - uses: actions/checkout@v1
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Install Ubuntu dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y libreadline-dev libboost-container-dev libboost-program-options-dev patchelf automake
+
+      - name: Download third-party dependencies
+        run: make downloads
+
+      - name: Build third-party dependencies
+        run: make -j$(nproc) dep
+
+      - name: Build
+        run: make -j$(nproc)
+
+      - name: Install [/opt/cartesi]
+        run: make install
+
+      - name: Upload emulator
+        uses: actions/upload-artifact@master
+        with:
+          name: emulator
+          path: /opt/cartesi
+
+  boot:
+    name: Boot
+    needs: build
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Download emulator
+        uses: actions/download-artifact@master
+        with:
+          name: emulator
+          path: /opt/cartesi
+
+      - name: Download [rootfs.ext2]
+        run: wget https://github.com/cartesi/image-rootfs/releases/download/v0.1.0-rc.1/rootfs.ext2
+      - name: Download [rom.bin]
+        run: wget https://github.com/cartesi/machine-emulator-rom/releases/download/v0.1.0-rc.1/rom.bin
+      - name: Download [kernel.bin]
+        run: wget https://github.com/cartesi/image-kernel/releases/download/v0.1.0-rc.1/kernel.bin
+
+      - name: Fix artifact permissions
+        run: chmod +x /opt/cartesi/bin/luapp5.3
+
+      - name: Test
+        run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/lib/luapp/5.3/cartesi-machine.lua --cmdline="-- /bin/true" --batch

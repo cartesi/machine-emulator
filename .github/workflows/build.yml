@@ -1,4 +1,4 @@
-name: Build and Test
+name: Build/Test/Release
 on: [push]
 jobs:
   build:
@@ -64,7 +64,9 @@ jobs:
         run: wget https://github.com/cartesi/image-kernel/releases/download/v0.1.0-rc.1/kernel.bin
 
       - name: Fix artifact permissions
-        run: chmod +x /opt/cartesi/bin/luapp5.3
+        run: |
+          chmod +x /opt/cartesi/bin/lua*
+          chmod +x /opt/cartesi/bin/cartesi-machine*
 
       - name: Simple Boot
         run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/lib/luapp/5.3/cartesi-machine.lua --cmdline="-- /bin/true" --batch
@@ -82,3 +84,31 @@ jobs:
 
       - name: Run test suite
         run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/lib/luapp/5.3/cartesi-machine-tests.lua /opt/cartesi/tests
+
+  release:
+    name: Release
+    needs: test
+    runs-on: ubuntu-18.04
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download emulator
+        uses: actions/download-artifact@master
+        with:
+          name: emulator
+          path: /opt/cartesi
+
+      - name: Fix artifact permissions
+        run: |
+          chmod +x /opt/cartesi/bin/lua*
+          chmod +x /opt/cartesi/bin/cartesi-machine*
+
+      - name: Create TAR
+        run: tar -czf machine-emulator-`uname`-${GITHUB_REF:10}.tar.gz -C /opt/cartesi .
+
+      - name: Upload TAR to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          prerelease: true
+          files: machine-emulator-*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.CI_TOKEN }}

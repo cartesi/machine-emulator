@@ -31,8 +31,8 @@ jobs:
           name: emulator
           path: /opt/cartesi
 
-  boot:
-    name: Boot
+  test:
+    name: Test
     needs: build
     runs-on: ubuntu-18.04
     steps:
@@ -52,5 +52,21 @@ jobs:
       - name: Fix artifact permissions
         run: chmod +x /opt/cartesi/bin/luapp5.3
 
-      - name: Test
+      - name: Simple Boot
         run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/lib/luapp/5.3/cartesi-machine.lua --cmdline="-- /bin/true" --batch
+
+      - name: Download test suite
+        uses: tuler/download-release-action@master
+        with:
+          repository: cartesi-corp/machine-tests
+          tag: 'v0.1.1-pre3'
+          file: machine-tests-v0.1.1-pre3.tar.gz
+          private: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.CI_TOKEN }}
+
+      - name: Untar test suite
+        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.1.1-pre3.tar.gz -C /opt/cartesi/tests
+
+      - name: Run test suite
+        run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/lib/luapp/5.3/cartesi-machine-tests.lua /opt/cartesi/tests

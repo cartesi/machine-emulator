@@ -67,8 +67,11 @@ clean: $(SUBCLEAN)
 depclean: $(DEPCLEAN) clean
 	rm -rf $(BUILDDIR)
 
-distclean: clean
+distclean: clean profile-clean
 	rm -rf $(BUILDBASE) $(DOWNLOADDIR) $(DEPDIRS)
+
+profile-clean:
+	$(MAKE) -C $(SRCDIR) $@
 
 $(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(INC_INSTALL_PATH):
 	mkdir -p $@

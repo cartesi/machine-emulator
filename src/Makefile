@@ -45,6 +45,7 @@ CXX_Darwin=clang++
 INCS_Darwin=
 BOOST_LIB_Darwin=-L/opt/local/lib -lboost_program_options-mt
 BOOST_INC_Darwin=-I/opt/local/include
+PROFILE_DATA_Darwin=default.profdata
 
 # Linux specific setup
 SOLDFLAGS_Linux:=-shared -fPIC -pthread
@@ -54,6 +55,7 @@ INCS_Linux=
 FS_LIB_Linux=-lstdc++fs
 BOOST_LIB_Linux=-lboost_program_options
 BOOST_INC_Linux=
+PROFILE_DATA_Linux=
 
 CC=$(CC_$(UNAME))
 CXX=$(CXX_$(UNAME))
@@ -85,6 +87,12 @@ DEFS+=-DDUMP_HIST
 #DEFS+=-DDUMP_COUNTERS
 endif
 
+ifeq ($(release),yes)
+DEFS+=-DNDEBUG
+else
+DEFS+=-g
+endif
+
 # Compile for current system processor
 ifeq ($(native),yes)
 CC_MARCH=-march=native
@@ -92,7 +100,7 @@ endif
 
 # -fsanitize=undefined
 CXXFLAGS=-O2 -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
-CFLAGS=-O2 -g -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
+CFLAGS=-O2 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
 all: luacartesi grpc hash
 
@@ -126,6 +134,7 @@ fs.ext2: fs/*
 
 generate: CXXFLAGS += -fprofile-generate
 generate: SOLDFLAGS += -fprofile-generate
+generate: luacartesi
 
 cov: CXXFLAGS += -O0 -g -fprofile-arcs -ftest-coverage
 cov: SOLDFLAGS += -fprofile-arcs
@@ -138,17 +147,18 @@ cov: luacartesi
 	lcov --capture --directory . --output-file cartesi.info
 	genhtml cartesi.info --output-directory coverage
 
-generate: luacartesi
-	$(LUA_BIN) ./cartesi-machine.lua --ram-image=kernel.bin --root-backing=rootfs.bin --batch --cmdline="-- /root/benchmark/whetstone.rv64imafd 500"
 
 valgrind: luacartesi
 	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) cartesi-machine-tests.lua
 	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) cartesi-machine.lua --initial-hash --final-hash --memory-size=16 --batch --cmdline="-- /bin/true"
 
+
+$(PROFILE_DATA_Darwin):
+	llvm-profdata merge -output=default.profdata default*.profraw
+
 use: CXXFLAGS += -fprofile-use
 use: SOLDFLAGS += -fprofile-use
-
-use: luacartesi
+use: $(PROFILE_DATA_$(UNAME)) luacartesi
 
 luacartesi: cartesi.so
 
@@ -214,6 +224,9 @@ cartesi-machine-server cartesi-machine-client: CXXFLAGS := $(GRPC_INC) $(CXXFLAG
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.gcda *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi-machine-server cartesi-machine-client cartesi-machine-hash
+	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi-machine-server cartesi-machine-client cartesi-machine-hash
+
+profile-clean:
+	rm -f *.profdata *.profraw *.gcda  
 
 -include $(wildcard *.d)

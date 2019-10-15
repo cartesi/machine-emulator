@@ -56,14 +56,12 @@ jobs:
         run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/lib/luapp/5.3/cartesi-machine.lua --cmdline="-- /bin/true" --batch
 
       - name: Download test suite
-        uses: tuler/download-release-action@master
+        uses: Legion2/download-release-action@v2.1.0
         with:
           repository: cartesi-corp/machine-tests
           tag: 'v0.1.1-pre3'
           file: machine-tests-v0.1.1-pre3.tar.gz
-          private: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.CI_TOKEN }}
+          token: ${{ secrets.CI_TOKEN }}
 
       - name: Untar test suite
         run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.1.1-pre3.tar.gz -C /opt/cartesi/tests

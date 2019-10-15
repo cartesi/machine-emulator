@@ -20,14 +20,11 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Fix build dependencies permissions
-        run: chmod +x ./build/`uname`_`uname -m`/bin/protoc ./build/`uname`_`uname -m`/bin/grpc_cpp_plugin
-
-      - name: Download third-party dependencies
-        run: make downloads
-
       - name: Build third-party dependencies
         run: make -j$(nproc) dep
+
+      - name: Fix build dependencies permissions
+        run: chmod +x ./build/`uname`_`uname -m`/bin/protoc ./build/`uname`_`uname -m`/bin/grpc_cpp_plugin
 
       - name: Cache third-party build
         run: aws s3 sync ./build s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build

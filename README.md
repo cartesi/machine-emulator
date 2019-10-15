@@ -28,7 +28,7 @@ sudo port install clang-8.0 automake boost libtool wget
 ### Build
 
 ```bash
-$ make submodules downloads
+$ make submodules
 $ make dep
 $ make
 ```

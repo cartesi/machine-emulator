@@ -25,25 +25,37 @@ DOWNLOADDIR := $(DEPDIR)/downloads
 SUBCLEAN := $(addsuffix .clean,$(SRCDIR))
 DEPDIRS := $(addprefix $(DEPDIR)/,cryptopp-CRYPTOPP_7_0_0 grpc lua-5.3.5)
 DEPCLEAN := $(addsuffix .clean,$(DEPDIRS))
+COREPROTO := lib/grpc-interfaces/core.proto
 
 # Mac OS X specific settings
 ifeq ($(UNAME),Darwin)
 LUA_PLAT ?= macosx
-LUACC = "CC=clang++ -std=c++17 -fopenmp"
+export CC = clang
+export CXX = clang++ -std=c++17 -fopenmp
+LUACC = "CC=$(CXX)"
 LIBRARY_PATH := "export DYLD_LIBRARY_PATH=$(BUILDDIR)/lib"
-DEP_TO_LIB += *.dylib
+LIB_EXTENSION = dylib
+DEP_TO_LIB += *.$(LIB_EXTENSION)
 
 # Linux specific settings
 else ifeq ($(UNAME),Linux)
 LUA_PLAT ?= linux
 LIBRARY_PATH := "export LD_LIBRARY_PATH=$(BUILDDIR)/lib"
-DEP_TO_LIB += *.so*
+LIB_EXTENSION := so
+DEP_TO_LIB += *.$(LIB_EXTENSION)*
 
 # Unknown platform
 else
 LUA_PLAT ?= none
 INSTALL_PLAT=
+LIB_EXTENSION := dll
+DEP_TO_LIB += *.$(LIB_EXTENSION)
 endif
+
+
+# Check if some binary dependencies already exists on build directory to skip
+# downloading and building them.
+DEPBINS := $(addprefix $(BUILDDIR)/,bin/luapp5.3 lib/libcryptopp.$(LIB_EXTENSION) lib/libgrpc.$(LIB_EXTENSION))
 
 all: luacartesi grpc
 
@@ -58,11 +70,6 @@ distclean: clean
 $(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH):
 	mkdir -p $@
 
-downloads:
-	mkdir -p $(DOWNLOADDIR)
-	wget -nc -i $(DEPDIR)/dependencies -P $(DOWNLOADDIR)
-	cd $(DEPDIR) && shasum -c shasumfile
-
 env:
 	@echo $(LIBRARY_PATH)
 	@echo "export PATH=$(SRCDIR):$(BUILDDIR)/bin:${PATH}"
@@ -71,10 +78,23 @@ env:
 doc:
 	cd doc && doxygen Doxyfile
 
-dep: $(BUILDDIR) $(DEPDIRS)
+$(DOWNLOADDIR):
+	@mkdir -p $(DOWNLOADDIR)
+	@wget -nc -i $(DEPDIR)/dependencies -P $(DOWNLOADDIR)
+	@cd $(DEPDIR) && shasum -c shasumfile
+
+downloads: $(DOWNLOADDIR)
+
+dep: $(DEPBINS)
 
 submodules:
 	git submodule update --init --recursive
+
+$(COREPROTO):
+	$(info gprc-interfaces submodule not initialized!)
+	@exit 1
+
+grpc: | $(COREPROTO)
 
 hash luacartesi grpc test:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
@@ -82,27 +102,29 @@ hash luacartesi grpc test:
 $(SRCDIR):
 	$(MAKE) -C $@ $(TARGET)
 
-$(DEPDIR)/lua-5.3.5:
-	tar -xzf $(DOWNLOADDIR)/lua-5.3.5.tar.gz -C $(DEPDIR)
-	cd $@ && patch -p1 < ../luapp.patch
-	$(MAKE) -C $@ $(LUA_PLAT) $(LUACC)
-	$(MAKE) -C $@ INSTALL_TOP=$(BUILDDIR) install
+$(DEPDIR)/lua-5.3.5 $(BUILDDIR)/bin/luapp5.3: | $(BUILDDIR) $(DOWNLOADDIR)
+	if [ ! -d $(DEPDIR)/lua-5.3.5 ]; then \
+		tar -xzf $(DOWNLOADDIR)/lua-5.3.5.tar.gz -C $(DEPDIR); \
+		cd $(DEPDIR)/lua-5.3.5 && patch -p1 < ../luapp.patch; \
+	fi
+	$(MAKE) -C $(DEPDIR)/lua-5.3.5 $(LUA_PLAT) $(LUACC)
+	$(MAKE) -C $(DEPDIR)/lua-5.3.5 INSTALL_TOP=$(BUILDDIR) install
 
-$(DEPDIR)/cryptopp-CRYPTOPP_7_0_0:
-	tar -xzf $(DOWNLOADDIR)/CRYPTOPP_7_0_0.tar.gz -C $(DEPDIR)
-	$(MAKE) -C $@ shared
-	$(MAKE) -C $@ static
-	$(MAKE) -C $@ libcryptopp.pc
-	$(MAKE) -C $@ PREFIX=$(BUILDDIR) install
+$(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 $(BUILDDIR)/lib/libcryptopp.$(LIB_EXTENSION): | $(BUILDDIR) $(DOWNLOADDIR)
+	if [ ! -d $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 ]; then tar -xzf $(DOWNLOADDIR)/CRYPTOPP_7_0_0.tar.gz -C $(DEPDIR); fi
+	$(MAKE) -C $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 shared
+	$(MAKE) -C $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 static
+	$(MAKE) -C $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 libcryptopp.pc
+	$(MAKE) -C $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 PREFIX=$(BUILDDIR) install
 
-$(DEPDIR)/grpc:
-	if [ ! -d $@ ]; then git clone --branch v1.16.0 --depth 1 https://github.com/grpc/grpc.git $@; fi
-	cd $@ && git checkout v1.16.0 && git submodule update --init --recursive
-	cd $@/third_party/protobuf && ./autogen.sh && ./configure --prefix=$(BUILDDIR)
-	$(MAKE) -C $@/third_party/protobuf
-	$(MAKE) -C $@/third_party/protobuf install
-	$(MAKE) -C $@ HAS_SYSTEM_PROTOBUF=false prefix=$(BUILDDIR)
-	$(MAKE) -C $@ HAS_SYSTEM_PROTOBUF=false prefix=$(BUILDDIR) install
+$(DEPDIR)/grpc $(BUILDDIR)/lib/libgrpc.$(LIB_EXTENSION): | $(BUILDDIR)
+	if [ ! -d $(DEPDIR)/grpc ]; then git clone --branch v1.16.0 --depth 1 https://github.com/grpc/grpc.git $(DEPDIR)/grpc; fi
+	cd $(DEPDIR)/grpc && git checkout v1.16.0 && git submodule update --init --recursive
+	cd $(DEPDIR)/grpc/third_party/protobuf && ./autogen.sh && ./configure --prefix=$(BUILDDIR)
+	$(MAKE) -C $(DEPDIR)/grpc/third_party/protobuf
+	$(MAKE) -C $(DEPDIR)/grpc/third_party/protobuf install
+	$(MAKE) -C $(DEPDIR)/grpc HAS_SYSTEM_PROTOBUF=false prefix=$(BUILDDIR)
+	$(MAKE) -C $(DEPDIR)/grpc HAS_SYSTEM_PROTOBUF=false prefix=$(BUILDDIR) install
 	# There is a bug in grpc install on Linux (!@$)...
 	[ -f $(BUILDDIR)/lib/libgrpc++.so.6 ] && mv -f $(BUILDDIR)/lib/libgrpc++.so.6 $(BUILDDIR)/lib/libgrpc++.so.1 || true
 
@@ -159,6 +181,7 @@ install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_PATH)
 
 install: install-dep install-emulator $(INSTALL_PLAT)
 
+.SECONDARY: $(DOWNLOADDIR) $(DEPDIRS) $(COREPROTO)
 
 .PHONY: all submodules doc clean distclean downloads src test luacartesi grpc\
-	$(DEPDIRS) $(SUBDIRS) $(SUBCLEAN) $(DEPCLEAN) $(DEPDIR)/lua.clean
+	$(SUBDIRS) $(SUBCLEAN) $(DEPCLEAN) $(DEPDIR)/lua.clean

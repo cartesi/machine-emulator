@@ -5,6 +5,7 @@ PREFIX= /opt/cartesi
 BIN_INSTALL_PATH= $(PREFIX)/bin
 LIB_INSTALL_PATH= $(PREFIX)/lib
 LUA_INSTALL_PATH= $(LIB_INSTALL_PATH)/luapp/5.3
+INC_INSTALL_PATH= $(PREFIX)/include/machine-emulator
 INSTALL_PLAT = install-$(UNAME)
 
 INSTALL= cp -RP
@@ -15,6 +16,7 @@ DEP_TO_BIN= luapp5.3 luacpp5.3
 DEP_TO_LIB=
 EMU_TO_BIN= cartesi-machine-server cartesi-machine-client
 EMU_TO_LUA= cartesi-machine-tests.lua cartesi-machine.lua cartesi.so
+EMU_TO_INC= pma-ext.h pma-constants.h pma-defines.h rtc.h
 
 # Build settings
 DEPDIR := third-party
@@ -67,7 +69,7 @@ depclean: $(DEPCLEAN) clean
 distclean: clean
 	rm -rf $(BUILDBASE) $(DOWNLOADDIR) $(DEPDIRS)
 
-$(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH):
+$(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(INC_INSTALL_PATH):
 	mkdir -p $@
 
 env:
@@ -171,9 +173,10 @@ install-dep: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH)
 	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(DEP_TO_BIN)
 	cd $(LIB_INSTALL_PATH) && $(CHMOD_EXEC) $(DEP_TO_LIB)
 
-install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_PATH)
+install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_PATH) $(INC_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_TO_BIN) $(BIN_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_TO_LUA) $(LUA_INSTALL_PATH)
+	cd src && $(INSTALL) $(EMU_TO_INC) $(INC_INSTALL_PATH)
 	echo "#!/bin/bash\nLUA_CPATH=$(LUA_INSTALL_PATH)/?.so $(BIN_INSTALL_PATH)/luapp5.3 $(LUA_INSTALL_PATH)/cartesi-machine.lua \$$@" > $(BIN_INSTALL_PATH)/cartesi-machine
 	echo "#!/bin/bash\nLUA_CPATH=$(LUA_INSTALL_PATH)/?.so $(BIN_INSTALL_PATH)/luapp5.3 $(LUA_INSTALL_PATH)/cartesi-machine-tests.lua \$$@" > $(BIN_INSTALL_PATH)/cartesi-machine-tests
 	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(EMU_TO_BIN) cartesi-machine cartesi-machine-tests

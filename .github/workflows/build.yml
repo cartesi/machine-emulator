@@ -14,7 +14,7 @@ jobs:
         run: sudo apt-get update -y && sudo apt-get install -y libreadline-dev libboost-container-dev libboost-program-options-dev patchelf automake
 
       - name: Download cache of third-party build
-        run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build ./build
+        run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-00001 ./build
         env:
           AWS_REGION: 'us-east-1'
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -27,7 +27,7 @@ jobs:
         run: chmod +x ./build/`uname`_`uname -m`/bin/protoc ./build/`uname`_`uname -m`/bin/grpc_cpp_plugin
 
       - name: Cache third-party build
-        run: aws s3 sync ./build s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build
+        run: aws s3 sync ./build s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-00001
         env:
           AWS_REGION: 'us-east-1'
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

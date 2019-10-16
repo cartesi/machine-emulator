@@ -11,6 +11,7 @@ INSTALL_PLAT = install-$(UNAME)
 INSTALL= cp -RP
 CHMOD_EXEC= chmod 0755
 CHMOD_DATA= chmod 0644
+STRIP_EXEC= strip -x
 
 DEP_TO_BIN= luapp5.3 luacpp5.3
 DEP_TO_LIB=
@@ -88,6 +89,12 @@ $(DOWNLOADDIR):
 downloads: $(DOWNLOADDIR)
 
 dep: $(DEPBINS)
+	@rm -f $(BUILDDIR)/lib/*.a
+	@$(STRIP_EXEC) \
+		$(BUILDDIR)/bin/lua* \
+		$(BUILDDIR)/bin/grpc* \
+		$(BUILDDIR)/bin/protoc* \
+		$(BUILDDIR)/lib/*.$(LIB_EXTENSION)*
 
 submodules:
 	git submodule update --init --recursive
@@ -182,7 +189,12 @@ install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_PATH) $(INC_INSTALL_PATH)
 	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(EMU_TO_BIN) cartesi-machine cartesi-machine-tests
 	cd $(LUA_INSTALL_PATH) && $(CHMOD_DATA) $(EMU_TO_LUA)
 
-install: install-dep install-emulator $(INSTALL_PLAT)
+install-strip:
+	cd $(BIN_INSTALL_PATH) && $(STRIP_EXEC) $(EMU_TO_BIN) $(DEP_TO_BIN)
+	cd $(LIB_INSTALL_PATH) && $(STRIP_EXEC) $(DEP_TO_LIB)
+	cd $(LUA_INSTALL_PATH) && $(STRIP_EXEC) *.so
+
+install: install-dep install-emulator install-strip $(INSTALL_PLAT)
 
 .SECONDARY: $(DOWNLOADDIR) $(DEPDIRS) $(COREPROTO)
 

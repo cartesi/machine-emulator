@@ -149,7 +149,7 @@ local machine = cartesi.machine{
         length = 1 << 20
     },
     rom = {
-        backing = "cmd",
+        backing = "rom.bin",
     },
     interactive = false,
 }

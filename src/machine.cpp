@@ -852,6 +852,15 @@ void machine::write_memory(uint64_t address, const unsigned char *data,
     pma_entry &pma = naked_find_pma_entry(m_s, address, length);
     if (!pma.get_istart_M() || pma.get_istart_E())
         throw std::invalid_argument{"address range not entirely in memory PMA"};
+    constexpr const auto page_size_log2 = PMA_constants::PMA_PAGE_SIZE_LOG2;
+    uint64_t page_in_range = ((address - pma.get_start()) >> page_size_log2)
+        << page_size_log2;
+    constexpr const auto page_size = PMA_constants::PMA_PAGE_SIZE;
+    int npages = (length+page_size-1)/page_size;
+    for (int i = 0; i < npages; ++i) {
+        pma.mark_dirty_page(page_in_range);
+        page_in_range += page_size;
+    }
     memcpy(pma.get_memory().get_host_memory()+(address-pma.get_start()), data,
             length);
 }

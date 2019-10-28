@@ -21,7 +21,7 @@ import sys
 import os
 
 #So the cartesi GRPC modules are in path
-sys.path.insert(0,'../lib/grpc-interfaces/py/')
+sys.path.insert(0,'../../lib/grpc-interfaces/py/')
 
 import core_pb2
 import cartesi_base_pb2
@@ -38,7 +38,7 @@ LENGTH = "length"
 SHARED = "shared"
 LABEL = "label"
 BOOTARGS = "bootargs"
-DIR_PATH = os.path.dirname(os.path.realpath(__file__))
+DIR_PATH = os.path.dirname(os.path.realpath("../../src/cartesi-machine-server"))
 
 TEST_ROM = {
     BOOTARGS: "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw {} -- /bin/echo nice && ls /mnt",
@@ -56,7 +56,7 @@ BACKING_TEST_DRIVE_FILEPATH = "rootfs.ext2"
 TEST_DRIVES = [
     {
         START: 1 << 63, #2**63 or ~ 9*10**18
-        LENGTH: os.path.getsize(BACKING_TEST_DRIVE_FILEPATH),
+        LENGTH: os.path.getsize(os.path.join(DIR_PATH, BACKING_TEST_DRIVE_FILEPATH)),
         BACKING: BACKING_TEST_DRIVE_FILEPATH,
         SHARED: False,
         LABEL: "root filesystem"
@@ -70,14 +70,14 @@ def build_mtdparts_str(drives):
     return mtdparts_str
 
 def make_new_machine_request():
-    ram_msg = cartesi_base_pb2.RAM(length=TEST_RAM[LENGTH], backing=DIR_PATH + '/' + TEST_RAM[BACKING])
+    ram_msg = cartesi_base_pb2.RAM(length=TEST_RAM[LENGTH], backing=os.path.join(DIR_PATH, TEST_RAM[BACKING]))
     drives_msg = []
     for drive in TEST_DRIVES:
-        drive_msg = cartesi_base_pb2.Drive(start=drive[START], length=drive[LENGTH], backing=DIR_PATH + '/' + drive[BACKING],
+        drive_msg = cartesi_base_pb2.Drive(start=drive[START], length=drive[LENGTH], backing=os.path.join(DIR_PATH, drive[BACKING]),
                                            shared=drive[SHARED], label=drive[LABEL])
         drives_msg.append(drive_msg)
     bootargs_str = TEST_ROM[BOOTARGS].format(build_mtdparts_str(TEST_DRIVES))
-    rom_msg = cartesi_base_pb2.ROM(bootargs=bootargs_str, backing=DIR_PATH + '/' + TEST_ROM[BACKING])
+    rom_msg = cartesi_base_pb2.ROM(bootargs=bootargs_str, backing=os.path.join(DIR_PATH, TEST_ROM[BACKING]))
     processor_state_msg = cartesi_base_pb2.ProcessorState(x1=5)
     processor_msg = cartesi_base_pb2.Processor(state=processor_state_msg)
     return cartesi_base_pb2.MachineRequest(processor=processor_msg, rom=rom_msg, ram=ram_msg, flash=drives_msg)
@@ -109,8 +109,9 @@ def run():
             request(stub, "GetRootHash", cartesi_base_pb2.Void())
             request(stub, "Run", cartesi_base_pb2.RunRequest(limit=500000000))
             request(stub, "Step", cartesi_base_pb2.Void())
-            request(stub, "WriteMemory", cartesi_base_pb2.WriteMemoryRequest(address=mem_address, data=content))
             request(stub, "ReadMemory", cartesi_base_pb2.ReadMemoryRequest(address=mem_address, length=len(content)))
+            request(stub, "WriteMemory", cartesi_base_pb2.WriteMemoryRequest(address=mem_address, data=content))
+            request(stub, "GetProof", cartesi_base_pb2.GetProofRequest(address=mem_address, log2_size=3))
             request(stub, "Shutdown", cartesi_base_pb2.Void())
         except Exception as e:
             print("An exception occurred:")

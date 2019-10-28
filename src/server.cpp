@@ -106,6 +106,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
     using MachineRequest = CartesiCore::MachineRequest;
     using RunRequest = CartesiCore::RunRequest;
     using RunResponse = CartesiCore::RunResponse;
+    using GetProofRequest = CartesiCore::GetProofRequest;
     using ReadMemoryRequest = CartesiCore::ReadMemoryRequest;
     using ReadMemoryResponse = CartesiCore::ReadMemoryResponse;
     using WriteMemoryRequest = CartesiCore::WriteMemoryRequest;
@@ -141,12 +142,34 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         return Status(StatusCode::ABORTED, e.what());
     }
 
-    void set_resp_from_access_log(const access_log &al,
-        AccessLog *response) const {
+    void set_proto_proof(const merkle_tree::proof_type &p, Proof *proto_p)
+        const {
+        proto_p->set_address(p.address);
+        proto_p->set_log2_size(p.log2_size);
+
+        //Building target hash
+        proto_p->mutable_target_hash()->set_content(p.target_hash.data(),
+            p.target_hash.size());
+
+        //Building root hash
+        proto_p->mutable_root_hash()->set_content(p.root_hash.data(),
+            p.root_hash.size());
+
+        //Setting all sibling hashes
+        for (int log2_size = merkle_tree::get_log2_tree_size()-1;
+            log2_size >= p.log2_size; --log2_size) {
+            const auto &h = merkle_tree::get_sibling_hash(p.sibling_hashes,
+                log2_size);
+            Hash *sh = proto_p->add_sibling_hashes();
+            sh->set_content(h.data(), h.size());
+        }
+    }
+
+    void set_proto_access_log(const access_log &al, AccessLog *proto_al) const {
         //Building word access grpc objects with equivalent content
         auto accesses = al.get_accesses();
         for (const auto &wa: al.get_accesses()) {
-            Access *a = response->add_accesses();
+            Access *a = proto_al->add_accesses();
             //Setting type
             switch (wa.type) {
                 case access_type::read:
@@ -162,28 +185,12 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             a->mutable_written()->set_content(&wa.written, sizeof(wa.written));
 
             //Building proof object
-            Proof *p = a->mutable_proof();
-            p->set_address(wa.proof.address);
-            p->set_log2_size(wa.proof.log2_size);
-
-            //Building target hash
-            p->mutable_target_hash()->set_content(wa.proof.target_hash.data(),
-                wa.proof.target_hash.size());
-
-            //Building root hash
-            p->mutable_root_hash()->set_content(wa.proof.root_hash.data(),
-                wa.proof.root_hash.size());
-
-            //Setting all sibling hashes
-            for (const auto &h: wa.proof.sibling_hashes) {
-                Hash *sh = p->add_sibling_hashes();
-                sh->set_content(h.data(), h.size());
-            }
+            set_proto_proof(wa.proof, a->mutable_proof());
         }
 
         //Building bracket note grpc objects with equivalent content
         for (const auto &bni: al.get_brackets()) {
-            BracketNote *bn = response->add_brackets();
+            BracketNote *bn = proto_al->add_brackets();
             //Setting type
             switch (bni.type) {
                 case bracket_type::begin:
@@ -203,7 +210,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
 
         //Building notes
         for (const auto &ni: al.get_notes()) {
-            response->add_notes()->assign(ni);
+            proto_al->add_notes()->assign(ni);
         }
     }
 
@@ -498,9 +505,9 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         std::lock_guard<std::mutex> lock(barrier_);
         // If machine already exists, abort
         if (context_.machine) {
-            constexpr char *msg = "Machine already exists";
-            dbg(msg);
-            return Status(StatusCode::FAILED_PRECONDITION, msg);
+            dbg("Machine already exists");
+            return Status(StatusCode::FAILED_PRECONDITION,
+                "Machine already exists");
         }
         // Otherwise, try to create a new one
         try {
@@ -522,9 +529,9 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         uint64_t limit = (uint64_t) request->limit();
         // Limit can't be in the past
         if (limit < context_.machine->read_mcycle()) {
-            const char *msg = "Requested mcycle limit is already past";
-            dbg(msg);
-            return Status(StatusCode::INVALID_ARGUMENT, msg);
+            dbg("Requested mcycle limit is already past");
+            return Status(StatusCode::INVALID_ARGUMENT,
+                "Requested mcycle limit is already past");
         }
         // If it is not in the past, try running running towards it
         try {
@@ -539,7 +546,31 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         }
     }
 
-    Status Step(ServerContext *, const Void *, AccessLog *response) override {
+    Status GetProof(ServerContext *, const GetProofRequest *request,
+        Proof *proto_p) override {
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine) {
+            return error_no_machine();
+        }
+        try {
+            dbg("GetProof started");
+            uint64_t address = request->address();
+            int log2_size = static_cast<int>(request->log2_size());
+            merkle_tree::proof_type p{};
+            if (context_.machine->update_merkle_tree() &&
+                context_.machine->get_proof(address, log2_size, p)) {
+                set_proto_proof(p, proto_p);
+            } else {
+                throw std::runtime_error{"GetProof failed"};
+            }
+            dbg("GetProof finished");
+            return Status::OK;
+        } catch (std::exception &e) {
+            return error_exception(e);
+        }
+    }
+
+    Status Step(ServerContext *, const Void *, AccessLog *proto_al) override {
         std::lock_guard<std::mutex> lock(barrier_);
         if (!context_.machine) {
             return error_no_machine();
@@ -547,7 +578,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         try {
             access_log al{};
             context_.machine->step(al);
-            set_resp_from_access_log(al, response);
+            set_proto_access_log(al, proto_al);
             dbg("Step executed");
             return Status::OK;
         } catch (std::exception &e) {

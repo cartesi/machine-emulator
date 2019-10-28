@@ -203,7 +203,7 @@ static void push_hash(lua_State *L, const merkle_tree::hash_type hash) {
 static void push_proof(lua_State *L, const merkle_tree::proof_type proof) {
     lua_newtable(L); // proof
     lua_newtable(L); // proof siblings
-    for (int log2_size = merkle_tree::get_log2_word_size(); log2_size < merkle_tree::get_log2_tree_size(); ++log2_size) {
+    for (int log2_size = proof.log2_size; log2_size < merkle_tree::get_log2_tree_size(); ++log2_size) {
         const auto &hash = merkle_tree::get_sibling_hash(proof.sibling_hashes, log2_size);
         push_hash(L, hash);
         lua_rawseti(L, -2, merkle_tree::get_log2_tree_size()-log2_size);

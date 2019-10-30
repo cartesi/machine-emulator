@@ -554,8 +554,8 @@ static int meta__index_destroy(lua_State *L) {
 /// \brief This is the machine:update_merkle_tree() method implementation.
 /// \param L Lua state.
 static int meta__index_update_merkle_tree(lua_State *L) try {
-    check_machine(L, 1)->update_merkle_tree();
-    return 0;
+    lua_pushboolean(L, check_machine(L, 1)->update_merkle_tree());
+    return 1;
 } catch (std::exception &x) {
     luaL_error(L, x.what());
     return 0;
@@ -580,7 +580,8 @@ static int meta__index_get_root_hash(lua_State *L) try {
         push_hash(L, hash);
         return 1;
     } else {
-        return 0;
+        lua_pushboolean(L, false);
+        return 1;
     }
 } catch (std::exception &x) {
     luaL_error(L, x.what());
@@ -591,7 +592,8 @@ static int meta__index_get_root_hash(lua_State *L) try {
 /// \param L Lua state.
 static int meta__index_run(lua_State *L) try {
     check_machine(L, 1)->run(luaL_checkinteger(L, 2));
-    return 0;
+    lua_pushboolean(L, true);
+    return 1;
 } catch (std::exception &x) {
     luaL_error(L, x.what());
     return 0;
@@ -689,7 +691,8 @@ static int meta__index_write_memory(lua_State *L) try {
     const unsigned char *data = reinterpret_cast<const unsigned char *>(
         luaL_checklstring(L, 3, &length));
     m->write_memory(luaL_checkinteger(L, 2), data, length);
-    return 0;
+    lua_pushboolean(L, true);
+    return 1;
 } catch (std::exception &x) {
     luaL_error(L, x.what());
     return 0;
@@ -719,7 +722,8 @@ static int meta__index_read_word(lua_State *L) try {
         lua_pushinteger(L, word_value);
         return 1;
     } else {
-        return 0;
+        lua_pushboolean(L, false);
+        return 1;
     }
 } catch (std::exception &x) {
     luaL_error(L, x.what());
@@ -735,7 +739,8 @@ static int meta__index_get_proof(lua_State *L) try {
         push_proof(L, proof);
         return 1;
     } else {
-        return 0;
+        lua_pushboolean(L, false);
+        return 1;
     }
 } catch (std::exception &x) {
     luaL_error(L, x.what());

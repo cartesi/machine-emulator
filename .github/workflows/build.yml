@@ -112,3 +112,13 @@ jobs:
           files: machine-emulator-*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.CI_TOKEN }}
+
+      - uses: actions/checkout@v1
+      - name: Docker Image
+        run: |
+          docker build -t cartesi/machine-emulator:${GITHUB_REF:11} -f .github/workflows/Dockerfile /opt/cartesi
+          echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin
+          docker push cartesi/machine-emulator:${GITHUB_REF:11}
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}

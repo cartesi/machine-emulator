@@ -57,6 +57,7 @@ BOOST_INC_Linux=
 
 CC=$(CC_$(UNAME))
 CXX=$(CXX_$(UNAME))
+CC_MARCH=
 SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 FS_LIB=$(FS_LIB_$(UNAME))
 BOOST_LIB=$(BOOST_LIB_$(UNAME))
@@ -83,9 +84,14 @@ DEFS+=-DDUMP_REGS
 #DEFS+=-DDUMP_COUNTERS
 endif
 
+# Compile for current system processor
+ifeq ($(native),yes)
+CC_MARCH=-march=native
+endif
+
 # -fsanitize=undefined
-CXXFLAGS=-O2 -std=c++17 -march=native -fvisibility=hidden -fPIC -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
-CFLAGS=-O2 -g -march=native -fvisibility=hidden -fPIC -MMD $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
+CXXFLAGS=-O2 -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
+CFLAGS=-O2 -g -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
 all: luacartesi grpc
 

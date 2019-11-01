@@ -29,6 +29,7 @@ SUBCLEAN := $(addsuffix .clean,$(SRCDIR))
 DEPDIRS := $(addprefix $(DEPDIR)/,cryptopp-CRYPTOPP_7_0_0 grpc lua-5.3.5)
 DEPCLEAN := $(addsuffix .clean,$(DEPDIRS))
 COREPROTO := lib/grpc-interfaces/core.proto
+GRPC_VERSION ?= v1.16.0
 
 # Mac OS X specific settings
 ifeq ($(UNAME),Darwin)
@@ -132,8 +133,8 @@ $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 $(BUILDDIR)/lib/libcryptopp.$(LIB_EXTENSION): 
 	$(MAKE) -C $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 PREFIX=$(BUILDDIR) install
 
 $(DEPDIR)/grpc $(BUILDDIR)/lib/libgrpc.$(LIB_EXTENSION): | $(BUILDDIR)
-	if [ ! -d $(DEPDIR)/grpc ]; then git clone --branch v1.16.0 --depth 1 https://github.com/grpc/grpc.git $(DEPDIR)/grpc; fi
-	cd $(DEPDIR)/grpc && git checkout v1.16.0 && git submodule update --init --recursive
+	if [ ! -d $(DEPDIR)/grpc ]; then git clone --branch $(GRPC_VERSION) --depth 1 https://github.com/grpc/grpc.git $(DEPDIR)/grpc; fi
+	cd $(DEPDIR)/grpc && git checkout $(GRPC_VERSION) && git submodule update --init --recursive
 	cd $(DEPDIR)/grpc/third_party/protobuf && ./autogen.sh && ./configure --prefix=$(BUILDDIR)
 	$(MAKE) -C $(DEPDIR)/grpc/third_party/protobuf
 	$(MAKE) -C $(DEPDIR)/grpc/third_party/protobuf install

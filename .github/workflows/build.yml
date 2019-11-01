@@ -135,11 +135,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.CI_TOKEN }}
 
       - uses: actions/checkout@v1
-      - name: Docker Image
-        run: |
-          docker build -t cartesi/machine-emulator:${GITHUB_REF:11} -f .github/workflows/Dockerfile /opt/cartesi
-          echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin
-          docker push cartesi/machine-emulator:${GITHUB_REF:11}
+      
+      - run: echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Docker Image
+        run: |
+          docker build -t cartesi/machine-emulator:${GITHUB_REF:11} -f .github/workflows/Dockerfile /opt/cartesi
+          docker push cartesi/machine-emulator:${GITHUB_REF:11}
+
+      - name: Docker Alpine Image
+        run: |
+          docker build . -t cartesi/machine-emulator:${GITHUB_REF:11}-alpine -f .github/workflows/Dockerfile.alpine
+          docker push cartesi/machine-emulator:${GITHUB_REF:11}-alpine

@@ -1,0 +1,45 @@
+FROM alpine:3.11 as builder
+
+RUN apk add --no-cache \
+    autoconf \
+    automake \
+    boost \
+    boost-dev \
+    cmake \
+    curl \
+    file \
+    g++ \
+    git \
+    libstdc++ \
+    libtool \
+    make \
+    openssl \
+    patchelf \
+    readline \
+    readline-dev \
+    unzip \
+    wget
+
+# alpine shasum is called sha1sum
+RUN echo -e "#!/bin/sh\nsha1sum \"\$@\"" > /usr/bin/shasum && chmod +x /usr/bin/shasum
+
+WORKDIR /usr/src/app
+COPY . .
+
+ARG GRPC_VERSION=v1.26.0
+
+RUN make -j$(nproc) dep GRPC_VERSION=${GRPC_VERSION} && \
+    make -j$(nproc) && \
+    make install && \
+    make clean && \
+    rm -rf *
+
+FROM alpine:3.11
+
+RUN apk add --no-cache boost libstdc++
+
+ENV PATH="/opt/cartesi/bin:${PATH}"
+WORKDIR /opt/cartesi
+COPY --from=builder /opt/cartesi .
+
+CMD [ "/opt/cartesi/bin/cartesi-machine-server" ]

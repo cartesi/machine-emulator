@@ -16,6 +16,8 @@ doc/api.md
 doc/html/
 doc/xml/
 
+.venv
+.vscode
 
 *.so
 *.dtb

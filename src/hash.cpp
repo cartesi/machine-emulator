@@ -124,12 +124,14 @@ static void error(const char *fmt, ...) {
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
+    exit(1);
 }
 
 /// \brief Prints help message
 static void help(void) {
     fprintf(stderr, "Usage:\n  hash [--input=<filename>] "
                     "--page-log2-size=<p> --tree-log2-size=<t>\n");
+    exit(0);
 }
 
 /// \brief Computes the Merkle hash of a page of data
@@ -548,6 +550,7 @@ public:
     }
 };
 
+#ifdef CONSISTENCY_TEST
 int main(int argc, char *argv[]) {
     const char *input_name = nullptr;
     const char *page_hashes_name = nullptr;
@@ -695,3 +698,77 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+#else
+int main(int argc, char *argv[]) {
+    const char *input_name = nullptr;
+    int page_log2_size = 0;
+    int tree_log2_size = 0;
+    // Process command line arguments
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--help") == 0) {
+            help();
+        } else if (stringval("--input=", argv[i], &input_name)) {
+            ;
+        } else if (intval("--page-log2-size=", argv[i], &page_log2_size)) {
+            ;
+        } else if (intval("--tree-log2-size=", argv[i], &tree_log2_size)) {
+            ;
+        } else {
+            error("unrecognized option '%s'\n", argv[i]);
+        }
+    }
+    if (page_log2_size < LEAF_LOG2_SIZE || page_log2_size >= 64 ||
+        tree_log2_size >= 64 || page_log2_size > tree_log2_size) {
+        error("invalid page size (%d) / tree size (%d) combination\n",
+            page_log2_size, tree_log2_size);
+        return 1;
+    }
+    // Read from stdin if no input name was given
+    auto input_file = unique_file_ptr{stdin};
+    if (input_name) {
+        input_file = unique_fopen(input_name, "ro", std::nothrow_t{});
+        if (!input_file) {
+            error("unable to open input file '%s'\n", input_name);
+            return 1;
+        }
+    }
+
+    // Allocate buffer for page data
+    uint64_t page_size = UINT64_C(1) << page_log2_size;
+    auto page_buf = unique_calloc<unsigned char>(1, page_size, std::nothrow_t{});
+    if (!page_buf) {
+        error("unable to allocate page buffer\n");
+        return 1;
+    }
+
+    incremental_merkle_tree_of_pages incremental_tree(page_log2_size,
+        tree_log2_size);
+
+    uint64_t max_pages = UINT64_C(1) << (tree_log2_size - page_log2_size);
+    uint64_t page_count = 0;
+    size_t got = page_size;
+    // Loop reading pages from file until done or error
+    while (1) {
+        got = fread(page_buf.get(), 1, page_size, input_file.get());
+        if (got == 0) {
+            if (ferror(input_file.get())) {
+                error("error reading input\n");
+            } else break;
+        }
+        if (page_count >= max_pages) {
+            error("too many pages for tree\n");
+        }
+        // Pad page with zeros if file ended before next page boundary
+        memset(page_buf.get()+got, 0, page_size-got);
+        // Compute page hash
+        auto page_hash = get_page_hash(page_buf.get(), page_log2_size);
+        // Add page to incremental tree
+        incremental_tree.add_page(page_hash);
+        // Compare the root hash for the incremental tree and the
+        // proof-by-proof tree
+        ++page_count;
+    }
+    print_hash(incremental_tree.get_root_hash(), stdout);
+    return 0;
+}
+#endif

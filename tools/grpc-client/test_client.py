@@ -21,7 +21,7 @@ import sys
 import os
 
 #So the cartesi GRPC modules are in path
-sys.path.insert(0,'../../lib/grpc-interfaces/py/')
+sys.path.insert(0,'./proto/')
 
 import core_pb2
 import cartesi_base_pb2

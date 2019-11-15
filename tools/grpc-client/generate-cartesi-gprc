@@ -1,0 +1,10 @@
+#!/bin/bash
+
+SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
+GRPCDIR=$SCRIPTPATH/../../lib/grpc-interfaces
+OUTDIR=$SCRIPTPATH/proto
+PROTOFILES="core.proto cartesi-base.proto manager-low.proto manager-high.proto logger-high.proto"
+
+mkdir -p $OUTDIR
+cd $GRPCDIR
+python3 -m grpc_tools.protoc -I. --python_out=$OUTDIR --grpc_python_out=$OUTDIR $PROTOFILES

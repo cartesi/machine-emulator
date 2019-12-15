@@ -20,23 +20,23 @@
 /// \file
 /// \brief Bootstrap and device tree in ROM
 
-#include "pma-ext.h"
+#include <pma-defines.h>
+
 #include "machine-config.h"
 
 namespace cartesi {
 
 void rom_init(const machine_config &c, unsigned char *rom_start, uint64_t length) {
-    if (length < PMA_EXT_LENGTH_DEF)
-        throw std::runtime_error{"Not enough space on ROM for PMA extension data"};
+    if (length < PMA_ROM_EXTRASPACE_LENGTH_DEF)
+        throw std::runtime_error{"Not enough space on ROM for bootargs"};
 
-    struct pma_ext_hdr *hdr = (struct pma_ext_hdr *)(rom_start + length - PMA_EXT_LENGTH_DEF);
-    hdr->version = PMA_EXT_VERSION;
+    char *bootargs = (char *)(rom_start + length - PMA_ROM_EXTRASPACE_LENGTH_DEF);
 
     if (!c.rom.bootargs.empty()) {
-        strncpy(hdr->bootargs, c.rom.bootargs.c_str(), PMA_EXT_BOOTARGS_SIZE);
-        hdr->bootargs[PMA_EXT_BOOTARGS_SIZE - 1] = '\0';
+        strncpy(bootargs, c.rom.bootargs.c_str(), PMA_BOOTARGS_LENGTH_DEF);
+        bootargs[PMA_BOOTARGS_LENGTH_DEF - 1] = '\0';
     } else {
-        memset(hdr->bootargs, 0, PMA_EXT_BOOTARGS_SIZE);
+        memset(bootargs, 0, PMA_BOOTARGS_LENGTH_DEF);
     }
 }
 

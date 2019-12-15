@@ -19,7 +19,7 @@
 
 #include <cstdint>
 
-#include "pma-defines.h"
+#include <pma-defines.h>
 
 namespace cartesi {
 
@@ -28,24 +28,24 @@ namespace cartesi {
 
 /// \brief Fixed PMA ranges.
 enum PMA_ranges: uint64_t {
-    PMA_SHADOW_START  = UINT64_C(0),           ///< Start of shadow range
-    PMA_SHADOW_LENGTH = UINT64_C(0x1000),      ///< Length of shadow range
-    PMA_ROM_START     = EXPAND_UINT64_C(PMA_ROM_START_DEF), ///< Start of ROM range
-    PMA_ROM_LENGTH    = EXPAND_UINT64_C(PMA_ROM_LENGTH_DEF),  ///< Length of ROM range
-    PMA_CLINT_START   = UINT64_C(0x2000000),   ///< Start of CLINT range
-    PMA_CLINT_LENGTH  = UINT64_C(0xC0000),     ///< Length of CLINT range
-    PMA_HTIF_START    = EXPAND_UINT64_C(PMA_HTIF_START_DEF),///< Start of HTIF range
-    PMA_HTIF_LENGTH   = UINT64_C(0x1000),      ///< Length of HTIF range
-    PMA_RAM_START     = EXPAND_UINT64_C(PMA_RAM_START_DEF),  ///< Start of RAM range
+    PMA_SHADOW_START  = EXPAND_UINT64_C(PMA_SHADOW_START_DEF),  ///< Start of shadow range
+    PMA_SHADOW_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_LENGTH_DEF), ///< Length of shadow range
+    PMA_ROM_START     = EXPAND_UINT64_C(PMA_ROM_START_DEF),     ///< Start of ROM range
+    PMA_ROM_LENGTH    = EXPAND_UINT64_C(PMA_ROM_LENGTH_DEF),    ///< Length of ROM range
+    PMA_CLINT_START   = EXPAND_UINT64_C(PMA_CLINT_START_DEF),   ///< Start of CLINT range
+    PMA_CLINT_LENGTH  = EXPAND_UINT64_C(PMA_CLINT_LENGTH_DEF),  ///< Length of CLINT range
+    PMA_HTIF_START    = EXPAND_UINT64_C(PMA_HTIF_START_DEF),    ///< Start of HTIF range
+    PMA_HTIF_LENGTH   = EXPAND_UINT64_C(PMA_HTIF_LENGTH_DEF),   ///< Length of HTIF range
+    PMA_RAM_START     = EXPAND_UINT64_C(PMA_RAM_START_DEF),     ///< Start of RAM range
 };
 
 /// \brief PMA constants.
 enum PMA_constants: uint64_t {
-    PMA_PAGE_SIZE_LOG2 = 12, ///< log<sub>2</sub> of physical memory page size.
-    PMA_PAGE_SIZE      = (UINT64_C(1) << PMA_PAGE_SIZE_LOG2), ///< Physical memory page size.
-    PMA_WORD_SIZE      = UINT64_C(8), ///< Physical memory word size.
-    PMA_MAX            = UINT64_C(32), ///< Maximum number of PMAs
-    PMA_BOARD_SHADOW_START = EXPAND_UINT64_C(PMA_START_DEF) ///< Base of board shadow, where PMAs start
+    PMA_PAGE_SIZE_LOG2 = EXPAND_UINT64_C(PMA_PAGE_SIZE_LOG2_DEF), ///< log<sub>2</sub> of physical memory page size.
+    PMA_PAGE_SIZE      = (UINT64_C(1) << PMA_PAGE_SIZE_LOG2_DEF), ///< Physical memory page size.
+    PMA_WORD_SIZE      = EXPAND_UINT64_C(PMA_WORD_SIZE_DEF),      ///< Physical memory word size.
+    PMA_MAX            = EXPAND_UINT64_C(PMA_MAX_DEF),            ///< Maximum number of PMAs
+    PMA_BOARD_SHADOW_START = EXPAND_UINT64_C(PMA_START_DEF)       ///< Base of board shadow, where PMAs start
 };
 
 /// \brief PMA istart shifts
@@ -76,11 +76,11 @@ enum PMA_ISTART_masks: uint64_t {
 
 /// \brief PMA device ids
 enum class PMA_ISTART_DID {
-    memory = 0, ///< DID for memory
-    shadow = 1, ///< DID for shadow device
-    drive  = 2, ///< DID for drive device
-    CLINT  = 3, ///< DID for CLINT device
-    HTIF   = 4  ///< DID for HTIF device
+    memory = PMA_MEMORY_DID_DEF, ///< DID for memory
+    shadow = PMA_SHADOW_DID_DEF, ///< DID for shadow device
+    drive  = PMA_DRIVE_DID_DEF,  ///< DID for drive device
+    CLINT  = PMA_CLINT_DID_DEF,  ///< DID for CLINT device
+    HTIF   = PMA_HTIF_DID_DEF    ///< DID for HTIF device
 };
 
 } // namespace

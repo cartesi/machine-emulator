@@ -71,7 +71,7 @@ GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_LIB)
 WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
-INCS=$(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) $(INCS_$(UNAME))
+INCS= -I../lib/machine-emulator-defines $(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 DEFS+=-DUMP_ILLEGAL_INSN

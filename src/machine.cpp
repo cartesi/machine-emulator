@@ -25,7 +25,6 @@
 #include <future>
 #include <thread>
 
-#include "pma-ext.h"
 #include "riscv-constants.h"
 #include "machine.h"
 #include "interpret.h"

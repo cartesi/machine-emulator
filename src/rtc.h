@@ -19,6 +19,8 @@
 
 #include <cstdint>
 
+#include <rtc-defines.h>
+
 /// \file
 /// \brief Real Time Clock
 
@@ -26,7 +28,7 @@ namespace cartesi {
 
 /// \brief RTC constants
 enum RTC_constants {
-    RTC_FREQ_DIV  = 100  ///< Clock divisor is set stone in whitepaper
+    RTC_FREQ_DIV  = RTC_FREQ_DIV_DEF ///< Clock divisor is set stone in whitepaper
 };
 
 /// \brief Converts from cycle count to time count

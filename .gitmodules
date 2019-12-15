@@ -1,3 +1,6 @@
 [submodule "lib/grpc-interfaces"]
 	path = lib/grpc-interfaces
 	url = ../grpc-interfaces.git
+[submodule "lib/machine-emulator-defines"]
+	path = lib/machine-emulator-defines
+	url = ../machine-emulator-defines.git

@@ -56,12 +56,33 @@ jobs:
           name: emulator
           path: /opt/cartesi
 
+      - name: Set current git organization env var
+        id: git_org
+        run: echo "::set-output name=current_organization::$(echo ${GITHUB_REPOSITORY} | cut -d '/' -f 1)"
+
       - name: Download [rootfs.ext2]
-        run: wget https://github.com/cartesi/image-rootfs/releases/download/v0.1.0-rc.1/rootfs.ext2
-      - name: Download [rom.bin]
-        run: wget https://github.com/cartesi/machine-emulator-rom/releases/download/v0.1.0-rc.1/rom.bin
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ steps.git_org.outputs.current_organization }}/image-rootfs
+          tag: 'v0.1.0'
+          file: rootfs.ext2
+          token: ${{ secrets.CI_TOKEN }}
+
       - name: Download [kernel.bin]
-        run: wget https://github.com/cartesi/image-kernel/releases/download/v0.1.0-rc.1/kernel.bin
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ steps.git_org.outputs.current_organization }}/image-kernel
+          tag: 'v0.1.0'
+          file: kernel.bin
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Download [rom.bin]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ steps.git_org.outputs.current_organization }}/machine-emulator-rom
+          tag: 'v0.1.0-rc2'
+          file: rom.bin
+          token: ${{ secrets.CI_TOKEN }}
 
       - name: Fix artifact permissions
         run: |
@@ -74,13 +95,13 @@ jobs:
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0
         with:
-          repository: cartesi-corp/machine-tests
-          tag: 'v0.1.1-pre3'
-          file: machine-tests-v0.1.1-pre3.tar.gz
+          repository: ${{ steps.git_org.outputs.current_organization }}/machine-tests
+          tag: 'v0.1.0-rc2'
+          file: machine-tests-v0.1.0-rc2.tar.gz
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Untar test suite
-        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.1.1-pre3.tar.gz -C /opt/cartesi/tests
+        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.1.0-rc2.tar.gz -C /opt/cartesi/tests
 
       - name: Run test suite
         run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/lib/luapp/5.3/cartesi-machine-tests.lua /opt/cartesi/tests

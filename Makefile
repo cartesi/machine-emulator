@@ -15,7 +15,7 @@ STRIP_EXEC= strip -x
 
 DEP_TO_BIN= luapp5.3 luacpp5.3
 DEP_TO_LIB=
-EMU_TO_BIN= cartesi-machine-server cartesi-machine-client
+EMU_TO_BIN= cartesi-machine-server cartesi-machine-client cartesi-machine-hash
 EMU_TO_LUA= cartesi-machine-tests.lua cartesi-machine.lua cartesi.so
 EMU_TO_INC= pma-defines.h rtc-defines.h
 
@@ -60,7 +60,7 @@ endif
 # downloading and building them.
 DEPBINS := $(addprefix $(BUILDDIR)/,bin/luapp5.3 lib/libcryptopp.$(LIB_EXTENSION) lib/libgrpc.$(LIB_EXTENSION))
 
-all: luacartesi grpc
+all: luacartesi grpc hash
 
 clean: $(SUBCLEAN)
 
@@ -198,5 +198,5 @@ install: install-dep install-emulator install-strip $(INSTALL_PLAT)
 
 .SECONDARY: $(DOWNLOADDIR) $(DEPDIRS) $(COREPROTO)
 
-.PHONY: all submodules doc clean distclean downloads src test luacartesi grpc\
+.PHONY: all submodules doc clean distclean downloads src test luacartesi grpc hash\
 	$(SUBDIRS) $(SUBCLEAN) $(DEPCLEAN) $(DEPDIR)/lua.clean

@@ -9,7 +9,7 @@ third-party/grpc
 third-party/lua-5.3.5
 src/cartesi-machine-client
 src/cartesi-machine-server
-src/hash
+src/cartesi-machine-hash
 
 doc/html
 doc/api.md

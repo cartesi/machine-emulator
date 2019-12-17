@@ -93,9 +93,9 @@ endif
 CXXFLAGS=-O2 -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 CFLAGS=-O2 -g -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
-all: luacartesi grpc
+all: luacartesi grpc hash
 
-.PHONY: all generate use clean test luacartesi grpc docker
+.PHONY: all generate use clean test luacartesi grpc hash docker
 
 LUACARTESI_OBJS:= \
 	clint.o \
@@ -153,6 +153,8 @@ luacartesi: cartesi.so
 
 grpc: cartesi-machine-server cartesi-machine-client
 
+hash: cartesi-machine-hash
+
 HASH_OBJS:= \
 	hash.o
 
@@ -180,7 +182,7 @@ GRPC_SRV_OBJS:= \
 	interpret.o \
 	manager-client.o
 
-hash: $(HASH_OBJS)
+cartesi-machine-hash: $(HASH_OBJS)
 	$(CXX) -o $@ $^ $(CRYPTOPP_LIB)
 
 cartesi-machine-server: $(GRPC_SRV_OBJS)
@@ -209,6 +211,6 @@ cartesi-machine-server cartesi-machine-client: CXXFLAGS := $(GRPC_INC) $(CXXFLAG
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.gcda *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi-machine-server cartesi-machine-client
+	rm -f dis/*.o dis/*.d *.gcda *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi-machine-server cartesi-machine-client cartesi-machine-hash
 
 -include $(wildcard *.d)

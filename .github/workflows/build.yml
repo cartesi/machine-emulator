@@ -80,7 +80,7 @@ jobs:
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: ${{ steps.git_org.outputs.current_organization }}/machine-emulator-rom
-          tag: 'v0.1.0-rc2'
+          tag: 'v0.1.0'
           file: rom.bin
           token: ${{ secrets.CI_TOKEN }}
 
@@ -96,12 +96,12 @@ jobs:
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: ${{ steps.git_org.outputs.current_organization }}/machine-tests
-          tag: 'v0.1.0-rc2'
-          file: machine-tests-v0.1.0-rc2.tar.gz
+          tag: 'v0.1.0'
+          file: machine-tests-v0.1.0.tar.gz
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Untar test suite
-        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.1.0-rc2.tar.gz -C /opt/cartesi/tests
+        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.1.0.tar.gz -C /opt/cartesi/tests
 
       - name: Run test suite
         run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/lib/luapp/5.3/cartesi-machine-tests.lua /opt/cartesi/tests

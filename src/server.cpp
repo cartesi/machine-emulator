@@ -414,22 +414,10 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
 
         //Setting ROM configs
         if (mr->has_rom()) {
-            auto rom = mr->rom();
-
-            switch (rom.rom_oneof_case()) {
-                case ROM::kBootargs: {
-                    c.rom.bootargs = rom.bootargs();
-                    break;
-                }
-                case ROM::kBacking: {
-                    c.rom.backing = rom.backing();
-                    break;
-                }
-                case ROM::ROM_ONEOF_NOT_SET: {
-                    dbg("No rom config set");
-                    break;
-                }
-            }
+            c.rom.bootargs = mr->rom().bootargs();
+            c.rom.backing = mr->rom().backing();
+            dbg("Bootargs: %s", c.rom.bootargs.c_str());
+            dbg("ROM backing file: %s", c.rom.backing.c_str());
         }
 
         //Setting ram configs

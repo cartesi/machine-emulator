@@ -613,8 +613,16 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
     }
 }
 
+#ifdef DUMP_HIST
+#include <unordered_map>
+static std::unordered_map<std::string, uint64_t> g_insn_hist;
+#endif
+
 static void dump_insn(machine &m, uint64_t pc, uint32_t insn, const char *name) {
     state_access a(m);
+#ifdef DUMP_HIST
+    g_insn_hist[name]++;
+#endif
 #ifdef DUMP_REGS
     dump_regs(m.get_state());
 #endif
@@ -2985,6 +2993,13 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
 
         // If the break flag is active, break from the inner loop
         if (a.get_naked_state().brk) {
+#ifdef DUMP_HIST
+            if (a.get_naked_state().iflags.H) {
+                for (auto v: g_insn_hist) {
+                    std::cout << v.second << ' ' << v.first << '\n';
+                }
+            }
+#endif
             return interpreter_status::brk;
         }
         // Otherwise, there can be no pending interrupts

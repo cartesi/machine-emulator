@@ -385,97 +385,185 @@ enum class CSR_address: uint32_t {
     tdata3 = 0x7a3,
 };
 
-/// \brief Names for instruction opcode field.
-enum class insn_opcode {
-    LUI   = 0b0110111,
-    AUIPC = 0b0010111,
-    JAL   = 0b1101111,
-    JALR  = 0b1100111,
-
-    branch_group = 0b1100011,
-    load_group = 0b0000011,
-    store_group = 0b0100011,
-    arithmetic_immediate_group = 0b0010011,
-    arithmetic_group = 0b0110011,
-    fence_group = 0b0001111,
-    csr_env_trap_int_mm_group = 0b1110011,
-    arithmetic_immediate_32_group = 0b0011011,
-    arithmetic_32_group = 0b0111011,
-    atomic_group = 0b0101111,
+/// \brief The result of insn & 0b111000001111111 can be used to identify
+/// most instructions directly
+enum class insn_funct3_00000_opcode: uint32_t {
+    LB              = 0b000000000000011,
+    LH              = 0b001000000000011,
+    LW              = 0b010000000000011,
+    LD              = 0b011000000000011,
+    LBU             = 0b100000000000011,
+    LHU             = 0b101000000000011,
+    LWU             = 0b110000000000011,
+    SB              = 0b000000000100011,
+    SH              = 0b001000000100011,
+    SW              = 0b010000000100011,
+    SD              = 0b011000000100011,
+    FENCE           = 0b000000000001111,
+    FENCE_I         = 0b001000000001111,
+    ADDI            = 0b000000000010011,
+    SLLI            = 0b001000000010011,
+    SLTI            = 0b010000000010011,
+    SLTIU           = 0b011000000010011,
+    XORI            = 0b100000000010011,
+    ORI             = 0b110000000010011,
+    ANDI            = 0b111000000010011,
+    ADDIW           = 0b000000000011011,
+    SLLIW           = 0b001000000011011,
+    SLLW            = 0b001000000111011,
+    DIVW            = 0b100000000111011,
+    REMW            = 0b110000000111011,
+    REMUW           = 0b111000000111011,
+    BEQ             = 0b000000001100011,
+    BNE             = 0b001000001100011,
+    BLT             = 0b100000001100011,
+    BGE             = 0b101000001100011,
+    BLTU            = 0b110000001100011,
+    BGEU            = 0b111000001100011,
+    JALR            = 0b000000001100111,
+    CSRRW           = 0b001000001110011,
+    CSRRS           = 0b010000001110011,
+    CSRRC           = 0b011000001110011,
+    CSRRWI          = 0b101000001110011,
+    CSRRSI          = 0b110000001110011,
+    CSRRCI          = 0b111000001110011,
+    AUIPC_000       = 0b000000000010111,
+    AUIPC_001       = 0b001000000010111,
+    AUIPC_010       = 0b010000000010111,
+    AUIPC_011       = 0b011000000010111,
+    AUIPC_100       = 0b100000000010111,
+    AUIPC_101       = 0b101000000010111,
+    AUIPC_110       = 0b110000000010111,
+    AUIPC_111       = 0b111000000010111,
+    LUI_000         = 0b000000000110111,
+    LUI_001         = 0b001000000110111,
+    LUI_010         = 0b010000000110111,
+    LUI_011         = 0b011000000110111,
+    LUI_100         = 0b100000000110111,
+    LUI_101         = 0b101000000110111,
+    LUI_110         = 0b110000000110111,
+    LUI_111         = 0b111000000110111,
+    JAL_000         = 0b000000001101111,
+    JAL_001         = 0b001000001101111,
+    JAL_010         = 0b010000001101111,
+    JAL_011         = 0b011000001101111,
+    JAL_100         = 0b100000001101111,
+    JAL_101         = 0b101000001101111,
+    JAL_110         = 0b110000001101111,
+    JAL_111         = 0b111000001101111,
+    // some instructions need additional inspection of funct7 (or part thereof)
+    SRLI_SRAI       = 0b101000000010011,
+    SRLIW_SRAIW     = 0b101000000011011,
+    AMO_W           = 0b010000000101111,
+    AMO_D           = 0b011000000101111,
+    ADD_MUL_SUB     = 0b000000000110011,
+    SLL_MULH        = 0b001000000110011,
+    SLT_MULHSU      = 0b010000000110011,
+    SLTU_MULHU      = 0b011000000110011,
+    XOR_DIV         = 0b100000000110011,
+    SRL_DIVU_SRA    = 0b101000000110011,
+    OR_REM          = 0b110000000110011,
+    AND_REMU        = 0b111000000110011,
+    ADDW_MULW_SUBW  = 0b000000000111011,
+    SRLW_DIVUW_SRAW = 0b101000000111011,
+    privileged      = 0b000000001110011,
 };
 
-/// \brief Names for branch instructions funct3 field.
-enum class insn_branch_funct3 {
-    BEQ  = 0b000,
-    BNE  = 0b001,
-    BLT  = 0b100,
-    BGE  = 0b101,
-    BLTU = 0b110,
-    BGEU = 0b111
-};
-
-/// \brief Names for load instructions funct3 field.
-enum class insn_load_funct3 {
-    LB  = 0b000,
-    LH  = 0b001,
-    LW  = 0b010,
-    LD  = 0b011,
-    LBU = 0b100,
-    LHU = 0b101,
-    LWU = 0b110
-};
-
-/// \brief Names for store instructions funct3 field.
-enum class insn_store_funct3 {
-    SB = 0b000,
-    SH = 0b001,
-    SW = 0b010,
-    SD = 0b011
-};
-
-/// \brief Names for arithmetic-immediate instructions funct3 field.
-enum class insn_arithmetic_immediate_funct3 {
-    ADDI  = 0b000,
-    SLTI  = 0b010,
-    SLTIU = 0b011,
-    XORI  = 0b100,
-    ORI   = 0b110,
-    ANDI  = 0b111,
-    SLLI  = 0b001,
-
-    shift_right_immediate_group = 0b101,
-};
-
-/// \brief Names for shift-right immediate instructions funct6 field.
-enum class insn_shift_right_immediate_funct6 {
+/// \brief The result of insn >> 26 (6 most significant bits of funct7) can be
+/// used to identify the SRI instructions
+enum insn_SRLI_SRAI_funct7_sr1: uint32_t {
     SRLI = 0b000000,
     SRAI = 0b010000
 };
 
-/// \brief Names for arithmetic instructions concatenated funct3 and funct7 fields.
-enum class insn_arithmetic_funct3_funct7 {
-    ADD    = 0b0000000000,
-    SUB    = 0b0000100000,
-    SLL    = 0b0010000000,
-    SLT    = 0b0100000000,
-    SLTU   = 0b0110000000,
-    XOR    = 0b1000000000,
-    SRL    = 0b1010000000,
-    SRA    = 0b1010100000,
-    OR     = 0b1100000000,
-    AND    = 0b1110000000,
-    MUL    = 0b0000000001,
-    MULH   = 0b0010000001,
-    MULHSU = 0b0100000001,
-    MULHU  = 0b0110000001,
-    DIV    = 0b1000000001,
-    DIVU   = 0b1010000001,
-    REM    = 0b1100000001,
-    REMU   = 0b1110000001,
+/// \brief funct7 constants for SRW instructions
+enum insn_SRLIW_SRAIW_funct7: uint32_t {
+    SRLIW = 0b0000000,
+    SRAIW = 0b0100000
 };
 
-/// \brief Names for env, trap, and int instructions.
-enum class insn_env_trap_int_group_insn {
+/// \brief The result of insn >> 27 (5 most significant bits of funct7) can be
+/// used to identify the atomic operation
+enum insn_AMO_funct7_sr2: uint32_t {
+    AMOADD  = 0b00000,
+    AMOSWAP = 0b00001,
+    LR      = 0b00010,
+    SC      = 0b00011,
+    AMOXOR  = 0b00100,
+    AMOOR   = 0b01000,
+    AMOAND  = 0b01100,
+    AMOMIN  = 0b10000,
+    AMOMAX  = 0b10100,
+    AMOMINU = 0b11000,
+    AMOMAXU = 0b11100
+};
+
+/// \brief funct7 constants for ADD, MUL, SUB instructions
+enum insn_ADD_MUL_SUB_funct7: uint32_t {
+    ADD = 0b0000000,
+    MUL = 0b0000001,
+    SUB = 0b0100000
+};
+
+/// \brief funct7 constants for SLL, MULH instructions
+enum insn_SLL_MULH_funct7: uint32_t {
+    SLL  = 0b0000000,
+    MULH = 0b0000001
+};
+
+/// \brief funct7 constants for SLT, MULHSU instructions
+enum insn_SLT_MULHSU_funct7: uint32_t {
+    SLT    = 0b0000000,
+    MULHSU = 0b0000001
+};
+
+/// \brief funct7 constants for SLTU, MULHU instructions
+enum insn_SLTU_MULHU_funct7: uint32_t {
+    SLTU  = 0b0000000,
+    MULHU = 0b0000001
+};
+
+/// \brief funct7 constants for XOR, DIV instructions
+enum insn_XOR_DIV_funct7: uint32_t {
+    XOR        = 0b0000000,
+    DIV        = 0b0000001,
+};
+
+/// \brief funct7 constants for SRL, DIVU, SRA instructions
+enum insn_SRL_DIVU_SRA_funct7: uint32_t {
+    SRL  = 0b0000000,
+    DIVU = 0b0000001,
+    SRA  = 0b0100000,
+};
+
+/// \brief funct7 constants for OR, REM instructions
+enum insn_OR_REM_funct7: uint32_t {
+    OR  = 0b0000000,
+    REM = 0b0000001
+};
+
+/// \brief funct7 constants for AND, REMU instructions
+enum insn_AND_REMU_funct7: uint32_t {
+    AND  = 0b0000000,
+    REMU = 0b0000001
+};
+
+/// \brief funct7 constants for ADDW, MULW, SUBW instructions
+enum insn_ADDW_MULW_SUBW_funct7: uint32_t {
+    ADDW = 0b0000000,
+    MULW = 0b0000001,
+    SUBW = 0b0100000
+};
+
+/// \brief funct7 constants for SRLW, DIVUW, SRAW instructions
+enum insn_SRLW_DIVUW_SRAW_funct7: uint32_t {
+    SRLW  = 0b0000000,
+    DIVUW = 0b0000001,
+    SRAW  = 0b0100000
+};
+
+/// \brief Privileged instructions, except for SFENCE.VMA, have no parameters
+enum class insn_privileged: uint32_t {
     ECALL  = 0b00000000000000000000000001110011,
     EBREAK = 0b00000000000100000000000001110011,
     URET   = 0b00000000001000000000000001110011,
@@ -483,73 +571,6 @@ enum class insn_env_trap_int_group_insn {
     MRET   = 0b00110000001000000000000001110011,
     WFI    = 0b00010000010100000000000001110011
 };
-
-/// \brief Names for csr, env, trap, int, mm instructions funct3 field.
-enum class insn_csr_env_trap_int_mm_funct3 {
-    CSRRW  = 0b001,
-    CSRRS  = 0b010,
-    CSRRC  = 0b011,
-    CSRRWI = 0b101,
-    CSRRSI = 0b110,
-    CSRRCI = 0b111,
-
-    env_trap_int_mm_group  = 0b000,
-};
-
-/// \brief Names for 32-bit arithmetic immediate instructions funct3 field.
-enum class insn_arithmetic_immediate_32_funct3 {
-    ADDIW = 0b000,
-    SLLIW = 0b001,
-
-    shift_right_immediate_32_group = 0b101,
-};
-
-/// \brief Names for 32-bit shift-right immediate instructions funct7 field.
-enum class insn_shift_right_immediate_32_funct7 {
-    SRLIW = 0b0000000,
-    SRAIW = 0b0100000
-};
-
-/// \brief Names for 32-bit arithmetic instructions concatenated funct3 and funct7 fields.
-enum class insn_arithmetic_32_funct3_funct7 {
-    ADDW  = 0b0000000000,
-    SUBW  = 0b0000100000,
-    SLLW  = 0b0010000000,
-    SRLW  = 0b1010000000,
-    SRAW  = 0b1010100000,
-    MULW  = 0b0000000001,
-    DIVW  = 0b1000000001,
-    DIVUW = 0b1010000001,
-    REMW  = 0b1100000001,
-    REMUW = 0b1110000001
-};
-
-/// \brief Names for atomic instructions concatenated funct3 and funct5 fields.
-enum class insn_atomic_funct3_funct5 {
-    LR_W      = 0b01000010,
-    SC_W      = 0b01000011,
-    AMOSWAP_W = 0b01000001,
-    AMOADD_W  = 0b01000000,
-    AMOXOR_W  = 0b01000100,
-    AMOAND_W  = 0b01001100,
-    AMOOR_W   = 0b01001000,
-    AMOMIN_W  = 0b01010000,
-    AMOMAX_W  = 0b01010100,
-    AMOMINU_W = 0b01011000,
-    AMOMAXU_W = 0b01011100,
-    LR_D      = 0b01100010,
-    SC_D      = 0b01100011,
-    AMOSWAP_D = 0b01100001,
-    AMOADD_D  = 0b01100000,
-    AMOXOR_D  = 0b01100100,
-    AMOAND_D  = 0b01101100,
-    AMOOR_D   = 0b01101000,
-    AMOMIN_D  = 0b01110000,
-    AMOMAX_D  = 0b01110100,
-    AMOMINU_D = 0b01111000,
-    AMOMAXU_D = 0b01111100
-};
-
 
 } // namespace cartesi
 

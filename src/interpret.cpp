@@ -397,6 +397,12 @@ static void raise_interrupt_if_any(STATE_ACCESS &a) {
     }
 }
 
+/// \brief Obtains the funct3 and opcode fields an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_funct3_00000_opcode(uint32_t insn) {
+    return insn & 0b111000001111111;
+}
+
 /// \brief Obtains the RD field from an instruction.
 /// \param insn Instruction.
 static inline uint32_t insn_get_rd(uint32_t insn) {
@@ -461,47 +467,25 @@ static inline int32_t insn_S_get_imm(uint32_t insn) {
     return (static_cast<int32_t>(insn & 0xfe000000) >> (25 - 5)) | ((insn >> 7) & 0b11111);
 }
 
-/// \brief Obtains the opcode field from an instruction.
+/// \brief Obtains the 5 most significant bits of the funct7 field from an instruction.
 /// \param insn Instruction.
-static inline uint32_t insn_get_opcode(uint32_t insn) {
-    //std::cerr << "opcode: " << std::bitset<7>(insn & 0b1111111) << '\n';
-    return insn & 0b1111111;
+static inline uint32_t insn_get_funct7_sr2(uint32_t insn) {
+    //std::cerr << "funct7_sr2: " << std::bitset<5>((insn >> 27)) << '\n';
+    return insn >> 27;
 }
 
-/// \brief Obtains the funct3 field from an instruction.
+/// \brief Obtains the 6 most significant bits of the funct7 field from an instruction.
 /// \param insn Instruction.
-static inline uint32_t insn_get_funct3(uint32_t insn) {
-    //std::cerr << "funct3: " << std::bitset<3>((insn >> 12) & 0b111) << '\n';
-    return (insn >> 12) & 0b111;
-}
-
-/// \brief Obtains the concatanation of funct3 and funct7 fields from an instruction.
-/// \param insn Instruction.
-static inline uint32_t insn_get_funct3_funct7(uint32_t insn) {
-    //std::cerr << "funct3_funct7: " << std::bitset<10>(((insn >> 5) & 0b1110000000) | (insn >> 24)) << '\n';
-    return ((insn >> 5) & 0b1110000000) | (insn >> 25);
-}
-
-/// \brief Obtains the concatanation of funct3 and funct5 fields from an instruction.
-/// \param insn Instruction.
-static inline uint32_t insn_get_funct3_funct5(uint32_t insn) {
-    //std::cerr << "funct3_funct5: " << std::bitset<8>(((insn >> 7) & 0b11100000) | (insn >> 27)) << '\n';
-    return ((insn >> 7) & 0b11100000) | (insn >> 27);
+static inline uint32_t insn_get_funct7_sr1(uint32_t insn) {
+    //std::cerr << "funct7_sr1: " << std::bitset<6>((insn >> 26)) << '\n';
+    return insn >> 26;
 }
 
 /// \brief Obtains the funct7 field from an instruction.
 /// \param insn Instruction.
 static inline uint32_t insn_get_funct7(uint32_t insn) {
-    //std::cerr << "funct7: " << std::bitset<7>((insn >> 25) & 0b1111111) << '\n';
-    return (insn >> 25) & 0b1111111;
-}
-
-/// \brief Obtains the funct6 field from an instruction.
-/// \param insn Instruction.
-/// \details I.e., the first 6 bits.
-static inline uint32_t insn_get_funct6(uint32_t insn) {
-    //std::cerr << "funct6: " << std::bitset<6>((insn >> 26) & 0b111111) << '\n';
-    return (insn >> 26) & 0b111111;
+    //std::cerr << "funct7: " << std::bitset<7>((insn >> 25)) << '\n';
+    return insn >> 25;
 }
 
 /// \brief Read an aligned word from virtual memory.
@@ -2564,293 +2548,235 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
     }
 }
 
-/// \brief Executes an instruction of the atomic group.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Current pc.
-/// \param insn Instruction.
-/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-/// \details See [Load-Reserved/Store-Conditional Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.7.2) and
-///  [Atomic Memory Operations](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.7.3).
 template <typename STATE_ACCESS>
-static inline execute_status execute_atomic_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    INC_COUNTER(a.get_naked_state(), atomic_mop);
-    switch (static_cast<insn_atomic_funct3_funct5>(insn_get_funct3_funct5(insn))) {
-        case insn_atomic_funct3_funct5::LR_W: return execute_LR_W(a, pc, insn);
-        case insn_atomic_funct3_funct5::SC_W: return execute_SC_W(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOSWAP_W: return execute_AMOSWAP_W(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOADD_W: return execute_AMOADD_W(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOXOR_W: return execute_AMOXOR_W(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOAND_W: return execute_AMOAND_W(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOOR_W: return execute_AMOOR_W(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOMIN_W: return execute_AMOMIN_W(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOMAX_W: return execute_AMOMAX_W(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOMINU_W: return execute_AMOMINU_W(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOMAXU_W: return execute_AMOMAXU_W(a, pc, insn);
-        case insn_atomic_funct3_funct5::LR_D: return execute_LR_D(a, pc, insn);
-        case insn_atomic_funct3_funct5::SC_D: return execute_SC_D(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOSWAP_D: return execute_AMOSWAP_D(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOADD_D: return execute_AMOADD_D(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOXOR_D: return execute_AMOXOR_D(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOAND_D: return execute_AMOAND_D(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOOR_D: return execute_AMOOR_D(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOMIN_D: return execute_AMOMIN_D(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOMAX_D: return execute_AMOMAX_D(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOMINU_D: return execute_AMOMINU_D(a, pc, insn);
-        case insn_atomic_funct3_funct5::AMOMAXU_D: return execute_AMOMAXU_D(a, pc, insn);
-        default: return raise_illegal_insn_exception(a, pc, insn);
+static inline execute_status execute_SRLI_SRAI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_SRLI_SRAI_funct7_sr1>(insn_get_funct7_sr1(insn))) {
+        case insn_SRLI_SRAI_funct7_sr1::SRLI:
+            return execute_SRLI(a, pc, insn);
+        case insn_SRLI_SRAI_funct7_sr1::SRAI:
+            return execute_SRAI(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-/// \brief Executes an instruction of the arithmetic-32 group.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Current pc.
-/// \param insn Instruction.
-/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-/// \details See [Integer Computational Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.4).
 template <typename STATE_ACCESS>
-static inline execute_status execute_arithmetic_32_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_arithmetic_32_funct3_funct7>(insn_get_funct3_funct7(insn))) {
-        case insn_arithmetic_32_funct3_funct7::ADDW: return execute_ADDW(a, pc, insn);
-        case insn_arithmetic_32_funct3_funct7::SUBW: return execute_SUBW(a, pc, insn);
-        case insn_arithmetic_32_funct3_funct7::SLLW: return execute_SLLW(a, pc, insn);
-        case insn_arithmetic_32_funct3_funct7::SRLW: return execute_SRLW(a, pc, insn);
-        case insn_arithmetic_32_funct3_funct7::SRAW: return execute_SRAW(a, pc, insn);
-        case insn_arithmetic_32_funct3_funct7::MULW: return execute_MULW(a, pc, insn);
-        case insn_arithmetic_32_funct3_funct7::DIVW: return execute_DIVW(a, pc, insn);
-        case insn_arithmetic_32_funct3_funct7::DIVUW: return execute_DIVUW(a, pc, insn);
-        case insn_arithmetic_32_funct3_funct7::REMW: return execute_REMW(a, pc, insn);
-        case insn_arithmetic_32_funct3_funct7::REMUW: return execute_REMUW(a, pc, insn);
-        default: return raise_illegal_insn_exception(a, pc, insn);
+static inline execute_status execute_SRLIW_SRAIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_SRLIW_SRAIW_funct7>(insn_get_funct7(insn))) {
+        case insn_SRLIW_SRAIW_funct7::SRLIW:
+            return execute_SRLIW(a, pc, insn);
+        case insn_SRLIW_SRAIW_funct7::SRAIW:
+            return execute_SRAIW(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-/// \brief Executes an instruction of the shift-rightimmediate-32 group.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Current pc.
-/// \param insn Instruction.
-/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
-static inline execute_status execute_shift_right_immediate_32_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_shift_right_immediate_32_funct7>(insn_get_funct7(insn))) {
-        case insn_shift_right_immediate_32_funct7::SRLIW: return execute_SRLIW(a, pc, insn);
-        case insn_shift_right_immediate_32_funct7::SRAIW: return execute_SRAIW(a, pc, insn);
-        default: return raise_illegal_insn_exception(a, pc, insn);
+static inline execute_status execute_AMO_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_AMO_funct7_sr2>(insn_get_funct7_sr2(insn))) {
+        case insn_AMO_funct7_sr2::AMOADD:
+            return execute_AMOADD_W(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOSWAP:
+            return execute_AMOSWAP_W(a, pc, insn);
+        case insn_AMO_funct7_sr2::LR:
+            return execute_LR_W(a, pc, insn);
+        case insn_AMO_funct7_sr2::SC:
+            return execute_SC_W(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOXOR:
+            return execute_AMOXOR_W(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOOR:
+            return execute_AMOOR_W(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOAND:
+            return execute_AMOAND_W(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOMIN:
+            return execute_AMOMIN_W(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOMAX:
+            return execute_AMOMAX_W(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOMINU:
+            return execute_AMOMINU_W(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOMAXU:
+            return execute_AMOMAXU_W(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-/// \brief Executes an instruction of the arithmetic-immediate-32 group.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Current pc.
-/// \param insn Instruction.
-/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-/// \details See [Integer Computational Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.4).
 template <typename STATE_ACCESS>
-static inline execute_status execute_arithmetic_immediate_32_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_arithmetic_immediate_32_funct3>(insn_get_funct3(insn))) {
-        case insn_arithmetic_immediate_32_funct3::ADDIW: return execute_ADDIW(a, pc, insn);
-        case insn_arithmetic_immediate_32_funct3::SLLIW: return execute_SLLIW(a, pc, insn);
-        case insn_arithmetic_immediate_32_funct3::shift_right_immediate_32_group:
-            return execute_shift_right_immediate_32_group(a, pc, insn);
-        default: return raise_illegal_insn_exception(a, pc, insn);
+static inline execute_status execute_AMO_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_AMO_funct7_sr2>(insn_get_funct7_sr2(insn))) {
+        case insn_AMO_funct7_sr2::AMOADD:
+            return execute_AMOADD_D(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOSWAP:
+            return execute_AMOSWAP_D(a, pc, insn);
+        case insn_AMO_funct7_sr2::LR:
+            return execute_LR_D(a, pc, insn);
+        case insn_AMO_funct7_sr2::SC:
+            return execute_SC_D(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOXOR:
+            return execute_AMOXOR_D(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOOR:
+            return execute_AMOOR_D(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOAND:
+            return execute_AMOAND_D(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOMIN:
+            return execute_AMOMIN_D(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOMAX:
+            return execute_AMOMAX_D(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOMINU:
+            return execute_AMOMINU_D(a, pc, insn);
+        case insn_AMO_funct7_sr2::AMOMAXU:
+            return execute_AMOMAXU_D(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-/// \brief Executes an instruction of the environment, trap, interrupt, or memory management groups.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Current pc.
-/// \param insn Instruction.
-/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-/// \details See [Environment Call and Breakpoints](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.9),
-///  [Machine-Mode Privileged Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-privileged-v1.10.pdf#section.3.2), and
-///  [Supervisor Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-privileged-v1.10.pdf#section.4.2).
 template <typename STATE_ACCESS>
-static inline execute_status execute_env_trap_int_mm_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_env_trap_int_group_insn>(insn)) {
-        case insn_env_trap_int_group_insn::ECALL: return execute_ECALL(a, pc, insn);
-        case insn_env_trap_int_group_insn::EBREAK: return execute_EBREAK(a, pc, insn);
-        case insn_env_trap_int_group_insn::URET: return execute_URET(a, pc, insn);
-        case insn_env_trap_int_group_insn::SRET: return execute_SRET(a, pc, insn);
-        case insn_env_trap_int_group_insn::MRET: return execute_MRET(a, pc, insn);
-        case insn_env_trap_int_group_insn::WFI: return execute_WFI(a, pc, insn);
-        default: return execute_SFENCE_VMA(a, pc, insn);
+static inline execute_status execute_ADD_MUL_SUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_ADD_MUL_SUB_funct7>(insn_get_funct7(insn))) {
+        case insn_ADD_MUL_SUB_funct7::ADD:
+            return execute_ADD(a, pc, insn);
+        case insn_ADD_MUL_SUB_funct7::MUL:
+            return execute_MUL(a, pc, insn);
+        case insn_ADD_MUL_SUB_funct7::SUB:
+            return execute_SUB(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-/// \brief Executes an instruction of the CSR, environment, trap, interrupt, or memory management groups.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Current pc.
-/// \param insn Instruction.
-/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-///  \details See [Control and Status Register Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.8),
-///  [Environment Call and Breakpoints](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.9),
-///  [Machine-Mode Privileged Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-privileged-v1.10.pdf#section.3.2), and
-///  [Supervisor Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-privileged-v1.10.pdf#section.4.2).
 template <typename STATE_ACCESS>
-static inline execute_status execute_csr_env_trap_int_mm_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_csr_env_trap_int_mm_funct3>(insn_get_funct3(insn))) {
-        case insn_csr_env_trap_int_mm_funct3::CSRRW: return execute_CSRRW(a, pc, insn);
-        case insn_csr_env_trap_int_mm_funct3::CSRRS: return execute_CSRRS(a, pc, insn);
-        case insn_csr_env_trap_int_mm_funct3::CSRRC: return execute_CSRRC(a, pc, insn);
-        case insn_csr_env_trap_int_mm_funct3::CSRRWI: return execute_CSRRWI(a, pc, insn);
-        case insn_csr_env_trap_int_mm_funct3::CSRRSI: return execute_CSRRSI(a, pc, insn);
-        case insn_csr_env_trap_int_mm_funct3::CSRRCI: return execute_CSRRCI(a, pc, insn);
-        case insn_csr_env_trap_int_mm_funct3::env_trap_int_mm_group:
-             return execute_env_trap_int_mm_group(a, pc, insn);
-        default: return raise_illegal_insn_exception(a, pc, insn);
+static inline execute_status execute_SLL_MULH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_SLL_MULH_funct7>(insn_get_funct7(insn))) {
+        case insn_SLL_MULH_funct7::SLL:
+            return execute_SLL(a, pc, insn);
+        case insn_SLL_MULH_funct7::MULH:
+            return execute_MULH(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-/// \brief Executes an instruction of the fence group.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Current pc.
-/// \param insn Instruction.
-/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-///  See [Memory Model](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.7).
 template <typename STATE_ACCESS>
-static inline execute_status execute_fence_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    if (insn == 0x0000100f) {
-        return execute_FENCE_I(a, pc, insn);
-    } else if (insn & 0xf00fff80) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    } else {
-        return execute_FENCE(a, pc, insn);
+static inline execute_status execute_SLT_MULHSU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_SLT_MULHSU_funct7>(insn_get_funct7(insn))) {
+        case insn_SLT_MULHSU_funct7::SLT:
+            return execute_SLT(a, pc, insn);
+        case insn_SLT_MULHSU_funct7::MULHSU:
+            return execute_MULHSU(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-/// \brief Executes an instruction of the shift-right-immediate group.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Current pc.
-/// \param insn Instruction.
-/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
 template <typename STATE_ACCESS>
-static inline execute_status execute_shift_right_immediate_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_shift_right_immediate_funct6>(insn_get_funct6(insn))) {
-        case insn_shift_right_immediate_funct6::SRLI: return execute_SRLI(a, pc, insn);
-        case insn_shift_right_immediate_funct6::SRAI: return execute_SRAI(a, pc, insn);
-        default: return raise_illegal_insn_exception(a, pc, insn);
+static inline execute_status execute_SLTU_MULHU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_SLTU_MULHU_funct7>(insn_get_funct7(insn))) {
+        case insn_SLTU_MULHU_funct7::SLTU:
+            return execute_SLTU(a, pc, insn);
+        case insn_SLTU_MULHU_funct7::MULHU:
+            return execute_MULHU(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-/// \brief Executes an instruction of the arithmetic group.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Current pc.
-/// \param insn Instruction.
-/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-///  See [Integer Computational Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.4).
 template <typename STATE_ACCESS>
-static inline execute_status execute_arithmetic_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    //std::cerr << "funct3_funct7: " << std::bitset<10>(insn_get_funct3_funct7(insn)) << '\n';
-    switch (static_cast<insn_arithmetic_funct3_funct7>(insn_get_funct3_funct7(insn))) {
-        case insn_arithmetic_funct3_funct7::ADD: return execute_ADD(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::SUB: return execute_SUB(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::SLL: return execute_SLL(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::SLT: return execute_SLT(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::SLTU: return execute_SLTU(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::XOR: return execute_XOR(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::SRL: return execute_SRL(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::SRA: return execute_SRA(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::OR: return execute_OR(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::AND: return execute_AND(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::MUL: return execute_MUL(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::MULH: return execute_MULH(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::MULHSU: return execute_MULHSU(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::MULHU: return execute_MULHU(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::DIV: return execute_DIV(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::DIVU: return execute_DIVU(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::REM: return execute_REM(a, pc, insn);
-        case insn_arithmetic_funct3_funct7::REMU: return execute_REMU(a, pc, insn);
-        default: return raise_illegal_insn_exception(a, pc, insn);
+static inline execute_status execute_XOR_DIV(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_XOR_DIV_funct7>(insn_get_funct7(insn))) {
+        case insn_XOR_DIV_funct7::XOR:
+            return execute_XOR(a, pc, insn);
+        case insn_XOR_DIV_funct7::DIV:
+            return execute_DIV(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-/// \brief Executes an instruction of the arithmetic-immediate group.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Current pc.
-/// \param insn Instruction.
-/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-///  See [Integer Computational Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.4).
 template <typename STATE_ACCESS>
-static inline execute_status execute_arithmetic_immediate_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_arithmetic_immediate_funct3>(insn_get_funct3(insn))) {
-        case insn_arithmetic_immediate_funct3::ADDI: return execute_ADDI(a, pc, insn);
-        case insn_arithmetic_immediate_funct3::SLTI: return execute_SLTI(a, pc, insn);
-        case insn_arithmetic_immediate_funct3::SLTIU: return execute_SLTIU(a, pc, insn);
-        case insn_arithmetic_immediate_funct3::XORI: return execute_XORI(a, pc, insn);
-        case insn_arithmetic_immediate_funct3::ORI: return execute_ORI(a, pc, insn);
-        case insn_arithmetic_immediate_funct3::ANDI: return execute_ANDI(a, pc, insn);
-        case insn_arithmetic_immediate_funct3::SLLI: return execute_SLLI(a, pc, insn);
-        case insn_arithmetic_immediate_funct3::shift_right_immediate_group:
-            return execute_shift_right_immediate_group(a, pc, insn);
-        default: return raise_illegal_insn_exception(a, pc, insn);
+static inline execute_status execute_SRL_DIVU_SRA(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_SRL_DIVU_SRA_funct7>(insn_get_funct7(insn))) {
+        case insn_SRL_DIVU_SRA_funct7::SRL:
+            return execute_SRL(a, pc, insn);
+        case insn_SRL_DIVU_SRA_funct7::DIVU:
+            return execute_DIVU(a, pc, insn);
+        case insn_SRL_DIVU_SRA_funct7::SRA:
+            return execute_SRA(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-/// \brief Executes an instruction of the store group.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Current pc.
-/// \param insn Instruction.
-/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-/// \details See [Load and Store Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.6).
 template <typename STATE_ACCESS>
-static inline execute_status execute_store_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_store_funct3>(insn_get_funct3(insn))) {
-        case insn_store_funct3::SB: return execute_SB(a, pc, insn);
-        case insn_store_funct3::SH: return execute_SH(a, pc, insn);
-        case insn_store_funct3::SW: return execute_SW(a, pc, insn);
-        case insn_store_funct3::SD: return execute_SD(a, pc, insn);
-        default: return raise_illegal_insn_exception(a, pc, insn);
+static inline execute_status execute_OR_REM(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_OR_REM_funct7>(insn_get_funct7(insn))) {
+        case insn_OR_REM_funct7::OR:
+            return execute_OR(a, pc, insn);
+        case insn_OR_REM_funct7::REM:
+            return execute_REM(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-/// \brief Executes an instruction of the load group.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Current pc.
-/// \param insn Instruction.
-/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-/// \details See [Load and Store Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.6).
 template <typename STATE_ACCESS>
-static inline execute_status execute_load_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_load_funct3>(insn_get_funct3(insn))) {
-        case insn_load_funct3::LB: return execute_LB(a, pc, insn);
-        case insn_load_funct3::LH: return execute_LH(a, pc, insn);
-        case insn_load_funct3::LW: return execute_LW(a, pc, insn);
-        case insn_load_funct3::LD: return execute_LD(a, pc, insn);
-        case insn_load_funct3::LBU: return execute_LBU(a, pc, insn);
-        case insn_load_funct3::LHU: return execute_LHU(a, pc, insn);
-        case insn_load_funct3::LWU: return execute_LWU(a, pc, insn);
-        default: return raise_illegal_insn_exception(a, pc, insn);
+static inline execute_status execute_AND_REMU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_AND_REMU_funct7>(insn_get_funct7(insn))) {
+        case insn_AND_REMU_funct7::AND:
+            return execute_AND(a, pc, insn);
+        case insn_AND_REMU_funct7::REMU:
+            return execute_REMU(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-/// \brief Executes an instruction of the branch group.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Current pc.
-/// \param insn Instruction.
-/// \return Returns true if the execution completed, false if it caused an exception. In that case, raise the exception.
-/// \details See [Control Transfer Instructions](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#section.2.5).
 template <typename STATE_ACCESS>
-static inline execute_status execute_branch_group(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_branch_funct3>(insn_get_funct3(insn))) {
-        case insn_branch_funct3::BEQ: return execute_BEQ(a, pc, insn);
-        case insn_branch_funct3::BNE: return execute_BNE(a, pc, insn);
-        case insn_branch_funct3::BLT: return execute_BLT(a, pc, insn);
-        case insn_branch_funct3::BGE: return execute_BGE(a, pc, insn);
-        case insn_branch_funct3::BLTU: return execute_BLTU(a, pc, insn);
-        case insn_branch_funct3::BGEU: return execute_BGEU(a, pc, insn);
-        default: return raise_illegal_insn_exception(a, pc, insn);
+static inline execute_status execute_ADDW_MULW_SUBW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_ADDW_MULW_SUBW_funct7>(insn_get_funct7(insn))) {
+        case insn_ADDW_MULW_SUBW_funct7::ADDW:
+            return execute_ADDW(a, pc, insn);
+        case insn_ADDW_MULW_SUBW_funct7::MULW:
+            return execute_MULW(a, pc, insn);
+        case insn_ADDW_MULW_SUBW_funct7::SUBW:
+            return execute_SUBW(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_SRLW_DIVUW_SRAW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_SRLW_DIVUW_SRAW_funct7>(insn_get_funct7(insn))) {
+        case insn_SRLW_DIVUW_SRAW_funct7::SRLW:
+            return execute_SRLW(a, pc, insn);
+        case insn_SRLW_DIVUW_SRAW_funct7::DIVUW:
+            return execute_DIVUW(a, pc, insn);
+        case insn_SRLW_DIVUW_SRAW_funct7::SRAW:
+            return execute_SRAW(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_privileged(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_privileged>(insn)) {
+        case insn_privileged::ECALL:
+            return execute_ECALL(a, pc, insn);
+        case insn_privileged::EBREAK:
+            return execute_EBREAK(a, pc, insn);
+        case insn_privileged::URET:
+            return execute_URET(a, pc, insn);
+        case insn_privileged::SRET:
+            return execute_SRET(a, pc, insn);
+        case insn_privileged::MRET:
+            return execute_MRET(a, pc, insn);
+        case insn_privileged::WFI:
+            return execute_WFI(a, pc, insn);
+        default:
+            return execute_SFENCE_VMA(a, pc, insn);
     }
 }
 
@@ -2870,22 +2796,144 @@ static inline execute_status execute_insn(STATE_ACCESS &a, uint64_t pc, uint32_t
 //std::cerr << "insn: " << std::bitset<32>(insn) << '\n';
 //??D We should probably try doing the first branch on the combined opcode, funct3, and funct7.
 //    Maybe it reduces the number of levels needed to decode most instructions.
-    switch (static_cast<insn_opcode>(insn_get_opcode(insn))) {
-        case insn_opcode::LUI: return execute_LUI(a, pc, insn);
-        case insn_opcode::AUIPC: return execute_AUIPC(a, pc, insn);
-        case insn_opcode::JAL: return execute_JAL(a, pc, insn);
-        case insn_opcode::JALR: return execute_JALR(a, pc, insn);
-        case insn_opcode::branch_group: return execute_branch_group(a, pc, insn);
-        case insn_opcode::load_group: return execute_load_group(a, pc, insn);
-        case insn_opcode::store_group: return execute_store_group(a, pc, insn);
-        case insn_opcode::arithmetic_immediate_group: return execute_arithmetic_immediate_group(a, pc, insn);
-        case insn_opcode::arithmetic_group: return execute_arithmetic_group(a, pc, insn);
-        case insn_opcode::fence_group: return execute_fence_group(a, pc, insn);
-        case insn_opcode::csr_env_trap_int_mm_group: return execute_csr_env_trap_int_mm_group(a, pc, insn);
-        case insn_opcode::arithmetic_immediate_32_group: return execute_arithmetic_immediate_32_group(a, pc, insn);
-        case insn_opcode::arithmetic_32_group: return execute_arithmetic_32_group(a, pc, insn);
-        case insn_opcode::atomic_group: return execute_atomic_group(a, pc, insn);
-        default: return raise_illegal_insn_exception(a, pc, insn);
+    switch (static_cast<insn_funct3_00000_opcode>(insn_get_funct3_00000_opcode(insn))) {
+        case insn_funct3_00000_opcode::LB:
+            return execute_LB(a, pc, insn);
+        case insn_funct3_00000_opcode::LH:
+            return execute_LH(a, pc, insn);
+        case insn_funct3_00000_opcode::LW:
+            return execute_LW(a, pc, insn);
+        case insn_funct3_00000_opcode::LD:
+            return execute_LD(a, pc, insn);
+        case insn_funct3_00000_opcode::LBU:
+            return execute_LBU(a, pc, insn);
+        case insn_funct3_00000_opcode::LHU:
+            return execute_LHU(a, pc, insn);
+        case insn_funct3_00000_opcode::LWU:
+            return execute_LWU(a, pc, insn);
+        case insn_funct3_00000_opcode::SB:
+            return execute_SB(a, pc, insn);
+        case insn_funct3_00000_opcode::SH:
+            return execute_SH(a, pc, insn);
+        case insn_funct3_00000_opcode::SW:
+            return execute_SW(a, pc, insn);
+        case insn_funct3_00000_opcode::SD:
+            return execute_SD(a, pc, insn);
+        case insn_funct3_00000_opcode::FENCE:
+            return execute_FENCE(a, pc, insn);
+        case insn_funct3_00000_opcode::FENCE_I:
+            return execute_FENCE_I(a, pc, insn);
+        case insn_funct3_00000_opcode::ADDI:
+            return execute_ADDI(a, pc, insn);
+        case insn_funct3_00000_opcode::SLLI:
+            return execute_SLLI(a, pc, insn);
+        case insn_funct3_00000_opcode::SLTI:
+            return execute_SLTI(a, pc, insn);
+        case insn_funct3_00000_opcode::SLTIU:
+            return execute_SLTIU(a, pc, insn);
+        case insn_funct3_00000_opcode::XORI:
+            return execute_XORI(a, pc, insn);
+        case insn_funct3_00000_opcode::ORI:
+            return execute_ORI(a, pc, insn);
+        case insn_funct3_00000_opcode::ANDI:
+            return execute_ANDI(a, pc, insn);
+        case insn_funct3_00000_opcode::ADDIW:
+            return execute_ADDIW(a, pc, insn);
+        case insn_funct3_00000_opcode::SLLIW:
+            return execute_SLLIW(a, pc, insn);
+        case insn_funct3_00000_opcode::SLLW:
+            return execute_SLLW(a, pc, insn);
+        case insn_funct3_00000_opcode::DIVW:
+            return execute_DIVW(a, pc, insn);
+        case insn_funct3_00000_opcode::REMW:
+            return execute_REMW(a, pc, insn);
+        case insn_funct3_00000_opcode::REMUW:
+            return execute_REMUW(a, pc, insn);
+        case insn_funct3_00000_opcode::BEQ:
+            return execute_BEQ(a, pc, insn);
+        case insn_funct3_00000_opcode::BNE:
+            return execute_BNE(a, pc, insn);
+        case insn_funct3_00000_opcode::BLT:
+            return execute_BLT(a, pc, insn);
+        case insn_funct3_00000_opcode::BGE:
+            return execute_BGE(a, pc, insn);
+        case insn_funct3_00000_opcode::BLTU:
+            return execute_BLTU(a, pc, insn);
+        case insn_funct3_00000_opcode::BGEU:
+            return execute_BGEU(a, pc, insn);
+        case insn_funct3_00000_opcode::JALR:
+            return execute_JALR(a, pc, insn);
+        case insn_funct3_00000_opcode::CSRRW:
+            return execute_CSRRW(a, pc, insn);
+        case insn_funct3_00000_opcode::CSRRS:
+            return execute_CSRRS(a, pc, insn);
+        case insn_funct3_00000_opcode::CSRRC:
+            return execute_CSRRC(a, pc, insn);
+        case insn_funct3_00000_opcode::CSRRWI:
+            return execute_CSRRWI(a, pc, insn);
+        case insn_funct3_00000_opcode::CSRRSI:
+            return execute_CSRRSI(a, pc, insn);
+        case insn_funct3_00000_opcode::CSRRCI:
+            return execute_CSRRCI(a, pc, insn);
+        case insn_funct3_00000_opcode::AUIPC_000:
+        case insn_funct3_00000_opcode::AUIPC_001:
+        case insn_funct3_00000_opcode::AUIPC_010:
+        case insn_funct3_00000_opcode::AUIPC_011:
+        case insn_funct3_00000_opcode::AUIPC_100:
+        case insn_funct3_00000_opcode::AUIPC_101:
+        case insn_funct3_00000_opcode::AUIPC_110:
+        case insn_funct3_00000_opcode::AUIPC_111:
+            return execute_AUIPC(a, pc, insn);
+        case insn_funct3_00000_opcode::LUI_000:
+        case insn_funct3_00000_opcode::LUI_001:
+        case insn_funct3_00000_opcode::LUI_010:
+        case insn_funct3_00000_opcode::LUI_011:
+        case insn_funct3_00000_opcode::LUI_100:
+        case insn_funct3_00000_opcode::LUI_101:
+        case insn_funct3_00000_opcode::LUI_110:
+        case insn_funct3_00000_opcode::LUI_111:
+            return execute_LUI(a, pc, insn);
+        case insn_funct3_00000_opcode::JAL_000:
+        case insn_funct3_00000_opcode::JAL_001:
+        case insn_funct3_00000_opcode::JAL_010:
+        case insn_funct3_00000_opcode::JAL_011:
+        case insn_funct3_00000_opcode::JAL_100:
+        case insn_funct3_00000_opcode::JAL_101:
+        case insn_funct3_00000_opcode::JAL_110:
+        case insn_funct3_00000_opcode::JAL_111:
+            return execute_JAL(a, pc, insn);
+        case insn_funct3_00000_opcode::SRLI_SRAI:
+            return execute_SRLI_SRAI(a, pc, insn);
+        case insn_funct3_00000_opcode::SRLIW_SRAIW:
+            return execute_SRLIW_SRAIW(a, pc, insn);
+        case insn_funct3_00000_opcode::AMO_W:
+            return execute_AMO_W(a, pc, insn);
+        case insn_funct3_00000_opcode::AMO_D:
+            return execute_AMO_D(a, pc, insn);
+        case insn_funct3_00000_opcode::ADD_MUL_SUB:
+            return execute_ADD_MUL_SUB(a, pc, insn);
+        case insn_funct3_00000_opcode::SLL_MULH:
+            return execute_SLL_MULH(a, pc, insn);
+        case insn_funct3_00000_opcode::SLT_MULHSU:
+            return execute_SLT_MULHSU(a, pc, insn);
+        case insn_funct3_00000_opcode::SLTU_MULHU:
+            return execute_SLTU_MULHU(a, pc, insn);
+        case insn_funct3_00000_opcode::XOR_DIV:
+            return execute_XOR_DIV(a, pc, insn);
+        case insn_funct3_00000_opcode::SRL_DIVU_SRA:
+            return execute_SRL_DIVU_SRA(a, pc, insn);
+        case insn_funct3_00000_opcode::OR_REM:
+            return execute_OR_REM(a, pc, insn);
+        case insn_funct3_00000_opcode::AND_REMU:
+            return execute_AND_REMU(a, pc, insn);
+        case insn_funct3_00000_opcode::ADDW_MULW_SUBW:
+            return execute_ADDW_MULW_SUBW(a, pc, insn);
+        case insn_funct3_00000_opcode::SRLW_DIVUW_SRAW:
+            return execute_SRLW_DIVUW_SRAW(a, pc, insn);
+        case insn_funct3_00000_opcode::privileged:
+            return execute_privileged(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 

@@ -21,9 +21,14 @@
 #include <grpc++/grpc++.h>
 
 #include "manager-client.h"
+
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include "manager-low.grpc.pb.h"
 #include "manager-low.pb.h"
 #include "cartesi-base.pb.h"
+#pragma GCC diagnostic pop
 
 #define dbg(...) syslog(LOG_DEBUG, __VA_ARGS__)
 

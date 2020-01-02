@@ -34,8 +34,12 @@
 #include <grpc++/grpc++.h>
 #include <grpc++/resource_quota.h>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include "core.grpc.pb.h"
 #include "core.pb.h"
+#pragma GCC diagnostic pop
+
 #include "manager-client.h"
 
 #include <chrono>

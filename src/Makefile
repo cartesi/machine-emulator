@@ -166,6 +166,8 @@ PROTO_OBJS:= \
 	manager-low.pb.o \
 	manager-low.grpc.pb.o
 
+$(PROTO_OBJS): CXXFLAGS +=  -Wno-unused-parameter
+
 GRPC_CLT_OBJS:= \
 	$(PROTO_OBJS) \
 	client.o

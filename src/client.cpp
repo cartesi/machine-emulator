@@ -21,7 +21,10 @@
 
 #include <grpc++/grpc++.h>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include "core.grpc.pb.h"
+#pragma GCC diagnostic pop
 
 using grpc::Channel;
 using grpc::ClientContext;

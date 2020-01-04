@@ -20,10 +20,13 @@ local cartesi = require"cartesi"
 
 -- Print help and exit
 local function help()
-    io.stderr:write([=[
+    io.stderr:write(string.format([=[
 Usage:
-  lua run.lua [options]
+
+  %s [options]
+
 where options are:
+
   --ram-image=<filename>       binary image for RAM
                                (default: "kernel.bin")
 
@@ -68,7 +71,8 @@ where options are:
 
   --json-steps=<filename>      output json file with steps
                                (default: none)
-]=])
+
+]=], arg[0]))
     os.exit()
 end
 

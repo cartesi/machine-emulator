@@ -104,7 +104,7 @@ jobs:
         run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.2.0.tar.gz -C /opt/cartesi/tests
 
       - name: Run test suite
-        run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/lib/luapp/5.3/cartesi-machine-tests.lua /opt/cartesi/tests
+        run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/lib/luapp/5.3/cartesi-machine-tests.lua --test-path=/opt/cartesi/tests run
 
   release:
     name: Release

@@ -126,7 +126,7 @@ cartesi.so: $(LUACARTESI_OBJS)
 	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LUACARTESI_LIBS)
 
 test: luacartesi
-	$(LUA_BIN) cartesi-machine-tests.lua $(TEST_PATH)
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
 
 fs.ext2: fs/*
 	genext2fs -f -i 512 -b 8192 -d fs fs.ext2
@@ -195,6 +195,38 @@ GRPC_SRV_OBJS:= \
 	interpret.o \
 	manager-client.o
 
+CYCLE_SKIP ?= 13
+HASH_DIR = hashes/$(CYCLE_SKIP)
+LOG_DIR = logs/$(CYCLE_SKIP)
+HASH_TRUTH_DIR =
+
+ifneq ($(strip $(TEST_PATH)),)
+TESTS=$(shell ./cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test=".*" list)
+endif
+TEST_HASHES=$(addprefix $(HASH_DIR)/,$(TESTS:.bin=.hashes))
+TEST_LOGS=$(addprefix $(LOG_DIR)/,$(TESTS:.bin=.json.br))
+
+GROUND_TRUTH_DIR ?= ground-truth
+
+$(HASH_DIR):
+	mkdir -p $(HASH_DIR)
+
+$(LOG_DIR):
+	mkdir -p $(LOG_DIR)
+
+test-hashes: $(TEST_HASHES)
+
+test-logs: $(TEST_LOGS)
+
+$(HASH_DIR)/%.hashes: $(TEST_PATH)/%.bin $(HASH_DIR)
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --skip=$(CYCLE_SKIP) hash >  $@
+	diff $@ $(GROUND_TRUTH_DIR)/$@
+
+$(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(LOG_DIR)
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --skip=$(CYCLE_SKIP) step > $(basename $@)
+	brotli -j -f $(basename $@)
+	diff $@ $(GROUND_TRUTH_DIR)/$@
+
 cartesi-machine-hash: $(HASH_OBJS)
 	$(CXX) -o $@ $^ $(CRYPTOPP_LIB)
 
@@ -227,6 +259,6 @@ clean:
 	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi-machine-server cartesi-machine-client cartesi-machine-hash
 
 profile-clean:
-	rm -f *.profdata *.profraw *.gcda  
+	rm -f *.profdata *.profraw *.gcda
 
 -include $(wildcard *.d)

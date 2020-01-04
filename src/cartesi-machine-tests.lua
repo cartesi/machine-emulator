@@ -204,60 +204,344 @@ local tests = {
   {"sd_pma_overflow.bin", 16},
 }
 
-local function run(machine)
-    local step = 500000
-    local cycles_end = step
-    while true do
-        machine:run(cycles_end)
-        if machine:read_iflags_H() then
-            break
+-- Print help and exit
+local function help()
+    io.stderr:write(string.format([=[
+Usage:
+
+  %s [options] <command>
+
+where options are:
+
+  --test-path=<dir>            path to test binaries
+                               (default: "./")
+
+  --test=<pattern>             select tests to run based on a Lua string <pattern>
+                               (default: ".*", i.e., all tests)
+
+  --skip=<number>              stop execution every <number> of cycles and perform action
+
+and command can be:
+
+  run                          run test and report if payload and cycles match expected
+
+  hash                         output root hash at every <number> of cycles
+
+  step                         output json log of step at every <number> of cycles
+
+  list                         list tests selected by the test <pattern>
+
+  machine                      prints a command for running the test machine
+
+]=], arg[0]))
+    os.exit()
+end
+
+local test_path = "./"
+local test_pattern = ".*"
+local skip = nil
+
+-- List of supported options
+-- Options are processed in order
+-- For each option,
+--   first entry is the pattern to match
+--   second entry is a callback
+--     if callback returns true, the option is accepted.
+--     if callback returns false, the option is rejected.
+local options = {
+    { "^%-%-help$", function(all)
+        if all then
+            help()
+            return true
+        else
+            return false
         end
-        cycles_end = cycles_end + step
+    end },
+    { "^%-%-test%-path%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        test_path = o
+        return true
+    end },
+    { "^%-%-test%=(.*)$", function(o, a)
+        if not o or #o < 1 then return false end
+        test_pattern = o
+        return true
+    end },
+    { "^(%-%-skip%=(%d*)(.*))$", function(all, n, e)
+        if not n then return false end
+        assert(e == "", "invalid option " .. all)
+        n = assert(tonumber(n), "invalid option " .. all)
+        assert(n >= 1, "invalid option " .. all)
+        skip = n
+        return true
+    end },
+    { ".*", function(all)
+        error("unrecognized option " .. all)
+    end }
+}
+
+local values = {}
+
+-- Process command line options
+for i, argument in ipairs({...}) do
+    if argument:sub(1,1) == "-" then
+        for j, option in ipairs(options) do
+            if option[2](argument:match(option[1])) then
+                break
+            end
+        end
+    else
+        values[#values+1] = argument
+    end
+end
+
+local command = assert(values[1], "missing command")
+assert(test_path, "missing test path")
+
+local function nothing()
+end
+
+local function run_machine(machine, expected_cycles, callback)
+    callback = callback or nothing
+    callback()
+    if skip then
+        for cycle = math.min(skip, 2*expected_cycles), 2*expected_cycles, skip do
+            machine:run(cycle)
+            callback()
+            if machine:read_iflags_H() then break end
+        end
+    else
+        machine:run(2*expected_cycles)
+        callback()
     end
     local payload = (machine:read_tohost() & (~1 >> 16)) >> 1
-    local cycles = machine:read_mcycle()
-    return cycles, payload
+    local final_cycle = machine:read_mcycle()
+    return final_cycle, payload
 end
 
-local errors = {}
-local tests_path = arg[1] or "../tests"
-
-for _, test in ipairs(tests) do
-    local ram_image = test[1]
-    local expected_cycles = test[2]
-    io.write(ram_image, " ")
-    local machine = cartesi.machine{
+local function build_machine(test_name)
+    return assert(cartesi.machine{
         machine = cartesi.get_name(),
         rom = {
-            backing = tests_path .. "/bootstrap.bin"
+            backing = test_path .. "/bootstrap.bin"
         },
         ram = {
-            length = 128 << 20,
-            backing = tests_path .. "/" .. ram_image
+            length = 32 << 20,
+            backing = test_path .. "/" .. test_name
         }
-    }
-    local cycles, payload = run(machine)
-    if payload ~= 0 then
-        local e = string.format("%s returned non-zero payload %d", ram_image, payload)
-        errors[#errors+1] = e
-        print(e)
-    elseif cycles ~= expected_cycles then
-        local e = string.format("%s terminated with mcycle = %d, expected %d", ram_image, cycles, expected_cycles)
-        errors[#errors+1] = e
-        print(e)
-    else
-        print(" passed")
-    end
-    machine:destroy()
+    })
 end
 
-if #errors > 0 then
-    io.write(string.format("FAILED %d tests\n", #errors))
-    for i, e in ipairs(errors) do
-        io.write("\t", e, "\n")
-    end
-    os.exit(1, true)
-else
-    print("passed all tests")
-    os.exit(0, true)
+local function print_machine(test_name, expected_cycles)
+    print(
+        string.format(
+            "./cartesi-machine.lua --no-root-backing --batch --memory-size=32 --rom-image='%s' --ram-image='%s' --max-mcycle=%d",
+            test_path .. "/bootstrap.bin",
+            test_path .. "/" .. test_name,
+            2*expected_cycles
+        )
+    )
 end
+
+local function run(tests)
+    local errors = {}
+    for _, test in ipairs(tests) do
+        local ram_image = test[1]
+        local expected_cycles = test[2]
+        io.write(ram_image, " ")
+        local machine = build_machine(ram_image)
+        local cycles, payload = run_machine(machine, expected_cycles)
+        if payload ~= 0 then
+            local e = string.format("%s returned non-zero payload %d", ram_image, payload)
+            errors[#errors+1] = e
+            print(e)
+        elseif cycles ~= expected_cycles then
+            local e = string.format("%s terminated with mcycle = %d, expected %d",
+                ram_image, cycles, expected_cycles)
+            errors[#errors+1] = e
+            print(e)
+        else
+            print(" passed")
+        end
+        machine:destroy()
+    end
+    if #errors > 0 then
+        io.write(string.format("FAILED %d tests\n", #errors))
+        for i, e in ipairs(errors) do
+            io.write("\t", e, "\n")
+        end
+        os.exit(1, true)
+    else
+        print("passed all tests")
+        os.exit(0, true)
+    end
+end
+
+local function hexhash(h)
+    return (string.gsub(h, ".", function(c)
+        return string.format("%02x", string.byte(c))
+    end))
+end
+
+local function hash(tests)
+    for _, test in ipairs(tests) do
+        local ram_image = test[1]
+        local expected_cycles = test[2]
+        local machine = build_machine(ram_image)
+        local cycles, payload = run_machine(machine, expected_cycles, function()
+            machine:update_merkle_tree()
+            print(machine:read_mcycle(), hexhash(machine:get_root_hash()))
+        end)
+        if payload ~= 0 or cycles ~= expected_cycles then
+            os.exit(1, true)
+        end
+        machine:destroy()
+    end
+end
+
+local function print_machines(tests)
+    for _, test in ipairs(tests) do
+        local ram_image = test[1]
+        local expected_cycles = test[2]
+        print_machine(ram_image, expected_cycles)
+    end
+end
+
+local function intstring(v)
+    local a = ""
+    for i = 0, 7 do
+        a = a .. string.format("%02x", (v >> i*8) & 0xff)
+    end
+    return a
+end
+
+local function print_json_log_sibling_hashes(sibling_hashes, log2_size, out, indent)
+    out:write('[\n')
+    for i, h in ipairs(sibling_hashes) do
+        out:write(indent,'"', hexhash(h), '"')
+        if sibling_hashes[i+1] then out:write(',\n') end
+    end
+    out:write(' ]')
+end
+
+local function print_json_log_proof(proof, out, indent)
+    out:write('{\n')
+    out:write(indent, '"address": ', proof.address, ',\n')
+    out:write(indent, '"log2_size": ', proof.log2_size, ',\n')
+    out:write(indent, '"target_hash": "', hexhash(proof.target_hash), '",\n')
+    out:write(indent, '"sibling_hashes": ')
+    print_json_log_sibling_hashes(proof.sibling_hashes, proof.log2_size, out,
+        indent .. "  ")
+    out:write(",\n", indent, '"root_hash": "', hexhash(proof.root_hash), '" }')
+end
+
+local function print_json_log_notes(notes, out, indent)
+    local indent2 = indent .. "  "
+    local n = #notes
+    out:write('[\n')
+    for i, note in ipairs(notes) do
+        out:write(indent2, '"', note, '"')
+        if i < n then out:write(',\n') end
+    end
+    out:write(indent, '],\n')
+end
+
+local function print_json_log_brackets(brackets, out, indent)
+    local n = #brackets
+    out:write('[ ')
+    for i, bracket in ipairs(brackets) do
+        out:write('{\n')
+        out:write(indent, '  "type": "', bracket.type, '",\n')
+        out:write(indent, '  "where": ', bracket.where, ',\n')
+        out:write(indent, '  "text": "', bracket.text, '"')
+        out:write(' }\n')
+        if i < n then out:write(', ') end
+    end
+    out:write(' ]')
+end
+
+local function print_json_log_access(access, out, indent)
+    out:write('{\n')
+    out:write(indent, '"type": "', access.type, '",\n')
+    out:write(indent, '"read": "', intstring(access.read), '",\n')
+    out:write(indent, '"written": "', intstring(access.written or 0), '",\n')
+    out:write(indent, '"proof": ')
+    print_json_log_proof(access.proof, out, indent .. "  ")
+    out:write(' }')
+end
+
+local function print_json_log_accesses(accesses, out, indent)
+    local indent2 = indent .. "  "
+    local n = #accesses
+    out:write('[ ')
+    for i, access in ipairs(accesses) do
+        print_json_log_access(access, out, indent2)
+        if i < n then out:write(',\n', indent) end
+    end
+    out:write(indent, ' ],\n')
+end
+
+local function print_json_log(log, init_cycles, final_cycles, out, indent)
+    out:write('{\n')
+    out:write(indent, '"init_cycles": ', init_cycles, ',\n')
+    out:write(indent, '"final_cycles": ', final_cycles, ',\n')
+    out:write(indent, '"accesses": ')
+    print_json_log_accesses(log.accesses, out, indent)
+    out:write(indent, '"notes": ')
+    print_json_log_notes(log.notes, out, indent)
+    out:write('  "brackets": ')
+    print_json_log_brackets(log.brackets, out, indent)
+    out:write(' }')
+end
+
+local function step(tests)
+    io.stdout:write("[ ")
+    for i, test in ipairs(tests) do
+        local ram_image = test[1]
+        local expected_cycles = test[2]
+        local machine = build_machine(ram_image)
+        io.stdout:write(" {\n")
+        io.stdout:write('  "test": "', ram_image, '",\n')
+        io.stdout:write('  "skip": ', skip, ',\n')
+        io.stdout:write('  "steps": [ ')
+        local cycles, payload = run_machine(machine, expected_cycles, function()
+            local init_cycles = machine:read_mcycle()
+            local log = machine:step()
+            local final_cycles = machine:read_mcycle()
+            print_json_log(log, init_cycles, final_cycles, io.stdout, "    ")
+            if not machine:read_iflags_H() then io.stdout:write(', ') end
+        end)
+        io.stdout:write(" ]")
+        if tests[i+1] then io.stdout:write(" }, ")
+        else io.stdout:write(" } ") end
+        if payload ~= 0 or cycles ~= expected_cycles then
+            os.exit(1, true)
+        end
+        machine:destroy()
+    end
+    io.stdout:write(" ]\n")
+end
+
+local function select(test_name, test_pattern)
+    local i, j = test_name:find(test_pattern)
+    if i == 1 and j == #test_name then return true end
+    i, j = test_name:find(test_pattern, 1, true)
+    return i == 1 and j == #test_name
+end
+
+local selected_tests = {}
+for _, test in ipairs(tests) do
+    if select(test[1], test_pattern) then
+        selected_tests[#selected_tests+1] = test
+    end
+end
+
+if command == "run" then run(selected_tests)
+elseif command == "hash" then hash(selected_tests)
+elseif command == "step" then step(selected_tests)
+elseif command == "list" then
+    for _, test in ipairs(selected_tests) do
+        print(test[1])
+    end
+elseif command == "machine" then print_machines(selected_tests)
+else error("command not found") end

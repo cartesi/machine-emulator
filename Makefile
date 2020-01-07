@@ -60,7 +60,7 @@ endif
 # downloading and building them.
 DEPBINS := $(addprefix $(BUILDDIR)/,bin/luapp5.3 lib/libcryptopp.$(LIB_EXTENSION) lib/libgrpc.$(LIB_EXTENSION))
 
-all: luacartesi grpc hash
+all: source-default
 
 clean: $(SUBCLEAN)
 
@@ -111,8 +111,8 @@ grpc: | $(COREPROTO)
 hash luacartesi grpc test:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 
-$(SRCDIR):
-	$(MAKE) -C $@ $(TARGET)
+source-default:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR)
 
 $(DEPDIR)/lua-5.3.5 $(BUILDDIR)/bin/luapp5.3: | $(BUILDDIR) $(DOWNLOADDIR)
 	if [ ! -d $(DEPDIR)/lua-5.3.5 ]; then \

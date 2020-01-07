@@ -19,14 +19,20 @@ The emulator implements RISC-V's RV64IMASU ISA. The letters after RV specify the
 #### Ubuntu 18.04
 
 ```
-$ apt-get install build-essential wget git libreadline-dev libboost-container-dev \
-        libboost-program-options-dev ca-certificates
+$ apt-get install build-essential wget git libreadline-dev libboost-container-dev libboost-program-options-dev ca-certificates
 ```
-#### MACOSX
+#### MacOS
 
+##### MacPorts
 ```
 sudo port install clang-8.0 automake boost libtool wget
 ```
+
+##### Homebrew
+```
+brew install llvm automake boost libomp wget
+```
+
 ### Build
 
 ```bash
@@ -70,10 +76,10 @@ $ build/{uname_arch}/luapp5.3 run.lua
 
 ## Contributing
 
-Thank you for your interest in Cartesi! Head over to our [Contributing Guidelines](https://github.com/cartesi/machine-emulator/blob/master/CONTRIBUTING.md) for instructions on how to sign our Contributors Agreement and get started with
+Thank you for your interest in Cartesi! Head over to our [Contributing Guidelines](CONTRIBUTING.md) for instructions on how to sign our Contributors Agreement and get started with
 Cartesi!
 
-Please note we have a [Code of Conduct](https://github.com/cartesi/machine-emulator/blob/master/CODE_OF_CONDUCT.md), please follow it in all your interactions with the project.
+Please note we have a [Code of Conduct](CODE_OF_CONDUCT.md), please follow it in all your interactions with the project.
 
 ## Authors
 
@@ -82,5 +88,5 @@ Please note we have a [Code of Conduct](https://github.com/cartesi/machine-emula
 ## License
 
 The machine-emulator repository and all contributions are licensed under
-[LGPL 3.0](https://www.gnu.org/licenses/lgpl-3.0.html). Please review our [COPYING](https://github.com/cartesi/machine-emulator/blob/master/COPYING) file.
+[LGPL 3.0](https://www.gnu.org/licenses/lgpl-3.0.html). Please review our [COPYING](COPYING) file.
 

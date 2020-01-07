@@ -43,8 +43,8 @@ SOLDFLAGS_Darwin:=-bundle -undefined dynamic_lookup
 CC_Darwin=clang
 CXX_Darwin=clang++
 INCS_Darwin=
-BOOST_LIB_Darwin=-L/opt/local/lib -lboost_program_options-mt
-BOOST_INC_Darwin=-I/opt/local/include
+BOOST_LIB_Darwin=-L/opt/local/lib -L/usr/local/opt/boost/lib -lboost_program_options-mt
+BOOST_INC_Darwin=-I/opt/local/include -I/usr/local/opt/boost/include
 PROFILE_DATA_Darwin=default.profdata
 
 # Linux specific setup

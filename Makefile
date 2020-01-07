@@ -34,8 +34,10 @@ COREPROTO := lib/grpc-interfaces/core.proto
 ifeq ($(UNAME),Darwin)
 LUA_PLAT ?= macosx
 export CC = clang
-export CXX = clang++ -std=c++17 -fopenmp
+export CXX = clang++
 LUACC = "CC=$(CXX)"
+LUACFLAGS = "MYCFLAGS=-std=c++17 -fopenmp"
+LUALDFLAGS = "MYLDFLAGS=-L/usr/local/opt/llvm/lib -fopenmp -lomp"
 LIBRARY_PATH := "export DYLD_LIBRARY_PATH=$(BUILDDIR)/lib"
 LIB_EXTENSION = dylib
 DEP_TO_LIB += *.$(LIB_EXTENSION)
@@ -119,7 +121,7 @@ $(DEPDIR)/lua-5.3.5 $(BUILDDIR)/bin/luapp5.3: | $(BUILDDIR) $(DOWNLOADDIR)
 		tar -xzf $(DOWNLOADDIR)/lua-5.3.5.tar.gz -C $(DEPDIR); \
 		cd $(DEPDIR)/lua-5.3.5 && patch -p1 < ../luapp.patch; \
 	fi
-	$(MAKE) -C $(DEPDIR)/lua-5.3.5 $(LUA_PLAT) $(LUACC)
+	$(MAKE) -C $(DEPDIR)/lua-5.3.5 $(LUA_PLAT) $(LUACC) $(LUACFLAGS) $(LUALDFLAGS)
 	$(MAKE) -C $(DEPDIR)/lua-5.3.5 INSTALL_TOP=$(BUILDDIR) install
 
 $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 $(BUILDDIR)/lib/libcryptopp.$(LIB_EXTENSION): | $(BUILDDIR) $(DOWNLOADDIR)

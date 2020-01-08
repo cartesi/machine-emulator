@@ -607,7 +607,7 @@ using is_an_i_state_access = std::integral_constant<
 /// accessing memory in the state
 template <typename STATE_ACCESS>
 struct avoid_tlb {
-    static constexpr bool value = false;
+    static constexpr bool value = true;
 };
 
 } // namespace cartesi

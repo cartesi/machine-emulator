@@ -53,6 +53,13 @@ where options are:
                                modify backing storage as well
                                (default: false)
 
+  --<label>-start=<num|expr>   set the starting memory position for <label>
+                               filesystem to a number or a Lua expression
+                               (if you set the position for one filesystem,
+                               you must set it for all of them)
+
+  --<label>-length=<num|expr>  set the byte length of the <label> filesystem
+
   --max-mcycle                 stop at a given mcycle
 
   --step                       run a step after stopping
@@ -71,14 +78,18 @@ where options are:
 
   --json-steps=<filename>      output json file with steps
                                (default: none)
-
+  
 ]=], arg[0]))
     os.exit()
 end
 
+local PAGE_SIZE = 4096
+local flash_base = 1<<63
 local backing = { root = "rootfs.ext2" }
 local backing_order = { "root" }
 local shared = { }
+local start = { }
+local length = { }
 local ram_image = "kernel.bin"
 local rom_image = "rom.bin"
 local cmdline = ""
@@ -115,20 +126,37 @@ local options = {
     end },
     { "^%-%-(%w+)-backing%=(.+)$", function(d, f)
         if not d or not f then return false end
-		if not backing[d] then
-			backing_order[#backing_order+1] = d
-		end
+        if not backing[d] then
+            backing_order[#backing_order+1] = d
+        end
         backing[d] = f
         return true
     end },
-    { "^%-%-no%-root%-backing$", function(all)
-        if not all then return false end
-		assert(backing.root and backing_order[1] == "root",
-			"no root backing to remove")
-		backing.root = nil
-		shared.root = nil
-		table.remove(backing_order, 1)
+    { "^%-%-(%w+)-start%=(.+)$", function(d, f)
+        if not d or not f then return false end
+        local fun = load("return " .. f) -- expr|num string to num
+        start[d] = fun and fun()
+        assert(start[d], "invalid start position '" .. f ..
+               "' for device '" .. d .. "'")
         return true
+    end },
+    { "^%-%-(%w+)-length=(.+)$", function(d, f)
+        if not d or not f then return false end
+        local fun = load("return " .. f) -- expr|num string to num
+        length[d] = fun and fun()
+        assert(length[d] and length[d] > 0,
+               "invalid length '" .. f ..
+               "' for device '" .. d .. "'")
+        return true
+    end },
+    { "^%-%-no%-root%-backing$", function(all)
+          if not all then return false end
+          assert(backing.root and backing_order[1] == "root",
+                 "no root backing to remove")
+          backing.root = nil
+          shared.root = nil
+          table.remove(backing_order, 1)
+          return true
     end },
     { "^%-%-ignore%-payload$", function(all)
         if not all then return false end
@@ -178,7 +206,7 @@ local options = {
     end },
     { "^%-%-no%-ram%-image$", function(all)
         if not all then return false end
-		ram_image = nil
+        ram_image = nil
         return true
     end },
     { "^%-%-rom%-image%=(.*)$", function(o)
@@ -236,19 +264,14 @@ local config_meta = {
 }
 
 function config_meta.__index:append_drive(t)
-    local length = assert(get_file_length(
-        assert(t.backing, "no backing file specified")),
-            "unable to compute backing file length")
     local flash = {
-        start = self._flash_base,
-        length = length,
+        start = t.start,
+        length = t.length,
         backing = t.backing,
         shared = t.shared
     }
     self.flash[self._flash_id] = flash
     self._flash_id = self._flash_id+1
-    -- make sure flash drives are separated by a power of two and at least 1MB
-    self._flash_base = self._flash_base + math.max(next_power_of_2(length), 1024*1024)
     return self
 end
 
@@ -290,7 +313,6 @@ local function new_config()
         },
         interactive = true,
         flash = {},
-        _flash_base = 1 << 63,
         _flash_id = 1,
     }, config_meta)
 end
@@ -436,6 +458,38 @@ local function print_json_log(log, init_cycles, final_cycles, out, indent)
     out:write(' }')
 end
 
+-- Resolve all device lengths
+for i, label in ipairs(backing_order) do
+    local filename = backing[label]
+    local len = get_file_length(filename)
+    assert(len, "missing backing file '" .. filename .. "' for device '" .. label .. "'")
+    if length[label] then
+        assert(len == length[label],
+               "Specified length " .. length[label] .. " for device .. '" .. label ..
+               "', but backing file '" .. filename .. "' has " .. len .. " bytes.")
+    else
+        length[label] = len
+    end
+end
+
+-- Resolve all device starting positions
+if next(start) == nil then
+    -- No positions specified. Generate a starting position for all devices.
+    for i, label in ipairs(backing_order) do
+        start[label] = flash_base
+        -- make sure flash drives are separated by a power of two and at least 1MB
+        flash_base = flash_base + math.max(next_power_of_2(length[label]), 1024*1024)
+    end
+else
+    -- At least one position specified. Must specify a starting position for all devices.
+    for i, label in ipairs(backing_order) do
+        if not start[label] then
+            error("start position not specified for device '" .. label .. "'")
+        end
+    end
+end
+
+
 local config = new_config(
 ):set_ram_image(
     ram_image
@@ -450,7 +504,9 @@ local mtdparts = {}
 for i, label in ipairs(backing_order) do
     config = config:append_drive{
         backing = backing[label],
-        shared = shared[label]
+        shared = shared[label],
+        start = start[label],
+        length = length[label]
     }
     mtdparts[#mtdparts+1] = string.format("flash.%d:-(%s)", i-1, label)
 end
@@ -495,11 +551,11 @@ else
         if machine:read_iflags_H() then
             break
         end
-		local init_cycles = machine:read_mcycle()
-		local log = machine:step()
-		local final_cycles = machine:read_mcycle()
+        local init_cycles = machine:read_mcycle()
+        local log = machine:step()
+        local final_cycles = machine:read_mcycle()
         print_json_log(log, init_cycles, final_cycles, json_steps, "  ")
-		io.stderr:write(init_cycles, " -> ", final_cycles, "\n")
+        io.stderr:write(init_cycles, " -> ", final_cycles, "\n")
         if i ~= max_mcycle then json_steps:write(', ') end
     end
     json_steps:write(' ]\n')

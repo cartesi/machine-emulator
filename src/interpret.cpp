@@ -109,7 +109,61 @@ static const char *reg_name[32] = {
 "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"
 };
 
-void dump_regs(const machine_state &s) {
+static const char *sbi_ecall_name(uint64_t a7) {
+    switch (a7) {
+        case 0: return "set timer";
+        case 1: return "console putchar";
+        case 2: return "console getchar";
+        case 3: return "clear ipi";
+        case 4: return "send ipi";
+        case 5: return "remote fence i";
+        case 6: return "remote fence vma";
+        case 7: return "remote fence vma asid";
+        case 8: return "shutdown";
+        default: return "unkonwn";
+    }
+}
+
+static void dump_exception_or_interrupt(uint64_t cause, uint64_t a7) {
+    if ((cause & MCAUSE_INTERRUPT_FLAG) != 0) {
+        switch(cause & ~MCAUSE_INTERRUPT_FLAG) {
+            case 0: fprintf(stderr, "user software interrupt"); break;
+            case 1: fprintf(stderr, "supervisor software interrupt"); break;
+            case 2: fprintf(stderr, "reserved software interrupt"); break;
+            case 3: fprintf(stderr, "machine software interrupt"); break;
+            case 4: fprintf(stderr, "user timer interrupt"); break;
+            case 5: fprintf(stderr, "supervisor timer interrupt"); break;
+            case 6: fprintf(stderr, "reserved timer interrupt"); break;
+            case 7: fprintf(stderr, "machine timer interrupt"); break;
+            case 8: fprintf(stderr, "user external interrupt"); break;
+            case 9: fprintf(stderr, "supervisor external interrupt"); break;
+            case 10: fprintf(stderr, "reserved external interrupt"); break;
+            case 11: fprintf(stderr, "machine external interrupt"); break;
+            default: fprintf(stderr, "unknown interrupt"); break;
+        }
+    } else {
+        switch(cause) {
+            case 0: fprintf(stderr, "instruction address misaligned"); break;
+            case 1: fprintf(stderr, "instruction access fault"); break;
+            case 2: fprintf(stderr, "illegal instruction"); break;
+            case 3: fprintf(stderr, "breakpoint"); break;
+            case 4: fprintf(stderr, "load address misaligned"); break;
+            case 5: fprintf(stderr, "load access fault"); break;
+            case 6: fprintf(stderr, "store/amo address misaligned"); break;
+            case 7: fprintf(stderr, "store/amo access fault"); break;
+            case 8: fprintf(stderr, "ecall %d from u-mode", int(a7)); break;
+            case 9: fprintf(stderr, "ecall %s(%d) from s-mode", sbi_ecall_name(a7), int(a7)); break;
+            case 10: fprintf(stderr, "ecall %d reserved", int(a7)); break;
+            case 11: fprintf(stderr, "ecall %s(%d) from m-mode", sbi_ecall_name(a7), int(a7)); break;
+            case 12: fprintf(stderr, "instruction page fault"); break;
+            case 13: fprintf(stderr, "load page fault"); break;
+            case 15: fprintf(stderr, "store/amo page fault"); break;
+            default: fprintf(stderr, "reserved"); break;
+        }
+    }
+}
+
+static void dump_regs(const machine_state &s) {
     int i, cols;
     const char priv_str[] = "USHM";
     cols = 256 / XLEN;
@@ -249,6 +303,7 @@ static void set_priv(STATE_ACCESS &a, int previous_prv, int new_prv) {
     }
 }
 
+
 /// \brief Raise an exception (or interrupt).
 /// \param a Machine state accessor object.
 /// \param cause Exception (or interrupt) mcause (or scause).
@@ -280,7 +335,9 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
             print_uint64_t(cause);
             fprintf(stderr, " tval=0x");
             print_uint64_t(tval);
-            fprintf(stderr, "\n");
+            fprintf(stderr, " (");
+            dump_exception_or_interrupt(cause, a.get_naked_machine().read_x(17));
+            fprintf(stderr, ")\n");
             dump_regs(a.get_naked_state());
         }
     }
@@ -305,7 +362,7 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
         a.write_sepc(a.read_pc());
         a.write_stval(tval);
         uint64_t mstatus = a.read_mstatus();
-        mstatus = (mstatus & ~MSTATUS_SPIE_MASK) | (((mstatus >> priv) & 1) << MSTATUS_SPIE_SHIFT);
+        mstatus = (mstatus & ~MSTATUS_SPIE_MASK) | (((mstatus >> PRV_S) & 1) << MSTATUS_SPIE_SHIFT);
         mstatus = (mstatus & ~MSTATUS_SPP_MASK) | (priv << MSTATUS_SPP_SHIFT);
         mstatus &= ~MSTATUS_SIE_MASK;
         a.write_mstatus(mstatus);
@@ -322,7 +379,7 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
         a.write_mepc(a.read_pc());
         a.write_mtval(tval);
         uint64_t mstatus = a.read_mstatus();
-        mstatus = (mstatus & ~MSTATUS_MPIE_MASK) | (((mstatus >> priv) & 1) << MSTATUS_MPIE_SHIFT);
+        mstatus = (mstatus & ~MSTATUS_MPIE_MASK) | (((mstatus >> PRV_M) & 1) << MSTATUS_MPIE_SHIFT);
         mstatus = (mstatus & ~MSTATUS_MPP_MASK) | (priv << MSTATUS_MPP_SHIFT);
         mstatus &= ~MSTATUS_MIE_MASK;
         a.write_mstatus(mstatus);
@@ -603,7 +660,6 @@ static std::unordered_map<std::string, uint64_t> g_insn_hist;
 #endif
 
 static void dump_insn(machine &m, uint64_t pc, uint32_t insn, const char *name) {
-    state_access a(m);
 #ifdef DUMP_HIST
     g_insn_hist[name]++;
 #endif
@@ -611,6 +667,7 @@ static void dump_insn(machine &m, uint64_t pc, uint32_t insn, const char *name) 
     dump_regs(m.get_state());
 #endif
 #ifdef DUMP_INSN
+    state_access a(m);
     //fprintf(stderr, "%s\n", name);
     (void) name;
     uint64_t ppc;
@@ -623,7 +680,7 @@ static void dump_insn(machine &m, uint64_t pc, uint32_t insn, const char *name) 
     fprintf(stderr, ":   %08" PRIx32 "   ", insn);
     fprintf(stderr, "\n");
 #else
-    (void) a;
+    (void) m;
     (void) pc;
     (void) insn;
     (void) name;
@@ -1834,6 +1891,7 @@ static inline execute_status execute_MRET(STATE_ACCESS &a, uint64_t pc, uint32_t
     } else {
         uint64_t mstatus = a.read_mstatus();
         int mpp = (mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
+        //??D we can save one shift here, but maybe the compiler already does
         /* set the IE state to previous IE state */
         int mpie = (mstatus & MSTATUS_MPIE_MASK) >> MSTATUS_MPIE_SHIFT;
         mstatus = (mstatus & ~MSTATUS_MIE_MASK) | (mpie << MSTATUS_MIE_SHIFT);

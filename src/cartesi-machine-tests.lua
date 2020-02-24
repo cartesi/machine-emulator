@@ -202,6 +202,7 @@ local tests = {
   {"rv64um-v-remw.bin", 6547},
 -- regression tests
   {"sd_pma_overflow.bin", 16},
+  {"xpie_exceptions.bin", 51},
 }
 
 -- Print help and exit
@@ -536,7 +537,8 @@ for _, test in ipairs(tests) do
     end
 end
 
-if command == "run" then run(selected_tests)
+if #selected_tests < 1 then error("no test selected")
+elseif command == "run" then run(selected_tests)
 elseif command == "hash" then hash(selected_tests)
 elseif command == "step" then step(selected_tests)
 elseif command == "list" then

@@ -68,14 +68,20 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
             throw std::system_error{errno, std::generic_category(),
                 "error opening backing file '"s + path + "'"s};
         }
+        // Get file size
+        fseek(fp.get(), 0, SEEK_END);
+        auto file_length = ftell(fp.get());
+        fseek(fp.get(), 0, SEEK_SET);
+        // Check against PMA range size
+        if (static_cast<uint64_t>(file_length) > length) {
+            throw std::runtime_error{
+                "backing file '" + path + "' too large for range"};
+        }
+        // Read to host memory
         auto read = fread(m_host_memory, 1, length, fp.get()); (void) read;
         if (ferror(fp.get())) {
             throw std::system_error{errno, std::generic_category(),
                 "error reading from backing file '"s + path + "'"s};
-        }
-        if (!feof(fp.get())) {
-            throw std::runtime_error{
-                "backing file '" + path + "' too large for range"};
         }
     }
 }

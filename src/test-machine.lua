@@ -116,9 +116,9 @@ x[30] = 0x0f0
 x[31] = 0x0f8
 local addr = { x = x }
 addr.pc = 0x100;
-addr.mvendorid = 0x108;
-addr.marchid = 0x110;
-addr.mimpid = 0x118;
+addr.mvendorid = cartesi.machine.MVENDORID;
+addr.marchid = cartesi.machine.MARCHID;
+addr.mimpid = cartesi.machine.MIMPID;
 addr.mcycle = 0x120;
 addr.minstret = 0x128;
 addr.mstatus = 0x130;
@@ -143,7 +143,6 @@ addr.scounteren = 0x1c0;
 addr.ilrsc = 0x1c8;
 
 local machine = cartesi.machine{
-    machine = cartesi.get_name(),
     processor = addr;
     ram = {
         length = 1 << 20

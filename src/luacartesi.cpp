@@ -294,23 +294,11 @@ static void push_log(lua_State *L, access_log &log) {
     lua_setfield(L, -2, "notes"); // log
 }
 
-/// \brief Checks if the machine field in config matches the machine name.
-/// \param L Lua state.
-/// \param tabidx Config stack index.
-static void check_machine_config(lua_State *L, int tabidx) {
-    std::string config_name = check_string_field(L, tabidx, "machine");
-    auto cartesi_name = cartesi::get_name();
-    if (config_name != cartesi_name) {
-        luaL_error(L, "Cartesi machine-config mismatch (%s running in %s)",
-            config_name.c_str(), cartesi_name.c_str());
-    }
-}
-
 /// \brief Loads RAM config from Lua to machine_config.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param c Machine config structure.
-static void load_ram_config(lua_State *L, int tabidx, machine_config &c) {
+static void check_ram_config(lua_State *L, int tabidx, machine_config &c) {
     check_table_field(L, tabidx, "ram");
     c.ram.length = check_uint_field(L, -1, "length");
     c.ram.backing = opt_string_field(L, -1, "backing");
@@ -321,7 +309,7 @@ static void load_ram_config(lua_State *L, int tabidx, machine_config &c) {
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param c Machine config structure.
-static void load_rom_config(lua_State *L, int tabidx, machine_config &c) {
+static void check_rom_config(lua_State *L, int tabidx, machine_config &c) {
     if (!opt_table_field(L, tabidx, "rom"))
         return;
     c.rom.backing = opt_string_field(L, -1, "backing");
@@ -333,7 +321,7 @@ static void load_rom_config(lua_State *L, int tabidx, machine_config &c) {
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param c Machine config structure.
-static void load_flash_config(lua_State *L, int tabidx, machine_config &c) {
+static void check_flash_config(lua_State *L, int tabidx, machine_config &c) {
     if (!opt_table_field(L, tabidx, "flash"))
         return;
     int len = luaL_len(L, -1);
@@ -360,7 +348,7 @@ static void load_flash_config(lua_State *L, int tabidx, machine_config &c) {
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param c Machine config structure.
-static void load_processor_config(lua_State *L, int tabidx, machine_config &c) {
+static void check_processor_config(lua_State *L, int tabidx, machine_config &c) {
     if (!opt_table_field(L, tabidx, "processor"))
         return;
     lua_getfield(L, -1, "x");
@@ -401,7 +389,6 @@ static void load_processor_config(lua_State *L, int tabidx, machine_config &c) {
     p.scounteren = opt_uint_field(L, -1, "scounteren", p.scounteren);
     p.ilrsc = opt_uint_field(L, -1, "ilrsc", p.ilrsc);
     p.iflags = opt_uint_field(L, -1, "iflags", p.iflags);
-    p.backing = opt_string_field(L, -1, "backing");
     lua_pop(L, 1);
 }
 
@@ -409,12 +396,11 @@ static void load_processor_config(lua_State *L, int tabidx, machine_config &c) {
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param c Machine config structure.
-static void load_htif_config(lua_State *L, int tabidx, machine_config &c) {
+static void check_htif_config(lua_State *L, int tabidx, machine_config &c) {
     if (!opt_table_field(L, tabidx, "htif"))
         return;
     c.htif.tohost = opt_uint_field(L, -1, "tohost", c.htif.tohost);
     c.htif.fromhost = opt_uint_field(L, -1, "fromhost", c.htif.fromhost);
-    c.htif.backing = opt_string_field(L, -1, "backing");
     lua_pop(L, 1);
 }
 
@@ -422,25 +408,34 @@ static void load_htif_config(lua_State *L, int tabidx, machine_config &c) {
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param c Machine config structure.
-static void load_clint_config(lua_State *L, int tabidx, machine_config &c) {
+static void check_clint_config(lua_State *L, int tabidx, machine_config &c) {
     if (!opt_table_field(L, tabidx, "clint"))
         return;
     c.clint.mtimecmp = opt_uint_field(L, -1, "mtimecmp", c.clint.mtimecmp);
-    c.clint.backing = opt_string_field(L, -1, "backing");
     lua_pop(L, 1);
 }
 
-/// \brief This is the cartesi.get_name() function implementation.
+
+/// \brief loads a machine_config object from a Lua table
 /// \param L Lua state.
-static int mod_get_name(lua_State *L) {
-    auto name = cartesi::get_name();
-    lua_pushlstring(L, name.data(), name.size());
-    return 1;
+/// \param tabidx Index of table in Lua stack
+static machine_config check_machine_config(lua_State *L, int tabidx) {
+    machine_config c;
+    // Check all parameters from Lua initialization table
+    // and copy them to the machine_config object
+    check_processor_config(L, tabidx, c);
+    check_ram_config(L, tabidx, c);
+    check_rom_config(L, tabidx, c);
+    check_flash_config(L, tabidx, c);
+    check_htif_config(L, tabidx, c);
+    check_clint_config(L, tabidx, c);
+    c.interactive = opt_boolean_field(L, tabidx, "interactive", false);
+    return c;
 }
 
 /// \brief This is the cartesi.keccak() function implementation.
 /// \param L Lua state.
-static int mod_keccak(lua_State *L) {
+static int cartesi_mod_keccak(lua_State *L) {
     keccak_256_hasher h;
     keccak_256_hasher::hash_type hash;
     switch (lua_gettop(L)) {
@@ -483,26 +478,17 @@ static int mod_keccak(lua_State *L) {
 
 /// \brief This is the cartesi.machine() function implementation.
 /// \param L Lua state.
-static int mod_machine(lua_State *L) try {
-    int tabidx = 1;
-    int meta = lua_upvalueindex(1);
-    machine_config c{};
-    // Check all parameters from Lua initialization table
-    // and copy them to the machine_config object
-    check_machine_config(L, tabidx);
-    load_processor_config(L, tabidx, c);
-    load_ram_config(L, tabidx, c);
-    load_rom_config(L, tabidx, c);
-    load_flash_config(L, tabidx, c);
-    load_htif_config(L, tabidx, c);
-    load_clint_config(L, tabidx, c);
-    c.interactive = opt_boolean_field(L, tabidx, "interactive", false);
+static int machine_ctor_meta__call(lua_State *L) try {
     // Allocate room for machine object as a Lua userdata
-    // and invoke placement new to construct it in place
     void *p = lua_newuserdata(L, sizeof(machine));
-    new (p) machine{c};
+    // Invoke placement new to construct it in place
+    if (lua_type(L, 2) == LUA_TTABLE) {
+        new (p) machine{check_machine_config(L, 2)};
+    } else {
+        new (p) machine{luaL_checkstring(L, 2)};
+    }
     // Set metatable so Lua recognizes userdata as a machine object
-    lua_pushvalue(L, meta);
+    lua_pushvalue(L, lua_upvalueindex(1));
     lua_setmetatable(L, -2);
     return 1;
 } catch (std::exception &x) {
@@ -510,11 +496,29 @@ static int mod_machine(lua_State *L) try {
     return 0;
 }
 
+/// \brief Machine constructor __gc metamethod.
+/// \param L Lua state.
+static int machine_ctor_meta__gc(lua_State *) {
+    return 0;
+}
+
+/// \brief Machine constructor __tostring metamethod.
+/// \param L Lua state.
+static int machine_ctor_meta__tostring(lua_State *L) {
+    lua_pushstring(L, "class");
+    return 1;
+}
+
+/// \brief Contents of the machine metatable.
+static const luaL_Reg machine_ctor_meta[] = {
+    {"__call", machine_ctor_meta__call},
+    {"__tostring", machine_ctor_meta__tostring},
+    { NULL, NULL }
+};
+
 /// \brief Contents of the cartesi module table.
-static const luaL_Reg mod[] = {
-    {"keccak", mod_keccak},
-    {"machine", mod_machine},
-    {"get_name", mod_get_name},
+static const luaL_Reg cartesi_mod[] = {
+    {"keccak", cartesi_mod_keccak},
     { NULL, NULL }
 };
 
@@ -543,7 +547,7 @@ static machine *check_machine(lua_State *L, int idx) {
 
 /// \brief This is the machine:destroy() method implementation.
 /// \param L Lua state.
-static int meta__index_destroy(lua_State *L) {
+static int machine_meta__index_destroy(lua_State *L) {
     machine *m = check_machine(L, 1);
     lua_pushnil(L); // Remove metatable from object
     lua_setmetatable(L, 1);
@@ -553,7 +557,7 @@ static int meta__index_destroy(lua_State *L) {
 
 /// \brief This is the machine:update_merkle_tree() method implementation.
 /// \param L Lua state.
-static int meta__index_update_merkle_tree(lua_State *L) try {
+static int machine_meta__index_update_merkle_tree(lua_State *L) try {
     lua_pushboolean(L, check_machine(L, 1)->update_merkle_tree());
     return 1;
 } catch (std::exception &x) {
@@ -561,9 +565,19 @@ static int meta__index_update_merkle_tree(lua_State *L) try {
     return 0;
 }
 
+/// \brief This is the machine:serialize() method implementation.
+/// \param L Lua state.
+static int machine_meta__index_store(lua_State *L) try {
+    check_machine(L, 1)->store(luaL_checkstring(L, 2));
+    return 0;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
 /// \brief This is the machine:verify_merkle_tree() method implementation.
 /// \param L Lua state.
-static int meta__index_verify_merkle_tree(lua_State *L) try {
+static int machine_meta__index_verify_merkle_tree(lua_State *L) try {
     lua_pushboolean(L, check_machine(L, 1)->get_merkle_tree().verify_tree());
     return 1;
 } catch (std::exception &x) {
@@ -573,7 +587,7 @@ static int meta__index_verify_merkle_tree(lua_State *L) try {
 
 /// \brief This is the machine:get_root_hash() method implementation.
 /// \param L Lua state.
-static int meta__index_get_root_hash(lua_State *L) try {
+static int machine_meta__index_get_root_hash(lua_State *L) try {
     machine *m = check_machine(L, 1);
     merkle_tree::hash_type hash;
     if (m->get_merkle_tree().get_root_hash(hash)) {
@@ -590,7 +604,7 @@ static int meta__index_get_root_hash(lua_State *L) try {
 
 /// \brief This is the machine:run() method implementation.
 /// \param L Lua state.
-static int meta__index_run(lua_State *L) try {
+static int machine_meta__index_run(lua_State *L) try {
     check_machine(L, 1)->run(luaL_checkinteger(L, 2));
     lua_pushboolean(L, true);
     return 1;
@@ -601,7 +615,7 @@ static int meta__index_run(lua_State *L) try {
 
 /// \brief This is the machine:read_mcycle() method implementation.
 /// \param L Lua state.
-static int meta__index_read_mcycle(lua_State *L) try {
+static int machine_meta__index_read_mcycle(lua_State *L) try {
     machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_mcycle());
     return 1;
@@ -612,7 +626,7 @@ static int meta__index_read_mcycle(lua_State *L) try {
 
 /// \brief This is the machine:read_tohost() method implementation.
 /// \param L Lua state.
-static int meta__index_read_tohost(lua_State *L) try {
+static int machine_meta__index_read_tohost(lua_State *L) try {
     machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_htif_tohost());
     return 1;
@@ -623,7 +637,7 @@ static int meta__index_read_tohost(lua_State *L) try {
 
 /// \brief This is the machine:read_tohost() method implementation.
 /// \param L Lua state.
-static int meta__index_read_iflags_H(lua_State *L) try {
+static int machine_meta__index_read_iflags_H(lua_State *L) try {
     machine *m = check_machine(L, 1);
     lua_pushboolean(L, m->read_iflags_H());
     return 1;
@@ -634,7 +648,7 @@ static int meta__index_read_iflags_H(lua_State *L) try {
 
 /// \brief This is the machine:dump() method implementation.
 /// \param L Lua state.
-static int meta__index_dump(lua_State *L) try {
+static int machine_meta__index_dump(lua_State *L) try {
     machine *m = check_machine(L, 1);
     m->dump();
     return 1;
@@ -645,7 +659,7 @@ static int meta__index_dump(lua_State *L) try {
 
 /// \brief This is the machine:dump_regs() method implementation.
 /// \param L Lua state.
-static int meta__index_dump_regs(lua_State *L) {
+static int machine_meta__index_dump_regs(lua_State *L) {
     machine *m = check_machine(L, 1);
     fprintf(stderr, "pc = %" PRIx64 "\n", m->read_pc());
     for (int i = 0; i < 32; ++i) {
@@ -685,7 +699,7 @@ static int meta__index_dump_regs(lua_State *L) {
 
 /// \brief This is the machine:write_memory() method implementation.
 /// \param L Lua state.
-static int meta__index_write_memory(lua_State *L) try {
+static int machine_meta__index_write_memory(lua_State *L) try {
     machine *m = check_machine(L, 1);
     size_t length = 0;
     const unsigned char *data = reinterpret_cast<const unsigned char *>(
@@ -700,7 +714,7 @@ static int meta__index_write_memory(lua_State *L) try {
 
 /// \brief This is the machine:read_memory() method implementation.
 /// \param L Lua state.
-static int meta__index_read_memory(lua_State *L) try {
+static int machine_meta__index_read_memory(lua_State *L) try {
     machine *m = check_machine(L, 1);
     size_t length = luaL_checkinteger(L, 3);
     auto data = cartesi::unique_calloc<unsigned char>(1, length);
@@ -712,10 +726,9 @@ static int meta__index_read_memory(lua_State *L) try {
     return 0;
 }
 
-
 /// \brief This is the machine:read_word() method implementation.
 /// \param L Lua state.
-static int meta__index_read_word(lua_State *L) try {
+static int machine_meta__index_read_word(lua_State *L) try {
     machine *m = check_machine(L, 1);
     uint64_t word_value = 0;
     if (m->read_word(luaL_checkinteger(L, 2), word_value)) {
@@ -732,7 +745,7 @@ static int meta__index_read_word(lua_State *L) try {
 
 /// \brief This is the machine:get_proof() method implementation.
 /// \param L Lua state.
-static int meta__index_get_proof(lua_State *L) try {
+static int machine_meta__index_get_proof(lua_State *L) try {
     machine *m = check_machine(L, 1);
     merkle_tree::proof_type proof;
     if (m->get_proof(luaL_checkinteger(L, 2), luaL_checkinteger(L, 3), proof)) {
@@ -749,7 +762,7 @@ static int meta__index_get_proof(lua_State *L) try {
 
 /// \brief This is the machine:verify_dirty_page_maps() method implementation.
 /// \param L Lua state.
-static int meta__index_verify_dirty_page_maps(lua_State *L) try {
+static int machine_meta__index_verify_dirty_page_maps(lua_State *L) try {
     machine *m = check_machine(L, 1);
     lua_pushboolean(L, m->verify_dirty_page_maps());
     return 1;
@@ -760,7 +773,7 @@ static int meta__index_verify_dirty_page_maps(lua_State *L) try {
 
 /// \brief This is the machine:step() method implementation.
 /// \param L Lua state.
-static int meta__index_step(lua_State *L) try {
+static int machine_meta__index_step(lua_State *L) try {
     machine *m = check_machine(L, 1);
     access_log log;
     m->step(log);
@@ -772,45 +785,46 @@ static int meta__index_step(lua_State *L) try {
 }
 
 /// \brief Contents of the machine metatable __index table.
-static const luaL_Reg meta__index[] = {
-    {"run", meta__index_run},
-    {"dump", meta__index_dump},
-    {"dump_regs", meta__index_dump_regs},
-    {"get_proof", meta__index_get_proof},
-    {"read_word", meta__index_read_word},
-    {"read_memory", meta__index_read_memory},
-    {"write_memory", meta__index_write_memory},
-    {"read_mcycle", meta__index_read_mcycle},
-    {"read_tohost", meta__index_read_tohost},
-    {"read_iflags_H", meta__index_read_iflags_H},
-    {"update_merkle_tree", meta__index_update_merkle_tree},
-    {"verify_merkle_tree", meta__index_verify_merkle_tree},
-    {"get_root_hash", meta__index_get_root_hash},
-    {"step", meta__index_step},
-    {"destroy", meta__index_destroy},
-    {"verify_dirty_page_maps", meta__index_verify_dirty_page_maps},
+static const luaL_Reg machine_meta__index[] = {
+    {"run", machine_meta__index_run},
+    {"dump", machine_meta__index_dump},
+    {"dump_regs", machine_meta__index_dump_regs},
+    {"get_proof", machine_meta__index_get_proof},
+    {"read_word", machine_meta__index_read_word},
+    {"read_memory", machine_meta__index_read_memory},
+    {"write_memory", machine_meta__index_write_memory},
+    {"read_mcycle", machine_meta__index_read_mcycle},
+    {"read_tohost", machine_meta__index_read_tohost},
+    {"read_iflags_H", machine_meta__index_read_iflags_H},
+    {"update_merkle_tree", machine_meta__index_update_merkle_tree},
+    {"verify_merkle_tree", machine_meta__index_verify_merkle_tree},
+    {"store", machine_meta__index_store},
+    {"get_root_hash", machine_meta__index_get_root_hash},
+    {"step", machine_meta__index_step},
+    {"destroy", machine_meta__index_destroy},
+    {"verify_dirty_page_maps", machine_meta__index_verify_dirty_page_maps},
     { NULL, NULL }
 };
 
 /// \brief Machine __tostring metamethod.
 /// \param L Lua state.
-static int meta__tostring(lua_State *L) {
+static int machine_meta__tostring(lua_State *L) {
     lua_pushstring(L, "machine");
     return 1;
 }
 
 /// \brief Machine __gc metamethod.
 /// \param L Lua state.
-static int meta__gc(lua_State *L) {
+static int machine_meta__gc(lua_State *L) {
     machine *m = check_machine(L, 1);
     m->~machine(); // Explicitly invoke object destructor
     return 0;
 }
 
 /// \brief Contents of the machine metatable.
-static const luaL_Reg meta[] = {
-    {"__gc", meta__gc},
-    {"__tostring", meta__tostring},
+static const luaL_Reg machine_meta[] = {
+    {"__gc", machine_meta__gc},
+    {"__tostring", machine_meta__tostring},
     { NULL, NULL }
 };
 
@@ -840,14 +854,28 @@ int luaopen_cartesi(lua_State *L) {
     lua_settable(L, LUA_REGISTRYINDEX); /**/
     ProfilerStart("cartesi.prof");
 #endif
-    lua_newtable(L); /* mod */
-    lua_newtable(L); /* mod meta */
-    lua_newtable(L); /* mod meta metaidx */
-    lua_pushvalue(L, -2); /* mod meta metaidx meta */
-    luaL_setfuncs(L, meta__index, 1); /* mod meta metaidx */
-    lua_setfield(L, -2, "__index"); /* mod meta */
-    lua_pushvalue(L, -1); /* mod meta meta */
-    luaL_setfuncs(L, meta, 1); /* mod meta */
-    luaL_setfuncs(L, mod, 1); /* mod */
+    lua_newtable(L); /* cartesi_mod */
+    lua_newtable(L); /* cartesi_mod machine_meta */
+    lua_newtable(L); /* cartesi_mod machine_meta metaidx */
+    lua_pushvalue(L, -2); /* cartesi_mod machine_meta metaidx machine_meta */
+    luaL_setfuncs(L, machine_meta__index, 1); /* cartesi_mod machine_meta metaidx */
+    lua_setfield(L, -2, "__index"); /* cartesi_mod machine_meta */
+    lua_pushvalue(L, -1); /* cartesi_mod machine_meta machine_meta */
+    luaL_setfuncs(L, machine_meta, 1); /* cartesi_mod machine_meta */
+    lua_newtable(L); /* cartesi_mod machine_meta ctor */
+    lua_newtable(L); /* cartesi_mod machine_meta ctor ctor_meta */
+    lua_pushvalue(L, -3); /* cartesi_mod machine_meta ctor ctor_meta machine_meta */
+    luaL_setfuncs(L, machine_ctor_meta, 1); /* cartesi_mod machine_meta ctor ctor_meta */
+    lua_newtable(L); /* cartesi_mod machine_meta ctor ctor_meta ctoridx */
+    lua_pushinteger(L, machine::MVENDORID);
+    lua_setfield(L, -2, "MVENDORID");
+    lua_pushinteger(L, machine::MARCHID);
+    lua_setfield(L, -2, "MARCHID");
+    lua_pushinteger(L, machine::MIMPID);
+    lua_setfield(L, -2, "MIMPID");
+    lua_setfield(L, -2, "__index"); /* cartesi_mod machine_meta ctor ctor_meta */
+    lua_setmetatable(L, -2); /* cartesi_mod machine_meta ctor */
+    lua_setfield(L, -3, "machine"); /* caretsi_mod machine_meta */
+    luaL_setfuncs(L, cartesi_mod, 1); /* cartesi_mod */
     return 1;
 }

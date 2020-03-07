@@ -54,7 +54,6 @@ struct processor_config final {
     uint64_t scounteren{SCOUNTEREN_INIT};
     uint64_t ilrsc{ILRSC_INIT};
     uint64_t iflags{IFLAGS_INIT};
-    std::string backing{};
 };
 
 struct ram_config final {
@@ -76,13 +75,11 @@ struct flash_config final {
 
 struct clint_config final {
     uint64_t mtimecmp{0};
-    std::string backing{};
 };
 
 struct htif_config final {
     uint64_t fromhost{0};
     uint64_t tohost{0};
-    std::string backing{};
 };
 
 /// \brief FLASH constants
@@ -90,14 +87,32 @@ enum FLASH_constants {
     FLASH_MAX = 8 ///< Maximum number of flash drives
 };
 
+using flash_configs = boost::container::static_vector<flash_config, FLASH_MAX>;
+
 struct machine_config final {
     processor_config processor{};
     ram_config ram{};
     rom_config rom{};
-    boost::container::static_vector<flash_config, FLASH_MAX> flash{};
+    flash_configs flash{};
     clint_config clint{};
     htif_config htif{};
     bool interactive{false};
+
+    /// \brief Get the name where config will be stored in a directory
+    static std::string get_config_name(const std::string &dir);
+
+    /// \brief Get the name where memory range will be stored in a directory
+    static std::string get_backing_name(const std::string &dir, uint64_t start,
+        uint64_t length);
+
+    /// \brief Loads a machine config from a directory
+    /// \param dir Directory from whence "config" will be loaded
+    /// \returns The config loaded
+    static machine_config load(const std::string &dir);
+
+    /// \brief Stores the machine config to a directory
+    /// \param dir Directory where "config" will be stored
+    void store(const std::string &dir) const;
 };
 
 } // namespace cartesi

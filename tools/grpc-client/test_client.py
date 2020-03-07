@@ -16,21 +16,20 @@
 
 from __future__ import print_function
 
-import grpc
-import sys
 import os
+import sys
+import argparse
+import grpc
 
-#So the cartesi GRPC modules are in path
-sys.path.insert(0,'./proto/')
+# So the cartesi GRPC modules are in path
+sys.path.insert(0, './proto/')
 
 import core_pb2
 import cartesi_base_pb2
 import core_pb2_grpc
 import manager_low_pb2
 import manager_low_pb2_grpc
-import traceback
-import argparse
-#from IPython import embed
+# from IPython import embed
 
 START = "start"
 BACKING = "backing"
@@ -43,59 +42,63 @@ DIR_PATH = os.path.dirname(os.path.realpath("../../src/cartesi-machine-server"))
 TEST_ROM = {
     BOOTARGS: "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw {} -- /bin/echo nice && ls /mnt",
     BACKING: "rom.bin"
-}
+    }
 
 TEST_RAM = {
-    LENGTH: 64 << 20, #2**26 or 67108864
+    LENGTH: 64 << 20,  # 2**26 or 67108864
     BACKING: "kernel.bin"
-
-}
+    }
 
 BACKING_TEST_DRIVE_FILEPATH = "rootfs.ext2"
 
 TEST_DRIVES = [
     {
-        START: 1 << 63, #2**63 or ~ 9*10**18
+        START: 1 << 63,  # 2**63 or ~ 9*10**18
         LENGTH: os.path.getsize(os.path.join(DIR_PATH, BACKING_TEST_DRIVE_FILEPATH)),
         BACKING: BACKING_TEST_DRIVE_FILEPATH,
         SHARED: False,
         LABEL: "root filesystem"
-    }
-]
+        }
+    ]
+
 
 def build_mtdparts_str(drives):
     mtdparts_str = "mtdparts="
-    for i,drive in enumerate(drives):
+    for i, drive in enumerate(drives):
         mtdparts_str += "flash.%d:-(%s)".format(i, drive[LABEL])
     return mtdparts_str
 
+
 def make_new_machine_request():
-    ram_msg = cartesi_base_pb2.RAM(length=TEST_RAM[LENGTH], backing=os.path.join(DIR_PATH, TEST_RAM[BACKING]))
+    ram_msg = cartesi_base_pb2.RAMConfig(length=TEST_RAM[LENGTH], backing=os.path.join(DIR_PATH, TEST_RAM[BACKING]))
     drives_msg = []
     for drive in TEST_DRIVES:
-        drive_msg = cartesi_base_pb2.Drive(start=drive[START], length=drive[LENGTH], backing=os.path.join(DIR_PATH, drive[BACKING]),
-                                           shared=drive[SHARED], label=drive[LABEL])
+        drive_msg = cartesi_base_pb2.FlashConfig(start=drive[START], length=drive[LENGTH], backing=os.path.join(DIR_PATH, drive[BACKING]),
+                                                 shared=drive[SHARED], label=drive[LABEL])
         drives_msg.append(drive_msg)
     bootargs_str = TEST_ROM[BOOTARGS].format(build_mtdparts_str(TEST_DRIVES))
-    rom_msg = cartesi_base_pb2.ROM(bootargs=bootargs_str, backing=os.path.join(DIR_PATH, TEST_ROM[BACKING]))
-    processor_state_msg = cartesi_base_pb2.ProcessorState(x1=5)
-    processor_msg = cartesi_base_pb2.Processor(state=processor_state_msg)
-    return cartesi_base_pb2.MachineRequest(processor=processor_msg, rom=rom_msg, ram=ram_msg, flash=drives_msg)
+    rom_msg = cartesi_base_pb2.ROMConfig(bootargs=bootargs_str, backing=os.path.join(DIR_PATH, TEST_ROM[BACKING]))
+    processor_config = cartesi_base_pb2.ProcessorConfig(x1=5)
+    machine_config = cartesi_base_pb2.MachineConfig(processor=processor_config, rom=rom_msg, ram=ram_msg, flash=drives_msg)
+    return cartesi_base_pb2.MachineRequest(config=machine_config)
+
 
 def request(stub, func, *args):
-    print("Executing {} request..".format(func) )
+    print("Executing {} request..".format(func))
     response = getattr(stub, func)(*args)
     if not response:
         raise Exception("Unexpected {} response: {}".format(func, str(response)))
     print(func + " response: " + str(response))
     return response
 
+
 def get_server_address():
     parser = argparse.ArgumentParser(description='GRPC client to the low level emulator API')
     parser.add_argument('server', nargs='?', default="127.0.0.1:50000",
-            help="Emulator GRPC server address (Default: 127.0.0.1:50000)")
+                        help="Emulator GRPC server address (Default: 127.0.0.1:50000)")
     args = parser.parse_args()
     return args.server
+
 
 def run():
     server_address = get_server_address()
@@ -117,6 +120,7 @@ def run():
             print("An exception occurred:")
             print(e)
             print(type(e))
+
 
 if __name__ == '__main__':
     run()

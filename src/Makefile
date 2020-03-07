@@ -43,7 +43,7 @@ SOLDFLAGS_Darwin:=-bundle -undefined dynamic_lookup
 CC_Darwin=clang
 CXX_Darwin=clang++
 INCS_Darwin=
-BOOST_LIB_Darwin=-L/opt/local/lib -L/usr/local/opt/boost/lib -lboost_program_options-mt
+BOOST_LIB_Darwin=-L/opt/local/lib -L/usr/local/opt/boost/lib -lboost_program_options-mt -lboost_serialization-mt
 BOOST_INC_Darwin=-I/opt/local/include -I/usr/local/opt/boost/include
 PROFILE_DATA_Darwin=default.profdata
 
@@ -53,7 +53,7 @@ CC_Linux=gcc
 CXX_Linux=g++
 INCS_Linux=
 FS_LIB_Linux=-lstdc++fs
-BOOST_LIB_Linux=-lboost_program_options
+BOOST_LIB_Linux=-lboost_program_options -lboost_serialization
 BOOST_INC_Linux=
 PROFILE_DATA_Linux=
 
@@ -65,7 +65,7 @@ FS_LIB=$(FS_LIB_$(UNAME))
 BOOST_LIB=$(BOOST_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
 
-LUACARTESI_LIBS:=$(CRYPTOPP_LIB)
+LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_LIB)
 GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
@@ -114,6 +114,7 @@ LUACARTESI_OBJS:= \
 	merkle-tree.o \
 	pma.o \
 	machine.o \
+	machine-config.o \
 	interpret.o \
 	luacartesi.o
 
@@ -192,6 +193,7 @@ GRPC_SRV_OBJS:= \
 	merkle-tree.o \
 	pma.o \
 	machine.o \
+	machine-config.o \
 	interpret.o \
 	manager-client.o
 

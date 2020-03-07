@@ -25,6 +25,8 @@
 #include <future>
 #include <thread>
 
+#include <sys/stat.h>
+
 #include "riscv-constants.h"
 #include "machine.h"
 #include "interpret.h"
@@ -69,12 +71,6 @@ pma_entry::flags machine::m_flash_flags{
     true,                   // IW
     PMA_ISTART_DID::drive  // DID
 };
-
-std::string get_name(void) {
-    std::ostringstream os;
-    os << MVENDORID_INIT << ':' << MARCHID_INIT << ':' << MIMPID_INIT;
-    return os.str();
-}
 
 /// \brief Obtain PMA entry that covers a given physical memory region
 /// \param s Pointer to machine state.
@@ -230,10 +226,21 @@ void machine::interact(void) {
 machine::machine(const machine_config &c):
     m_s{},
     m_t{},
-    m_h{*this, c.interactive} {
+    m_h{*this, c.interactive},
+    m_c{c} {
 
-    if (!c.processor.backing.empty())
-        throw std::runtime_error{"processor backing not implemented"};
+    // Check compatibility
+    if (c.processor.marchid != MARCHID) {
+        throw std::invalid_argument{"marchid mismatch."};
+    }
+
+    if (c.processor.mimpid != MIMPID) {
+        throw std::invalid_argument{"mimpid mismatch."};
+    }
+
+    if (c.processor.mvendorid != MVENDORID) {
+        throw std::invalid_argument{"mvendorid mismatch."};
+    }
 
     // General purpose registers
     for (int i = 1; i < 32; i++) {
@@ -241,9 +248,6 @@ machine::machine(const machine_config &c):
     }
 
     write_pc(c.processor.pc);
-    write_mvendorid(c.processor.mvendorid);
-    write_marchid(c.processor.marchid);
-    write_mimpid(c.processor.mimpid);
     write_mcycle(c.processor.mcycle);
     write_minstret(c.processor.minstret);
     write_mstatus(c.processor.mstatus);
@@ -299,16 +303,12 @@ machine::machine(const machine_config &c):
     m_h.register_device(PMA_HTIF_START, PMA_HTIF_LENGTH);
 
     // Copy HTIF state to from config to machine
-    if (!c.htif.backing.empty())
-        throw std::runtime_error{"HTIF backing not implemented"};
     write_htif_tohost(c.htif.tohost);
     write_htif_fromhost(c.htif.fromhost);
 
     // Resiter CLINT device
     clint_register_device(*this, PMA_CLINT_START, PMA_CLINT_LENGTH);
     // Copy CLINT state to from config to machine
-    if (!c.clint.backing.empty())
-        throw std::runtime_error{"CLINT backing not implemented"};
     write_clint_mtimecmp(c.clint.mtimecmp);
 
     // Register shadow device
@@ -322,6 +322,124 @@ machine::machine(const machine_config &c):
 
     // Add sentinel to PMA vector
     allocate_pma_entry(pma_entry{});
+}
+
+static void load_hash(const std::string &dir, merkle_tree::hash_type &h) {
+    auto name = dir + "/hash";
+    auto fp = unique_fopen(name.c_str(), "rb");
+    if (fread(h.data(), 1, h.size(), fp.get()) != h.size()) {
+        throw std::runtime_error{"error reading from '" + name + "'"};
+    }
+}
+
+machine::machine(const std::string &dir):
+    machine{ machine_config::load(dir) } {
+    merkle_tree::hash_type hstored, hrestored;
+    load_hash(dir, hstored);
+    if (!update_merkle_tree() || !get_merkle_tree().get_root_hash(hrestored)) {
+        throw std::runtime_error{"error updating root hash"};
+    }
+    if (hstored != hrestored) {
+        throw std::runtime_error{"stored and restored hashes do not match"};
+    }
+}
+
+machine_config machine::serialization_config(void) const {
+    // Initialize with copy of original config
+    machine_config c = m_c;
+    // Copy current processor state to config
+    for (int i = 1; i < 32; ++i) {
+        c.processor.x[i] = read_x(i);
+    }
+    c.processor.pc = read_pc();
+    c.processor.mvendorid = read_mvendorid();
+    c.processor.marchid = read_marchid();
+    c.processor.mimpid = read_mimpid();
+    c.processor.mcycle = read_mcycle();
+    c.processor.minstret = read_minstret();
+    c.processor.mstatus = read_mstatus();
+    c.processor.mtvec = read_mtvec();
+    c.processor.mscratch = read_mscratch();
+    c.processor.mepc = read_mepc();
+    c.processor.mcause = read_mcause();
+    c.processor.mtval = read_mtval();
+    c.processor.misa = read_misa();
+    c.processor.mie = read_mie();
+    c.processor.mip = read_mip();
+    c.processor.medeleg = read_medeleg();
+    c.processor.mideleg = read_mideleg();
+    c.processor.mcounteren = read_mcounteren();
+    c.processor.stvec = read_stvec();
+    c.processor.sscratch = read_sscratch();
+    c.processor.sepc = read_sepc();
+    c.processor.scause = read_scause();
+    c.processor.stval = read_stval();
+    c.processor.satp = read_satp();
+    c.processor.scounteren = read_scounteren();
+    c.processor.ilrsc = read_ilrsc();
+    c.processor.iflags = read_iflags();
+    // Copy current CLINT state to config
+    c.clint.mtimecmp = read_clint_mtimecmp();
+    // Copy current HTIF state to config
+    c.htif.tohost = read_htif_tohost();
+    c.htif.fromhost = read_htif_fromhost();
+    // Ensure we don't mess with ROM by writing the original bootargs
+    // over the potentially modified memory region we serialize
+    c.rom.bootargs.clear();
+    // Remove backing names from serialization
+    // (they will will be ignored by save and load for security reasons)
+    c.ram.backing.clear();
+    c.rom.backing.clear();
+    for (auto &f: c.flash) {
+        f.backing.clear();
+    }
+    return c;
+}
+
+static void store_memory_pma(const pma_entry &pma, const std::string &dir) {
+    if (!pma.get_istart_M()) {
+        throw std::runtime_error{"attempt to save non-memory PMA"};
+    }
+    auto name = machine_config::get_backing_name(dir,
+        pma.get_start(), pma.get_length());
+    auto fp = unique_fopen(name.c_str(), "wb");
+    const pma_memory &mem = pma.get_memory();
+    if (fwrite(mem.get_host_memory(), 1, pma.get_length(), fp.get()) !=
+        pma.get_length()) {
+        throw std::runtime_error{"error writing to '" + name + "'"};
+    }
+}
+
+void machine::store_pmas(const machine_config &c, const std::string &dir) const {
+    store_memory_pma(naked_find_pma_entry<uint64_t>(m_s, PMA_ROM_START), dir);
+    store_memory_pma(naked_find_pma_entry<uint64_t>(m_s, PMA_RAM_START), dir);
+    // Could iterate over PMAs checking for those with a drive DID
+    // but this is easier
+    for (const auto &f: c.flash) {
+        store_memory_pma(naked_find_pma_entry<uint64_t>(m_s, f.start), dir);
+    }
+}
+
+static void store_hash(const merkle_tree::hash_type &h, const std::string dir) {
+    auto name = dir + "/hash";
+    auto fp = unique_fopen(name.c_str(), "wb");
+    if (fwrite(h.data(), 1, h.size(), fp.get()) != h.size()) {
+        throw std::runtime_error{"error writing to '" + name + "'"};
+    }
+}
+
+void machine::store(const std::string &dir) {
+    if (mkdir(dir.c_str(), 0700)) {
+        throw std::runtime_error{"error creating directory '" + dir + "'"};
+    }
+    merkle_tree::hash_type h;
+    if (!update_merkle_tree() || !get_merkle_tree().get_root_hash(h)) {
+        throw std::runtime_error{"error updating root hash"};
+    }
+    store_hash(h, dir);
+    auto c = serialization_config();
+    c.store(dir);
+    store_pmas(c, dir);
 }
 
 machine::~machine() {
@@ -365,27 +483,15 @@ void machine::write_pc(uint64_t val) {
 }
 
 uint64_t machine::read_mvendorid(void) const {
-    return m_s.mvendorid;
-}
-
-void machine::write_mvendorid(uint64_t val) {
-    m_s.mvendorid = val;
+    return MVENDORID;
 }
 
 uint64_t machine::read_marchid(void) const {
-    return m_s.marchid;
-}
-
-void machine::write_marchid(uint64_t val) {
-    m_s.marchid = val;
+    return MARCHID;
 }
 
 uint64_t machine::read_mimpid(void) const {
-    return m_s.mimpid;
-}
-
-void machine::write_mimpid(uint64_t val) {
-    m_s.mimpid = val;
+    return MIMPID;
 }
 
 uint64_t machine::read_mcycle(void) const {

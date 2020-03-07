@@ -322,7 +322,11 @@ end
 
 local function build_machine(test_name)
     return assert(cartesi.machine{
-        machine = cartesi.get_name(),
+        processor = {
+            mvendorid = cartesi.machine.MVENDORID,
+            marchid = cartesi.machine.MARCHID,
+            mimpid = cartesi.machine.MIMPID
+        },
         rom = {
             backing = test_path .. "/bootstrap.bin"
         },

@@ -63,7 +63,7 @@ private:
         return 0;
     }
 
-    uint64_t do_read_x(int reg) {
+    uint64_t do_read_x(int reg) const {
         return m_m.get_state().x[reg];
     }
 
@@ -72,7 +72,7 @@ private:
         m_m.get_state().x[reg] = val;
     }
 
-    uint64_t do_read_pc(void) {
+    uint64_t do_read_pc(void) const {
         return m_m.get_state().pc;
     }
 
@@ -80,7 +80,7 @@ private:
         m_m.get_state().pc = val;
     }
 
-	uint64_t do_read_minstret(void) {
+	uint64_t do_read_minstret(void) const {
 		return m_m.get_state().minstret;
 	}
 
@@ -88,31 +88,19 @@ private:
 		m_m.get_state().minstret = val;
 	}
 
-	uint64_t do_read_mvendorid(void) {
-		return m_m.get_state().mvendorid;
+	uint64_t do_read_mvendorid(void) const {
+		return m_m.MVENDORID;
 	}
 
-	void do_write_mvendorid(uint64_t val) {
-		m_m.get_state().mvendorid = val;
+	uint64_t do_read_marchid(void) const {
+		return m_m.MARCHID;
 	}
 
-	uint64_t do_read_marchid(void) {
-		return m_m.get_state().marchid;
+	uint64_t do_read_mimpid(void) const {
+		return m_m.MIMPID;
 	}
 
-	void do_write_marchid(uint64_t val) {
-		m_m.get_state().marchid = val;
-	}
-
-	uint64_t do_read_mimpid(void) {
-		return m_m.get_state().mimpid;
-	}
-
-	void do_write_mimpid(uint64_t val) {
-		m_m.get_state().mimpid = val;
-	}
-
-	uint64_t do_read_mcycle(void) {
+	uint64_t do_read_mcycle(void) const {
 		return m_m.get_state().mcycle;
 	}
 
@@ -120,7 +108,7 @@ private:
 		m_m.get_state().mcycle = val;
 	}
 
-	uint64_t do_read_mstatus(void) {
+	uint64_t do_read_mstatus(void) const {
         return m_m.get_state().mstatus;
 	}
 
@@ -128,7 +116,7 @@ private:
         m_m.get_state().mstatus = val;
 	}
 
-	uint64_t do_read_mtvec(void) {
+	uint64_t do_read_mtvec(void) const {
 		return m_m.get_state().mtvec;
 	}
 
@@ -136,7 +124,7 @@ private:
 		m_m.get_state().mtvec = val;
 	}
 
-	uint64_t do_read_mscratch(void) {
+	uint64_t do_read_mscratch(void) const {
 		return m_m.get_state().mscratch;
 	}
 
@@ -144,7 +132,7 @@ private:
 		m_m.get_state().mscratch = val;
 	}
 
-	uint64_t do_read_mepc(void) {
+	uint64_t do_read_mepc(void) const {
 		return m_m.get_state().mepc;
 	}
 
@@ -152,7 +140,7 @@ private:
 		m_m.get_state().mepc = val;
 	}
 
-	uint64_t do_read_mcause(void) {
+	uint64_t do_read_mcause(void) const {
 		return m_m.get_state().mcause;
 	}
 
@@ -160,7 +148,7 @@ private:
 		m_m.get_state().mcause = val;
 	}
 
-	uint64_t do_read_mtval(void) {
+	uint64_t do_read_mtval(void) const {
 		return m_m.get_state().mtval;
 	}
 
@@ -168,7 +156,7 @@ private:
 		m_m.get_state().mtval = val;
 	}
 
-	uint64_t do_read_misa(void) {
+	uint64_t do_read_misa(void) const {
 		return m_m.get_state().misa;
 	}
 
@@ -176,7 +164,7 @@ private:
 		m_m.get_state().misa = val;
 	}
 
-	uint64_t do_read_mie(void) {
+	uint64_t do_read_mie(void) const {
 		return m_m.get_state().mie;
 	}
 
@@ -184,7 +172,7 @@ private:
 		m_m.get_state().mie = val;
 	}
 
-	uint64_t do_read_mip(void) {
+	uint64_t do_read_mip(void) const {
 		return m_m.get_state().mip;
 	}
 
@@ -192,7 +180,7 @@ private:
 		m_m.get_state().mip = val;
 	}
 
-	uint64_t do_read_medeleg(void) {
+	uint64_t do_read_medeleg(void) const {
 		return m_m.get_state().medeleg;
 	}
 
@@ -200,7 +188,7 @@ private:
 		m_m.get_state().medeleg = val;
 	}
 
-	uint64_t do_read_mideleg(void) {
+	uint64_t do_read_mideleg(void) const {
 		return m_m.get_state().mideleg;
 	}
 
@@ -208,7 +196,7 @@ private:
 		m_m.get_state().mideleg = val;
 	}
 
-	uint64_t do_read_mcounteren(void) {
+	uint64_t do_read_mcounteren(void) const {
 		return m_m.get_state().mcounteren;
 	}
 
@@ -216,7 +204,7 @@ private:
 		m_m.get_state().mcounteren = val;
 	}
 
-	uint64_t do_read_stvec(void) {
+	uint64_t do_read_stvec(void) const {
 		return m_m.get_state().stvec;
 	}
 
@@ -224,7 +212,7 @@ private:
 		m_m.get_state().stvec = val;
 	}
 
-	uint64_t do_read_sscratch(void) {
+	uint64_t do_read_sscratch(void) const {
 		return m_m.get_state().sscratch;
 	}
 
@@ -232,7 +220,7 @@ private:
 		m_m.get_state().sscratch = val;
 	}
 
-	uint64_t do_read_sepc(void) {
+	uint64_t do_read_sepc(void) const {
 		return m_m.get_state().sepc;
 	}
 
@@ -240,7 +228,7 @@ private:
 		m_m.get_state().sepc = val;
 	}
 
-	uint64_t do_read_scause(void) {
+	uint64_t do_read_scause(void) const {
 		return m_m.get_state().scause;
 	}
 
@@ -248,7 +236,7 @@ private:
 		m_m.get_state().scause = val;
 	}
 
-	uint64_t do_read_stval(void) {
+	uint64_t do_read_stval(void) const {
 		return m_m.get_state().stval;
 	}
 
@@ -256,7 +244,7 @@ private:
 		m_m.get_state().stval = val;
 	}
 
-	uint64_t do_read_satp(void) {
+	uint64_t do_read_satp(void) const {
 		return m_m.get_state().satp;
 	}
 
@@ -264,7 +252,7 @@ private:
 		m_m.get_state().satp = val;
 	}
 
-	uint64_t do_read_scounteren(void) {
+	uint64_t do_read_scounteren(void) const {
 		return m_m.get_state().scounteren;
 	}
 
@@ -272,7 +260,7 @@ private:
 		m_m.get_state().scounteren = val;
 	}
 
-	uint64_t do_read_ilrsc(void) {
+	uint64_t do_read_ilrsc(void) const {
 		return m_m.get_state().ilrsc;
 	}
 
@@ -284,7 +272,7 @@ private:
         m_m.get_state().iflags.H = true;
     }
 
-    bool do_read_iflags_H(void) {
+    bool do_read_iflags_H(void) const {
         return m_m.get_state().iflags.H;
     }
 
@@ -296,11 +284,11 @@ private:
         m_m.get_state().iflags.H = false;
     }
 
-    bool do_read_iflags_I(void) {
+    bool do_read_iflags_I(void) const {
         return m_m.get_state().iflags.I;
     }
 
-    uint8_t do_read_iflags_PRV(void) {
+    uint8_t do_read_iflags_PRV(void) const {
         return m_m.get_state().iflags.PRV;
     }
 
@@ -308,7 +296,7 @@ private:
         m_m.get_state().iflags.PRV = val;
     }
 
-    uint64_t do_read_clint_mtimecmp(void) {
+    uint64_t do_read_clint_mtimecmp(void) const {
 		return m_m.get_state().clint.mtimecmp;
     }
 
@@ -316,7 +304,7 @@ private:
         m_m.get_state().clint.mtimecmp = val;
     }
 
-    uint64_t do_read_htif_fromhost(void) {
+    uint64_t do_read_htif_fromhost(void) const {
         return m_m.get_state().htif.fromhost;
     }
 
@@ -324,7 +312,7 @@ private:
         m_m.get_state().htif.fromhost = val;
     }
 
-    uint64_t do_read_htif_tohost(void) {
+    uint64_t do_read_htif_tohost(void) const {
         return m_m.get_state().htif.tohost;
     }
 
@@ -332,11 +320,11 @@ private:
         m_m.get_state().htif.tohost = val;
     }
 
-    void do_read_pma(const pma_entry &pma, int i) {
+    void do_read_pma(const pma_entry &pma, int i) const {
         (void) i; (void) pma;
     }
 
-    uint64_t do_read_pma_istart(int i) {
+    uint64_t do_read_pma_istart(int i) const {
         assert(i >= 0 && i < 32);
         const auto &pmas = m_m.get_pmas();
         uint64_t istart = 0;
@@ -346,7 +334,7 @@ private:
         return istart;
     }
 
-    uint64_t do_read_pma_ilength(int i) {
+    uint64_t do_read_pma_ilength(int i) const {
         assert(i >= 0 && i < 32);
         const auto &pmas = m_m.get_pmas();
         uint64_t ilength = 0;
@@ -358,7 +346,7 @@ private:
 
     template <typename T>
     void do_read_memory(uint64_t paddr, const unsigned char *hpage,
-        uint64_t hoffset, T *pval) {
+        uint64_t hoffset, T *pval) const {
         (void) paddr;
         *pval = aliased_aligned_read<T>(hpage+hoffset);
     }

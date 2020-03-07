@@ -18,13 +18,11 @@
 #include <string>
 #include <syslog.h>
 
-#include <grpc++/grpc++.h>
-
 #include "manager-client.h"
-
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
+#include <grpc++/grpc++.h>
 #include "manager-low.grpc.pb.h"
 #include "manager-low.pb.h"
 #include "cartesi-base.pb.h"

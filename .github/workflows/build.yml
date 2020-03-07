@@ -11,7 +11,7 @@ jobs:
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Install Ubuntu dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y libreadline-dev libboost-container-dev libboost-program-options-dev patchelf automake
+        run: sudo apt-get update -y && sudo apt-get install -y libreadline-dev libboost-container-dev libboost-program-options-dev libboost-serialization-dev patchelf automake
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-grpc-16 ./build
@@ -55,6 +55,9 @@ jobs:
         with:
           name: emulator
           path: /opt/cartesi
+
+      - name: Install Ubuntu dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-program-options1.65.1 libboost-serialization1.65.1
 
       - name: Set current git organization env var
         id: git_org
@@ -138,7 +141,7 @@ jobs:
         with:
           submodules: recursive
           token: ${{ secrets.CI_TOKEN }}
-    
+
       - run: echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}

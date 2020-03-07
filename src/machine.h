@@ -44,6 +44,8 @@ class machine final {
     merkle_tree m_t;     ///< Merkle tree of state
     htif m_h;            ///< HTIF device
 
+    machine_config m_c;  ///< Copy of initialization config
+
     static pma_entry::flags m_rom_flags;    ///< PMA flags used for ROM
     static pma_entry::flags m_ram_flags;    ///< PMA flags used for RAM
     static pma_entry::flags m_flash_flags;  ///< PMA flags used for flash drives
@@ -81,8 +83,19 @@ class machine final {
 
 public:
 
+    static const uint64_t MVENDORID = MVENDORID_INIT;
+    static const uint64_t MARCHID = MARCHID_INIT;
+    static const uint64_t MIMPID = MIMPID_INIT;
+
     /// \brief Constructor from machine configuration
     explicit machine(const machine_config &c);
+
+    /// \brief Constructor from previously serialized directory
+    explicit machine(const std::string &dir);
+
+    /// \brief Serialize entire state to directory
+    /// \detail The method is not const because it updates the root hash
+    void store(const std::string &dir);
 
     /// \brief No default constructor
     machine(void) = delete;
@@ -497,10 +510,15 @@ public:
     /// \returns true if they are, false if there is an error.
     bool verify_dirty_page_maps(void) const;
 
-};
+    /// \brief Copies the current state into a configuration for serialization
+    /// \returns The configuration
+    machine_config serialization_config(void) const;
 
-/// \brief Returns a string describing the implementation
-std::string get_name(void);
+    /// \brief Saves PMAs into files for serialization
+    /// \param c Machine config to be stored
+    /// \param dir Directory where PMAs will be stored
+    void store_pmas(const machine_config &c, const std::string &dir) const;
+};
 
 } // namespace cartesi
 

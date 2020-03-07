@@ -35,8 +35,6 @@ void rom_init(const machine_config &c, unsigned char *rom_start, uint64_t length
     if (!c.rom.bootargs.empty()) {
         strncpy(bootargs, c.rom.bootargs.c_str(), PMA_BOOTARGS_LENGTH_DEF);
         bootargs[PMA_BOOTARGS_LENGTH_DEF - 1] = '\0';
-    } else {
-        memset(bootargs, 0, PMA_BOOTARGS_LENGTH_DEF);
     }
 }
 

@@ -120,7 +120,7 @@ private:
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
     /// \param val Value read.
     /// \param text Textual description of the access.
-    uint64_t log_read(uint64_t paligned, uint64_t val, const char *text) {
+    uint64_t log_read(uint64_t paligned, uint64_t val, const char *text) const {
         static_assert(merkle_tree::get_log2_word_size() == size_log2<uint64_t>::value,
             "Machine and merkle_tree word sizes must match");
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
@@ -183,7 +183,7 @@ private:
         return scoped_note{m_log, text};
     }
 
-    uint64_t do_read_x(int reg) {
+    uint64_t do_read_x(int reg) const {
         return log_read(PMA_SHADOW_START + shadow_get_register_rel_addr(reg), m_m.get_state().x[reg], "x");
     }
 
@@ -192,7 +192,7 @@ private:
         return log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_register_rel_addr(reg), m_m.get_state().x[reg], val, "x");
     }
 
-    uint64_t do_read_pc(void) {
+    uint64_t do_read_pc(void) const {
         return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::pc), m_m.get_state().pc, "pc");
     }
 
@@ -200,7 +200,7 @@ private:
         log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::pc), m_m.get_state().pc, val, "pc");
     }
 
-	uint64_t do_read_minstret(void) {
+	uint64_t do_read_minstret(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::minstret), m_m.get_state().minstret, "minstret");
 	}
 
@@ -208,31 +208,19 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::minstret), m_m.get_state().minstret, val, "minstret");
 	}
 
-	uint64_t do_read_mvendorid(void) {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mvendorid), m_m.get_state().mvendorid, "mvendorid");
+	uint64_t do_read_mvendorid(void) const {
+		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mvendorid), m_m.MVENDORID, "mvendorid");
 	}
 
-	void do_write_mvendorid(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mvendorid), m_m.get_state().mvendorid, val, "mvendorid");
+	uint64_t do_read_marchid(void) const {
+		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::marchid), m_m.MARCHID, "marchid");
 	}
 
-	uint64_t do_read_marchid(void) {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::marchid), m_m.get_state().marchid, "marchid");
+	uint64_t do_read_mimpid(void) const {
+		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mimpid), m_m.MIMPID, "mimpid");
 	}
 
-	void do_write_marchid(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::marchid), m_m.get_state().marchid, val, "marchid");
-	}
-
-	uint64_t do_read_mimpid(void) {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mimpid), m_m.get_state().mimpid, "mimpid");
-	}
-
-	void do_write_mimpid(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mimpid), m_m.get_state().mimpid, val, "mimpid");
-	}
-
-	uint64_t do_read_mcycle(void) {
+	uint64_t do_read_mcycle(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcycle), m_m.get_state().mcycle, "mcycle");
 	}
 
@@ -240,7 +228,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcycle), m_m.get_state().mcycle, val, "mcycle");
 	}
 
-	uint64_t do_read_mstatus(void) {
+	uint64_t do_read_mstatus(void) const {
         return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mstatus), m_m.get_state().mstatus, "mstatus");
 	}
 
@@ -248,7 +236,7 @@ private:
         log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mstatus), m_m.get_state().mstatus, val, "mstatus");
 	}
 
-	uint64_t do_read_mtvec(void) {
+	uint64_t do_read_mtvec(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtvec), m_m.get_state().mtvec, "mtvec");
 	}
 
@@ -256,7 +244,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtvec), m_m.get_state().mtvec, val, "mtvec");
 	}
 
-	uint64_t do_read_mscratch(void) {
+	uint64_t do_read_mscratch(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mscratch), m_m.get_state().mscratch, "mscratch");
 	}
 
@@ -264,7 +252,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mscratch), m_m.get_state().mscratch, val, "mscratch");
 	}
 
-	uint64_t do_read_mepc(void) {
+	uint64_t do_read_mepc(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mepc), m_m.get_state().mepc, "mepc");
 	}
 
@@ -272,7 +260,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mepc), m_m.get_state().mepc, val, "mepc");
 	}
 
-	uint64_t do_read_mcause(void) {
+	uint64_t do_read_mcause(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcause), m_m.get_state().mcause, "mcause");
 	}
 
@@ -280,7 +268,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcause), m_m.get_state().mcause, val, "mcause");
 	}
 
-	uint64_t do_read_mtval(void) {
+	uint64_t do_read_mtval(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtval), m_m.get_state().mtval, "mtval");
 	}
 
@@ -288,7 +276,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtval), m_m.get_state().mtval, val, "mtval");
 	}
 
-	uint64_t do_read_misa(void) {
+	uint64_t do_read_misa(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::misa), m_m.get_state().misa, "misa");
 	}
 
@@ -296,7 +284,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::misa), m_m.get_state().misa, val, "misa");
 	}
 
-	uint64_t do_read_mie(void) {
+	uint64_t do_read_mie(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mie), m_m.get_state().mie, "mie");
 	}
 
@@ -304,7 +292,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mie), m_m.get_state().mie, val, "mie");
 	}
 
-	uint64_t do_read_mip(void) {
+	uint64_t do_read_mip(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mip), m_m.get_state().mip, "mip");
 	}
 
@@ -312,7 +300,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mip), m_m.get_state().mip, val, "mip");
 	}
 
-	uint64_t do_read_medeleg(void) {
+	uint64_t do_read_medeleg(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::medeleg), m_m.get_state().medeleg, "medeleg");
 	}
 
@@ -320,7 +308,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::medeleg), m_m.get_state().medeleg, val, "medeleg");
 	}
 
-	uint64_t do_read_mideleg(void) {
+	uint64_t do_read_mideleg(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mideleg), m_m.get_state().mideleg, "mideleg");
 	}
 
@@ -328,7 +316,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mideleg), m_m.get_state().mideleg, val, "mideleg");
 	}
 
-	uint64_t do_read_mcounteren(void) {
+	uint64_t do_read_mcounteren(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcounteren), m_m.get_state().mcounteren, "mcounteren");
 	}
 
@@ -336,7 +324,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcounteren), m_m.get_state().mcounteren, val, "mcounteren");
 	}
 
-	uint64_t do_read_stvec(void) {
+	uint64_t do_read_stvec(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stvec), m_m.get_state().stvec, "stvec");
 	}
 
@@ -344,7 +332,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stvec), m_m.get_state().stvec, val, "stvec");
 	}
 
-	uint64_t do_read_sscratch(void) {
+	uint64_t do_read_sscratch(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sscratch), m_m.get_state().sscratch, "sscratch");
 	}
 
@@ -352,7 +340,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sscratch), m_m.get_state().sscratch, val, "sscratch");
 	}
 
-	uint64_t do_read_sepc(void) {
+	uint64_t do_read_sepc(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sepc), m_m.get_state().sepc, "sepc");
 	}
 
@@ -360,7 +348,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sepc), m_m.get_state().sepc, val, "sepc");
 	}
 
-	uint64_t do_read_scause(void) {
+	uint64_t do_read_scause(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scause), m_m.get_state().scause, "scause");
 	}
 
@@ -368,7 +356,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scause), m_m.get_state().scause, val, "scause");
 	}
 
-	uint64_t do_read_stval(void) {
+	uint64_t do_read_stval(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stval), m_m.get_state().stval, "stval");
 	}
 
@@ -376,7 +364,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stval), m_m.get_state().stval, val, "stval");
 	}
 
-	uint64_t do_read_satp(void) {
+	uint64_t do_read_satp(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::satp), m_m.get_state().satp, "satp");
 	}
 
@@ -384,7 +372,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::satp), m_m.get_state().satp, val, "satp");
 	}
 
-	uint64_t do_read_scounteren(void) {
+	uint64_t do_read_scounteren(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scounteren), m_m.get_state().scounteren, "scounteren");
 	}
 
@@ -392,7 +380,7 @@ private:
 		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scounteren), m_m.get_state().scounteren, val, "scounteren");
 	}
 
-	uint64_t do_read_ilrsc(void) {
+	uint64_t do_read_ilrsc(void) const {
 		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::ilrsc), m_m.get_state().ilrsc, "ilrsc");
 	}
 
@@ -412,7 +400,7 @@ private:
         update_after_write(iflags_addr);
     }
 
-    bool do_read_iflags_H(void) {
+    bool do_read_iflags_H(void) const {
         log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.H");
         return m_m.get_state().iflags.H;
     }
@@ -441,12 +429,12 @@ private:
         update_after_write(iflags_addr);
     }
 
-    bool do_read_iflags_I(void) {
+    bool do_read_iflags_I(void) const {
         log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.I");
         return m_m.get_state().iflags.I;
     }
 
-    uint8_t do_read_iflags_PRV(void) {
+    uint8_t do_read_iflags_PRV(void) const {
         log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.PRV");
         return m_m.get_state().iflags.PRV;
     }
@@ -463,7 +451,7 @@ private:
         update_after_write(iflags_addr);
     }
 
-    uint64_t do_read_clint_mtimecmp(void) {
+    uint64_t do_read_clint_mtimecmp(void) const {
 		return log_read(PMA_CLINT_START + clint_get_csr_rel_addr(clint_csr::mtimecmp), m_m.get_state().clint.mtimecmp, "clint.mtimecmp");
     }
 
@@ -471,7 +459,7 @@ private:
         log_before_write_write_and_update(PMA_CLINT_START + clint_get_csr_rel_addr(clint_csr::mtimecmp), m_m.get_state().clint.mtimecmp, val, "clint.mtimecmp");
     }
 
-    uint64_t do_read_htif_fromhost(void) {
+    uint64_t do_read_htif_fromhost(void) const {
         return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::fromhost), m_m.get_state().htif.fromhost, "htif.fromhost");
     }
 
@@ -479,7 +467,7 @@ private:
         log_before_write_write_and_update(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::fromhost), m_m.get_state().htif.fromhost, val, "htif.fromhost");
     }
 
-    uint64_t do_read_htif_tohost(void) {
+    uint64_t do_read_htif_tohost(void) const {
         return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::tohost), m_m.get_state().htif.tohost, "htif.tohost");
     }
 
@@ -487,7 +475,7 @@ private:
         log_before_write_write_and_update(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::tohost), m_m.get_state().htif.tohost, val, "htif.tohost");
     }
 
-    void do_read_pma(const pma_entry &pma, int i) {
+    void do_read_pma(const pma_entry &pma, int i) const {
         auto istart = pma.get_istart();
         auto ilength = pma.get_ilength();
         auto rel_addr = shadow_get_pma_rel_addr(i);
@@ -495,7 +483,7 @@ private:
         log_read(PMA_SHADOW_START + rel_addr + sizeof(uint64_t), ilength, "pma.ilength");
     }
 
-    uint64_t do_read_pma_istart(int i) {
+    uint64_t do_read_pma_istart(int i) const {
         assert(i >= 0 && i < 32);
         const auto &pmas = m_m.get_pmas();
         uint64_t istart = 0;
@@ -507,7 +495,7 @@ private:
         return istart;
     }
 
-    uint64_t do_read_pma_ilength(int i) {
+    uint64_t do_read_pma_ilength(int i) const {
         assert(i >= 0 && i < 32);
         const auto &pmas = m_m.get_pmas();
         uint64_t ilength = 0;
@@ -521,7 +509,7 @@ private:
 
     template <typename T>
     void do_read_memory(uint64_t paddr, const unsigned char *hpage,
-        uint64_t hoffset, T *pval) {
+        uint64_t hoffset, T *pval) const {
         // Log access to aligned 64-bit word that contains T value
         uint64_t haligned_offset = hoffset & (~(sizeof(uint64_t)-1));
         uint64_t val64 = aliased_aligned_read<uint64_t>(hpage+haligned_offset);

@@ -19,10 +19,9 @@
 #include <string>
 #include <new>
 
-#include <grpc++/grpc++.h>
-
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
+#include <grpc++/grpc++.h>
 #include "core.grpc.pb.h"
 #pragma GCC diagnostic pop
 

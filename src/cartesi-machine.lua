@@ -60,7 +60,8 @@ where options are:
 
   --<label>-length=<num|expr>  set the byte length of the <label> filesystem
 
-  --max-mcycle                 stop at a given mcycle
+  --max-mcycle=<number>        stop at a given mcycle
+                               (default: 2305843009213693952)
 
   --step                       run a step after stopping
 
@@ -78,7 +79,11 @@ where options are:
 
   --json-steps=<filename>      output json file with steps
                                (default: none)
-  
+
+  --load=<directory>           load prebuilt machine from directory
+
+  --store=<directory>          store machine to directory
+
 ]=], arg[0]))
     os.exit()
 end
@@ -102,6 +107,8 @@ local dump = false
 local max_mcycle = 2^61
 local json_steps
 local step = false
+local store_dir = nil
+local load_dir = nil
 
 -- List of supported options
 -- Options are processed in order
@@ -197,6 +204,16 @@ local options = {
     { "^%-%-ram%-image%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         ram_image = o
+        return true
+    end },
+    { "^%-%-load%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        load_dir = o
+        return true
+    end },
+    { "^%-%-store%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        store_dir = o
         return true
     end },
     { "^%-%-json%-steps%=(.*)$", function(o)
@@ -304,7 +321,11 @@ end
 
 local function new_config()
     return setmetatable({
-        machine = cartesi.get_name(),
+        processor = {
+            mvendorid = cartesi.machine.MVENDORID,
+            marchid = cartesi.machine.MARCHID,
+            mimpid = cartesi.machine.MIMPID
+        },
         ram = {
             length = 64 << 20
         },
@@ -458,68 +479,77 @@ local function print_json_log(log, init_cycles, final_cycles, out, indent)
     out:write(' }')
 end
 
--- Resolve all device lengths
-for i, label in ipairs(backing_order) do
-    local filename = backing[label]
-    local len = get_file_length(filename)
-    assert(len, "missing backing file '" .. filename .. "' for device '" .. label .. "'")
-    if length[label] then
-        assert(len == length[label],
-               "Specified length " .. length[label] .. " for device .. '" .. label ..
-               "', but backing file '" .. filename .. "' has " .. len .. " bytes.")
-    else
-        length[label] = len
-    end
-end
 
--- Resolve all device starting positions
-if next(start) == nil then
-    -- No positions specified. Generate a starting position for all devices.
-    for i, label in ipairs(backing_order) do
-        start[label] = flash_base
-        -- make sure flash drives are separated by a power of two and at least 1MB
-        flash_base = flash_base + math.max(next_power_of_2(length[label]), 1024*1024)
-    end
+local machine
+
+if load_dir then
+    io.stderr:write("Loading machine: please wait\n")
+    machine = cartesi.machine(load_dir)
 else
-    -- At least one position specified. Must specify a starting position for all devices.
+    -- Resolve all device lengths
     for i, label in ipairs(backing_order) do
-        if not start[label] then
-            error("start position not specified for device '" .. label .. "'")
+        local filename = backing[label]
+        local len = get_file_length(filename)
+        assert(len, "missing backing file '" .. filename .. "' for device '" .. label .. "'")
+        if length[label] then
+            assert(len == length[label],
+                   "Specified length " .. length[label] .. " for device .. '" .. label ..
+                   "', but backing file '" .. filename .. "' has " .. len .. " bytes.")
+        else
+            length[label] = len
         end
     end
+
+    -- Resolve all device starting positions
+    if next(start) == nil then
+        -- No positions specified. Generate a starting position for all devices.
+        for i, label in ipairs(backing_order) do
+            start[label] = flash_base
+            -- make sure flash drives are separated by a power of two and at least 1MB
+            flash_base = flash_base + math.max(next_power_of_2(length[label]), 1024*1024)
+        end
+    else
+        -- At least one position specified. Must specify a starting position for all devices.
+        for i, label in ipairs(backing_order) do
+            if not start[label] then
+                error("start position not specified for device '" .. label .. "'")
+            end
+        end
+    end
+
+
+    local config = new_config(
+    ):set_ram_image(
+        ram_image
+    ):set_rom_image(
+        rom_image
+    ):set_memory_size(
+        memory_size
+    )
+
+
+    local mtdparts = {}
+    for i, label in ipairs(backing_order) do
+        config = config:append_drive{
+            backing = backing[label],
+            shared = shared[label],
+            start = start[label],
+            length = length[label]
+        }
+        mtdparts[#mtdparts+1] = string.format("flash.%d:-(%s)", i-1, label)
+    end
+
+    config = config:append_cmdline(
+        "mtdparts=" .. table.concat(mtdparts, ";")
+    ):append_cmdline(
+        cmdline
+    ):set_interactive(
+        not batch
+    )
+
+    io.stderr:write("Building machine: please wait\n")
+    machine = cartesi.machine(config)
 end
-
-
-local config = new_config(
-):set_ram_image(
-    ram_image
-):set_rom_image(
-    rom_image
-):set_memory_size(
-    memory_size
-)
-
-
-local mtdparts = {}
-for i, label in ipairs(backing_order) do
-    config = config:append_drive{
-        backing = backing[label],
-        shared = shared[label],
-        start = start[label],
-        length = length[label]
-    }
-    mtdparts[#mtdparts+1] = string.format("flash.%d:-(%s)", i-1, label)
-end
-
-config = config:append_cmdline(
-    "mtdparts=" .. table.concat(mtdparts, ";")
-):append_cmdline(
-    cmdline
-):set_interactive(
-    not batch
-)
-
-local machine = cartesi.machine(config)
 
 if not json_steps then
     if dump then
@@ -542,7 +572,10 @@ if not json_steps then
     if final_hash then
         print_root_hash(machine)
     end
-    machine:destroy() -- redundant: garbage collector would take care of this
+    if store_dir then
+        io.stderr:write("Storing machine: please wait\n")
+        machine:store(store_dir)
+    end
     os.exit(payload, true)
 else
     json_steps = assert(io.open(json_steps, "w"))
@@ -560,4 +593,8 @@ else
     end
     json_steps:write(' ]\n')
     json_steps:close()
+    if store_dir then
+        io.stderr:write("Storing machine: please wait\n")
+        machine:store(store_dir)
+    end
 end

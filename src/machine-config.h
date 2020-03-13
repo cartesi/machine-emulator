@@ -74,12 +74,14 @@ struct flash_config final {
 };
 
 struct clint_config final {
-    uint64_t mtimecmp{0};
+    uint64_t mtimecmp{MTIMECMP_INIT};
 };
 
 struct htif_config final {
-    uint64_t fromhost{0};
-    uint64_t tohost{0};
+    uint64_t fromhost{FROMHOST_INIT};
+    uint64_t tohost{TOHOST_INIT};
+    bool interact{false};
+    bool yield{false};
 };
 
 /// \brief FLASH constants
@@ -96,7 +98,6 @@ struct machine_config final {
     flash_configs flash{};
     clint_config clint{};
     htif_config htif{};
-    bool interactive{false};
 
     /// \brief Get the name where config will be stored in a directory
     static std::string get_config_name(const std::string &dir);

@@ -429,14 +429,24 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         //Setting CLINT configs
         if (ms.has_clint()) {
             const auto &clint = ms.clint();
-            c.clint.mtimecmp = clint.mtimecmp();
+            if (clint.mtimecmp_oneof_case() == CLINTConfig::kMtimecmp) {
+                c.clint.mtimecmp = clint.mtimecmp();
+            }
         }
 
         //Setting HTIF configs
         if (ms.has_htif()) {
             const auto &htif = ms.htif();
-            c.htif.fromhost = htif.fromhost();
-            c.htif.tohost = htif.tohost();
+            if (htif.fromhost() == HTIFConfig::kFromhost) {
+                c.htif.fromhost = htif.fromhost();
+            }
+            if (htif.tohost() == HTIFConfig::kTohost) {
+                c.htif.tohost = htif.tohost();
+            }
+            // zero default when missing is ok
+            c.htif.interact = htif.interact();
+            // zero default when missing is ok
+            c.htif.yield = htif.yield();
         }
 
         return c;
@@ -517,6 +527,8 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             context_.machine->run(limit);
             response->set_mcycle(context_.machine->read_mcycle());
             response->set_tohost(context_.machine->read_htif_tohost());
+            response->set_iflags_h(context_.machine->read_iflags_H());
+            response->set_iflags_y(context_.machine->read_iflags_Y());
             dbg("Run finished");
             return Status::OK;
         } catch (std::exception& e) {

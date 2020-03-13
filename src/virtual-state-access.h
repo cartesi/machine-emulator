@@ -61,16 +61,16 @@ private:
         m_a.reset_iflags_I();
         // Tell inner loop mip/mie have been modified, so it
         // may break out if need be
-        m_a.get_naked_state().set_brk_from_mip_mie();
+        m_a.get_naked_state().or_brk_with_mip_mie();
     }
 
     void do_reset_mip(uint32_t mask) override {
         uint32_t mip = m_a.read_mip();
         mip &= ~mask;
         m_a.write_mip(mip);
-        // Tell inner loop mip/mie have been modified, so it
-        // may break out if need be
-        m_a.get_naked_state().set_brk_from_mip_mie();
+        // Tell inner loop mip/mie have been modified, so whatever
+        // reason it had to break may not exist anymore
+        m_a.get_naked_state().set_brk_from_all();
     }
 
     uint32_t do_read_mip(void) override {
@@ -83,8 +83,14 @@ private:
 
     void do_set_iflags_H(void) override {
         m_a.set_iflags_H();
-        // Tell inner loop H has been modified, so it can break out
-        m_a.get_naked_state().set_brk_from_iflags_H();
+        // Tell inner loop H has been set, so it must break out
+        m_a.get_naked_state().brk = true;
+    }
+
+    void do_set_iflags_Y(void) override {
+        m_a.set_iflags_Y();
+        // Tell inner loop Y has been set, so it can break out
+        m_a.get_naked_state().brk = true;
     }
 
     uint64_t do_read_clint_mtimecmp(void) override {

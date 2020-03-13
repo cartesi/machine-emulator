@@ -67,7 +67,9 @@ where options are:
 
   --cmdline                    pass additional command-line arguments to kernel
 
-  --batch                      run in batch mode
+  --batch                      run in non-interactive mode
+
+  --yield                      honor yield requests by target
 
   --initial-hash               prints initial hash before running
 
@@ -83,6 +85,7 @@ where options are:
   --load=<directory>           load prebuilt machine from directory
 
   --store=<directory>          store machine to directory
+
 
 ]=], arg[0]))
     os.exit()
@@ -100,6 +103,7 @@ local rom_image = "rom.bin"
 local cmdline = ""
 local memory_size = 64
 local batch = false
+local yield = false
 local initial_hash = false
 local final_hash = false
 local ignore_payload = false
@@ -129,6 +133,11 @@ local options = {
     { "^%-%-batch$", function(all)
         if not all then return false end
         batch = true
+        return true
+    end },
+    { "^%-%-yield$", function(all)
+        if not all then return false end
+        yield = true
         return true
     end },
     { "^%-%-(%w+)-backing%=(.+)$", function(d, f)
@@ -299,10 +308,18 @@ function config_meta.__index:append_cmdline(cmdline)
     return self
 end
 
-function config_meta.__index:set_interactive(interactive)
-    self.interactive = interactive
+function config_meta.__index:set_interact(interact)
+    self.htif = self.htif or {}
+    self.htif.interact = interact
     return self
 end
+
+function config_meta.__index:set_yield(yield)
+    self.htif = self.htif or {}
+    self.htif.yield = yield
+    return self
+end
+
 
 function config_meta.__index:set_memory_size(memory_size)
     self.ram.length = memory_size << 20
@@ -332,7 +349,9 @@ local function new_config()
         rom = {
             bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw",
         },
-        interactive = true,
+        htif = {
+            interact = true,
+        },
         flash = {},
         _flash_id = 1,
     }, config_meta)
@@ -543,8 +562,10 @@ else
         "mtdparts=" .. table.concat(mtdparts, ";")
     ):append_cmdline(
         cmdline
-    ):set_interactive(
+    ):set_interact(
         not batch
+    ):set_yield(
+        yield
     )
 
     io.stderr:write("Building machine: please wait\n")
@@ -558,17 +579,31 @@ if not json_steps then
     if initial_hash then
         print_root_hash(machine)
     end
-    machine:run(max_mcycle)
-    local payload = 0
-    if machine:read_iflags_H() then
-        payload = (machine:read_tohost() & (~1 >> 16)) >> 1
-        io.stderr:write("payload: ", payload, "\n")
-    elseif step then
+    local cycles = 0
+    while cycles < max_mcycle do
+        machine:run(max_mcycle)
+        cycles = machine:read_mcycle()
+        if machine:read_iflags_H() then
+            local payload = machine:read_tohost() << 16 >> 17
+            io.stderr:write("\nHalted with payload: ", payload, "\n")
+            io.stderr:write("Cycles: ", cycles, "\n")
+            break
+        elseif machine:read_iflags_Y() then
+            local tohost = machine:read_tohost()
+            local cmd = tohost << 8 >> 56
+            local data = tohost << 16 >> 16
+            if cmd == 0 then
+                io.stderr:write("Progress: ", data, "\r")
+            else
+                io.stderr:write("\nYielded cmd: ", cmd, ", data: ", data, "\n")
+                io.stderr:write("Cycles: ", cycles, "\n")
+            end
+        end
+    end
+    if step then
         io.stderr:write("Gathering step proof: please wait\n")
         print_log(machine:step())
     end
-    local cycles = machine:read_mcycle()
-    io.stderr:write("cycles: ", cycles, "\n")
     if final_hash then
         print_root_hash(machine)
     end

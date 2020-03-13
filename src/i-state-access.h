@@ -443,6 +443,25 @@ public:
         return derived().do_read_iflags_I();
     }
 
+    /// \brief Sets the iflags_Y flag.
+    /// \details This is Cartesi-specific.
+    void set_iflags_Y(void) {
+        return derived().do_set_iflags_Y();
+    }
+
+    /// \brief Resets the iflags_Y flag.
+    /// \details This is Cartesi-specific.
+    void reset_iflags_Y(void) {
+        return derived().do_reset_iflags_Y();
+    }
+
+    /// \brief Reads the iflags_Y flag.
+    /// \returns The flag value.
+    /// \details This is Cartesi-specific.
+    bool read_iflags_Y(void) {
+        return derived().do_read_iflags_Y();
+    }
+
     /// \brief Reads the current privilege mode from iflags_PRV.
     /// \details This is Cartesi-specific.
     /// \returns Current privilege mode.

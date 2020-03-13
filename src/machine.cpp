@@ -226,7 +226,7 @@ void machine::interact(void) {
 machine::machine(const machine_config &c):
     m_s{},
     m_t{},
-    m_h{*this, c.interactive},
+    m_h{*this, c.htif},
     m_c{c} {
 
     // Check compatibility
@@ -572,7 +572,7 @@ uint64_t machine::read_mip(void) const {
 
 void machine::write_mip(uint64_t mip) {
     m_s.mip = mip;
-    m_s.set_brk_from_mip_mie();
+    m_s.set_brk_from_all();
 }
 
 uint64_t machine::read_mie(void) const {
@@ -581,7 +581,7 @@ uint64_t machine::read_mie(void) const {
 
 void machine::write_mie(uint64_t val) {
     m_s.mie = val;
-    m_s.set_brk_from_mip_mie();
+    m_s.set_brk_from_all();
 }
 
 uint64_t machine::read_medeleg(void) const {
@@ -678,7 +678,7 @@ uint64_t machine::read_iflags(void) const {
 
 void machine::write_iflags(uint64_t val) {
     m_s.write_iflags(val);
-    m_s.set_brk_from_iflags_H();
+    m_s.set_brk_from_all();
 }
 
 uint64_t machine::read_htif_tohost(void) const {
@@ -708,12 +708,12 @@ void machine::write_clint_mtimecmp(uint64_t val) {
 void machine::set_mip(uint32_t mask) {
     m_s.mip |= mask;
     m_s.iflags.I = false;
-    m_s.set_brk_from_mip_mie();
+    m_s.or_brk_with_mip_mie();
 }
 
 void machine::reset_mip(uint32_t mask) {
     m_s.mip &= ~mask;
-    m_s.set_brk_from_mip_mie();
+    m_s.set_brk_from_all();
 }
 
 uint8_t machine::read_iflags_PRV(void) const {
@@ -728,13 +728,30 @@ void machine::reset_iflags_I(void) {
     m_s.iflags.I = false;
 }
 
+void machine::set_iflags_I(void) {
+    m_s.iflags.I = true;
+}
+
+bool machine::read_iflags_Y(void) const {
+    return m_s.iflags.Y;
+}
+
+void machine::reset_iflags_Y(void) {
+    m_s.iflags.Y = false;
+}
+
+void machine::set_iflags_Y(void) {
+    m_s.iflags.Y = true;
+    m_s.brk = true;
+}
+
 bool machine::read_iflags_H(void) const {
     return m_s.iflags.H;
 }
 
 void machine::set_iflags_H(void) {
     m_s.iflags.H = true;
-    m_s.set_brk_from_iflags_H();
+    m_s.brk = true;
 }
 
 static double now(void) {
@@ -1091,6 +1108,11 @@ void machine::run(uint64_t mcycle_end) {
         // If we hit mcycle_end, we are done
         mcycle = read_mcycle();
         if (mcycle >= mcycle_end) {
+            return;
+        }
+
+        // If we yielded, we are done
+        if (read_iflags_Y()) {
             return;
         }
 

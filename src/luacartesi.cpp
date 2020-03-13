@@ -401,6 +401,8 @@ static void check_htif_config(lua_State *L, int tabidx, machine_config &c) {
         return;
     c.htif.tohost = opt_uint_field(L, -1, "tohost", c.htif.tohost);
     c.htif.fromhost = opt_uint_field(L, -1, "fromhost", c.htif.fromhost);
+    c.htif.interact = opt_boolean_field(L, -1, "interact", c.htif.interact);
+    c.htif.yield = opt_boolean_field(L, -1, "yield", c.htif.yield);
     lua_pop(L, 1);
 }
 
@@ -429,7 +431,6 @@ static machine_config check_machine_config(lua_State *L, int tabidx) {
     check_flash_config(L, tabidx, c);
     check_htif_config(L, tabidx, c);
     check_clint_config(L, tabidx, c);
-    c.interactive = opt_boolean_field(L, tabidx, "interactive", false);
     return c;
 }
 
@@ -635,11 +636,22 @@ static int machine_meta__index_read_tohost(lua_State *L) try {
     return 0;
 }
 
-/// \brief This is the machine:read_tohost() method implementation.
+/// \brief This is the machine:read_iflags_H() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_iflags_H(lua_State *L) try {
     machine *m = check_machine(L, 1);
     lua_pushboolean(L, m->read_iflags_H());
+    return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+/// \brief This is the machine:read_iflags_Y() method implementation.
+/// \param L Lua state.
+static int machine_meta__index_read_iflags_Y(lua_State *L) try {
+    machine *m = check_machine(L, 1);
+    lua_pushboolean(L, m->read_iflags_Y());
     return 1;
 } catch (std::exception &x) {
     luaL_error(L, x.what());
@@ -796,6 +808,7 @@ static const luaL_Reg machine_meta__index[] = {
     {"read_mcycle", machine_meta__index_read_mcycle},
     {"read_tohost", machine_meta__index_read_tohost},
     {"read_iflags_H", machine_meta__index_read_iflags_H},
+    {"read_iflags_Y", machine_meta__index_read_iflags_Y},
     {"update_merkle_tree", machine_meta__index_update_merkle_tree},
     {"verify_merkle_tree", machine_meta__index_verify_merkle_tree},
     {"store", machine_meta__index_store},

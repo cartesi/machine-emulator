@@ -1438,7 +1438,7 @@ static bool write_csr_sie(STATE_ACCESS &a, uint64_t val) {
     uint64_t mask = a.read_mideleg();
     uint64_t mie = a.read_mie();
     a.write_mie((mie & ~mask) | (val & mask));
-    a.get_naked_state().set_brk_from_mip_mie();
+    a.get_naked_state().set_brk_from_all();
     return true;
 }
 
@@ -1484,7 +1484,7 @@ static bool write_csr_sip(STATE_ACCESS &a, uint64_t val) {
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
-    a.get_naked_state().set_brk_from_mip_mie();
+    a.get_naked_state().set_brk_from_all();
     return true;
 }
 
@@ -1542,7 +1542,7 @@ template <typename STATE_ACCESS>
 static bool write_csr_mie(STATE_ACCESS &a, uint64_t val) {
     const uint64_t mask = MIP_MSIP_MASK | MIP_MTIP_MASK | MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
     a.write_mie((a.read_mie() & ~mask) | (val & mask));
-    a.get_naked_state().set_brk_from_mip_mie();
+    a.get_naked_state().set_brk_from_all();
     return true;
 }
 
@@ -1608,7 +1608,7 @@ static bool write_csr_mip(STATE_ACCESS &a, uint64_t val) {
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
-    a.get_naked_state().set_brk_from_mip_mie();
+    a.get_naked_state().set_brk_from_all();
     return true;
 }
 
@@ -1920,7 +1920,8 @@ static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t 
     // Go to power down if no enabled interrupts are pending
     if ((mip & mie) == 0) {
         a.set_iflags_I();
-        a.get_naked_state().brk = true; // set brk so the outer loop can skip time if it wants too
+        // set brk so the outer loop can skip time if it wants too
+        a.get_naked_state().brk = true;
     }
     return advance_to_next_insn(a, pc);
 }
@@ -3063,9 +3064,12 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         return interpreter_status::success;
     }
 
-    // Set break flag considering only interrupts, since we
-    // know we are not halted
-    a.get_naked_state().set_brk_from_mip_mie();
+    // Clear Y bit because we are back here running, so we either were
+    // just resumed, or we had not even yielded
+    a.reset_iflags_Y();
+
+    // Rebuild brk flag from all conditions.
+    a.get_naked_state().set_brk_from_all();
 
     // Raise the highest priority pending interrupt, if any
     raise_interrupt_if_any(a);

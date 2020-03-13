@@ -125,6 +125,8 @@ template <typename ARX>
 void serialize(ARX &ar, cartesi::htif_config &h, const unsigned int) {
     ar & h.fromhost;
     ar & h.tohost;
+    ar & h.interact;
+    ar & h.yield;
 }
 
 
@@ -136,7 +138,6 @@ void serialize(ARX &ar, cartesi::machine_config &m, const unsigned int) {
     ar & m.flash;
     ar & m.clint;
     ar & m.htif;
-    ar & m.interactive;
 }
 
 } } // namespace boost::serialization

@@ -399,7 +399,7 @@ public:
 
     /// \brief Returns packed iflags from its component fields.
     /// \returns The value of the register.
-    uint64_t packed_iflags(int PRV, int I, int H);
+    uint64_t packed_iflags(int PRV, int I, int Y, int H);
 
     /// \brief Reads the value of the iflags register.
     /// \param val New register value.
@@ -438,13 +438,18 @@ public:
     /// \brief Resets the value of the iflags_I flag.
     void reset_iflags_I(void);
 
-    /// \brief Sets bits in mip.
-    /// \param mask Bits set in \p mask will also be set in mip
-    void set_mip(uint32_t mask);
+    /// \brief Sets the iflags_I flag.
+    void set_iflags_I(void);
 
-    /// \brief Resets bits in mip.
-    /// \param mask Bits set in \p mask will also be reset in mip
-    void reset_mip(uint32_t mask);
+    /// \brief Checks the value of the iflags_Y flag.
+    /// \returns The flag value.
+    bool read_iflags_Y(void) const;
+
+    /// \brief Resets the value of the iflags_Y flag.
+    void reset_iflags_Y(void);
+
+    /// \brief Sets the iflags_Y flag.
+    void set_iflags_Y(void);
 
     /// \brief Checks the value of the iflags_H flag.
     /// \returns The flag value.
@@ -456,6 +461,14 @@ public:
 
     /// \brief Sets the iflags_H flag.
     void set_iflags_H(void);
+
+    /// \brief Sets bits in mip.
+    /// \param mask Bits set in \p mask will also be set in mip
+    void set_mip(uint32_t mask);
+
+    /// \brief Resets bits in mip.
+    /// \param mask Bits set in \p mask will also be reset in mip
+    void reset_mip(uint32_t mask);
 
     /// \brief Register a new memory region using the host's mmap functionality.
     /// \param start Start of physical memory range in the target address

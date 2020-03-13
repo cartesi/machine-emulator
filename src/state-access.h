@@ -276,12 +276,24 @@ private:
         return m_m.get_state().iflags.H;
     }
 
+    void do_set_iflags_Y(void) {
+        m_m.get_state().iflags.Y = true;
+    }
+
+    void do_reset_iflags_Y(void) {
+        m_m.get_state().iflags.Y = false;
+    }
+
+    bool do_read_iflags_Y(void) const {
+        return m_m.get_state().iflags.Y;
+    }
+
     void do_set_iflags_I(void) {
         m_m.get_state().iflags.I = true;
     }
 
     void do_reset_iflags_I(void) {
-        m_m.get_state().iflags.H = false;
+        m_m.get_state().iflags.I = false;
     }
 
     bool do_read_iflags_I(void) const {

@@ -20,6 +20,8 @@
 #include <cstdint>
 #include <termios.h>
 
+#include "machine-config.h"
+
 /// \file
 /// \brief Host-Target interface device.
 
@@ -30,19 +32,32 @@ class machine;
 
 /// \brief HTIF constants
 enum HTIF_constants {
-    HTIF_INTERACT_DIVISOR = 10, ///< Proportion of interacts to ignore
+    HTIF_INTERACT_DIVISOR = 10,  ///< Proportion of interacts to ignore
     HTIF_CONSOLE_BUF_SIZE = 1024 ///< Number of characters in console input buffer
+};
+
+/// \brief HTIF devices
+enum HTIF_devices {
+    HTIF_DEVICE_HALT = 0,        ///< Used to halt machine
+    HTIF_DEVICE_CONSOLE = 1,     ///< Used for console input and output
+    HTIF_DEVICE_YIELD = 2,       ///< Used to yield control back to host
+};
+
+/// \brief HTIF commands
+enum HTIF_commands {
+    HTIF_CONSOLE_GETCHAR = 0,
+    HTIF_CONSOLE_PUTCHAR = 1
 };
 
 /// \brief Host-Target interface implementation
 class htif final {
 
     machine &m_machine;                    ///< Associated machine.
-    bool m_interactive;                    ///< Running in interactive mode.
+    bool m_interact;                       ///< Interact with console.
+    bool m_yield;                          ///< Accept yield requests.
     char m_buf[HTIF_CONSOLE_BUF_SIZE];     ///< Console buffer.
     ssize_t m_buf_pos;                     ///< Next character in buffer.
     ssize_t m_buf_len;                     ///< Last character in buffer.
-    bool m_fromhost_pending;               ///< fromhost is pending.
     int m_divisor_counter;                 ///< Ignored calls to interact.
     int m_ttyfd;                           ///< The tty file descriptor.
     struct termios m_oldtty;               ///< Saved termios values.
@@ -62,9 +77,10 @@ public:
 
     /// \brief Constructor
     /// \param m Associated machine.
-    /// \param interactive This is an interactive session with terminal support.
+    /// \param interact This is an interactive session with terminal support.
+    /// \param yield Accept yield requests from target.
     /// \details The constructor for the associated machine is typically done yet when the constructor for the HTIF device is invoked.
-    htif(machine &m, bool interactive);
+    htif(machine &m, const htif_config &h);
 
     /// \brief Registers device with the machine
     /// \param start Start address for memory range.
@@ -77,20 +93,21 @@ public:
     /// \brief Destructor
     ~htif();
 
-    /// \brief Resets the fromhost pending flag
-    void reset_fromhost_pending(void);
-
-    /// \brief Checks the fromhost pending flag
-    bool fromhost_pending(void) const;
-
-    /// \brief Checks the if HTIF is interactive
+    /// \brief Checks if HTIF interacts with console
     bool is_interactive(void) const;
+
+    /// \brief Checks if HTIF honors yield requests
+    bool is_yieldable(void) const;
 
     /// \brief Returns the associated machine
     const machine &get_machine(void) const;
 
     /// \brief Checks if there is input available from console.
     void poll_console(void);
+
+    bool console_has_char(void) const;
+
+    int console_get_char(void);
 
     /// \brief Mapping between CSRs and their relative addresses in HTIF memory
     enum class csr {
@@ -102,6 +119,10 @@ public:
     /// \param reg CSR name.
     /// \returns The address.
     static uint64_t get_csr_rel_addr(csr reg);
+
+    /// \brief Gets the next available console character
+    /// \returns The character, or 0 if none are available.
+    char console_next_char(void);
 
 private:
 

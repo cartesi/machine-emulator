@@ -283,15 +283,16 @@ enum COUNTEREN_rw_masks: uint64_t {
 /// \brief Cartesi-specific iflags shifts
 enum IFLAGS_shifts {
     IFLAGS_H_SHIFT  = 0,
-    IFLAGS_I_SHIFT  = 1,
-    IFLAGS_PRV_SHIFT= 2
+    IFLAGS_Y_SHIFT  = 1,
+    IFLAGS_I_SHIFT  = 2,
+    IFLAGS_PRV_SHIFT= 3
 };
 
 /// \brief Initial values for Cartesi machines
 enum CARTESI_init: uint64_t {
     PC_INIT         = UINT64_C(0x1000), ///< Initial value for pc
     MVENDORID_INIT  = UINT64_C(0x6361727465736920), ///< Initial value for mvendorid
-    MARCHID_INIT    = UINT64_C(1), ///< Initial value for marchid
+    MARCHID_INIT    = UINT64_C(2), ///< Initial value for marchid
     MIMPID_INIT     = UINT64_C(1), ///< Initial value for mimpid
     MCYCLE_INIT     = UINT64_C(0), ///< Initial value for mcycle
     MINSTRET_INIT   = UINT64_C(0), ///< Initial value for minstret
@@ -318,7 +319,10 @@ enum CARTESI_init: uint64_t {
     SATP_INIT       = UINT64_C(0), ///< Initial value for satp
     SCOUNTEREN_INIT = UINT64_C(0), ///< Initial value for scounteren
     ILRSC_INIT      = UINT64_C(-1), ///< Initial value for ilrsc
-    IFLAGS_INIT    = static_cast<uint64_t>(PRV_M) << IFLAGS_PRV_SHIFT, ///< Initial value for iflags
+    IFLAGS_INIT     = static_cast<uint64_t>(PRV_M) << IFLAGS_PRV_SHIFT, ///< Initial value for iflags
+    MTIMECMP_INIT   = UINT64_C(0),  ///< Initial value for mtimecmp
+    FROMHOST_INIT   = UINT64_C(0),  ///< Initial value for fromhost
+    TOHOST_INIT     = UINT64_C(0),  ///< Initial value for tohost
 };
 
 /// \brief Mapping between CSR names and addresses

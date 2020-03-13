@@ -75,7 +75,7 @@ jobs:
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: ${{ steps.git_org.outputs.current_organization }}/image-kernel
-          tag: 'v0.3.0'
+          tag: 'v0.4.0'
           file: kernel.bin
           token: ${{ secrets.CI_TOKEN }}
 

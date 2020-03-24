@@ -52,7 +52,6 @@ enum HTIF_commands {
 /// \brief Host-Target interface implementation
 class htif final {
 
-    machine &m_machine;                    ///< Associated machine.
     bool m_interact;                       ///< Interact with console.
     bool m_yield;                          ///< Accept yield requests.
     char m_buf[HTIF_CONSOLE_BUF_SIZE];     ///< Console buffer.
@@ -80,12 +79,7 @@ public:
     /// \param interact This is an interactive session with terminal support.
     /// \param yield Accept yield requests from target.
     /// \details The constructor for the associated machine is typically done yet when the constructor for the HTIF device is invoked.
-    htif(machine &m, const htif_config &h);
-
-    /// \brief Registers device with the machine
-    /// \param start Start address for memory range.
-    /// \param length Length of memory range.
-    void register_device(uint64_t start, uint64_t length);
+    htif(const htif_config &h);
 
     /// \brief Interact with the hosts's terminal.
     void interact(void);
@@ -133,6 +127,18 @@ private:
     void end_console(void);
 
 };
+
+/// \brief Creates a PMA entry for the HTIF device
+/// \param start Start address for memory range.
+/// \param length Length of memory range.
+/// \returns Corresponding PMA entry
+pma_entry make_htif_pma_entry(htif &h, uint64_t start, uint64_t length);
+
+/// \brief Creates a mock PMA entry for the HTIF device
+/// \param start Start address for memory range.
+/// \param length Length of memory range.
+/// \returns Corresponding PMA entry
+pma_entry make_htif_pma_entry(uint64_t start, uint64_t length);
 
 } // namespace cartesi
 

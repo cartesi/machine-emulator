@@ -54,6 +54,14 @@ private:
     // Declare interface as friend to it can forward calls to the "overriden" methods.
     friend i_state_access<state_access>;
 
+    const machine_state &do_get_naked_state(void) const {
+        return m_m.get_state();
+    }
+
+    machine_state &do_get_naked_state(void) {
+        return m_m.get_state();
+    }
+
     void do_push_bracket(bracket_type type, const char *text) {
         (void) type; (void) text;
     }
@@ -332,12 +340,7 @@ private:
         m_m.get_state().htif.tohost = val;
     }
 
-    void do_read_pma(const pma_entry &pma, int i) const {
-        (void) i; (void) pma;
-    }
-
     uint64_t do_read_pma_istart(int i) const {
-        assert(i >= 0 && i < 32);
         const auto &pmas = m_m.get_pmas();
         uint64_t istart = 0;
         if (i >= 0 && i < static_cast<int>(pmas.size())) {
@@ -370,12 +373,28 @@ private:
         aliased_aligned_write(hpage+hoffset, val);
     }
 
-    machine &do_get_naked_machine(void) {
-        return m_m;
-    }
-
-    const machine &do_get_naked_machine(void) const {
-        return m_m;
+    template <typename T>
+    pma_entry &do_find_pma_entry(uint64_t paddr) {
+        int i = 0;
+        while (1) {
+            auto &pma = m_m.get_state().pmas[i];
+            // The pmas array always contain a sentinel. It is an entry with
+            // zero length. If we hit it, return it
+            if (pma.get_length() == 0)
+                return pma;
+            // Otherwise, if we found an entry where the access fits, return it
+            // Note the "strange" order of arithmetic operations.
+            // This is to ensure there is no overflow.
+            // Since we know paddr >= start, there is no chance of overflow
+            // in the first subtraction.
+            // Since length is at least 4096 (an entire page), there is no
+            // chance of overflow in the second subtraction.
+            if (paddr >= pma.get_start() &&
+                paddr - pma.get_start() <= pma.get_length() - sizeof(T)) {
+                return pma;
+            }
+            i++;
+        }
     }
 
 };

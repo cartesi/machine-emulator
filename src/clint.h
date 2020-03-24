@@ -19,6 +19,8 @@
 
 #include <cstdint>
 
+#include "pma.h"
+
 /// \file
 /// \brief Clock interruptor device.
 
@@ -38,11 +40,11 @@ enum class clint_csr {
 /// \returns The address.
 uint64_t clint_get_csr_rel_addr(clint_csr reg);
 
-/// \brief Registers a CLINT device with the machine
-/// \param m Associated machine.
+/// \brief Creates a PMA entry for the CLINT device
 /// \param start Start address for memory range.
 /// \param length Length of memory range.
-void clint_register_device(machine &m, uint64_t start, uint64_t length);
+/// \returns Corresponding PMA entry
+pma_entry make_clint_pma_entry(uint64_t start, uint64_t length);
 
 } // namespace cartesi
 

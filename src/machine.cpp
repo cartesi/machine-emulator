@@ -117,28 +117,7 @@ static inline const pma_entry &naked_find_pma_entry(const machine_state &s, uint
         const_cast<machine_state &>(s), paddr));
 }
 
-/// \brief Memory range peek callback. See ::pma_peek.
-static bool memory_peek(const pma_entry &pma, uint64_t page_address, const unsigned char **page_data, unsigned char *scratch) {
-    // If page_address is not aligned, or if it is out of range, return error
-    if ((page_address & (PMA_PAGE_SIZE-1)) != 0 ||
-        page_address > pma.get_length()) {
-        *page_data = nullptr;
-        return false;
-    }
-    // If page is only partially inside range, copy to scratch
-    if (page_address + PMA_PAGE_SIZE > pma.get_length()) {
-        memset(scratch, 0, PMA_PAGE_SIZE);
-        memcpy(scratch, pma.get_memory().get_host_memory() + page_address, pma.get_length() - page_address);
-        *page_data = scratch;
-        return true;
-    // Otherwise, return pointer direclty into host memory
-    } else {
-        *page_data = pma.get_memory().get_host_memory() + page_address;
-        return true;
-    }
-}
-
-pma_entry &machine::allocate_pma_entry(pma_entry &&pma) {
+pma_entry &machine::register_pma_entry(pma_entry &&pma) {
     if (m_s.pmas.capacity() <= m_s.pmas.size())
         throw std::runtime_error{"too many PMAs"};
     auto start = pma.get_start();
@@ -158,67 +137,6 @@ pma_entry &machine::allocate_pma_entry(pma_entry &&pma) {
     return m_s.pmas.back();
 }
 
-pma_entry &machine::register_host_mmapd_memory(uint64_t start, uint64_t length,
-    const pma_entry::flags &f, const char *path, bool shared) {
-    return allocate_pma_entry(
-        pma_entry{
-            start,
-            length,
-            pma_memory{
-                length,
-                path,
-                pma_memory::mmapd{shared}
-            },
-            memory_peek
-        }.set_flags(f)
-    );
-}
-
-pma_entry &machine::register_host_callocd_memory(uint64_t start,
-    uint64_t length, const pma_entry::flags &f) {
-    return allocate_pma_entry(
-        pma_entry{
-            start,
-            length,
-            pma_memory{
-                length,
-                pma_memory::callocd{}
-            },
-            memory_peek
-        }.set_flags(f)
-    );
-}
-
-pma_entry &machine::register_host_callocd_memory(uint64_t start,
-    uint64_t length, const pma_entry::flags &f, const std::string &path) {
-    return allocate_pma_entry(
-        pma_entry{
-            start,
-            length,
-            pma_memory{
-                length,
-                path,
-                pma_memory::callocd{}
-            },
-            memory_peek
-        }.set_flags(f)
-    );
-}
-
-void machine::register_device(uint64_t start, uint64_t length, const pma_entry::flags &f, pma_peek peek, void *context, const pma_driver *driver) {
-    allocate_pma_entry(
-        pma_entry{
-            start,
-            length,
-            pma_device{
-                context,
-                driver
-            },
-            peek
-        }.set_flags(f)
-    );
-}
-
 void machine::interact(void) {
     m_h.interact();
 }
@@ -226,7 +144,7 @@ void machine::interact(void) {
 machine::machine(const machine_config &c):
     m_s{},
     m_t{},
-    m_h{*this, c.htif},
+    m_h{c.htif},
     m_c{c} {
 
     // Check compatibility
@@ -277,42 +195,45 @@ machine::machine(const machine_config &c):
 
     // Register RAM
     if (c.ram.backing.empty()) {
-        register_host_callocd_memory(PMA_RAM_START, c.ram.length, m_ram_flags);
+        register_pma_entry(make_callocd_memory_pma_entry(PMA_RAM_START,
+            c.ram.length, m_ram_flags));
     } else {
-        register_host_callocd_memory(PMA_RAM_START, c.ram.length, m_ram_flags,
-            c.ram.backing);
+        register_pma_entry(make_callocd_memory_pma_entry(PMA_RAM_START,
+            c.ram.length, m_ram_flags, c.ram.backing));
     }
 
     // Register ROM
-    pma_entry &rom = register_host_callocd_memory(PMA_ROM_START, PMA_ROM_LENGTH,
-        m_rom_flags, c.rom.backing);
+    pma_entry &rom = register_pma_entry(make_callocd_memory_pma_entry(
+        PMA_ROM_START, PMA_ROM_LENGTH, m_rom_flags, c.rom.backing));
 
     // Register all flash drives
     for (const auto &f: c.flash) {
         // Flash drive with no backing behaves just like memory, but with
         // different flags
         if (f.backing.empty()) {
-            register_host_callocd_memory(f.start, f.length, m_flash_flags);
+            register_pma_entry(make_callocd_memory_pma_entry(f.start,
+                f.length, m_flash_flags));
         } else {
-            register_host_mmapd_memory(f.start, f.length, m_flash_flags,
-                f.backing.c_str(), f.shared);
+            register_pma_entry(make_mmapd_memory_pma_entry(f.start,
+                f.length, m_flash_flags, f.backing, f.shared));
         }
     }
 
     // Register HTIF device
-    m_h.register_device(PMA_HTIF_START, PMA_HTIF_LENGTH);
+    register_pma_entry(make_htif_pma_entry(m_h,
+            PMA_HTIF_START, PMA_HTIF_LENGTH));
 
     // Copy HTIF state to from config to machine
     write_htif_tohost(c.htif.tohost);
     write_htif_fromhost(c.htif.fromhost);
 
     // Resiter CLINT device
-    clint_register_device(*this, PMA_CLINT_START, PMA_CLINT_LENGTH);
+    register_pma_entry(make_clint_pma_entry(PMA_CLINT_START, PMA_CLINT_LENGTH));
     // Copy CLINT state to from config to machine
     write_clint_mtimecmp(c.clint.mtimecmp);
 
     // Register shadow device
-    shadow_register_device(*this, PMA_SHADOW_START, PMA_SHADOW_LENGTH);
+    register_pma_entry(make_shadow_pma_entry(PMA_SHADOW_START, PMA_SHADOW_LENGTH));
 
     // Initialize PMA extension metadata on ROM
     rom_init(c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
@@ -321,7 +242,7 @@ machine::machine(const machine_config &c):
     m_s.init_tlb();
 
     // Add sentinel to PMA vector
-    allocate_pma_entry(pma_entry{});
+    register_pma_entry(make_empty_pma_entry(0, 0));
 }
 
 static void load_hash(const std::string &dir, merkle_tree::hash_type &h) {
@@ -784,7 +705,7 @@ bool machine::verify_dirty_page_maps(void) const {
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length(); page_start_in_range += PMA_PAGE_SIZE) {
             const unsigned char *page_data = nullptr;
             uint64_t page_address = pma.get_start() + page_start_in_range;
-            peek(pma, page_start_in_range, &page_data, scratch.get());
+            peek(pma, *this, page_start_in_range, &page_data, scratch.get());
             merkle_tree::hash_type stored, real;
             m_t.get_page_node_hash(page_address, stored);
             m_t.get_page_node_hash(h, page_data, real);
@@ -848,7 +769,7 @@ bool machine::update_merkle_tree(void) {
                         continue;
                     // If the peek failed, or if it returned a page for update but
                     // we failed updating it, the entire process failed
-                    if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
+                    if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
                         return false;
                     }
                     if (page_data) {
@@ -897,7 +818,7 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     m_t.begin_update();
     const unsigned char *page_data = nullptr;
     auto peek = pma.get_peek();
-    if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
+    if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
         m_t.end_update(h);
         return false;
     }
@@ -936,7 +857,7 @@ void machine::dump(void) const {
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length(); page_start_in_range += PMA_PAGE_SIZE) {
             const unsigned char *page_data = nullptr;
             auto peek = pma.get_peek();
-            if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
+            if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
                 throw std::runtime_error{"peek failed"};
             } else if (page_data && fwrite(page_data, 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
                 throw std::system_error{errno, std::generic_category(),
@@ -954,7 +875,7 @@ bool machine::get_proof(uint64_t address, int log2_size, merkle_tree::proof_type
     const unsigned char *page_data = nullptr;
     uint64_t page_start_in_range = (address - pma.get_start()) & (~(PMA_PAGE_SIZE-1));
     auto peek = pma.get_peek();
-    if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
+    if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
         return false;
     }
     return m_t.get_proof(address, log2_size, page_data, proof);
@@ -1000,7 +921,7 @@ bool machine::read_word(uint64_t word_address, uint64_t &word_value) const {
     const unsigned char *page_data = nullptr;
     uint64_t page_start_in_range = (word_address - pma.get_start()) & (~(PMA_PAGE_SIZE-1));
     auto peek = pma.get_peek();
-    if (!peek(pma, page_start_in_range, &page_data, scratch.get())) {
+    if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
         return false;
     }
     // If peek returns a page, read from it
@@ -1042,14 +963,14 @@ static void roll_hash_up_tree(merkle_tree::hasher_type &hasher,
 }
 
 static void get_word_hash(merkle_tree::hasher_type &hasher,
-    const uint64_t &word, merkle_tree::hash_type &word_hash) {
+    uint64_t word, merkle_tree::hash_type &word_hash) {
     hasher.begin();
     hasher.add_data(reinterpret_cast<const unsigned char *>(&word),
         sizeof(word));
     hasher.end(word_hash);
 }
 
-bool machine::verify_access_log(const access_log &log) const {
+bool machine::verify_access_log(const access_log &log) {
     const auto &accesses = log.get_accesses();
     if (accesses.empty()) return true;
     auto prev_root_hash = accesses[0].proof.root_hash;

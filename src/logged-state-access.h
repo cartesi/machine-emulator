@@ -44,8 +44,8 @@ class logged_state_access: public i_state_access<logged_state_access> {
 
 public:
 
-    /// \brief Constructor from machine state and Merkle tree.
-    /// \param m Pointer to machine state.
+    /// \brief Constructor from machine state.
+    /// \param m Reference to machine state.
     explicit logged_state_access(machine &m):
         m_m(m),
         m_log(std::make_shared<access_log>()) { ; }
@@ -172,8 +172,16 @@ private:
         update_after_write(paligned);
     }
 
-    // Declare interface as friend to it can forward calls to the "overriden" methods.
-    friend i_state_access<logged_state_access>;
+// Declare interface as friend to it can forward calls to the "overriden" methods.
+friend i_state_access<logged_state_access>;
+
+    const machine_state &do_get_naked_state(void) const {
+        return m_m.get_state();
+    }
+
+    machine_state &do_get_naked_state(void) {
+        return m_m.get_state();
+    }
 
     void do_push_bracket(bracket_type &type, const char *text) {
         m_log->push_bracket(type, text);
@@ -504,16 +512,7 @@ private:
         log_before_write_write_and_update(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::tohost), m_m.get_state().htif.tohost, val, "htif.tohost");
     }
 
-    void do_read_pma(const pma_entry &pma, int i) const {
-        auto istart = pma.get_istart();
-        auto ilength = pma.get_ilength();
-        auto rel_addr = shadow_get_pma_rel_addr(i);
-        log_read(PMA_SHADOW_START + rel_addr, istart, "pma.istart");
-        log_read(PMA_SHADOW_START + rel_addr + sizeof(uint64_t), ilength, "pma.ilength");
-    }
-
     uint64_t do_read_pma_istart(int i) const {
-        assert(i >= 0 && i < 32);
         const auto &pmas = m_m.get_pmas();
         uint64_t istart = 0;
         if (i >= 0 && i < static_cast<int>(pmas.size())) {
@@ -525,7 +524,6 @@ private:
     }
 
     uint64_t do_read_pma_ilength(int i) const {
-        assert(i >= 0 && i < 32);
         const auto &pmas = m_m.get_pmas();
         uint64_t ilength = 0;
         if (i >= 0 && i < static_cast<int>(pmas.size())) {
@@ -577,12 +575,33 @@ private:
         update_after_write(paligned);
     }
 
-    machine &do_get_naked_machine(void) {
-        return m_m;
-    }
-
-    const machine &do_get_naked_machine(void) const {
-        return m_m;
+    template <typename T>
+    pma_entry &do_find_pma_entry(uint64_t paddr) {
+        auto note = this->make_scoped_note("find_pma_entry");
+        (void) note;
+        int i = 0;
+        while (1) {
+            auto &pma = this->get_naked_state().pmas[i];
+            auto istart = this->read_pma_istart(i);
+            auto ilength = this->read_pma_ilength(i);
+            (void) istart; (void) ilength;
+            // The pmas array always contain a sentinel. It is an entry with
+            // zero length. If we hit it, return it
+            if (pma.get_length() == 0)
+                return pma;
+            // Otherwise, if we found an entry where the access fits, return it
+            // Note the "strange" order of arithmetic operations.
+            // This is to ensure there is no overflow.
+            // Since we know paddr >= start, there is no chance of overflow
+            // in the first subtraction.
+            // Since length is at least 4096 (an entire page), there is no
+            // chance of overflow in the second subtraction.
+            if (paddr >= pma.get_start() &&
+                paddr - pma.get_start() <= pma.get_length() - sizeof(T)) {
+                return pma;
+            }
+            i++;
+        }
     }
 
 };

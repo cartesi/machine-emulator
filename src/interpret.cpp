@@ -659,15 +659,15 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
 static std::unordered_map<std::string, uint64_t> g_insn_hist;
 #endif
 
-static void dump_insn(machine &m, uint64_t pc, uint32_t insn, const char *name) {
+template <typename STATE_ACCESS>
+static void dump_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const char *name) {
 #ifdef DUMP_HIST
     g_insn_hist[name]++;
 #endif
 #ifdef DUMP_REGS
-    dump_regs(m.get_state());
+    dump_regs(a.get_naked_state());
 #endif
 #ifdef DUMP_INSN
-    state_access a(m);
     //fprintf(stderr, "%s\n", name);
     (void) name;
     uint64_t ppc;
@@ -680,7 +680,7 @@ static void dump_insn(machine &m, uint64_t pc, uint32_t insn, const char *name) 
     fprintf(stderr, ":   %08" PRIx32 "   ", insn);
     fprintf(stderr, "\n");
 #else
-    (void) m;
+    (void) a;
     (void) pc;
     (void) insn;
     (void) name;
@@ -800,7 +800,7 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_LR_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) a; (void) pc; (void) insn;
     if ((insn & 0b00000001111100000000000000000000) == 0 ) {
-        dump_insn(a.get_naked_machine(), pc, insn, "lr.w");
+        dump_insn(a, pc, insn, "lr.w");
         auto note = a.make_scoped_note("lr.w"); (void) note;
         return execute_LR<int32_t>(a, pc, insn);
     } else {
@@ -811,7 +811,7 @@ static inline execute_status execute_LR_W(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the SC.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SC_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sc.w");
+    dump_insn(a, pc, insn, "sc.w");
     auto note = a.make_scoped_note("sc.w"); (void) note;
     return execute_SC<int32_t>(a, pc, insn);
 }
@@ -835,7 +835,7 @@ static inline execute_status execute_AMO(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the AMOSWAP.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOSWAP_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amoswap.w");
+    dump_insn(a, pc, insn, "amoswap.w");
     auto note = a.make_scoped_note("amoswap.w"); (void) note;
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { (void) valm; return valr; });
 }
@@ -843,7 +843,7 @@ static inline execute_status execute_AMOSWAP_W(STATE_ACCESS &a, uint64_t pc, uin
 /// \brief Implementation of the AMOADD.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOADD_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amoadd.w");
+    dump_insn(a, pc, insn, "amoadd.w");
     auto note = a.make_scoped_note("amoadd.w"); (void) note;
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t {
         int32_t val = 0;
@@ -860,7 +860,7 @@ static inline execute_status execute_AMOXOR_W(STATE_ACCESS &a, uint64_t pc, uint
 /// \brief Implementation of the AMOAND.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOAND_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amoand.w");
+    dump_insn(a, pc, insn, "amoand.w");
     auto note = a.make_scoped_note("amoand.w"); (void) note;
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm & valr; });
 }
@@ -868,7 +868,7 @@ static inline execute_status execute_AMOAND_W(STATE_ACCESS &a, uint64_t pc, uint
 /// \brief Implementation of the AMOOR.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOOR_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amoor.w");
+    dump_insn(a, pc, insn, "amoor.w");
     auto note = a.make_scoped_note("amoor.w"); (void) note;
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm | valr; });
 }
@@ -876,7 +876,7 @@ static inline execute_status execute_AMOOR_W(STATE_ACCESS &a, uint64_t pc, uint3
 /// \brief Implementation of the AMOMIN.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMIN_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amomin.w");
+    dump_insn(a, pc, insn, "amomin.w");
     auto note = a.make_scoped_note("amomin.w"); (void) note;
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm < valr? valm: valr; });
 }
@@ -884,7 +884,7 @@ static inline execute_status execute_AMOMIN_W(STATE_ACCESS &a, uint64_t pc, uint
 /// \brief Implementation of the AMOMAX.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMAX_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amomax.w");
+    dump_insn(a, pc, insn, "amomax.w");
     auto note = a.make_scoped_note("amomax.w"); (void) note;
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm > valr? valm: valr; });
 }
@@ -892,7 +892,7 @@ static inline execute_status execute_AMOMAX_W(STATE_ACCESS &a, uint64_t pc, uint
 /// \brief Implementation of the AMOMINU.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMINU_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amominu.w");
+    dump_insn(a, pc, insn, "amominu.w");
     auto note = a.make_scoped_note("amominu.w"); (void) note;
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t {
         return static_cast<uint32_t>(valm) < static_cast<uint32_t>(valr)? valm: valr;
@@ -902,7 +902,7 @@ static inline execute_status execute_AMOMINU_W(STATE_ACCESS &a, uint64_t pc, uin
 /// \brief Implementation of the AMOMAXU.W instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMAXU_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amomaxu.w");
+    dump_insn(a, pc, insn, "amomaxu.w");
     auto note = a.make_scoped_note("amomaxu.w"); (void) note;
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t {
         return static_cast<uint32_t>(valm) > static_cast<uint32_t>(valr)? valm: valr;
@@ -913,7 +913,7 @@ static inline execute_status execute_AMOMAXU_W(STATE_ACCESS &a, uint64_t pc, uin
 template <typename STATE_ACCESS>
 static inline execute_status execute_LR_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     if ((insn & 0b00000001111100000000000000000000) == 0 ) {
-        dump_insn(a.get_naked_machine(), pc, insn, "lr.d");
+        dump_insn(a, pc, insn, "lr.d");
         auto note = a.make_scoped_note("lr.d"); (void) note;
         return execute_LR<uint64_t>(a, pc, insn);
     } else {
@@ -924,7 +924,7 @@ static inline execute_status execute_LR_D(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the SC.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SC_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sc.d");
+    dump_insn(a, pc, insn, "sc.d");
     auto note = a.make_scoped_note("sc.d"); (void) note;
     return execute_SC<uint64_t>(a, pc, insn);
 }
@@ -932,7 +932,7 @@ static inline execute_status execute_SC_D(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the AMOSWAP.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOSWAP_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amoswap.d");
+    dump_insn(a, pc, insn, "amoswap.d");
     auto note = a.make_scoped_note("amoswap.d"); (void) note;
     return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { (void) valm; return valr; });
 }
@@ -940,7 +940,7 @@ static inline execute_status execute_AMOSWAP_D(STATE_ACCESS &a, uint64_t pc, uin
 /// \brief Implementation of the AMOADD.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOADD_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amoadd.d");
+    dump_insn(a, pc, insn, "amoadd.d");
     auto note = a.make_scoped_note("amoadd.d"); (void) note;
     return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t {
         int64_t val = 0;
@@ -957,7 +957,7 @@ static inline execute_status execute_AMOXOR_D(STATE_ACCESS &a, uint64_t pc, uint
 /// \brief Implementation of the AMOAND.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOAND_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amoand.d");
+    dump_insn(a, pc, insn, "amoand.d");
     auto note = a.make_scoped_note("amoand.d"); (void) note;
     return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm & valr; });
 }
@@ -965,7 +965,7 @@ static inline execute_status execute_AMOAND_D(STATE_ACCESS &a, uint64_t pc, uint
 /// \brief Implementation of the AMOOR.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOOR_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amoor.d");
+    dump_insn(a, pc, insn, "amoor.d");
     auto note = a.make_scoped_note("amoor.d"); (void) note;
     return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm | valr; });
 }
@@ -973,7 +973,7 @@ static inline execute_status execute_AMOOR_D(STATE_ACCESS &a, uint64_t pc, uint3
 /// \brief Implementation of the AMOMIN.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMIN_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amomin.d");
+    dump_insn(a, pc, insn, "amomin.d");
     auto note = a.make_scoped_note("amomin.d"); (void) note;
     return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm < valr? valm: valr; });
 }
@@ -981,7 +981,7 @@ static inline execute_status execute_AMOMIN_D(STATE_ACCESS &a, uint64_t pc, uint
 /// \brief Implementation of the AMOMAX.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMAX_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amomax.d");
+    dump_insn(a, pc, insn, "amomax.d");
     auto note = a.make_scoped_note("amomax.d"); (void) note;
     return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm > valr? valm: valr; });
 }
@@ -989,7 +989,7 @@ static inline execute_status execute_AMOMAX_D(STATE_ACCESS &a, uint64_t pc, uint
 /// \brief Implementation of the AMOMINU.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMINU_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amominu.d");
+    dump_insn(a, pc, insn, "amominu.d");
     auto note = a.make_scoped_note("amominu.d"); (void) note;
     return execute_AMO<uint64_t>(a, pc, insn,
         [](uint64_t valm, uint64_t valr) -> uint64_t { return valm < valr? valm: valr; });
@@ -998,7 +998,7 @@ static inline execute_status execute_AMOMINU_D(STATE_ACCESS &a, uint64_t pc, uin
 /// \brief Implementation of the AMOMAXU.D instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOMAXU_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "amomaxu.d");
+    dump_insn(a, pc, insn, "amomaxu.d");
     auto note = a.make_scoped_note("amomaxu.d"); (void) note;
     return execute_AMO<uint64_t>(a, pc, insn,
         [](uint64_t valm, uint64_t valr) -> uint64_t { return valm > valr? valm: valr; });
@@ -1007,7 +1007,7 @@ static inline execute_status execute_AMOMAXU_D(STATE_ACCESS &a, uint64_t pc, uin
 /// \brief Implementation of the ADDW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_ADDW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "addw");
+    dump_insn(a, pc, insn, "addw");
     auto note = a.make_scoped_note("addw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         // Discard upper 32 bits
@@ -1022,7 +1022,7 @@ static inline execute_status execute_ADDW(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the SUBW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SUBW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "subw");
+    dump_insn(a, pc, insn, "subw");
     auto note = a.make_scoped_note("subw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         // Convert 64-bit to 32-bit
@@ -1037,7 +1037,7 @@ static inline execute_status execute_SUBW(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the SLLW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLLW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sllw");
+    dump_insn(a, pc, insn, "sllw");
     auto note = a.make_scoped_note("sllw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int32_t rs1w = static_cast<int32_t>(rs1) << (rs2 & 31);
@@ -1048,7 +1048,7 @@ static inline execute_status execute_SLLW(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the SRLW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRLW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "srlw");
+    dump_insn(a, pc, insn, "srlw");
     auto note = a.make_scoped_note("srlw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int32_t rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) >> (rs2 & 31));
@@ -1059,7 +1059,7 @@ static inline execute_status execute_SRLW(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the SRAW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRAW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sraw");
+    dump_insn(a, pc, insn, "sraw");
     auto note = a.make_scoped_note("sraw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int32_t rs1w = static_cast<int32_t>(rs1) >> (rs2 & 31);
@@ -1070,7 +1070,7 @@ static inline execute_status execute_SRAW(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the MULW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_MULW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "mulw");
+    dump_insn(a, pc, insn, "mulw");
     auto note = a.make_scoped_note("mulw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int32_t rs1w = static_cast<int32_t>(rs1);
@@ -1084,7 +1084,7 @@ static inline execute_status execute_MULW(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the DIVW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_DIVW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "divw");
+    dump_insn(a, pc, insn, "divw");
     auto note = a.make_scoped_note("divw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int32_t rs1w = static_cast<int32_t>(rs1);
@@ -1102,7 +1102,7 @@ static inline execute_status execute_DIVW(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the DIVUW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_DIVUW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "divuw");
+    dump_insn(a, pc, insn, "divuw");
     auto note = a.make_scoped_note("divuw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         uint32_t rs1w = static_cast<uint32_t>(rs1);
@@ -1118,7 +1118,7 @@ static inline execute_status execute_DIVUW(STATE_ACCESS &a, uint64_t pc, uint32_
 /// \brief Implementation of the REMW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_REMW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "remw");
+    dump_insn(a, pc, insn, "remw");
     auto note = a.make_scoped_note("remw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int32_t rs1w = static_cast<int32_t>(rs1);
@@ -1137,7 +1137,7 @@ static inline execute_status execute_REMW(STATE_ACCESS &a, uint64_t pc, uint32_t
 template <typename STATE_ACCESS>
 static inline execute_status execute_REMUW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) a; (void) pc; (void) insn;
-    dump_insn(a.get_naked_machine(), pc, insn, "remuw");
+    dump_insn(a, pc, insn, "remuw");
     auto note = a.make_scoped_note("remuw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         uint32_t rs1w = static_cast<uint32_t>(rs1);
@@ -1724,7 +1724,7 @@ static inline execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t pc, uint32
 /// \brief Implementation of the CSRRW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_CSRRW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "csrrw");
+    dump_insn(a, pc, insn, "csrrw");
     auto note = a.make_scoped_note("csrrw"); (void) note;
     return execute_csr_RW(a, pc, insn,
         [](STATE_ACCESS &a, uint32_t insn) -> uint64_t { return a.read_x(insn_get_rs1(insn)); }
@@ -1734,7 +1734,7 @@ static inline execute_status execute_CSRRW(STATE_ACCESS &a, uint64_t pc, uint32_
 /// \brief Implementation of the CSRRWI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_CSRRWI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "csrrwi");
+    dump_insn(a, pc, insn, "csrrwi");
     auto note = a.make_scoped_note("csrrwi"); (void) note;
     return execute_csr_RW(a, pc, insn,
         [](STATE_ACCESS &, uint32_t insn) -> uint64_t { return static_cast<uint64_t>(insn_get_rs1(insn)); }
@@ -1770,7 +1770,7 @@ static inline execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, uint32
 /// \brief Implementation of the CSRRS instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_CSRRS(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "csrrs");
+    dump_insn(a, pc, insn, "csrrs");
     auto note = a.make_scoped_note("csrrs"); (void) note;
     return execute_csr_SC(a, pc, insn, [](uint64_t csr, uint64_t rs1) -> uint64_t { return csr | rs1; });
 }
@@ -1778,7 +1778,7 @@ static inline execute_status execute_CSRRS(STATE_ACCESS &a, uint64_t pc, uint32_
 /// \brief Implementation of the CSRRC instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_CSRRC(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "csrrc");
+    dump_insn(a, pc, insn, "csrrc");
     auto note = a.make_scoped_note("csrrc"); (void) note;
     return execute_csr_SC(a, pc, insn, [](uint64_t csr, uint64_t rs1) -> uint64_t {
         return csr & ~rs1;
@@ -1811,7 +1811,7 @@ static inline execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc, uint3
 /// \brief Implementation of the CSRRSI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_CSRRSI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "csrrsi");
+    dump_insn(a, pc, insn, "csrrsi");
     auto note = a.make_scoped_note("csrrsi"); (void) note;
     return execute_csr_SCI(a, pc, insn, [](uint64_t csr, uint32_t rs1) -> uint64_t { return csr | rs1; });
 }
@@ -1819,7 +1819,7 @@ static inline execute_status execute_CSRRSI(STATE_ACCESS &a, uint64_t pc, uint32
 /// \brief Implementation of the CSRRCI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_CSRRCI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "csrrci");
+    dump_insn(a, pc, insn, "csrrci");
     auto note = a.make_scoped_note("csrrci"); (void) note;
     return execute_csr_SCI(a, pc, insn, [](uint64_t csr, uint32_t rs1) -> uint64_t { return csr & ~rs1; });
 }
@@ -1827,7 +1827,7 @@ static inline execute_status execute_CSRRCI(STATE_ACCESS &a, uint64_t pc, uint32
 /// \brief Implementation of the ECALL instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_ECALL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "ecall");
+    dump_insn(a, pc, insn, "ecall");
     auto note = a.make_scoped_note("ecall"); (void) note;
     //??D Need another version of raise_exception that does not modify mtval
     auto priv = a.read_iflags_PRV();
@@ -1840,7 +1840,7 @@ static inline execute_status execute_ECALL(STATE_ACCESS &a, uint64_t pc, uint32_
 template <typename STATE_ACCESS>
 static inline execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) a;
-    dump_insn(a.get_naked_machine(), pc, insn, "ebreak");
+    dump_insn(a, pc, insn, "ebreak");
     auto note = a.make_scoped_note("ebreak"); (void) note;
     //??D Need another version of raise_exception that does not modify mtval
     raise_exception(a, MCAUSE_BREAKPOINT, a.read_mtval());
@@ -1850,7 +1850,7 @@ static inline execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t pc, uint32
 /// \brief Implementation of the URET instruction. // no U-mode traps
 template <typename STATE_ACCESS>
 static inline execute_status execute_URET(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "uret");
+    dump_insn(a, pc, insn, "uret");
     auto note = a.make_scoped_note("uret"); (void) note;
     return raise_illegal_insn_exception(a, pc, insn);
 }
@@ -1858,7 +1858,7 @@ static inline execute_status execute_URET(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the SRET instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRET(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sret");
+    dump_insn(a, pc, insn, "sret");
     auto note = a.make_scoped_note("sret"); (void) note;
     auto priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
@@ -1883,7 +1883,7 @@ static inline execute_status execute_SRET(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the MRET instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_MRET(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "mret");
+    dump_insn(a, pc, insn, "mret");
     auto note = a.make_scoped_note("mret"); (void) note;
     auto priv = a.read_iflags_PRV();
     if (priv < PRV_M) {
@@ -1909,7 +1909,7 @@ static inline execute_status execute_MRET(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the WFI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "wfi");
+    dump_insn(a, pc, insn, "wfi");
     auto note = a.make_scoped_note("wfi"); (void) note;
     auto priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
@@ -1931,7 +1931,7 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_FENCE(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) insn;
     INC_COUNTER(a.get_naked_state(), fence);
-    dump_insn(a.get_naked_machine(), pc, insn, "fence");
+    dump_insn(a, pc, insn, "fence");
     auto note = a.make_scoped_note("fence"); (void) note;
     // Really do nothing
     return advance_to_next_insn(a, pc);
@@ -1942,7 +1942,7 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_FENCE_I(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) insn;
     INC_COUNTER(a.get_naked_state(), fence_i);
-    dump_insn(a.get_naked_machine(), pc, insn, "fence.i");
+    dump_insn(a, pc, insn, "fence.i");
     auto note = a.make_scoped_note("fence.i"); (void) note;
     // Really do nothing
     return advance_to_next_insn(a, pc);
@@ -1965,7 +1965,7 @@ static inline execute_status execute_arithmetic(STATE_ACCESS &a, uint64_t pc, ui
 /// \brief Implementation of the ADD instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_ADD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "add");
+    dump_insn(a, pc, insn, "add");
     auto note = a.make_scoped_note("add"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         uint64_t val = 0;
@@ -1977,7 +1977,7 @@ static inline execute_status execute_ADD(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the SUB instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sub");
+    dump_insn(a, pc, insn, "sub");
     auto note = a.make_scoped_note("sub"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         uint64_t val = 0;
@@ -1989,7 +1989,7 @@ static inline execute_status execute_SUB(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the SLL instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sll");
+    dump_insn(a, pc, insn, "sll");
     auto note = a.make_scoped_note("sll"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return rs1 << (rs2 & (XLEN-1));
@@ -1999,7 +1999,7 @@ static inline execute_status execute_SLL(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the SLT instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLT(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "slt");
+    dump_insn(a, pc, insn, "slt");
     auto note = a.make_scoped_note("slt"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return static_cast<int64_t>(rs1) < static_cast<int64_t>(rs2);
@@ -2009,7 +2009,7 @@ static inline execute_status execute_SLT(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the SLTU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLTU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sltu");
+    dump_insn(a, pc, insn, "sltu");
     auto note = a.make_scoped_note("sltu"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return rs1 < rs2;
@@ -2019,7 +2019,7 @@ static inline execute_status execute_SLTU(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the XOR instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_XOR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "xor");
+    dump_insn(a, pc, insn, "xor");
     auto note = a.make_scoped_note("xor"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return rs1 ^ rs2;
@@ -2029,7 +2029,7 @@ static inline execute_status execute_XOR(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the SRL instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "srl");
+    dump_insn(a, pc, insn, "srl");
     auto note = a.make_scoped_note("srl"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return rs1 >> (rs2 & (XLEN-1));
@@ -2039,7 +2039,7 @@ static inline execute_status execute_SRL(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the SRA instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRA(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sra");
+    dump_insn(a, pc, insn, "sra");
     auto note = a.make_scoped_note("sra"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return static_cast<uint64_t>(static_cast<int64_t>(rs1) >> (rs2 & (XLEN-1)));
@@ -2049,7 +2049,7 @@ static inline execute_status execute_SRA(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the OR instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_OR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "or");
+    dump_insn(a, pc, insn, "or");
     auto note = a.make_scoped_note("or"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return rs1 | rs2;
@@ -2059,7 +2059,7 @@ static inline execute_status execute_OR(STATE_ACCESS &a, uint64_t pc, uint32_t i
 /// \brief Implementation of the AND instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AND(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "and");
+    dump_insn(a, pc, insn, "and");
     auto note = a.make_scoped_note("and"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return rs1 & rs2;
@@ -2069,7 +2069,7 @@ static inline execute_status execute_AND(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the MUL instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_MUL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "mul");
+    dump_insn(a, pc, insn, "mul");
     auto note = a.make_scoped_note("mul"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int64_t srs1 = static_cast<int64_t>(rs1);
@@ -2083,7 +2083,7 @@ static inline execute_status execute_MUL(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the MULH instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_MULH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "mulh");
+    dump_insn(a, pc, insn, "mulh");
     auto note = a.make_scoped_note("mulh"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int64_t srs1 = static_cast<int64_t>(rs1);
@@ -2095,7 +2095,7 @@ static inline execute_status execute_MULH(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the MULHSU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_MULHSU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "mulhsu");
+    dump_insn(a, pc, insn, "mulhsu");
     auto note = a.make_scoped_note("mulhsu"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int64_t srs1 = static_cast<int64_t>(rs1);
@@ -2106,7 +2106,7 @@ static inline execute_status execute_MULHSU(STATE_ACCESS &a, uint64_t pc, uint32
 /// \brief Implementation of the MULHU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_MULHU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "mulhu");
+    dump_insn(a, pc, insn, "mulhu");
     auto note = a.make_scoped_note("mulhu"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         return static_cast<uint64_t>((static_cast<uint128_t>(rs1) * static_cast<uint128_t>(rs2)) >> 64);
@@ -2116,7 +2116,7 @@ static inline execute_status execute_MULHU(STATE_ACCESS &a, uint64_t pc, uint32_
 /// \brief Implementation of the DIV instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_DIV(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "div");
+    dump_insn(a, pc, insn, "div");
     auto note = a.make_scoped_note("div"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int64_t srs1 = static_cast<int64_t>(rs1);
@@ -2134,7 +2134,7 @@ static inline execute_status execute_DIV(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the DIVU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_DIVU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "divu");
+    dump_insn(a, pc, insn, "divu");
     auto note = a.make_scoped_note("divu"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         if (rs2 == 0) {
@@ -2148,7 +2148,7 @@ static inline execute_status execute_DIVU(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the REM instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_REM(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "rem");
+    dump_insn(a, pc, insn, "rem");
     auto note = a.make_scoped_note("rem"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int64_t srs1 = static_cast<int64_t>(rs1);
@@ -2166,7 +2166,7 @@ static inline execute_status execute_REM(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the REMU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_REMU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "remu");
+    dump_insn(a, pc, insn, "remu");
     auto note = a.make_scoped_note("remu"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         if (rs2 == 0) {
@@ -2191,7 +2191,7 @@ static inline execute_status execute_arithmetic_immediate(STATE_ACCESS &a, uint6
 /// \brief Implementation of the SRLI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRLI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "srli");
+    dump_insn(a, pc, insn, "srli");
     auto note = a.make_scoped_note("srli"); (void) note;
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return rs1 >> (imm & (XLEN - 1));
@@ -2201,7 +2201,7 @@ static inline execute_status execute_SRLI(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the SRAI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRAI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "srai");
+    dump_insn(a, pc, insn, "srai");
     auto note = a.make_scoped_note("srai"); (void) note;
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return static_cast<uint64_t>(static_cast<int64_t>(rs1) >> (imm & (XLEN - 1)));
@@ -2211,7 +2211,7 @@ static inline execute_status execute_SRAI(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the ADDI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_ADDI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "addi");
+    dump_insn(a, pc, insn, "addi");
     auto note = a.make_scoped_note("addi"); (void) note;
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         int64_t val = 0;
@@ -2223,7 +2223,7 @@ static inline execute_status execute_ADDI(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the SLTI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLTI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "slti");
+    dump_insn(a, pc, insn, "slti");
     auto note = a.make_scoped_note("slti"); (void) note;
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return static_cast<int64_t>(rs1) < static_cast<int64_t>(imm);
@@ -2233,7 +2233,7 @@ static inline execute_status execute_SLTI(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the SLTIU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLTIU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sltiu");
+    dump_insn(a, pc, insn, "sltiu");
     auto note = a.make_scoped_note("sltiu"); (void) note;
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return rs1 < static_cast<uint64_t>(imm);
@@ -2243,7 +2243,7 @@ static inline execute_status execute_SLTIU(STATE_ACCESS &a, uint64_t pc, uint32_
 /// \brief Implementation of the XORI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_XORI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "xori");
+    dump_insn(a, pc, insn, "xori");
     auto note = a.make_scoped_note("xori"); (void) note;
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return rs1 ^ imm;
@@ -2253,7 +2253,7 @@ static inline execute_status execute_XORI(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the ORI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_ORI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "ori");
+    dump_insn(a, pc, insn, "ori");
     auto note = a.make_scoped_note("ori"); (void) note;
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return rs1 | imm;
@@ -2263,7 +2263,7 @@ static inline execute_status execute_ORI(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the ANDI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_ANDI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "andi");
+    dump_insn(a, pc, insn, "andi");
     auto note = a.make_scoped_note("andi"); (void) note;
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return rs1 & imm;
@@ -2274,7 +2274,7 @@ static inline execute_status execute_ANDI(STATE_ACCESS &a, uint64_t pc, uint32_t
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLLI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     if ((insn & (0b111111 << 26)) == 0) {
-        dump_insn(a.get_naked_machine(), pc, insn, "slli");
+        dump_insn(a, pc, insn, "slli");
         auto note = a.make_scoped_note("slli"); (void) note;
         return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
             // No need to mask lower 6 bits in imm because of the if condition a above
@@ -2289,7 +2289,7 @@ static inline execute_status execute_SLLI(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the ADDIW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_ADDIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "addiw");
+    dump_insn(a, pc, insn, "addiw");
     auto note = a.make_scoped_note("addiw"); (void) note;
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         int32_t val = 0;
@@ -2302,7 +2302,7 @@ static inline execute_status execute_ADDIW(STATE_ACCESS &a, uint64_t pc, uint32_
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     if (insn_get_funct7(insn) == 0) {
-        dump_insn(a.get_naked_machine(), pc, insn, "slliw");
+        dump_insn(a, pc, insn, "slliw");
         auto note = a.make_scoped_note("slliw"); (void) note;
         return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
             // No need to mask lower 5 bits in imm because of the if condition a above
@@ -2318,7 +2318,7 @@ static inline execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t pc, uint32_
 /// \brief Implementation of the SRLIW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRLIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "srliw");
+    dump_insn(a, pc, insn, "srliw");
     auto note = a.make_scoped_note("srliw"); (void) note;
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         // No need to mask lower 5 bits in imm because of funct7 test in caller
@@ -2331,7 +2331,7 @@ static inline execute_status execute_SRLIW(STATE_ACCESS &a, uint64_t pc, uint32_
 /// \brief Implementation of the SRAIW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRAIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sraiw");
+    dump_insn(a, pc, insn, "sraiw");
     auto note = a.make_scoped_note("sraiw"); (void) note;
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         int32_t rs1w = static_cast<int32_t>(rs1) >> (imm & 0b11111);
@@ -2354,7 +2354,7 @@ static inline execute_status execute_S(STATE_ACCESS &a, uint64_t pc, uint32_t in
 /// \brief Implementation of the SB instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sb");
+    dump_insn(a, pc, insn, "sb");
     auto note = a.make_scoped_note("sb"); (void) note;
     return execute_S<uint8_t>(a, pc, insn);
 }
@@ -2362,7 +2362,7 @@ static inline execute_status execute_SB(STATE_ACCESS &a, uint64_t pc, uint32_t i
 /// \brief Implementation of the SH instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sh");
+    dump_insn(a, pc, insn, "sh");
     auto note = a.make_scoped_note("sh"); (void) note;
     return execute_S<uint16_t>(a, pc, insn);
 }
@@ -2370,7 +2370,7 @@ static inline execute_status execute_SH(STATE_ACCESS &a, uint64_t pc, uint32_t i
 /// \brief Implementation of the SW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sw");
+    dump_insn(a, pc, insn, "sw");
     auto note = a.make_scoped_note("sw"); (void) note;
     return execute_S<uint32_t>(a, pc, insn);
 }
@@ -2378,7 +2378,7 @@ static inline execute_status execute_SW(STATE_ACCESS &a, uint64_t pc, uint32_t i
 /// \brief Implementation of the SD instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_SD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "sd");
+    dump_insn(a, pc, insn, "sd");
     auto note = a.make_scoped_note("sd"); (void) note;
     return execute_S<uint64_t>(a, pc, insn);
 }
@@ -2404,7 +2404,7 @@ static inline execute_status execute_L(STATE_ACCESS &a, uint64_t pc, uint32_t in
 /// \brief Implementation of the LB instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "lb");
+    dump_insn(a, pc, insn, "lb");
     auto note = a.make_scoped_note("lb"); (void) note;
     return execute_L<int8_t>(a, pc, insn);
 }
@@ -2412,7 +2412,7 @@ static inline execute_status execute_LB(STATE_ACCESS &a, uint64_t pc, uint32_t i
 /// \brief Implementation of the LH instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "lh");
+    dump_insn(a, pc, insn, "lh");
     auto note = a.make_scoped_note("lh"); (void) note;
     return execute_L<int16_t>(a, pc, insn);
 }
@@ -2420,7 +2420,7 @@ static inline execute_status execute_LH(STATE_ACCESS &a, uint64_t pc, uint32_t i
 /// \brief Implementation of the LW instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "lw");
+    dump_insn(a, pc, insn, "lw");
     auto note = a.make_scoped_note("lw"); (void) note;
     return execute_L<int32_t>(a, pc, insn);
 }
@@ -2428,7 +2428,7 @@ static inline execute_status execute_LW(STATE_ACCESS &a, uint64_t pc, uint32_t i
 /// \brief Implementation of the LD instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "ld");
+    dump_insn(a, pc, insn, "ld");
     auto note = a.make_scoped_note("ld"); (void) note;
     return execute_L<int64_t>(a, pc, insn);
 }
@@ -2436,7 +2436,7 @@ static inline execute_status execute_LD(STATE_ACCESS &a, uint64_t pc, uint32_t i
 /// \brief Implementation of the LBU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LBU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "lbu");
+    dump_insn(a, pc, insn, "lbu");
     auto note = a.make_scoped_note("lbu"); (void) note;
     return execute_L<uint8_t>(a, pc, insn);
 }
@@ -2444,7 +2444,7 @@ static inline execute_status execute_LBU(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the LHU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LHU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "lhu");
+    dump_insn(a, pc, insn, "lhu");
     auto note = a.make_scoped_note("lhu"); (void) note;
     return execute_L<uint16_t>(a, pc, insn);
 }
@@ -2452,7 +2452,7 @@ static inline execute_status execute_LHU(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the LWU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LWU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "lwu");
+    dump_insn(a, pc, insn, "lwu");
     auto note = a.make_scoped_note("lwu"); (void) note;
     return execute_L<uint32_t>(a, pc, insn);
 }
@@ -2475,7 +2475,7 @@ static inline execute_status execute_branch(STATE_ACCESS &a, uint64_t pc, uint32
 /// \brief Implementation of the BEQ instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_BEQ(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "beq");
+    dump_insn(a, pc, insn, "beq");
     auto note = a.make_scoped_note("beq"); (void) note;
     return execute_branch(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 == rs2; });
 }
@@ -2484,7 +2484,7 @@ static inline execute_status execute_BEQ(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the BNE instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_BNE(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "bne");
+    dump_insn(a, pc, insn, "bne");
     auto note = a.make_scoped_note("bne"); (void) note;
     return execute_branch(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 != rs2; });
 }
@@ -2492,7 +2492,7 @@ static inline execute_status execute_BNE(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the BLT instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_BLT(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "blt");
+    dump_insn(a, pc, insn, "blt");
     auto note = a.make_scoped_note("blt"); (void) note;
     return execute_branch(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool {
         return static_cast<int64_t>(rs1) < static_cast<int64_t>(rs2);
@@ -2502,7 +2502,7 @@ static inline execute_status execute_BLT(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the BGE instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_BGE(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "bge");
+    dump_insn(a, pc, insn, "bge");
     auto note = a.make_scoped_note("bge"); (void) note;
     return execute_branch(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool {
         return static_cast<int64_t>(rs1) >= static_cast<int64_t>(rs2);
@@ -2512,7 +2512,7 @@ static inline execute_status execute_BGE(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the BLTU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_BLTU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "bltu");
+    dump_insn(a, pc, insn, "bltu");
     auto note = a.make_scoped_note("bltu"); (void) note;
     return execute_branch(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool {
         return rs1 < rs2;
@@ -2522,7 +2522,7 @@ static inline execute_status execute_BLTU(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the BGEU instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_BGEU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "bgeu");
+    dump_insn(a, pc, insn, "bgeu");
     auto note = a.make_scoped_note("bgeu"); (void) note;
     return execute_branch(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool {
         return rs1 >= rs2;
@@ -2532,7 +2532,7 @@ static inline execute_status execute_BGEU(STATE_ACCESS &a, uint64_t pc, uint32_t
 /// \brief Implementation of the LUI instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_LUI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "lui");
+    dump_insn(a, pc, insn, "lui");
     auto note = a.make_scoped_note("lui"); (void) note;
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
@@ -2543,7 +2543,7 @@ static inline execute_status execute_LUI(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the AUIPC instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_AUIPC(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "auipc");
+    dump_insn(a, pc, insn, "auipc");
     auto note = a.make_scoped_note("auipc"); (void) note;
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0)
@@ -2554,7 +2554,7 @@ static inline execute_status execute_AUIPC(STATE_ACCESS &a, uint64_t pc, uint32_
 /// \brief Implementation of the JAL instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_JAL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "jal");
+    dump_insn(a, pc, insn, "jal");
     auto note = a.make_scoped_note("jal"); (void) note;
     uint64_t new_pc = pc + insn_J_get_imm(insn);
     if (new_pc & 3) {
@@ -2569,7 +2569,7 @@ static inline execute_status execute_JAL(STATE_ACCESS &a, uint64_t pc, uint32_t 
 /// \brief Implementation of the JALR instruction.
 template <typename STATE_ACCESS>
 static inline execute_status execute_JALR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a.get_naked_machine(), pc, insn, "jalr");
+    dump_insn(a, pc, insn, "jalr");
     auto note = a.make_scoped_note("jalr"); (void) note;
     uint64_t val = pc + 4;
     uint64_t new_pc = static_cast<int64_t>(a.read_x(insn_get_rs1(insn)) + insn_I_get_imm(insn)) & ~static_cast<uint64_t>(1);
@@ -2587,7 +2587,7 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
     // rs1 and rs2 are arbitrary, rest is set
     if ((insn & 0b11111110000000000111111111111111) == 0b00010010000000000000000001110011) {
         INC_COUNTER(a.get_naked_state(), fence_vma);
-        dump_insn(a.get_naked_machine(), pc, insn, "sfence.vma");
+        dump_insn(a, pc, insn, "sfence.vma");
         auto note = a.make_scoped_note("sfence.vma"); (void) note;
         auto priv = a.read_iflags_PRV();
         uint64_t mstatus = a.read_mstatus();

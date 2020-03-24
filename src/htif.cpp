@@ -53,10 +53,6 @@ bool htif::is_yieldable(void) const {
     return m_yield;
 }
 
-const machine &htif::get_machine(void) const {
-    return m_machine;
-}
-
 uint64_t htif::get_csr_rel_addr(csr reg) {
     return static_cast<uint64_t>(reg);
 }
@@ -156,8 +152,7 @@ void htif::end_console(void) {
 
 // The constructor for the associated machine is typically *not* done
 // yet when the constructor for the HTIF device is invoked.
-htif::htif(machine &m, const htif_config &h):
-    m_machine{m},
+htif::htif(const htif_config &h):
     m_interact{h.interact},
     m_yield{h.yield},
     m_buf{}, m_buf_pos{}, m_buf_len{},
@@ -205,8 +200,9 @@ static bool htif_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t 
 
 static bool htif_getchar(i_virtual_state_access *a, htif *h, uint64_t payload) {
     (void) payload;
+    int c = h? h->console_get_char(): 0;
     a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_CONSOLE << 56) |
-        ((uint64_t)HTIF_CONSOLE_GETCHAR << 48) | h->console_get_char());
+        ((uint64_t)HTIF_CONSOLE_GETCHAR << 48) | c);
     return true;
 }
 
@@ -292,10 +288,9 @@ static bool htif_write(const pma_entry &pma, i_virtual_state_access *a, uint64_t
 }
 
 /// \brief HTIF device peek callback. See ::pma_peek.
-static bool htif_peek(const pma_entry &pma, uint64_t page_offset,
-    const unsigned char **page_data, unsigned char *scratch) {
-    const htif *h = reinterpret_cast<htif *>(pma.get_device().get_context());
-    const machine &m = h->get_machine();
+static bool htif_peek(const pma_entry &pma, const machine &m,
+    uint64_t page_offset, const unsigned char **page_data, 
+    unsigned char *scratch) {
     // Check for alignment and range
     if (page_offset % PMA_PAGE_SIZE != 0 || page_offset >= pma.get_length()) {
         *page_data = nullptr;
@@ -323,7 +318,7 @@ static const pma_driver htif_driver {
     htif_write
 };
 
-void htif::register_device(uint64_t start, uint64_t length) {
+pma_entry make_htif_pma_entry(uint64_t start, uint64_t length) {
     pma_entry::flags f{
         true,                   // R
         true,                   // W
@@ -332,7 +327,20 @@ void htif::register_device(uint64_t start, uint64_t length) {
         false,                  // IW
         PMA_ISTART_DID::HTIF    // DID
     };
-    m_machine.register_device(start, length, f, htif_peek, this, &htif_driver);
+    return make_device_pma_entry(start, length, f, htif_peek, nullptr, 
+        &htif_driver);
+}
+
+pma_entry make_htif_pma_entry(htif &h, uint64_t start, uint64_t length) {
+    pma_entry::flags f{
+        true,                   // R
+        true,                   // W
+        false,                  // X
+        false,                  // IR
+        false,                  // IW
+        PMA_ISTART_DID::HTIF    // DID
+    };
+    return make_device_pma_entry(start, length, f, htif_peek, &h, &htif_driver);
 }
 
 } // namespace cartesi

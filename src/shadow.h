@@ -22,6 +22,8 @@
 /// \file
 /// \brief Shadow device.
 
+#include "pma.h"
+
 namespace cartesi {
 
 // Forward declarations
@@ -74,11 +76,12 @@ uint64_t shadow_get_register_rel_addr(int reg);
 /// \returns The address.
 uint64_t shadow_get_pma_rel_addr(int p);
 
-/// \brief Registers a shadow device with the machine
-/// \param m Associated machine.
+/// \brief Creates a PMA entry for the shadow device
 /// \param start Start address for memory range.
 /// \param length Length of memory range.
-void shadow_register_device(machine &m, uint64_t start, uint64_t length);
+/// \returns Corresponding PMA entry
+pma_entry make_shadow_pma_entry(uint64_t start, uint64_t length);
+
 
 } // namespace cartesi
 

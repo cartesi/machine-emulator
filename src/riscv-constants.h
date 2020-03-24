@@ -282,10 +282,17 @@ enum COUNTEREN_rw_masks: uint64_t {
 
 /// \brief Cartesi-specific iflags shifts
 enum IFLAGS_shifts {
-    IFLAGS_H_SHIFT  = 0,
-    IFLAGS_Y_SHIFT  = 1,
-    IFLAGS_I_SHIFT  = 2,
-    IFLAGS_PRV_SHIFT= 3
+    IFLAGS_H_SHIFT   = 0,
+    IFLAGS_Y_SHIFT   = 1,
+    IFLAGS_I_SHIFT   = 2,
+    IFLAGS_PRV_SHIFT = 3
+};
+
+enum IFLAGS_masks: uint64_t {
+    IFLAGS_H_MASK   = UINT64_C(1) << IFLAGS_H_SHIFT,
+    IFLAGS_Y_MASK   = UINT64_C(1) << IFLAGS_Y_SHIFT,
+    IFLAGS_I_MASK   = UINT64_C(1) << IFLAGS_I_SHIFT,
+    IFLAGS_PRV_MASK = UINT64_C(3) << IFLAGS_PRV_SHIFT
 };
 
 /// \brief Initial values for Cartesi machines

@@ -40,10 +40,10 @@ uint64_t shadow_get_pma_rel_addr(int p) {
 }
 
 /// \brief Shadow device peek callback. See ::pma_peek.
-static bool shadow_peek(const pma_entry &pma, uint64_t page_offset,
-    const unsigned char **page_data, unsigned char *shadow) {
-    const machine *m = reinterpret_cast<const machine *>(
-        pma.get_device().get_context());
+static bool shadow_peek(const pma_entry &pma, const machine &m,
+    uint64_t page_offset, const unsigned char **page_data,
+    unsigned char *shadow) {
+    (void) pma;
     // There is only one page: 0
     if (page_offset != 0) {
         *page_data = nullptr;
@@ -54,66 +54,66 @@ static bool shadow_peek(const pma_entry &pma, uint64_t page_offset,
     // Copy general-purpose registers
     for (int i = 0; i < 32; ++i) {
         aliased_aligned_write<uint64_t>(shadow +
-            shadow_get_register_rel_addr(i), m->read_x(i));
+            shadow_get_register_rel_addr(i), m.read_x(i));
     }
     // Copy named registers
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::pc), m->read_pc());
+        shadow_get_csr_rel_addr(shadow_csr::pc), m.read_pc());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::mvendorid), m->read_mvendorid());
+        shadow_get_csr_rel_addr(shadow_csr::mvendorid), m.read_mvendorid());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::marchid), m->read_marchid());
+        shadow_get_csr_rel_addr(shadow_csr::marchid), m.read_marchid());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::mimpid), m->read_mimpid());
+        shadow_get_csr_rel_addr(shadow_csr::mimpid), m.read_mimpid());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::mcycle), m->read_mcycle());
+        shadow_get_csr_rel_addr(shadow_csr::mcycle), m.read_mcycle());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::minstret), m->read_minstret());
+        shadow_get_csr_rel_addr(shadow_csr::minstret), m.read_minstret());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::mstatus), m->read_mstatus());
+        shadow_get_csr_rel_addr(shadow_csr::mstatus), m.read_mstatus());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::mtvec), m->read_mtvec());
+        shadow_get_csr_rel_addr(shadow_csr::mtvec), m.read_mtvec());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::mscratch), m->read_mscratch());
+        shadow_get_csr_rel_addr(shadow_csr::mscratch), m.read_mscratch());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::mepc), m->read_mepc());
+        shadow_get_csr_rel_addr(shadow_csr::mepc), m.read_mepc());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::mcause), m->read_mcause());
+        shadow_get_csr_rel_addr(shadow_csr::mcause), m.read_mcause());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::mtval), m->read_mtval());
+        shadow_get_csr_rel_addr(shadow_csr::mtval), m.read_mtval());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::misa), m->read_misa());
+        shadow_get_csr_rel_addr(shadow_csr::misa), m.read_misa());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::mie), m->read_mie());
+        shadow_get_csr_rel_addr(shadow_csr::mie), m.read_mie());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::mip), m->read_mip());
+        shadow_get_csr_rel_addr(shadow_csr::mip), m.read_mip());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::medeleg), m->read_medeleg());
+        shadow_get_csr_rel_addr(shadow_csr::medeleg), m.read_medeleg());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::mideleg), m->read_mideleg());
+        shadow_get_csr_rel_addr(shadow_csr::mideleg), m.read_mideleg());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::mcounteren), m->read_mcounteren());
+        shadow_get_csr_rel_addr(shadow_csr::mcounteren), m.read_mcounteren());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::stvec), m->read_stvec());
+        shadow_get_csr_rel_addr(shadow_csr::stvec), m.read_stvec());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::sscratch), m->read_sscratch());
+        shadow_get_csr_rel_addr(shadow_csr::sscratch), m.read_sscratch());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::sepc), m->read_sepc());
+        shadow_get_csr_rel_addr(shadow_csr::sepc), m.read_sepc());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::scause), m->read_scause());
+        shadow_get_csr_rel_addr(shadow_csr::scause), m.read_scause());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::stval), m->read_stval());
+        shadow_get_csr_rel_addr(shadow_csr::stval), m.read_stval());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::satp), m->read_satp());
+        shadow_get_csr_rel_addr(shadow_csr::satp), m.read_satp());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::scounteren), m->read_scounteren());
+        shadow_get_csr_rel_addr(shadow_csr::scounteren), m.read_scounteren());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::ilrsc), m->read_ilrsc());
+        shadow_get_csr_rel_addr(shadow_csr::ilrsc), m.read_ilrsc());
     aliased_aligned_write<uint64_t>(shadow +
-        shadow_get_csr_rel_addr(shadow_csr::iflags), m->read_iflags());
+        shadow_get_csr_rel_addr(shadow_csr::iflags), m.read_iflags());
     // Copy PMAs
     int i = 0;
-    for (const auto &pma: m->get_pmas()) {
+    for (const auto &pma: m.get_pmas()) {
         auto rel_addr = shadow_get_pma_rel_addr(i);
         aliased_aligned_write<uint64_t>(shadow + rel_addr, pma.get_istart());
         aliased_aligned_write<uint64_t>(shadow + rel_addr + sizeof(uint64_t),
@@ -150,14 +150,13 @@ static bool shadow_read(const pma_entry &pma, i_virtual_state_access *a, uint64_
     return false;
 }
 
-
 static const pma_driver shadow_driver = {
     "SHADOW",
     shadow_read,
     pma_write_error
 };
 
-void shadow_register_device(machine &m, uint64_t start, uint64_t length) {
+pma_entry make_shadow_pma_entry(uint64_t start, uint64_t length) {
     pma_entry::flags f{
         true,                   // R
         false,                  // W
@@ -166,7 +165,8 @@ void shadow_register_device(machine &m, uint64_t start, uint64_t length) {
         false,                  // IW
         PMA_ISTART_DID::shadow  // DID
     };
-    m.register_device(start, length, f, shadow_peek, &m, &shadow_driver);
+    return make_device_pma_entry(start, length, f, shadow_peek, nullptr,
+        &shadow_driver);
 }
 
 } // namespace cartesi

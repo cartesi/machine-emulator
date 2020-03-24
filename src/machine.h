@@ -53,25 +53,7 @@ class machine final {
     /// \brief Allocates a new PMA entry.
     /// \param pma PMA entry to add to machine.
     /// \returns Reference to corresponding entry in machine state.
-    pma_entry &allocate_pma_entry(pma_entry &&pma);
-
-    /// \brief Register a new memory range initially filled with zeros.
-    /// \param start Start of PMA range.
-    /// \param length Length of PMA range.
-    /// \param f PMA flags for range.
-    /// \returns Reference to corresponding entry in machine state.
-    pma_entry &register_host_callocd_memory(uint64_t start, uint64_t length,
-        const pma_entry::flags &f);
-
-    /// \brief Register a new memory range initially filled with the
-    /// contents of a backing file.
-    /// \param start Start of PMA range.
-    /// \param length Length of PMA range.
-    /// \param f PMA flags for range.
-    /// \param path Path to backing file.
-    /// \returns Reference to corresponding entry in machine state.
-    pma_entry &register_host_callocd_memory(uint64_t start, uint64_t length,
-        const pma_entry::flags &f, const std::string &path);
+    pma_entry &register_pma_entry(pma_entry &&pma);
 
     /// \brief Runs the machine until mcycle reaches *at most* \p mcycle_end.
     /// \param mcycle_end Maximum value of mcycle before function returns.
@@ -117,7 +99,7 @@ public:
 
     /// \brief Checks the integrity of an access log.
     /// \param log State access log to be verified.
-    bool verify_access_log(const access_log &log) const;
+    static bool verify_access_log(const access_log &log);
 
     /// \brief Returns machine state for direct access.
     machine_state &get_state(void) { return m_s; }
@@ -469,44 +451,6 @@ public:
     /// \brief Resets bits in mip.
     /// \param mask Bits set in \p mask will also be reset in mip
     void reset_mip(uint32_t mask);
-
-    /// \brief Register a new memory region using the host's mmap functionality.
-    /// \param start Start of physical memory range in the target address
-    /// space on which to map the memory region.
-    /// \param length Length of physical memory range in the
-    /// target address space on which to map the memory region.
-    /// \param f PMA flags for range.
-    /// \param path Pointer to a string containing the filename
-    /// for the backing file in the host with the contents of the memory region.
-    /// \param shared Whether target modifications to the memory region are
-    /// reflected in the host's backing file.
-    /// \returns Reference to corresponding entry in machine state.
-    /// \details \p length must match the size of the backing file.
-    /// This function is typically used to map flash drives.
-    pma_entry &register_host_mmapd_memory(uint64_t start, uint64_t length,
-        const pma_entry::flags &f, const char *path, bool shared);
-
-    /// \brief Register a new memory-mapped IO device.
-    /// \param start Start of physical memory range in the target address
-    /// space on which to map the device.
-    /// \param length Length of physical memory range in the
-    /// target address space on which to map the device.
-    /// \param f PMA flags for range.
-    /// \param peek Peek callback for the range.
-    /// \param context Pointer to context to be passed to callbacks.
-    /// \param driver Pointer to driver with callbacks.
-    /// \param DID PMA device id.
-    void register_device(uint64_t start, uint64_t length, const pma_entry::flags &f, pma_peek peek, void *context, const pma_driver *driver);
-
-    /// \brief Register a new shadow device.
-    /// \param start Start of physical memory range in the target address
-    /// space on which to map the shadow device.
-    /// \param length Length of physical memory range in the
-    /// target address space on which to map the shadow device.
-    /// \param peek Peek callback for the range.
-    /// \param context Pointer to context to be passed to callbacks.
-    /// \param driver Pointer to driver with callbacks.
-    void register_shadow(uint64_t start, uint64_t length, pma_peek peek, void *context, const pma_driver *driver);
 
     /// \brief Dump all memory ranges to files in current working directory.
     /// \returns true if successful, false otherwise.

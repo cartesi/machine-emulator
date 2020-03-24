@@ -109,10 +109,9 @@ static bool clint_write(const pma_entry &pma, i_virtual_state_access *a, uint64_
 #define base(v) ((v) - ((v) % (PMA_PAGE_SIZE)))
 #define offset(v) ((v) % (PMA_PAGE_SIZE))
 /// \brief CLINT device peek callback. See ::pma_peek.
-static bool clint_peek(const pma_entry &pma, uint64_t page_offset,
-    const unsigned char **page_data, unsigned char *scratch) {
-    const machine *m = reinterpret_cast<const machine *>(
-        pma.get_device().get_context());
+static bool clint_peek(const pma_entry &pma, const machine &m, 
+    uint64_t page_offset, const unsigned char **page_data,
+    unsigned char *scratch) {
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
         "code assumes little-endian byte ordering");
     static_assert(base(CLINT_MSIP0_REL_ADDR) != base(CLINT_MTIMECMP_REL_ADDR) &&
@@ -127,20 +126,20 @@ static bool clint_peek(const pma_entry &pma, uint64_t page_offset,
             memset(scratch, 0, PMA_PAGE_SIZE);
             aliased_aligned_write<uint64_t>(scratch +
                 offset(CLINT_MSIP0_REL_ADDR),
-                (m->read_mip() & MIP_MSIP_MASK) == MIP_MSIP_MASK);
+                (m.read_mip() & MIP_MSIP_MASK) == MIP_MSIP_MASK);
             *page_data = scratch;
             return true;
         case base(CLINT_MTIMECMP_REL_ADDR):
             memset(scratch, 0, PMA_PAGE_SIZE);
             aliased_aligned_write<uint64_t>(scratch +
-                offset(CLINT_MTIMECMP_REL_ADDR), m->read_clint_mtimecmp());
+                offset(CLINT_MTIMECMP_REL_ADDR), m.read_clint_mtimecmp());
             *page_data = scratch;
             return true;
         case base(CLINT_MTIME_REL_ADDR):
             memset(scratch, 0, PMA_PAGE_SIZE);
             aliased_aligned_write<uint64_t>(scratch +
                 offset(CLINT_MTIME_REL_ADDR),
-                rtc_cycle_to_time(m->read_mcycle()));
+                rtc_cycle_to_time(m.read_mcycle()));
             *page_data = scratch;
             return true;
         default:
@@ -159,7 +158,7 @@ static const pma_driver clint_driver = {
     clint_write
 };
 
-void clint_register_device(machine &m, uint64_t start, uint64_t length) {
+pma_entry make_clint_pma_entry(uint64_t start, uint64_t length) {
     pma_entry::flags f{
         true,                   // R
         true,                   // W
@@ -168,7 +167,8 @@ void clint_register_device(machine &m, uint64_t start, uint64_t length) {
         false,                  // IW
         PMA_ISTART_DID::CLINT   // DID
     };
-    m.register_device(start, length, f, clint_peek, &m, &clint_driver);
+    return make_device_pma_entry(start, length, f, clint_peek, nullptr,
+        &clint_driver);
 }
 
 } // namespace cartesi

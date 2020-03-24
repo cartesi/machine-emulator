@@ -58,6 +58,13 @@ pma_memory::pma_memory(uint64_t length, const callocd &c):
         throw std::bad_alloc{};
 }
 
+pma_memory::pma_memory(uint64_t length, const mockd &m):
+    m_length{length},
+    m_host_memory{nullptr},
+    m_backing_file{-1} {
+    (void) m;
+}
+
 pma_memory::pma_memory(uint64_t length, const std::string &path,
     const callocd &c):
     pma_memory{length, c} {
@@ -169,9 +176,99 @@ bool pma_read_error(const pma_entry &, i_virtual_state_access *, uint64_t, uint6
     return false;
 }
 
-/// \brief Default device peek callback issues error on peeks.
-bool pma_peek_error(const pma_entry &, uint64_t, const unsigned char **, unsigned char *) {
+/// \brief Default device peek callback issues error on peeks. See ::pma_peek.
+bool pma_peek_error(const pma_entry &, const machine &, uint64_t, const unsigned char **, unsigned char *) {
     return false;
+}
+
+/// \brief Memory range peek callback. See ::pma_peek.
+static bool memory_peek(const pma_entry &pma, const machine &m, uint64_t page_address, const unsigned char **page_data, unsigned char *scratch) {
+    (void) m;
+    // If page_address is not aligned, or if it is out of range, return error
+    if ((page_address & (PMA_PAGE_SIZE-1)) != 0 ||
+        page_address > pma.get_length()) {
+        *page_data = nullptr;
+        return false;
+    }
+    // If page is only partially inside range, copy to scratch
+    if (page_address + PMA_PAGE_SIZE > pma.get_length()) {
+        memset(scratch, 0, PMA_PAGE_SIZE);
+        memcpy(scratch, pma.get_memory().get_host_memory() + page_address, pma.get_length() - page_address);
+        *page_data = scratch;
+        return true;
+    // Otherwise, return pointer direclty into host memory
+    } else {
+        *page_data = pma.get_memory().get_host_memory() + page_address;
+        return true;
+    }
+}
+
+pma_entry make_mmapd_memory_pma_entry(uint64_t start, uint64_t length,
+    const pma_entry::flags &f, const std::string &path, bool shared) {
+    if (length == 0) {
+        throw std::invalid_argument{"PMA length cannot be zero"};
+    }
+    return pma_entry{
+        start,
+        length,
+        pma_memory{
+            length,
+            path,
+            pma_memory::mmapd{shared}
+        },
+        memory_peek
+    }.set_flags(f);
+}
+
+pma_entry make_callocd_memory_pma_entry(uint64_t start,
+    uint64_t length, const pma_entry::flags &f) {
+    if (length == 0) {
+        throw std::invalid_argument{"PMA length cannot be zero"};
+    }
+    return pma_entry{
+        start,
+        length,
+        pma_memory{
+            length,
+            pma_memory::callocd{}
+        },
+        memory_peek
+    }.set_flags(f);
+}
+
+pma_entry make_callocd_memory_pma_entry(uint64_t start,
+    uint64_t length, const pma_entry::flags &f, const std::string &path) {
+    if (length == 0) {
+        throw std::invalid_argument{"PMA length cannot be zero"};
+    }
+    return pma_entry{
+        start,
+        length,
+        pma_memory{
+            length,
+            path,
+            pma_memory::callocd{}
+        },
+        memory_peek
+    }.set_flags(f);
+}
+
+pma_entry make_device_pma_entry(uint64_t start, uint64_t length,
+    const pma_entry::flags &f, pma_peek peek, void *context,
+    const pma_driver *driver) {
+    return pma_entry{
+        start,
+        length,
+        pma_device{
+            context,
+            driver
+        },
+        peek
+    }.set_flags(f);
+}
+
+pma_entry make_empty_pma_entry(uint64_t start, uint64_t length) {
+    return pma_entry{start, length};
 }
 
 } // namespace cartesi

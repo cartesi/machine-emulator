@@ -27,6 +27,7 @@ namespace cartesi {
 // Forward declarations
 class state_access;
 class logged_state_access;
+class step_state_access;
 class machine;
 
 /// \brief Interpreter status code
@@ -52,7 +53,12 @@ interpret(state_access &a, uint64_t mcycle_end);
 // Declaration of explicit instantiation in module interpret.cpp
 extern template
 interpreter_status
-interpret(state_access &a, uint64_t mcycle_end);
+interpret(logged_state_access &a, uint64_t mcycle_end);
+
+// Declaration of explicit instantiation in module interpret.cpp
+extern template
+interpreter_status
+interpret(step_state_access &a, uint64_t mcycle_end);
 
 } // namespace cartesi
 

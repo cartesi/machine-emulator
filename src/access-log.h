@@ -32,7 +32,8 @@ namespace cartesi {
 /// \brief Type of state access
 enum class access_type {
     read, ///< Read operation
-    write ///< Write operation
+    write, ///< Write operation
+    invalid ///< Invalid opearation
 };
 
 /// \brief Records access to a word in the machine state
@@ -51,6 +52,16 @@ class access_log {
     std::vector<std::string> m_notes{};     ///< Per-access annotations
 
 public:
+
+    access_log(void) = default;
+
+    template <typename ACCESSES, typename BRACKETS, typename NOTES>
+    access_log(ACCESSES &&accesses, BRACKETS &&brackets, NOTES &&notes):
+        m_accesses(std::forward<ACCESSES>(accesses)),
+        m_brackets(std::forward<BRACKETS>(brackets)),
+        m_notes(std::forward<NOTES>(notes)) {
+            ;
+    }
 
     /// \brief Clear the log
     void clear(void) {

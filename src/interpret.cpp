@@ -86,6 +86,7 @@ typedef unsigned __int128 uint128_t;
 #include "machine-state.h"
 #include "state-access.h"
 #include "logged-state-access.h"
+#include "step-state-access.h"
 #include "virtual-state-access.h"
 #include "rtc.h"
 #include "meta.h"
@@ -124,7 +125,13 @@ static const char *sbi_ecall_name(uint64_t a7) {
     }
 }
 
-static void dump_exception_or_interrupt(uint64_t cause, uint64_t a7) {
+template <typename STATE>
+static void dump_exception_or_interrupt(uint64_t cause, STATE &s) {
+    (void) cause; (void) s;
+}
+
+static void dump_exception_or_interrupt(uint64_t cause, machine_state &s) {
+    uint64_t a7 = s.x[17];
     if ((cause & MCAUSE_INTERRUPT_FLAG) != 0) {
         switch(cause & ~MCAUSE_INTERRUPT_FLAG) {
             case 0: fprintf(stderr, "user software interrupt"); break;
@@ -161,6 +168,11 @@ static void dump_exception_or_interrupt(uint64_t cause, uint64_t a7) {
             default: fprintf(stderr, "reserved"); break;
         }
     }
+}
+
+template <typename STATE>
+static void dump_regs(const STATE &s) {
+    (void)s;
 }
 
 static void dump_regs(const machine_state &s) {
@@ -294,7 +306,9 @@ template <typename STATE_ACCESS>
 static void set_priv(STATE_ACCESS &a, int previous_prv, int new_prv) {
     if (previous_prv != new_prv) {
         INC_COUNTER(a.get_naked_state(), priv_level[new_prv]);
-        tlb_flush_all(a.get_naked_state());
+        if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
+            tlb_flush_all(a.get_naked_state());
+        }
         a.write_iflags_PRV(new_prv);
         //??D new priv 1.11 draft says invalidation should
         //happen within a trap handler, although it could
@@ -336,7 +350,7 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
             fprintf(stderr, " tval=0x");
             print_uint64_t(tval);
             fprintf(stderr, " (");
-            dump_exception_or_interrupt(cause, a.get_naked_machine().read_x(17));
+            dump_exception_or_interrupt(cause, a.get_naked_state());
             fprintf(stderr, ")\n");
             dump_regs(a.get_naked_state());
         }
@@ -428,7 +442,6 @@ static inline uint32_t get_pending_irq_mask(STATE_ACCESS &a) {
             break;
         }
         default:
-            assert(a.get_naked_state().iflags.PRV == PRV_U);
             enabled_ints = -1;
             break;
     }
@@ -555,14 +568,19 @@ static inline uint32_t insn_get_funct7(uint32_t insn) {
 template <typename T, typename STATE_ACCESS>
 static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)  {
     using U = std::make_unsigned_t<T>;
-    int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
-    tlb_entry &tlb = a.get_naked_state().tlb_read[tlb_idx];
-    if (!avoid_tlb<STATE_ACCESS>::value && tlb_hit<T>(tlb, vaddr)) {
-        *pval = aliased_aligned_read<T>(tlb.hpage + (vaddr & PAGE_OFFSET_MASK));
-        INC_COUNTER(a.get_naked_state(), tlb_rhit);
-        return true;
+    // If we have a TLB, try hitting it
+    if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
+        int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
+        const tlb_entry &tlb = a.get_naked_state().tlb_read[tlb_idx];
+        if (tlb_hit<T>(tlb, vaddr)) {
+            *pval = aliased_aligned_read<T>(tlb.hpage +
+                (vaddr & PAGE_OFFSET_MASK));
+            INC_COUNTER(a.get_naked_state(), tlb_rhit);
+            return true;
+        }
+    }
     // No support for misaligned accesses: They are handled by a trap in BBL
-    } else if (vaddr & (sizeof(T)-1)) {
+    if (vaddr & (sizeof(T)-1)) {
         raise_exception(a, MCAUSE_LOAD_ADDRESS_MISALIGNED, vaddr);
         return false;
     // Deal with aligned accesses
@@ -578,7 +596,16 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             raise_exception(a, MCAUSE_LOAD_ACCESS_FAULT, vaddr);
             return false;
         } else if (pma.get_istart_M()) {
-            unsigned char *hpage = tlb_replace_read(pma, vaddr, paddr, tlb);
+            unsigned char *hpage = nullptr;
+            if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
+                int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
+                tlb_entry &tlb = a.get_naked_state().tlb_read[tlb_idx];
+                hpage = tlb_replace_read(pma, vaddr, paddr, tlb);
+            } else {
+                uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+                hpage = pma.get_memory().get_host_memory() +
+                    (paddr_page - pma.get_start());
+            }
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             a.read_memory(paddr, hpage, hoffset, pval);
             return true;
@@ -610,15 +637,19 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
 template <typename T, typename STATE_ACCESS>
 static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_t val64) {
     using U = std::make_unsigned_t<T>;
-    uint32_t tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
-    tlb_entry &tlb = a.get_naked_state().tlb_write[tlb_idx];
-    if (!avoid_tlb<STATE_ACCESS>::value && tlb_hit<T>(tlb, vaddr)) {
-        aliased_aligned_write<T>(tlb.hpage + (vaddr & PAGE_OFFSET_MASK),
-            static_cast<T>(val64));
-        INC_COUNTER(a.get_naked_state(), tlb_whit);
-        return true;
+    // If we have a TLB, try hitting it
+    if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
+        int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
+        tlb_entry &tlb = a.get_naked_state().tlb_write[tlb_idx];
+        if (tlb_hit<T>(tlb, vaddr)) {
+            aliased_aligned_write<T>(tlb.hpage + (vaddr & PAGE_OFFSET_MASK),
+                static_cast<T>(val64));
+            INC_COUNTER(a.get_naked_state(), tlb_whit);
+            return true;
+        }
+    }
     // No support for misaligned accesses: They are handled by a trap in BBL
-    } else if (vaddr & (sizeof(T)-1)) {
+    if (vaddr & (sizeof(T)-1)) {
         raise_exception(a, MCAUSE_STORE_AMO_ADDRESS_MISALIGNED, vaddr);
         return false;
     // Deal with aligned accesses
@@ -634,7 +665,16 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             raise_exception(a, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
             return false;
         } else if (pma.get_istart_M()) {
-            unsigned char *hpage = tlb_replace_write(pma, vaddr, paddr, tlb);
+            unsigned char *hpage = nullptr;
+            if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
+                int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
+                tlb_entry &tlb = a.get_naked_state().tlb_write[tlb_idx];
+                hpage = tlb_replace_write(pma, vaddr, paddr, tlb);
+            } else {
+                uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+                hpage = pma.get_memory().get_host_memory() +
+                    (paddr_page - pma.get_start());
+            }
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             // write to memory
             a.write_memory(paddr, hpage, hoffset, static_cast<T>(val64));
@@ -654,15 +694,10 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
     }
 }
 
-#ifdef DUMP_HIST
-#include <unordered_map>
-static std::unordered_map<std::string, uint64_t> g_insn_hist;
-#endif
-
 template <typename STATE_ACCESS>
 static void dump_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const char *name) {
 #ifdef DUMP_HIST
-    g_insn_hist[name]++;
+    a.get_naked_state().insn_hist[name]++;
 #endif
 #ifdef DUMP_REGS
     dump_regs(a.get_naked_state());
@@ -670,8 +705,11 @@ static void dump_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const char *n
 #ifdef DUMP_INSN
     //fprintf(stderr, "%s\n", name);
     (void) name;
-    uint64_t ppc;
-    if (!translate_virtual_address(a, &ppc, pc, PTE_XWR_C_SHIFT)) {
+    uint64_t ppc = 0;
+    //??D This will end up in the log, should we ever use this function while
+    // collecting a log or consuming a log...
+    if (std::is_same<STATE_ACCESS, state_access>::value &&
+        !translate_virtual_address(a, &ppc, pc, PTE_XWR_C_SHIFT)) {
         ppc = pc;
         fprintf(stderr, "v    %08" PRIx64, ppc);
     } else {
@@ -702,7 +740,7 @@ enum class execute_status: int {
 /// \details This function is tail-called whenever the caller decoded enough of the instruction to identify it as illegal.
 template <typename STATE_ACCESS>
 static inline execute_status raise_illegal_insn_exception(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    (void) a; (void) pc;
+    (void) pc;
     raise_exception(a, MCAUSE_ILLEGAL_INSN, insn);
     return execute_status::illegal;
 }
@@ -715,7 +753,6 @@ static inline execute_status raise_illegal_insn_exception(STATE_ACCESS &a, uint6
 /// \details This function is tail-called whenever the caller identified that the next value of pc is misaligned.
 template <typename STATE_ACCESS>
 static inline execute_status raise_misaligned_fetch_exception(STATE_ACCESS &a, uint64_t pc) {
-    (void) a;
     raise_exception(a, MCAUSE_INSN_ADDRESS_MISALIGNED, pc);
     return execute_status::retired;
 }
@@ -1499,7 +1536,9 @@ static bool write_csr_satp(STATE_ACCESS &a, uint64_t val) {
     a.write_satp((val & (((uint64_t)1 << 44) - 1)) | ((uint64_t)mode << 60));
     // Since MMU configuration was changted, flush the TLBs
     // This does not need to be done within the blockchain
-    tlb_flush_all(a.get_naked_state());
+    if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
+        tlb_flush_all(a.get_naked_state());
+    }
     return true;
 }
 
@@ -1507,12 +1546,14 @@ template <typename STATE_ACCESS>
 static bool write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
     uint64_t mstatus = a.read_mstatus() & MSTATUS_R_MASK;
 
-    // If MMU configuration was changed, flush the TLBs
-    // This does not need to be done within the blockchain
-    uint64_t mod = mstatus ^ val;
-    if ((mod & (MSTATUS_MPRV_MASK | MSTATUS_SUM_MASK | MSTATUS_MXR_MASK)) != 0 ||
-        ((mstatus & MSTATUS_MPRV_MASK) && (mod & MSTATUS_MPP_MASK) != 0)) {
-        tlb_flush_all(a.get_naked_state());
+    if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
+        // If MMU configuration was changed, flush the TLBs
+        // This does not need to be done within the blockchain
+        uint64_t mod = mstatus ^ val;
+        if ((mod & (MSTATUS_MPRV_MASK | MSTATUS_SUM_MASK | MSTATUS_MXR_MASK)) != 0 ||
+            ((mstatus & MSTATUS_MPRV_MASK) && (mod & MSTATUS_MPP_MASK) != 0)) {
+            tlb_flush_all(a.get_naked_state());
+        }
     }
 
     // Modify only bits that can be written to
@@ -1921,7 +1962,7 @@ static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t 
     if ((mip & mie) == 0) {
         a.set_iflags_I();
         // set brk so the outer loop can skip time if it wants too
-        a.get_naked_state().brk = true;
+        a.get_naked_state().set_brk();
     }
     return advance_to_next_insn(a, pc);
 }
@@ -2594,13 +2635,15 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
         if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK)))
             return raise_illegal_insn_exception(a, pc, insn);
         uint32_t rs1 = insn_get_rs1(insn);
-        if (rs1 == 0) {
-            tlb_flush_all(a.get_naked_state());
-        } else {
-            tlb_flush_vaddr(a.get_naked_state(), a.get_naked_state().x[rs1]);
+        if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
+            if (rs1 == 0) {
+                tlb_flush_all(a.get_naked_state());
+            } else {
+                tlb_flush_vaddr(a.get_naked_state(), a.get_naked_state().x[rs1]);
+            }
         }
         //??D The current code TLB may have been flushed
-        // a.get_naked_state().brk = true;
+        // a.get_naked_state().set_brk();
         return advance_to_next_insn(a, pc);
     } else {
         return raise_illegal_insn_exception(a, pc, insn);
@@ -3014,35 +3057,44 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
     auto note = a.make_scoped_note("fetch_insn"); (void) note;
     // Get current pc from state
     uint64_t vaddr = *pc = a.read_pc();
-    // Check TLB for hit
-    int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
-    tlb_entry &tlb = a.get_naked_state().tlb_code[tlb_idx];
-    if (!avoid_tlb<STATE_ACCESS>::value && tlb_hit<uint32_t>(tlb, vaddr)) {
-        *pinsn = aliased_aligned_read<uint32_t>(tlb.hpage + (vaddr & PAGE_OFFSET_MASK));
-        INC_COUNTER(a.get_naked_state(), tlb_chit);
-        return fetch_status::success;
-    // TLB miss
-    } else {
-        uint64_t paddr;
-        INC_COUNTER(a.get_naked_state(), tlb_cmiss);
-        // Walk page table and obtain the physical address
-        if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_C_SHIFT)) {
-            raise_exception(a, MCAUSE_FETCH_PAGE_FAULT, vaddr);
-            return fetch_status::exception;
+    // If we have a TLB, try hitting it
+    if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
+        int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
+        const tlb_entry &tlb = a.get_naked_state().tlb_code[tlb_idx];
+        if (tlb_hit<uint32_t>(tlb, vaddr)) {
+            *pinsn = aliased_aligned_read<uint32_t>(tlb.hpage + (vaddr & PAGE_OFFSET_MASK));
+            INC_COUNTER(a.get_naked_state(), tlb_chit);
+            return fetch_status::success;
         }
-        // Walk memory map to find the range that contains the physical address
-        pma_entry &pma = a.template find_pma_entry<uint32_t>(paddr);
-        // We only execute directly from RAM (as in "random access memory", which includes ROM)
-        // If the range is not memory or not executable, this as a PMA violation
-        if (!pma.get_istart_M() || !pma.get_istart_X()) {
-            raise_exception(a, MCAUSE_INSN_ACCESS_FAULT, vaddr);
-            return fetch_status::exception;
-        }
-        unsigned char *hpage = tlb_replace_read(pma, vaddr, paddr, tlb);
-        uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
-        a.read_memory(paddr, hpage, hoffset, pinsn);
-        return fetch_status::success;
     }
+    uint64_t paddr;
+    INC_COUNTER(a.get_naked_state(), tlb_cmiss);
+    // Walk page table and obtain the physical address
+    if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_C_SHIFT)) {
+        raise_exception(a, MCAUSE_FETCH_PAGE_FAULT, vaddr);
+        return fetch_status::exception;
+    }
+    // Walk memory map to find the range that contains the physical address
+    pma_entry &pma = a.template find_pma_entry<uint32_t>(paddr);
+    // We only execute directly from RAM (as in "random access memory", which includes ROM)
+    // If the range is not memory or not executable, this as a PMA violation
+    if (!pma.get_istart_M() || !pma.get_istart_X()) {
+        raise_exception(a, MCAUSE_INSN_ACCESS_FAULT, vaddr);
+        return fetch_status::exception;
+    }
+    unsigned char *hpage = nullptr;
+    if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
+        int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
+        tlb_entry &tlb = a.get_naked_state().tlb_code[tlb_idx];
+        hpage = tlb_replace_read(pma, vaddr, paddr, tlb);
+    } else {
+        uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+        hpage = pma.get_memory().get_host_memory() +
+            (paddr_page - pma.get_start());
+    }
+    uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
+    a.read_memory(paddr, hpage, hoffset, pinsn);
+    return fetch_status::success;
 }
 
 template <typename STATE_ACCESS>
@@ -3060,7 +3112,7 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     }
 
     // If we reached the target mcycle, we are done
-    if (a.get_naked_state().mcycle >= mcycle_end) {
+    if (a.get_naked_state().is_done(mcycle_end)) {
         return interpreter_status::success;
     }
 
@@ -3102,17 +3154,11 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         a.write_mcycle(mcycle);
 
         // If the break flag is active, break from the inner loop
-        if (a.get_naked_state().brk) {
-#ifdef DUMP_HIST
-            if (a.get_naked_state().iflags.H) {
-                for (auto v: g_insn_hist) {
-                    std::cout << v.second << ' ' << v.first << '\n';
-                }
-            }
-#endif
+        if (a.get_naked_state().get_brk()) {
             return interpreter_status::brk;
         }
         // Otherwise, there can be no pending interrupts
+        //
         // An interrupt is pending when mie & mip != 0
         // and when interrupts are not globally disabled
         // in mstatus (MIE or SIE). The logic is a bit
@@ -3120,9 +3166,7 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         // get_pending_irq_mask for details.
         // assert(get_pending_irq_mask(a.get_naked_state()) == 0);
         // For simplicity, we brk whenever mie & mip != 0
-        assert((a.get_naked_state().mie & a.get_naked_state().mip) == 0);
-        // or whenever iflags.H is set
-        assert(!a.get_naked_state().iflags.H);
+        a.get_naked_state().assert_no_brk();
 
         // If we reached the target mcycle, we are done
         if (mcycle >= mcycle_end) {
@@ -3141,5 +3185,10 @@ interpret(state_access &a, uint64_t mcycle_end);
 template
 interpreter_status
 interpret(logged_state_access &a, uint64_t mcycle_end);
+
+// Explicit instantiation for logged_state_access
+template
+interpreter_status
+interpret(step_state_access &a, uint64_t mcycle_end);
 
 } // namespace cartesi

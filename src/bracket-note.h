@@ -32,7 +32,7 @@ enum class bracket_type {
 /// \brief Bracket note
 struct bracket_note {
     bracket_type type{bracket_type::invalid}; ///< Bracket type
-    size_t where{0};                          ///< Where it points to in the log
+    uint64_t where{0};                        ///< Where it points to in the log
     std::string text{};                       ///< Note text
 };
 

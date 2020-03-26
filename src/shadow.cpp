@@ -165,8 +165,8 @@ pma_entry make_shadow_pma_entry(uint64_t start, uint64_t length) {
         false,                  // IW
         PMA_ISTART_DID::shadow  // DID
     };
-    return make_device_pma_entry(start, length, f, shadow_peek, nullptr,
-        &shadow_driver);
+    return make_device_pma_entry(start, length, shadow_peek, &shadow_driver).
+        set_flags(f);
 }
 
 } // namespace cartesi

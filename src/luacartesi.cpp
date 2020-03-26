@@ -29,6 +29,8 @@
 using cartesi::merkle_tree;
 using cartesi::access_type;
 using cartesi::bracket_type;
+using cartesi::bracket_note;
+using cartesi::word_access;
 using cartesi::access_log;
 using cartesi::machine_config;
 using cartesi::processor_config;
@@ -65,6 +67,23 @@ static bool opt_boolean_field(lua_State *L, int tabidx, const char *field, bool 
     }
     lua_pop(L, 1);
     return val;
+}
+
+/// \brief Returns an integer field indexed by string in a table.
+/// \param L Lua state.
+/// \param tabidx Table stack index.
+/// \param field Field index.
+/// \returns Field value. Throws error if field is missing.
+static int check_int_field(lua_State *L, int tabidx, const char *field) {
+    tabidx = lua_absindex(L, tabidx);
+    lua_Integer ival;
+    lua_getfield(L, tabidx, field);
+    if (!lua_isinteger(L, -1))
+        luaL_error(L, "invalid %s (expected integer, got %s)", field,
+            lua_typename(L, lua_type(L, -1)));
+    ival = lua_tointeger(L, -1);
+    lua_pop(L, 1);
+    return (int) ival;
 }
 
 /// \brief Returns an integer field indexed by string in a table.
@@ -215,10 +234,10 @@ static void push_proof(lua_State *L, const merkle_tree::proof_type proof) {
     push_hash(L, proof.target_hash); lua_setfield(L, -2, "target_hash"); // proof
 }
 
-/// \brief Converts an access type to a string.
+/// \brief Converts an access_type to a string.
 /// \param type Access type.
-/// \returns String with access type name.
-static const char *access_name(access_type type) {
+/// \returns String with access_type name.
+static const char *access_type_name(access_type type) {
     switch (type) {
         case access_type::read:
             return "read";
@@ -229,18 +248,43 @@ static const char *access_name(access_type type) {
     }
 }
 
-/// \brief Converts a note type to a string
+/// \brief Converts a string to an access_type.
+/// \param name Access type name.
+/// \returns Corresponding access_type.
+static access_type access_name_type(const std::string &name) {
+    if (name.compare("read") == 0) {
+        return access_type::read;
+    } else if (name.compare("write") == 0) {
+        return access_type::write;
+    } else {
+        return access_type::invalid;
+    }
+}
+
+/// \brief Converts a note_type to a string
 /// \param type Note type.
 /// \returns String with note type name.
-static const char *bracket_name(bracket_type type) {
+static const char *bracket_type_name(bracket_type type) {
     switch (type) {
         case bracket_type::begin:
             return "begin";
         case bracket_type::end:
             return "end";
-        case bracket_type::invalid:
         default:
             return "invalid";
+    }
+}
+
+/// \brief Converts a string to a bracket_type
+/// \param name Bracket_type name.
+/// \returns Corresponding bracket_type.
+static bracket_type bracket_name_type(const std::string &name) {
+    if (name.compare("begin") == 0) {
+        return bracket_type::begin;
+    } else if (name.compare("end") == 0) {
+        return bracket_type::end;
+    } else {
+        return bracket_type::invalid;
     }
 }
 
@@ -254,7 +298,7 @@ static void push_log(lua_State *L, access_log &log) {
     int i = 1; // convert from 0- to 1-based index
     for (const auto &a: log.get_accesses()) {
         lua_newtable(L); // log accesses wordaccess
-        lua_pushstring(L, access_name(a.type));
+        lua_pushstring(L, access_type_name(a.type));
         lua_setfield(L, -2, "type");
         lua_pushinteger(L, a.read);
         lua_setfield(L, -2, "read");
@@ -273,7 +317,7 @@ static void push_log(lua_State *L, access_log &log) {
     i = 1; // convert from 0- to 1-based index
     for (const auto &b: log.get_brackets()) {
         lua_newtable(L); // log brackets bracket
-        lua_pushstring(L, bracket_name(b.type));
+        lua_pushstring(L, bracket_type_name(b.type));
         lua_setfield(L, -2, "type");
         lua_pushinteger(L, b.where+1); // convert from 0- to 1-based index
         lua_setfield(L, -2, "where");
@@ -292,6 +336,150 @@ static void push_log(lua_State *L, access_log &log) {
         i++;
     }
     lua_setfield(L, -2, "notes"); // log
+}
+
+/// \brief Loads a bracket_note from Lua.
+/// \param L Lua state.
+/// \param tabidx Bracket_note stack index.
+/// \returns The bracket_note.
+bracket_note check_bracket_note(lua_State *L, int tabidx) {
+    luaL_checktype(L, tabidx, LUA_TTABLE);
+    return {
+        bracket_name_type(check_string_field(L, -1, "type")),
+        check_uint_field(L, -1, "where")-1, // confert from 1- to 0-based index
+        check_string_field(L, -1, "text")
+    };
+}
+
+/// \brief Return a hash from Lua
+/// \param L Lua state.
+/// \param idx Index in stack.
+/// \returns Hash.
+static merkle_tree::hash_type check_hash(lua_State *L, int idx) {
+    merkle_tree::hash_type hash;
+    if (lua_isstring(L, idx)) {
+        const char *data = nullptr;
+        size_t len = 0;
+        data = lua_tolstring(L, -1, &len);
+        if (len != hash.max_size()) {
+            luaL_error(L, "expected hash");
+        }
+        memcpy(hash.data(), data, hash.max_size());
+    } else {
+        luaL_error(L, "expected hash");
+    }
+    return hash;
+}
+
+/// \brief Loads an array of sibling_hashes from Lua.
+/// \param L Lua state.
+/// \param tabidx Proof stack index.
+/// \returns The sibling_hashes array.
+merkle_tree::siblings_type check_sibling_hashes(lua_State *L, int idx, int log2_size) {
+    luaL_checktype(L, idx, LUA_TTABLE);
+    merkle_tree::siblings_type sibling_hashes;
+    if (log2_size < merkle_tree::get_log2_word_size()) {
+        luaL_error(L, "invalid log2_size");
+    }
+    for ( ; log2_size < merkle_tree::get_log2_tree_size(); ++log2_size) {
+        lua_rawgeti(L, idx, merkle_tree::get_log2_tree_size()-log2_size);
+        merkle_tree::set_sibling_hash(check_hash(L, -1),
+            log2_size, sibling_hashes);
+        lua_pop(L, 1);
+    }
+    return sibling_hashes;
+}
+
+/// \brief Loads a proof from Lua.
+/// \param L Lua state.
+/// \param tabidx Proof stack index.
+/// \returns The proof.
+merkle_tree::proof_type check_proof(lua_State *L, int tabidx) {
+    luaL_checktype(L, tabidx, LUA_TTABLE);
+    uint64_t address = check_uint_field(L, tabidx, "address");
+    int log2_size = check_int_field(L, tabidx, "log2_size");
+    lua_getfield(L, tabidx, "target_hash");
+    auto target_hash = check_hash(L, -1);
+    lua_pop(L, 1);
+    lua_getfield(L, tabidx, "root_hash");
+    auto root_hash = check_hash(L, -1);
+    lua_pop(L, 1);
+    lua_getfield(L, tabidx, "sibling_hashes");
+    auto sibling_hashes = check_sibling_hashes(L, -1, log2_size);
+    lua_pop(L, 1);
+    return {
+        address,
+        log2_size,
+        target_hash,
+        sibling_hashes,
+        root_hash
+    };
+}
+
+/// \brief Loads a word_acces from Lua.
+/// \param L Lua state.
+/// \param tabidx Word_access stack index.
+/// \returns The word_access.
+word_access check_word_access(lua_State *L, int tabidx) {
+    luaL_checktype(L, tabidx, LUA_TTABLE);
+    lua_getfield(L, tabidx, "proof");
+    auto proof = check_proof(L, -1);
+    lua_pop(L, 1);
+    return {
+        access_name_type(check_string_field(L, -1, "type")),
+        check_uint_field(L, tabidx, "read"),
+        opt_uint_field(L, tabidx, "written", 0),
+        proof
+    };
+}
+
+/// \brief Loads an access_log from Lua.
+/// \param L Lua state.
+/// \param tabidx Access_log stack index.
+/// \returns The access_log.
+access_log check_log(lua_State *L, int tabidx) {
+    std::vector<word_access> accesses;
+    std::vector<bracket_note> brackets;
+    std::vector<std::string> notes;
+    luaL_checktype(L, tabidx, LUA_TTABLE);
+    check_table_field(L, tabidx, "accesses");
+    int len = luaL_len(L, -1);
+    for (int i = 1; i <= len; i++) {
+        lua_geti(L, -1, i);
+        if (!lua_istable(L, -1)) {
+            luaL_error(L, "access [%d] not a table", i);
+        }
+        accesses.emplace_back(check_word_access(L, -1));
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+    if (opt_table_field(L, tabidx, "notes")) {
+        len = luaL_len(L, -1);
+        for (int i = 1; i <= len; i++) {
+            lua_geti(L, -1, i);
+            if (!lua_isstring(L, -1)) {
+                luaL_error(L, "note [%d] not a string", i);
+            }
+            notes.emplace_back(lua_tostring(L, -1));
+            lua_pop(L, 1);
+        }
+    }
+    if (opt_table_field(L, tabidx, "brackets")) {
+        len = luaL_len(L, -1);
+        for (int i = 1; i <= len; i++) {
+            lua_geti(L, -1, i);
+            if (!lua_istable(L, -1)) {
+                luaL_error(L, "bracket [%d] not a table", i);
+            }
+            brackets.emplace_back(check_bracket_note(L, -1));
+            lua_pop(L, 1);
+        }
+    }
+    return {
+        std::move(accesses),
+        std::move(brackets),
+        std::move(notes)
+    };
 }
 
 /// \brief Loads RAM config from Lua to machine_config.
@@ -853,6 +1041,29 @@ static const luaL_Reg gperf_meta[] = {
 };
 #endif
 
+static int machine_verify_access_log(lua_State *L) try {
+    machine::verify_access_log(check_log(L, 1));
+    lua_pushnumber(L, 1);
+    return 1;
+} catch (std::exception &x) {
+    lua_pushnil(L);
+    lua_pushstring(L, x.what());
+    return 2;
+}
+
+/// \brief Sets machine class static entries in table at top of stack
+/// \param L Lua state.
+static void machine_set_static(lua_State *L) {
+    lua_pushinteger(L, machine::MVENDORID);
+    lua_setfield(L, -2, "MVENDORID");
+    lua_pushinteger(L, machine::MARCHID);
+    lua_setfield(L, -2, "MARCHID");
+    lua_pushinteger(L, machine::MIMPID);
+    lua_setfield(L, -2, "MIMPID");
+    lua_pushcfunction(L, machine_verify_access_log);
+    lua_setfield(L, -2, "verify_access_log");
+}
+
 /// \brief Entrypoint to the Cartesi Lua library.
 /// \param L Lua state.
 extern "C"
@@ -870,6 +1081,7 @@ int luaopen_cartesi(lua_State *L) {
     lua_newtable(L); /* cartesi_mod */
     lua_newtable(L); /* cartesi_mod machine_meta */
     lua_newtable(L); /* cartesi_mod machine_meta metaidx */
+    machine_set_static(L);
     lua_pushvalue(L, -2); /* cartesi_mod machine_meta metaidx machine_meta */
     luaL_setfuncs(L, machine_meta__index, 1); /* cartesi_mod machine_meta metaidx */
     lua_setfield(L, -2, "__index"); /* cartesi_mod machine_meta */
@@ -880,12 +1092,7 @@ int luaopen_cartesi(lua_State *L) {
     lua_pushvalue(L, -3); /* cartesi_mod machine_meta ctor ctor_meta machine_meta */
     luaL_setfuncs(L, machine_ctor_meta, 1); /* cartesi_mod machine_meta ctor ctor_meta */
     lua_newtable(L); /* cartesi_mod machine_meta ctor ctor_meta ctoridx */
-    lua_pushinteger(L, machine::MVENDORID);
-    lua_setfield(L, -2, "MVENDORID");
-    lua_pushinteger(L, machine::MARCHID);
-    lua_setfield(L, -2, "MARCHID");
-    lua_pushinteger(L, machine::MIMPID);
-    lua_setfield(L, -2, "MIMPID");
+    machine_set_static(L);
     lua_setfield(L, -2, "__index"); /* cartesi_mod machine_meta ctor ctor_meta */
     lua_setmetatable(L, -2); /* cartesi_mod machine_meta ctor */
     lua_setfield(L, -3, "machine"); /* caretsi_mod machine_meta */

@@ -21,6 +21,11 @@
 /// \brief Cartesi machine state structure definition.
 
 #include <cstdint>
+#include <cassert>
+
+#ifdef DUMP_HIST
+#include <unordered_map>
+#endif
 
 #include <boost/container/static_vector.hpp>
 
@@ -75,6 +80,13 @@ struct machine_statistics {
 };
 #endif
 
+struct unpacked_iflags {
+    uint8_t PRV; ///< Privilege level.
+    bool I;      ///< CPU is idle (waiting for interrupts).
+    bool Y;      ///< CPU has temporarily yielded.
+    bool H;      ///< CPU has been permanently halted.
+};        ///< Cartesi-specific unpacked CSR iflags.
+
 /// \brief Machine state.
 /// \details The machine_state structure contains the entire
 /// state of a Cartesi machine.
@@ -118,12 +130,8 @@ struct machine_state {
 
     // Cartesi-specific state
     uint64_t ilrsc;  ///< Cartesi-specific CSR ilrsc (For LR/SC instructions).
-    struct {
-        uint8_t PRV; ///< Privilege level.
-        bool I;      ///< CPU is idle (waiting for interrupts).
-        bool Y;      ///< CPU has temporarily yielded.
-        bool H;      ///< CPU has been permanently halted.
-    } iflags;        ///< Cartesi-specific unpacked CSR iflags.
+
+    unpacked_iflags iflags;  ///< Cartesi-specific unpacked CSR iflags.
 
     /// \brief CLINT state
     struct {
@@ -150,8 +158,34 @@ struct machine_state {
     tlb_entry tlb_code[TLB_SIZE]; ///< Code TLB
 
 #ifdef DUMP_COUNTERS
-    struct machine_statistics stats;
+    machine_statistics stats;
 #endif
+
+#ifdef DUMP_HIST
+    std::unordered_map<std::string, uint64_t> insn_hist;
+#endif
+
+    /// \brief Checks if machine is past given mcycle
+    bool is_done(uint64_t mcycle_end) const {
+        return mcycle >= mcycle_end;
+    }
+
+    /// \brief Sets the value of the brk flag.
+    void set_brk(void) {
+        brk = true;
+    }
+
+    /// \brief Read the value of the brk flag.
+    bool get_brk(void) const {
+        return brk;
+    }
+
+    /// \brief Checks that false brk is consistent with rest of state
+    void assert_no_brk(void) const {
+        assert((mie & mip) == 0);
+        assert(!iflags.Y);
+        assert(!iflags.H);
+    }
 
     /// \brief Updates the brk flag from changes in mip and mie registers.
     void or_brk_with_mip_mie(void) {

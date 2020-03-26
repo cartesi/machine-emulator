@@ -178,6 +178,10 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
                 case access_type::write:
                     a->set_operation(CartesiCore::AccessOperation::WRITE);
                     break;
+                default:
+                    //??D waiting for PR on grpc_interfaces
+                    //a->set_operation(CartesiCore::AccessOperation::INVALID);
+                    break;
             }
 
             //Setting read, and written fields
@@ -199,7 +203,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
                 case bracket_type::end:
                     bn->set_type(CartesiCore::BracketNote_BracketNoteType_END);
                     break;
-                case bracket_type::invalid:
+                default:
                     bn->set_type(CartesiCore::BracketNote_BracketNoteType_INVALID);
                     break;
             }

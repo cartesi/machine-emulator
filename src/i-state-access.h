@@ -67,12 +67,12 @@ template <typename DERIVED> class i_state_access { // CRTP
 public:
 
     /// \brief Returns machine state for direct access.
-    machine_state &get_naked_state(void) {
+    auto &get_naked_state(void) {
         return derived().do_get_naked_state();
     }
 
     /// \brief Returns machine state for direct read-only access.
-    const machine_state &get_naked_state(void) const {
+    const auto &get_naked_state(void) const {
         return derived().do_get_naked_state();
     }
 

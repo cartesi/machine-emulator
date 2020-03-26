@@ -20,7 +20,8 @@
 #include <cstdint>
 #include <vector>
 #include <variant>
-
+#include <string>
+#include <stdexcept>
 
 #include "pma-constants.h"
 
@@ -80,16 +81,16 @@ struct pma_driver final {
 /// \brief Data for IO ranges.
 class pma_device final {
 
-    void *m_context;             ///< Context to pass to callbacks.
     const pma_driver *m_driver;  ///< Driver with callbacks.
+    void *m_context;             ///< Context to pass to callbacks.
 
 public:
     /// \brief Constructor from entries.
     /// \param context Context to pass to callbacks.
-    /// \param driver Driver with callbacks.
-    pma_device(void *context, const pma_driver *driver):
-        m_context{context},
-        m_driver{driver} {
+    /// \param driver Pointer to driver with callbacks.
+    explicit pma_device(const pma_driver *driver, void *context):
+        m_driver{driver},
+        m_context{context} {
         ;
     }
 
@@ -105,7 +106,7 @@ public:
         return const_cast<void *>(m_context);
     }
 
-    /// \brief Returns driver with callbacks
+    /// \brief Returns pointer to driver with callbacks
     const pma_driver *get_driver(void) const {
         return m_driver;
     }
@@ -262,7 +263,7 @@ public:
     pma_entry(void): pma_entry(0, 0) { ; }
 
     /// \brief Constructor for memory entry
-    explicit pma_entry(uint64_t start, uint64_t length, pma_memory &&memory,
+    pma_entry(uint64_t start, uint64_t length, pma_memory &&memory,
         pma_peek peek = pma_peek_error):
         m_start{start},
         m_length{length},
@@ -276,7 +277,7 @@ public:
     }
 
     /// \brief Constructor for device entry
-    explicit pma_entry(uint64_t start, uint64_t length, pma_device &&device,
+    pma_entry(uint64_t start, uint64_t length, pma_device &&device,
         pma_peek peek = pma_peek_error):
         m_start{start},
         m_length{length},
@@ -435,20 +436,17 @@ public:
 /// initially filled with zeros.
 /// \param start Start of PMA range.
 /// \param length Length of PMA range.
-/// \param f PMA flags for range.
 /// \returns Corresponding PMA entry
-pma_entry make_callocd_memory_pma_entry(uint64_t start, uint64_t length,
-    const pma_entry::flags &f);
+pma_entry make_callocd_memory_pma_entry(uint64_t start, uint64_t length);
 
 /// \brief Creates a PMA entry for a new memory range initially filled
 /// with the contents of a backing file.
 /// \param start Start of PMA range.
 /// \param length Length of PMA range.
-/// \param f PMA flags for range.
 /// \param path Path to backing file.
 /// \returns Corresponding PMA entry
 pma_entry make_callocd_memory_pma_entry(uint64_t start, uint64_t length,
-    const pma_entry::flags &f, const std::string &path);
+    const std::string &path);
 
 /// \brief Creates a PMA entry for a new memory region using the host's
 /// mmap functionality.
@@ -456,8 +454,7 @@ pma_entry make_callocd_memory_pma_entry(uint64_t start, uint64_t length,
 /// space on which to map the memory region.
 /// \param length Length of physical memory range in the
 /// target address space on which to map the memory region.
-/// \param f PMA flags for range.
-/// \param path Pointer to a string containing the filename
+/// \param path Reference to a string containing the filename
 /// for the backing file in the host with the contents of the memory region.
 /// \param shared Whether target modifications to the memory region are
 /// reflected in the host's backing file.
@@ -465,31 +462,33 @@ pma_entry make_callocd_memory_pma_entry(uint64_t start, uint64_t length,
 /// \details \p length must match the size of the backing file.
 /// This function is typically used to map flash drives.
 pma_entry make_mmapd_memory_pma_entry(uint64_t start, uint64_t length,
-    const pma_entry::flags &f, const std::string &path, bool shared);
+    const std::string &path, bool shared);
+
+/// \brief Creates a PMA entry for a new mock memory region (no allocation).
+/// \param start Start of physical memory range in the target address
+/// space on which to map the memory region.
+/// \param length Length of physical memory range in the
+/// target address space on which to map the memory region.
+/// \returns Corresponding PMA entry
+pma_entry make_mockd_memory_pma_entry(uint64_t start, uint64_t length);
 
 /// \brief Creates a PMA entry for a new memory-mapped IO device.
 /// \param start Start of physical memory range in the target address
 /// space on which to map the device.
 /// \param length Length of physical memory range in the
 /// target address space on which to map the device.
-/// \param f PMA flags for range.
 /// \param peek Peek callback for the range.
-/// \param context Pointer to context to be passed to callbacks.
 /// \param driver Pointer to driver with callbacks.
+/// \param context Pointer to context to be passed to callbacks.
 /// \returns Corresponding PMA entry
 pma_entry make_device_pma_entry(uint64_t start, uint64_t length,
-    const pma_entry::flags &f, pma_peek peek, void *context,
-    const pma_driver *driver);
+    pma_peek peek, const pma_driver *driver, void *context = nullptr);
 
 /// \brief Creates an empty PMA entry.
 /// \param start Start of physical memory range in the target address
 /// space on which to map the device.
 /// \param length Length of physical memory range in the
 /// target address space on which to map the device.
-/// \param f PMA flags for range.
-/// \param peek Peek callback for the range.
-/// \param context Pointer to context to be passed to callbacks.
-/// \param driver Pointer to driver with callbacks.
 /// \returns Corresponding PMA entry
 pma_entry make_empty_pma_entry(uint64_t start, uint64_t length);
 

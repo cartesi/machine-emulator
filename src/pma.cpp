@@ -21,6 +21,7 @@
 #include <errno.h>
 
 #include <string>
+#include <cstring>
 #include <system_error>
 
 #include "unique-c-ptr.h"
@@ -204,7 +205,7 @@ static bool memory_peek(const pma_entry &pma, const machine &m, uint64_t page_ad
 }
 
 pma_entry make_mmapd_memory_pma_entry(uint64_t start, uint64_t length,
-    const pma_entry::flags &f, const std::string &path, bool shared) {
+    const std::string &path, bool shared) {
     if (length == 0) {
         throw std::invalid_argument{"PMA length cannot be zero"};
     }
@@ -217,11 +218,10 @@ pma_entry make_mmapd_memory_pma_entry(uint64_t start, uint64_t length,
             pma_memory::mmapd{shared}
         },
         memory_peek
-    }.set_flags(f);
+    };
 }
 
-pma_entry make_callocd_memory_pma_entry(uint64_t start,
-    uint64_t length, const pma_entry::flags &f) {
+pma_entry make_callocd_memory_pma_entry(uint64_t start, uint64_t length) {
     if (length == 0) {
         throw std::invalid_argument{"PMA length cannot be zero"};
     }
@@ -233,11 +233,11 @@ pma_entry make_callocd_memory_pma_entry(uint64_t start,
             pma_memory::callocd{}
         },
         memory_peek
-    }.set_flags(f);
+    };
 }
 
 pma_entry make_callocd_memory_pma_entry(uint64_t start,
-    uint64_t length, const pma_entry::flags &f, const std::string &path) {
+    uint64_t length, const std::string &path) {
     if (length == 0) {
         throw std::invalid_argument{"PMA length cannot be zero"};
     }
@@ -250,21 +250,35 @@ pma_entry make_callocd_memory_pma_entry(uint64_t start,
             pma_memory::callocd{}
         },
         memory_peek
-    }.set_flags(f);
+    };
+}
+
+pma_entry make_mockd_memory_pma_entry(uint64_t start, uint64_t length) {
+    if (length == 0) {
+        throw std::invalid_argument{"PMA length cannot be zero"};
+    }
+    return pma_entry{
+        start,
+        length,
+        pma_memory{
+            length,
+            pma_memory::mockd{}
+        },
+        pma_peek_error
+    };
 }
 
 pma_entry make_device_pma_entry(uint64_t start, uint64_t length,
-    const pma_entry::flags &f, pma_peek peek, void *context,
-    const pma_driver *driver) {
+    pma_peek peek, const pma_driver *driver, void *context) {
     return pma_entry{
         start,
         length,
         pma_device{
-            context,
-            driver
+            driver,
+            context
         },
         peek
-    }.set_flags(f);
+    };
 }
 
 pma_entry make_empty_pma_entry(uint64_t start, uint64_t length) {

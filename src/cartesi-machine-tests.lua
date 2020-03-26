@@ -507,7 +507,7 @@ local function step(tests)
         local machine = build_machine(ram_image)
         io.stdout:write(" {\n")
         io.stdout:write('  "test": "', ram_image, '",\n')
-        io.stdout:write('  "skip": ', skip, ',\n')
+        if skip then io.stdout:write('  "skip": ', skip, ',\n') end
         io.stdout:write('  "steps": [ ')
         local cycles, payload = run_machine(machine, expected_cycles, function()
             local init_cycles = machine:read_mcycle()

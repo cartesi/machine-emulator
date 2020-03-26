@@ -99,7 +99,7 @@ public:
 
     /// \brief Checks the integrity of an access log.
     /// \param log State access log to be verified.
-    static bool verify_access_log(const access_log &log);
+    static void verify_access_log(const access_log &log);
 
     /// \brief Returns machine state for direct access.
     machine_state &get_state(void) { return m_s; }

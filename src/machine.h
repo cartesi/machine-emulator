@@ -32,6 +32,8 @@ namespace cartesi {
 // Forward declarations
 class access_log;
 
+/// \class machine
+/// \brief Cartesi Machine implementation
 class machine final {
 
     //??D Ideally, we would hold a unique_ptr to the state. This
@@ -64,6 +66,40 @@ class machine final {
     void run_inner_loop(uint64_t mcycle_end);
 
 public:
+
+    /// \brief List of CSRs to use with read_csr and write_csr
+    enum class csr {
+        pc,
+        mvendorid,
+        marchid,
+        mimpid,
+        mcycle,
+        minstret,
+        mstatus,
+        mtvec,
+        mscratch,
+        mepc,
+        mcause,
+        mtval,
+        misa,
+        mie,
+        mip,
+        medeleg,
+        mideleg,
+        mcounteren,
+        stvec,
+        sscratch,
+        sepc,
+        scause,
+        stval,
+        satp,
+        scounteren,
+        ilrsc,
+        iflags,
+        clint_mtimecmp,
+        htif_tohost,
+        htif_fromhost
+    };
 
     static const uint64_t MVENDORID = MVENDORID_INIT;
     static const uint64_t MARCHID = MARCHID_INIT;
@@ -131,6 +167,16 @@ public:
     /// \param proof Receives the proof.
     /// \returns true if succeeded, false otherwise.
     bool get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) const;
+
+    /// \brief Read the value of any CSR
+    /// \param r CSR to read
+    /// \returns The value of the CSR
+    uint64_t read_csr(csr r) const;
+
+    /// \brief Write the value of any CSR
+    /// \param w CSR to write
+    /// \param val Value to write
+    void write_csr(csr w, uint64_t val);
 
     /// \brief Read the value of a word in the machine state.
     /// \param word_address Word address (aligned to 64-bit boundary).

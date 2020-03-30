@@ -315,7 +315,7 @@ local function run_machine(machine, expected_cycles, callback)
         machine:run(2*expected_cycles)
         callback()
     end
-    local payload = (machine:read_tohost() & (~1 >> 16)) >> 1
+    local payload = (machine:read_htif_tohost() & (~1 >> 16)) >> 1
     local final_cycle = machine:read_mcycle()
     return final_cycle, payload
 end

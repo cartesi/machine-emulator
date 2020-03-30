@@ -584,12 +584,12 @@ if not json_steps then
         machine:run(max_mcycle)
         cycles = machine:read_mcycle()
         if machine:read_iflags_H() then
-            local payload = machine:read_tohost() << 16 >> 17
+            local payload = machine:read_htif_tohost() << 16 >> 17
             io.stderr:write("\nHalted with payload: ", payload, "\n")
             io.stderr:write("Cycles: ", cycles, "\n")
             break
         elseif machine:read_iflags_Y() then
-            local tohost = machine:read_tohost()
+            local tohost = machine:read_htif_tohost()
             local cmd = tohost << 8 >> 56
             local data = tohost << 16 >> 16
             if cmd == 0 then

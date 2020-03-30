@@ -634,6 +634,82 @@ void machine::write_clint_mtimecmp(uint64_t val) {
     m_s.clint.mtimecmp = val;
 }
 
+uint64_t machine::read_csr(csr r) const {
+    switch (r) {
+        case csr::pc: return read_pc();
+        case csr::mvendorid: return read_mvendorid();
+        case csr::marchid: return read_marchid();
+        case csr::mimpid: return read_mimpid();
+        case csr::mcycle: return read_mcycle();
+        case csr::minstret: return read_minstret();
+        case csr::mstatus: return read_mstatus();
+        case csr::mtvec: return read_mtvec();
+        case csr::mscratch: return read_mscratch();
+        case csr::mepc: return read_mepc();
+        case csr::mcause: return read_mcause();
+        case csr::mtval: return read_mtval();
+        case csr::misa: return read_misa();
+        case csr::mie: return read_mie();
+        case csr::mip: return read_mip();
+        case csr::medeleg: return read_medeleg();
+        case csr::mideleg: return read_mideleg();
+        case csr::mcounteren: return read_mcounteren();
+        case csr::stvec: return read_stvec();
+        case csr::sscratch: return read_sscratch();
+        case csr::sepc: return read_sepc();
+        case csr::scause: return read_scause();
+        case csr::stval: return read_stval();
+        case csr::satp: return read_satp();
+        case csr::scounteren: return read_scounteren();
+        case csr::ilrsc: return read_ilrsc();
+        case csr::iflags: return read_iflags();
+        case csr::clint_mtimecmp: return read_clint_mtimecmp();
+        case csr::htif_tohost: return read_htif_tohost();
+        case csr::htif_fromhost: return read_htif_fromhost();
+        default:
+            throw std::invalid_argument{"unknown CSR"};
+            return 0; // never reached
+    }
+}
+
+void machine::write_csr(csr w, uint64_t val) {
+    switch (w) {
+        case csr::pc: return write_pc(val);
+        case csr::mcycle: return write_mcycle(val);
+        case csr::minstret: return write_minstret(val);
+        case csr::mstatus: return write_mstatus(val);
+        case csr::mtvec: return write_mtvec(val);
+        case csr::mscratch: return write_mscratch(val);
+        case csr::mepc: return write_mepc(val);
+        case csr::mcause: return write_mcause(val);
+        case csr::mtval: return write_mtval(val);
+        case csr::misa: return write_misa(val);
+        case csr::mie: return write_mie(val);
+        case csr::mip: return write_mip(val);
+        case csr::medeleg: return write_medeleg(val);
+        case csr::mideleg: return write_mideleg(val);
+        case csr::mcounteren: return write_mcounteren(val);
+        case csr::stvec: return write_stvec(val);
+        case csr::sscratch: return write_sscratch(val);
+        case csr::sepc: return write_sepc(val);
+        case csr::scause: return write_scause(val);
+        case csr::stval: return write_stval(val);
+        case csr::satp: return write_satp(val);
+        case csr::scounteren: return write_scounteren(val);
+        case csr::ilrsc: return write_ilrsc(val);
+        case csr::iflags: return write_iflags(val);
+        case csr::clint_mtimecmp: return write_clint_mtimecmp(val);
+        case csr::htif_tohost: return write_htif_tohost(val);
+        case csr::htif_fromhost: return write_htif_fromhost(val);
+        case csr::mvendorid: [[fallthrough]];
+        case csr::marchid: [[fallthrough]];
+        case csr::mimpid:
+            throw std::invalid_argument{"CSR is read-only"};
+        default:
+            throw std::invalid_argument{"unknown CSR"};
+    }
+}
+
 void machine::set_mip(uint32_t mask) {
     m_s.mip |= mask;
     m_s.iflags.I = false;

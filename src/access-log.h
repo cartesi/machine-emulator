@@ -33,7 +33,6 @@ namespace cartesi {
 enum class access_type {
     read, ///< Read operation
     write, ///< Write operation
-    invalid ///< Invalid opearation
 };
 
 /// \brief Records access to a word in the machine state

@@ -179,8 +179,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
                     a->set_operation(CartesiCore::AccessOperation::WRITE);
                     break;
                 default:
-                    //??D waiting for PR on grpc_interfaces
-                    //a->set_operation(CartesiCore::AccessOperation::INVALID);
+                    throw std::invalid_argument{"Invalid AccessOperation"};
                     break;
             }
 
@@ -204,7 +203,7 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
                     bn->set_type(CartesiCore::BracketNote_BracketNoteType_END);
                     break;
                 default:
-                    bn->set_type(CartesiCore::BracketNote_BracketNoteType_INVALID);
+                    throw std::invalid_argument{"Invalid BracketNoteType"};
                     break;
             }
             //Setting where and text

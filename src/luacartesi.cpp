@@ -225,7 +225,7 @@ static std::string check_string_field(lua_State *L, int tabidx, const char *fiel
     return str;
 }
 
-/// \brief Pushes to stack a table field indexed by string in a table.
+/// \brief Pushes to the stack a table field indexed by string in another table.
 /// \param L Lua state.
 /// \param tabidx Table stack index.
 /// \param field Field index.
@@ -253,6 +253,38 @@ static bool opt_table_field(lua_State *L, int tabidx, const char *field) {
         return false;
     } else {
         return true;
+    }
+}
+
+/// \brief Returns an access_type table field indexed by string in a table.
+/// \param name Access type name.
+/// \returns Corresponding access_type.
+static access_type check_access_type_field(lua_State *L, int tabidx,
+    const char *field) {
+    auto name = check_string_field(L, tabidx, field);
+    if (name.compare("read") == 0) {
+        return access_type::read;
+    } else if (name.compare("write") == 0) {
+        return access_type::write;
+    } else {
+        luaL_error(L, "invalid %s (expected access type)", field);
+        return access_type::read; // never reached
+    }
+}
+
+/// \brief Returns an bracket_type table field indexed by string in a table.
+/// \param name Access type name.
+/// \returns Corresponding bracket_type.
+static bracket_type check_bracket_type_field(lua_State *L, int tabidx,
+    const char *field) {
+    auto name = check_string_field(L, tabidx, field);
+    if (name.compare("begin") == 0) {
+        return bracket_type::begin;
+    } else if (name.compare("end") == 0) {
+        return bracket_type::end;
+    } else {
+        luaL_error(L, "invalid %s (expected bracket type)", field);
+        return bracket_type::begin; // never reached
     }
 }
 
@@ -291,21 +323,6 @@ static const char *access_type_name(access_type type) {
             return "read";
         case access_type::write:
             return "write";
-        default:
-            return "invalid";
-    }
-}
-
-/// \brief Converts a string to an access_type.
-/// \param name Access type name.
-/// \returns Corresponding access_type.
-static access_type access_name_type(const std::string &name) {
-    if (name.compare("read") == 0) {
-        return access_type::read;
-    } else if (name.compare("write") == 0) {
-        return access_type::write;
-    } else {
-        return access_type::invalid;
     }
 }
 
@@ -318,21 +335,6 @@ static const char *bracket_type_name(bracket_type type) {
             return "begin";
         case bracket_type::end:
             return "end";
-        default:
-            return "invalid";
-    }
-}
-
-/// \brief Converts a string to a bracket_type
-/// \param name Bracket_type name.
-/// \returns Corresponding bracket_type.
-static bracket_type bracket_name_type(const std::string &name) {
-    if (name.compare("begin") == 0) {
-        return bracket_type::begin;
-    } else if (name.compare("end") == 0) {
-        return bracket_type::end;
-    } else {
-        return bracket_type::invalid;
     }
 }
 
@@ -518,7 +520,7 @@ static void push_access_log(lua_State *L, const access_log &log) {
 bracket_note check_bracket_note(lua_State *L, int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
     return {
-        bracket_name_type(check_string_field(L, -1, "type")),
+        check_bracket_type_field(L, -1, "type"),
         check_uint_field(L, -1, "where")-1, // confert from 1- to 0-based index
         check_string_field(L, -1, "text")
     };
@@ -548,7 +550,8 @@ static merkle_tree::hash_type check_hash(lua_State *L, int idx) {
 /// \param L Lua state.
 /// \param tabidx Proof stack index.
 /// \returns The sibling_hashes array.
-merkle_tree::siblings_type check_sibling_hashes(lua_State *L, int idx, int log2_size) {
+merkle_tree::siblings_type check_sibling_hashes(lua_State *L, int idx,
+    int log2_size) {
     luaL_checktype(L, idx, LUA_TTABLE);
     merkle_tree::siblings_type sibling_hashes;
     if (log2_size < merkle_tree::get_log2_word_size()) {
@@ -599,7 +602,7 @@ word_access check_word_access(lua_State *L, int tabidx) {
     auto proof = check_proof(L, -1);
     lua_pop(L, 1);
     return {
-        access_name_type(check_string_field(L, -1, "type")),
+        check_access_type_field(L, -1, "type"),
         check_uint_field(L, tabidx, "read"),
         opt_uint_field(L, tabidx, "written", 0),
         proof

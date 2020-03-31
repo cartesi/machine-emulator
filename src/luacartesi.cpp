@@ -36,6 +36,7 @@ using cartesi::access_log;
 using cartesi::machine_config;
 using cartesi::processor_config;
 using cartesi::flash_config;
+using cartesi::flash_configs;
 using cartesi::rom_config;
 using cartesi::ram_config;
 using cartesi::htif_config;
@@ -335,10 +336,135 @@ static bracket_type bracket_name_type(const std::string &name) {
     }
 }
 
+/// \brief Pushes a processor_config to the Lua stack
+/// \param L Lua state.
+/// \param p Processor_config to be pushed.
+static void push_processor_config(lua_State *L, const processor_config &p) {
+    lua_newtable(L); // p
+    lua_newtable(L); // p x
+    for (int i = 1; i <= 31; i++) {
+        lua_pushinteger(L, p.x[i]);
+        lua_rawseti(L, -2, i);
+    }
+    lua_setfield(L, -2, "x");
+    lua_pushinteger(L, p.pc); lua_setfield(L, -2, "pc");
+    lua_pushinteger(L, p.mvendorid); lua_setfield(L, -2, "mvendorid");
+    lua_pushinteger(L, p.marchid); lua_setfield(L, -2, "marchid");
+    lua_pushinteger(L, p.mimpid); lua_setfield(L, -2, "mimpid");
+    lua_pushinteger(L, p.mcycle); lua_setfield(L, -2, "mcycle");
+    lua_pushinteger(L, p.minstret); lua_setfield(L, -2, "minstret");
+    lua_pushinteger(L, p.mstatus); lua_setfield(L, -2, "mstatus");
+    lua_pushinteger(L, p.mtvec); lua_setfield(L, -2, "mtvec");
+    lua_pushinteger(L, p.mscratch); lua_setfield(L, -2, "mscratch");
+    lua_pushinteger(L, p.mepc); lua_setfield(L, -2, "mepc");
+    lua_pushinteger(L, p.mcause); lua_setfield(L, -2, "mcause");
+    lua_pushinteger(L, p.mtval); lua_setfield(L, -2, "mtval");
+    lua_pushinteger(L, p.misa); lua_setfield(L, -2, "misa");
+    lua_pushinteger(L, p.mie); lua_setfield(L, -2, "mie");
+    lua_pushinteger(L, p.mip); lua_setfield(L, -2, "mip");
+    lua_pushinteger(L, p.medeleg); lua_setfield(L, -2, "medeleg");
+    lua_pushinteger(L, p.mideleg); lua_setfield(L, -2, "mideleg");
+    lua_pushinteger(L, p.mcounteren); lua_setfield(L, -2, "mcounteren");
+    lua_pushinteger(L, p.stvec); lua_setfield(L, -2, "stvec");
+    lua_pushinteger(L, p.sscratch); lua_setfield(L, -2, "sscratch");
+    lua_pushinteger(L, p.sepc); lua_setfield(L, -2, "sepc");
+    lua_pushinteger(L, p.scause); lua_setfield(L, -2, "scause");
+    lua_pushinteger(L, p.stval); lua_setfield(L, -2, "stval");
+    lua_pushinteger(L, p.satp); lua_setfield(L, -2, "satp");
+    lua_pushinteger(L, p.scounteren); lua_setfield(L, -2, "scounteren");
+    lua_pushinteger(L, p.ilrsc); lua_setfield(L, -2, "ilrsc");
+    lua_pushinteger(L, p.iflags); lua_setfield(L, -2, "iflags");
+}
+
+/// \brief Pushes a ram_config to the Lua stack
+/// \param L Lua state.
+/// \param p Ram_config to be pushed.
+static void push_ram_config(lua_State *L, const ram_config &r) {
+    lua_newtable(L);
+    lua_pushinteger(L, r.length); lua_setfield(L, -2, "length");
+    if (!r.backing.empty()) {
+        lua_pushlstring(L, r.backing.data(), r.backing.size());
+        lua_setfield(L, -2, "backing");
+    }
+}
+
+/// \brief Pushes a rom_config to the Lua stack
+/// \parom L Lua state.
+/// \parom p Ram_config to be pushed.
+static void push_rom_config(lua_State *L, const rom_config &r) {
+    lua_newtable(L);
+    if (!r.bootargs.empty()) {
+        lua_pushlstring(L, r.bootargs.data(), r.bootargs.size());
+        lua_setfield(L, -2, "bootargs");
+    }
+    if (!r.backing.empty()) {
+        lua_pushlstring(L, r.backing.data(), r.backing.size());
+        lua_setfield(L, -2, "backing");
+    }
+}
+
+/// \brief Pushes an htif_config to the Lua stack
+/// \parom L Lua state.
+/// \parom p Htif_config to be pushed.
+static void push_htif_config(lua_State *L, const htif_config &h) {
+    lua_newtable(L);
+    lua_pushboolean(L, h.interact); lua_setfield(L, -2, "interact");
+    lua_pushboolean(L, h.yield); lua_setfield(L, -2, "yield");
+    lua_pushinteger(L, h.fromhost); lua_setfield(L, -2, "fromhost");
+    lua_pushinteger(L, h.tohost); lua_setfield(L, -2, "tohost");
+}
+
+/// \brief Pushes an clint_config to the Lua stack
+/// \parom L Lua state.
+/// \parom p Clint_config to be pushed.
+static void push_clint_config(lua_State *L, const clint_config &c) {
+    lua_newtable(L);
+    lua_pushinteger(L, c.mtimecmp); lua_setfield(L, -2, "mtimecmp");
+}
+
+/// \brief Pushes flash_configs to the Lua stack
+/// \parom L Lua state.
+/// \parom p Flash_configs to be pushed.
+static void push_flash_configs(lua_State *L, const flash_configs &flash) {
+    lua_newtable(L);
+    int i = 1;
+    for (const auto &f: flash) {
+        lua_newtable(L);
+        lua_pushinteger(L, f.start); lua_setfield(L, -2, "start");
+        lua_pushinteger(L, f.length); lua_setfield(L, -2, "length");
+        if (!f.backing.empty()) {
+            lua_pushlstring(L, f.backing.data(), f.backing.size());
+            lua_setfield(L, -2, "backing");
+        }
+        lua_pushboolean(L, f.shared); lua_setfield(L, -2, "shared");
+        lua_rawseti(L, -2, i);
+        i++;
+    }
+}
+
+/// \brief Pushes a machine_config to the Lua stack
+/// \param L Lua state.
+/// \param c Machine_config to be pushed.
+static void push_machine_config(lua_State *L, const machine_config &c) {
+    lua_newtable(L); // config
+    push_processor_config(L, c.processor); // config processor
+    lua_setfield(L, -2, "processor"); // config
+    push_htif_config(L, c.htif); // config htif
+    lua_setfield(L, -2, "htif"); // config
+    push_clint_config(L, c.clint); // config clint
+    lua_setfield(L, -2, "clint"); // config
+    push_flash_configs(L, c.flash); // config flash
+    lua_setfield(L, -2, "flash"); // config
+    push_ram_config(L, c.ram); // config ram
+    lua_setfield(L, -2, "ram"); // config
+    push_rom_config(L, c.rom); // config rom
+    lua_setfield(L, -2, "rom"); // config
+}
+
 /// \brief Pushes an access log to the Lua stack
 /// \param L Lua state.
 /// \param log Access log to be pushed.
-static void push_log(lua_State *L, access_log &log) {
+static void push_access_log(lua_State *L, const access_log &log) {
     lua_newtable(L); // log
     // Add all accesses
     lua_newtable(L); // log accesses
@@ -532,35 +658,35 @@ access_log check_log(lua_State *L, int tabidx) {
 /// \brief Loads RAM config from Lua to machine_config.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
-/// \param c Machine config structure.
-static void check_ram_config(lua_State *L, int tabidx, machine_config &c) {
+/// \param r RAM config structure.
+static void check_ram_config(lua_State *L, int tabidx, ram_config &r) {
     check_table_field(L, tabidx, "ram");
-    c.ram.length = check_uint_field(L, -1, "length");
-    c.ram.backing = opt_string_field(L, -1, "backing");
+    r.length = check_uint_field(L, -1, "length");
+    r.backing = opt_string_field(L, -1, "backing");
     lua_pop(L, 1);
 }
 
 /// \brief Loads ROM config from Lua to machine_config.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
-/// \param c Machine config structure.
-static void check_rom_config(lua_State *L, int tabidx, machine_config &c) {
+/// \param c ROM config structure.
+static void check_rom_config(lua_State *L, int tabidx, rom_config &r) {
     if (!opt_table_field(L, tabidx, "rom"))
         return;
-    c.rom.backing = opt_string_field(L, -1, "backing");
-    c.rom.bootargs = opt_string_field(L, -1, "bootargs");
+    r.backing = opt_string_field(L, -1, "backing");
+    r.bootargs = opt_string_field(L, -1, "bootargs");
     lua_pop(L, 1);
 }
 
 /// \brief Loads flash-drive config from Lua to machine_config.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
-/// \param c Machine config structure.
-static void check_flash_config(lua_State *L, int tabidx, machine_config &c) {
+/// \param c Flash config structure.
+static void check_flash_config(lua_State *L, int tabidx, flash_configs &f) {
     if (!opt_table_field(L, tabidx, "flash"))
         return;
     int len = luaL_len(L, -1);
-    if (len > (int) c.flash.capacity()) {
+    if (len > (int) f.capacity()) {
         luaL_error(L, "too many flash drives");
     }
     for (int i = 1; i <= len; i++) {
@@ -573,7 +699,7 @@ static void check_flash_config(lua_State *L, int tabidx, machine_config &c) {
         flash.backing = opt_string_field(L, -1, "backing");
         flash.start = check_uint_field(L, -1, "start");
         flash.length = check_uint_field(L, -1, "length");
-        c.flash.push_back(std::move(flash));
+        f.push_back(std::move(flash));
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
@@ -582,12 +708,11 @@ static void check_flash_config(lua_State *L, int tabidx, machine_config &c) {
 /// \brief Loads processor config from Lua to machine_config.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
-/// \param c Machine config structure.
-static void check_processor_config(lua_State *L, int tabidx, machine_config &c) {
+/// \param c Processor config structure.
+static void check_processor_config(lua_State *L, int tabidx, processor_config &p) {
     if (!opt_table_field(L, tabidx, "processor"))
         return;
     lua_getfield(L, -1, "x");
-    auto &p = c.processor;
     if (lua_istable(L, -1)) {
         int len = luaL_len(L, -1);
         for (int i = 1; i <= std::min(len, 31); i++) {
@@ -627,31 +752,30 @@ static void check_processor_config(lua_State *L, int tabidx, machine_config &c) 
     lua_pop(L, 1);
 }
 
-/// \brief Loads HTIF config from Lua to machine_config.
+/// \brief Loads HTIF config from Lua.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
-/// \param c Machine config structure.
-static void check_htif_config(lua_State *L, int tabidx, machine_config &c) {
+/// \param h HTIF config structure.
+static void check_htif_config(lua_State *L, int tabidx, htif_config &h) {
     if (!opt_table_field(L, tabidx, "htif"))
         return;
-    c.htif.tohost = opt_uint_field(L, -1, "tohost", c.htif.tohost);
-    c.htif.fromhost = opt_uint_field(L, -1, "fromhost", c.htif.fromhost);
-    c.htif.interact = opt_boolean_field(L, -1, "interact", c.htif.interact);
-    c.htif.yield = opt_boolean_field(L, -1, "yield", c.htif.yield);
+    h.tohost = opt_uint_field(L, -1, "tohost", h.tohost);
+    h.fromhost = opt_uint_field(L, -1, "fromhost", h.fromhost);
+    h.interact = opt_boolean_field(L, -1, "interact", h.interact);
+    h.yield = opt_boolean_field(L, -1, "yield", h.yield);
     lua_pop(L, 1);
 }
 
 /// \brief Loads CLINT config from Lua to machine_config.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
-/// \param c Machine config structure.
-static void check_clint_config(lua_State *L, int tabidx, machine_config &c) {
+/// \param c CLINT config structure.
+static void check_clint_config(lua_State *L, int tabidx, clint_config &c) {
     if (!opt_table_field(L, tabidx, "clint"))
         return;
-    c.clint.mtimecmp = opt_uint_field(L, -1, "mtimecmp", c.clint.mtimecmp);
+    c.mtimecmp = opt_uint_field(L, -1, "mtimecmp", c.mtimecmp);
     lua_pop(L, 1);
 }
-
 
 /// \brief loads a machine_config object from a Lua table
 /// \param L Lua state.
@@ -660,12 +784,12 @@ static machine_config check_machine_config(lua_State *L, int tabidx) {
     machine_config c;
     // Check all parameters from Lua initialization table
     // and copy them to the machine_config object
-    check_processor_config(L, tabidx, c);
-    check_ram_config(L, tabidx, c);
-    check_rom_config(L, tabidx, c);
-    check_flash_config(L, tabidx, c);
-    check_htif_config(L, tabidx, c);
-    check_clint_config(L, tabidx, c);
+    check_processor_config(L, tabidx, c.processor);
+    check_ram_config(L, tabidx, c.ram);
+    check_rom_config(L, tabidx, c.rom);
+    check_flash_config(L, tabidx, c.flash);
+    check_htif_config(L, tabidx, c.htif);
+    check_clint_config(L, tabidx, c.clint);
     return c;
 }
 
@@ -1002,7 +1126,7 @@ static int machine_meta__index_step(lua_State *L) try {
     machine *m = check_machine(L, 1);
     access_log log;
     m->step(log);
-    push_log(L, log);
+    push_access_log(L, log);
     return 1;
 } catch (std::exception &x) {
     luaL_error(L, x.what());
@@ -1481,12 +1605,19 @@ static int machine_meta__index_write_htif_fromhost(lua_State *L) {
     return 0;
 }
 
+static int machine_meta__index_get_initial_config(lua_State *L) {
+    machine *m = check_machine(L, 1);
+    push_machine_config(L, m->get_initial_config());
+    return 1;
+}
+
 /// \brief Contents of the machine metatable __index table.
 static const luaL_Reg machine_meta__index[] = {
     {"destroy", machine_meta__index_destroy},
     {"dump", machine_meta__index_dump},
     {"dump_regs", machine_meta__index_dump_regs},
     {"get_proof", machine_meta__index_get_proof},
+    {"get_initial_config", machine_meta__index_get_initial_config},
     {"get_root_hash", machine_meta__index_get_root_hash},
     {"read_clint_mtimecmp", machine_meta__index_read_clint_mtimecmp},
     {"read_csr", machine_meta__index_read_csr},

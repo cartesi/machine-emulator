@@ -18,9 +18,13 @@
 
 local cartesi = require"cartesi"
 
+local function stderr(fmt, ...)
+    io.stderr:write(string.format(fmt, ...))
+end
+
 -- Print help and exit
 local function help()
-    io.stderr:write(string.format([=[
+    stderr([=[
 Usage:
 
   %s [options]
@@ -79,6 +83,8 @@ where options are:
 
   --dump                       dump non-pristine pages to disk
 
+  --dump-config                dump machine config to screen
+
   --json-steps=<filename>      output json file with steps
                                (default: none)
 
@@ -87,7 +93,7 @@ where options are:
   --store=<directory>          store machine to directory
 
 
-]=], arg[0]))
+]=], arg[0])
     os.exit()
 end
 
@@ -108,6 +114,7 @@ local initial_hash = false
 local final_hash = false
 local ignore_payload = false
 local dump = false
+local dump_config = false
 local max_mcycle = 2^61
 local json_steps
 local step = false
@@ -182,6 +189,11 @@ local options = {
     { "^%-%-dump$", function(all)
         if not all then return false end
         dump = true
+        return true
+    end },
+    { "^%-%-dump%-config$", function(all)
+        if not all then return false end
+        dump_config = true
         return true
     end },
     { "^%-%-step$", function(all)
@@ -498,11 +510,62 @@ local function print_json_log(log, init_cycles, final_cycles, out, indent)
     out:write(' }')
 end
 
+local function dump_machine_config(config)
+    stderr("config = {\n")
+    stderr("  processor = {\n")
+    stderr("    x = {\n")
+    for i, xi in ipairs(config.processor.x) do
+        stderr("      0x%x,\n", xi)
+    end
+    stderr("    },\n")
+    for i,v in pairs(config.processor) do
+        if type(v) == "number" then
+            stderr("    %s = 0x%x,\n", i, v)
+        end
+    end
+    stderr("  },\n")
+    stderr("  ram = {\n")
+    stderr("    length = 0x%x,\n", config.ram.length)
+    if config.ram.backing and config.ram.backing ~= "" then
+        stderr("    backing = %q,\n", config.ram.backing)
+    end
+    stderr("  },\n")
+    stderr("  rom = {\n")
+    if config.rom.backing and config.rom.backing ~= "" then
+        stderr("    backing = %q,\n", config.rom.backing)
+    end
+    if config.rom.bootargs and config.rom.bootargs ~= "" then
+        stderr("    bootargs = %q,\n", config.rom.bootargs)
+    end
+    stderr("  },\n")
+    stderr("  htif = {\n")
+    stderr("    tohost = 0x%x,\n", config.htif.tohost)
+    stderr("    fromhost = 0x%x,\n", config.htif.fromhost)
+    stderr("  },\n")
+    stderr("  clint = {\n")
+    stderr("    mtimecmp = 0x%x,\n", config.clint.mtimecmp)
+    stderr("  },\n")
+    stderr("  flash = {\n")
+    for i, f in ipairs(config.flash) do
+        stderr("    [%d] = {\n", i)
+        stderr("      start = 0x%x,\n", f.start)
+        stderr("      length = 0x%x,\n", f.length)
+        if f.backing and f.backing ~= "" then
+            stderr("      backing = %q,\n", f.backing)
+        end
+        if f.shared then
+            stderr("      shared = true,\n", f.backing)
+        end
+        stderr("    },\n")
+    end
+    stderr("  },\n")
+    stderr("}\n")
+end
 
 local machine
 
 if load_dir then
-    io.stderr:write("Loading machine: please wait\n")
+    stderr("Loading machine: please wait\n")
     machine = cartesi.machine(load_dir)
 else
     -- Resolve all device lengths
@@ -568,13 +631,16 @@ else
         yield
     )
 
-    io.stderr:write("Building machine: please wait\n")
+    stderr("Building machine: please wait\n")
     machine = cartesi.machine(config)
 end
 
 if not json_steps then
     if dump then
         machine:dump()
+    end
+    if dump_config then
+        dump_machine_config(machine:get_initial_config())
     end
     if initial_hash then
         print_root_hash(machine)
@@ -585,30 +651,30 @@ if not json_steps then
         cycles = machine:read_mcycle()
         if machine:read_iflags_H() then
             local payload = machine:read_htif_tohost() << 16 >> 17
-            io.stderr:write("\nHalted with payload: ", payload, "\n")
-            io.stderr:write("Cycles: ", cycles, "\n")
+            stderr("\nHalted with payload: %u\n", payload)
+            stderr("Cycles: %u\n", cycles)
             break
         elseif machine:read_iflags_Y() then
             local tohost = machine:read_htif_tohost()
             local cmd = tohost << 8 >> 56
             local data = tohost << 16 >> 16
             if cmd == 0 then
-                io.stderr:write("Progress: ", data, "\r")
+                stderr("Progress: %u\n", data)
             else
-                io.stderr:write("\nYielded cmd: ", cmd, ", data: ", data, "\n")
-                io.stderr:write("Cycles: ", cycles, "\n")
+                stderr("\nYielded cmd: %u, data: %u\n", cmd, data)
+                stderr("Cycles: %u\n", cycles)
             end
         end
     end
     if step then
-        io.stderr:write("Gathering step proof: please wait\n")
+        stderr("Gathering step proof: please wait\n")
         print_log(machine:step())
     end
     if final_hash then
         print_root_hash(machine)
     end
     if store_dir then
-        io.stderr:write("Storing machine: please wait\n")
+        stderr("Storing machine: please wait\n")
         machine:store(store_dir)
     end
     os.exit(payload, true)
@@ -623,13 +689,13 @@ else
         local log = machine:step()
         local final_cycles = machine:read_mcycle()
         print_json_log(log, init_cycles, final_cycles, json_steps, "  ")
-        io.stderr:write(init_cycles, " -> ", final_cycles, "\n")
+        stderr("%u -> %u\n", init_cycles, final_cycles)
         if i ~= max_mcycle then json_steps:write(', ') end
     end
     json_steps:write(' ]\n')
     json_steps:close()
     if store_dir then
-        io.stderr:write("Storing machine: please wait\n")
+        stderr("Storing machine: please wait\n")
         machine:store(store_dir)
     end
 end

@@ -517,6 +517,9 @@ public:
     /// \returns The configuration
     machine_config serialization_config(void) const;
 
+    /// \brief Returns copy of initialization config.
+    const machine_config &get_initial_config(void) const { return m_c; }
+
     /// \brief Saves PMAs into files for serialization
     /// \param c Machine config to be stored
     /// \param dir Directory where PMAs will be stored

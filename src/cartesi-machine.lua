@@ -69,7 +69,9 @@ where options are:
 
   --step                       run a step after stopping
 
-  --cmdline                    pass additional command-line arguments to kernel
+  --no-bootargs                clear default bootargs before cmdline
+
+  --cmdline                    add options after default bootargs
 
   --batch                      run in non-interactive mode
 
@@ -106,6 +108,7 @@ local start = { }
 local length = { }
 local ram_image = "kernel.bin"
 local rom_image = "rom.bin"
+local bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw"
 local cmdline = ""
 local memory_size = 64
 local batch = false
@@ -252,6 +255,11 @@ local options = {
         rom_image = o
         return true
     end },
+    { "^%-%-no%-bootargs$", function(all)
+        if not all then return false end
+        bootargs = ""
+        return true
+    end },
     { "^%-%-cmdline%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         cmdline = o
@@ -359,7 +367,7 @@ local function new_config()
             length = 64 << 20
         },
         rom = {
-            bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw",
+            bootargs = bootargs
         },
         htif = {
             interact = true,
@@ -385,9 +393,9 @@ local function print_root_hash(machine)
     print(hexhash(machine:get_root_hash()))
 end
 
-local function indentout(level, ...)
+local function indentout(level, fmt, ...)
     local step = "  "
-    io.stdout:write(string.rep(step, level), ...)
+    io.stdout:write(string.rep(step, level), string.format(fmt, ...))
 end
 
 local function print_log(log)
@@ -400,23 +408,25 @@ local function print_log(log)
         if not bj and not ai then break end
         if bj and bj.where <= i then
             if bj.type == "begin" then
-                indentout(d, "begin ", bj.text, "\n")
+                indentout(d, "begin %s\n", bj.text)
                 d = d + 1
             elseif bj.type == "end" then
                 d = d - 1
-                indentout(d, "end ", bj.text, "\n")
+                indentout(d, "end %s\n", bj.text)
             end
             j = j + 1
         elseif ai then
             local ai = log.accesses[i]
-            indentout(d, "hash ", hexhash8(ai.proof.root_hash), "\n")
+            indentout(d, "hash %s\n", hexhash8(ai.proof.root_hash))
             if ai.type == "read" then
-                indentout(d, "read ", log.notes[i], string.format("@%x",
-                    ai.proof.address), ": ", ai.read, "\n")
+                indentout(d, "%d: read %s@0x%x(%u): 0x%x(%u)\n", i,
+                    log.notes[i], ai.proof.address, ai.proof.address,
+                    ai.read, ai.read)
             else
                 assert(ai.type == "write")
-                indentout(d, "write ", log.notes[i], string.format("@%x",
-                    ai.proof.address), ": ", ai.read, " -> ", ai.written, "\n")
+                indentout(d, "%d: write %s@0x%x(%u): 0x%x(%u) -> 0x%x(%u)\n", i,
+                    log.notes[i], ai.proof.address, ai.proof.address,
+                    ai.read, ai.read, ai.written, ai.written)
             end
             i = i + 1
         end
@@ -620,10 +630,11 @@ else
         }
         mtdparts[#mtdparts+1] = string.format("flash.%d:-(%s)", i-1, label)
     end
-
+    if #mtdparts > 0 then
+        config = config:append_cmdline("mtdparts=" ..
+            table.concat(mtdparts, ";"))
+    end
     config = config:append_cmdline(
-        "mtdparts=" .. table.concat(mtdparts, ";")
-    ):append_cmdline(
         cmdline
     ):set_interact(
         not batch

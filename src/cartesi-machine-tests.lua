@@ -340,7 +340,7 @@ end
 local function print_machine(test_name, expected_cycles)
     print(
         string.format(
-            "./cartesi-machine.lua --no-root-backing --batch --memory-size=32 --rom-image='%s' --ram-image='%s' --max-mcycle=%d",
+            "./cartesi-machine.lua --no-root-backing --batch --memory-size=32 --rom-image='%s' --ram-image='%s' --no-bootargs --max-mcycle=%d",
             test_path .. "/bootstrap.bin",
             test_path .. "/" .. test_name,
             2*expected_cycles

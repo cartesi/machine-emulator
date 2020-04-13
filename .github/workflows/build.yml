@@ -93,7 +93,7 @@ jobs:
           chmod +x /opt/cartesi/bin/cartesi-machine*
 
       - name: Simple Boot
-        run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/lib/luapp/5.3/cartesi-machine.lua --cmdline="-- /bin/true" --batch
+        run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/bin/cartesi-machine.lua --cmdline="-- /bin/true" --batch
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0
@@ -107,7 +107,7 @@ jobs:
         run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.3.0.tar.gz -C /opt/cartesi/tests
 
       - name: Run test suite
-        run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/lib/luapp/5.3/cartesi-machine-tests.lua --test-path=/opt/cartesi/tests run
+        run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/bin/cartesi-machine-tests.lua --test-path=/opt/cartesi/tests run
 
   release:
     name: Release

@@ -4,7 +4,9 @@ UNAME:=$(shell uname)
 PREFIX= /opt/cartesi
 BIN_INSTALL_PATH= $(PREFIX)/bin
 LIB_INSTALL_PATH= $(PREFIX)/lib
-LUA_INSTALL_PATH= $(LIB_INSTALL_PATH)/luapp/5.3
+SHARE_INSTALL_PATH= $(PREFIX)/share
+LUA_INSTALL_CPATH= $(LIB_INSTALL_PATH)/luapp/5.3
+LUA_INSTALL_PATH= $(SHARE_INSTALL_PATH)/luapp/5.3
 INC_INSTALL_PATH= $(PREFIX)/include/machine-emulator
 INSTALL_PLAT = install-$(UNAME)
 
@@ -16,7 +18,8 @@ STRIP_EXEC= strip -x
 DEP_TO_BIN= luapp5.3 luacpp5.3
 DEP_TO_LIB=
 EMU_TO_BIN= cartesi-machine-server cartesi-machine-client cartesi-machine-hash
-EMU_TO_LUA= cartesi-machine-tests.lua cartesi-machine.lua cartesi.so
+EMU_LUA_TO_BIN= cartesi-machine-tests.lua cartesi-machine.lua
+EMU_TO_LUA_CPATH= cartesi.so
 EMU_TO_INC= pma-defines.h rtc-defines.h
 
 # Build settings
@@ -31,14 +34,14 @@ DEPCLEAN := $(addsuffix .clean,$(DEPDIRS))
 COREPROTO := lib/grpc-interfaces/core.proto
 GRPC_VERSION ?= v1.16.0
 
+LUACFLAGS = "MYCFLAGS=-DLUA_ROOT=\\\"$(PREFIX)/\\\""
+
 # Mac OS X specific settings
 ifeq ($(UNAME),Darwin)
 LUA_PLAT ?= macosx
 export CC = clang
 export CXX = clang++
-LUACC = "CC=$(CXX)"
-LUACFLAGS = "MYCFLAGS=-std=c++17 -fopenmp"
-LUALDFLAGS = "MYLDFLAGS=-L/usr/local/opt/llvm/lib -fopenmp -lomp"
+LUACC = "CC=$(CXX) -std=c++17"
 LIBRARY_PATH := "export DYLD_LIBRARY_PATH=$(BUILDDIR)/lib"
 LIB_EXTENSION = dylib
 DEP_TO_LIB += *.$(LIB_EXTENSION)
@@ -76,13 +79,14 @@ distclean: clean profile-clean
 profile-clean:
 	$(MAKE) -C $(SRCDIR) $@
 
-$(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(INC_INSTALL_PATH):
+$(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(INC_INSTALL_PATH):
 	mkdir -p $@
 
 env:
 	@echo $(LIBRARY_PATH)
 	@echo "export PATH=$(SRCDIR):$(BUILDDIR)/bin:${PATH}"
-	@echo "export LUA_CPATH='$(SRCDIR)/?.so;$(subst $\',,${LUA_CPATH})'"
+	@echo "export LUAPP_CPATH='$(SRCDIR)/?.so;$(BUILDDIR)/lib/luapp/5.3/?.so'"
+	@echo "export LUAPP_PATH='$(SRCDIR)/?.lua;$(BUILDDIR)/share/luapp/5.3/?.lua'"
 
 doc:
 	cd doc && doxygen Doxyfile
@@ -153,8 +157,8 @@ build-linux-env:
 	docker build -t cartesi/linux-env:v1 tools/docker
 
 install-Darwin:
-	install_name_tool -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH)/cartesi.so
-	install_name_tool -change $(BUILDDIR)/lib/libcryptopp.dylib @rpath/libcryptopp.dylib $(LUA_INSTALL_PATH)/cartesi.so
+	install_name_tool -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi.so
+	install_name_tool -change $(BUILDDIR)/lib/libcryptopp.dylib @rpath/libcryptopp.dylib $(LUA_INSTALL_CPATH)/cartesi.so
 	cd $(BIN_INSTALL_PATH) && \
 		for x in $(DEP_TO_BIN) $(EMU_TO_BIN); do \
 			install_name_tool -add_rpath $(LIB_INSTALL_PATH) $$x ;\
@@ -178,7 +182,7 @@ install-Darwin:
 install-Linux:
 	cd $(BIN_INSTALL_PATH) && for x in $(DEP_TO_BIN) $(EMU_TO_BIN); do patchelf --set-rpath $(LIB_INSTALL_PATH) $$x ; done
 	cd $(LIB_INSTALL_PATH) && for x in `find . -maxdepth 1 -type f -name "*.so*"`; do patchelf --set-rpath $(LIB_INSTALL_PATH) $$x ; done
-	cd $(LUA_INSTALL_PATH) && for x in `find . -maxdepth 1 -type f -name "*.so"`; do patchelf --set-rpath $(LIB_INSTALL_PATH) $$x ; done
+	cd $(LUA_INSTALL_CPATH) && for x in `find . -maxdepth 1 -type f -name "*.so"`; do patchelf --set-rpath $(LIB_INSTALL_PATH) $$x ; done
 
 install-dep: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH)
 	cd $(BUILDDIR)/bin && $(INSTALL) $(DEP_TO_BIN) $(BIN_INSTALL_PATH)
@@ -186,19 +190,20 @@ install-dep: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH)
 	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(DEP_TO_BIN)
 	cd $(LIB_INSTALL_PATH) && $(CHMOD_EXEC) $(DEP_TO_LIB)
 
-install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_PATH) $(INC_INSTALL_PATH)
+install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(INC_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_TO_BIN) $(BIN_INSTALL_PATH)
-	cd src && $(INSTALL) $(EMU_TO_LUA) $(LUA_INSTALL_PATH)
-	cd lib/machine-emulator-defines && $(INSTALL) $(EMU_TO_INC) $(INC_INSTALL_PATH)
-	echo "#!/bin/bash\nLUA_CPATH=$(LUA_INSTALL_PATH)/?.so $(BIN_INSTALL_PATH)/luapp5.3 $(LUA_INSTALL_PATH)/cartesi-machine.lua \$$@" > $(BIN_INSTALL_PATH)/cartesi-machine
-	echo "#!/bin/bash\nLUA_CPATH=$(LUA_INSTALL_PATH)/?.so $(BIN_INSTALL_PATH)/luapp5.3 $(LUA_INSTALL_PATH)/cartesi-machine-tests.lua \$$@" > $(BIN_INSTALL_PATH)/cartesi-machine-tests
+	cd src && $(INSTALL) $(EMU_LUA_TO_BIN) $(BIN_INSTALL_PATH)
+	cd src && $(INSTALL) $(EMU_TO_LUA_CPATH) $(LUA_INSTALL_CPATH)
+	echo "#!/bin/bash\n$(BIN_INSTALL_PATH)/luapp5.3 $(BIN_INSTALL_PATH)/cartesi-machine.lua \"\$$@\"" > $(BIN_INSTALL_PATH)/cartesi-machine
+	echo "#!/bin/bash\n$(BIN_INSTALL_PATH)/luapp5.3 $(BIN_INSTALL_PATH)/cartesi-machine-tests.lua \"\$$@"\" > $(BIN_INSTALL_PATH)/cartesi-machine-tests
 	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(EMU_TO_BIN) cartesi-machine cartesi-machine-tests
-	cd $(LUA_INSTALL_PATH) && $(CHMOD_DATA) $(EMU_TO_LUA)
+	cd lib/machine-emulator-defines && $(INSTALL) $(EMU_TO_INC) $(INC_INSTALL_PATH)
+	cd $(LUA_INSTALL_CPATH) && $(CHMOD_EXEC) $(EMU_TO_LUA_CPATH)
 
 install-strip:
 	cd $(BIN_INSTALL_PATH) && $(STRIP_EXEC) $(EMU_TO_BIN) $(DEP_TO_BIN)
 	cd $(LIB_INSTALL_PATH) && $(STRIP_EXEC) $(DEP_TO_LIB)
-	cd $(LUA_INSTALL_PATH) && $(STRIP_EXEC) *.so
+	cd $(LUA_INSTALL_CPATH) && $(STRIP_EXEC) *.so
 
 install: install-dep install-emulator install-strip $(INSTALL_PLAT)
 

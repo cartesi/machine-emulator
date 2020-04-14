@@ -5,8 +5,10 @@ PREFIX= /opt/cartesi
 BIN_INSTALL_PATH= $(PREFIX)/bin
 LIB_INSTALL_PATH= $(PREFIX)/lib
 SHARE_INSTALL_PATH= $(PREFIX)/share
-LUA_INSTALL_CPATH= $(LIB_INSTALL_PATH)/luapp/5.3
-LUA_INSTALL_PATH= $(SHARE_INSTALL_PATH)/luapp/5.3
+CDIR=lib/luapp/5.3
+LDIR=share/luapp/5.3
+LUA_INSTALL_CPATH= $(PREFIX)/$(CDIR)
+LUA_INSTALL_PATH= $(PREFIX)/$(LDIR)
 INC_INSTALL_PATH= $(PREFIX)/include/machine-emulator
 INSTALL_PLAT = install-$(UNAME)
 
@@ -29,19 +31,21 @@ BUILDBASE := $(abspath build)
 BUILDDIR = $(BUILDBASE)/$(UNAME)_$(shell uname -m)
 DOWNLOADDIR := $(DEPDIR)/downloads
 SUBCLEAN := $(addsuffix .clean,$(SRCDIR))
-DEPDIRS := $(addprefix $(DEPDIR)/,cryptopp-CRYPTOPP_7_0_0 grpc lua-5.3.5)
+DEPDIRS := $(addprefix $(DEPDIR)/,cryptopp-CRYPTOPP_7_0_0 grpc lua-5.3.5 luasocket)
 DEPCLEAN := $(addsuffix .clean,$(DEPDIRS))
 COREPROTO := lib/grpc-interfaces/core.proto
 GRPC_VERSION ?= v1.16.0
+LUASOCKET_VERSION ?= 5b18e475f38fcf28429b1cc4b17baee3b9793a62
 
-LUACFLAGS = "MYCFLAGS=-DLUA_ROOT=\\\"$(PREFIX)/\\\""
+LUACFLAGS = "MYCFLAGS=-std=c++17 -x c++ -DLUA_ROOT=\\\"$(PREFIX)/\\\""
+LUASOCKETCFLAGS = "MYCFLAGS=-std=c++17 -x c++ -DLUASOCKET_API=\"extern \\\"C\\\" __attribute__ ((visibility (\\\"default\\\")))\""
 
 # Mac OS X specific settings
 ifeq ($(UNAME),Darwin)
 LUA_PLAT ?= macosx
 export CC = clang
 export CXX = clang++
-LUACC = "CC=$(CXX) -std=c++17"
+LUACC = "CC=$(CXX)"
 LIBRARY_PATH := "export DYLD_LIBRARY_PATH=$(BUILDDIR)/lib"
 LIB_EXTENSION = dylib
 DEP_TO_LIB += *.$(LIB_EXTENSION)
@@ -52,7 +56,7 @@ LUA_PLAT ?= linux
 LIBRARY_PATH := "export LD_LIBRARY_PATH=$(BUILDDIR)/lib"
 LIB_EXTENSION := so
 DEP_TO_LIB += *.$(LIB_EXTENSION)*
-
+LUACC = "CC=g++"
 # Unknown platform
 else
 LUA_PLAT ?= none
@@ -64,7 +68,7 @@ endif
 
 # Check if some binary dependencies already exists on build directory to skip
 # downloading and building them.
-DEPBINS := $(addprefix $(BUILDDIR)/,bin/luapp5.3 lib/libcryptopp.$(LIB_EXTENSION) lib/libgrpc.$(LIB_EXTENSION))
+DEPBINS := $(addprefix $(BUILDDIR)/,bin/luapp5.3 lib/libcryptopp.$(LIB_EXTENSION) lib/libgrpc.$(LIB_EXTENSION) $(CDIR)/socket/core.so)
 
 all: source-default
 
@@ -85,8 +89,8 @@ $(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_IN
 env:
 	@echo $(LIBRARY_PATH)
 	@echo "export PATH=$(SRCDIR):$(BUILDDIR)/bin:${PATH}"
-	@echo "export LUAPP_CPATH='$(SRCDIR)/?.so;$(BUILDDIR)/lib/luapp/5.3/?.so'"
-	@echo "export LUAPP_PATH='$(SRCDIR)/?.lua;$(BUILDDIR)/share/luapp/5.3/?.lua'"
+	@echo "export LUAPP_CPATH='$(SRCDIR)/?.so;$(BUILDDIR)/$(CDIR)/?.so'"
+	@echo "export LUAPP_PATH='$(SRCDIR)/?.lua;$(BUILDDIR)/$(LDIR)/?.lua'"
 
 doc:
 	cd doc && doxygen Doxyfile
@@ -114,7 +118,6 @@ $(COREPROTO):
 	@exit 1
 
 grpc: | $(COREPROTO)
-
 hash luacartesi grpc test:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 
@@ -128,6 +131,16 @@ $(DEPDIR)/lua-5.3.5 $(BUILDDIR)/bin/luapp5.3: | $(BUILDDIR) $(DOWNLOADDIR)
 	fi
 	$(MAKE) -C $(DEPDIR)/lua-5.3.5 $(LUA_PLAT) $(LUACC) $(LUACFLAGS) $(LUALDFLAGS)
 	$(MAKE) -C $(DEPDIR)/lua-5.3.5 INSTALL_TOP=$(BUILDDIR) install
+
+$(DEPDIR)/luasocket $(BUILDDIR)/$(CDIR)/socket/core.so: $(BUILDDIR)/bin/luapp5.3 | $(BUILDDIR) $(DOWNLOADDIR)
+	if [ ! -d $(DEPDIR)/luasocket ]; then \
+		git clone https://github.com/diegonehab/luasocket.git $(DEPDIR)/luasocket; \
+		cd $(DEPDIR)/luasocket; \
+		git reset --hard $(LUASOCKET_VERSION); \
+	fi
+	$(MAKE) -C $(DEPDIR)/luasocket PLAT=$(LUA_PLAT) $(LUACC) $(LUASOCKETCFLAGS) LUAINC=$(BUILDDIR)/include/luapp/5.3
+	$(MAKE) -C $(DEPDIR)/luasocket PLAT=$(LUA_PLAT) CDIR=$(CDIR) LDIR=$(LDIR) prefix=$(BUILDDIR) install
+
 
 $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 $(BUILDDIR)/lib/libcryptopp.$(LIB_EXTENSION): | $(BUILDDIR) $(DOWNLOADDIR)
 	if [ ! -d $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 ]; then tar -xzf $(DOWNLOADDIR)/CRYPTOPP_7_0_0.tar.gz -C $(DEPDIR); fi
@@ -184,9 +197,11 @@ install-Linux:
 	cd $(LIB_INSTALL_PATH) && for x in `find . -maxdepth 1 -type f -name "*.so*"`; do patchelf --set-rpath $(LIB_INSTALL_PATH) $$x ; done
 	cd $(LUA_INSTALL_CPATH) && for x in `find . -maxdepth 1 -type f -name "*.so"`; do patchelf --set-rpath $(LIB_INSTALL_PATH) $$x ; done
 
-install-dep: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH)
+install-dep: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH)
 	cd $(BUILDDIR)/bin && $(INSTALL) $(DEP_TO_BIN) $(BIN_INSTALL_PATH)
 	cd $(BUILDDIR)/lib && $(INSTALL) $(DEP_TO_LIB) $(LIB_INSTALL_PATH)
+	$(INSTALL) $(BUILDDIR)/$(CDIR)/* $(LUA_INSTALL_CPATH)
+	$(INSTALL) $(BUILDDIR)/$(LDIR)/* $(LUA_INSTALL_PATH)
 	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(DEP_TO_BIN)
 	cd $(LIB_INSTALL_PATH) && $(CHMOD_EXEC) $(DEP_TO_LIB)
 

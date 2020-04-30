@@ -115,6 +115,12 @@ where options are:
   --final-hash
     print final hash when done
 
+  --periodic-hashes=<number-period>[,<number-start>]
+    prints root hash every <number-period> cycles. If <number-start> is given,
+    the periodic hashing will start at that mcycle. This option implies
+    --initial-hash and --final-hash.
+    (default: none)
+
   --step
     print step log for 1 additional cycle when done
 
@@ -148,6 +154,8 @@ local interact = false
 local yield = false
 local initial_hash = false
 local final_hash = false
+local periodic_hashes_period = math.maxinteger
+local periodic_hashes_start = 0
 local dump_pmas = false
 local dump_config = false
 local max_mcycle = math.maxinteger
@@ -281,12 +289,9 @@ local options = {
         shared[d] = true
         return true
     end },
-    { "^(%-%-max%-mcycle%=(%d+)(.*))$", function(all, n, e)
+    { "^(%-%-max%-mcycle%=(.*))$", function(all, n)
         if not n then return false end
-        assert(e == "", "invalid option " .. all)
-        n = assert(parse_number(n), "invalid option " .. all)
-        assert(n >= 0, "invalid option " .. all)
-        max_mcycle = math.ceil(n)
+        max_mcycle = assert(parse_number(n), "invalid option " .. all)
         return true
     end },
     { "^%-%-load%=(.*)$", function(o)
@@ -311,6 +316,20 @@ local options = {
     end },
     { "^%-%-final%-hash$", function(all)
         if not all then return false end
+        final_hash = true
+        return true
+    end },
+    { "^(%-%-periodic%-hashes%=(.*))$", function(all, v)
+        if not v then return false end
+        string.gsub(v, "^([^%,]+),(.+)$", function(p, s)
+            periodic_hashes_period = assert(parse_number(p), "invalid period " .. all)
+            periodic_hashes_start = assert(parse_number(s), "invalid start " .. all)
+        end)
+        if periodic_hashes_period == math.maxinteger then
+            periodic_hashes_period = assert(parse_number(v), "invalid period " .. all)
+            periodic_hashes_start = 0
+        end
+        initial_hash = true
         final_hash = true
         return true
     end },
@@ -414,10 +433,9 @@ local function hexhash8(hash)
     return string.sub(hexhash(hash), 1, 8)
 end
 
-local function print_root_hash(machine)
-    stderr("Updating Merkle tree: please wait\n")
+local function print_root_hash(cycles, machine)
     machine:update_merkle_tree()
-    print(hexhash(machine:get_root_hash()))
+    stderr("%d: %s\n", cycles, hexhash(machine:get_root_hash()))
 end
 
 local function indentout(level, fmt, ...)
@@ -702,14 +720,20 @@ if not json_steps then
     if dump_config then
         dump_machine_config(machine:get_initial_config())
     end
+    local cycles = machine:read_mcycle()
     if initial_hash then
         assert(not interact, "hashes are meaningless in interactive mode")
-        print_root_hash(machine)
+        print_root_hash(cycles, machine)
     end
-    local cycles = 0
     local payload = 0
+    local next_hash_mcycle
+    if periodic_hashes_start ~= 0 then
+        next_hash_mcycle = periodic_hashes_start
+    else
+        next_hash_mcycle = periodic_hashes_period
+    end
     while math.ult(cycles, max_mcycle) do
-        machine:run(max_mcycle)
+        machine:run(math.min(next_hash_mcycle, max_mcycle))
         cycles = machine:read_mcycle()
         if machine:read_iflags_H() then
             payload = machine:read_htif_tohost() << 16 >> 17
@@ -727,6 +751,10 @@ if not json_steps then
                 stderr("Cycles: %u\n", cycles)
             end
         end
+        if cycles == next_hash_mcycle then
+            print_root_hash(cycles, machine)
+            next_hash_mcycle = next_hash_mcycle + periodic_hashes_period
+        end
     end
     if not math.ult(cycles, max_mcycle) then
         stderr("\nCycles: %u\n", cycles)
@@ -740,7 +768,7 @@ if not json_steps then
         machine:dump_pmas()
     end
     if final_hash then
-        print_root_hash(machine)
+        print_root_hash(cycles, machine)
     end
     if store_dir then
         assert(not interact, "hashes are meaningless in interactive mode")

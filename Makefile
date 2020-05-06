@@ -37,7 +37,7 @@ COREPROTO := lib/grpc-interfaces/core.proto
 GRPC_VERSION ?= v1.16.0
 LUASOCKET_VERSION ?= 5b18e475f38fcf28429b1cc4b17baee3b9793a62
 
-LUACFLAGS = "MYCFLAGS=-std=c++17 -x c++ -DLUA_ROOT=\\\"$(PREFIX)/\\\""
+LUAMYCFLAGS = "MYCFLAGS=-std=c++17 -x c++ -fopenmp -DLUA_ROOT=\\\"$(PREFIX)/\\\""
 LUASOCKETCFLAGS = "MYCFLAGS=-std=c++17 -x c++ -DLUASOCKET_API=\"extern \\\"C\\\" __attribute__ ((visibility (\\\"default\\\")))\""
 
 # Mac OS X specific settings
@@ -49,6 +49,7 @@ LUACC = "CC=$(CXX)"
 LIBRARY_PATH := "export DYLD_LIBRARY_PATH=$(BUILDDIR)/lib"
 LIB_EXTENSION = dylib
 DEP_TO_LIB += *.$(LIB_EXTENSION)
+LUAMYLIBS = "MYLIBS=-L/opt/local/lib/libomp -lgomp"
 
 # Linux specific settings
 else ifeq ($(UNAME),Linux)
@@ -57,6 +58,7 @@ LIBRARY_PATH := "export LD_LIBRARY_PATH=$(BUILDDIR)/lib"
 LIB_EXTENSION := so
 DEP_TO_LIB += *.$(LIB_EXTENSION)*
 LUACC = "CC=g++"
+LUAMYLIBS = "MYLIBS=\"-lgomp\""
 # Unknown platform
 else
 LUA_PLAT ?= none
@@ -129,7 +131,7 @@ $(DEPDIR)/lua-5.3.5 $(BUILDDIR)/bin/luapp5.3: | $(BUILDDIR) $(DOWNLOADDIR)
 		tar -xzf $(DOWNLOADDIR)/lua-5.3.5.tar.gz -C $(DEPDIR); \
 		cd $(DEPDIR)/lua-5.3.5 && patch -p1 < ../luapp.patch; \
 	fi
-	$(MAKE) -C $(DEPDIR)/lua-5.3.5 $(LUA_PLAT) $(LUACC) $(LUACFLAGS) $(LUALDFLAGS)
+	$(MAKE) -C $(DEPDIR)/lua-5.3.5 $(LUA_PLAT) $(LUACC) $(LUAMYCFLAGS) $(LUAMYLIBS)
 	$(MAKE) -C $(DEPDIR)/lua-5.3.5 INSTALL_TOP=$(BUILDDIR) install
 
 $(DEPDIR)/luasocket $(BUILDDIR)/$(CDIR)/socket/core.so: $(BUILDDIR)/bin/luapp5.3 | $(BUILDDIR) $(DOWNLOADDIR)

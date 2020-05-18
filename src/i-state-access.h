@@ -548,7 +548,6 @@ public:
     }
 
     /// \brief Obtain PMA entry covering a physical memory word
-    /// \param s Pointer to machine state.
     /// \param paddr Target physical address.
     /// \returns Corresponding entry if found, or a sentinel entry
     /// for an empty range.

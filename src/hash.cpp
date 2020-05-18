@@ -285,9 +285,8 @@ class full_merkle_tree_of_pages {
     }
 
     /// \brief Initialize tree from a list of consecutive page hashes
-    /// \param pristine_page_hash Hash for pristine page
     /// \param page_hashes List of page hashes
-    /// \detail The page hashes in page_hashes are copied to the appropriate
+    /// \details The page hashes in page_hashes are copied to the appropriate
     /// subtree nodes, in order, and the rest are filled with pristine
     /// page hashes
     void init_tree(const std::vector<hash_type> &page_hashes) {
@@ -402,8 +401,8 @@ public:
 /// \details This is surprisingly efficient in both time and space.
 /// Adding the next page takes O(log(n)) in the worst case, but is
 /// this is amortized to O(1) time when adding n pages.
-/// Obtaining the proof for the current page takes \theta(log(n)) time.
-/// Computing the tree root hash also takes \theta(log(n)) time.
+/// Obtaining the proof for the current page takes theta(log(n)) time.
+/// Computing the tree root hash also takes theta(log(n)) time.
 /// The class only ever stores log(n) hashes (1 for each tree level).
 class incremental_merkle_tree_of_pages {
     pristine_hashes m_pristine_hashes; ///< Hash of pristine subtrees of all sizes

@@ -75,9 +75,7 @@ public:
     htif &operator=(htif &&) = delete;
 
     /// \brief Constructor
-    /// \param m Associated machine.
-    /// \param interact This is an interactive session with terminal support.
-    /// \param yield Accept yield requests from target.
+    /// \param h HTIF device configuration.
     /// \details The constructor for the associated machine is typically done yet when the constructor for the HTIF device is invoked.
     htif(const htif_config &h);
 
@@ -129,6 +127,7 @@ private:
 };
 
 /// \brief Creates a PMA entry for the HTIF device
+/// \param h HTIF device.
 /// \param start Start address for memory range.
 /// \param length Length of memory range.
 /// \returns Corresponding PMA entry

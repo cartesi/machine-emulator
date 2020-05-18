@@ -14,6 +14,9 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
+/// \file
+/// \brief Physical memory attributes implementation
+
 #include <sys/mman.h> // mmap, munmap
 #include <unistd.h> // close
 #include <sys/stat.h> // fstat
@@ -167,22 +170,19 @@ uint64_t pma_entry::get_ilength(void) const {
     return m_length;
 }
 
-/// \brief Default device write callback issues error on write.
 bool pma_write_error(const pma_entry &, i_virtual_state_access *, uint64_t, uint64_t, int) {
     return false;
 }
 
-/// \brief Default device read callback issues error on reads.
 bool pma_read_error(const pma_entry &, i_virtual_state_access *, uint64_t, uint64_t *, int) {
     return false;
 }
 
-/// \brief Default device peek callback issues error on peeks. See ::pma_peek.
 bool pma_peek_error(const pma_entry &, const machine &, uint64_t, const unsigned char **, unsigned char *) {
     return false;
 }
 
-/// \brief Memory range peek callback. See ::pma_peek.
+/// \brief Memory range peek callback. See pma_peek.
 static bool memory_peek(const pma_entry &pma, const machine &m, uint64_t page_address, const unsigned char **page_data, unsigned char *scratch) {
     (void) m;
     // If page_address is not aligned, or if it is out of range, return error

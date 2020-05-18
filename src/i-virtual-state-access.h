@@ -46,19 +46,17 @@ public:
     }
 
     /// \brief Set bits in mip.
-    /// \details See ::processor_set_mip.
     void set_mip(uint32_t mask) {
         return do_set_mip(mask);
     }
 
     /// \brief Resets bits in mip.
-    /// \details See ::processor_reset_mip.
     void reset_mip(uint32_t mask) {
         return do_reset_mip(mask);
     }
 
     /// \brief Reads the value of the mip register.
-    /// \details See ::processor_read_mip.
+    /// \returns Register value.
     uint32_t read_mip(void) {
         return do_read_mip();
     }

@@ -96,7 +96,7 @@ private:
 public:
 
     /// \brief Constructor from log of word accesses.
-    /// \param m Reference to word access vector.
+    /// \param accesses Reference to word access vector.
     explicit step_state_access(const std::vector<word_access> &accesses):
         m_accesses(accesses), m_next_access{0} {
         if (!m_accesses.empty()) {

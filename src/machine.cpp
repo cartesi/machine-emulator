@@ -41,6 +41,8 @@
 #include "step-state-access.h"
 #include "strict-aliasing.h"
 
+/// \file
+/// \brief Cartesi machine implementation
 
 namespace cartesi {
 

@@ -25,79 +25,88 @@
 
 namespace cartesi {
 
+/// \brief Processor state configuration
 struct processor_config final {
-    uint64_t x[32]{};
-    uint64_t pc{PC_INIT};
-    uint64_t mvendorid{MVENDORID_INIT};
-    uint64_t marchid{MARCHID_INIT};
-    uint64_t mimpid{MIMPID_INIT};
-    uint64_t mcycle{MCYCLE_INIT};
-    uint64_t minstret{MINSTRET_INIT};
-    uint64_t mstatus{MSTATUS_INIT};
-    uint64_t mtvec{MTVEC_INIT};
-    uint64_t mscratch{MSCRATCH_INIT};
-    uint64_t mepc{MEPC_INIT};
-    uint64_t mcause{MCAUSE_INIT};
-    uint64_t mtval{MTVAL_INIT};
-    uint64_t misa{MISA_INIT};
-    uint64_t mie{MIE_INIT};
-    uint64_t mip{MIP_INIT};
-    uint64_t medeleg{MEDELEG_INIT};
-    uint64_t mideleg{MIDELEG_INIT};
-    uint64_t mcounteren{MCOUNTEREN_INIT};
-    uint64_t stvec{STVEC_INIT};
-    uint64_t sscratch{SSCRATCH_INIT};
-    uint64_t sepc{SEPC_INIT};
-    uint64_t scause{SCAUSE_INIT};
-    uint64_t stval{STVAL_INIT};
-    uint64_t satp{SATP_INIT};
-    uint64_t scounteren{SCOUNTEREN_INIT};
-    uint64_t ilrsc{ILRSC_INIT};
-    uint64_t iflags{IFLAGS_INIT};
+    uint64_t x[32]{};                      ///< Value of general-purpose registers
+    uint64_t pc{PC_INIT};                  ///< Value of pc
+    uint64_t mvendorid{MVENDORID_INIT};    ///< Value of mvendorid CSR
+    uint64_t marchid{MARCHID_INIT};        ///< Value of marchid CSR
+    uint64_t mimpid{MIMPID_INIT};          ///< Value of mimpid CSR
+    uint64_t mcycle{MCYCLE_INIT};          ///< Value of mcycle CSR
+    uint64_t minstret{MINSTRET_INIT};      ///< Value of minstret CSR
+    uint64_t mstatus{MSTATUS_INIT};        ///< Value of mstatus CSR
+    uint64_t mtvec{MTVEC_INIT};            ///< Value of mtvec CSR
+    uint64_t mscratch{MSCRATCH_INIT};      ///< Value of mscratch CSR
+    uint64_t mepc{MEPC_INIT};              ///< Value of mepc CSR
+    uint64_t mcause{MCAUSE_INIT};          ///< Value of mcause CSR
+    uint64_t mtval{MTVAL_INIT};            ///< Value of mtval CSR
+    uint64_t misa{MISA_INIT};              ///< Value of misa CSR
+    uint64_t mie{MIE_INIT};                ///< Value of mie CSR
+    uint64_t mip{MIP_INIT};                ///< Value of mip CSR
+    uint64_t medeleg{MEDELEG_INIT};        ///< Value of medeleg CSR
+    uint64_t mideleg{MIDELEG_INIT};        ///< Value of mideleg CSR
+    uint64_t mcounteren{MCOUNTEREN_INIT};  ///< Value of mcounteren CSR
+    uint64_t stvec{STVEC_INIT};            ///< Value of stvec CSR
+    uint64_t sscratch{SSCRATCH_INIT};      ///< Value of sscratch CSR
+    uint64_t sepc{SEPC_INIT};              ///< Value of sepc CSR
+    uint64_t scause{SCAUSE_INIT};          ///< Value of scause CSR
+    uint64_t stval{STVAL_INIT};            ///< Value of stval CSR
+    uint64_t satp{SATP_INIT};              ///< Value of satp CSR
+    uint64_t scounteren{SCOUNTEREN_INIT};  ///< Value of scounteren CSR
+    uint64_t ilrsc{ILRSC_INIT};            ///< Value of ilrsc CSR
+    uint64_t iflags{IFLAGS_INIT};          ///< Value of iflags CSR              
 };
 
+/// \brief RAM state configuration
 struct ram_config final {
-    uint64_t length{0};
-    std::string backing{};
+    uint64_t length{0}; ///< RAM length
+    std::string backing{}; ///< RAM image backing file name
 };
 
+/// \brief ROM state configuration
 struct rom_config final {
-    std::string bootargs{};
-    std::string backing{};
+    std::string bootargs{}; ///< Bootargs to pass to kernel
+    std::string backing{}; ///< ROM image backing file
 };
 
+/// \brief Flash drive state configuration
 struct flash_config final {
-    uint64_t start{0};
-    uint64_t length{0};
-    bool shared{false};
-    std::string backing{};
+    uint64_t start{0};  ///< Flash drive start position
+    uint64_t length{0}; ///< Flash drive length
+    bool shared{false}; ///< Target modifications to drive change backing file?
+    std::string backing{}; ///< Flash drive backing file name
 };
 
+/// \brief CLINT device state configuration
 struct clint_config final {
-    uint64_t mtimecmp{MTIMECMP_INIT};
+    uint64_t mtimecmp{MTIMECMP_INIT}; ///< Value of mtimecmp CSR
 };
 
+/// \brief HTIF device state configuration
 struct htif_config final {
-    uint64_t fromhost{FROMHOST_INIT};
-    uint64_t tohost{TOHOST_INIT};
-    bool interact{false};
-    bool yield{false};
+    uint64_t fromhost{FROMHOST_INIT}; ///< Value of fromhost CSR
+    uint64_t tohost{TOHOST_INIT}; ///< Value of tohost CSR
+    bool interact{false}; ///< Monitor host console for input and pass to target?
+    bool yield{false}; ///< Honor yield commands?
 };
 
-/// \brief FLASH constants
+/// \brief Flash constants
 enum FLASH_constants {
     FLASH_MAX = 8 ///< Maximum number of flash drives
 };
 
+/// \brief List of flash drives
 using flash_configs = boost::container::static_vector<flash_config, FLASH_MAX>;
 
+/// \brief Machine state configuration
 struct machine_config final {
-    processor_config processor{};
-    ram_config ram{};
-    rom_config rom{};
-    flash_configs flash{};
-    clint_config clint{};
-    htif_config htif{};
+
+    processor_config processor{}; ///< Processor state
+    ram_config ram{};             ///< RAM state
+    rom_config rom{};             ///< ROM state
+    flash_configs flash{};        ///< Flash drives state
+    clint_config clint{};         ///< CLINT device state
+    htif_config htif{};           ///< HTIF device state
 
     /// \brief Get the name where config will be stored in a directory
     static std::string get_config_name(const std::string &dir);

@@ -257,7 +257,9 @@ static bool opt_table_field(lua_State *L, int tabidx, const char *field) {
 }
 
 /// \brief Returns an access_type table field indexed by string in a table.
-/// \param name Access type name.
+/// \param L Lua state.
+/// \param tabidx Table stack index.
+/// \param field Field index.
 /// \returns Corresponding access_type.
 static access_type check_access_type_field(lua_State *L, int tabidx,
     const char *field) {
@@ -273,7 +275,9 @@ static access_type check_access_type_field(lua_State *L, int tabidx,
 }
 
 /// \brief Returns an bracket_type table field indexed by string in a table.
-/// \param name Access type name.
+/// \param L Lua state.
+/// \param tabidx Table stack index.
+/// \param field Field index.
 /// \returns Corresponding bracket_type.
 static bracket_type check_bracket_type_field(lua_State *L, int tabidx,
     const char *field) {
@@ -380,7 +384,7 @@ static void push_processor_config(lua_State *L, const processor_config &p) {
 
 /// \brief Pushes a ram_config to the Lua stack
 /// \param L Lua state.
-/// \param p Ram_config to be pushed.
+/// \param r Ram_config to be pushed.
 static void push_ram_config(lua_State *L, const ram_config &r) {
     lua_newtable(L);
     lua_pushinteger(L, r.length); lua_setfield(L, -2, "length");
@@ -391,8 +395,8 @@ static void push_ram_config(lua_State *L, const ram_config &r) {
 }
 
 /// \brief Pushes a rom_config to the Lua stack
-/// \parom L Lua state.
-/// \parom p Ram_config to be pushed.
+/// \param L Lua state.
+/// \param r Ram_config to be pushed.
 static void push_rom_config(lua_State *L, const rom_config &r) {
     lua_newtable(L);
     if (!r.bootargs.empty()) {
@@ -406,8 +410,8 @@ static void push_rom_config(lua_State *L, const rom_config &r) {
 }
 
 /// \brief Pushes an htif_config to the Lua stack
-/// \parom L Lua state.
-/// \parom p Htif_config to be pushed.
+/// \param L Lua state.
+/// \param h Htif_config to be pushed.
 static void push_htif_config(lua_State *L, const htif_config &h) {
     lua_newtable(L);
     lua_pushboolean(L, h.interact); lua_setfield(L, -2, "interact");
@@ -417,16 +421,16 @@ static void push_htif_config(lua_State *L, const htif_config &h) {
 }
 
 /// \brief Pushes an clint_config to the Lua stack
-/// \parom L Lua state.
-/// \parom p Clint_config to be pushed.
+/// \param L Lua state.
+/// \param c Clint_config to be pushed.
 static void push_clint_config(lua_State *L, const clint_config &c) {
     lua_newtable(L);
     lua_pushinteger(L, c.mtimecmp); lua_setfield(L, -2, "mtimecmp");
 }
 
 /// \brief Pushes flash_configs to the Lua stack
-/// \parom L Lua state.
-/// \parom p Flash_configs to be pushed.
+/// \param L Lua state.
+/// \param flash Flash_configs to be pushed.
 static void push_flash_configs(lua_State *L, const flash_configs &flash) {
     lua_newtable(L);
     int i = 1;
@@ -548,7 +552,8 @@ static merkle_tree::hash_type check_hash(lua_State *L, int idx) {
 
 /// \brief Loads an array of sibling_hashes from Lua.
 /// \param L Lua state.
-/// \param tabidx Proof stack index.
+/// \param idx Proof stack index.
+/// \param log2_size of node from which to obtain siblings.
 /// \returns The sibling_hashes array.
 merkle_tree::siblings_type check_sibling_hashes(lua_State *L, int idx,
     int log2_size) {
@@ -661,7 +666,7 @@ access_log check_log(lua_State *L, int tabidx) {
 /// \brief Loads RAM config from Lua to machine_config.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
-/// \param r RAM config structure.
+/// \param r RAM config structure to receive results.
 static void check_ram_config(lua_State *L, int tabidx, ram_config &r) {
     check_table_field(L, tabidx, "ram");
     r.length = check_uint_field(L, -1, "length");
@@ -672,7 +677,7 @@ static void check_ram_config(lua_State *L, int tabidx, ram_config &r) {
 /// \brief Loads ROM config from Lua to machine_config.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
-/// \param c ROM config structure.
+/// \param r ROM config structure to receive results.
 static void check_rom_config(lua_State *L, int tabidx, rom_config &r) {
     if (!opt_table_field(L, tabidx, "rom"))
         return;
@@ -684,7 +689,7 @@ static void check_rom_config(lua_State *L, int tabidx, rom_config &r) {
 /// \brief Loads flash-drive config from Lua to machine_config.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
-/// \param c Flash config structure.
+/// \param f Flash_configs structure to receive results.
 static void check_flash_config(lua_State *L, int tabidx, flash_configs &f) {
     if (!opt_table_field(L, tabidx, "flash"))
         return;
@@ -711,7 +716,7 @@ static void check_flash_config(lua_State *L, int tabidx, flash_configs &f) {
 /// \brief Loads processor config from Lua to machine_config.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
-/// \param c Processor config structure.
+/// \param p Processor config structure to receive results.
 static void check_processor_config(lua_State *L, int tabidx, processor_config &p) {
     if (!opt_table_field(L, tabidx, "processor"))
         return;
@@ -758,7 +763,7 @@ static void check_processor_config(lua_State *L, int tabidx, processor_config &p
 /// \brief Loads HTIF config from Lua.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
-/// \param h HTIF config structure.
+/// \param h HTIF config structure to receive results.
 static void check_htif_config(lua_State *L, int tabidx, htif_config &h) {
     if (!opt_table_field(L, tabidx, "htif"))
         return;
@@ -772,7 +777,7 @@ static void check_htif_config(lua_State *L, int tabidx, htif_config &h) {
 /// \brief Loads CLINT config from Lua to machine_config.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
-/// \param c CLINT config structure.
+/// \param c CLINT config structure to receive results.
 static void check_clint_config(lua_State *L, int tabidx, clint_config &c) {
     if (!opt_table_field(L, tabidx, "clint"))
         return;
@@ -861,7 +866,8 @@ static int machine_ctor_meta__call(lua_State *L) try {
 
 /// \brief Machine constructor __gc metamethod.
 /// \param L Lua state.
-static int machine_ctor_meta__gc(lua_State *) {
+static int machine_ctor_meta__gc(lua_State *L) {
+    (void) L;
     return 0;
 }
 
@@ -1752,10 +1758,10 @@ static void machine_set_static(lua_State *L) {
     lua_setfield(L, -2, "verify_access_log");
 }
 
-/// \brief Entrypoint to the Cartesi Lua library.
-/// \param L Lua state.
 extern "C"
 __attribute__((visibility("default")))
+/// \brief Entrypoint to the Cartesi Lua library.
+/// \param L Lua state.
 int luaopen_cartesi(lua_State *L) {
 #ifdef GPERF
     lua_newuserdata(L, 1); /* gperf */

@@ -18,7 +18,7 @@
 #define MACHINE_H
 
 /// \file
-/// \brief Cartesi machine implementation
+/// \brief Cartesi machine interface
 
 #include <memory>
 
@@ -112,7 +112,7 @@ public:
     explicit machine(const std::string &dir);
 
     /// \brief Serialize entire state to directory
-    /// \detail The method is not const because it updates the root hash
+    /// \details The method is not const because it updates the root hash
     void store(const std::string &dir);
 
     /// \brief No default constructor
@@ -186,19 +186,19 @@ public:
     bool read_word(uint64_t word_address, uint64_t &word_value) const;
 
     /// \brief Reads a chunk of data from the machine memory.
-    /// \param word_address Address to start reading.
+    /// \param address Address to start reading.
     /// \param data Receives chunk of memory.
     /// \param length Size of chunk.
-    /// \detail The entire chunk, from \p address to \p address + \p length must
+    /// \details The entire chunk, from \p address to \p address + \p length must
     /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
     /// and not a device PMA.
     void read_memory(uint64_t address, unsigned char *data, uint64_t length) const;
 
     /// \brief Writes a chunk of data to the machine memory.
-    /// \param word_address Address to start writing.
+    /// \param address Address to start writing.
     /// \param data Source for chunk of data.
     /// \param length Size of chunk.
-    /// \detail The entire chunk, from \p address to \p address + \p length must
+    /// \details The entire chunk, from \p address to \p address + \p length must
     /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
     /// and not a device PMA.
     void write_memory(uint64_t address, const unsigned char *data, size_t length);

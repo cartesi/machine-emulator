@@ -33,7 +33,7 @@ class i_virtual_state_access;
 class machine;
 
 /// \file
-/// \brief Physical memory attributes.
+/// \brief Physical memory attributes interface
 
 /// \brief Prototype for callback invoked when machine wants to peek into a range with no side-effects.
 /// \param pma Reference to corresponding PMA entry.

@@ -500,7 +500,7 @@ public:
 
     /// \brief Dump all memory ranges to files in current working directory.
     /// \returns true if successful, false otherwise.
-    void dump(void) const;
+    void dump_pmas(void) const;
 
     /// \brief Get read-only access to container with all PMA entries.
     /// \returns The container.

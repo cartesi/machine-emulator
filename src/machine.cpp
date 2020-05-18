@@ -937,7 +937,7 @@ merkle_tree &machine::get_merkle_tree(void) {
     return m_t;
 }
 
-void machine::dump(void) const {
+void machine::dump_pmas(void) const {
     auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
     for (auto &pma: m_s.pmas) {
         if (pma.get_length() == 0) break;

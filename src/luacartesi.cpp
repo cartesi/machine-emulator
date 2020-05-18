@@ -1004,11 +1004,11 @@ static int machine_meta__index_write_csr(lua_State *L) try {
     return 0;
 }
 
-/// \brief This is the machine:dump() method implementation.
+/// \brief This is the machine:dump_pmas() method implementation.
 /// \param L Lua state.
-static int machine_meta__index_dump(lua_State *L) try {
+static int machine_meta__index_dump_pmas(lua_State *L) try {
     machine *m = check_machine(L, 1);
-    m->dump();
+    m->dump_pmas();
     return 1;
 } catch (std::exception &x) {
     luaL_error(L, x.what());
@@ -1623,7 +1623,7 @@ static int machine_meta__index_get_initial_config(lua_State *L) {
 /// \brief Contents of the machine metatable __index table.
 static const luaL_Reg machine_meta__index[] = {
     {"destroy", machine_meta__index_destroy},
-    {"dump", machine_meta__index_dump},
+    {"dump_pmas", machine_meta__index_dump_pmas},
     {"dump_regs", machine_meta__index_dump_regs},
     {"get_proof", machine_meta__index_get_proof},
     {"get_initial_config", machine_meta__index_get_initial_config},

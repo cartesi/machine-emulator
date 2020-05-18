@@ -22,6 +22,26 @@ local function stderr(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
 end
 
+local function parse_number(n)
+    if not n then return nil end
+    local base, rest = string.match(n, "^%s*(0x%x+)%s*(.-)%s*$")
+    if not base then
+        base, rest = string.match(n, "^%s*(%d+)%s*(.-)%s*$")
+    end
+    base = tonumber(base)
+    if not base then return nil end
+    if rest == "Ki" then return base << 10
+    elseif rest == "Mi" then return base << 20
+    elseif rest == "Gi" then return base << 30
+    elseif rest == "" then return base end
+    local shift = string.match(rest, "^%s*%<%<%s*(%d+)$")
+    if shift then
+        shift = tonumber(shift)
+        if shift then return base << shift end
+    end
+    return nil
+end
+
 -- Print help and exit
 local function help()
     stderr([=[
@@ -31,69 +51,82 @@ Usage:
 
 where options are:
 
-  --ram-image=<filename>       binary image for RAM
-                               (default: "kernel.bin")
+  --ram-backing=<filename>
+    binary image for RAM (default: "kernel.bin")
 
-  --no-ram-image               forget settings for ram-image
+  --no-ram-image
+    forget settings for ram-image
 
-  --rom-image=<filename>       binary image for ROM
-                               (default: none)
+  --ram-length=<number>
+    set RAM length
 
-  --memory-size=<number>       target memory in MiB
-                               (default: 64)
+  --rom-backing=<filename>
+    binary image for ROM (default: "rom.bin")
 
-  --root-backing=<filename>    backing storage for root filesystem
-                               corresponding to /dev/mtdblock0 mounted as /
-                               (default: rootfs.ext2)
+  --root-backing=<filename>
+    backing storage for root file-system corresponding
+    to /dev/mtdblock0 mounted as / (default: rootfs.ext2)
 
-  --no-root-backing            forget (default) backing settings for root
+  --no-root-backing
+    forget (default) backing settings for root
 
-  --<label>-backing=<filename> backing storage for <label> filesystem
-                               corresponding to /dev/mtdblock[1-7]
-                               and mounted by init as /mnt/<label>
-                               (default: none)
+  --flash-<label>-backing=<filename>
+    backing storage for <label> file-system corresponding to /dev/mtdblock[1-7]
+    and mounted by init as /mnt/<label> (default: none)
 
-  --<label>-shared             target modifications to <label> filesystem
-                               modify backing storage as well
-                               (default: false)
+  --flash-<label>-shared
+    target modifications to <label> file-system modify backing storage as well
+    (default: false)
 
-  --<label>-start=<num|expr>   set the starting memory position for <label>
-                               filesystem to a number or a Lua expression
-                               (if you set the position for one filesystem,
-                               you must set it for all of them)
+  --flash-<label>-start=<number>
+    set the starting memory position for <label> file-system
+    (either set the position for no file-system, or set for all of them)
 
-  --<label>-length=<num|expr>  set the byte length of the <label> filesystem
+  --flash-<label>-length=<number>
+    set the byte length of the <label> file-system
 
-  --max-mcycle=<number>        stop at a given mcycle
-                               (default: 2305843009213693952)
+  --max-mcycle=<number>
+    stop at a given mcycle (default: 2305843009213693952)
 
-  --step                       run a step after stopping
+  --no-rom-bootargs
+    clear default bootargs
 
-  --no-bootargs                clear default bootargs before cmdline
+  --append-rom-bootargs=<string>
+    append <string> to bootargs
 
-  --cmdline                    add options after default bootargs
+  -i or --htif-interact
+    run in interactive mode
 
-  --batch                      run in non-interactive mode
+  --htif-yield
+    honor yield requests by target
 
-  --yield                      honor yield requests by target
+  --dump-config
+    dump initial config to screen
 
-  --initial-hash               prints initial hash before running
+  --load=<directory>
+    load prebuilt machine from <directory>
 
-  --final-hash                 prints final hash after running
+  --store=<directory>
+    store machine to <directory>
 
-  --ignore-payload             do not report error on non-zero payload
+  --initial-hash
+    print initial hash before running machine
 
-  --dump                       dump non-pristine pages to disk
+  --final-hash
+    print final hash when done
 
-  --dump-config                dump machine config to screen
+  --step
+    print step log for 1 additional cycle when done
 
-  --json-steps=<filename>      output json file with steps
-                               (default: none)
+  --json-steps=<filename>
+    output json with step logs for all cycles to <filename>
 
-  --load=<directory>           load prebuilt machine from directory
+  --dump-pmas
+    dump all PMA ranges to disk when done
 
-  --store=<directory>          store machine to directory
-
+<number> can be specified in decimal (e.g., 16) or hexadeximal (e.g., 0x10),
+with a suffix multiplier (i.e., Ki, Mi, Gi for 2^10, 2^20, 2^30, respectively),
+or a left shift (e.g., 2 << 20).
 
 ]=], arg[0])
     os.exit()
@@ -109,14 +142,13 @@ local length = { }
 local ram_image = "kernel.bin"
 local rom_image = "rom.bin"
 local bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw"
-local cmdline = ""
-local memory_size = 64
-local batch = false
+local append_bootargs = ""
+local ram_length = 64 << 20
+local interact = false
 local yield = false
 local initial_hash = false
 local final_hash = false
-local ignore_payload = false
-local dump = false
+local dump_pmas = false
 local dump_config = false
 local max_mcycle = 2^61
 local json_steps
@@ -140,17 +172,53 @@ local options = {
             return false
         end
     end },
-    { "^%-%-batch$", function(all)
-        if not all then return false end
-        batch = true
+    { "^%-%-rom%-backing%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        rom_image = o
         return true
     end },
-    { "^%-%-yield$", function(all)
+    { "^%-%-no%-rom%-bootargs$", function(all)
+        if not all then return false end
+        bootargs = ""
+        return true
+    end },
+    { "^%-%-append%-rom%-bootargs%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        append_bootargs = o
+        return true
+    end },
+    { "^%-%-ram%-length%=(.+)$", function(n)
+        if not n then return false end
+        n = assert(parse_number(n), "invalid RAM length " .. n)
+        ram_length = n
+        return true
+    end },
+    { "^%-%-ram%-backing%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        ram_image = o
+        return true
+    end },
+    { "^%-%-no%-ram%-image$", function(all)
+        if not all then return false end
+        ram_image = nil
+        return true
+    end },
+    { "^%-%-htif%-interact$", function(all)
+        if not all then return false end
+        interact = true
+        return true
+    end },
+    { "^%-i$", function(all)
+        if not all then return false end
+        interact = true
+        return true
+    end },
+    { "^%-%-htif%-yield$", function(all)
         if not all then return false end
         yield = true
         return true
     end },
-    { "^%-%-(%w+)-backing%=(.+)$", function(d, f)
+    { "^%-%-flash%-(%w+)-backing%=(.+)$", function(d, f)
         if not d or not f then return false end
         if not backing[d] then
             backing_order[#backing_order+1] = d
@@ -158,21 +226,25 @@ local options = {
         backing[d] = f
         return true
     end },
-    { "^%-%-(%w+)-start%=(.+)$", function(d, f)
-        if not d or not f then return false end
-        local fun = load("return " .. f) -- expr|num string to num
-        start[d] = fun and fun()
-        assert(start[d], "invalid start position '" .. f ..
-               "' for device '" .. d .. "'")
+    { "^%-%-flash%-(%w+)-start%=(.+)$", function(d, s)
+        if not d or not s then return false end
+        start[d] = assert(parse_number(s),
+          string.format("invalid start '%s' for flash drive '%s'", s, d))
         return true
     end },
-    { "^%-%-(%w+)-length=(.+)$", function(d, f)
-        if not d or not f then return false end
-        local fun = load("return " .. f) -- expr|num string to num
-        length[d] = fun and fun()
-        assert(length[d] and length[d] > 0,
-               "invalid length '" .. f ..
-               "' for device '" .. d .. "'")
+    { "^%-%-flash%-(%w+)-length=(.+)$", function(d, l)
+        if not d or not l then return false end
+        length[d] = assert(parse_number(l),
+          string.format("invalid length '%s' for flash drive '%s'", l, d))
+        return true
+    end },
+    { "^%-%-root%-backing%=(.+)$", function(f)
+        if not f then return false end
+        local d = "root"
+        if not backing[d] then
+            backing_order[#backing_order+1] = d
+        end
+        backing[d] = f
         return true
     end },
     { "^%-%-no%-root%-backing$", function(all)
@@ -184,17 +256,12 @@ local options = {
           table.remove(backing_order, 1)
           return true
     end },
-    { "^%-%-ignore%-payload$", function(all)
+    { "^%-%-dump%-pmas$", function(all)
         if not all then return false end
-        ignore_payload = true
+        dump_pmas = true
         return true
     end },
-    { "^%-%-dump$", function(all)
-        if not all then return false end
-        dump = true
-        return true
-    end },
-    { "^%-%-dump%-config$", function(all)
+    { "^%-%-dump%-machine%-config$", function(all)
         if not all then return false end
         dump_config = true
         return true
@@ -204,30 +271,17 @@ local options = {
         step = true
         return true
     end },
-    { "^%-%-(%w+)%-shared$", function(d)
+    { "^%-%-flash%-(%w+)%-shared$", function(d)
         if not d then return false end
         shared[d] = true
-        return true
-    end },
-    { "^(%-%-memory%-size%=(%d+)(.*))$", function(all, n, e)
-        if not n then return false end
-        assert(e == "", "invalid option " .. all)
-        n = assert(tonumber(n), "invalid option " .. all)
-        assert(n >= 0, "not enough memory " .. all)
-        memory_size = math.ceil(n)
         return true
     end },
     { "^(%-%-max%-mcycle%=(%d+)(.*))$", function(all, n, e)
         if not n then return false end
         assert(e == "", "invalid option " .. all)
-        n = assert(tonumber(n), "invalid option " .. all)
+        n = assert(parse_number(n), "invalid option " .. all)
         assert(n >= 0, "invalid option " .. all)
         max_mcycle = math.ceil(n)
-        return true
-    end },
-    { "^%-%-ram%-image%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        ram_image = o
         return true
     end },
     { "^%-%-load%=(.*)$", function(o)
@@ -243,26 +297,6 @@ local options = {
     { "^%-%-json%-steps%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         json_steps = o
-        return true
-    end },
-    { "^%-%-no%-ram%-image$", function(all)
-        if not all then return false end
-        ram_image = nil
-        return true
-    end },
-    { "^%-%-rom%-image%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        rom_image = o
-        return true
-    end },
-    { "^%-%-no%-bootargs$", function(all)
-        if not all then return false end
-        bootargs = ""
-        return true
-    end },
-    { "^%-%-cmdline%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        cmdline = o
         return true
     end },
     { "^%-%-initial%-hash$", function(all)
@@ -297,14 +331,6 @@ local function get_file_length(filename)
     return size
 end
 
-local function next_power_of_2(value)
-    local i = 1
-    while i < value do
-        i = i*2
-    end
-    return i
-end
-
 local config_meta = {
     __index = { }
 }
@@ -321,9 +347,9 @@ function config_meta.__index:append_drive(t)
     return self
 end
 
-function config_meta.__index:append_cmdline(cmdline)
-    if cmdline and cmdline ~= "" then
-        self.rom.bootargs = self.rom.bootargs .. " " .. cmdline
+function config_meta.__index:append_bootargs(bootargs)
+    if bootargs and bootargs ~= "" then
+        self.rom.bootargs = self.rom.bootargs .. " " .. bootargs
     end
     return self
 end
@@ -340,9 +366,8 @@ function config_meta.__index:set_yield(yield)
     return self
 end
 
-
-function config_meta.__index:set_memory_size(memory_size)
-    self.ram.length = memory_size << 20
+function config_meta.__index:set_ram_length(length)
+    self.ram.length = length
     return self
 end
 
@@ -369,9 +394,6 @@ local function new_config()
         rom = {
             bootargs = bootargs
         },
-        htif = {
-            interact = true,
-        },
         flash = {},
         _flash_id = 1,
     }, config_meta)
@@ -395,7 +417,7 @@ end
 
 local function indentout(level, fmt, ...)
     local step = "  "
-    io.stdout:write(string.rep(step, level), string.format(fmt, ...))
+    io.stderr:write(string.rep(step, level), string.format(fmt, ...))
 end
 
 local function print_log(log)
@@ -521,19 +543,23 @@ local function print_json_log(log, init_cycles, final_cycles, out, indent)
 end
 
 local function dump_machine_config(config)
-    stderr("config = {\n")
+    stderr("machine_config = {\n")
     stderr("  processor = {\n")
-    stderr("    x = {\n")
-    for i, xi in ipairs(config.processor.x) do
-        stderr("      0x%x,\n", xi)
-    end
-    stderr("    },\n")
-    for i,v in pairs(config.processor) do
-        if type(v) == "number" then
-            stderr("    %s = 0x%x,\n", i, v)
+    if config.processor then
+        if config.processor.x then
+            stderr("    x = {\n")
+            for i, xi in ipairs(config.processor.x) do
+                stderr("      0x%x,\n", xi)
+            end
+            stderr("    },\n")
         end
+        for i,v in pairs(config.processor) do
+            if type(v) == "number" then
+                stderr("    %s = 0x%x,\n", i, v)
+            end
+        end
+        stderr("  },\n")
     end
-    stderr("  },\n")
     stderr("  ram = {\n")
     stderr("    length = 0x%x,\n", config.ram.length)
     if config.ram.backing and config.ram.backing ~= "" then
@@ -551,21 +577,21 @@ local function dump_machine_config(config)
     stderr("  htif = {\n")
     stderr("    tohost = 0x%x,\n", config.htif.tohost)
     stderr("    fromhost = 0x%x,\n", config.htif.fromhost)
+    stderr("    interact = %s,\n", tostring(config.htif.interact))
+    stderr("    yield = %s,\n", tostring(config.htif.yield))
     stderr("  },\n")
     stderr("  clint = {\n")
     stderr("    mtimecmp = 0x%x,\n", config.clint.mtimecmp)
     stderr("  },\n")
     stderr("  flash = {\n")
     for i, f in ipairs(config.flash) do
-        stderr("    [%d] = {\n", i)
+        stderr("    {\n", i)
         stderr("      start = 0x%x,\n", f.start)
         stderr("      length = 0x%x,\n", f.length)
         if f.backing and f.backing ~= "" then
             stderr("      backing = %q,\n", f.backing)
         end
-        if f.shared then
-            stderr("      shared = true,\n", f.backing)
-        end
+        stderr("      shared = %s,\n", tostring(f.shared))
         stderr("    },\n")
     end
     stderr("  },\n")
@@ -598,7 +624,7 @@ else
         for i, label in ipairs(backing_order) do
             start[label] = flash_base
             -- make sure flash drives are separated by a power of two and at least 1MB
-            flash_base = flash_base + math.max(next_power_of_2(length[label]), 1024*1024)
+            flash_base = flash_base + (1 << 60)
         end
     else
         -- At least one position specified. Must specify a starting position for all devices.
@@ -609,16 +635,14 @@ else
         end
     end
 
-
     local config = new_config(
     ):set_ram_image(
         ram_image
     ):set_rom_image(
         rom_image
-    ):set_memory_size(
-        memory_size
+    ):set_ram_length(
+        ram_length
     )
-
 
     local mtdparts = {}
     for i, label in ipairs(backing_order) do
@@ -631,13 +655,13 @@ else
         mtdparts[#mtdparts+1] = string.format("flash.%d:-(%s)", i-1, label)
     end
     if #mtdparts > 0 then
-        config = config:append_cmdline("mtdparts=" ..
+        config = config:append_bootargs("mtdparts=" ..
             table.concat(mtdparts, ";"))
     end
-    config = config:append_cmdline(
-        cmdline
+    config = config:append_bootargs(
+        append_bootargs
     ):set_interact(
-        not batch
+        interact
     ):set_yield(
         yield
     )
@@ -647,21 +671,23 @@ else
 end
 
 if not json_steps then
-    if dump then
-        machine:dump()
+    if interact then
+        stderr("Running in interactive mode!\n")
     end
     if dump_config then
         dump_machine_config(machine:get_initial_config())
     end
     if initial_hash then
+        assert(not interact, "hashes are meaningless in interactive mode")
         print_root_hash(machine)
     end
     local cycles = 0
-    while cycles < max_mcycle do
+    local payload = 0
+    while math.ult(cycles, max_mcycle) do
         machine:run(max_mcycle)
         cycles = machine:read_mcycle()
         if machine:read_iflags_H() then
-            local payload = machine:read_htif_tohost() << 16 >> 17
+            payload = machine:read_htif_tohost() << 16 >> 17
             stderr("\nHalted with payload: %u\n", payload)
             stderr("Cycles: %u\n", cycles)
             break
@@ -670,26 +696,35 @@ if not json_steps then
             local cmd = tohost << 8 >> 56
             local data = tohost << 16 >> 16
             if cmd == 0 then
-                stderr("Progress: %u\n", data)
+                stderr("Progress: %6.2f\r", data/100)
             else
                 stderr("\nYielded cmd: %u, data: %u\n", cmd, data)
                 stderr("Cycles: %u\n", cycles)
             end
         end
     end
+    if not math.ult(cycles, max_mcycle) then
+        stderr("\nCycles: %u\n", cycles)
+    end
     if step then
+        assert(not interact, "step proof is meaningless in interactive mode")
         stderr("Gathering step proof: please wait\n")
         print_log(machine:step())
+    end
+    if dump_pmas then
+        machine:dump_pmas()
     end
     if final_hash then
         print_root_hash(machine)
     end
     if store_dir then
+        assert(not interact, "hashes are meaningless in interactive mode")
         stderr("Storing machine: please wait\n")
         machine:store(store_dir)
     end
     os.exit(payload, true)
 else
+    assert(not interact, "logs are meaningless in interactive mode")
     json_steps = assert(io.open(json_steps, "w"))
     json_steps:write("[ ")
     for i = 0, max_mcycle do

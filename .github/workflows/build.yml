@@ -93,7 +93,7 @@ jobs:
           chmod +x /opt/cartesi/bin/cartesi-machine*
 
       - name: Simple Boot
-        run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/bin/cartesi-machine.lua --cmdline="-- /bin/true" --batch
+        run: /opt/cartesi/bin/luapp5.3 /opt/cartesi/bin/cartesi-machine.lua --append-rom-bootargs="-- /bin/true"
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0

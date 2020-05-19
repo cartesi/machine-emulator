@@ -674,6 +674,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
                 uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
                 hpage = pma.get_memory().get_host_memory() +
                     (paddr_page - pma.get_start());
+                pma.mark_dirty_page(paddr_page - pma.get_start());
             }
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             // write to memory

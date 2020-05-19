@@ -777,12 +777,14 @@ bool machine::verify_dirty_page_maps(void) const {
     bool broken = false;
     merkle_tree::hash_type pristine = m_t.get_pristine_hash(
         m_t.get_log2_page_size());
-    // Go over the write TLB and mark as dirty all pages currently there
-    for (int i = 0; i < TLB_SIZE; ++i) {
-        auto &write = m_s.tlb_write[i];
-        if (write.vaddr_page != UINT64_C(-1)) {
-            write.pma->mark_dirty_page(write.paddr_page -
-                write.pma->get_start());
+    if constexpr(!avoid_tlb<machine_state>::value) {
+        // Go over the write TLB and mark as dirty all pages currently there
+        for (int i = 0; i < TLB_SIZE; ++i) {
+            auto &write = m_s.tlb_write[i];
+            if (write.vaddr_page != UINT64_C(-1)) {
+                write.pma->mark_dirty_page(write.paddr_page -
+                    write.pma->get_start());
+            }
         }
     }
     // Now go over all PMAs verifying dirty pages are marked
@@ -817,12 +819,14 @@ bool machine::update_merkle_tree(void) {
     merkle_tree::hasher_type gh;
     //double begin = now();
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
-    // Go over the write TLB and mark as dirty all pages currently there
-    for (int i = 0; i < TLB_SIZE; ++i) {
-        auto &write = m_s.tlb_write[i];
-        if (write.vaddr_page != UINT64_C(-1)) {
-            write.pma->mark_dirty_page(write.paddr_page -
-                write.pma->get_start());
+    if constexpr(!avoid_tlb<machine_state>::value) {
+        // Go over the write TLB and mark as dirty all pages currently there
+        for (int i = 0; i < TLB_SIZE; ++i) {
+            auto &write = m_s.tlb_write[i];
+            if (write.vaddr_page != UINT64_C(-1)) {
+                write.pma->mark_dirty_page(write.paddr_page -
+                    write.pma->get_start());
+            }
         }
     }
     // Now go over all PMAs and updating the Merkle tree

@@ -19,7 +19,7 @@ The emulator implements RISC-V's RV64IMASU ISA. The letters after RV specify the
 #### Ubuntu 18.04
 
 ```
-$ apt-get install build-essential automake patchelf wget git libreadline-dev libboost-container-dev libboost-program-options-dev ca-certificates
+$ apt-get install build-essential automake libtool patchelf wget git libreadline-dev libboost-container-dev libboost-program-options-dev libboost-serialization-dev ca-certificates
 ```
 #### MacOS
 

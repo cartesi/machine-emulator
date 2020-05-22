@@ -150,7 +150,7 @@ local initial_hash = false
 local final_hash = false
 local dump_pmas = false
 local dump_config = false
-local max_mcycle = 2^61
+local max_mcycle = math.maxinteger
 local json_steps
 local step = false
 local store_dir = nil
@@ -255,6 +255,11 @@ local options = {
           shared.root = nil
           table.remove(backing_order, 1)
           return true
+    end },
+    { "^%-%-root%-shared$", function(all)
+        if not all then return false end
+        shared.root = true
+        return true
     end },
     { "^%-%-dump%-pmas$", function(all)
         if not all then return false end
@@ -410,7 +415,7 @@ local function hexhash8(hash)
 end
 
 local function print_root_hash(machine)
-    print("Updating merkle tree: please wait")
+    stderr("Updating Merkle tree: please wait\n")
     machine:update_merkle_tree()
     print(hexhash(machine:get_root_hash()))
 end
@@ -542,46 +547,65 @@ local function print_json_log(log, init_cycles, final_cycles, out, indent)
     out:write(' }')
 end
 
+local function comment_default(u, v)
+    if u ~= v then stderr("\n")
+    else stderr(" -- default\n") end
+end
+
 local function dump_machine_config(config)
     stderr("machine_config = {\n")
     stderr("  processor = {\n")
-    if config.processor then
-        if config.processor.x then
-            stderr("    x = {\n")
-            for i, xi in ipairs(config.processor.x) do
-                stderr("      0x%x,\n", xi)
-            end
-            stderr("    },\n")
-        end
-        for i,v in pairs(config.processor) do
-            if type(v) == "number" then
-                stderr("    %s = 0x%x,\n", i, v)
-            end
-        end
-        stderr("  },\n")
+    local def = cartesi.machine.DEFAULT_CONFIG
+    stderr("    x = {\n")
+    local processor = config.processor or { x = {} }
+    for i = 1, 31 do
+        local xi = processor.x[i] or def.processor.x[i]
+        stderr("      0x%x,",  xi)
+        comment_default(xi, def.processor.x[i])
     end
+    stderr("    },\n")
+    local order = {}
+    for i,v in pairs(def.processor) do
+        if type(v) == "number" then
+            order[#order+1] = i
+        end
+    end
+    table.sort(order)
+    for i,csr in ipairs(order) do
+        local c = processor[csr] or def.processor[csr]
+        stderr("    %s = 0x%x,", csr, c)
+        comment_default(c,  def.processor[csr])
+    end
+    stderr("  },\n")
+    local ram = config.ram or {}
     stderr("  ram = {\n")
-    stderr("    length = 0x%x,\n", config.ram.length)
-    if config.ram.backing and config.ram.backing ~= "" then
-        stderr("    backing = %q,\n", config.ram.backing)
-    end
+    stderr("    length = 0x%x,", ram.length or def.ram.length)
+    comment_default(ram.length, def.ram.length)
+    stderr("    backing = %q,", ram.backing or def.ram.backing)
+    comment_default(ram.backing, def.ram.backing)
     stderr("  },\n")
+    local rom = config.rom or {}
     stderr("  rom = {\n")
-    if config.rom.backing and config.rom.backing ~= "" then
-        stderr("    backing = %q,\n", config.rom.backing)
-    end
-    if config.rom.bootargs and config.rom.bootargs ~= "" then
-        stderr("    bootargs = %q,\n", config.rom.bootargs)
-    end
+    stderr("    backing = %q,", rom.backing or def.rom.backing)
+    comment_default(rom.backing, def.rom.backing)
+    stderr("    bootargs = %q,", rom.bootargs or def.rom.bootargs)
+    comment_default(rom.bootargs, def.rom.bootargs)
     stderr("  },\n")
+    local htif = config.htif or {}
     stderr("  htif = {\n")
-    stderr("    tohost = 0x%x,\n", config.htif.tohost)
-    stderr("    fromhost = 0x%x,\n", config.htif.fromhost)
-    stderr("    interact = %s,\n", tostring(config.htif.interact))
-    stderr("    yield = %s,\n", tostring(config.htif.yield))
+    stderr("    tohost = 0x%x,", htif.tohost or def.htif.tohost)
+    comment_default(htif.tohost, def.htif.tohost)
+    stderr("    fromhost = 0x%x,", htif.fromhost or def.htif.fromhost)
+    comment_default(htif.fromhost, def.htif.fromhost)
+    stderr("    interact = %s,", tostring(htif.interact or false))
+    comment_default(htif.interact or false, def.htif.interact)
+    stderr("    yield = %s,", tostring(htif.yield or false))
+    comment_default(htif.yield or false, def.htif.yield)
     stderr("  },\n")
+    local clint = config.clint or {}
     stderr("  clint = {\n")
-    stderr("    mtimecmp = 0x%x,\n", config.clint.mtimecmp)
+    stderr("    mtimecmp = 0x%x,", clint.mtimecmp or def.clint.mtimecmp)
+    comment_default(clint.mtimecmp, def.clint.mtimecmp)
     stderr("  },\n")
     stderr("  flash = {\n")
     for i, f in ipairs(config.flash) do
@@ -591,7 +615,8 @@ local function dump_machine_config(config)
         if f.backing and f.backing ~= "" then
             stderr("      backing = %q,\n", f.backing)
         end
-        stderr("      shared = %s,\n", tostring(f.shared))
+        stderr("      shared = %s,", tostring(f.shared or false))
+        comment_default(false, f.shared)
         stderr("    },\n")
     end
     stderr("  },\n")

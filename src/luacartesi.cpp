@@ -1366,6 +1366,14 @@ static int machine_meta__index_read_iflags_H(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:read_iflags_I() method implementation.
+/// \param L Lua state.
+static int machine_meta__index_read_iflags_I(lua_State *L) {
+    machine *m = check_machine(L, 1);
+    lua_pushboolean(L, m->read_iflags_I());
+    return 1;
+}
+
 /// \brief This is the machine:read_iflags_Y() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_iflags_Y(lua_State *L) {
@@ -1635,6 +1643,7 @@ static const luaL_Reg machine_meta__index[] = {
     {"read_iflags", machine_meta__index_read_iflags},
     {"read_iflags_H", machine_meta__index_read_iflags_H},
     {"read_iflags_Y", machine_meta__index_read_iflags_Y},
+    {"read_iflags_I", machine_meta__index_read_iflags_I},
     {"read_ilrsc", machine_meta__index_read_ilrsc},
     {"read_marchid", machine_meta__index_read_marchid},
     {"read_mcause", machine_meta__index_read_mcause},
@@ -1756,6 +1765,8 @@ static void machine_set_static(lua_State *L) {
     lua_setfield(L, -2, "MIMPID");
     lua_pushcfunction(L, machine_verify_access_log);
     lua_setfield(L, -2, "verify_access_log");
+    push_machine_config(L, machine_config{});
+    lua_setfield(L, -2, "DEFAULT_CONFIG");
 }
 
 extern "C"

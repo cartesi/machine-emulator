@@ -62,7 +62,7 @@ static bool clint_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t
     (void) pma;
 
     switch (offset) {
-        case CLINT_MSIP0_REL_ADDR:    
+        case CLINT_MSIP0_REL_ADDR:
             return clint_read_msip(a, val, size_log2);
         case CLINT_MTIMECMP_REL_ADDR:
             return clint_read_mtimecmp(a, val, size_log2);

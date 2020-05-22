@@ -775,8 +775,6 @@ bool machine::verify_dirty_page_maps(void) const {
     auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
     if (!scratch) return false;
     bool broken = false;
-    merkle_tree::hash_type pristine = m_t.get_pristine_hash(
-        m_t.get_log2_page_size());
     if constexpr(!avoid_tlb<machine_state>::value) {
         // Go over the write TLB and mark as dirty all pages currently there
         for (int i = 0; i < TLB_SIZE; ++i) {
@@ -787,32 +785,37 @@ bool machine::verify_dirty_page_maps(void) const {
             }
         }
     }
-    // Now go over all PMAs verifying dirty pages are marked
+    // Now go over all memory PMAs verifying that all dirty pages are marked
     for (auto &pma: m_s.pmas) {
         auto peek = pma.get_peek();
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length(); page_start_in_range += PMA_PAGE_SIZE) {
-            const unsigned char *page_data = nullptr;
             uint64_t page_address = pma.get_start() + page_start_in_range;
-            peek(pma, *this, page_start_in_range, &page_data, scratch.get());
-            merkle_tree::hash_type stored, real;
-            m_t.get_page_node_hash(page_address, stored);
-            m_t.get_page_node_hash(h, page_data, real);
-            bool marked_dirty = pma.is_page_marked_dirty(page_start_in_range);
-            bool is_dirty = (real != stored);
-            if (marked_dirty != is_dirty && pma.get_istart_M()) {
-                broken = true;
-                if (is_dirty) {
+            if (pma.get_istart_M()) {
+                const unsigned char *page_data = nullptr;
+                peek(pma, *this, page_start_in_range, &page_data, scratch.get());
+                merkle_tree::hash_type stored, real;
+                m_t.get_page_node_hash(page_address, stored);
+                m_t.get_page_node_hash(h, page_data, real);
+                bool marked_dirty = pma.is_page_marked_dirty(page_start_in_range);
+                bool is_dirty = (real != stored);
+                if (is_dirty && !marked_dirty) {
+                    broken = true;
                     std::cerr << std::setfill('0') << std::setw(8) << std::hex << page_address << " should have been dirty\n";
                     std::cerr << "  expected " << stored << '\n';
                     std::cerr << "  got " << real << '\n';
-                } else if (real != pristine) {
-                    std::cerr << std::setfill('0') << std::setw(8) << std::hex << page_address << " could have been clean\n";
-                    std::cerr << "  still " << stored << '\n';
+                    break;
+                }
+            } else if (pma.get_istart_IO()) {
+                if (!pma.is_page_marked_dirty(page_start_in_range)) {
+                    broken = true;
+                    std::cerr << std::setfill('0') << std::setw(8) << std::hex << page_address << " should have been dirty\n";
+                    std::cerr << "  all pages in IO PMAs must be set to dirty\n";
+                    break;
                 }
             }
         }
     }
-    return broken;
+    return !broken;
 }
 
 bool machine::update_merkle_tree(void) {
@@ -877,12 +880,12 @@ bool machine::update_merkle_tree(void) {
             }, j));
         }
         // Check if any thread failed
-        bool failed = false;
+        bool succeeded = true;
         for (auto &f: futures) {
-            failed &= f.get();
+            succeeded = succeeded && f.get();
         }
         // If so, we also failed
-        if (failed) {
+        if (!succeeded) {
             m_t.end_update(gh);
             return false;
         }
@@ -920,8 +923,8 @@ bool machine::update_merkle_tree_page(uint64_t address) {
             m_t.end_update(h);
             return false;
         }
-	}
-	pma.mark_clean_page(page_start_in_range);
+    }
+    pma.mark_clean_page(page_start_in_range);
     return m_t.end_update(h);
 }
 
@@ -1054,51 +1057,45 @@ void machine::run(uint64_t mcycle_end) {
 
     // The outer loop breaks only when the machine is halted
     // or when mcycle hits mcycle_end
-    for ( ;; ) {
+    uint64_t mcycle = read_mcycle();
+
+    while (mcycle < mcycle_end) {
 
         // If we are halted, do nothing
         if (read_iflags_H()) {
             return;
         }
 
-        // Run the emulator inner loop until we reach the next multiple of RISCV_RTC_FREQ_DIV
-        // ??D This is enough for us to be inside the inner loop for about 98% of the time,
-        // according to measurement, so it is not a good target for further optimization
-        uint64_t mcycle = read_mcycle();
+        // Get the next possible cycle for a timer interrupt
         uint64_t next_rtc_freq_div = mcycle + RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV;
-        run_inner_loop(std::min(next_rtc_freq_div, mcycle_end));
+        // If the processor idle (waiting for interrupts), we could skip time until the
+        // next potential timer interrupt (as long as we don't go over mcycle_end)
+        // CLINT is the only interrupt source external to the inner loop
+        // IPI (inter-processor interrupt) via MSIP can only be raised internally
+        // There are no other means for getting out idle status
+        if (read_iflags_I()) {
+            write_mcycle(std::min(next_rtc_freq_div, mcycle_end));
+        // Otherwise, we run until the next potential timer interrupt (or mcycle_end)
+        } else {
+            run_inner_loop(std::min(next_rtc_freq_div, mcycle_end));
+        }
 
-        // If we hit mcycle_end, we are done
+        // If we managed to hit the next potential timer interrupt
         mcycle = read_mcycle();
-        if (mcycle >= mcycle_end) {
-            return;
+        if (mcycle == next_rtc_freq_div) {
+            // Get the mcycle corresponding to mtimecmp
+            uint64_t timecmp_mcycle = rtc_time_to_cycle(read_clint_mtimecmp());
+            // If the timer is expired, set interrupt as pending
+            if (timecmp_mcycle <= mcycle && timecmp_mcycle != 0) {
+               set_mip(MIP_MTIP_MASK);
+            }
+            // And perform any interactive action
+            interact();
         }
 
         // If we yielded, we are done
         if (read_iflags_Y()) {
             return;
-        }
-
-        // If we managed to run until the next possible frequency divisor
-        if (mcycle == next_rtc_freq_div) {
-            // Get the mcycle corresponding to mtimecmp
-            uint64_t timecmp_mcycle = rtc_time_to_cycle(read_clint_mtimecmp());
-
-            // If the processor is waiting for interrupts, we can skip until time hits timecmp
-            // CLINT is the only interrupt source external to the inner loop
-            // IPI (inter-processor interrupt) via MSIP can only be raised internally
-            if (read_iflags_I()) {
-                mcycle = std::min(timecmp_mcycle, mcycle_end);
-                write_mcycle(mcycle);
-            }
-
-            // If the timer is expired, set interrupt as pending
-            if (timecmp_mcycle && timecmp_mcycle <= mcycle) {
-                set_mip(MIP_MTIP_MASK);
-            }
-
-            // Perform interactive actions
-            interact();
         }
     }
 }

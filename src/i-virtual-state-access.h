@@ -45,7 +45,7 @@ public:
         ;
     }
 
-    /// \brief Set bits in mip.
+    /// \brief Sets bits in mip.
     void set_mip(uint32_t mask) {
         return do_set_mip(mask);
     }

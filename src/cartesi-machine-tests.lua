@@ -214,25 +214,40 @@ Usage:
 
 where options are:
 
-  --test-path=<dir>            path to test binaries
-                               (default: "./")
+  --test-path=<dir>
+    path to test binaries
+    (default: "./")
 
-  --test=<pattern>             select tests to run based on a Lua string <pattern>
-                               (default: ".*", i.e., all tests)
+  --test=<pattern>
+    select tests to run based on a Lua string <pattern>
+    (default: ".*", i.e., all tests)
 
-  --skip=<number>              stop execution every <number> of cycles and perform action
+  --periodic-action=<number-period>[,<number-start>]
+    stop execution every <number> of cycles and perform action. If
+    <number-start> is given, the periodic action will start at that
+    mcycle. Only take effect with hash and step commands.
+    (default: none)
 
 and command can be:
 
-  run                          run test and report if payload and cycles match expected
+  run
+    run test and report if payload and cycles match expected
 
-  hash                         output root hash at every <number> of cycles
+  hash
+    output root hash at every <number> of cycles
 
-  step                         output json log of step at every <number> of cycles
+  step
+    output json log of step at every <number> of cycles
 
-  list                         list tests selected by the test <pattern>
+  list
+    list tests selected by the test <pattern>
 
-  machine                      prints a command for running the test machine
+  machine
+    prints a command for running the test machine
+
+<number> can be specified in decimal (e.g., 16) or hexadeximal (e.g., 0x10),
+with a suffix multiplier (i.e., Ki, Mi, Gi for 2^10, 2^20, 2^30, respectively),
+or a left shift (e.g., 2 << 20).
 
 ]=], arg[0]))
     os.exit()
@@ -240,7 +255,29 @@ end
 
 local test_path = "./"
 local test_pattern = ".*"
-local skip = nil
+local periodic_action = false
+local periodic_action_period = math.maxinteger
+local periodic_action_start = 0
+
+local function parse_number(n)
+    if not n then return nil end
+    local base, rest = string.match(n, "^%s*(0x%x+)%s*(.-)%s*$")
+    if not base then
+        base, rest = string.match(n, "^%s*(%d+)%s*(.-)%s*$")
+    end
+    base = tonumber(base)
+    if not base then return nil end
+    if rest == "Ki" then return base << 10
+    elseif rest == "Mi" then return base << 20
+    elseif rest == "Gi" then return base << 30
+    elseif rest == "" then return base end
+    local shift = string.match(rest, "^%s*%<%<%s*(%d+)$")
+    if shift then
+        shift = tonumber(shift)
+        if shift then return base << shift end
+    end
+    return nil
+end
 
 -- List of supported options
 -- Options are processed in order
@@ -268,12 +305,17 @@ local options = {
         test_pattern = o
         return true
     end },
-    { "^(%-%-skip%=(%d*)(.*))$", function(all, n, e)
-        if not n then return false end
-        assert(e == "", "invalid option " .. all)
-        n = assert(tonumber(n), "invalid option " .. all)
-        assert(n >= 1, "invalid option " .. all)
-        skip = n
+    { "^(%-%-periodic%-action%=(.*))$", function(all, v)
+        if not v then return false end
+        string.gsub(v, "^([^%,]+),(.+)$", function(p, s)
+            periodic_action_period = assert(parse_number(p), "invalid period " .. all)
+            periodic_action_start = assert(parse_number(s), "invalid start " .. all)
+        end)
+        if periodic_action_period == math.maxinteger then
+            periodic_action_period = assert(parse_number(v), "invalid period " .. all)
+            periodic_action_start = 0
+        end
+        periodic_action = true
         return true
     end },
     { ".*", function(all)
@@ -303,20 +345,31 @@ local function nothing()
 end
 
 local function run_machine(machine, expected_cycles, callback)
+    local max_mcycle = 2*expected_cycles
+    local cycles = machine:read_mcycle()
     callback = callback or nothing
-    callback()
-    if skip then
-        for cycle = math.min(skip, 2*expected_cycles), 2*expected_cycles, skip do
-            machine:run(cycle)
-            callback()
-            if machine:read_iflags_H() then break end
-        end
-    else
-        machine:run(2*expected_cycles)
-        callback()
+    local next_action_mcycle = math.maxinteger
+    if periodic_action then
+      if periodic_action_start ~= 0 then
+          next_action_mcycle = periodic_action_start
+      else
+          next_action_mcycle = periodic_action_period
+      end
     end
-    local payload = (machine:read_htif_tohost() & (~1 >> 16)) >> 1
+    callback()
+    while math.ult(cycles, max_mcycle) do
+        machine:run(math.min(next_action_mcycle, max_mcycle))
+        cycles = machine:read_mcycle()
+        if periodic_action and cycles == next_action_mcycle then
+            callback()
+            next_action_mcycle = next_action_mcycle + periodic_action_period
+        else
+            callback()
+        end
+        if machine:read_iflags_H() then break end
+    end
     local final_cycle = machine:read_mcycle()
+    local payload = machine:read_htif_tohost() << 16 >> 17
     return final_cycle, payload
 end
 
@@ -340,7 +393,7 @@ end
 local function print_machine(test_name, expected_cycles)
     print(
         string.format(
-            "./cartesi-machine.lua --no-root-backing --batch --memory-size=32 --rom-image='%s' --ram-image='%s' --no-bootargs --max-mcycle=%d",
+            "./cartesi-machine.lua --no-root-backing --ram-length=32Mi --rom-backing='%s' --ram-backing='%s' --no-rom-bootargs --max-mcycle=%d",
             test_path .. "/bootstrap.bin",
             test_path .. "/" .. test_name,
             2*expected_cycles
@@ -392,6 +445,7 @@ local function hash(tests)
     for _, test in ipairs(tests) do
         local ram_image = test[1]
         local expected_cycles = test[2]
+        print(ram_image)
         local machine = build_machine(ram_image)
         local cycles, payload = run_machine(machine, expected_cycles, function()
             machine:update_merkle_tree()
@@ -507,7 +561,10 @@ local function step(tests)
         local machine = build_machine(ram_image)
         io.stdout:write(" {\n")
         io.stdout:write('  "test": "', ram_image, '",\n')
-        if skip then io.stdout:write('  "skip": ', skip, ',\n') end
+        if periodic_action then
+          io.stdout:write('  "period": ', periodic_action_period, ',\n')
+          io.stdout:write('  "start": ', periodic_action_start, ',\n')
+        end
         io.stdout:write('  "steps": [ ')
         local cycles, payload = run_machine(machine, expected_cycles, function()
             local init_cycles = machine:read_mcycle()
@@ -520,6 +577,7 @@ local function step(tests)
         if tests[i+1] then io.stdout:write(" }, ")
         else io.stdout:write(" } ") end
         if payload ~= 0 or cycles ~= expected_cycles then
+            print('deu merda', payload, cycles, expected_cycles)
             os.exit(1, true)
         end
         machine:destroy()

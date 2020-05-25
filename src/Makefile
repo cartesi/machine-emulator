@@ -201,33 +201,42 @@ CYCLE_SKIP ?= 13
 HASH_DIR = hashes/$(CYCLE_SKIP)
 LOG_DIR = logs/$(CYCLE_SKIP)
 HASH_TRUTH_DIR =
+GROUND_TRUTH_DIR ?= ground-truth
 
 ifneq ($(strip $(TEST_PATH)),)
 TESTS=$(shell ./cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test=".*" list)
 endif
 TEST_HASHES=$(addprefix $(HASH_DIR)/,$(TESTS:.bin=.hashes))
 TEST_LOGS=$(addprefix $(LOG_DIR)/,$(TESTS:.bin=.json.br))
+TRUTH_HASHES=$(addprefix $(GROUND_TRUTH_DIR)/,$(TEST_HASHES))
+TRUTH_LOGS=$(addprefix $(GROUND_TRUTH_DIR)/,$(TEST_LOGS))
 
-GROUND_TRUTH_DIR ?= ground-truth
-
-$(HASH_DIR):
-	mkdir -p $(HASH_DIR)
-
-$(LOG_DIR):
-	mkdir -p $(LOG_DIR)
+$(HASH_DIR) $(LOG_DIR) $(GROUND_TRUTH_DIR)/$(HASH_DIR) $(GROUND_TRUTH_DIR)/$(LOG_DIR):
+	mkdir -p $@
 
 test-hashes: $(TEST_HASHES)
 
 test-logs: $(TEST_LOGS)
 
+truth-hashes: $(TRUTH_HASHES)
+
+truth-logs: $(TRUTH_LOGS)
+
 $(HASH_DIR)/%.hashes: $(TEST_PATH)/%.bin $(HASH_DIR)
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --skip=$(CYCLE_SKIP) hash >  $@
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_SKIP) hash >  $@
 	diff $@ $(GROUND_TRUTH_DIR)/$@
 
 $(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(LOG_DIR)
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --skip=$(CYCLE_SKIP) step > $(basename $@)
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_SKIP) step > $(basename $@)
 	brotli -j -f $(basename $@)
 	diff $@ $(GROUND_TRUTH_DIR)/$@
+
+$(GROUND_TRUTH_DIR)/$(HASH_DIR)/%.hashes: $(TEST_PATH)/%.bin $(GROUND_TRUTH_DIR)/$(HASH_DIR)
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_SKIP) hash >  $@
+
+$(GROUND_TRUTH_DIR)/$(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(GROUND_TRUTH_DIR)/$(LOG_DIR)
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_SKIP) step > $(basename $@)
+	brotli -j -f $(basename $@)
 
 cartesi-machine-hash: $(HASH_OBJS)
 	$(CXX) -o $@ $^ $(CRYPTOPP_LIB)

@@ -125,8 +125,9 @@ template <typename ARX>
 void serialize(ARX &ar, cartesi::htif_config &h, const unsigned int) {
     ar & h.fromhost;
     ar & h.tohost;
-    ar & h.interact;
-    ar & h.yield;
+    ar & h.console_getchar;
+    ar & h.yield_progress;
+    ar & h.yield_rollup;
 }
 
 

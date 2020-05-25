@@ -54,7 +54,7 @@ struct processor_config final {
     uint64_t satp{SATP_INIT};              ///< Value of satp CSR
     uint64_t scounteren{SCOUNTEREN_INIT};  ///< Value of scounteren CSR
     uint64_t ilrsc{ILRSC_INIT};            ///< Value of ilrsc CSR
-    uint64_t iflags{IFLAGS_INIT};          ///< Value of iflags CSR              
+    uint64_t iflags{IFLAGS_INIT};          ///< Value of iflags CSR
 };
 
 /// \brief RAM state configuration
@@ -85,9 +85,10 @@ struct clint_config final {
 /// \brief HTIF device state configuration
 struct htif_config final {
     uint64_t fromhost{FROMHOST_INIT}; ///< Value of fromhost CSR
-    uint64_t tohost{TOHOST_INIT}; ///< Value of tohost CSR
-    bool interact{false}; ///< Monitor host console for input and pass to target?
-    bool yield{false}; ///< Honor yield commands?
+    uint64_t tohost{TOHOST_INIT};     ///< Value of tohost CSR
+    bool console_getchar{false};      ///< Make console getchar available?
+    bool yield_progress{false};       ///< Make yield progress available?
+    bool yield_rollup{false};         ///< Make yield rollup available?
 };
 
 /// \brief Flash constants

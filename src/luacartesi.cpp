@@ -76,6 +76,9 @@ const static std::unordered_map<std::string, machine::csr> g_csr_name = {
     {"clint_mtimecmp", machine::csr::clint_mtimecmp},
     {"htif_tohost", machine::csr::htif_tohost},
     {"htif_fromhost", machine::csr::htif_fromhost},
+    {"htif_halt", machine::csr::htif_halt},
+    {"htif_console", machine::csr::htif_console},
+    {"htif_yield", machine::csr::htif_yield},
 };
 
 /// \file
@@ -414,8 +417,9 @@ static void push_rom_config(lua_State *L, const rom_config &r) {
 /// \param h Htif_config to be pushed.
 static void push_htif_config(lua_State *L, const htif_config &h) {
     lua_newtable(L);
-    lua_pushboolean(L, h.interact); lua_setfield(L, -2, "interact");
-    lua_pushboolean(L, h.yield); lua_setfield(L, -2, "yield");
+    lua_pushboolean(L, h.console_getchar); lua_setfield(L, -2, "console_getchar");
+    lua_pushboolean(L, h.yield_progress); lua_setfield(L, -2, "yield_progress");
+    lua_pushboolean(L, h.yield_rollup); lua_setfield(L, -2, "yield_rollup");
     lua_pushinteger(L, h.fromhost); lua_setfield(L, -2, "fromhost");
     lua_pushinteger(L, h.tohost); lua_setfield(L, -2, "tohost");
 }
@@ -769,8 +773,10 @@ static void check_htif_config(lua_State *L, int tabidx, htif_config &h) {
         return;
     h.tohost = opt_uint_field(L, -1, "tohost", h.tohost);
     h.fromhost = opt_uint_field(L, -1, "fromhost", h.fromhost);
-    h.interact = opt_boolean_field(L, -1, "interact", h.interact);
-    h.yield = opt_boolean_field(L, -1, "yield", h.yield);
+    h.console_getchar = opt_boolean_field(L, -1, "console_getchar",
+        h.console_getchar);
+    h.yield_progress = opt_boolean_field(L, -1, "yield_progress", h.yield_progress);
+    h.yield_rollup = opt_boolean_field(L, -1, "yield_rollup", h.yield_rollup);
     lua_pop(L, 1);
 }
 
@@ -1052,6 +1058,9 @@ static int machine_meta__index_dump_regs(lua_State *L) {
     fprintf(stderr, "clint_mtimecmp = %" PRIx64 "\n", m->read_clint_mtimecmp());
     fprintf(stderr, "htif_tohost = %" PRIx64 "\n", m->read_htif_tohost());
     fprintf(stderr, "htif_fromhost = %" PRIx64 "\n", m->read_htif_fromhost());
+    fprintf(stderr, "htif_halt = %" PRIx64 "\n", m->read_htif_halt());
+    fprintf(stderr, "htif_console = %" PRIx64 "\n", m->read_htif_console());
+    fprintf(stderr, "htif_yield = %" PRIx64 "\n", m->read_htif_yield());
     return 0;
 }
 
@@ -1403,6 +1412,30 @@ static int machine_meta__index_read_htif_tohost(lua_State *L) {
 static int machine_meta__index_read_htif_fromhost(lua_State *L) {
     machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_htif_fromhost());
+    return 1;
+}
+
+/// \brief This is the machine:read_htif_halt() method implementation.
+/// \param L Lua state.
+static int machine_meta__index_read_htif_halt(lua_State *L) {
+    machine *m = check_machine(L, 1);
+    lua_pushinteger(L, m->read_htif_halt());
+    return 1;
+}
+
+/// \brief This is the machine:read_htif_console() method implementation.
+/// \param L Lua state.
+static int machine_meta__index_read_htif_console(lua_State *L) {
+    machine *m = check_machine(L, 1);
+    lua_pushinteger(L, m->read_htif_console());
+    return 1;
+}
+
+/// \brief This is the machine:read_htif_yield() method implementation.
+/// \param L Lua state.
+static int machine_meta__index_read_htif_yield(lua_State *L) {
+    machine *m = check_machine(L, 1);
+    lua_pushinteger(L, m->read_htif_yield());
     return 1;
 }
 

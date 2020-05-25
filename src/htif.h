@@ -45,15 +45,19 @@ enum HTIF_devices {
 
 /// \brief HTIF commands
 enum HTIF_commands {
+    HTIF_HALT_HALT = 0,
     HTIF_CONSOLE_GETCHAR = 0,
-    HTIF_CONSOLE_PUTCHAR = 1
+    HTIF_CONSOLE_PUTCHAR = 1,
+    HTIF_YIELD_PROGRESS = 0,
+    HTIF_YIELD_ROLLUP = 1,
 };
 
 /// \brief Host-Target interface implementation
 class htif final {
 
-    bool m_interact;                       ///< Interact with console.
-    bool m_yield;                          ///< Accept yield requests.
+    bool m_console_getchar;                ///< Provide console getchar.
+    bool m_yield_progress;                 ///< Provide yield progress.
+    bool m_yield_rollup;                   ///< Provide yield rollup.
     char m_buf[HTIF_CONSOLE_BUF_SIZE];     ///< Console buffer.
     ssize_t m_buf_pos;                     ///< Next character in buffer.
     ssize_t m_buf_len;                     ///< Last character in buffer.
@@ -85,11 +89,14 @@ public:
     /// \brief Destructor
     ~htif();
 
-    /// \brief Checks if HTIF interacts with console
-    bool is_interactive(void) const;
+    /// \brief Checks if HTIF honors yield progress
+    bool has_yield_progress(void) const;
 
-    /// \brief Checks if HTIF honors yield requests
-    bool is_yieldable(void) const;
+    /// \brief Checks if HTIF honors yield rollup
+    bool has_yield_rollup(void) const;
+
+    /// \brief Checks if HTIF honors console getchar
+    bool has_console_getchar(void) const;
 
     /// \brief Returns the associated machine
     const machine &get_machine(void) const;
@@ -97,14 +104,17 @@ public:
     /// \brief Checks if there is input available from console.
     void poll_console(void);
 
-    bool console_has_char(void) const;
+    bool console_char_pending(void) const;
 
     int console_get_char(void);
 
     /// \brief Mapping between CSRs and their relative addresses in HTIF memory
     enum class csr {
         tohost   = UINT64_C(0x0),
-        fromhost = UINT64_C(0x8)
+        fromhost = UINT64_C(0x8),
+        halt     = UINT64_C(0x10),
+        console  = UINT64_C(0x18),
+        yield    = UINT64_C(0x20)
     };
 
     /// \brief Obtains the relative address of a CSR in HTIF memory.

@@ -142,6 +142,9 @@ struct machine_state {
     struct {
         uint64_t tohost;    ///< CSR tohost.
         uint64_t fromhost;  ///< CSR fromhost.
+        uint64_t halt;      ///< CSR halt.
+        uint64_t console;   ///< CSR console.
+        uint64_t yield;     ///< CSR yield.
     } htif;
 
     /// Map of physical memory ranges
@@ -230,7 +233,7 @@ struct machine_state {
         iflags.PRV = (val >> IFLAGS_PRV_SHIFT) & 3;
     }
 
-    /// \brief Packs iflags into the CSR value 
+    /// \brief Packs iflags into the CSR value
     /// \param PRV privilege level
     /// \param I Waiting for interrupts flag
     /// \param Y Yielded flag

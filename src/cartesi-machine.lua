@@ -54,8 +54,8 @@ where options are:
   --ram-backing=<filename>
     binary image for RAM (default: "kernel.bin")
 
-  --no-ram-image
-    forget settings for ram-image
+  --no-ram-backing
+    forget settings for ram-backing
 
   --ram-length=<number>
     set RAM length
@@ -94,11 +94,14 @@ where options are:
   --append-rom-bootargs=<string>
     append <string> to bootargs
 
-  -i or --htif-interact
+  -i or --htif-console-getchar
     run in interactive mode
 
-  --htif-yield
-    honor yield requests by target
+  --htif-yield-progress
+    honor yield progress requests by target
+
+  --htif-yield-rollup
+    honor yield rollup requests by target
 
   --dump-config
     dump initial config to screen
@@ -150,8 +153,9 @@ local rom_image = "rom.bin"
 local bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw"
 local append_bootargs = ""
 local ram_length = 64 << 20
-local interact = false
-local yield = false
+local console_get_char = false
+local yield_progress = false
+local yield_rollup = false
 local initial_hash = false
 local final_hash = false
 local periodic_hashes_period = math.maxinteger
@@ -206,24 +210,29 @@ local options = {
         ram_image = o
         return true
     end },
-    { "^%-%-no%-ram%-image$", function(all)
+    { "^%-%-no%-ram%-backing$", function(all)
         if not all then return false end
-        ram_image = nil
+        ram_backing = nil
         return true
     end },
-    { "^%-%-htif%-interact$", function(all)
+    { "^%-%-htif%-console-getchar$", function(all)
         if not all then return false end
-        interact = true
+        console_getchar = true
         return true
     end },
     { "^%-i$", function(all)
         if not all then return false end
-        interact = true
+        console_getchar = true
         return true
     end },
-    { "^%-%-htif%-yield$", function(all)
+    { "^%-%-htif%-yield%-progress$", function(all)
         if not all then return false end
-        yield = true
+        yield_progress = true
+        return true
+    end },
+    { "^%-%-htif%-yield%-rollup$", function(all)
+        if not all then return false end
+        yield_rollup = true
         return true
     end },
     { "^%-%-flash%-(%w+)-backing%=(.+)$", function(d, f)
@@ -378,15 +387,21 @@ function config_meta.__index:append_bootargs(bootargs)
     return self
 end
 
-function config_meta.__index:set_interact(interact)
+function config_meta.__index:set_console_getchar(console_getchar)
     self.htif = self.htif or {}
-    self.htif.interact = interact
+    self.htif.console_getchar = console_getchar
     return self
 end
 
-function config_meta.__index:set_yield(yield)
+function config_meta.__index:set_yield_progress(yield_progress)
     self.htif = self.htif or {}
-    self.htif.yield = yield
+    self.htif.yield_progress = yield_progress
+    return self
+end
+
+function config_meta.__index:set_yield_rollup(yield_rollup)
+    self.htif = self.htif or {}
+    self.htif.yield_rollup = yield_rollup
     return self
 end
 
@@ -615,10 +630,12 @@ local function dump_machine_config(config)
     comment_default(htif.tohost, def.htif.tohost)
     stderr("    fromhost = 0x%x,", htif.fromhost or def.htif.fromhost)
     comment_default(htif.fromhost, def.htif.fromhost)
-    stderr("    interact = %s,", tostring(htif.interact or false))
-    comment_default(htif.interact or false, def.htif.interact)
-    stderr("    yield = %s,", tostring(htif.yield or false))
-    comment_default(htif.yield or false, def.htif.yield)
+    stderr("    console_getchar = %s,", tostring(htif.console_getchar or false))
+    comment_default(htif.console_getchar or false, def.htif.console_getchar)
+    stderr("    yield_progress = %s,", tostring(htif.yield_progress or false))
+    comment_default(htif.yield_progress or false, def.htif.yield_progress)
+    stderr("    yield_rollup = %s,", tostring(htif.yield_rollup or false))
+    comment_default(htif.yield_rollup or false, def.htif.yield_rollup)
     stderr("  },\n")
     local clint = config.clint or {}
     stderr("  clint = {\n")
@@ -703,10 +720,12 @@ else
     end
     config = config:append_bootargs(
         append_bootargs
-    ):set_interact(
-        interact
-    ):set_yield(
-        yield
+    ):set_console_getchar(
+        console_getchar
+    ):set_yield_progress(
+        yield_progress
+    ):set_yield_rollup(
+        yield_rollup
     )
 
     stderr("Building machine: please wait\n")
@@ -714,7 +733,7 @@ else
 end
 
 if not json_steps then
-    if interact then
+    if console_getchar then
         stderr("Running in interactive mode!\n")
     end
     if dump_config then
@@ -722,7 +741,7 @@ if not json_steps then
     end
     local cycles = machine:read_mcycle()
     if initial_hash then
-        assert(not interact, "hashes are meaningless in interactive mode")
+        assert(not console_getchar, "hashes are meaningless in interactive mode")
         print_root_hash(cycles, machine)
     end
     local payload = 0
@@ -760,7 +779,7 @@ if not json_steps then
         stderr("\nCycles: %u\n", cycles)
     end
     if step then
-        assert(not interact, "step proof is meaningless in interactive mode")
+        assert(not console_getchar, "step proof is meaningless in interactive mode")
         stderr("Gathering step proof: please wait\n")
         print_log(machine:step())
     end
@@ -768,16 +787,17 @@ if not json_steps then
         machine:dump_pmas()
     end
     if final_hash then
+        assert(not console_getchar, "hashes are meaningless in interactive mode")
         print_root_hash(cycles, machine)
     end
     if store_dir then
-        assert(not interact, "hashes are meaningless in interactive mode")
+        assert(not console_getchar, "hashes are meaningless in interactive mode")
         stderr("Storing machine: please wait\n")
         machine:store(store_dir)
     end
     os.exit(payload, true)
 else
-    assert(not interact, "logs are meaningless in interactive mode")
+    assert(not console_getchar, "logs are meaningless in interactive mode")
     json_steps = assert(io.open(json_steps, "w"))
     json_steps:write("[ ")
     for i = 0, max_mcycle do

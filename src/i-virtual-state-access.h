@@ -115,6 +115,24 @@ public:
         return do_write_htif_tohost(val);
     }
 
+    /// \brief Reads HTIF's halt.
+    /// \returns Register value.
+    uint64_t read_htif_halt(void) {
+        return do_read_htif_halt();
+    }
+
+    /// \brief Reads HTIF's console.
+    /// \returns Register value.
+    uint64_t read_htif_console(void) {
+        return do_read_htif_console();
+    }
+
+    /// \brief Reads HTIF's yield.
+    /// \returns Register value.
+    uint64_t read_htif_yield(void) {
+        return do_read_htif_yield();
+    }
+
     /// \brief Reads the istart field of a PMA entry
     /// \param p Index of PMA
     uint64_t read_pma_istart(int p) {
@@ -141,6 +159,9 @@ private:
     virtual void do_write_htif_fromhost(uint64_t val) = 0;
     virtual uint64_t do_read_htif_tohost(void) = 0;
     virtual void do_write_htif_tohost(uint64_t val) = 0;
+    virtual uint64_t do_read_htif_halt(void) = 0;
+    virtual uint64_t do_read_htif_console(void) = 0;
+    virtual uint64_t do_read_htif_yield(void) = 0;
     virtual uint64_t do_read_pma_istart(int p) = 0;
     virtual uint64_t do_read_pma_ilength(int p) = 0;
 };

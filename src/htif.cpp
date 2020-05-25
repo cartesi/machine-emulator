@@ -32,12 +32,23 @@ namespace cartesi {
 
 #define HTIF_TOHOST_REL_ADDR (static_cast<uint64_t>(htif::csr::tohost))
 #define HTIF_FROMHOST_REL_ADDR (static_cast<uint64_t>(htif::csr::fromhost))
+#define HTIF_HALT_REL_ADDR (static_cast<uint64_t>(htif::csr::halt))
+#define HTIF_CONSOLE_REL_ADDR (static_cast<uint64_t>(htif::csr::console))
+#define HTIF_YIELD_REL_ADDR (static_cast<uint64_t>(htif::csr::yield))
 
-bool htif::is_interactive(void) const {
-    return m_interact;
+bool htif::has_yield_progress(void) const {
+    return m_yield_progress;
 }
 
-bool htif::console_has_char(void) const {
+bool htif::has_yield_rollup(void) const {
+    return m_yield_rollup;
+}
+
+bool htif::has_console_getchar(void) const {
+    return m_console_getchar;
+}
+
+bool htif::console_char_pending(void) const {
     return m_buf_pos < m_buf_len;
 }
 
@@ -47,10 +58,6 @@ int htif::console_get_char(void) {
     } else {
         return 0;
     }
-}
-
-bool htif::is_yieldable(void) const {
-    return m_yield;
 }
 
 uint64_t htif::get_csr_rel_addr(csr reg) {
@@ -153,26 +160,27 @@ void htif::end_console(void) {
 // The constructor for the associated machine is typically *not* done
 // yet when the constructor for the HTIF device is invoked.
 htif::htif(const htif_config &h):
-    m_interact{h.interact},
-    m_yield{h.yield},
+    m_console_getchar{h.console_getchar},
+    m_yield_progress{h.yield_progress},
+    m_yield_rollup{h.yield_rollup},
     m_buf{}, m_buf_pos{}, m_buf_len{},
     m_divisor_counter{},
     m_ttyfd{-1} {
     memset(&m_oldtty, 0, sizeof(m_oldtty));
-    if (m_interact) {
+    if (m_console_getchar) {
         init_console();
     }
 }
 
 htif::~htif() {
-    if (m_interact) {
+    if (m_console_getchar) {
         end_console();
     }
 }
 
 void htif::interact(void) {
     // Only interact every
-    if (m_interact && ++m_divisor_counter >= HTIF_INTERACT_DIVISOR) {
+    if (m_console_getchar && ++m_divisor_counter >= HTIF_INTERACT_DIVISOR) {
         m_divisor_counter = 0;
         poll_console();
     }
@@ -192,6 +200,15 @@ static bool htif_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t 
         case HTIF_FROMHOST_REL_ADDR:
             *pval = a->read_htif_fromhost();
             return true;
+        case HTIF_HALT_REL_ADDR:
+            *pval = a->read_htif_halt();
+            return true;
+        case HTIF_CONSOLE_REL_ADDR:
+            *pval = a->read_htif_console();
+            return true;
+        case HTIF_YIELD_REL_ADDR:
+            *pval = a->read_htif_yield();
+            return true;
         default:
             // other reads are exceptions
             return false;
@@ -201,6 +218,7 @@ static bool htif_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t 
 static bool htif_getchar(i_virtual_state_access *a, htif *h, uint64_t payload) {
     (void) payload;
     int c = h? h->console_get_char(): 0;
+    // Write acknowledgement to fromhost
     a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_CONSOLE << 56) |
         ((uint64_t)HTIF_CONSOLE_GETCHAR << 48) | c);
     return true;
@@ -209,33 +227,45 @@ static bool htif_getchar(i_virtual_state_access *a, htif *h, uint64_t payload) {
 static bool htif_putchar(i_virtual_state_access *a, htif *h, uint64_t payload) {
     (void) h;
     uint8_t ch = payload & 0xff;
-    // Obviously, somethind different must be done in blockchain
+    // Obviously, something different must be done in blockchain
     if (write(STDOUT_FILENO, &ch, 1) < 1) { ; }
     // Write acknowledgement to fromhost
-    a->write_htif_fromhost(((uint64_t)1 << 56) | ((uint64_t)1 << 48));
+    a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_CONSOLE << 56) |
+        ((uint64_t)1 << 48));
     return true;
 }
 
 static bool htif_halt(i_virtual_state_access *a, htif *h, uint64_t cmd,
     uint64_t payload) {
     (void) h;
-    if (cmd == 0 && (payload & 1)) {
+    if (cmd == HTIF_HALT_HALT && (payload & 1)) {
         a->set_iflags_H();
     }
     //??D Write acknowledgement to fromhost???
-    // a->write_htif_fromhost(((uint64_t)2 << 56) | (cmd << 48));
+    // a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_HALT << 56) |
+        // (cmd << 48));
     return true;
 }
 
 static bool htif_yield(i_virtual_state_access *a, htif *h, uint64_t cmd,
     uint64_t payload) {
     (void) payload;
-    if (h->is_yieldable()) {
+    if (cmd == HTIF_YIELD_PROGRESS && h->has_yield_progress()) {
         a->set_iflags_Y();
+        // Write acknowledgement to fromhost
+        a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_YIELD << 56) |
+            (cmd << 48));
+        return true;
+    } else if (cmd == HTIF_YIELD_ROLLUP && h->has_yield_rollup()) {
+        a->set_iflags_Y();
+        // Write acknowledgement to fromhost
+        a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_YIELD << 56) |
+            (cmd << 48));
+        return true;
+    } else {
+        //??D Unknown HTIF yield commands are silently ignored
+        return true;
     }
-    // Write acknowledgement to fromhost
-    a->write_htif_fromhost(((uint64_t)2 << 56) | (cmd << 48));
-    return true;
 }
 
 static bool htif_console(i_virtual_state_access *a, htif *h, uint64_t cmd,
@@ -289,7 +319,7 @@ static bool htif_write(const pma_entry &pma, i_virtual_state_access *a, uint64_t
 
 /// \brief HTIF device peek callback. See ::pma_peek.
 static bool htif_peek(const pma_entry &pma, const machine &m,
-    uint64_t page_offset, const unsigned char **page_data, 
+    uint64_t page_offset, const unsigned char **page_data,
     unsigned char *scratch) {
     // Check for alignment and range
     if (page_offset % PMA_PAGE_SIZE != 0 || page_offset >= pma.get_length()) {
@@ -308,6 +338,12 @@ static bool htif_peek(const pma_entry &pma, const machine &m,
         htif::get_csr_rel_addr(htif::csr::tohost), m.read_htif_tohost());
     aliased_aligned_write<uint64_t>(scratch +
         htif::get_csr_rel_addr(htif::csr::fromhost), m.read_htif_fromhost());
+    aliased_aligned_write<uint64_t>(scratch +
+        htif::get_csr_rel_addr(htif::csr::halt), m.read_htif_halt());
+    aliased_aligned_write<uint64_t>(scratch +
+        htif::get_csr_rel_addr(htif::csr::console), m.read_htif_console());
+    aliased_aligned_write<uint64_t>(scratch +
+        htif::get_csr_rel_addr(htif::csr::yield), m.read_htif_yield());
     *page_data = scratch;
     return true;
 }

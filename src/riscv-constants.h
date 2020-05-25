@@ -299,7 +299,7 @@ enum IFLAGS_masks: uint64_t {
 enum CARTESI_init: uint64_t {
     PC_INIT         = UINT64_C(0x1000), ///< Initial value for pc
     MVENDORID_INIT  = UINT64_C(0x6361727465736920), ///< Initial value for mvendorid
-    MARCHID_INIT    = UINT64_C(2), ///< Initial value for marchid
+    MARCHID_INIT    = UINT64_C(3), ///< Initial value for marchid
     MIMPID_INIT     = UINT64_C(1), ///< Initial value for mimpid
     MCYCLE_INIT     = UINT64_C(0), ///< Initial value for mcycle
     MINSTRET_INIT   = UINT64_C(0), ///< Initial value for minstret

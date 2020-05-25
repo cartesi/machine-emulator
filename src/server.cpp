@@ -447,9 +447,11 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
                 c.htif.tohost = htif.tohost();
             }
             // zero default when missing is ok
-            c.htif.interact = htif.interact();
+            c.htif.console_getchar = htif.console_getchar();
             // zero default when missing is ok
-            c.htif.yield = htif.yield();
+            c.htif.yield_progress = htif.yield_progress();
+            // zero default when missing is ok
+            c.htif.yield_rollup = htif.yield_rollup();
         }
 
         return c;

@@ -98,7 +98,10 @@ public:
         iflags,
         clint_mtimecmp,
         htif_tohost,
-        htif_fromhost
+        htif_fromhost,
+        htif_halt,
+        htif_console,
+        htif_yield,
     };
 
     static const uint64_t MVENDORID = MVENDORID_INIT;
@@ -450,6 +453,30 @@ public:
     /// \brief Writes the value of HTIF's fromhost register.
     /// \param val New register value.
     void write_htif_fromhost(uint64_t val);
+
+    /// \brief Reads the value of HTIF's halt register.
+    /// \returns The value of the register.
+    uint64_t read_htif_halt(void) const;
+
+    /// \brief Writes the value of HTIF's halt register.
+    /// \param val New register value.
+    void write_htif_halt(uint64_t val);
+
+    /// \brief Reads the value of HTIF's console register.
+    /// \returns The value of the register.
+    uint64_t read_htif_console(void) const;
+
+    /// \brief Writes the value of HTIF's console register.
+    /// \param val New register value.
+    void write_htif_console(uint64_t val);
+
+    /// \brief Reads the value of HTIF's yield register.
+    /// \returns The value of the register.
+    uint64_t read_htif_yield(void) const;
+
+    /// \brief Writes the value of HTIF's yield register.
+    /// \param val New register value.
+    void write_htif_yield(uint64_t val);
 
     /// \brief Reads the value of CLINT's mtimecmp register.
     /// \returns The value of the register.

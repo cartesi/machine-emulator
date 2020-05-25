@@ -608,6 +608,21 @@ private:
             htif::get_csr_rel_addr(htif::csr::tohost), val, "htif.tohost");
     }
 
+    uint64_t do_read_htif_halt(void) {
+        return check_read(PMA_HTIF_START +
+            htif::get_csr_rel_addr(htif::csr::halt), "htif.halt");
+    }
+
+    uint64_t do_read_htif_console(void) {
+        return check_read(PMA_HTIF_START +
+            htif::get_csr_rel_addr(htif::csr::console), "htif.console");
+    }
+
+    uint64_t do_read_htif_yield(void) {
+        return check_read(PMA_HTIF_START +
+            htif::get_csr_rel_addr(htif::csr::yield), "htif.yield");
+    }
+
     uint64_t do_read_pma_istart(int i) {
         auto rel_addr = shadow_get_pma_rel_addr(i);
         return check_read(PMA_SHADOW_START + rel_addr, "pma.istart");

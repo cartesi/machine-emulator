@@ -117,6 +117,18 @@ private:
         return m_a.write_htif_tohost(val);
     }
 
+    uint64_t do_read_htif_halt(void) override {
+        return m_a.read_htif_halt();
+    }
+
+    uint64_t do_read_htif_console(void) override {
+        return m_a.read_htif_console();
+    }
+
+    uint64_t do_read_htif_yield(void) override {
+        return m_a.read_htif_yield();
+    }
+
     uint64_t do_read_pma_istart(int p) override {
         return m_a.read_pma_istart(p);
     }

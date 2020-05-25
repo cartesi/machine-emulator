@@ -512,6 +512,21 @@ friend i_state_access<logged_state_access>;
         log_before_write_write_and_update(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::tohost), m_m.get_state().htif.tohost, val, "htif.tohost");
     }
 
+    uint64_t do_read_htif_halt(void) const {
+        return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::halt),
+            m_m.get_state().htif.halt, "htif.halt");
+    }
+
+    uint64_t do_read_htif_console(void) const {
+        return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::console),
+            m_m.get_state().htif.console, "htif.console");
+    }
+
+    uint64_t do_read_htif_yield(void) const {
+        return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::yield),
+            m_m.get_state().htif.yield, "htif.yield");
+    }
+
     uint64_t do_read_pma_istart(int i) const {
         const auto &pmas = m_m.get_pmas();
         uint64_t istart = 0;

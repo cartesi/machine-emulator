@@ -247,21 +247,31 @@ static bool htif_halt(i_virtual_state_access *a, htif *h, uint64_t cmd,
     return true;
 }
 
+static bool htif_yield_progress(i_virtual_state_access *a, htif *h, uint64_t cmd,
+    uint64_t payload) {
+    (void) payload;
+    a->set_iflags_Y(h->has_yield_progress());
+    // Write acknowledgement to fromhost
+    a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_YIELD << 56) | (cmd << 48));
+    return true;
+}
+
+static bool htif_yield_rollup(i_virtual_state_access *a, htif *h, uint64_t cmd,
+    uint64_t payload) {
+    (void) payload;
+    a->set_iflags_Y(h->has_yield_rollup());
+    // Write acknowledgement to fromhost
+    a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_YIELD << 56) | (cmd << 48));
+    return true;
+}
+
 static bool htif_yield(i_virtual_state_access *a, htif *h, uint64_t cmd,
     uint64_t payload) {
     (void) payload;
-    if (cmd == HTIF_YIELD_PROGRESS && h->has_yield_progress()) {
-        a->set_iflags_Y();
-        // Write acknowledgement to fromhost
-        a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_YIELD << 56) |
-            (cmd << 48));
-        return true;
-    } else if (cmd == HTIF_YIELD_ROLLUP && h->has_yield_rollup()) {
-        a->set_iflags_Y();
-        // Write acknowledgement to fromhost
-        a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_YIELD << 56) |
-            (cmd << 48));
-        return true;
+    if (cmd == HTIF_YIELD_PROGRESS) {
+            return htif_yield_progress(a, h, cmd, payload);
+    } else if (cmd == HTIF_YIELD_ROLLUP) {
+        return htif_yield_rollup(a, h, cmd, payload);
     } else {
         //??D Unknown HTIF yield commands are silently ignored
         return true;
@@ -290,11 +300,15 @@ static bool htif_write_tohost(i_virtual_state_access *a, htif *h,
     a->write_htif_tohost(tohost);
     // Handle devices
     switch (device) {
-        case HTIF_DEVICE_HALT: return htif_halt(a, h, cmd, payload);
-        case HTIF_DEVICE_CONSOLE: return htif_console(a, h, cmd, payload);
-        case HTIF_DEVICE_YIELD: return htif_yield(a, h, cmd, payload);
+        case HTIF_DEVICE_HALT:
+            return htif_halt(a, h, cmd, payload);
+        case HTIF_DEVICE_CONSOLE:
+            return htif_console(a, h, cmd, payload);
+        case HTIF_DEVICE_YIELD:
+            return htif_yield(a, h, cmd, payload);
         //??D Unknown HTIF devices are silently ignored
-        default: return true;
+        default:
+            return true;
     }
 }
 

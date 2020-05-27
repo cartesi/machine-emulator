@@ -501,22 +501,22 @@ public:
 		return derived().do_write_htif_tohost(val);
 	}
 
-    /// \brief Reads HTIF's halt.
+    /// \brief Reads HTIF's ihalt.
     /// \returns Register value.
-	uint64_t read_htif_halt(void) {
-		return derived().do_read_htif_halt();
+	uint64_t read_htif_ihalt(void) {
+		return derived().do_read_htif_ihalt();
 	}
 
-    /// \brief Reads HTIF's console.
+    /// \brief Reads HTIF's iconsole.
     /// \returns Register value.
-	uint64_t read_htif_console(void) {
-		return derived().do_read_htif_console();
+	uint64_t read_htif_iconsole(void) {
+		return derived().do_read_htif_iconsole();
 	}
 
-    /// \brief Reads HTIF's yield.
+    /// \brief Reads HTIF's iyield.
     /// \returns Register value.
-	uint64_t read_htif_yield(void) {
-		return derived().do_read_htif_yield();
+	uint64_t read_htif_iyield(void) {
+		return derived().do_read_htif_iyield();
 	}
 
     /// \brief Reads PMA at a given index.

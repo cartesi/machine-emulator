@@ -142,9 +142,9 @@ struct machine_state {
     struct {
         uint64_t tohost;    ///< CSR tohost.
         uint64_t fromhost;  ///< CSR fromhost.
-        uint64_t halt;      ///< CSR halt.
-        uint64_t console;   ///< CSR console.
-        uint64_t yield;     ///< CSR yield.
+        uint64_t ihalt;      ///< CSR ihalt.
+        uint64_t iconsole;   ///< CSR iconsole.
+        uint64_t iyield;     ///< CSR iyield.
     } htif;
 
     /// Map of physical memory ranges

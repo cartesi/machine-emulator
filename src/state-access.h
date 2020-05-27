@@ -340,16 +340,16 @@ private:
         m_m.get_state().htif.tohost = val;
     }
 
-    bool do_read_htif_halt(void) const {
-        return m_m.get_state().htif.halt;
+    bool do_read_htif_ihalt(void) const {
+        return m_m.get_state().htif.ihalt;
     }
 
-    bool do_read_htif_console(void) const {
-        return m_m.get_state().htif.console;
+    bool do_read_htif_iconsole(void) const {
+        return m_m.get_state().htif.iconsole;
     }
 
-    uint64_t do_read_htif_yield(void) const {
-        return m_m.get_state().htif.yield;
+    uint64_t do_read_htif_iyield(void) const {
+        return m_m.get_state().htif.iyield;
     }
 
     uint64_t do_read_pma_istart(int i) const {

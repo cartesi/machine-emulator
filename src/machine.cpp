@@ -230,16 +230,16 @@ machine::machine(const machine_config &c):
     write_htif_tohost(c.htif.tohost);
     write_htif_fromhost(c.htif.fromhost);
     // Only command in halt device is command 0 and it is always available
-    uint64_t htif_halt = static_cast<uint64_t>(true) << HTIF_HALT_HALT;
-    write_htif_halt(htif_halt);
-    uint64_t htif_console =
+    uint64_t htif_ihalt = static_cast<uint64_t>(true) << HTIF_HALT_HALT;
+    write_htif_ihalt(htif_ihalt);
+    uint64_t htif_iconsole =
         static_cast<uint64_t>(c.htif.console_getchar) << HTIF_CONSOLE_GETCHAR |
         static_cast<uint64_t>(true) << HTIF_CONSOLE_PUTCHAR;
-    write_htif_console(htif_console);
-    uint64_t htif_yield =
+    write_htif_iconsole(htif_iconsole);
+    uint64_t htif_iyield =
         static_cast<uint64_t>(c.htif.yield_progress) << HTIF_YIELD_PROGRESS |
         static_cast<uint64_t>(c.htif.yield_rollup) << HTIF_YIELD_ROLLUP;
-    write_htif_yield(htif_yield);
+    write_htif_iyield(htif_iyield);
     // Resiter CLINT device
     register_pma_entry(make_clint_pma_entry(PMA_CLINT_START, PMA_CLINT_LENGTH));
     // Copy CLINT state to from config to machine
@@ -317,13 +317,13 @@ machine_config machine::serialization_config(void) const {
     // Copy current HTIF state to config
     c.htif.tohost = read_htif_tohost();
     c.htif.fromhost = read_htif_fromhost();
-    // c.htif.halt = read_htif_halt(); // hard-coded to true
+    // c.htif.halt = read_htif_ihalt(); // hard-coded to true
     c.htif.console_getchar =
-        static_cast<bool>(read_htif_console() & (1 << HTIF_CONSOLE_GETCHAR));
+        static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
     c.htif.yield_progress =
-        static_cast<bool>(read_htif_yield() & (1 << HTIF_YIELD_PROGRESS));
+        static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_PROGRESS));
     c.htif.yield_rollup =
-        static_cast<bool>(read_htif_yield() & (1 << HTIF_YIELD_ROLLUP));
+        static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_ROLLUP));
     // Ensure we don't mess with ROM by writing the original bootargs
     // over the potentially modified memory region we serialize
     c.rom.bootargs.clear();
@@ -645,28 +645,28 @@ void machine::write_htif_fromhost(uint64_t val) {
     m_s.htif.fromhost = val;
 }
 
-uint64_t machine::read_htif_halt(void) const {
-    return m_s.htif.halt;
+uint64_t machine::read_htif_ihalt(void) const {
+    return m_s.htif.ihalt;
 }
 
-void machine::write_htif_halt(uint64_t val) {
-    m_s.htif.halt = val;
+void machine::write_htif_ihalt(uint64_t val) {
+    m_s.htif.ihalt = val;
 }
 
-uint64_t machine::read_htif_console(void) const {
-    return m_s.htif.console;
+uint64_t machine::read_htif_iconsole(void) const {
+    return m_s.htif.iconsole;
 }
 
-void machine::write_htif_console(uint64_t val) {
-    m_s.htif.console = val;
+void machine::write_htif_iconsole(uint64_t val) {
+    m_s.htif.iconsole = val;
 }
 
-uint64_t machine::read_htif_yield(void) const {
-    return m_s.htif.yield;
+uint64_t machine::read_htif_iyield(void) const {
+    return m_s.htif.iyield;
 }
 
-void machine::write_htif_yield(uint64_t val) {
-    m_s.htif.yield = val;
+void machine::write_htif_iyield(uint64_t val) {
+    m_s.htif.iyield = val;
 }
 
 uint64_t machine::read_clint_mtimecmp(void) const {
@@ -709,9 +709,9 @@ uint64_t machine::read_csr(csr r) const {
         case csr::clint_mtimecmp: return read_clint_mtimecmp();
         case csr::htif_tohost: return read_htif_tohost();
         case csr::htif_fromhost: return read_htif_fromhost();
-        case csr::htif_halt: return read_htif_halt();
-        case csr::htif_console: return read_htif_console();
-        case csr::htif_yield: return read_htif_yield();
+        case csr::htif_ihalt: return read_htif_ihalt();
+        case csr::htif_iconsole: return read_htif_iconsole();
+        case csr::htif_iyield: return read_htif_iyield();
         default:
             throw std::invalid_argument{"unknown CSR"};
             return 0; // never reached
@@ -747,9 +747,9 @@ void machine::write_csr(csr w, uint64_t val) {
         case csr::clint_mtimecmp: return write_clint_mtimecmp(val);
         case csr::htif_tohost: return write_htif_tohost(val);
         case csr::htif_fromhost: return write_htif_fromhost(val);
-        case csr::htif_halt: [[fallthrough]];
-        case csr::htif_console: [[fallthrough]];
-        case csr::htif_yield: [[fallthrough]];
+        case csr::htif_ihalt: [[fallthrough]];
+        case csr::htif_iconsole: [[fallthrough]];
+        case csr::htif_iyield: [[fallthrough]];
         case csr::mvendorid: [[fallthrough]];
         case csr::marchid: [[fallthrough]];
         case csr::mimpid:

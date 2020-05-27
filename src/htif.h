@@ -112,9 +112,9 @@ public:
     enum class csr {
         tohost   = UINT64_C(0x0),
         fromhost = UINT64_C(0x8),
-        halt     = UINT64_C(0x10),
-        console  = UINT64_C(0x18),
-        yield    = UINT64_C(0x20)
+        ihalt     = UINT64_C(0x10),
+        iconsole  = UINT64_C(0x18),
+        iyield    = UINT64_C(0x20)
     };
 
     /// \brief Obtains the relative address of a CSR in HTIF memory.

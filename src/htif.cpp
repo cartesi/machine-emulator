@@ -32,9 +32,9 @@ namespace cartesi {
 
 #define HTIF_TOHOST_REL_ADDR (static_cast<uint64_t>(htif::csr::tohost))
 #define HTIF_FROMHOST_REL_ADDR (static_cast<uint64_t>(htif::csr::fromhost))
-#define HTIF_HALT_REL_ADDR (static_cast<uint64_t>(htif::csr::halt))
-#define HTIF_CONSOLE_REL_ADDR (static_cast<uint64_t>(htif::csr::console))
-#define HTIF_YIELD_REL_ADDR (static_cast<uint64_t>(htif::csr::yield))
+#define HTIF_IHALT_REL_ADDR (static_cast<uint64_t>(htif::csr::ihalt))
+#define HTIF_ICONSOLE_REL_ADDR (static_cast<uint64_t>(htif::csr::iconsole))
+#define HTIF_IYIELD_REL_ADDR (static_cast<uint64_t>(htif::csr::iyield))
 
 bool htif::has_yield_progress(void) const {
     return m_yield_progress;
@@ -200,14 +200,14 @@ static bool htif_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t 
         case HTIF_FROMHOST_REL_ADDR:
             *pval = a->read_htif_fromhost();
             return true;
-        case HTIF_HALT_REL_ADDR:
-            *pval = a->read_htif_halt();
+        case HTIF_IHALT_REL_ADDR:
+            *pval = a->read_htif_ihalt();
             return true;
-        case HTIF_CONSOLE_REL_ADDR:
-            *pval = a->read_htif_console();
+        case HTIF_ICONSOLE_REL_ADDR:
+            *pval = a->read_htif_iconsole();
             return true;
-        case HTIF_YIELD_REL_ADDR:
-            *pval = a->read_htif_yield();
+        case HTIF_IYIELD_REL_ADDR:
+            *pval = a->read_htif_iyield();
             return true;
         default:
             // other reads are exceptions
@@ -353,11 +353,11 @@ static bool htif_peek(const pma_entry &pma, const machine &m,
     aliased_aligned_write<uint64_t>(scratch +
         htif::get_csr_rel_addr(htif::csr::fromhost), m.read_htif_fromhost());
     aliased_aligned_write<uint64_t>(scratch +
-        htif::get_csr_rel_addr(htif::csr::halt), m.read_htif_halt());
+        htif::get_csr_rel_addr(htif::csr::ihalt), m.read_htif_ihalt());
     aliased_aligned_write<uint64_t>(scratch +
-        htif::get_csr_rel_addr(htif::csr::console), m.read_htif_console());
+        htif::get_csr_rel_addr(htif::csr::iconsole), m.read_htif_iconsole());
     aliased_aligned_write<uint64_t>(scratch +
-        htif::get_csr_rel_addr(htif::csr::yield), m.read_htif_yield());
+        htif::get_csr_rel_addr(htif::csr::iyield), m.read_htif_iyield());
     *page_data = scratch;
     return true;
 }

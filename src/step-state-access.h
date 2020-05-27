@@ -608,19 +608,19 @@ private:
             htif::get_csr_rel_addr(htif::csr::tohost), val, "htif.tohost");
     }
 
-    uint64_t do_read_htif_halt(void) {
+    uint64_t do_read_htif_ihalt(void) {
         return check_read(PMA_HTIF_START +
-            htif::get_csr_rel_addr(htif::csr::halt), "htif.halt");
+            htif::get_csr_rel_addr(htif::csr::ihalt), "htif.ihalt");
     }
 
-    uint64_t do_read_htif_console(void) {
+    uint64_t do_read_htif_iconsole(void) {
         return check_read(PMA_HTIF_START +
-            htif::get_csr_rel_addr(htif::csr::console), "htif.console");
+            htif::get_csr_rel_addr(htif::csr::iconsole), "htif.iconsole");
     }
 
-    uint64_t do_read_htif_yield(void) {
+    uint64_t do_read_htif_iyield(void) {
         return check_read(PMA_HTIF_START +
-            htif::get_csr_rel_addr(htif::csr::yield), "htif.yield");
+            htif::get_csr_rel_addr(htif::csr::iyield), "htif.iyield");
     }
 
     uint64_t do_read_pma_istart(int i) {

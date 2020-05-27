@@ -76,9 +76,9 @@ const static std::unordered_map<std::string, machine::csr> g_csr_name = {
     {"clint_mtimecmp", machine::csr::clint_mtimecmp},
     {"htif_tohost", machine::csr::htif_tohost},
     {"htif_fromhost", machine::csr::htif_fromhost},
-    {"htif_halt", machine::csr::htif_halt},
-    {"htif_console", machine::csr::htif_console},
-    {"htif_yield", machine::csr::htif_yield},
+    {"htif_ihalt", machine::csr::htif_ihalt},
+    {"htif_iconsole", machine::csr::htif_iconsole},
+    {"htif_iyield", machine::csr::htif_iyield},
 };
 
 /// \file
@@ -1058,9 +1058,9 @@ static int machine_meta__index_dump_regs(lua_State *L) {
     fprintf(stderr, "clint_mtimecmp = %" PRIx64 "\n", m->read_clint_mtimecmp());
     fprintf(stderr, "htif_tohost = %" PRIx64 "\n", m->read_htif_tohost());
     fprintf(stderr, "htif_fromhost = %" PRIx64 "\n", m->read_htif_fromhost());
-    fprintf(stderr, "htif_halt = %" PRIx64 "\n", m->read_htif_halt());
-    fprintf(stderr, "htif_console = %" PRIx64 "\n", m->read_htif_console());
-    fprintf(stderr, "htif_yield = %" PRIx64 "\n", m->read_htif_yield());
+    fprintf(stderr, "htif_ihalt = %" PRIx64 "\n", m->read_htif_ihalt());
+    fprintf(stderr, "htif_iconsole = %" PRIx64 "\n", m->read_htif_iconsole());
+    fprintf(stderr, "htif_iyield = %" PRIx64 "\n", m->read_htif_iyield());
     return 0;
 }
 
@@ -1415,27 +1415,27 @@ static int machine_meta__index_read_htif_fromhost(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine:read_htif_halt() method implementation.
+/// \brief This is the machine:read_htif_ihalt() method implementation.
 /// \param L Lua state.
-static int machine_meta__index_read_htif_halt(lua_State *L) {
+static int machine_meta__index_read_htif_ihalt(lua_State *L) {
     machine *m = check_machine(L, 1);
-    lua_pushinteger(L, m->read_htif_halt());
+    lua_pushinteger(L, m->read_htif_ihalt());
     return 1;
 }
 
-/// \brief This is the machine:read_htif_console() method implementation.
+/// \brief This is the machine:read_htif_iconsole() method implementation.
 /// \param L Lua state.
-static int machine_meta__index_read_htif_console(lua_State *L) {
+static int machine_meta__index_read_htif_iconsole(lua_State *L) {
     machine *m = check_machine(L, 1);
-    lua_pushinteger(L, m->read_htif_console());
+    lua_pushinteger(L, m->read_htif_iconsole());
     return 1;
 }
 
 /// \brief This is the machine:read_htif_yield() method implementation.
 /// \param L Lua state.
-static int machine_meta__index_read_htif_yield(lua_State *L) {
+static int machine_meta__index_read_htif_iyield(lua_State *L) {
     machine *m = check_machine(L, 1);
-    lua_pushinteger(L, m->read_htif_yield());
+    lua_pushinteger(L, m->read_htif_iyield());
     return 1;
 }
 

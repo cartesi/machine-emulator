@@ -42,6 +42,44 @@ local function parse_number(n)
     return nil
 end
 
+local function parse_flash(s)
+    local function escape(v)
+        -- replace escaped \, :, and , with something "safe"
+        v = string.gsub(v, "%\\%\\", "\0")
+        v = string.gsub(v, "%\\%:", "\1")
+        return string.gsub(v, "%\\%,", "\2")
+    end
+    local function unescape(v)
+        v = string.gsub(v, "\0", "\\")
+        v = string.gsub(v, "\1", ":")
+        return string.gsub(v, "\2", ",")
+    end
+    local keys = {
+        label = true,
+        filename = true,
+        shared = true,
+        length = true,
+        start = true
+    }
+    -- split at commas and validate key
+    local options = {}
+    string.gsub(escape(s) .. ",", "(.-)%,", function(o)
+        local k, v = string.match(o, "(.-):(.*)")
+        if k and v then
+            k = unescape(k)
+            v = unescape(v)
+        else
+            k = unescape(o)
+            v = true
+        end
+        assert(keys[k], string.format("unknown flash drive option '%q'", k))
+        options[k] = v
+    end)
+    options.image_filename = options.filename
+    options.filename = nil
+    return options
+end
+
 -- Print help and exit
 local function help()
     stderr([=[
@@ -51,7 +89,7 @@ Usage:
 
 where options are:
 
-  --ram-image-filename=<filename>
+  --ram-image=<filename>
     name of file containing RAM image (default: "kernel.bin")
 
   --no-ram-image
@@ -60,43 +98,51 @@ where options are:
   --ram-length=<number>
     set RAM length
 
-  --rom-image-filename=<filename>
+  --rom-image=<filename>
     name of file containing ROM image (default: "rom.bin")
-
-  --root-image-filename=<filename>
-    name of file containing image for root file-system corresponding
-    to /dev/mtdblock0 and mounted as / (default: rootfs.ext2)
-
-  --no-root-image
-    forget (default) image filename for root
-
-  --flash-<label>
-    add flash drive corresponding to /dev/mtdblock[1-7] that init attempts
-    to mount as /mnt/<label>
-
-  --flash-<label>-image-filename=<filename>
-    name of file containing image for <label> file-system corresponding
-    to /dev/mtdblock[1-7] that init attempts to mount as /mnt/<label>
-
-  --flash-<label>-shared
-    target modifications to <label> file-system modify image file as well
-    (default: false)
-
-  --flash-<label>-start=<number>
-    set the starting memory position for flash drive of <label> file-system
-    (either set the position for no file-system, or set for all of them)
-
-  --flash-<label>-length=<number>
-    set the byte length of the flash drive of <label> file-system
-
-  --max-mcycle=<number>
-    stop at a given mcycle (default: 2305843009213693952)
 
   --no-rom-bootargs
     clear default bootargs
 
   --append-rom-bootargs=<string>
     append <string> to bootargs
+
+  --flash-drive=<key>:<value>[,<key>:<value>[,...]...]
+    defines a new flash drive, or modify an existing flash drive definition
+    flash drives appear as /dev/mtdblock[1-7]
+
+    <key>:<value> is one of
+        label:<label>
+        filename:<filename>
+        start:<number>
+        length:<number>
+        shared
+
+        label (mandatory)
+        identifies the flash drive and init attempts to mount it as /mnt/<label>
+
+        filename (optional)
+        gives the name containing the image for the flash drive
+        when omitted or set to the empty string, the drive starts filled with 0
+
+        start (optional)
+        sets the starting physical memory offset for flash drive in bytes
+        when omitted, drives start at 2 << 63 and are spaced by 2 << 60
+        if any start offset is set, all of them must be set
+
+        length (optional)
+        gives the length of the flash drive in bytes (must be a multiple of 4Ki)
+        if omitted, the length is computed from the image in filename
+        if length and filename are set, the image file size must match length
+
+        shared (optional)
+        target modifications to flash drive modify image file as well
+        by default, image files are not modified and changes are lost
+
+    (default: "root:rootfs.ext2")
+
+  --max-mcycle=<number>
+    stop at a given mcycle (default: 2305843009213693952)
 
   -i or --htif-console-getchar
     run in interactive mode
@@ -186,7 +232,7 @@ local options = {
             return false
         end
     end },
-    { "^%-%-rom%-image%-filename%=(.*)$", function(o)
+    { "^%-%-rom%-image%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         rom_image_filename = o
         return true
@@ -206,7 +252,7 @@ local options = {
         ram_length = assert(parse_number(n), "invalid RAM length " .. n)
         return true
     end },
-    { "^%-%-ram%-image%-filename%=(.*)$", function(o)
+    { "^%-%-ram%-image%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         ram_image_filename = o
         return true
@@ -236,61 +282,30 @@ local options = {
         htif_yield_rollup = true
         return true
     end },
-    { "^%-%-flash%-(%w+)$", function(d)
-        if not d then return false end
+    { "^(%-%-flash%-drive%=(.+))$", function(all, f)
+        if not f then return false end
+        local f = parse_flash(f)
+        assert(f.label, "missing flash drive label in " .. all)
+        if f.image_filename == true then f.image_filename = "" end
+        assert(not f.shared or f.shared == true,
+            "invalid flash drive shared value in " .. all)
+        if f.start then
+            f.start = assert(parse_number(f.start),
+                "invalid flash drive start in " .. all)
+        end
+        if f.length then
+            f.length = assert(parse_number(f.length),
+                "invalid flash drive length in " .. all)
+        end
+        local d = f.label
         if not flash_image_filename[d] then
             flash_label_order[#flash_label_order+1] = d
             flash_image_filename[d] = ""
         end
-        return true
-    end },
-    { "^%-%-flash%-(%w+)-image%-filename%=(.+)$", function(d, f)
-        if not d or not f then return false end
-        if not flash_image_filename[d] then
-            flash_label_order[#flash_label_order+1] = d
-        end
-        flash_image_filename[d] = f
-        return true
-    end },
-    { "^%-%-flash%-(%w+)-start%=(.+)$", function(d, s)
-        if not d or not s then return false end
-        if not flash_image_filename[d] then
-            flash_label_order[#flash_label_order+1] = d
-        end
-        flash_start[d] = assert(parse_number(s),
-          string.format("invalid start '%s' for flash drive '%s'", s, d))
-        return true
-    end },
-    { "^%-%-flash%-(%w+)-length=(.+)$", function(d, l)
-        if not d or not l then return false end
-        if not flash_image_filename[d] then
-            flash_label_order[#flash_label_order+1] = d
-        end
-        flash_length[d] = assert(parse_number(l),
-          string.format("invalid length '%s' for flash drive '%s'", l, d))
-        return true
-    end },
-    { "^%-%-flash%-(%w+)%-shared$", function(d)
-        if not d then return false end
-        if not flash_image_filename[d] then
-            flash_label_order[#flash_label_order+1] = d
-        end
-        flash_shared[d] = true
-        return true
-    end },
-    { "^%-%-root%-image%-filename%=(.+)$", function(f)
-        if not f then return false end
-        flash_image_filename.root = f
-        return true
-    end },
-    { "^%-%-no%-root%-image$", function(all)
-          if not all then return false end
-          flash_image_filename.root = ""
-          return true
-    end },
-    { "^%-%-root%-shared$", function(all)
-        if not all then return false end
-        flash_shared.root = true
+        flash_length[d] = f.length or flash_length[d]
+        flash_start[d] = f.start or flash_start[d]
+        flash_image_filename[d] = f.image_filename or
+            flash_image_filename[d]
         return true
     end },
     { "^%-%-dump%-pmas$", function(all)

@@ -51,39 +51,43 @@ Usage:
 
 where options are:
 
-  --ram-backing=<filename>
-    binary image for RAM (default: "kernel.bin")
+  --ram-image-filename=<filename>
+    name of file containing RAM image (default: "kernel.bin")
 
-  --no-ram-backing
-    forget settings for ram-backing
+  --no-ram-image
+    forget settings for RAM image
 
   --ram-length=<number>
     set RAM length
 
-  --rom-backing=<filename>
-    binary image for ROM (default: "rom.bin")
+  --rom-image-filename=<filename>
+    name of file containing ROM image (default: "rom.bin")
 
-  --root-backing=<filename>
-    backing storage for root file-system corresponding
-    to /dev/mtdblock0 mounted as / (default: rootfs.ext2)
+  --root-image-filename=<filename>
+    name of file containing image for root file-system corresponding
+    to /dev/mtdblock0 and mounted as / (default: rootfs.ext2)
 
-  --no-root-backing
-    forget (default) backing settings for root
+  --no-root-image
+    forget (default) image filename for root
 
-  --flash-<label>-backing=<filename>
-    backing storage for <label> file-system corresponding to /dev/mtdblock[1-7]
-    and mounted by init as /mnt/<label> (default: none)
+  --flash-<label>
+    add flash drive corresponding to /dev/mtdblock[1-7] that init attempts
+    to mount as /mnt/<label>
+
+  --flash-<label>-image-filename=<filename>
+    name of file containing image for <label> file-system corresponding
+    to /dev/mtdblock[1-7] that init attempts to mount as /mnt/<label>
 
   --flash-<label>-shared
-    target modifications to <label> file-system modify backing storage as well
+    target modifications to <label> file-system modify image file as well
     (default: false)
 
   --flash-<label>-start=<number>
-    set the starting memory position for <label> file-system
+    set the starting memory position for flash drive of <label> file-system
     (either set the position for no file-system, or set for all of them)
 
   --flash-<label>-length=<number>
-    set the byte length of the <label> file-system
+    set the byte length of the flash drive of <label> file-system
 
   --max-mcycle=<number>
     stop at a given mcycle (default: 2305843009213693952)
@@ -141,21 +145,19 @@ or a left shift (e.g., 2 << 20).
     os.exit()
 end
 
-local PAGE_SIZE = 4096
-local flash_base = 1<<63
-local backing = { root = "rootfs.ext2" }
-local backing_order = { "root" }
-local shared = { }
-local start = { }
-local length = { }
-local ram_image = "kernel.bin"
-local rom_image = "rom.bin"
-local bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw"
-local append_bootargs = ""
+local flash_image_filename = { root = "rootfs.ext2" }
+local flash_label_order = { "root" }
+local flash_shared = { }
+local flash_start = { }
+local flash_length = { }
+local ram_image_filename = "kernel.bin"
 local ram_length = 64 << 20
+local rom_image_filename = "rom.bin"
+local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw"
+local append_rom_bootargs = ""
 local console_get_char = false
-local yield_progress = false
-local yield_rollup = false
+local htif_yield_progress = false
+local htif_yield_rollup = false
 local initial_hash = false
 local final_hash = false
 local periodic_hashes_period = math.maxinteger
@@ -184,35 +186,34 @@ local options = {
             return false
         end
     end },
-    { "^%-%-rom%-backing%=(.*)$", function(o)
+    { "^%-%-rom%-image%-filename%=(.*)$", function(o)
         if not o or #o < 1 then return false end
-        rom_image = o
+        rom_image_filename = o
         return true
     end },
     { "^%-%-no%-rom%-bootargs$", function(all)
         if not all then return false end
-        bootargs = ""
+        rom_bootargs = ""
         return true
     end },
     { "^%-%-append%-rom%-bootargs%=(.*)$", function(o)
         if not o or #o < 1 then return false end
-        append_bootargs = o
+        append_rom_bootargs = o
         return true
     end },
     { "^%-%-ram%-length%=(.+)$", function(n)
         if not n then return false end
-        n = assert(parse_number(n), "invalid RAM length " .. n)
-        ram_length = n
+        ram_length = assert(parse_number(n), "invalid RAM length " .. n)
         return true
     end },
-    { "^%-%-ram%-backing%=(.*)$", function(o)
+    { "^%-%-ram%-image%-filename%=(.*)$", function(o)
         if not o or #o < 1 then return false end
-        ram_image = o
+        ram_image_filename = o
         return true
     end },
-    { "^%-%-no%-ram%-backing$", function(all)
+    { "^%-%-no%-ram%-image$", function(all)
         if not all then return false end
-        ram_backing = nil
+        ram_image_filename = ""
         return true
     end },
     { "^%-%-htif%-console-getchar$", function(all)
@@ -227,55 +228,69 @@ local options = {
     end },
     { "^%-%-htif%-yield%-progress$", function(all)
         if not all then return false end
-        yield_progress = true
+        htif_yield_progress = true
         return true
     end },
     { "^%-%-htif%-yield%-rollup$", function(all)
         if not all then return false end
-        yield_rollup = true
+        htif_yield_rollup = true
         return true
     end },
-    { "^%-%-flash%-(%w+)-backing%=(.+)$", function(d, f)
-        if not d or not f then return false end
-        if not backing[d] then
-            backing_order[#backing_order+1] = d
+    { "^%-%-flash%-(%w+)$", function(d)
+        if not d then return false end
+        if not flash_image_filename[d] then
+            flash_label_order[#flash_label_order+1] = d
+            flash_image_filename[d] = ""
         end
-        backing[d] = f
+        return true
+    end },
+    { "^%-%-flash%-(%w+)-image%-filename%=(.+)$", function(d, f)
+        if not d or not f then return false end
+        if not flash_image_filename[d] then
+            flash_label_order[#flash_label_order+1] = d
+        end
+        flash_image_filename[d] = f
         return true
     end },
     { "^%-%-flash%-(%w+)-start%=(.+)$", function(d, s)
         if not d or not s then return false end
-        start[d] = assert(parse_number(s),
+        if not flash_image_filename[d] then
+            flash_label_order[#flash_label_order+1] = d
+        end
+        flash_start[d] = assert(parse_number(s),
           string.format("invalid start '%s' for flash drive '%s'", s, d))
         return true
     end },
     { "^%-%-flash%-(%w+)-length=(.+)$", function(d, l)
         if not d or not l then return false end
-        length[d] = assert(parse_number(l),
+        if not flash_image_filename[d] then
+            flash_label_order[#flash_label_order+1] = d
+        end
+        flash_length[d] = assert(parse_number(l),
           string.format("invalid length '%s' for flash drive '%s'", l, d))
         return true
     end },
-    { "^%-%-root%-backing%=(.+)$", function(f)
-        if not f then return false end
-        local d = "root"
-        if not backing[d] then
-            backing_order[#backing_order+1] = d
+    { "^%-%-flash%-(%w+)%-shared$", function(d)
+        if not d then return false end
+        if not flash_image_filename[d] then
+            flash_label_order[#flash_label_order+1] = d
         end
-        backing[d] = f
+        flash_shared[d] = true
         return true
     end },
-    { "^%-%-no%-root%-backing$", function(all)
+    { "^%-%-root%-image%-filename%=(.+)$", function(f)
+        if not f then return false end
+        flash_image_filename.root = f
+        return true
+    end },
+    { "^%-%-no%-root%-image$", function(all)
           if not all then return false end
-          assert(backing.root and backing_order[1] == "root",
-                 "no root backing to remove")
-          backing.root = nil
-          shared.root = nil
-          table.remove(backing_order, 1)
+          flash_image_filename.root = ""
           return true
     end },
     { "^%-%-root%-shared$", function(all)
         if not all then return false end
-        shared.root = true
+        flash_shared.root = true
         return true
     end },
     { "^%-%-dump%-pmas$", function(all)
@@ -291,11 +306,6 @@ local options = {
     { "^%-%-step$", function(all)
         if not all then return false end
         step = true
-        return true
-    end },
-    { "^%-%-flash%-(%w+)%-shared$", function(d)
-        if not d then return false end
-        shared[d] = true
         return true
     end },
     { "^(%-%-max%-mcycle%=(.*))$", function(all, n)
@@ -368,11 +378,11 @@ local config_meta = {
     __index = { }
 }
 
-function config_meta.__index:append_drive(t)
+function config_meta.__index:append_flash(t)
     local flash = {
         start = t.start,
         length = t.length,
-        backing = t.backing,
+        image_filename = t.image_filename,
         shared = t.shared
     }
     self.flash[self._flash_id] = flash
@@ -380,9 +390,9 @@ function config_meta.__index:append_drive(t)
     return self
 end
 
-function config_meta.__index:append_bootargs(bootargs)
-    if bootargs and bootargs ~= "" then
-        self.rom.bootargs = self.rom.bootargs .. " " .. bootargs
+function config_meta.__index:append_rom_bootargs(rom_bootargs)
+    if rom_bootargs and rom_bootargs ~= "" then
+        self.rom.bootargs = self.rom.bootargs .. " " .. rom_bootargs
     end
     return self
 end
@@ -393,30 +403,39 @@ function config_meta.__index:set_console_getchar(console_getchar)
     return self
 end
 
-function config_meta.__index:set_yield_progress(yield_progress)
+function config_meta.__index:set_htif_yield_progress(htif_yield_progress)
     self.htif = self.htif or {}
-    self.htif.yield_progress = yield_progress
+    self.htif.yield_progress = htif_yield_progress
     return self
 end
 
-function config_meta.__index:set_yield_rollup(yield_rollup)
+function config_meta.__index:set_htif_yield_rollup(htif_yield_rollup)
     self.htif = self.htif or {}
-    self.htif.yield_rollup = yield_rollup
+    self.htif.yield_rollup = htif_yield_rollup
     return self
 end
 
 function config_meta.__index:set_ram_length(length)
+    self.ram = self.ram or {}
     self.ram.length = length
     return self
 end
 
-function config_meta.__index:set_ram_image(ram_image)
-    self.ram.backing = ram_image
+function config_meta.__index:set_rom_bootargs(rom_bootargs)
+    self.rom = self.rom or {}
+    self.rom.bootargs = rom_bootargs
     return self
 end
 
-function config_meta.__index:set_rom_image(rom_image)
-    self.rom.backing = rom_image
+function config_meta.__index:set_ram_image_filename(ram_image_filename)
+    self.ram = self.ram or {}
+    self.ram.image_filename = ram_image_filename
+    return self
+end
+
+function config_meta.__index:set_rom_image_filename(rom_image_filename)
+    self.rom = self.rom or {}
+    self.rom.image_filename = rom_image_filename
     return self
 end
 
@@ -426,12 +445,6 @@ local function new_config()
             mvendorid = cartesi.machine.MVENDORID,
             marchid = cartesi.machine.MARCHID,
             mimpid = cartesi.machine.MIMPID
-        },
-        ram = {
-            length = 64 << 20
-        },
-        rom = {
-            bootargs = bootargs
         },
         flash = {},
         _flash_id = 1,
@@ -614,13 +627,13 @@ local function dump_machine_config(config)
     stderr("  ram = {\n")
     stderr("    length = 0x%x,", ram.length or def.ram.length)
     comment_default(ram.length, def.ram.length)
-    stderr("    backing = %q,", ram.backing or def.ram.backing)
-    comment_default(ram.backing, def.ram.backing)
+    stderr("    image_filename = %q,", ram.image_filename or def.ram.image_filename)
+    comment_default(ram.image_filename, def.ram.image_filename)
     stderr("  },\n")
     local rom = config.rom or {}
     stderr("  rom = {\n")
-    stderr("    backing = %q,", rom.backing or def.rom.backing)
-    comment_default(rom.backing, def.rom.backing)
+    stderr("    image_filename = %q,", rom.image_filename or def.rom.image_filename)
+    comment_default(rom.image_filename, def.rom.image_filename)
     stderr("    bootargs = %q,", rom.bootargs or def.rom.bootargs)
     comment_default(rom.bootargs, def.rom.bootargs)
     stderr("  },\n")
@@ -647,8 +660,8 @@ local function dump_machine_config(config)
         stderr("    {\n", i)
         stderr("      start = 0x%x,\n", f.start)
         stderr("      length = 0x%x,\n", f.length)
-        if f.backing and f.backing ~= "" then
-            stderr("      backing = %q,\n", f.backing)
+        if f.image_filename and f.image_filename ~= "" then
+            stderr("      image_filename = %q,\n", f.image_filename)
         end
         stderr("      shared = %s,", tostring(f.shared or false))
         comment_default(false, f.shared)
@@ -658,74 +671,96 @@ local function dump_machine_config(config)
     stderr("}\n")
 end
 
+local function resolve_flash_lengths(label_order, image_filename, start, length)
+    for i, label in ipairs(label_order) do
+        local filename = image_filename[label]
+        local len = length[label]
+        local filelen
+        if filename and filename ~= "" then
+            filelen = assert(get_file_length(filename), string.format(
+                "unable to find length of flash drive '%s' image file '%s'",
+                label, filename))
+            if len and len ~= filelen then
+                error(string.format("flash drive '%s' length (%u) and image file '%s' length (%u) do not match", label, len, filename, filelen))
+            else
+                length[label] = filelen
+            end
+        elseif not len then
+            error(string.format(
+                "flash drive '%s' nas no length or image file", label))
+        end
+    end
+end
+
+local function resolve_flash_starts(label_order, image_filename, start, length)
+    local auto_start = 1<<63
+    if next(start) == nil then
+        for i, label in ipairs(label_order) do
+            start[label] = auto_start
+            auto_start = auto_start + (1 << 60)
+        end
+    else
+        local missing = {}
+        local found = {}
+        for i, label in ipairs(label_order) do
+            local quoted = string.format("'%s'", label)
+            if start[label] then
+                found[#found+1] = quoted
+            else
+                missing[#missing+1] = quoted
+            end
+        end
+        error(string.format("flash drive start set for %s but missing for %s",
+            table.concat(found, ", "), table.concat(missing, ", ")))
+    end
+end
+
 local machine
 
 if load_dir then
     stderr("Loading machine: please wait\n")
     machine = cartesi.machine(load_dir)
 else
-    -- Resolve all device lengths
-    for i, label in ipairs(backing_order) do
-        local filename = backing[label]
-        local len = get_file_length(filename)
-        assert(len, "missing backing file '" .. filename .. "' for device '" .. label .. "'")
-        if length[label] then
-            assert(len == length[label],
-                   "Specified length " .. length[label] .. " for device .. '" .. label ..
-                   "', but backing file '" .. filename .. "' has " .. len .. " bytes.")
-        else
-            length[label] = len
-        end
-    end
-
-    -- Resolve all device starting positions
-    if next(start) == nil then
-        -- No positions specified. Generate a starting position for all devices.
-        for i, label in ipairs(backing_order) do
-            start[label] = flash_base
-            -- make sure flash drives are separated by a power of two and at least 1MB
-            flash_base = flash_base + (1 << 60)
-        end
-    else
-        -- At least one position specified. Must specify a starting position for all devices.
-        for i, label in ipairs(backing_order) do
-            if not start[label] then
-                error("start position not specified for device '" .. label .. "'")
-            end
-        end
-    end
+    -- Resolve all device starts and lengths
+    resolve_flash_lengths(flash_label_order, flash_image_filename, flash_start,
+        flash_length)
+    resolve_flash_starts(flash_label_order, flash_image_filename, flash_start,
+        flash_length)
 
     local config = new_config(
-    ):set_ram_image(
-        ram_image
-    ):set_rom_image(
-        rom_image
+    ):set_ram_image_filename(
+        ram_image_filename
     ):set_ram_length(
         ram_length
+    ):set_rom_image_filename(
+        rom_image_filename
+    ):set_rom_bootargs(
+        rom_bootargs
     )
 
     local mtdparts = {}
-    for i, label in ipairs(backing_order) do
-        config = config:append_drive{
-            backing = backing[label],
-            shared = shared[label],
-            start = start[label],
-            length = length[label]
+    for i, label in ipairs(flash_label_order) do
+        config = config:append_flash{
+            image_filename = flash_image_filename[label],
+            shared = flash_shared[label],
+            start = flash_start[label],
+            length = flash_length[label]
         }
         mtdparts[#mtdparts+1] = string.format("flash.%d:-(%s)", i-1, label)
     end
     if #mtdparts > 0 then
-        config = config:append_bootargs("mtdparts=" ..
+        config = config:append_rom_bootargs("mtdparts=" ..
             table.concat(mtdparts, ";"))
     end
-    config = config:append_bootargs(
-        append_bootargs
+
+    config = config:append_rom_bootargs(
+        append_rom_bootargs
     ):set_console_getchar(
         console_getchar
-    ):set_yield_progress(
-        yield_progress
-    ):set_yield_rollup(
-        yield_rollup
+    ):set_htif_yield_progress(
+        htif_yield_progress
+    ):set_htif_yield_rollup(
+        htif_yield_rollup
     )
 
     stderr("Building machine: please wait\n")

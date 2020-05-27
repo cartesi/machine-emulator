@@ -193,32 +193,32 @@ machine::machine(const machine_config &c):
     write_ilrsc(c.processor.ilrsc);
     write_iflags(c.processor.iflags);
 
-    if (c.rom.backing.empty())
-        throw std::invalid_argument{"ROM backing is undefined"};
+    if (c.rom.image_filename.empty())
+        throw std::invalid_argument{"ROM image filename is undefined"};
 
     // Register RAM
-    if (c.ram.backing.empty()) {
+    if (c.ram.image_filename.empty()) {
         register_pma_entry(make_callocd_memory_pma_entry(PMA_RAM_START,
             c.ram.length).set_flags(m_ram_flags));
     } else {
         register_pma_entry(make_callocd_memory_pma_entry(PMA_RAM_START,
-            c.ram.length, c.ram.backing).set_flags(m_ram_flags));
+            c.ram.length, c.ram.image_filename).set_flags(m_ram_flags));
     }
 
     // Register ROM
     pma_entry &rom = register_pma_entry(make_callocd_memory_pma_entry(
-        PMA_ROM_START, PMA_ROM_LENGTH, c.rom.backing).set_flags(m_rom_flags));
+        PMA_ROM_START, PMA_ROM_LENGTH, c.rom.image_filename).set_flags(m_rom_flags));
 
     // Register all flash drives
     for (const auto &f: c.flash) {
-        // Flash drive with no backing behaves just like memory, but with
+        // Flash drive with no image behaves just like memory, but with
         // different flags
-        if (f.backing.empty()) {
+        if (f.image_filename.empty()) {
             register_pma_entry(make_callocd_memory_pma_entry(f.start,
                 f.length).set_flags(m_flash_flags));
         } else {
             register_pma_entry(make_mmapd_memory_pma_entry(f.start,
-                f.length, f.backing, f.shared).set_flags(m_flash_flags));
+                f.length, f.image_filename, f.shared).set_flags(m_flash_flags));
         }
     }
 
@@ -327,12 +327,12 @@ machine_config machine::serialization_config(void) const {
     // Ensure we don't mess with ROM by writing the original bootargs
     // over the potentially modified memory region we serialize
     c.rom.bootargs.clear();
-    // Remove backing names from serialization
+    // Remove image filenames from serialization
     // (they will will be ignored by save and load for security reasons)
-    c.ram.backing.clear();
-    c.rom.backing.clear();
+    c.ram.image_filename.clear();
+    c.rom.image_filename.clear();
     for (auto &f: c.flash) {
-        f.backing.clear();
+        f.image_filename.clear();
     }
     return c;
 }
@@ -341,7 +341,7 @@ static void store_memory_pma(const pma_entry &pma, const std::string &dir) {
     if (!pma.get_istart_M()) {
         throw std::runtime_error{"attempt to save non-memory PMA"};
     }
-    auto name = machine_config::get_backing_name(dir,
+    auto name = machine_config::get_image_filename(dir,
         pma.get_start(), pma.get_length());
     auto fp = unique_fopen(name.c_str(), "wb");
     const pma_memory &mem = pma.get_memory();

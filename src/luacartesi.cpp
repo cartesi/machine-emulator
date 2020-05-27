@@ -391,9 +391,9 @@ static void push_processor_config(lua_State *L, const processor_config &p) {
 static void push_ram_config(lua_State *L, const ram_config &r) {
     lua_newtable(L);
     lua_pushinteger(L, r.length); lua_setfield(L, -2, "length");
-    if (!r.backing.empty()) {
-        lua_pushlstring(L, r.backing.data(), r.backing.size());
-        lua_setfield(L, -2, "backing");
+    if (!r.image_filename.empty()) {
+        lua_pushlstring(L, r.image_filename.data(), r.image_filename.size());
+        lua_setfield(L, -2, "image_filename");
     }
 }
 
@@ -406,9 +406,9 @@ static void push_rom_config(lua_State *L, const rom_config &r) {
         lua_pushlstring(L, r.bootargs.data(), r.bootargs.size());
         lua_setfield(L, -2, "bootargs");
     }
-    if (!r.backing.empty()) {
-        lua_pushlstring(L, r.backing.data(), r.backing.size());
-        lua_setfield(L, -2, "backing");
+    if (!r.image_filename.empty()) {
+        lua_pushlstring(L, r.image_filename.data(), r.image_filename.size());
+        lua_setfield(L, -2, "image_filename");
     }
 }
 
@@ -442,9 +442,9 @@ static void push_flash_configs(lua_State *L, const flash_configs &flash) {
         lua_newtable(L);
         lua_pushinteger(L, f.start); lua_setfield(L, -2, "start");
         lua_pushinteger(L, f.length); lua_setfield(L, -2, "length");
-        if (!f.backing.empty()) {
-            lua_pushlstring(L, f.backing.data(), f.backing.size());
-            lua_setfield(L, -2, "backing");
+        if (!f.image_filename.empty()) {
+            lua_pushlstring(L, f.image_filename.data(), f.image_filename.size());
+            lua_setfield(L, -2, "image_filename");
         }
         lua_pushboolean(L, f.shared); lua_setfield(L, -2, "shared");
         lua_rawseti(L, -2, i);
@@ -674,7 +674,7 @@ access_log check_log(lua_State *L, int tabidx) {
 static void check_ram_config(lua_State *L, int tabidx, ram_config &r) {
     check_table_field(L, tabidx, "ram");
     r.length = check_uint_field(L, -1, "length");
-    r.backing = opt_string_field(L, -1, "backing");
+    r.image_filename = opt_string_field(L, -1, "image_filename");
     lua_pop(L, 1);
 }
 
@@ -685,7 +685,7 @@ static void check_ram_config(lua_State *L, int tabidx, ram_config &r) {
 static void check_rom_config(lua_State *L, int tabidx, rom_config &r) {
     if (!opt_table_field(L, tabidx, "rom"))
         return;
-    r.backing = opt_string_field(L, -1, "backing");
+    r.image_filename = opt_string_field(L, -1, "image_filename");
     r.bootargs = opt_string_field(L, -1, "bootargs");
     lua_pop(L, 1);
 }
@@ -708,7 +708,7 @@ static void check_flash_config(lua_State *L, int tabidx, flash_configs &f) {
         }
         flash_config flash;
         flash.shared = opt_boolean_field(L, -1, "shared", false);
-        flash.backing = opt_string_field(L, -1, "backing");
+        flash.image_filename = opt_string_field(L, -1, "image_filename");
         flash.start = check_uint_field(L, -1, "start");
         flash.length = check_uint_field(L, -1, "length");
         f.push_back(std::move(flash));

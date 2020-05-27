@@ -408,22 +408,22 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
         //Setting ROM configs
         if (ms.has_rom()) {
             c.rom.bootargs = ms.rom().bootargs();
-            c.rom.backing = ms.rom().backing();
+            c.rom.image_filename = ms.rom().image_filename();
             dbg("Bootargs: %s", c.rom.bootargs.c_str());
-            dbg("ROM backing file: %s", c.rom.backing.c_str());
+            dbg("ROM image filename: %s", c.rom.image_filename.c_str());
         }
 
         //Setting ram configs
         if (ms.has_ram()) {
             c.ram.length = ms.ram().length();
-            c.ram.backing = ms.ram().backing();
+            c.ram.image_filename = ms.ram().image_filename();
         }
 
         //Setting flash configs
         for (const auto &fs: ms.flash()) {
             flash_config f{};
             f.start = fs.start();
-            f.backing = fs.backing();
+            f.image_filename = fs.image_filename();
             f.length = fs.length();
             f.shared = fs.shared();
             c.flash.emplace_back(std::move(f));

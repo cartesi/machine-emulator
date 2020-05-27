@@ -99,13 +99,13 @@ void serialize(ARX &ar, cartesi::processor_config &p, const unsigned int) {
 template <typename ARX>
 void serialize(ARX &ar, cartesi::ram_config &r, const unsigned int) {
     ar & r.length;
-    ar & r.backing;
+    ar & r.image_filename;
 }
 
 template <typename ARX>
 void serialize(ARX &ar, cartesi::rom_config &r, const unsigned int) {
     ar & r.bootargs;
-    ar & r.backing;
+    ar & r.image_filename;
 }
 
 template <typename ARX>
@@ -113,7 +113,7 @@ void serialize(ARX &ar, cartesi::flash_config &d, const unsigned int) {
     ar & d.start;
     ar & d.length;
     ar & d.shared;
-    ar & d.backing;
+    ar & d.image_filename;
 }
 
 template <typename ARX>
@@ -145,7 +145,7 @@ void serialize(ARX &ar, cartesi::machine_config &m, const unsigned int) {
 
 namespace cartesi {
 
-std::string machine_config::get_backing_name(const std::string &dir,
+std::string machine_config::get_image_filename(const std::string &dir,
     uint64_t start, uint64_t length) {
     std::ostringstream sout;
     sout << dir << "/" << std::hex << std::setw(16) << std::setfill('0')
@@ -153,33 +153,33 @@ std::string machine_config::get_backing_name(const std::string &dir,
     return sout.str();
 }
 
-std::string machine_config::get_config_name(const std::string &dir) {
+std::string machine_config::get_config_filename(const std::string &dir) {
     return dir + "/config";
 }
 
-static void adjust_backing_names(machine_config &c, const std::string &dir) {
-    c.rom.backing = c.get_backing_name(dir, PMA_ROM_START, PMA_ROM_LENGTH);
-    c.ram.backing = c.get_backing_name(dir, PMA_RAM_START, c.ram.length);
+static void adjust_image_filenames(machine_config &c, const std::string &dir) {
+    c.rom.image_filename = c.get_image_filename(dir, PMA_ROM_START, PMA_ROM_LENGTH);
+    c.ram.image_filename = c.get_image_filename(dir, PMA_RAM_START, c.ram.length);
     for (auto &f: c.flash) {
-        f.backing = c.get_backing_name(dir, f.start, f.length);
+        f.image_filename = c.get_image_filename(dir, f.start, f.length);
     }
 }
 
 machine_config machine_config::load(const std::string &dir) {
     machine_config c;
-    auto name = machine_config::get_config_name(dir);
+    auto name = machine_config::get_config_filename(dir);
     std::ifstream ifs(name, std::ios::binary);
     if (!ifs) {
         throw std::runtime_error{"unable to open '" + name + "' for reading"};
     }
     boost::archive::binary_iarchive ia(ifs);
     ia >> c;
-    adjust_backing_names(c, dir);
+    adjust_image_filenames(c, dir);
     return c;
 }
 
 void machine_config::store(const std::string &dir) const {
-    auto name = get_config_name(dir);
+    auto name = get_config_filename(dir);
     std::ofstream ofs(name, std::ios::binary);
     if (!ofs) {
         throw std::runtime_error{"unable to open '" + name + "' for writing"};

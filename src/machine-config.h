@@ -60,21 +60,21 @@ struct processor_config final {
 /// \brief RAM state configuration
 struct ram_config final {
     uint64_t length{0}; ///< RAM length
-    std::string backing{}; ///< RAM image backing file name
+    std::string image_filename{}; ///< RAM image file name
 };
 
 /// \brief ROM state configuration
 struct rom_config final {
     std::string bootargs{}; ///< Bootargs to pass to kernel
-    std::string backing{}; ///< ROM image backing file
+    std::string image_filename{}; ///< ROM image file
 };
 
 /// \brief Flash drive state configuration
 struct flash_config final {
-    uint64_t start{0};  ///< Flash drive start position
-    uint64_t length{0}; ///< Flash drive length
-    bool shared{false}; ///< Target modifications to drive change backing file?
-    std::string backing{}; ///< Flash drive backing file name
+    uint64_t start{0};            ///< Flash drive start position
+    uint64_t length{0};           ///< Flash drive length
+    bool shared{false};           ///< Target changes to drive affect image file?
+    std::string image_filename{}; ///< Flash drive image file name
 };
 
 /// \brief CLINT device state configuration
@@ -110,10 +110,10 @@ struct machine_config final {
     htif_config htif{};           ///< HTIF device state
 
     /// \brief Get the name where config will be stored in a directory
-    static std::string get_config_name(const std::string &dir);
+    static std::string get_config_filename(const std::string &dir);
 
     /// \brief Get the name where memory range will be stored in a directory
-    static std::string get_backing_name(const std::string &dir, uint64_t start,
+    static std::string get_image_filename(const std::string &dir, uint64_t start,
         uint64_t length);
 
     /// \brief Loads a machine config from a directory

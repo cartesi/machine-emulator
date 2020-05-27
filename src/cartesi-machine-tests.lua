@@ -381,11 +381,11 @@ local function build_machine(test_name)
             mimpid = cartesi.machine.MIMPID
         },
         rom = {
-            backing = test_path .. "/bootstrap.bin"
+            image_filename = test_path .. "/bootstrap.bin"
         },
         ram = {
             length = 32 << 20,
-            backing = test_path .. "/" .. test_name
+            image_filename = test_path .. "/" .. test_name
         }
     })
 end
@@ -393,7 +393,7 @@ end
 local function print_machine(test_name, expected_cycles)
     print(
         string.format(
-            "./cartesi-machine.lua --no-root-backing --ram-length=32Mi --rom-backing='%s' --ram-backing='%s' --no-rom-bootargs --max-mcycle=%d",
+            "./cartesi-machine.lua --no-root-image --ram-length=32Mi --rom-image-filename='%s' --ram-image-filename='%s' --no-rom-bootargs --max-mcycle=%d",
             test_path .. "/bootstrap.bin",
             test_path .. "/" .. test_name,
             2*expected_cycles

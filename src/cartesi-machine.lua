@@ -85,7 +85,7 @@ local function help()
     stderr([=[
 Usage:
 
-  %s [options]
+  %s [options] [command] [arguments]
 
 where options are:
 
@@ -106,6 +106,9 @@ where options are:
 
   --append-rom-bootargs=<string>
     append <string> to bootargs
+
+  --no-root-flash-drive
+    clear default root flash drive and associated bootargs parameters
 
   --flash-drive=<key>:<value>[,<key>:<value>[,...]...]
     defines a new flash drive, or modify an existing flash drive definition
@@ -139,7 +142,7 @@ where options are:
         target modifications to flash drive modify image file as well
         by default, image files are not modified and changes are lost
 
-    (default: "root:rootfs.ext2")
+    (default: "label:root,filename:rootfs.ext2")
 
   --max-mcycle=<number>
     stop at a given mcycle (default: 2305843009213693952)
@@ -153,8 +156,8 @@ where options are:
   --htif-yield-rollup
     honor yield rollup requests by target
 
-  --dump-config
-    dump initial config to screen
+  --dump-machine-config
+    dump initial machine config to screen
 
   --load=<directory>
     load prebuilt machine from <directory>
@@ -182,6 +185,15 @@ where options are:
 
   --dump-pmas
     dump all PMA ranges to disk when done
+
+and command and arguments:
+
+  command
+    the full path to the program inside the target system
+    (default: /bin/sh)
+
+  arguments
+    the given command arguments
 
 <number> can be specified in decimal (e.g., 16) or hexadeximal (e.g., 0x10),
 with a suffix multiplier (i.e., Ki, Mi, Gi for 2^10, 2^20, 2^30, respectively),
@@ -215,6 +227,8 @@ local json_steps
 local step = false
 local store_dir = nil
 local load_dir = nil
+local cmdline_opts_finished = false
+local exec_arguments = {}
 
 -- List of supported options
 -- Options are processed in order
@@ -302,10 +316,23 @@ local options = {
             flash_label_order[#flash_label_order+1] = d
             flash_image_filename[d] = ""
         end
-        flash_length[d] = f.length or flash_length[d]
-        flash_start[d] = f.start or flash_start[d]
         flash_image_filename[d] = f.image_filename or
             flash_image_filename[d]
+        flash_start[d] = f.start or flash_start[d]
+        flash_length[d] = f.length or flash_length[d]
+        flash_shared[d] = f.shared or flash_shared[d]
+        return true
+    end },
+    { "^%-%-no%-root%-flash%-drive$", function(all)
+        if not all then return false end
+        assert(flash_image_filename.root and flash_label_order[1] == "root",
+                 "no root flash drive to remove")
+        flash_image_filename.root = nil
+        flash_start.root = nil
+        flash_length.root = nil
+        flash_shared.root = nil
+        table.remove(flash_label_order, 1)
+        rom_bootargs = "console=hvc0"
         return true
     end },
     { "^%-%-dump%-pmas$", function(all)
@@ -368,16 +395,27 @@ local options = {
         return true
     end },
     { ".*", function(all)
+        if not all then return false end
+        local not_option = all:sub(1,1) ~= "-"
+        if not_option or all == "--" then
+          cmdline_opts_finished = true
+          if not_option then exec_arguments = { all } end
+          return true
+        end
         error("unrecognized option " .. all)
     end }
 }
 
 -- Process command line options
 for i, a in ipairs(arg) do
-    for j, option in ipairs(options) do
-        if option[2](a:match(option[1])) then
-            break
-        end
+    if not cmdline_opts_finished then
+      for j, option in ipairs(options) do
+          if option[2](a:match(option[1])) then
+              break
+          end
+      end
+    else
+      exec_arguments[#exec_arguments+1] = a
     end
 end
 
@@ -777,6 +815,12 @@ else
     ):set_htif_yield_rollup(
         htif_yield_rollup
     )
+
+    if #exec_arguments > 0 then
+        config = config:append_rom_bootargs(
+            "-- " .. table.concat(exec_arguments, " ")
+        )
+    end
 
     stderr("Building machine: please wait\n")
     machine = cartesi.machine(config)

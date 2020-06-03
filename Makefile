@@ -5,6 +5,7 @@ PREFIX= /opt/cartesi
 BIN_INSTALL_PATH= $(PREFIX)/bin
 LIB_INSTALL_PATH= $(PREFIX)/lib
 SHARE_INSTALL_PATH= $(PREFIX)/share
+IMAGES_INSTALL_PATH= $(SHARE_INSTALL_PATH)/images
 CDIR=lib/luapp/5.3
 LDIR=share/luapp/5.3
 LUA_INSTALL_CPATH= $(PREFIX)/$(CDIR)
@@ -85,8 +86,8 @@ distclean: clean profile-clean
 profile-clean:
 	$(MAKE) -C $(SRCDIR) $@
 
-$(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(INC_INSTALL_PATH):
-	mkdir -p $@
+$(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH):
+	mkdir -m 0755 -p $@
 
 env:
 	@echo $(LIBRARY_PATH)
@@ -207,13 +208,14 @@ install-dep: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_I
 	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(DEP_TO_BIN)
 	cd $(LIB_INSTALL_PATH) && $(CHMOD_EXEC) $(DEP_TO_LIB)
 
-install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(INC_INSTALL_PATH)
+install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_TO_BIN) $(BIN_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_LUA_TO_BIN) $(BIN_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_TO_LUA_CPATH) $(LUA_INSTALL_CPATH)
-	echo "#!/bin/bash\n$(BIN_INSTALL_PATH)/luapp5.3 $(BIN_INSTALL_PATH)/cartesi-machine.lua \"\$$@\"" > $(BIN_INSTALL_PATH)/cartesi-machine
-	echo "#!/bin/bash\n$(BIN_INSTALL_PATH)/luapp5.3 $(BIN_INSTALL_PATH)/cartesi-machine-tests.lua \"\$$@"\" > $(BIN_INSTALL_PATH)/cartesi-machine-tests
+	echo "#!/bin/sh\nCARTESI_IMAGES_PATH=$(IMAGES_INSTALL_PATH) $(BIN_INSTALL_PATH)/luapp5.3 $(BIN_INSTALL_PATH)/cartesi-machine.lua \"\$$@\"" > $(BIN_INSTALL_PATH)/cartesi-machine
+	echo "#!/bin/sh\n$(BIN_INSTALL_PATH)/luapp5.3 $(BIN_INSTALL_PATH)/cartesi-machine-tests.lua \"\$$@"\" > $(BIN_INSTALL_PATH)/cartesi-machine-tests
 	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(EMU_TO_BIN) cartesi-machine cartesi-machine-tests
+	cd $(BIN_INSTALL_PATH) && $(CHMOD_DATA) $(EMU_LUA_TO_BIN)
 	cd lib/machine-emulator-defines && $(INSTALL) $(EMU_TO_INC) $(INC_INSTALL_PATH)
 	cd $(LUA_INSTALL_CPATH) && $(CHMOD_EXEC) $(EMU_TO_LUA_CPATH)
 

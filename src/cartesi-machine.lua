@@ -80,6 +80,11 @@ local function parse_flash(s)
     return options
 end
 
+local function parse_images_path(path)
+    if not path then return "" end
+    return string.gsub(path, "/*$", "") .. "/"
+end
+
 -- Print help and exit
 local function help()
     stderr([=[
@@ -203,14 +208,15 @@ or a left shift (e.g., 2 << 20).
     os.exit()
 end
 
-local flash_image_filename = { root = "rootfs.ext2" }
+local images_path = parse_images_path(os.getenv('CARTESI_IMAGES_PATH'))
+local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
 local flash_shared = { }
 local flash_start = { }
 local flash_length = { }
-local ram_image_filename = "kernel.bin"
+local ram_image_filename = images_path .. "kernel.bin"
 local ram_length = 64 << 20
-local rom_image_filename = "rom.bin"
+local rom_image_filename = images_path .. "rom.bin"
 local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw"
 local append_rom_bootargs = ""
 local console_get_char = false

@@ -22,15 +22,15 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <grpc++/grpc++.h>
-#include "core.grpc.pb.h"
+#include "cartesi-machine.grpc.pb.h"
 #pragma GCC diagnostic pop
 
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
-using CartesiCore::Void;
-using CartesiCore::Machine;
-using CartesiCore::MachineRequest;
+using CartesiMachine::Void;
+using CartesiMachine::Machine;
+using CartesiMachine::MachineRequest;
 
 class MachineClient {
 

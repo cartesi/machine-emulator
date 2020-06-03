@@ -171,11 +171,10 @@ HASH_OBJS:= \
 	hash.o
 
 PROTO_OBJS:= \
-	cartesi-base.pb.o \
-	core.pb.o \
-	core.grpc.pb.o \
-	manager-low.pb.o \
-	manager-low.grpc.pb.o
+	cartesi-machine.pb.o \
+	machine-discovery.pb.o \
+	cartesi-machine.grpc.pb.o \
+	machine-discovery.grpc.pb.o
 
 $(PROTO_OBJS): CXXFLAGS +=  -Wno-unused-parameter
 

@@ -23,9 +23,8 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <grpc++/grpc++.h>
-#include "manager-low.grpc.pb.h"
-#include "manager-low.pb.h"
-#include "cartesi-base.pb.h"
+#include "cartesi-machine.grpc.pb.h"
+#include "machine-discovery.grpc.pb.h"
 #pragma GCC diagnostic pop
 
 #define dbg(...) syslog(LOG_DEBUG, __VA_ARGS__)
@@ -35,16 +34,15 @@ namespace cartesi {
 manager_client::manager_client() {}
 
 void manager_client::register_on_manager(std::string &session_id, std::string &address, std::string &manager_address){
-    CartesiManagerLow::AddressRequest request;
-    CartesiCore::Void response;
+    CartesiMachineManager::AddressRequest request;
+    CartesiMachine::Void response;
     grpc::ClientContext context;
 
     request.set_address(address);
     request.set_session_id(session_id);
-    
+
     dbg("Creating manager server connection stub");
-    std::unique_ptr<CartesiManagerLow::MachineManagerLow::Stub> mml_stub = CartesiManagerLow::MachineManagerLow::NewStub(grpc::CreateChannel(manager_address, 
-            grpc::InsecureChannelCredentials()));
+    std::unique_ptr<CartesiMachineManager::MachineDiscovery::Stub> mml_stub = CartesiMachineManager::MachineDiscovery::NewStub(grpc::CreateChannel(manager_address, grpc::InsecureChannelCredentials()));
     dbg("Initiated manager server connection stub");
 
     dbg("Communicating address to manager server");
@@ -53,7 +51,7 @@ void manager_client::register_on_manager(std::string &session_id, std::string &a
 
     if (!status.ok()){
         dbg("Error trying to communicate reference to manager\n");
-    }    
+    }
 }
 
 }

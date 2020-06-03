@@ -34,8 +34,7 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <grpc++/grpc++.h>
 #include <grpc++/resource_quota.h>
-#include "core.grpc.pb.h"
-#include "core.pb.h"
+#include "cartesi-machine.grpc.pb.h"
 #pragma GCC diagnostic pop
 
 #include "manager-client.h"
@@ -98,34 +97,34 @@ enum class BreakReason {
 };
 
 // Logic and data behind the server's behavior.
-class MachineServiceImpl final: public CartesiCore::Machine::Service {
+class MachineServiceImpl final: public CartesiMachine::Machine::Service {
 
-    using Void = CartesiCore::Void;
+    using Void = CartesiMachine::Void;
     using Status = grpc::Status;
     using StatusCode = grpc::StatusCode;
     using ServerContext = grpc::ServerContext;
     using Server = grpc::Server;
-    using MachineRequest = CartesiCore::MachineRequest;
-    using StoreRequest = CartesiCore::StoreRequest;
-    using RunRequest = CartesiCore::RunRequest;
-    using RunResponse = CartesiCore::RunResponse;
-    using GetProofRequest = CartesiCore::GetProofRequest;
-    using ReadMemoryRequest = CartesiCore::ReadMemoryRequest;
-    using ReadMemoryResponse = CartesiCore::ReadMemoryResponse;
-    using WriteMemoryRequest = CartesiCore::WriteMemoryRequest;
-    using MachineConfig = CartesiCore::MachineConfig;
-    using ProcessorConfig = CartesiCore::ProcessorConfig;
-    using ROMConfig = CartesiCore::ROMConfig;
-    using RAMConfig = CartesiCore::RAMConfig;
-    using FlashConfig = CartesiCore::FlashConfig;
-    using HTIFConfig = CartesiCore::HTIFConfig;
-    using CLINTConfig = CartesiCore::CLINTConfig;
-    using AccessLog = CartesiCore::AccessLog;
-    using BracketNote = CartesiCore::BracketNote;
-    using Access = CartesiCore::Access;
-    using Proof = CartesiCore::Proof;
-    using Hash = CartesiCore::Hash;
-    using Word = CartesiCore::Word;
+    using MachineRequest = CartesiMachine::MachineRequest;
+    using StoreRequest = CartesiMachine::StoreRequest;
+    using RunRequest = CartesiMachine::RunRequest;
+    using RunResponse = CartesiMachine::RunResponse;
+    using GetProofRequest = CartesiMachine::GetProofRequest;
+    using ReadMemoryRequest = CartesiMachine::ReadMemoryRequest;
+    using ReadMemoryResponse = CartesiMachine::ReadMemoryResponse;
+    using WriteMemoryRequest = CartesiMachine::WriteMemoryRequest;
+    using MachineConfig = CartesiMachine::MachineConfig;
+    using ProcessorConfig = CartesiMachine::ProcessorConfig;
+    using ROMConfig = CartesiMachine::ROMConfig;
+    using RAMConfig = CartesiMachine::RAMConfig;
+    using FlashConfig = CartesiMachine::FlashConfig;
+    using HTIFConfig = CartesiMachine::HTIFConfig;
+    using CLINTConfig = CartesiMachine::CLINTConfig;
+    using AccessLog = CartesiMachine::AccessLog;
+    using BracketNote = CartesiMachine::BracketNote;
+    using Access = CartesiMachine::Access;
+    using Proof = CartesiMachine::Proof;
+    using Hash = CartesiMachine::Hash;
+    using Word = CartesiMachine::Word;
 
     std::mutex barrier_;
     std::thread breaker_;
@@ -173,10 +172,10 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             //Setting type
             switch (wa.type) {
                 case access_type::read:
-                    a->set_operation(CartesiCore::AccessOperation::READ);
+                    a->set_operation(CartesiMachine::AccessOperation::READ);
                     break;
                 case access_type::write:
-                    a->set_operation(CartesiCore::AccessOperation::WRITE);
+                    a->set_operation(CartesiMachine::AccessOperation::WRITE);
                     break;
                 default:
                     throw std::invalid_argument{"Invalid AccessOperation"};
@@ -197,10 +196,10 @@ class MachineServiceImpl final: public CartesiCore::Machine::Service {
             //Setting type
             switch (bni.type) {
                 case bracket_type::begin:
-                    bn->set_type(CartesiCore::BracketNote_BracketNoteType_BEGIN);
+                    bn->set_type(CartesiMachine::BracketNote_BracketNoteType_BEGIN);
                     break;
                 case bracket_type::end:
-                    bn->set_type(CartesiCore::BracketNote_BracketNoteType_END);
+                    bn->set_type(CartesiMachine::BracketNote_BracketNoteType_END);
                     break;
                 default:
                     throw std::invalid_argument{"Invalid BracketNoteType"};

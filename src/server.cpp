@@ -551,12 +551,11 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
             uint64_t address = request->address();
             int log2_size = static_cast<int>(request->log2_size());
             merkle_tree::proof_type p{};
-            if (context_.machine->update_merkle_tree() &&
-                context_.machine->get_proof(address, log2_size, p)) {
-                set_proto_proof(p, proto_p);
-            } else {
-                throw std::runtime_error{"GetProof failed"};
+            if (!context_.machine->update_merkle_tree()) {
+                throw std::runtime_error{"Merkle tree update failed"};
             }
+            context_.machine->get_proof(address, log2_size, p);
+            set_proto_proof(p, proto_p);
             dbg("GetProof finished");
             return Status::OK;
         } catch (std::exception &e) {

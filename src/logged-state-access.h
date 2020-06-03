@@ -125,8 +125,7 @@ private:
             "Machine and merkle_tree word sizes must match");
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
         word_access wa;
-        bool proven = m_m.get_proof(paligned, merkle_tree::get_log2_word_size(), wa.proof);
-        assert(proven);
+        m_m.get_proof(paligned, merkle_tree::get_log2_word_size(), wa.proof);
         wa.type = access_type::read;
         wa.read = val;
         wa.written = 0;
@@ -144,8 +143,7 @@ private:
             "Machine and merkle_tree word sizes must match");
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
         word_access wa;
-        bool proven = m_m.get_proof(paligned, merkle_tree::get_log2_word_size(), wa.proof);
-        assert(proven);
+        m_m.get_proof(paligned, merkle_tree::get_log2_word_size(), wa.proof);
         wa.type = access_type::write;
         wa.read = dest;
         wa.written = val;

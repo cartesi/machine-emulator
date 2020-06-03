@@ -1007,18 +1007,51 @@ void machine::dump_pmas(void) const {
     }
 }
 
-bool machine::get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) const {
+void machine::get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) const {
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
-    auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
-    if (!scratch) return false;
-    const pma_entry &pma = naked_find_pma_entry<uint64_t>(m_s, address);
-    const unsigned char *page_data = nullptr;
-    uint64_t page_start_in_range = (address - pma.get_start()) & (~(PMA_PAGE_SIZE-1));
-    auto peek = pma.get_peek();
-    if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
-        return false;
+    // Check for valid target node size
+    if (log2_size > merkle_tree::get_log2_tree_size() ||
+        log2_size < merkle_tree::get_log2_word_size()) {
+        throw std::invalid_argument{"invalid log2_size"};
     }
-    return m_t.get_proof(address, log2_size, page_data, proof);
+    // Check target address alignment
+    if (address & ((~UINT64_C(0)) >> (64-log2_size))) {
+        throw std::invalid_argument{"address not aligned to log2_size"};
+    }
+    // If proof concerns range smaller than a page, we may need to rebuild part
+    // of the proof from the contents of a page inside some PMA range.
+    // PMA range starts and lengths are multiple of the page size, which is a
+    // power of 2.
+    // The size of the desired range is smaller than the page size, but its
+    // size is a power of 2, and it is aligned to its size.
+    // Therefore, it is is either entirely inside a PMA range,
+    // or entirely outside it.
+    if (log2_size < merkle_tree::get_log2_page_size()) {
+        uint64_t length = UINT64_C(1) << log2_size;
+        const pma_entry &pma = naked_find_pma_entry(m_s, address, length);
+        auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
+        const unsigned char *page_data = nullptr;
+        // If the PMA range is empty, we know the desired range is
+        // entirely outside of any non-pristine PMA.
+        // Therefore, the entire page where it lies is also pristine
+        // Otherwise, the entire desired range is inside it.
+        if (!pma.get_istart_E()) {
+            uint64_t page_start_in_range = (address - pma.get_start()) & (~(PMA_PAGE_SIZE-1));
+            auto peek = pma.get_peek();
+            if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
+                throw std::runtime_error{"PMA peek failed"};
+            }
+        }
+        if (!m_t.get_proof(address, log2_size, page_data, proof)) {
+            throw std::runtime_error{"merkle_tree::get_proof() failed"};
+        }
+    // If proof concerns range bigger than a page, we already have its hash
+    // stored in the tree itself
+    } else {
+        if (!m_t.get_proof(address, log2_size, nullptr, proof)) {
+            throw std::runtime_error{"merkle_tree::get_proof() failed"};
+        }
+    }
 }
 
 void machine::read_memory(uint64_t address, unsigned char *data,

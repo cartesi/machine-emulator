@@ -168,8 +168,8 @@ public:
     /// \param log2_size log<sub>2</sub> of size subintended by target node.
     /// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
     /// \param proof Receives the proof.
-    /// \returns true if succeeded, false otherwise.
-    bool get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) const;
+    /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
+    void get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) const;
 
     /// \brief Read the value of any CSR
     /// \param r CSR to read

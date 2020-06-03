@@ -42,7 +42,7 @@ local function parse_number(n)
     return nil
 end
 
-local function parse_flash(s)
+local function parse_options(s, keys)
     local function escape(v)
         -- replace escaped \, :, and , with something "safe"
         v = string.gsub(v, "%\\%\\", "\0")
@@ -54,13 +54,6 @@ local function parse_flash(s)
         v = string.gsub(v, "\1", ":")
         return string.gsub(v, "\2", ",")
     end
-    local keys = {
-        label = true,
-        filename = true,
-        shared = true,
-        length = true,
-        start = true
-    }
     -- split at commas and validate key
     local options = {}
     string.gsub(escape(s) .. ",", "(.-)%,", function(o)
@@ -72,11 +65,9 @@ local function parse_flash(s)
             k = unescape(o)
             v = true
         end
-        assert(keys[k], string.format("unknown flash drive option '%q'", k))
+        assert(keys[k], string.format("unknown option '%q'", k))
         options[k] = v
     end)
-    options.image_filename = options.filename
-    options.filename = nil
     return options
 end
 
@@ -171,10 +162,10 @@ where options are:
     store machine to <directory>
 
   --initial-hash
-    print initial hash before running machine
+    print initial state hash before running machine
 
   --final-hash
-    print final hash when done
+    print final state hash when done
 
   --periodic-hashes=<number-period>[,<number-start>]
     prints root hash every <number-period> cycles. If <number-start> is given,
@@ -224,6 +215,8 @@ local htif_yield_progress = false
 local htif_yield_rollup = false
 local initial_hash = false
 local final_hash = false
+local initial_proof = {}
+local final_proof = {}
 local periodic_hashes_period = math.maxinteger
 local periodic_hashes_start = 0
 local dump_pmas = false
@@ -302,10 +295,18 @@ local options = {
         htif_yield_rollup = true
         return true
     end },
-    { "^(%-%-flash%-drive%=(.+))$", function(all, f)
-        if not f then return false end
-        local f = parse_flash(f)
+    { "^(%-%-flash%-drive%=(.+))$", function(all, opts)
+        if not opts then return false end
+        local f = parse_options(opts, {
+            label = true,
+            filename = true,
+            shared = true,
+            length = true,
+            start = true
+        })
         assert(f.label, "missing flash drive label in " .. all)
+        f.image_filename = f.filename
+        f.filename = nil
         if f.image_filename == true then f.image_filename = "" end
         assert(not f.shared or f.shared == true,
             "invalid flash drive shared value in " .. all)
@@ -327,6 +328,40 @@ local options = {
         flash_start[d] = f.start or flash_start[d]
         flash_length[d] = f.length or flash_length[d]
         flash_shared[d] = f.shared or flash_shared[d]
+        return true
+    end },
+    { "^(%-%-initial%-proof%=(.+))$", function(all, opts)
+        if not opts then return false end
+        local p = parse_options(opts, {
+            address = true,
+            log2_size = true,
+            filename = true
+        })
+        p.cmdline = all
+        p.address = assert(parse_number(p.address),
+            "invalid address in " .. all)
+        p.log2_size = assert(parse_number(p.log2_size),
+            "invalid log2_size in " .. all)
+        assert(p.log2_size >= 3,
+            "log2_size must be at least 3 in " .. all)
+        initial_proof[#initial_proof+1] = p
+        return true
+    end },
+    { "^(%-%-final%-proof%=(.+))$", function(all, opts)
+        if not opts then return false end
+        local p = parse_options(opts, {
+            address = true,
+            log2_size = true,
+            filename = true
+        })
+        p.cmdline = all
+        p.address = assert(parse_number(p.address),
+            "invalid address in " .. all)
+        p.log2_size = assert(parse_number(p.log2_size),
+            "invalid log2_size in " .. all)
+        assert(p.log2_size >= 3,
+            "log2_size must be at least 3 in " .. all)
+        final_proof[#final_proof+1] = p
         return true
     end },
     { "^%-%-no%-root%-flash%-drive$", function(all)
@@ -573,7 +608,7 @@ local function intstring(v)
     return a
 end
 
-local function print_json_log_sibling_hashes(sibling_hashes, log2_size, out, indent)
+local function print_json_sibling_hashes(sibling_hashes, log2_size, out, indent)
     out:write('[\n')
     for i, h in ipairs(sibling_hashes) do
         out:write(indent,'"', hexhash(h), '"')
@@ -582,13 +617,13 @@ local function print_json_log_sibling_hashes(sibling_hashes, log2_size, out, ind
     out:write(' ]')
 end
 
-local function print_json_log_proof(proof, out, indent)
+local function print_json_proof(proof, out, indent)
     out:write('{\n')
-    out:write(indent, '"address": ', proof.address, ',\n')
+    out:write(indent, string.format('"address": %u,\n', proof.address))
     out:write(indent, '"log2_size": ', proof.log2_size, ',\n')
     out:write(indent, '"target_hash": "', hexhash(proof.target_hash), '",\n')
     out:write(indent, '"sibling_hashes": ')
-    print_json_log_sibling_hashes(proof.sibling_hashes, proof.log2_size, out,
+    print_json_sibling_hashes(proof.sibling_hashes, proof.log2_size, out,
         indent .. "  ")
     out:write(",\n", indent, '"root_hash": "', hexhash(proof.root_hash), '" }')
 end
@@ -624,7 +659,7 @@ local function print_json_log_access(access, out, indent)
     out:write(indent, '"read": "', intstring(access.read), '",\n')
     out:write(indent, '"written": "', intstring(access.written or 0), '",\n')
     out:write(indent, '"proof": ')
-    print_json_log_proof(access.proof, out, indent .. "  ")
+    print_json_proof(access.proof, out, indent .. "  ")
     out:write(' }')
 end
 
@@ -774,6 +809,21 @@ local function resolve_flash_starts(label_order, image_filename, start, length)
     end
 end
 
+local function dump_proofs(machine, desired_proofs, console_getchar)
+    if #desired_proofs > 0 then
+        assert(not console_getchar,
+            "proofs are meaningless in interactive mode")
+        machine:update_merkle_tree()
+    end
+    for i, desired in ipairs(desired_proofs) do
+        local proof = machine:get_proof(desired.address, desired.log2_size)
+        local out = desired.filename and assert(io.open(desired.filename, "wb"))
+            or io.stdout
+        out:write("proof = ")
+        print_json_proof(proof, out, "  ")
+    end
+end
+
 local machine
 
 if load_dir then
@@ -844,6 +894,7 @@ if not json_steps then
         assert(not console_getchar, "hashes are meaningless in interactive mode")
         print_root_hash(cycles, machine)
     end
+    dump_proofs(machine, initial_proof, console_getchar)
     local payload = 0
     local next_hash_mcycle
     if periodic_hashes_start ~= 0 then
@@ -890,6 +941,7 @@ if not json_steps then
         assert(not console_getchar, "hashes are meaningless in interactive mode")
         print_root_hash(cycles, machine)
     end
+    dump_proofs(machine, final_proof, console_getchar)
     if store_dir then
         assert(not console_getchar, "hashes are meaningless in interactive mode")
         stderr("Storing machine: please wait\n")

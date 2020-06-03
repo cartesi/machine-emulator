@@ -1115,13 +1115,9 @@ static int machine_meta__index_read_word(lua_State *L) try {
 static int machine_meta__index_get_proof(lua_State *L) try {
     machine *m = check_machine(L, 1);
     merkle_tree::proof_type proof;
-    if (m->get_proof(luaL_checkinteger(L, 2), luaL_checkinteger(L, 3), proof)) {
-        push_proof(L, proof);
-        return 1;
-    } else {
-        lua_pushboolean(L, false);
-        return 1;
-    }
+    m->get_proof(luaL_checkinteger(L, 2), luaL_checkinteger(L, 3), proof);
+    push_proof(L, proof);
+    return 1;
 } catch (std::exception &x) {
     luaL_error(L, x.what());
     return 0;

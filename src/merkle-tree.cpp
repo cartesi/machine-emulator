@@ -498,22 +498,29 @@ get_proof(address_type address, int log2_size, const unsigned char *page_data, p
     } else if (log2_node_size == get_log2_page_size()) {
         assert(node);
         hash_type page_hash;
-        // If we have the page data, compute from it
-        if (page_data) {
-            get_inside_page_sibling_hashes(address, log2_size, proof.target_hash,
-                page_data, page_hash, proof.sibling_hashes);
-        // Otherwise the page is pristine
-        } else {
-            page_hash = get_pristine_hash(get_log2_page_size());
-            for (int i = get_log2_page_size()-1; i >= log2_size; --i) {
-                set_sibling_hash(get_pristine_hash(i), i, proof.sibling_hashes);
+        // If target node is smaller than page size
+        if (log2_size < get_log2_page_size()) {
+            // If we were given the page data, compute from it
+            if (page_data) {
+                get_inside_page_sibling_hashes(address, log2_size, proof.target_hash,
+                    page_data, page_hash, proof.sibling_hashes);
+            // Otherwise, if page is pristine
+            } else {
+                page_hash = get_pristine_hash(get_log2_page_size());
+                for (int i = get_log2_page_size()-1; i >= log2_size; --i) {
+                    set_sibling_hash(get_pristine_hash(i), i, proof.sibling_hashes);
+                }
+                proof.target_hash = get_pristine_hash(log2_size);
             }
-            proof.target_hash = get_pristine_hash(log2_size);
-        }
-        // Check if hash stored in node matches what we just computed
-        if (node->hash != page_hash) {
-            // Caller probably forgot to update the Merkle tree
-            return false;
+            // Check if hash stored in node matches what we just computed
+            if (node->hash != page_hash) {
+                // Caller probably forgot to update the Merkle tree
+                return false;
+            }
+        // If target node is the page itself
+        } else {
+            // Simply copy hash
+            proof.target_hash = node->hash;
         }
     // Case 3
     // We hit the target node itself

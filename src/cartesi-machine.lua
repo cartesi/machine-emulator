@@ -804,8 +804,10 @@ local function resolve_flash_starts(label_order, image_filename, start, length)
                 missing[#missing+1] = quoted
             end
         end
-        error(string.format("flash drive start set for %s but missing for %s",
-            table.concat(found, ", "), table.concat(missing, ", ")))
+        if #missing > 0 then
+            error(string.format("flash drive start set for %s but missing for %s",
+                table.concat(found, ", "), table.concat(missing, ", ")))
+        end
     end
 end
 

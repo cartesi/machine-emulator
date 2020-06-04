@@ -5,7 +5,7 @@ jobs:
     name: Build
     runs-on: ubuntu-18.04
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
         with:
           submodules: recursive
           token: ${{ secrets.CI_TOKEN }}
@@ -124,6 +124,21 @@ jobs:
 
       - name: Run test suite
         run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
+
+      - name: Checkout emulator source code
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Build docker image
+        run: docker build -t cartesi/machine-emulator:test -f .github/workflows/Dockerfile /opt/cartesi
+
+      - name: Simple boot inside the docker image
+        run: docker run --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -t cartesi/machine-emulator:test /opt/cartesi/bin/cartesi-machine /bin/true
+
+      - name: Run test suite inside the docker image
+        run: docker run --rm -v /opt/cartesi/tests:/opt/cartesi/tests -t cartesi/machine-emulator:test /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
 
   release:
     name: Release

@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y \
     libboost-serialization1.65.1 \
     libreadline7 \
     openssl \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/opt/cartesi/bin:${PATH}"

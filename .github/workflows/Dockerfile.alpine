@@ -12,6 +12,7 @@ RUN apk add --no-cache \
     git \
     libstdc++ \
     libtool \
+    libgomp \
     make \
     openssl \
     patchelf \
@@ -34,9 +35,16 @@ RUN make -j$(nproc) dep GRPC_VERSION=${GRPC_VERSION} && \
     make clean && \
     rm -rf *
 
+# Fix cartesi-machine and cartesi-machine-tests
+RUN \
+    echo -e `cat /opt/cartesi/bin/cartesi-machine` > /tmp/cartesi-machine && \
+    echo -e `cat /opt/cartesi/bin/cartesi-machine-tests` > /tmp/cartesi-machine-tests && \
+    mv /tmp/cartesi-machine /tmp/cartesi-machine-tests /opt/cartesi/bin/ && \
+    chmod 0755 /opt/cartesi/bin/cartesi-machine /opt/cartesi/bin/cartesi-machine-tests
+
 FROM alpine:3.11
 
-RUN apk add --no-cache boost libstdc++
+RUN apk add --no-cache boost libstdc++ libgomp
 
 ENV PATH="/opt/cartesi/bin:${PATH}"
 WORKDIR /opt/cartesi

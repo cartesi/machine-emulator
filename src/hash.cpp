@@ -700,7 +700,7 @@ int main(int argc, char *argv[]) {
 #else
 int main(int argc, char *argv[]) {
     const char *input_name = nullptr;
-    int page_log2_size = 0;
+    int page_log2_size = 10;
     int tree_log2_size = 0;
     // Process command line arguments
     for (int i = 1; i < argc; ++i) {

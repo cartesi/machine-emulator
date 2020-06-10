@@ -196,9 +196,9 @@ GRPC_SRV_OBJS:= \
 	interpret.o \
 	manager-client.o
 
-CYCLE_SKIP ?= 13
-HASH_DIR = hashes/$(CYCLE_SKIP)
-LOG_DIR = logs/$(CYCLE_SKIP)
+CYCLE_PERIOD ?= 13
+HASH_DIR = hashes/$(CYCLE_PERIOD)
+LOG_DIR = logs/$(CYCLE_PERIOD)
 HASH_TRUTH_DIR =
 GROUND_TRUTH_DIR ?= ground-truth
 
@@ -222,19 +222,19 @@ truth-hashes: $(TRUTH_HASHES)
 truth-logs: $(TRUTH_LOGS)
 
 $(HASH_DIR)/%.hashes: $(TEST_PATH)/%.bin $(HASH_DIR)
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_SKIP) hash >  $@
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) hash >  $@
 	diff $@ $(GROUND_TRUTH_DIR)/$@
 
 $(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(LOG_DIR)
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_SKIP) step > $(basename $@)
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) step > $(basename $@)
 	brotli -j -f $(basename $@)
 	diff $@ $(GROUND_TRUTH_DIR)/$@
 
 $(GROUND_TRUTH_DIR)/$(HASH_DIR)/%.hashes: $(TEST_PATH)/%.bin $(GROUND_TRUTH_DIR)/$(HASH_DIR)
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_SKIP) hash >  $@
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) hash >  $@
 
 $(GROUND_TRUTH_DIR)/$(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(GROUND_TRUTH_DIR)/$(LOG_DIR)
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_SKIP) step > $(basename $@)
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) step > $(basename $@)
 	brotli -j -f $(basename $@)
 
 cartesi-machine-hash: $(HASH_OBJS)

@@ -17,6 +17,7 @@
 --
 
 local cartesi = require"cartesi"
+local util = require"cartesi.util"
 
 local tests = {
   {"rv64mi-p-access.bin", 110},
@@ -315,6 +316,8 @@ local options = {
             periodic_action_period = assert(parse_number(v), "invalid period " .. all)
             periodic_action_start = 0
         end
+        assert(periodic_action_period > 0, "invalid period " ..
+            periodic_action_period)
         periodic_action = true
         return true
     end },
@@ -435,12 +438,6 @@ local function run(tests)
     end
 end
 
-local function hexhash(h)
-    return (string.gsub(h, ".", function(c)
-        return string.format("%02x", string.byte(c))
-    end))
-end
-
 local function hash(tests)
     for _, test in ipairs(tests) do
         local ram_image = test[1]
@@ -449,7 +446,7 @@ local function hash(tests)
         local machine = build_machine(ram_image)
         local cycles, payload = run_machine(machine, expected_cycles, function()
             machine:update_merkle_tree()
-            print(machine:read_mcycle(), hexhash(machine:get_root_hash()))
+            print(machine:read_mcycle(), util.hexhash(machine:get_root_hash()))
         end)
         if payload ~= 0 or cycles ~= expected_cycles then
             os.exit(1, true)
@@ -466,123 +463,39 @@ local function print_machines(tests)
     end
 end
 
-local function intstring(v)
-    local a = ""
-    for i = 0, 7 do
-        a = a .. string.format("%02x", (v >> i*8) & 0xff)
-    end
-    return a
-end
-
-local function print_json_log_sibling_hashes(sibling_hashes, log2_size, out, indent)
-    out:write('[\n')
-    for i, h in ipairs(sibling_hashes) do
-        out:write(indent,'"', hexhash(h), '"')
-        if sibling_hashes[i+1] then out:write(',\n') end
-    end
-    out:write(' ]')
-end
-
-local function print_json_log_proof(proof, out, indent)
-    out:write('{\n')
-    out:write(indent, '"address": ', proof.address, ',\n')
-    out:write(indent, '"log2_size": ', proof.log2_size, ',\n')
-    out:write(indent, '"target_hash": "', hexhash(proof.target_hash), '",\n')
-    out:write(indent, '"sibling_hashes": ')
-    print_json_log_sibling_hashes(proof.sibling_hashes, proof.log2_size, out,
-        indent .. "  ")
-    out:write(",\n", indent, '"root_hash": "', hexhash(proof.root_hash), '" }')
-end
-
-local function print_json_log_notes(notes, out, indent)
-    local indent2 = indent .. "  "
-    local n = #notes
-    out:write('[\n')
-    for i, note in ipairs(notes) do
-        out:write(indent2, '"', note, '"')
-        if i < n then out:write(',\n') end
-    end
-    out:write(indent, '],\n')
-end
-
-local function print_json_log_brackets(brackets, out, indent)
-    local n = #brackets
-    out:write('[ ')
-    for i, bracket in ipairs(brackets) do
-        out:write('{\n')
-        out:write(indent, '  "type": "', bracket.type, '",\n')
-        out:write(indent, '  "where": ', bracket.where, ',\n')
-        out:write(indent, '  "text": "', bracket.text, '"')
-        out:write(' }\n')
-        if i < n then out:write(', ') end
-    end
-    out:write(' ]')
-end
-
-local function print_json_log_access(access, out, indent)
-    out:write('{\n')
-    out:write(indent, '"type": "', access.type, '",\n')
-    out:write(indent, '"read": "', intstring(access.read), '",\n')
-    out:write(indent, '"written": "', intstring(access.written or 0), '",\n')
-    out:write(indent, '"proof": ')
-    print_json_log_proof(access.proof, out, indent .. "  ")
-    out:write(' }')
-end
-
-local function print_json_log_accesses(accesses, out, indent)
-    local indent2 = indent .. "  "
-    local n = #accesses
-    out:write('[ ')
-    for i, access in ipairs(accesses) do
-        print_json_log_access(access, out, indent2)
-        if i < n then out:write(',\n', indent) end
-    end
-    out:write(indent, ' ],\n')
-end
-
-local function print_json_log(log, init_cycles, final_cycles, out, indent)
-    out:write('{\n')
-    out:write(indent, '"init_cycles": ', init_cycles, ',\n')
-    out:write(indent, '"final_cycles": ', final_cycles, ',\n')
-    out:write(indent, '"accesses": ')
-    print_json_log_accesses(log.accesses, out, indent)
-    out:write(indent, '"notes": ')
-    print_json_log_notes(log.notes, out, indent)
-    out:write('  "brackets": ')
-    print_json_log_brackets(log.brackets, out, indent)
-    out:write(' }')
-end
-
 local function step(tests)
-    io.stdout:write("[ ")
+    local out = io.stdout
+    local indentout = util.indentout
+    out:write("[\n")
+    local log_type = {} -- no proofs or annotations
     for i, test in ipairs(tests) do
         local ram_image = test[1]
         local expected_cycles = test[2]
         local machine = build_machine(ram_image)
-        io.stdout:write(" {\n")
-        io.stdout:write('  "test": "', ram_image, '",\n')
+        indentout(out, 1, "{\n")
+        indentout(out, 2, '"test": "%s",\n', ram_image)
         if periodic_action then
-          io.stdout:write('  "period": ', periodic_action_period, ',\n')
-          io.stdout:write('  "start": ', periodic_action_start, ',\n')
+            indentout(out, 2, '"period": %u,\n', periodic_action_period)
+            indentout(out, 2, '"start": %u,\n', periodic_action_start)
         end
-        io.stdout:write('  "steps": [ ')
+        indentout(out, 2, '"steps": [\n')
         local cycles, payload = run_machine(machine, expected_cycles, function()
             local init_cycles = machine:read_mcycle()
-            local log = machine:step()
+            local log = machine:step(log_type)
             local final_cycles = machine:read_mcycle()
-            print_json_log(log, init_cycles, final_cycles, io.stdout, "    ")
-            if not machine:read_iflags_H() then io.stdout:write(', ') end
+            util.dump_json_log(log, init_cycles, final_cycles, out, 3)
+            if not machine:read_iflags_H() then out:write(',\n')
+            else out:write('\n') end
         end)
-        io.stdout:write(" ]")
-        if tests[i+1] then io.stdout:write(" }, ")
-        else io.stdout:write(" } ") end
+        indentout(out, 2, "]\n")
+        if tests[i+1] then indentout(out, 1, "},\n")
+        else indentout(out, 1, "}\n") end
         if payload ~= 0 or cycles ~= expected_cycles then
-            print('deu merda', payload, cycles, expected_cycles)
             os.exit(1, true)
         end
         machine:destroy()
     end
-    io.stdout:write(" ]\n")
+    io.stdout:write("]\n")
 end
 
 local function select(test_name, test_pattern)

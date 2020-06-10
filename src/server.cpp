@@ -106,6 +106,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
     using Server = grpc::Server;
     using MachineRequest = CartesiMachine::MachineRequest;
     using StoreRequest = CartesiMachine::StoreRequest;
+    using StepRequest = CartesiMachine::StepRequest;
     using RunRequest = CartesiMachine::RunRequest;
     using RunResponse = CartesiMachine::RunResponse;
     using GetProofRequest = CartesiMachine::GetProofRequest;
@@ -119,6 +120,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
     using FlashConfig = CartesiMachine::FlashConfig;
     using HTIFConfig = CartesiMachine::HTIFConfig;
     using CLINTConfig = CartesiMachine::CLINTConfig;
+    using AccessLogType = CartesiMachine::AccessLogType;
     using AccessLog = CartesiMachine::AccessLog;
     using BracketNote = CartesiMachine::BracketNote;
     using Access = CartesiMachine::Access;
@@ -186,33 +188,42 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
             a->mutable_read()->set_content(&wa.read, sizeof(wa.read));
             a->mutable_written()->set_content(&wa.written, sizeof(wa.written));
 
-            //Building proof object
-            set_proto_proof(wa.proof, a->mutable_proof());
-        }
-
-        //Building bracket note grpc objects with equivalent content
-        for (const auto &bni: al.get_brackets()) {
-            BracketNote *bn = proto_al->add_brackets();
-            //Setting type
-            switch (bni.type) {
-                case bracket_type::begin:
-                    bn->set_type(CartesiMachine::BracketNote_BracketNoteType_BEGIN);
-                    break;
-                case bracket_type::end:
-                    bn->set_type(CartesiMachine::BracketNote_BracketNoteType_END);
-                    break;
-                default:
-                    throw std::invalid_argument{"Invalid BracketNoteType"};
-                    break;
+            //  If access_log contains proofs
+            if (al.get_log_type().has_proofs()) {
+                //Building proof object
+                set_proto_proof(wa.proof, a->mutable_proof());
             }
-            //Setting where and text
-            bn->set_where(bni.where);
-            bn->set_text(bni.text);
         }
 
-        //Building notes
-        for (const auto &ni: al.get_notes()) {
-            proto_al->add_notes()->assign(ni);
+        // If access_log contains annoations
+        if (al.get_log_type().has_annotations()) {
+
+            //Building bracket note grpc objects with equivalent content
+            for (const auto &bni: al.get_brackets()) {
+                BracketNote *bn = proto_al->add_brackets();
+                //Setting type
+                switch (bni.type) {
+                    case bracket_type::begin:
+                        bn->set_type(
+                            CartesiMachine::BracketNote_BracketNoteType_BEGIN);
+                        break;
+                    case bracket_type::end:
+                        bn->set_type(
+                            CartesiMachine::BracketNote_BracketNoteType_END);
+                        break;
+                    default:
+                        throw std::invalid_argument{"Invalid BracketNoteType"};
+                        break;
+                }
+                //Setting where and text
+                bn->set_where(bni.where);
+                bn->set_text(bni.text);
+            }
+
+            //Building notes
+            for (const auto &ni: al.get_notes()) {
+                proto_al->add_notes()->assign(ni);
+            }
         }
     }
 
@@ -563,15 +574,22 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
         }
     }
 
-    Status Step(ServerContext *, const Void *, AccessLog *proto_al) override {
+    access_log::type get_proto_log_type(const AccessLogType &lt) {
+        return access_log::type{
+			lt.proofs(),
+			lt.annotations()
+        };
+    }
+
+    Status Step(ServerContext *, const StepRequest *request,
+        AccessLog *proto_al) override {
         std::lock_guard<std::mutex> lock(barrier_);
         if (!context_.machine) {
             return error_no_machine();
         }
         try {
-            access_log al{};
-            context_.machine->step(al);
-            set_proto_access_log(al, proto_al);
+            set_proto_access_log(context_.machine->step(
+                    get_proto_log_type(request->log_type())), proto_al);
             dbg("Step executed");
             return Status::OK;
         } catch (std::exception &e) {

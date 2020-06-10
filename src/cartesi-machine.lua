@@ -17,61 +17,13 @@
 --
 
 local cartesi = require"cartesi"
+local util = require"cartesi.util"
 
 local function stderr(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
 end
 
-local function parse_number(n)
-    if not n then return nil end
-    local base, rest = string.match(n, "^%s*(0x%x+)%s*(.-)%s*$")
-    if not base then
-        base, rest = string.match(n, "^%s*(%d+)%s*(.-)%s*$")
-    end
-    base = tonumber(base)
-    if not base then return nil end
-    if rest == "Ki" then return base << 10
-    elseif rest == "Mi" then return base << 20
-    elseif rest == "Gi" then return base << 30
-    elseif rest == "" then return base end
-    local shift = string.match(rest, "^%s*%<%<%s*(%d+)$")
-    if shift then
-        shift = tonumber(shift)
-        if shift then return base << shift end
-    end
-    return nil
-end
-
-local function parse_options(s, keys)
-    local function escape(v)
-        -- replace escaped \, :, and , with something "safe"
-        v = string.gsub(v, "%\\%\\", "\0")
-        v = string.gsub(v, "%\\%:", "\1")
-        return string.gsub(v, "%\\%,", "\2")
-    end
-    local function unescape(v)
-        v = string.gsub(v, "\0", "\\")
-        v = string.gsub(v, "\1", ":")
-        return string.gsub(v, "\2", ",")
-    end
-    -- split at commas and validate key
-    local options = {}
-    string.gsub(escape(s) .. ",", "(.-)%,", function(o)
-        local k, v = string.match(o, "(.-):(.*)")
-        if k and v then
-            k = unescape(k)
-            v = unescape(v)
-        else
-            k = unescape(o)
-            v = true
-        end
-        assert(keys[k], string.format("unknown option '%q'", k))
-        options[k] = v
-    end)
-    return options
-end
-
-local function parse_images_path(path)
+local function adjust_images_path(path)
     if not path then return "" end
     return string.gsub(path, "/*$", "") .. "/"
 end
@@ -199,7 +151,7 @@ or a left shift (e.g., 2 << 20).
     os.exit()
 end
 
-local images_path = parse_images_path(os.getenv('CARTESI_IMAGES_PATH'))
+local images_path = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH'))
 local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
 local flash_shared = { }
@@ -262,7 +214,7 @@ local options = {
     end },
     { "^%-%-ram%-length%=(.+)$", function(n)
         if not n then return false end
-        ram_length = assert(parse_number(n), "invalid RAM length " .. n)
+        ram_length = assert(util.parse_number(n), "invalid RAM length " .. n)
         return true
     end },
     { "^%-%-ram%-image%=(.*)$", function(o)
@@ -277,12 +229,12 @@ local options = {
     end },
     { "^%-%-htif%-console-getchar$", function(all)
         if not all then return false end
-        console_getchar = true
+        htif_console_getchar = true
         return true
     end },
     { "^%-i$", function(all)
         if not all then return false end
-        console_getchar = true
+        htif_console_getchar = true
         return true
     end },
     { "^%-%-htif%-yield%-progress$", function(all)
@@ -297,7 +249,7 @@ local options = {
     end },
     { "^(%-%-flash%-drive%=(.+))$", function(all, opts)
         if not opts then return false end
-        local f = parse_options(opts, {
+        local f = util.parse_options(opts, {
             label = true,
             filename = true,
             shared = true,
@@ -311,11 +263,11 @@ local options = {
         assert(not f.shared or f.shared == true,
             "invalid flash drive shared value in " .. all)
         if f.start then
-            f.start = assert(parse_number(f.start),
+            f.start = assert(util.parse_number(f.start),
                 "invalid flash drive start in " .. all)
         end
         if f.length then
-            f.length = assert(parse_number(f.length),
+            f.length = assert(util.parse_number(f.length),
                 "invalid flash drive length in " .. all)
         end
         local d = f.label
@@ -332,15 +284,15 @@ local options = {
     end },
     { "^(%-%-initial%-proof%=(.+))$", function(all, opts)
         if not opts then return false end
-        local p = parse_options(opts, {
+        local p = util.parse_options(opts, {
             address = true,
             log2_size = true,
             filename = true
         })
         p.cmdline = all
-        p.address = assert(parse_number(p.address),
+        p.address = assert(util.parse_number(p.address),
             "invalid address in " .. all)
-        p.log2_size = assert(parse_number(p.log2_size),
+        p.log2_size = assert(util.parse_number(p.log2_size),
             "invalid log2_size in " .. all)
         assert(p.log2_size >= 3,
             "log2_size must be at least 3 in " .. all)
@@ -349,15 +301,15 @@ local options = {
     end },
     { "^(%-%-final%-proof%=(.+))$", function(all, opts)
         if not opts then return false end
-        local p = parse_options(opts, {
+        local p = util.parse_options(opts, {
             address = true,
             log2_size = true,
             filename = true
         })
         p.cmdline = all
-        p.address = assert(parse_number(p.address),
+        p.address = assert(util.parse_number(p.address),
             "invalid address in " .. all)
-        p.log2_size = assert(parse_number(p.log2_size),
+        p.log2_size = assert(util.parse_number(p.log2_size),
             "invalid log2_size in " .. all)
         assert(p.log2_size >= 3,
             "log2_size must be at least 3 in " .. all)
@@ -393,7 +345,7 @@ local options = {
     end },
     { "^(%-%-max%-mcycle%=(.*))$", function(all, n)
         if not n then return false end
-        max_mcycle = assert(parse_number(n), "invalid option " .. all)
+        max_mcycle = assert(util.parse_number(n), "invalid option " .. all)
         return true
     end },
     { "^%-%-load%=(.*)$", function(o)
@@ -424,11 +376,14 @@ local options = {
     { "^(%-%-periodic%-hashes%=(.*))$", function(all, v)
         if not v then return false end
         string.gsub(v, "^([^%,]+),(.+)$", function(p, s)
-            periodic_hashes_period = assert(parse_number(p), "invalid period " .. all)
-            periodic_hashes_start = assert(parse_number(s), "invalid start " .. all)
+            periodic_hashes_period = assert(util.parse_number(p),
+                "invalid period " .. all)
+            periodic_hashes_start = assert(util.parse_number(s),
+                "invalid start " .. all)
         end)
         if periodic_hashes_period == math.maxinteger then
-            periodic_hashes_period = assert(parse_number(v), "invalid period " .. all)
+            periodic_hashes_period = assert(util.parse_number(v),
+                "invalid period " .. all)
             periodic_hashes_start = 0
         end
         initial_hash = true
@@ -468,223 +423,9 @@ local function get_file_length(filename)
     return size
 end
 
-local config_meta = {
-    __index = { }
-}
-
-function config_meta.__index:append_flash(t)
-    local flash = {
-        start = t.start,
-        length = t.length,
-        image_filename = t.image_filename,
-        shared = t.shared
-    }
-    self.flash[self._flash_id] = flash
-    self._flash_id = self._flash_id+1
-    return self
-end
-
-function config_meta.__index:append_rom_bootargs(rom_bootargs)
-    if rom_bootargs and rom_bootargs ~= "" then
-        self.rom.bootargs = self.rom.bootargs .. " " .. rom_bootargs
-    end
-    return self
-end
-
-function config_meta.__index:set_console_getchar(console_getchar)
-    self.htif = self.htif or {}
-    self.htif.console_getchar = console_getchar
-    return self
-end
-
-function config_meta.__index:set_htif_yield_progress(htif_yield_progress)
-    self.htif = self.htif or {}
-    self.htif.yield_progress = htif_yield_progress
-    return self
-end
-
-function config_meta.__index:set_htif_yield_rollup(htif_yield_rollup)
-    self.htif = self.htif or {}
-    self.htif.yield_rollup = htif_yield_rollup
-    return self
-end
-
-function config_meta.__index:set_ram_length(length)
-    self.ram = self.ram or {}
-    self.ram.length = length
-    return self
-end
-
-function config_meta.__index:set_rom_bootargs(rom_bootargs)
-    self.rom = self.rom or {}
-    self.rom.bootargs = rom_bootargs
-    return self
-end
-
-function config_meta.__index:set_ram_image_filename(ram_image_filename)
-    self.ram = self.ram or {}
-    self.ram.image_filename = ram_image_filename
-    return self
-end
-
-function config_meta.__index:set_rom_image_filename(rom_image_filename)
-    self.rom = self.rom or {}
-    self.rom.image_filename = rom_image_filename
-    return self
-end
-
-local function new_config()
-    return setmetatable({
-        processor = {
-            mvendorid = cartesi.machine.MVENDORID,
-            marchid = cartesi.machine.MARCHID,
-            mimpid = cartesi.machine.MIMPID
-        },
-        flash = {},
-        _flash_id = 1,
-    }, config_meta)
-end
-
-local function hexhash(hash)
-    return (string.gsub(hash, ".", function(c)
-        return string.format("%02x", string.byte(c))
-    end))
-end
-
-local function hexhash8(hash)
-    return string.sub(hexhash(hash), 1, 8)
-end
-
 local function print_root_hash(cycles, machine)
     machine:update_merkle_tree()
-    stderr("%d: %s\n", cycles, hexhash(machine:get_root_hash()))
-end
-
-local function indentout(level, fmt, ...)
-    local step = "  "
-    io.stderr:write(string.rep(step, level), string.format(fmt, ...))
-end
-
-local function print_log(log)
-    local d = 0
-    local j = 1
-    local i = 1
-    while true do
-        local bj = log.brackets[j]
-        local ai = log.accesses[i]
-        if not bj and not ai then break end
-        if bj and bj.where <= i then
-            if bj.type == "begin" then
-                indentout(d, "begin %s\n", bj.text)
-                d = d + 1
-            elseif bj.type == "end" then
-                d = d - 1
-                indentout(d, "end %s\n", bj.text)
-            end
-            j = j + 1
-        elseif ai then
-            local ai = log.accesses[i]
-            indentout(d, "hash %s\n", hexhash8(ai.proof.root_hash))
-            if ai.type == "read" then
-                indentout(d, "%d: read %s@0x%x(%u): 0x%x(%u)\n", i,
-                    log.notes[i], ai.proof.address, ai.proof.address,
-                    ai.read, ai.read)
-            else
-                assert(ai.type == "write")
-                indentout(d, "%d: write %s@0x%x(%u): 0x%x(%u) -> 0x%x(%u)\n", i,
-                    log.notes[i], ai.proof.address, ai.proof.address,
-                    ai.read, ai.read, ai.written, ai.written)
-            end
-            i = i + 1
-        end
-    end
-end
-
-local function intstring(v)
-    local a = ""
-    for i = 0, 7 do
-        a = a .. string.format("%02x", (v >> i*8) & 0xff)
-    end
-    return a
-end
-
-local function print_json_sibling_hashes(sibling_hashes, log2_size, out, indent)
-    out:write('[\n')
-    for i, h in ipairs(sibling_hashes) do
-        out:write(indent,'"', hexhash(h), '"')
-        if sibling_hashes[i+1] then out:write(',\n') end
-    end
-    out:write(' ]')
-end
-
-local function print_json_proof(proof, out, indent)
-    out:write('{\n')
-    out:write(indent, string.format('"address": %u,\n', proof.address))
-    out:write(indent, '"log2_size": ', proof.log2_size, ',\n')
-    out:write(indent, '"target_hash": "', hexhash(proof.target_hash), '",\n')
-    out:write(indent, '"sibling_hashes": ')
-    print_json_sibling_hashes(proof.sibling_hashes, proof.log2_size, out,
-        indent .. "  ")
-    out:write(",\n", indent, '"root_hash": "', hexhash(proof.root_hash), '" }')
-end
-
-local function print_json_log_notes(notes, out, indent)
-    local indent2 = indent .. "  "
-    local n = #notes
-    out:write('[\n')
-    for i, note in ipairs(notes) do
-        out:write(indent2, '"', note, '"')
-        if i < n then out:write(',\n') end
-    end
-    out:write(indent, '],\n')
-end
-
-local function print_json_log_brackets(brackets, out, indent)
-    local n = #brackets
-    out:write('[ ')
-    for i, bracket in ipairs(brackets) do
-        out:write('{\n')
-        out:write(indent, '  "type": "', bracket.type, '",\n')
-        out:write(indent, '  "where": ', bracket.where, ',\n')
-        out:write(indent, '  "text": "', bracket.text, '"')
-        out:write(' }\n')
-        if i < n then out:write(', ') end
-    end
-    out:write(' ]')
-end
-
-local function print_json_log_access(access, out, indent)
-    out:write('{\n')
-    out:write(indent, '"type": "', access.type, '",\n')
-    out:write(indent, '"read": "', intstring(access.read), '",\n')
-    out:write(indent, '"written": "', intstring(access.written or 0), '",\n')
-    out:write(indent, '"proof": ')
-    print_json_proof(access.proof, out, indent .. "  ")
-    out:write(' }')
-end
-
-local function print_json_log_accesses(accesses, out, indent)
-    local indent2 = indent .. "  "
-    local n = #accesses
-    out:write('[ ')
-    for i, access in ipairs(accesses) do
-        print_json_log_access(access, out, indent2)
-        if i < n then out:write(',\n', indent) end
-    end
-    out:write(indent, ' ],\n')
-end
-
-local function print_json_log(log, init_cycles, final_cycles, out, indent)
-    out:write('{\n')
-    out:write(indent, '"init_cycles": ', init_cycles, ',\n')
-    out:write(indent, '"final_cycles": ', final_cycles, ',\n')
-    out:write(indent, '"accesses": ')
-    print_json_log_accesses(log.accesses, out, indent)
-    out:write(indent, '"notes": ')
-    print_json_log_notes(log.notes, out, indent)
-    out:write('  "brackets": ')
-    print_json_log_brackets(log.brackets, out, indent)
-    out:write(' }')
+    stderr("%u: %s\n", cycles, util.hexhash(machine:get_root_hash()))
 end
 
 local function comment_default(u, v)
@@ -811,9 +552,9 @@ local function resolve_flash_starts(label_order, image_filename, start, length)
     end
 end
 
-local function dump_proofs(machine, desired_proofs, console_getchar)
+local function dump_value_proofs(machine, desired_proofs, htif_console_getchar)
     if #desired_proofs > 0 then
-        assert(not console_getchar,
+        assert(not htif_console_getchar,
             "proofs are meaningless in interactive mode")
         machine:update_merkle_tree()
     end
@@ -822,11 +563,16 @@ local function dump_proofs(machine, desired_proofs, console_getchar)
         local out = desired.filename and assert(io.open(desired.filename, "wb"))
             or io.stdout
         out:write("proof = ")
-        print_json_proof(proof, out, "  ")
+        util.dump_json_proof(proof, out, 1)
     end
 end
 
 local machine
+
+local function append(a, b)
+    if not a or a == "" then return b
+    else return a .. " "  .. b end
+end
 
 if load_dir then
     stderr("Loading machine: please wait\n")
@@ -838,20 +584,32 @@ else
     resolve_flash_starts(flash_label_order, flash_image_filename, flash_start,
         flash_length)
 
-    local config = new_config(
-    ):set_ram_image_filename(
-        ram_image_filename
-    ):set_ram_length(
-        ram_length
-    ):set_rom_image_filename(
-        rom_image_filename
-    ):set_rom_bootargs(
-        rom_bootargs
-    )
+    -- Build machine config
+    local config = {
+        processor = {
+            mvendorid = cartesi.machine.MVENDORID,
+            marchid = cartesi.machine.MARCHID,
+            mimpid = cartesi.machine.MIMPID
+        },
+        rom = {
+            image_filename = rom_image_filename,
+            bootargs = rom_bootargs
+        },
+        ram = {
+            image_filename = ram_image_filename,
+            length = ram_length
+        },
+        htif = {
+            console_getchar = htif_console_getchar,
+            yield_progress = htif_yield_progress,
+            yield_rollup = htif_yield_rollup
+        },
+        flash = {},
+    }
 
     local mtdparts = {}
     for i, label in ipairs(flash_label_order) do
-        config = config:append_flash{
+        config.flash[#config.flash+1] = {
             image_filename = flash_image_filename[label],
             shared = flash_shared[label],
             start = flash_start[label],
@@ -860,24 +618,15 @@ else
         mtdparts[#mtdparts+1] = string.format("flash.%d:-(%s)", i-1, label)
     end
     if #mtdparts > 0 then
-        config = config:append_rom_bootargs("mtdparts=" ..
+        config.rom.bootargs = append(config.rom.bootargs, "mtdparts=" ..
             table.concat(mtdparts, ";"))
     end
 
-    config = config:append_rom_bootargs(
-        append_rom_bootargs
-    ):set_console_getchar(
-        console_getchar
-    ):set_htif_yield_progress(
-        htif_yield_progress
-    ):set_htif_yield_rollup(
-        htif_yield_rollup
-    )
+    config.rom.bootargs = append(config.rom.bootargs, append_rom_bootargs)
 
     if #exec_arguments > 0 then
-        config = config:append_rom_bootargs(
-            "-- " .. table.concat(exec_arguments, " ")
-        )
+        config.rom.bootargs = append(config.rom.bootargs, "-- " ..
+            table.concat(exec_arguments, " "))
     end
 
     stderr("Building machine: please wait\n")
@@ -885,7 +634,7 @@ else
 end
 
 if not json_steps then
-    if console_getchar then
+    if htif_console_getchar then
         stderr("Running in interactive mode!\n")
     end
     if dump_config then
@@ -893,10 +642,11 @@ if not json_steps then
     end
     local cycles = machine:read_mcycle()
     if initial_hash then
-        assert(not console_getchar, "hashes are meaningless in interactive mode")
+        assert(not htif_console_getchar,
+            "hashes are meaningless in interactive mode")
         print_root_hash(cycles, machine)
     end
-    dump_proofs(machine, initial_proof, console_getchar)
+    dump_value_proofs(machine, initial_proof, htif_console_getchar)
     local payload = 0
     local next_hash_mcycle
     if periodic_hashes_start ~= 0 then
@@ -917,7 +667,7 @@ if not json_steps then
             local cmd = tohost << 8 >> 56
             local data = tohost << 16 >> 16
             if cmd == 0 then
-                stderr("Progress: %6.2f\r", data/100)
+                stderr("Progress: %6.2f\r", data/10)
             else
                 stderr("\nYielded cmd: %u, data: %u\n", cmd, data)
                 stderr("Cycles: %u\n", cycles)
@@ -932,40 +682,46 @@ if not json_steps then
         stderr("\nCycles: %u\n", cycles)
     end
     if step then
-        assert(not console_getchar, "step proof is meaningless in interactive mode")
+        assert(not htif_console_getchar,
+            "step proof is meaningless in interactive mode")
         stderr("Gathering step proof: please wait\n")
-        print_log(machine:step())
+        util.dump_log(machine:step{ proofs = true, annotations = true },
+            io.stderr)
     end
     if dump_pmas then
         machine:dump_pmas()
     end
     if final_hash then
-        assert(not console_getchar, "hashes are meaningless in interactive mode")
+        assert(not htif_console_getchar,
+            "hashes are meaningless in interactive mode")
         print_root_hash(cycles, machine)
     end
-    dump_proofs(machine, final_proof, console_getchar)
+    dump_value_proofs(machine, final_proof, htif_console_getchar)
     if store_dir then
-        assert(not console_getchar, "hashes are meaningless in interactive mode")
+        assert(not htif_console_getchar,
+            "hashes are meaningless in interactive mode")
         stderr("Storing machine: please wait\n")
         machine:store(store_dir)
     end
     os.exit(payload, true)
 else
-    assert(not console_getchar, "logs are meaningless in interactive mode")
+    assert(not htif_console_getchar, "logs are meaningless in interactive mode")
     json_steps = assert(io.open(json_steps, "w"))
-    json_steps:write("[ ")
+    json_steps:write("[\n")
+    local log_type = {} -- no proofs or annotations
     for i = 0, max_mcycle do
         if machine:read_iflags_H() then
             break
         end
         local init_cycles = machine:read_mcycle()
-        local log = machine:step()
+        local log = machine:step(log_type)
         local final_cycles = machine:read_mcycle()
-        print_json_log(log, init_cycles, final_cycles, json_steps, "  ")
+        util.dump_json_log(log, init_cycles, final_cycles, json_steps, 1)
         stderr("%u -> %u\n", init_cycles, final_cycles)
-        if i ~= max_mcycle then json_steps:write(', ') end
+        if i ~= max_mcycle then json_steps:write(',\n')
+		else json_steps:write('\n') end
     end
-    json_steps:write(' ]\n')
+    json_steps:write(']\n')
     json_steps:close()
     if store_dir then
         stderr("Storing machine: please wait\n")

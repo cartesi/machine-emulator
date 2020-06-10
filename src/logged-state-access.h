@@ -46,9 +46,9 @@ public:
 
     /// \brief Constructor from machine state.
     /// \param m Reference to machine state.
-    explicit logged_state_access(machine &m):
+    logged_state_access(machine &m, access_log::type log_type):
         m_m(m),
-        m_log(std::make_shared<access_log>()) { ; }
+        m_log(std::make_shared<access_log>(log_type)) { ; }
 
     /// \brief No copy constructor
     logged_state_access(const logged_state_access &) = delete;
@@ -121,12 +121,17 @@ private:
     /// \param val Value read.
     /// \param text Textual description of the access.
     uint64_t log_read(uint64_t paligned, uint64_t val, const char *text) const {
-        static_assert(merkle_tree::get_log2_word_size() == size_log2<uint64_t>::value,
+        static_assert(merkle_tree::get_log2_word_size() ==
+            size_log2<uint64_t>::value,
             "Machine and merkle_tree word sizes must match");
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
         word_access wa;
-        m_m.get_proof(paligned, merkle_tree::get_log2_word_size(), wa.proof);
+        if (m_log->get_log_type().has_proofs()) {
+            m_m.get_proof(paligned,
+                merkle_tree::get_log2_word_size(), wa.proof);
+        }
         wa.type = access_type::read;
+        wa.address = paligned;
         wa.read = val;
         wa.written = 0;
         m_log->push_access(wa, text);
@@ -139,12 +144,17 @@ private:
     /// \param val Value to write.
     /// \param text Textual description of the access.
     void log_before_write(uint64_t paligned, uint64_t dest, uint64_t val, const char *text) {
-        static_assert(merkle_tree::get_log2_word_size() == size_log2<uint64_t>::value,
+        static_assert(merkle_tree::get_log2_word_size() ==
+            size_log2<uint64_t>::value,
             "Machine and merkle_tree word sizes must match");
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
         word_access wa;
-        m_m.get_proof(paligned, merkle_tree::get_log2_word_size(), wa.proof);
+        if (m_log->get_log_type().has_proofs()) {
+            m_m.get_proof(paligned,
+                merkle_tree::get_log2_word_size(), wa.proof);
+        }
         wa.type = access_type::write;
+        wa.address = paligned;
         wa.read = dest;
         wa.written = val;
         m_log->push_access(wa, text);
@@ -154,8 +164,10 @@ private:
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
     void update_after_write(uint64_t paligned) {
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
-        bool updated = m_m.update_merkle_tree_page(paligned);
-        assert(updated);
+        if (m_log->get_log_type().has_proofs()) {
+            bool updated = m_m.update_merkle_tree_page(paligned);
+            assert(updated);
+        }
     }
 
     /// \brief Logs a write access before it happens, writes, and then update the Merkle tree.

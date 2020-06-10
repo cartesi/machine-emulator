@@ -91,7 +91,7 @@ const static std::unordered_map<std::string, machine::csr> g_csr_name = {
 /// \brief Returns a CSR selector from Lua.
 /// \param L Lua state.
 /// \param idx Index in stack
-/// \returns CSR selector. Throws error if field is missing.
+/// \returns CSR selector. Throws error if unknown.
 static machine::csr check_csr(lua_State *L, int idx) {
     std::string name = luaL_checkstring(L, idx);
     auto got = g_csr_name.find(name);
@@ -101,21 +101,15 @@ static machine::csr check_csr(lua_State *L, int idx) {
     return got->second;
 }
 
-/// \brief Returns an optinoal boolean field indexed by string in a table.
+/// \brief Returns an optional boolean field indexed by string in a table.
 /// \param L Lua state.
 /// \param tabidx Table stack index.
 /// \param field Field index.
-/// \param def Default value for missing field.
-/// \returns Field value, or default value if missing.
-static bool opt_boolean_field(lua_State *L, int tabidx, const char *field, bool def) {
+/// \returns Field value, or false if missing.
+static bool opt_boolean_field(lua_State *L, int tabidx, const char *field) {
     tabidx = lua_absindex(L, tabidx);
-    int val = def;
     lua_getfield(L, tabidx, field);
-    if (lua_isboolean(L, -1)) {
-        val = lua_toboolean(L, -1);
-    } else if (!lua_isnil(L, -1)) {
-        luaL_error(L, "invalid %s (expected Boolean)", field);
-    }
+    bool val = lua_toboolean(L, -1);
     lua_pop(L, 1);
     return val;
 }
@@ -303,6 +297,17 @@ static void push_hash(lua_State *L, const merkle_tree::hash_type hash) {
         hash.size());
 }
 
+/// \brief Pushes an access_log::type to the Lua stack
+/// \param L Lua state.
+/// \param log_type Access_log::type to be pushed.
+static void push_log_type(lua_State *L, bool proofs, bool annotations) {
+    lua_newtable(L);
+    lua_pushboolean(L, annotations);
+    lua_setfield(L, -2, "annotations");
+    lua_pushboolean(L, proofs);
+    lua_setfield(L, -2, "proofs");
+}
+
 /// \brief Pushes a proof to the Lua stack
 /// \param L Lua state.
 /// \param proof Proof to be pushed.
@@ -476,6 +481,10 @@ static void push_machine_config(lua_State *L, const machine_config &c) {
 /// \param log Access log to be pushed.
 static void push_access_log(lua_State *L, const access_log &log) {
     lua_newtable(L); // log
+    lua_newtable(L); // log type
+    auto log_type = log.get_log_type();
+    push_log_type(L, log_type.has_proofs(), log_type.has_annotations());
+    lua_setfield(L, -2, "log_type"); // log
     // Add all accesses
     lua_newtable(L); // log accesses
     int i = 1; // convert from 0- to 1-based index
@@ -483,54 +492,72 @@ static void push_access_log(lua_State *L, const access_log &log) {
         lua_newtable(L); // log accesses wordaccess
         lua_pushstring(L, access_type_name(a.type));
         lua_setfield(L, -2, "type");
+        lua_pushinteger(L, a.address);
+        lua_setfield(L, -2, "address");
         lua_pushinteger(L, a.read);
         lua_setfield(L, -2, "read");
         if (a.type == access_type::write) {
             lua_pushinteger(L, a.written);
             lua_setfield(L, -2, "written");
         }
-        push_proof(L, a.proof);
-        lua_setfield(L, -2, "proof");
+        if (log_type.has_proofs()) {
+            push_proof(L, a.proof);
+            lua_setfield(L, -2, "proof");
+        }
         lua_rawseti(L, -2, i);
         ++i;
     }
     lua_setfield(L, -2, "accesses"); // log
     // Add all brackets
-    lua_newtable(L); // log brackets
-    i = 1; // convert from 0- to 1-based index
-    for (const auto &b: log.get_brackets()) {
-        lua_newtable(L); // log brackets bracket
-        lua_pushstring(L, bracket_type_name(b.type));
-        lua_setfield(L, -2, "type");
-        lua_pushinteger(L, b.where+1); // convert from 0- to 1-based index
-        lua_setfield(L, -2, "where");
-        lua_pushlstring(L, b.text.data(), b.text.size());
-        lua_setfield(L, -2, "text");
-        lua_rawseti(L, -2, i);
-        ++i;
-    }
-    lua_setfield(L, -2, "brackets"); // log
+    if (log_type.has_annotations()) {
+        lua_newtable(L); // log brackets
+        i = 1; // convert from 0- to 1-based index
+        for (const auto &b: log.get_brackets()) {
+            lua_newtable(L); // log brackets bracket
+            lua_pushstring(L, bracket_type_name(b.type));
+            lua_setfield(L, -2, "type");
+            lua_pushinteger(L, b.where+1); // convert from 0- to 1-based index
+            lua_setfield(L, -2, "where");
+            lua_pushlstring(L, b.text.data(), b.text.size());
+            lua_setfield(L, -2, "text");
+            lua_rawseti(L, -2, i);
+            ++i;
+        }
+        lua_setfield(L, -2, "brackets"); // log
 
-    lua_newtable(L); // log notes
-    i = 1; // convert from 0- to 1-based index
-    for (const auto &n: log.get_notes()) {
-        lua_pushlstring(L, n.data(), n.size());
-        lua_rawseti(L, -2, i);
-        i++;
+        lua_newtable(L); // log notes
+        i = 1; // convert from 0- to 1-based index
+        for (const auto &n: log.get_notes()) {
+            lua_pushlstring(L, n.data(), n.size());
+            lua_rawseti(L, -2, i);
+            i++;
+        }
+        lua_setfield(L, -2, "notes"); // log
     }
-    lua_setfield(L, -2, "notes"); // log
 }
 
 /// \brief Loads a bracket_note from Lua.
 /// \param L Lua state.
 /// \param tabidx Bracket_note stack index.
 /// \returns The bracket_note.
-bracket_note check_bracket_note(lua_State *L, int tabidx) {
+static bracket_note check_bracket_note(lua_State *L, int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
     return {
         check_bracket_type_field(L, -1, "type"),
         check_uint_field(L, -1, "where")-1, // confert from 1- to 0-based index
         check_string_field(L, -1, "text")
+    };
+}
+
+/// \brief Loads an access_log::type from Lua
+/// \param L Lua state.
+/// \param tabidx Access_log::type stack index.
+/// \param log_type Access_log::type to be pushed.
+static access_log::type check_log_type(lua_State *L, int tabidx) {
+    luaL_checktype(L, tabidx, LUA_TTABLE);
+    return access_log::type{
+        opt_boolean_field(L, -1, "proofs"),
+        opt_boolean_field(L, -1, "annotations")
     };
 }
 
@@ -605,13 +632,17 @@ merkle_tree::proof_type check_proof(lua_State *L, int tabidx) {
 /// \param L Lua state.
 /// \param tabidx Word_access stack index.
 /// \returns The word_access.
-word_access check_word_access(lua_State *L, int tabidx) {
+word_access check_word_access(lua_State *L, int tabidx, bool proofs) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
-    lua_getfield(L, tabidx, "proof");
-    auto proof = check_proof(L, -1);
-    lua_pop(L, 1);
+    merkle_tree::proof_type proof;
+    if (proofs) {
+        lua_getfield(L, tabidx, "proof");
+        proof = check_proof(L, -1);
+        lua_pop(L, 1);
+    }
     return {
-        check_access_type_field(L, -1, "type"),
+        check_access_type_field(L, tabidx, "type"),
+        check_uint_field(L, tabidx, "address"),
         check_uint_field(L, tabidx, "read"),
         opt_uint_field(L, tabidx, "written", 0),
         proof
@@ -622,11 +653,15 @@ word_access check_word_access(lua_State *L, int tabidx) {
 /// \param L Lua state.
 /// \param tabidx Access_log stack index.
 /// \returns The access_log.
-access_log check_log(lua_State *L, int tabidx) {
+access_log check_access_log(lua_State *L, int tabidx) {
     std::vector<word_access> accesses;
     std::vector<bracket_note> brackets;
     std::vector<std::string> notes;
     luaL_checktype(L, tabidx, LUA_TTABLE);
+    check_table_field(L, tabidx, "log_type");
+    bool proofs = opt_boolean_field(L, -1, "proofs");
+    bool annotations = opt_boolean_field(L, -1, "annotations");
+    lua_pop(L, 1);
     check_table_field(L, tabidx, "accesses");
     int len = luaL_len(L, -1);
     for (int i = 1; i <= len; i++) {
@@ -634,11 +669,12 @@ access_log check_log(lua_State *L, int tabidx) {
         if (!lua_istable(L, -1)) {
             luaL_error(L, "access [%d] not a table", i);
         }
-        accesses.emplace_back(check_word_access(L, -1));
+        accesses.emplace_back(check_word_access(L, -1, proofs));
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
-    if (opt_table_field(L, tabidx, "notes")) {
+    if (annotations) {
+        check_table_field(L, tabidx, "notes");
         len = luaL_len(L, -1);
         for (int i = 1; i <= len; i++) {
             lua_geti(L, -1, i);
@@ -648,8 +684,8 @@ access_log check_log(lua_State *L, int tabidx) {
             notes.emplace_back(lua_tostring(L, -1));
             lua_pop(L, 1);
         }
-    }
-    if (opt_table_field(L, tabidx, "brackets")) {
+        lua_pop(L, 1);
+        check_table_field(L, tabidx, "brackets");
         len = luaL_len(L, -1);
         for (int i = 1; i <= len; i++) {
             lua_geti(L, -1, i);
@@ -659,11 +695,13 @@ access_log check_log(lua_State *L, int tabidx) {
             brackets.emplace_back(check_bracket_note(L, -1));
             lua_pop(L, 1);
         }
+        lua_pop(L, 1);
     }
     return {
         std::move(accesses),
         std::move(brackets),
-        std::move(notes)
+        std::move(notes),
+        access_log::type{proofs, annotations}
     };
 }
 
@@ -707,7 +745,7 @@ static void check_flash_config(lua_State *L, int tabidx, flash_configs &f) {
             luaL_error(L, "flash[%d] not a table", i);
         }
         flash_config flash;
-        flash.shared = opt_boolean_field(L, -1, "shared", false);
+        flash.shared = opt_boolean_field(L, -1, "shared");
         flash.image_filename = opt_string_field(L, -1, "image_filename");
         flash.start = check_uint_field(L, -1, "start");
         flash.length = check_uint_field(L, -1, "length");
@@ -773,10 +811,9 @@ static void check_htif_config(lua_State *L, int tabidx, htif_config &h) {
         return;
     h.tohost = opt_uint_field(L, -1, "tohost", h.tohost);
     h.fromhost = opt_uint_field(L, -1, "fromhost", h.fromhost);
-    h.console_getchar = opt_boolean_field(L, -1, "console_getchar",
-        h.console_getchar);
-    h.yield_progress = opt_boolean_field(L, -1, "yield_progress", h.yield_progress);
-    h.yield_rollup = opt_boolean_field(L, -1, "yield_rollup", h.yield_rollup);
+    h.console_getchar = opt_boolean_field(L, -1, "console_getchar");
+    h.yield_progress = opt_boolean_field(L, -1, "yield_progress");
+    h.yield_rollup = opt_boolean_field(L, -1, "yield_rollup");
     lua_pop(L, 1);
 }
 
@@ -1138,9 +1175,7 @@ static int machine_meta__index_verify_dirty_page_maps(lua_State *L) try {
 /// \param L Lua state.
 static int machine_meta__index_step(lua_State *L) try {
     machine *m = check_machine(L, 1);
-    access_log log;
-    m->step(log);
-    push_access_log(L, log);
+    push_access_log(L, m->step(check_log_type(L, 2)));
     return 1;
 } catch (std::exception &x) {
     luaL_error(L, x.what());
@@ -1774,7 +1809,8 @@ static const luaL_Reg gperf_meta[] = {
 #endif
 
 static int machine_verify_access_log(lua_State *L) try {
-    machine::verify_access_log(check_log(L, 1));
+    luaL_argcheck(L, lua_gettop(L) >= 2, 2, "expected boolean");
+    machine::verify_access_log(check_access_log(L, 1), lua_toboolean(L, 2));
     lua_pushnumber(L, 1);
     return 1;
 } catch (std::exception &x) {

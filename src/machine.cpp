@@ -278,7 +278,7 @@ machine::machine(const std::string &dir):
     }
 }
 
-machine_config machine::serialization_config(void) const {
+machine_config machine::get_serialization_config(void) const {
     // Initialize with copy of original config
     machine_config c = m_c;
     // Copy current processor state to config
@@ -378,7 +378,7 @@ void machine::store(const std::string &dir) {
         throw std::runtime_error{"error updating root hash"};
     }
     store_hash(h, dir);
-    auto c = serialization_config();
+    auto c = get_serialization_config();
     c.store(dir);
     store_pmas(c, dir);
 }
@@ -1116,21 +1116,22 @@ void machine::run_inner_loop(uint64_t mcycle_end) {
     interpret(a, mcycle_end);
 }
 
-void machine::verify_access_log(const access_log &log) {
-    step_state_access a(log.get_accesses());
+void machine::verify_access_log(const access_log &log, bool verify_proofs) {
+    step_state_access a(log, verify_proofs);
     interpret(a, UINT64_MAX);
     a.finish();
 }
 
-void machine::step(access_log &log) {
+access_log machine::step(const access_log::type &log_type) {
     update_merkle_tree();
     // Call interpret with a logged state access object
-    logged_state_access a(*this);
+    logged_state_access a(*this, log_type);
     a.push_bracket(bracket_type::begin, "step");
     interpret(a, m_s.mcycle+1);
     a.push_bracket(bracket_type::end, "step");
-    log = std::move(*a.get_log());
-    verify_access_log(log);
+    // Verify log before returning
+    verify_access_log(*a.get_log(), log_type.has_proofs());
+    return std::move(*a.get_log());
 }
 
 void machine::run(uint64_t mcycle_end) {

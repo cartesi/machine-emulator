@@ -25,12 +25,10 @@
 #include "machine-state.h"
 #include "machine-config.h"
 #include "merkle-tree.h"
+#include "access-log.h"
 #include "htif.h"
 
 namespace cartesi {
-
-// Forward declarations
-class access_log;
 
 /// \class machine
 /// \brief Cartesi Machine implementation
@@ -133,12 +131,14 @@ public:
     void run(uint64_t mcycle_end);
 
     /// \brief Runs the machine for one cycle logging all accesses to the state.
-    /// \param log Receives log of all state accesses.
-    void step(access_log &log);
+    /// \param log_type Type of access log to generate.
+    /// \returns The state access log.
+    access_log step(const access_log::type &log_type);
 
     /// \brief Checks the integrity of an access log.
     /// \param log State access log to be verified.
-    static void verify_access_log(const access_log &log);
+    /// \param verify_proofs Whether to verify proofs in access log.
+    static void verify_access_log(const access_log &log, bool verify_proofs);
 
     /// \brief Returns machine state for direct access.
     machine_state &get_state(void) { return m_s; }
@@ -542,7 +542,7 @@ public:
 
     /// \brief Copies the current state into a configuration for serialization
     /// \returns The configuration
-    machine_config serialization_config(void) const;
+    machine_config get_serialization_config(void) const;
 
     /// \brief Returns copy of initialization config.
     const machine_config &get_initial_config(void) const { return m_c; }

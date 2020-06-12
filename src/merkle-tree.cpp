@@ -404,11 +404,10 @@ merkle_tree::
 #endif
 }
 
-bool
+void
 merkle_tree::
 get_root_hash(hash_type &hash) const {
     hash = m_root->hash;
-    return true;
 }
 
 bool

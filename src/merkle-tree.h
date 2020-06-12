@@ -334,8 +334,7 @@ public:
 
     /// \brief Returns the root hash.
     /// \param hash Receives the hash.
-    /// \returns True.
-    bool get_root_hash(hash_type &hash) const;
+    void get_root_hash(hash_type &hash) const;
 
     /// \brief Start tree update.
     /// \returns True.

@@ -65,6 +65,9 @@ class machine final {
 
 public:
 
+    /// \brief Type of hash
+    using hash_type = merkle_tree::hash_type;
+
     /// \brief List of CSRs to use with read_csr and write_csr
     enum class csr {
         pc,
@@ -132,13 +135,29 @@ public:
 
     /// \brief Runs the machine for one cycle logging all accesses to the state.
     /// \param log_type Type of access log to generate.
+    /// \param one_based Use 1-based indices when reporting errors.
     /// \returns The state access log.
-    access_log step(const access_log::type &log_type);
+    access_log step(const access_log::type &log_type, bool one_based = false);
 
-    /// \brief Checks the integrity of an access log.
+    /// \brief Verifies a proof.
+    /// \param proof Proof to be verified.
+    /// \return True if proof is consistent, false otherwise.
+    static bool verify_proof(const merkle_tree::proof_type &proof);
+
+    /// \brief Checks the internal consistency of an access log.
     /// \param log State access log to be verified.
-    /// \param verify_proofs Whether to verify proofs in access log.
-    static void verify_access_log(const access_log &log, bool verify_proofs);
+    /// \param one_based Use 1-based indices when reporting errors.
+    static void verify_access_log(const access_log &log,
+        bool one_based = false);
+
+    /// \brief Checks the validity of a state transition.
+    /// \param root_hash_before State hash before step.
+    /// \param log Step state access log.
+    /// \param root_hash_after State hash after step.
+    /// \param one_based Use 1-based indices when reporting errors.
+    static void verify_state_transition(const hash_type &root_hash_before,
+        const access_log &log, const hash_type &root_hash_after,
+        bool one_based = false);
 
     /// \brief Returns machine state for direct access.
     machine_state &get_state(void) { return m_s; }
@@ -148,11 +167,6 @@ public:
 
     /// \brief Destructor.
     ~machine();
-
-    /// \brief Returns the associated Merkle tree.
-    const merkle_tree &get_merkle_tree(void) const;
-    /// \brief Returns the associated Merkle tree.
-    merkle_tree &get_merkle_tree(void);
 
     /// \brief Update the Merkle tree so it matches the contents of the machine state.
     /// \returns true if succeeded, false otherwise.
@@ -170,6 +184,14 @@ public:
     /// \param proof Receives the proof.
     /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
     void get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) const;
+
+    /// \brief Obtains the root hash of the Merkle tree.
+    /// \param hash Receives the hash.
+    void get_root_hash(hash_type &hash) const;
+
+    /// \brief Verifies integrity of Merkle tree.
+    /// \returns True if tree is self-consistent, false otherwise.
+    bool verify_merkle_tree(void) const;
 
     /// \brief Read the value of any CSR
     /// \param r CSR to read

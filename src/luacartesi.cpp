@@ -570,7 +570,7 @@ static merkle_tree::hash_type check_hash(lua_State *L, int idx) {
     if (lua_isstring(L, idx)) {
         const char *data = nullptr;
         size_t len = 0;
-        data = lua_tolstring(L, -1, &len);
+        data = lua_tolstring(L, idx, &len);
         if (len != hash.max_size()) {
             luaL_error(L, "expected hash");
         }
@@ -990,7 +990,7 @@ static int machine_meta__index_store(lua_State *L) try {
 /// \brief This is the machine:verify_merkle_tree() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_verify_merkle_tree(lua_State *L) try {
-    lua_pushboolean(L, check_machine(L, 1)->get_merkle_tree().verify_tree());
+    lua_pushboolean(L, check_machine(L, 1)->verify_merkle_tree());
     return 1;
 } catch (std::exception &x) {
     luaL_error(L, x.what());
@@ -1002,13 +1002,9 @@ static int machine_meta__index_verify_merkle_tree(lua_State *L) try {
 static int machine_meta__index_get_root_hash(lua_State *L) try {
     machine *m = check_machine(L, 1);
     merkle_tree::hash_type hash;
-    if (m->get_merkle_tree().get_root_hash(hash)) {
-        push_hash(L, hash);
-        return 1;
-    } else {
-        lua_pushboolean(L, false);
-        return 1;
-    }
+    m->get_root_hash(hash);
+    push_hash(L, hash);
+    return 1;
 } catch (std::exception &x) {
     luaL_error(L, x.what());
     return 0;
@@ -1175,7 +1171,7 @@ static int machine_meta__index_verify_dirty_page_maps(lua_State *L) try {
 /// \param L Lua state.
 static int machine_meta__index_step(lua_State *L) try {
     machine *m = check_machine(L, 1);
-    push_access_log(L, m->step(check_log_type(L, 2)));
+    push_access_log(L, m->step(check_log_type(L, 2), true));
     return 1;
 } catch (std::exception &x) {
     luaL_error(L, x.what());
@@ -1808,9 +1804,22 @@ static const luaL_Reg gperf_meta[] = {
 };
 #endif
 
+/// \brief This is the machine:verify_state_transition() method implementation.
+static int machine_verify_state_transition(lua_State *L) try {
+    machine::verify_state_transition(check_hash(L, 1), check_access_log(L, 2),
+        check_hash(L, 3), true /* 1-based indices in errors */);
+    lua_pushnumber(L, 1);
+    return 1;
+} catch (std::exception &x) {
+    lua_pushnil(L);
+    lua_pushstring(L, x.what());
+    return 2;
+}
+
+/// \brief This is the machine:verify_access_log() method implementation.
 static int machine_verify_access_log(lua_State *L) try {
-    luaL_argcheck(L, lua_gettop(L) >= 2, 2, "expected boolean");
-    machine::verify_access_log(check_access_log(L, 1), lua_toboolean(L, 2));
+    machine::verify_access_log(check_access_log(L, 1),
+        true /* 1-based indices in errors */ );
     lua_pushnumber(L, 1);
     return 1;
 } catch (std::exception &x) {
@@ -1830,6 +1839,8 @@ static void machine_set_static(lua_State *L) {
     lua_setfield(L, -2, "MIMPID");
     lua_pushcfunction(L, machine_verify_access_log);
     lua_setfield(L, -2, "verify_access_log");
+    lua_pushcfunction(L, machine_verify_state_transition);
+    lua_setfield(L, -2, "verify_state_transition");
     push_machine_config(L, machine_config{});
     lua_setfield(L, -2, "DEFAULT_CONFIG");
 }

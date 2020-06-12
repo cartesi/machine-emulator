@@ -258,7 +258,7 @@ machine::machine(const machine_config &c):
     register_pma_entry(make_empty_pma_entry(0, 0));
 }
 
-static void load_hash(const std::string &dir, merkle_tree::hash_type &h) {
+static void load_hash(const std::string &dir, machine::hash_type &h) {
     auto name = dir + "/hash";
     auto fp = unique_fopen(name.c_str(), "rb");
     if (fread(h.data(), 1, h.size(), fp.get()) != h.size()) {
@@ -268,11 +268,12 @@ static void load_hash(const std::string &dir, merkle_tree::hash_type &h) {
 
 machine::machine(const std::string &dir):
     machine{ machine_config::load(dir) } {
-    merkle_tree::hash_type hstored, hrestored;
+    hash_type hstored, hrestored;
     load_hash(dir, hstored);
-    if (!update_merkle_tree() || !get_merkle_tree().get_root_hash(hrestored)) {
+    if (!update_merkle_tree()) {
         throw std::runtime_error{"error updating root hash"};
     }
+    m_t.get_root_hash(hrestored);
     if (hstored != hrestored) {
         throw std::runtime_error{"stored and restored hashes do not match"};
     }
@@ -361,7 +362,7 @@ void machine::store_pmas(const machine_config &c, const std::string &dir) const 
     }
 }
 
-static void store_hash(const merkle_tree::hash_type &h, const std::string dir) {
+static void store_hash(const machine::hash_type &h, const std::string dir) {
     auto name = dir + "/hash";
     auto fp = unique_fopen(name.c_str(), "wb");
     if (fwrite(h.data(), 1, h.size(), fp.get()) != h.size()) {
@@ -373,10 +374,11 @@ void machine::store(const std::string &dir) {
     if (mkdir(dir.c_str(), 0700)) {
         throw std::runtime_error{"error creating directory '" + dir + "'"};
     }
-    merkle_tree::hash_type h;
-    if (!update_merkle_tree() || !get_merkle_tree().get_root_hash(h)) {
+    if (!update_merkle_tree()) {
         throw std::runtime_error{"error updating root hash"};
     }
+    hash_type h;
+    m_t.get_root_hash(h);
     store_hash(h, dir);
     auto c = get_serialization_config();
     c.store(dir);
@@ -840,7 +842,7 @@ bool machine::verify_dirty_page_maps(void) const {
             if (pma.get_istart_M()) {
                 const unsigned char *page_data = nullptr;
                 peek(pma, *this, page_start_in_range, &page_data, scratch.get());
-                merkle_tree::hash_type stored, real;
+                hash_type stored, real;
                 m_t.get_page_node_hash(page_address, stored);
                 m_t.get_page_node_hash(h, page_data, real);
                 bool marked_dirty = pma.is_page_marked_dirty(page_start_in_range);
@@ -913,7 +915,7 @@ bool machine::update_merkle_tree(void) {
                         return false;
                     }
                     if (page_data) {
-                        merkle_tree::hash_type hash;
+                        hash_type hash;
                         m_t.get_page_node_hash(h, page_data, hash);
                         {
                             std::lock_guard<std::mutex> lock(updatex);
@@ -964,7 +966,7 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     }
     if (page_data) {
         uint64_t page_address = pma.get_start() + page_start_in_range;
-        merkle_tree::hash_type hash;
+        hash_type hash;
         m_t.get_page_node_hash(h, page_data, hash);
         if (!m_t.update_page_node_hash(page_address, hash)) {
             m_t.end_update(h);
@@ -977,14 +979,6 @@ bool machine::update_merkle_tree_page(uint64_t address) {
 
 const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas(void) const {
     return m_s.pmas;
-}
-
-const merkle_tree &machine::get_merkle_tree(void) const {
-    return m_t;
-}
-
-merkle_tree &machine::get_merkle_tree(void) {
-    return m_t;
 }
 
 void machine::dump_pmas(void) const {
@@ -1005,6 +999,14 @@ void machine::dump_pmas(void) const {
             }
         }
     }
+}
+
+void machine::get_root_hash(hash_type &hash) const {
+    m_t.get_root_hash(hash);
+}
+
+bool machine::verify_merkle_tree(void) const {
+    return m_t.verify_tree();
 }
 
 void machine::get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) const {
@@ -1116,21 +1118,60 @@ void machine::run_inner_loop(uint64_t mcycle_end) {
     interpret(a, mcycle_end);
 }
 
-void machine::verify_access_log(const access_log &log, bool verify_proofs) {
-    step_state_access a(log, verify_proofs);
+void machine::verify_access_log(const access_log &log, bool one_based) {
+    step_state_access a(log, log.get_log_type().has_proofs(), one_based);
     interpret(a, UINT64_MAX);
     a.finish();
 }
 
-access_log machine::step(const access_log::type &log_type) {
-    update_merkle_tree();
+void machine::verify_state_transition(const hash_type &root_hash_before,
+    const access_log &log, const hash_type &root_hash_after, bool one_based) {
+    if (!log.get_accesses().empty()) {
+        // We need proofs in order to verify the state transition
+        if (!log.get_log_type().has_proofs()) {
+            throw std::invalid_argument{"log has no proofs"};
+        }
+        // Make sure the access log starts from the same root hash as the state
+        if (log.get_accesses().front().proof.root_hash != root_hash_before) {
+            throw std::invalid_argument{"mismatch in root hash before step"};
+        }
+        // Verify all intermediate state transitions
+        step_state_access a(log, true /* verify proofs! */, one_based);
+        interpret(a, UINT64_MAX);
+        a.finish();
+        // Make sure the access log ends at the same root hash as the state
+        hash_type obtained_root_hash;
+        a.get_root_hash(obtained_root_hash);
+        if (obtained_root_hash != root_hash_after) {
+            throw std::invalid_argument{"mismatch in root hash after step"};
+        }
+    // If log is empty, the state must not have changed.
+    } else if (root_hash_before != root_hash_after) {
+        throw std::invalid_argument{"root hash changed but log is empty"};
+    }
+}
+
+access_log machine::step(const access_log::type &log_type, bool one_based) {
+    hash_type root_hash_before;
+    if (log_type.has_proofs()) {
+        update_merkle_tree();
+        get_root_hash(root_hash_before);
+    }
     // Call interpret with a logged state access object
     logged_state_access a(*this, log_type);
     a.push_bracket(bracket_type::begin, "step");
     interpret(a, m_s.mcycle+1);
     a.push_bracket(bracket_type::end, "step");
-    // Verify log before returning
-    verify_access_log(*a.get_log(), log_type.has_proofs());
+    // Verify access log before returning
+    if (log_type.has_proofs()) {
+        hash_type root_hash_after;
+        update_merkle_tree();
+        get_root_hash(root_hash_after);
+        verify_state_transition(root_hash_before, *a.get_log(), 
+            root_hash_after, one_based);
+    } else {
+        verify_access_log(*a.get_log(), one_based);
+    }
     return std::move(*a.get_log());
 }
 

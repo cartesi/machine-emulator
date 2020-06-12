@@ -605,7 +605,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
         try {
             context_.machine->update_merkle_tree();
             merkle_tree::hash_type rh;
-            context_.machine->get_merkle_tree().get_root_hash(rh);
+            context_.machine->get_root_hash(rh);
             response->set_content(rh.data(), rh.size());
             return Status::OK;
         } catch (std::exception &e) {

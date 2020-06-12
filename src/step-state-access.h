@@ -87,6 +87,8 @@ private:
     bool m_verify_proofs;
     ///< Next access
     unsigned m_next_access;
+    ///< Add to indices reported in errors
+    int m_one_based;
     ///< Root hash before next access
     merkle_tree::hash_type m_root_hash;
     ///< Hasher needed to verify proofs
@@ -101,10 +103,12 @@ public:
 
     /// \brief Constructor from log of word accesses.
     /// \param accesses Reference to word access vector.
-    explicit step_state_access(const access_log &log, bool verify_proofs):
+    step_state_access(const access_log &log, bool verify_proofs,
+        bool one_based):
         m_accesses(log.get_accesses()),
         m_verify_proofs(verify_proofs),
-        m_next_access{0} {
+        m_next_access{0},
+        m_one_based{one_based} {
         if (m_verify_proofs && !log.get_log_type().has_proofs()) {
             throw std::invalid_argument{"log has no proofs"};
         }
@@ -128,7 +132,15 @@ public:
         }
     }
 
+    void get_root_hash(merkle_tree::hash_type &hash) const {
+        hash = m_root_hash;
+    }
+
 private:
+
+    int access_to_report(void) const {
+        return m_next_access + m_one_based;
+    }
 
     const auto &do_get_naked_state(void) const {
         return m_naked_state;
@@ -180,37 +192,38 @@ private:
         const auto &access = m_accesses[m_next_access];
         if (access.type != access_type::read) {
             throw std::invalid_argument{"expected access " +
-                std::to_string(m_next_access) + " to read " + text};
+                std::to_string(access_to_report()) +
+                " to read " + text};
         }
         if (access.address != paligned) {
             std::ostringstream err;
-            err << "expected access " << m_next_access << " to read "
-                << text << "at address 0x" << std::hex << paligned <<
-                "(" << std::dec << paligned << ")";
+            err << "expected access " << access_to_report() <<
+                " to read " << text << " at address 0x" << std::hex <<
+                paligned << "(" << std::dec << paligned << ")";
             throw std::invalid_argument{err.str()};
         }
         if (m_verify_proofs) {
             const auto &proof = access.proof;
             if (proof.address != access.address) {
                 throw std::invalid_argument{"mismatch in read access " +
-                    std::to_string(m_next_access) +
+                    std::to_string(access_to_report()) +
                     " address and its proof address"};
             }
             if (m_root_hash != proof.root_hash) {
                 throw std::invalid_argument{"mismatch in read access " +
-                    std::to_string(m_next_access) + " root hash"};
+                    std::to_string(access_to_report()) + " root hash"};
             }
             merkle_tree::hash_type rolling_hash;
             get_word_hash(m_hasher, access.read, rolling_hash);
             if (rolling_hash != proof.target_hash) {
                 throw std::invalid_argument{"word value in read access " +
-                    std::to_string(m_next_access) +
+                    std::to_string(access_to_report()) +
                     " does not match target hash"};
             }
             roll_hash_up_tree(m_hasher, proof, rolling_hash);
             if (rolling_hash != proof.root_hash) {
                 throw std::invalid_argument{"word value in read access " +
-                    std::to_string(m_next_access) + " fails proof"};
+                    std::to_string(access_to_report()) + " fails proof"};
             }
         }
         m_next_access++;
@@ -231,12 +244,12 @@ private:
         const auto &access = m_accesses[m_next_access];
         if (access.type != access_type::write) {
             throw std::invalid_argument{"expected access " +
-                std::to_string(m_next_access) + " to write " + text};
+                std::to_string(access_to_report()) + " to write " + text};
         }
         if (access.address != paligned) {
             std::ostringstream err;
-            err << "expected access " << m_next_access << " to write "
-                << text << "at address 0x" << std::hex << paligned <<
+            err << "expected access " << access_to_report() << " to write "
+                << text << " at address 0x" << std::hex << paligned <<
                 "(" << std::dec << paligned << ")";
             throw std::invalid_argument{err.str()};
         }
@@ -244,28 +257,28 @@ private:
             const auto &proof = access.proof;
             if (proof.address != access.address) {
                 throw std::invalid_argument{"mismatch in write access " +
-                    std::to_string(m_next_access) +
+                    std::to_string(access_to_report()) +
                     " address and its proof address"};
             }
             if (m_root_hash != proof.root_hash) {
                 throw std::invalid_argument{"mismatch in write access " +
-                    std::to_string(m_next_access) + " root hash"};
+                    std::to_string(access_to_report()) + " root hash"};
             }
             merkle_tree::hash_type rolling_hash;
             get_word_hash(m_hasher, access.read, rolling_hash);
             if (rolling_hash != proof.target_hash) {
                 throw std::invalid_argument{"word value before write access " +
-                    std::to_string(m_next_access) +
+                    std::to_string(access_to_report()) +
                     " does not match target hash"};
             }
             roll_hash_up_tree(m_hasher, proof, rolling_hash);
             if (rolling_hash != proof.root_hash) {
                 throw std::invalid_argument{"word value before write access " +
-                    std::to_string(m_next_access) + " fails proof"};
+                    std::to_string(access_to_report()) + " fails proof"};
             }
             if (access.written != val) {
                 throw std::invalid_argument{"word value written in access " +
-                    std::to_string(m_next_access) + " does not match log"};
+                    std::to_string(access_to_report()) + " does not match log"};
             }
             if (access.type == access_type::write) {
                 get_word_hash(m_hasher, access.written, m_root_hash);
@@ -713,7 +726,7 @@ private:
     pma_entry &error_flags(const std::string &what) {
         static pma_entry empty{};
         throw std::invalid_argument{"invalid flags in access "
-            + std::to_string(m_next_access) + " to PMA (" + what + ")"};
+            + std::to_string(access_to_report()) + " to PMA (" + what + ")"};
         return empty; // never reached
     }
 

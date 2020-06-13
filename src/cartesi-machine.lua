@@ -562,8 +562,9 @@ local function dump_value_proofs(machine, desired_proofs, htif_console_getchar)
         local proof = machine:get_proof(desired.address, desired.log2_size)
         local out = desired.filename and assert(io.open(desired.filename, "wb"))
             or io.stdout
-        out:write("proof = ")
+        out:write("{\n")
         util.dump_json_proof(proof, out, 1)
+        out:write("}\n")
     end
 end
 

@@ -215,63 +215,65 @@ static bool htif_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t 
     }
 }
 
-static bool htif_getchar(i_virtual_state_access *a, htif *h, uint64_t payload) {
-    (void) payload;
+static bool htif_getchar(i_virtual_state_access *a, htif *h, uint64_t data) {
+    (void) data;
     int c = h? h->console_get_char(): 0;
     // Write acknowledgement to fromhost
-    a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_CONSOLE << 56) |
-        ((uint64_t)HTIF_CONSOLE_GETCHAR << 48) | c);
+    a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE,
+        HTIF_CONSOLE_GETCHAR, c));
     return true;
 }
 
-static bool htif_putchar(i_virtual_state_access *a, htif *h, uint64_t payload) {
+static bool htif_putchar(i_virtual_state_access *a, htif *h, uint64_t data) {
     (void) h;
-    uint8_t ch = payload & 0xff;
+    uint8_t ch = data & 0xff;
     // Obviously, something different must be done in blockchain
     if (write(STDOUT_FILENO, &ch, 1) < 1) { ; }
     // Write acknowledgement to fromhost
-    a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_CONSOLE << 56) |
-        ((uint64_t)1 << 48));
+    a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE,
+        HTIF_CONSOLE_PUTCHAR, 0));
     return true;
 }
 
 static bool htif_halt(i_virtual_state_access *a, htif *h, uint64_t cmd,
-    uint64_t payload) {
+    uint64_t data) {
     (void) h;
-    if (cmd == HTIF_HALT_HALT && (payload & 1)) {
+    if (cmd == HTIF_HALT_HALT && (data & 1)) {
         a->set_iflags_H();
     }
     //??D Write acknowledgement to fromhost???
-    // a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_HALT << 56) |
-        // (cmd << 48));
+    // a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_HALT,
+    //     HTIF_HALT_HALT, cmd))
     return true;
 }
 
 static bool htif_yield_progress(i_virtual_state_access *a, htif *h, uint64_t cmd,
-    uint64_t payload) {
-    (void) payload;
+    uint64_t data) {
+    (void) data;
     a->set_iflags_Y(h->has_yield_progress());
     // Write acknowledgement to fromhost
-    a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_YIELD << 56) | (cmd << 48));
+    a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD,
+        HTIF_YIELD_PROGRESS, cmd));
     return true;
 }
 
 static bool htif_yield_rollup(i_virtual_state_access *a, htif *h, uint64_t cmd,
-    uint64_t payload) {
-    (void) payload;
+    uint64_t data) {
+    (void) data;
     a->set_iflags_Y(h->has_yield_rollup());
     // Write acknowledgement to fromhost
-    a->write_htif_fromhost(((uint64_t)HTIF_DEVICE_YIELD << 56) | (cmd << 48));
+    a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD,
+        HTIF_YIELD_ROLLUP, cmd));
     return true;
 }
 
 static bool htif_yield(i_virtual_state_access *a, htif *h, uint64_t cmd,
-    uint64_t payload) {
-    (void) payload;
+    uint64_t data) {
+    (void) data;
     if (cmd == HTIF_YIELD_PROGRESS) {
-            return htif_yield_progress(a, h, cmd, payload);
+        return htif_yield_progress(a, h, cmd, data);
     } else if (cmd == HTIF_YIELD_ROLLUP) {
-        return htif_yield_rollup(a, h, cmd, payload);
+        return htif_yield_rollup(a, h, cmd, data);
     } else {
         //??D Unknown HTIF yield commands are silently ignored
         return true;
@@ -279,11 +281,11 @@ static bool htif_yield(i_virtual_state_access *a, htif *h, uint64_t cmd,
 }
 
 static bool htif_console(i_virtual_state_access *a, htif *h, uint64_t cmd,
-    uint64_t payload) {
+    uint64_t data) {
     if (cmd == HTIF_CONSOLE_PUTCHAR) {
-        return htif_putchar(a, h, payload);
+        return htif_putchar(a, h, data);
     } else if (cmd == HTIF_CONSOLE_GETCHAR) {
-        return htif_getchar(a, h, payload);
+        return htif_getchar(a, h, data);
     } else {
         //??D Unknown HTIF console commands are silently ignored
         return true;
@@ -293,19 +295,19 @@ static bool htif_console(i_virtual_state_access *a, htif *h, uint64_t cmd,
 static bool htif_write_tohost(i_virtual_state_access *a, htif *h,
     uint64_t tohost) {
     // Decode tohost
-    uint32_t device = tohost >> 56;
-    uint32_t cmd = (tohost >> 48) & 0xff;
-    uint64_t payload = (tohost & (~1ULL >> 16));
+    uint32_t device = HTIF_DEV_FIELD(tohost);
+    uint32_t cmd = HTIF_CMD_FIELD(tohost);
+    uint64_t data = HTIF_DATA_FIELD(tohost);
     // Log write to tohost
     a->write_htif_tohost(tohost);
     // Handle devices
     switch (device) {
         case HTIF_DEVICE_HALT:
-            return htif_halt(a, h, cmd, payload);
+            return htif_halt(a, h, cmd, data);
         case HTIF_DEVICE_CONSOLE:
-            return htif_console(a, h, cmd, payload);
+            return htif_console(a, h, cmd, data);
         case HTIF_DEVICE_YIELD:
-            return htif_yield(a, h, cmd, payload);
+            return htif_yield(a, h, cmd, data);
         //??D Unknown HTIF devices are silently ignored
         default:
             return true;

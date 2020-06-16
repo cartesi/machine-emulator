@@ -30,6 +30,33 @@ namespace cartesi {
 // Forward declarations
 class machine;
 
+/// \brief HTIF shifts
+enum HTIF_shifts {
+    HTIF_DEV_SHIFT = 56,
+    HTIF_CMD_SHIFT = 48,
+    HTIF_DATA_SHIFT = 0
+};
+
+/// \brief HTIF shifts
+enum HTIF_masks: uint64_t {
+    HTIF_DEV_MASK = UINT64_C(0xff) << HTIF_DEV_SHIFT,
+    HTIF_CMD_MASK = UINT64_C(0xff) << HTIF_CMD_SHIFT,
+    HTIF_DATA_MASK = UINT64_C(0xffffffffffff) << HTIF_DATA_SHIFT
+};
+
+#define HTIF_BUILD(dev, cmd, data) \
+    (((static_cast<uint64_t>(dev)  << HTIF_DEV_SHIFT)  & HTIF_DEV_MASK) | \
+     ((static_cast<uint64_t>(cmd)  << HTIF_CMD_SHIFT)  & HTIF_CMD_MASK) | \
+     ((static_cast<uint64_t>(data) << HTIF_DATA_SHIFT) & HTIF_DATA_MASK))
+
+#define HTIF_DEV_FIELD(reg)  ((reg & HTIF_DEV_MASK)  >> HTIF_DEV_SHIFT)
+#define HTIF_CMD_FIELD(reg)  ((reg & HTIF_CMD_MASK)  >> HTIF_CMD_SHIFT)
+#define HTIF_DATA_FIELD(reg) ((reg & HTIF_DATA_MASK) >> HTIF_DATA_SHIFT)
+
+#define HTIF_REPLACE_DATA(reg, data) \
+    (static_cast<uint64_t>(reg) & (~HTIF_DATA_MASK) | \
+        (data << HTIF_DATA_SHIFT) & HTIF_DATA_MASK)
+
 /// \brief HTIF constants
 enum HTIF_constants {
     HTIF_INTERACT_DIVISOR = 10,  ///< Proportion of interacts to ignore

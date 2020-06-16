@@ -458,11 +458,21 @@ public:
     /// \param val New register value.
     void write_iflags(uint64_t val);
 
-    /// \brief Returns the maximum XLEN for the machine.
-    /// \returns The value for XLEN.
     /// \brief Reads the value of HTIF's tohost register.
     /// \returns The value of the register.
     uint64_t read_htif_tohost(void) const;
+
+    /// \brief Reads the value of the device field of HTIF's tohost register.
+    /// \returns The value of the field.
+    uint64_t read_htif_tohost_dev(void) const;
+
+    /// \brief Reads the value of the command field of HTIF's tohost register.
+    /// \returns The value of the field.
+    uint64_t read_htif_tohost_cmd(void) const;
+
+    /// \brief Reads the value of the data field of HTIF's tohost register.
+    /// \returns The value of the field.
+    uint64_t read_htif_tohost_data(void) const;
 
     /// \brief Writes the value of HTIF's tohost register.
     /// \param val New register value.
@@ -475,6 +485,10 @@ public:
     /// \brief Writes the value of HTIF's fromhost register.
     /// \param val New register value.
     void write_htif_fromhost(uint64_t val);
+
+    /// \brief Writes the value of the data field in HTIF's fromhost register.
+    /// \param val New value for the field.
+    void write_htif_fromhost_data(uint64_t val);
 
     /// \brief Reads the value of HTIF's halt register.
     /// \returns The value of the register.

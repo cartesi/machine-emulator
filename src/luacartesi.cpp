@@ -1434,6 +1434,30 @@ static int machine_meta__index_read_htif_tohost(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:read_htif_tohost_dev() method implementation.
+/// \param L Lua state.
+static int machine_meta__index_read_htif_tohost_dev(lua_State *L) {
+    machine *m = check_machine(L, 1);
+    lua_pushinteger(L, m->read_htif_tohost_dev());
+    return 1;
+}
+
+/// \brief This is the machine:read_htif_tohost_cmd() method implementation.
+/// \param L Lua state.
+static int machine_meta__index_read_htif_tohost_cmd(lua_State *L) {
+    machine *m = check_machine(L, 1);
+    lua_pushinteger(L, m->read_htif_tohost_cmd());
+    return 1;
+}
+
+/// \brief This is the machine:read_htif_tohost_data() method implementation.
+/// \param L Lua state.
+static int machine_meta__index_read_htif_tohost_data(lua_State *L) {
+    machine *m = check_machine(L, 1);
+    lua_pushinteger(L, m->read_htif_tohost_data());
+    return 1;
+}
+
 /// \brief This is the machine:read_htif_fromhost() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_htif_fromhost(lua_State *L) {
@@ -1682,6 +1706,14 @@ static int machine_meta__index_write_htif_fromhost(lua_State *L) {
     return 0;
 }
 
+/// \brief This is the machine:write_htif_fromhost_data() method implementation.
+/// \param L Lua state.
+static int machine_meta__index_write_htif_fromhost_data(lua_State *L) {
+    machine *m = check_machine(L, 1);
+    m->write_htif_fromhost_data(luaL_checkinteger(L, 2));
+    return 0;
+}
+
 static int machine_meta__index_get_initial_config(lua_State *L) {
     machine *m = check_machine(L, 1);
     push_machine_config(L, m->get_initial_config());
@@ -1700,6 +1732,9 @@ static const luaL_Reg machine_meta__index[] = {
     {"read_csr", machine_meta__index_read_csr},
     {"read_htif_fromhost", machine_meta__index_read_htif_fromhost},
     {"read_htif_tohost", machine_meta__index_read_htif_tohost},
+    {"read_htif_tohost_dev", machine_meta__index_read_htif_tohost_dev},
+    {"read_htif_tohost_cmd", machine_meta__index_read_htif_tohost_cmd},
+    {"read_htif_tohost_data", machine_meta__index_read_htif_tohost_data},
     {"read_iflags", machine_meta__index_read_iflags},
     {"read_iflags_H", machine_meta__index_read_iflags_H},
     {"read_iflags_Y", machine_meta__index_read_iflags_Y},
@@ -1741,6 +1776,7 @@ static const luaL_Reg machine_meta__index[] = {
     {"write_clint_mtimecmp", machine_meta__index_write_clint_mtimecmp},
     {"write_csr", machine_meta__index_write_csr},
     {"write_htif_fromhost", machine_meta__index_write_htif_fromhost},
+    {"write_htif_fromhost_data", machine_meta__index_write_htif_fromhost_data},
     {"write_htif_tohost", machine_meta__index_write_htif_tohost},
     {"write_iflags", machine_meta__index_write_iflags},
     {"write_ilrsc", machine_meta__index_write_ilrsc},
@@ -1845,6 +1881,31 @@ static void machine_set_static(lua_State *L) {
     lua_setfield(L, -2, "DEFAULT_CONFIG");
 }
 
+/// \brief Sets cartesi constants in table at top of stack
+/// \param L Lua state.
+static void cartesi_set_constants(lua_State *L) {
+    using namespace cartesi;
+    struct named_constant {
+        uint64_t value;
+        const char *name;
+    };
+    named_constant constants[] = {
+        { HTIF_DEVICE_HALT, "HTIF_DEVICE_HALT" },
+        { HTIF_DEVICE_CONSOLE, "HTIF_DEVICE_CONSOLE" },
+        { HTIF_DEVICE_YIELD, "HTIF_DEVICE_YIELD" },
+        { HTIF_HALT_HALT, "HTIF_HALT_HALT" },
+        { HTIF_YIELD_PROGRESS, "HTIF_YIELD_PROGRESS" },
+        { HTIF_YIELD_ROLLUP, "HTIF_YIELD_ROLLUP" },
+        { HTIF_CONSOLE_GETCHAR, "HTIF_CONSOLE_GETCHAR" },
+        { HTIF_CONSOLE_PUTCHAR, "HTIF_CONSOLE_PUTCHAR" },
+        { 0, nullptr },
+    };
+    for (auto nc = constants; nc->name; nc++) {
+        lua_pushinteger(L, nc->value);
+        lua_setfield(L, -2, nc->name);
+    }
+}
+
 extern "C"
 __attribute__((visibility("default")))
 /// \brief Entrypoint to the Cartesi Lua library.
@@ -1860,6 +1921,7 @@ int luaopen_cartesi(lua_State *L) {
     ProfilerStart("cartesi.prof");
 #endif
     lua_newtable(L); /* cartesi_mod */
+    cartesi_set_constants(L);
     lua_newtable(L); /* cartesi_mod machine_meta */
     lua_newtable(L); /* cartesi_mod machine_meta metaidx */
     machine_set_static(L);

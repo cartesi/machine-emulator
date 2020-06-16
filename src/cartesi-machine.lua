@@ -659,15 +659,14 @@ if not json_steps then
         machine:run(math.min(next_hash_mcycle, max_mcycle))
         cycles = machine:read_mcycle()
         if machine:read_iflags_H() then
-            payload = machine:read_htif_tohost() << 16 >> 17
+            payload = machine:read_htif_tohost_data() >> 1
             stderr("\nHalted with payload: %u\n", payload)
             stderr("Cycles: %u\n", cycles)
             break
         elseif machine:read_iflags_Y() then
-            local tohost = machine:read_htif_tohost()
-            local cmd = tohost << 8 >> 56
-            local data = tohost << 16 >> 16
-            if cmd == 0 then
+            local cmd = machine:read_htif_tohost_cmd()
+            local data = machine:read_htif_tohost_data()
+            if cmd == cartesi.HTIF_YIELD_PROGRESS then
                 stderr("Progress: %6.2f\r", data/10)
             else
                 stderr("\nYielded cmd: %u, data: %u\n", cmd, data)

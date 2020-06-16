@@ -635,6 +635,18 @@ uint64_t machine::read_htif_tohost(void) const {
     return m_s.htif.tohost;
 }
 
+uint64_t machine::read_htif_tohost_dev(void) const {
+    return HTIF_DEV_FIELD(m_s.htif.tohost);
+}
+
+uint64_t machine::read_htif_tohost_cmd(void) const {
+    return HTIF_CMD_FIELD(m_s.htif.tohost);
+}
+
+uint64_t machine::read_htif_tohost_data(void) const {
+    return HTIF_DATA_FIELD(m_s.htif.tohost);
+}
+
 void machine::write_htif_tohost(uint64_t val) {
     m_s.htif.tohost = val;
 }
@@ -645,6 +657,10 @@ uint64_t machine::read_htif_fromhost(void) const {
 
 void machine::write_htif_fromhost(uint64_t val) {
     m_s.htif.fromhost = val;
+}
+
+void machine::write_htif_fromhost_data(uint64_t val) {
+    m_s.htif.fromhost = HTIF_REPLACE_DATA(m_s.htif.fromhost, val);
 }
 
 uint64_t machine::read_htif_ihalt(void) const {

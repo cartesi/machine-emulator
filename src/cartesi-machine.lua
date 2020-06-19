@@ -660,7 +660,11 @@ if not json_steps then
         cycles = machine:read_mcycle()
         if machine:read_iflags_H() then
             payload = machine:read_htif_tohost_data() >> 1
-            stderr("\nHalted with payload: %u\n", payload)
+            if payload ~= 0 then
+                stderr("\nHalted with payload: %u\n", payload)
+            else
+                stderr("\nHalted\n")
+            end
             stderr("Cycles: %u\n", cycles)
             break
         elseif machine:read_iflags_Y() then

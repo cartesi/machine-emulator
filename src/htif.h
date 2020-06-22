@@ -54,8 +54,8 @@ enum HTIF_masks: uint64_t {
 #define HTIF_DATA_FIELD(reg) ((reg & HTIF_DATA_MASK) >> HTIF_DATA_SHIFT)
 
 #define HTIF_REPLACE_DATA(reg, data) \
-    (static_cast<uint64_t>(reg) & (~HTIF_DATA_MASK) | \
-        (data << HTIF_DATA_SHIFT) & HTIF_DATA_MASK)
+    ((static_cast<uint64_t>(reg) & (~HTIF_DATA_MASK)) | \
+        ((data << HTIF_DATA_SHIFT) & HTIF_DATA_MASK))
 
 /// \brief HTIF constants
 enum HTIF_constants {

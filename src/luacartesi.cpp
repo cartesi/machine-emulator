@@ -336,6 +336,7 @@ static const char *access_type_name(access_type type) {
         case access_type::write:
             return "write";
     }
+    return nullptr;
 }
 
 /// \brief Converts a note_type to a string
@@ -348,6 +349,7 @@ static const char *bracket_type_name(bracket_type type) {
         case bracket_type::end:
             return "end";
     }
+    return nullptr;
 }
 
 /// \brief Pushes a processor_config to the Lua stack

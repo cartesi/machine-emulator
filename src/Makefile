@@ -165,10 +165,10 @@ luacartesi: cartesi.so
 
 grpc: cartesi-machine-server cartesi-machine-client
 
-hash: cartesi-machine-hash
+hash: merkle-tree-hash
 
-HASH_OBJS:= \
-	hash.o
+MERKLE_TREE_HASH_OBJS:= \
+	merkle-tree-hash.o
 
 PROTO_OBJS:= \
 	cartesi-machine.pb.o \
@@ -237,7 +237,7 @@ $(GROUND_TRUTH_DIR)/$(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(GROUND_TRUTH_DIR)
 	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) step > $(basename $@)
 	brotli -j -f $(basename $@)
 
-cartesi-machine-hash: $(HASH_OBJS)
+merkle-tree-hash: $(MERKLE_TREE_HASH_OBJS)
 	$(CXX) -o $@ $^ $(CRYPTOPP_LIB)
 
 cartesi-machine-server: $(GRPC_SRV_OBJS)
@@ -266,7 +266,7 @@ cartesi-machine-server cartesi-machine-client: CXXFLAGS := $(GRPC_INC) $(CXXFLAG
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi-machine-server cartesi-machine-client cartesi-machine-hash
+	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi-machine-server cartesi-machine-client merkle-tree-hash
 
 profile-clean:
 	rm -f *.profdata *.profraw *.gcda

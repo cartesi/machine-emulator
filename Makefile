@@ -20,8 +20,8 @@ STRIP_EXEC= strip -x
 
 DEP_TO_BIN= luapp5.3 luacpp5.3
 DEP_TO_LIB=
-EMU_TO_BIN= cartesi-machine-server cartesi-machine-client cartesi-machine-hash
-EMU_LUA_TO_BIN= cartesi-machine-tests.lua cartesi-machine.lua
+EMU_TO_BIN= cartesi-machine-server cartesi-machine-client merkle-tree-hash
+EMU_LUA_TO_BIN= cartesi-machine-tests.lua cartesi-machine.lua cartesi-machine-stored-hash.lua
 EMU_TO_LUA_PATH= cartesi/util.lua
 EMU_TO_LUA_CPATH= cartesi.so
 EMU_TO_INC= pma-defines.h rtc-defines.h
@@ -216,7 +216,8 @@ install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_PATH)/c
 	cd src && $(INSTALL) $(EMU_TO_LUA_PATH) $(LUA_INSTALL_PATH)/cartesi
 	echo "#!/bin/sh\nCARTESI_IMAGES_PATH=$(IMAGES_INSTALL_PATH) $(BIN_INSTALL_PATH)/luapp5.3 $(BIN_INSTALL_PATH)/cartesi-machine.lua \"\$$@\"" > $(BIN_INSTALL_PATH)/cartesi-machine
 	echo "#!/bin/sh\n$(BIN_INSTALL_PATH)/luapp5.3 $(BIN_INSTALL_PATH)/cartesi-machine-tests.lua \"\$$@"\" > $(BIN_INSTALL_PATH)/cartesi-machine-tests
-	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(EMU_TO_BIN) cartesi-machine cartesi-machine-tests
+	echo "#!/bin/sh\n$(BIN_INSTALL_PATH)/luapp5.3 $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash.lua \"\$$@"\" > $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash
+	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(EMU_TO_BIN) cartesi-machine cartesi-machine-tests cartesi-machine-stored-hash
 	cd $(BIN_INSTALL_PATH) && $(CHMOD_DATA) $(EMU_LUA_TO_BIN)
 	cd lib/machine-emulator-defines && $(INSTALL) $(EMU_TO_INC) $(INC_INSTALL_PATH)
 	cd $(LUA_INSTALL_CPATH) && $(CHMOD_EXEC) $(EMU_TO_LUA_CPATH)

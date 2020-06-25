@@ -160,7 +160,7 @@ local flash_length = { }
 local ram_image_filename = images_path .. "kernel.bin"
 local ram_length = 64 << 20
 local rom_image_filename = images_path .. "rom.bin"
-local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw"
+local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet"
 local append_rom_bootargs = ""
 local console_get_char = false
 local htif_yield_progress = false
@@ -630,7 +630,6 @@ else
             table.concat(exec_arguments, " "))
     end
 
-    stderr("Building machine: please wait\n")
     machine = cartesi.machine(config)
 end
 

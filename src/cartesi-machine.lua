@@ -38,7 +38,7 @@ Usage:
 where options are:
 
   --ram-image=<filename>
-    name of file containing RAM image (default: "kernel.bin")
+    name of file containing RAM image (default: "linux.bin")
 
   --no-ram-image
     forget settings for RAM image
@@ -172,7 +172,7 @@ local flash_shared = { }
 local flash_start = { }
 local flash_length = { }
 local flash_drive_replace = { }
-local ram_image_filename = images_path .. "kernel.bin"
+local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
 local rom_image_filename = images_path .. "rom.bin"
 local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet"

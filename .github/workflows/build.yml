@@ -85,7 +85,7 @@ jobs:
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: ${{ steps.git_org.outputs.current_organization }}/image-rootfs
-          tag: 'v0.2.0'
+          tag: 'v0.4.0'
           file: rootfs.ext2
           token: ${{ secrets.CI_TOKEN }}
 
@@ -93,20 +93,22 @@ jobs:
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: ${{ steps.git_org.outputs.current_organization }}/image-kernel
-          tag: 'v0.4.0'
-          file: kernel.bin
+          tag: 'v0.5.0'
+          file: linux-5.5.19-ctsi-1.bin
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Download [rom.bin]
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: ${{ steps.git_org.outputs.current_organization }}/machine-emulator-rom
-          tag: 'v0.2.0'
+          tag: 'v0.2.1'
           file: rom.bin
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Move images to cartesi images folder
-        run: mv rom.bin kernel.bin rootfs.ext2 /opt/cartesi/share/images/
+        run: |
+          mv rom.bin linux-5.5.19-ctsi-1.bin rootfs.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-1.bin linux.bin
 
       - name: Simple Boot
         run: /opt/cartesi/bin/cartesi-machine /bin/true
@@ -115,12 +117,12 @@ jobs:
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: ${{ steps.git_org.outputs.current_organization }}/machine-tests
-          tag: 'v0.3.0'
-          file: machine-tests-v0.3.0.tar.gz
+          tag: 'v0.4.0'
+          file: machine-tests-v0.4.0.tar.gz
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Untar test suite
-        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.3.0.tar.gz -C /opt/cartesi/tests
+        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.4.0.tar.gz -C /opt/cartesi/tests
 
       - name: Run test suite
         run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
@@ -188,7 +190,3 @@ jobs:
           docker build -t cartesi/machine-emulator:${GITHUB_REF:11} -f .github/workflows/Dockerfile /opt/cartesi
           docker push cartesi/machine-emulator:${GITHUB_REF:11}
 
-      - name: Docker Alpine Image
-        run: |
-          docker build . -t cartesi/machine-emulator:${GITHUB_REF:11}-alpine -f .github/workflows/Dockerfile.alpine
-          docker push cartesi/machine-emulator:${GITHUB_REF:11}-alpine

@@ -571,8 +571,11 @@ end
 local machine
 
 local function append(a, b)
-    if not a or a == "" then return b
-    else return a .. " "  .. b end
+    a = a or ""
+    b = b or ""
+    if a == "" then return b end
+    if b == "" then return a end
+    return a .. " " .. b
 end
 
 if load_dir then

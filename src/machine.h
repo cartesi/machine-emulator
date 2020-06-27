@@ -67,7 +67,7 @@ class machine final {
     /// \brief Creates a new PMA entry reflecting a flash drive configuration.
     /// \param flash Flash drive configuration.
     /// \returns Reference to New PMA entry.
-    pma_entry make_flash_pma_entry(const flash_config &c);
+    static pma_entry make_flash_pma_entry(const flash_drive_config &c);
 
     /// \brief Runs the machine until mcycle reaches *at most* \p mcycle_end.
     /// \param mcycle_end Maximum value of mcycle before function returns.
@@ -606,7 +606,7 @@ public:
     /// \param new_flash Configuration of the new flash drive.
     /// \details The machine must contain an existing flash
     /// drive matching the start and length specified in new_flash.
-    void replace_flash_drive(const flash_config &new_flash);
+    void replace_flash_drive(const flash_drive_config &new_flash);
 };
 
 } // namespace cartesi

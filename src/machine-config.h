@@ -70,7 +70,7 @@ struct rom_config final {
 };
 
 /// \brief Flash drive state configuration
-struct flash_config final {
+struct flash_drive_config final {
     uint64_t start{0};            ///< Flash drive start position
     uint64_t length{0};           ///< Flash drive length
     bool shared{false};           ///< Target changes to drive affect image file?
@@ -92,29 +92,29 @@ struct htif_config final {
 };
 
 /// \brief Flash constants
-enum FLASH_constants {
-    FLASH_MAX = 8 ///< Maximum number of flash drives
+enum FLASH_DRIVE_constants {
+    FLASH_DRIVE_MAX = 8 ///< Maximum number of flash drives
 };
 
 /// \brief List of flash drives
-using flash_configs = boost::container::static_vector<flash_config, FLASH_MAX>;
+using flash_drive_configs = boost::container::static_vector<flash_drive_config, FLASH_DRIVE_MAX>;
 
 /// \brief Machine state configuration
 struct machine_config final {
 
-    processor_config processor{}; ///< Processor state
-    ram_config ram{};             ///< RAM state
-    rom_config rom{};             ///< ROM state
-    flash_configs flash{};        ///< Flash drives state
-    clint_config clint{};         ///< CLINT device state
-    htif_config htif{};           ///< HTIF device state
+    processor_config processor{};      ///< Processor state
+    ram_config ram{};                  ///< RAM state
+    rom_config rom{};                  ///< ROM state
+    flash_drive_configs flash_drive{}; ///< Flash drives state
+    clint_config clint{};              ///< CLINT device state
+    htif_config htif{};                ///< HTIF device state
 
     /// \brief Get the name where config will be stored in a directory
     static std::string get_config_filename(const std::string &dir);
 
     /// \brief Get the name where memory range will be stored in a directory
-    static std::string get_image_filename(const std::string &dir, uint64_t start,
-        uint64_t length);
+    static std::string get_image_filename(const std::string &dir,
+        uint64_t start, uint64_t length);
 
     /// \brief Loads a machine config from a directory
     /// \param dir Directory from whence "config" will be loaded

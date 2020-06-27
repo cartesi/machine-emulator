@@ -120,7 +120,7 @@ static inline const pma_entry &naked_find_pma_entry(const machine_state &s, uint
         const_cast<machine_state &>(s), paddr));
 }
 
-pma_entry machine::make_flash_pma_entry(const flash_config &c) {
+pma_entry machine::make_flash_pma_entry(const flash_drive_config &c) {
     if (c.image_filename.empty()) {
         return make_callocd_memory_pma_entry(c.start,
             c.length).set_flags(m_flash_flags);
@@ -161,7 +161,7 @@ pma_entry& machine::replace_pma_entry(pma_entry&& new_entry) {
     throw std::invalid_argument{"PMA range does not exist"};
 }
 
-void machine::replace_flash_drive(const flash_config &new_flash) {
+void machine::replace_flash_drive(const flash_drive_config &new_flash) {
     replace_pma_entry(make_flash_pma_entry(new_flash));
 }
 
@@ -235,7 +235,7 @@ machine::machine(const machine_config &c):
         PMA_ROM_START, PMA_ROM_LENGTH, c.rom.image_filename).set_flags(m_rom_flags));
 
     // Register all flash drives
-    for (const auto &f: c.flash) {
+    for (const auto &f: c.flash_drive) {
         register_pma_entry(make_flash_pma_entry(f));
     }
 
@@ -349,7 +349,7 @@ machine_config machine::get_serialization_config(void) const {
     // (they will will be ignored by save and load for security reasons)
     c.ram.image_filename.clear();
     c.rom.image_filename.clear();
-    for (auto &f: c.flash) {
+    for (auto &f: c.flash_drive) {
         f.image_filename.clear();
     }
     return c;
@@ -374,12 +374,12 @@ void machine::store_pmas(const machine_config &c, const std::string &dir) const 
     store_memory_pma(naked_find_pma_entry<uint64_t>(m_s, PMA_RAM_START), dir);
     // Could iterate over PMAs checking for those with a drive DID
     // but this is easier
-    for (const auto &f: c.flash) {
+    for (const auto &f: c.flash_drive) {
         store_memory_pma(naked_find_pma_entry<uint64_t>(m_s, f.start), dir);
     }
 }
 
-static void store_hash(const machine::hash_type &h, const std::string dir) {
+static void store_hash(const machine::hash_type &h, const std::string &dir) {
     auto name = dir + "/hash";
     auto fp = unique_fopen(name.c_str(), "wb");
     if (fwrite(h.data(), 1, h.size(), fp.get()) != h.size()) {

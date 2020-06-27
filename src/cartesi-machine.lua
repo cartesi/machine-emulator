@@ -90,7 +90,21 @@ where options are:
         target modifications to flash drive modify image file as well
         by default, image files are not modified and changes are lost
 
-    (default: "label:root,filename:rootfs.ext2")
+    (an option "--flash-drive=label:root,filename:rootfs.ext2" is implicit)
+
+  --replace-flash-drive=<key>:<value>[,<key>:<value>[,...]...]
+    replaces an existing flash drive right after machine instantiation.
+    (typically used in conjunction with the --load=<directory> option.)
+
+    <key>:<value> is one of
+        filename:<filename>
+        start:<number>
+        length:<number>
+        shared
+
+    semantics are the same as for the --flash-drive option with the following
+    difference: start and length are mandatory, and must match those of a
+    previously existing flash drive.
 
   --max-mcycle=<number>
     stop at a given mcycle (default: 2305843009213693952)
@@ -157,6 +171,7 @@ local flash_label_order = { "root" }
 local flash_shared = { }
 local flash_start = { }
 local flash_length = { }
+local flash_drive_replace = { }
 local ram_image_filename = images_path .. "kernel.bin"
 local ram_length = 64 << 20
 local rom_image_filename = images_path .. "rom.bin"
@@ -280,6 +295,26 @@ local options = {
         flash_start[d] = f.start or flash_start[d]
         flash_length[d] = f.length or flash_length[d]
         flash_shared[d] = f.shared or flash_shared[d]
+        return true
+    end },
+    { "^(%-%-replace%-flash%-drive%=(.+))$", function(all, opts)
+        if not opts then return false end
+        local f = util.parse_options(opts, {
+            filename = true,
+            shared = true,
+            length = true,
+            start = true
+        })
+        f.image_filename = f.filename
+        f.filename = nil
+        if f.image_filename == true then f.image_filename = "" end
+        assert(not f.shared or f.shared == true,
+            "invalid flash drive shared value in " .. all)
+        f.start = assert(util.parse_number(f.start),
+            "invalid flash drive start in " .. all)
+        f.length = assert(util.parse_number(f.length),
+            "invalid flash drive length in " .. all)
+        flash_drive_replace[#flash_drive_replace+1] = f
         return true
     end },
     { "^(%-%-initial%-proof%=(.+))$", function(all, opts)
@@ -490,8 +525,8 @@ local function dump_machine_config(config)
     stderr("    mtimecmp = 0x%x,", clint.mtimecmp or def.clint.mtimecmp)
     comment_default(clint.mtimecmp, def.clint.mtimecmp)
     stderr("  },\n")
-    stderr("  flash = {\n")
-    for i, f in ipairs(config.flash) do
+    stderr("  flash_drive = {\n")
+    for i, f in ipairs(config.flash_drive) do
         stderr("    {\n", i)
         stderr("      start = 0x%x,\n", f.start)
         stderr("      length = 0x%x,\n", f.length)
@@ -608,12 +643,12 @@ else
             yield_progress = htif_yield_progress,
             yield_rollup = htif_yield_rollup
         },
-        flash = {},
+        flash_drive = {},
     }
 
     local mtdparts = {}
     for i, label in ipairs(flash_label_order) do
-        config.flash[#config.flash+1] = {
+        config.flash_drive[#config.flash_drive+1] = {
             image_filename = flash_image_filename[label],
             shared = flash_shared[label],
             start = flash_start[label],
@@ -634,6 +669,10 @@ else
     end
 
     machine = cartesi.machine(config)
+end
+
+for _,f in ipairs(flash_drive_replace) do
+    machine:replace_flash_drive(f)
 end
 
 if not json_steps then

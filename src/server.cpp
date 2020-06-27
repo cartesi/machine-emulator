@@ -21,6 +21,13 @@
 #include <string>
 #include <thread>
 #include <chrono>
+#include <cstdint>
+
+#define SERVER_VERSION_MAJOR UINT32_C(0)
+#define SERVER_VERSION_MINOR UINT32_C(1)
+#define SERVER_VERSION_PATCH UINT32_C(0)
+#define SERVER_VERSION_PRE_RELEASE "rc1"
+#define SERVER_VERSION_BUILD ""
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -61,7 +68,7 @@ using cartesi::bracket_type;
 using cartesi::access_log;
 using cartesi::machine_config;
 using cartesi::processor_config;
-using cartesi::flash_config;
+using cartesi::flash_drive_config;
 using cartesi::rom_config;
 using cartesi::ram_config;
 using cartesi::htif_config;
@@ -99,34 +106,39 @@ enum class BreakReason {
 // Logic and data behind the server's behavior.
 class MachineServiceImpl final: public CartesiMachine::Machine::Service {
 
-    using Void = CartesiMachine::Void;
-    using Status = grpc::Status;
-    using StatusCode = grpc::StatusCode;
-    using ServerContext = grpc::ServerContext;
-    using Server = grpc::Server;
-    using MachineRequest = CartesiMachine::MachineRequest;
-    using StoreRequest = CartesiMachine::StoreRequest;
-    using StepRequest = CartesiMachine::StepRequest;
-    using RunRequest = CartesiMachine::RunRequest;
-    using RunResponse = CartesiMachine::RunResponse;
+    using Access = CartesiMachine::Access;
+    using AccessLog = CartesiMachine::AccessLog;
+    using AccessLogType = CartesiMachine::AccessLogType;
+    using BracketNote = CartesiMachine::BracketNote;
+    using CLINTConfig = CartesiMachine::CLINTConfig;
+    using FlashDriveConfig = CartesiMachine::FlashDriveConfig;
     using GetProofRequest = CartesiMachine::GetProofRequest;
+    using GetProofResponse = CartesiMachine::GetProofResponse;
+    using GetRootHashResponse = CartesiMachine::GetRootHashResponse;
+    using HTIFConfig = CartesiMachine::HTIFConfig;
+    using Hash = CartesiMachine::Hash;
+    using MachineConfig = CartesiMachine::MachineConfig;
+    using MachineRequest = CartesiMachine::MachineRequest;
+    using ProcessorConfig = CartesiMachine::ProcessorConfig;
+    using Proof = CartesiMachine::Proof;
+    using RAMConfig = CartesiMachine::RAMConfig;
+    using ROMConfig = CartesiMachine::ROMConfig;
     using ReadMemoryRequest = CartesiMachine::ReadMemoryRequest;
     using ReadMemoryResponse = CartesiMachine::ReadMemoryResponse;
-    using WriteMemoryRequest = CartesiMachine::WriteMemoryRequest;
-    using MachineConfig = CartesiMachine::MachineConfig;
-    using ProcessorConfig = CartesiMachine::ProcessorConfig;
-    using ROMConfig = CartesiMachine::ROMConfig;
-    using RAMConfig = CartesiMachine::RAMConfig;
-    using FlashConfig = CartesiMachine::FlashConfig;
-    using HTIFConfig = CartesiMachine::HTIFConfig;
-    using CLINTConfig = CartesiMachine::CLINTConfig;
-    using AccessLogType = CartesiMachine::AccessLogType;
-    using AccessLog = CartesiMachine::AccessLog;
-    using BracketNote = CartesiMachine::BracketNote;
-    using Access = CartesiMachine::Access;
-    using Proof = CartesiMachine::Proof;
-    using Hash = CartesiMachine::Hash;
+    using ReplaceFlashDriveRequest = CartesiMachine::ReplaceFlashDriveRequest;
+    using RunRequest = CartesiMachine::RunRequest;
+    using RunResponse = CartesiMachine::RunResponse;
+    using Server = grpc::Server;
+    using ServerContext = grpc::ServerContext;
+    using Status = grpc::Status;
+    using StatusCode = grpc::StatusCode;
+    using StepRequest = CartesiMachine::StepRequest;
+    using StepResponse = CartesiMachine::StepResponse;
+    using StoreRequest = CartesiMachine::StoreRequest;
+    using GetVersionResponse = Versioning::GetVersionResponse;
+    using Void = CartesiMachine::Void;
     using Word = CartesiMachine::Word;
+    using WriteMemoryRequest = CartesiMachine::WriteMemoryRequest;
 
     std::mutex barrier_;
     std::thread breaker_;
@@ -150,11 +162,11 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
         proto_p->set_log2_size(p.log2_size);
 
         //Building target hash
-        proto_p->mutable_target_hash()->set_content(p.target_hash.data(),
+        proto_p->mutable_target_hash()->set_data(p.target_hash.data(),
             p.target_hash.size());
 
         //Building root hash
-        proto_p->mutable_root_hash()->set_content(p.root_hash.data(),
+        proto_p->mutable_root_hash()->set_data(p.root_hash.data(),
             p.root_hash.size());
 
         //Setting all sibling hashes
@@ -163,7 +175,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
             const auto &h = merkle_tree::get_sibling_hash(p.sibling_hashes,
                 log2_size);
             Hash *sh = proto_p->add_sibling_hashes();
-            sh->set_content(h.data(), h.size());
+            sh->set_data(h.data(), h.size());
         }
     }
 
@@ -185,8 +197,8 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
             }
 
             //Setting read, and written fields
-            a->mutable_read()->set_content(&wa.read, sizeof(wa.read));
-            a->mutable_written()->set_content(&wa.written, sizeof(wa.written));
+            a->mutable_read()->set_data(&wa.read, sizeof(wa.read));
+            a->mutable_written()->set_data(&wa.written, sizeof(wa.written));
 
             //  If access_log contains proofs
             if (al.get_log_type().has_proofs()) {
@@ -407,6 +419,15 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
         return p;
     }
 
+    flash_drive_config get_proto_flash_drive_config(const FlashDriveConfig &fs) {
+        flash_drive_config f;
+        f.start = fs.start();
+        f.image_filename = fs.image_filename();
+        f.length = fs.length();
+        f.shared = fs.shared();
+        return f;
+    }
+
     machine_config get_proto_machine_config(const MachineConfig &ms) {
         machine_config c;
 
@@ -429,14 +450,9 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
             c.ram.image_filename = ms.ram().image_filename();
         }
 
-        //Setting flash configs
-        for (const auto &fs: ms.flash()) {
-            flash_config f{};
-            f.start = fs.start();
-            f.image_filename = fs.image_filename();
-            f.length = fs.length();
-            f.shared = fs.shared();
-            c.flash.emplace_back(std::move(f));
+        //Setting flash drive configs
+        for (const auto &fs: ms.flash_drive()) {
+            c.flash_drive.emplace_back(get_proto_flash_drive_config(fs));
         }
 
         //Setting CLINT configs
@@ -507,6 +523,17 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
         }
     }
 
+    Status GetVersion(ServerContext *, const Void *,
+        GetVersionResponse *response) override {
+        auto version = response->mutable_version();
+        version->set_major(SERVER_VERSION_MAJOR);
+        version->set_minor(SERVER_VERSION_MINOR);
+        version->set_patch(SERVER_VERSION_PATCH);
+        version->set_pre_release(SERVER_VERSION_PRE_RELEASE);
+        version->set_build(SERVER_VERSION_BUILD);
+        return Status::OK;
+    }
+
     Status Store(ServerContext *, const StoreRequest *request, Void *)
         override {
         std::lock_guard<std::mutex> lock(barrier_);
@@ -552,7 +579,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
     }
 
     Status GetProof(ServerContext *, const GetProofRequest *request,
-        Proof *proto_p) override {
+        GetProofResponse *response) override {
         std::lock_guard<std::mutex> lock(barrier_);
         if (!context_.machine) {
             return error_no_machine();
@@ -566,7 +593,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
                 throw std::runtime_error{"Merkle tree update failed"};
             }
             context_.machine->get_proof(address, log2_size, p);
-            set_proto_proof(p, proto_p);
+            set_proto_proof(p, response->mutable_proof());
             dbg("GetProof finished");
             return Status::OK;
         } catch (std::exception &e) {
@@ -582,14 +609,15 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
     }
 
     Status Step(ServerContext *, const StepRequest *request,
-        AccessLog *proto_al) override {
+        StepResponse *response) override {
         std::lock_guard<std::mutex> lock(barrier_);
         if (!context_.machine) {
             return error_no_machine();
         }
         try {
+            AccessLog proto_log;
             set_proto_access_log(context_.machine->step(
-                    get_proto_log_type(request->log_type())), proto_al);
+                    get_proto_log_type(request->log_type())), response->mutable_log());
             dbg("Step executed");
             return Status::OK;
         } catch (std::exception &e) {
@@ -597,7 +625,8 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
         }
     }
 
-    Status GetRootHash(ServerContext *, const Void *, Hash *response) override {
+    Status GetRootHash(ServerContext *, const Void *,
+        GetRootHashResponse *response) override {
         std::lock_guard<std::mutex> lock(barrier_);
         if (!context_.machine) {
             return error_no_machine();
@@ -606,13 +635,12 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
             context_.machine->update_merkle_tree();
             merkle_tree::hash_type rh;
             context_.machine->get_root_hash(rh);
-            response->set_content(rh.data(), rh.size());
+            response->mutable_hash()->set_data(rh.data(), rh.size());
             return Status::OK;
         } catch (std::exception &e) {
             return error_exception(e);
         }
     }
-
 
     Status ReadMemory(ServerContext *, const ReadMemoryRequest *request,
         ReadMemoryResponse *response) override {
@@ -644,6 +672,22 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
             context_.machine->write_memory(address,
                 reinterpret_cast<const unsigned char *>(data.data()),
                 data.size());
+            return Status::OK;
+        } catch (std::exception &e) {
+            return error_exception(e);
+        }
+    }
+
+    Status ReplaceFlashDrive(ServerContext *,
+        const ReplaceFlashDriveRequest *request, Void *)
+        override {
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine) {
+            return error_no_machine();
+        }
+        try {
+            context_.machine->replace_flash_drive(get_proto_flash_drive_config(
+                request->config()));
             return Status::OK;
         } catch (std::exception &e) {
             return error_exception(e);

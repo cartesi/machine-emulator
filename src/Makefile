@@ -171,6 +171,7 @@ MERKLE_TREE_HASH_OBJS:= \
 	merkle-tree-hash.o
 
 PROTO_OBJS:= \
+	versioning.pb.o \
 	cartesi-machine.pb.o \
 	machine-discovery.pb.o \
 	cartesi-machine.grpc.pb.o \

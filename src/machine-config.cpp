@@ -35,12 +35,14 @@ namespace boost {
 namespace serialization {
 
 template <typename ARX>
-inline void save(ARX &ar, const cartesi::flash_configs &t, const unsigned int) {
-    boost::serialization::stl::save_collection<ARX, cartesi::flash_configs> (ar, t);
+inline void save(ARX &ar, const cartesi::flash_drive_configs &t,
+    const unsigned int) {
+    boost::serialization::stl::save_collection<ARX,
+        cartesi::flash_drive_configs> (ar, t);
 }
 
 template <typename ARX>
-inline void load(ARX &ar, cartesi::flash_configs &t, const unsigned int) {
+inline void load(ARX &ar, cartesi::flash_drive_configs &t, const unsigned int) {
     boost::serialization::collection_size_type count;
     ar >> BOOST_SERIALIZATION_NVP(count);
 	if (count > t.capacity()) {
@@ -59,7 +61,7 @@ inline void load(ARX &ar, cartesi::flash_configs &t, const unsigned int) {
 }
 
 template <typename ARX>
-inline void serialize(ARX &ar, cartesi::flash_configs &t,
+inline void serialize(ARX &ar, cartesi::flash_drive_configs &t,
     const unsigned int file_version) {
     boost::serialization::split_free(ar, t, file_version);
 }
@@ -109,7 +111,7 @@ void serialize(ARX &ar, cartesi::rom_config &r, const unsigned int) {
 }
 
 template <typename ARX>
-void serialize(ARX &ar, cartesi::flash_config &d, const unsigned int) {
+void serialize(ARX &ar, cartesi::flash_drive_config &d, const unsigned int) {
     ar & d.start;
     ar & d.length;
     ar & d.shared;
@@ -136,7 +138,7 @@ void serialize(ARX &ar, cartesi::machine_config &m, const unsigned int) {
     ar & m.processor;
     ar & m.ram;
     ar & m.rom;
-    ar & m.flash;
+    ar & m.flash_drive;
     ar & m.clint;
     ar & m.htif;
 }
@@ -160,7 +162,7 @@ std::string machine_config::get_config_filename(const std::string &dir) {
 static void adjust_image_filenames(machine_config &c, const std::string &dir) {
     c.rom.image_filename = c.get_image_filename(dir, PMA_ROM_START, PMA_ROM_LENGTH);
     c.ram.image_filename = c.get_image_filename(dir, PMA_RAM_START, c.ram.length);
-    for (auto &f: c.flash) {
+    for (auto &f: c.flash_drive) {
         f.image_filename = c.get_image_filename(dir, f.start, f.length);
     }
 }

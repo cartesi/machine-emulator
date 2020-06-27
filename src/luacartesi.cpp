@@ -35,8 +35,8 @@ using cartesi::word_access;
 using cartesi::access_log;
 using cartesi::machine_config;
 using cartesi::processor_config;
-using cartesi::flash_config;
-using cartesi::flash_configs;
+using cartesi::flash_drive_config;
+using cartesi::flash_drive_configs;
 using cartesi::rom_config;
 using cartesi::ram_config;
 using cartesi::htif_config;
@@ -439,13 +439,14 @@ static void push_clint_config(lua_State *L, const clint_config &c) {
     lua_pushinteger(L, c.mtimecmp); lua_setfield(L, -2, "mtimecmp");
 }
 
-/// \brief Pushes flash_configs to the Lua stack
+/// \brief Pushes flash_drive_configs to the Lua stack
 /// \param L Lua state.
-/// \param flash Flash_configs to be pushed.
-static void push_flash_configs(lua_State *L, const flash_configs &flash) {
+/// \param flash_drive Flash_drive_configs to be pushed.
+static void push_flash_drive_configs(lua_State *L,
+    const flash_drive_configs &flash_drive) {
     lua_newtable(L);
     int i = 1;
-    for (const auto &f: flash) {
+    for (const auto &f: flash_drive) {
         lua_newtable(L);
         lua_pushinteger(L, f.start); lua_setfield(L, -2, "start");
         lua_pushinteger(L, f.length); lua_setfield(L, -2, "length");
@@ -470,8 +471,8 @@ static void push_machine_config(lua_State *L, const machine_config &c) {
     lua_setfield(L, -2, "htif"); // config
     push_clint_config(L, c.clint); // config clint
     lua_setfield(L, -2, "clint"); // config
-    push_flash_configs(L, c.flash); // config flash
-    lua_setfield(L, -2, "flash"); // config
+    push_flash_drive_configs(L, c.flash_drive); // config flash_drive
+    lua_setfield(L, -2, "flash_drive"); // config
     push_ram_config(L, c.ram); // config ram
     lua_setfield(L, -2, "ram"); // config
     push_rom_config(L, c.rom); // config rom
@@ -730,12 +731,13 @@ static void check_rom_config(lua_State *L, int tabidx, rom_config &r) {
     lua_pop(L, 1);
 }
 
-/// \brief Loads flash-drive config from Lua to machine_config.
+/// \brief Loads flash drive config from Lua to machine_config.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param f Flash_configs structure to receive results.
-static void check_flash_config(lua_State *L, int tabidx, flash_configs &f) {
-    if (!opt_table_field(L, tabidx, "flash"))
+static void check_flash_drive_config(lua_State *L, int tabidx,
+    flash_drive_configs &f) {
+    if (!opt_table_field(L, tabidx, "flash_drive"))
         return;
     int len = luaL_len(L, -1);
     if (len > (int) f.capacity()) {
@@ -744,14 +746,14 @@ static void check_flash_config(lua_State *L, int tabidx, flash_configs &f) {
     for (int i = 1; i <= len; i++) {
         lua_geti(L, -1, i);
         if (!lua_istable(L, -1)) {
-            luaL_error(L, "flash[%d] not a table", i);
+            luaL_error(L, "flash_drive[%d] not a table", i);
         }
-        flash_config flash;
-        flash.shared = opt_boolean_field(L, -1, "shared");
-        flash.image_filename = opt_string_field(L, -1, "image_filename");
-        flash.start = check_uint_field(L, -1, "start");
-        flash.length = check_uint_field(L, -1, "length");
-        f.push_back(std::move(flash));
+        flash_drive_config flash_drive;
+        flash_drive.shared = opt_boolean_field(L, -1, "shared");
+        flash_drive.image_filename = opt_string_field(L, -1, "image_filename");
+        flash_drive.start = check_uint_field(L, -1, "start");
+        flash_drive.length = check_uint_field(L, -1, "length");
+        f.push_back(std::move(flash_drive));
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
@@ -840,7 +842,7 @@ static machine_config check_machine_config(lua_State *L, int tabidx) {
     check_processor_config(L, tabidx, c.processor);
     check_ram_config(L, tabidx, c.ram);
     check_rom_config(L, tabidx, c.rom);
-    check_flash_config(L, tabidx, c.flash);
+    check_flash_drive_config(L, tabidx, c.flash_drive);
     check_htif_config(L, tabidx, c.htif);
     check_clint_config(L, tabidx, c.clint);
     return c;
@@ -1728,7 +1730,7 @@ static int machine_meta__index_replace_flash_drive(lua_State *L) try {
     machine *m = check_machine(L, 1);
     luaL_checktype(L, 2, LUA_TTABLE);
 
-    cartesi::flash_config flash;;
+    cartesi::flash_drive_config flash;;
     flash.shared = opt_boolean_field(L, -1, "shared");
     flash.image_filename = opt_string_field(L, -1, "image_filename");
     flash.start = check_uint_field(L, -1, "start");

@@ -1722,6 +1722,27 @@ static int machine_meta__index_get_initial_config(lua_State *L) {
     return 1;
 }
 
+/// \brief Replaces a flash drive.
+/// \param L Lua state.
+static int machine_meta__index_replace_flash_drive(lua_State *L) try {
+    machine *m = check_machine(L, 1);
+    luaL_checktype(L, 2, LUA_TTABLE);
+
+    cartesi::flash_config flash;;
+    flash.shared = opt_boolean_field(L, -1, "shared");
+    flash.image_filename = opt_string_field(L, -1, "image_filename");
+    flash.start = check_uint_field(L, -1, "start");
+    flash.length = check_uint_field(L, -1, "length");
+
+    m->replace_flash_drive(flash);
+
+    return 0;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+
 /// \brief Contents of the machine metatable __index table.
 static const luaL_Reg machine_meta__index[] = {
     {"destroy", machine_meta__index_destroy},
@@ -1805,6 +1826,7 @@ static const luaL_Reg machine_meta__index[] = {
     {"write_sscratch", machine_meta__index_write_sscratch},
     {"write_stval", machine_meta__index_write_stval},
     {"write_stvec", machine_meta__index_write_stvec},
+    {"replace_flash_drive", machine_meta__index_replace_flash_drive},
     { NULL, NULL }
 };
 

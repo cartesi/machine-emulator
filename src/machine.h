@@ -55,6 +55,20 @@ class machine final {
     /// \returns Reference to corresponding entry in machine state.
     pma_entry &register_pma_entry(pma_entry &&pma);
 
+    /// \brief Replaces an existing PMA entry.
+    /// \param new_entry The new PMA entry
+    /// \returns Reference to the new entry in the machine state.
+    /// \details The first PMA entry matching the size and length
+    /// of new_entry will be replaced. Throws std::invalid_argument
+    /// if a matching PMA entry can't be found
+    pma_entry& replace_pma_entry(pma_entry&& new_entry);
+
+
+    /// \brief Creates a new PMA entry reflecting a flash drive configuration.
+    /// \param flash Flash drive configuration.
+    /// \returns Reference to New PMA entry.
+    pma_entry make_flash_pma_entry(const flash_config &c);
+
     /// \brief Runs the machine until mcycle reaches *at most* \p mcycle_end.
     /// \param mcycle_end Maximum value of mcycle before function returns.
     /// \details Several conditions can cause the function to
@@ -587,6 +601,12 @@ public:
     /// \param c Machine config to be stored
     /// \param dir Directory where PMAs will be stored
     void store_pmas(const machine_config &c, const std::string &dir) const;
+
+    /// \brief Replaces a flash drive.
+    /// \param new_flash Configuration of the new flash drive.
+    /// \details The machine must contain an existing flash
+    /// drive matching the start and length specified in new_flash.
+    void replace_flash_drive(const flash_config &new_flash);
 };
 
 } // namespace cartesi

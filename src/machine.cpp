@@ -120,6 +120,17 @@ static inline const pma_entry &naked_find_pma_entry(const machine_state &s, uint
         const_cast<machine_state &>(s), paddr));
 }
 
+pma_entry machine::make_flash_pma_entry(const flash_config &c) {
+    if (c.image_filename.empty()) {
+        return make_callocd_memory_pma_entry(c.start,
+            c.length).set_flags(m_flash_flags);
+    }
+
+    return make_mmapd_memory_pma_entry(c.start,
+        c.length, c.image_filename, c.shared).set_flags(m_flash_flags);
+}
+
+
 pma_entry &machine::register_pma_entry(pma_entry &&pma) {
     if (m_s.pmas.capacity() <= m_s.pmas.size())
         throw std::runtime_error{"too many PMAs"};
@@ -138,6 +149,20 @@ pma_entry &machine::register_pma_entry(pma_entry &&pma) {
     }
     m_s.pmas.push_back(std::move(pma));
     return m_s.pmas.back();
+}
+
+pma_entry& machine::replace_pma_entry(pma_entry&& new_entry) {
+    for(auto & pma: m_s.pmas) {
+        if (pma.get_istart() == new_entry.get_istart() && pma.get_ilength() == new_entry.get_ilength()) {
+            pma = std::move(new_entry);
+            return pma;
+        }
+    }
+    throw std::invalid_argument{"PMA range does not exist"};
+}
+
+void machine::replace_flash_drive(const flash_config &new_flash) {
+    replace_pma_entry(make_flash_pma_entry(new_flash));
 }
 
 void machine::interact(void) {
@@ -211,15 +236,7 @@ machine::machine(const machine_config &c):
 
     // Register all flash drives
     for (const auto &f: c.flash) {
-        // Flash drive with no image behaves just like memory, but with
-        // different flags
-        if (f.image_filename.empty()) {
-            register_pma_entry(make_callocd_memory_pma_entry(f.start,
-                f.length).set_flags(m_flash_flags));
-        } else {
-            register_pma_entry(make_mmapd_memory_pma_entry(f.start,
-                f.length, f.image_filename, f.shared).set_flags(m_flash_flags));
-        }
+        register_pma_entry(make_flash_pma_entry(f));
     }
 
     // Register HTIF device

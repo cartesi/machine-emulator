@@ -183,10 +183,23 @@ struct machine_state {
         return brk;
     }
 
+    /// \brief Decide if brk should be set due to yield.
+    bool brk_from_iflags_Y(void) const {
+        if (iflags.Y) {
+            // uint64_t dev = HTIF_DEV_FIELD(htif.tohost);
+            uint64_t dev = htif.tohost >> 56;
+            // uint64_t cmd = HTIF_CMD_FIELD(htif.tohost)
+            uint64_t cmd = htif.tohost << 8 >> 48;
+            // brk |= (dev == HTIF_DEVICE_YIELD && (htif.iyield >> cmd));
+            return (dev == 2 && ((htif.iyield >> cmd) & 1));
+        }
+        return false;
+    }
+
     /// \brief Checks that false brk is consistent with rest of state
     void assert_no_brk(void) const {
         assert((mie & mip) == 0);
-        assert(!iflags.Y);
+        assert(!brk_from_iflags_Y());
         assert(!iflags.H);
     }
 
@@ -202,7 +215,7 @@ struct machine_state {
 
     /// \brief Updates the brk flag from changes in the iflags_Y flag.
     void or_brk_with_iflags_Y(void) {
-        brk |= iflags.Y;
+        brk |= brk_from_iflags_Y();
     }
 
     /// \brief Rebuild brk from all.

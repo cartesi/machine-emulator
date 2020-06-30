@@ -77,6 +77,9 @@ class machine final {
     ///  instruction. Another example is when the machine halts.
     void run_inner_loop(uint64_t mcycle_end);
 
+    /// \brief Decides if machine should yield
+    bool should_yield(void) const;
+
 public:
 
     /// \brief Type of hash

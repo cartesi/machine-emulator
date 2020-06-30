@@ -169,6 +169,10 @@ void machine::interact(void) {
     m_h.interact();
 }
 
+bool machine::should_yield(void) const {
+    return m_s.brk_from_iflags_Y();
+}
+
 machine::machine(const machine_config &c):
     m_s{},
     m_t{},
@@ -1200,7 +1204,7 @@ access_log machine::step(const access_log::type &log_type, bool one_based) {
         hash_type root_hash_after;
         update_merkle_tree();
         get_root_hash(root_hash_after);
-        verify_state_transition(root_hash_before, *a.get_log(), 
+        verify_state_transition(root_hash_before, *a.get_log(),
             root_hash_after, one_based);
     } else {
         verify_access_log(*a.get_log(), one_based);
@@ -1249,7 +1253,7 @@ void machine::run(uint64_t mcycle_end) {
         }
 
         // If we yielded, we are done
-        if (read_iflags_Y()) {
+        if (should_yield()) {
             return;
         }
     }

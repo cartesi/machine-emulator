@@ -22,7 +22,7 @@ DEP_TO_BIN= luapp5.3 luacpp5.3
 DEP_TO_LIB=
 EMU_TO_BIN= cartesi-machine-server cartesi-machine-client merkle-tree-hash
 EMU_LUA_TO_BIN= cartesi-machine-tests.lua cartesi-machine.lua cartesi-machine-stored-hash.lua
-EMU_TO_LUA_PATH= cartesi/util.lua
+EMU_TO_LUA_PATH= cartesi/util.lua cartesi/proof.lua
 EMU_TO_LUA_CPATH= cartesi.so
 EMU_TO_INC= pma-defines.h rtc-defines.h
 

@@ -22,6 +22,7 @@
 
 #include <cstdint>
 #include <cassert>
+#include <iostream>
 
 #ifdef DUMP_HIST
 #include <unordered_map>
@@ -189,8 +190,8 @@ struct machine_state {
             // uint64_t dev = HTIF_DEV_FIELD(htif.tohost);
             uint64_t dev = htif.tohost >> 56;
             // uint64_t cmd = HTIF_CMD_FIELD(htif.tohost)
-            uint64_t cmd = htif.tohost << 8 >> 48;
-            // brk |= (dev == HTIF_DEVICE_YIELD && (htif.iyield >> cmd));
+            uint64_t cmd = htif.tohost << 8 >> 56;
+            // return (dev == HTIF_DEVICE_YIELD && ((htif.iyield >> cmd) & 1));
             return (dev == 2 && ((htif.iyield >> cmd) & 1));
         }
         return false;

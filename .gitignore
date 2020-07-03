@@ -10,7 +10,7 @@ third-party/lua-5.3.5
 third-party/luasocket
 src/cartesi-machine-client
 src/cartesi-machine-server
-src/cartesi-machine-hash
+src/merkle-tree-hash
 
 doc/html
 doc/api.md

@@ -26,11 +26,8 @@ CRYPTOPP_LIB:=-L$(BUILDDIR)/lib -lcryptopp
 CRYPTOPP_INC:=-I$(BUILDDIR)/include
 GRPC_DIR:=../lib/grpc-interfaces
 
-GRPC_INC:=-I$(BUILDDIR)/include
-GRPC_LIB:=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lprotobuf -lpthread
-
-PROTOC:=$(BUILDDIR)/bin/protoc
-GRPC_CPP_PLUGIN=$(BUILDDIR)/bin/grpc_cpp_plugin
+PROTOC:=$(shell which protoc)
+GRPC_CPP_PLUGIN=$(shell which grpc_cpp_plugin)
 
 # So we can use gcc to check if there are unused symbols
 ifeq ($(gc),yes)
@@ -45,6 +42,9 @@ CXX_Darwin=clang++
 INCS_Darwin=
 BOOST_LIB_Darwin=-L/opt/local/lib -L/usr/local/opt/boost/lib -lboost_program_options-mt -lboost_serialization-mt
 BOOST_INC_Darwin=-I/opt/local/include -I/usr/local/opt/boost/include
+GRPC_LIB_Darwin:=-L/opt/local/lib -L/usr/local/opt/grpc/lib -L/usr/local/opt/protobuf/lib -lgrpc++ -lgrpc -lprotobuf -lpthread
+GRPC_INC_Darwin:=-I/opt/local/include -I/usr/local/opt/grpc/include -I/usr/local/opt/protobuf/include
+
 PROFILE_DATA_Darwin=default.profdata
 
 # Linux specific setup
@@ -55,6 +55,8 @@ INCS_Linux=
 FS_LIB_Linux=-lstdc++fs
 BOOST_LIB_Linux=-lboost_program_options -lboost_serialization
 BOOST_INC_Linux=
+GRPC_LIB_Linux:=-lgrpc++ -lgrpc -lprotobuf -lpthread
+GRPC_INC_Linux:=
 PROFILE_DATA_Linux=
 
 CC=$(CC_$(UNAME))
@@ -66,7 +68,7 @@ BOOST_LIB=$(BOOST_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
 
 LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_LIB)
-GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_LIB)
+GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB_$(UNAME)) $(FS_LIB) $(BOOST_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
 
@@ -245,9 +247,9 @@ cartesi-machine-server: $(GRPC_SRV_OBJS)
 	$(CXX) -o $@ $^ $(GRPC_SRV_LIBS)
 
 cartesi-machine-client: $(GRPC_CLT_OBJS)
-	$(CXX) -o $@ $^ $(GRPC_LIB)
+	$(CXX) -o $@ $^ $(GRPC_LIB_$(UNAME))
 
-cartesi-machine-server cartesi-machine-client: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
+cartesi-machine-server cartesi-machine-client: CXXFLAGS := $(GRPC_INC_$(UNAME)) $(CXXFLAGS)
 
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 

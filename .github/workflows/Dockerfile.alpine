@@ -1,4 +1,4 @@
-FROM alpine:3.11 as builder
+FROM alpine:3.12 as builder
 
 RUN apk add --no-cache \
     autoconf \
@@ -13,6 +13,7 @@ RUN apk add --no-cache \
     libstdc++ \
     libtool \
     libgomp \
+    grpc-dev \
     make \
     openssl \
     patchelf \
@@ -27,9 +28,7 @@ RUN echo -e "#!/bin/sh\nsha1sum \"\$@\"" > /usr/bin/shasum && chmod +x /usr/bin/
 WORKDIR /usr/src/app
 COPY . .
 
-ARG GRPC_VERSION=v1.26.0
-
-RUN make -j$(nproc) dep GRPC_VERSION=${GRPC_VERSION} && \
+RUN make -j$(nproc) dep && \
     make -j$(nproc) && \
     make install && \
     make clean && \
@@ -42,9 +41,9 @@ RUN \
     mv /tmp/cartesi-machine /tmp/cartesi-machine-tests /opt/cartesi/bin/ && \
     chmod 0755 /opt/cartesi/bin/cartesi-machine /opt/cartesi/bin/cartesi-machine-tests
 
-FROM alpine:3.11
+FROM alpine:3.12
 
-RUN apk add --no-cache boost libstdc++ libgomp
+RUN apk add --no-cache boost libstdc++ libgomp grpc
 
 ENV PATH="/opt/cartesi/bin:${PATH}"
 WORKDIR /opt/cartesi

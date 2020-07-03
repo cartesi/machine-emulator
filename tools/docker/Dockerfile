@@ -1,4 +1,4 @@
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 MAINTAINER Diego Nehab <diego@cartesi.io>
 
@@ -14,6 +14,7 @@ RUN \
     apt-get install --no-install-recommends -y \
         build-essential vim wget git libreadline-dev libboost-container-dev \
         libboost-program-options-dev libboost-serialization-dev \
+        protobuf-compiler protobuf-compiler-grpc libprotobuf-dev libgrpc++-dev \
         ca-certificates automake libtool patchelf && \
     rm -rf /var/lib/apt/lists/*
 

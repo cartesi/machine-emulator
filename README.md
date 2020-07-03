@@ -10,27 +10,29 @@ The emulator implements RISC-V's RV64IMASU ISA. The letters after RV specify the
 
 ### Requirements
 
-- C++ Compiler with support for C++17 (tested with GCC >= 7+ and Clang >= 8.x).
+- C++ Compiler with support for C++17 (tested with GCC >= 8+ and Clang >= 8.x).
 - GNU Make >= 3.81
 - Cryptoapp 7.0.0
 - GRPC 1.16.0
 - Lua 5.3.5
 
-#### Ubuntu 18.04
+Obs: Please note that Apple Clang Version number does not follow upstream LLVM/Clang.
+
+#### Ubuntu 20.04
 
 ```
-$ apt-get install build-essential automake libtool patchelf wget git libreadline-dev libboost-container-dev libboost-program-options-dev libboost-serialization-dev ca-certificates
+$ apt-get install build-essential automake libtool patchelf wget git libreadline-dev libboost-container-dev libboost-program-options-dev libboost-serialization-dev protobuf-compiler protobuf-compiler-grpc libprotobuf-dev libgrpc++-dev ca-certificates
 ```
 #### MacOS
 
 ##### MacPorts
 ```
-sudo port install clang-8.0 automake boost libtool wget
+sudo port install clang-9.0 automake boost grpc protobuf3-cpp libtool wget
 ```
 
 ##### Homebrew
 ```
-brew install llvm automake boost libomp wget
+brew install llvm automake boost grpc protobuf libomp wget
 ```
 
 ### Build

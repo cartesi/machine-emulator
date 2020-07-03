@@ -1,9 +1,12 @@
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 RUN apt-get update && apt-get install -y \
-    libboost-program-options1.65.1 \
-    libboost-serialization1.65.1 \
-    libreadline7 \
+    libboost-program-options1.71.0 \
+    libboost-serialization1.71.0 \
+    libprotobuf17 \
+    libprotobuf-lite17 \
+    libgrpc++1 \
+    libreadline8 \
     openssl \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*

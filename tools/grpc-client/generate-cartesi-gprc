@@ -3,7 +3,7 @@
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 GRPCDIR=$SCRIPTPATH/../../lib/grpc-interfaces
 OUTDIR=$SCRIPTPATH/proto
-PROTOFILES="core.proto cartesi-base.proto manager-low.proto manager-high.proto logger-high.proto"
+PROTOFILES="cartesi-machine.proto versioning.proto"
 
 mkdir -p $OUTDIR
 cd $GRPCDIR

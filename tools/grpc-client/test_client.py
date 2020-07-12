@@ -24,11 +24,8 @@ import grpc
 # So the cartesi GRPC modules are in path
 sys.path.insert(0, './proto/')
 
-import core_pb2
-import cartesi_base_pb2
-import core_pb2_grpc
-import manager_low_pb2
-import manager_low_pb2_grpc
+import cartesi_machine_pb2
+import cartesi_machine_pb2_grpc
 # from IPython import embed
 
 START = "start"
@@ -46,7 +43,7 @@ TEST_ROM = {
 
 TEST_RAM = {
     LENGTH: 64 << 20,  # 2**26 or 67108864
-    BACKING: "kernel.bin"
+    BACKING: "linux.bin"
     }
 
 BACKING_TEST_DRIVE_FILEPATH = "rootfs.ext2"
@@ -70,17 +67,17 @@ def build_mtdparts_str(drives):
 
 
 def make_new_machine_request():
-    ram_msg = cartesi_base_pb2.RAMConfig(length=TEST_RAM[LENGTH], backing=os.path.join(DIR_PATH, TEST_RAM[BACKING]))
+    ram_msg = cartesi_machine_pb2.RAMConfig(length=TEST_RAM[LENGTH], image_filename=os.path.join(DIR_PATH, TEST_RAM[BACKING]))
     drives_msg = []
     for drive in TEST_DRIVES:
-        drive_msg = cartesi_base_pb2.FlashConfig(start=drive[START], length=drive[LENGTH], backing=os.path.join(DIR_PATH, drive[BACKING]),
-                                                 shared=drive[SHARED], label=drive[LABEL])
+        drive_msg = cartesi_machine_pb2.FlashDriveConfig(start=drive[START], length=drive[LENGTH], image_filename=os.path.join(DIR_PATH, drive[BACKING]),
+                                                 shared=drive[SHARED])
         drives_msg.append(drive_msg)
     bootargs_str = TEST_ROM[BOOTARGS].format(build_mtdparts_str(TEST_DRIVES))
-    rom_msg = cartesi_base_pb2.ROMConfig(bootargs=bootargs_str, backing=os.path.join(DIR_PATH, TEST_ROM[BACKING]))
-    processor_config = cartesi_base_pb2.ProcessorConfig(x1=5)
-    machine_config = cartesi_base_pb2.MachineConfig(processor=processor_config, rom=rom_msg, ram=ram_msg, flash=drives_msg)
-    return cartesi_base_pb2.MachineRequest(config=machine_config)
+    rom_msg = cartesi_machine_pb2.ROMConfig(bootargs=bootargs_str, image_filename=os.path.join(DIR_PATH, TEST_ROM[BACKING]))
+    processor_config = cartesi_machine_pb2.ProcessorConfig(x1=5)
+    machine_config = cartesi_machine_pb2.MachineConfig(processor=processor_config, rom=rom_msg, ram=ram_msg, flash_drive=drives_msg)
+    return cartesi_machine_pb2.MachineRequest(config=machine_config)
 
 
 def request(stub, func, *args):
@@ -104,18 +101,18 @@ def run():
     server_address = get_server_address()
     print("Connecting to cartesi-machine-server at " + server_address)
     with grpc.insecure_channel(server_address) as channel:
-        stub = core_pb2_grpc.MachineStub(channel)
+        stub = cartesi_machine_pb2_grpc.MachineStub(channel)
         content = bytes("Hello World!", "iso8859-1")
         mem_address = TEST_DRIVES[0][START]
         try:
             request(stub, "Machine", make_new_machine_request())
-            request(stub, "GetRootHash", cartesi_base_pb2.Void())
-            request(stub, "Run", cartesi_base_pb2.RunRequest(limit=500000000))
-            request(stub, "Step", cartesi_base_pb2.Void())
-            request(stub, "ReadMemory", cartesi_base_pb2.ReadMemoryRequest(address=mem_address, length=len(content)))
-            request(stub, "WriteMemory", cartesi_base_pb2.WriteMemoryRequest(address=mem_address, data=content))
-            request(stub, "GetProof", cartesi_base_pb2.GetProofRequest(address=mem_address, log2_size=3))
-            request(stub, "Shutdown", cartesi_base_pb2.Void())
+            request(stub, "GetRootHash", cartesi_machine_pb2.Void())
+            request(stub, "Run", cartesi_machine_pb2.RunRequest(limit=500000000))
+            request(stub, "Step", cartesi_machine_pb2.Void())
+            request(stub, "ReadMemory", cartesi_machine_pb2.ReadMemoryRequest(address=mem_address, length=len(content)))
+            request(stub, "WriteMemory", cartesi_machine_pb2.WriteMemoryRequest(address=mem_address, data=content))
+            request(stub, "GetProof", cartesi_machine_pb2.GetProofRequest(address=mem_address, log2_size=3))
+            request(stub, "Shutdown", cartesi_machine_pb2.Void())
         except Exception as e:
             print("An exception occurred:")
             print(e)

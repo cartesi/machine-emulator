@@ -56,6 +56,7 @@
 #include "keccak-256-hasher.h"
 #include "pma.h"
 #include "unique-c-ptr.h"
+#include "shadow.h"
 
 #include <boost/program_options.hpp>
 
@@ -77,6 +78,21 @@ using cartesi::machine_config;
 using cartesi::keccak_256_hasher;
 using cartesi::bracket_note;
 using hash_type = keccak_256_hasher::hash_type;
+using GetXAddressRequest = CartesiMachine::GetXAddressRequest;
+using GetXAddressResponse = CartesiMachine::GetXAddressResponse;
+using ReadXRequest = CartesiMachine::ReadXRequest;
+using ReadXResponse = CartesiMachine::ReadXResponse;
+using WriteXRequest = CartesiMachine::WriteXRequest;
+using Csr = CartesiMachine::Csr;
+using GetCsrAddressRequest = CartesiMachine::GetCsrAddressRequest;
+using GetCsrAddressResponse = CartesiMachine::GetCsrAddressResponse;
+using ReadCsrRequest = CartesiMachine::ReadCsrRequest;
+using ReadCsrResponse = CartesiMachine::ReadCsrResponse;
+using WriteCsrRequest = CartesiMachine::WriteCsrRequest;
+using GetInitialConfigResponse = CartesiMachine::GetInitialConfigResponse;
+using VerifyMerkleTreeResponse = CartesiMachine::VerifyMerkleTreeResponse;
+using UpdateMerkleTreeResponse = CartesiMachine::UpdateMerkleTreeResponse;
+using VerifyDirtyPageMapsResponse = CartesiMachine::VerifyDirtyPageMapsResponse;
 
 #define dbg(...) syslog(LOG_DEBUG, __VA_ARGS__)
 
@@ -180,6 +196,8 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
     }
 
     void set_proto_access_log(const access_log &al, AccessLog *proto_al) const {
+        proto_al->mutable_log_type()->set_annotations(al.get_log_type().has_annotations());
+        proto_al->mutable_log_type()->set_proofs(al.get_log_type().has_proofs());
         //Building word access grpc objects with equivalent content
         for (const auto &wa: al.get_accesses()) {
             Access *a = proto_al->add_accesses();
@@ -196,6 +214,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
                     break;
             }
 
+            a->set_address(wa.address);
             //Setting read, and written fields
             a->mutable_read()->set_data(&wa.read, sizeof(wa.read));
             a->mutable_written()->set_data(&wa.written, sizeof(wa.written));
@@ -209,7 +228,6 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
 
         // If access_log contains annoations
         if (al.get_log_type().has_annotations()) {
-
             //Building bracket note grpc objects with equivalent content
             for (const auto &bni: al.get_brackets()) {
                 BracketNote *bn = proto_al->add_brackets();
@@ -611,6 +629,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
     Status Step(ServerContext *, const StepRequest *request,
         StepResponse *response) override {
         std::lock_guard<std::mutex> lock(barrier_);
+
         if (!context_.machine) {
             return error_no_machine();
         }
@@ -694,6 +713,82 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
         }
     }
 
+    Status GetXAddress(ServerContext*, const GetXAddressRequest *request, GetXAddressResponse *response) override {
+        auto index = request->index();
+        if (index > 31)
+            throw std::invalid_argument{"Invalid register index"};
+        response->set_address(cartesi::machine::get_x_address(index));
+        return Status::OK;
+    }
+
+    Status ReadX(ServerContext*, const ReadXRequest *request, ReadXResponse *response) override {
+        auto index = request->index();
+        if (index > 31)
+            throw std::invalid_argument{"Invalid register index"};
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine)
+            return error_no_machine();
+        try {
+            response->set_value(context_.machine->read_x(index));
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
+        }
+    }
+
+    Status WriteX(ServerContext*, const WriteXRequest *request, Void*)  override {
+        auto index = request->index();
+        if (index > 31)
+            throw std::invalid_argument{"Invalid register index"};
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine)
+            return error_no_machine();
+        try {
+            context_.machine->write_x(index, request->value());
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
+        }
+    }
+
+    Status GetCsrAddress(ServerContext*, const GetCsrAddressRequest *request, GetCsrAddressResponse *response) override {
+        if (!CartesiMachine::Csr_IsValid(request->csr()))
+            throw std::invalid_argument{"Invalid CSR"};
+        auto csr = static_cast<cartesi::machine::csr>(request->csr());
+        response->set_address(cartesi::machine::get_csr_address(csr));
+        return Status::OK;
+    }
+
+    Status ReadCsr(ServerContext*, const ReadCsrRequest *request, ReadCsrResponse *response) override {
+        if (!CartesiMachine::Csr_IsValid(request->csr()))
+            throw std::invalid_argument{"Invalid CSR"};
+        auto csr = static_cast<cartesi::machine::csr>(request->csr());
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine)
+            return error_no_machine();
+        try {
+            response->set_value(context_.machine->read_csr(csr));
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
+        }
+    }
+
+    Status WriteCsr(ServerContext*, const WriteCsrRequest *request, Void*) override {
+        if (!CartesiMachine::Csr_IsValid(request->csr()))
+            throw std::invalid_argument{"Invalid CSR"};
+        auto csr = static_cast<cartesi::machine::csr>(request->csr());
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine)
+            return error_no_machine();
+        try {
+            context_.machine->write_csr(csr, request->value());
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
+        }
+    }
+
     Status Snapshot(ServerContext *, const Void *, Void *) override {
         std::lock_guard<std::mutex> lock(barrier_);
         Break(BreakReason::snapshot);
@@ -713,6 +808,155 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
     Status Shutdown(ServerContext *, const Void *, Void *) override {
         std::lock_guard<std::mutex> lock(barrier_);
         Break(BreakReason::shutdown);
+        return Status::OK;
+    }
+
+    Status GetInitialConfig(ServerContext *, const Void*, GetInitialConfigResponse *response) override {
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine)
+            return error_no_machine();
+        try {
+            set_proto_machine_config(
+                response->mutable_config(),
+                context_.machine->get_initial_config());
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
+        }
+    }
+
+    static void set_proto_machine_config(MachineConfig* cfg, const machine_config &c) {
+        ROMConfig *rom = cfg->mutable_rom();
+        rom->set_bootargs(c.rom.bootargs);
+        rom->set_image_filename(c.rom.image_filename);
+        RAMConfig* ram = cfg->mutable_ram();
+        ram->set_length(c.ram.length);
+        ram->set_image_filename(c.ram.image_filename);
+        HTIFConfig* htif = cfg->mutable_htif();
+        htif->set_console_getchar(c.htif.console_getchar);
+        htif->set_yield_progress(c.htif.yield_progress);
+        htif->set_yield_rollup(c.htif.yield_rollup);
+        htif->set_fromhost(c.htif.fromhost);
+        htif->set_tohost(c.htif.tohost);
+        CLINTConfig* clint = cfg->mutable_clint();
+        clint->set_mtimecmp(c.clint.mtimecmp);
+        ProcessorConfig* p = cfg->mutable_processor();
+        p->set_x1(c.processor.x[1]);
+        p->set_x2(c.processor.x[2]);
+        p->set_x3(c.processor.x[3]);
+        p->set_x4(c.processor.x[4]);
+        p->set_x5(c.processor.x[5]);
+        p->set_x6(c.processor.x[6]);
+        p->set_x7(c.processor.x[7]);
+        p->set_x8(c.processor.x[8]);
+        p->set_x9(c.processor.x[9]);
+        p->set_x10(c.processor.x[10]);
+        p->set_x11(c.processor.x[11]);
+        p->set_x12(c.processor.x[12]);
+        p->set_x13(c.processor.x[13]);
+        p->set_x14(c.processor.x[14]);
+        p->set_x15(c.processor.x[15]);
+        p->set_x16(c.processor.x[16]);
+        p->set_x17(c.processor.x[17]);
+        p->set_x18(c.processor.x[18]);
+        p->set_x19(c.processor.x[19]);
+        p->set_x20(c.processor.x[20]);
+        p->set_x21(c.processor.x[21]);
+        p->set_x22(c.processor.x[22]);
+        p->set_x23(c.processor.x[23]);
+        p->set_x24(c.processor.x[24]);
+        p->set_x25(c.processor.x[25]);
+        p->set_x26(c.processor.x[26]);
+        p->set_x27(c.processor.x[27]);
+        p->set_x28(c.processor.x[28]);
+        p->set_x29(c.processor.x[29]);
+        p->set_x30(c.processor.x[30]);
+        p->set_x31(c.processor.x[31]);
+        p->set_pc(c.processor.pc);
+        p->set_mvendorid(c.processor.mvendorid);
+        p->set_marchid(c.processor.marchid);
+        p->set_mimpid(c.processor.mimpid);
+        p->set_mcycle(c.processor.mcycle);
+        p->set_minstret(c.processor.minstret);
+        p->set_mstatus(c.processor.mstatus);
+        p->set_mtvec(c.processor.mtvec);
+        p->set_mscratch(c.processor.mscratch);
+        p->set_mepc(c.processor.mepc);
+        p->set_mcause(c.processor.mcause);
+        p->set_mtval(c.processor.mtval);
+        p->set_misa(c.processor.misa);
+        p->set_mie(c.processor.mie);
+        p->set_mip(c.processor.mip);
+        p->set_medeleg(c.processor.medeleg);
+        p->set_mideleg(c.processor.mideleg);
+        p->set_mcounteren(c.processor.mcounteren);
+        p->set_stvec(c.processor.stvec);
+        p->set_sscratch(c.processor.sscratch);
+        p->set_sepc(c.processor.sepc);
+        p->set_scause(c.processor.scause);
+        p->set_stval(c.processor.stval);
+        p->set_satp(c.processor.satp);
+        p->set_scounteren(c.processor.scounteren);
+        p->set_ilrsc(c.processor.ilrsc);
+        p->set_iflags(c.processor.iflags);
+        for(const auto &f:c.flash_drive) {
+            auto flash = cfg->add_flash_drive();
+            flash->set_start(f.start);
+            flash->set_length(f.length);
+            flash->set_shared(f.shared);
+            flash->set_image_filename(f.image_filename);
+        }
+    }
+
+    Status DumpPmas(ServerContext *, const Void*, Void *) override {
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine)
+            return error_no_machine();
+        try {
+            context_.machine->dump_pmas();
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
+        }
+        return Status::OK;
+    }
+
+    Status VerifyMerkleTree(ServerContext *, const Void*, VerifyMerkleTreeResponse *response) override {
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine)
+            return error_no_machine();
+        try {
+            response->set_success(context_.machine->verify_merkle_tree());
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
+        }
+        return Status::OK;
+    }
+
+    Status UpdateMerkleTree(ServerContext *, const Void*, UpdateMerkleTreeResponse *response) override {
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine)
+            return error_no_machine();
+        try {
+            response->set_success(context_.machine->update_merkle_tree());
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
+        }
+        return Status::OK;
+    }
+
+    Status VerifyDirtyPageMaps(ServerContext *, const Void*, VerifyDirtyPageMapsResponse *response) override {
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine)
+            return error_no_machine();
+        try {
+            response->set_success(context_.machine->verify_dirty_page_maps());
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
+        }
         return Status::OK;
     }
 
@@ -987,6 +1231,7 @@ int main(int argc, char** argv) {
 
     daemonize();
     openlog("cartesi-grpc", LOG_PID, LOG_USER);
+
     //??D I am nervous about using a multi-threaded GRPC
     //    server here. The combination of fork with threads is
     //    problematic because, after a fork, we can only call

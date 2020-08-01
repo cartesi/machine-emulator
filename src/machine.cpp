@@ -441,6 +441,10 @@ uint64_t machine::read_x(int i) const {
     return m_s.x[i];
 }
 
+uint64_t machine::get_x_address(int i) {
+    return PMA_SHADOW_START + shadow_get_register_rel_addr(i);
+}
+
 void machine::write_x(int i, uint64_t val) {
     if (i > 0) m_s.x[i] = val;
 }
@@ -793,6 +797,59 @@ void machine::write_csr(csr w, uint64_t val) {
         case csr::marchid: [[fallthrough]];
         case csr::mimpid:
             throw std::invalid_argument{"CSR is read-only"};
+        default:
+            throw std::invalid_argument{"unknown CSR"};
+    }
+}
+
+/// \brief Returns the address of a CSR in the shadow
+/// \param w The desired CSR
+/// \return Address of the specified CSR in the shadow
+static inline uint64_t csr_address(shadow_csr w) {
+    return cartesi::PMA_SHADOW_START + shadow_get_csr_rel_addr(w);
+}
+
+static inline uint64_t htif_reg_address(htif::csr r) {
+    return PMA_HTIF_START + htif::get_csr_rel_addr(r);
+}
+
+uint64_t machine::get_csr_address(csr w) {
+    switch (w) {
+        case csr::pc: return csr_address(shadow_csr::pc);
+        case csr::mvendorid: return csr_address(shadow_csr::mvendorid);
+        case csr::marchid: return csr_address(shadow_csr::marchid);
+        case csr::mimpid: return csr_address(shadow_csr::mimpid);
+        case csr::mcycle: return csr_address(shadow_csr::mcycle);
+        case csr::minstret: return csr_address(shadow_csr::minstret);
+        case csr::mstatus: return csr_address(shadow_csr::mstatus);
+        case csr::mtvec: return csr_address(shadow_csr::mtvec);
+        case csr::mscratch: return csr_address(shadow_csr::mscratch);
+        case csr::mepc: return csr_address(shadow_csr::mepc);
+        case csr::mcause: return csr_address(shadow_csr::mcause);
+        case csr::mtval: return csr_address(shadow_csr::mtval);
+        case csr::misa: return csr_address(shadow_csr::misa);
+        case csr::mie: return csr_address(shadow_csr::mie);
+        case csr::mip: return csr_address(shadow_csr::mip);
+        case csr::medeleg: return csr_address(shadow_csr::medeleg);
+        case csr::mideleg: return csr_address(shadow_csr::mideleg);
+        case csr::mcounteren: return csr_address(shadow_csr::mcounteren);
+        case csr::stvec: return csr_address(shadow_csr::stvec);
+        case csr::sscratch: return csr_address(shadow_csr::sscratch);
+        case csr::sepc: return csr_address(shadow_csr::sepc);
+        case csr::scause: return csr_address(shadow_csr::scause);
+        case csr::stval: return csr_address(shadow_csr::stval);
+        case csr::satp: return csr_address(shadow_csr::satp);
+        case csr::scounteren: return csr_address(shadow_csr::scounteren);
+        case csr::ilrsc: return csr_address(shadow_csr::ilrsc);
+        case csr::iflags: return csr_address(shadow_csr::iflags);
+        case csr::htif_tohost: return htif_reg_address(htif::csr::tohost);
+        case csr::htif_fromhost: return htif_reg_address(htif::csr::fromhost);
+        case csr::htif_ihalt: return htif_reg_address(htif::csr::ihalt);
+        case csr::htif_iconsole: return htif_reg_address(htif::csr::iconsole);
+        case csr::htif_iyield: return htif_reg_address(htif::csr::iyield);
+        case csr::clint_mtimecmp:
+            return PMA_CLINT_START + clint_get_csr_rel_addr(clint_csr::mtimecmp);
+
         default:
             throw std::invalid_argument{"unknown CSR"};
     }

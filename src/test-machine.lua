@@ -190,6 +190,6 @@ end
 log = machine:step()
 print_log(log)
 
-machine:destroy()
+machine:shutdown()
 
 print("passed")

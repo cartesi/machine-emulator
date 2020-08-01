@@ -23,9 +23,14 @@
 #include <unordered_map>
 
 #include "machine.h"
+#include "i-virtual-machine.h"
+#include "virtual-machine.h"
 #include "access-log.h"
 #include "keccak-256-hasher.h"
 #include "unique-c-ptr.h"
+#include "i-virtual-machine.h"
+#include "virtual-machine.h"
+#include "grpc-virtual-machine.h"
 
 using cartesi::merkle_tree;
 using cartesi::access_type;
@@ -43,6 +48,9 @@ using cartesi::htif_config;
 using cartesi::clint_config;
 using cartesi::machine_config;
 using cartesi::machine;
+using cartesi::i_virtual_machine;
+using cartesi::grpc_virtual_machine;
+using cartesi::virtual_machine;
 using cartesi::keccak_256_hasher;
 
 const static std::unordered_map<std::string, machine::csr> g_csr_name = {
@@ -895,12 +903,14 @@ static int cartesi_mod_keccak(lua_State *L) {
 /// \param L Lua state.
 static int machine_ctor_meta__call(lua_State *L) try {
     // Allocate room for machine object as a Lua userdata
-    void *p = lua_newuserdata(L, sizeof(machine));
-    // Invoke placement new to construct it in place
+    //void *p = lua_newuserdata(L, sizeof(machine));
+
+    i_virtual_machine *vmachine = nullptr;
+    void *p = lua_newuserdata(L, sizeof(virtual_machine));
     if (lua_type(L, 2) == LUA_TTABLE) {
-        new (p) machine{check_machine_config(L, 2)};
+        vmachine = new (p) virtual_machine(check_machine_config(L, 2));
     } else {
-        new (p) machine{luaL_checkstring(L, 2)};
+        vmachine = new (p) virtual_machine(luaL_checkstring(L, 2));
     }
     // Set metatable so Lua recognizes userdata as a machine object
     lua_pushvalue(L, lua_upvalueindex(1));
@@ -932,6 +942,48 @@ static const luaL_Reg machine_ctor_meta[] = {
     { NULL, NULL }
 };
 
+/// \brief This is the cartesi.grpc.machine() function implementation.
+/// \param L Lua state.
+static int grpc_machine_ctor_meta__call(lua_State *L) try {
+    auto server_addr = luaL_checkstring(L, 3);
+
+    i_virtual_machine *vmachine = nullptr;
+    void *p = lua_newuserdata(L, sizeof(grpc_virtual_machine));
+    if (lua_type(L, 2) == LUA_TTABLE) {
+        vmachine = new (p) grpc_virtual_machine(server_addr, check_machine_config(L, 2));
+    } else {
+        vmachine = new (p) grpc_virtual_machine(server_addr, luaL_checkstring(L, 2));
+    }
+    // Set metatable so Lua recognizes userdata as a grpc.machine object
+    lua_pushvalue(L, lua_upvalueindex(1));
+    lua_setmetatable(L, -2);
+    return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+/// \brief Machine constructor __gc metamethod.
+/// \param L Lua state.
+static int grpc_machine_ctor_meta__gc(lua_State *L) {
+    (void) L;
+    return 0;
+}
+
+/// \brief Machine constructor __tostring metamethod.
+/// \param L Lua state.
+static int grpc_machine_ctor_meta__tostring(lua_State *L) {
+    lua_pushstring(L, "class");
+    return 1;
+}
+
+/// \brief Contents of the machine metatable.
+static const luaL_Reg grpc_machine_ctor_meta[] = {
+    {"__call", grpc_machine_ctor_meta__call},
+    {"__tostring", grpc_machine_ctor_meta__tostring},
+    { NULL, NULL }
+};
+
 /// \brief Contents of the cartesi module table.
 static const luaL_Reg cartesi_mod[] = {
     {"keccak", cartesi_mod_keccak},
@@ -954,20 +1006,21 @@ static int is_machine(lua_State *L, int idx) {
 /// \param L Lua state.
 /// \param idx Stack index.
 /// \returns 1 if it is a machine, 0 otherwise.
-static machine *check_machine(lua_State *L, int idx) {
+static virtual_machine *check_machine(lua_State *L, int idx) {
     if (!is_machine(L, idx)) {
         luaL_argerror(L, idx, "expected machine");
     }
-    return reinterpret_cast<machine *>(lua_touserdata(L, idx));
+    return reinterpret_cast<virtual_machine *>(lua_touserdata(L, idx));
 }
 
-/// \brief This is the machine:destroy() method implementation.
+/// \brief This is the machine:shutdown() method implementation.
 /// \param L Lua state.
-static int machine_meta__index_destroy(lua_State *L) {
-    machine *m = check_machine(L, 1);
+static int machine_meta__index_shutdown(lua_State *L) {
+    virtual_machine *m = check_machine(L, 1);
+    m->shutdown();
     lua_pushnil(L); // Remove metatable from object
     lua_setmetatable(L, 1);
-    m->~machine(); // Explicitly invoke object destructor
+    m->~virtual_machine(); // Explicitly invoke object destructor
     return 0;
 }
 
@@ -1004,7 +1057,7 @@ static int machine_meta__index_verify_merkle_tree(lua_State *L) try {
 /// \brief This is the machine:get_root_hash() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_get_root_hash(lua_State *L) try {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     merkle_tree::hash_type hash;
     m->get_root_hash(hash);
     push_hash(L, hash);
@@ -1028,7 +1081,7 @@ static int machine_meta__index_run(lua_State *L) try {
 /// \brief This is the machine:read_csr() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_csr(lua_State *L) try {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_csr(check_csr(L, 2)));
     return 1;
 } catch (std::exception &x) {
@@ -1039,7 +1092,7 @@ static int machine_meta__index_read_csr(lua_State *L) try {
 /// \brief This is the machine:write_csr() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_csr(lua_State *L) try {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_csr(check_csr(L, 2), luaL_checkinteger(L, 3));
     return 0;
 } catch (std::exception &x) {
@@ -1050,7 +1103,7 @@ static int machine_meta__index_write_csr(lua_State *L) try {
 /// \brief This is the machine:dump_pmas() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_dump_pmas(lua_State *L) try {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->dump_pmas();
     return 1;
 } catch (std::exception &x) {
@@ -1061,7 +1114,7 @@ static int machine_meta__index_dump_pmas(lua_State *L) try {
 /// \brief This is the machine:dump_regs() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_dump_regs(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     fprintf(stderr, "pc = %" PRIx64 "\n", m->read_pc());
     for (int i = 0; i < 32; ++i) {
         fprintf(stderr, "x%d = %" PRIx64 "\n", i, m->read_x(i));
@@ -1104,7 +1157,7 @@ static int machine_meta__index_dump_regs(lua_State *L) {
 /// \brief This is the machine:write_memory() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_memory(lua_State *L) try {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     size_t length = 0;
     const unsigned char *data = reinterpret_cast<const unsigned char *>(
         luaL_checklstring(L, 3, &length));
@@ -1119,7 +1172,7 @@ static int machine_meta__index_write_memory(lua_State *L) try {
 /// \brief This is the machine:read_memory() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_memory(lua_State *L) try {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     size_t length = luaL_checkinteger(L, 3);
     auto data = cartesi::unique_calloc<unsigned char>(1, length);
     m->read_memory(luaL_checkinteger(L, 2), data.get(), length);
@@ -1133,7 +1186,7 @@ static int machine_meta__index_read_memory(lua_State *L) try {
 /// \brief This is the machine:read_word() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_word(lua_State *L) try {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     uint64_t word_value = 0;
     if (m->read_word(luaL_checkinteger(L, 2), word_value)) {
         lua_pushinteger(L, word_value);
@@ -1150,7 +1203,7 @@ static int machine_meta__index_read_word(lua_State *L) try {
 /// \brief This is the machine:get_proof() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_get_proof(lua_State *L) try {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     merkle_tree::proof_type proof;
     m->get_proof(luaL_checkinteger(L, 2), luaL_checkinteger(L, 3), proof);
     push_proof(L, proof);
@@ -1163,7 +1216,7 @@ static int machine_meta__index_get_proof(lua_State *L) try {
 /// \brief This is the machine:verify_dirty_page_maps() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_verify_dirty_page_maps(lua_State *L) try {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushboolean(L, m->verify_dirty_page_maps());
     return 1;
 } catch (std::exception &x) {
@@ -1174,7 +1227,7 @@ static int machine_meta__index_verify_dirty_page_maps(lua_State *L) try {
 /// \brief This is the machine:step() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_step(lua_State *L) try {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     push_access_log(L, m->step(check_log_type(L, 2), true));
     return 1;
 } catch (std::exception &x) {
@@ -1185,7 +1238,7 @@ static int machine_meta__index_step(lua_State *L) try {
 /// \brief This is the machine:read_pc() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_pc(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_pc());
     return 1;
 }
@@ -1193,7 +1246,7 @@ static int machine_meta__index_read_pc(lua_State *L) {
 /// \brief This is the machine:read_mvendorid() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_mvendorid(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_mvendorid());
     return 1;
 }
@@ -1201,7 +1254,7 @@ static int machine_meta__index_read_mvendorid(lua_State *L) {
 /// \brief This is the machine:read_marchid() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_marchid(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_marchid());
     return 1;
 }
@@ -1209,7 +1262,7 @@ static int machine_meta__index_read_marchid(lua_State *L) {
 /// \brief This is the machine:read_mimpid() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_mimpid(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_mimpid());
     return 1;
 }
@@ -1217,7 +1270,7 @@ static int machine_meta__index_read_mimpid(lua_State *L) {
 /// \brief This is the machine:read_mcycle() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_mcycle(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_mcycle());
     return 1;
 }
@@ -1225,7 +1278,7 @@ static int machine_meta__index_read_mcycle(lua_State *L) {
 /// \brief This is the machine:read_minstret() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_minstret(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_minstret());
     return 1;
 }
@@ -1233,7 +1286,7 @@ static int machine_meta__index_read_minstret(lua_State *L) {
 /// \brief This is the machine:read_mstatus() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_mstatus(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_mstatus());
     return 1;
 }
@@ -1241,7 +1294,7 @@ static int machine_meta__index_read_mstatus(lua_State *L) {
 /// \brief This is the machine:read_mtvec() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_mtvec(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_mtvec());
     return 1;
 }
@@ -1249,7 +1302,7 @@ static int machine_meta__index_read_mtvec(lua_State *L) {
 /// \brief This is the machine:read_mscratch() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_mscratch(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_mscratch());
     return 1;
 }
@@ -1257,7 +1310,7 @@ static int machine_meta__index_read_mscratch(lua_State *L) {
 /// \brief This is the machine:read_mepc() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_mepc(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_mepc());
     return 1;
 }
@@ -1265,7 +1318,7 @@ static int machine_meta__index_read_mepc(lua_State *L) {
 /// \brief This is the machine:read_mcause() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_mcause(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_mcause());
     return 1;
 }
@@ -1273,7 +1326,7 @@ static int machine_meta__index_read_mcause(lua_State *L) {
 /// \brief This is the machine:read_mtval() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_mtval(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_mtval());
     return 1;
 }
@@ -1281,7 +1334,7 @@ static int machine_meta__index_read_mtval(lua_State *L) {
 /// \brief This is the machine:read_misa() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_misa(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_misa());
     return 1;
 }
@@ -1289,7 +1342,7 @@ static int machine_meta__index_read_misa(lua_State *L) {
 /// \brief This is the machine:read_mie() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_mie(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_mie());
     return 1;
 }
@@ -1297,7 +1350,7 @@ static int machine_meta__index_read_mie(lua_State *L) {
 /// \brief This is the machine:read_mip() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_mip(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_mip());
     return 1;
 }
@@ -1305,7 +1358,7 @@ static int machine_meta__index_read_mip(lua_State *L) {
 /// \brief This is the machine:read_medeleg() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_medeleg(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_medeleg());
     return 1;
 }
@@ -1313,7 +1366,7 @@ static int machine_meta__index_read_medeleg(lua_State *L) {
 /// \brief This is the machine:read_mideleg() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_mideleg(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_mideleg());
     return 1;
 }
@@ -1321,7 +1374,7 @@ static int machine_meta__index_read_mideleg(lua_State *L) {
 /// \brief This is the machine:read_mcounteren() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_mcounteren(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_mcounteren());
     return 1;
 }
@@ -1329,7 +1382,7 @@ static int machine_meta__index_read_mcounteren(lua_State *L) {
 /// \brief This is the machine:read_stvec() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_stvec(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_stvec());
     return 1;
 }
@@ -1337,7 +1390,7 @@ static int machine_meta__index_read_stvec(lua_State *L) {
 /// \brief This is the machine:read_sscratch() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_sscratch(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_sscratch());
     return 1;
 }
@@ -1345,7 +1398,7 @@ static int machine_meta__index_read_sscratch(lua_State *L) {
 /// \brief This is the machine:read_sepc() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_sepc(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_sepc());
     return 1;
 }
@@ -1353,7 +1406,7 @@ static int machine_meta__index_read_sepc(lua_State *L) {
 /// \brief This is the machine:read_scause() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_scause(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_scause());
     return 1;
 }
@@ -1361,7 +1414,7 @@ static int machine_meta__index_read_scause(lua_State *L) {
 /// \brief This is the machine:read_stval() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_stval(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_stval());
     return 1;
 }
@@ -1369,7 +1422,7 @@ static int machine_meta__index_read_stval(lua_State *L) {
 /// \brief This is the machine:read_satp() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_satp(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_satp());
     return 1;
 }
@@ -1377,7 +1430,7 @@ static int machine_meta__index_read_satp(lua_State *L) {
 /// \brief This is the machine:read_scounteren() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_scounteren(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_scounteren());
     return 1;
 }
@@ -1385,7 +1438,7 @@ static int machine_meta__index_read_scounteren(lua_State *L) {
 /// \brief This is the machine:read_ilrsc() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_ilrsc(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_ilrsc());
     return 1;
 }
@@ -1393,7 +1446,7 @@ static int machine_meta__index_read_ilrsc(lua_State *L) {
 /// \brief This is the machine:read_iflags() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_iflags(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_iflags());
     return 1;
 }
@@ -1401,7 +1454,7 @@ static int machine_meta__index_read_iflags(lua_State *L) {
 /// \brief This is the machine:read_iflags_H() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_iflags_H(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushboolean(L, m->read_iflags_H());
     return 1;
 }
@@ -1409,7 +1462,7 @@ static int machine_meta__index_read_iflags_H(lua_State *L) {
 /// \brief This is the machine:read_iflags_I() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_iflags_I(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushboolean(L, m->read_iflags_I());
     return 1;
 }
@@ -1417,7 +1470,7 @@ static int machine_meta__index_read_iflags_I(lua_State *L) {
 /// \brief This is the machine:read_iflags_Y() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_iflags_Y(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushboolean(L, m->read_iflags_Y());
     return 1;
 }
@@ -1425,7 +1478,7 @@ static int machine_meta__index_read_iflags_Y(lua_State *L) {
 /// \brief This is the machine:read_clint_mtimecmp() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_clint_mtimecmp(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_clint_mtimecmp());
     return 1;
 }
@@ -1433,7 +1486,7 @@ static int machine_meta__index_read_clint_mtimecmp(lua_State *L) {
 /// \brief This is the machine:read_htif_tohost() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_htif_tohost(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_htif_tohost());
     return 1;
 }
@@ -1441,7 +1494,7 @@ static int machine_meta__index_read_htif_tohost(lua_State *L) {
 /// \brief This is the machine:read_htif_tohost_dev() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_htif_tohost_dev(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_htif_tohost_dev());
     return 1;
 }
@@ -1449,7 +1502,7 @@ static int machine_meta__index_read_htif_tohost_dev(lua_State *L) {
 /// \brief This is the machine:read_htif_tohost_cmd() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_htif_tohost_cmd(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_htif_tohost_cmd());
     return 1;
 }
@@ -1457,7 +1510,7 @@ static int machine_meta__index_read_htif_tohost_cmd(lua_State *L) {
 /// \brief This is the machine:read_htif_tohost_data() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_htif_tohost_data(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_htif_tohost_data());
     return 1;
 }
@@ -1465,7 +1518,7 @@ static int machine_meta__index_read_htif_tohost_data(lua_State *L) {
 /// \brief This is the machine:read_htif_fromhost() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_htif_fromhost(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_htif_fromhost());
     return 1;
 }
@@ -1473,7 +1526,7 @@ static int machine_meta__index_read_htif_fromhost(lua_State *L) {
 /// \brief This is the machine:read_htif_ihalt() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_htif_ihalt(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_htif_ihalt());
     return 1;
 }
@@ -1481,7 +1534,7 @@ static int machine_meta__index_read_htif_ihalt(lua_State *L) {
 /// \brief This is the machine:read_htif_iconsole() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_htif_iconsole(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_htif_iconsole());
     return 1;
 }
@@ -1489,7 +1542,7 @@ static int machine_meta__index_read_htif_iconsole(lua_State *L) {
 /// \brief This is the machine:read_htif_yield() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_read_htif_iyield(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     lua_pushinteger(L, m->read_htif_iyield());
     return 1;
 }
@@ -1497,7 +1550,7 @@ static int machine_meta__index_read_htif_iyield(lua_State *L) {
 /// \brief This is the machine:write_pc() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_pc(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_pc(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1505,7 +1558,7 @@ static int machine_meta__index_write_pc(lua_State *L) {
 /// \brief This is the machine:write_mcycle() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_mcycle(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_mcycle(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1513,7 +1566,7 @@ static int machine_meta__index_write_mcycle(lua_State *L) {
 /// \brief This is the machine:write_minstret() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_minstret(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_minstret(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1521,7 +1574,7 @@ static int machine_meta__index_write_minstret(lua_State *L) {
 /// \brief This is the machine:write_mstatus() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_mstatus(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_mstatus(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1529,7 +1582,7 @@ static int machine_meta__index_write_mstatus(lua_State *L) {
 /// \brief This is the machine:write_mtvec() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_mtvec(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_mtvec(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1537,7 +1590,7 @@ static int machine_meta__index_write_mtvec(lua_State *L) {
 /// \brief This is the machine:write_mscratch() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_mscratch(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_mscratch(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1545,7 +1598,7 @@ static int machine_meta__index_write_mscratch(lua_State *L) {
 /// \brief This is the machine:write_mepc() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_mepc(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_mepc(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1553,7 +1606,7 @@ static int machine_meta__index_write_mepc(lua_State *L) {
 /// \brief This is the machine:write_mcause() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_mcause(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_mcause(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1561,7 +1614,7 @@ static int machine_meta__index_write_mcause(lua_State *L) {
 /// \brief This is the machine:write_mtval() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_mtval(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_mtval(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1569,7 +1622,7 @@ static int machine_meta__index_write_mtval(lua_State *L) {
 /// \brief This is the machine:write_misa() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_misa(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_misa(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1577,7 +1630,7 @@ static int machine_meta__index_write_misa(lua_State *L) {
 /// \brief This is the machine:write_mie() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_mie(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_mie(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1585,7 +1638,7 @@ static int machine_meta__index_write_mie(lua_State *L) {
 /// \brief This is the machine:write_mip() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_mip(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_mip(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1593,7 +1646,7 @@ static int machine_meta__index_write_mip(lua_State *L) {
 /// \brief This is the machine:write_medeleg() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_medeleg(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_medeleg(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1601,7 +1654,7 @@ static int machine_meta__index_write_medeleg(lua_State *L) {
 /// \brief This is the machine:write_mideleg() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_mideleg(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_mideleg(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1609,7 +1662,7 @@ static int machine_meta__index_write_mideleg(lua_State *L) {
 /// \brief This is the machine:write_mcounteren() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_mcounteren(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_mcounteren(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1617,7 +1670,7 @@ static int machine_meta__index_write_mcounteren(lua_State *L) {
 /// \brief This is the machine:write_stvec() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_stvec(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_stvec(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1625,7 +1678,7 @@ static int machine_meta__index_write_stvec(lua_State *L) {
 /// \brief This is the machine:write_sscratch() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_sscratch(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_sscratch(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1633,7 +1686,7 @@ static int machine_meta__index_write_sscratch(lua_State *L) {
 /// \brief This is the machine:write_sepc() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_sepc(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_sepc(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1641,7 +1694,7 @@ static int machine_meta__index_write_sepc(lua_State *L) {
 /// \brief This is the machine:write_scause() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_scause(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_scause(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1649,7 +1702,7 @@ static int machine_meta__index_write_scause(lua_State *L) {
 /// \brief This is the machine:write_stval() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_stval(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_stval(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1657,7 +1710,7 @@ static int machine_meta__index_write_stval(lua_State *L) {
 /// \brief This is the machine:write_satp() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_satp(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_satp(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1665,7 +1718,7 @@ static int machine_meta__index_write_satp(lua_State *L) {
 /// \brief This is the machine:write_scounteren() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_scounteren(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_scounteren(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1673,7 +1726,7 @@ static int machine_meta__index_write_scounteren(lua_State *L) {
 /// \brief This is the machine:write_ilrsc() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_ilrsc(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_ilrsc(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1681,7 +1734,7 @@ static int machine_meta__index_write_ilrsc(lua_State *L) {
 /// \brief This is the machine:write_iflags() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_iflags(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_iflags(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1689,7 +1742,7 @@ static int machine_meta__index_write_iflags(lua_State *L) {
 /// \brief This is the machine:write_clint_mtimecmp() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_clint_mtimecmp(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_clint_mtimecmp(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1697,7 +1750,7 @@ static int machine_meta__index_write_clint_mtimecmp(lua_State *L) {
 /// \brief This is the machine:write_htif_tohost() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_htif_tohost(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_htif_tohost(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1705,7 +1758,7 @@ static int machine_meta__index_write_htif_tohost(lua_State *L) {
 /// \brief This is the machine:write_htif_fromhost() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_htif_fromhost(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_htif_fromhost(luaL_checkinteger(L, 2));
     return 0;
 }
@@ -1713,13 +1766,13 @@ static int machine_meta__index_write_htif_fromhost(lua_State *L) {
 /// \brief This is the machine:write_htif_fromhost_data() method implementation.
 /// \param L Lua state.
 static int machine_meta__index_write_htif_fromhost_data(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     m->write_htif_fromhost_data(luaL_checkinteger(L, 2));
     return 0;
 }
 
 static int machine_meta__index_get_initial_config(lua_State *L) {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     push_machine_config(L, m->get_initial_config());
     return 1;
 }
@@ -1727,7 +1780,7 @@ static int machine_meta__index_get_initial_config(lua_State *L) {
 /// \brief Replaces a flash drive.
 /// \param L Lua state.
 static int machine_meta__index_replace_flash_drive(lua_State *L) try {
-    machine *m = check_machine(L, 1);
+    virtual_machine *m = check_machine(L, 1);
     luaL_checktype(L, 2, LUA_TTABLE);
 
     cartesi::flash_drive_config flash;;
@@ -1743,11 +1796,26 @@ static int machine_meta__index_replace_flash_drive(lua_State *L) try {
     luaL_error(L, x.what());
     return 0;
 }
+static int machine_meta__index_snapshot(lua_State *L) try {
+    virtual_machine *m = check_machine(L, 1);
+    m->snapshot();
+    return 0;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
 
+static int machine_meta__index_rollback(lua_State *L) try {
+    virtual_machine *m = check_machine(L, 1);
+    m->rollback();
+    return 0;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
 
 /// \brief Contents of the machine metatable __index table.
 static const luaL_Reg machine_meta__index[] = {
-    {"destroy", machine_meta__index_destroy},
     {"dump_pmas", machine_meta__index_dump_pmas},
     {"dump_regs", machine_meta__index_dump_regs},
     {"get_proof", machine_meta__index_get_proof},
@@ -1829,6 +1897,9 @@ static const luaL_Reg machine_meta__index[] = {
     {"write_stval", machine_meta__index_write_stval},
     {"write_stvec", machine_meta__index_write_stvec},
     {"replace_flash_drive", machine_meta__index_replace_flash_drive},
+    {"shutdown", machine_meta__index_shutdown},
+    {"snapshot", machine_meta__index_snapshot},
+    {"rollback", machine_meta__index_rollback},
     { NULL, NULL }
 };
 
@@ -1842,8 +1913,9 @@ static int machine_meta__tostring(lua_State *L) {
 /// \brief Machine __gc metamethod.
 /// \param L Lua state.
 static int machine_meta__gc(lua_State *L) {
-    machine *m = check_machine(L, 1);
-    m->~machine(); // Explicitly invoke object destructor
+    virtual_machine *m = check_machine(L, 1);
+    if (m)
+        m->~virtual_machine(); // Explicitly invoke object destructor
     return 0;
 }
 
@@ -1851,6 +1923,30 @@ static int machine_meta__gc(lua_State *L) {
 static const luaL_Reg machine_meta[] = {
     {"__gc", machine_meta__gc},
     {"__tostring", machine_meta__tostring},
+    { NULL, NULL }
+};
+
+
+/// \brief Machine __tostring metamethod.
+/// \param L Lua state.
+static int grpc_machine_meta__tostring(lua_State *L) {
+    lua_pushstring(L, "grpc.machine");
+    return 1;
+}
+
+/// \brief Machine __gc metamethod.
+/// \param L Lua state.
+static int grpc_machine_meta__gc(lua_State *L) {
+    virtual_machine *m = check_machine(L, 1);
+    if (m)
+        m->~virtual_machine(); // Explicitly invoke object destructor
+    return 0;
+}
+
+/// \brief Contents of the machine metatable.
+static const luaL_Reg grpc_machine_meta[] = {
+    {"__gc", grpc_machine_meta__gc},
+    {"__tostring", grpc_machine_meta__tostring},
     { NULL, NULL }
 };
 
@@ -1966,5 +2062,27 @@ int luaopen_cartesi(lua_State *L) {
     lua_setmetatable(L, -2); /* cartesi_mod machine_meta ctor */
     lua_setfield(L, -3, "machine"); /* caretsi_mod machine_meta */
     luaL_setfuncs(L, cartesi_mod, 1); /* cartesi_mod */
+
+    lua_newtable(L); /* cartesi_mod grpc  */
+    lua_newtable(L); /* cartesi_mod grpc grpc_machine_meta */
+    lua_newtable(L); /* cartesi_mod grpc grpc_machine_meta metaidx */
+    lua_pushvalue(L, -2); /* cartesi_mod grpc grpc_machine_meta metaidx grpc_machine_meta */
+    luaL_setfuncs(L, machine_meta__index, 1); /* cartesi_mod grpc grpc_machine_meta metaidx */
+    lua_setfield(L, -2, "__index"); /* cartesi_mod grpc grpc_machine_meta */
+    lua_pushvalue(L, -1); /* cartesi_mod grpc grpc_machine_meta grpc_machine_meta */
+    luaL_setfuncs(L, grpc_machine_meta, 1); /* cartesi_mod grpc grpc_machine_meta */
+
+    lua_newtable(L); /* cartesi_mod grpc grpc_machine_meta ctor */
+    lua_newtable(L); /* cartesi_mod grpc grpc_machine_meta ctor ctor_meta */
+    lua_pushvalue(L, -3); /* cartesi_mod grpc grpc_machine_meta ctor ctor_meta grpc_machine_meta */
+    luaL_setfuncs(L, grpc_machine_ctor_meta, 1); /* cartesi_mod grpc grpc_machine_meta ctor ctor_meta */
+    lua_newtable(L); /* cartesi_mod grpc grpc_machine_meta ctor ctor_meta ctoridx */
+    lua_setfield(L, -2, "__index"); /* cartesi_mod grpc grpc_machine_meta ctor ctor_meta */
+    lua_setmetatable(L, -2); /* cartesi_mod grpc grpc_machine_meta ctor */
+
+    lua_setfield(L, -3, "machine"); /* cartesi_mod grpc grpc_machine_meta */
+    lua_pop(L, 1);  /* cartesi_mod grpc  */
+    lua_setfield(L, -2, "grpc"); /* cartesi_mod  */
+
     return 1;
 }

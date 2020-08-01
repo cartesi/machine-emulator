@@ -220,6 +220,11 @@ public:
     /// \param val Value to write
     void write_csr(csr w, uint64_t val);
 
+    /// \brief Gets the address of any CSR
+    /// \param w The CSR
+    /// \returns The address of the specified CSR
+    static uint64_t get_csr_address(csr w);
+
     /// \brief Read the value of a word in the machine state.
     /// \param word_address Word address (aligned to 64-bit boundary).
     /// \param word_value Receives word value.
@@ -254,6 +259,11 @@ public:
     /// \param i Register index.
     /// \param val New register value.
     void write_x(int i, uint64_t val);
+
+    /// \brief Gets the address of a general-purpose register.
+    /// \param i Register index.
+    /// \returns Address of the specified register
+    static uint64_t get_x_address(int i);
 
     /// \brief Reads the value of the pc register.
     /// \returns The value of the register.

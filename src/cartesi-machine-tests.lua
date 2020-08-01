@@ -424,7 +424,7 @@ local function run(tests)
         else
             print(" passed")
         end
-        machine:destroy()
+        machine:shutdown()
     end
     if #errors > 0 then
         io.write(string.format("FAILED %d tests\n", #errors))
@@ -451,7 +451,7 @@ local function hash(tests)
         if payload ~= 0 or cycles ~= expected_cycles then
             os.exit(1, true)
         end
-        machine:destroy()
+        machine:shutdown()
     end
 end
 
@@ -493,7 +493,7 @@ local function step(tests)
         if payload ~= 0 or cycles ~= expected_cycles then
             os.exit(1, true)
         end
-        machine:destroy()
+        machine:shutdown()
     end
     io.stdout:write("]\n")
 end

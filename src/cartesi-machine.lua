@@ -37,6 +37,11 @@ Usage:
 
 where options are:
 
+  --server=<server-address>
+     Address of the remote cartesi machine server in one the the formats:
+        <host>:<port>
+        unix:<path>
+
   --ram-image=<filename>
     name of file containing RAM image (default: "linux.bin")
 
@@ -161,10 +166,13 @@ and command and arguments:
 with a suffix multiplier (i.e., Ki, Mi, Gi for 2^10, 2^20, 2^30, respectively),
 or a left shift (e.g., 2 << 20).
 
+<host> can be a host name, IPv4 or IPv6 address.
+
 ]=], arg[0])
     os.exit()
 end
 
+local server_addr = nil
 local images_path = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH'))
 local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
@@ -395,6 +403,11 @@ local options = {
         store_dir = o
         return true
     end },
+    { "^%-%-server%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        server_addr = o
+        return true
+    end },
     { "^%-%-json%-steps%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         json_steps = o
@@ -605,8 +618,6 @@ local function dump_value_proofs(machine, desired_proofs, htif_console_getchar)
     end
 end
 
-local machine
-
 local function append(a, b)
     a = a or ""
     b = b or ""
@@ -615,9 +626,18 @@ local function append(a, b)
     return a .. " " .. b
 end
 
+local function create_machine(arg)
+    if server_addr then
+        return cartesi.grpc.machine(arg, server_addr)
+    end
+    return cartesi.machine(arg)
+end
+
+local machine
+
 if load_dir then
     stderr("Loading machine: please wait\n")
-    machine = cartesi.machine(load_dir)
+    machine = create_machine(load_dir)
 else
     -- Resolve all device starts and lengths
     resolve_flash_lengths(flash_label_order, flash_image_filename, flash_start,
@@ -670,7 +690,7 @@ else
             table.concat(exec_arguments, " "))
     end
 
-    machine = cartesi.machine(config)
+    machine = create_machine(config)
 end
 
 for _,f in ipairs(flash_drive_replace) do
@@ -750,6 +770,7 @@ if not json_steps then
         stderr("Storing machine: please wait\n")
         machine:store(store_dir)
     end
+    machine:shutdown()
     os.exit(payload, true)
 else
     assert(not htif_console_getchar, "logs are meaningless in interactive mode")
@@ -775,3 +796,6 @@ else
         machine:store(store_dir)
     end
 end
+
+machine:shutdown()
+

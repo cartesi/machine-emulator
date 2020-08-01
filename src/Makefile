@@ -67,7 +67,7 @@ FS_LIB=$(FS_LIB_$(UNAME))
 BOOST_LIB=$(BOOST_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
 
-LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_LIB)
+LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_LIB) $(GRPC_LIB_$(UNAME))
 GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB_$(UNAME)) $(FS_LIB) $(BOOST_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
@@ -118,14 +118,21 @@ LUACARTESI_OBJS:= \
 	machine.o \
 	machine-config.o \
 	interpret.o \
+	virtual-machine.o \
+	grpc-virtual-machine.o \
 	luacartesi.o
+
+LUACARTESI_GRPC_OBJS:= \
+	versioning.pb.o \
+	cartesi-machine.pb.o \
+	cartesi-machine.grpc.pb.o
 
 ifeq ($(gperf),yes)
 DEFS+=-DGPERF
 LUACARTESI_LIBS+=-lprofiler
 endif
 
-cartesi.so: $(LUACARTESI_OBJS)
+cartesi.so: $(LUACARTESI_GRPC_OBJS) $(LUACARTESI_OBJS)
 	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LUACARTESI_LIBS)
 
 test: luacartesi
@@ -258,6 +265,8 @@ cartesi-machine-server cartesi-machine-client: CXXFLAGS := $(GRPC_INC_$(UNAME)) 
 
 %.pb.cc: $(GRPC_DIR)/%.proto
 	$(PROTOC) -I$(GRPC_DIR) --cpp_out=. $<
+
+grpc-virtual-machine.o: $(LUACARTESI_GRPC_OBJS)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<

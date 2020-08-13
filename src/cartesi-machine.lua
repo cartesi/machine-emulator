@@ -204,13 +204,15 @@ local exec_arguments = {}
 --     if callback returns true, the option is accepted.
 --     if callback returns false, the option is rejected.
 local options = {
+    { "^%-h$", function(all)
+        if not all then return false end
+        help()
+        return true
+    end },
     { "^%-%-help$", function(all)
-        if all then
-            help()
-            return true
-        else
-            return false
-        end
+        if not all then return false end
+        help()
+        return true
     end },
     { "^%-%-rom%-image%=(.*)$", function(o)
         if not o or #o < 1 then return false end
@@ -712,7 +714,7 @@ if not json_steps then
             local cmd = machine:read_htif_tohost_cmd()
             local data = machine:read_htif_tohost_data()
             if cmd == cartesi.HTIF_YIELD_PROGRESS then
-                stderr("Progress: %6.2f\r", data/10)
+                stderr("Progress: %6.2f" .. (htif_console_getchar and "\n" or "\r"), data/10)
             else
                 stderr("\nYielded cmd: %u, data: %u\n", cmd, data)
                 stderr("Cycles: %u\n", cycles)

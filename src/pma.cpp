@@ -34,19 +34,27 @@ namespace cartesi {
 
 using namespace std::string_literals;
 
-pma_memory::~pma_memory() {
+void pma_memory::release(void) {
     if (m_backing_file >= 0) {
         munmap(m_host_memory, m_length);
         close(m_backing_file);
+        m_backing_file = -1;
     } else {
         free(m_host_memory);
     }
+    m_host_memory = nullptr;
+    m_length = 0;
+}
+
+pma_memory::~pma_memory() {
+    release();
 }
 
 pma_memory::pma_memory(pma_memory &&other):
     m_length{std::move(other.m_length)},
     m_host_memory{std::move(other.m_host_memory)},
     m_backing_file{std::move(other.m_backing_file)} {
+    // set other to safe state
     other.m_host_memory = nullptr;
     other.m_backing_file = -1;
     other.m_length = 0;
@@ -143,9 +151,12 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
 }
 
 pma_memory& pma_memory::operator=(pma_memory &&other) {
+    release();
+    // copy from other
     m_host_memory = std::move(other.m_host_memory);
     m_backing_file = std::move(other.m_backing_file);
     m_length = std::move(other.m_length);
+    // set other to safe state
     other.m_host_memory = nullptr;
     other.m_backing_file = -1;
     other.m_length = 0;

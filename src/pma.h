@@ -124,6 +124,9 @@ class pma_memory final {
     unsigned char *m_host_memory;  ///< Start of associated memory region in host.
     int m_backing_file;            ///< File descryptor for mmaped memory.
 
+    /// \brief Close file and/or release memory.
+    void release(void);
+
 public:
 
     /// \brief Mmap'd range data (shared or not).
@@ -167,10 +170,10 @@ public:
     /// \brief No copy assignment
     pma_memory &operator=(const pma_memory &) = delete;
 
-    /// \brief Move assignment
+    /// \brief Move constructor
     pma_memory(pma_memory &&);
 
-    /// \brief Move constructor
+    /// \brief Move assignment
     pma_memory &operator=(pma_memory &&);
 
     /// \brief Destructor

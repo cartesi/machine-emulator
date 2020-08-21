@@ -22,6 +22,7 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <grpc++/grpc++.h>
 #include "cartesi-machine.grpc.pb.h"
 #include "machine-discovery.grpc.pb.h"

@@ -85,6 +85,286 @@ void virtual_machine::do_write_x(int i, uint64_t val) {
     m_machine->write_x(i, val);
 }
 
+uint64_t virtual_machine::do_read_pc(void) {
+    return m_machine->read_pc();
+}
+
+void virtual_machine::do_write_pc(uint64_t val) {
+    return m_machine->write_pc(val);
+}
+
+uint64_t virtual_machine::do_read_mvendorid(void) {
+    return m_machine->read_mvendorid();
+}
+
+uint64_t virtual_machine::do_read_marchid(void) {
+    return m_machine->read_marchid();
+}
+
+uint64_t virtual_machine::do_read_mimpid(void) {
+    return m_machine->read_mimpid();
+}
+
+uint64_t virtual_machine::do_read_mcycle(void) {
+    return m_machine->read_mcycle();
+}
+
+void virtual_machine::do_write_mcycle(uint64_t val) {
+    return m_machine->write_mcycle(val);
+}
+
+uint64_t virtual_machine::do_read_minstret(void) {
+    return m_machine->read_minstret();
+}
+
+void virtual_machine::do_write_minstret(uint64_t val) {
+    return m_machine->write_minstret(val);
+}
+
+uint64_t virtual_machine::do_read_mstatus(void) {
+    return m_machine->read_mstatus();
+}
+
+void virtual_machine::do_write_mstatus(uint64_t val) {
+    return m_machine->write_mstatus(val);
+}
+
+uint64_t virtual_machine::do_read_mtvec(void) {
+    return m_machine->read_mtvec();
+}
+
+void virtual_machine::do_write_mtvec(uint64_t val) {
+    return m_machine->write_mtvec(val);
+}
+
+uint64_t virtual_machine::do_read_mscratch(void) {
+    return m_machine->read_mscratch();
+}
+
+void virtual_machine::do_write_mscratch(uint64_t val) {
+    return m_machine->write_mscratch(val);
+}
+
+uint64_t virtual_machine::do_read_mepc(void) {
+    return m_machine->read_mepc();
+}
+
+void virtual_machine::do_write_mepc(uint64_t val) {
+    return m_machine->write_mepc(val);
+}
+
+uint64_t virtual_machine::do_read_mcause(void) {
+    return m_machine->read_mcause();
+}
+
+void virtual_machine::do_write_mcause(uint64_t val) {
+    return m_machine->write_mcause(val);
+}
+
+uint64_t virtual_machine::do_read_mtval(void) {
+    return m_machine->read_mtval();
+}
+
+void virtual_machine::do_write_mtval(uint64_t val) {
+    return m_machine->write_mtval(val);
+}
+
+uint64_t virtual_machine::do_read_misa(void) {
+    return m_machine->read_misa();
+}
+
+void virtual_machine::do_write_misa(uint64_t val) {
+    return m_machine->write_misa(val);
+}
+
+uint64_t virtual_machine::do_read_mie(void) {
+    return m_machine->read_mie();
+}
+
+void virtual_machine::do_write_mie(uint64_t val) {
+    return m_machine->write_mie(val);
+}
+
+uint64_t virtual_machine::do_read_mip(void) {
+    return m_machine->read_mip();
+}
+
+void virtual_machine::do_write_mip(uint64_t val) {
+    return m_machine->write_mip(val);
+}
+
+uint64_t virtual_machine::do_read_medeleg(void) {
+    return m_machine->read_medeleg();
+}
+
+void virtual_machine::do_write_medeleg(uint64_t val) {
+    return m_machine->write_medeleg(val);
+}
+
+uint64_t virtual_machine::do_read_mideleg(void) {
+    return m_machine->read_mideleg();
+}
+
+void virtual_machine::do_write_mideleg(uint64_t val) {
+    return m_machine->write_mideleg(val);
+}
+
+uint64_t virtual_machine::do_read_mcounteren(void) {
+    return m_machine->read_mcounteren();
+}
+
+void virtual_machine::do_write_mcounteren(uint64_t val) {
+    return m_machine->write_mcounteren(val);
+}
+
+uint64_t virtual_machine::do_read_stvec(void) {
+    return m_machine->read_stvec();
+}
+
+void virtual_machine::do_write_stvec(uint64_t val) {
+    return m_machine->write_stvec(val);
+}
+
+uint64_t virtual_machine::do_read_sscratch(void) {
+    return m_machine->read_sscratch();
+}
+
+void virtual_machine::do_write_sscratch(uint64_t val) {
+    return m_machine->write_sscratch(val);
+}
+
+uint64_t virtual_machine::do_read_sepc(void) {
+    return m_machine->read_sepc();
+}
+
+void virtual_machine::do_write_sepc(uint64_t val) {
+    return m_machine->write_sepc(val);
+}
+
+uint64_t virtual_machine::do_read_scause(void) {
+    return m_machine->read_scause();
+}
+
+void virtual_machine::do_write_scause(uint64_t val) {
+    return m_machine->write_scause(val);
+}
+
+uint64_t virtual_machine::do_read_stval(void) {
+    return m_machine->read_stval();
+}
+
+void virtual_machine::do_write_stval(uint64_t val) {
+    return m_machine->write_stval(val);
+}
+
+uint64_t virtual_machine::do_read_satp(void) {
+    return m_machine->read_satp();
+}
+
+void virtual_machine::do_write_satp(uint64_t val) {
+    return m_machine->write_satp(val);
+}
+
+uint64_t virtual_machine::do_read_scounteren(void) {
+    return m_machine->read_scounteren();
+}
+
+void virtual_machine::do_write_scounteren(uint64_t val) {
+    return m_machine->write_scounteren(val);
+}
+
+uint64_t virtual_machine::do_read_ilrsc(void) {
+    return m_machine->read_ilrsc();
+}
+
+void virtual_machine::do_write_ilrsc(uint64_t val) {
+    return m_machine->write_ilrsc(val);
+}
+
+uint64_t virtual_machine::do_read_iflags(void) {
+    return m_machine->read_iflags();
+}
+
+bool virtual_machine::do_read_iflags_H(void) {
+    return m_machine->read_iflags_H();
+}
+
+bool virtual_machine::do_read_iflags_I(void) {
+    return m_machine->read_iflags_I();
+}
+
+bool virtual_machine::do_read_iflags_Y(void) {
+    return m_machine->read_iflags_Y();
+}
+
+void virtual_machine::do_write_iflags(uint64_t val) {
+    return m_machine->write_iflags(val);
+}
+
+uint64_t virtual_machine::do_read_htif_tohost(void) {
+    return m_machine->read_htif_tohost();
+}
+
+uint64_t virtual_machine::do_read_htif_tohost_dev(void) {
+    return m_machine->read_htif_tohost_dev();
+}
+
+uint64_t virtual_machine::do_read_htif_tohost_cmd(void) {
+    return m_machine->read_htif_tohost_cmd();
+}
+
+uint64_t virtual_machine::do_read_htif_tohost_data(void) {
+    return m_machine->read_htif_tohost_data();
+}
+
+void virtual_machine::do_write_htif_tohost(uint64_t val) {
+    return m_machine->write_htif_tohost(val);
+}
+
+uint64_t virtual_machine::do_read_htif_fromhost(void) {
+    return m_machine->read_htif_fromhost();
+}
+
+void virtual_machine::do_write_htif_fromhost(uint64_t val) {
+    return m_machine->write_htif_fromhost(val);
+}
+
+void virtual_machine::do_write_htif_fromhost_data(uint64_t val) {
+    return m_machine->write_htif_fromhost_data(val);
+}
+
+uint64_t virtual_machine::do_read_htif_ihalt(void) {
+    return m_machine->read_htif_ihalt();
+}
+
+void virtual_machine::do_write_htif_ihalt(uint64_t val) {
+    return m_machine->write_htif_ihalt(val);
+}
+
+uint64_t virtual_machine::do_read_htif_iconsole(void) {
+    return m_machine->read_htif_iconsole();
+}
+
+void virtual_machine::do_write_htif_iconsole(uint64_t val) {
+    return m_machine->write_htif_iconsole(val);
+}
+
+uint64_t virtual_machine::do_read_htif_iyield(void) {
+    return m_machine->read_htif_iyield();
+}
+
+void virtual_machine::do_write_htif_iyield(uint64_t val) {
+    return m_machine->write_htif_iyield(val);
+}
+
+uint64_t virtual_machine::do_read_clint_mtimecmp(void) {
+    return m_machine->read_clint_mtimecmp();
+}
+
+void virtual_machine::do_write_clint_mtimecmp(uint64_t val) {
+    return m_machine->write_clint_mtimecmp(val);
+}
+
 uint64_t virtual_machine::do_get_x_address(int i) {
     return m_machine->get_x_address(i);
 }

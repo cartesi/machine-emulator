@@ -21,6 +21,7 @@
 #include <termios.h>
 
 #include "machine-config.h"
+#include "pma.h"
 
 /// \file
 /// \brief Host-Target interface device.

@@ -19,32 +19,49 @@
 
 #include <cstdint>
 #include <string>
+#include <memory>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <grpc++/grpc++.h>
 #include "cartesi-machine.grpc.pb.h"
+#include "versioning.pb.h"
 #pragma GCC diagnostic pop
 
 #include "i-virtual-machine.h"
-
-using CartesiMachine::Machine;
+#include "semantic-version.h"
 
 namespace cartesi {
+
+using grpc_machine_stub_ptr = std::shared_ptr<CartesiMachine::Machine::Stub>;
 
 /// \class grpc_virtual_machine
 /// \brief GRPC implementation of the i_virtual_machine interface
 class grpc_virtual_machine : public i_virtual_machine {
-    std::unique_ptr<Machine::Stub> m_stub;
 public:
-    grpc_virtual_machine(const std::string &address, const std::string &dir);
-    grpc_virtual_machine(const std::string &address, const machine_config &c);
-    ~grpc_virtual_machine();
+
+    grpc_virtual_machine(grpc_machine_stub_ptr stub, const std::string &dir);
+    grpc_virtual_machine(grpc_machine_stub_ptr stub, const machine_config &c);
+
+    virtual ~grpc_virtual_machine();
+
+    static grpc_machine_stub_ptr connect(const std::string &address);
+
+    static semantic_version get_version(grpc_machine_stub_ptr stub);
+
+    static machine_config get_default_config(grpc_machine_stub_ptr stub);
+
+    static void verify_access_log(grpc_machine_stub_ptr stub,
+        const access_log &log, bool one_based = false);
+
+    static void verify_state_transition(grpc_machine_stub_ptr stub,
+        const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after, bool one_based = false);
 
 private:
-    void create_machine(const std::string &dir);
-    void create_machine(const machine_config &c);
     machine_config do_get_initial_config(void) override;
+
     void do_run(uint64_t mcycle_end) override;
     void do_store(const std::string &dir) override;
     uint64_t do_read_csr(csr r) override;
@@ -55,6 +72,76 @@ private:
     uint64_t do_get_x_address(int i) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) override;
     void do_write_memory(uint64_t address, const unsigned char *data, size_t length) override;
+    uint64_t do_read_pc(void) override;
+    void do_write_pc(uint64_t val) override;
+    uint64_t do_read_mvendorid(void) override;
+    uint64_t do_read_marchid(void) override;
+    uint64_t do_read_mimpid(void) override;
+    uint64_t do_read_mcycle(void) override;
+    void do_write_mcycle(uint64_t val) override;
+    uint64_t do_read_minstret(void) override;
+    void do_write_minstret(uint64_t val) override;
+    uint64_t do_read_mstatus(void) override;
+    void do_write_mstatus(uint64_t val) override;
+    uint64_t do_read_mtvec(void) override;
+    void do_write_mtvec(uint64_t val) override;
+    uint64_t do_read_mscratch(void) override;
+    void do_write_mscratch(uint64_t val) override;
+    uint64_t do_read_mepc(void) override;
+    void do_write_mepc(uint64_t val) override;
+    uint64_t do_read_mcause(void) override;
+    void do_write_mcause(uint64_t val) override;
+    uint64_t do_read_mtval(void) override;
+    void do_write_mtval(uint64_t val) override;
+    uint64_t do_read_misa(void) override;
+    void do_write_misa(uint64_t val) override;
+    uint64_t do_read_mie(void) override;
+    void do_write_mie(uint64_t val) override;
+    uint64_t do_read_mip(void) override;
+    void do_write_mip(uint64_t val) override;
+    uint64_t do_read_medeleg(void) override;
+    void do_write_medeleg(uint64_t val) override;
+    uint64_t do_read_mideleg(void) override;
+    void do_write_mideleg(uint64_t val) override;
+    uint64_t do_read_mcounteren(void) override;
+    void do_write_mcounteren(uint64_t val) override;
+    uint64_t do_read_stvec(void) override;
+    void do_write_stvec(uint64_t val) override;
+    uint64_t do_read_sscratch(void) override;
+    void do_write_sscratch(uint64_t val) override;
+    uint64_t do_read_sepc(void) override;
+    void do_write_sepc(uint64_t val) override;
+    uint64_t do_read_scause(void) override;
+    void do_write_scause(uint64_t val) override;
+    uint64_t do_read_stval(void) override;
+    void do_write_stval(uint64_t val) override;
+    uint64_t do_read_satp(void) override;
+    void do_write_satp(uint64_t val) override;
+    uint64_t do_read_scounteren(void) override;
+    void do_write_scounteren(uint64_t val) override;
+    uint64_t do_read_ilrsc(void) override;
+    void do_write_ilrsc(uint64_t val) override;
+    uint64_t do_read_iflags(void) override;
+    bool do_read_iflags_H(void) override;
+    bool do_read_iflags_I(void) override;
+    bool do_read_iflags_Y(void) override;
+    void do_write_iflags(uint64_t val) override;
+    uint64_t do_read_htif_tohost(void) override;
+    uint64_t do_read_htif_tohost_dev(void) override;
+    uint64_t do_read_htif_tohost_cmd(void) override;
+    uint64_t do_read_htif_tohost_data(void) override;
+    void do_write_htif_tohost(uint64_t val) override;
+    uint64_t do_read_htif_fromhost(void) override;
+    void do_write_htif_fromhost(uint64_t val) override;
+    void do_write_htif_fromhost_data(uint64_t val) override;
+    uint64_t do_read_htif_ihalt(void) override;
+    void do_write_htif_ihalt(uint64_t val) override;
+    uint64_t do_read_htif_iconsole(void) override;
+    void do_write_htif_iconsole(uint64_t val) override;
+    uint64_t do_read_htif_iyield(void) override;
+    void do_write_htif_iyield(uint64_t val) override;
+    uint64_t do_read_clint_mtimecmp(void) override;
+    void do_write_clint_mtimecmp(uint64_t val) override;
     void do_get_root_hash(hash_type &hash) override;
     void do_get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) override;
     void do_replace_flash_drive(const flash_drive_config &new_flash) override;
@@ -67,6 +154,8 @@ private:
     bool do_read_word(uint64_t word_address, uint64_t &word_value) override;
     bool do_verify_merkle_tree(void) override;
     bool do_update_merkle_tree(void) override;
+
+    grpc_machine_stub_ptr m_stub;
 };
 
 } // namespace cartesi

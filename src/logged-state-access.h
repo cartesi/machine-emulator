@@ -227,15 +227,15 @@ friend i_state_access<logged_state_access>;
 	}
 
 	uint64_t do_read_mvendorid(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mvendorid), m_m.MVENDORID, "mvendorid");
+		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mvendorid), MVENDORID_INIT, "mvendorid");
 	}
 
 	uint64_t do_read_marchid(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::marchid), m_m.MARCHID, "marchid");
+		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::marchid), MARCHID_INIT, "marchid");
 	}
 
 	uint64_t do_read_mimpid(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mimpid), m_m.MIMPID, "mimpid");
+		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mimpid), MIMPID_INIT, "mimpid");
 	}
 
 	uint64_t do_read_mcycle(void) const {

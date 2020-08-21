@@ -172,7 +172,7 @@ or a left shift (e.g., 2 << 20).
     os.exit()
 end
 
-local server_addr = nil
+local server = nil
 local images_path = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH'))
 local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
@@ -405,7 +405,7 @@ local options = {
     end },
     { "^%-%-server%=(.*)$", function(o)
         if not o or #o < 1 then return false end
-        server_addr = o
+        server = o
         return true
     end },
     { "^%-%-json%-steps%=(.*)$", function(o)
@@ -486,7 +486,12 @@ end
 local function dump_machine_config(config)
     stderr("machine_config = {\n")
     stderr("  processor = {\n")
-    local def = cartesi.machine.DEFAULT_CONFIG
+    local def
+    if server then
+        def = server.machine.get_default_config()
+    else
+        def = cartesi.machine.get_default_config()
+    end
     stderr("    x = {\n")
     local processor = config.processor or { x = {} }
     for i = 1, 31 do
@@ -627,13 +632,20 @@ local function append(a, b)
 end
 
 local function create_machine(arg)
-    if server_addr then
-        return cartesi.grpc.machine(arg, server_addr)
+    if server then
+        return server.machine(arg)
     end
     return cartesi.machine(arg)
 end
 
 local machine
+
+if server then
+    stderr("Connecting to server '%s'\n", server)
+    server = assert(cartesi.grpc.connect(server))
+    local v = assert(server.get_version())
+    stderr("Connected: server version is %d.%d.%d\n", v.major, v.minor, v.patch)
+end
 
 if load_dir then
     stderr("Loading machine: please wait\n")
@@ -648,9 +660,10 @@ else
     -- Build machine config
     local config = {
         processor = {
-            mvendorid = cartesi.machine.MVENDORID,
-            marchid = cartesi.machine.MARCHID,
-            mimpid = cartesi.machine.MIMPID
+            -- Request automatic default values for versioning CSRs
+            mimpid = -1,
+            marchid = -1,
+            mvendorid = -1
         },
         rom = {
             image_filename = rom_image_filename,
@@ -798,4 +811,3 @@ else
 end
 
 machine:shutdown()
-

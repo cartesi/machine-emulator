@@ -1,0 +1,116 @@
+// Copyright 2020 Cartesi Pte. Ltd.
+//
+// This file is part of the machine-emulator. The machine-emulator is free
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// Lesser General Public License as published by the Free Software Foundation,
+// either version 3 of the License, or (at your option) any later version.
+//
+// The machine-emulator is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
+// for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
+//
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#include "cartesi-machine.grpc.pb.h"
+#include "versioning.pb.h"
+#pragma GCC diagnostic pop
+
+#include "machine-config.h"
+#include "access-log.h"
+#include "semantic-version.h"
+
+namespace cartesi {
+
+/// \brief Converts proto MachineConfig to C++ machine_config
+/// \param proto_c Proto MachineConfig to convert
+/// \returns Converted C++ machine_config
+machine_config get_proto_machine_config(
+    const CartesiMachine::MachineConfig &proto_c);
+
+/// \brief Converts C++ machine_config to proto MachineConfig
+/// \param c C++ machine_config to convert
+/// \param proto_c Pointer to proto MachineConfig receiving result of conversion
+void set_proto_machine_config(const machine_config &c,
+    CartesiMachine::MachineConfig* proto_c);
+
+/// \brief Converts proto ProcessorConfig to C++ processor_config
+/// \param proto_p Proto ProcessorConfig to convert
+/// \returns Converted C++ processor_config
+processor_config get_proto_processor_config(
+    const CartesiMachine::ProcessorConfig &proto_p);
+
+/// \brief Converts Proto AccessLogType to C++ access_log::type
+/// \param proto_lt Proto AccessLogType to convert
+/// \returns Converted C++ access_log::type
+access_log::type get_proto_log_type(
+    const CartesiMachine::AccessLogType &proto_lt);
+
+/// \brief Converts proto Hash to C++ hash
+/// \param proto_hash Proto Hash to convert
+/// \returns Converted C++ hash
+merkle_tree::hash_type get_proto_hash(const CartesiMachine::Hash &proto_hash);
+
+/// \brief Converts C++ hash to proto Hash
+/// \param h C++ hash to convert
+/// \param proto_h Pointer to proto Hash receiving result of conversion
+void set_proto_hash(const merkle_tree::hash_type &h,
+    CartesiMachine::Hash *proto_h);
+
+/// \brief Convertes C++ proof to proto Proof
+/// \param p C++ proof to convert
+/// \param proto_p Pointer to proto Proof receiving result of conversion
+void set_proto_proof(const merkle_tree::proof_type &p,
+    CartesiMachine::Proof *proto_p);
+
+/// \brief Converts proto Proof to C++ proof
+/// \param proto_proof Proto proof to convert
+/// \returns Converted C++ proof
+merkle_tree::proof_type get_proto_proof(
+    const CartesiMachine::Proof &proto_proof);
+
+/// \brief Converts C++ access_log to proto Access_Log
+/// \param al C++ access_log to convert
+/// \param proto_al Pointer to proto AccessLog receiving result of conversion
+void set_proto_access_log(const access_log &al,
+    CartesiMachine::AccessLog *proto_al);
+
+/// \brief Converts proto AccessLog to C++ access_log
+/// \param proto_al Proto AccessLog to convert
+/// \returns Converted C++ access_log
+access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al);
+
+/// \brief Converts proto FlashDriveConfig to C++ flash_drive_config
+/// \param proto_f Proto FlashDriveConfig to convert
+/// \returns Converted C++ flash_drive_config
+flash_drive_config get_proto_flash_drive_config(
+    const CartesiMachine::FlashDriveConfig &proto_f);
+
+/// \brief Converts proto BracketType to C++ bracket_type
+/// \param proto_b Proto BracketType  to convert
+/// \returns Converted C++ bracket_type
+bracket_type get_proto_bracket_type(
+    CartesiMachine::BracketNote_BracketNoteType proto_b);
+
+/// \brief Converts proto AccessType to C++ access_type
+/// \param proto_at Proto AccessType to convert
+/// \returns Converted C++ access_type
+access_type get_proto_access_type(CartesiMachine::AccessType proto_at);
+
+/// \brief Converts proto Word to C++ word
+/// \param proto_w Proto Word to convert
+/// \returns Converted C++ word
+uint64_t get_proto_word(const CartesiMachine::Word &proto_w);
+
+/// \brief Converts proto SemanticVersion to C++ semantic_version
+/// \param proto_v Proto SemanticVersion to convert
+/// \returns Converted C++ semantic_version
+semantic_version get_proto_semantic_version(
+    const Versioning::SemanticVersion &proto_v);
+
+} // namespace cartesi

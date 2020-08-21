@@ -122,10 +122,6 @@ public:
         htif_iyield,
     };
 
-    static const uint64_t MVENDORID = MVENDORID_INIT;
-    static const uint64_t MARCHID = MARCHID_INIT;
-    static const uint64_t MIMPID = MIMPID_INIT;
-
     /// \brief Constructor from machine configuration
     explicit machine(const machine_config &c);
 
@@ -175,6 +171,8 @@ public:
     static void verify_state_transition(const hash_type &root_hash_before,
         const access_log &log, const hash_type &root_hash_after,
         bool one_based = false);
+
+    static machine_config get_default_config(void);
 
     /// \brief Returns machine state for direct access.
     machine_state &get_state(void) { return m_s; }

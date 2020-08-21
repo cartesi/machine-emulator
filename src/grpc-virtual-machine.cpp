@@ -18,6 +18,7 @@
 #include <string>
 #include <algorithm>
 
+#include "grpc-util.h"
 #include "grpc-virtual-machine.h"
 
 using grpc::Channel;
@@ -29,8 +30,11 @@ using CartesiMachine::Machine;
 using CartesiMachine::VerifyMerkleTreeResponse;
 using CartesiMachine::UpdateMerkleTreeResponse;
 using CartesiMachine::VerifyDirtyPageMapsResponse;
+using CartesiMachine::VerifyStateTransitionRequest;
+using CartesiMachine::VerifyAccessLogRequest;
 using CartesiMachine::MachineConfig;
 using CartesiMachine::GetInitialConfigResponse;
+using CartesiMachine::GetDefaultConfigResponse;
 using CartesiMachine::ProcessorConfig;
 using CartesiMachine::HTIFConfig;
 using CartesiMachine::ROMConfig;
@@ -63,7 +67,7 @@ using CartesiMachine::WriteMemoryRequest;
 using CartesiMachine::ReadMemoryRequest;
 using CartesiMachine::ReadMemoryResponse;
 using CartesiMachine::GetRootHashResponse;
-using CartesiMachine::AccessOperation;
+using CartesiMachine::AccessType;
 using CartesiMachine::Hash;
 using CartesiMachine::GetProofRequest;
 using CartesiMachine::Word;
@@ -72,35 +76,53 @@ using CartesiMachine::Proof;
 using CartesiMachine::StepRequest;
 using CartesiMachine::AccessLog;
 using CartesiMachine::AccessLogType;
-using CartesiMachine::Access;
+using CartesiMachine::WordAccess;
 using CartesiMachine::BracketNote;
 using CartesiMachine::BracketNote_BracketNoteType;
 using CartesiMachine::BracketNote_BracketNoteType_BEGIN;
 using CartesiMachine::BracketNote_BracketNoteType_END;
+using Versioning::GetVersionResponse;
+using grpc::StatusCode;
+
 using hash_type = cartesi::merkle_tree::hash_type;
 
 namespace cartesi {
 
-static void check_status(const Status &status) {
-    if (!status.ok()) {
-        throw std::runtime_error(status.error_message());
+static std::string status_code_to_string(StatusCode code) {
+    switch (code) {
+        case StatusCode::OK: return "ok";
+        case StatusCode::CANCELLED: return "cancelled";
+        case StatusCode::INVALID_ARGUMENT: return "invalid argument";
+        case StatusCode::DEADLINE_EXCEEDED: return "deadline exceeded";
+        case StatusCode::NOT_FOUND: return "not found";
+        case StatusCode::ALREADY_EXISTS: return "already exists";
+        case StatusCode::PERMISSION_DENIED: return "permission denied";
+        case StatusCode::UNAUTHENTICATED: return "unauthenticated";
+        case StatusCode::RESOURCE_EXHAUSTED: return "resource exhausted";
+        case StatusCode::FAILED_PRECONDITION: return "failed precondition";
+        case StatusCode::ABORTED: return "aborted";
+        case StatusCode::OUT_OF_RANGE: return "out of range";
+        case StatusCode::UNIMPLEMENTED: return "unimplemented";
+        case StatusCode::INTERNAL: return "internal";
+        case StatusCode::UNAVAILABLE: return "unavailable";
+        case StatusCode::DATA_LOSS: return "data loss";
+        case StatusCode::UNKNOWN: return "unknown";
+        default: return "unknown";
     }
 }
 
-grpc_virtual_machine::grpc_virtual_machine(const std::string &address, const std::string &dir) {
-    m_stub = Machine::NewStub(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()));
-    create_machine(dir);
+static void check_status(const Status &status) {
+    if (!status.ok()) {
+        if (status.error_message().empty()) {
+            throw std::runtime_error(status_code_to_string(status.error_code()));
+        } else {
+            throw std::runtime_error(status.error_message());
+        }
+    }
 }
 
-grpc_virtual_machine::grpc_virtual_machine(const std::string &address, const machine_config &c) {
-    m_stub = Machine::NewStub(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()));
-    create_machine(c);
-}
-
-grpc_virtual_machine::~grpc_virtual_machine(void) {
-}
-
-void grpc_virtual_machine::create_machine(const std::string &dir) {
+grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
+    const std::string &dir): m_stub(stub) {
     MachineRequest request;
     request.set_directory(dir);
     Void response;
@@ -108,7 +130,8 @@ void grpc_virtual_machine::create_machine(const std::string &dir) {
     check_status(m_stub->Machine(&context, request, &response));
 }
 
-void grpc_virtual_machine::create_machine(const machine_config &c) {
+grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
+    const machine_config &c): m_stub(stub) {
     MachineRequest request;
     MachineConfig* cfg = request.mutable_config();
     ROMConfig *rom = cfg->mutable_rom();
@@ -194,6 +217,10 @@ void grpc_virtual_machine::create_machine(const machine_config &c) {
     Void response;
     ClientContext context;
     check_status(m_stub->Machine(&context, request, &response));
+
+}
+
+grpc_virtual_machine::~grpc_virtual_machine(void) {
 }
 
 machine_config grpc_virtual_machine::do_get_initial_config(void) {
@@ -201,106 +228,54 @@ machine_config grpc_virtual_machine::do_get_initial_config(void) {
     GetInitialConfigResponse response;
     ClientContext context;
     check_status(m_stub->GetInitialConfig(&context, request, &response));
+    return get_proto_machine_config(response.config());
+}
 
-    auto &rom = response.config().rom();
-    auto &ram = response.config().ram();
-    auto &clint = response.config().clint();
-    auto &htif = response.config().htif();
-    auto &p = response.config().processor();
+machine_config grpc_virtual_machine::get_default_config(
+    grpc_machine_stub_ptr stub) {
+    Void request;
+    GetDefaultConfigResponse response;
+    ClientContext context;
+    check_status(stub->GetDefaultConfig(&context, request, &response));
+    return get_proto_machine_config(response.config());
+}
 
-    processor_config pc;
-    pc.pc = p.pc();
-    pc.mvendorid = p.mvendorid();
-    pc.marchid = p.marchid();
-    pc.mimpid = p.mimpid();
-    pc.mcycle = p.mcycle();
-    pc.minstret = p.minstret();
-    pc.mstatus = p.mstatus();
-    pc.mtvec = p.mtvec();
-    pc.mscratch = p.mscratch();
-    pc.mepc = p.mepc();
-    pc.mcause = p.mcause();
-    pc.mtval = p.mtval();
-    pc.misa = p.misa();
-    pc.mie = p.mie();
-    pc.mip = p.mip();
-    pc.medeleg = p.medeleg();
-    pc.mideleg = p.mideleg();
-    pc.mcounteren = p.mcounteren();
-    pc.stvec = p.stvec();
-    pc.sscratch = p.sscratch();
-    pc.sepc = p.sepc();
-    pc.scause = p.scause();
-    pc.stval = p.stval();
-    pc.satp = p.satp();
-    pc.scounteren = p.scounteren();
-    pc.ilrsc = p.ilrsc();
-    pc.iflags = p.iflags();
-    if (p.x1_oneof_case()  == ProcessorConfig::kX1)  pc.x[1] = p.x1();
-    if (p.x2_oneof_case()  == ProcessorConfig::kX2)  pc.x[2] = p.x2();
-    if (p.x3_oneof_case()  == ProcessorConfig::kX3)  pc.x[3] = p.x3();
-    if (p.x4_oneof_case()  == ProcessorConfig::kX4)  pc.x[4] = p.x4();
-    if (p.x5_oneof_case()  == ProcessorConfig::kX5)  pc.x[5] = p.x5();
-    if (p.x6_oneof_case()  == ProcessorConfig::kX6)  pc.x[6] = p.x6();
-    if (p.x7_oneof_case()  == ProcessorConfig::kX7)  pc.x[7] = p.x7();
-    if (p.x8_oneof_case()  == ProcessorConfig::kX8)  pc.x[8] = p.x8();
-    if (p.x9_oneof_case()  == ProcessorConfig::kX9)  pc.x[9] = p.x9();
-    if (p.x10_oneof_case() == ProcessorConfig::kX10) pc.x[10]= p.x10();
-    if (p.x11_oneof_case()  == ProcessorConfig::kX11)  pc.x[11] = p.x11();
-    if (p.x12_oneof_case()  == ProcessorConfig::kX12)  pc.x[12] = p.x12();
-    if (p.x13_oneof_case()  == ProcessorConfig::kX13)  pc.x[13] = p.x13();
-    if (p.x14_oneof_case()  == ProcessorConfig::kX14)  pc.x[14] = p.x14();
-    if (p.x15_oneof_case()  == ProcessorConfig::kX15)  pc.x[15] = p.x15();
-    if (p.x16_oneof_case()  == ProcessorConfig::kX16)  pc.x[16] = p.x16();
-    if (p.x17_oneof_case()  == ProcessorConfig::kX17)  pc.x[17] = p.x17();
-    if (p.x18_oneof_case()  == ProcessorConfig::kX18)  pc.x[18] = p.x18();
-    if (p.x19_oneof_case()  == ProcessorConfig::kX19)  pc.x[19] = p.x19();
-    if (p.x20_oneof_case() == ProcessorConfig::kX20)  pc.x[20]= p.x20();
-    if (p.x21_oneof_case()  == ProcessorConfig::kX21)  pc.x[21] = p.x21();
-    if (p.x22_oneof_case()  == ProcessorConfig::kX22)  pc.x[22] = p.x22();
-    if (p.x23_oneof_case()  == ProcessorConfig::kX23)  pc.x[23] = p.x23();
-    if (p.x24_oneof_case()  == ProcessorConfig::kX24)  pc.x[24] = p.x24();
-    if (p.x25_oneof_case()  == ProcessorConfig::kX25)  pc.x[25] = p.x25();
-    if (p.x26_oneof_case()  == ProcessorConfig::kX26)  pc.x[26] = p.x26();
-    if (p.x27_oneof_case()  == ProcessorConfig::kX27)  pc.x[27] = p.x27();
-    if (p.x28_oneof_case()  == ProcessorConfig::kX28)  pc.x[28] = p.x28();
-    if (p.x29_oneof_case()  == ProcessorConfig::kX29)  pc.x[29] = p.x29();
-    if (p.x30_oneof_case()  == ProcessorConfig::kX30)  pc.x[30] = p.x30();
-    if (p.x31_oneof_case()  == ProcessorConfig::kX31)  pc.x[31] = p.x31();
+semantic_version grpc_virtual_machine::get_version(
+    grpc_machine_stub_ptr stub) {
+    Void request;
+    GetVersionResponse response;
+    ClientContext context;
+    check_status(stub->GetVersion(&context, request, &response));
+    return get_proto_semantic_version(response.version());
+}
 
-    if (response.config().flash_drive().size() > FLASH_DRIVE_MAX)
-        throw std::invalid_argument{"too many flash drives"};
+void grpc_virtual_machine::verify_access_log(grpc_machine_stub_ptr stub,
+        const access_log &log, bool one_based) {
+    VerifyAccessLogRequest request;
+    Void response;
+    ClientContext context;
+    set_proto_access_log(log, request.mutable_log());
+    request.set_one_based(one_based);
+    check_status(stub->VerifyAccessLog(&context, request, &response));
+}
 
-    flash_drive_configs flashes;
-    for(const auto &f: response.config().flash_drive())
-        flashes.push_back(flash_drive_config{
-            f.start(),
-            f.length(),
-            f.shared(),
-            f.image_filename()});
+void grpc_virtual_machine::verify_state_transition(grpc_machine_stub_ptr stub,
+        const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after, bool one_based) {
+    VerifyStateTransitionRequest request;
+    Void response;
+    ClientContext context;
+    set_proto_hash(root_hash_before, request.mutable_root_hash_before());
+    set_proto_access_log(log, request.mutable_log());
+    set_proto_hash(root_hash_after, request.mutable_root_hash_after());
+    request.set_one_based(one_based);
+    check_status(stub->VerifyStateTransition(&context, request, &response));
+}
 
-    return  machine_config{
-        pc,
-        ram_config{
-            ram.length(),
-            ram.image_filename()
-        },
-        rom_config{
-            rom.bootargs(),
-            rom.image_filename()
-        },
-        flashes,
-        clint_config{
-            clint.mtimecmp()
-        },
-        htif_config{
-            htif.fromhost(),
-            htif.tohost(),
-            htif.console_getchar(),
-            htif.yield_progress(),
-            htif.yield_rollup()
-        }
-    };
+grpc_machine_stub_ptr grpc_virtual_machine::connect(
+    const std::string &address) {
+    return Machine::NewStub(grpc::CreateChannel(address,
+            grpc::InsecureChannelCredentials()));
 }
 
 void grpc_virtual_machine::do_run(uint64_t mcycle_end) {
@@ -394,32 +369,284 @@ void grpc_virtual_machine::do_write_memory(uint64_t address, const unsigned char
     check_status(m_stub->WriteMemory(&context, request, &response));
 }
 
-static hash_type make_hash(const Hash& proto_hash) {
-    hash_type hash;
-    if (proto_hash.data().size() != hash.size())
-        throw std::invalid_argument("invalid hash size");
-    memcpy(hash.data(), proto_hash.data().data(), proto_hash.data().size());
-    return hash;
+uint64_t grpc_virtual_machine::do_read_pc(void) {
+    return read_csr(csr::pc);
 }
 
-static merkle_tree::proof_type make_proof(const Proof& proto_proof) {
-    merkle_tree::proof_type proof;
-    proof.address = proto_proof.address();
-    proof.log2_size = proto_proof.log2_size();
-    if (proof.log2_size > merkle_tree::get_log2_tree_size() ||
-        proof.log2_size < merkle_tree::get_log2_word_size())
-        throw std::invalid_argument("invalid log2_size");
+void grpc_virtual_machine::do_write_pc(uint64_t val) {
+    write_csr(csr::pc, val);
+};
 
-    proof.target_hash = make_hash(proto_proof.target_hash());
-    proof.root_hash = make_hash(proto_proof.root_hash());
-    const auto &proto_sibs = proto_proof.sibling_hashes();
-    if (proto_sibs.size() + proof.log2_size != merkle_tree::get_log2_tree_size())
-        throw std::invalid_argument("too many sibling hashes");
+uint64_t grpc_virtual_machine::do_read_mvendorid(void) {
+    return read_csr(csr::mvendorid);
+}
 
-    for(int i=0; i<proto_sibs.size(); i++) {
-        proof.sibling_hashes[0] = make_hash(proto_sibs[i]);
-    }
-    return proof;
+uint64_t grpc_virtual_machine::do_read_marchid(void) {
+    return read_csr(csr::marchid);
+}
+
+uint64_t grpc_virtual_machine::do_read_mimpid(void) {
+    return read_csr(csr::mimpid);
+}
+
+uint64_t grpc_virtual_machine::do_read_mcycle(void) {
+    return read_csr(csr::mcycle);
+}
+
+void grpc_virtual_machine::do_write_mcycle(uint64_t val) {
+    write_csr(csr::mcycle, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_minstret(void) {
+    return read_csr(csr::minstret);
+}
+
+void grpc_virtual_machine::do_write_minstret(uint64_t val) {
+    write_csr(csr::minstret, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_mstatus(void) {
+    return read_csr(csr::mstatus);
+}
+
+void grpc_virtual_machine::do_write_mstatus(uint64_t val) {
+    write_csr(csr::mstatus, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_mtvec(void) {
+    return read_csr(csr::mtvec);
+}
+
+void grpc_virtual_machine::do_write_mtvec(uint64_t val) {
+    write_csr(csr::mtvec, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_mscratch(void) {
+    return read_csr(csr::mscratch);
+}
+
+void grpc_virtual_machine::do_write_mscratch(uint64_t val) {
+    write_csr(csr::mscratch, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_mepc(void) {
+    return read_csr(csr::mepc);
+}
+
+void grpc_virtual_machine::do_write_mepc(uint64_t val) {
+    write_csr(csr::mepc, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_mcause(void) {
+    return read_csr(csr::mcause);
+}
+
+void grpc_virtual_machine::do_write_mcause(uint64_t val) {
+    write_csr(csr::mcause, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_mtval(void) {
+    return read_csr(csr::mtval);
+ }
+
+void grpc_virtual_machine::do_write_mtval(uint64_t val) {
+    write_csr(csr::mtval, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_misa(void) {
+    return read_csr(csr::misa);
+}
+
+void grpc_virtual_machine::do_write_misa(uint64_t val) {
+    write_csr(csr::misa, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_mie(void) {
+    return read_csr(csr::mie);
+}
+
+void grpc_virtual_machine::do_write_mie(uint64_t val) {
+    write_csr(csr::mie, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_mip(void) {
+    return read_csr(csr::mip);
+}
+
+void grpc_virtual_machine::do_write_mip(uint64_t val) {
+    write_csr(csr::mip, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_medeleg(void) {
+    return read_csr(csr::medeleg);
+}
+
+void grpc_virtual_machine::do_write_medeleg(uint64_t val) {
+    write_csr(csr::medeleg, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_mideleg(void) {
+    return read_csr(csr::mideleg);
+}
+
+void grpc_virtual_machine::do_write_mideleg(uint64_t val) {
+    write_csr(csr::mideleg, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_mcounteren(void) {
+    return read_csr(csr::mcounteren);
+}
+
+void grpc_virtual_machine::do_write_mcounteren(uint64_t val) {
+    write_csr(csr::mcounteren, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_stvec(void) {
+    return read_csr(csr::stvec);
+}
+
+void grpc_virtual_machine::do_write_stvec(uint64_t val) {
+    write_csr(csr::stvec, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_sscratch(void) {
+    return read_csr(csr::sscratch);
+}
+
+void grpc_virtual_machine::do_write_sscratch(uint64_t val) {
+    write_csr(csr::sscratch, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_sepc(void) {
+    return read_csr(csr::sepc);
+}
+
+void grpc_virtual_machine::do_write_sepc(uint64_t val) {
+    write_csr(csr::sepc, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_scause(void) {
+    return read_csr(csr::scause);
+}
+
+void grpc_virtual_machine::do_write_scause(uint64_t val) {
+    write_csr(csr::scause, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_stval(void) {
+    return read_csr(csr::stval);
+}
+
+void grpc_virtual_machine::do_write_stval(uint64_t val) {
+    write_csr(csr::stval, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_satp(void) {
+    return read_csr(csr::satp);
+}
+
+void grpc_virtual_machine::do_write_satp(uint64_t val) {
+    write_csr(csr::satp, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_scounteren(void) {
+    return read_csr(csr::scounteren);
+}
+
+void grpc_virtual_machine::do_write_scounteren(uint64_t val) {
+    write_csr(csr::scounteren, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_ilrsc(void) {
+    return read_csr(csr::ilrsc);
+}
+
+void grpc_virtual_machine::do_write_ilrsc(uint64_t val) {
+    write_csr(csr::ilrsc, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_iflags(void) {
+    return read_csr(csr::iflags);
+}
+
+bool grpc_virtual_machine::do_read_iflags_H(void) {
+    return (read_csr(csr::iflags) >> IFLAGS_H_SHIFT) & 1;
+}
+
+bool grpc_virtual_machine::do_read_iflags_I(void) {
+    return (read_csr(csr::iflags) >> IFLAGS_I_SHIFT) & 1;
+}
+
+bool grpc_virtual_machine::do_read_iflags_Y(void) {
+    return (read_csr(csr::iflags) >> IFLAGS_Y_SHIFT) & 1;
+}
+
+void grpc_virtual_machine::do_write_iflags(uint64_t val) {
+    write_csr(csr::iflags, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_htif_tohost(void) {
+    return read_csr(csr::htif_tohost);
+}
+
+uint64_t grpc_virtual_machine::do_read_htif_tohost_dev(void) {
+    return HTIF_DEV_FIELD(read_htif_tohost());
+}
+
+uint64_t grpc_virtual_machine::do_read_htif_tohost_cmd(void) {
+    return HTIF_CMD_FIELD(read_htif_tohost());
+}
+
+uint64_t grpc_virtual_machine::do_read_htif_tohost_data(void) {
+    return HTIF_DATA_FIELD(read_htif_tohost());
+}
+
+void grpc_virtual_machine::do_write_htif_tohost(uint64_t val) {
+    write_csr(csr::htif_tohost, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_htif_fromhost(void) {
+    return read_csr(csr::htif_fromhost);
+}
+
+void grpc_virtual_machine::do_write_htif_fromhost(uint64_t val) {
+    write_csr(csr::htif_fromhost, val);
+}
+
+void grpc_virtual_machine::do_write_htif_fromhost_data(uint64_t val) {
+    write_htif_fromhost(HTIF_REPLACE_DATA(read_htif_fromhost(), val));
+}
+
+uint64_t grpc_virtual_machine::do_read_htif_ihalt(void) {
+    return read_csr(csr::htif_ihalt);
+}
+
+void grpc_virtual_machine::do_write_htif_ihalt(uint64_t val)  {
+    write_csr(csr::htif_ihalt, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_htif_iconsole(void) {
+    return read_csr(csr::htif_iconsole);
+}
+
+void grpc_virtual_machine::do_write_htif_iconsole(uint64_t val) {
+    write_csr(csr::htif_iconsole, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_htif_iyield(void) {
+    return read_csr(csr::htif_iyield);
+}
+
+void grpc_virtual_machine::do_write_htif_iyield(uint64_t val)  {
+    write_csr(csr::htif_iyield, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_clint_mtimecmp(void) {
+    return read_csr(csr::clint_mtimecmp);
+}
+
+void grpc_virtual_machine::do_write_clint_mtimecmp(uint64_t val) {
+    write_csr(csr::clint_mtimecmp, val);
 }
 
 void grpc_virtual_machine::do_get_root_hash(hash_type &hash)  {
@@ -427,7 +654,7 @@ void grpc_virtual_machine::do_get_root_hash(hash_type &hash)  {
     Void request;
     ClientContext context;
     check_status(m_stub->GetRootHash(&context, request, &response));
-    hash = make_hash(response.hash());
+    hash = get_proto_hash(response.hash());
 }
 
 void grpc_virtual_machine::do_get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof)  {
@@ -437,7 +664,7 @@ void grpc_virtual_machine::do_get_proof(uint64_t address, int log2_size, merkle_
     request.set_log2_size(log2_size);
     ClientContext context;
     check_status(m_stub->GetProof(&context, request, &response));
-    proof = make_proof(response.proof());
+    proof = get_proto_proof(response.proof());
 }
 
 void grpc_virtual_machine::do_replace_flash_drive(const flash_drive_config &new_flash)  {
@@ -452,85 +679,16 @@ void grpc_virtual_machine::do_replace_flash_drive(const flash_drive_config &new_
     check_status(m_stub->ReplaceFlashDrive(&context, request, &response));
 }
 
-static access_type make_access_type(AccessOperation proto_operation) {
-    switch (proto_operation) {
-        case (AccessOperation::READ):
-            return access_type::read;
-        case (AccessOperation::WRITE):
-            return access_type::write;
-        default:
-            throw std::invalid_argument{"invalid AccessOperation"};
-    };
-}
-
-static uint64_t make_word(const Word &proto_word) {
-  uint64_t word;
-  if (proto_word.data().size() > sizeof(word))
-      throw std::runtime_error("word is too big");
-
-  memcpy(&word, proto_word.data().data(), proto_word.data().size());
-  return word;
-}
-
-static bracket_type make_bracket_type(BracketNote_BracketNoteType proto_bn_type) {
-    switch(proto_bn_type) {
-        case (BracketNote_BracketNoteType_BEGIN):
-            return bracket_type::begin;
-        case (BracketNote_BracketNoteType_END):
-            return bracket_type::end;
-        default:
-            throw std::invalid_argument("invalid bracket type");
-    }
-}
-
-access_log grpc_virtual_machine::do_step(const access_log::type &log_type, bool /*one_based = false*/) {
+access_log grpc_virtual_machine::do_step(const access_log::type &log_type,
+    bool one_based) {
     StepRequest request;
     request.mutable_log_type()->set_proofs(log_type.has_proofs());
     request.mutable_log_type()->set_annotations(log_type.has_annotations());
+    request.set_one_based(one_based);
     StepResponse response;
     ClientContext context;
     check_status(m_stub->Step(&context, request, &response));
-
-    const auto &proto_al = response.log();
-    if (proto_al.log_type().annotations() &&
-        proto_al.accesses().size() != proto_al.notes().size())
-        throw std::invalid_argument("size of log accesses and notes differ");
-
-    bool has_annotations = proto_al.log_type().annotations();
-    bool has_proofs =  proto_al.log_type().proofs();
-    auto al = access_log(access_log::type{has_proofs, has_annotations});
-
-    const auto& proto_accesses = proto_al.accesses();
-    const auto& proto_brackets = proto_al.brackets();
-    const auto& proto_notes = proto_al.notes();
-    auto pbr = proto_brackets.begin();
-    auto pnt = proto_notes.begin();
-    auto pac = proto_accesses.begin();
-    uint64_t iac = 0; // curent access index
-    while(pac != proto_accesses.end() && pbr != proto_brackets.end()) {
-        while (pbr != proto_brackets.end() && pbr->where() == iac) {
-            // bracket note points to current access
-            al.push_bracket(make_bracket_type(pbr->type()),  pbr->text().c_str());
-            assert(pbr->where() == al.get_brackets().back().where);
-            pbr++;
-        }
-        if (pac != proto_accesses.end()) {
-            word_access wa;
-            wa.type = make_access_type(pac->operation());
-            wa.address = pac->address();
-            wa.read = make_word(pac->read());
-            wa.written = make_word(pac->written());
-            std::string note;
-            if (has_annotations)
-                note = *pnt++;
-            if (has_proofs)
-                wa.proof = make_proof(pac->proof());
-            al.push_access(wa, note.c_str());
-            pac++;
-            iac++;
-        }
-    }
-    return al;
+    return get_proto_access_log(response.log());
 }
 
 void grpc_virtual_machine::do_shutdown() {
@@ -595,7 +753,4 @@ bool grpc_virtual_machine::do_update_merkle_tree(void) {
     return response.success();
 }
 
-
-
-// grpc_virtual_machine::
 } // namespace cartesi

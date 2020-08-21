@@ -24,7 +24,7 @@
 #include <cstdint>
 
 #define SERVER_VERSION_MAJOR UINT32_C(0)
-#define SERVER_VERSION_MINOR UINT32_C(1)
+#define SERVER_VERSION_MINOR UINT32_C(2)
 #define SERVER_VERSION_PATCH UINT32_C(0)
 #define SERVER_VERSION_PRE_RELEASE ""
 #define SERVER_VERSION_BUILD ""
@@ -39,11 +39,13 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <grpc++/grpc++.h>
 #include <grpc++/resource_quota.h>
 #include "cartesi-machine.grpc.pb.h"
 #pragma GCC diagnostic pop
 
+#include "grpc-util.h"
 #include "manager-client.h"
 
 #include <chrono>
@@ -62,22 +64,10 @@
 
 namespace po = boost::program_options;
 
-using cartesi::word_access;
-using cartesi::merkle_tree;
-using cartesi::access_type;
-using cartesi::bracket_type;
-using cartesi::access_log;
-using cartesi::machine_config;
-using cartesi::processor_config;
-using cartesi::flash_drive_config;
-using cartesi::rom_config;
-using cartesi::ram_config;
-using cartesi::htif_config;
-using cartesi::clint_config;
-using cartesi::machine_config;
-using cartesi::keccak_256_hasher;
-using cartesi::bracket_note;
+using namespace cartesi;
 using hash_type = keccak_256_hasher::hash_type;
+
+
 using GetXAddressRequest = CartesiMachine::GetXAddressRequest;
 using GetXAddressResponse = CartesiMachine::GetXAddressResponse;
 using ReadXRequest = CartesiMachine::ReadXRequest;
@@ -90,7 +80,10 @@ using ReadCsrRequest = CartesiMachine::ReadCsrRequest;
 using ReadCsrResponse = CartesiMachine::ReadCsrResponse;
 using WriteCsrRequest = CartesiMachine::WriteCsrRequest;
 using GetInitialConfigResponse = CartesiMachine::GetInitialConfigResponse;
+using GetDefaultConfigResponse = CartesiMachine::GetDefaultConfigResponse;
 using VerifyMerkleTreeResponse = CartesiMachine::VerifyMerkleTreeResponse;
+using VerifyAccessLogRequest = CartesiMachine::VerifyAccessLogRequest;
+using VerifyStateTransitionRequest = CartesiMachine::VerifyStateTransitionRequest;
 using UpdateMerkleTreeResponse = CartesiMachine::UpdateMerkleTreeResponse;
 using VerifyDirtyPageMapsResponse = CartesiMachine::VerifyDirtyPageMapsResponse;
 
@@ -122,7 +115,7 @@ enum class BreakReason {
 // Logic and data behind the server's behavior.
 class MachineServiceImpl final: public CartesiMachine::Machine::Service {
 
-    using Access = CartesiMachine::Access;
+    using WordAccess = CartesiMachine::WordAccess;
     using AccessLog = CartesiMachine::AccessLog;
     using AccessLogType = CartesiMachine::AccessLogType;
     using BracketNote = CartesiMachine::BracketNote;
@@ -164,341 +157,12 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
 
     Status error_no_machine(void) const {
         dbg("No machine");
-        return Status(StatusCode::FAILED_PRECONDITION, "No machine");
+        return Status(StatusCode::FAILED_PRECONDITION, "no machine");
     }
 
     Status error_exception(const std::exception& e) const {
         dbg("Caught exception %s", e.what());
         return Status(StatusCode::ABORTED, e.what());
-    }
-
-    void set_proto_proof(const merkle_tree::proof_type &p, Proof *proto_p)
-        const {
-        proto_p->set_address(p.address);
-        proto_p->set_log2_size(p.log2_size);
-
-        //Building target hash
-        proto_p->mutable_target_hash()->set_data(p.target_hash.data(),
-            p.target_hash.size());
-
-        //Building root hash
-        proto_p->mutable_root_hash()->set_data(p.root_hash.data(),
-            p.root_hash.size());
-
-        //Setting all sibling hashes
-        for (int log2_size = merkle_tree::get_log2_tree_size()-1;
-            log2_size >= p.log2_size; --log2_size) {
-            const auto &h = merkle_tree::get_sibling_hash(p.sibling_hashes,
-                log2_size);
-            Hash *sh = proto_p->add_sibling_hashes();
-            sh->set_data(h.data(), h.size());
-        }
-    }
-
-    void set_proto_access_log(const access_log &al, AccessLog *proto_al) const {
-        proto_al->mutable_log_type()->set_annotations(al.get_log_type().has_annotations());
-        proto_al->mutable_log_type()->set_proofs(al.get_log_type().has_proofs());
-        //Building word access grpc objects with equivalent content
-        for (const auto &wa: al.get_accesses()) {
-            Access *a = proto_al->add_accesses();
-            //Setting type
-            switch (wa.type) {
-                case access_type::read:
-                    a->set_operation(CartesiMachine::AccessOperation::READ);
-                    break;
-                case access_type::write:
-                    a->set_operation(CartesiMachine::AccessOperation::WRITE);
-                    break;
-                default:
-                    throw std::invalid_argument{"Invalid AccessOperation"};
-                    break;
-            }
-
-            a->set_address(wa.address);
-            //Setting read, and written fields
-            a->mutable_read()->set_data(&wa.read, sizeof(wa.read));
-            a->mutable_written()->set_data(&wa.written, sizeof(wa.written));
-
-            //  If access_log contains proofs
-            if (al.get_log_type().has_proofs()) {
-                //Building proof object
-                set_proto_proof(wa.proof, a->mutable_proof());
-            }
-        }
-
-        // If access_log contains annoations
-        if (al.get_log_type().has_annotations()) {
-            //Building bracket note grpc objects with equivalent content
-            for (const auto &bni: al.get_brackets()) {
-                BracketNote *bn = proto_al->add_brackets();
-                //Setting type
-                switch (bni.type) {
-                    case bracket_type::begin:
-                        bn->set_type(
-                            CartesiMachine::BracketNote_BracketNoteType_BEGIN);
-                        break;
-                    case bracket_type::end:
-                        bn->set_type(
-                            CartesiMachine::BracketNote_BracketNoteType_END);
-                        break;
-                    default:
-                        throw std::invalid_argument{"Invalid BracketNoteType"};
-                        break;
-                }
-                //Setting where and text
-                bn->set_where(bni.where);
-                bn->set_text(bni.text);
-            }
-
-            //Building notes
-            for (const auto &ni: al.get_notes()) {
-                proto_al->add_notes()->assign(ni);
-            }
-        }
-    }
-
-    processor_config get_proto_processor_config(const ProcessorConfig &ps)
-        const {
-        processor_config p;
-        if (ps.x1_oneof_case() == ProcessorConfig::kX1) {
-            p.x[1] = ps.x1();
-        }
-        if (ps.x2_oneof_case() == ProcessorConfig::kX2) {
-            p.x[2] = ps.x2();
-        }
-        if (ps.x3_oneof_case() == ProcessorConfig::kX3) {
-            p.x[3] = ps.x3();
-        }
-        if (ps.x4_oneof_case() == ProcessorConfig::kX4) {
-            p.x[4] = ps.x4();
-        }
-        if (ps.x5_oneof_case() == ProcessorConfig::kX5) {
-            p.x[5] = ps.x5();
-        }
-        if (ps.x6_oneof_case() == ProcessorConfig::kX6) {
-            p.x[6] = ps.x6();
-        }
-        if (ps.x7_oneof_case() == ProcessorConfig::kX7) {
-            p.x[7] = ps.x7();
-        }
-        if (ps.x8_oneof_case() == ProcessorConfig::kX8) {
-            p.x[8] = ps.x8();
-        }
-        if (ps.x9_oneof_case() == ProcessorConfig::kX9) {
-            p.x[9] = ps.x9();
-        }
-        if (ps.x10_oneof_case() == ProcessorConfig::kX10) {
-            p.x[10] = ps.x10();
-        }
-        if (ps.x11_oneof_case() == ProcessorConfig::kX11) {
-            p.x[11] = ps.x11();
-        }
-        if (ps.x12_oneof_case() == ProcessorConfig::kX12) {
-            p.x[12] = ps.x12();
-        }
-        if (ps.x13_oneof_case() == ProcessorConfig::kX13) {
-            p.x[13] = ps.x13();
-        }
-        if (ps.x14_oneof_case() == ProcessorConfig::kX14) {
-            p.x[14] = ps.x14();
-        }
-        if (ps.x15_oneof_case() == ProcessorConfig::kX15) {
-            p.x[15] = ps.x15();
-        }
-        if (ps.x16_oneof_case() == ProcessorConfig::kX16) {
-            p.x[16] = ps.x16();
-        }
-        if (ps.x17_oneof_case() == ProcessorConfig::kX17) {
-            p.x[17] = ps.x17();
-        }
-        if (ps.x18_oneof_case() == ProcessorConfig::kX18) {
-            p.x[18] = ps.x18();
-        }
-        if (ps.x19_oneof_case() == ProcessorConfig::kX19) {
-            p.x[19] = ps.x19();
-        }
-        if (ps.x20_oneof_case() == ProcessorConfig::kX20) {
-            p.x[20] = ps.x20();
-        }
-        if (ps.x21_oneof_case() == ProcessorConfig::kX21) {
-            p.x[21] = ps.x21();
-        }
-        if (ps.x22_oneof_case() == ProcessorConfig::kX22) {
-            p.x[22] = ps.x22();
-        }
-        if (ps.x23_oneof_case() == ProcessorConfig::kX23) {
-            p.x[23] = ps.x23();
-        }
-        if (ps.x24_oneof_case() == ProcessorConfig::kX24) {
-            p.x[24] = ps.x24();
-        }
-        if (ps.x25_oneof_case() == ProcessorConfig::kX25) {
-            p.x[25] = ps.x25();
-        }
-        if (ps.x26_oneof_case() == ProcessorConfig::kX26) {
-            p.x[26] = ps.x26();
-        }
-        if (ps.x27_oneof_case() == ProcessorConfig::kX27) {
-            p.x[27] = ps.x27();
-        }
-        if (ps.x28_oneof_case() == ProcessorConfig::kX28) {
-            p.x[28] = ps.x28();
-        }
-        if (ps.x29_oneof_case() == ProcessorConfig::kX29) {
-            p.x[29] = ps.x29();
-        }
-        if (ps.x30_oneof_case() == ProcessorConfig::kX30) {
-            p.x[30] = ps.x30();
-        }
-        if (ps.x31_oneof_case() == ProcessorConfig::kX31) {
-            p.x[31] = ps.x31();
-        }
-        if (ps.pc_oneof_case() == ProcessorConfig::kPc) {
-            p.pc = ps.pc();
-        }
-        if (ps.mvendorid_oneof_case() == ProcessorConfig::kMvendorid) {
-            p.mvendorid = ps.mvendorid();
-        }
-        if (ps.marchid_oneof_case() == ProcessorConfig::kMarchid) {
-            p.marchid = ps.marchid();
-        }
-        if (ps.mimpid_oneof_case() == ProcessorConfig::kMimpid) {
-            p.mimpid = ps.mimpid();
-        }
-        if (ps.mcycle_oneof_case() == ProcessorConfig::kMcycle) {
-            p.mcycle = ps.mcycle();
-        }
-        if (ps.minstret_oneof_case() == ProcessorConfig::kMinstret) {
-            p.minstret = ps.minstret();
-        }
-        if (ps.mstatus_oneof_case() == ProcessorConfig::kMstatus) {
-            p.mstatus = ps.mstatus();
-        }
-        if (ps.mtvec_oneof_case() == ProcessorConfig::kMtvec) {
-            p.mtvec = ps.mtvec();
-        }
-        if (ps.mscratch_oneof_case() == ProcessorConfig::kMscratch) {
-            p.mscratch = ps.mscratch();
-        }
-        if (ps.mepc_oneof_case() == ProcessorConfig::kMepc) {
-            p.mepc = ps.mepc();
-        }
-        if (ps.mcause_oneof_case() == ProcessorConfig::kMcause) {
-            p.mcause = ps.mcause();
-        }
-        if (ps.mtval_oneof_case() == ProcessorConfig::kMtval) {
-            p.mtval = ps.mtval();
-        }
-        if (ps.misa_oneof_case() == ProcessorConfig::kMisa) {
-            p.misa = ps.misa();
-        }
-        if (ps.mie_oneof_case() == ProcessorConfig::kMie) {
-            p.mie = ps.mie();
-        }
-        if (ps.mip_oneof_case() == ProcessorConfig::kMip) {
-            p.mip = ps.mip();
-        }
-        if (ps.medeleg_oneof_case() == ProcessorConfig::kMedeleg) {
-            p.medeleg = ps.medeleg();
-        }
-        if (ps.mideleg_oneof_case() == ProcessorConfig::kMideleg) {
-            p.mideleg = ps.mideleg();
-        }
-        if (ps.mcounteren_oneof_case() == ProcessorConfig::kMcounteren) {
-            p.mcounteren = ps.mcounteren();
-        }
-        if (ps.stvec_oneof_case() == ProcessorConfig::kStvec) {
-            p.stvec = ps.stvec();
-        }
-        if (ps.sscratch_oneof_case() == ProcessorConfig::kSscratch) {
-            p.sscratch = ps.sscratch();
-        }
-        if (ps.sepc_oneof_case() == ProcessorConfig::kSepc) {
-            p.sepc = ps.sepc();
-        }
-        if (ps.scause_oneof_case() == ProcessorConfig::kScause) {
-            p.scause = ps.scause();
-        }
-        if (ps.stval_oneof_case() == ProcessorConfig::kStval) {
-            p.stval = ps.stval();
-        }
-        if (ps.satp_oneof_case() == ProcessorConfig::kSatp) {
-            p.satp = ps.satp();
-        }
-        if (ps.scounteren_oneof_case() == ProcessorConfig::kScounteren) {
-            p.scounteren = ps.scounteren();
-        }
-        if (ps.ilrsc_oneof_case() == ProcessorConfig::kIlrsc) {
-            p.ilrsc = ps.ilrsc();
-        }
-        if (ps.iflags_oneof_case() == ProcessorConfig::kIflags) {
-            p.iflags = ps.iflags();
-        }
-        return p;
-    }
-
-    flash_drive_config get_proto_flash_drive_config(const FlashDriveConfig &fs) {
-        flash_drive_config f;
-        f.start = fs.start();
-        f.image_filename = fs.image_filename();
-        f.length = fs.length();
-        f.shared = fs.shared();
-        return f;
-    }
-
-    machine_config get_proto_machine_config(const MachineConfig &ms) {
-        machine_config c;
-
-        //Checking if custom processor values were set on request parameters
-        if (ms.has_processor()) {
-            c.processor = get_proto_processor_config(ms.processor());
-        }
-
-        //Setting ROM configs
-        if (ms.has_rom()) {
-            c.rom.bootargs = ms.rom().bootargs();
-            c.rom.image_filename = ms.rom().image_filename();
-            dbg("Bootargs: %s", c.rom.bootargs.c_str());
-            dbg("ROM image filename: %s", c.rom.image_filename.c_str());
-        }
-
-        //Setting ram configs
-        if (ms.has_ram()) {
-            c.ram.length = ms.ram().length();
-            c.ram.image_filename = ms.ram().image_filename();
-        }
-
-        //Setting flash drive configs
-        for (const auto &fs: ms.flash_drive()) {
-            c.flash_drive.emplace_back(get_proto_flash_drive_config(fs));
-        }
-
-        //Setting CLINT configs
-        if (ms.has_clint()) {
-            const auto &clint = ms.clint();
-            if (clint.mtimecmp_oneof_case() == CLINTConfig::kMtimecmp) {
-                c.clint.mtimecmp = clint.mtimecmp();
-            }
-        }
-
-        //Setting HTIF configs
-        if (ms.has_htif()) {
-            const auto &htif = ms.htif();
-            if (htif.fromhost() == HTIFConfig::kFromhost) {
-                c.htif.fromhost = htif.fromhost();
-            }
-            if (htif.tohost() == HTIFConfig::kTohost) {
-                c.htif.tohost = htif.tohost();
-            }
-            // zero default when missing is ok
-            c.htif.console_getchar = htif.console_getchar();
-            // zero default when missing is ok
-            c.htif.yield_progress = htif.yield_progress();
-            // zero default when missing is ok
-            c.htif.yield_rollup = htif.yield_rollup();
-        }
-
-        return c;
     }
 
     void Break(BreakReason reason) {
@@ -519,7 +183,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
         if (context_.machine) {
             dbg("Machine already exists");
             return Status(StatusCode::FAILED_PRECONDITION,
-                "Machine already exists");
+                "machine already exists");
         }
         // Otherwise, try to create a new one
         try {
@@ -534,7 +198,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
                     return Status::OK;
                 default:
                     return Status(StatusCode::INVALID_ARGUMENT,
-                        "Invalid machine specification");
+                        "invalid machine specification");
             }
         } catch (std::exception& e) {
             return error_exception(e);
@@ -578,8 +242,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
         // Limit can't be in the past
         if (limit < context_.machine->read_mcycle()) {
             dbg("Requested mcycle limit is already past");
-            return Status(StatusCode::INVALID_ARGUMENT,
-                "Requested mcycle limit is already past");
+            return Status(StatusCode::INVALID_ARGUMENT, "mcycle in past");
         }
         // If it is not in the past, try running running towards it
         try {
@@ -619,13 +282,6 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
         }
     }
 
-    access_log::type get_proto_log_type(const AccessLogType &lt) {
-        return access_log::type{
-			lt.proofs(),
-			lt.annotations()
-        };
-    }
-
     Status Step(ServerContext *, const StepRequest *request,
         StepResponse *response) override {
         std::lock_guard<std::mutex> lock(barrier_);
@@ -636,7 +292,8 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
         try {
             AccessLog proto_log;
             set_proto_access_log(context_.machine->step(
-                    get_proto_log_type(request->log_type())), response->mutable_log());
+                get_proto_log_type(request->log_type()), request->one_based()), 
+                    response->mutable_log());
             dbg("Step executed");
             return Status::OK;
         } catch (std::exception &e) {
@@ -654,7 +311,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
             context_.machine->update_merkle_tree();
             merkle_tree::hash_type rh;
             context_.machine->get_root_hash(rh);
-            response->mutable_hash()->set_data(rh.data(), rh.size());
+            set_proto_hash(rh, response->mutable_hash());
             return Status::OK;
         } catch (std::exception &e) {
             return error_exception(e);
@@ -801,7 +458,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
             Break(BreakReason::rollback);
             return Status::OK;
         } else {
-            return Status(StatusCode::FAILED_PRECONDITION, "No snapshot");
+            return Status(StatusCode::FAILED_PRECONDITION, "no snapshot");
         }
     }
 
@@ -817,94 +474,22 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
             return error_no_machine();
         try {
             set_proto_machine_config(
-                response->mutable_config(),
-                context_.machine->get_initial_config());
+                context_.machine->get_initial_config(),
+                response->mutable_config());
             return Status::OK;
         } catch (std::exception& e) {
             return error_exception(e);
         }
     }
 
-    static void set_proto_machine_config(MachineConfig* cfg, const machine_config &c) {
-        ROMConfig *rom = cfg->mutable_rom();
-        rom->set_bootargs(c.rom.bootargs);
-        rom->set_image_filename(c.rom.image_filename);
-        RAMConfig* ram = cfg->mutable_ram();
-        ram->set_length(c.ram.length);
-        ram->set_image_filename(c.ram.image_filename);
-        HTIFConfig* htif = cfg->mutable_htif();
-        htif->set_console_getchar(c.htif.console_getchar);
-        htif->set_yield_progress(c.htif.yield_progress);
-        htif->set_yield_rollup(c.htif.yield_rollup);
-        htif->set_fromhost(c.htif.fromhost);
-        htif->set_tohost(c.htif.tohost);
-        CLINTConfig* clint = cfg->mutable_clint();
-        clint->set_mtimecmp(c.clint.mtimecmp);
-        ProcessorConfig* p = cfg->mutable_processor();
-        p->set_x1(c.processor.x[1]);
-        p->set_x2(c.processor.x[2]);
-        p->set_x3(c.processor.x[3]);
-        p->set_x4(c.processor.x[4]);
-        p->set_x5(c.processor.x[5]);
-        p->set_x6(c.processor.x[6]);
-        p->set_x7(c.processor.x[7]);
-        p->set_x8(c.processor.x[8]);
-        p->set_x9(c.processor.x[9]);
-        p->set_x10(c.processor.x[10]);
-        p->set_x11(c.processor.x[11]);
-        p->set_x12(c.processor.x[12]);
-        p->set_x13(c.processor.x[13]);
-        p->set_x14(c.processor.x[14]);
-        p->set_x15(c.processor.x[15]);
-        p->set_x16(c.processor.x[16]);
-        p->set_x17(c.processor.x[17]);
-        p->set_x18(c.processor.x[18]);
-        p->set_x19(c.processor.x[19]);
-        p->set_x20(c.processor.x[20]);
-        p->set_x21(c.processor.x[21]);
-        p->set_x22(c.processor.x[22]);
-        p->set_x23(c.processor.x[23]);
-        p->set_x24(c.processor.x[24]);
-        p->set_x25(c.processor.x[25]);
-        p->set_x26(c.processor.x[26]);
-        p->set_x27(c.processor.x[27]);
-        p->set_x28(c.processor.x[28]);
-        p->set_x29(c.processor.x[29]);
-        p->set_x30(c.processor.x[30]);
-        p->set_x31(c.processor.x[31]);
-        p->set_pc(c.processor.pc);
-        p->set_mvendorid(c.processor.mvendorid);
-        p->set_marchid(c.processor.marchid);
-        p->set_mimpid(c.processor.mimpid);
-        p->set_mcycle(c.processor.mcycle);
-        p->set_minstret(c.processor.minstret);
-        p->set_mstatus(c.processor.mstatus);
-        p->set_mtvec(c.processor.mtvec);
-        p->set_mscratch(c.processor.mscratch);
-        p->set_mepc(c.processor.mepc);
-        p->set_mcause(c.processor.mcause);
-        p->set_mtval(c.processor.mtval);
-        p->set_misa(c.processor.misa);
-        p->set_mie(c.processor.mie);
-        p->set_mip(c.processor.mip);
-        p->set_medeleg(c.processor.medeleg);
-        p->set_mideleg(c.processor.mideleg);
-        p->set_mcounteren(c.processor.mcounteren);
-        p->set_stvec(c.processor.stvec);
-        p->set_sscratch(c.processor.sscratch);
-        p->set_sepc(c.processor.sepc);
-        p->set_scause(c.processor.scause);
-        p->set_stval(c.processor.stval);
-        p->set_satp(c.processor.satp);
-        p->set_scounteren(c.processor.scounteren);
-        p->set_ilrsc(c.processor.ilrsc);
-        p->set_iflags(c.processor.iflags);
-        for(const auto &f:c.flash_drive) {
-            auto flash = cfg->add_flash_drive();
-            flash->set_start(f.start);
-            flash->set_length(f.length);
-            flash->set_shared(f.shared);
-            flash->set_image_filename(f.image_filename);
+    Status GetDefaultConfig(ServerContext *, const Void*, GetDefaultConfigResponse *response) override {
+        try {
+            set_proto_machine_config(
+                machine::get_default_config(),
+                response->mutable_config());
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
         }
     }
 
@@ -919,6 +504,31 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
             return error_exception(e);
         }
         return Status::OK;
+    }
+
+    Status VerifyAccessLog(ServerContext *,
+        const VerifyAccessLogRequest *request, Void *) override {
+        try {
+            machine::verify_access_log(get_proto_access_log(
+                    request->log()), request->one_based());
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
+        }
+    }
+
+    Status VerifyStateTransition(ServerContext *,
+        const VerifyStateTransitionRequest *request, Void *) override {
+        try {
+            machine::verify_state_transition(
+                get_proto_hash(request->root_hash_before()),
+                get_proto_access_log(request->log()),
+                get_proto_hash(request->root_hash_after()),
+                request->one_based());
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
+        }
     }
 
     Status VerifyMerkleTree(ServerContext *, const Void*, VerifyMerkleTreeResponse *response) override {

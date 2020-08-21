@@ -162,368 +162,353 @@ public:
 
     /// \brief Reads the pc register
     uint64_t read_pc(void) {
-        return read_csr(csr::pc);
+        return  do_read_pc();
     }
 
     /// \brief Writes the pc register
     void write_pc(uint64_t val) {
-        write_csr(csr::pc, val);
+         do_write_pc(val);
     };
 
     /// \brief Reads the mvendorid register
     uint64_t read_mvendorid(void) {
-        return read_csr(csr::mvendorid);
-    }
-
-    /// \brief Writes the mvendorid register
-    void write_mvendorid(uint64_t val) {
-        write_csr(csr::mvendorid, val);
+        return  do_read_mvendorid();
     }
 
     /// \brief Reads the marchid register
     uint64_t read_marchid(void) {
-        return read_csr(csr::marchid);
-    }
-
-    /// \brief Writes the marchid register
-    void write_marchid(uint64_t val) {
-        write_csr(csr::marchid, val);
+        return  do_read_marchid();
     }
 
     /// \brief Reads the mimpid register
     uint64_t read_mimpid(void) {
-        return read_csr(csr::mimpid);
-    }
-
-    /// \brief Writes the mimpid register
-    void write_mimpid(uint64_t val) {
-        write_csr(csr::mimpid, val);
+        return  do_read_mimpid();
     }
 
     /// \brief Reads the mcycle register
     uint64_t read_mcycle(void) {
-        return read_csr(csr::mcycle);
+        return  do_read_mcycle();
     }
 
     /// \brief Writes the mcycle register
     void write_mcycle(uint64_t val) {
-        write_csr(csr::mcycle, val);
+         do_write_mcycle(val);
     }
 
     /// \brief Reads the minstret register
     uint64_t read_minstret(void) {
-        return read_csr(csr::minstret);
+        return  do_read_minstret();
     }
 
     /// \brief Writes the minstret register
     void write_minstret(uint64_t val) {
-        write_csr(csr::minstret, val);
+         do_write_minstret(val);
     }
 
     /// \brief Reads the mstatus register
     uint64_t read_mstatus(void) {
-        return read_csr(csr::mstatus);
+        return  do_read_mstatus();
     }
 
     /// \brief Writes the mstatus register
     void write_mstatus(uint64_t val) {
-        write_csr(csr::mstatus, val);
+         do_write_mstatus(val);
     }
 
     /// \brief Reads the mtvec register
     uint64_t read_mtvec(void) {
-        return read_csr(csr::mtvec);
+        return  do_read_mtvec();
     }
 
     /// \brief Writes the mtvec register
     void write_mtvec(uint64_t val) {
-        write_csr(csr::mtvec, val);
+         do_write_mtvec(val);
     }
 
     /// \brief Reads the mscratch register
     uint64_t read_mscratch(void) {
-        return read_csr(csr::mscratch);
+        return  do_read_mscratch();
     }
 
     /// \brief Writes the mscratch register
     void write_mscratch(uint64_t val) {
-        write_csr(csr::mscratch, val);
+         do_write_mscratch(val);
     }
 
     /// \brief Reads the mepc register
     uint64_t read_mepc(void) {
-        return read_csr(csr::mepc);
+        return  do_read_mepc();
     }
 
     /// \brief Writes the mepc register
     void write_mepc(uint64_t val) {
-        write_csr(csr::mepc, val);
+         do_write_mepc(val);
     }
 
     /// \brief Reads the mcause register
     uint64_t read_mcause(void) {
-        return read_csr(csr::mcause);
+        return  do_read_mcause();
     }
 
     /// \brief Writes the mcause register
     void write_mcause(uint64_t val) {
-        write_csr(csr::mcause, val);
+         do_write_mcause(val);
     }
 
     /// \brief Reads the mtval register
     uint64_t read_mtval(void) {
-        return read_csr(csr::mtval);
+        return  do_read_mtval();
      }
 
     /// \brief Writes the mtval register
     void write_mtval(uint64_t val) {
-        write_csr(csr::mtval, val);
+         do_write_mtval(val);
     }
 
     /// \brief Reads the misa register
     uint64_t read_misa(void) {
-        return read_csr(csr::misa);
+        return  do_read_misa();
     }
 
     /// \brief Writes the misa register
     void write_misa(uint64_t val) {
-        write_csr(csr::misa, val);
+         do_write_misa(val);
     }
 
     /// \brief Reads the mie register
     uint64_t read_mie(void) {
-        return read_csr(csr::mie);
+        return  do_read_mie();
     }
 
     /// \brief Writes the mie register
     void write_mie(uint64_t val) {
-        write_csr(csr::mie, val);
+         do_write_mie(val);
     }
 
     /// \brief Reads the mip register
     uint64_t read_mip(void) {
-        return read_csr(csr::mip);
+        return  do_read_mip();
     }
 
     /// \brief Writes the mip register
     void write_mip(uint64_t val) {
-        write_csr(csr::mip, val);
+         do_write_mip(val);
     }
 
     /// \brief Reads the medeleg register
     uint64_t read_medeleg(void) {
-        return read_csr(csr::medeleg);
+        return  do_read_medeleg();
     }
 
     /// \brief Writes the medeleg register
     void write_medeleg(uint64_t val) {
-        write_csr(csr::medeleg, val);
+         do_write_medeleg(val);
     }
 
     /// \brief Reads the mideleg register
     uint64_t read_mideleg(void) {
-        return read_csr(csr::mideleg);
+        return  do_read_mideleg();
     }
 
     /// \brief Writes the mideleg register
     /// \param val New register value.
     void write_mideleg(uint64_t val) {
-        write_csr(csr::mideleg, val);
+         do_write_mideleg(val);
     }
 
     /// \brief Reads the mcounteren register
     uint64_t read_mcounteren(void) {
-        return read_csr(csr::mcounteren);
+        return  do_read_mcounteren();
     }
 
     /// \brief Writes the mcounteren register
     void write_mcounteren(uint64_t val) {
-        write_csr(csr::mcounteren, val);
+         do_write_mcounteren(val);
     }
 
     /// \brief Reads the stvec register
     uint64_t read_stvec(void) {
-        return read_csr(csr::stvec);
+        return  do_read_stvec();
     }
 
     /// \brief Writes the stvec register
     void write_stvec(uint64_t val) {
-        write_csr(csr::stvec, val);
+         do_write_stvec(val);
     }
 
     /// \brief Reads the sscratch register
     uint64_t read_sscratch(void) {
-        return read_csr(csr::sscratch);
+        return  do_read_sscratch();
     }
 
     /// \brief Writes the sscratch register
     void write_sscratch(uint64_t val) {
-        write_csr(csr::sscratch, val);
+         do_write_sscratch(val);
     }
 
     /// \brief Reads the sepc register
     uint64_t read_sepc(void) {
-        return read_csr(csr::sepc);
+        return  do_read_sepc();
     }
 
     /// \brief Writes the sepc register
     void write_sepc(uint64_t val) {
-        write_csr(csr::sepc, val);
+         do_write_sepc(val);
     }
 
     /// \brief Reads the scause register
     uint64_t read_scause(void) {
-        return read_csr(csr::scause);
+        return  do_read_scause();
     }
 
     /// \brief Writes the scause register
     void write_scause(uint64_t val) {
-        write_csr(csr::scause, val);
+         do_write_scause(val);
     }
 
     /// \brief Reads the stval register
     uint64_t read_stval(void) {
-        return read_csr(csr::stval);
+        return  do_read_stval();
     }
 
     /// \brief Writes the stval register
     void write_stval(uint64_t val) {
-        write_csr(csr::stval, val);
+         do_write_stval(val);
     }
 
     /// \brief Reads the satp register
     uint64_t read_satp(void) {
-        return read_csr(csr::satp);
+        return  do_read_satp();
     }
 
     /// \brief Writes the satp register
     void write_satp(uint64_t val) {
-        write_csr(csr::satp, val);
+         do_write_satp(val);
     }
 
     /// \brief Reads the scounteren register
     uint64_t read_scounteren(void) {
-        return read_csr(csr::scounteren);
+        return  do_read_scounteren();
     }
 
     /// \brief Writes the scounteren register
     void write_scounteren(uint64_t val) {
-        write_csr(csr::scounteren, val);
+         do_write_scounteren(val);
     }
 
     /// \brief Reads the ilrsc register
     uint64_t read_ilrsc(void) {
-        return read_csr(csr::ilrsc);
+        return  do_read_ilrsc();
     }
 
     /// \brief Writes the ilrsc register
     void write_ilrsc(uint64_t val) {
-        write_csr(csr::ilrsc, val);
+         do_write_ilrsc(val);
     }
 
     /// \brief Reads the iflags register
     uint64_t read_iflags(void) {
-        return read_csr(csr::iflags);
+        return  do_read_iflags();
     }
 
-    /// \brief Reads the H I-flag
+    /// \brief Reads the H iflag
     bool read_iflags_H(void) {
-        return (read_csr(csr::iflags) >> IFLAGS_H_SHIFT) & 1;
+        return do_read_iflags_H();
     }
 
-    /// \brief Reads the I I-flag
+    /// \brief Reads the I iflag
     bool read_iflags_I(void) {
-        return (read_csr(csr::iflags) >> IFLAGS_I_SHIFT) & 1;
+        return do_read_iflags_I();
     }
 
-    /// \brief Reads the Y I-flag
+    /// \brief Reads the Y iflag
     bool read_iflags_Y(void) {
-        return (read_csr(csr::iflags) >> IFLAGS_Y_SHIFT) & 1;
+        return do_read_iflags_Y();
     }
 
     /// \brief Writes the iflags register
     void write_iflags(uint64_t val) {
-        write_csr(csr::iflags, val);
+         do_write_iflags(val);
     }
 
     /// \brief Reads htif's tohost
     uint64_t read_htif_tohost(void) {
-        return read_csr(csr::htif_tohost);
+        return  do_read_htif_tohost();
     }
 
     /// \brief Reads htif's tohost dev
     uint64_t read_htif_tohost_dev(void) {
-        return HTIF_DEV_FIELD(read_htif_tohost());
+        return do_read_htif_tohost_dev();
     }
 
     /// \brief Reads htif's tohost cmd
     uint64_t read_htif_tohost_cmd(void) {
-        return HTIF_CMD_FIELD(read_htif_tohost());
+        return do_read_htif_tohost_cmd();
     }
 
     /// \brief Reads htif's tohost data
     uint64_t read_htif_tohost_data(void) {
-        return HTIF_DATA_FIELD(read_htif_tohost());
+        return do_read_htif_tohost_data();
     }
 
     /// \brief Writes htif's tohost
     void write_htif_tohost(uint64_t val) {
-        write_csr(csr::htif_tohost, val);
+         do_write_htif_tohost(val);
     }
 
     /// \brief Reads htif's fromhost
     uint64_t read_htif_fromhost(void) {
-        return read_csr(csr::htif_fromhost);
+        return  do_read_htif_fromhost();
     }
 
     /// \brief Writes htif's fromhost
     void write_htif_fromhost(uint64_t val) {
-        write_csr(csr::htif_fromhost, val);
+         do_write_htif_fromhost(val);
     }
 
     /// \brief Writes htif's fromhost data
     void write_htif_fromhost_data(uint64_t val) {
-        write_htif_fromhost(HTIF_REPLACE_DATA(read_htif_fromhost(), val));
+        do_write_htif_fromhost_data(val);
     }
 
     /// \brief Reads htif's ihalt
     uint64_t read_htif_ihalt(void) {
-        return read_csr(csr::htif_ihalt);
+        return  do_read_htif_ihalt();
     }
 
     /// \brief Writes htif's ihalt
     void write_htif_ihalt(uint64_t val)  {
-        write_csr(csr::htif_ihalt, val);
+         do_write_htif_ihalt(val);
     }
 
     /// \brief Reads htif's iconsole
     uint64_t read_htif_iconsole(void) {
-        return read_csr(csr::htif_iconsole);
+        return  do_read_htif_iconsole();
     }
 
     /// \brief Writes htif's iconsole
     void write_htif_iconsole(uint64_t val) {
-        write_csr(csr::htif_iconsole, val);
+         do_write_htif_iconsole(val);
     }
 
     /// \brief Reads htif's iyield
     uint64_t read_htif_iyield(void) {
-        return read_csr(csr::htif_iyield);
+        return  do_read_htif_iyield();
     }
 
     /// \brief Writes htif's iyield
     void write_htif_iyield(uint64_t val)  {
-        write_csr(csr::htif_iyield, val);
+         do_write_htif_iyield(val);
     }
 
     /// \brief Reads clint's mtimecmp
     uint64_t read_clint_mtimecmp(void) {
-        return read_csr(csr::clint_mtimecmp);
+        return  do_read_clint_mtimecmp();
     }
 
     /// \brief Writes clint's mtimecmp
     void write_clint_mtimecmp(uint64_t val) {
-        write_csr(csr::clint_mtimecmp, val);
+         do_write_clint_mtimecmp(val);
     }
 
 private:
@@ -541,6 +526,76 @@ private:
     virtual void do_write_memory(uint64_t address, const unsigned char *data, size_t length) = 0;
     virtual uint64_t do_read_x(int i) = 0;
     virtual void do_write_x(int i, uint64_t val) = 0;
+    virtual uint64_t do_read_pc(void) = 0;
+    virtual void do_write_pc(uint64_t val) = 0;
+    virtual uint64_t do_read_mvendorid(void) = 0;
+    virtual uint64_t do_read_marchid(void) = 0;
+    virtual uint64_t do_read_mimpid(void) = 0;
+    virtual uint64_t do_read_mcycle(void) = 0;
+    virtual void do_write_mcycle(uint64_t val) = 0;
+    virtual uint64_t do_read_minstret(void) = 0;
+    virtual void do_write_minstret(uint64_t val) = 0;
+    virtual uint64_t do_read_mstatus(void) = 0;
+    virtual void do_write_mstatus(uint64_t val) = 0;
+    virtual uint64_t do_read_mtvec(void) = 0;
+    virtual void do_write_mtvec(uint64_t val) = 0;
+    virtual uint64_t do_read_mscratch(void) = 0;
+    virtual void do_write_mscratch(uint64_t val) = 0;
+    virtual uint64_t do_read_mepc(void) = 0;
+    virtual void do_write_mepc(uint64_t val) = 0;
+    virtual uint64_t do_read_mcause(void) = 0;
+    virtual void do_write_mcause(uint64_t val) = 0;
+    virtual uint64_t do_read_mtval(void) = 0;
+    virtual void do_write_mtval(uint64_t val) = 0;
+    virtual uint64_t do_read_misa(void) = 0;
+    virtual void do_write_misa(uint64_t val) = 0;
+    virtual uint64_t do_read_mie(void) = 0;
+    virtual void do_write_mie(uint64_t val) = 0;
+    virtual uint64_t do_read_mip(void) = 0;
+    virtual void do_write_mip(uint64_t val) = 0;
+    virtual uint64_t do_read_medeleg(void) = 0;
+    virtual void do_write_medeleg(uint64_t val) = 0;
+    virtual uint64_t do_read_mideleg(void) = 0;
+    virtual void do_write_mideleg(uint64_t val) = 0;
+    virtual uint64_t do_read_mcounteren(void) = 0;
+    virtual void do_write_mcounteren(uint64_t val) = 0;
+    virtual uint64_t do_read_stvec(void) = 0;
+    virtual void do_write_stvec(uint64_t val) = 0;
+    virtual uint64_t do_read_sscratch(void) = 0;
+    virtual void do_write_sscratch(uint64_t val) = 0;
+    virtual uint64_t do_read_sepc(void) = 0;
+    virtual void do_write_sepc(uint64_t val) = 0;
+    virtual uint64_t do_read_scause(void) = 0;
+    virtual void do_write_scause(uint64_t val) = 0;
+    virtual uint64_t do_read_stval(void) = 0;
+    virtual void do_write_stval(uint64_t val) = 0;
+    virtual uint64_t do_read_satp(void) = 0;
+    virtual void do_write_satp(uint64_t val) = 0;
+    virtual uint64_t do_read_scounteren(void) = 0;
+    virtual void do_write_scounteren(uint64_t val) = 0;
+    virtual uint64_t do_read_ilrsc(void) = 0;
+    virtual void do_write_ilrsc(uint64_t val) = 0;
+    virtual uint64_t do_read_iflags(void) = 0;
+    virtual bool do_read_iflags_H(void) = 0;
+    virtual bool do_read_iflags_I(void) = 0;
+    virtual bool do_read_iflags_Y(void) = 0;
+    virtual void do_write_iflags(uint64_t val) = 0;
+    virtual uint64_t do_read_htif_tohost(void) = 0;
+    virtual uint64_t do_read_htif_tohost_dev(void) = 0;
+    virtual uint64_t do_read_htif_tohost_cmd(void) = 0;
+    virtual uint64_t do_read_htif_tohost_data(void) = 0;
+    virtual void do_write_htif_tohost(uint64_t val) = 0;
+    virtual uint64_t do_read_htif_fromhost(void) = 0;
+    virtual void do_write_htif_fromhost(uint64_t val) = 0;
+    virtual void do_write_htif_fromhost_data(uint64_t val) = 0;
+    virtual uint64_t do_read_htif_ihalt(void) = 0;
+    virtual void do_write_htif_ihalt(uint64_t val) = 0;
+    virtual uint64_t do_read_htif_iconsole(void) = 0;
+    virtual void do_write_htif_iconsole(uint64_t val) = 0;
+    virtual uint64_t do_read_htif_iyield(void) = 0;
+    virtual void do_write_htif_iyield(uint64_t val) = 0;
+    virtual uint64_t do_read_clint_mtimecmp(void) = 0;
+    virtual void do_write_clint_mtimecmp(uint64_t val) = 0;
     virtual uint64_t do_get_x_address(int i) = 0;
     virtual void do_replace_flash_drive(const flash_drive_config &new_flash) = 0;
     virtual void do_dump_pmas(void) = 0;

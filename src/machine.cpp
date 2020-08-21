@@ -179,67 +179,78 @@ machine::machine(const machine_config &c):
     m_h{c.htif},
     m_c{c} {
 
-    // Check compatibility
-    if (c.processor.marchid != MARCHID) {
+    if (m_c.processor.marchid == UINT64_C(-1)) {
+        m_c.processor.marchid = MARCHID_INIT;
+    }
+
+    if (m_c.processor.marchid != MARCHID_INIT) {
         throw std::invalid_argument{"marchid mismatch."};
     }
 
-    if (c.processor.mimpid != MIMPID) {
-        throw std::invalid_argument{"mimpid mismatch."};
+    if (m_c.processor.mvendorid == UINT64_C(-1)) {
+        m_c.processor.mvendorid = MVENDORID_INIT;
     }
 
-    if (c.processor.mvendorid != MVENDORID) {
+    if (m_c.processor.mvendorid != MVENDORID_INIT) {
         throw std::invalid_argument{"mvendorid mismatch."};
+    }
+
+    if (m_c.processor.mimpid == UINT64_C(-1)) {
+        m_c.processor.mimpid = MIMPID_INIT;
+    }
+
+    if (m_c.processor.mimpid != MIMPID_INIT) {
+        throw std::invalid_argument{"mimpid mismatch."};
     }
 
     // General purpose registers
     for (int i = 1; i < 32; i++) {
-        write_x(i, c.processor.x[i]);
+        write_x(i, m_c.processor.x[i]);
     }
 
-    write_pc(c.processor.pc);
-    write_mcycle(c.processor.mcycle);
-    write_minstret(c.processor.minstret);
-    write_mstatus(c.processor.mstatus);
-    write_mtvec(c.processor.mtvec);
-    write_mscratch(c.processor.mscratch);
-    write_mepc(c.processor.mepc);
-    write_mcause(c.processor.mcause);
-    write_mtval(c.processor.mtval);
-    write_misa(c.processor.misa);
-    write_mie(c.processor.mie);
-    write_mip(c.processor.mip);
-    write_medeleg(c.processor.medeleg);
-    write_mideleg(c.processor.mideleg);
-    write_mcounteren(c.processor.mcounteren);
-    write_stvec(c.processor.stvec);
-    write_sscratch(c.processor.sscratch);
-    write_sepc(c.processor.sepc);
-    write_scause(c.processor.scause);
-    write_stval(c.processor.stval);
-    write_satp(c.processor.satp);
-    write_scounteren(c.processor.scounteren);
-    write_ilrsc(c.processor.ilrsc);
-    write_iflags(c.processor.iflags);
+    write_pc(m_c.processor.pc);
+    write_mcycle(m_c.processor.mcycle);
+    write_minstret(m_c.processor.minstret);
+    write_mstatus(m_c.processor.mstatus);
+    write_mtvec(m_c.processor.mtvec);
+    write_mscratch(m_c.processor.mscratch);
+    write_mepc(m_c.processor.mepc);
+    write_mcause(m_c.processor.mcause);
+    write_mtval(m_c.processor.mtval);
+    write_misa(m_c.processor.misa);
+    write_mie(m_c.processor.mie);
+    write_mip(m_c.processor.mip);
+    write_medeleg(m_c.processor.medeleg);
+    write_mideleg(m_c.processor.mideleg);
+    write_mcounteren(m_c.processor.mcounteren);
+    write_stvec(m_c.processor.stvec);
+    write_sscratch(m_c.processor.sscratch);
+    write_sepc(m_c.processor.sepc);
+    write_scause(m_c.processor.scause);
+    write_stval(m_c.processor.stval);
+    write_satp(m_c.processor.satp);
+    write_scounteren(m_c.processor.scounteren);
+    write_ilrsc(m_c.processor.ilrsc);
+    write_iflags(m_c.processor.iflags);
 
-    if (c.rom.image_filename.empty())
+    if (m_c.rom.image_filename.empty())
         throw std::invalid_argument{"ROM image filename is undefined"};
 
     // Register RAM
-    if (c.ram.image_filename.empty()) {
+    if (m_c.ram.image_filename.empty()) {
         register_pma_entry(make_callocd_memory_pma_entry(PMA_RAM_START,
-            c.ram.length).set_flags(m_ram_flags));
+            m_c.ram.length).set_flags(m_ram_flags));
     } else {
         register_pma_entry(make_callocd_memory_pma_entry(PMA_RAM_START,
-            c.ram.length, c.ram.image_filename).set_flags(m_ram_flags));
+            m_c.ram.length, m_c.ram.image_filename).set_flags(m_ram_flags));
     }
 
     // Register ROM
     pma_entry &rom = register_pma_entry(make_callocd_memory_pma_entry(
-        PMA_ROM_START, PMA_ROM_LENGTH, c.rom.image_filename).set_flags(m_rom_flags));
+        PMA_ROM_START, PMA_ROM_LENGTH, m_c.rom.image_filename).set_flags(m_rom_flags));
 
     // Register all flash drives
-    for (const auto &f: c.flash_drive) {
+    for (const auto &f: m_c.flash_drive) {
         register_pma_entry(make_flash_pma_entry(f));
     }
 
@@ -248,29 +259,30 @@ machine::machine(const machine_config &c):
             PMA_HTIF_START, PMA_HTIF_LENGTH));
 
     // Copy HTIF state to from config to machine
-    write_htif_tohost(c.htif.tohost);
-    write_htif_fromhost(c.htif.fromhost);
+    write_htif_tohost(m_c.htif.tohost);
+    write_htif_fromhost(m_c.htif.fromhost);
     // Only command in halt device is command 0 and it is always available
     uint64_t htif_ihalt = static_cast<uint64_t>(true) << HTIF_HALT_HALT;
     write_htif_ihalt(htif_ihalt);
     uint64_t htif_iconsole =
-        static_cast<uint64_t>(c.htif.console_getchar) << HTIF_CONSOLE_GETCHAR |
+        static_cast<uint64_t>(m_c.htif.console_getchar) << HTIF_CONSOLE_GETCHAR |
         static_cast<uint64_t>(true) << HTIF_CONSOLE_PUTCHAR;
     write_htif_iconsole(htif_iconsole);
     uint64_t htif_iyield =
-        static_cast<uint64_t>(c.htif.yield_progress) << HTIF_YIELD_PROGRESS |
-        static_cast<uint64_t>(c.htif.yield_rollup) << HTIF_YIELD_ROLLUP;
+        static_cast<uint64_t>(m_c.htif.yield_progress) << HTIF_YIELD_PROGRESS |
+        static_cast<uint64_t>(m_c.htif.yield_rollup) << HTIF_YIELD_ROLLUP;
     write_htif_iyield(htif_iyield);
     // Resiter CLINT device
     register_pma_entry(make_clint_pma_entry(PMA_CLINT_START, PMA_CLINT_LENGTH));
     // Copy CLINT state to from config to machine
-    write_clint_mtimecmp(c.clint.mtimecmp);
+    write_clint_mtimecmp(m_c.clint.mtimecmp);
 
     // Register shadow device
-    register_pma_entry(make_shadow_pma_entry(PMA_SHADOW_START, PMA_SHADOW_LENGTH));
+    register_pma_entry(make_shadow_pma_entry(PMA_SHADOW_START,
+            PMA_SHADOW_LENGTH));
 
     // Initialize PMA extension metadata on ROM
-    rom_init(c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
+    rom_init(m_c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
 
     // Clear all TLB entries
     m_s.init_tlb();
@@ -458,15 +470,15 @@ void machine::write_pc(uint64_t val) {
 }
 
 uint64_t machine::read_mvendorid(void) const {
-    return MVENDORID;
+    return MVENDORID_INIT;
 }
 
 uint64_t machine::read_marchid(void) const {
-    return MARCHID;
+    return MARCHID_INIT;
 }
 
 uint64_t machine::read_mimpid(void) const {
-    return MIMPID;
+    return MIMPID_INIT;
 }
 
 uint64_t machine::read_mcycle(void) const {
@@ -1216,6 +1228,10 @@ void machine::verify_access_log(const access_log &log, bool one_based) {
     step_state_access a(log, log.get_log_type().has_proofs(), one_based);
     interpret(a, UINT64_MAX);
     a.finish();
+}
+
+machine_config machine::get_default_config(void) {
+    return machine_config{};
 }
 
 void machine::verify_state_transition(const hash_type &root_hash_before,

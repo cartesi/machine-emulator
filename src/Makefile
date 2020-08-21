@@ -68,7 +68,8 @@ BOOST_LIB=$(BOOST_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
 
 LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_LIB) $(GRPC_LIB_$(UNAME))
-GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(XKCP_LIB) $(GRPC_LIB_$(UNAME)) $(FS_LIB) $(BOOST_LIB)
+GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB_$(UNAME)) $(FS_LIB) $(BOOST_LIB)
+GRPC_CLT_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB_$(UNAME))
 
 #DEFS+= -DMT_ALL_DIRTY
 
@@ -119,8 +120,14 @@ LUACARTESI_OBJS:= \
 	machine-config.o \
 	interpret.o \
 	virtual-machine.o \
+	grpc-util.o \
 	grpc-virtual-machine.o \
-	luacartesi.o
+	clua-cartesi.o \
+	clua-machine.o \
+	clua-htif.o \
+	clua-grpc-machine.o \
+	clua-machine-util.o \
+	clua.o
 
 LUACARTESI_GRPC_OBJS:= \
 	versioning.pb.o \
@@ -186,15 +193,18 @@ PROTO_OBJS:= \
 	cartesi-machine.grpc.pb.o \
 	machine-discovery.grpc.pb.o
 
-$(PROTO_OBJS): CXXFLAGS +=  -Wno-unused-parameter
+$(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-deprecated-declarations
 
 GRPC_CLT_OBJS:= \
 	$(PROTO_OBJS) \
+    grpc-util.o \
+	merkle-tree.o \
 	client.o
 
 GRPC_SRV_OBJS:= \
 	$(PROTO_OBJS) \
     server.o \
+    grpc-util.o \
 	clint.o \
 	rom.o \
 	htif.o \
@@ -254,7 +264,7 @@ cartesi-machine-server: $(GRPC_SRV_OBJS)
 	$(CXX) -o $@ $^ $(GRPC_SRV_LIBS)
 
 cartesi-machine-client: $(GRPC_CLT_OBJS)
-	$(CXX) -o $@ $^ $(GRPC_LIB_$(UNAME))
+	$(CXX) -o $@ $^ $(GRPC_CLT_LIBS)
 
 cartesi-machine-server cartesi-machine-client: CXXFLAGS := $(GRPC_INC_$(UNAME)) $(CXXFLAGS)
 
@@ -266,7 +276,7 @@ cartesi-machine-server cartesi-machine-client: CXXFLAGS := $(GRPC_INC_$(UNAME)) 
 %.pb.cc: $(GRPC_DIR)/%.proto
 	$(PROTOC) -I$(GRPC_DIR) --cpp_out=. $<
 
-grpc-virtual-machine.o: $(LUACARTESI_GRPC_OBJS)
+grpc-util.o grpc-virtual-machine.o: $(LUACARTESI_GRPC_OBJS)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<

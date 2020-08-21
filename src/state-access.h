@@ -97,15 +97,15 @@ private:
 	}
 
 	uint64_t do_read_mvendorid(void) const {
-		return m_m.MVENDORID;
+		return MVENDORID_INIT;
 	}
 
 	uint64_t do_read_marchid(void) const {
-		return m_m.MARCHID;
+		return MARCHID_INIT;
 	}
 
 	uint64_t do_read_mimpid(void) const {
-		return m_m.MIMPID;
+		return MIMPID_INIT;
 	}
 
 	uint64_t do_read_mcycle(void) const {

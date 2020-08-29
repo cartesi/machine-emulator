@@ -428,17 +428,17 @@ public:
 
     /// \brief Reads the H I-flag
     bool read_iflags_H(void) {
-        return read_csr(csr::htif_ihalt);
+        return (read_csr(csr::iflags) >> IFLAGS_H_SHIFT) & 1;
     }
 
     /// \brief Reads the I I-flag
     bool read_iflags_I(void) {
-        return read_csr(csr::htif_iconsole);
+        return (read_csr(csr::iflags) >> IFLAGS_I_SHIFT) & 1;
     }
 
     /// \brief Reads the Y I-flag
     bool read_iflags_Y(void) {
-        return read_csr(csr::htif_iyield);
+        return (read_csr(csr::iflags) >> IFLAGS_Y_SHIFT) & 1;
     }
 
     /// \brief Writes the iflags register

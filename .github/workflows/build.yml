@@ -116,12 +116,12 @@ jobs:
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: ${{ steps.git_org.outputs.current_organization }}/machine-tests
-          tag: 'v0.4.0'
-          file: machine-tests-v0.4.0.tar.gz
+          tag: 'v0.6.0'
+          file: machine-tests-v0.6.0.tar.gz
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Untar test suite
-        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.4.0.tar.gz -C /opt/cartesi/tests
+        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.6.0.tar.gz -C /opt/cartesi/tests
 
       - name: Run test suite
         run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run

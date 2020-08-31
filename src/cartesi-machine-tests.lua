@@ -19,6 +19,8 @@
 local cartesi = require"cartesi"
 local util = require"cartesi.util"
 
+-- Tests Cases
+-- format {"ram_image_file", number_of_cycles, halt_payload, yield_payloads}
 local tests = {
   {"rv64mi-p-access.bin", 110},
   {"rv64mi-p-breakpoint.bin", 61},
@@ -204,6 +206,7 @@ local tests = {
 -- regression tests
   {"sd_pma_overflow.bin", 16},
   {"xpie_exceptions.bin", 51},
+  {"htif_devices.bin", 498, 42, {10, 20, 30, 45, 55, 65}}
 }
 
 -- Print help and exit
@@ -347,33 +350,32 @@ assert(test_path, "missing test path")
 local function nothing()
 end
 
-local function run_machine(machine, expected_cycles, callback)
-    local max_mcycle = 2*expected_cycles
-    local cycles = machine:read_mcycle()
-    callback = callback or nothing
-    local next_action_mcycle = math.maxinteger
+local function get_next_action_mcycle(cycles)
     if periodic_action then
-      if periodic_action_start ~= 0 then
-          next_action_mcycle = periodic_action_start
-      else
-          next_action_mcycle = periodic_action_period
+      local next_action_mcycle = periodic_action_start
+      if next_action_mcycle <= cycles then
+          next_action_mcycle = next_action_mcycle
+            + ((((cycles-periodic_action_start)//periodic_action_period)+1) * periodic_action_period)
       end
+      return next_action_mcycle
     end
-    callback()
+    return math.maxinteger
+end
+
+local function run_machine(machine, max_mcycle, callback)
+    callback = callback or nothing
+    local cycles = machine:read_mcycle()
+    local next_action_mcycle = get_next_action_mcycle(cycles)
     while math.ult(cycles, max_mcycle) do
         machine:run(math.min(next_action_mcycle, max_mcycle))
         cycles = machine:read_mcycle()
         if periodic_action and cycles == next_action_mcycle then
-            callback()
             next_action_mcycle = next_action_mcycle + periodic_action_period
-        else
-            callback()
+            callback(machine)
         end
-        if machine:read_iflags_H() then break end
+        if machine:read_iflags_H() or machine:read_iflags_Y() then break end
     end
-    local final_cycle = machine:read_mcycle()
-    local payload = machine:read_htif_tohost() << 16 >> 17
-    return final_cycle, payload
+    return machine:read_mcycle()
 end
 
 local function build_machine(test_name)
@@ -389,7 +391,12 @@ local function build_machine(test_name)
         ram = {
             length = 32 << 20,
             image_filename = test_path .. "/" .. test_name
-        }
+        },
+        htif = {
+            console_getchar = false,
+            yield_progress = true,
+            yield_rollup = true
+        },
     })
 end
 
@@ -404,51 +411,98 @@ local function print_machine(test_name, expected_cycles)
     )
 end
 
+local function add_error(errors, ram_image, msg, ...)
+    local e = string.format(msg, ...)
+    if not errors[ram_image] then errors[ram_image] = {} end
+    local ram_image_errors = errors[ram_image]
+    ram_image_errors[#ram_image_errors + 1] = e
+end
+
+local function check_test_result(machine, ctx, errors)
+    if machine:read_iflags_Y() then
+        local expected_yield_payload = ctx.expected_yield_payloads[ctx.yield_payload_index] or 0
+        ctx.yield_payload_index = ctx.yield_payload_index + 1
+        if machine:read_htif_tohost_data() ~= expected_yield_payload then
+            add_error(errors, ctx.ram_image, "returned yield payload %d, expected %d", machine:read_htif_tohost_data(), expected_yield_payload)
+            ctx.failed = true
+        end
+    else
+        if #ctx.expected_yield_payloads ~= (ctx.yield_payload_index - 1) then
+            add_error(errors, ctx.ram_image, "yielded %d times, expected %d", ctx.yield_payload_index-1, #ctx.expected_yield_payloads)
+            ctx.failed = true
+        end
+        if machine:read_htif_tohost_data() >> 1 ~= ctx.expected_halt_payload then
+            add_error(errors, ctx.ram_image, "returned halt payload %d, expected %d",  machine:read_htif_tohost_data() >> 1, ctx.expected_halt_payload)
+            ctx.failed = true
+        end
+        if ctx.cycles ~= ctx.expected_cycles then
+            add_error(errors, ctx.ram_image, "terminated with mcycle = %d, expected %d", ctx.cycles, ctx.expected_cycles)
+            ctx.failed = true
+        end
+    end
+end
+
 local function run(tests)
-    local errors = {}
+    local errors, error_count = {}, 0
     for _, test in ipairs(tests) do
-        local ram_image = test[1]
-        local expected_cycles = test[2]
-        io.write(ram_image, " ")
-        local machine = build_machine(ram_image)
-        local cycles, payload = run_machine(machine, expected_cycles)
-        if payload ~= 0 then
-            local e = string.format("%s returned non-zero payload %d", ram_image, payload)
-            errors[#errors+1] = e
-            print(e)
-        elseif cycles ~= expected_cycles then
-            local e = string.format("%s terminated with mcycle = %d, expected %d",
-                ram_image, cycles, expected_cycles)
-            errors[#errors+1] = e
-            print(e)
+        local ctx = {
+            ram_image = test[1],
+            expected_cycles = test[2],
+            expected_halt_payload = test[3] or 0,
+            expected_yield_payloads = test[4] or {},
+            yield_payload_index = 1,
+            failed = false,
+            cycles = 0
+        }
+        local machine = build_machine(ctx.ram_image)
+
+        io.write(ctx.ram_image, ": ")
+        repeat
+            ctx.cycles = run_machine(machine, 2 * ctx.expected_cycles)
+            check_test_result(machine, ctx, errors)
+        until not machine:read_iflags_Y()
+
+        if ctx.failed then
+            print("failed")
+            error_count = error_count + 1
         else
-            print(" passed")
+            print("passed")
         end
         machine:shutdown()
     end
-    if #errors > 0 then
-        io.write(string.format("FAILED %d tests\n", #errors))
-        for i, e in ipairs(errors) do
-            io.write("\t", e, "\n")
+    if error_count > 0 then
+        io.write(string.format("\nFAILED %d of %d tests:\n\n", error_count, #tests))
+        for k, v in pairs(errors) do
+          for _, e in ipairs(v) do
+            io.write(string.format("\t%s: %s\n", k, e))
+          end
         end
         os.exit(1, true)
     else
-        print("passed all tests")
+        io.write(string.format("\nPASSED all %d tests\n\n", #tests))
         os.exit(0, true)
     end
+end
+
+local function print_machine_hash(machine)
+    machine:update_merkle_tree()
+    print(machine:read_mcycle(), util.hexhash(machine:get_root_hash()))
 end
 
 local function hash(tests)
     for _, test in ipairs(tests) do
         local ram_image = test[1]
         local expected_cycles = test[2]
-        print(ram_image)
+        local expected_payload = test[3] or 0
         local machine = build_machine(ram_image)
-        local cycles, payload = run_machine(machine, expected_cycles, function()
-            machine:update_merkle_tree()
-            print(machine:read_mcycle(), util.hexhash(machine:get_root_hash()))
-        end)
-        if payload ~= 0 or cycles ~= expected_cycles then
+        local cycles
+        io.write(ram_image, ":\n")
+        print_machine_hash(machine)
+        repeat
+            cycles = run_machine(machine, 2 * expected_cycles, print_machine_hash)
+        until not machine:read_iflags_Y()
+        print_machine_hash(machine)
+        if machine:read_htif_tohost_data() >> 1 ~= expected_payload or cycles ~= expected_cycles then
             os.exit(1, true)
         end
         machine:shutdown()
@@ -463,14 +517,24 @@ local function print_machines(tests)
     end
 end
 
+local function print_machine_json_log(machine, log_type, out)
+    local init_cycles = machine:read_mcycle()
+    local log = machine:step(log_type)
+    local final_cycles = machine:read_mcycle()
+    util.dump_json_log(log, init_cycles, final_cycles, out, 3)
+    if not machine:read_iflags_H() then out:write(',\n')
+    else out:write('\n') end
+end
+
 local function step(tests)
     local out = io.stdout
     local indentout = util.indentout
-    out:write("[\n")
     local log_type = {} -- no proofs or annotations
+    out:write("[\n")
     for i, test in ipairs(tests) do
         local ram_image = test[1]
         local expected_cycles = test[2]
+        local expected_payload = test[3] or 0
         local machine = build_machine(ram_image)
         indentout(out, 1, "{\n")
         indentout(out, 2, '"test": "%s",\n', ram_image)
@@ -479,18 +543,18 @@ local function step(tests)
             indentout(out, 2, '"start": %u,\n', periodic_action_start)
         end
         indentout(out, 2, '"steps": [\n')
-        local cycles, payload = run_machine(machine, expected_cycles, function()
-            local init_cycles = machine:read_mcycle()
-            local log = machine:step(log_type)
-            local final_cycles = machine:read_mcycle()
-            util.dump_json_log(log, init_cycles, final_cycles, out, 3)
-            if not machine:read_iflags_H() then out:write(',\n')
-            else out:write('\n') end
-        end)
+        local cycles
+        print_machine_json_log(machine, log_type, out)
+        repeat
+            cycles = run_machine(machine, 2 * expected_cycles, function(machine)
+                print_machine_json_log(machine, log_type, out)
+            end)
+        until not machine:read_iflags_Y()
+        print_machine_json_log(machine, log_type, out)
         indentout(out, 2, "]\n")
         if tests[i+1] then indentout(out, 1, "},\n")
         else indentout(out, 1, "}\n") end
-        if payload ~= 0 or cycles ~= expected_cycles then
+        if machine:read_htif_tohost_data() >> 1 ~= expected_payload or cycles ~= expected_cycles then
             os.exit(1, true)
         end
         machine:shutdown()

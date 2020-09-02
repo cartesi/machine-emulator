@@ -20,11 +20,18 @@
 #include <cstdint>
 #include <termios.h>
 
+#include <htif-defines.h>
+
 #include "machine-config.h"
 #include "pma.h"
 
 /// \file
 /// \brief Host-Target interface device.
+
+// helper for using UINT64_C with defines
+#ifndef EXPAND_UINT64_C
+#define EXPAND_UINT64_C(a) UINT64_C(a)
+#endif
 
 namespace cartesi {
 
@@ -33,16 +40,16 @@ class machine;
 
 /// \brief HTIF shifts
 enum HTIF_shifts {
-    HTIF_DEV_SHIFT = 56,
-    HTIF_CMD_SHIFT = 48,
-    HTIF_DATA_SHIFT = 0
+    HTIF_DEV_SHIFT  = HTIF_DEV_SHIFT_DEF,
+    HTIF_CMD_SHIFT  = HTIF_CMD_SHIFT_DEF,
+    HTIF_DATA_SHIFT = HTIF_DATA_SHIFT_DEF
 };
 
 /// \brief HTIF shifts
 enum HTIF_masks: uint64_t {
-    HTIF_DEV_MASK = UINT64_C(0xff) << HTIF_DEV_SHIFT,
-    HTIF_CMD_MASK = UINT64_C(0xff) << HTIF_CMD_SHIFT,
-    HTIF_DATA_MASK = UINT64_C(0xffffffffffff) << HTIF_DATA_SHIFT
+    HTIF_DEV_MASK = EXPAND_UINT64_C(HTIF_DEV_MASK_DEF),
+    HTIF_CMD_MASK = EXPAND_UINT64_C(HTIF_CMD_MASK_DEF),
+    HTIF_DATA_MASK = EXPAND_UINT64_C(HTIF_DATA_MASK_DEF)
 };
 
 #define HTIF_BUILD(dev, cmd, data) \
@@ -65,19 +72,19 @@ enum HTIF_constants {
 };
 
 /// \brief HTIF devices
-enum HTIF_devices {
-    HTIF_DEVICE_HALT = 0,        ///< Used to halt machine
-    HTIF_DEVICE_CONSOLE = 1,     ///< Used for console input and output
-    HTIF_DEVICE_YIELD = 2,       ///< Used to yield control back to host
+enum HTIF_devices: uint64_t {
+    HTIF_DEVICE_HALT    = HTIF_DEVICE_HALT_DEF,    ///< Used to halt machine
+    HTIF_DEVICE_CONSOLE = HTIF_DEVICE_CONSOLE_DEF, ///< Used for console input and output
+    HTIF_DEVICE_YIELD   = HTIF_DEVICE_YIELD_DEF,   ///< Used to yield control back to host
 };
 
 /// \brief HTIF commands
-enum HTIF_commands {
-    HTIF_HALT_HALT = 0,
-    HTIF_CONSOLE_GETCHAR = 0,
-    HTIF_CONSOLE_PUTCHAR = 1,
-    HTIF_YIELD_PROGRESS = 0,
-    HTIF_YIELD_ROLLUP = 1,
+enum HTIF_commands: uint64_t {
+    HTIF_HALT_HALT       = HTIF_HALT_HALT_DEF,
+    HTIF_CONSOLE_GETCHAR = HTIF_CONSOLE_GETCHAR_DEF,
+    HTIF_CONSOLE_PUTCHAR = HTIF_CONSOLE_PUTCHAR_DEF,
+    HTIF_YIELD_PROGRESS  = HTIF_YIELD_PROGRESS_DEF,
+    HTIF_YIELD_ROLLUP    = HTIF_YIELD_ROLLUP_DEF,
 };
 
 /// \brief Host-Target interface implementation

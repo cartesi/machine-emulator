@@ -250,7 +250,7 @@ static bool htif_halt(i_virtual_state_access *a, htif *h, uint64_t cmd,
 static bool htif_yield_progress(i_virtual_state_access *a, htif *h, uint64_t cmd,
     uint64_t data) {
     (void) data;
-    a->set_iflags_Y(h->has_yield_progress());
+    a->set_iflags_Y(h && h->has_yield_progress());
     // Write acknowledgement to fromhost
     a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD,
         HTIF_YIELD_PROGRESS, cmd));
@@ -260,7 +260,7 @@ static bool htif_yield_progress(i_virtual_state_access *a, htif *h, uint64_t cmd
 static bool htif_yield_rollup(i_virtual_state_access *a, htif *h, uint64_t cmd,
     uint64_t data) {
     (void) data;
-    a->set_iflags_Y(h->has_yield_rollup());
+    a->set_iflags_Y(h && h->has_yield_rollup());
     // Write acknowledgement to fromhost
     a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD,
         HTIF_YIELD_ROLLUP, cmd));

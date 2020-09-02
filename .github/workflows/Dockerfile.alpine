@@ -1,20 +1,17 @@
 FROM alpine:3.12 as builder
 
 RUN apk add --no-cache \
+    build-base \
     autoconf \
     automake \
     boost \
     boost-dev \
     cmake \
     curl \
-    file \
-    g++ \
     git \
-    libstdc++ \
     libtool \
     libgomp \
     grpc-dev \
-    make \
     openssl \
     patchelf \
     readline \

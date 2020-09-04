@@ -46,7 +46,7 @@ public:
 
     virtual ~grpc_virtual_machine();
 
-    static grpc_machine_stub_ptr connect(const std::string &address);
+    static grpc_machine_stub_ptr stub(const std::string &address);
 
     static semantic_version get_version(grpc_machine_stub_ptr stub);
 

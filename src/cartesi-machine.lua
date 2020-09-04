@@ -642,7 +642,7 @@ local machine
 
 if server then
     stderr("Connecting to server '%s'\n", server)
-    server = assert(cartesi.grpc.connect(server))
+    server = assert(cartesi.grpc.stub(server))
     local v = assert(server.get_version())
     stderr("Connected: server version is %d.%d.%d\n", v.major, v.minor, v.patch)
 end

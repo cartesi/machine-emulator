@@ -131,17 +131,17 @@ static const luaL_Reg grpc_server_static_methods[] = {
     { nullptr, nullptr }
 };
 
-/// \brief This is the grpc.connect() method implementation.
-static int mod_connect(lua_State *L) {
+/// \brief This is the grpc.stub() method implementation.
+static int mod_stub(lua_State *L) {
     const char *address = luaL_checkstring(L, 1);
     grpc_machine_stub_ptr *p = reinterpret_cast<grpc_machine_stub_ptr *>(
         lua_newuserdata(L, sizeof(grpc_machine_stub_ptr))); // stub
     new (p) grpc_machine_stub_ptr();
-    *p = grpc_virtual_machine::connect(address);
+    *p = grpc_virtual_machine::stub(address);
     if (!(*p)) {
         lua_pop(L, 2);
         lua_pushnil(L);
-        lua_pushliteral(L, "connection failed");
+        lua_pushliteral(L, "stub creation failed");
         return 2;
     }
     clua_setmetatable<grpc_machine_stub_ptr>(L, -1); // stub
@@ -165,7 +165,7 @@ static int mod_connect(lua_State *L) {
 
 /// \brief Contents of the grpc module.
 static luaL_Reg mod[] = {
-    {"connect", mod_connect },
+    {"stub", mod_stub },
     { nullptr, nullptr }
 };
 

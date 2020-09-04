@@ -272,7 +272,7 @@ void grpc_virtual_machine::verify_state_transition(grpc_machine_stub_ptr stub,
     check_status(stub->VerifyStateTransition(&context, request, &response));
 }
 
-grpc_machine_stub_ptr grpc_virtual_machine::connect(
+grpc_machine_stub_ptr grpc_virtual_machine::stub(
     const std::string &address) {
     return Machine::NewStub(grpc::CreateChannel(address,
             grpc::InsecureChannelCredentials()));

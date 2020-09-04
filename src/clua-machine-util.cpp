@@ -307,29 +307,68 @@ merkle_tree::proof_type clua_check_proof(lua_State *L, int tabidx) {
     };
 }
 
-/// \brief Loads a word_acces from Lua.
+/// \brief Returns an access_data field indexed by string in a table.
+/// \param L Lua state.
+/// \param tabidx Table stack index.
+/// \param field Field index.
+/// \param log2_size Expected log2 of size of data
+/// \param opt Whether filed is optional
+/// \returns Field value. Throws error if field is not optional but is missing.
+static access_data aux_access_data_field(lua_State *L, int tabidx, 
+    const char *field, uint64_t log2_size, bool opt) {
+    access_data a;
+    tabidx = lua_absindex(L, tabidx);
+    lua_getfield(L, tabidx, field);
+    if (lua_isstring(L, -1)) {
+        size_t len = 0;
+        const char *s = lua_tolstring(L, -1, &len);
+        uint64_t expected_len = UINT64_C(1) << log2_size;
+        if (len != expected_len)
+            luaL_error(L, "invalid %s (expected string with 2^%d bytes)", field,
+                (int) log2_size);
+        a.reserve(len);
+        std::copy(s, s+len, std::back_inserter(a));
+    } else if (!opt || !lua_isnil(L, -1)) {
+        luaL_error(L, "invalid %s (expected string)", field);
+    }
+    lua_pop(L, 1);
+    return a;
+}
+
+static access_data check_access_data_field(lua_State *L, int tabidx, 
+    const char *field, uint64_t log2_size) {
+    return aux_access_data_field(L, tabidx, field, log2_size, false);
+}
+
+static access_data opt_access_data_field(lua_State *L, int tabidx, 
+    const char *field, uint64_t log2_size) {
+    return aux_access_data_field(L, tabidx, field, log2_size, true);
+}
+
+/// \brief Loads an access from Lua.
 /// \param L Lua state.
 /// \param tabidx Word_access stack index.
 /// \returns The word_access.
-static word_access check_word_access(lua_State *L, int tabidx, bool proofs) {
+static access check_access(lua_State *L, int tabidx, bool proofs) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
-    merkle_tree::proof_type proof;
+    access a;
     if (proofs) {
         lua_getfield(L, tabidx, "proof");
-        proof = clua_check_proof(L, -1);
+        a.proof = clua_check_proof(L, -1);
         lua_pop(L, 1);
     }
-    return {
-        check_access_type_field(L, tabidx, "type"),
-        check_uint_field(L, tabidx, "address"),
-        check_uint_field(L, tabidx, "read"),
-        opt_uint_field(L, tabidx, "written", 0),
-        proof
-    };
+    a.type = check_access_type_field(L, tabidx, "type");
+    a.address = check_uint_field(L, tabidx, "address");
+    a.log2_size = check_uint_field(L, tabidx, "log2_size");
+    if (a.log2_size < 3 || a.log2_size > 64)
+        luaL_error(L, "invalid log2_size (expected integer in {3..64})");
+    a.read = check_access_data_field(L, tabidx, "read", a.log2_size);
+    a.written = opt_access_data_field(L, tabidx, "written", a.log2_size);
+    return a;
 }
 
 access_log clua_check_access_log(lua_State *L, int tabidx) {
-    std::vector<word_access> accesses;
+    std::vector<access> accesses;
     std::vector<bracket_note> brackets;
     std::vector<std::string> notes;
     luaL_checktype(L, tabidx, LUA_TTABLE);
@@ -344,7 +383,7 @@ access_log clua_check_access_log(lua_State *L, int tabidx) {
         if (!lua_istable(L, -1)) {
             luaL_error(L, "access [%d] not a table", i);
         }
-        accesses.emplace_back(check_word_access(L, -1, proofs));
+        accesses.emplace_back(check_access(L, -1, proofs));
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
@@ -446,6 +485,13 @@ static const char *bracket_type_name(bracket_type type) {
     return nullptr;
 }
 
+/// \brief Pushes an access_data to the Lua stack
+/// \param L Lua state.
+/// \param a Access_data to be pushed.
+static void push_access_data(lua_State *L, const access_data &a) {
+    lua_pushlstring(L, reinterpret_cast<const char *>(a.data()), a.size());
+}
+
 /// \brief Pushes an access log to the Lua stack
 /// \param L Lua state.
 /// \param log Access log to be pushed.
@@ -464,10 +510,12 @@ void clua_push_access_log(lua_State *L, const access_log &log) {
         lua_setfield(L, -2, "type");
         lua_pushinteger(L, a.address);
         lua_setfield(L, -2, "address");
-        lua_pushinteger(L, a.read);
+        lua_pushinteger(L, a.log2_size);
+        lua_setfield(L, -2, "log2_size");
+        push_access_data(L, a.read);
         lua_setfield(L, -2, "read");
         if (a.type == access_type::write) {
-            lua_pushinteger(L, a.written);
+            push_access_data(L, a.written);
             lua_setfield(L, -2, "written");
         }
         if (log_type.has_proofs()) {

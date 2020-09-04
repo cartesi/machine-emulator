@@ -179,24 +179,24 @@ void set_proto_access_log(const access_log &al,
     proto_al->mutable_log_type()->set_annotations(
         al.get_log_type().has_annotations());
     proto_al->mutable_log_type()->set_proofs(al.get_log_type().has_proofs());
-    for (const auto &wa: al.get_accesses()) {
-        auto proto_wa = proto_al->add_accesses();
-        switch (wa.type) {
+    for (const auto &a: al.get_accesses()) {
+        auto proto_a = proto_al->add_accesses();
+        switch (a.type) {
             case access_type::read:
-                proto_wa->set_type(CartesiMachine::AccessType::READ);
+                proto_a->set_type(CartesiMachine::AccessType::READ);
                 break;
             case access_type::write:
-                proto_wa->set_type(CartesiMachine::AccessType::WRITE);
+                proto_a->set_type(CartesiMachine::AccessType::WRITE);
                 break;
             default:
                 throw std::invalid_argument{"Invalid AccessType"};
                 break;
         }
-        proto_wa->set_address(wa.address);
-        proto_wa->mutable_read()->set_data(&wa.read, sizeof(wa.read));
-        proto_wa->mutable_written()->set_data(&wa.written, sizeof(wa.written));
+        proto_a->set_address(a.address);
+        proto_a->set_read(a.read.data(), a.read.size());
+        proto_a->set_written(a.written.data(), a.written.size());
         if (al.get_log_type().has_proofs()) {
-            set_proto_proof(wa.proof, proto_wa->mutable_proof());
+            set_proto_proof(a.proof, proto_a->mutable_proof());
         }
     }
     if (al.get_log_type().has_annotations()) {
@@ -247,14 +247,6 @@ access_type get_proto_access_type(CartesiMachine::AccessType proto_at) {
     };
 }
 
-uint64_t get_proto_word(const CartesiMachine::Word &proto_w) {
-  uint64_t w;
-  if (proto_w.data().size() > sizeof(w))
-      throw std::runtime_error("Word is too big");
-  memcpy(&w, proto_w.data().data(), proto_w.data().size());
-  return w;
-}
-
 access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
     if (proto_al.log_type().annotations() &&
         proto_al.accesses().size() != proto_al.notes().size())
@@ -280,17 +272,20 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
             pbr++;
         }
         if (pac != proto_accesses.end()) {
-            word_access wa;
-            wa.type = get_proto_access_type(pac->type());
-            wa.address = pac->address();
-            wa.read = get_proto_word(pac->read());
-            wa.written = get_proto_word(pac->written());
+            access a;
+            a.type = get_proto_access_type(pac->type());
+            a.address = pac->address();
+            a.log2_size = pac->log2_size();
+            std::copy(pac->read().begin(), pac->read().end(),
+                std::back_inserter(a.read));
+            std::copy(pac->written().begin(), pac->written().end(),
+                std::back_inserter(a.written));
             std::string note;
             if (has_annotations)
                 note = *pnt++;
             if (has_proofs)
-                wa.proof = get_proto_proof(pac->proof());
-            al.push_access(wa, note.c_str());
+                a.proof = get_proto_proof(pac->proof());
+            al.push_access(a, note.c_str());
             pac++;
             iac++;
         }

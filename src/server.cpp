@@ -128,7 +128,7 @@ enum class BreakReason {
 // Logic and data behind the server's behavior.
 class MachineServiceImpl final: public CartesiMachine::Machine::Service {
 
-    using WordAccess = CartesiMachine::WordAccess;
+    using Access = CartesiMachine::Access;
     using AccessLog = CartesiMachine::AccessLog;
     using AccessLogType = CartesiMachine::AccessLogType;
     using BracketNote = CartesiMachine::BracketNote;
@@ -159,7 +159,6 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
     using StoreRequest = CartesiMachine::StoreRequest;
     using GetVersionResponse = Versioning::GetVersionResponse;
     using Void = CartesiMachine::Void;
-    using Word = CartesiMachine::Word;
     using WriteMemoryRequest = CartesiMachine::WriteMemoryRequest;
 
     std::mutex barrier_;

@@ -120,21 +120,21 @@ private:
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
     /// \param val Value read.
     /// \param text Textual description of the access.
-    uint64_t log_read(uint64_t paligned, uint64_t val, const char *text) const {
+    uint64_t log_word_read(uint64_t paligned, uint64_t val, const char *text) const {
         static_assert(merkle_tree::get_log2_word_size() ==
             size_log2<uint64_t>::value,
             "Machine and merkle_tree word sizes must match");
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
-        word_access wa;
+        access a;
         if (m_log->get_log_type().has_proofs()) {
             m_m.get_proof(paligned,
-                merkle_tree::get_log2_word_size(), wa.proof);
+                merkle_tree::get_log2_word_size(), a.proof);
         }
-        wa.type = access_type::read;
-        wa.address = paligned;
-        wa.read = val;
-        wa.written = 0;
-        m_log->push_access(wa, text);
+        a.type = access_type::read;
+        a.address = paligned;
+        a.log2_size = 3;
+        set_word_access_data(val, a.read);
+        m_log->push_access(std::move(a), text);
         return val;
     }
 
@@ -143,26 +143,27 @@ private:
     /// \param dest Value before writing.
     /// \param val Value to write.
     /// \param text Textual description of the access.
-    void log_before_write(uint64_t paligned, uint64_t dest, uint64_t val, const char *text) {
+    void log_before_word_write(uint64_t paligned, uint64_t dest, uint64_t val, const char *text) {
         static_assert(merkle_tree::get_log2_word_size() ==
             size_log2<uint64_t>::value,
             "Machine and merkle_tree word sizes must match");
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
-        word_access wa;
+        access a;
         if (m_log->get_log_type().has_proofs()) {
             m_m.get_proof(paligned,
-                merkle_tree::get_log2_word_size(), wa.proof);
+                merkle_tree::get_log2_word_size(), a.proof);
         }
-        wa.type = access_type::write;
-        wa.address = paligned;
-        wa.read = dest;
-        wa.written = val;
-        m_log->push_access(wa, text);
+        a.type = access_type::write;
+        a.address = paligned;
+        a.log2_size = 3;
+        set_word_access_data(dest, a.read);
+        set_word_access_data(val, a.written);
+        m_log->push_access(std::move(a), text);
     }
 
     /// \brief Updates the Merkle tree after the modification of a word in the machine state.
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
-    void update_after_write(uint64_t paligned) {
+    void update_after_word_write(uint64_t paligned) {
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
         if (m_log->get_log_type().has_proofs()) {
             bool updated = m_m.update_merkle_tree_page(paligned);
@@ -175,11 +176,11 @@ private:
     /// \param dest Reference to value before writing.
     /// \param val Value to write to \p dest.
     /// \param text Textual description of the access.
-    void log_before_write_write_and_update(uint64_t paligned, uint64_t &dest, uint64_t val, const char *text) {
+    void log_before_word_write_write_and_update(uint64_t paligned, uint64_t &dest, uint64_t val, const char *text) {
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
-        log_before_write(paligned, dest, val, text);
+        log_before_word_write(paligned, dest, val, text);
         dest = val;
-        update_after_write(paligned);
+        update_after_word_write(paligned);
     }
 
 // Declare interface as friend to it can forward calls to the "overriden" methods.
@@ -202,208 +203,208 @@ friend i_state_access<logged_state_access>;
     }
 
     uint64_t do_read_x(int reg) const {
-        return log_read(PMA_SHADOW_START + shadow_get_register_rel_addr(reg), m_m.get_state().x[reg], "x");
+        return log_word_read(PMA_SHADOW_START + shadow_get_register_rel_addr(reg), m_m.get_state().x[reg], "x");
     }
 
     void do_write_x(int reg, uint64_t val) {
         assert(reg != 0);
-        return log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_register_rel_addr(reg), m_m.get_state().x[reg], val, "x");
+        return log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_register_rel_addr(reg), m_m.get_state().x[reg], val, "x");
     }
 
     uint64_t do_read_pc(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::pc), m_m.get_state().pc, "pc");
+        return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::pc), m_m.get_state().pc, "pc");
     }
 
     void do_write_pc(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::pc), m_m.get_state().pc, val, "pc");
+        log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::pc), m_m.get_state().pc, val, "pc");
     }
 
 	uint64_t do_read_minstret(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::minstret), m_m.get_state().minstret, "minstret");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::minstret), m_m.get_state().minstret, "minstret");
 	}
 
 	void do_write_minstret(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::minstret), m_m.get_state().minstret, val, "minstret");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::minstret), m_m.get_state().minstret, val, "minstret");
 	}
 
 	uint64_t do_read_mvendorid(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mvendorid), MVENDORID_INIT, "mvendorid");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mvendorid), MVENDORID_INIT, "mvendorid");
 	}
 
 	uint64_t do_read_marchid(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::marchid), MARCHID_INIT, "marchid");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::marchid), MARCHID_INIT, "marchid");
 	}
 
 	uint64_t do_read_mimpid(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mimpid), MIMPID_INIT, "mimpid");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mimpid), MIMPID_INIT, "mimpid");
 	}
 
 	uint64_t do_read_mcycle(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcycle), m_m.get_state().mcycle, "mcycle");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcycle), m_m.get_state().mcycle, "mcycle");
 	}
 
 	void do_write_mcycle(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcycle), m_m.get_state().mcycle, val, "mcycle");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcycle), m_m.get_state().mcycle, val, "mcycle");
 	}
 
 	uint64_t do_read_mstatus(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mstatus), m_m.get_state().mstatus, "mstatus");
+        return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mstatus), m_m.get_state().mstatus, "mstatus");
 	}
 
 	void do_write_mstatus(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mstatus), m_m.get_state().mstatus, val, "mstatus");
+        log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mstatus), m_m.get_state().mstatus, val, "mstatus");
 	}
 
 	uint64_t do_read_mtvec(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtvec), m_m.get_state().mtvec, "mtvec");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtvec), m_m.get_state().mtvec, "mtvec");
 	}
 
 	void do_write_mtvec(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtvec), m_m.get_state().mtvec, val, "mtvec");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtvec), m_m.get_state().mtvec, val, "mtvec");
 	}
 
 	uint64_t do_read_mscratch(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mscratch), m_m.get_state().mscratch, "mscratch");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mscratch), m_m.get_state().mscratch, "mscratch");
 	}
 
 	void do_write_mscratch(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mscratch), m_m.get_state().mscratch, val, "mscratch");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mscratch), m_m.get_state().mscratch, val, "mscratch");
 	}
 
 	uint64_t do_read_mepc(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mepc), m_m.get_state().mepc, "mepc");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mepc), m_m.get_state().mepc, "mepc");
 	}
 
 	void do_write_mepc(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mepc), m_m.get_state().mepc, val, "mepc");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mepc), m_m.get_state().mepc, val, "mepc");
 	}
 
 	uint64_t do_read_mcause(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcause), m_m.get_state().mcause, "mcause");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcause), m_m.get_state().mcause, "mcause");
 	}
 
 	void do_write_mcause(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcause), m_m.get_state().mcause, val, "mcause");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcause), m_m.get_state().mcause, val, "mcause");
 	}
 
 	uint64_t do_read_mtval(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtval), m_m.get_state().mtval, "mtval");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtval), m_m.get_state().mtval, "mtval");
 	}
 
 	void do_write_mtval(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtval), m_m.get_state().mtval, val, "mtval");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtval), m_m.get_state().mtval, val, "mtval");
 	}
 
 	uint64_t do_read_misa(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::misa), m_m.get_state().misa, "misa");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::misa), m_m.get_state().misa, "misa");
 	}
 
 	void do_write_misa(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::misa), m_m.get_state().misa, val, "misa");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::misa), m_m.get_state().misa, val, "misa");
 	}
 
 	uint64_t do_read_mie(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mie), m_m.get_state().mie, "mie");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mie), m_m.get_state().mie, "mie");
 	}
 
 	void do_write_mie(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mie), m_m.get_state().mie, val, "mie");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mie), m_m.get_state().mie, val, "mie");
 	}
 
 	uint64_t do_read_mip(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mip), m_m.get_state().mip, "mip");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mip), m_m.get_state().mip, "mip");
 	}
 
 	void do_write_mip(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mip), m_m.get_state().mip, val, "mip");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mip), m_m.get_state().mip, val, "mip");
 	}
 
 	uint64_t do_read_medeleg(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::medeleg), m_m.get_state().medeleg, "medeleg");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::medeleg), m_m.get_state().medeleg, "medeleg");
 	}
 
 	void do_write_medeleg(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::medeleg), m_m.get_state().medeleg, val, "medeleg");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::medeleg), m_m.get_state().medeleg, val, "medeleg");
 	}
 
 	uint64_t do_read_mideleg(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mideleg), m_m.get_state().mideleg, "mideleg");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mideleg), m_m.get_state().mideleg, "mideleg");
 	}
 
 	void do_write_mideleg(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mideleg), m_m.get_state().mideleg, val, "mideleg");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mideleg), m_m.get_state().mideleg, val, "mideleg");
 	}
 
 	uint64_t do_read_mcounteren(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcounteren), m_m.get_state().mcounteren, "mcounteren");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcounteren), m_m.get_state().mcounteren, "mcounteren");
 	}
 
 	void do_write_mcounteren(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcounteren), m_m.get_state().mcounteren, val, "mcounteren");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcounteren), m_m.get_state().mcounteren, val, "mcounteren");
 	}
 
 	uint64_t do_read_stvec(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stvec), m_m.get_state().stvec, "stvec");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stvec), m_m.get_state().stvec, "stvec");
 	}
 
 	void do_write_stvec(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stvec), m_m.get_state().stvec, val, "stvec");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stvec), m_m.get_state().stvec, val, "stvec");
 	}
 
 	uint64_t do_read_sscratch(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sscratch), m_m.get_state().sscratch, "sscratch");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sscratch), m_m.get_state().sscratch, "sscratch");
 	}
 
 	void do_write_sscratch(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sscratch), m_m.get_state().sscratch, val, "sscratch");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sscratch), m_m.get_state().sscratch, val, "sscratch");
 	}
 
 	uint64_t do_read_sepc(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sepc), m_m.get_state().sepc, "sepc");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sepc), m_m.get_state().sepc, "sepc");
 	}
 
 	void do_write_sepc(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sepc), m_m.get_state().sepc, val, "sepc");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sepc), m_m.get_state().sepc, val, "sepc");
 	}
 
 	uint64_t do_read_scause(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scause), m_m.get_state().scause, "scause");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scause), m_m.get_state().scause, "scause");
 	}
 
 	void do_write_scause(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scause), m_m.get_state().scause, val, "scause");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scause), m_m.get_state().scause, val, "scause");
 	}
 
 	uint64_t do_read_stval(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stval), m_m.get_state().stval, "stval");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stval), m_m.get_state().stval, "stval");
 	}
 
 	void do_write_stval(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stval), m_m.get_state().stval, val, "stval");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stval), m_m.get_state().stval, val, "stval");
 	}
 
 	uint64_t do_read_satp(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::satp), m_m.get_state().satp, "satp");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::satp), m_m.get_state().satp, "satp");
 	}
 
 	void do_write_satp(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::satp), m_m.get_state().satp, val, "satp");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::satp), m_m.get_state().satp, val, "satp");
 	}
 
 	uint64_t do_read_scounteren(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scounteren), m_m.get_state().scounteren, "scounteren");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scounteren), m_m.get_state().scounteren, "scounteren");
 	}
 
 	void do_write_scounteren(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scounteren), m_m.get_state().scounteren, val, "scounteren");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scounteren), m_m.get_state().scounteren, val, "scounteren");
 	}
 
 	uint64_t do_read_ilrsc(void) const {
-		return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::ilrsc), m_m.get_state().ilrsc, "ilrsc");
+		return log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::ilrsc), m_m.get_state().ilrsc, "ilrsc");
 	}
 
 	void do_write_ilrsc(uint64_t val) {
-		log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::ilrsc), m_m.get_state().ilrsc, val, "ilrsc");
+		log_before_word_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::ilrsc), m_m.get_state().ilrsc, val, "ilrsc");
 	}
 
     void do_set_iflags_H(void) {
@@ -412,14 +413,14 @@ friend i_state_access<logged_state_access>;
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.I, m_m.get_state().iflags.Y, true);
         uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_read(iflags_addr, old_iflags, "iflags.H (superfluous)");
-        log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.H");
+        log_word_read(iflags_addr, old_iflags, "iflags.H (superfluous)");
+        log_before_word_write(iflags_addr, old_iflags, new_iflags, "iflags.H");
         m_m.get_state().iflags.H = true;
-        update_after_write(iflags_addr);
+        update_after_word_write(iflags_addr);
     }
 
     bool do_read_iflags_H(void) const {
-        log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.H");
+        log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.H");
         return m_m.get_state().iflags.H;
     }
 
@@ -429,10 +430,10 @@ friend i_state_access<logged_state_access>;
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.I, true, m_m.get_state().iflags.H);
         uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_read(iflags_addr, old_iflags, "iflags.Y (superfluous)");
-        log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.Y");
+        log_word_read(iflags_addr, old_iflags, "iflags.Y (superfluous)");
+        log_before_word_write(iflags_addr, old_iflags, new_iflags, "iflags.Y");
         m_m.get_state().iflags.Y = true;
-        update_after_write(iflags_addr);
+        update_after_word_write(iflags_addr);
     }
 
     void do_reset_iflags_Y(void) {
@@ -441,14 +442,14 @@ friend i_state_access<logged_state_access>;
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.I, false, m_m.get_state().iflags.H);
         uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_read(iflags_addr, old_iflags, "iflags.Y (superfluous)");
-        log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.Y");
+        log_word_read(iflags_addr, old_iflags, "iflags.Y (superfluous)");
+        log_before_word_write(iflags_addr, old_iflags, new_iflags, "iflags.Y");
         m_m.get_state().iflags.Y = false;
-        update_after_write(iflags_addr);
+        update_after_word_write(iflags_addr);
     }
 
     bool do_read_iflags_Y(void) const {
-        log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.Y");
+        log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.Y");
         return m_m.get_state().iflags.Y;
     }
 
@@ -458,10 +459,10 @@ friend i_state_access<logged_state_access>;
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, true, m_m.get_state().iflags.Y, m_m.get_state().iflags.H);
         uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_read(iflags_addr, old_iflags, "iflags.I (superfluous)");
-        log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.I");
+        log_word_read(iflags_addr, old_iflags, "iflags.I (superfluous)");
+        log_before_word_write(iflags_addr, old_iflags, new_iflags, "iflags.I");
         m_m.get_state().iflags.I = true;
-        update_after_write(iflags_addr);
+        update_after_word_write(iflags_addr);
     }
 
     void do_reset_iflags_I(void) {
@@ -470,19 +471,19 @@ friend i_state_access<logged_state_access>;
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, false, m_m.get_state().iflags.Y, m_m.get_state().iflags.H);
         uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_read(iflags_addr, old_iflags, "iflags.I (superfluous)");
-        log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.I");
+        log_word_read(iflags_addr, old_iflags, "iflags.I (superfluous)");
+        log_before_word_write(iflags_addr, old_iflags, new_iflags, "iflags.I");
         m_m.get_state().iflags.I = false;
-        update_after_write(iflags_addr);
+        update_after_word_write(iflags_addr);
     }
 
     bool do_read_iflags_I(void) const {
-        log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.I");
+        log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.I");
         return m_m.get_state().iflags.I;
     }
 
     uint8_t do_read_iflags_PRV(void) const {
-        log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.PRV");
+        log_word_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.PRV");
         return m_m.get_state().iflags.PRV;
     }
 
@@ -492,48 +493,48 @@ friend i_state_access<logged_state_access>;
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(val, m_m.get_state().iflags.I, m_m.get_state().iflags.Y, m_m.get_state().iflags.H);
         uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_read(iflags_addr, old_iflags, "iflags.PRV (superfluous)");
-        log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.PRV");
+        log_word_read(iflags_addr, old_iflags, "iflags.PRV (superfluous)");
+        log_before_word_write(iflags_addr, old_iflags, new_iflags, "iflags.PRV");
         m_m.get_state().iflags.PRV = val;
-        update_after_write(iflags_addr);
+        update_after_word_write(iflags_addr);
     }
 
     uint64_t do_read_clint_mtimecmp(void) const {
-		return log_read(PMA_CLINT_START + clint_get_csr_rel_addr(clint_csr::mtimecmp), m_m.get_state().clint.mtimecmp, "clint.mtimecmp");
+		return log_word_read(PMA_CLINT_START + clint_get_csr_rel_addr(clint_csr::mtimecmp), m_m.get_state().clint.mtimecmp, "clint.mtimecmp");
     }
 
     void do_write_clint_mtimecmp(uint64_t val) {
-        log_before_write_write_and_update(PMA_CLINT_START + clint_get_csr_rel_addr(clint_csr::mtimecmp), m_m.get_state().clint.mtimecmp, val, "clint.mtimecmp");
+        log_before_word_write_write_and_update(PMA_CLINT_START + clint_get_csr_rel_addr(clint_csr::mtimecmp), m_m.get_state().clint.mtimecmp, val, "clint.mtimecmp");
     }
 
     uint64_t do_read_htif_fromhost(void) const {
-        return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::fromhost), m_m.get_state().htif.fromhost, "htif.fromhost");
+        return log_word_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::fromhost), m_m.get_state().htif.fromhost, "htif.fromhost");
     }
 
     void do_write_htif_fromhost(uint64_t val) {
-        log_before_write_write_and_update(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::fromhost), m_m.get_state().htif.fromhost, val, "htif.fromhost");
+        log_before_word_write_write_and_update(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::fromhost), m_m.get_state().htif.fromhost, val, "htif.fromhost");
     }
 
     uint64_t do_read_htif_tohost(void) const {
-        return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::tohost), m_m.get_state().htif.tohost, "htif.tohost");
+        return log_word_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::tohost), m_m.get_state().htif.tohost, "htif.tohost");
     }
 
     void do_write_htif_tohost(uint64_t val) {
-        log_before_write_write_and_update(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::tohost), m_m.get_state().htif.tohost, val, "htif.tohost");
+        log_before_word_write_write_and_update(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::tohost), m_m.get_state().htif.tohost, val, "htif.tohost");
     }
 
     uint64_t do_read_htif_ihalt(void) const {
-        return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::ihalt),
+        return log_word_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::ihalt),
             m_m.get_state().htif.ihalt, "htif.ihalt");
     }
 
     uint64_t do_read_htif_iconsole(void) const {
-        return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::iconsole),
+        return log_word_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::iconsole),
             m_m.get_state().htif.iconsole, "htif.iconsole");
     }
 
     uint64_t do_read_htif_iyield(void) const {
-        return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::iyield),
+        return log_word_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::iyield),
             m_m.get_state().htif.iyield, "htif.iyield");
     }
 
@@ -544,7 +545,7 @@ friend i_state_access<logged_state_access>;
             istart = pmas[i].get_istart();
         }
         auto rel_addr = shadow_get_pma_rel_addr(i);
-        log_read(PMA_SHADOW_START + rel_addr, istart, "pma.istart");
+        log_word_read(PMA_SHADOW_START + rel_addr, istart, "pma.istart");
         return istart;
     }
 
@@ -555,7 +556,7 @@ friend i_state_access<logged_state_access>;
             ilength = pmas[i].get_ilength();
         }
         auto rel_addr = shadow_get_pma_rel_addr(i);
-        log_read(PMA_SHADOW_START + rel_addr + sizeof(uint64_t), ilength, "pma.ilength");
+        log_word_read(PMA_SHADOW_START + rel_addr + sizeof(uint64_t), ilength, "pma.ilength");
         return ilength;
     }
 
@@ -566,7 +567,7 @@ friend i_state_access<logged_state_access>;
         uint64_t haligned_offset = hoffset & (~(sizeof(uint64_t)-1));
         uint64_t val64 = aliased_aligned_read<uint64_t>(hpage+haligned_offset);
         uint64_t paligned = paddr & (~(sizeof(uint64_t)-1));
-        log_read(paligned, val64, "memory");
+        log_word_read(paligned, val64, "memory");
         *pval = aliased_aligned_read<T>(hpage+hoffset);
     }
 
@@ -591,13 +592,13 @@ friend i_state_access<logged_state_access>;
         // We therefore log a superfluous read access.
         uint64_t paligned = paddr & (~(sizeof(uint64_t)-1));
         if (sizeof(T) < sizeof(uint64_t))
-            log_read(paligned, old_val64, "memory (superfluous)");
+            log_word_read(paligned, old_val64, "memory (superfluous)");
         // Log the real write access
-        log_before_write(paligned, old_val64, new_val64, "memory");
+        log_before_word_write(paligned, old_val64, new_val64, "memory");
         // Actually modify the state
         aliased_aligned_write<T>(hval, val);
         // Finaly update the Merkle tree
-        update_after_write(paligned);
+        update_after_word_write(paligned);
     }
 
     template <typename T>

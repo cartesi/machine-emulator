@@ -102,11 +102,6 @@ bracket_type get_proto_bracket_type(
 /// \returns Converted C++ access_type
 access_type get_proto_access_type(CartesiMachine::AccessType proto_at);
 
-/// \brief Converts proto Word to C++ word
-/// \param proto_w Proto Word to convert
-/// \returns Converted C++ word
-uint64_t get_proto_word(const CartesiMachine::Word &proto_w);
-
 /// \brief Converts proto SemanticVersion to C++ semantic_version
 /// \param proto_v Proto SemanticVersion to convert
 /// \returns Converted C++ semantic_version

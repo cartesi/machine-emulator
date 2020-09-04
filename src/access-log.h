@@ -21,8 +21,11 @@
 /// \brief State access log implementation
 
 #include <cstdint>
+#include <cstring>
 #include <vector>
 #include <tuple>
+#include <iterator>
+#include <boost/container/small_vector.hpp>
 
 #include "merkle-tree.h"
 #include "bracket-note.h"
@@ -35,13 +38,28 @@ enum class access_type {
     write, ///< Write operation
 };
 
-/// \brief Records access to a word in the machine state
-struct word_access {
-    access_type type{0};             ///< Type of state access
+using access_data = boost::container::small_vector<uint8_t, 8>;
+
+static inline void set_word_access_data(uint64_t w, access_data &ad) {
+    uint8_t *p = reinterpret_cast<uint8_t *>(&w);
+    std::copy(p, p+sizeof(w), std::back_inserter(ad));
+}
+
+static inline uint64_t get_word_access_data(const access_data &ad) {
+    assert(ad.size() == 8);
+    uint64_t w = 0;
+    memcpy(&w, ad.data(), sizeof(w));
+    return w;
+}
+
+/// \brief Records an access to the machine state
+struct access {
+    access_type type{0};             ///< Type of access
     uint64_t address;                ///< Address of access
-    uint64_t read{0};                ///< Word value before access
-    uint64_t written{0};             ///< Word value after access (if writing)
-    merkle_tree::proof_type proof{}; ///< Proof of word value before access
+    uint64_t log2_size;              ///< Log2 of size of access
+    access_data read;                ///< Data before access
+    access_data written;             ///< Data after access (if writing)
+    merkle_tree::proof_type proof{}; ///< Proof of data before access
 };
 
 /// \brief Log of state accesses
@@ -76,7 +94,7 @@ public:
 
 private:
 
-    std::vector<word_access> m_accesses{};  ///< List of all accesses
+    std::vector<access> m_accesses{};  ///< List of all accesses
     std::vector<bracket_note> m_brackets{}; ///< Begin/End annotations
     std::vector<std::string> m_notes{};     ///< Per-access annotations
     type m_log_type;                        ///< Log type
@@ -113,10 +131,13 @@ public:
     }
 
     /// \brief Adds a new access to the log
-    /// \param access Word access
-    /// \param text Annotation contents (added if the log type includes annotations)
-    void push_access(const word_access &access, const char *text) {
-        m_accesses.push_back(access);
+    /// \tparam A Type of access
+    /// \param a Access object
+    /// \param text Annotation contents (added if the log
+    /// type includes annotations, ignored otherwise)
+    template <typename A>
+    void push_access(A &&a, const char *text) {
+        m_accesses.push_back(std::forward<A>(a));
         if (m_log_type.has_annotations())
             m_notes.push_back(text);
     }
@@ -129,7 +150,7 @@ public:
 
     /// \brief Returns the array of accesses
     /// \return Constant reference to array
-    const std::vector<word_access> &get_accesses(void) const {
+    const std::vector<access> &get_accesses(void) const {
         return m_accesses;
     }
 

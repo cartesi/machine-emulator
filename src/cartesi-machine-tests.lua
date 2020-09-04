@@ -232,6 +232,13 @@ where options are:
     mcycle. Only take effect with hash and step commands.
     (default: none)
 
+  --server=<server-address>
+    run tests on a remote cartesi machine server. <server-address>
+    should be in one of the following formats:
+        <host>:<port>
+        unix:<path>
+
+
 and command can be:
 
   run
@@ -259,9 +266,12 @@ end
 
 local test_path = "./"
 local test_pattern = ".*"
+local server_address = nil
+local server = nil
 local periodic_action = false
 local periodic_action_period = math.maxinteger
 local periodic_action_start = 0
+local cleanup = {}
 
 local function parse_number(n)
     if not n then return nil end
@@ -291,13 +301,18 @@ end
 --     if callback returns true, the option is accepted.
 --     if callback returns false, the option is rejected.
 local options = {
+    { "^%-%-h$", function(all)
+        if not all then return false end
+        help()
+    end },
     { "^%-%-help$", function(all)
-        if all then
-            help()
-            return true
-        else
-            return false
-        end
+        if not all then return false end
+        help()
+    end },
+    { "^%-%-server%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        server_address = o
+        return true
     end },
     { "^%-%-test%-path%=(.*)$", function(o)
         if not o or #o < 1 then return false end
@@ -347,6 +362,8 @@ end
 local command = assert(values[1], "missing command")
 assert(test_path, "missing test path")
 
+if server_address then cartesi.grpc = require("cartesi.grpc") end
+
 local function nothing()
 end
 
@@ -378,12 +395,23 @@ local function run_machine(machine, max_mcycle, callback)
     return machine:read_mcycle()
 end
 
+local function connect()
+    local server = cartesi.grpc.stub(server_address)
+    local version = assert(server.get_version(),
+        "could not connect to cartesi machine GRPC server at " .. server_address)
+    local shutdown = function() server:shutdown() end
+    local mt = { __gc = function() pcall(shutdown) end}
+    setmetatable(cleanup, mt)
+    return server, version
+end
+
 local function build_machine(test_name)
-    return assert(cartesi.machine{
+    local config = {
         processor = {
-            mvendorid = cartesi.machine.MVENDORID,
-            marchid = cartesi.machine.MARCHID,
-            mimpid = cartesi.machine.MIMPID
+            -- Request automatic default values for versioning CSRs
+            mimpid = -1,
+            marchid = -1,
+            mvendorid = -1
         },
         rom = {
             image_filename = test_path .. "/bootstrap.bin"
@@ -397,7 +425,12 @@ local function build_machine(test_name)
             yield_progress = true,
             yield_rollup = true
         },
-    })
+    }
+    if server_address then
+      if not server then server = connect() end
+      return assert(server.machine(config))
+    end
+    return assert(cartesi.machine(config))
 end
 
 local function print_machine(test_name, expected_cycles)
@@ -468,7 +501,7 @@ local function run(tests)
         else
             print("passed")
         end
-        machine:shutdown()
+        machine:destroy()
     end
     if error_count > 0 then
         io.write(string.format("\nFAILED %d of %d tests:\n\n", error_count, #tests))
@@ -505,7 +538,7 @@ local function hash(tests)
         if machine:read_htif_tohost_data() >> 1 ~= expected_payload or cycles ~= expected_cycles then
             os.exit(1, true)
         end
-        machine:shutdown()
+        machine:destroy()
     end
 end
 
@@ -557,7 +590,7 @@ local function step(tests)
         if machine:read_htif_tohost_data() >> 1 ~= expected_payload or cycles ~= expected_cycles then
             os.exit(1, true)
         end
-        machine:shutdown()
+        machine:destroy()
     end
     io.stdout:write("]\n")
 end

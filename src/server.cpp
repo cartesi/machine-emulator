@@ -105,6 +105,19 @@ static void shutdown_server(grpc::Server *s) {
     if (s) s->Shutdown();
 }
 
+static void squash_parent(Context &context) {
+    // If we are a forked child, we have a parent waiting.
+    // We want to take its place before exiting.
+    // Wake parent up by signaling ourselves to stop.
+    // Parent will wake us back up and then exit.
+    if (context.forked) {
+        raise(SIGSTOP);
+        // When we wake up, we took the parent's place, so we are not "forked" anymore
+        context.forked = false;
+    }
+}
+
+
 enum class BreakReason {
     error,
     snapshot,
@@ -292,7 +305,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
         try {
             AccessLog proto_log;
             set_proto_access_log(context_.machine->step(
-                get_proto_log_type(request->log_type()), request->one_based()), 
+                get_proto_log_type(request->log_type()), request->one_based()),
                     response->mutable_log());
             dbg("Step executed");
             return Status::OK;
@@ -462,8 +475,17 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
         }
     }
 
-    Status Shutdown(ServerContext *, const Void *, Void *) override {
+    Status Destroy(ServerContext *, const Void *, Void *) override {
         std::lock_guard<std::mutex> lock(barrier_);
+        squash_parent(context_);
+        // Destruct current machine if there's one
+        if (context_.machine)
+            context_.machine.reset();
+        return Status::OK;
+    }
+
+    Status Shutdown(ServerContext *, const Void *, Void *) override {
+        // No lock here, Shutdown should always be available
         Break(BreakReason::shutdown);
         return Status::OK;
     }
@@ -641,15 +663,7 @@ static BreakReason server_loop(Context &context) {
 
 static void snapshot(Context &context) {
     pid_t childid = 0;
-    // If we are a forked child, we have a parent waiting.
-    // We want to take its place.
-    // Wake parent up by signaling ourselves to stop.
-    // Parent will wake us up and then exit.
-    if (context.forked) {
-        raise(SIGSTOP);
-        // When we wake up, we took the parent's place, so we are not "forked" anymore
-        context.forked = false;
-    }
+    squash_parent(context);
     // Now actually fork
     if ((childid = fork()) == 0) {
         // Child simply goes on with next loop iteration.
@@ -683,15 +697,7 @@ static void rollback(Context &context) {
 }
 
 static void shutdown(Context &context) {
-    // If we are a forked child, we have a parent waiting.
-    // We want to take its place before exiting.
-    // Wake parent up by signaling ourselves to stop.
-    // Parent will wake us back up and then exit.
-    if (context.forked) {
-        raise(SIGSTOP);
-        // When we wake up, we took the parent's place, so we are not "forked" anymore
-        context.forked = false;
-    }
+    squash_parent(context);
     // Now exit
     exit(0);
 }

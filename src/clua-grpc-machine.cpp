@@ -125,9 +125,23 @@ static int grpc_server_class_get_version(lua_State *L) try {
     return 2;
 }
 
+/// \brief This is the machine.shutdown() static method implementation.
+static int grpc_server_class_shutdown(lua_State *L) try {
+    auto &stub = clua_check<grpc_machine_stub_ptr>(L, lua_upvalueindex(1),
+        lua_upvalueindex(2));
+    grpc_virtual_machine::shutdown(stub);
+    lua_pushnumber(L, 1);
+    return 1;
+} catch (std::exception &x) {
+    lua_pushnil(L);
+    lua_pushstring(L, x.what());
+    return 2;
+}
+
 /// \brief GRPC server static methods
 static const luaL_Reg grpc_server_static_methods[] = {
     { "get_version", grpc_server_class_get_version },
+    { "shutdown", grpc_server_class_shutdown},
     { nullptr, nullptr }
 };
 

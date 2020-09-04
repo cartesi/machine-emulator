@@ -38,7 +38,8 @@ Usage:
 where options are:
 
   --server=<server-address>
-     Address of the remote cartesi machine server in one the the formats:
+    address of the remote cartesi machine server in one of the following
+    formats:
         <host>:<port>
         unix:<path>
 
@@ -784,7 +785,7 @@ if not json_steps then
         stderr("Storing machine: please wait\n")
         machine:store(store_dir)
     end
-    machine:shutdown()
+    machine:destroy()
     os.exit(payload, true)
 else
     assert(not htif_console_getchar, "logs are meaningless in interactive mode")
@@ -811,4 +812,4 @@ else
     end
 end
 
-machine:shutdown()
+machine:destroy()

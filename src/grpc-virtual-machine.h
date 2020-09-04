@@ -50,6 +50,8 @@ public:
 
     static semantic_version get_version(grpc_machine_stub_ptr stub);
 
+    static void shutdown(grpc_machine_stub_ptr stub);
+
     static machine_config get_default_config(grpc_machine_stub_ptr stub);
 
     static void verify_access_log(grpc_machine_stub_ptr stub,
@@ -146,7 +148,7 @@ private:
     void do_get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) override;
     void do_replace_flash_drive(const flash_drive_config &new_flash) override;
     access_log do_step(const access_log::type &log_type, bool /*one_based = false*/) override;
-    void do_shutdown() override;
+    void do_destroy() override;
     void do_snapshot() override;
     void do_rollback() override;
     bool do_verify_dirty_page_maps(void) override;

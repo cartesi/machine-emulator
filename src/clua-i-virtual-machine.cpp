@@ -789,14 +789,14 @@ static int machine_obj__index_replace_flash_drive(lua_State *L) try {
     return 0;
 }
 
-/// \brief This is the machine:shutdown() method implementation.
+/// \brief This is the machine:destroy() method implementation.
 /// \param L Lua state.
-static int machine_obj__index_shutdown(lua_State *L) {
+static int machine_obj__index_destroy(lua_State *L) try {
     auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->shutdown();
-    m.~clua_i_virtual_machine_ptr(); // Explicitly invoke object destructor
-    lua_pushnil(L); // Remove metatable from object
-    lua_setmetatable(L, 1);
+    m->destroy();
+    return 0;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
     return 0;
 }
 
@@ -908,7 +908,7 @@ static const luaL_Reg machine_obj__index[] = {
     {"write_stval", machine_obj__index_write_stval},
     {"write_stvec", machine_obj__index_write_stvec},
     {"replace_flash_drive", machine_obj__index_replace_flash_drive},
-    {"shutdown", machine_obj__index_shutdown},
+    {"destroy", machine_obj__index_destroy},
     {"snapshot", machine_obj__index_snapshot},
     {"rollback", machine_obj__index_rollback},
     { nullptr, nullptr }

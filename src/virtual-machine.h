@@ -127,7 +127,7 @@ private:
     bool do_verify_dirty_page_maps(void) override;
     machine_config do_get_initial_config(void) override;
     void do_snapshot() override;
-    void do_shutdown() override;
+    void do_destroy() override;
     void do_rollback() override;
 };
 

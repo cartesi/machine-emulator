@@ -389,8 +389,8 @@ machine_config virtual_machine::do_get_initial_config(void) {
     return m_machine->get_initial_config();
 }
 
-void virtual_machine::do_shutdown() {
-    // shutdown is no-op on local machines
+void virtual_machine::do_destroy() {
+    // destroy is no-op on local machines
 }
 
 void virtual_machine::do_snapshot(void) {

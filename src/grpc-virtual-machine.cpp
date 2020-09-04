@@ -249,6 +249,13 @@ semantic_version grpc_virtual_machine::get_version(
     return get_proto_semantic_version(response.version());
 }
 
+void grpc_virtual_machine::shutdown(grpc_machine_stub_ptr stub) {
+    Void request;
+    Void response;
+    ClientContext context;
+    check_status(stub->Shutdown(&context, request, &response));
+}
+
 void grpc_virtual_machine::verify_access_log(grpc_machine_stub_ptr stub,
         const access_log &log, bool one_based) {
     VerifyAccessLogRequest request;
@@ -691,11 +698,11 @@ access_log grpc_virtual_machine::do_step(const access_log::type &log_type,
     return get_proto_access_log(response.log());
 }
 
-void grpc_virtual_machine::do_shutdown() {
+void grpc_virtual_machine::do_destroy() {
     Void request;
     Void response;
     ClientContext context;
-    check_status(m_stub->Shutdown(&context, request, &response));
+    check_status(m_stub->Destroy(&context, request, &response));
 }
 
 void grpc_virtual_machine::do_snapshot() {

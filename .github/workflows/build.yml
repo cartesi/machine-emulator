@@ -74,7 +74,7 @@ jobs:
           find /opt/cartesi/lib -type f -exec chmod 755 {} +
 
       - name: Install Ubuntu dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y libboost-program-options1.71.0 libboost-serialization1.71.0 libprotobuf17 libprotobuf-lite17 libgrpc++1
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-program-options1.71.0 libboost-serialization1.71.0 libprotobuf17 libprotobuf-lite17 libgrpc++1 netcat
 
       - name: Set current git organization env var
         id: git_org
@@ -125,6 +125,13 @@ jobs:
 
       - name: Run test suite
         run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
+
+      - name: Run test suite on GRPC server
+        run: |
+          /opt/cartesi/bin/cartesi-machine-server -a 127.0.0.1:5001
+          timeout 20 bash -c 'while ! nc -q0 127.0.0.1 5001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
+          /opt/cartesi/bin/cartesi-machine-tests --server=127.0.0.1:5001 --test-path=/opt/cartesi/tests run
+          pkill -f cartesi-machine-server || true
 
       - name: Checkout emulator source code
         uses: actions/checkout@v2

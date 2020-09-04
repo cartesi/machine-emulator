@@ -150,9 +150,9 @@ public:
         do_snapshot();
     }
 
-    /// \brief shutdown
-    void shutdown(void) {
-        do_shutdown();
+    /// \brief destroy
+    void destroy(void) {
+        do_destroy();
     }
 
     /// \brief rollback
@@ -603,7 +603,7 @@ private:
     virtual bool do_verify_dirty_page_maps(void) = 0;
     virtual machine_config do_get_initial_config(void) = 0;
     virtual void do_snapshot() = 0;
-    virtual void do_shutdown() = 0;
+    virtual void do_destroy() = 0;
     virtual void do_rollback() = 0;
 
 };

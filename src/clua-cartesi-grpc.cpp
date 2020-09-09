@@ -15,21 +15,26 @@
 //
 
 #include "clua.h"
+#include "clua-i-virtual-machine.h"
+#include "clua-grpc-machine.h"
 
-namespace cartesi {
+/// \file
+/// \brief Scripting interface for the Cartesi GRPC API SDK.
 
-int clua_init(lua_State *L) {
-    lua_pushstring(L, CLUA_REGISTRY_KEY); // key
-    lua_rawget(L, LUA_REGISTRYINDEX); // ctxtab_or_nil
-    if (lua_isnil(L, -1)) { // nil
-        lua_pop(L, 1); //
-        lua_newtable(L); // ctxtab
-        lua_pushstring(L, CLUA_REGISTRY_KEY); // ctx key
-        lua_pushvalue(L, -2); // ctxtab key ctxtab
-        lua_rawset(L, LUA_REGISTRYINDEX); // ctxtab
-    }
-    // ctxtab
+extern "C"
+__attribute__((visibility("default")))
+/// \brief Entrypoint to the Cartesi GRPC Lua library.
+/// \param L Lua state.
+int luaopen_cartesi_grpc(lua_State *L) {
+    using namespace cartesi;
+
+    // Initialize and export grpc machine bind
+    clua_init(L); // cluactx
+    lua_newtable(L); // cluactx grpc
+    // Initialize and export machine bind
+    clua_i_virtual_machine_export(L, -2); // cluactx grpc
+    // Initialize and export grpc machine bind
+    clua_grpc_machine_export(L, -2); // cluactx grpc
+
     return 1;
 }
-
-} // namespace cartesi

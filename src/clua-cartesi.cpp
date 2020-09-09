@@ -17,9 +17,9 @@
 #include "keccak-256-hasher.h"
 
 #include "clua.h"
-#include "clua-machine.h"
+#include "clua-i-virtual-machine.h"
 #include "clua-machine-util.h"
-#include "clua-grpc-machine.h"
+#include "clua-machine.h"
 
 /// \file
 /// \brief Scripting interface for the Cartesi SDK.
@@ -110,10 +110,9 @@ int luaopen_cartesi(lua_State *L) {
     clua_init(L); // cluactx
     lua_newtable(L); // cluactx cartesi
     // Initialize and export machine bind
+    clua_i_virtual_machine_export(L, -2); // cluactx cartesi
     clua_machine_export(L, -2); // cluactx cartesi
-    // Initialize and export grpc machine bind
-    clua_grpc_machine_export(L, -2); // cluactx cartesi
-	// Set module functions
+    // Set module functions
     lua_pushvalue(L, -2); // cluactx cartesi cluactx
     luaL_setfuncs(L, cartesi_mod, 1); // cluactx cartesi
 

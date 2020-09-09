@@ -16,7 +16,7 @@
 
 #include "grpc-virtual-machine.h"
 #include "clua.h"
-#include "clua-machine.h"
+#include "clua-i-virtual-machine.h"
 #include "clua-htif.h"
 #include "clua-machine-util.h"
 #include "clua-grpc-machine.h"
@@ -178,14 +178,11 @@ int clua_grpc_machine_init(lua_State *L, int ctxidx) {
 }
 
 int clua_grpc_machine_export(lua_State *L, int ctxidx) {
-    ctxidx = lua_absindex(L, ctxidx);
-    // cartesi
-    clua_machine_init(L, ctxidx); // cartesi
-    clua_grpc_machine_init(L, ctxidx); // cartesi
-    lua_newtable(L); // cartesi grpc
-    lua_pushvalue(L, ctxidx); // cartesi grpc cluactx
-    luaL_setfuncs(L, mod, 1); // cartesi grpc
-    lua_setfield(L, -2, "grpc"); // cartesi
+    int ctxabsidx = lua_absindex(L, ctxidx);
+    // grpc
+    clua_grpc_machine_init(L, ctxabsidx); // grpc
+    lua_pushvalue(L, ctxabsidx); // grpc cluactx
+    luaL_setfuncs(L, mod, 1); // grpc
     return 0;
 }
 

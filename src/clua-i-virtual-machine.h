@@ -14,22 +14,32 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
+#ifndef CLUA_I_VIRTUAL_MACHINE_H
+#define CLUA_I_VIRTUAL_MACHINE_H
+
+#include <memory>
+
+#include "i-virtual-machine.h"
 #include "clua.h"
+
+/// \file
+/// \brief Cartesi machine Lua interface
 
 namespace cartesi {
 
-int clua_init(lua_State *L) {
-    lua_pushstring(L, CLUA_REGISTRY_KEY); // key
-    lua_rawget(L, LUA_REGISTRYINDEX); // ctxtab_or_nil
-    if (lua_isnil(L, -1)) { // nil
-        lua_pop(L, 1); //
-        lua_newtable(L); // ctxtab
-        lua_pushstring(L, CLUA_REGISTRY_KEY); // ctx key
-        lua_pushvalue(L, -2); // ctxtab key ctxtab
-        lua_rawset(L, LUA_REGISTRYINDEX); // ctxtab
-    }
-    // ctxtab
-    return 1;
-}
+/// \brief Type used to represent virtual machine objects in Lua
+using clua_i_virtual_machine_ptr = std::unique_ptr<i_virtual_machine>;
+
+/// \brief Initialize Cartesi machine Lua interface
+/// \param L Lua state
+/// \param ctxidx Index of Clua context
+int clua_i_virtual_machine_init(lua_State *L, int ctxidx);
+
+/// \brief Exports symbols to table on top of Lua stack
+/// \param L Lua state
+/// \param ctxidx Index of Clua context
+int clua_i_virtual_machine_export(lua_State *L, int ctxidx);
 
 } // namespace cartesi
+
+#endif

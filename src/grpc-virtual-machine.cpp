@@ -375,7 +375,7 @@ uint64_t grpc_virtual_machine::do_read_pc(void) {
 
 void grpc_virtual_machine::do_write_pc(uint64_t val) {
     write_csr(csr::pc, val);
-};
+}
 
 uint64_t grpc_virtual_machine::do_read_mvendorid(void) {
     return read_csr(csr::mvendorid);

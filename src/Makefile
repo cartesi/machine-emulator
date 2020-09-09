@@ -40,10 +40,24 @@ SOLDFLAGS_Darwin:=-bundle -undefined dynamic_lookup
 CC_Darwin=clang
 CXX_Darwin=clang++
 INCS_Darwin=
-BOOST_LIB_Darwin=-L/opt/local/lib -L/usr/local/opt/boost/lib -lboost_program_options-mt -lboost_serialization-mt
-BOOST_INC_Darwin=-I/opt/local/include -I/usr/local/opt/boost/include
-GRPC_LIB_Darwin:=-L/opt/local/lib -L/usr/local/opt/grpc/lib -L/usr/local/opt/protobuf/lib -lgrpc++ -lgrpc -lprotobuf -lpthread
-GRPC_INC_Darwin:=-I/opt/local/include -I/usr/local/opt/grpc/include -I/usr/local/opt/protobuf/include
+
+ifeq ($(UNAME),Darwin)
+# Homebrew installation
+ifneq (,$(wildcard /usr/local/opt/boost/lib))
+BOOST_LIB_Darwin=-L/usr/local/opt/boost/lib
+BOOST_INC_Darwin=-I/usr/local/opt/boost/include
+GRPC_LIB_Darwin=-L/usr/local/opt/grpc/lib -L/usr/local/opt/protobuf/lib
+GRPC_INC_Darwin=-I/usr/local/opt/grpc/include -I/usr/local/opt/protobuf/include
+else # Macports installation
+BOOST_LIB_Darwin=-L/opt/local/lib
+BOOST_INC_Darwin=-I/opt/local/include
+GRPC_LIB_Darwin=-L/opt/local/lib
+GRPC_INC_Darwin=-I/opt/local/include
+endif
+endif
+
+BOOST_LIB_Darwin+=-lboost_program_options-mt -lboost_serialization-mt
+GRPC_LIB_Darwin+=-lgrpc++ -lgrpc -lprotobuf -lpthread
 
 PROFILE_DATA_Darwin=default.profdata
 
@@ -66,17 +80,20 @@ SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 FS_LIB=$(FS_LIB_$(UNAME))
 BOOST_LIB=$(BOOST_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
+GRPC_LIB=$(GRPC_LIB_$(UNAME))
+GRPC_INC=$(GRPC_INC_$(UNAME))
 
-LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_LIB) $(GRPC_LIB_$(UNAME))
-GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB_$(UNAME)) $(FS_LIB) $(BOOST_LIB)
-GRPC_CLT_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB_$(UNAME))
+LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_LIB)
+LUACARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(BOOST_LIB) $(GRPC_LIB)
+GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_LIB)
+GRPC_CLT_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
 
 WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
-INCS= -I../lib/machine-emulator-defines $(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) $(INCS_$(UNAME))
+INCS= -I../lib/machine-emulator-defines $(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 #DEFS+=-DUMP_ILLEGAL_INSN
@@ -120,27 +137,40 @@ LUACARTESI_OBJS:= \
 	machine-config.o \
 	interpret.o \
 	virtual-machine.o \
-	grpc-util.o \
-	grpc-virtual-machine.o \
 	clua-cartesi.o \
+	clua-i-virtual-machine.o \
 	clua-machine.o \
 	clua-htif.o \
-	clua-grpc-machine.o \
 	clua-machine-util.o \
 	clua.o
 
-LUACARTESI_GRPC_OBJS:= \
+LUACARTESI_GRPC_GEN_OBJS:= \
 	versioning.pb.o \
 	cartesi-machine.pb.o \
 	cartesi-machine.grpc.pb.o
+
+LUACARTESI_GRPC_OBJS:= \
+	merkle-tree.o \
+	clua-i-virtual-machine.o \
+	clua-htif.o \
+	clua-machine-util.o \
+	$(LUACARTESI_GRPC_GEN_OBJS) \
+	grpc-util.o \
+	grpc-virtual-machine.o \
+	clua-cartesi-grpc.o \
+	clua-grpc-machine.o \
+	clua.o
 
 ifeq ($(gperf),yes)
 DEFS+=-DGPERF
 LUACARTESI_LIBS+=-lprofiler
 endif
 
-cartesi.so: $(LUACARTESI_GRPC_OBJS) $(LUACARTESI_OBJS)
+cartesi.so: $(LUACARTESI_OBJS)
 	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LUACARTESI_LIBS)
+
+cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS)
+	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LUACARTESI_GRPC_LIBS)
 
 test: luacartesi
 	$(LUA_BIN) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
@@ -179,7 +209,7 @@ use: $(PROFILE_DATA_$(UNAME)) luacartesi
 
 luacartesi: cartesi.so
 
-grpc: cartesi-machine-server cartesi-machine-client
+grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-client
 
 hash: merkle-tree-hash
 
@@ -197,14 +227,14 @@ $(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-de
 
 GRPC_CLT_OBJS:= \
 	$(PROTO_OBJS) \
-    grpc-util.o \
+	grpc-util.o \
 	merkle-tree.o \
 	client.o
 
 GRPC_SRV_OBJS:= \
 	$(PROTO_OBJS) \
-    server.o \
-    grpc-util.o \
+	server.o \
+	grpc-util.o \
 	clint.o \
 	rom.o \
 	htif.o \
@@ -276,7 +306,7 @@ cartesi-machine-server cartesi-machine-client: CXXFLAGS := $(GRPC_INC_$(UNAME)) 
 %.pb.cc: $(GRPC_DIR)/%.proto
 	$(PROTOC) -I$(GRPC_DIR) --cpp_out=. $<
 
-grpc-util.o grpc-virtual-machine.o: $(LUACARTESI_GRPC_OBJS)
+grpc-util.o grpc-virtual-machine.o: $(LUACARTESI_GRPC_GEN_OBJS)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
@@ -288,7 +318,7 @@ grpc-util.o grpc-virtual-machine.o: $(LUACARTESI_GRPC_OBJS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi-machine-server cartesi-machine-client merkle-tree-hash
+	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-client merkle-tree-hash
 
 profile-clean:
 	rm -f *.profdata *.profraw *.gcda

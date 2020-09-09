@@ -25,6 +25,8 @@
 
 #include <boost/type_index.hpp>
 
+#define CLUA_REGISTRY_KEY "clua_key"
+
 namespace cartesi {
 
 /// \brief Initizizes clua, leaving the context on top of stack

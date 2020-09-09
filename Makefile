@@ -24,6 +24,7 @@ EMU_TO_BIN= cartesi-machine-server cartesi-machine-client merkle-tree-hash
 EMU_LUA_TO_BIN= cartesi-machine-tests.lua cartesi-machine.lua cartesi-machine-stored-hash.lua
 EMU_TO_LUA_PATH= cartesi/util.lua cartesi/proof.lua
 EMU_TO_LUA_CPATH= cartesi.so
+EMU_TO_LUA_CARTESI_CPATH= cartesi/grpc.so
 EMU_TO_INC= pma-defines.h rtc-defines.h
 
 # Build settings
@@ -86,7 +87,7 @@ distclean: clean profile-clean
 profile-clean:
 	$(MAKE) -C $(SRCDIR) $@
 
-$(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH):
+$(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH):
 	mkdir -m 0755 -p $@
 
 env:
@@ -161,7 +162,9 @@ build-linux-env:
 
 install-Darwin:
 	install_name_tool -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi.so
+	install_name_tool -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi/grpc.so
 	install_name_tool -change $(BUILDDIR)/lib/libcryptopp.dylib @rpath/libcryptopp.dylib $(LUA_INSTALL_CPATH)/cartesi.so
+	install_name_tool -change $(BUILDDIR)/lib/libcryptopp.dylib @rpath/libcryptopp.dylib $(LUA_INSTALL_CPATH)/cartesi/grpc.so
 	cd $(BIN_INSTALL_PATH) && \
 		for x in $(DEP_TO_BIN) $(EMU_TO_BIN); do \
 			install_name_tool -add_rpath $(LIB_INSTALL_PATH) $$x ;\
@@ -186,10 +189,11 @@ install-dep: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_I
 	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(DEP_TO_BIN)
 	cd $(LIB_INSTALL_PATH) && $(CHMOD_EXEC) $(DEP_TO_LIB)
 
-install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH)
+install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_TO_BIN) $(BIN_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_LUA_TO_BIN) $(BIN_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_TO_LUA_CPATH) $(LUA_INSTALL_CPATH)
+	cd src && $(INSTALL) $(EMU_TO_LUA_CARTESI_CPATH) $(LUA_INSTALL_CPATH)/cartesi
 	cd src && $(INSTALL) $(EMU_TO_LUA_PATH) $(LUA_INSTALL_PATH)/cartesi
 	echo "#!/bin/sh\nCARTESI_IMAGES_PATH=$(IMAGES_INSTALL_PATH) $(BIN_INSTALL_PATH)/luapp5.3 $(BIN_INSTALL_PATH)/cartesi-machine.lua \"\$$@\"" > $(BIN_INSTALL_PATH)/cartesi-machine
 	echo "#!/bin/sh\n$(BIN_INSTALL_PATH)/luapp5.3 $(BIN_INSTALL_PATH)/cartesi-machine-tests.lua \"\$$@"\" > $(BIN_INSTALL_PATH)/cartesi-machine-tests

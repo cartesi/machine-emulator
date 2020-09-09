@@ -17,18 +17,12 @@
 #ifndef CLUA_MACHINE_H
 #define CLUA_MACHINE_H
 
-#include <memory>
-
-#include "i-virtual-machine.h"
 #include "clua.h"
 
 /// \file
 /// \brief Cartesi machine Lua interface
 
 namespace cartesi {
-
-/// \brief Type used to represent virtual machine objects in Lua
-using clua_i_virtual_machine_ptr = std::unique_ptr<i_virtual_machine>;
 
 /// \brief Initialize Cartesi machine Lua interface
 /// \param L Lua state

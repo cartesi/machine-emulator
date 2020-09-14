@@ -139,6 +139,11 @@ jobs:
           submodules: recursive
           token: ${{ secrets.CI_TOKEN }}
 
+      - name: Run test scripts
+        run: |
+          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
+          cd src && for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do /opt/cartesi/bin/luapp5.3 $x; done
+
       - name: Build docker image
         run: docker build -t cartesi/machine-emulator:test -f .github/workflows/Dockerfile /opt/cartesi
 

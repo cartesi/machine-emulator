@@ -179,6 +179,9 @@ test-grpc: luacartesi grpc
 	./cartesi-machine-server -a 127.0.0.1:5001 && sleep 1
 	$(LUA_BIN) cartesi-machine-tests.lua --server=127.0.0.1:5001 --test-path="$(TEST_PATH)" --test=".*" run
 
+test-scripts: luacartesi
+	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do $(LUA_BIN) $$x; done
+
 fs.ext2: fs/*
 	genext2fs -f -i 512 -b 8192 -d fs fs.ext2
 	truncate -s %4096 fs.ext2

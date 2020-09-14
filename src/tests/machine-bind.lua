@@ -1,4 +1,4 @@
-#!/usr/local/bin/luapp
+#!/usr/bin/env luapp5.3
 
 -- Copyright 2019 Cartesi Pte. Ltd.
 --
@@ -17,69 +17,7 @@
 --
 
 local cartesi = require"cartesi"
-
-local function hexhash(hash)
-    return (string.gsub(hash, ".", function(c)
-        return string.format("%02x", string.byte(c))
-    end))
-end
-
-local function hexhash8(hash)
-    return string.sub(hexhash(hash), 1, 8)
-end
-
-local function indentout(level, ...)
-    local step = "  "
-    io.stdout:write(string.rep(step, level), ...)
-end
-
-local function print_log(log)
-    local d = 0
-    local j = 1
-    local i = 1
-    while true do
-        local bj = log.brackets[j]
-        local ai = log.accesses[i]
-        if not bj and not ai then break end
-        if bj and bj.where <= i then
-            if bj.type == "begin" then
-                indentout(d, "begin ", bj.text, "\n")
-                d = d + 1
-            elseif bj.type == "end" then
-                d = d - 1
-                indentout(d, "end ", bj.text, "\n")
-            end
-            j = j + 1
-        elseif ai then
-            local ai = log.accesses[i]
-            indentout(d, "hash ", hexhash8(ai.proof.root_hash), "\n")
-            if ai.type == "read" then
-                indentout(d, "read ", log.notes[i], string.format("@%x",
-                    ai.proof.address), ": ", ai.read, "\n")
-            else
-                assert(ai.type == "write")
-                indentout(d, "write ", log.notes[i], string.format("@%x",
-                    ai.proof.address), ": ", ai.read, " -> ", ai.written, "\n")
-            end
-            i = i + 1
-        end
-    end
-end
-
-local function check_proof(proof)
-    local hash = proof.target_hash
-    for log2_size = proof.log2_size, 63 do
-        local bit = (proof.address & (1 << log2_size)) ~= 0
-        local first, second
-        if bit then
-            first, second = proof.sibling_hashes[64-log2_size], hash
-        else
-            first, second = hash, proof.sibling_hashes[64-log2_size]
-        end
-        hash = cartesi.keccak(first, second)
-    end
-    return hash == proof.root_hash
-end
+local util = require"cartesi.util"
 
 local x = {}
 x[0] = 0x000
@@ -116,9 +54,9 @@ x[30] = 0x0f0
 x[31] = 0x0f8
 local addr = { x = x }
 addr.pc = 0x100;
-addr.mvendorid = cartesi.machine.MVENDORID;
-addr.marchid = cartesi.machine.MARCHID;
-addr.mimpid = cartesi.machine.MIMPID;
+addr.mvendorid = 0x6361727465736920;
+addr.marchid = 0x003;
+addr.mimpid = 0x001;
 addr.mcycle = 0x120;
 addr.minstret = 0x128;
 addr.mstatus = 0x130;
@@ -142,26 +80,58 @@ addr.satp = 0x1b8;
 addr.scounteren = 0x1c0;
 addr.ilrsc = 0x1c8;
 
+local function check_proof(proof)
+    local hash = proof.target_hash
+    for log2_size = proof.log2_size, 63 do
+        local bit = (proof.address & (1 << log2_size)) ~= 0
+        local first, second
+        if bit then
+            first, second = proof.sibling_hashes[64-log2_size], hash
+        else
+            first, second = hash, proof.sibling_hashes[64-log2_size]
+        end
+        hash = cartesi.keccak(first, second)
+    end
+    return hash == proof.root_hash
+end
+
+local function align(v, el)
+    return (v >> el << el)
+end
+
+local function adjust_images_path(path)
+    if not path then return "" end
+    return string.gsub(path, "/*$", "") .. "/"
+end
+
+local images_path = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH'))
+
+-- Create new machine
 local machine = cartesi.machine{
     processor = addr;
     ram = {
         length = 1 << 20
     },
     rom = {
-        backing = "rom.bin",
+        image_filename = images_path .. "rom.bin",
     },
-    interactive = false,
 }
 
+addr.mvendorid = nil
+addr.marchid = nil
+addr.mimpid = nil
 addr.x = nil
 
-local function align(v, el)
-    return (v >> el << el)
-end
+-- Check machine is not halted
+assert(not machine:read_iflags_H(), "machine shouldn't be halted")
 
+-- Check machine is not yielded
+assert(not machine:read_iflags_Y(), "machine shouldn't be yielded")
+
+-- Update merkle tree
 machine:update_merkle_tree()
 
--- check initialization and shadow reads
+-- Check initialization and shadow reads
 for i,v in pairs(addr) do
     local r = machine:read_word(v)
     assert(v == r)
@@ -172,7 +142,7 @@ for i,v in pairs(x) do
     assert(v == r)
 end
 
--- check proofs
+-- Check proofs
 for i,v in pairs(addr) do
     for el = 3, 63 do
         local a = align(v, el)
@@ -187,8 +157,10 @@ for i,v in pairs(x) do
     end
 end
 
-log = machine:step()
-print_log(log)
+-- Dump log
+local log_type = {}
+local log = machine:step(log_type)
+util.dump_log(log, io.stdout)
 
 machine:destroy()
 

@@ -66,26 +66,12 @@ namespace po = boost::program_options;
 
 using namespace cartesi;
 using hash_type = keccak_256_hasher::hash_type;
-
-
-using GetXAddressRequest = CartesiMachine::GetXAddressRequest;
-using GetXAddressResponse = CartesiMachine::GetXAddressResponse;
-using ReadXRequest = CartesiMachine::ReadXRequest;
-using ReadXResponse = CartesiMachine::ReadXResponse;
-using WriteXRequest = CartesiMachine::WriteXRequest;
-using Csr = CartesiMachine::Csr;
-using GetCsrAddressRequest = CartesiMachine::GetCsrAddressRequest;
-using GetCsrAddressResponse = CartesiMachine::GetCsrAddressResponse;
-using ReadCsrRequest = CartesiMachine::ReadCsrRequest;
-using ReadCsrResponse = CartesiMachine::ReadCsrResponse;
-using WriteCsrRequest = CartesiMachine::WriteCsrRequest;
-using GetInitialConfigResponse = CartesiMachine::GetInitialConfigResponse;
-using GetDefaultConfigResponse = CartesiMachine::GetDefaultConfigResponse;
-using VerifyMerkleTreeResponse = CartesiMachine::VerifyMerkleTreeResponse;
-using VerifyAccessLogRequest = CartesiMachine::VerifyAccessLogRequest;
-using VerifyStateTransitionRequest = CartesiMachine::VerifyStateTransitionRequest;
-using UpdateMerkleTreeResponse = CartesiMachine::UpdateMerkleTreeResponse;
-using VerifyDirtyPageMapsResponse = CartesiMachine::VerifyDirtyPageMapsResponse;
+using namespace CartesiMachine;
+using namespace Versioning;
+using grpc::Status;
+using grpc::ServerContext;
+using grpc::StatusCode;
+using grpc::Server;
 
 #define dbg(...) syslog(LOG_DEBUG, __VA_ARGS__)
 
@@ -127,39 +113,6 @@ enum class BreakReason {
 
 // Logic and data behind the server's behavior.
 class MachineServiceImpl final: public CartesiMachine::Machine::Service {
-
-    using Access = CartesiMachine::Access;
-    using AccessLog = CartesiMachine::AccessLog;
-    using AccessLogType = CartesiMachine::AccessLogType;
-    using BracketNote = CartesiMachine::BracketNote;
-    using CLINTConfig = CartesiMachine::CLINTConfig;
-    using FlashDriveConfig = CartesiMachine::FlashDriveConfig;
-    using GetProofRequest = CartesiMachine::GetProofRequest;
-    using GetProofResponse = CartesiMachine::GetProofResponse;
-    using GetRootHashResponse = CartesiMachine::GetRootHashResponse;
-    using HTIFConfig = CartesiMachine::HTIFConfig;
-    using Hash = CartesiMachine::Hash;
-    using MachineConfig = CartesiMachine::MachineConfig;
-    using MachineRequest = CartesiMachine::MachineRequest;
-    using ProcessorConfig = CartesiMachine::ProcessorConfig;
-    using Proof = CartesiMachine::Proof;
-    using RAMConfig = CartesiMachine::RAMConfig;
-    using ROMConfig = CartesiMachine::ROMConfig;
-    using ReadMemoryRequest = CartesiMachine::ReadMemoryRequest;
-    using ReadMemoryResponse = CartesiMachine::ReadMemoryResponse;
-    using ReplaceFlashDriveRequest = CartesiMachine::ReplaceFlashDriveRequest;
-    using RunRequest = CartesiMachine::RunRequest;
-    using RunResponse = CartesiMachine::RunResponse;
-    using Server = grpc::Server;
-    using ServerContext = grpc::ServerContext;
-    using Status = grpc::Status;
-    using StatusCode = grpc::StatusCode;
-    using StepRequest = CartesiMachine::StepRequest;
-    using StepResponse = CartesiMachine::StepResponse;
-    using StoreRequest = CartesiMachine::StoreRequest;
-    using GetVersionResponse = Versioning::GetVersionResponse;
-    using Void = CartesiMachine::Void;
-    using WriteMemoryRequest = CartesiMachine::WriteMemoryRequest;
 
     std::mutex barrier_;
     std::thread breaker_;
@@ -339,7 +292,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
         try {
             uint64_t address = request->address();
             uint64_t length = request->length();
-            auto data = cartesi::unique_calloc<unsigned char>(1, length);
+            auto data = cartesi::unique_calloc<unsigned char>(length);
             context_.machine->read_memory(address, data.get(), length);
             response->set_data(data.get(), length);
             return Status::OK;
@@ -384,7 +337,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
 
     Status GetXAddress(ServerContext*, const GetXAddressRequest *request, GetXAddressResponse *response) override {
         auto index = request->index();
-        if (index > 31)
+        if (index >= X_REG_COUNT)
             throw std::invalid_argument{"Invalid register index"};
         response->set_address(cartesi::machine::get_x_address(index));
         return Status::OK;
@@ -392,7 +345,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
 
     Status ReadX(ServerContext*, const ReadXRequest *request, ReadXResponse *response) override {
         auto index = request->index();
-        if (index > 31)
+        if (index >= X_REG_COUNT)
             throw std::invalid_argument{"Invalid register index"};
         std::lock_guard<std::mutex> lock(barrier_);
         if (!context_.machine)
@@ -407,13 +360,53 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
 
     Status WriteX(ServerContext*, const WriteXRequest *request, Void*)  override {
         auto index = request->index();
-        if (index > 31)
+        if (index >= X_REG_COUNT || index <= 0) // x0 is read-only
             throw std::invalid_argument{"Invalid register index"};
         std::lock_guard<std::mutex> lock(barrier_);
         if (!context_.machine)
             return error_no_machine();
         try {
             context_.machine->write_x(index, request->value());
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
+        }
+    }
+
+    Status GetDhdHAddress(ServerContext *,
+        const GetDhdHAddressRequest *request,
+        GetDhdHAddressResponse *response) override {
+        auto index = request->index();
+        if (index >= DHD_H_REG_COUNT)
+            throw std::invalid_argument{"Invalid register index"};
+        response->set_address(cartesi::machine::get_dhd_h_address(index));
+        return Status::OK;
+    }
+
+    Status ReadDhdH(ServerContext*, const ReadDhdHRequest *request, ReadDhdHResponse *response) override {
+        auto index = request->index();
+        if (index >= DHD_H_REG_COUNT)
+            throw std::invalid_argument{"Invalid register index"};
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine)
+            return error_no_machine();
+        try {
+            response->set_value(context_.machine->read_dhd_h(index));
+            return Status::OK;
+        } catch (std::exception& e) {
+            return error_exception(e);
+        }
+    }
+
+    Status WriteDhdH(ServerContext*, const WriteDhdHRequest *request, Void*)  override {
+        auto index = request->index();
+        if (index >= DHD_H_REG_COUNT)
+            throw std::invalid_argument{"Invalid register index"};
+        std::lock_guard<std::mutex> lock(barrier_);
+        if (!context_.machine)
+            return error_no_machine();
+        try {
+            context_.machine->write_dhd_h(index, request->value());
             return Status::OK;
         } catch (std::exception& e) {
             return error_exception(e);
@@ -530,8 +523,10 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
     Status VerifyAccessLog(ServerContext *,
         const VerifyAccessLogRequest *request, Void *) override {
         try {
-            machine::verify_access_log(get_proto_access_log(
-                    request->log()), request->one_based());
+            machine::verify_access_log(
+                get_proto_access_log(request->log()),
+                get_proto_machine_runtime_config(request->runtime()),
+                request->one_based());
             return Status::OK;
         } catch (std::exception& e) {
             return error_exception(e);
@@ -545,6 +540,7 @@ class MachineServiceImpl final: public CartesiMachine::Machine::Service {
                 get_proto_hash(request->root_hash_before()),
                 get_proto_access_log(request->log()),
                 get_proto_hash(request->root_hash_after()),
+                get_proto_machine_runtime_config(request->runtime()),
                 request->one_based());
             return Status::OK;
         } catch (std::exception& e) {

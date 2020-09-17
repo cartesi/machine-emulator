@@ -120,7 +120,6 @@ endif
 
 # -fsanitize=undefined
 CXXFLAGS=-O2 -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
-CFLAGS=-O2 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
 all: luacartesi grpc hash
 
@@ -130,6 +129,8 @@ LUACARTESI_OBJS:= \
 	clint.o \
 	rom.o \
 	htif.o \
+	dhd.o \
+	dhd-source.o \
 	shadow.o \
 	merkle-tree.o \
 	pma.o \
@@ -245,6 +246,8 @@ GRPC_SRV_OBJS:= \
 	clint.o \
 	rom.o \
 	htif.o \
+	dhd.o \
+	dhd-source.o \
 	shadow.o \
 	merkle-tree.o \
 	pma.o \
@@ -320,9 +323,6 @@ grpc-util.o grpc-virtual-machine.o: $(LUACARTESI_GRPC_GEN_OBJS)
 
 %.o: %.cc
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
-
-%.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
 	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-client merkle-tree-hash

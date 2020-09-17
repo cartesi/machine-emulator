@@ -27,7 +27,7 @@ namespace cartesi {
 
 /// \brief Processor state configuration
 struct processor_config final {
-    uint64_t x[32]{};                      ///< Value of general-purpose registers
+    uint64_t x[X_REG_COUNT]{};          ///< Value of general-purpose registers
     uint64_t pc{PC_INIT};                  ///< Value of pc
     uint64_t mvendorid{MVENDORID_INIT};    ///< Value of mvendorid CSR
     uint64_t marchid{MARCHID_INIT};        ///< Value of marchid CSR
@@ -91,6 +91,16 @@ struct htif_config final {
     bool yield_rollup{false};         ///< Make yield rollup available?
 };
 
+/// \brief DHD device state configuration
+struct dhd_config final {
+    uint64_t tstart{0};           ///< Start of target physical memory range for output data
+    uint64_t tlength{0};          ///< Length of target physical memory range for output data
+    std::string image_filename{}; ///< Data image file name
+    uint64_t dlength{0};          ///< Output data length CSR
+    uint64_t hlength{0};          ///< Input hash length CSR
+    uint64_t h[DHD_H_REG_COUNT]{}; ///< Input hash words
+};
+
 /// \brief Flash constants
 enum FLASH_DRIVE_constants {
     FLASH_DRIVE_MAX = 8 ///< Maximum number of flash drives
@@ -108,6 +118,7 @@ struct machine_config final {
     flash_drive_configs flash_drive{}; ///< Flash drives state
     clint_config clint{};              ///< CLINT device state
     htif_config htif{};                ///< HTIF device state
+    dhd_config dhd{};                  ///< DHD state
 
     /// \brief Get the name where config will be stored in a directory
     static std::string get_config_filename(const std::string &dir);

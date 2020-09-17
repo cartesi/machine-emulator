@@ -46,26 +46,16 @@ using unique_calloc_ptr = std::unique_ptr<T, detail::free_deleter>;
 using unique_file_ptr = std::unique_ptr<FILE, detail::fclose_deleter>;
 
 template <typename T>
-static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb, size_t size) {
-    T *ptr = reinterpret_cast<T *>(calloc(nmemb, size));
+static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb) {
+    T *ptr = reinterpret_cast<T *>(calloc(nmemb, sizeof(T)));
     if (!ptr) throw std::bad_alloc{};
     return unique_calloc_ptr<T>(ptr);
 }
 
 template <typename T>
-static inline unique_calloc_ptr<T> unique_calloc(void) {
-    return unique_calloc<T>(1, sizeof(T));
-}
-
-template <typename T>
-static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb, size_t size, const std::nothrow_t &tag) {
+static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb, const std::nothrow_t &tag) {
     (void) tag;
-    return unique_calloc_ptr<T>(reinterpret_cast<T *>(calloc(nmemb, size)));
-}
-
-template <typename T>
-static inline unique_calloc_ptr<T> unique_calloc(const std::nothrow_t &tag) {
-    return unique_calloc<T>(1, sizeof(T), tag);
+    return unique_calloc_ptr<T>(reinterpret_cast<T*>(calloc(nmemb, sizeof(T))));
 }
 
 static inline unique_file_ptr unique_fopen(const char *pathname, const char *mode) {

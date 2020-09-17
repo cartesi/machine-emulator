@@ -22,6 +22,7 @@
 #pragma GCC diagnostic pop
 
 #include "machine-config.h"
+#include "machine-runtime-config.h"
 #include "access-log.h"
 #include "semantic-version.h"
 
@@ -38,6 +39,19 @@ machine_config get_proto_machine_config(
 /// \param proto_c Pointer to proto MachineConfig receiving result of conversion
 void set_proto_machine_config(const machine_config &c,
     CartesiMachine::MachineConfig* proto_c);
+
+/// \brief Converts proto MachineRuntimeConfig to C++ machine_runtime_config
+/// \param proto_c Proto MachineRuntimeConfig to convert
+/// \returns Converted C++ machine_runtime_config
+machine_runtime_config get_proto_machine_runtime_config(
+    const CartesiMachine::MachineRuntimeConfig &proto_r);
+
+/// \brief Converts C++ machine_runtime_config to proto MachineRuntimeConfig
+/// \param c C++ machine_runtime_config to convert
+/// \param proto_c Pointer to proto MachineRuntimeConfig receiving
+///  result of conversion
+void set_proto_machine_runtime_config(const machine_runtime_config &c,
+    CartesiMachine::MachineRuntimeConfig* proto_r);
 
 /// \brief Converts proto ProcessorConfig to C++ processor_config
 /// \param proto_p Proto ProcessorConfig to convert

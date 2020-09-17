@@ -79,7 +79,7 @@ where options are:
         identifies the flash drive and init attempts to mount it as /mnt/<label>
 
         filename (optional)
-        gives the name containing the image for the flash drive
+        gives the name of the file containing the image for the flash drive
         when omitted or set to the empty string, the drive starts filled with 0
 
         start (optional)
@@ -111,6 +111,30 @@ where options are:
     semantics are the same as for the --flash-drive option with the following
     difference: start and length are mandatory, and must match those of a
     previously existing flash drive.
+
+  --dhd=<key>:<value>[,<key>:<value>[,...]...]
+    configures the dehashing device
+    by default, the device is not present
+
+    <key>:<value> is one of
+        filename:<filename>
+        tstart:<number>
+        tlength:<number>
+
+        filename (optional)
+        gives the name of the file containing the initial dehashed data.
+        when omitted or set to the empty string, the data starts filled with 0
+
+        tstart (mandatory when device present)
+        sets the start of target physical memory range for output data
+        must be aligned to tlength
+
+        tlength (mandatory when device present)
+        gives the length of target physical memory range for output data
+        must be a power of 2 greater than 4Ki, or 0 when device not present
+
+  --dhd-source=<address>
+    server acting as source for dehashed data
 
   --max-mcycle=<number>
     stop at a given mcycle (default: 2305843009213693952)
@@ -185,6 +209,10 @@ local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
 local rom_image_filename = images_path .. "rom.bin"
 local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet"
+local dhd_tstart = 0
+local dhd_tlength = 0
+local dhd_image_filename = nil
+local dhd_source_address = nil
 local append_rom_bootargs = ""
 local console_get_char = false
 local htif_yield_progress = false
@@ -326,6 +354,30 @@ local options = {
         f.length = assert(util.parse_number(f.length),
             "invalid flash drive length in " .. all)
         flash_drive_replace[#flash_drive_replace+1] = f
+        return true
+    end },
+    { "^(%-%-dhd%=(.+))$", function(all, opts)
+        if not opts then return false end
+        local d = util.parse_options(opts, {
+            filename = true,
+            tlength = true,
+            tstart = true
+        })
+        d.image_filename = d.filename
+        d.filename = nil
+        if d.image_filename == true then d.image_filename = "" end
+        d.tstart = assert(util.parse_number(d.tstart),
+                "invalid start of target in " .. all)
+        d.tlength = assert(util.parse_number(d.tlength),
+                "invalid length of target in " .. all)
+        dhd_tstart = d.tstart
+        dhd_tlength = d.tlength
+        dhd_image_filename = d.image_filename
+        return true
+    end },
+    { "^%-%-dhd%-source%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        dhd_source_address = o
         return true
     end },
     { "^(%-%-initial%-proof%=(.+))$", function(all, opts)
@@ -485,14 +537,14 @@ local function comment_default(u, v)
 end
 
 local function dump_machine_config(config)
-    stderr("machine_config = {\n")
-    stderr("  processor = {\n")
     local def
     if server then
         def = server.machine.get_default_config()
     else
         def = cartesi.machine.get_default_config()
     end
+    stderr("machine_config = {\n")
+    stderr("  processor = {\n")
     stderr("    x = {\n")
     local processor = config.processor or { x = {} }
     for i = 1, 31 do
@@ -545,6 +597,27 @@ local function dump_machine_config(config)
     stderr("  clint = {\n")
     stderr("    mtimecmp = 0x%x,", clint.mtimecmp or def.clint.mtimecmp)
     comment_default(clint.mtimecmp, def.clint.mtimecmp)
+    stderr("  },\n")
+    local dhd = config.dhd or { h = {} }
+    stderr("  dhd = {\n")
+    stderr("    tstart = 0x%x,", dhd.tstart or def.dhd.tstart)
+    comment_default(dhd.tstart, def.dhd.tstart)
+    stderr("    tlength = 0x%x,", dhd.tlength or def.dhd.tlength)
+    comment_default(dhd.tlength, def.dhd.tlength)
+    if dhd.image_filename and dhd.image_filename ~= "" then
+        stderr("      image_filename = %q,\n", dhd.image_filename)
+    end
+    stderr("    dlength = 0x%x,", dhd.dlength or def.dhd.dlength)
+    comment_default(dhd.dlength, def.dhd.dlength)
+    stderr("    hlength = 0x%x,", dhd.hlength or def.dhd.hlength)
+    comment_default(dhd.hlength, def.dhd.hlength)
+    stderr("    h = {\n")
+    for i = 1, 4 do
+        local hi = dhd.h[i] or def.dhd.h[i]
+        stderr("      0x%x,",  hi)
+        comment_default(hi, def.dhd.h[i])
+    end
+    stderr("    },\n")
     stderr("  },\n")
     stderr("  flash_drive = {\n")
     for i, f in ipairs(config.flash_drive) do
@@ -632,11 +705,11 @@ local function append(a, b)
     return a .. " " .. b
 end
 
-local function create_machine(arg)
+local function create_machine(config_or_dir, runtime)
     if server then
-        return server.machine(arg)
+        return server.machine(config_or_dir, runtime)
     end
-    return cartesi.machine(arg)
+    return cartesi.machine(config_or_dir, runtime)
 end
 
 local machine
@@ -649,9 +722,15 @@ if server then
     stderr("Connected: server version is %d.%d.%d\n", v.major, v.minor, v.patch)
 end
 
+local runtime = {
+    dhd = {
+        source_address = dhd_source_address
+    }
+}
+
 if load_dir then
     stderr("Loading machine: please wait\n")
-    machine = create_machine(load_dir)
+    machine = create_machine(load_dir, runtime)
 else
     -- Resolve all device starts and lengths
     resolve_flash_lengths(flash_label_order, flash_image_filename, flash_start,
@@ -680,6 +759,11 @@ else
             yield_progress = htif_yield_progress,
             yield_rollup = htif_yield_rollup
         },
+        dhd = {
+            tstart = dhd_tstart,
+            tlength = dhd_tlength,
+            image_filename = dhd_image_filename
+        },
         flash_drive = {},
     }
 
@@ -705,7 +789,7 @@ else
             table.concat(exec_arguments, " "))
     end
 
-    machine = create_machine(config)
+    machine = create_machine(config, runtime)
 end
 
 for _,f in ipairs(flash_drive_replace) do

@@ -24,7 +24,6 @@
 #include <cstring>
 #include <vector>
 #include <tuple>
-#include <iterator>
 #include <boost/container/small_vector.hpp>
 
 #include "merkle-tree.h"
@@ -42,7 +41,8 @@ using access_data = boost::container::small_vector<uint8_t, 8>;
 
 static inline void set_word_access_data(uint64_t w, access_data &ad) {
     uint8_t *p = reinterpret_cast<uint8_t *>(&w);
-    std::copy(p, p+sizeof(w), std::back_inserter(ad));
+    ad.clear();
+    ad.insert(ad.end(), p, p+sizeof(w));
 }
 
 static inline uint64_t get_word_access_data(const access_data &ad) {

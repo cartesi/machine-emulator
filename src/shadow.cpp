@@ -15,13 +15,13 @@
 //
 
 #include <cassert>
+#include <cinttypes>
+#include <cstring>
 
 #include "shadow.h"
 #include "machine.h"
-#include "i-virtual-state-access.h"
+#include "i-device-state-access.h"
 #include "strict-aliasing.h"
-
-#include <cinttypes>
 
 namespace cartesi {
 
@@ -29,13 +29,13 @@ uint64_t shadow_get_csr_rel_addr(shadow_csr reg) {
     return static_cast<uint64_t>(reg);
 }
 
-uint64_t shadow_get_register_rel_addr(int reg) {
-    assert(reg >= 0 && reg < 32);
+uint64_t shadow_get_x_rel_addr(int reg) {
+    assert(reg >= 0 && reg < X_REG_COUNT);
     return reg*sizeof(uint64_t);
 }
 
 uint64_t shadow_get_pma_rel_addr(int p) {
-    assert(p >= 0 && p < 32);
+    assert(p >= 0 && p < (int) PMA_MAX);
     return PMA_BOARD_SHADOW_START + 2*p*sizeof(uint64_t);
 }
 
@@ -52,9 +52,9 @@ static bool shadow_peek(const pma_entry &pma, const machine &m,
     // Clear page
     memset(shadow, 0, PMA_PAGE_SIZE);
     // Copy general-purpose registers
-    for (int i = 0; i < 32; ++i) {
+    for (int i = 0; i < X_REG_COUNT; ++i) {
         aliased_aligned_write<uint64_t>(shadow +
-            shadow_get_register_rel_addr(i), m.read_x(i));
+            shadow_get_x_rel_addr(i), m.read_x(i));
     }
     // Copy named registers
     aliased_aligned_write<uint64_t>(shadow +
@@ -125,7 +125,7 @@ static bool shadow_peek(const pma_entry &pma, const machine &m,
 }
 
 /// \brief Shadow device read callback. See ::pma_read.
-static bool shadow_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t offset, uint64_t *pval, int size_log2) {
+static bool shadow_read(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t *pval, int size_log2) {
     (void) pma;
 
     // Our shadow only supports aligned 64-bit reads
@@ -136,7 +136,7 @@ static bool shadow_read(const pma_entry &pma, i_virtual_state_access *a, uint64_
         offset -= PMA_constants::PMA_BOARD_SHADOW_START;
         offset >>= 3;
         // If offset within PMA range
-        if (offset < 32*2) {
+        if (offset < PMA_MAX*2) {
             int p = static_cast<int>(offset >> 1);
             if (offset & 1) {
                 *pval = a->read_pma_ilength(p);

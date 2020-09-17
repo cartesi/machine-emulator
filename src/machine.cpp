@@ -32,6 +32,7 @@
 #include "interpret.h"
 #include "clint.h"
 #include "htif.h"
+#include "dhd.h"
 #include "rtc.h"
 #include "shadow.h"
 #include "rom.h"
@@ -75,50 +76,6 @@ pma_entry::flags machine::m_flash_flags{
     PMA_ISTART_DID::drive  // DID
 };
 
-/// \brief Obtain PMA entry that covers a given physical memory region
-/// \param s Pointer to machine state.
-/// \param paddr Start of physical memory region.
-/// \param length Length of physical memory region.
-/// \returns Corresponding entry if found, or a sentinel entry
-/// for an empty range.
-static inline pma_entry &naked_find_pma_entry(machine_state &s, uint64_t paddr,
-    size_t length) {
-    for (auto &pma: s.pmas) {
-        // Stop at first empty PMA
-        if (pma.get_length() == 0)
-            return pma;
-        // Check if data is in range
-        if (paddr >= pma.get_start() && pma.get_length() >= length &&
-            paddr - pma.get_start() <= pma.get_length() - length) {
-            return pma;
-        }
-    }
-    // Last PMA is always the empty range
-    return s.pmas.back();
-}
-
-static inline const pma_entry &naked_find_pma_entry(const machine_state &s,
-    uint64_t paddr, size_t length) {
-    return const_cast<const pma_entry &>(naked_find_pma_entry(
-        const_cast<machine_state &>(s), paddr, length));
-}
-
-/// \brief Obtain PMA entry covering a physical memory word
-/// \param s Pointer to machine state.
-/// \param paddr Target physical address.
-/// \returns Corresponding entry if found, or a sentinel entry
-/// for an empty range.
-/// \tparam T Type of word.
-template <typename T>
-static inline pma_entry &naked_find_pma_entry(machine_state &s, uint64_t paddr) {
-    return naked_find_pma_entry(s, paddr, sizeof(T));
-}
-
-template <typename T>
-static inline const pma_entry &naked_find_pma_entry(const machine_state &s, uint64_t paddr) {
-    return const_cast<const pma_entry &>(naked_find_pma_entry<T>(
-        const_cast<machine_state &>(s), paddr));
-}
 
 pma_entry machine::make_flash_pma_entry(const flash_drive_config &c) {
     if (c.image_filename.empty()) {
@@ -173,11 +130,13 @@ bool machine::should_yield(void) const {
     return m_s.brk_from_iflags_Y();
 }
 
-machine::machine(const machine_config &c):
+machine::machine(const machine_config &c,
+    const machine_runtime_config &r):
     m_s{},
     m_t{},
     m_h{c.htif},
-    m_c{c} {
+    m_c{c},
+    m_r{r} {
 
     if (m_c.processor.marchid == UINT64_C(-1)) {
         m_c.processor.marchid = MARCHID_INIT;
@@ -204,7 +163,7 @@ machine::machine(const machine_config &c):
     }
 
     // General purpose registers
-    for (int i = 1; i < 32; i++) {
+    for (int i = 1; i < X_REG_COUNT; i++) {
         write_x(i, m_c.processor.x[i]);
     }
 
@@ -281,6 +240,41 @@ machine::machine(const machine_config &c):
     register_pma_entry(make_shadow_pma_entry(PMA_SHADOW_START,
             PMA_SHADOW_LENGTH));
 
+    // Add DHD device only if tlength is non-zero...
+    if (m_c.dhd.tlength != 0) {
+        // ... and also a power of 2...
+        if ((m_c.dhd.tlength & (m_c.dhd.tlength-1)) != 0) {
+            throw std::invalid_argument{"DHD tlength not a power of 2"};
+        }
+        // ... and tstart is aligned to that power of 2
+        if ((m_c.dhd.tstart & (m_c.dhd.tlength-1)) != 0) {
+            throw std::invalid_argument{"DHD tstart not aligned to tlength"};
+        }
+        // Register associated target range
+        if (m_c.dhd.image_filename.empty()) {
+            register_pma_entry(make_callocd_memory_pma_entry(
+                m_c.dhd.tstart, m_c.dhd.tlength).
+                    set_flags(m_rom_flags));
+        } else {
+            register_pma_entry(make_callocd_memory_pma_entry(
+                m_c.dhd.tstart, m_c.dhd.tlength,
+                m_c.dhd.image_filename).
+                    set_flags(m_rom_flags));
+        }
+        // Register DHD range itself
+        register_pma_entry(make_dhd_pma_entry(PMA_DHD_START, PMA_DHD_LENGTH));
+        // Set the DHD source in the state
+        m_s.dhd.source = make_dhd_source(r.dhd.source_address);
+    }
+    // Copy DHD state from config to machine
+    write_dhd_tstart(m_c.dhd.tstart);
+    write_dhd_tlength(m_c.dhd.tlength);
+    write_dhd_dlength(m_c.dhd.dlength);
+    write_dhd_hlength(m_c.dhd.hlength);
+    for (int i = 0; i < DHD_H_REG_COUNT; i++) {
+        write_dhd_h(i, m_c.dhd.h[i]);
+    }
+
     // Initialize PMA extension metadata on ROM
     rom_init(m_c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
 
@@ -299,8 +293,8 @@ static void load_hash(const std::string &dir, machine::hash_type &h) {
     }
 }
 
-machine::machine(const std::string &dir):
-    machine{ machine_config::load(dir) } {
+machine::machine(const std::string &dir, const machine_runtime_config &r):
+    machine{machine_config::load(dir), r} {
     hash_type hstored, hrestored;
     load_hash(dir, hstored);
     if (!update_merkle_tree()) {
@@ -316,7 +310,7 @@ machine_config machine::get_serialization_config(void) const {
     // Initialize with copy of original config
     machine_config c = m_c;
     // Copy current processor state to config
-    for (int i = 1; i < 32; ++i) {
+    for (int i = 1; i < X_REG_COUNT; ++i) {
         c.processor.x[i] = read_x(i);
     }
     c.processor.pc = read_pc();
@@ -385,13 +379,33 @@ static void store_memory_pma(const pma_entry &pma, const std::string &dir) {
     }
 }
 
+pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) {
+    return const_cast<pma_entry &>(
+        const_cast<const machine *>(this)->find_pma_entry(paddr, length));
+}
+
+const pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) const {
+    for (auto &pma: m_s.pmas) {
+        // Stop at first empty PMA
+        if (pma.get_length() == 0)
+            return pma;
+        // Check if data is in range
+        if (paddr >= pma.get_start() && pma.get_length() >= length &&
+            paddr - pma.get_start() <= pma.get_length() - length) {
+            return pma;
+        }
+    }
+    // Last PMA is always the empty range
+    return m_s.pmas.back();
+}
+
 void machine::store_pmas(const machine_config &c, const std::string &dir) const {
-    store_memory_pma(naked_find_pma_entry<uint64_t>(m_s, PMA_ROM_START), dir);
-    store_memory_pma(naked_find_pma_entry<uint64_t>(m_s, PMA_RAM_START), dir);
+    store_memory_pma(find_pma_entry<uint64_t>(PMA_ROM_START), dir);
+    store_memory_pma(find_pma_entry<uint64_t>(PMA_RAM_START), dir);
     // Could iterate over PMAs checking for those with a drive DID
     // but this is easier
     for (const auto &f: c.flash_drive) {
-        store_memory_pma(naked_find_pma_entry<uint64_t>(m_s, f.start), dir);
+        store_memory_pma(find_pma_entry<uint64_t>(f.start), dir);
     }
 }
 
@@ -454,7 +468,7 @@ uint64_t machine::read_x(int i) const {
 }
 
 uint64_t machine::get_x_address(int i) {
-    return PMA_SHADOW_START + shadow_get_register_rel_addr(i);
+    return PMA_SHADOW_START + shadow_get_x_rel_addr(i);
 }
 
 void machine::write_x(int i, uint64_t val) {
@@ -732,6 +746,50 @@ void machine::write_clint_mtimecmp(uint64_t val) {
     m_s.clint.mtimecmp = val;
 }
 
+uint64_t machine::read_dhd_tstart(void) const {
+    return m_s.dhd.tstart;
+}
+
+void machine::write_dhd_tstart(uint64_t val) {
+    m_s.dhd.tstart = val;
+}
+
+uint64_t machine::read_dhd_tlength(void) const {
+    return m_s.dhd.tlength;
+}
+
+void machine::write_dhd_tlength(uint64_t val) {
+    m_s.dhd.tlength = val;
+}
+
+uint64_t machine::read_dhd_dlength(void) const {
+    return m_s.dhd.dlength;
+}
+
+void machine::write_dhd_dlength(uint64_t val) {
+    m_s.dhd.dlength = val;
+}
+
+uint64_t machine::read_dhd_hlength(void) const {
+    return m_s.dhd.hlength;
+}
+
+void machine::write_dhd_hlength(uint64_t val) {
+    m_s.dhd.hlength = val;
+}
+
+uint64_t machine::read_dhd_h(int i) const {
+    return m_s.dhd.h[i];
+}
+
+void machine::write_dhd_h(int i, uint64_t val) {
+    m_s.dhd.h[i] = val;
+}
+
+uint64_t machine::get_dhd_h_address(int i) {
+    return PMA_DHD_START + dhd_get_h_rel_addr(i);
+}
+
 uint64_t machine::read_csr(csr r) const {
     switch (r) {
         case csr::pc: return read_pc();
@@ -767,6 +825,10 @@ uint64_t machine::read_csr(csr r) const {
         case csr::htif_ihalt: return read_htif_ihalt();
         case csr::htif_iconsole: return read_htif_iconsole();
         case csr::htif_iyield: return read_htif_iyield();
+        case csr::dhd_tstart: return read_dhd_tstart();
+        case csr::dhd_tlength: return read_dhd_tlength();
+        case csr::dhd_dlength: return read_dhd_dlength();
+        case csr::dhd_hlength: return read_dhd_hlength();
         default:
             throw std::invalid_argument{"unknown CSR"};
             return 0; // never reached
@@ -802,9 +864,13 @@ void machine::write_csr(csr w, uint64_t val) {
         case csr::clint_mtimecmp: return write_clint_mtimecmp(val);
         case csr::htif_tohost: return write_htif_tohost(val);
         case csr::htif_fromhost: return write_htif_fromhost(val);
-        case csr::htif_ihalt: [[fallthrough]];
-        case csr::htif_iconsole: [[fallthrough]];
-        case csr::htif_iyield: [[fallthrough]];
+        case csr::dhd_tstart: return write_dhd_tstart(val);
+        case csr::dhd_tlength: return write_dhd_tlength(val);
+        case csr::dhd_dlength: return write_dhd_dlength(val);
+        case csr::dhd_hlength: return write_dhd_hlength(val);
+        case csr::htif_ihalt: return write_htif_ihalt(val);
+        case csr::htif_iconsole: return write_htif_iconsole(val);
+        case csr::htif_iyield: return write_htif_iyield(val);
         case csr::mvendorid: [[fallthrough]];
         case csr::marchid: [[fallthrough]];
         case csr::mimpid:
@@ -817,51 +883,70 @@ void machine::write_csr(csr w, uint64_t val) {
 /// \brief Returns the address of a CSR in the shadow
 /// \param w The desired CSR
 /// \return Address of the specified CSR in the shadow
-static inline uint64_t csr_address(shadow_csr w) {
+static inline uint64_t get_csr_addr(shadow_csr w) {
     return cartesi::PMA_SHADOW_START + shadow_get_csr_rel_addr(w);
 }
 
-static inline uint64_t htif_reg_address(htif::csr r) {
+/// \brief Returns the address of a CSR in HTIF
+/// \param w The desired CSR
+/// \return Address of the specified CSR in HTIF
+static inline uint64_t htif_get_csr_addr(htif::csr r) {
     return PMA_HTIF_START + htif::get_csr_rel_addr(r);
+}
+
+/// \brief Returns the address of a CSR in DHD
+/// \param w The desired CSR
+/// \return Address of the specified CSR in DHD
+static inline uint64_t dhd_get_csr_addr(dhd_csr r) {
+    return PMA_DHD_START + dhd_get_csr_rel_addr(r);
+}
+
+/// \brief Returns the address of a CSR in CLINT
+/// \param w The desired CSR
+/// \return Address of the specified CSR in CLINT
+static inline uint64_t clint_get_csr_addr(clint_csr r) {
+    return PMA_CLINT_START + clint_get_csr_rel_addr(r);
 }
 
 uint64_t machine::get_csr_address(csr w) {
     switch (w) {
-        case csr::pc: return csr_address(shadow_csr::pc);
-        case csr::mvendorid: return csr_address(shadow_csr::mvendorid);
-        case csr::marchid: return csr_address(shadow_csr::marchid);
-        case csr::mimpid: return csr_address(shadow_csr::mimpid);
-        case csr::mcycle: return csr_address(shadow_csr::mcycle);
-        case csr::minstret: return csr_address(shadow_csr::minstret);
-        case csr::mstatus: return csr_address(shadow_csr::mstatus);
-        case csr::mtvec: return csr_address(shadow_csr::mtvec);
-        case csr::mscratch: return csr_address(shadow_csr::mscratch);
-        case csr::mepc: return csr_address(shadow_csr::mepc);
-        case csr::mcause: return csr_address(shadow_csr::mcause);
-        case csr::mtval: return csr_address(shadow_csr::mtval);
-        case csr::misa: return csr_address(shadow_csr::misa);
-        case csr::mie: return csr_address(shadow_csr::mie);
-        case csr::mip: return csr_address(shadow_csr::mip);
-        case csr::medeleg: return csr_address(shadow_csr::medeleg);
-        case csr::mideleg: return csr_address(shadow_csr::mideleg);
-        case csr::mcounteren: return csr_address(shadow_csr::mcounteren);
-        case csr::stvec: return csr_address(shadow_csr::stvec);
-        case csr::sscratch: return csr_address(shadow_csr::sscratch);
-        case csr::sepc: return csr_address(shadow_csr::sepc);
-        case csr::scause: return csr_address(shadow_csr::scause);
-        case csr::stval: return csr_address(shadow_csr::stval);
-        case csr::satp: return csr_address(shadow_csr::satp);
-        case csr::scounteren: return csr_address(shadow_csr::scounteren);
-        case csr::ilrsc: return csr_address(shadow_csr::ilrsc);
-        case csr::iflags: return csr_address(shadow_csr::iflags);
-        case csr::htif_tohost: return htif_reg_address(htif::csr::tohost);
-        case csr::htif_fromhost: return htif_reg_address(htif::csr::fromhost);
-        case csr::htif_ihalt: return htif_reg_address(htif::csr::ihalt);
-        case csr::htif_iconsole: return htif_reg_address(htif::csr::iconsole);
-        case csr::htif_iyield: return htif_reg_address(htif::csr::iyield);
-        case csr::clint_mtimecmp:
-            return PMA_CLINT_START + clint_get_csr_rel_addr(clint_csr::mtimecmp);
-
+        case csr::pc: return get_csr_addr(shadow_csr::pc);
+        case csr::mvendorid: return get_csr_addr(shadow_csr::mvendorid);
+        case csr::marchid: return get_csr_addr(shadow_csr::marchid);
+        case csr::mimpid: return get_csr_addr(shadow_csr::mimpid);
+        case csr::mcycle: return get_csr_addr(shadow_csr::mcycle);
+        case csr::minstret: return get_csr_addr(shadow_csr::minstret);
+        case csr::mstatus: return get_csr_addr(shadow_csr::mstatus);
+        case csr::mtvec: return get_csr_addr(shadow_csr::mtvec);
+        case csr::mscratch: return get_csr_addr(shadow_csr::mscratch);
+        case csr::mepc: return get_csr_addr(shadow_csr::mepc);
+        case csr::mcause: return get_csr_addr(shadow_csr::mcause);
+        case csr::mtval: return get_csr_addr(shadow_csr::mtval);
+        case csr::misa: return get_csr_addr(shadow_csr::misa);
+        case csr::mie: return get_csr_addr(shadow_csr::mie);
+        case csr::mip: return get_csr_addr(shadow_csr::mip);
+        case csr::medeleg: return get_csr_addr(shadow_csr::medeleg);
+        case csr::mideleg: return get_csr_addr(shadow_csr::mideleg);
+        case csr::mcounteren: return get_csr_addr(shadow_csr::mcounteren);
+        case csr::stvec: return get_csr_addr(shadow_csr::stvec);
+        case csr::sscratch: return get_csr_addr(shadow_csr::sscratch);
+        case csr::sepc: return get_csr_addr(shadow_csr::sepc);
+        case csr::scause: return get_csr_addr(shadow_csr::scause);
+        case csr::stval: return get_csr_addr(shadow_csr::stval);
+        case csr::satp: return get_csr_addr(shadow_csr::satp);
+        case csr::scounteren: return get_csr_addr(shadow_csr::scounteren);
+        case csr::ilrsc: return get_csr_addr(shadow_csr::ilrsc);
+        case csr::iflags: return get_csr_addr(shadow_csr::iflags);
+        case csr::htif_tohost: return htif_get_csr_addr(htif::csr::tohost);
+        case csr::htif_fromhost: return htif_get_csr_addr(htif::csr::fromhost);
+        case csr::htif_ihalt: return htif_get_csr_addr(htif::csr::ihalt);
+        case csr::htif_iconsole: return htif_get_csr_addr(htif::csr::iconsole);
+        case csr::htif_iyield: return htif_get_csr_addr(htif::csr::iyield);
+        case csr::clint_mtimecmp: return clint_get_csr_addr(clint_csr::mtimecmp);
+        case csr::dhd_tstart: return dhd_get_csr_addr(dhd_csr::tstart);
+        case csr::dhd_tlength: return dhd_get_csr_addr(dhd_csr::tlength);
+        case csr::dhd_dlength: return dhd_get_csr_addr(dhd_csr::dlength);
+        case csr::dhd_hlength: return dhd_get_csr_addr(dhd_csr::hlength);
         default:
             throw std::invalid_argument{"unknown CSR"};
     }
@@ -927,7 +1012,7 @@ bool machine::verify_dirty_page_maps(void) const {
     // double begin = now();
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
     merkle_tree::hasher_type h;
-    auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
+    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
     if (!scratch) return false;
     bool broken = false;
     if constexpr(!avoid_tlb<machine_state>::value) {
@@ -973,6 +1058,11 @@ bool machine::verify_dirty_page_maps(void) const {
     return !broken;
 }
 
+dhd_data machine::dehash(const unsigned char* hash, uint64_t hlength,
+    uint64_t &dlength) {
+    return m_s.dehash(hash, hlength, dlength);
+}
+
 bool machine::update_merkle_tree(void) {
     merkle_tree::hasher_type gh;
     //double begin = now();
@@ -1004,7 +1094,7 @@ bool machine::update_merkle_tree(void) {
         futures.reserve(n);
         for (int j = 0; j < n; ++j) {
             futures.emplace_back(std::async(std::launch::async, [&](int j) -> bool {
-                auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
+                auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
                 if (!scratch) return false;
                 merkle_tree::hasher_type h;
                 // Thread j is responsible for page i if i % n == j.
@@ -1058,10 +1148,10 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
     // Align address to begining of page
     address &= ~(PMA_PAGE_SIZE-1);
-    pma_entry &pma = naked_find_pma_entry<uint64_t>(m_s, address);
+    pma_entry &pma = find_pma_entry<uint64_t>(address);
     uint64_t page_start_in_range = address - pma.get_start();
     merkle_tree::hasher_type h;
-    auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
+    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
     if (!scratch) return false;
     m_t.begin_update();
     const unsigned char *page_data = nullptr;
@@ -1088,7 +1178,7 @@ const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas(voi
 }
 
 void machine::dump_pmas(void) const {
-    auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
+    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
     for (auto &pma: m_s.pmas) {
         if (pma.get_length() == 0) break;
         char filename[256];
@@ -1136,8 +1226,8 @@ void machine::get_proof(uint64_t address, int log2_size, merkle_tree::proof_type
     // or entirely outside it.
     if (log2_size < merkle_tree::get_log2_page_size()) {
         uint64_t length = UINT64_C(1) << log2_size;
-        const pma_entry &pma = naked_find_pma_entry(m_s, address, length);
-        auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
+        const pma_entry &pma = find_pma_entry(address, length);
+        auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
         const unsigned char *page_data = nullptr;
         // If the PMA range is empty, we know the desired range is
         // entirely outside of any non-pristine PMA.
@@ -1164,7 +1254,7 @@ void machine::get_proof(uint64_t address, int log2_size, merkle_tree::proof_type
 
 void machine::read_memory(uint64_t address, unsigned char *data,
     uint64_t length) const {
-    const pma_entry &pma = naked_find_pma_entry(m_s, address, length);
+    const pma_entry &pma = find_pma_entry(address, length);
     if (!pma.get_istart_M() || pma.get_istart_E())
         throw std::invalid_argument{"address range not entirely in memory PMA"};
     memcpy(data, pma.get_memory().get_host_memory()+(address-pma.get_start()),
@@ -1173,7 +1263,7 @@ void machine::read_memory(uint64_t address, unsigned char *data,
 
 void machine::write_memory(uint64_t address, const unsigned char *data,
     size_t length) {
-    pma_entry &pma = naked_find_pma_entry(m_s, address, length);
+    pma_entry &pma = find_pma_entry(address, length);
     if (!pma.get_istart_M() || pma.get_istart_E())
         throw std::invalid_argument{"address range not entirely in memory PMA"};
     constexpr const auto page_size_log2 = PMA_constants::PMA_PAGE_SIZE_LOG2;
@@ -1193,11 +1283,11 @@ bool machine::read_word(uint64_t word_address, uint64_t &word_value) const {
     // Make sure address is aligned
     if (word_address & (PMA_WORD_SIZE-1))
         return false;
-    const pma_entry &pma = naked_find_pma_entry<uint64_t>(m_s, word_address);
+    const pma_entry &pma = find_pma_entry<uint64_t>(word_address);
     // ??D We should split peek into peek_word and peek_page
     // for performance. On the other hand, this function
     // will almost never be used, so one wonders if it is worth it...
-    auto scratch = unique_calloc<unsigned char>(1, PMA_PAGE_SIZE);
+    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
     if (!scratch) return false;
     const unsigned char *page_data = nullptr;
     uint64_t page_start_in_range = (word_address - pma.get_start()) & (~(PMA_PAGE_SIZE-1));
@@ -1224,8 +1314,10 @@ void machine::run_inner_loop(uint64_t mcycle_end) {
     interpret(a, mcycle_end);
 }
 
-void machine::verify_access_log(const access_log &log, bool one_based) {
-    step_state_access a(log, log.get_log_type().has_proofs(), one_based);
+void machine::verify_access_log(const access_log &log,
+    const machine_runtime_config &r, bool one_based) {
+    step_state_access a(log, log.get_log_type().has_proofs(),
+        make_dhd_source(r.dhd.source_address), one_based);
     interpret(a, UINT64_MAX);
     a.finish();
 }
@@ -1235,7 +1327,8 @@ machine_config machine::get_default_config(void) {
 }
 
 void machine::verify_state_transition(const hash_type &root_hash_before,
-    const access_log &log, const hash_type &root_hash_after, bool one_based) {
+    const access_log &log, const hash_type &root_hash_after,
+    const machine_runtime_config &r, bool one_based) {
     if (!log.get_accesses().empty()) {
         // We need proofs in order to verify the state transition
         if (!log.get_log_type().has_proofs()) {
@@ -1246,7 +1339,8 @@ void machine::verify_state_transition(const hash_type &root_hash_before,
             throw std::invalid_argument{"mismatch in root hash before step"};
         }
         // Verify all intermediate state transitions
-        step_state_access a(log, true /* verify proofs! */, one_based);
+        step_state_access a(log, true /* verify proofs! */,
+            make_dhd_source(r.dhd.source_address), one_based);
         interpret(a, UINT64_MAX);
         a.finish();
         // Make sure the access log ends at the same root hash as the state
@@ -1278,9 +1372,9 @@ access_log machine::step(const access_log::type &log_type, bool one_based) {
         update_merkle_tree();
         get_root_hash(root_hash_after);
         verify_state_transition(root_hash_before, *a.get_log(),
-            root_hash_after, one_based);
+            root_hash_after, m_r, one_based);
     } else {
-        verify_access_log(*a.get_log(), one_based);
+        verify_access_log(*a.get_log(), m_r, one_based);
     }
     return std::move(*a.get_log());
 }

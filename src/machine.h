@@ -24,9 +24,11 @@
 
 #include "machine-state.h"
 #include "machine-config.h"
+#include "machine-runtime-config.h"
 #include "merkle-tree.h"
 #include "access-log.h"
 #include "htif.h"
+#include "dhd-source.h"
 
 namespace cartesi {
 
@@ -45,6 +47,7 @@ class machine final {
     htif m_h;            ///< HTIF device
 
     machine_config m_c;  ///< Copy of initialization config
+    machine_runtime_config m_r;  ///< Copy of initialization runtime config
 
     static pma_entry::flags m_rom_flags;    ///< PMA flags used for ROM
     static pma_entry::flags m_ram_flags;    ///< PMA flags used for RAM
@@ -120,13 +123,19 @@ public:
         htif_ihalt,
         htif_iconsole,
         htif_iyield,
+        dhd_tstart,
+        dhd_tlength,
+        dhd_dlength,
+        dhd_hlength,
     };
 
     /// \brief Constructor from machine configuration
-    explicit machine(const machine_config &c);
+    explicit machine(const machine_config &c,
+        const machine_runtime_config &r = {});
 
     /// \brief Constructor from previously serialized directory
-    explicit machine(const std::string &dir);
+    explicit machine(const std::string &dir,
+        const machine_runtime_config &r = {});
 
     /// \brief Serialize entire state to directory
     /// \details The method is not const because it updates the root hash
@@ -159,18 +168,20 @@ public:
 
     /// \brief Checks the internal consistency of an access log.
     /// \param log State access log to be verified.
+    /// \param r Machine runtime configuration to use during verification.
     /// \param one_based Use 1-based indices when reporting errors.
     static void verify_access_log(const access_log &log,
-        bool one_based = false);
+        const machine_runtime_config &r, bool one_based = false);
 
     /// \brief Checks the validity of a state transition.
     /// \param root_hash_before State hash before step.
     /// \param log Step state access log.
     /// \param root_hash_after State hash after step.
+    /// \param r Machine runtime configuration to use during verification.
     /// \param one_based Use 1-based indices when reporting errors.
     static void verify_state_transition(const hash_type &root_hash_before,
         const access_log &log, const hash_type &root_hash_after,
-        bool one_based = false);
+        const machine_runtime_config &r, bool one_based = false);
 
     static machine_config get_default_config(void);
 
@@ -182,6 +193,17 @@ public:
 
     /// \brief Destructor.
     ~machine();
+
+    /// \brief Obtains the block of data that has a given hash
+    /// \param hash Pointer to buffer containing hash
+    /// \param hlength Length  of hash in bytes
+    /// \param dlength Maximum length of desired block of data with that hash.
+    /// On return, contains the actual length of the block found. Or
+    /// DHD_NOT_FOUND if no matching block was found.
+    /// \returns The block of data with the given hash, or an empty block
+    /// if not found
+    dhd_data dehash(const unsigned char* hash, uint64_t hlength,
+        uint64_t &dlength);
 
     /// \brief Update the Merkle tree so it matches the contents of the machine state.
     /// \returns true if succeeded, false otherwise.
@@ -231,7 +253,7 @@ public:
     bool read_word(uint64_t word_address, uint64_t &word_value) const;
 
     /// \brief Reads a chunk of data from the machine memory.
-    /// \param address Address to start reading.
+    /// \param address Physical address to start reading.
     /// \param data Receives chunk of memory.
     /// \param length Size of chunk.
     /// \details The entire chunk, from \p address to \p address + \p length must
@@ -240,7 +262,7 @@ public:
     void read_memory(uint64_t address, unsigned char *data, uint64_t length) const;
 
     /// \brief Writes a chunk of data to the machine memory.
-    /// \param address Address to start writing.
+    /// \param address Physical address to start writing.
     /// \param data Source for chunk of data.
     /// \param length Size of chunk.
     /// \details The entire chunk, from \p address to \p address + \p length must
@@ -249,17 +271,17 @@ public:
     void write_memory(uint64_t address, const unsigned char *data, size_t length);
 
     /// \brief Reads the value of a general-purpose register.
-    /// \param i Register index.
+    /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
     /// \returns The value of the register.
     uint64_t read_x(int i) const;
 
     /// \brief Writes the value of a general-purpose register.
-    /// \param i Register index.
+    /// \param i Register index. Between 1 and X_REG_COUNT-1, inclusive.
     /// \param val New register value.
     void write_x(int i, uint64_t val);
 
     /// \brief Gets the address of a general-purpose register.
-    /// \param i Register index.
+    /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
     /// \returns Address of the specified register
     static uint64_t get_x_address(int i);
 
@@ -547,6 +569,55 @@ public:
     /// \param val New register value.
     void write_clint_mtimecmp(uint64_t val);
 
+    /// \brief Reads the value of DHD's tstart register.
+    /// \returns The value of the register.
+    uint64_t read_dhd_tstart(void) const;
+
+    /// \brief Writes the value of DHD's tstart register.
+    /// \param val New register value.
+    void write_dhd_tstart(uint64_t val);
+
+    /// \brief Reads the value of DHD's tlength register.
+    /// \returns The value of the register.
+    uint64_t read_dhd_tlength(void) const;
+
+    /// \brief Writes the value of DHD's tlength register.
+    /// \param val New register value.
+    void write_dhd_tlength(uint64_t val);
+
+    /// \brief Reads the value of DHD's dlength register.
+    /// \returns The value of the register.
+    uint64_t read_dhd_dlength(void) const;
+
+    /// \brief Writes the value of DHD's dlength register.
+    /// \param val New register value.
+    void write_dhd_dlength(uint64_t val);
+
+    /// \brief Reads the value of DHD's hlength register.
+    /// \returns The value of the register.
+    uint64_t read_dhd_hlength(void) const;
+
+    /// \brief Writes the value of DHD's hlength register.
+    /// \param val New register value.
+    void write_dhd_hlength(uint64_t val);
+
+    /// \brief Reads the value of DHD's input hash word.
+    /// \param i Index of input hash word.
+    /// Between 0 and DHD_H_REG_COUNT-1, inclusive.
+    /// \returns The value of the register.
+    uint64_t read_dhd_h(int i) const;
+
+    /// \brief Writes the value of DHD's input hash word.
+    /// \param i Index of input hash word.
+    /// Between 0 and DHD_H_REG_COUNT-1, inclusive.
+    /// \param val New value for word.
+    void write_dhd_h(int i, uint64_t val);
+
+    /// \brief Gets the address of a DHD h register.
+    /// \param i Register index. Between 0 and DHD_H_REG_COUNT-1, inclusive.
+    /// \returns Address of the specified register
+    static uint64_t get_dhd_h_address(int i);
+
     /// \brief Checks the value of the iflags_I flag.
     /// \returns The flag value.
     bool read_iflags_I(void) const;
@@ -593,6 +664,32 @@ public:
     /// \brief Get read-only access to container with all PMA entries.
     /// \returns The container.
     const boost::container::static_vector<pma_entry, PMA_MAX> &get_pmas(void) const;
+
+    /// \brief Obtain PMA entry that covers a given physical memory region
+    /// \param s Pointer to machine state.
+    /// \param paddr Start of physical memory region.
+    /// \param length Length of physical memory region.
+    /// \returns Corresponding entry if found, or a sentinel entry
+    /// for an empty range.
+    pma_entry &find_pma_entry(uint64_t paddr, size_t length);
+
+    const pma_entry &find_pma_entry(uint64_t paddr, size_t length) const;
+
+    /// \brief Obtain PMA entry covering a physical memory word
+    /// \tparam T Type of word.
+    /// \param s Pointer to machine state.
+    /// \param paddr Target physical address.
+    /// \returns Corresponding entry if found, or a sentinel entry
+    /// for an empty range.
+    template <typename T>
+    const pma_entry &find_pma_entry(uint64_t paddr) const {
+        return find_pma_entry(paddr, sizeof(T));
+    }
+
+    template <typename T>
+    pma_entry &find_pma_entry(uint64_t paddr) {
+        return find_pma_entry(paddr, sizeof(T));
+    }
 
     /// \brief Interact with console
     void interact(void);

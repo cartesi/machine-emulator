@@ -181,11 +181,11 @@ uint64_t pma_entry::get_ilength(void) const {
     return m_length;
 }
 
-bool pma_write_error(const pma_entry &, i_virtual_state_access *, uint64_t, uint64_t, int) {
+bool pma_write_error(const pma_entry &, i_device_state_access *, uint64_t, uint64_t, int) {
     return false;
 }
 
-bool pma_read_error(const pma_entry &, i_virtual_state_access *, uint64_t, uint64_t *, int) {
+bool pma_read_error(const pma_entry &, i_device_state_access *, uint64_t, uint64_t *, int) {
     return false;
 }
 

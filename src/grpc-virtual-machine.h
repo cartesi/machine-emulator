@@ -41,8 +41,10 @@ using grpc_machine_stub_ptr = std::shared_ptr<CartesiMachine::Machine::Stub>;
 class grpc_virtual_machine : public i_virtual_machine {
 public:
 
-    grpc_virtual_machine(grpc_machine_stub_ptr stub, const std::string &dir);
-    grpc_virtual_machine(grpc_machine_stub_ptr stub, const machine_config &c);
+    grpc_virtual_machine(grpc_machine_stub_ptr stub, const std::string &dir,
+        const machine_runtime_config &r = {});
+    grpc_virtual_machine(grpc_machine_stub_ptr stub, const machine_config &c,
+        const machine_runtime_config &r = {});
 
     virtual ~grpc_virtual_machine();
 
@@ -72,6 +74,7 @@ private:
     uint64_t do_read_x(int i) override;
     void do_write_x(int i, uint64_t val) override;
     uint64_t do_get_x_address(int i) override;
+    uint64_t do_get_dhd_h_address(int i) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) override;
     void do_write_memory(uint64_t address, const unsigned char *data, size_t length) override;
     uint64_t do_read_pc(void) override;
@@ -144,6 +147,16 @@ private:
     void do_write_htif_iyield(uint64_t val) override;
     uint64_t do_read_clint_mtimecmp(void) override;
     void do_write_clint_mtimecmp(uint64_t val) override;
+    uint64_t do_read_dhd_tstart(void) override;
+    void do_write_dhd_tstart(uint64_t val) override;
+    uint64_t do_read_dhd_tlength(void) override;
+    void do_write_dhd_tlength(uint64_t val) override;
+    uint64_t do_read_dhd_dlength(void) override;
+    void do_write_dhd_dlength(uint64_t val) override;
+    uint64_t do_read_dhd_hlength(void) override;
+    void do_write_dhd_hlength(uint64_t val) override;
+    uint64_t do_read_dhd_h(int i) override;
+    void do_write_dhd_h(int i, uint64_t val) override;
     void do_get_root_hash(hash_type &hash) override;
     void do_get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) override;
     void do_replace_flash_drive(const flash_drive_config &new_flash) override;

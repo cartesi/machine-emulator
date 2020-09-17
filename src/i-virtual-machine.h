@@ -596,7 +596,18 @@ private:
     virtual void do_write_htif_iyield(uint64_t val) = 0;
     virtual uint64_t do_read_clint_mtimecmp(void) = 0;
     virtual void do_write_clint_mtimecmp(uint64_t val) = 0;
+    virtual uint64_t do_read_dhd_tstart(void) = 0;
+    virtual void do_write_dhd_tstart(uint64_t val) = 0;
+    virtual uint64_t do_read_dhd_tlength(void) = 0;
+    virtual void do_write_dhd_tlength(uint64_t val) = 0;
+    virtual uint64_t do_read_dhd_dlength(void) = 0;
+    virtual void do_write_dhd_dlength(uint64_t val) = 0;
+    virtual uint64_t do_read_dhd_hlength(void) = 0;
+    virtual void do_write_dhd_hlength(uint64_t val) = 0;
+    virtual uint64_t do_read_dhd_h(int i) = 0;
+    virtual void do_write_dhd_h(int i, uint64_t val) = 0;
     virtual uint64_t do_get_x_address(int i) = 0;
+    virtual uint64_t do_get_dhd_h_address(int i) = 0;
     virtual void do_replace_flash_drive(const flash_drive_config &new_flash) = 0;
     virtual void do_dump_pmas(void) = 0;
     virtual bool do_read_word(uint64_t word_address, uint64_t &word_value) = 0;
@@ -605,7 +616,6 @@ private:
     virtual void do_snapshot() = 0;
     virtual void do_destroy() = 0;
     virtual void do_rollback() = 0;
-
 };
 
 } // namespace cartesi

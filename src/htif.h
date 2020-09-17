@@ -36,8 +36,6 @@
 namespace cartesi {
 
 // Forward declarations
-class machine;
-
 /// \brief HTIF shifts
 enum HTIF_shifts {
     HTIF_DEV_SHIFT  = HTIF_DEV_SHIFT_DEF,
@@ -115,7 +113,6 @@ public:
 
     /// \brief Constructor
     /// \param h HTIF device configuration.
-    /// \details The constructor for the associated machine is typically done yet when the constructor for the HTIF device is invoked.
     htif(const htif_config &h);
 
     /// \brief Interact with the hosts's terminal.
@@ -132,9 +129,6 @@ public:
 
     /// \brief Checks if HTIF honors console getchar
     bool has_console_getchar(void) const;
-
-    /// \brief Returns the associated machine
-    const machine &get_machine(void) const;
 
     /// \brief Checks if there is input available from console.
     void poll_console(void);

@@ -34,6 +34,7 @@ static int machine_class__index_get_default_config(lua_State *L) {
 /// \brief This is the machine.verify_access_log() method implementation.
 static int machine_class__index_verify_access_log(lua_State *L) try {
     machine::verify_access_log(clua_check_access_log(L, 1),
+        clua_check_machine_runtime_config(L, 2),
         true /* 1-based indices in errors */ );
     lua_pushnumber(L, 1);
     return 1;
@@ -47,7 +48,9 @@ static int machine_class__index_verify_access_log(lua_State *L) try {
 static int machine_class__index_verify_state_transition(lua_State *L) try {
     machine::verify_state_transition(clua_check_hash(L, 1),
         clua_check_access_log(L, 2),
-        clua_check_hash(L, 3), true /* 1-based indices in errors */);
+        clua_check_hash(L, 3),
+        clua_check_machine_runtime_config(L, 4),
+        true /* 1-based indices in errors */);
     lua_pushnumber(L, 1);
     return 1;
 } catch (std::exception &x) {
@@ -67,14 +70,17 @@ static const luaL_Reg machine_class__index[] = {
 /// \brief This is the cartesi.machine() constructor implementation.
 /// \param L Lua state.
 static int machine_ctor(lua_State *L) try {
+    lua_settop(L, 3);
     // Allocate room for clua_i_virtual_machine_ptr as a Lua userdata
     clua_i_virtual_machine_ptr *p = reinterpret_cast<clua_i_virtual_machine_ptr *>(
         lua_newuserdata(L, sizeof(clua_i_virtual_machine_ptr)));
     new (p) clua_i_virtual_machine_ptr();
     if (lua_type(L, 2) == LUA_TTABLE) {
-        *p = std::make_unique<virtual_machine>(clua_check_machine_config(L, 2));
+        *p = std::make_unique<virtual_machine>(clua_check_machine_config(L, 2),
+            clua_opt_machine_runtime_config(L, 3, {}));
     } else {
-        *p = std::make_unique<virtual_machine>(luaL_checkstring(L, 2));
+        *p = std::make_unique<virtual_machine>(luaL_checkstring(L, 2),
+            clua_opt_machine_runtime_config(L, 3, {}));
     }
     clua_setmetatable<clua_i_virtual_machine_ptr>(L, -1);
     return 1;

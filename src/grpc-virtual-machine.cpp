@@ -24,64 +24,9 @@
 using grpc::Channel;
 using grpc::Status;
 using grpc::ClientContext;
-using CartesiMachine::Machine;
-using CartesiMachine::Void;
-using CartesiMachine::Machine;
-using CartesiMachine::VerifyMerkleTreeResponse;
-using CartesiMachine::UpdateMerkleTreeResponse;
-using CartesiMachine::VerifyDirtyPageMapsResponse;
-using CartesiMachine::VerifyStateTransitionRequest;
-using CartesiMachine::VerifyAccessLogRequest;
-using CartesiMachine::MachineConfig;
-using CartesiMachine::GetInitialConfigResponse;
-using CartesiMachine::GetDefaultConfigResponse;
-using CartesiMachine::ProcessorConfig;
-using CartesiMachine::HTIFConfig;
-using CartesiMachine::ROMConfig;
-using CartesiMachine::RAMConfig;
-using CartesiMachine::FlashDriveConfig;
-using CartesiMachine::CLINTConfig;
-using CartesiMachine::HTIFConfig;
-using CartesiMachine::ReplaceFlashDriveRequest;
-using CartesiMachine::FlashDriveConfig;
-using CartesiMachine::MachineRequest;
-using CartesiMachine::MachineRequest;
-using CartesiMachine::RunRequest;
-using CartesiMachine::RunResponse;
-using CartesiMachine::Csr;
-using CartesiMachine::ReadCsrRequest;
-using CartesiMachine::ReadCsrResponse;
-using CartesiMachine::WriteCsrRequest;
-using CartesiMachine::StepResponse;
-using CartesiMachine::GetCsrAddressRequest;
-using CartesiMachine::GetCsrAddressResponse;
-using CartesiMachine::ReadXRequest;
-using CartesiMachine::ReadXResponse;
-using CartesiMachine::GetXAddressRequest;
-using CartesiMachine::GetXAddressResponse;
-using CartesiMachine::WriteXRequest;
-using CartesiMachine::StoreRequest;
-using CartesiMachine::ReadWordRequest;
-using CartesiMachine::ReadWordResponse;
-using CartesiMachine::WriteMemoryRequest;
-using CartesiMachine::ReadMemoryRequest;
-using CartesiMachine::ReadMemoryResponse;
-using CartesiMachine::GetRootHashResponse;
-using CartesiMachine::AccessType;
-using CartesiMachine::Hash;
-using CartesiMachine::GetProofRequest;
-using CartesiMachine::GetProofResponse;
-using CartesiMachine::Proof;
-using CartesiMachine::StepRequest;
-using CartesiMachine::AccessLog;
-using CartesiMachine::AccessLogType;
-using CartesiMachine::Access;
-using CartesiMachine::BracketNote;
-using CartesiMachine::BracketNote_BracketNoteType;
-using CartesiMachine::BracketNote_BracketNoteType_BEGIN;
-using CartesiMachine::BracketNote_BracketNoteType_END;
-using Versioning::GetVersionResponse;
 using grpc::StatusCode;
+using namespace CartesiMachine;
+using namespace Versioning;
 
 using hash_type = cartesi::merkle_tree::hash_type;
 
@@ -121,102 +66,23 @@ static void check_status(const Status &status) {
 }
 
 grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
-    const std::string &dir): m_stub(stub) {
+    const std::string &dir, const machine_runtime_config &r): m_stub(stub) {
     MachineRequest request;
     request.set_directory(dir);
+    set_proto_machine_runtime_config(r, request.mutable_runtime());
     Void response;
     ClientContext context;
     check_status(m_stub->Machine(&context, request, &response));
 }
 
 grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
-    const machine_config &c): m_stub(stub) {
+    const machine_config &c, const machine_runtime_config &r): m_stub(stub) {
     MachineRequest request;
-    MachineConfig* cfg = request.mutable_config();
-    ROMConfig *rom = cfg->mutable_rom();
-    rom->set_bootargs(c.rom.bootargs);
-    rom->set_image_filename(c.rom.image_filename);
-    RAMConfig* ram = cfg->mutable_ram();
-    ram->set_length(c.ram.length);
-    ram->set_image_filename(c.ram.image_filename);
-    HTIFConfig* htif = cfg->mutable_htif();
-    htif->set_console_getchar(c.htif.console_getchar);
-    htif->set_yield_progress(c.htif.yield_progress);
-    htif->set_yield_rollup(c.htif.yield_rollup);
-    htif->set_fromhost(c.htif.fromhost);
-    htif->set_tohost(c.htif.tohost);
-    CLINTConfig* clint = cfg->mutable_clint();
-    clint->set_mtimecmp(c.clint.mtimecmp);
-    ProcessorConfig* p = cfg->mutable_processor();
-    p->set_x1(c.processor.x[1]);
-    p->set_x2(c.processor.x[2]);
-    p->set_x3(c.processor.x[3]);
-    p->set_x4(c.processor.x[4]);
-    p->set_x5(c.processor.x[5]);
-    p->set_x6(c.processor.x[6]);
-    p->set_x7(c.processor.x[7]);
-    p->set_x8(c.processor.x[8]);
-    p->set_x9(c.processor.x[9]);
-    p->set_x10(c.processor.x[10]);
-    p->set_x11(c.processor.x[11]);
-    p->set_x12(c.processor.x[12]);
-    p->set_x13(c.processor.x[13]);
-    p->set_x14(c.processor.x[14]);
-    p->set_x15(c.processor.x[15]);
-    p->set_x16(c.processor.x[16]);
-    p->set_x17(c.processor.x[17]);
-    p->set_x18(c.processor.x[18]);
-    p->set_x19(c.processor.x[19]);
-    p->set_x20(c.processor.x[20]);
-    p->set_x21(c.processor.x[21]);
-    p->set_x22(c.processor.x[22]);
-    p->set_x23(c.processor.x[23]);
-    p->set_x24(c.processor.x[24]);
-    p->set_x25(c.processor.x[25]);
-    p->set_x26(c.processor.x[26]);
-    p->set_x27(c.processor.x[27]);
-    p->set_x28(c.processor.x[28]);
-    p->set_x29(c.processor.x[29]);
-    p->set_x30(c.processor.x[30]);
-    p->set_x31(c.processor.x[31]);
-    p->set_pc(c.processor.pc);
-    p->set_mvendorid(c.processor.mvendorid);
-    p->set_marchid(c.processor.marchid);
-    p->set_mimpid(c.processor.mimpid);
-    p->set_mcycle(c.processor.mcycle);
-    p->set_minstret(c.processor.minstret);
-    p->set_mstatus(c.processor.mstatus);
-    p->set_mtvec(c.processor.mtvec);
-    p->set_mscratch(c.processor.mscratch);
-    p->set_mepc(c.processor.mepc);
-    p->set_mcause(c.processor.mcause);
-    p->set_mtval(c.processor.mtval);
-    p->set_misa(c.processor.misa);
-    p->set_mie(c.processor.mie);
-    p->set_mip(c.processor.mip);
-    p->set_medeleg(c.processor.medeleg);
-    p->set_mideleg(c.processor.mideleg);
-    p->set_mcounteren(c.processor.mcounteren);
-    p->set_stvec(c.processor.stvec);
-    p->set_sscratch(c.processor.sscratch);
-    p->set_sepc(c.processor.sepc);
-    p->set_scause(c.processor.scause);
-    p->set_stval(c.processor.stval);
-    p->set_satp(c.processor.satp);
-    p->set_scounteren(c.processor.scounteren);
-    p->set_ilrsc(c.processor.ilrsc);
-    p->set_iflags(c.processor.iflags);
-    for(const auto &f:c.flash_drive) {
-        auto flash = cfg->add_flash_drive();
-        flash->set_start(f.start);
-        flash->set_length(f.length);
-        flash->set_shared(f.shared);
-        flash->set_image_filename(f.image_filename);
-    }
+    set_proto_machine_config(c, request.mutable_config());
+    set_proto_machine_runtime_config(r, request.mutable_runtime());
     Void response;
     ClientContext context;
     check_status(m_stub->Machine(&context, request, &response));
-
 }
 
 grpc_virtual_machine::~grpc_virtual_machine(void) {
@@ -346,12 +212,39 @@ void grpc_virtual_machine::do_write_x(int i, uint64_t val)  {
     check_status(m_stub->WriteX(&context, request, &response));
 }
 
+uint64_t grpc_virtual_machine::do_read_dhd_h(int i) {
+    ReadDhdHRequest request;
+    request.set_index(i);
+    ReadDhdHResponse response;
+    ClientContext context;
+    check_status(m_stub->ReadDhdH(&context, request, &response));
+    return response.value();
+}
+
+void grpc_virtual_machine::do_write_dhd_h(int i, uint64_t val)  {
+    WriteDhdHRequest request;
+    request.set_index(i);
+    request.set_value(val);
+    Void response;
+    ClientContext context;
+    check_status(m_stub->WriteDhdH(&context, request, &response));
+}
+
 uint64_t grpc_virtual_machine::do_get_x_address(int i)  {
     GetXAddressRequest request;
     request.set_index(i);
     GetXAddressResponse response;
     ClientContext context;
     check_status(m_stub->GetXAddress(&context, request, &response));
+    return response.address();
+}
+
+uint64_t grpc_virtual_machine::do_get_dhd_h_address(int i)  {
+    GetDhdHAddressRequest request;
+    request.set_index(i);
+    GetDhdHAddressResponse response;
+    ClientContext context;
+    check_status(m_stub->GetDhdHAddress(&context, request, &response));
     return response.address();
 }
 
@@ -653,6 +546,38 @@ uint64_t grpc_virtual_machine::do_read_clint_mtimecmp(void) {
 
 void grpc_virtual_machine::do_write_clint_mtimecmp(uint64_t val) {
     write_csr(csr::clint_mtimecmp, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_dhd_tstart(void) {
+    return read_csr(csr::dhd_tstart);
+}
+
+void grpc_virtual_machine::do_write_dhd_tstart(uint64_t val) {
+    write_csr(csr::dhd_tstart, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_dhd_tlength(void) {
+    return read_csr(csr::dhd_tlength);
+}
+
+void grpc_virtual_machine::do_write_dhd_tlength(uint64_t val) {
+    write_csr(csr::dhd_tlength, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_dhd_dlength(void) {
+    return read_csr(csr::dhd_dlength);
+}
+
+void grpc_virtual_machine::do_write_dhd_dlength(uint64_t val) {
+    write_csr(csr::dhd_dlength, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_dhd_hlength(void) {
+    return read_csr(csr::dhd_hlength);
+}
+
+void grpc_virtual_machine::do_write_dhd_hlength(uint64_t val) {
+    write_csr(csr::dhd_hlength, val);
 }
 
 void grpc_virtual_machine::do_get_root_hash(hash_type &hash)  {

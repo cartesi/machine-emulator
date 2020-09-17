@@ -30,6 +30,11 @@
 #include "machine-config.h"
 #include "pma-constants.h"
 
+#define ARCHIVE_VERSION 1
+
+// ARCHIVE_VERSION 0 was the first version
+// ARCHIVE_VERSION 1 added the dhd configuration
+BOOST_CLASS_VERSION(cartesi::machine_config, ARCHIVE_VERSION)
 
 namespace boost {
 namespace serialization {
@@ -132,15 +137,28 @@ void serialize(ARX &ar, cartesi::htif_config &h, const unsigned int) {
     ar & h.yield_rollup;
 }
 
+template <typename ARX>
+void serialize(ARX &ar, cartesi::dhd_config &d, const unsigned int) {
+    ar & d.tstart;
+    ar & d.tlength;
+    ar & d.image_filename;
+    ar & d.dlength;
+    ar & d.hlength;
+    ar & d.h;
+}
+
 
 template <typename ARX>
-void serialize(ARX &ar, cartesi::machine_config &m, const unsigned int) {
+void serialize(ARX &ar, cartesi::machine_config &m, const unsigned int v) {
     ar & m.processor;
     ar & m.ram;
     ar & m.rom;
     ar & m.flash_drive;
     ar & m.clint;
     ar & m.htif;
+    if (v > 0) {
+        ar & m.dhd;
+    }
 }
 
 } } // namespace boost::serialization

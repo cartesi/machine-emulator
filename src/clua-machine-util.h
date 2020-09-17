@@ -44,8 +44,14 @@ void clua_push_hash(lua_State *L, const merkle_tree::hash_type hash);
 
 /// \brief Pushes a machine_config to the Lua stack
 /// \param L Lua state.
-/// \param c Machine_config to be pushed.
+/// \param r Machine_config to be pushed.
 void clua_push_machine_config(lua_State *L, const machine_config &c);
+
+/// \brief Pushes a machine_runtime_config to the Lua stack
+/// \param L Lua state.
+/// \param r Machine_runtime_config to be pushed.
+void clua_push_machine_runtime_config(lua_State *L,
+    const machine_runtime_config &r);
 
 /// \brief Returns a CSR selector from Lua.
 /// \param L Lua state.
@@ -82,10 +88,22 @@ merkle_tree::proof_type clua_check_proof(lua_State *L, int tabidx);
 /// \returns The access_log.
 access_log clua_check_access_log(lua_State *L, int tabidx);
 
-/// \brief loads a machine_config object from a Lua table
+/// \brief Loads a machine_config object from a Lua table
 /// \param L Lua state.
 /// \param tabidx Index of table in Lua stack
 machine_config clua_check_machine_config(lua_State *L, int tabidx);
+
+/// \brief Loads a machine_runtime_config object from a Lua table
+/// \param L Lua state.
+/// \param tabidx Index of table in Lua stack
+machine_runtime_config clua_check_machine_runtime_config(lua_State *L,
+    int tabidx);
+
+/// \brief Loads an optional machine_runtime_config object from a Lua
+/// \param L Lua state.
+/// \param tabidx Index of table in Lua stack
+machine_runtime_config clua_opt_machine_runtime_config(lua_State *L,
+    int tabidx, const machine_runtime_config &r);
 
 /// \brief Loads flash drive config from a Lua table.
 /// \param L Lua state.

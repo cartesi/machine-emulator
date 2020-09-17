@@ -86,6 +86,7 @@ static int grpc_machine_tostring(lua_State *L) {
 /// \brief This is the cartesi.machine() constructor implementation.
 /// \param L Lua state.
 static int grpc_machine_ctor(lua_State *L) try {
+    lua_settop(L, 3);
     auto &stub = *reinterpret_cast<grpc_machine_stub_ptr *>(
         lua_touserdata(L, lua_upvalueindex(1)));
     clua_i_virtual_machine_ptr *p = reinterpret_cast<
@@ -94,10 +95,12 @@ static int grpc_machine_ctor(lua_State *L) try {
     new (p) clua_i_virtual_machine_ptr();
     if (lua_type(L, 2) == LUA_TTABLE) {
         *p = std::make_unique<grpc_virtual_machine>(stub,
-            clua_check_machine_config(L, 2));
+            clua_check_machine_config(L, 2),
+            clua_opt_machine_runtime_config(L, 3, {}));
     } else {
         *p = std::make_unique<grpc_virtual_machine>(stub,
-            luaL_checkstring(L, 2));
+            luaL_checkstring(L, 2),
+            clua_opt_machine_runtime_config(L, 3, {}));
     }
     clua_setmetatable<clua_i_virtual_machine_ptr>(L, -1, lua_upvalueindex(2));
     return 1;

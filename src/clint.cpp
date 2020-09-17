@@ -15,7 +15,7 @@
 //
 
 #include "clint.h"
-#include "i-virtual-state-access.h"
+#include "i-device-state-access.h"
 #include "machine.h"
 #include "pma.h"
 #include "rtc.h"
@@ -32,7 +32,7 @@ uint64_t clint_get_csr_rel_addr(clint_csr reg) {
     return static_cast<uint64_t>(reg);
 }
 
-static bool clint_read_msip(i_virtual_state_access *a, uint64_t *val,
+static bool clint_read_msip(i_device_state_access *a, uint64_t *val,
     int size_log2) {
     if (size_log2 == 2) {
         *val = ((a->read_mip() & MIP_MSIP_MASK) == MIP_MSIP_MASK);
@@ -41,7 +41,7 @@ static bool clint_read_msip(i_virtual_state_access *a, uint64_t *val,
     return false;
 }
 
-static bool clint_read_mtime(i_virtual_state_access *a, uint64_t *val, int size_log2) {
+static bool clint_read_mtime(i_device_state_access *a, uint64_t *val, int size_log2) {
     if (size_log2 == 3) {
         *val = rtc_cycle_to_time(a->read_mcycle());
         return true;
@@ -49,7 +49,7 @@ static bool clint_read_mtime(i_virtual_state_access *a, uint64_t *val, int size_
     return false;
 }
 
-static bool clint_read_mtimecmp(i_virtual_state_access *a, uint64_t *val, int size_log2) {
+static bool clint_read_mtimecmp(i_device_state_access *a, uint64_t *val, int size_log2) {
     if (size_log2 == 3) {
         *val = a->read_clint_mtimecmp();
         return true;
@@ -58,7 +58,7 @@ static bool clint_read_mtimecmp(i_virtual_state_access *a, uint64_t *val, int si
 }
 
 /// \brief CLINT device read callback. See ::pma_read.
-static bool clint_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t offset, uint64_t *val, int size_log2) {
+static bool clint_read(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t *val, int size_log2) {
     (void) pma;
 
     switch (offset) {
@@ -75,7 +75,7 @@ static bool clint_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t
 }
 
 /// \brief CLINT device read callback. See ::pma_write.
-static bool clint_write(const pma_entry &pma, i_virtual_state_access *a, uint64_t offset, uint64_t val, int size_log2) {
+static bool clint_write(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t val, int size_log2) {
     (void) pma;
 
     switch (offset) {

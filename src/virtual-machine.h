@@ -31,8 +31,10 @@ class virtual_machine : public i_virtual_machine {
     machine *m_machine;
 
 public:
-    virtual_machine(const machine_config &c);
-    virtual_machine(const std::string &dir);
+    virtual_machine(const machine_config &c,
+        const machine_runtime_config &r = {});
+    virtual_machine(const std::string &dir,
+        const machine_runtime_config &r = {});
     virtual ~virtual_machine(void);
 
 private:
@@ -120,7 +122,18 @@ private:
     void do_write_htif_iyield(uint64_t val) override;
     uint64_t do_read_clint_mtimecmp(void) override;
     void do_write_clint_mtimecmp(uint64_t val) override;
+    uint64_t do_read_dhd_tstart(void) override;
+    void do_write_dhd_tstart(uint64_t val) override;
+    uint64_t do_read_dhd_tlength(void) override;
+    void do_write_dhd_tlength(uint64_t val) override;
+    uint64_t do_read_dhd_dlength(void) override;
+    void do_write_dhd_dlength(uint64_t val) override;
+    uint64_t do_read_dhd_hlength(void) override;
+    void do_write_dhd_hlength(uint64_t val) override;
+    uint64_t do_read_dhd_h(int i) override;
+    void do_write_dhd_h(int i, uint64_t val) override;
     uint64_t do_get_x_address(int i) override;
+    uint64_t do_get_dhd_h_address(int i) override;
     void do_replace_flash_drive(const flash_drive_config &new_flash) override;
     void do_dump_pmas(void) override;
     bool do_read_word(uint64_t word_address, uint64_t &word_value) override;

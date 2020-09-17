@@ -46,42 +46,32 @@ static int cartesi_mod_keccak(lua_State *L) {
     using namespace cartesi;
     keccak_256_hasher h;
     keccak_256_hasher::hash_type hash;
-    switch (lua_gettop(L)) {
-        case 0:
-            luaL_argerror(L, 1, "too few arguments");
-            break;
-        case 1: {
-            uint64_t word = luaL_checkinteger(L, 1);
-            h.begin();
-            h.add_data(reinterpret_cast<const unsigned char *>(&word),
-                sizeof(word));
-            h.end(hash);
-            clua_push_hash(L, hash);
-            break;
-        }
-        case 2: {
-            size_t len1 = 0;
-            const char *hash1 = luaL_checklstring(L, 1, &len1);
-            if (len1 != keccak_256_hasher::hash_size) {
-                luaL_argerror(L, 1, "invalid hash size");
-            }
-            size_t len2 = 0;
-            const char *hash2 = luaL_checklstring(L, 2, &len2);
-            if (len2 != keccak_256_hasher::hash_size) {
-                luaL_argerror(L, 2, "invalid hash size");
-            }
-            h.begin();
-            h.add_data(reinterpret_cast<const unsigned char *>(hash1), len1);
-            h.add_data(reinterpret_cast<const unsigned char *>(hash2), len2);
-            h.end(hash);
-            clua_push_hash(L, hash);
-            break;
-        }
-        default:
-            luaL_argerror(L, 3, "too many arguments");
-            break;
+    if (lua_gettop(L) > 2) {
+        luaL_argerror(L, 3, "too many arguments");
     }
-    return 1;
+    if (lua_gettop(L) < 1) {
+        luaL_argerror(L, 1, "too few arguments");
+    }
+    if (lua_isinteger(L, 1)) {
+        uint64_t word = luaL_checkinteger(L, 1);
+        h.begin();
+        h.add_data(reinterpret_cast<const unsigned char *>(&word),
+            sizeof(word));
+        h.end(hash);
+        clua_push_hash(L, hash);
+        return 1;
+    } else {
+        h.begin();
+        size_t len1 = 0;
+        const char *hash1 = luaL_checklstring(L, 1, &len1);
+        h.add_data(reinterpret_cast<const unsigned char *>(hash1), len1);
+        size_t len2 = 0;
+        const char *hash2 = luaL_optlstring(L, 2, "", &len2);
+        h.add_data(reinterpret_cast<const unsigned char *>(hash2), len2);
+        h.end(hash);
+        clua_push_hash(L, hash);
+        return 1;
+    }
 }
 
 /// \brief Contents of the cartesi module table.

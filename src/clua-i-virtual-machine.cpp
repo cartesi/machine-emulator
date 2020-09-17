@@ -279,7 +279,7 @@ static int machine_obj__index_read_medeleg(lua_State *L) {
 static int machine_obj__index_read_memory(lua_State *L) try {
     auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
     size_t length = luaL_checkinteger(L, 3);
-    auto data = cartesi::unique_calloc<unsigned char>(1, length);
+    auto data = cartesi::unique_calloc<unsigned char>(length);
     m->read_memory(luaL_checkinteger(L, 2), data.get(), length);
     lua_pushlstring(L, reinterpret_cast<const char *>(data.get()), length);
     return 1;

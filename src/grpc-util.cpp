@@ -111,6 +111,21 @@ void set_proto_machine_config(const machine_config &c,
         proto_f->set_shared(f.shared);
         proto_f->set_image_filename(f.image_filename);
     }
+    auto proto_dhd = proto_c->mutable_dhd();
+    proto_dhd->set_tstart(c.dhd.tstart);
+    proto_dhd->set_tlength(c.dhd.tlength);
+    proto_dhd->set_image_filename(c.dhd.image_filename);
+    proto_dhd->set_dlength(c.dhd.dlength);
+    proto_dhd->set_hlength(c.dhd.hlength);
+    for (int i = 0; i < DHD_H_REG_COUNT; i++) {
+        proto_dhd->add_h(c.dhd.h[i]);
+    }
+}
+
+void set_proto_machine_runtime_config(const machine_runtime_config &r,
+    CartesiMachine::MachineRuntimeConfig* proto_r) {
+    auto proto_dhd = proto_r->mutable_dhd();
+    proto_dhd->set_source_address(r.dhd.source_address);
 }
 
 access_log::type get_proto_log_type(
@@ -146,12 +161,12 @@ merkle_tree::proof_type get_proto_proof(
     proof.target_hash = get_proto_hash(proto_proof.target_hash());
     proof.root_hash = get_proto_hash(proto_proof.root_hash());
     const auto &proto_sibs = proto_proof.sibling_hashes();
-    if (proto_sibs.size() + proof.log2_size != 
-        merkle_tree::get_log2_tree_size())
-        throw std::invalid_argument("too many sibling hashes");
-
-    for(int i=0; i<proto_sibs.size(); i++) {
-        proof.sibling_hashes[0] = get_proto_hash(proto_sibs[i]);
+    if (proto_sibs.size() + proof.log2_size !=
+        merkle_tree::get_log2_tree_size()) {
+        throw std::invalid_argument("wrong number of sibling hashes");
+    }
+    for (int i = 0; i < proto_sibs.size(); i++) {
+        proof.sibling_hashes[i] = get_proto_hash(proto_sibs[i]);
     }
     return proof;
 }
@@ -189,7 +204,7 @@ void set_proto_access_log(const access_log &al,
                 proto_a->set_type(CartesiMachine::AccessType::WRITE);
                 break;
             default:
-                throw std::invalid_argument{"Invalid AccessType"};
+                throw std::invalid_argument{"invalid AccessType"};
                 break;
         }
         proto_a->set_address(a.address);
@@ -212,7 +227,7 @@ void set_proto_access_log(const access_log &al,
                         CartesiMachine::BracketNote_BracketNoteType_END);
                     break;
                 default:
-                    throw std::invalid_argument{"Invalid BracketNoteType"};
+                    throw std::invalid_argument{"invalid BracketNoteType"};
                     break;
             }
             proto_bn->set_where(bn.where);
@@ -266,7 +281,7 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
     while (pac != proto_accesses.end() && pbr != proto_brackets.end()) {
         while (pbr != proto_brackets.end() && pbr->where() == iac) {
             // bracket note points to current access
-            al.push_bracket(get_proto_bracket_type(pbr->type()), 
+            al.push_bracket(get_proto_bracket_type(pbr->type()),
                 pbr->text().c_str());
             assert(pbr->where() == al.get_brackets().back().where);
             pbr++;
@@ -276,10 +291,9 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
             a.type = get_proto_access_type(pac->type());
             a.address = pac->address();
             a.log2_size = pac->log2_size();
-            std::copy(pac->read().begin(), pac->read().end(),
-                std::back_inserter(a.read));
-            std::copy(pac->written().begin(), pac->written().end(),
-                std::back_inserter(a.written));
+            a.read.insert(a.read.end(), pac->read().begin(), pac->read().end());
+            a.written.insert(a.written.end(), pac->written().begin(),
+                pac->written().end());
             std::string note;
             if (has_annotations)
                 note = *pnt++;
@@ -484,6 +498,13 @@ flash_drive_config get_proto_flash_drive_config(
     return f;
 }
 
+machine_runtime_config get_proto_machine_runtime_config(
+    const CartesiMachine::MachineRuntimeConfig &proto_r) {
+    machine_runtime_config r;
+    r.dhd.source_address = proto_r.dhd().source_address();
+    return r;
+}
+
 machine_config get_proto_machine_config(
     const CartesiMachine::MachineConfig &proto_c) {
     machine_config c;
@@ -503,7 +524,7 @@ machine_config get_proto_machine_config(
     }
     if (proto_c.has_clint()) {
         const auto &clint = proto_c.clint();
-        if (clint.mtimecmp_oneof_case() == 
+        if (clint.mtimecmp_oneof_case() ==
             CartesiMachine::CLINTConfig::kMtimecmp) {
             c.clint.mtimecmp = clint.mtimecmp();
         }
@@ -522,6 +543,24 @@ machine_config get_proto_machine_config(
         c.htif.yield_progress = htif.yield_progress();
         // zero default when missing is ok
         c.htif.yield_rollup = htif.yield_rollup();
+    }
+    if (proto_c.has_dhd()) {
+        const auto &dhd = proto_c.dhd();
+        // zero default when missing is ok
+        c.dhd.tstart = dhd.tstart();
+        // zero default when missing is ok
+        c.dhd.tlength = dhd.tlength();
+        c.dhd.image_filename = dhd.image_filename();
+        // zero default when missing is ok
+        c.dhd.dlength = dhd.dlength();
+        // zero default when missing is ok
+        c.dhd.hlength = dhd.hlength();
+        if (dhd.h_size() > DHD_H_REG_COUNT) {
+            throw std::invalid_argument{"too many DHD h registers"};
+        }
+        for (int i = 0; i < dhd.h_size(); i++) {
+            c.dhd.h[i] = dhd.h(i);
+        }
     }
     return c;
 }

@@ -36,6 +36,13 @@ enum PMA_ranges: uint64_t {
     PMA_CLINT_LENGTH  = EXPAND_UINT64_C(PMA_CLINT_LENGTH_DEF),  ///< Length of CLINT range
     PMA_HTIF_START    = EXPAND_UINT64_C(PMA_HTIF_START_DEF),    ///< Start of HTIF range
     PMA_HTIF_LENGTH   = EXPAND_UINT64_C(PMA_HTIF_LENGTH_DEF),   ///< Length of HTIF range
+//    PMA_FIRST_VIRTIO_START  = EXPAND_UINT64_C(PMA_FIRST_VIRTIO_START_DEF),   ///< Start of first VIRTIO range
+//    PMA_VIRTIO_LENGTH  = EXPAND_UINT64_C(PMA_VIRTIO_LENGTH_DEF),   ///< Length of each VIRTIO range
+//    PMA_LAST_VIRTIO_END  = EXPAND_UINT64_C(PMA_LAST_VIRTIO_END_DEF),   ///< End of last VIRTIO range
+    PMA_DHD_START    = EXPAND_UINT64_C(PMA_DHD_START_DEF),    ///< Start of DHD range
+    PMA_DHD_LENGTH   = EXPAND_UINT64_C(PMA_DHD_LENGTH_DEF),   ///< Length of DHD range
+//    PMA_PLIC_START    = EXPAND_UINT64_C(PMA_PLIC_START_DEF),    ///< Start of PLIC range
+//    PMA_PLIC_LENGTH   = EXPAND_UINT64_C(PMA_PLIC_LENGTH_DEF),   ///< Length of PLIC range
     PMA_RAM_START     = EXPAND_UINT64_C(PMA_RAM_START_DEF),     ///< Start of RAM range
 };
 
@@ -82,7 +89,8 @@ enum class PMA_ISTART_DID {
     shadow = PMA_SHADOW_DID_DEF, ///< DID for shadow device
     drive  = PMA_DRIVE_DID_DEF,  ///< DID for drive device
     CLINT  = PMA_CLINT_DID_DEF,  ///< DID for CLINT device
-    HTIF   = PMA_HTIF_DID_DEF    ///< DID for HTIF device
+    HTIF   = PMA_HTIF_DID_DEF,   ///< DID for HTIF device
+    DHD    = PMA_DHD_DID_DEF     ///< DID for DHD
 };
 
 } // namespace

@@ -16,7 +16,7 @@
 
 #include "machine.h"
 #include "htif.h"
-#include "i-virtual-state-access.h"
+#include "i-device-state-access.h"
 #include "strict-aliasing.h"
 
 #include <signal.h>
@@ -187,7 +187,7 @@ void htif::interact(void) {
 }
 
 /// \brief HTIF device read callback. See ::pma_read.
-static bool htif_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t offset, uint64_t *pval, int size_log2) {
+static bool htif_read(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t *pval, int size_log2) {
     (void) pma;
 
     // Our HTIF only supports aligned 64-bit reads
@@ -215,7 +215,7 @@ static bool htif_read(const pma_entry &pma, i_virtual_state_access *a, uint64_t 
     }
 }
 
-static bool htif_getchar(i_virtual_state_access *a, htif *h, uint64_t data) {
+static bool htif_getchar(i_device_state_access *a, htif *h, uint64_t data) {
     (void) data;
     int c = h? h->console_get_char(): 0;
     // Write acknowledgement to fromhost
@@ -224,7 +224,7 @@ static bool htif_getchar(i_virtual_state_access *a, htif *h, uint64_t data) {
     return true;
 }
 
-static bool htif_putchar(i_virtual_state_access *a, htif *h, uint64_t data) {
+static bool htif_putchar(i_device_state_access *a, htif *h, uint64_t data) {
     (void) h;
     uint8_t ch = data & 0xff;
     // Obviously, something different must be done in blockchain
@@ -235,7 +235,7 @@ static bool htif_putchar(i_virtual_state_access *a, htif *h, uint64_t data) {
     return true;
 }
 
-static bool htif_halt(i_virtual_state_access *a, htif *h, uint64_t cmd,
+static bool htif_halt(i_device_state_access *a, htif *h, uint64_t cmd,
     uint64_t data) {
     (void) h;
     if (cmd == HTIF_HALT_HALT && (data & 1)) {
@@ -247,7 +247,7 @@ static bool htif_halt(i_virtual_state_access *a, htif *h, uint64_t cmd,
     return true;
 }
 
-static bool htif_yield_progress(i_virtual_state_access *a, htif *h, uint64_t cmd,
+static bool htif_yield_progress(i_device_state_access *a, htif *h, uint64_t cmd,
     uint64_t data) {
     (void) data;
     a->set_iflags_Y(h && h->has_yield_progress());
@@ -257,7 +257,7 @@ static bool htif_yield_progress(i_virtual_state_access *a, htif *h, uint64_t cmd
     return true;
 }
 
-static bool htif_yield_rollup(i_virtual_state_access *a, htif *h, uint64_t cmd,
+static bool htif_yield_rollup(i_device_state_access *a, htif *h, uint64_t cmd,
     uint64_t data) {
     (void) data;
     a->set_iflags_Y(h && h->has_yield_rollup());
@@ -267,7 +267,7 @@ static bool htif_yield_rollup(i_virtual_state_access *a, htif *h, uint64_t cmd,
     return true;
 }
 
-static bool htif_yield(i_virtual_state_access *a, htif *h, uint64_t cmd,
+static bool htif_yield(i_device_state_access *a, htif *h, uint64_t cmd,
     uint64_t data) {
     (void) data;
     if (cmd == HTIF_YIELD_PROGRESS) {
@@ -280,7 +280,7 @@ static bool htif_yield(i_virtual_state_access *a, htif *h, uint64_t cmd,
     }
 }
 
-static bool htif_console(i_virtual_state_access *a, htif *h, uint64_t cmd,
+static bool htif_console(i_device_state_access *a, htif *h, uint64_t cmd,
     uint64_t data) {
     if (cmd == HTIF_CONSOLE_PUTCHAR) {
         return htif_putchar(a, h, data);
@@ -292,7 +292,7 @@ static bool htif_console(i_virtual_state_access *a, htif *h, uint64_t cmd,
     }
 }
 
-static bool htif_write_tohost(i_virtual_state_access *a, htif *h,
+static bool htif_write_tohost(i_device_state_access *a, htif *h,
     uint64_t tohost) {
     // Decode tohost
     uint32_t device = HTIF_DEV_FIELD(tohost);
@@ -315,7 +315,7 @@ static bool htif_write_tohost(i_virtual_state_access *a, htif *h,
 }
 
 /// \brief HTIF device write callback. See ::pma_write.
-static bool htif_write(const pma_entry &pma, i_virtual_state_access *a, uint64_t offset, uint64_t val, int size_log2) {
+static bool htif_write(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t val, int size_log2) {
     htif *h = reinterpret_cast<htif *>(pma.get_device().get_context());
 
     // Our HTIF only supports aligned 64-bit writes

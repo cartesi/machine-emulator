@@ -14,10 +14,12 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#ifndef I_VIRTUAL_STATE_ACCESS
-#define I_VIRTUAL_STATE_ACCESS
+#ifndef I_DEVICE_STATE_ACCESS
+#define I_DEVICE_STATE_ACCESS
 
 #include <cstdint>
+
+#include "i-dhd-source.h"
 
 namespace cartesi {
 
@@ -32,16 +34,16 @@ namespace cartesi {
 /// i_state_access interface (which is not virtual).
 ///
 /// Since device access to state is not time critical, the
-/// i_virtual_state_access interace uses virtual methods.  A
-/// template class virtual_state_access implements this
+/// i_device_state_access interace uses virtual methods.  A
+/// template class device_state_access implements this
 /// virtual interface on top of any class that implements the
 /// i_state_access.
 /// \}
-class i_virtual_state_access {
+class i_device_state_access {
 public:
 
     /// \brief Virtual destructor.
-    virtual ~i_virtual_state_access(void) {
+    virtual ~i_device_state_access(void) {
         ;
     }
 
@@ -133,6 +135,82 @@ public:
         return do_read_htif_iyield();
     }
 
+    /// \brief Reads DHD's start.
+    /// \returns Register value.
+    uint64_t read_dhd_tstart(void) {
+        return do_read_dhd_tstart();
+    }
+
+    /// \brief Reads DHD's length.
+    /// \returns Register value.
+    uint64_t read_dhd_tlength(void) {
+        return do_read_dhd_tlength();
+    }
+
+    /// \brief Reads DHD's dlength.
+    /// \returns Register value.
+    uint64_t read_dhd_dlength(void) {
+        return do_read_dhd_dlength();
+    }
+
+    /// \brief Writes DHD's dlength.
+    /// \param val New register value.
+    void write_dhd_dlength(uint64_t val) {
+        return do_write_dhd_dlength(val);
+    }
+
+    /// \brief Reads DHD's hlength.
+    /// \returns Register value.
+    uint64_t read_dhd_hlength(void) {
+        return do_read_dhd_hlength();
+    }
+
+    /// \brief Writes DHD's hlength.
+    /// \param val New register value.
+    void write_dhd_hlength(uint64_t val) {
+        return do_write_dhd_hlength(val);
+    }
+
+    /// \brief Reads the value of DHD's input hash word.
+    /// \param i Index of input hash word.
+    /// Between 0 and DHD_H_REG_COUNT-1, inclusive.
+    /// \returns The value of the register.
+    uint64_t read_dhd_h(int i) {
+        return do_read_dhd_h(i);
+    }
+
+    /// \brief Writes the value of DHD's input hash word.
+    /// \param i Index of input hash word.
+    /// Between 0 and DHD_H_REG_COUNT-1, inclusive.
+    /// \param val New value for word.
+    void write_dhd_h(int i, uint64_t val) {
+        return do_write_dhd_h(i, val);
+    }
+
+    /// \brief Writes a chunk of data to a memory PMA range.
+    /// \param paddr Target physical address. Must be aligned to data size.
+    /// \param data Pointer to chunk of data.
+    /// \param log2_size Log 2 of data size. Must be >= 3 and < 64.
+    /// \details The entire chunk of data must fit inside the same memory
+    /// PMA range. The search for the PMA range is implicit, and not logged.
+    void write_memory(uint64_t paddr, const unsigned char *data,
+        uint64_t log2_size) {
+        return do_write_memory(paddr, data, log2_size);
+    }
+
+    /// \brief Obtains the block of data that has a given hash
+    /// \param hash Pointer to buffer containing hash
+    /// \param hlength Length  of hash in bytes
+    /// \param dlength Maximum length of desired block of data with that hash.
+    /// On return, contains the actual length of the block found. Or
+    /// DHD_NOT_FOUND if no matching block was found.
+    /// \returns The block of data with the given hash, or an empty block
+    /// if not found
+    dhd_data dehash(const unsigned char* hash, uint64_t hlength,
+        uint64_t &dlength) {
+        return do_dehash(hash, hlength, dlength);
+    }
+
     /// \brief Reads the istart field of a PMA entry
     /// \param p Index of PMA
     uint64_t read_pma_istart(int p) {
@@ -162,6 +240,20 @@ private:
     virtual uint64_t do_read_htif_ihalt(void) = 0;
     virtual uint64_t do_read_htif_iconsole(void) = 0;
     virtual uint64_t do_read_htif_iyield(void) = 0;
+    virtual uint64_t do_read_dhd_tstart(void) = 0;
+    virtual void do_write_dhd_tstart(uint64_t val) = 0;
+    virtual uint64_t do_read_dhd_tlength(void) = 0;
+    virtual void do_write_dhd_tlength(uint64_t val) = 0;
+    virtual uint64_t do_read_dhd_dlength(void) = 0;
+    virtual void do_write_dhd_dlength(uint64_t val) = 0;
+    virtual uint64_t do_read_dhd_hlength(void) = 0;
+    virtual void do_write_dhd_hlength(uint64_t val) = 0;
+    virtual uint64_t do_read_dhd_h(int i) = 0;
+    virtual void do_write_dhd_h(int i, uint64_t val) = 0;
+    virtual dhd_data do_dehash(const unsigned char* hash,
+        uint64_t hlength, uint64_t &dlength) = 0;
+    virtual void do_write_memory(uint64_t paddr, const unsigned char *data,
+        uint64_t log2_size) = 0;
     virtual uint64_t do_read_pma_istart(int p) = 0;
     virtual uint64_t do_read_pma_ilength(int p) = 0;
 };

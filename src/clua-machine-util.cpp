@@ -314,7 +314,7 @@ merkle_tree::proof_type clua_check_proof(lua_State *L, int tabidx) {
 /// \param log2_size Expected log2 of size of data
 /// \param opt Whether filed is optional
 /// \returns Field value. Throws error if field is not optional but is missing.
-static access_data aux_access_data_field(lua_State *L, int tabidx, 
+static access_data aux_access_data_field(lua_State *L, int tabidx,
     const char *field, uint64_t log2_size, bool opt) {
     access_data a;
     tabidx = lua_absindex(L, tabidx);
@@ -326,8 +326,7 @@ static access_data aux_access_data_field(lua_State *L, int tabidx,
         if (len != expected_len)
             luaL_error(L, "invalid %s (expected string with 2^%d bytes)", field,
                 (int) log2_size);
-        a.reserve(len);
-        std::copy(s, s+len, std::back_inserter(a));
+        a.insert(a.end(), s, s+len);
     } else if (!opt || !lua_isnil(L, -1)) {
         luaL_error(L, "invalid %s (expected string)", field);
     }
@@ -335,12 +334,12 @@ static access_data aux_access_data_field(lua_State *L, int tabidx,
     return a;
 }
 
-static access_data check_access_data_field(lua_State *L, int tabidx, 
+static access_data check_access_data_field(lua_State *L, int tabidx,
     const char *field, uint64_t log2_size) {
     return aux_access_data_field(L, tabidx, field, log2_size, false);
 }
 
-static access_data opt_access_data_field(lua_State *L, int tabidx, 
+static access_data opt_access_data_field(lua_State *L, int tabidx,
     const char *field, uint64_t log2_size) {
     return aux_access_data_field(L, tabidx, field, log2_size, true);
 }
@@ -360,8 +359,8 @@ static access check_access(lua_State *L, int tabidx, bool proofs) {
     a.type = check_access_type_field(L, tabidx, "type");
     a.address = check_uint_field(L, tabidx, "address");
     a.log2_size = check_uint_field(L, tabidx, "log2_size");
-    if (a.log2_size < 3 || a.log2_size > 64)
-        luaL_error(L, "invalid log2_size (expected integer in {3..64})");
+    if (a.log2_size < 3 || a.log2_size > 63)
+        luaL_error(L, "invalid log2_size (expected integer in {3..63})");
     a.read = check_access_data_field(L, tabidx, "read", a.log2_size);
     a.written = opt_access_data_field(L, tabidx, "written", a.log2_size);
     return a;
@@ -597,7 +596,7 @@ access_log::type clua_check_log_type(lua_State *L, int tabidx) {
 static void push_processor_config(lua_State *L, const processor_config &p) {
     lua_newtable(L); // p
     lua_newtable(L); // p x
-    for (int i = 1; i <= 31; i++) {
+    for (int i = 1; i <= (X_REG_COUNT-1); i++) {
         lua_pushinteger(L, p.x[i]);
         lua_rawseti(L, -2, i);
     }
@@ -678,6 +677,26 @@ static void push_clint_config(lua_State *L, const clint_config &c) {
     lua_pushinteger(L, c.mtimecmp); lua_setfield(L, -2, "mtimecmp");
 }
 
+/// \brief Pushes an dhd_config to the Lua stack
+/// \param L Lua state.
+/// \param c Dhd_config to be pushed.
+static void push_dhd_config(lua_State *L, const dhd_config &d) {
+    lua_newtable(L);
+    lua_pushinteger(L, d.tstart); lua_setfield(L, -2, "tstart");
+    lua_pushinteger(L, d.tlength); lua_setfield(L, -2, "tlength");
+    if (!d.image_filename.empty()) {
+        lua_pushlstring(L, d.image_filename.data(), d.image_filename.size());
+        lua_setfield(L, -2, "image_filename");
+    }
+    lua_pushinteger(L, d.dlength); lua_setfield(L, -2, "dlength");
+    lua_pushinteger(L, d.hlength); lua_setfield(L, -2, "hlength");
+    lua_newtable(L);
+    for (int i = 1; i <= DHD_H_REG_COUNT; i++) {
+        lua_pushinteger(L, d.h[i-1]); lua_rawseti(L, -2, i);
+    }
+    lua_setfield(L, -2, "h");
+}
+
 /// \brief Pushes flash_drive_configs to the Lua stack
 /// \param L Lua state.
 /// \param flash_drive Flash_drive_configs to be pushed.
@@ -713,6 +732,26 @@ void clua_push_machine_config(lua_State *L, const machine_config &c) {
     lua_setfield(L, -2, "ram"); // config
     push_rom_config(L, c.rom); // config rom
     lua_setfield(L, -2, "rom"); // config
+    push_dhd_config(L, c.dhd); // config dhd
+    lua_setfield(L, -2, "dhd"); // config
+}
+
+/// \brief Pushes an dhd_runtime_config to the Lua stack
+/// \param L Lua state.
+/// \param c Dhd_runtime_config to be pushed.
+static void push_dhd_runtime_config(lua_State *L, const dhd_runtime_config &d) {
+    lua_newtable(L);
+    if (!d.source_address.empty()) {
+        lua_pushlstring(L, d.source_address.data(), d.source_address.size());
+        lua_setfield(L, -2, "source_address");
+    }
+}
+
+void clua_push_machine_runtime_config(lua_State *L,
+    const machine_runtime_config &r) {
+    lua_newtable(L); // config
+    push_dhd_runtime_config(L, r.dhd); // config dhd
+    lua_setfield(L, -2, "dhd"); // config
 }
 
 /// \brief Loads RAM config from Lua to machine_config.
@@ -780,8 +819,7 @@ static void check_processor_config(lua_State *L, int tabidx,
         return;
     lua_getfield(L, -1, "x");
     if (lua_istable(L, -1)) {
-        int len = luaL_len(L, -1);
-        for (int i = 1; i <= std::min(len, 31); i++) {
+        for (int i = 1; i < X_REG_COUNT; i++) {
             p.x[i] = opt_uint_field(L, -1, i, p.x[i]);
         }
     } else if (!lua_isnil(L, -1)) {
@@ -844,6 +882,29 @@ static void check_clint_config(lua_State *L, int tabidx, clint_config &c) {
     lua_pop(L, 1);
 }
 
+/// \brief Loads DHD config from Lua.
+/// \param L Lua state.
+/// \param tabidx Config stack index.
+/// \param d DHD config structure to receive results.
+static void check_dhd_config(lua_State *L, int tabidx, dhd_config &d) {
+    if (!opt_table_field(L, tabidx, "dhd"))
+        return;
+    d.tstart = check_uint_field(L, -1, "tstart");
+    d.tlength = check_uint_field(L, -1, "tlength");
+    d.dlength = opt_uint_field(L, -1, "dlength", d.dlength);
+    d.image_filename = opt_string_field(L, -1, "image_filename");
+    d.hlength = opt_uint_field(L, -1, "hlength", d.hlength);
+    lua_getfield(L, -1, "h");
+    if (lua_istable(L, -1)) {
+        for (int i = 1; i <= DHD_H_REG_COUNT; i++) {
+            d.h[i-1] = opt_uint_field(L, -1, i, d.h[i-1]);
+        }
+    } else if (!lua_isnil(L, -1)) {
+        luaL_error(L, "invalid dhd.h (expected table)");
+    }
+    lua_pop(L, 2);
+}
+
 machine_config clua_check_machine_config(lua_State *L, int tabidx) {
     machine_config c;
     // Check all parameters from Lua initialization table
@@ -854,7 +915,36 @@ machine_config clua_check_machine_config(lua_State *L, int tabidx) {
     check_flash_drive_configs(L, tabidx, c.flash_drive);
     check_htif_config(L, tabidx, c.htif);
     check_clint_config(L, tabidx, c.clint);
+    check_dhd_config(L, tabidx, c.dhd);
     return c;
+}
+
+/// \brief Loads DHD runtime config from Lua.
+/// \param L Lua state.
+/// \param tabidx Runtime config stack index.
+/// \param d DHD runtime config structure to receive results.
+static void check_dhd_runtime_config(lua_State *L, int tabidx,
+    dhd_runtime_config &d) {
+    if (!opt_table_field(L, tabidx, "dhd"))
+        return;
+    d.source_address = opt_string_field(L, -1, "source_address");
+    lua_pop(L, 1);
+}
+
+machine_runtime_config clua_check_machine_runtime_config(lua_State *L,
+    int tabidx) {
+    luaL_checktype(L, tabidx, LUA_TTABLE);
+    machine_runtime_config r;
+    check_dhd_runtime_config(L, tabidx, r.dhd);
+    return r;
+}
+
+machine_runtime_config clua_opt_machine_runtime_config(lua_State *L,
+    int tabidx, const machine_runtime_config &r) {
+    if (!lua_isnoneornil(L, tabidx)) {
+        return clua_check_machine_runtime_config(L, tabidx);
+    }
+    return r;
 }
 
 } // namespace cartesi

@@ -30,6 +30,7 @@
 
 #include <boost/container/static_vector.hpp>
 
+#include "i-dhd-source.h"
 #include "pma.h"
 #include "riscv-constants.h"
 
@@ -102,7 +103,7 @@ struct machine_state {
     machine_state &operator=(machine_state &&other) = delete;
 
     uint64_t pc;        ///< Program counter.
-    uint64_t x[32];     ///< Register file.
+    uint64_t x[X_REG_COUNT];  ///< Register file.
 
     uint64_t minstret;  ///< CSR minstret.
     uint64_t mcycle;
@@ -141,12 +142,22 @@ struct machine_state {
 
     /// \brief HTIF state
     struct {
-        uint64_t tohost;    ///< CSR tohost.
-        uint64_t fromhost;  ///< CSR fromhost.
+        uint64_t tohost;     ///< CSR tohost.
+        uint64_t fromhost;   ///< CSR fromhost.
         uint64_t ihalt;      ///< CSR ihalt.
         uint64_t iconsole;   ///< CSR iconsole.
         uint64_t iyield;     ///< CSR iyield.
     } htif;
+
+    /// \brief DHD state
+    struct {
+        i_dhd_source_ptr source;     ///< Dehash source to use
+        uint64_t tstart;             ///< Start of target physical memory range for output data.
+        uint64_t tlength;            ///< Length of target physical memory range for output data.
+        uint64_t dlength;            ///< Output data length CSR.
+        uint64_t hlength;            ///< Input hash length CSR.
+        uint64_t h[DHD_H_REG_COUNT]; ///< Words of input hash.
+    } dhd;
 
     /// Map of physical memory ranges
     boost::container::static_vector<pma_entry, PMA_MAX> pmas;
@@ -276,6 +287,20 @@ struct machine_state {
             tlb_code[i].paddr_page = UINT64_C(-1);
             tlb_code[i].hpage = nullptr;
         }
+    }
+
+    /// \brief Obtains the block of data that has a given hash
+    /// \param hash Pointer to buffer containing hash
+    /// \param hlength Length  of hash in bytes
+    /// \param dlength Maximum length of desired block of data with that hash.
+    /// On return, contains the actual length of the block found. Or
+    /// DHD_NOT_FOUND if no matching block was found.
+    /// \returns The block of data with the given hash, or an empty block
+    /// if not found
+    dhd_data dehash(const unsigned char* hash, uint64_t hlength,
+        uint64_t &dlength) {
+        if (!dhd.source) throw std::runtime_error{"no dehash source"};
+        return dhd.source->dehash(hash, hlength, dlength);
     }
 
 };

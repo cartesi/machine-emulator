@@ -429,9 +429,9 @@ local function build_machine(test_name)
     }
     if server_address then
       if not server then server = connect() end
-      return assert(server.machine(config))
+      return assert(server.machine(config, {}))
     end
-    return assert(cartesi.machine(config))
+    return assert(cartesi.machine(config, {}))
 end
 
 local function print_machine(test_name, expected_cycles)

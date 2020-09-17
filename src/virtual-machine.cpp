@@ -17,12 +17,14 @@
 
 namespace cartesi {
 
-virtual_machine::virtual_machine(const machine_config &c) {
-    m_machine = new machine(c);
+virtual_machine::virtual_machine(const machine_config &c,
+    const machine_runtime_config &r) {
+    m_machine = new machine(c, r);
 }
 
-virtual_machine::virtual_machine(const std::string &dir) {
-    m_machine = new machine(dir);
+virtual_machine::virtual_machine(const std::string &dir,
+    const machine_runtime_config &r) {
+    m_machine = new machine(dir, r);
 }
 
 virtual_machine::~virtual_machine(void) {
@@ -365,8 +367,52 @@ void virtual_machine::do_write_clint_mtimecmp(uint64_t val) {
     return m_machine->write_clint_mtimecmp(val);
 }
 
+uint64_t virtual_machine::do_read_dhd_tstart(void) {
+    return m_machine->read_dhd_tstart();
+}
+
+void virtual_machine::do_write_dhd_tstart(uint64_t val) {
+    return m_machine->write_dhd_tstart(val);
+}
+
+uint64_t virtual_machine::do_read_dhd_tlength(void) {
+    return m_machine->read_dhd_tlength();
+}
+
+void virtual_machine::do_write_dhd_tlength(uint64_t val) {
+    return m_machine->write_dhd_tlength(val);
+}
+
+uint64_t virtual_machine::do_read_dhd_dlength(void) {
+    return m_machine->read_dhd_dlength();
+}
+
+void virtual_machine::do_write_dhd_dlength(uint64_t val) {
+    return m_machine->write_dhd_dlength(val);
+}
+
+uint64_t virtual_machine::do_read_dhd_hlength(void) {
+    return m_machine->read_dhd_hlength();
+}
+
+void virtual_machine::do_write_dhd_hlength(uint64_t val) {
+    return m_machine->write_dhd_hlength(val);
+}
+
+uint64_t virtual_machine::do_read_dhd_h(int i) {
+    return m_machine->read_dhd_h(i);
+}
+
+void virtual_machine::do_write_dhd_h(int i, uint64_t val) {
+    return m_machine->write_dhd_h(i, val);
+}
+
 uint64_t virtual_machine::do_get_x_address(int i) {
     return m_machine->get_x_address(i);
+}
+
+uint64_t virtual_machine::do_get_dhd_h_address(int i) {
+    return m_machine->get_dhd_h_address(i);
 }
 
 void virtual_machine::do_replace_flash_drive(const flash_drive_config &new_flash) {

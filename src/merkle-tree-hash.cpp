@@ -602,7 +602,7 @@ int main(int argc, char *argv[]) {
 
     // Allocate buffer for page data
     uint64_t page_size = UINT64_C(1) << page_log2_size;
-    auto page_buf = unique_calloc<unsigned char>(1, page_size, std::nothrow_t{});
+    auto page_buf = unique_calloc<unsigned char>(page_size, std::nothrow_t{});
     if (!page_buf) {
         error("unable to allocate page buffer\n");
         return 1;
@@ -734,7 +734,7 @@ int main(int argc, char *argv[]) {
 
     // Allocate buffer for page data
     uint64_t page_size = UINT64_C(1) << page_log2_size;
-    auto page_buf = unique_calloc<unsigned char>(1, page_size, std::nothrow_t{});
+    auto page_buf = unique_calloc<unsigned char>(page_size, std::nothrow_t{});
     if (!page_buf) {
         error("unable to allocate page buffer\n");
         return 1;

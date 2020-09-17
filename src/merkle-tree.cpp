@@ -218,7 +218,7 @@ initialize_pristine_hashes(void) {
     h.add_data(reinterpret_cast<const unsigned char *>(&zero), sizeof(zero));
     h.end(hash);
     set_pristine_hash(hash, get_log2_word_size());
-    for (unsigned i = get_log2_word_size()+1; i <= get_log2_tree_size(); ++i) {
+    for (int i = get_log2_word_size()+1; i <= get_log2_tree_size(); ++i) {
         get_concat_hash(h, hash, hash, hash);
         set_pristine_hash(hash, i);
     }

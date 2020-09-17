@@ -61,7 +61,7 @@ static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t va
         (paddr_page - pma.get_start());
     uint64_t hoffset = paddr - paddr_page;
     // log writes to memory
-    a.write_memory(paddr, hpage, hoffset, val);
+    a.write_memory_word(paddr, hpage, hoffset, val);
     // mark page as dirty so we know to update the Merkle tree
     pma.mark_dirty_page(paddr - pma.get_start());
     return true;
@@ -81,7 +81,7 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
     unsigned char *hpage = pma.get_memory().get_host_memory() +
         (paddr_page - pma.get_start());
     uint64_t hoffset = paddr - paddr_page;
-    a.read_memory(paddr, hpage, hoffset, pval);
+    a.read_memory_word(paddr, hpage, hoffset, pval);
     return true;
 }
 

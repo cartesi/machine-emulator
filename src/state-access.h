@@ -352,7 +352,53 @@ private:
         return m_m.get_state().htif.iyield;
     }
 
+    uint64_t do_read_dhd_tstart(void) const {
+		return m_m.get_state().dhd.tstart;
+    }
+
+    void do_write_dhd_tstart(uint64_t val) {
+        m_m.get_state().dhd.tstart = val;
+    }
+
+    uint64_t do_read_dhd_tlength(void) const {
+		return m_m.get_state().dhd.tlength;
+    }
+
+    void do_write_dhd_tlength(uint64_t val) {
+        m_m.get_state().dhd.tlength = val;
+    }
+
+    uint64_t do_read_dhd_dlength(void) const {
+		return m_m.get_state().dhd.dlength;
+    }
+
+    void do_write_dhd_dlength(uint64_t val) {
+        m_m.get_state().dhd.dlength = val;
+    }
+
+    uint64_t do_read_dhd_hlength(void) const {
+		return m_m.get_state().dhd.hlength;
+    }
+
+    void do_write_dhd_hlength(uint64_t val) {
+        m_m.get_state().dhd.hlength = val;
+    }
+
+    uint64_t do_read_dhd_h(int i) const {
+		return m_m.get_state().dhd.h[i];
+    }
+
+    void do_write_dhd_h(int i, uint64_t val) {
+        m_m.get_state().dhd.h[i] = val;
+    }
+
+    dhd_data do_dehash(const unsigned char* hash, uint64_t hlength,
+        uint64_t &dlength) {
+        return m_m.get_state().dehash(hash, hlength, dlength);
+    }
+
     uint64_t do_read_pma_istart(int i) const {
+        assert(i >= 0 && i < (int) PMA_MAX);
         const auto &pmas = m_m.get_pmas();
         uint64_t istart = 0;
         if (i >= 0 && i < static_cast<int>(pmas.size())) {
@@ -362,7 +408,7 @@ private:
     }
 
     uint64_t do_read_pma_ilength(int i) const {
-        assert(i >= 0 && i < 32);
+        assert(i >= 0 && i < (int) PMA_MAX);
         const auto &pmas = m_m.get_pmas();
         uint64_t ilength = 0;
         if (i >= 0 && i < static_cast<int>(pmas.size())) {
@@ -372,17 +418,22 @@ private:
     }
 
     template <typename T>
-    void do_read_memory(uint64_t paddr, const unsigned char *hpage,
+    void do_read_memory_word(uint64_t paddr, const unsigned char *hpage,
         uint64_t hoffset, T *pval) const {
         (void) paddr;
         *pval = aliased_aligned_read<T>(hpage+hoffset);
     }
 
     template <typename T>
-    void do_write_memory(uint64_t paddr, unsigned char *hpage,
+    void do_write_memory_word(uint64_t paddr, unsigned char *hpage,
         uint64_t hoffset, T val) {
         (void) paddr;
         aliased_aligned_write(hpage+hoffset, val);
+    }
+
+    void do_write_memory(uint64_t paddr, const unsigned char *data,
+        uint64_t log2_size) {
+        m_m.write_memory(paddr, data, UINT64_C(1) << log2_size);
     }
 
     template <typename T>

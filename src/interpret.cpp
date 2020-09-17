@@ -87,7 +87,7 @@ typedef unsigned __int128 uint128_t;
 #include "state-access.h"
 #include "logged-state-access.h"
 #include "step-state-access.h"
-#include "virtual-state-access.h"
+#include "device-state-access.h"
 #include "rtc.h"
 #include "meta.h"
 #include "riscv-constants.h"
@@ -103,7 +103,7 @@ static void print_uint64_t(uint64_t a) {
     fprintf(stderr, "%016" PRIx64, a);
 }
 
-static const char *reg_name[32] = {
+static const char *reg_name[X_REG_COUNT] = {
 "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
 "s0", "s1", "a0", "a1", "a2", "a3", "a4", "a5",
 "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
@@ -182,7 +182,7 @@ static void dump_regs(const machine_state &s) {
     fprintf(stderr, "pc = ");
     print_uint64_t(s.pc);
     fprintf(stderr, " ");
-    for(i = 1; i < 32; i++) {
+    for(i = 1; i < X_REG_COUNT; i++) {
         fprintf(stderr, "%-3s= ", reg_name[i]);
         print_uint64_t(s.x[i]);
         if ((i & (cols - 1)) == (cols - 1))
@@ -607,13 +607,13 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
                     (paddr_page - pma.get_start());
             }
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
-            a.read_memory(paddr, hpage, hoffset, pval);
+            a.read_memory_word(paddr, hpage, hoffset, pval);
             return true;
         } else {
             assert(pma.get_istart_IO());
             uint64_t offset = paddr - pma.get_start();
             uint64_t val;
-            virtual_state_access<STATE_ACCESS> da(a);
+            device_state_access<STATE_ACCESS> da(a);
             // If we do not know how to read, we treat this as a PMA violation
             if (!pma.get_device().get_driver()->
                 read(pma, &da, offset, &val, size_log2<U>::value)) {
@@ -678,12 +678,12 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             }
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             // write to memory
-            a.write_memory(paddr, hpage, hoffset, static_cast<T>(val64));
+            a.write_memory_word(paddr, hpage, hoffset, static_cast<T>(val64));
             return true;
         } else {
             assert(pma.get_istart_IO());
             uint64_t offset = paddr - pma.get_start();
-            virtual_state_access<STATE_ACCESS> da(a);
+            device_state_access<STATE_ACCESS> da(a);
             // If we do not know how to write, we treat this as a PMA violation
             if (!pma.get_device().get_driver()->
                 write(pma, &da, offset, val64, size_log2<U>::value)) {
@@ -3098,7 +3098,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
             (paddr_page - pma.get_start());
     }
     uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
-    a.read_memory(paddr, hpage, hoffset, pinsn);
+    a.read_memory_word(paddr, hpage, hoffset, pinsn);
     return fetch_status::success;
 }
 

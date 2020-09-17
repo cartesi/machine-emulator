@@ -69,7 +69,7 @@ uint64_t shadow_get_csr_rel_addr(shadow_csr reg);
 /// in shadow memory.
 /// \param reg Register index in 0...31, for x0...x31, respectively.
 /// \returns The address.
-uint64_t shadow_get_register_rel_addr(int reg);
+uint64_t shadow_get_x_rel_addr(int reg);
 
 /// \brief Obtains the relative address of a PMA entry in shadow memory.
 /// \param p Index of desired shadow PMA entry, in 0..31.

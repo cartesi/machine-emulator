@@ -16,27 +16,20 @@
 
 local _M = {}
 
-local function intstring(v)
-    local a = ""
-    for i = 0, 7 do
-        a = a .. string.format("%02x", (v >> i*8) & 0xff)
-    end
-    return a
-end
-
 local function indentout(f, indent, fmt, ...)
     f:write(string.rep("  ", indent), string.format(fmt, ...))
 end
 
 _M.indentout = indentout
 
-local function hexhash(hash)
+local function hexstring(hash)
     return (string.gsub(hash, ".", function(c)
         return string.format("%02x", string.byte(c))
     end))
 end
 
-_M.hexhash = hexhash
+local hexhash = hexstring
+_M.hexhash = hexstring
 
 local function dump_json_sibling_hashes(sibling_hashes, out, indent)
     for i, h in ipairs(sibling_hashes) do
@@ -84,8 +77,10 @@ local function dump_json_log_access(access, out, indent)
     indentout(out, indent, '{\n')
     indentout(out, indent+1, '"type": "%s",\n', access.type)
     indentout(out, indent+1, '"address": %u,\n', access.address)
-    indentout(out, indent+1, '"read": "%s",\n', intstring(access.read))
-    indentout(out, indent+1, '"written": "%s"', intstring(access.written or 0))
+    indentout(out, indent+1, '"read": "%s",\n', hexstring(access.read))
+    if access.type == "write" then
+        indentout(out, indent+1, '"written": "%s"', hexstring(access.written))
+    end
     if access.proof then
 		out:write(",\n")
         indentout(out, indent+1, '"proof": {\n')
@@ -181,6 +176,17 @@ local function hexhash8(hash)
     return string.sub(hexhash(hash), 1, 8)
 end
 
+local function accessdatastring(data, log2_size)
+    if log2_size == 3 then
+        data = string.unpack("<I8", data)
+        return string.format("0x%x(%u)", data, data)
+    else
+        return string.format("%s...%s(2^%d bytes)",
+            hexstring(string.sub(data, 1, 3)),
+            hexstring(string.sub(data, -3, -1)), log2_size)
+    end
+end
+
 function _M.dump_log(log, out)
     local indent = 0
     local j = 1 -- Bracket index
@@ -209,16 +215,15 @@ function _M.dump_log(log, out)
                 indentout(out, indent, "hash %s\n",
                     hexhash8(ai.proof.root_hash))
             end
+            local read = accessdatastring(ai.read, ai.log2_size)
             if ai.type == "read" then
-                indentout(out, indent,
-                    "%d: read %s@0x%x(%u): 0x%x(%u)\n", i,
-                    notes[i] or "", ai.address, ai.address, ai.read, ai.read)
+                indentout(out, indent, "%d: read %s@0x%x(%u): %s\n", i,
+                    notes[i] or "", ai.address, ai.address, read)
             else
                 assert(ai.type == "write", "unknown access type")
-                indentout(out, indent,
-                    "%d: write %s@0x%x(%u): 0x%x(%u) -> 0x%x(%u)\n", i,
-                    notes[i] or "", ai.address, ai.address,
-                    ai.read, ai.read, ai.written, ai.written)
+                local written = accessdatastring(ai.written, ai.log2_size)
+                indentout(out, indent, "%d: write %s@0x%x(%u): %s -> %s\n", i,
+                    notes[i] or "", ai.address, ai.address, read, written)
             end
             i = i + 1
         end

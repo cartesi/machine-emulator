@@ -14,41 +14,41 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#ifndef VIRTUAL_STATE_ACCESS
-#define VIRTUAL_STATE_ACCESS
+#ifndef DEVICE_STATE_ACCESS
+#define DEVICE_STATE_ACCESS
 
 /// \file
 /// \brief Virtual state access implementation
 
 #include <cstdint>
 
-#include "i-virtual-state-access.h"
+#include "i-device-state-access.h"
 #include "machine.h"
 
 namespace cartesi {
 
-/// \details The virtual_state_access class implements a
+/// \details The device_state_access class implements a
 /// virtual interface to the state on top of the static
 /// interface provided by any class implementing the
 /// i_state_access interface.
 /// \tparam STATE_ACCESS Class implementing the
 /// i_state_access interface.
 template <typename STATE_ACCESS>
-class virtual_state_access: public i_virtual_state_access {
+class device_state_access: public i_device_state_access {
 public:
 
-    explicit virtual_state_access(STATE_ACCESS &a): m_a(a) {
+    explicit device_state_access(STATE_ACCESS &a): m_a(a) {
         static_assert(is_an_i_state_access<STATE_ACCESS>::value, "not an i_state_access");
     }
 
     /// \brief No copy constructor
-    virtual_state_access(const virtual_state_access &) = delete;
+    device_state_access(const device_state_access &) = delete;
     /// \brief No copy assignment
-    virtual_state_access& operator=(const virtual_state_access &) = delete;
+    device_state_access& operator=(const device_state_access &) = delete;
     /// \brief No move constructor
-    virtual_state_access(virtual_state_access &&) = delete;
+    device_state_access(device_state_access &&) = delete;
     /// \brief No move assignment
-    virtual_state_access& operator=(virtual_state_access &&) = delete;
+    device_state_access& operator=(device_state_access &&) = delete;
 
 private:
 
@@ -128,6 +128,56 @@ private:
 
     uint64_t do_read_htif_iyield(void) override {
         return m_a.read_htif_iyield();
+    }
+
+    uint64_t do_read_dhd_tstart(void) override {
+        return m_a.read_dhd_tstart();
+    }
+
+    void do_write_dhd_tstart(uint64_t val) override {
+        return m_a.write_dhd_tstart(val);
+    }
+
+    uint64_t do_read_dhd_tlength(void) override {
+        return m_a.read_dhd_tlength();
+    }
+
+    void do_write_dhd_tlength(uint64_t val) override {
+        return m_a.write_dhd_tlength(val);
+    }
+
+    uint64_t do_read_dhd_dlength(void) override {
+        return m_a.read_dhd_dlength();
+    }
+
+    void do_write_dhd_dlength(uint64_t val) override {
+        return m_a.write_dhd_dlength(val);
+    }
+
+    uint64_t do_read_dhd_hlength(void) override {
+        return m_a.read_dhd_hlength();
+    }
+
+    void do_write_dhd_hlength(uint64_t val) override {
+        return m_a.write_dhd_hlength(val);
+    }
+
+    uint64_t do_read_dhd_h(int i) override {
+        return m_a.read_dhd_h(i);
+    }
+
+    void do_write_dhd_h(int i, uint64_t val) override {
+        return m_a.write_dhd_h(i, val);
+    }
+
+    dhd_data do_dehash(const unsigned char* hash,
+        uint64_t hlength, uint64_t &dlength) override {
+        return m_a.dehash(hash, hlength, dlength);
+    }
+
+    void do_write_memory(uint64_t paddr, const unsigned char *data,
+        uint64_t log2_length) override {
+        return m_a.write_memory(paddr, data, log2_length);
     }
 
     uint64_t do_read_pma_istart(int p) override {

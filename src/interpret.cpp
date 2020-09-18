@@ -2431,11 +2431,15 @@ static inline execute_status execute_L(STATE_ACCESS &a, uint64_t pc, uint32_t in
     int32_t imm = insn_I_get_imm(insn);
     T val;
     if (read_virtual_memory<T>(a, vaddr+imm, &val)) {
-        // This static branch is eliminated by the compiler
-        if (std::is_signed<T>::value) {
-            a.write_x(insn_get_rd(insn), static_cast<int64_t>(val));
-        } else {
-            a.write_x(insn_get_rd(insn), static_cast<uint64_t>(val));
+        uint32_t rd = insn_get_rd(insn);
+        // don't write x0
+        if (rd != 0) {
+            // This static branch is eliminated by the compiler
+            if (std::is_signed<T>::value) {
+                a.write_x(rd, static_cast<int64_t>(val));
+            } else {
+                a.write_x(rd, static_cast<uint64_t>(val));
+            }
         }
         return advance_to_next_insn(a, pc);
     } else {

@@ -1,4 +1,4 @@
-name: Build/Test/Release
+name: Build/Test/Verify/Release
 on: [push]
 jobs:
   build:
@@ -152,6 +152,119 @@ jobs:
 
       - name: Run test suite inside the docker image
         run: docker run --rm -v /opt/cartesi/tests:/opt/cartesi/tests -t cartesi/machine-emulator:test /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
+
+  verify:
+    name: Verify
+    needs: build
+    runs-on: ubuntu-20.04
+    if: ${{ contains(github.ref, '-rc') || endsWith(github.ref, 'verify') }}
+    steps:
+      - name: Download emulator
+        uses: actions/download-artifact@master
+        with:
+          name: emulator
+          path: /opt/cartesi
+
+      - name: Create images folder
+        run: mkdir -m 755 -p /opt/cartesi/share/images
+
+      - name: Fix install directories and permissions [/opt/cartesi]
+        run: |
+          find /opt/cartesi -type d -exec chmod 755 {} +
+          find /opt/cartesi -type f -exec chmod 644 {} +
+          find /opt/cartesi/bin -type f \! -iname "*.lua" -exec chmod 755 {} +
+          find /opt/cartesi/lib -type f -exec chmod 755 {} +
+
+      - name: Install Ubuntu dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-program-options1.71.0 libboost-serialization1.71.0 libprotobuf17 libprotobuf-lite17 libgrpc++1
+
+      - name: Set current git organization env var
+        id: git_org
+        run: echo "::set-output name=current_organization::$(echo ${GITHUB_REPOSITORY} | cut -d '/' -f 1)"
+      - name: Download test suite
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ steps.git_org.outputs.current_organization }}/machine-tests
+          tag: 'v0.7.0'
+          file: machine-tests-v0.7.0.tar.gz
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Untar test suite
+        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.7.0.tar.gz -C /opt/cartesi/tests
+
+      - name: Checkout emulator source code
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Download ground truth logs cache
+        id: download_ground_truth_logs
+        continue-on-error: true
+        env:
+          AWS_REGION: 'us-east-1'
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          mkdir -p ./src/ground-truth
+          aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/ground-truth/logs-00001 ./src/ground-truth/logs && test -f ./src/ground-truth/logs/1/dont_write_x0.json.br
+
+      - name: Generate ground truth logs
+        id: gen_logs
+        if: ${{ steps.download_ground_truth_logs.outcome == 'failure' }}
+        run: |
+          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/opt/cartesi/bin/luapp5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
+          make -j$(nproc) CYCLE_PERIOD=1 truth-logs
+
+      - name: Upload ground truth logs
+        if: ${{ steps.gen_logs.outcome == 'success' }}
+        env:
+          AWS_REGION: 'us-east-1'
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: aws s3 sync ./src/ground-truth/logs s3://cartesi-ci/${GITHUB_REPOSITORY}/ground-truth/logs-00001
+
+      - name: Verify logs against ground truth
+        run: |
+          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/opt/cartesi/bin/luapp5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
+          make -j$(nproc) CYCLE_PERIOD=1 test-logs
+
+      - name: Download ground truth hashes cache
+        id: download_ground_truth_hashes
+        continue-on-error: true
+        env:
+          AWS_REGION: 'us-east-1'
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          mkdir -p ./src/ground-truth
+          aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/ground-truth/hashes-00001 ./src/ground-truth/hashes && test -f ./src/ground-truth/hashes/1/dont_write_x0.hashes
+
+      - name: Generate ground truth hashes
+        id: gen_hashes
+        if: ${{ steps.download_ground_truth_hashes.outcome == 'failure' }}
+        run: |
+          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/opt/cartesi/bin/luapp5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
+          make -j$(nproc) CYCLE_PERIOD=1 truth-hashes
+          make -j$(nproc) CYCLE_PERIOD=2 truth-hashes
+          make -j$(nproc) CYCLE_PERIOD=3 truth-hashes
+          make -j$(nproc) CYCLE_PERIOD=13 truth-hashes
+
+      - name: Upload ground truth logs and hashes cache
+        if: ${{ steps.gen_hashes.outcome == 'success' }}
+        run: aws s3 sync ./src/ground-truth/hashes s3://cartesi-ci/${GITHUB_REPOSITORY}/ground-truth/hashes-00001
+        env:
+          AWS_REGION: 'us-east-1'
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Verify logs and hashes against ground truth
+        run: |
+          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/opt/cartesi/bin/luapp5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
+          make -j$(nproc) CYCLE_PERIOD=1 test-hashes
+          make -j$(nproc) CYCLE_PERIOD=2 compare-hashes
+          make -j$(nproc) CYCLE_PERIOD=3 compare-hashes
+          make -j$(nproc) CYCLE_PERIOD=13 compare-hashes
 
   release:
     name: Release

@@ -259,7 +259,6 @@ GRPC_SRV_OBJS:= \
 CYCLE_PERIOD ?= 13
 HASH_DIR = hashes/$(CYCLE_PERIOD)
 LOG_DIR = logs/$(CYCLE_PERIOD)
-HASH_TRUTH_DIR =
 GROUND_TRUTH_DIR ?= ground-truth
 
 ifneq ($(strip $(TEST_PATH)),)
@@ -270,7 +269,14 @@ TEST_LOGS=$(addprefix $(LOG_DIR)/,$(TESTS:.bin=.json.br))
 TRUTH_HASHES=$(addprefix $(GROUND_TRUTH_DIR)/,$(TEST_HASHES))
 TRUTH_LOGS=$(addprefix $(GROUND_TRUTH_DIR)/,$(TEST_LOGS))
 
-$(HASH_DIR) $(LOG_DIR) $(GROUND_TRUTH_DIR)/$(HASH_DIR) $(GROUND_TRUTH_DIR)/$(LOG_DIR):
+HASH_EACH_CYCLE_DIR=
+TEST_EACH_CYCLE_HASHES=
+ifneq ($(strip $(CYCLE_PERIOD)),1)
+HASH_EACH_CYCLE_DIR = hashes/1
+TEST_EACH_CYCLE_HASHES=$(addprefix $(HASH_EACH_CYCLE_DIR)/,$(TESTS:.bin=.hashes))
+endif
+
+$(HASH_DIR) $(LOG_DIR) $(GROUND_TRUTH_DIR)/$(HASH_DIR) $(GROUND_TRUTH_DIR)/$(LOG_DIR) $(HASH_EACH_CYCLE_DIR):
 	mkdir -p $@
 
 test-hashes: $(TEST_HASHES)
@@ -280,6 +286,19 @@ test-logs: $(TEST_LOGS)
 truth-hashes: $(TRUTH_HASHES)
 
 truth-logs: $(TRUTH_LOGS)
+
+compare-hashes: $(TEST_EACH_CYCLE_HASHES) $(TEST_HASHES)
+	@for t in $(TESTS) ; do \
+		result=$$(tail -n +2 -q $(HASH_DIR)/$${t%.bin}.hashes $(HASH_EACH_CYCLE_DIR)/$${t%.bin}.hashes | sort -s -n | uniq | awk -v step=-1 '{pline=line; line=$$0; pstep=step; step=$$1; if (pstep >= 0 && pstep == step) {print(pline); print(line); exit 1;}}'); \
+		if [ "$$result" != "" ]; then \
+			echo $$t ;\
+			echo "$$result"; \
+			exit 1; \
+		fi \
+	done
+
+$(HASH_EACH_CYCLE_DIR)/%.hashes: $(TEST_PATH)/%.bin $(HASH_EACH_CYCLE_DIR)
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=1 hash >  $@
 
 $(HASH_DIR)/%.hashes: $(TEST_PATH)/%.bin $(HASH_DIR)
 	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) hash >  $@

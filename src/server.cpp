@@ -43,10 +43,10 @@
 #include <grpc++/grpc++.h>
 #include <grpc++/resource_quota.h>
 #include "cartesi-machine.grpc.pb.h"
+#include "machine-discovery.grpc.pb.h"
 #pragma GCC diagnostic pop
 
 #include "grpc-util.h"
-#include "manager-client.h"
 
 #include <chrono>
 #include <thread>
@@ -67,21 +67,23 @@ namespace po = boost::program_options;
 using namespace cartesi;
 using hash_type = keccak_256_hasher::hash_type;
 using namespace CartesiMachine;
+using namespace CartesiMachineManager;
 using namespace Versioning;
 using grpc::Status;
 using grpc::ServerContext;
 using grpc::StatusCode;
 using grpc::Server;
+using grpc::ClientContext;
 
 #define dbg(...) syslog(LOG_DEBUG, __VA_ARGS__)
 
 struct Context {
     int value;
     std::string address;
-    std::string manager_address;
+    std::string discovery_address;
     std::string session_id;
     bool auto_port;
-    bool report_to_manager;
+    bool report_to_client;
     bool forked;
     std::unique_ptr<cartesi::machine> machine;
 };
@@ -616,12 +618,21 @@ public:
 
 };
 
-static void report_to_manager_server(Context &context) {
-    dbg("Reporting address to manager\n");
-    std::unique_ptr<cartesi::manager_client> mc = std::make_unique<cartesi::manager_client>();
-    mc->register_on_manager(context.session_id, context.address, context.manager_address);
-    dbg("Address reported to manager\n");
-
+static void report_address_update(const std::string &discovery_address,
+    const std::string &session_id, const std::string &address) {
+    AddressRequest request;
+    Void response;
+    ClientContext context;
+    request.set_address(address);
+    request.set_session_id(session_id);
+    auto stub = MachineDiscovery::NewStub(grpc::CreateChannel(
+        discovery_address, grpc::InsecureChannelCredentials()));
+    auto status = stub->CommunicateAddress(&context, request, &response);
+    if (!status.ok()){
+        dbg("Failed to update address with client\n");
+    } else {
+        dbg("Updated address with client");
+    }
 }
 
 static BreakReason server_loop(Context &context) {
@@ -648,8 +659,9 @@ static BreakReason server_loop(Context &context) {
         context.address += std::to_string(bound_port);
     }
     dbg("Server %d listening to %s", getpid(), context.address.c_str());
-    if (context.report_to_manager) {
-        report_to_manager_server(context);
+    if (context.report_to_client) {
+        report_address_update(context.discovery_address, context.session_id,
+            context.address);
     }
 
     server->Wait();
@@ -807,8 +819,8 @@ static void set_context_with_cli_arguments(Context &context, int &argc,
             exit(1);
         }
         //They were, setting manager-address and session-id
-        context.manager_address = vm["manager-address"].as<std::string>();
-        context.report_to_manager = true;
+        context.discovery_address = vm["manager-address"].as<std::string>();
+        context.report_to_client = true;
         context.session_id = vm["session-id"].as<std::string>();
     }
 

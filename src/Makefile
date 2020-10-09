@@ -253,8 +253,7 @@ GRPC_SRV_OBJS:= \
 	pma.o \
 	machine.o \
 	machine-config.o \
-	interpret.o \
-	manager-client.o
+	interpret.o
 
 CYCLE_PERIOD ?= 13
 HASH_DIR = hashes/$(CYCLE_PERIOD)

@@ -219,8 +219,6 @@ using machine_ptr = std::unique_ptr<machine>;
 
 class handler_GetVersion final: public handler<Void, GetVersionResponse> {
 
-    using base = handler<Void, GetVersionResponse>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req, ServerAsyncResponseWriter<GetVersionResponse> *writer) override {
         hctx.s.RequestGetVersion(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -247,8 +245,6 @@ public:
 };
 
 class handler_Machine final: public handler<MachineRequest, Void> {
-
-    using base = handler<MachineRequest, Void>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, MachineRequest *req, ServerAsyncResponseWriter<Void> *writer) override {
         hctx.s.RequestMachine(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
@@ -284,8 +280,6 @@ public:
 
 class handler_Run final: public handler<RunRequest, RunResponse> {
 
-    using base = handler<RunRequest, RunResponse>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, RunRequest *req, ServerAsyncResponseWriter<RunResponse> *writer) override {
         hctx.s.RequestRun(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -318,8 +312,6 @@ public:
 
 class handler_Store final: public handler<StoreRequest, Void> {
 
-    using base = handler<StoreRequest, Void>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, StoreRequest *req, ServerAsyncResponseWriter<Void> *writer) override {
         hctx.s.RequestStore(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -342,8 +334,6 @@ public:
 };
 
 class handler_Destroy final: public handler<Void, Void> {
-
-    using base = handler<Void, Void>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req, ServerAsyncResponseWriter<Void> *writer) override {
         hctx.s.RequestDestroy(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
@@ -369,8 +359,6 @@ public:
 
 class handler_Snapshot final: public handler<Void, Void> {
 
-    using base = handler<Void, Void>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req, ServerAsyncResponseWriter<Void> *writer) override {
         hctx.s.RequestSnapshot(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::snapshot;
@@ -391,8 +379,6 @@ public:
 };
 
 class handler_Rollback final: public handler<Void, Void> {
-
-    using base = handler<Void, Void>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req, ServerAsyncResponseWriter<Void> *writer) override {
         hctx.s.RequestRollback(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
@@ -415,8 +401,6 @@ public:
 
 class handler_Shutdown final: public handler<Void, Void> {
 
-    using base = handler<Void, Void>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req, ServerAsyncResponseWriter<Void> *writer) override {
         hctx.s.RequestShutdown(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::shutdown;
@@ -437,8 +421,6 @@ public:
 };
 
 class handler_Step final: public handler<StepRequest, StepResponse> {
-
-    using base = handler<StepRequest, StepResponse>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, StepRequest *req, ServerAsyncResponseWriter<StepResponse> *writer) override {
         hctx.s.RequestStep(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
@@ -464,8 +446,6 @@ public:
 };
 
 class handler_ReadMemory final: public handler<ReadMemoryRequest, ReadMemoryResponse> {
-
-    using base = handler<ReadMemoryRequest, ReadMemoryResponse>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, ReadMemoryRequest *req, ServerAsyncResponseWriter<ReadMemoryResponse> *writer) override {
         hctx.s.RequestReadMemory(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
@@ -494,8 +474,6 @@ public:
 
 class handler_WriteMemory final: public handler<WriteMemoryRequest, Void> {
 
-    using base = handler<WriteMemoryRequest, Void>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, WriteMemoryRequest *req, ServerAsyncResponseWriter<Void> *writer) override {
         hctx.s.RequestWriteMemory(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -521,8 +499,6 @@ public:
 };
 
 class handler_ReadWord final: public handler<ReadWordRequest, ReadWordResponse> {
-
-    using base = handler<ReadWordRequest, ReadWordResponse>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, ReadWordRequest *req, ServerAsyncResponseWriter<ReadWordResponse> *writer) override {
         hctx.s.RequestReadWord(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
@@ -550,8 +526,6 @@ public:
 
 class handler_GetRootHash final: public handler<Void, GetRootHashResponse> {
 
-    using base = handler<Void, GetRootHashResponse>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req, ServerAsyncResponseWriter<GetRootHashResponse> *writer) override {
         hctx.s.RequestGetRootHash(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -578,8 +552,6 @@ public:
 };
 
 class handler_GetProof final: public handler<GetProofRequest, GetProofResponse> {
-
-    using base = handler<GetProofRequest, GetProofResponse>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, GetProofRequest *req, ServerAsyncResponseWriter<GetProofResponse> *writer) override {
         hctx.s.RequestGetProof(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
@@ -611,8 +583,6 @@ public:
 
 class handler_ReplaceFlashDrive final: public handler<ReplaceFlashDriveRequest, Void> {
 
-    using base = handler<ReplaceFlashDriveRequest, Void>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, ReplaceFlashDriveRequest *req, ServerAsyncResponseWriter<Void> *writer) override {
         hctx.s.RequestReplaceFlashDrive(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -636,8 +606,6 @@ public:
 };
 
 class handler_GetXAddress final: public handler<GetXAddressRequest, GetXAddressResponse> {
-
-    using base = handler<GetXAddressRequest, GetXAddressResponse>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, GetXAddressRequest *req, ServerAsyncResponseWriter<GetXAddressResponse> *writer) override {
         hctx.s.RequestGetXAddress(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
@@ -663,8 +631,6 @@ public:
 };
 
 class handler_ReadX final: public handler<ReadXRequest, ReadXResponse> {
-
-    using base = handler<ReadXRequest, ReadXResponse>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, ReadXRequest *req, ServerAsyncResponseWriter<ReadXResponse> *writer) override {
         hctx.s.RequestReadX(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
@@ -693,8 +659,6 @@ public:
 
 class handler_WriteX final: public handler<WriteXRequest, Void> {
 
-    using base = handler<WriteXRequest, Void>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, WriteXRequest *req, ServerAsyncResponseWriter<Void> *writer) override {
         hctx.s.RequestWriteX(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -722,8 +686,6 @@ public:
 
 class handler_GetDhdHAddress final: public handler<GetDhdHAddressRequest, GetDhdHAddressResponse> {
 
-    using base = handler<GetDhdHAddressRequest, GetDhdHAddressResponse>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, GetDhdHAddressRequest *req, ServerAsyncResponseWriter<GetDhdHAddressResponse> *writer) override {
         hctx.s.RequestGetDhdHAddress(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -748,8 +710,6 @@ public:
 };
 
 class handler_ReadDhdH final: public handler<ReadDhdHRequest, ReadDhdHResponse> {
-
-    using base = handler<ReadDhdHRequest, ReadDhdHResponse>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, ReadDhdHRequest *req, ServerAsyncResponseWriter<ReadDhdHResponse> *writer) override {
         hctx.s.RequestReadDhdH(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
@@ -778,8 +738,6 @@ public:
 
 class handler_WriteDhdH final: public handler<WriteDhdHRequest, Void> {
 
-    using base = handler<WriteDhdHRequest, Void>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, WriteDhdHRequest *req, ServerAsyncResponseWriter<Void> *writer) override {
         hctx.s.RequestWriteDhdH(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -807,8 +765,6 @@ public:
 
 class handler_GetCsrAddress final: public handler<GetCsrAddressRequest, GetCsrAddressResponse> {
 
-    using base = handler<GetCsrAddressRequest, GetCsrAddressResponse>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, GetCsrAddressRequest *req, ServerAsyncResponseWriter<GetCsrAddressResponse> *writer) override {
         hctx.s.RequestGetCsrAddress(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -833,8 +789,6 @@ public:
 };
 
 class handler_ReadCsr final: public handler<ReadCsrRequest, ReadCsrResponse> {
-
-    using base = handler<ReadCsrRequest, ReadCsrResponse>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, ReadCsrRequest *req, ServerAsyncResponseWriter<ReadCsrResponse> *writer) override {
         hctx.s.RequestReadCsr(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
@@ -863,8 +817,6 @@ public:
 
 class handler_WriteCsr final: public handler<WriteCsrRequest, Void> {
 
-    using base = handler<WriteCsrRequest, Void>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, WriteCsrRequest *req, ServerAsyncResponseWriter<Void> *writer) override {
         hctx.s.RequestWriteCsr(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -892,8 +844,6 @@ public:
 
 class handler_GetInitialConfig final: public handler<Void, GetInitialConfigResponse> {
 
-    using base = handler<Void, GetInitialConfigResponse>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req, ServerAsyncResponseWriter<GetInitialConfigResponse> *writer) override {
         hctx.s.RequestGetInitialConfig(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -919,8 +869,6 @@ public:
 
 class handler_VerifyMerkleTree final: public handler<Void, VerifyMerkleTreeResponse> {
 
-    using base = handler<Void, VerifyMerkleTreeResponse>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req, ServerAsyncResponseWriter<VerifyMerkleTreeResponse> *writer) override {
         hctx.s.RequestVerifyMerkleTree(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -944,8 +892,6 @@ public:
 };
 
 class handler_UpdateMerkleTree final: public handler<Void, UpdateMerkleTreeResponse> {
-
-    using base = handler<Void, UpdateMerkleTreeResponse>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req, ServerAsyncResponseWriter<UpdateMerkleTreeResponse> *writer) override {
         hctx.s.RequestUpdateMerkleTree(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
@@ -971,8 +917,6 @@ public:
 
 class handler_VerifyDirtyPageMaps final: public handler<Void, VerifyDirtyPageMapsResponse> {
 
-    using base = handler<Void, VerifyDirtyPageMapsResponse>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req, ServerAsyncResponseWriter<VerifyDirtyPageMapsResponse> *writer) override {
         hctx.s.RequestVerifyDirtyPageMaps(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -996,8 +940,6 @@ public:
 };
 
 class handler_DumpPmas final: public handler<Void, Void> {
-
-    using base = handler<Void, Void>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req, ServerAsyncResponseWriter<Void> *writer) override {
         hctx.s.RequestDumpPmas(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
@@ -1023,8 +965,6 @@ public:
 
 class handler_GetDefaultConfig final: public handler<Void, GetDefaultConfigResponse> {
 
-    using base = handler<Void, GetDefaultConfigResponse>;
-
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req, ServerAsyncResponseWriter<GetDefaultConfigResponse> *writer) override {
         hctx.s.RequestGetDefaultConfig(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
@@ -1047,8 +987,6 @@ public:
 };
 
 class handler_VerifyAccessLog final: public handler<VerifyAccessLogRequest, Void> {
-
-    using base = handler<VerifyAccessLogRequest, Void>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, VerifyAccessLogRequest *req, ServerAsyncResponseWriter<Void> *writer) override {
         hctx.s.RequestVerifyAccessLog(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
@@ -1073,8 +1011,6 @@ public:
 };
 
 class handler_VerifyStateTransition final: public handler<VerifyStateTransitionRequest, Void> {
-
-    using base = handler<VerifyStateTransitionRequest, Void>;
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, VerifyStateTransitionRequest *req, ServerAsyncResponseWriter<Void> *writer) override {
         hctx.s.RequestVerifyStateTransition(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);

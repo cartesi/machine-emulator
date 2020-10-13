@@ -207,6 +207,7 @@ void set_proto_access_log(const access_log &al,
                 throw std::invalid_argument{"invalid AccessType"};
                 break;
         }
+        proto_a->set_log2_size(a.log2_size);
         proto_a->set_address(a.address);
         proto_a->set_read(a.read.data(), a.read.size());
         proto_a->set_written(a.written.data(), a.written.size());

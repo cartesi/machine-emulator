@@ -227,9 +227,7 @@ MERKLE_TREE_HASH_OBJS:= \
 PROTO_OBJS:= \
 	versioning.pb.o \
 	cartesi-machine.pb.o \
-	machine-discovery.pb.o \
-	cartesi-machine.grpc.pb.o \
-	machine-discovery.grpc.pb.o
+	cartesi-machine.grpc.pb.o
 
 $(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-deprecated-declarations
 

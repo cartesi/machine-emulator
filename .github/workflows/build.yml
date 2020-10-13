@@ -128,7 +128,7 @@ jobs:
 
       - name: Run test suite on GRPC server
         run: |
-          /opt/cartesi/bin/cartesi-machine-server -a 127.0.0.1:5001
+          /opt/cartesi/bin/cartesi-machine-server 127.0.0.1:5001 &
           timeout 20 bash -c 'while ! nc -q0 127.0.0.1 5001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
           /opt/cartesi/bin/cartesi-machine-tests --server=127.0.0.1:5001 --test-path=/opt/cartesi/tests run
           pkill -f cartesi-machine-server || true

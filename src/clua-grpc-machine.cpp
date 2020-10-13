@@ -68,11 +68,39 @@ static int grpc_machine_class_verify_state_transition(lua_State *L) try {
     return 2;
 }
 
+/// \brief This is the machine.get_x_address() method implementation.
+static int grpc_machine_class_get_x_address(lua_State *L) try {
+    auto &stub = clua_check<grpc_machine_stub_ptr>(L, lua_upvalueindex(1),
+        lua_upvalueindex(2));
+    lua_pushnumber(L, grpc_virtual_machine::get_x_address(stub,
+        luaL_checkinteger(L, 1)));
+    return 1;
+} catch (std::exception &x) {
+    lua_pushnil(L);
+    lua_pushstring(L, x.what());
+    return 2;
+}
+
+/// \brief This is the machine.get_x_address() method implementation.
+static int grpc_machine_class_get_dhd_h_address(lua_State *L) try {
+    auto &stub = clua_check<grpc_machine_stub_ptr>(L, lua_upvalueindex(1),
+        lua_upvalueindex(2));
+    lua_pushnumber(L, grpc_virtual_machine::get_dhd_h_address(stub,
+        luaL_checkinteger(L, 1)));
+    return 1;
+} catch (std::exception &x) {
+    lua_pushnil(L);
+    lua_pushstring(L, x.what());
+    return 2;
+}
+
 /// \brief Contents of the machine class metatable __index table.
 static const luaL_Reg grpc_machine_static_methods[] = {
     {"get_default_config", grpc_machine_class_get_default_config},
     {"verify_access_log", grpc_machine_class_verify_access_log},
     {"verify_state_transition", grpc_machine_class_verify_state_transition},
+    {"get_x_address", grpc_machine_class_get_x_address},
+    {"get_dhd_h_address", grpc_machine_class_get_dhd_h_address},
     { nullptr, nullptr }
 };
 
@@ -154,7 +182,7 @@ static int mod_stub(lua_State *L) {
     grpc_machine_stub_ptr *p = reinterpret_cast<grpc_machine_stub_ptr *>(
         lua_newuserdata(L, sizeof(grpc_machine_stub_ptr))); // stub
     new (p) grpc_machine_stub_ptr();
-    *p = grpc_virtual_machine::stub(address);
+    *p = std::make_shared<grpc_machine_stub>(address);
     if (!(*p)) {
         lua_pop(L, 2);
         lua_pushnil(L);

@@ -34,11 +34,23 @@
 
 namespace cartesi {
 
-using grpc_machine_stub_ptr = std::shared_ptr<CartesiMachine::Machine::Stub>;
+/// \class grpc_machine_stub
+/// \brief GRPC connection to Cartesi Machine Server
+class grpc_machine_stub {
+    std::string m_address;
+    std::unique_ptr<CartesiMachine::Machine::Stub> m_stub;
+public:
+    grpc_machine_stub(const std::string &address);
+    void reconnect(void);
+    CartesiMachine::Machine::Stub *get_stub(void);
+    const CartesiMachine::Machine::Stub *get_stub(void) const;
+};
+
+using grpc_machine_stub_ptr = std::shared_ptr<grpc_machine_stub>;
 
 /// \class grpc_virtual_machine
 /// \brief GRPC implementation of the i_virtual_machine interface
-class grpc_virtual_machine : public i_virtual_machine {
+class grpc_virtual_machine: public i_virtual_machine {
 public:
 
     grpc_virtual_machine(grpc_machine_stub_ptr stub, const std::string &dir,
@@ -47,8 +59,6 @@ public:
         const machine_runtime_config &r = {});
 
     virtual ~grpc_virtual_machine();
-
-    static grpc_machine_stub_ptr stub(const std::string &address);
 
     static semantic_version get_version(grpc_machine_stub_ptr stub);
 
@@ -63,6 +73,10 @@ public:
         const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after, bool one_based = false);
 
+    static uint64_t get_x_address(grpc_machine_stub_ptr stub, int i);
+
+    static uint64_t get_dhd_h_address(grpc_machine_stub_ptr stub, int i);
+
 private:
     machine_config do_get_initial_config(void) override;
 
@@ -73,8 +87,6 @@ private:
     uint64_t do_get_csr_address(csr w) override;
     uint64_t do_read_x(int i) override;
     void do_write_x(int i, uint64_t val) override;
-    uint64_t do_get_x_address(int i) override;
-    uint64_t do_get_dhd_h_address(int i) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) override;
     void do_write_memory(uint64_t address, const unsigned char *data, size_t length) override;
     uint64_t do_read_pc(void) override;

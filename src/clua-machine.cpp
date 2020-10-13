@@ -59,11 +59,33 @@ static int machine_class__index_verify_state_transition(lua_State *L) try {
     return 2;
 }
 
+/// \brief This is the machine.get_x_address() method implementation.
+static int machine_class__index_get_x_address(lua_State *L) try {
+    lua_pushnumber(L, machine::get_x_address(luaL_checkinteger(L, 1)));
+    return 1;
+} catch (std::exception &x) {
+    lua_pushnil(L);
+    lua_pushstring(L, x.what());
+    return 2;
+}
+
+/// \brief This is the machine.get_dhd_h_address() method implementation.
+static int machine_class__index_get_dhd_h_address(lua_State *L) try {
+    lua_pushnumber(L, machine::get_dhd_h_address(luaL_checkinteger(L, 1)));
+    return 1;
+} catch (std::exception &x) {
+    lua_pushnil(L);
+    lua_pushstring(L, x.what());
+    return 2;
+}
+
 /// \brief Contents of the machine class metatable __index table.
 static const luaL_Reg machine_class__index[] = {
     {"get_default_config", machine_class__index_get_default_config},
     {"verify_access_log", machine_class__index_verify_access_log},
     {"verify_state_transition", machine_class__index_verify_state_transition},
+    {"get_x_address", machine_class__index_get_x_address},
+    {"get_dhd_h_address", machine_class__index_get_dhd_h_address},
     { nullptr, nullptr }
 };
 

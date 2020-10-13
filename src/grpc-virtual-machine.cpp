@@ -32,6 +32,26 @@ using hash_type = cartesi::merkle_tree::hash_type;
 
 namespace cartesi {
 
+grpc_machine_stub::grpc_machine_stub(const std::string &address):
+    m_address(address),
+    m_stub(Machine::NewStub(grpc::CreateChannel(address,
+        grpc::InsecureChannelCredentials()))) {
+    ;
+}
+
+Machine::Stub *grpc_machine_stub::get_stub(void) {
+    return m_stub.get();
+}
+
+const Machine::Stub *grpc_machine_stub::get_stub(void) const {
+    return m_stub.get();
+}
+
+void grpc_machine_stub::reconnect(void) {
+    m_stub = Machine::NewStub(grpc::CreateChannel(m_address,
+        grpc::InsecureChannelCredentials()));
+}
+
 static std::string status_code_to_string(StatusCode code) {
     switch (code) {
         case StatusCode::OK: return "ok";
@@ -72,7 +92,7 @@ grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
     set_proto_machine_runtime_config(r, request.mutable_runtime());
     Void response;
     ClientContext context;
-    check_status(m_stub->Machine(&context, request, &response));
+    check_status(m_stub->get_stub()->Machine(&context, request, &response));
 }
 
 grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
@@ -82,7 +102,7 @@ grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
     set_proto_machine_runtime_config(r, request.mutable_runtime());
     Void response;
     ClientContext context;
-    check_status(m_stub->Machine(&context, request, &response));
+    check_status(m_stub->get_stub()->Machine(&context, request, &response));
 }
 
 grpc_virtual_machine::~grpc_virtual_machine(void) {
@@ -92,7 +112,7 @@ machine_config grpc_virtual_machine::do_get_initial_config(void) {
     Void request;
     GetInitialConfigResponse response;
     ClientContext context;
-    check_status(m_stub->GetInitialConfig(&context, request, &response));
+    check_status(m_stub->get_stub()->GetInitialConfig(&context, request, &response));
     return get_proto_machine_config(response.config());
 }
 
@@ -101,7 +121,8 @@ machine_config grpc_virtual_machine::get_default_config(
     Void request;
     GetDefaultConfigResponse response;
     ClientContext context;
-    check_status(stub->GetDefaultConfig(&context, request, &response));
+    check_status(stub->get_stub()->GetDefaultConfig(&context,
+            request, &response));
     return get_proto_machine_config(response.config());
 }
 
@@ -110,7 +131,7 @@ semantic_version grpc_virtual_machine::get_version(
     Void request;
     GetVersionResponse response;
     ClientContext context;
-    check_status(stub->GetVersion(&context, request, &response));
+    check_status(stub->get_stub()->GetVersion(&context, request, &response));
     return get_proto_semantic_version(response.version());
 }
 
@@ -118,7 +139,7 @@ void grpc_virtual_machine::shutdown(grpc_machine_stub_ptr stub) {
     Void request;
     Void response;
     ClientContext context;
-    check_status(stub->Shutdown(&context, request, &response));
+    check_status(stub->get_stub()->Shutdown(&context, request, &response));
 }
 
 void grpc_virtual_machine::verify_access_log(grpc_machine_stub_ptr stub,
@@ -128,7 +149,7 @@ void grpc_virtual_machine::verify_access_log(grpc_machine_stub_ptr stub,
     ClientContext context;
     set_proto_access_log(log, request.mutable_log());
     request.set_one_based(one_based);
-    check_status(stub->VerifyAccessLog(&context, request, &response));
+    check_status(stub->get_stub()->VerifyAccessLog(&context, request, &response));
 }
 
 void grpc_virtual_machine::verify_state_transition(grpc_machine_stub_ptr stub,
@@ -141,13 +162,7 @@ void grpc_virtual_machine::verify_state_transition(grpc_machine_stub_ptr stub,
     set_proto_access_log(log, request.mutable_log());
     set_proto_hash(root_hash_after, request.mutable_root_hash_after());
     request.set_one_based(one_based);
-    check_status(stub->VerifyStateTransition(&context, request, &response));
-}
-
-grpc_machine_stub_ptr grpc_virtual_machine::stub(
-    const std::string &address) {
-    return Machine::NewStub(grpc::CreateChannel(address,
-            grpc::InsecureChannelCredentials()));
+    check_status(stub->get_stub()->VerifyStateTransition(&context, request, &response));
 }
 
 void grpc_virtual_machine::do_run(uint64_t mcycle_end) {
@@ -155,7 +170,7 @@ void grpc_virtual_machine::do_run(uint64_t mcycle_end) {
     request.set_limit(mcycle_end);
     RunResponse response;
     ClientContext context;
-    check_status(m_stub->Run(&context, request, &response));
+    check_status(m_stub->get_stub()->Run(&context, request, &response));
 }
 
 void grpc_virtual_machine::do_store(const std::string &dir) {
@@ -163,7 +178,7 @@ void grpc_virtual_machine::do_store(const std::string &dir) {
     request.set_directory(dir);
     Void response;
     ClientContext context;
-    check_status(m_stub->Store(&context, request, &response));
+    check_status(m_stub->get_stub()->Store(&context, request, &response));
 }
 
 uint64_t grpc_virtual_machine::do_read_csr(csr r)  {
@@ -171,7 +186,7 @@ uint64_t grpc_virtual_machine::do_read_csr(csr r)  {
     request.set_csr((Csr)r);
     ReadCsrResponse response;
     ClientContext context;
-    check_status(m_stub->ReadCsr(&context, request, &response));
+    check_status(m_stub->get_stub()->ReadCsr(&context, request, &response));
     auto name = CartesiMachine::Csr_Name((Csr)r);
     return response.value();
 }
@@ -182,7 +197,7 @@ void grpc_virtual_machine::do_write_csr(csr w, uint64_t val)   {
     request.set_value(val);
     Void response;
     ClientContext context;
-    check_status(m_stub->WriteCsr(&context, request, &response));
+    check_status(m_stub->get_stub()->WriteCsr(&context, request, &response));
 }
 
 uint64_t grpc_virtual_machine::do_get_csr_address(csr w) {
@@ -190,7 +205,7 @@ uint64_t grpc_virtual_machine::do_get_csr_address(csr w) {
     request.set_csr((Csr)w);
     GetCsrAddressResponse response;
     ClientContext context;
-    check_status(m_stub->GetCsrAddress(&context, request, &response));
+    check_status(m_stub->get_stub()->GetCsrAddress(&context, request, &response));
     return response.address();
 }
 
@@ -199,7 +214,7 @@ uint64_t grpc_virtual_machine::do_read_x(int i) {
     request.set_index(i);
     ReadXResponse response;
     ClientContext context;
-    check_status(m_stub->ReadX(&context, request, &response));
+    check_status(m_stub->get_stub()->ReadX(&context, request, &response));
     return response.value();
 }
 
@@ -209,7 +224,7 @@ void grpc_virtual_machine::do_write_x(int i, uint64_t val)  {
     request.set_value(val);
     Void response;
     ClientContext context;
-    check_status(m_stub->WriteX(&context, request, &response));
+    check_status(m_stub->get_stub()->WriteX(&context, request, &response));
 }
 
 uint64_t grpc_virtual_machine::do_read_dhd_h(int i) {
@@ -217,7 +232,7 @@ uint64_t grpc_virtual_machine::do_read_dhd_h(int i) {
     request.set_index(i);
     ReadDhdHResponse response;
     ClientContext context;
-    check_status(m_stub->ReadDhdH(&context, request, &response));
+    check_status(m_stub->get_stub()->ReadDhdH(&context, request, &response));
     return response.value();
 }
 
@@ -227,24 +242,30 @@ void grpc_virtual_machine::do_write_dhd_h(int i, uint64_t val)  {
     request.set_value(val);
     Void response;
     ClientContext context;
-    check_status(m_stub->WriteDhdH(&context, request, &response));
+    check_status(m_stub->get_stub()->WriteDhdH(&context, request, &response));
 }
 
-uint64_t grpc_virtual_machine::do_get_x_address(int i)  {
+uint64_t grpc_virtual_machine::get_x_address(
+    grpc_machine_stub_ptr stub,
+    int i
+) {
     GetXAddressRequest request;
     request.set_index(i);
     GetXAddressResponse response;
     ClientContext context;
-    check_status(m_stub->GetXAddress(&context, request, &response));
+    check_status(stub->get_stub()->GetXAddress(&context, request, &response));
     return response.address();
 }
 
-uint64_t grpc_virtual_machine::do_get_dhd_h_address(int i)  {
+uint64_t grpc_virtual_machine::get_dhd_h_address(
+    grpc_machine_stub_ptr stub,
+    int i
+) {
     GetDhdHAddressRequest request;
     request.set_index(i);
     GetDhdHAddressResponse response;
     ClientContext context;
-    check_status(m_stub->GetDhdHAddress(&context, request, &response));
+    check_status(stub->get_stub()->GetDhdHAddress(&context, request, &response));
     return response.address();
 }
 
@@ -254,7 +275,7 @@ void grpc_virtual_machine::do_read_memory(uint64_t address, unsigned char *data,
     request.set_length(length);
     ReadMemoryResponse response;
     ClientContext context;
-    check_status(m_stub->ReadMemory(&context, request, &response));
+    check_status(m_stub->get_stub()->ReadMemory(&context, request, &response));
     assert(response.data().size() == length);
     memcpy(data, response.data().data(), response.data().size());
 }
@@ -265,7 +286,7 @@ void grpc_virtual_machine::do_write_memory(uint64_t address, const unsigned char
     request.set_data(std::string(reinterpret_cast<const char*>(data), length));
     ClientContext context;
     Void response;
-    check_status(m_stub->WriteMemory(&context, request, &response));
+    check_status(m_stub->get_stub()->WriteMemory(&context, request, &response));
 }
 
 uint64_t grpc_virtual_machine::do_read_pc(void) {
@@ -584,7 +605,7 @@ void grpc_virtual_machine::do_get_root_hash(hash_type &hash)  {
     GetRootHashResponse response;
     Void request;
     ClientContext context;
-    check_status(m_stub->GetRootHash(&context, request, &response));
+    check_status(m_stub->get_stub()->GetRootHash(&context, request, &response));
     hash = get_proto_hash(response.hash());
 }
 
@@ -594,7 +615,7 @@ void grpc_virtual_machine::do_get_proof(uint64_t address, int log2_size, merkle_
     request.set_address(address);
     request.set_log2_size(log2_size);
     ClientContext context;
-    check_status(m_stub->GetProof(&context, request, &response));
+    check_status(m_stub->get_stub()->GetProof(&context, request, &response));
     proof = get_proto_proof(response.proof());
 }
 
@@ -607,7 +628,7 @@ void grpc_virtual_machine::do_replace_flash_drive(const flash_drive_config &new_
     flash->set_image_filename(new_flash.image_filename);
     Void response;
     ClientContext context;
-    check_status(m_stub->ReplaceFlashDrive(&context, request, &response));
+    check_status(m_stub->get_stub()->ReplaceFlashDrive(&context, request, &response));
 }
 
 access_log grpc_virtual_machine::do_step(const access_log::type &log_type,
@@ -618,7 +639,7 @@ access_log grpc_virtual_machine::do_step(const access_log::type &log_type,
     request.set_one_based(one_based);
     StepResponse response;
     ClientContext context;
-    check_status(m_stub->Step(&context, request, &response));
+    check_status(m_stub->get_stub()->Step(&context, request, &response));
     return get_proto_access_log(response.log());
 }
 
@@ -626,28 +647,30 @@ void grpc_virtual_machine::do_destroy() {
     Void request;
     Void response;
     ClientContext context;
-    check_status(m_stub->Destroy(&context, request, &response));
+    check_status(m_stub->get_stub()->Destroy(&context, request, &response));
 }
 
 void grpc_virtual_machine::do_snapshot() {
     Void request;
     Void response;
     ClientContext context;
-    check_status(m_stub->Snapshot(&context, request, &response));
+    check_status(m_stub->get_stub()->Snapshot(&context, request, &response));
+    m_stub->reconnect();
 }
 
 void grpc_virtual_machine::do_rollback() {
     Void request;
     Void response;
     ClientContext context;
-    check_status(m_stub->Rollback(&context, request, &response));
+    check_status(m_stub->get_stub()->Rollback(&context, request, &response));
+    m_stub->reconnect();
 }
 
 bool grpc_virtual_machine::do_verify_dirty_page_maps(void) {
     Void request;
     VerifyDirtyPageMapsResponse response;
     ClientContext context;
-    check_status(m_stub->VerifyDirtyPageMaps(&context, request, &response));
+    check_status(m_stub->get_stub()->VerifyDirtyPageMaps(&context, request, &response));
     return response.success();
 }
 
@@ -655,7 +678,7 @@ void grpc_virtual_machine::do_dump_pmas(void) {
     Void request;
     Void response;
     ClientContext context;
-    check_status(m_stub->DumpPmas(&context, request, &response));
+    check_status(m_stub->get_stub()->DumpPmas(&context, request, &response));
 }
 
 bool grpc_virtual_machine::do_read_word(uint64_t word_address, uint64_t &word_value) {
@@ -663,7 +686,7 @@ bool grpc_virtual_machine::do_read_word(uint64_t word_address, uint64_t &word_va
     request.set_address(word_address);
     ReadWordResponse response;
     ClientContext context;
-    check_status(m_stub->ReadWord(&context, request, &response));
+    check_status(m_stub->get_stub()->ReadWord(&context, request, &response));
     word_value = response.value();
     return response.success();
 }
@@ -672,7 +695,7 @@ bool grpc_virtual_machine::do_verify_merkle_tree(void) {
     Void request;
     ClientContext context;
     VerifyMerkleTreeResponse response;
-    check_status(m_stub->VerifyMerkleTree(&context, request, &response));
+    check_status(m_stub->get_stub()->VerifyMerkleTree(&context, request, &response));
     return response.success();
 }
 
@@ -680,7 +703,7 @@ bool grpc_virtual_machine::do_update_merkle_tree(void) {
     Void request;
     ClientContext context;
     UpdateMerkleTreeResponse response;
-    check_status(m_stub->UpdateMerkleTree(&context, request, &response));
+    check_status(m_stub->get_stub()->UpdateMerkleTree(&context, request, &response));
     return response.success();
 }
 

@@ -407,14 +407,6 @@ void virtual_machine::do_write_dhd_h(int i, uint64_t val) {
     return m_machine->write_dhd_h(i, val);
 }
 
-uint64_t virtual_machine::do_get_x_address(int i) {
-    return m_machine->get_x_address(i);
-}
-
-uint64_t virtual_machine::do_get_dhd_h_address(int i) {
-    return m_machine->get_dhd_h_address(i);
-}
-
 void virtual_machine::do_replace_flash_drive(const flash_drive_config &new_flash) {
     m_machine->replace_flash_drive(new_flash);
 }

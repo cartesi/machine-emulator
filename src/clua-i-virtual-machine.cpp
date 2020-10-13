@@ -139,6 +139,78 @@ static int machine_obj__index_read_csr(lua_State *L) try {
     return 0;
 }
 
+/// \brief This is the machine:read_dhd_tstart() method implementation.
+/// \param L Lua state.
+static int machine_obj__index_read_dhd_tstart(lua_State *L) try {
+    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+    lua_pushinteger(L, m->read_dhd_tstart());
+    return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+/// \brief This is the machine:read_dhd_tlength() method implementation.
+/// \param L Lua state.
+static int machine_obj__index_read_dhd_tlength(lua_State *L) try {
+    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+    lua_pushinteger(L, m->read_dhd_tlength());
+    return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+/// \brief This is the machine:read_dhd_dlength() method implementation.
+/// \param L Lua state.
+static int machine_obj__index_read_dhd_dlength(lua_State *L) try {
+    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+    lua_pushinteger(L, m->read_dhd_dlength());
+    return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+/// \brief This is the machine:read_dhd_hlength() method implementation.
+/// \param L Lua state.
+static int machine_obj__index_read_dhd_hlength(lua_State *L) try {
+    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+    lua_pushinteger(L, m->read_dhd_hlength());
+    return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+/// \brief This is the machine:read_x() method implementation.
+/// \param L Lua state.
+static int machine_obj__index_read_x(lua_State *L) try {
+    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+    int i = luaL_checkinteger(L, 2);
+    if (i < 0 || i >= X_REG_COUNT)
+        throw std::invalid_argument{"register index out of range"};
+    lua_pushinteger(L, m->read_x(i));
+    return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+/// \brief This is the machine:read_dhd_h() method implementation.
+/// \param L Lua state.
+static int machine_obj__index_read_dhd_h(lua_State *L) try {
+    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+    int i = luaL_checkinteger(L, 2);
+    if (i < 0 || i >= DHD_H_REG_COUNT)
+        throw std::invalid_argument{"register index out of range"};
+    lua_pushinteger(L, m->read_dhd_h(i));
+    return 1;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
 /// \brief This is the machine:read_htif_fromhost() method implementation.
 /// \param L Lua state.
 static int machine_obj__index_read_htif_fromhost(lua_State *L) try {
@@ -673,6 +745,79 @@ static int machine_obj__index_write_csr(lua_State *L) try {
     return 0;
 }
 
+/// \brief This is the machine:write_dhd_tstart() method implementation.
+/// \param L Lua state.
+static int machine_obj__index_write_dhd_tstart(lua_State *L) try {
+    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+    m->write_dhd_tstart(luaL_checkinteger(L, 2));
+    return 0;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+/// \brief This is the machine:write_dhd_tlength() method implementation.
+/// \param L Lua state.
+static int machine_obj__index_write_dhd_tlength(lua_State *L) try {
+    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+    m->write_dhd_tlength(luaL_checkinteger(L, 2));
+    return 0;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+/// \brief This is the machine:write_dhd_dlength() method implementation.
+/// \param L Lua state.
+static int machine_obj__index_write_dhd_dlength(lua_State *L) try {
+    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+    m->write_dhd_dlength(luaL_checkinteger(L, 2));
+    return 0;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+/// \brief This is the machine:write_dhd_hlength() method implementation.
+/// \param L Lua state.
+static int machine_obj__index_write_dhd_hlength(lua_State *L) try {
+    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+    m->write_dhd_hlength(luaL_checkinteger(L, 2));
+    return 0;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+/// \brief This is the machine:write_x() method implementation.
+/// \param L Lua state.
+static int machine_obj__index_write_x(lua_State *L) try {
+    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+    int i = luaL_checkinteger(L, 2);
+    if (i < 1 || i >= X_REG_COUNT)
+        throw std::invalid_argument{"register index out of range"};
+    m->write_x(i, luaL_checkinteger(L, 3));
+    return 0;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+/// \brief This is the machine:write_dhd_h() method implementation.
+/// \param L Lua state.
+static int machine_obj__index_write_dhd_h(lua_State *L) try {
+    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+    int i = luaL_checkinteger(L, 2);
+    if (i < 0 || i >= DHD_H_REG_COUNT)
+        throw std::invalid_argument{"register index out of range"};
+    m->write_dhd_h(i, luaL_checkinteger(L, 3));
+    return 0;
+} catch (std::exception &x) {
+    luaL_error(L, x.what());
+    return 0;
+}
+
+
 /// \brief This is the machine:write_htif_fromhost() method implementation.
 /// \param L Lua state.
 static int machine_obj__index_write_htif_fromhost(lua_State *L) try {
@@ -1038,6 +1183,11 @@ static const luaL_Reg machine_obj__index[] = {
     {"get_root_hash", machine_obj__index_get_root_hash},
     {"read_clint_mtimecmp", machine_obj__index_read_clint_mtimecmp},
     {"read_csr", machine_obj__index_read_csr},
+    {"read_dhd_dlength", machine_obj__index_read_dhd_dlength},
+    {"read_dhd_h", machine_obj__index_read_dhd_h},
+    {"read_dhd_hlength", machine_obj__index_read_dhd_hlength},
+    {"read_dhd_tlength", machine_obj__index_read_dhd_tlength},
+    {"read_dhd_tstart", machine_obj__index_read_dhd_tstart},
     {"read_htif_fromhost", machine_obj__index_read_htif_fromhost},
     {"read_htif_tohost", machine_obj__index_read_htif_tohost},
     {"read_htif_tohost_dev", machine_obj__index_read_htif_tohost_dev},
@@ -1078,6 +1228,7 @@ static const luaL_Reg machine_obj__index[] = {
     {"read_stval", machine_obj__index_read_stval},
     {"read_stvec", machine_obj__index_read_stvec},
     {"read_word", machine_obj__index_read_word},
+    {"read_x", machine_obj__index_read_x},
     {"run", machine_obj__index_run},
     {"step", machine_obj__index_step},
     {"store", machine_obj__index_store},
@@ -1086,6 +1237,11 @@ static const luaL_Reg machine_obj__index[] = {
     {"verify_merkle_tree", machine_obj__index_verify_merkle_tree},
     {"write_clint_mtimecmp", machine_obj__index_write_clint_mtimecmp},
     {"write_csr", machine_obj__index_write_csr},
+    {"write_dhd_dlength", machine_obj__index_write_dhd_dlength},
+    {"write_dhd_h", machine_obj__index_write_dhd_h},
+    {"write_dhd_hlength", machine_obj__index_write_dhd_hlength},
+    {"write_dhd_tlength", machine_obj__index_write_dhd_tlength},
+    {"write_dhd_tstart", machine_obj__index_write_dhd_tstart},
     {"write_htif_fromhost", machine_obj__index_write_htif_fromhost},
     {"write_htif_fromhost_data", machine_obj__index_write_htif_fromhost_data},
     {"write_htif_tohost", machine_obj__index_write_htif_tohost},
@@ -1114,6 +1270,7 @@ static const luaL_Reg machine_obj__index[] = {
     {"write_sscratch", machine_obj__index_write_sscratch},
     {"write_stval", machine_obj__index_write_stval},
     {"write_stvec", machine_obj__index_write_stvec},
+    {"write_x", machine_obj__index_write_x},
     {"replace_flash_drive", machine_obj__index_replace_flash_drive},
     {"destroy", machine_obj__index_destroy},
     {"snapshot", machine_obj__index_snapshot},

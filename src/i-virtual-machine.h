@@ -115,11 +115,6 @@ public:
         do_write_x(i, val);
     }
 
-    /// \brief Gets the address of a general-purpose register.
-    uint64_t get_x_address(int i) {
-        return do_get_x_address(i);
-    }
-
     /// \brief Replaces a flash drive.
     void replace_flash_drive(const flash_drive_config &new_flash) {
         do_replace_flash_drive(new_flash);
@@ -511,6 +506,56 @@ public:
          do_write_clint_mtimecmp(val);
     }
 
+    /// \brief Reads dhd's tstart
+    uint64_t read_dhd_tstart(void) {
+        return  do_read_dhd_tstart();
+    }
+
+    /// \brief Writes dhd's tstart
+    void write_dhd_tstart(uint64_t val) {
+         do_write_dhd_tstart(val);
+    }
+
+    /// \brief Reads dhd's tlength
+    uint64_t read_dhd_tlength(void) {
+        return  do_read_dhd_tlength();
+    }
+
+    /// \brief Writes dhd's tlength
+    void write_dhd_tlength(uint64_t val) {
+         do_write_dhd_tlength(val);
+    }
+
+    /// \brief Reads dhd's dlength
+    uint64_t read_dhd_dlength(void) {
+        return  do_read_dhd_dlength();
+    }
+
+    /// \brief Writes dhd's dlength
+    void write_dhd_dlength(uint64_t val) {
+         do_write_dhd_dlength(val);
+    }
+
+    /// \brief Reads dhd's hlength
+    uint64_t read_dhd_hlength(void) {
+        return  do_read_dhd_hlength();
+    }
+
+    /// \brief Writes dhd's hlength
+    void write_dhd_hlength(uint64_t val) {
+         do_write_dhd_hlength(val);
+    }
+
+    /// \brief Reads the value of a dhd h register.
+    uint64_t read_dhd_h(int i) {
+        return do_read_dhd_h(i);
+    }
+
+    /// \brief Writes the value of a dhd h register.
+    void write_dhd_h(int i, uint64_t val) {
+        do_write_dhd_h(i, val);
+    }
+
 private:
     virtual void do_run(uint64_t mcycle_end) = 0;
     virtual void do_store(const std::string &dir) = 0;
@@ -606,8 +651,6 @@ private:
     virtual void do_write_dhd_hlength(uint64_t val) = 0;
     virtual uint64_t do_read_dhd_h(int i) = 0;
     virtual void do_write_dhd_h(int i, uint64_t val) = 0;
-    virtual uint64_t do_get_x_address(int i) = 0;
-    virtual uint64_t do_get_dhd_h_address(int i) = 0;
     virtual void do_replace_flash_drive(const flash_drive_config &new_flash) = 0;
     virtual void do_dump_pmas(void) = 0;
     virtual bool do_read_word(uint64_t word_address, uint64_t &word_value) = 0;

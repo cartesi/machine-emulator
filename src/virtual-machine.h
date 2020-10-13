@@ -132,8 +132,6 @@ private:
     void do_write_dhd_hlength(uint64_t val) override;
     uint64_t do_read_dhd_h(int i) override;
     void do_write_dhd_h(int i, uint64_t val) override;
-    uint64_t do_get_x_address(int i) override;
-    uint64_t do_get_dhd_h_address(int i) override;
     void do_replace_flash_drive(const flash_drive_config &new_flash) override;
     void do_dump_pmas(void) override;
     bool do_read_word(uint64_t word_address, uint64_t &word_value) override;

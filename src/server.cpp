@@ -1051,8 +1051,8 @@ int main(int argc, char *argv[]) {
         std::cerr << "Usage:\n";
         std::cerr << "  " << argv[0] << " <address>\n";
         std::cerr << "where <address> can be\n";
-        std::cerr << "  ipv4:<host>:<port>\n";
-        std::cerr << "  ipv6:<host>:<port>\n";
+        std::cerr << "  <ipv4-hostname/address>:<port>\n";
+        std::cerr << "  <ipv6-hostname/address>:<port>\n";
         std::cerr << "  unix:<path>\n";
         exit(1);
     }
@@ -1060,6 +1060,10 @@ int main(int argc, char *argv[]) {
     const char *address = argv[1];
     handler_context hctx{};
     auto server = build_server(address, hctx);
+    if (!server) {
+        std::cerr << "server creation failed\n";
+        exit(1);
+    }
 
     handler_GetVersion hGetVersion(hctx);
     handler_Machine hMachine(hctx);

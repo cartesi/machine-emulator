@@ -56,7 +56,7 @@ GRPC_INC_Darwin=-I/opt/local/include
 endif
 endif
 
-BOOST_LIB_Darwin+=-lboost_program_options-mt -lboost_serialization-mt
+BOOST_LIB_Darwin+=-lboost_serialization-mt
 GRPC_LIB_Darwin+=-lgrpc++ -lgrpc -lprotobuf -lpthread
 
 PROFILE_DATA_Darwin=default.profdata
@@ -67,7 +67,7 @@ CC_Linux=gcc
 CXX_Linux=g++
 INCS_Linux=
 FS_LIB_Linux=-lstdc++fs
-BOOST_LIB_Linux=-lboost_program_options -lboost_serialization
+BOOST_LIB_Linux=-lboost_serialization
 BOOST_INC_Linux=
 GRPC_LIB_Linux:=-lgrpc++ -lgrpc -lprotobuf -lpthread
 GRPC_INC_Linux:=

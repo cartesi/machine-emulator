@@ -75,13 +75,6 @@
 ///   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Integer-Overflow-Builtins.html#Integer-Overflow-Builtins
 /// \}
 
-// GCC complains about __int128 with -pedantic or -pedantic-errors
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-typedef __int128 int128_t;
-typedef unsigned __int128 uint128_t;
-#pragma GCC diagnostic pop
-
 #include "machine.h"
 #include "machine-state.h"
 #include "state-access.h"
@@ -96,6 +89,62 @@ typedef unsigned __int128 uint128_t;
 #include "interpret.h"
 #include "translate-virtual-address.h"
 #include "strict-aliasing.h"
+
+#ifdef __SIZEOF_INT128__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+typedef __int128 int128_t;
+typedef unsigned __int128 uint128_t;
+#pragma GCC diagnostic pop
+#endif
+
+uint64_t mul64hu(uint64_t a, uint64_t b) {
+#ifdef __SIZEOF_INT128__
+    return static_cast<uint64_t>((static_cast<uint128_t>(a) *
+        static_cast<uint128_t>(b)) >> 64);
+#else
+    uint64_t al = static_cast<uint64_t>(
+        static_cast<uint32_t>(a));
+    uint64_t ah = a >> 32;
+    uint64_t bl = static_cast<uint64_t>(
+        static_cast<uint32_t>(b));
+    uint64_t bh = b >> 32;
+    uint64_t pl = al*bl;
+    uint64_t pm0 = al*bh;
+    uint64_t pm1 = ah*bl;
+    uint64_t ph = ah*bh;
+    uint32_t c = static_cast<uint32_t>(
+        ((pl >> 32) +
+        static_cast<uint32_t>(pm0) +
+        static_cast<uint32_t>(pm1)) >> 32);
+    return ph + (pm0 >> 32) + (pm1 >> 32) + c;
+#endif
+}
+
+int64_t mul64hsu(int64_t a, uint64_t b) {
+#ifdef __SIZEOF_INT128__
+    return static_cast<int64_t>((static_cast<int128_t>(a) *
+        static_cast<int128_t>(b)) >> 64);
+#else
+    int64_t h = static_cast<int64_t>(
+        mul64hu(static_cast<uint64_t>(a), static_cast<uint64_t>(b)));
+    if (a < INT64_C(0)) h -= b;
+    return h;
+#endif
+}
+
+int64_t mul64h(int64_t a, int64_t b) {
+#ifdef __SIZEOF_INT128__
+    return static_cast<int64_t>((static_cast<int128_t>(a) *
+            static_cast<int64_t>(b)) >> 64);
+#else
+    int64_t h = static_cast<int64_t>(
+        mul64hu(static_cast<uint64_t>(a), static_cast<uint64_t>(b)));
+    if (a < INT64_C(0)) h -= b;
+    if (b < INT64_C(0)) h -= a;
+    return h;
+#endif
+}
 
 namespace cartesi {
 
@@ -2130,7 +2179,7 @@ static inline execute_status execute_MULH(STATE_ACCESS &a, uint64_t pc, uint32_t
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int64_t srs1 = static_cast<int64_t>(rs1);
         int64_t srs2 = static_cast<int64_t>(rs2);
-        return static_cast<uint64_t>((static_cast<int128_t>(srs1) * static_cast<int128_t>(srs2)) >> 64);
+        return static_cast<uint64_t>(mul64h(srs1, srs2));
     });
 }
 
@@ -2141,7 +2190,7 @@ static inline execute_status execute_MULHSU(STATE_ACCESS &a, uint64_t pc, uint32
     auto note = a.make_scoped_note("mulhsu"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         int64_t srs1 = static_cast<int64_t>(rs1);
-        return static_cast<uint64_t>((static_cast<int128_t>(srs1) * static_cast<int128_t>(rs2)) >> 64);
+        return static_cast<uint64_t>(mul64hsu(srs1, rs2));
     });
 }
 
@@ -2151,7 +2200,7 @@ static inline execute_status execute_MULHU(STATE_ACCESS &a, uint64_t pc, uint32_
     dump_insn(a, pc, insn, "mulhu");
     auto note = a.make_scoped_note("mulhu"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        return static_cast<uint64_t>((static_cast<uint128_t>(rs1) * static_cast<uint128_t>(rs2)) >> 64);
+        return mul64hu(rs1, rs2);
     });
 }
 

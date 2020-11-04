@@ -211,7 +211,7 @@ struct machine_state {
     /// \brief Checks that false brk is consistent with rest of state
     void assert_no_brk(void) const {
         assert((mie & mip) == 0);
-        assert(!brk_from_iflags_Y());
+        assert(!iflags.Y);
         assert(!iflags.H);
     }
 
@@ -227,7 +227,7 @@ struct machine_state {
 
     /// \brief Updates the brk flag from changes in the iflags_Y flag.
     void or_brk_with_iflags_Y(void) {
-        brk |= brk_from_iflags_Y();
+        brk |= iflags.Y;
     }
 
     /// \brief Rebuild brk from all.

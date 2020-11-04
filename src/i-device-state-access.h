@@ -77,8 +77,8 @@ public:
 
     /// \brief Sets the iflags_Y flag.
     /// \details This is Cartesi-specific.
-    void set_iflags_Y(bool brk) {
-        return do_set_iflags_Y(brk);
+    void set_iflags_Y(void) {
+        return do_set_iflags_Y();
     }
 
     /// \brief Reads CLINT's mtimecmp.
@@ -230,7 +230,7 @@ private:
     virtual uint32_t do_read_mip(void) = 0;
     virtual uint64_t do_read_mcycle(void) = 0;
     virtual void do_set_iflags_H(void) = 0;
-    virtual void do_set_iflags_Y(bool brk) = 0;
+    virtual void do_set_iflags_Y(void) = 0;
     virtual uint64_t do_read_clint_mtimecmp(void) = 0;
     virtual void do_write_clint_mtimecmp(uint64_t val) = 0;
     virtual uint64_t do_read_htif_fromhost(void) = 0;

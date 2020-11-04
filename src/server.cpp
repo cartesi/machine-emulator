@@ -684,6 +684,30 @@ public:
     }
 };
 
+class handler_ResetIflagsY final: public handler<Void, Void> {
+
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req, ServerAsyncResponseWriter<Void> *writer) override {
+        hctx.s.RequestResetIflagsY(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        return side_effect::none;
+    }
+
+    side_effect go(handler_context &hctx, Void *req, ServerAsyncResponseWriter<Void> *writer) override {
+        (void) req;
+        if (!hctx.m) {
+            return finish_with_error_no_machine(writer);
+        }
+        hctx.m->reset_iflags_Y();
+        Void resp;
+        return finish_ok(writer, resp);
+    }
+
+public:
+
+    handler_ResetIflagsY(handler_context &hctx) {
+        advance(hctx);
+    }
+};
+
 class handler_GetDhdHAddress final: public handler<GetDhdHAddressRequest, GetDhdHAddressResponse> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, GetDhdHAddressRequest *req, ServerAsyncResponseWriter<GetDhdHAddressResponse> *writer) override {
@@ -1083,6 +1107,7 @@ int main(int argc, char *argv[]) {
     handler_GetXAddress hGetXAddress(hctx);
     handler_ReadX hReadX(hctx);
     handler_WriteX hWriteX(hctx);
+    handler_ResetIflagsY hResetIflagsY(hctx);
     handler_GetDhdHAddress hGetDhdHAddress(hctx);
     handler_ReadDhdH hReadDhdH(hctx);
     handler_WriteDhdH hWriteDhdH(hctx);

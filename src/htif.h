@@ -89,8 +89,6 @@ enum HTIF_commands: uint64_t {
 class htif final {
 
     bool m_console_getchar;                ///< Provide console getchar.
-    bool m_yield_progress;                 ///< Provide yield progress.
-    bool m_yield_rollup;                   ///< Provide yield rollup.
     char m_buf[HTIF_CONSOLE_BUF_SIZE];     ///< Console buffer.
     ssize_t m_buf_pos;                     ///< Next character in buffer.
     ssize_t m_buf_len;                     ///< Last character in buffer.
@@ -120,15 +118,6 @@ public:
 
     /// \brief Destructor
     ~htif();
-
-    /// \brief Checks if HTIF honors yield progress
-    bool has_yield_progress(void) const;
-
-    /// \brief Checks if HTIF honors yield rollup
-    bool has_yield_rollup(void) const;
-
-    /// \brief Checks if HTIF honors console getchar
-    bool has_console_getchar(void) const;
 
     /// \brief Checks if there is input available from console.
     void poll_console(void);

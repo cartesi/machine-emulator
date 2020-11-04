@@ -19,6 +19,8 @@
 local cartesi = require"cartesi"
 local util = require"cartesi.util"
 
+print("testing machine bind")
+
 local x = {}
 x[0] = 0x000
 x[1] = 0x008
@@ -54,9 +56,9 @@ x[30] = 0x0f0
 x[31] = 0x0f8
 local addr = { x = x }
 addr.pc = 0x100;
-addr.mvendorid = 0x6361727465736920;
-addr.marchid = 0x003;
-addr.mimpid = 0x001;
+addr.mvendorid = -1;
+addr.marchid = -1;
+addr.mimpid = -1;
 addr.mcycle = 0x120;
 addr.minstret = 0x128;
 addr.mstatus = 0x130;
@@ -164,4 +166,4 @@ util.dump_log(log, io.stdout)
 
 machine:destroy()
 
-print("passed")
+print("  passed")

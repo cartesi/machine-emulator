@@ -3165,14 +3165,15 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         return interpreter_status::success;
     }
 
+    // If the cpu is yielded, we are done
+    if (a.read_iflags_Y()) {
+        return interpreter_status::success;
+    }
+
     // If we reached the target mcycle, we are done
     if (a.get_naked_state().is_done(mcycle_end)) {
         return interpreter_status::success;
     }
-
-    // Clear Y bit because we are back here running, so we either were
-    // just resumed, or we had not even yielded
-    a.reset_iflags_Y();
 
     // Rebuild brk flag from all conditions.
     a.get_naked_state().set_brk_from_all();

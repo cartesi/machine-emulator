@@ -454,6 +454,7 @@ end
 
 local function check_test_result(machine, ctx, errors)
     if machine:read_iflags_Y() then
+        machine:reset_iflags_Y()
         local expected_yield_payload = ctx.expected_yield_payloads[ctx.yield_payload_index] or 0
         ctx.yield_payload_index = ctx.yield_payload_index + 1
         if machine:read_htif_tohost_data() ~= expected_yield_payload then

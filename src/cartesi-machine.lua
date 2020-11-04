@@ -832,12 +832,13 @@ if not json_steps then
         elseif machine:read_iflags_Y() then
             local cmd = machine:read_htif_tohost_cmd()
             local data = machine:read_htif_tohost_data()
-            if cmd == cartesi.HTIF_YIELD_PROGRESS then
+            if cmd == cartesi.machine.HTIF_YIELD_PROGRESS then
                 stderr("Progress: %6.2f" .. (htif_console_getchar and "\n" or "\r"), data/10)
             else
                 stderr("\nYielded cmd: %u, data: %u\n", cmd, data)
                 stderr("Cycles: %u\n", cycles)
             end
+            machine:reset_iflags_Y()
         end
         if cycles == next_hash_mcycle then
             print_root_hash(cycles, machine)

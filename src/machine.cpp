@@ -126,10 +126,6 @@ void machine::interact(void) {
     m_h.interact();
 }
 
-bool machine::should_yield(void) const {
-    return m_s.brk_from_iflags_Y();
-}
-
 machine::machine(const machine_config &c,
     const machine_runtime_config &r):
     m_s{},
@@ -1392,6 +1388,11 @@ void machine::run(uint64_t mcycle_end) {
             return;
         }
 
+        // If we are yielded, do nothing
+        if (read_iflags_Y()) {
+            return;
+        }
+
         // Get the next possible cycle for a timer interrupt
         uint64_t next_rtc_freq_div = mcycle + RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV;
         // If the processor idle (waiting for interrupts), we could skip time until the
@@ -1417,11 +1418,6 @@ void machine::run(uint64_t mcycle_end) {
             }
             // And perform any interactive action
             interact();
-        }
-
-        // If we yielded, we are done
-        if (should_yield()) {
-            return;
         }
     }
 }

@@ -36,18 +36,6 @@ namespace cartesi {
 #define HTIF_ICONSOLE_REL_ADDR (static_cast<uint64_t>(htif::csr::iconsole))
 #define HTIF_IYIELD_REL_ADDR (static_cast<uint64_t>(htif::csr::iyield))
 
-bool htif::has_yield_progress(void) const {
-    return m_yield_progress;
-}
-
-bool htif::has_yield_rollup(void) const {
-    return m_yield_rollup;
-}
-
-bool htif::has_console_getchar(void) const {
-    return m_console_getchar;
-}
-
 bool htif::console_char_pending(void) const {
     return m_buf_pos < m_buf_len;
 }
@@ -161,8 +149,6 @@ void htif::end_console(void) {
 // yet when the constructor for the HTIF device is invoked.
 htif::htif(const htif_config &h):
     m_console_getchar{h.console_getchar},
-    m_yield_progress{h.yield_progress},
-    m_yield_rollup{h.yield_rollup},
     m_buf{}, m_buf_pos{}, m_buf_len{},
     m_divisor_counter{},
     m_ttyfd{-1} {
@@ -247,35 +233,17 @@ static bool htif_halt(i_device_state_access *a, htif *h, uint64_t cmd,
     return true;
 }
 
-static bool htif_yield_progress(i_device_state_access *a, htif *h, uint64_t cmd,
-    uint64_t data) {
-    (void) data;
-    a->set_iflags_Y(h && h->has_yield_progress());
-    // Write acknowledgement to fromhost
-    a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD,
-        HTIF_YIELD_PROGRESS, cmd));
-    return true;
-}
-
-static bool htif_yield_rollup(i_device_state_access *a, htif *h, uint64_t cmd,
-    uint64_t data) {
-    (void) data;
-    a->set_iflags_Y(h && h->has_yield_rollup());
-    // Write acknowledgement to fromhost
-    a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD,
-        HTIF_YIELD_ROLLUP, cmd));
-    return true;
-}
-
 static bool htif_yield(i_device_state_access *a, htif *h, uint64_t cmd,
     uint64_t data) {
     (void) data;
-    if (cmd == HTIF_YIELD_PROGRESS) {
-        return htif_yield_progress(a, h, cmd, data);
-    } else if (cmd == HTIF_YIELD_ROLLUP) {
-        return htif_yield_rollup(a, h, cmd, data);
+    (void) h;
+    // If yield command is enabled, yield and acknowledge
+    if ((a->read_htif_iyield() >> cmd) & 1) {
+        a->set_iflags_Y();
+        a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD, cmd, 0));
+        return true;
     } else {
-        //??D Unknown HTIF yield commands are silently ignored
+        // Otherwise, silently ignore it
         return true;
     }
 }

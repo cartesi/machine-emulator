@@ -6,9 +6,9 @@ The Cartesi Machine Emulator is the reference off-chain implementation of the Ca
 
 The emulator implements RISC-V's RV64IMASU ISA. The letters after RV specify the extension set. This selection corresponds to a 64-bit machine, Integer arithmetic with Multiplication and division, Atomic operations, as well as the optional Supervisor and User privilege levels. In addition, Cartesi Machines support the Sv48 mode of address translation and memory protection.
 
-## Getting Started
+## 1. Getting Started
 
-### Requirements
+### 1.1 Requirements
 
 - C++ Compiler with support for C++17 (tested with GCC >= 8+ and Clang >= 8.x).
 - GNU Make >= 3.81
@@ -18,24 +18,24 @@ The emulator implements RISC-V's RV64IMASU ISA. The letters after RV specify the
 
 Obs: Please note that Apple Clang Version number does not follow upstream LLVM/Clang.
 
-#### Ubuntu 20.04
+#### 1.1.1 Ubuntu 20.04
 
 ```
 $ apt-get install build-essential automake libtool patchelf wget git libreadline-dev libboost-container-dev libboost-program-options-dev libboost-serialization-dev protobuf-compiler protobuf-compiler-grpc libprotobuf-dev libgrpc++-dev ca-certificates
 ```
-#### MacOS
+#### 1.1.2 MacOS
 
-##### MacPorts
+##### 1.1.2.1 MacPorts
 ```
 sudo port install clang-9.0 automake boost grpc protobuf3-cpp libtool wget
 ```
 
-##### Homebrew
+##### 1.1.2.2 Homebrew
 ```
 brew install llvm automake boost grpc protobuf libomp wget
 ```
 
-### Build
+### 1.2 Build
 
 ```bash
 $ make submodules
@@ -50,13 +50,13 @@ $ make depclean
 $ make clean
 ```
 
-### Install
+### 1.3 Install
 
 ```bash
 $ make install
 ```
 
-## Running Tests
+## 2. Running Tests
 
 Copy the tests binaries to a directory called `tests` and run: (Eg.: )
 
@@ -70,11 +70,18 @@ The default search path for binaries is `machine-emulator/tests`. Alternatively 
 $ make test TEST_PATH=/full/path/to/test/binaries
 ```
 
-## Usage
+## 3. Usage
 
 ```bash
 $ build/{uname_arch}/luapp5.3 run.lua
 ```
+## 4. Building Dockerfile
+
+To build the ```cartesi/machine-emulator``` Docker from source use the following: 
+```shell
+docker build -t cartesi/machine-emulator:0.5.1 -t cartesi/machine-emulator -t cartesi/machine-emulator:latest -f .github/workflows/Dockerfile /opt/cartesi
+```
+The Docker image is used in the ```descartes-tutorials/descartes-env``` container to run the tutorial dApps.
 
 ## Contributing
 

@@ -79,7 +79,7 @@ $ build/{uname_arch}/luapp5.3 run.lua
 
 To build the ```cartesi/machine-emulator``` Docker from source use the following: 
 ```shell
-docker build -t cartesi/machine-emulator:0.5.1 -t cartesi/machine-emulator -t cartesi/machine-emulator:latest -f .github/workflows/Dockerfile /opt/cartesi
+docker build -t cartesi/machine-emulator -t cartesi/machine-emulator:latest -f .github/workflows/Dockerfile /opt/cartesi
 ```
 The Docker image is used in the ```descartes-tutorials/descartes-env``` container to run the tutorial dApps.
 

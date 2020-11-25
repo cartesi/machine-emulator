@@ -386,6 +386,7 @@ local function run_machine(machine, max_mcycle, callback)
     local cycles = machine:read_mcycle()
     local next_action_mcycle = get_next_action_mcycle(cycles)
     while math.ult(cycles, max_mcycle) do
+        machine:reset_iflags_Y()
         machine:run(math.min(next_action_mcycle, max_mcycle))
         cycles = machine:read_mcycle()
         if periodic_action and cycles == next_action_mcycle then
@@ -455,7 +456,6 @@ end
 
 local function check_test_result(machine, ctx, errors)
     if machine:read_iflags_Y() then
-        machine:reset_iflags_Y()
         local expected_yield_payload = ctx.expected_yield_payloads[ctx.yield_payload_index] or 0
         ctx.yield_payload_index = ctx.yield_payload_index + 1
         if machine:read_htif_tohost_data() ~= expected_yield_payload then

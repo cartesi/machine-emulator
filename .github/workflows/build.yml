@@ -1,5 +1,12 @@
 name: Build/Test/Verify/Release
 on: [push]
+env:
+  ROM_VERSION: v0.4.0
+  KERNEL_VERSION: v0.7.0
+  ROOTFS_VERSION: v0.5.0
+  TEST_VERSION: v0.8.0
+  GROUND_TRUTH_VERSION: v0.8.0-0001
+  BUILD_CACHE_VERSION: v0.6.0-0001
 jobs:
   build:
     name: Build
@@ -16,7 +23,7 @@ jobs:
           sudo apt-get install -y libreadline-dev libboost-container-dev libboost-program-options-dev libboost-serialization-dev protobuf-compiler protobuf-compiler-grpc libprotobuf-dev libgrpc++-dev patchelf automake
 
       - name: Download cache of third-party build
-        run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-00009 ./build && test -f ./build/`uname`_`uname -m`/bin/luapp5.3
+        run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/bin/luapp5.3
         id: download_cache
         continue-on-error: true
         env:
@@ -31,7 +38,7 @@ jobs:
 
       - name: Cache third-party build
         if: ${{ steps.build_dep.outcome == 'success' }}
-        run: aws s3 sync ./build s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-00009
+        run: aws s3 sync ./build s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION}
         env:
           AWS_REGION: 'us-east-1'
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -84,7 +91,7 @@ jobs:
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: ${{ steps.git_org.outputs.current_organization }}/image-rootfs
-          tag: 'v0.4.0'
+          tag: ${{ env.ROOTFS_VERSION }}
           file: rootfs.ext2
           token: ${{ secrets.CI_TOKEN }}
 
@@ -92,22 +99,22 @@ jobs:
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: ${{ steps.git_org.outputs.current_organization }}/image-kernel
-          tag: 'v0.5.0'
-          file: linux-5.5.19-ctsi-1.bin
+          tag: ${{ env.KERNEL_VERSION }}
+          file: linux-5.5.19-ctsi-2.bin
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Download [rom.bin]
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: ${{ steps.git_org.outputs.current_organization }}/machine-emulator-rom
-          tag: 'v0.2.1'
+          tag: ${{ env.ROM_VERSION }}
           file: rom.bin
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Move images to cartesi images folder
         run: |
-          mv rom.bin linux-5.5.19-ctsi-1.bin rootfs.ext2 /opt/cartesi/share/images/
-          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-1.bin linux.bin
+          mv rom.bin linux-5.5.19-ctsi-2.bin rootfs.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-2.bin linux.bin
 
       - name: Simple Boot
         run: /opt/cartesi/bin/cartesi-machine /bin/true
@@ -116,12 +123,12 @@ jobs:
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: ${{ steps.git_org.outputs.current_organization }}/machine-tests
-          tag: 'v0.8.0'
-          file: machine-tests-v0.8.0.tar.gz
+          tag: ${{ env.TEST_VERSION }}
+          file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Untar test suite
-        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.8.0.tar.gz -C /opt/cartesi/tests
+        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
 
       - name: Run test suite
         run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
@@ -167,6 +174,7 @@ jobs:
     name: Verify
     needs: build
     runs-on: ubuntu-20.04
+    timeout-minutes: 600
     if: ${{ contains(github.ref, '-rc') || endsWith(github.ref, 'verify') }}
     steps:
       - name: Download emulator
@@ -195,12 +203,12 @@ jobs:
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: ${{ steps.git_org.outputs.current_organization }}/machine-tests
-          tag: 'v0.8.0'
-          file: machine-tests-v0.8.0.tar.gz
+          tag: ${{ env.TEST_VERSION }}
+          file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Untar test suite
-        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-v0.8.0.tar.gz -C /opt/cartesi/tests
+        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
 
       - name: Checkout emulator source code
         uses: actions/checkout@v2
@@ -217,7 +225,25 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           mkdir -p ./src/ground-truth
-          aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/ground-truth/logs-00001 ./src/ground-truth/logs && test -f ./src/ground-truth/logs/1/dont_write_x0.json.br
+          aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/ground-truth/logs-${GROUND_TRUTH_VERSION} ./src/ground-truth/logs && test -f ./src/ground-truth/logs/1/dont_write_x0.json.br
+
+      - name: Generate test machine initial state
+        id: gen_init_state
+        if: ${{ steps.download_ground_truth_logs.outcome == 'failure' }}
+        run: |
+          mkdir -p ./src/ground-truth/machine-init-state && cd ./src/ground-truth/machine-init-state
+          /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests dump
+          rm -f 0000000080000000*.bin
+          cd .. && tar -czf machine-init-state.tar.gz ./machine-init-state
+
+      - name: Upload test machine initial state
+        if: ${{ steps.gen_init_state.outcome == 'success' }}
+        env:
+          AWS_REGION: 'us-east-1'
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          aws s3 cp ./src/ground-truth/machine-init-state.tar.gz s3://cartesi-ci/${GITHUB_REPOSITORY}/ground-truth/machine-init-state-${GROUND_TRUTH_VERSION}.tar.gz
 
       - name: Generate ground truth logs
         id: gen_logs
@@ -232,7 +258,7 @@ jobs:
           AWS_REGION: 'us-east-1'
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: aws s3 sync ./src/ground-truth/logs s3://cartesi-ci/${GITHUB_REPOSITORY}/ground-truth/logs-00001
+        run: aws s3 sync ./src/ground-truth/logs s3://cartesi-ci/${GITHUB_REPOSITORY}/ground-truth/logs-${GROUND_TRUTH_VERSION}
 
       - name: Verify logs against ground truth
         run: |
@@ -248,7 +274,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           mkdir -p ./src/ground-truth
-          aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/ground-truth/hashes-00001 ./src/ground-truth/hashes && test -f ./src/ground-truth/hashes/1/dont_write_x0.hashes
+          aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/ground-truth/hashes-${GROUND_TRUTH_VERSION} ./src/ground-truth/hashes && test -f ./src/ground-truth/hashes/1/dont_write_x0.hashes
 
       - name: Generate ground truth hashes
         id: gen_hashes
@@ -262,7 +288,7 @@ jobs:
 
       - name: Upload ground truth logs and hashes cache
         if: ${{ steps.gen_hashes.outcome == 'success' }}
-        run: aws s3 sync ./src/ground-truth/hashes s3://cartesi-ci/${GITHUB_REPOSITORY}/ground-truth/hashes-00001
+        run: aws s3 sync ./src/ground-truth/hashes s3://cartesi-ci/${GITHUB_REPOSITORY}/ground-truth/hashes-${GROUND_TRUTH_VERSION}
         env:
           AWS_REGION: 'us-east-1'
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

@@ -252,6 +252,9 @@ and command can be:
   step
     output json log of step at every <number> of cycles
 
+  dump
+    dump machine initial state pmas on current directory
+
   list
     list tests selected by the test <pattern>
 
@@ -598,6 +601,14 @@ local function step(tests)
     io.stdout:write("]\n")
 end
 
+local function dump(tests)
+    if server_address then error("dump cannot be used with grpc server") end
+    local ram_image = tests[1][1]
+    local machine = build_machine(ram_image)
+    machine:dump_pmas()
+    machine:destroy()
+end
+
 local function select(test_name, test_pattern)
     local i, j = test_name:find(test_pattern)
     if i == 1 and j == #test_name then return true end
@@ -616,6 +627,7 @@ if #selected_tests < 1 then error("no test selected")
 elseif command == "run" then run(selected_tests)
 elseif command == "hash" then hash(selected_tests)
 elseif command == "step" then step(selected_tests)
+elseif command == "dump" then dump(selected_tests)
 elseif command == "list" then
     for _, test in ipairs(selected_tests) do
         print(test[1])

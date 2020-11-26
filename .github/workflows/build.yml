@@ -142,6 +142,7 @@ jobs:
       - name: Run test scripts
         run: |
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
+          export CARTESI_TESTS_PATH=/opt/cartesi/tests
           cd src && for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do /opt/cartesi/bin/luapp5.3 $x; done
 
       - name: Build docker image (Ubuntu)

@@ -1,13 +1,11 @@
 local cartesi = require"cartesi"
 
-print("testing yield sink")
-
 local function adjust_images_path(path)
     if not path then return "" end
     return string.gsub(path, "/*$", "") .. "/"
 end
 
-local images_path = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH'))
+local tests_path = adjust_images_path(os.getenv('CARTESI_TESTS_PATH'))
 
 -- Config yields 5 times with progress
 local config =  {
@@ -17,42 +15,75 @@ local config =  {
     marchid = -1,
   },
   ram = {
-    image_filename = images_path .. "linux.bin",
+    image_filename = tests_path .. "htif_devices.bin",
     length = 0x4000000,
   },
   rom = {
-    image_filename = images_path .. "rom.bin",
-    bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet mtdparts=flash.0:-(root) -- for i in $(seq 1 5); do yield progress $i; done",
-  },
-  htif = {
-    yield_progress = true,
-  },
-  flash_drive = {
-    {
-      image_filename = images_path .. "rootfs.ext2",
-      start = 0x8000000000000000,
-      length = 0x3c00000,
-    },
+    image_filename = tests_path .. "bootstrap.bin"
   },
 }
 
-local machine = cartesi.machine(config)
+local yields = {
+    { mcycle = 26, data = 10, cmd = cartesi.machine.HTIF_YIELD_PROGRESS},
+    { mcycle = 52, data = 20, cmd = cartesi.machine.HTIF_YIELD_PROGRESS},
+    { mcycle = 78, data = 30, cmd = cartesi.machine.HTIF_YIELD_PROGRESS},
+    { mcycle = 104, data = 45, cmd = cartesi.machine.HTIF_YIELD_ROLLUP},
+    { mcycle = 130, data = 55, cmd = cartesi.machine.HTIF_YIELD_ROLLUP},
+    { mcycle = 156, data = 65, cmd = cartesi.machine.HTIF_YIELD_ROLLUP},
+}
 
--- running the machine to maxinteger should stop early 5 times before halting
-for i = 1, 5 do
-    machine:run(math.maxinteger)
-    -- when it stops, iflags.Y should be set
-    assert(machine:read_iflags_Y())
-    local mcycle = machine:read_mcycle()
-    -- trying to run it without resetting iflags.Y should not advance
-    machine:run(math.maxinteger)
-    assert(mcycle == machine:read_mcycle())
-    assert(machine:read_iflags_Y())
-    -- now reset it so the machine can be advanced
-    machine:reset_iflags_Y()
+local function stderr(...)
+    io.stderr:write(string.format(...))
 end
--- finally run to completion
-machine:run(math.maxinteger)
-assert(machine:read_iflags_H())
 
-print("  passed")
+local final_mcycle = 432
+local exit_payload = 42
+
+function test(config, progress_enable, rollup_enable)
+    stderr("  testing progress:%s rollup:%s\n",
+        progress_enable and "on" or "off",
+        rollup_enable and "on" or "off"
+    )
+    config.htif = {
+        yield_progress = progress_enable,
+        yield_rollup = rollup_enable,
+    }
+    local machine = cartesi.machine(config)
+    for i, v in ipairs(yields) do
+        if v.cmd == cartesi.machine.HTIF_YIELD_PROGRESS and progress_enable or
+           v.cmd == cartesi.machine.HTIF_YIELD_ROLLUP and rollup_enable then
+            machine:run(math.maxinteger)
+            -- when it stops, iflags.Y should be set
+            assert(machine:read_iflags_Y())
+            -- mcycle should be as expected
+            local mcycle = machine:read_mcycle()
+            assert(mcycle == v.mcycle)
+            -- data should be as expected
+            assert(machine:read_htif_tohost_data() == v.data)
+            -- cmd should be as expected
+            assert(machine:read_htif_tohost_cmd() == v.cmd)
+            -- trying to run it without resetting iflags.Y should not advance
+            machine:run(math.maxinteger)
+            assert(mcycle == machine:read_mcycle())
+            assert(machine:read_iflags_Y())
+            -- now reset it so the machine can be advanced
+            machine:reset_iflags_Y()
+        end
+    end
+    -- finally run to completion
+    machine:run(math.maxinteger)
+    -- should be halted
+    assert(machine:read_iflags_H())
+    -- at the expected mcycle
+    assert(machine:read_mcycle() == final_mcycle, machine:read_mcycle())
+    -- with the expected payload
+    assert((machine:read_htif_tohost_data() >> 1) == exit_payload)
+    stderr("    passed\n")
+end
+
+stderr("testing yield sink\n")
+
+test(config, true, true)
+test(config, true, false)
+test(config, false, true)
+test(config, false, false)

@@ -144,14 +144,23 @@ jobs:
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           cd src && for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do /opt/cartesi/bin/luapp5.3 $x; done
 
-      - name: Build docker image
+      - name: Build docker image (Ubuntu)
         run: docker build -t cartesi/machine-emulator:test -f .github/workflows/Dockerfile /opt/cartesi
 
-      - name: Simple boot inside the docker image
+      - name: Simple boot inside the docker image (Ubuntu)
         run: docker run --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -t cartesi/machine-emulator:test /opt/cartesi/bin/cartesi-machine /bin/true
 
-      - name: Run test suite inside the docker image
+      - name: Run test suite inside the docker image (Ubuntu)
         run: docker run --rm -v /opt/cartesi/tests:/opt/cartesi/tests -t cartesi/machine-emulator:test /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
+
+      - name: Build docker image (Alpine)
+        run: docker build -t cartesi/machine-emulator:test-alpine -f .github/workflows/Dockerfile.alpine .
+
+      - name: Simple boot inside the docker image (Alpine)
+        run: docker run --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -t cartesi/machine-emulator:test-alpine /opt/cartesi/bin/cartesi-machine /bin/true
+
+      - name: Run test suite inside the docker image (Alpine)
+        run: docker run --rm -v /opt/cartesi/tests:/opt/cartesi/tests -t cartesi/machine-emulator:test-alpine /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
 
   verify:
     name: Verify
@@ -312,5 +321,7 @@ jobs:
       - name: Docker Image
         run: |
           docker build -t cartesi/machine-emulator:${GITHUB_REF:11} -f .github/workflows/Dockerfile /opt/cartesi
+          docker build -t cartesi/machine-emulator:${GITHUB_REF:11}-alpine -f .github/workflows/Dockerfile.alpine .
           docker push cartesi/machine-emulator:${GITHUB_REF:11}
+          docker push cartesi/machine-emulator:${GITHUB_REF:11}-alpine
 

@@ -208,6 +208,7 @@ local tests = {
   {"xpie_exceptions.bin", 51},
   {"htif_devices.bin", 498, 42, {10, 20, 30, 45, 55, 65}},
   {"dont_write_x0.bin", 44},
+  {"version_check.bin", 30},
 }
 
 -- Print help and exit

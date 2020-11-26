@@ -877,19 +877,17 @@ else
     json_steps = assert(io.open(json_steps, "w"))
     json_steps:write("[\n")
     local log_type = {} -- no proofs or annotations
-    for i = 0, max_mcycle do
-        if machine:read_iflags_H() then
-            break
-        end
+    local first_cycle = machine:read_mcycle()
+    while not machine:read_iflags_H() and not machine:read_iflags_Y() do
         local init_cycles = machine:read_mcycle()
+        if init_cycles == max_mcycle then break end
         local log = machine:step(log_type)
         local final_cycles = machine:read_mcycle()
+        if init_cycles ~= first_cycle then json_steps:write(',\n') end
         util.dump_json_log(log, init_cycles, final_cycles, json_steps, 1)
         stderr("%u -> %u\n", init_cycles, final_cycles)
-        if i ~= max_mcycle then json_steps:write(',\n')
-		else json_steps:write('\n') end
     end
-    json_steps:write(']\n')
+    json_steps:write('\n]\n')
     json_steps:close()
     if store_dir then
         stderr("Storing machine: please wait\n")

@@ -77,8 +77,9 @@ local function dump_json_log_access(access, out, indent)
     indentout(out, indent, '{\n')
     indentout(out, indent+1, '"type": "%s",\n', access.type)
     indentout(out, indent+1, '"address": %u,\n', access.address)
-    indentout(out, indent+1, '"read": "%s",\n', hexstring(access.read))
+    indentout(out, indent+1, '"read": "%s"', hexstring(access.read))
     if access.type == "write" then
+        out:write(",\n")
         indentout(out, indent+1, '"written": "%s"', hexstring(access.written))
     end
     if access.proof then

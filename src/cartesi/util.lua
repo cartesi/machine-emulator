@@ -83,13 +83,13 @@ local function dump_json_log_access(access, out, indent)
         indentout(out, indent+1, '"written": "%s"', hexstring(access.written))
     end
     if access.proof then
-		out:write(",\n")
+        out:write(",\n")
         indentout(out, indent+1, '"proof": {\n')
         dump_json_proof(access.proof, out, indent+2)
         indentout(out, indent+1, '}\n')
     else
-		out:write("\n")
-	end
+        out:write("\n")
+    end
     indentout(out, indent, '}')
 end
 
@@ -98,7 +98,7 @@ local function dump_json_log_accesses(accesses, out, indent)
     for i, access in ipairs(accesses) do
         dump_json_log_access(access, out, indent)
         if i < n then out:write(',\n')
-		else out:write('\n') end
+        else out:write('\n') end
     end
 end
 
@@ -109,9 +109,9 @@ function _M.dump_json_log(log, init_cycles, final_cycles, out, indent)
     indentout(out, indent+1, '"final_cycles": %u,\n', final_cycles)
     indentout(out, indent+1, '"accesses": [\n')
     dump_json_log_accesses(log.accesses, out, indent+2)
-	indentout(out, indent+1, "]");
+    indentout(out, indent+1, "]");
     if log.log_type.annotations then
-		out:write(",\n")
+        out:write(",\n")
         indentout(out, indent+1, '"notes": [\n')
         dump_json_log_notes(log.notes, out, indent+2)
         indentout(out, indent+1, '],\n')
@@ -119,8 +119,8 @@ function _M.dump_json_log(log, init_cycles, final_cycles, out, indent)
         dump_json_log_brackets(log.brackets, out, indent+2)
         indentout(out, indent+1, ']\n')
     else
-		out:write("\n")
-	end
+        out:write("\n")
+    end
     indentout(out, indent, '}')
 end
 

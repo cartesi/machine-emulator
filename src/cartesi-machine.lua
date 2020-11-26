@@ -878,9 +878,10 @@ else
     json_steps:write("[\n")
     local log_type = {} -- no proofs or annotations
     local first_cycle = machine:read_mcycle()
-    while not machine:read_iflags_H() and not machine:read_iflags_Y() do
+    while not machine:read_iflags_H() do
         local init_cycles = machine:read_mcycle()
         if init_cycles == max_mcycle then break end
+        machine:reset_iflags_Y() -- move past any potential yield
         local log = machine:step(log_type)
         local final_cycles = machine:read_mcycle()
         if init_cycles ~= first_cycle then json_steps:write(',\n') end

@@ -240,6 +240,12 @@ where options are:
         <host>:<port>
         unix:<path>
 
+  --output=<filename>
+    write the output of hash and step commands to the file at
+    <filename>. If the argument is not present the output is written
+    to stdout.
+    (default: none)
+
 
 and command can be:
 
@@ -273,6 +279,7 @@ local test_path = "./"
 local test_pattern = ".*"
 local server_address = nil
 local server = nil
+local output = nil
 local periodic_action = false
 local periodic_action_period = math.maxinteger
 local periodic_action_start = 0
@@ -317,6 +324,11 @@ local options = {
     { "^%-%-server%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         server_address = o
+        return true
+    end },
+    { "^%-%-output%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        output = o
         return true
     end },
     { "^%-%-test%-path%=(.*)$", function(o)
@@ -523,24 +535,27 @@ local function run(tests)
     end
 end
 
-local function print_machine_hash(machine)
+local function print_machine_hash(machine, out)
     machine:update_merkle_tree()
-    print(machine:read_mcycle(), util.hexhash(machine:get_root_hash()))
+    out:write(machine:read_mcycle(), " ", util.hexhash(machine:get_root_hash()), "\n")
 end
 
 local function hash(tests)
+    local out = io.stdout
+    if output then out = assert(io.open(output, "w"), "error opening file: " .. output) end
+    local print_callback = function(machine) print_machine_hash(machine, out) end
     for _, test in ipairs(tests) do
         local ram_image = test[1]
         local expected_cycles = test[2]
         local expected_payload = test[3] or 0
         local machine = build_machine(ram_image)
         local cycles
-        io.write(ram_image, ":\n")
-        print_machine_hash(machine)
+        out:write(ram_image, ":\n")
+        print_machine_hash(machine, out)
         repeat
-            cycles = run_machine(machine, 2 * expected_cycles, print_machine_hash)
+            cycles = run_machine(machine, 2 * expected_cycles, print_callback)
         until not machine:read_iflags_Y()
-        print_machine_hash(machine)
+        print_machine_hash(machine, out)
         if machine:read_htif_tohost_data() >> 1 ~= expected_payload or cycles ~= expected_cycles then
             os.exit(1, true)
         end
@@ -556,17 +571,17 @@ local function print_machines(tests)
     end
 end
 
-local function print_machine_json_log(machine, log_type, out)
+local function print_machine_json_log(machine, log_type, out, last)
     local init_cycles = machine:read_mcycle()
     local log = machine:step(log_type)
     local final_cycles = machine:read_mcycle()
     util.dump_json_log(log, init_cycles, final_cycles, out, 3)
-    if not machine:read_iflags_H() then out:write(',\n')
-    else out:write('\n') end
+    if last then out:write('\n') else out:write(',\n') end
 end
 
 local function step(tests)
     local out = io.stdout
+    if output then out = assert(io.open(output, "w"), "error opening file: " .. output) end
     local indentout = util.indentout
     local log_type = {} -- no proofs or annotations
     out:write("[\n")
@@ -589,7 +604,7 @@ local function step(tests)
                 print_machine_json_log(machine, log_type, out)
             end)
         until not machine:read_iflags_Y()
-        print_machine_json_log(machine, log_type, out)
+        print_machine_json_log(machine, log_type, out, true)
         indentout(out, 2, "]\n")
         if tests[i+1] then indentout(out, 1, "},\n")
         else indentout(out, 1, "}\n") end
@@ -598,7 +613,7 @@ local function step(tests)
         end
         machine:destroy()
     end
-    io.stdout:write("]\n")
+    out:write("]\n")
 end
 
 local function dump(tests)

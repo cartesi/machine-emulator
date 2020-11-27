@@ -161,6 +161,61 @@ jobs:
       - name: Run test suite inside the docker image (Ubuntu)
         run: docker run --rm -v /opt/cartesi/tests:/opt/cartesi/tests -t cartesi/machine-emulator:test /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
 
+  test-alpine-build:
+    name: Test Alpine Build
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout emulator source code
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Set current git organization env var
+        id: git_org
+        run: echo "::set-output name=current_organization::$(echo ${GITHUB_REPOSITORY} | cut -d '/' -f 1)"
+
+      - name: Download [rootfs.ext2]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ steps.git_org.outputs.current_organization }}/image-rootfs
+          tag: ${{ env.ROOTFS_VERSION }}
+          file: rootfs.ext2
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Download [kernel.bin]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ steps.git_org.outputs.current_organization }}/image-kernel
+          tag: ${{ env.KERNEL_VERSION }}
+          file: linux-5.5.19-ctsi-2.bin
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Download [rom.bin]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ steps.git_org.outputs.current_organization }}/machine-emulator-rom
+          tag: ${{ env.ROM_VERSION }}
+          file: rom.bin
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Move images to cartesi images folder
+        run: |
+          mkdir -m 755 -p /opt/cartesi/share/images
+          mv rom.bin linux-5.5.19-ctsi-2.bin rootfs.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-2.bin linux.bin
+
+      - name: Download test suite
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ steps.git_org.outputs.current_organization }}/machine-tests
+          tag: ${{ env.TEST_VERSION }}
+          file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Untar test suite
+        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
+
       - name: Build docker image (Alpine)
         run: docker build -t cartesi/machine-emulator:test-alpine -f .github/workflows/Dockerfile.alpine .
 

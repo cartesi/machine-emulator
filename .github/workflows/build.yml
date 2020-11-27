@@ -5,7 +5,7 @@ env:
   KERNEL_VERSION: v0.7.0
   ROOTFS_VERSION: v0.5.0
   TEST_VERSION: v0.8.0
-  GROUND_TRUTH_VERSION: v0.8.0-0003
+  GROUND_TRUTH_VERSION: v0.8.0-0004
   BUILD_CACHE_VERSION: v0.6.0-0001
 jobs:
   build:
@@ -288,6 +288,7 @@ jobs:
         run: |
           mkdir -p ./src/ground-truth/machine-init-state && cd ./src/ground-truth/machine-init-state
           /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests dump
+          /opt/cartesi/bin/cartesi-machine-tests --json-test-list list > test_list.json
           rm -f 0000000080000000*.bin
           cd .. && tar -czf machine-init-state.tar.gz ./machine-init-state
 

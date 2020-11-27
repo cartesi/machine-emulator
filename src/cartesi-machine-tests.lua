@@ -245,6 +245,8 @@ where options are:
     to stdout.
     (default: none)
 
+  --json-test-list
+    write the output of the list command as json
 
 and command can be:
 
@@ -279,6 +281,7 @@ local test_pattern = ".*"
 local server_address = nil
 local server = nil
 local output = nil
+local json_list = false
 local periodic_action = false
 local periodic_action_period = math.maxinteger
 local periodic_action_start = 0
@@ -328,6 +331,11 @@ local options = {
     { "^%-%-output%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         output = o
+        return true
+    end },
+    { "^%-%-json%-test%-list$", function(all)
+        if not all then return false end
+        json_list = true
         return true
     end },
     { "^%-%-test%-path%=(.*)$", function(o)
@@ -607,6 +615,26 @@ local function dump(tests)
     machine:destroy()
 end
 
+local function list(tests)
+    if json_list then
+        local out = io.stdout
+        local indentout = util.indentout
+        out:write("{\n  \"tests\": [\n")
+        for i, test in ipairs(tests) do
+            if i ~= 1 then out:write(",\n") end
+            indentout(out, 2, "{\n")
+            indentout(out, 3, "\"file\": \"" .. test[1] .. "\",\n")
+            indentout(out, 3, "\"mcycle\": " .. test[2] .. "\n")
+            indentout(out, 2, "}")
+        end
+        out:write("\n  ]\n}\n")
+    else
+        for _, test in ipairs(tests) do
+            print(test[1])
+        end
+    end
+end
+
 local function select(test_name, test_pattern)
     local i, j = test_name:find(test_pattern)
     if i == 1 and j == #test_name then return true end
@@ -626,9 +654,6 @@ elseif command == "run" then run(selected_tests)
 elseif command == "hash" then hash(selected_tests)
 elseif command == "step" then step(selected_tests)
 elseif command == "dump" then dump(selected_tests)
-elseif command == "list" then
-    for _, test in ipairs(selected_tests) do
-        print(test[1])
-    end
+elseif command == "list" then list(selected_tests)
 elseif command == "machine" then print_machines(selected_tests)
 else error("command not found") end

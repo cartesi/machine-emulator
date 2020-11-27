@@ -206,7 +206,6 @@ local tests = {
 -- regression tests
   {"sd_pma_overflow.bin", 16},
   {"xpie_exceptions.bin", 51},
-  {"htif_devices.bin", 432, 42, {10, 20, 30, 45, 55, 65}},
   {"dont_write_x0.bin", 44},
   {"version_check.bin", 30},
 }
@@ -401,14 +400,13 @@ local function run_machine(machine, max_mcycle, callback)
     local cycles = machine:read_mcycle()
     local next_action_mcycle = get_next_action_mcycle(cycles)
     while math.ult(cycles, max_mcycle) do
-        machine:reset_iflags_Y()
         machine:run(math.min(next_action_mcycle, max_mcycle))
         cycles = machine:read_mcycle()
         if periodic_action and cycles == next_action_mcycle then
             next_action_mcycle = next_action_mcycle + periodic_action_period
             callback(machine)
         end
-        if machine:read_iflags_H() or machine:read_iflags_Y() then break end
+        if machine:read_iflags_H() then break end
     end
     return machine:read_mcycle()
 end
@@ -440,8 +438,8 @@ local function build_machine(test_name)
         },
         htif = {
             console_getchar = false,
-            yield_progress = true,
-            yield_rollup = true
+            yield_progress = false,
+            yield_rollup = false
         },
     }
     if server_address then
@@ -470,26 +468,17 @@ local function add_error(errors, ram_image, msg, ...)
 end
 
 local function check_test_result(machine, ctx, errors)
-    if machine:read_iflags_Y() then
-        local expected_yield_payload = ctx.expected_yield_payloads[ctx.yield_payload_index] or 0
-        ctx.yield_payload_index = ctx.yield_payload_index + 1
-        if machine:read_htif_tohost_data() ~= expected_yield_payload then
-            add_error(errors, ctx.ram_image, "returned yield payload %d, expected %d", machine:read_htif_tohost_data(), expected_yield_payload)
-            ctx.failed = true
-        end
-    else
-        if #ctx.expected_yield_payloads ~= (ctx.yield_payload_index - 1) then
-            add_error(errors, ctx.ram_image, "yielded %d times, expected %d", ctx.yield_payload_index-1, #ctx.expected_yield_payloads)
-            ctx.failed = true
-        end
-        if machine:read_htif_tohost_data() >> 1 ~= ctx.expected_halt_payload then
-            add_error(errors, ctx.ram_image, "returned halt payload %d, expected %d",  machine:read_htif_tohost_data() >> 1, ctx.expected_halt_payload)
-            ctx.failed = true
-        end
-        if ctx.cycles ~= ctx.expected_cycles then
-            add_error(errors, ctx.ram_image, "terminated with mcycle = %d, expected %d", ctx.cycles, ctx.expected_cycles)
-            ctx.failed = true
-        end
+    if #ctx.expected_yield_payloads ~= (ctx.yield_payload_index - 1) then
+        add_error(errors, ctx.ram_image, "yielded %d times, expected %d", ctx.yield_payload_index-1, #ctx.expected_yield_payloads)
+        ctx.failed = true
+    end
+    if machine:read_htif_tohost_data() >> 1 ~= ctx.expected_halt_payload then
+        add_error(errors, ctx.ram_image, "returned halt payload %d, expected %d",  machine:read_htif_tohost_data() >> 1, ctx.expected_halt_payload)
+        ctx.failed = true
+    end
+    if ctx.cycles ~= ctx.expected_cycles then
+        add_error(errors, ctx.ram_image, "terminated with mcycle = %d, expected %d", ctx.cycles, ctx.expected_cycles)
+        ctx.failed = true
     end
 end
 
@@ -508,10 +497,8 @@ local function run(tests)
         local machine = build_machine(ctx.ram_image)
 
         io.write(ctx.ram_image, ": ")
-        repeat
-            ctx.cycles = run_machine(machine, 2 * ctx.expected_cycles)
-            check_test_result(machine, ctx, errors)
-        until not machine:read_iflags_Y()
+        ctx.cycles = run_machine(machine, 2 * ctx.expected_cycles)
+        check_test_result(machine, ctx, errors)
 
         if ctx.failed then
             print("failed")
@@ -552,9 +539,7 @@ local function hash(tests)
         local cycles
         out:write(ram_image, ":\n")
         print_machine_hash(machine, out)
-        repeat
-            cycles = run_machine(machine, 2 * expected_cycles, print_callback)
-        until not machine:read_iflags_Y()
+        cycles = run_machine(machine, 2 * expected_cycles, print_callback)
         print_machine_hash(machine, out)
         if machine:read_htif_tohost_data() >> 1 ~= expected_payload or cycles ~= expected_cycles then
             os.exit(1, true)
@@ -599,11 +584,9 @@ local function step(tests)
         indentout(out, 2, '"steps": [\n')
         local cycles
         print_machine_json_log(machine, log_type, out)
-        repeat
-            cycles = run_machine(machine, 2 * expected_cycles, function(machine)
-                print_machine_json_log(machine, log_type, out)
-            end)
-        until not machine:read_iflags_Y()
+        cycles = run_machine(machine, 2 * expected_cycles, function(machine)
+            print_machine_json_log(machine, log_type, out)
+        end)
         print_machine_json_log(machine, log_type, out, true)
         indentout(out, 2, "]\n")
         if tests[i+1] then indentout(out, 1, "},\n")

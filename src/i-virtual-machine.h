@@ -90,11 +90,6 @@ public:
         do_write_csr(w, val);
     }
 
-    /// \brief Gets the address of any CSR
-    uint64_t get_csr_address(csr w) {
-        return do_get_csr_address(w);
-    }
-
     /// \brief Reads a chunk of data from the machine memory.
     void read_memory(uint64_t address, unsigned char *data, uint64_t length) {
         do_read_memory(address, data, length);
@@ -591,7 +586,6 @@ private:
     virtual bool do_verify_merkle_tree(void) = 0;
     virtual uint64_t do_read_csr(csr r) = 0;
     virtual void do_write_csr(csr w, uint64_t val) = 0;
-    virtual uint64_t do_get_csr_address(csr w) = 0;
     virtual void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) = 0;
     virtual void do_write_memory(uint64_t address, const unsigned char *data, size_t length) = 0;
     virtual uint64_t do_read_x(int i) = 0;

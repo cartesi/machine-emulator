@@ -47,7 +47,6 @@ private:
     bool do_verify_merkle_tree(void) override;
     uint64_t do_read_csr(csr r) override;
     void do_write_csr(csr w, uint64_t val) override;
-    uint64_t do_get_csr_address(csr w) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) override;
     void do_write_memory(uint64_t address, const unsigned char *data, size_t length) override;
     uint64_t do_read_x(int i) override;

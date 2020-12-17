@@ -67,10 +67,6 @@ void virtual_machine::do_write_csr(csr w, uint64_t val) {
     m_machine->write_csr(w, val);
 }
 
-uint64_t virtual_machine::do_get_csr_address(csr w) {
-    return get_csr_address(w);
-}
-
 void virtual_machine::do_read_memory(uint64_t address, unsigned char *data, uint64_t length) {
     m_machine->read_memory(address, data, length);
 }

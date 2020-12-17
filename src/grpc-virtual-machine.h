@@ -77,6 +77,8 @@ public:
 
     static uint64_t get_dhd_h_address(grpc_machine_stub_ptr stub, int i);
 
+    static uint64_t get_csr_address(grpc_machine_stub_ptr stub, csr w);
+
 private:
     machine_config do_get_initial_config(void) override;
 
@@ -84,7 +86,6 @@ private:
     void do_store(const std::string &dir) override;
     uint64_t do_read_csr(csr r) override;
     void do_write_csr(csr w, uint64_t val) override;
-    uint64_t do_get_csr_address(csr w) override;
     uint64_t do_read_x(int i) override;
     void do_write_x(int i, uint64_t val) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) override;

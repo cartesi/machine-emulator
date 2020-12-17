@@ -69,6 +69,16 @@ static int machine_class__index_get_x_address(lua_State *L) try {
     return 2;
 }
 
+/// \brief This is the machine.get_csr_address() method implementation.
+static int machine_class__index_get_csr_address(lua_State *L) try {
+    lua_pushnumber(L, machine::get_csr_address(clua_check_csr(L, 1)));
+    return 1;
+} catch (std::exception &x) {
+    lua_pushnil(L);
+    lua_pushstring(L, x.what());
+    return 2;
+}
+
 /// \brief This is the machine.get_dhd_h_address() method implementation.
 static int machine_class__index_get_dhd_h_address(lua_State *L) try {
     lua_pushnumber(L, machine::get_dhd_h_address(luaL_checkinteger(L, 1)));
@@ -85,6 +95,7 @@ static const luaL_Reg machine_class__index[] = {
     {"verify_access_log", machine_class__index_verify_access_log},
     {"verify_state_transition", machine_class__index_verify_state_transition},
     {"get_x_address", machine_class__index_get_x_address},
+    {"get_csr_address", machine_class__index_get_csr_address},
     {"get_dhd_h_address", machine_class__index_get_dhd_h_address},
     { nullptr, nullptr }
 };

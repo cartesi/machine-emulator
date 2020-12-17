@@ -81,6 +81,19 @@ static int grpc_machine_class_get_x_address(lua_State *L) try {
     return 2;
 }
 
+/// \brief This is the machine.get_csr_address() method implementation.
+static int grpc_machine_class_get_csr_address(lua_State *L) try {
+    auto &stub = clua_check<grpc_machine_stub_ptr>(L, lua_upvalueindex(1),
+        lua_upvalueindex(2));
+    lua_pushnumber(L, grpc_virtual_machine::get_csr_address(stub,
+        clua_check_csr(L, 1)));
+    return 1;
+} catch (std::exception &x) {
+    lua_pushnil(L);
+    lua_pushstring(L, x.what());
+    return 2;
+}
+
 /// \brief This is the machine.get_x_address() method implementation.
 static int grpc_machine_class_get_dhd_h_address(lua_State *L) try {
     auto &stub = clua_check<grpc_machine_stub_ptr>(L, lua_upvalueindex(1),
@@ -100,6 +113,7 @@ static const luaL_Reg grpc_machine_static_methods[] = {
     {"verify_access_log", grpc_machine_class_verify_access_log},
     {"verify_state_transition", grpc_machine_class_verify_state_transition},
     {"get_x_address", grpc_machine_class_get_x_address},
+    {"get_csr_address", grpc_machine_class_get_csr_address},
     {"get_dhd_h_address", grpc_machine_class_get_dhd_h_address},
     { nullptr, nullptr }
 };

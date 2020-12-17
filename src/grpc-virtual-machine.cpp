@@ -200,12 +200,13 @@ void grpc_virtual_machine::do_write_csr(csr w, uint64_t val)   {
     check_status(m_stub->get_stub()->WriteCsr(&context, request, &response));
 }
 
-uint64_t grpc_virtual_machine::do_get_csr_address(csr w) {
+uint64_t grpc_virtual_machine::get_csr_address(grpc_machine_stub_ptr stub,
+    csr w) {
     GetCsrAddressRequest request;
     request.set_csr((Csr)w);
     GetCsrAddressResponse response;
     ClientContext context;
-    check_status(m_stub->get_stub()->GetCsrAddress(&context, request, &response));
+    check_status(stub->get_stub()->GetCsrAddress(&context, request, &response));
     return response.address();
 }
 

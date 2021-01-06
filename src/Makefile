@@ -257,6 +257,7 @@ CYCLE_PERIOD ?= 13
 HASH_DIR = hashes/$(CYCLE_PERIOD)
 LOG_DIR = logs/$(CYCLE_PERIOD)
 GROUND_TRUTH_DIR ?= ground-truth
+CONCURRENCY_MERKLE_TREE ?= 0
 
 ifneq ($(strip $(TEST_PATH)),)
 TESTS=$(shell ./cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test=".*" list)
@@ -284,7 +285,7 @@ truth-hashes: $(TRUTH_HASHES)
 
 truth-logs: $(TRUTH_LOGS)
 
-compare-hashes: $(TEST_EACH_CYCLE_HASHES) $(TEST_HASHES)
+compare-hashes: | $(TEST_EACH_CYCLE_HASHES) $(TEST_HASHES)
 	@for t in $(TESTS) ; do \
 		result=$$(tail -n +2 -q $(HASH_DIR)/$${t%.bin}.hashes $(HASH_EACH_CYCLE_DIR)/$${t%.bin}.hashes | sort -s -n | uniq | awk -v step=-1 '{pline=line; line=$$0; pstep=step; step=$$1; if (pstep >= 0 && pstep == step) {print(pline); print(line); exit 1;}}'); \
 		if [ "$$result" != "" ]; then \
@@ -294,11 +295,11 @@ compare-hashes: $(TEST_EACH_CYCLE_HASHES) $(TEST_HASHES)
 		fi \
 	done
 
-$(HASH_EACH_CYCLE_DIR)/%.hashes: $(TEST_PATH)/%.bin $(HASH_EACH_CYCLE_DIR)
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=1 --output=$@ hash
+$(HASH_EACH_CYCLE_DIR)/%.hashes: $(TEST_PATH)/%.bin | $(HASH_EACH_CYCLE_DIR)
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=1 --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
 
-$(HASH_DIR)/%.hashes: $(TEST_PATH)/%.bin $(HASH_DIR)
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$@ hash
+$(HASH_DIR)/%.hashes: $(TEST_PATH)/%.bin | $(HASH_DIR)
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
 	diff $@ $(GROUND_TRUTH_DIR)/$@
 
 $(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(LOG_DIR)
@@ -306,8 +307,8 @@ $(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(LOG_DIR)
 	brotli -j -f $(basename $@)
 	diff $@ $(GROUND_TRUTH_DIR)/$@
 
-$(GROUND_TRUTH_DIR)/$(HASH_DIR)/%.hashes: $(TEST_PATH)/%.bin $(GROUND_TRUTH_DIR)/$(HASH_DIR)
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$@ hash
+$(GROUND_TRUTH_DIR)/$(HASH_DIR)/%.hashes: $(TEST_PATH)/%.bin | $(GROUND_TRUTH_DIR)/$(HASH_DIR)
+	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
 
 $(GROUND_TRUTH_DIR)/$(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(GROUND_TRUTH_DIR)/$(LOG_DIR)
 	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$(basename $@) step

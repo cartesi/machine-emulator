@@ -93,8 +93,8 @@ $(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_IN
 env:
 	@echo $(LIBRARY_PATH)
 	@echo "export PATH='$(SRCDIR):$(BUILDDIR)/bin:${PATH}'"
-	@echo "export LUAPP_CPATH='$(SRCDIR)/?.so;$(BUILDDIR)/$(CDIR)/?.so'"
-	@echo "export LUAPP_PATH='$(SRCDIR)/?.lua;$(BUILDDIR)/$(LDIR)/?.lua'"
+	@echo "export LUAPP_CPATH='?.so;$(SRCDIR)/?.so;$(BUILDDIR)/$(CDIR)/?.so'"
+	@echo "export LUAPP_PATH='?.lua;$(SRCDIR)/?.lua;$(BUILDDIR)/$(LDIR)/?.lua'"
 
 doc:
 	cd doc && doxygen Doxyfile

@@ -285,27 +285,8 @@ local json_list = false
 local periodic_action = false
 local periodic_action_period = math.maxinteger
 local periodic_action_start = 0
+local concurrency_update_merkle_tree = 0
 local cleanup = {}
-
-local function parse_number(n)
-    if not n then return nil end
-    local base, rest = string.match(n, "^%s*(0x%x+)%s*(.-)%s*$")
-    if not base then
-        base, rest = string.match(n, "^%s*(%d+)%s*(.-)%s*$")
-    end
-    base = tonumber(base)
-    if not base then return nil end
-    if rest == "Ki" then return base << 10
-    elseif rest == "Mi" then return base << 20
-    elseif rest == "Gi" then return base << 30
-    elseif rest == "" then return base end
-    local shift = string.match(rest, "^%s*%<%<%s*(%d+)$")
-    if shift then
-        shift = tonumber(shift)
-        if shift then return base << shift end
-    end
-    return nil
-end
 
 -- List of supported options
 -- Options are processed in order
@@ -351,16 +332,26 @@ local options = {
     { "^(%-%-periodic%-action%=(.*))$", function(all, v)
         if not v then return false end
         string.gsub(v, "^([^%,]+),(.+)$", function(p, s)
-            periodic_action_period = assert(parse_number(p), "invalid period " .. all)
-            periodic_action_start = assert(parse_number(s), "invalid start " .. all)
+            periodic_action_period = assert(util.parse_number(p), "invalid period " .. all)
+            periodic_action_start = assert(util.parse_number(s), "invalid start " .. all)
         end)
         if periodic_action_period == math.maxinteger then
-            periodic_action_period = assert(parse_number(v), "invalid period " .. all)
+            periodic_action_period = assert(util.parse_number(v), "invalid period " .. all)
             periodic_action_start = 0
         end
         assert(periodic_action_period > 0, "invalid period " ..
             periodic_action_period)
         periodic_action = true
+        return true
+    end },
+    { "^(%-%-concurrency%=(.+))$", function(all, opts)
+        if not opts then return false end
+        local c = util.parse_options(opts, {
+            update_merkle_tree = true
+        })
+        c.update_merkle_tree = assert(util.parse_number(c.update_merkle_tree),
+                "invalid update_merkle_tree number in " .. all)
+        concurrency_update_merkle_tree = c.update_merkle_tree
         return true
     end },
     { ".*", function(all)
@@ -450,11 +441,16 @@ local function build_machine(test_name)
             yield_rollup = false
         },
     }
+    local runtime = {
+        concurrency = {
+            update_merkle_tree = concurrency_update_merkle_tree
+        }
+    }
     if server_address then
       if not server then server = connect() end
-      return assert(server.machine(config, {}))
+      return assert(server.machine(config, runtime))
     end
-    return assert(cartesi.machine(config, {}))
+    return assert(cartesi.machine(config, runtime))
 end
 
 local function print_machine(test_name, expected_cycles)

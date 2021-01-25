@@ -29,9 +29,20 @@ struct dhd_runtime_config {
     std::string source_address; ///< Address of dehash source
 };
 
+/// \brief Concurrency runtime configuration
+struct concurrency_config {
+    uint64_t update_merkle_tree;
+};
+
 /// \brief Machine runtime configuration
 struct machine_runtime_config {
     dhd_runtime_config dhd;
+    concurrency_config concurrency;
+};
+
+/// \brief CONCURRENCY constants
+enum CONCURRENCY_constants : uint64_t {
+    THREADS_MAX = 256 ///< Maximum number of threads
 };
 
 }

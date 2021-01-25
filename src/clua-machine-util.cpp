@@ -751,11 +751,22 @@ static void push_dhd_runtime_config(lua_State *L, const dhd_runtime_config &d) {
     }
 }
 
+/// \brief Pushes an concurrency_config to the Lua stack
+/// \param L Lua state.
+/// \param c concurrency_config to be pushed.
+static void push_concurrency_runtime_config(lua_State *L, const concurrency_config &c) {
+    lua_newtable(L);
+    lua_pushinteger(L, c.update_merkle_tree);
+    lua_setfield(L, -2, "update_merkle_tree");
+}
+
 void clua_push_machine_runtime_config(lua_State *L,
     const machine_runtime_config &r) {
     lua_newtable(L); // config
     push_dhd_runtime_config(L, r.dhd); // config dhd
     lua_setfield(L, -2, "dhd"); // config
+    push_concurrency_runtime_config(L, r.concurrency); // config concurrency
+    lua_setfield(L, -2, "concurrency"); // config
 }
 
 /// \brief Loads RAM config from Lua to machine_config.
@@ -935,11 +946,24 @@ static void check_dhd_runtime_config(lua_State *L, int tabidx,
     lua_pop(L, 1);
 }
 
+/// \brief Loads concurrency runtime config from Lua.
+/// \param L Lua state.
+/// \param tabidx Runtime config stack index.
+/// \param c concurrency runtime config structure to receive results.
+static void check_concurrency_runtime_config(lua_State *L, int tabidx,
+    concurrency_config &c) {
+    if (!opt_table_field(L, tabidx, "concurrency"))
+        return;
+    c.update_merkle_tree = opt_uint_field(L, -1, "update_merkle_tree");
+    lua_pop(L, 1);
+}
+
 machine_runtime_config clua_check_machine_runtime_config(lua_State *L,
     int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
     machine_runtime_config r;
     check_dhd_runtime_config(L, tabidx, r.dhd);
+    check_concurrency_runtime_config(L, tabidx, r.concurrency);
     return r;
 }
 

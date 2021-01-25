@@ -136,6 +136,17 @@ where options are:
   --dhd-source=<address>
     server acting as source for dehashed data
 
+  --concurrency=<key>:<value>[,<key>:<value>[,...]...]
+    configures the number of threads used in some implementation parts.
+
+    <key>:<value> is one of
+        update_merkle_tree:<number>
+
+        update_merkle_tree (optional)
+        defines the number of threads to use while calculating the merkle tree.
+        when ommited or defined as 0, the number of hardware threads is used if
+        it can be identified or else a single thread is used.
+
   --max-mcycle=<number>
     stop at a given mcycle (default: 2305843009213693952)
 
@@ -213,6 +224,7 @@ local dhd_tstart = 0
 local dhd_tlength = 0
 local dhd_image_filename = nil
 local dhd_source_address = nil
+local concurrency_update_merkle_tree = 0
 local append_rom_bootargs = ""
 local console_get_char = false
 local htif_yield_progress = false
@@ -378,6 +390,16 @@ local options = {
     { "^%-%-dhd%-source%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         dhd_source_address = o
+        return true
+    end },
+    { "^(%-%-concurrency%=(.+))$", function(all, opts)
+        if not opts then return false end
+        local c = util.parse_options(opts, {
+            update_merkle_tree = true
+        })
+        c.update_merkle_tree = assert(util.parse_number(c.update_merkle_tree),
+                "invalid update_merkle_tree number in " .. all)
+        concurrency_update_merkle_tree = c.update_merkle_tree
         return true
     end },
     { "^(%-%-initial%-proof%=(.+))$", function(all, opts)
@@ -725,6 +747,9 @@ end
 local runtime = {
     dhd = {
         source_address = dhd_source_address
+    },
+    concurrency = {
+        update_merkle_tree = concurrency_update_merkle_tree
     }
 }
 

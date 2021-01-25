@@ -1059,6 +1059,11 @@ dhd_data machine::dehash(const unsigned char* hash, uint64_t hlength,
     return m_s.dehash(hash, hlength, dlength);
 }
 
+static uint64_t get_task_concurrency(uint64_t value) {
+    uint64_t concurrency = value > 0 ? value : std::max(std::thread::hardware_concurrency(), 1U);
+    return std::min(concurrency, static_cast<uint64_t>(THREADS_MAX));
+}
+
 bool machine::update_merkle_tree(void) {
     merkle_tree::hasher_type gh;
     //double begin = now();
@@ -1079,8 +1084,9 @@ bool machine::update_merkle_tree(void) {
         auto peek = pma.get_peek();
         // Each PMA has a number of pages
         auto pages_in_range = (pma.get_length()+PMA_PAGE_SIZE-1)/PMA_PAGE_SIZE;
-        // For each PMA, we launch as many threads (n) as the hardware supports.
-        const int n = (int) std::thread::hardware_concurrency();
+        // For each PMA, we launch as many threads (n) as defined on concurrency
+        // runtime config or as the hardware supports.
+        const uint64_t n = get_task_concurrency(m_r.concurrency.update_merkle_tree);
         // The update_page_node_hash function in the merkle_tree is not thread
         // safe, so we protect it with a mutex
         std::mutex updatex;
@@ -1088,13 +1094,13 @@ bool machine::update_merkle_tree(void) {
         // computation succeeded
         std::vector<std::future<bool>> futures;
         futures.reserve(n);
-        for (int j = 0; j < n; ++j) {
+        for (uint64_t j = 0; j < n; ++j) {
             futures.emplace_back(std::async(std::launch::async, [&](int j) -> bool {
                 auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
                 if (!scratch) return false;
                 merkle_tree::hasher_type h;
                 // Thread j is responsible for page i if i % n == j.
-                for (int i = j; i < (int) pages_in_range; i+=n) {
+                for (uint64_t i = j; i < pages_in_range; i+=n) {
                     uint64_t page_start_in_range = i*PMA_PAGE_SIZE;
                     uint64_t page_address = pma.get_start() + page_start_in_range;
                     const unsigned char *page_data = nullptr;

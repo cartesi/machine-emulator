@@ -260,10 +260,13 @@ class handler_Machine final: public handler<MachineRequest, Void> {
         switch (req->machine_oneof_case()) {
             case MachineRequest::kConfig:
                 hctx.m = std::make_unique<cartesi::machine>(
-                    get_proto_machine_config(req->config()));
+                    get_proto_machine_config(req->config()),
+                    get_proto_machine_runtime_config(req->runtime()));
                 return finish_ok(writer, resp);
             case MachineRequest::kDirectory:
-                hctx.m = std::make_unique<cartesi::machine>(req->directory());
+                hctx.m = std::make_unique<cartesi::machine>(
+                    req->directory(),
+                    get_proto_machine_runtime_config(req->runtime()));
                 return finish_ok(writer, resp);
             default:
                 return finish_with_error(writer, StatusCode::INVALID_ARGUMENT,

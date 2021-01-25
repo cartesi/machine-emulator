@@ -126,6 +126,8 @@ void set_proto_machine_runtime_config(const machine_runtime_config &r,
     CartesiMachine::MachineRuntimeConfig* proto_r) {
     auto proto_dhd = proto_r->mutable_dhd();
     proto_dhd->set_source_address(r.dhd.source_address);
+    auto proto_concurrency = proto_r->mutable_concurrency();
+    proto_concurrency->set_update_merkle_tree(r.concurrency.update_merkle_tree);
 }
 
 access_log::type get_proto_log_type(
@@ -503,6 +505,7 @@ machine_runtime_config get_proto_machine_runtime_config(
     const CartesiMachine::MachineRuntimeConfig &proto_r) {
     machine_runtime_config r;
     r.dhd.source_address = proto_r.dhd().source_address();
+    r.concurrency.update_merkle_tree = proto_r.concurrency().update_merkle_tree();
     return r;
 }
 

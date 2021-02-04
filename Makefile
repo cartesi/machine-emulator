@@ -42,6 +42,9 @@ LUASOCKET_VERSION ?= 5b18e475f38fcf28429b1cc4b17baee3b9793a62
 LUAMYCFLAGS = "MYCFLAGS=-std=c++17 -x c++ -fopenmp -DLUA_ROOT=\\\"$(PREFIX)/\\\""
 LUASOCKETCFLAGS = "MYCFLAGS=-std=c++17 -x c++ -DLUASOCKET_API=\"extern \\\"C\\\" __attribute__ ((visibility (\\\"default\\\")))\""
 
+# Docker image tag
+TAG ?= devel
+
 # Mac OS X specific settings
 ifeq ($(UNAME),Darwin)
 LUA_PLAT ?= macosx
@@ -159,6 +162,12 @@ linux-env:
 
 build-linux-env:
 	docker build -t cartesi/linux-env:v2 tools/docker
+
+build-ubuntu-image:
+	docker build -t cartesi/machine-emulator:$(TAG) -f .github/workflows/Dockerfile .
+
+build-alpine-image:
+	docker build -t cartesi/machine-emulator:$(TAG)-alpine -f .github/workflows/Dockerfile.alpine .
 
 install-Darwin:
 	install_name_tool -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi.so

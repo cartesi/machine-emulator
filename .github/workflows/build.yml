@@ -83,14 +83,10 @@ jobs:
       - name: Install Ubuntu dependencies
         run: sudo apt-get update -y && sudo apt-get install -y libboost-program-options1.71.0 libboost-serialization1.71.0 libprotobuf17 libprotobuf-lite17 libgrpc++1 netcat
 
-      - name: Set current git organization env var
-        id: git_org
-        run: echo "::set-output name=current_organization::$(echo ${GITHUB_REPOSITORY} | cut -d '/' -f 1)"
-
       - name: Download [rootfs.ext2]
         uses: Legion2/download-release-action@v2.1.0
         with:
-          repository: ${{ steps.git_org.outputs.current_organization }}/image-rootfs
+          repository: ${{ github.repository_owner }}/image-rootfs
           tag: ${{ env.ROOTFS_VERSION }}
           file: rootfs.ext2
           token: ${{ secrets.CI_TOKEN }}
@@ -98,7 +94,7 @@ jobs:
       - name: Download [kernel.bin]
         uses: Legion2/download-release-action@v2.1.0
         with:
-          repository: ${{ steps.git_org.outputs.current_organization }}/image-kernel
+          repository: ${{ github.repository_owner }}/image-kernel
           tag: ${{ env.KERNEL_VERSION }}
           file: linux-5.5.19-ctsi-2.bin
           token: ${{ secrets.CI_TOKEN }}
@@ -106,7 +102,7 @@ jobs:
       - name: Download [rom.bin]
         uses: Legion2/download-release-action@v2.1.0
         with:
-          repository: ${{ steps.git_org.outputs.current_organization }}/machine-emulator-rom
+          repository: ${{ github.repository_owner }}/machine-emulator-rom
           tag: ${{ env.ROM_VERSION }}
           file: rom.bin
           token: ${{ secrets.CI_TOKEN }}
@@ -122,7 +118,7 @@ jobs:
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0
         with:
-          repository: ${{ steps.git_org.outputs.current_organization }}/machine-tests
+          repository: ${{ github.repository_owner }}/machine-tests
           tag: ${{ env.TEST_VERSION }}
           file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
           token: ${{ secrets.CI_TOKEN }}
@@ -152,79 +148,6 @@ jobs:
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
           cd src && for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do /opt/cartesi/bin/luapp5.3 $x; done
 
-      - name: Build docker image (Ubuntu)
-        run: docker build -t cartesi/machine-emulator:test -f .github/workflows/Dockerfile /opt/cartesi
-
-      - name: Simple boot inside the docker image (Ubuntu)
-        run: docker run --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -t cartesi/machine-emulator:test /opt/cartesi/bin/cartesi-machine /bin/true
-
-      - name: Run test suite inside the docker image (Ubuntu)
-        run: docker run --rm -v /opt/cartesi/tests:/opt/cartesi/tests -t cartesi/machine-emulator:test /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
-
-  test-alpine-build:
-    name: Test Alpine Build
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Checkout emulator source code
-        uses: actions/checkout@v2
-        with:
-          submodules: recursive
-          token: ${{ secrets.CI_TOKEN }}
-
-      - name: Set current git organization env var
-        id: git_org
-        run: echo "::set-output name=current_organization::$(echo ${GITHUB_REPOSITORY} | cut -d '/' -f 1)"
-
-      - name: Download [rootfs.ext2]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ steps.git_org.outputs.current_organization }}/image-rootfs
-          tag: ${{ env.ROOTFS_VERSION }}
-          file: rootfs.ext2
-          token: ${{ secrets.CI_TOKEN }}
-
-      - name: Download [kernel.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ steps.git_org.outputs.current_organization }}/image-kernel
-          tag: ${{ env.KERNEL_VERSION }}
-          file: linux-5.5.19-ctsi-2.bin
-          token: ${{ secrets.CI_TOKEN }}
-
-      - name: Download [rom.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ steps.git_org.outputs.current_organization }}/machine-emulator-rom
-          tag: ${{ env.ROM_VERSION }}
-          file: rom.bin
-          token: ${{ secrets.CI_TOKEN }}
-
-      - name: Move images to cartesi images folder
-        run: |
-          mkdir -m 755 -p /opt/cartesi/share/images
-          mv rom.bin linux-5.5.19-ctsi-2.bin rootfs.ext2 /opt/cartesi/share/images/
-          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-2.bin linux.bin
-
-      - name: Download test suite
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ steps.git_org.outputs.current_organization }}/machine-tests
-          tag: ${{ env.TEST_VERSION }}
-          file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
-          token: ${{ secrets.CI_TOKEN }}
-
-      - name: Untar test suite
-        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
-
-      - name: Build docker image (Alpine)
-        run: docker build -t cartesi/machine-emulator:test-alpine -f .github/workflows/Dockerfile.alpine .
-
-      - name: Simple boot inside the docker image (Alpine)
-        run: docker run --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -t cartesi/machine-emulator:test-alpine /opt/cartesi/bin/cartesi-machine /bin/true
-
-      - name: Run test suite inside the docker image (Alpine)
-        run: docker run --rm -v /opt/cartesi/tests:/opt/cartesi/tests -t cartesi/machine-emulator:test-alpine /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
-
   verify:
     name: Verify
     needs: build
@@ -251,13 +174,10 @@ jobs:
       - name: Install Ubuntu dependencies
         run: sudo apt-get update -y && sudo apt-get install -y libboost-program-options1.71.0 libboost-serialization1.71.0 libprotobuf17 libprotobuf-lite17 libgrpc++1
 
-      - name: Set current git organization env var
-        id: git_org
-        run: echo "::set-output name=current_organization::$(echo ${GITHUB_REPOSITORY} | cut -d '/' -f 1)"
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0
         with:
-          repository: ${{ steps.git_org.outputs.current_organization }}/machine-tests
+          repository: ${{ github.repository_owner }}/machine-tests
           tag: ${{ env.TEST_VERSION }}
           file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
           token: ${{ secrets.CI_TOKEN }}
@@ -358,9 +278,281 @@ jobs:
           make -j$(nproc) CYCLE_PERIOD=3 compare-hashes
           make -j$(nproc) CYCLE_PERIOD=13 compare-hashes
 
+  ubuntu-image-build:
+    name: Build and Test Ubuntu based Docker image
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout emulator source code
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Setup docker image tags
+        id: docker_image_tags
+        uses: crazy-max/ghaction-docker-meta@v1
+        with:
+          images: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator
+          tag-semver: |
+            {{version}}
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Cache Docker layers
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.ubuntu-buildx-cache
+          key: ${{ runner.os }}-ubuntu-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ubuntu-buildx-
+
+      - name: Build Ubuntu based docker image
+        id: docker_build
+        uses: docker/build-push-action@v2
+        with:
+          file: .github/workflows/Dockerfile
+          context: .
+          builder: ${{ steps.buildx.outputs.name }}
+          platforms: linux/amd64
+          tags: ${{ steps.docker_image_tags.outputs.tags }}
+          push: false
+          load: true
+          cache-from: type=local,src=/tmp/.ubuntu-buildx-cache
+          cache-to: type=local,dest=/tmp/.ubuntu-buildx-cache
+
+      - name: Download [rootfs.ext2]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/image-rootfs
+          tag: ${{ env.ROOTFS_VERSION }}
+          file: rootfs.ext2
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Download [kernel.bin]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/image-kernel
+          tag: ${{ env.KERNEL_VERSION }}
+          file: linux-5.5.19-ctsi-2.bin
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Download [rom.bin]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/machine-emulator-rom
+          tag: ${{ env.ROM_VERSION }}
+          file: rom.bin
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Move images to cartesi images folder
+        run: |
+          mkdir -m 755 -p /opt/cartesi/share/images
+          mv rom.bin linux-5.5.19-ctsi-2.bin rootfs.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-2.bin linux.bin
+
+      - name: Download test suite
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/machine-tests
+          tag: ${{ env.TEST_VERSION }}
+          file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Untar test suite
+        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
+
+      - name: Set default tag name
+        id: docker_image_default_tag
+        run: echo '::set-output name=name::$(echo "${{ steps.docker_image_tags.outputs.tags }}" | cut -d "," -f 1 | xargs)'
+
+      - name: Simple boot inside the docker image (Ubuntu)
+        run: docker run --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -t ${{ steps.docker_image_default_tag.outputs.name }} /opt/cartesi/bin/cartesi-machine /bin/true
+
+      - name: Run test suite inside the docker image (Ubuntu)
+        run: docker run --rm -v /opt/cartesi/tests:/opt/cartesi/tests -t ${{ steps.docker_image_default_tag.outputs.name }} /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
+
+  alpine-image-build:
+    name: Build and Test Alpine based Docker image
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout emulator source code
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Setup docker image tags
+        id: docker_image_tags
+        uses: crazy-max/ghaction-docker-meta@v1
+        with:
+          images: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator
+          tag-semver: |
+            {{version}}-alpine
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Cache Docker layers
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.alpine-buildx-cache
+          key: ${{ runner.os }}-alpine-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-alpine-buildx-
+
+      - name: Build Alpine based Docker image
+        id: docker_build
+        uses: docker/build-push-action@v2
+        with:
+          file: .github/workflows/Dockerfile.alpine
+          context: .
+          builder: ${{ steps.buildx.outputs.name }}
+          platforms: linux/amd64
+          tags: ${{ steps.docker_image_tags.outputs.tags }}
+          push: false
+          load: true
+          cache-from: type=local,src=/tmp/.alpine-buildx-cache
+          cache-to: type=local,dest=/tmp/.alpine-buildx-cache
+
+      - name: Download [rootfs.ext2]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/image-rootfs
+          tag: ${{ env.ROOTFS_VERSION }}
+          file: rootfs.ext2
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Download [kernel.bin]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/image-kernel
+          tag: ${{ env.KERNEL_VERSION }}
+          file: linux-5.5.19-ctsi-2.bin
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Download [rom.bin]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/machine-emulator-rom
+          tag: ${{ env.ROM_VERSION }}
+          file: rom.bin
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Move images to cartesi images folder
+        run: |
+          mkdir -m 755 -p /opt/cartesi/share/images
+          mv rom.bin linux-5.5.19-ctsi-2.bin rootfs.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-2.bin linux.bin
+
+      - name: Download test suite
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/machine-tests
+          tag: ${{ env.TEST_VERSION }}
+          file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Untar test suite
+        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
+
+      - name: Set default tag name
+        id: docker_image_default_tag
+        run: echo '::set-output name=name::$(echo "${{ steps.docker_image_tags.outputs.tags }}" | cut -d "," -f 1 | xargs)'
+
+      - name: Simple boot inside the docker image (Alpine)
+        run: docker run --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -t ${{ steps.docker_image_default_tag.outputs.name }} /opt/cartesi/bin/cartesi-machine /bin/true
+
+      - name: Run test suite inside the docker image (Alpine)
+        run: docker run --rm -v /opt/cartesi/tests:/opt/cartesi/tests -t ${{ steps.docker_image_default_tag.outputs.name }} /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
+
+  publish_images:
+    name: Publish Docker images
+    needs: [test, ubuntu-image-build, alpine-image-build]
+    runs-on: ubuntu-20.04
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/develop') }}
+    steps:
+      - name: Checkout emulator source code
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Setup ubuntu docker image tags
+        id: ubuntu_docker_image_tags
+        uses: crazy-max/ghaction-docker-meta@v1
+        with:
+          images: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator
+          tag-semver: |
+            {{version}}
+
+      - name: Setup alpine docker image tags
+        id: alpine_docker_image_tags
+        uses: crazy-max/ghaction-docker-meta@v1
+        with:
+          images: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator
+          tag-semver: |
+            {{version}}-alpine
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Cache Ubuntu Docker layers
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.ubuntu-buildx-cache
+          key: ${{ runner.os }}-ubuntu-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ubuntu-buildx-
+
+      - name: Cache Alpine Docker layers
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.alpine-buildx-cache
+          key: ${{ runner.os }}-alpine-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-alpine-buildx-
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Ubuntu based docker image
+        id: ubuntu_docker_build
+        uses: docker/build-push-action@v2
+        with:
+          file: .github/workflows/Dockerfile
+          context: .
+          builder: ${{ steps.buildx.outputs.name }}
+          platforms: linux/amd64
+          tags: ${{ steps.ubuntu_docker_image_tags.outputs.tags }}
+          push: true
+          load: false
+          cache-from: type=local,src=/tmp/.ubuntu-buildx-cache
+          cache-to: type=local,dest=/tmp/.ubuntu-buildx-cache
+
+      - name: Build Alpine based Docker image
+        id: alpine_docker_build
+        uses: docker/build-push-action@v2
+        with:
+          file: .github/workflows/Dockerfile.alpine
+          context: .
+          builder: ${{ steps.buildx.outputs.name }}
+          platforms: linux/amd64
+          tags: ${{ steps.alpine_docker_image_tags.outputs.tags }}
+          push: true
+          load: false
+          cache-from: type=local,src=/tmp/.alpine-buildx-cache
+          cache-to: type=local,dest=/tmp/.alpine-buildx-cache
+
   release:
-    name: Release
-    needs: [test, test-alpine-build]
+    name: Release machine emulator tarball
+    needs: [test, ubuntu-image-build, alpine-image-build]
     runs-on: ubuntu-20.04
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -390,21 +582,3 @@ jobs:
           files: machine-emulator-*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.CI_TOKEN }}
-
-      - uses: actions/checkout@v2
-        with:
-          submodules: recursive
-          token: ${{ secrets.CI_TOKEN }}
-
-      - run: echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Docker Image
-        run: |
-          docker build -t cartesi/machine-emulator:${GITHUB_REF:11} -f .github/workflows/Dockerfile /opt/cartesi
-          docker build -t cartesi/machine-emulator:${GITHUB_REF:11}-alpine -f .github/workflows/Dockerfile.alpine .
-          docker push cartesi/machine-emulator:${GITHUB_REF:11}
-          docker push cartesi/machine-emulator:${GITHUB_REF:11}-alpine
-

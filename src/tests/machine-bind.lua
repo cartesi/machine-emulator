@@ -159,6 +159,49 @@ for i,v in pairs(x) do
     end
 end
 
+for _, n in ipairs
+    {
+        "pc",
+        "mvendorid",
+        "marchid",
+        "mimpid",
+        "mcycle",
+        "minstret",
+        "mstatus",
+        "mtvec",
+        "mscratch",
+        "mepc",
+        "mcause",
+        "mtval",
+        "misa",
+        "mie",
+        "mip",
+        "medeleg",
+        "mideleg",
+        "mcounteren",
+        "stvec",
+        "sscratch",
+        "sepc",
+        "scause",
+        "stval",
+        "satp",
+        "scounteren",
+        "ilrsc",
+        "iflags",
+        "clint_mtimecmp",
+        "htif_tohost",
+        "htif_fromhost",
+        "htif_ihalt",
+        "htif_iconsole",
+        "htif_iyield",
+        "dhd_tstart",
+        "dhd_tlength",
+        "dhd_dlength",
+        "dhd_hlength",
+    } do
+    assert(cartesi.machine.get_csr_address(n), "missing " .. n)
+end
+
 -- Dump log
 local log_type = {}
 local log = machine:step(log_type)

@@ -365,7 +365,7 @@ jobs:
 
       - name: Set default tag name
         id: docker_image_default_tag
-        run: echo '::set-output name=name::$(echo "${{ steps.docker_image_tags.outputs.tags }}" | cut -d "," -f 1 | xargs)'
+        run: echo ::set-output name=name::$(echo "${{ steps.docker_image_tags.outputs.tags }}" | head -n 1 | xargs)
 
       - name: Simple boot inside the docker image (Ubuntu)
         run: docker run --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -t ${{ steps.docker_image_default_tag.outputs.name }} /opt/cartesi/bin/cartesi-machine /bin/true
@@ -460,7 +460,7 @@ jobs:
 
       - name: Set default tag name
         id: docker_image_default_tag
-        run: echo '::set-output name=name::$(echo "${{ steps.docker_image_tags.outputs.tags }}" | cut -d "," -f 1 | xargs)'
+        run: echo ::set-output name=name::$(echo "${{ steps.docker_image_tags.outputs.tags }}" | head -n 1 | xargs)
 
       - name: Simple boot inside the docker image (Alpine)
         run: docker run --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -t ${{ steps.docker_image_default_tag.outputs.name }} /opt/cartesi/bin/cartesi-machine /bin/true

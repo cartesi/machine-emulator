@@ -1317,11 +1317,35 @@ void machine::run_inner_loop(uint64_t mcycle_end) {
     interpret(a, mcycle_end);
 }
 
+static uint64_t saturate_next_mcycle(uint64_t mcycle) {
+    return (mcycle < UINT64_MAX) ? mcycle + 1 : UINT64_MAX;
+}
+
+static uint64_t get_next_mcycle_from_log(const access_log &log) {
+    const auto& first_access = log.get_accesses().front();
+    auto mcycle_address = PMA_SHADOW_START +
+        shadow_get_csr_rel_addr(shadow_csr::mcycle);
+
+    // The first access should always be a read to mcycle
+    if (first_access.type != access_type::read ||
+        first_access.address != mcycle_address) {
+        throw std::invalid_argument{"invalid access log"};
+    }
+
+    uint64_t mcycle = get_word_access_data(first_access.read);
+    return saturate_next_mcycle(mcycle);
+}
+
 void machine::verify_access_log(const access_log &log,
     const machine_runtime_config &r, bool one_based) {
+    // There must be at least one access in log
+    if (log.get_accesses().empty()) {
+        throw std::invalid_argument{"too few accesses in log"};
+    }
     step_state_access a(log, log.get_log_type().has_proofs(),
         make_dhd_source(r.dhd.source_address), one_based);
-    interpret(a, UINT64_MAX);
+    uint64_t next_mcycle = get_next_mcycle_from_log(log);
+    interpret(a, next_mcycle);
     a.finish();
 }
 
@@ -1332,29 +1356,30 @@ machine_config machine::get_default_config(void) {
 void machine::verify_state_transition(const hash_type &root_hash_before,
     const access_log &log, const hash_type &root_hash_after,
     const machine_runtime_config &r, bool one_based) {
-    if (!log.get_accesses().empty()) {
-        // We need proofs in order to verify the state transition
-        if (!log.get_log_type().has_proofs()) {
-            throw std::invalid_argument{"log has no proofs"};
-        }
-        // Make sure the access log starts from the same root hash as the state
-        if (log.get_accesses().front().proof.root_hash != root_hash_before) {
-            throw std::invalid_argument{"mismatch in root hash before step"};
-        }
-        // Verify all intermediate state transitions
-        step_state_access a(log, true /* verify proofs! */,
-            make_dhd_source(r.dhd.source_address), one_based);
-        interpret(a, UINT64_MAX);
-        a.finish();
-        // Make sure the access log ends at the same root hash as the state
-        hash_type obtained_root_hash;
-        a.get_root_hash(obtained_root_hash);
-        if (obtained_root_hash != root_hash_after) {
-            throw std::invalid_argument{"mismatch in root hash after step"};
-        }
-    // If log is empty, the state must not have changed.
-    } else if (root_hash_before != root_hash_after) {
-        throw std::invalid_argument{"root hash changed but log is empty"};
+
+    // We need proofs in order to verify the state transition
+    if (!log.get_log_type().has_proofs()) {
+        throw std::invalid_argument{"log has no proofs"};
+    }
+    // There must be at least one access in log
+    if (log.get_accesses().empty()) {
+        throw std::invalid_argument{"too few accesses in log"};
+    }
+    // Make sure the access log starts from the same root hash as the state
+    if (log.get_accesses().front().proof.root_hash != root_hash_before) {
+        throw std::invalid_argument{"mismatch in root hash before step"};
+    }
+    // Verify all intermediate state transitions
+    step_state_access a(log, true /* verify proofs! */,
+        make_dhd_source(r.dhd.source_address), one_based);
+    uint64_t next_mcycle = get_next_mcycle_from_log(log);
+    interpret(a, next_mcycle);
+    a.finish();
+    // Make sure the access log ends at the same root hash as the state
+    hash_type obtained_root_hash;
+    a.get_root_hash(obtained_root_hash);
+    if (obtained_root_hash != root_hash_after) {
+        throw std::invalid_argument{"mismatch in root hash after step"};
     }
 }
 
@@ -1367,7 +1392,8 @@ access_log machine::step(const access_log::type &log_type, bool one_based) {
     // Call interpret with a logged state access object
     logged_state_access a(*this, log_type);
     a.push_bracket(bracket_type::begin, "step");
-    interpret(a, m_s.mcycle+1);
+    uint64_t next_mcycle = saturate_next_mcycle(read_mcycle());
+    interpret(a, next_mcycle);
     a.push_bracket(bracket_type::end, "step");
     // Verify access log before returning
     if (log_type.has_proofs()) {

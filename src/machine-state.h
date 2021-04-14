@@ -180,11 +180,6 @@ struct machine_state {
     std::unordered_map<std::string, uint64_t> insn_hist;
 #endif
 
-    /// \brief Checks if machine is past given mcycle
-    bool is_done(uint64_t mcycle_end) const {
-        return mcycle >= mcycle_end;
-    }
-
     /// \brief Sets the value of the brk flag.
     void set_brk(void) {
         brk = true;

@@ -50,7 +50,7 @@ public:
     class mock_machine_state {
     public:
 
-        mock_machine_state(void): m_done{false} { }
+        mock_machine_state(void) { }
 
         void set_brk(void) { }
         bool get_brk(void) const { return true; }
@@ -59,12 +59,6 @@ public:
         void or_brk_with_iflags_Y(void) { }
         void set_brk_from_all(void) { }
         void assert_no_brk(void) { }
-        bool is_done(uint64_t mcycle_end) {
-            (void) mcycle_end;
-            bool done = m_done;
-            m_done = true;
-            return done;
-        }
 
 #ifdef DUMP_COUNTERS
         machine_statistics stats;
@@ -73,10 +67,6 @@ public:
 #ifdef DUMP_HIST
     std::unordered_map<std::string, uint64_t> insn_hist;
 #endif
-
-    private:
-
-        uint64_t m_done;
     };
 
 private:

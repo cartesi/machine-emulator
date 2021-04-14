@@ -3160,6 +3160,14 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     static_assert(is_an_i_state_access<STATE_ACCESS>::value,
         "not an i_state_access");
 
+    // If we reached the target mcycle, we are done
+    // In Solidity, also check against UINT64_MAX (2^64-1)
+    // This must be the first check because we assume the first log access is a
+    // mcycle read in machine::verify_state_transition
+    if (a.read_mcycle() >= mcycle_end) {
+        return interpreter_status::success;
+    }
+
     // If the cpu is halted, we are done
     if (a.read_iflags_H()) {
         return interpreter_status::success;
@@ -3167,11 +3175,6 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
 
     // If the cpu is yielded, we are done
     if (a.read_iflags_Y()) {
-        return interpreter_status::success;
-    }
-
-    // If we reached the target mcycle, we are done
-    if (a.get_naked_state().is_done(mcycle_end)) {
         return interpreter_status::success;
     }
 

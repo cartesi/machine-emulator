@@ -753,8 +753,6 @@ static void dump_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const char *n
     dump_regs(a.get_naked_state());
 #endif
 #ifdef DUMP_INSN
-    //fprintf(stderr, "%s\n", name);
-    (void) name;
     uint64_t ppc = 0;
     //??D This will end up in the log, should we ever use this function while
     // collecting a log or consuming a log...
@@ -766,7 +764,7 @@ static void dump_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const char *n
         fprintf(stderr, "p    %08" PRIx64, ppc);
     }
     fprintf(stderr, ":   %08" PRIx32 "   ", insn);
-    fprintf(stderr, "\n");
+    fprintf(stderr, "%s\n", name);
 #else
     (void) a;
     (void) pc;

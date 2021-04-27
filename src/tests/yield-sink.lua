@@ -52,7 +52,9 @@ function test(config, progress_enable, rollup_enable)
     for i, v in ipairs(yields) do
         if v.cmd == cartesi.machine.HTIF_YIELD_PROGRESS and progress_enable or
            v.cmd == cartesi.machine.HTIF_YIELD_ROLLUP and rollup_enable then
-            machine:run(math.maxinteger)
+            while not machine:read_iflags_Y() and not machine:read_iflags_H() do
+                machine:run(math.maxinteger)
+            end
             -- when it stops, iflags.Y should be set
             assert(machine:read_iflags_Y())
             -- mcycle should be as expected
@@ -71,7 +73,9 @@ function test(config, progress_enable, rollup_enable)
         end
     end
     -- finally run to completion
-    machine:run(math.maxinteger)
+    while not machine:read_iflags_Y() and not machine:read_iflags_H() do
+        machine:run(math.maxinteger)
+    end
     -- should be halted
     assert(machine:read_iflags_H())
     -- at the expected mcycle

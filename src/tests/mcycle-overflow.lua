@@ -28,6 +28,13 @@ end
 
 local tests_path = adjust_images_path(os.getenv("CARTESI_TESTS_PATH"))
 
+local function run_loop(machine, mcycle_end)
+    while machine:read_mcycle() < mcycle_end do
+        machine:run(mcycle_end)
+        if machine:read_iflags_H() then break end
+    end
+end
+
 local function build_machine()
     local config =  {
         processor = {
@@ -48,9 +55,7 @@ local function build_machine()
 
     -- Stop the machine before the first RAM instruction
     local wfi_cycle = 7
-    while machine:read_mcycle() < wfi_cycle do
-        machine:run(wfi_cycle)
-    end
+    run_loop(machine, wfi_cycle)
 
     return machine
 end
@@ -69,8 +74,8 @@ do_test("machine should run up to mcycle limit", function(machine)
     machine:write_mcycle(MAX_MCYCLE - 5)
     -- Run once to trigger an interrupt, which might cause an overflow on the
     -- next call to machine:run
-    machine:run(MAX_MCYCLE - 4)
-    machine:run(MAX_MCYCLE)
+    run_loop(machine, MAX_MCYCLE - 4)
+    run_loop(machine, MAX_MCYCLE)
     assert(machine:read_mcycle() == MAX_MCYCLE)
 end)
 
@@ -78,7 +83,7 @@ do_test("machine run shouldn't change state in max mcycle", function(machine)
     machine:write_mcycle(MAX_MCYCLE)
     machine:update_merkle_tree()
     local hash_before = machine:get_root_hash()
-    machine:run(MAX_MCYCLE)
+    run_loop(machine, MAX_MCYCLE)
     machine:update_merkle_tree()
     local hash_after = machine:get_root_hash()
     assert(hash_before == hash_after)

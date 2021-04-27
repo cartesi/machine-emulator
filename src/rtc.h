@@ -45,6 +45,12 @@ static inline uint64_t rtc_time_to_cycle(uint64_t time) {
     return time * RTC_FREQ_DIV;
 }
 
+/// \brief Returns whether the cycle is a RTC tick
+/// \param cycle Cycle count
+static inline bool rtc_is_tick(uint64_t cycle) {
+    return (cycle % RTC_FREQ_DIV) == 0;
+}
+
 } // namespace cartesi
 
 #endif

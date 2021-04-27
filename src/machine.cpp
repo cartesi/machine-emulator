@@ -1426,47 +1426,12 @@ void machine::run(uint64_t mcycle_end) {
             return;
         }
 
-        // Get the next possible cycle for a timer interrupt
-        uint64_t next_rtc_freq_offset = RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV;
+        run_inner_loop(mcycle_end);
+        mcycle = read_mcycle();
 
-        // Check if the next cycle for a timer interrupt happens before mcycle
-        // max value to avoid integer overflow
-        if (mcycle < UINT64_MAX - next_rtc_freq_offset) {
-            uint64_t next_rtc_freq_div = mcycle + next_rtc_freq_offset;
-
-            // If the processor idle (waiting for interrupts), we could skip
-            // time until the next potential timer interrupt (as long as we
-            // don't go over mcycle_end) CLINT is the only interrupt source
-            // external to the inner loop IPI (inter-processor interrupt) via
-            // MSIP can only be raised internally There are no other means for
-            // getting out idle status
-            if (read_iflags_I()) {
-                write_mcycle(std::min(next_rtc_freq_div, mcycle_end));
-            // Otherwise, we run until the next potential timer interrupt (or
-            // mcycle_end)
-            } else {
-                run_inner_loop(std::min(next_rtc_freq_div, mcycle_end));
-            }
-
-            // If we managed to hit the next potential timer interrupt
-            mcycle = read_mcycle();
-            if (mcycle == next_rtc_freq_div) {
-                // Get the mcycle corresponding to mtimecmp
-                uint64_t timecmp_mcycle =
-                    rtc_time_to_cycle(read_clint_mtimecmp());
-                // If the timer is expired, set interrupt as pending
-                if (timecmp_mcycle <= mcycle && timecmp_mcycle != 0) {
-                   set_mip(MIP_MTIP_MASK);
-                }
-                // And perform any interactive action
-                interact();
-            }
-        }
-        // Otherwise, run the inner loop until mcycle_end because a timer
-        // interrupt won't happen
-        else {
-            run_inner_loop(mcycle_end);
-            mcycle = read_mcycle();
+        // Perform interact with htif after every timer interrupt
+        if (mcycle % RTC_FREQ_DIV == 0) {
+            interact();
         }
     }
 }

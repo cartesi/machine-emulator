@@ -516,6 +516,20 @@ static void raise_interrupt_if_any(STATE_ACCESS &a) {
     }
 }
 
+/// \brief At every tick, set interrupt as pending if the timer is expired
+/// \param a Machine state accessor object.
+template <typename STATE_ACCESS>
+static void set_rtc_interrupt(STATE_ACCESS &a, uint64_t mcycle) {
+    auto note = a.make_scoped_note("set_rtc_interrupt"); (void) note;
+    if (rtc_is_tick(mcycle)) {
+        uint64_t timecmp_cycle = rtc_time_to_cycle(a.read_clint_mtimecmp());
+        if (timecmp_cycle <= mcycle && timecmp_cycle != 0) {
+            uint64_t mip = a.read_mip();
+            a.write_mip(mip | MIP_MTIP_MASK);
+        }
+    }
+}
+
 /// \brief Obtains the funct3 and opcode fields an instruction.
 /// \param insn Instruction.
 static inline uint32_t insn_get_funct3_00000_opcode(uint32_t insn) {
@@ -2000,18 +2014,11 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "wfi");
     auto note = a.make_scoped_note("wfi"); (void) note;
+    // Check privileges and do nothing else
     auto priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
     if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TW_MASK)))
         return raise_illegal_insn_exception(a, pc, insn);
-    uint64_t mip = a.read_mip();
-    uint64_t mie = a.read_mie();
-    // Go to power down if no enabled interrupts are pending
-    if ((mip & mie) == 0) {
-        a.set_iflags_I();
-        // set brk so the outer loop can skip time if it wants too
-        a.get_naked_state().set_brk();
-    }
     return advance_to_next_insn(a, pc);
 }
 
@@ -3158,11 +3165,21 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     static_assert(is_an_i_state_access<STATE_ACCESS>::value,
         "not an i_state_access");
 
+    // This must be the first read because we assume the first log access is a
+    // mcycle read in machine::verify_state_transition
+    uint64_t mcycle = a.read_mcycle();
+
+    // Limit mcycle_end up to the next RTC tick
+    // Checks for overflow before setting this limit
+    uint64_t next_rtc_offset = RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV;
+    if (mcycle <= UINT64_MAX - next_rtc_offset) {
+        uint64_t next_rtc_cycle = mcycle + next_rtc_offset;
+        mcycle_end = std::min(mcycle_end, next_rtc_cycle);
+    }
+
     // If we reached the target mcycle, we are done
     // In Solidity, also check against UINT64_MAX (2^64-1)
-    // This must be the first check because we assume the first log access is a
-    // mcycle read in machine::verify_state_transition
-    if (a.read_mcycle() >= mcycle_end) {
+    if (mcycle >= mcycle_end) {
         return interpreter_status::success;
     }
 
@@ -3175,6 +3192,9 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     if (a.read_iflags_Y()) {
         return interpreter_status::success;
     }
+
+    // Set interrupt flag for RTC
+    set_rtc_interrupt(a, mcycle);
 
     // Rebuild brk flag from all conditions.
     a.get_naked_state().set_brk_from_all();

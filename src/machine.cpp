@@ -14,7 +14,6 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#include <cstddef>
 #include <sstream>
 #include <cstring>
 #include <cinttypes>
@@ -1409,30 +1408,13 @@ access_log machine::step(const access_log::type &log_type, bool one_based) {
 }
 
 void machine::run(uint64_t mcycle_end) {
+    uint64_t inital_mcycle = read_mcycle();
+    run_inner_loop(mcycle_end);
 
-    // The outer loop breaks only when the machine is halted
-    // or when mcycle hits mcycle_end
-    uint64_t mcycle = read_mcycle();
-
-    while (mcycle < mcycle_end) {
-
-        // If we are halted, do nothing
-        if (read_iflags_H()) {
-            return;
-        }
-
-        // If we are yielded, do nothing
-        if (read_iflags_Y()) {
-            return;
-        }
-
-        run_inner_loop(mcycle_end);
-        mcycle = read_mcycle();
-
-        // Perform interact with htif after every timer interrupt
-        if (mcycle % RTC_FREQ_DIV == 0) {
-            interact();
-        }
+    // Perform interact with htif after every timer interrupt
+    uint64_t final_mcycle = read_mcycle();
+    if (final_mcycle != inital_mcycle && rtc_is_tick(final_mcycle)) {
+        interact();
     }
 }
 

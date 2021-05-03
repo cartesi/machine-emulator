@@ -413,7 +413,7 @@ friend i_state_access<logged_state_access>;
         // The proof in the log uses the Merkle tree before the state is modified.
         // But log needs the word value before and after the change.
         auto old_iflags = m_m.get_state().read_iflags();
-        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.I, m_m.get_state().iflags.Y, true);
+        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.Y, true);
         uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
         log_read(iflags_addr, old_iflags, "iflags.H (superfluous)");
         log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.H");
@@ -430,7 +430,7 @@ friend i_state_access<logged_state_access>;
         // The proof in the log uses the Merkle tree before the state is modified.
         // But log needs the word value before and after the change.
         auto old_iflags = m_m.get_state().read_iflags();
-        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.I, true, m_m.get_state().iflags.H);
+        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, true, m_m.get_state().iflags.H);
         uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
         log_read(iflags_addr, old_iflags, "iflags.Y (superfluous)");
         log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.Y");
@@ -442,7 +442,7 @@ friend i_state_access<logged_state_access>;
         // The proof in the log uses the Merkle tree before the state is modified.
         // But log needs the word value before and after the change.
         auto old_iflags = m_m.get_state().read_iflags();
-        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.I, false, m_m.get_state().iflags.H);
+        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, false, m_m.get_state().iflags.H);
         uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
         log_read(iflags_addr, old_iflags, "iflags.Y (superfluous)");
         log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.Y");
@@ -455,35 +455,6 @@ friend i_state_access<logged_state_access>;
         return m_m.get_state().iflags.Y;
     }
 
-    void do_set_iflags_I(void) {
-        // The proof in the log uses the Merkle tree before the state is modified.
-        // But log needs the word value before and after the change.
-        auto old_iflags = m_m.get_state().read_iflags();
-        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, true, m_m.get_state().iflags.Y, m_m.get_state().iflags.H);
-        uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_read(iflags_addr, old_iflags, "iflags.I (superfluous)");
-        log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.I");
-        m_m.get_state().iflags.I = true;
-        update_after_write(iflags_addr);
-    }
-
-    void do_reset_iflags_I(void) {
-        // The proof in the log uses the Merkle tree before the state is modified.
-        // But log needs the word value before and after the change.
-        auto old_iflags = m_m.get_state().read_iflags();
-        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, false, m_m.get_state().iflags.Y, m_m.get_state().iflags.H);
-        uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
-        log_read(iflags_addr, old_iflags, "iflags.I (superfluous)");
-        log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.I");
-        m_m.get_state().iflags.I = false;
-        update_after_write(iflags_addr);
-    }
-
-    bool do_read_iflags_I(void) const {
-        log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.I");
-        return m_m.get_state().iflags.I;
-    }
-
     uint8_t do_read_iflags_PRV(void) const {
         log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(), "iflags.PRV");
         return m_m.get_state().iflags.PRV;
@@ -493,7 +464,7 @@ friend i_state_access<logged_state_access>;
         // The proof in the log uses the Merkle tree before the state is modified.
         // But log needs the word value before and after the change.
         auto old_iflags = m_m.get_state().read_iflags();
-        auto new_iflags = machine_state::packed_iflags(val, m_m.get_state().iflags.I, m_m.get_state().iflags.Y, m_m.get_state().iflags.H);
+        auto new_iflags = machine_state::packed_iflags(val, m_m.get_state().iflags.Y, m_m.get_state().iflags.H);
         uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
         log_read(iflags_addr, old_iflags, "iflags.PRV (superfluous)");
         log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.PRV");

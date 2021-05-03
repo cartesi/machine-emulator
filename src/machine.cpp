@@ -950,7 +950,6 @@ uint64_t machine::get_csr_address(csr w) {
 
 void machine::set_mip(uint32_t mask) {
     m_s.mip |= mask;
-    m_s.iflags.I = false;
     m_s.or_brk_with_mip_mie();
 }
 
@@ -961,18 +960,6 @@ void machine::reset_mip(uint32_t mask) {
 
 uint8_t machine::read_iflags_PRV(void) const {
     return m_s.iflags.PRV;
-}
-
-bool machine::read_iflags_I(void) const {
-    return m_s.iflags.I;
-}
-
-void machine::reset_iflags_I(void) {
-    m_s.iflags.I = false;
-}
-
-void machine::set_iflags_I(void) {
-    m_s.iflags.I = true;
 }
 
 bool machine::read_iflags_Y(void) const {

@@ -659,28 +659,6 @@ private:
         return (iflags & IFLAGS_Y_MASK) != 0;
     }
 
-    void do_set_iflags_I(void) {
-        uint64_t iflags_addr = PMA_SHADOW_START +
-            shadow_get_csr_rel_addr(shadow_csr::iflags);
-        auto old_iflags = check_read_word(iflags_addr, "iflags.I (superfluous)");
-        auto new_iflags = old_iflags | IFLAGS_I_MASK;
-        check_write_word(iflags_addr, new_iflags, "iflags.I");
-    }
-
-    void do_reset_iflags_I(void) {
-        uint64_t iflags_addr = PMA_SHADOW_START +
-            shadow_get_csr_rel_addr(shadow_csr::iflags);
-        auto old_iflags = check_read_word(iflags_addr, "iflags.I (superfluous)");
-        auto new_iflags = old_iflags & (~IFLAGS_I_MASK);
-        check_write_word(iflags_addr, new_iflags, "iflags.I");
-    }
-
-    bool do_read_iflags_I(void) {
-        auto iflags = check_read_word(PMA_SHADOW_START +
-            shadow_get_csr_rel_addr(shadow_csr::iflags), "iflags.I");
-        return (iflags & IFLAGS_I_MASK) != 0;
-    }
-
     uint8_t do_read_iflags_PRV(void) {
         auto iflags = check_read_word(PMA_SHADOW_START +
             shadow_get_csr_rel_addr(shadow_csr::iflags), "iflags.PRV");

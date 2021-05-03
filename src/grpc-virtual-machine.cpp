@@ -494,10 +494,6 @@ bool grpc_virtual_machine::do_read_iflags_H(void) {
     return (read_csr(csr::iflags) >> IFLAGS_H_SHIFT) & 1;
 }
 
-bool grpc_virtual_machine::do_read_iflags_I(void) {
-    return (read_csr(csr::iflags) >> IFLAGS_I_SHIFT) & 1;
-}
-
 bool grpc_virtual_machine::do_read_iflags_Y(void) {
     return (read_csr(csr::iflags) >> IFLAGS_Y_SHIFT) & 1;
 }
@@ -506,16 +502,8 @@ void grpc_virtual_machine::do_set_iflags_H(void) {
     return write_csr(csr::iflags, read_csr(csr::iflags) | IFLAGS_H_MASK);
 }
 
-void grpc_virtual_machine::do_set_iflags_I(void) {
-    return write_csr(csr::iflags, read_csr(csr::iflags) | IFLAGS_I_MASK);
-}
-
 void grpc_virtual_machine::do_set_iflags_Y(void) {
     return write_csr(csr::iflags, read_csr(csr::iflags) | IFLAGS_Y_MASK);
-}
-
-void grpc_virtual_machine::do_reset_iflags_I(void) {
-    return write_csr(csr::iflags, read_csr(csr::iflags) & (~IFLAGS_I_MASK));
 }
 
 void grpc_virtual_machine::do_reset_iflags_Y(void) {

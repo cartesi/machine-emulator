@@ -406,11 +406,6 @@ public:
         return do_read_iflags_H();
     }
 
-    /// \brief Reads the I iflag
-    bool read_iflags_I(void) {
-        return do_read_iflags_I();
-    }
-
     /// \brief Reads the Y iflag
     bool read_iflags_Y(void) {
         return do_read_iflags_Y();
@@ -421,19 +416,9 @@ public:
         return do_set_iflags_H();
     }
 
-    /// \brief Sets the I iflag
-    void set_iflags_I(void) {
-        return do_set_iflags_I();
-    }
-
     /// \brief Sets the Y iflag
     void set_iflags_Y(void) {
         return do_set_iflags_Y();
-    }
-
-    /// \brief Resets the I iflag
-    void reset_iflags_I(void) {
-        return do_reset_iflags_I();
     }
 
     /// \brief Reads the Y iflag
@@ -641,12 +626,9 @@ private:
     virtual void do_write_ilrsc(uint64_t val) = 0;
     virtual uint64_t do_read_iflags(void) = 0;
     virtual bool do_read_iflags_H(void) = 0;
-    virtual bool do_read_iflags_I(void) = 0;
     virtual bool do_read_iflags_Y(void) = 0;
     virtual void do_set_iflags_H(void) = 0;
-    virtual void do_set_iflags_I(void) = 0;
     virtual void do_set_iflags_Y(void) = 0;
-    virtual void do_reset_iflags_I(void) = 0;
     virtual void do_reset_iflags_Y(void) = 0;
     virtual void do_write_iflags(uint64_t val) = 0;
     virtual uint64_t do_read_htif_tohost(void) = 0;

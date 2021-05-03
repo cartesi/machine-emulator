@@ -499,7 +499,7 @@ public:
 
     /// \brief Returns packed iflags from its component fields.
     /// \returns The value of the register.
-    uint64_t packed_iflags(int PRV, int I, int Y, int H);
+    uint64_t packed_iflags(int PRV, int Y, int H);
 
     /// \brief Reads the value of the iflags register.
     /// \param val New register value.
@@ -617,16 +617,6 @@ public:
     /// \param i Register index. Between 0 and DHD_H_REG_COUNT-1, inclusive.
     /// \returns Address of the specified register
     static uint64_t get_dhd_h_address(int i);
-
-    /// \brief Checks the value of the iflags_I flag.
-    /// \returns The flag value.
-    bool read_iflags_I(void) const;
-
-    /// \brief Resets the value of the iflags_I flag.
-    void reset_iflags_I(void);
-
-    /// \brief Sets the iflags_I flag.
-    void set_iflags_I(void);
 
     /// \brief Checks the value of the iflags_Y flag.
     /// \returns The flag value.

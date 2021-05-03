@@ -321,17 +321,6 @@ static int machine_obj__index_read_iflags_H(lua_State *L) try {
     return 0;
 }
 
-/// \brief This is the machine:read_iflags_I() method implementation.
-/// \param L Lua state.
-static int machine_obj__index_read_iflags_I(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushboolean(L, m->read_iflags_I());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
 /// \brief This is the machine:read_iflags_Y() method implementation.
 /// \param L Lua state.
 static int machine_obj__index_read_iflags_Y(lua_State *L) try {
@@ -354,33 +343,11 @@ static int machine_obj__index_set_iflags_H(lua_State *L) try {
     return 0;
 }
 
-/// \brief This is the machine:set_iflags_I() method implementation.
-/// \param L Lua state.
-static int machine_obj__index_set_iflags_I(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->set_iflags_I();
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
 /// \brief This is the machine:set_iflags_Y() method implementation.
 /// \param L Lua state.
 static int machine_obj__index_set_iflags_Y(lua_State *L) try {
     auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
     m->set_iflags_Y();
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:reset_iflags_I() method implementation.
-/// \param L Lua state.
-static int machine_obj__index_reset_iflags_I(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->reset_iflags_I();
     return 0;
 } catch (std::exception &x) {
     luaL_error(L, x.what());
@@ -1253,12 +1220,9 @@ static const luaL_Reg machine_obj__index[] = {
     {"read_htif_iyield", machine_obj__index_read_htif_iyield},
     {"read_iflags", machine_obj__index_read_iflags},
     {"read_iflags_H", machine_obj__index_read_iflags_H},
-    {"read_iflags_I", machine_obj__index_read_iflags_I},
     {"read_iflags_Y", machine_obj__index_read_iflags_Y},
     {"set_iflags_H", machine_obj__index_set_iflags_H},
-    {"set_iflags_I", machine_obj__index_set_iflags_I},
     {"set_iflags_Y", machine_obj__index_set_iflags_Y},
-    {"reset_iflags_I", machine_obj__index_reset_iflags_I},
     {"reset_iflags_Y", machine_obj__index_reset_iflags_Y},
     {"read_ilrsc", machine_obj__index_read_ilrsc},
     {"read_marchid", machine_obj__index_read_marchid},

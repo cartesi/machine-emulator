@@ -415,25 +415,6 @@ public:
         return derived().do_read_iflags_H();
     }
 
-    /// \brief Sets the iflags_I flag.
-    /// \details This is Cartesi-specific.
-    void set_iflags_I(void) {
-        return derived().do_set_iflags_I();
-    }
-
-    /// \brief Resets the iflags_I flag.
-    /// \details This is Cartesi-specific.
-    void reset_iflags_I(void) {
-        return derived().do_reset_iflags_I();
-    }
-
-    /// \brief Reads the iflags_I flag.
-    /// \returns The flag value.
-    /// \details This is Cartesi-specific.
-    bool read_iflags_I(void) {
-        return derived().do_read_iflags_I();
-    }
-
     /// \brief Sets the iflags_Y flag.
     /// \details This is Cartesi-specific.
     void set_iflags_Y(void) {

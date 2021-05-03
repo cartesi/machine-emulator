@@ -296,18 +296,6 @@ private:
         return m_m.get_state().iflags.Y;
     }
 
-    void do_set_iflags_I(void) {
-        m_m.get_state().iflags.I = true;
-    }
-
-    void do_reset_iflags_I(void) {
-        m_m.get_state().iflags.I = false;
-    }
-
-    bool do_read_iflags_I(void) const {
-        return m_m.get_state().iflags.I;
-    }
-
     uint8_t do_read_iflags_PRV(void) const {
         return m_m.get_state().iflags.PRV;
     }

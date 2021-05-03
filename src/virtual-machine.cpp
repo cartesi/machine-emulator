@@ -287,10 +287,6 @@ bool virtual_machine::do_read_iflags_H(void) {
     return m_machine->read_iflags_H();
 }
 
-bool virtual_machine::do_read_iflags_I(void) {
-    return m_machine->read_iflags_I();
-}
-
 bool virtual_machine::do_read_iflags_Y(void) {
     return m_machine->read_iflags_Y();
 }
@@ -299,16 +295,8 @@ void virtual_machine::do_set_iflags_H(void) {
     return m_machine->set_iflags_H();
 }
 
-void virtual_machine::do_set_iflags_I(void) {
-    return m_machine->set_iflags_I();
-}
-
 void virtual_machine::do_set_iflags_Y(void) {
     return m_machine->set_iflags_Y();
-}
-
-void virtual_machine::do_reset_iflags_I(void) {
-    return m_machine->reset_iflags_I();
 }
 
 void virtual_machine::do_reset_iflags_Y(void) {

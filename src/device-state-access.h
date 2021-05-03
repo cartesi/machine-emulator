@@ -58,7 +58,6 @@ private:
         uint32_t mip = m_a.read_mip();
         mip |= mask;
         m_a.write_mip(mip);
-        m_a.reset_iflags_I();
         // Tell inner loop mip/mie have been modified, so it
         // may break out if need be
         m_a.get_naked_state().or_brk_with_mip_mie();

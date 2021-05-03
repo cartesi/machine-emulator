@@ -84,7 +84,6 @@ struct machine_statistics {
 
 struct unpacked_iflags {
     uint8_t PRV; ///< Privilege level.
-    bool I;      ///< CPU is idle (waiting for interrupts).
     bool Y;      ///< CPU has temporarily yielded.
     bool H;      ///< CPU has been permanently halted.
 };        ///< Cartesi-specific unpacked CSR iflags.
@@ -238,7 +237,6 @@ struct machine_state {
     uint64_t read_iflags(void) const {
         return packed_iflags(
             iflags.PRV,
-            iflags.I,
             iflags.Y,
             iflags.H
         );
@@ -249,7 +247,6 @@ struct machine_state {
     void write_iflags(uint64_t val) {
         iflags.H = (val >> IFLAGS_H_SHIFT) & 1;
         iflags.Y = (val >> IFLAGS_Y_SHIFT) & 1;
-        iflags.I = (val >> IFLAGS_I_SHIFT) & 1;
         iflags.PRV = (val >> IFLAGS_PRV_SHIFT) & 3;
     }
 
@@ -259,9 +256,8 @@ struct machine_state {
     /// \param Y Yielded flag
     /// \param H Halted flag
     /// \returns Packed iflags
-    static uint64_t packed_iflags(int PRV, int I, int Y, int H) {
+    static uint64_t packed_iflags(int PRV, int Y, int H) {
         return (PRV << IFLAGS_PRV_SHIFT) |
-               (I << IFLAGS_I_SHIFT) |
                (Y << IFLAGS_Y_SHIFT) |
                (H << IFLAGS_H_SHIFT);
     }

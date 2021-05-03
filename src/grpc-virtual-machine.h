@@ -141,12 +141,9 @@ private:
     void do_write_ilrsc(uint64_t val) override;
     uint64_t do_read_iflags(void) override;
     bool do_read_iflags_H(void) override;
-    bool do_read_iflags_I(void) override;
     bool do_read_iflags_Y(void) override;
     void do_set_iflags_H(void) override;
-    void do_set_iflags_I(void) override;
     void do_set_iflags_Y(void) override;
-    void do_reset_iflags_I(void) override;
     void do_reset_iflags_Y(void) override;
     void do_write_iflags(uint64_t val) override;
     uint64_t do_read_htif_tohost(void) override;

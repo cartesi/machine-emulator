@@ -21,7 +21,7 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 #### Ubuntu 20.04
 
 ```
-$ apt-get install build-essential automake libtool patchelf wget git libreadline-dev libboost-container-dev libboost-program-options-dev libboost-serialization-dev protobuf-compiler protobuf-compiler-grpc libprotobuf-dev libgrpc++-dev ca-certificates
+$ apt-get install build-essential automake libtool patchelf wget git libreadline-dev libboost-container-dev libboost-coroutine-dev libboost-context-dev libboost-serialization-dev protobuf-compiler protobuf-compiler-grpc libprotobuf-dev libgrpc++-dev ca-certificates
 ```
 #### MacOS
 

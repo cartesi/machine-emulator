@@ -44,19 +44,20 @@ INCS_Darwin=
 ifeq ($(UNAME),Darwin)
 # Homebrew installation
 ifneq (,$(wildcard /usr/local/opt/boost/lib))
-BOOST_LIB_Darwin=-L/usr/local/opt/boost/lib
+BOOST_LIB_DIR_Darwin=-L/usr/local/opt/boost/lib
 BOOST_INC_Darwin=-I/usr/local/opt/boost/include
 GRPC_LIB_Darwin=-L/usr/local/opt/grpc/lib -L/usr/local/opt/protobuf/lib
 GRPC_INC_Darwin=-I/usr/local/opt/grpc/include -I/usr/local/opt/protobuf/include
 else # Macports installation
-BOOST_LIB_Darwin=-L/opt/local/lib
+BOOST_LIB_DIR_Darwin=-L/opt/local/lib
 BOOST_INC_Darwin=-I/opt/local/include
 GRPC_LIB_Darwin=-L/opt/local/lib
 GRPC_INC_Darwin=-I/opt/local/include
 endif
 endif
 
-BOOST_LIB_Darwin+=-lboost_serialization-mt
+BOOST_SERIAL_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_serialization-mt
+BOOST_CORO_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_coroutine-mt -lboost_context-mt
 GRPC_LIB_Darwin+=-lgrpc++ -lgrpc -lprotobuf -lpthread
 
 PROFILE_DATA_Darwin=default.profdata
@@ -67,7 +68,8 @@ CC_Linux=gcc
 CXX_Linux=g++
 INCS_Linux=
 FS_LIB_Linux=-lstdc++fs
-BOOST_LIB_Linux=-lboost_serialization
+BOOST_SERIAL_LIB_Linux:=-lboost_serialization
+BOOST_CORO_LIB_Linux:=-lboost_coroutine -lboost_context
 BOOST_INC_Linux=
 GRPC_LIB_Linux:=-lgrpc++ -lgrpc -lprotobuf -lpthread
 GRPC_INC_Linux:=
@@ -78,15 +80,16 @@ CXX=$(CXX_$(UNAME))
 CC_MARCH=
 SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 FS_LIB=$(FS_LIB_$(UNAME))
-BOOST_LIB=$(BOOST_LIB_$(UNAME))
+BOOST_SERIAL_LIB=$(BOOST_SERIAL_LIB_$(UNAME))
+BOOST_CORO_LIB=$(BOOST_CORO_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
 GRPC_LIB=$(GRPC_LIB_$(UNAME))
 GRPC_INC=$(GRPC_INC_$(UNAME))
 
-LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_LIB)
-LUACARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(BOOST_LIB) $(GRPC_LIB)
-GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_LIB)
-GRPC_CLT_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB)
+LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB)
+LUACARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB) $(GRPC_LIB)
+GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_SERIAL_LIB)
+GRPC_PRX_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
 
@@ -217,7 +220,7 @@ use: $(PROFILE_DATA_$(UNAME)) luacartesi
 
 luacartesi: cartesi.so
 
-grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-client
+grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy
 
 hash: merkle-tree-hash
 
@@ -231,11 +234,11 @@ PROTO_OBJS:= \
 
 $(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-deprecated-declarations
 
-GRPC_CLT_OBJS:= \
+GRPC_PRX_OBJS:= \
 	$(PROTO_OBJS) \
 	grpc-util.o \
 	merkle-tree.o \
-	client.o
+	proxy.o
 
 GRPC_SRV_OBJS:= \
 	$(PROTO_OBJS) \
@@ -320,10 +323,10 @@ merkle-tree-hash: $(MERKLE_TREE_HASH_OBJS)
 cartesi-machine-server: $(GRPC_SRV_OBJS)
 	$(CXX) -o $@ $^ $(GRPC_SRV_LIBS)
 
-cartesi-machine-client: $(GRPC_CLT_OBJS)
-	$(CXX) -o $@ $^ $(GRPC_CLT_LIBS)
+cartesi-machine-proxy: $(GRPC_PRX_OBJS)
+	$(CXX) -o $@ $^ $(GRPC_PRX_LIBS)
 
-cartesi-machine-server cartesi-machine-client: CXXFLAGS := $(GRPC_INC_$(UNAME)) $(CXXFLAGS)
+cartesi-machine-server cartesi-machine-proxy: CXXFLAGS := $(GRPC_INC_$(UNAME)) $(CXXFLAGS)
 
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 
@@ -342,7 +345,7 @@ grpc-util.o grpc-virtual-machine.o: $(LUACARTESI_GRPC_GEN_OBJS)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-client merkle-tree-hash
+	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy merkle-tree-hash
 
 profile-clean:
 	rm -f *.profdata *.profraw *.gcda

@@ -3,7 +3,7 @@ FROM ubuntu:20.04 as builder
 RUN apt-get update && \
     apt-get install --no-install-recommends -y \
         build-essential wget git \
-        libreadline-dev libboost-container-dev libboost-program-options-dev \
+        libreadline-dev libboost-coroutine-dev libboost-context-dev \
         libboost-serialization-dev protobuf-compiler protobuf-compiler-grpc \
         libprotobuf-dev libgrpc++-dev \
         ca-certificates automake libtool patchelf && \
@@ -21,7 +21,8 @@ RUN make -j$(nproc) dep && \
 FROM ubuntu:20.04
 
 RUN apt-get update && apt-get install -y \
-    libboost-program-options1.71.0 \
+    libboost-coroutine1.71.0 \
+    libboost-context1.71.0 \
     libboost-serialization1.71.0 \
     libprotobuf17 \
     libprotobuf-lite17 \

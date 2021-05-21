@@ -1395,13 +1395,16 @@ access_log machine::step(const access_log::type &log_type, bool one_based) {
 }
 
 void machine::run(uint64_t mcycle_end) {
-    uint64_t inital_mcycle = read_mcycle();
-    run_inner_loop(mcycle_end);
-
-    // Perform interact with htif after every timer interrupt
-    uint64_t final_mcycle = read_mcycle();
-    if (final_mcycle != inital_mcycle && rtc_is_tick(final_mcycle)) {
-        interact();
+    // The interpreter loop inside this function is not required by
+    // specification.  However, this loop is an optimization to reduce
+    // the number of calls to machine::run, which can be expensive in
+    // some bindings such as gRPC.
+    while (read_mcycle() < mcycle_end && !read_iflags_H() && !read_iflags_Y()) {
+        run_inner_loop(mcycle_end);
+        // Perform interact with htif after every timer interrupt
+        if (rtc_is_tick(read_mcycle())) {
+            interact();
+        }
     }
 }
 

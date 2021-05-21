@@ -12,8 +12,8 @@ RUN \
 RUN \
     apt-get update && \
     apt-get install --no-install-recommends -y \
-        build-essential vim wget git libreadline-dev libboost-container-dev \
-        libboost-program-options-dev libboost-serialization-dev \
+        build-essential vim wget git libreadline-dev libboost-coroutine-dev \
+        libboost-context-dev libboost-serialization-dev \
         protobuf-compiler protobuf-compiler-grpc libprotobuf-dev libgrpc++-dev \
         ca-certificates automake libtool patchelf && \
     rm -rf /var/lib/apt/lists/*

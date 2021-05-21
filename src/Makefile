@@ -232,7 +232,7 @@ PROTO_OBJS:= \
 	cartesi-machine.pb.o \
 	cartesi-machine.grpc.pb.o
 
-$(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-deprecated-declarations
+$(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-deprecated-declarations -Wno-deprecated-copy
 
 GRPC_PRX_OBJS:= \
 	$(PROTO_OBJS) \

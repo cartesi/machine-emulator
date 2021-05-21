@@ -18,6 +18,12 @@
 #include <string>
 #include <boost/coroutine2/coroutine.hpp>
 
+#define PROXY_VERSION_MAJOR UINT32_C(0)
+#define PROXY_VERSION_MINOR UINT32_C(3)
+#define PROXY_VERSION_PATCH UINT32_C(0)
+#define PROXY_VERSION_PRE_RELEASE ""
+#define PROXY_VERSION_BUILD ""
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -39,7 +45,7 @@ using namespace Versioning;
 // 6) A request status object
 //
 // gRPC async server calls have the following life-cycle
-// 1) We "request" from the service object that it starts processing requests
+// 1) We "request" from the service object that it starts accepting requests
 // for a given <rpc-name> by calling service->Request<rpc-name>() method, and
 // passing the server context, a request message to receive the request, the
 // writer object for the response, the completion queue, and a tag.
@@ -99,8 +105,12 @@ using namespace Versioning;
 // side_effect::shutdown, it will be deleted and the server will be shutdown.
 // Otherwise, the coroutine must have yielded side_effect::none, and therefore
 // it *must* arrange for itself to arrive again in the completion queue. If it
-// doesn't arrange this, it will never be deleted and memory will leak.
-
+// doesn't arrange this, it will never be deleted. THIS WILL LEAK.
+// Conversely, if the coroutine arranged to be returned from the completion
+// queue, it *must* yield instead of finishing. Otherwise, it will be
+// immediately deleted and a dangling pointer will be returned by the completion
+// queue. THIS WILL CRASH!
+//
 struct handler_context {
     Machine::AsyncService async_service;
     std::unique_ptr<Machine::Stub> stub;
@@ -633,6 +643,13 @@ static bool build_client(const std::string &address, handler_context &hctx) {
         response.version().major() << "." <<
         response.version().minor() << "." <<
         response.version().patch() << "\n";
+
+    if (response.version().major() != PROXY_VERSION_MAJOR ||
+        response.version().minor() != PROXY_VERSION_MINOR) {
+        std::cerr << "proxy is incompatible with server\n";
+        return false;
+    }
+
     return true;
 }
 
@@ -664,6 +681,11 @@ int main(int argc, char *argv[]) {
     }
 
     handler_context hctx{};
+
+    std::cerr << "proxy version is " <<
+        PROXY_VERSION_MAJOR << "." <<
+        PROXY_VERSION_MINOR << "." <<
+        PROXY_VERSION_PATCH << "\n";
 
     if (!build_client(argv[2], hctx)) {
         std::cerr << "client creation failed\n";
@@ -717,6 +739,9 @@ int main(int argc, char *argv[]) {
             goto shutdown;
         }
         // If the coroutine is finished, simply delete it
+        // This can't really happen here, because the coroutine ALWAYS yields
+        // after arranging for the completion queue to return it, rather than
+        // finishing.
         if (finished(h)) {
             delete h;
         } else {
@@ -726,9 +751,9 @@ int main(int argc, char *argv[]) {
             if (finished(h)) {
                 delete h;
             } else {
-                // Otherwise, it returned a side effect
-                // If it requested a shutdown, delete this coroutine and
-                // shutdown
+                // Otherwise, if requested a shutdown, delete this coroutine and
+                // shutdown. The other pending coroutines will be deleted when
+                // we drain the completion queue.
                 if (h->get() == side_effect::shutdown) {
                     delete h;
                     goto shutdown;

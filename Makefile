@@ -22,7 +22,7 @@ STRIP_EXEC= strip -x
 
 DEP_TO_BIN= luapp5.3 luacpp5.3
 DEP_TO_LIB=
-EMU_TO_BIN= cartesi-machine-server cartesi-machine-proxy merkle-tree-hash
+EMU_TO_BIN= cartesi-machine-server cartesi-machine-proxy merkle-tree-hash rollup-machine-manager
 EMU_TO_LIB= $(LIBCARTESI_$(UNAME))
 EMU_LUA_TO_BIN= cartesi-machine-tests.lua cartesi-machine.lua cartesi-machine-stored-hash.lua
 EMU_TO_LUA_PATH= cartesi/util.lua cartesi/proof.lua

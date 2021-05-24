@@ -96,8 +96,9 @@ LIBCARTESI_LIB=-L. -lcartesi
 CARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB)
 LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB)
 LUACARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB) $(GRPC_LIB)
-GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_SERIAL_LIB)
-GRPC_PRX_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
+CARTESI_MACHINE_SERVER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_SERIAL_LIB)
+CARTESI_MACHINE_PROXY_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
+ROLLUP_MACHINE_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
 
@@ -274,7 +275,7 @@ use: $(PROFILE_DATA_$(UNAME)) luacartesi
 
 luacartesi: cartesi.so
 
-grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy
+grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy rollup-machine-manager
 
 hash: merkle-tree-hash tests/test-merkle-tree-hash
 
@@ -295,24 +296,38 @@ TEST_MERKLE_TREE_HASH_OBJS:= \
 TEST_MACHINE_C_API_OBJS:= \
     test-machine-c-api.o
 
-PROTO_OBJS:= \
+CARTESI_MACHINE_PROTO_OBJS:= \
 	versioning.pb.o \
 	cartesi-machine.pb.o \
 	cartesi-machine.grpc.pb.o
+
+ROLLUP_MACHINE_MANAGER_PROTO_OBJS:= \
+	rollup-machine-manager.pb.o \
+	rollup-machine-manager.grpc.pb.o
+
+PROTO_OBJS:= \
+	$(CARTESI_MACHINE_PROTO_OBJS) \
+	$(ROLLUP_MACHINE_MANAGER_PROTO_OBJS)
+
 
 $(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-deprecated-declarations -Wno-deprecated-copy
 
 PROTO_SOURCES:=$(PROTO_OBJS:.o=.cc)
 
-GRPC_PRX_OBJS:= \
-	$(PROTO_OBJS) \
-	grpc-util.o \
-	machine-merkle-tree.o \
-	pristine-merkle-tree.o \
+CARTESI_MACHINE_PROXY_OBJS:= \
+	$(CARTESI_MACHINE_PROTO_OBJS) \
 	proxy.o
 
-GRPC_SRV_OBJS:= \
-	$(PROTO_OBJS) \
+ROLLUP_MACHINE_MANAGER_OBJS:= \
+	$(CARTESI_MACHINE_PROTO_OBJS) \
+	$(ROLLUP_MACHINE_MANAGER_PROTO_OBJS) \
+	machine-merkle-tree.o \
+	pristine-merkle-tree.o \
+	grpc-util.o \
+	rollup-machine-manager.o
+
+CARTESI_MACHINE_SERVER_OBJS:= \
+	$(CARTESI_MACHINE_PROTO_OBJS) \
 	server.o \
 	grpc-util.o \
 	clint.o \
@@ -397,13 +412,16 @@ tests/test-merkle-tree-hash: $(TEST_MERKLE_TREE_HASH_OBJS)
 
 grpc-interfaces: $(PROTO_SOURCES)
 
-cartesi-machine-server: $(GRPC_SRV_OBJS)
-	$(CXX) -o $@ $^ $(GRPC_SRV_LIBS)
+cartesi-machine-server: $(CARTESI_MACHINE_SERVER_OBJS)
+	$(CXX) -o $@ $^ $(CARTESI_MACHINE_SERVER_LIBS)
 
-cartesi-machine-proxy: $(GRPC_PRX_OBJS)
-	$(CXX) -o $@ $^ $(GRPC_PRX_LIBS)
+cartesi-machine-proxy: $(CARTESI_MACHINE_PROXY_OBJS)
+	$(CXX) -o $@ $^ $(CARTESI_MACHINE_PROXY_LIBS)
 
-cartesi-machine-server cartesi-machine-proxy: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
+rollup-machine-manager: $(ROLLUP_MACHINE_MANAGER_OBJS)
+	$(CXX) -o $@ $^ $(ROLLUP_MACHINE_MANAGER_LIBS)
+
+cartesi-machine-server cartesi-machine-proxy rollup-machine-manager: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
 tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI)
 	$(CXX) $(LIBCARTESI_TESTS_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI_LIB)

@@ -31,10 +31,10 @@
 
 namespace cartesi {
 
-/// \class merkle_tree
+/// \class machine_merkle_tree
 /// \brief Merkle tree implementation.
 ///
-/// \details The merkle_tree class implements a Merkle tree
+/// \details The machine_merkle_tree class implements a Merkle tree
 /// covering LOG2_TREE_SIZE bits of address space.
 ///
 /// Upon creation, the memory is *pristine*, i.e., completely
@@ -51,9 +51,9 @@ namespace cartesi {
 /// Tree leaves contain Keccak-256 hashes of individual words.
 ///
 /// Tree contents are updated page-by-page using calls to
-/// merkle_tree#begin_update, merkle_tree#update_page, ...,
-/// merkle_tree#update_page, merkle_tree#end_update.
-class merkle_tree final {
+/// machine_merkle_tree#begin_update, machine_merkle_tree#update_page, ...,
+/// machine_merkle_tree#update_page, machine_merkle_tree#end_update.
+class machine_merkle_tree final {
 public:
 
     using word_type = uint64_t;
@@ -317,20 +317,20 @@ public:
 
     /// \brief Default constructor.
     /// \details Initializes memory to zero.
-    merkle_tree(void);
+    machine_merkle_tree(void);
 
     /// \brief No copy constructor
-    merkle_tree(const merkle_tree &) = delete;
+    machine_merkle_tree(const machine_merkle_tree &) = delete;
     /// \brief No copy assignment
-    merkle_tree& operator=(const merkle_tree &) = delete;
+    machine_merkle_tree& operator=(const machine_merkle_tree &) = delete;
     /// \brief No move constructor
-    merkle_tree(merkle_tree &&) = delete;
+    machine_merkle_tree(machine_merkle_tree &&) = delete;
     /// \brief No move assignment
-    merkle_tree& operator=(merkle_tree &&) = delete;
+    machine_merkle_tree& operator=(machine_merkle_tree &&) = delete;
 
     /// \brief Destructor
     /// \details Releases all used memory
-    ~merkle_tree();
+    ~machine_merkle_tree();
 
     /// \brief Returns the root hash.
     /// \param hash Receives the hash.
@@ -393,7 +393,7 @@ public:
     static bool verify_proof(const proof_type &proof);
 };
 
-std::ostream &operator<<(std::ostream &out, const merkle_tree::hash_type &hash);
+std::ostream &operator<<(std::ostream &out, const machine_merkle_tree::hash_type &hash);
 
 } // namespace cartesi
 

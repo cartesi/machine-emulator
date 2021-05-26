@@ -135,7 +135,7 @@ LUACARTESI_OBJS:= \
 	dhd.o \
 	dhd-source.o \
 	shadow.o \
-	merkle-tree.o \
+	machine-merkle-tree.o \
 	pma.o \
 	machine.o \
 	machine-config.o \
@@ -154,7 +154,7 @@ LUACARTESI_GRPC_GEN_OBJS:= \
 	cartesi-machine.grpc.pb.o
 
 LUACARTESI_GRPC_OBJS:= \
-	merkle-tree.o \
+	machine-merkle-tree.o \
 	clua-i-virtual-machine.o \
 	clua-htif.o \
 	clua-machine-util.o \
@@ -237,7 +237,7 @@ $(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-de
 GRPC_PRX_OBJS:= \
 	$(PROTO_OBJS) \
 	grpc-util.o \
-	merkle-tree.o \
+	machine-merkle-tree.o \
 	proxy.o
 
 GRPC_SRV_OBJS:= \
@@ -250,7 +250,7 @@ GRPC_SRV_OBJS:= \
 	dhd.o \
 	dhd-source.o \
 	shadow.o \
-	merkle-tree.o \
+	machine-merkle-tree.o \
 	pma.o \
 	machine.o \
 	machine-config.o \

@@ -37,7 +37,7 @@ namespace cartesi {
 /// \}
 class i_virtual_machine {
 public:
-    using hash_type = merkle_tree::hash_type;
+    using hash_type = machine_merkle_tree::hash_type;
     using csr = machine::csr;
 
     /// \brief Destructor.
@@ -66,7 +66,7 @@ public:
     }
 
     /// \brief Obtains the proof for a node in the Merkle tree.
-    void get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) {
+    void get_proof(uint64_t address, int log2_size, machine_merkle_tree::proof_type &proof) {
         do_get_proof(address, log2_size, proof);
     }
 
@@ -566,7 +566,7 @@ private:
     virtual void do_store(const std::string &dir) = 0;
     virtual access_log do_step(const access_log::type &log_type, bool one_based = false) = 0;
     virtual bool do_update_merkle_tree(void) = 0;
-    virtual void do_get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) = 0;
+    virtual void do_get_proof(uint64_t address, int log2_size, machine_merkle_tree::proof_type &proof) = 0;
     virtual void do_get_root_hash(hash_type &hash) = 0;
     virtual bool do_verify_merkle_tree(void) = 0;
     virtual uint64_t do_read_csr(csr r) = 0;

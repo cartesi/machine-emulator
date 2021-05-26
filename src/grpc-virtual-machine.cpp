@@ -28,7 +28,7 @@ using grpc::StatusCode;
 using namespace CartesiMachine;
 using namespace Versioning;
 
-using hash_type = cartesi::merkle_tree::hash_type;
+using hash_type = cartesi::machine_merkle_tree::hash_type;
 
 namespace cartesi {
 
@@ -621,7 +621,7 @@ void grpc_virtual_machine::do_get_root_hash(hash_type &hash)  {
     hash = get_proto_hash(response.hash());
 }
 
-void grpc_virtual_machine::do_get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof)  {
+void grpc_virtual_machine::do_get_proof(uint64_t address, int log2_size, machine_merkle_tree::proof_type &proof)  {
     GetProofRequest request;
     GetProofResponse response;
     request.set_address(address);

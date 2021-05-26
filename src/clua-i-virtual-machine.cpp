@@ -86,7 +86,7 @@ static int machine_obj__index_dump_regs(lua_State *L) try {
 /// \param L Lua state.
 static int machine_obj__index_get_proof(lua_State *L) try {
     auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    merkle_tree::proof_type proof;
+    machine_merkle_tree::proof_type proof;
     m->get_proof(luaL_checkinteger(L, 2), luaL_checkinteger(L, 3), proof);
     clua_push_proof(L, proof);
     return 1;
@@ -108,7 +108,7 @@ static int machine_obj__index_get_initial_config(lua_State *L) try {
 /// \param L Lua state.
 static int machine_obj__index_get_root_hash(lua_State *L) try {
     auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    merkle_tree::hash_type hash;
+    machine_merkle_tree::hash_type hash;
     m->get_root_hash(hash);
     clua_push_hash(L, hash);
     return 1;

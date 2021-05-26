@@ -25,7 +25,7 @@
 #include "machine-state.h"
 #include "machine-config.h"
 #include "machine-runtime-config.h"
-#include "merkle-tree.h"
+#include "machine-merkle-tree.h"
 #include "access-log.h"
 #include "htif.h"
 #include "dhd-source.h"
@@ -43,7 +43,7 @@ class machine final {
     //    not constantly going through the extra indirection. We
     //    should test this.
     machine_state m_s;   ///< Opaque machine state
-    merkle_tree m_t;     ///< Merkle tree of state
+    machine_merkle_tree m_t;     ///< Merkle tree of state
     htif m_h;            ///< HTIF device
 
     machine_config m_c;  ///< Copy of initialization config
@@ -86,7 +86,7 @@ class machine final {
 public:
 
     /// \brief Type of hash
-    using hash_type = merkle_tree::hash_type;
+    using hash_type = machine_merkle_tree::hash_type;
 
     /// \brief List of CSRs to use with read_csr and write_csr
     enum class csr {
@@ -164,7 +164,7 @@ public:
     /// \brief Verifies a proof.
     /// \param proof Proof to be verified.
     /// \return True if proof is consistent, false otherwise.
-    static bool verify_proof(const merkle_tree::proof_type &proof);
+    static bool verify_proof(const machine_merkle_tree::proof_type &proof);
 
     /// \brief Checks the internal consistency of an access log.
     /// \param log State access log to be verified.
@@ -220,7 +220,7 @@ public:
     /// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
     /// \param proof Receives the proof.
     /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
-    void get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) const;
+    void get_proof(uint64_t address, int log2_size, machine_merkle_tree::proof_type &proof) const;
 
     /// \brief Obtains the root hash of the Merkle tree.
     /// \param hash Receives the hash.

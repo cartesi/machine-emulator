@@ -37,7 +37,7 @@
 #include "clint.h"
 #include "htif.h"
 #include "access-log.h"
-#include "merkle-tree.h"
+#include "machine-merkle-tree.h"
 #include "pma.h"
 #include "strict-aliasing.h"
 
@@ -82,9 +82,9 @@ private:
     ///< Add to indices reported in errors
     int m_one_based;
     ///< Root hash before next access
-    merkle_tree::hash_type m_root_hash;
+    machine_merkle_tree::hash_type m_root_hash;
     ///< Hasher needed to verify proofs
-    merkle_tree::hasher_type m_hasher;
+    machine_merkle_tree::hasher_type m_hasher;
     ///< Local storage for mock pma entries reconstructed from accesses
     boost::container::static_vector<pma_entry, PMA_MAX> m_mock_pmas;
 
@@ -125,7 +125,7 @@ public:
         }
     }
 
-    void get_root_hash(merkle_tree::hash_type &hash) const {
+    void get_root_hash(machine_merkle_tree::hash_type &hash) const {
         hash = m_root_hash;
     }
 
@@ -143,9 +143,9 @@ private:
         return m_naked_state;
     }
 
-    static void roll_hash_up_tree(merkle_tree::hasher_type &hasher,
-        const merkle_tree::proof_type &proof,
-        merkle_tree::hash_type &rolling_hash) {
+    static void roll_hash_up_tree(machine_merkle_tree::hasher_type &hasher,
+        const machine_merkle_tree::proof_type &proof,
+        machine_merkle_tree::hash_type &rolling_hash) {
         for (int log2_size = proof.log2_size; log2_size < 64; ++log2_size) {
            int bit = (proof.address & (UINT64_C(1) << log2_size)) != 0;
            const auto &sibling_hash = proof.sibling_hashes[63-log2_size];
@@ -161,8 +161,8 @@ private:
         }
     }
 
-    static void get_hash(merkle_tree::hasher_type &hasher,
-        const unsigned char *data, size_t len, merkle_tree::hash_type &hash) {
+    static void get_hash(machine_merkle_tree::hasher_type &hasher,
+        const unsigned char *data, size_t len, machine_merkle_tree::hash_type &hash) {
         if (len <= 8) {
             assert(len == 8);
             hasher.begin();
@@ -171,7 +171,7 @@ private:
         } else {
             assert((len & 1) == 0);
             len = len/2;
-            merkle_tree::hash_type left;
+            machine_merkle_tree::hash_type left;
             get_hash(hasher, data, len, left);
             get_hash(hasher, data+len, len, hash);
             hasher.begin();
@@ -181,8 +181,8 @@ private:
         }
     }
 
-    static void get_hash(merkle_tree::hasher_type &hasher,
-        const access_data &data, merkle_tree::hash_type &hash) {
+    static void get_hash(machine_merkle_tree::hasher_type &hasher,
+        const access_data &data, machine_merkle_tree::hash_type &hash) {
         get_hash(hasher, data.data(), data.size(), hash);
     }
 
@@ -246,7 +246,7 @@ private:
                 throw std::invalid_argument{"mismatch in read access " +
                     std::to_string(access_to_report()) + " root hash"};
             }
-            merkle_tree::hash_type rolling_hash;
+            machine_merkle_tree::hash_type rolling_hash;
             get_hash(m_hasher, access.read, rolling_hash);
             if (rolling_hash != proof.target_hash) {
                 throw std::invalid_argument{"value in read access " +
@@ -330,7 +330,7 @@ private:
                 throw std::invalid_argument{"mismatch in write access " +
                     std::to_string(access_to_report()) + " root hash"};
             }
-            merkle_tree::hash_type rolling_hash;
+            machine_merkle_tree::hash_type rolling_hash;
             get_hash(m_hasher, access.read, rolling_hash);
             if (rolling_hash != proof.target_hash) {
                 throw std::invalid_argument{"value before write access " +

@@ -993,8 +993,8 @@ static double now(void) {
 
 bool machine::verify_dirty_page_maps(void) const {
     // double begin = now();
-    static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
-    merkle_tree::hasher_type h;
+    static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(), "PMA and machine_merkle_tree page sizes must match");
+    machine_merkle_tree::hasher_type h;
     auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
     if (!scratch) return false;
     bool broken = false;
@@ -1052,9 +1052,9 @@ static uint64_t get_task_concurrency(uint64_t value) {
 }
 
 bool machine::update_merkle_tree(void) {
-    merkle_tree::hasher_type gh;
+    machine_merkle_tree::hasher_type gh;
     //double begin = now();
-    static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
+    static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(), "PMA and machine_merkle_tree page sizes must match");
     if constexpr(!avoid_tlb<machine_state>::value) {
         // Go over the write TLB and mark as dirty all pages currently there
         for (int i = 0; i < TLB_SIZE; ++i) {
@@ -1074,7 +1074,7 @@ bool machine::update_merkle_tree(void) {
         // For each PMA, we launch as many threads (n) as defined on concurrency
         // runtime config or as the hardware supports.
         const uint64_t n = get_task_concurrency(m_r.concurrency.update_merkle_tree);
-        // The update_page_node_hash function in the merkle_tree is not thread
+        // The update_page_node_hash function in the machine_merkle_tree is not thread
         // safe, so we protect it with a mutex
         std::mutex updatex;
         // Each thread is launched as a future, whose value tells if the
@@ -1085,7 +1085,7 @@ bool machine::update_merkle_tree(void) {
             futures.emplace_back(std::async(std::launch::async, [&](int j) -> bool {
                 auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
                 if (!scratch) return false;
-                merkle_tree::hasher_type h;
+                machine_merkle_tree::hasher_type h;
                 // Thread j is responsible for page i if i % n == j.
                 for (uint64_t i = j; i < pages_in_range; i+=n) {
                     uint64_t page_start_in_range = i*PMA_PAGE_SIZE;
@@ -1134,12 +1134,12 @@ bool machine::update_merkle_tree(void) {
 }
 
 bool machine::update_merkle_tree_page(uint64_t address) {
-    static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
+    static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(), "PMA and machine_merkle_tree page sizes must match");
     // Align address to begining of page
     address &= ~(PMA_PAGE_SIZE-1);
     pma_entry &pma = find_pma_entry<uint64_t>(address);
     uint64_t page_start_in_range = address - pma.get_start();
-    merkle_tree::hasher_type h;
+    machine_merkle_tree::hasher_type h;
     auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
     if (!scratch) return false;
     m_t.begin_update();
@@ -1194,11 +1194,11 @@ bool machine::verify_merkle_tree(void) const {
     return m_t.verify_tree();
 }
 
-void machine::get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) const {
-    static_assert(PMA_PAGE_SIZE == merkle_tree::get_page_size(), "PMA and merkle_tree page sizes must match");
+void machine::get_proof(uint64_t address, int log2_size, machine_merkle_tree::proof_type &proof) const {
+    static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(), "PMA and machine_merkle_tree page sizes must match");
     // Check for valid target node size
-    if (log2_size > merkle_tree::get_log2_tree_size() ||
-        log2_size < merkle_tree::get_log2_word_size()) {
+    if (log2_size > machine_merkle_tree::get_log2_tree_size() ||
+        log2_size < machine_merkle_tree::get_log2_word_size()) {
         throw std::invalid_argument{"invalid log2_size"};
     }
     // Check target address alignment
@@ -1213,7 +1213,7 @@ void machine::get_proof(uint64_t address, int log2_size, merkle_tree::proof_type
     // size is a power of 2, and it is aligned to its size.
     // Therefore, it is is either entirely inside a PMA range,
     // or entirely outside it.
-    if (log2_size < merkle_tree::get_log2_page_size()) {
+    if (log2_size < machine_merkle_tree::get_log2_page_size()) {
         uint64_t length = UINT64_C(1) << log2_size;
         const pma_entry &pma = find_pma_entry(address, length);
         auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
@@ -1230,13 +1230,13 @@ void machine::get_proof(uint64_t address, int log2_size, merkle_tree::proof_type
             }
         }
         if (!m_t.get_proof(address, log2_size, page_data, proof)) {
-            throw std::runtime_error{"merkle_tree::get_proof() failed"};
+            throw std::runtime_error{"machine_merkle_tree::get_proof() failed"};
         }
     // If proof concerns range bigger than a page, we already have its hash
     // stored in the tree itself
     } else {
         if (!m_t.get_proof(address, log2_size, nullptr, proof)) {
-            throw std::runtime_error{"merkle_tree::get_proof() failed"};
+            throw std::runtime_error{"machine_merkle_tree::get_proof() failed"};
         }
     }
 }

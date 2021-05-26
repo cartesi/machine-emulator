@@ -69,24 +69,24 @@ access_log::type get_proto_log_type(
 /// \brief Converts proto Hash to C++ hash
 /// \param proto_hash Proto Hash to convert
 /// \returns Converted C++ hash
-merkle_tree::hash_type get_proto_hash(const CartesiMachine::Hash &proto_hash);
+machine_merkle_tree::hash_type get_proto_hash(const CartesiMachine::Hash &proto_hash);
 
 /// \brief Converts C++ hash to proto Hash
 /// \param h C++ hash to convert
 /// \param proto_h Pointer to proto Hash receiving result of conversion
-void set_proto_hash(const merkle_tree::hash_type &h,
+void set_proto_hash(const machine_merkle_tree::hash_type &h,
     CartesiMachine::Hash *proto_h);
 
 /// \brief Convertes C++ proof to proto Proof
 /// \param p C++ proof to convert
 /// \param proto_p Pointer to proto Proof receiving result of conversion
-void set_proto_proof(const merkle_tree::proof_type &p,
+void set_proto_proof(const machine_merkle_tree::proof_type &p,
     CartesiMachine::Proof *proto_p);
 
 /// \brief Converts proto Proof to C++ proof
 /// \param proto_proof Proto proof to convert
 /// \returns Converted C++ proof
-merkle_tree::proof_type get_proto_proof(
+machine_merkle_tree::proof_type get_proto_proof(
     const CartesiMachine::Proof &proto_proof);
 
 /// \brief Converts C++ access_log to proto Access_Log

@@ -269,16 +269,16 @@ static bracket_note check_bracket_note(lua_State *L, int tabidx) {
 /// \param idx Proof stack index.
 /// \param log2_size of node from which to obtain siblings.
 /// \returns The sibling_hashes array.
-static merkle_tree::siblings_type check_sibling_hashes(lua_State *L, int idx,
+static machine_merkle_tree::siblings_type check_sibling_hashes(lua_State *L, int idx,
     int log2_size) {
     luaL_checktype(L, idx, LUA_TTABLE);
-    merkle_tree::siblings_type sibling_hashes;
-    if (log2_size < merkle_tree::get_log2_word_size()) {
+    machine_merkle_tree::siblings_type sibling_hashes;
+    if (log2_size < machine_merkle_tree::get_log2_word_size()) {
         luaL_error(L, "invalid log2_size");
     }
-    for ( ; log2_size < merkle_tree::get_log2_tree_size(); ++log2_size) {
-        lua_rawgeti(L, idx, merkle_tree::get_log2_tree_size()-log2_size);
-        merkle_tree::set_sibling_hash(clua_check_hash(L, -1),
+    for ( ; log2_size < machine_merkle_tree::get_log2_tree_size(); ++log2_size) {
+        lua_rawgeti(L, idx, machine_merkle_tree::get_log2_tree_size()-log2_size);
+        machine_merkle_tree::set_sibling_hash(clua_check_hash(L, -1),
             log2_size, sibling_hashes);
         lua_pop(L, 1);
     }
@@ -289,7 +289,7 @@ static merkle_tree::siblings_type check_sibling_hashes(lua_State *L, int idx,
 /// \param L Lua state.
 /// \param tabidx Proof stack index.
 /// \returns The proof.
-merkle_tree::proof_type clua_check_proof(lua_State *L, int tabidx) {
+machine_merkle_tree::proof_type clua_check_proof(lua_State *L, int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
     uint64_t address = check_uint_field(L, tabidx, "address");
     int log2_size = check_int_field(L, tabidx, "log2_size");
@@ -426,8 +426,8 @@ access_log clua_check_access_log(lua_State *L, int tabidx) {
 /// \param L Lua state.
 /// \param idx Index in stack.
 /// \returns Hash.
-merkle_tree::hash_type clua_check_hash(lua_State *L, int idx) {
-    merkle_tree::hash_type hash;
+machine_merkle_tree::hash_type clua_check_hash(lua_State *L, int idx) {
+    machine_merkle_tree::hash_type hash;
     if (lua_isstring(L, idx)) {
         const char *data = nullptr;
         size_t len = 0;
@@ -557,7 +557,7 @@ void clua_push_access_log(lua_State *L, const access_log &log) {
     }
 }
 
-void clua_push_hash(lua_State *L, const merkle_tree::hash_type hash) {
+void clua_push_hash(lua_State *L, const machine_merkle_tree::hash_type hash) {
     lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()),
         hash.size());
 }
@@ -571,13 +571,13 @@ void clua_push_semantic_version(lua_State *L, const semantic_version &v) {
     lua_pushlstring(L, v.build.data(), v.build.size()); lua_setfield(L, -2, "build"); // version
 }
 
-void clua_push_proof(lua_State *L, const merkle_tree::proof_type proof) {
+void clua_push_proof(lua_State *L, const machine_merkle_tree::proof_type proof) {
     lua_newtable(L); // proof
     lua_newtable(L); // proof siblings
-    for (int log2_size = proof.log2_size; log2_size < merkle_tree::get_log2_tree_size(); ++log2_size) {
-        const auto &hash = merkle_tree::get_sibling_hash(proof.sibling_hashes, log2_size);
+    for (int log2_size = proof.log2_size; log2_size < machine_merkle_tree::get_log2_tree_size(); ++log2_size) {
+        const auto &hash = machine_merkle_tree::get_sibling_hash(proof.sibling_hashes, log2_size);
         clua_push_hash(L, hash);
-        lua_rawseti(L, -2, merkle_tree::get_log2_tree_size()-log2_size);
+        lua_rawseti(L, -2, machine_merkle_tree::get_log2_tree_size()-log2_size);
     }
     lua_setfield(L, -2, "sibling_hashes"); // proof
     lua_pushinteger(L, proof.address); lua_setfield(L, -2, "address"); // proof

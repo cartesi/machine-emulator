@@ -138,33 +138,33 @@ access_log::type get_proto_log_type(
     };
 }
 
-void set_proto_hash(const merkle_tree::hash_type &h,
+void set_proto_hash(const machine_merkle_tree::hash_type &h,
     CartesiMachine::Hash *proto_h) {
     proto_h->set_data(h.data(), h.size());
 }
 
-merkle_tree::hash_type get_proto_hash(const CartesiMachine::Hash &proto_hash) {
-    merkle_tree::hash_type hash;
+machine_merkle_tree::hash_type get_proto_hash(const CartesiMachine::Hash &proto_hash) {
+    machine_merkle_tree::hash_type hash;
     if (proto_hash.data().size() != hash.size())
         throw std::invalid_argument("invalid hash size");
     memcpy(hash.data(), proto_hash.data().data(), proto_hash.data().size());
     return hash;
 }
 
-merkle_tree::proof_type get_proto_proof(
+machine_merkle_tree::proof_type get_proto_proof(
     const CartesiMachine::Proof &proto_proof) {
-    merkle_tree::proof_type proof;
+    machine_merkle_tree::proof_type proof;
     proof.address = proto_proof.address();
     proof.log2_size = proto_proof.log2_size();
-    if (proof.log2_size > merkle_tree::get_log2_tree_size() ||
-        proof.log2_size < merkle_tree::get_log2_word_size())
+    if (proof.log2_size > machine_merkle_tree::get_log2_tree_size() ||
+        proof.log2_size < machine_merkle_tree::get_log2_word_size())
         throw std::invalid_argument("invalid log2_size");
 
     proof.target_hash = get_proto_hash(proto_proof.target_hash());
     proof.root_hash = get_proto_hash(proto_proof.root_hash());
     const auto &proto_sibs = proto_proof.sibling_hashes();
     if (proto_sibs.size() + proof.log2_size !=
-        merkle_tree::get_log2_tree_size()) {
+        machine_merkle_tree::get_log2_tree_size()) {
         throw std::invalid_argument("wrong number of sibling hashes");
     }
     for (int i = 0; i < proto_sibs.size(); i++) {
@@ -173,7 +173,7 @@ merkle_tree::proof_type get_proto_proof(
     return proof;
 }
 
-void set_proto_proof(const merkle_tree::proof_type &p,
+void set_proto_proof(const machine_merkle_tree::proof_type &p,
     CartesiMachine::Proof *proto_p) {
     proto_p->set_address(p.address);
     proto_p->set_log2_size(p.log2_size);
@@ -181,9 +181,9 @@ void set_proto_proof(const merkle_tree::proof_type &p,
         p.target_hash.size());
     proto_p->mutable_root_hash()->set_data(p.root_hash.data(),
         p.root_hash.size());
-    for (int log2_size = merkle_tree::get_log2_tree_size()-1;
+    for (int log2_size = machine_merkle_tree::get_log2_tree_size()-1;
         log2_size >= p.log2_size; --log2_size) {
-        const auto &h = merkle_tree::get_sibling_hash(p.sibling_hashes,
+        const auto &h = machine_merkle_tree::get_sibling_hash(p.sibling_hashes,
             log2_size);
         auto proto_h = proto_p->add_sibling_hashes();
         proto_h->set_data(h.data(), h.size());

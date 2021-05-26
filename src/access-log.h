@@ -26,7 +26,7 @@
 #include <tuple>
 #include <boost/container/small_vector.hpp>
 
-#include "merkle-tree.h"
+#include "machine-merkle-tree.h"
 #include "bracket-note.h"
 
 namespace cartesi {
@@ -59,7 +59,7 @@ struct access {
     uint64_t log2_size;              ///< Log2 of size of access
     access_data read;                ///< Data before access
     access_data written;             ///< Data after access (if writing)
-    merkle_tree::proof_type proof{}; ///< Proof of data before access
+    machine_merkle_tree::proof_type proof{}; ///< Proof of data before access
 };
 
 /// \brief Log of state accesses

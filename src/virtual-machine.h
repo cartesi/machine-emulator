@@ -42,7 +42,7 @@ private:
     void do_run(uint64_t mcycle_end) override;
     access_log do_step(const access_log::type &log_type, bool one_based = false) override;
     bool do_update_merkle_tree(void) override;
-    void do_get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) override;
+    void do_get_proof(uint64_t address, int log2_size, machine_merkle_tree::proof_type &proof) override;
     void do_get_root_hash(hash_type &hash) override;
     bool do_verify_merkle_tree(void) override;
     uint64_t do_read_csr(csr r) override;

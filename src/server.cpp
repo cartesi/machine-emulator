@@ -541,7 +541,7 @@ class handler_GetRootHash final: public handler<Void, GetRootHashResponse> {
             return finish_with_error_no_machine(writer);
         }
         hctx.m->update_merkle_tree();
-        merkle_tree::hash_type rh;
+        machine_merkle_tree::hash_type rh;
         hctx.m->get_root_hash(rh);
         GetRootHashResponse resp;
         set_proto_hash(rh, resp.mutable_hash());
@@ -568,7 +568,7 @@ class handler_GetProof final: public handler<GetProofRequest, GetProofResponse> 
         }
         uint64_t address = req->address();
         int log2_size = static_cast<int>(req->log2_size());
-        merkle_tree::proof_type p{};
+        machine_merkle_tree::proof_type p{};
         if (!hctx.m->update_merkle_tree()) {
             throw std::runtime_error{"Merkle tree update failed"};
         }

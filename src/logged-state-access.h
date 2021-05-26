@@ -31,7 +31,7 @@
 #include "dhd.h"
 #include "htif.h"
 #include "access-log.h"
-#include "merkle-tree.h"
+#include "machine-merkle-tree.h"
 #include "pma.h"
 #include "strict-aliasing.h"
 #include "unique-c-ptr.h"
@@ -123,14 +123,14 @@ private:
     /// \param val Value read.
     /// \param text Textual description of the access.
     uint64_t log_read(uint64_t paligned, uint64_t val, const char *text) const {
-        static_assert(merkle_tree::get_log2_word_size() ==
+        static_assert(machine_merkle_tree::get_log2_word_size() ==
             size_log2<uint64_t>::value,
-            "Machine and merkle_tree word sizes must match");
+            "Machine and machine_merkle_tree word sizes must match");
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
         access a;
         if (m_log->get_log_type().has_proofs()) {
             m_m.get_proof(paligned,
-                merkle_tree::get_log2_word_size(), a.proof);
+                machine_merkle_tree::get_log2_word_size(), a.proof);
         }
         a.type = access_type::read;
         a.address = paligned;
@@ -146,14 +146,14 @@ private:
     /// \param val Value to write.
     /// \param text Textual description of the access.
     void log_before_write(uint64_t paligned, uint64_t dest, uint64_t val, const char *text) {
-        static_assert(merkle_tree::get_log2_word_size() ==
+        static_assert(machine_merkle_tree::get_log2_word_size() ==
             size_log2<uint64_t>::value,
-            "Machine and merkle_tree word sizes must match");
+            "Machine and machine_merkle_tree word sizes must match");
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
         access a;
         if (m_log->get_log_type().has_proofs()) {
             m_m.get_proof(paligned,
-                merkle_tree::get_log2_word_size(), a.proof);
+                machine_merkle_tree::get_log2_word_size(), a.proof);
         }
         a.type = access_type::write;
         a.address = paligned;

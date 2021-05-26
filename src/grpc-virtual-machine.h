@@ -174,7 +174,7 @@ private:
     uint64_t do_read_dhd_h(int i) override;
     void do_write_dhd_h(int i, uint64_t val) override;
     void do_get_root_hash(hash_type &hash) override;
-    void do_get_proof(uint64_t address, int log2_size, merkle_tree::proof_type &proof) override;
+    void do_get_proof(uint64_t address, int log2_size, machine_merkle_tree::proof_type &proof) override;
     void do_replace_flash_drive(const flash_drive_config &new_flash) override;
     access_log do_step(const access_log::type &log_type, bool /*one_based = false*/) override;
     void do_destroy() override;

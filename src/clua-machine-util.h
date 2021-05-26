@@ -17,7 +17,7 @@
 #ifndef CLUA_MACHINE_UTIL_H
 #define CLUA_MACHINE_UTIL_H
 
-#include "merkle-tree.h"
+#include "machine-merkle-tree.h"
 #include "access-log.h"
 #include "machine.h"
 #include "semantic-version.h"
@@ -30,7 +30,7 @@ namespace cartesi {
 /// \brief Pushes a proof to the Lua stack
 /// \param L Lua state.
 /// \param proof Proof to be pushed.
-void clua_push_proof(lua_State *L, const merkle_tree::proof_type proof);
+void clua_push_proof(lua_State *L, const machine_merkle_tree::proof_type proof);
 
 /// \brief Pushes a semantic_version to the Lua stack
 /// \param L Lua state.
@@ -40,7 +40,7 @@ void clua_push_semantic_version(lua_State *L, const semantic_version &v);
 /// \brief Pushes a hash to the Lua stack
 /// \param L Lua state.
 /// \param hash Hash to be pushed.
-void clua_push_hash(lua_State *L, const merkle_tree::hash_type hash);
+void clua_push_hash(lua_State *L, const machine_merkle_tree::hash_type hash);
 
 /// \brief Pushes a machine_config to the Lua stack
 /// \param L Lua state.
@@ -74,13 +74,13 @@ access_log::type clua_check_log_type(lua_State *L, int tabidx);
 /// \param L Lua state.
 /// \param idx Index in stack.
 /// \returns Hash.
-merkle_tree::hash_type clua_check_hash(lua_State *L, int idx);
+machine_merkle_tree::hash_type clua_check_hash(lua_State *L, int idx);
 
 /// \brief Loads a proof from Lua.
 /// \param L Lua state.
 /// \param tabidx Proof stack index.
 /// \returns The proof.
-merkle_tree::proof_type clua_check_proof(lua_State *L, int tabidx);
+machine_merkle_tree::proof_type clua_check_proof(lua_State *L, int tabidx);
 
 /// \brief Loads an access_log from Lua.
 /// \param L Lua state.

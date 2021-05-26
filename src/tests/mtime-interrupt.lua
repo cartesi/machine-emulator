@@ -17,21 +17,17 @@
 --
 
 local cartesi = require"cartesi"
+local test_utils = require "tests.utils"
 
-local function adjust_images_path(path)
-    if not path then return "" end
-    return string.gsub(path, "/*$", "") .. "/"
-end
 
-local tests_path = adjust_images_path(os.getenv("CARTESI_TESTS_PATH"))
 
 local function build_machine()
     machine_config = {
         rom = {
-            image_filename = tests_path .. "bootstrap.bin"
+            image_filename = test_utils.tests_path .. "bootstrap.bin"
         },
         ram = {
-            image_filename = tests_path .. "mtime_interrupt.bin",
+            image_filename = test_utils.tests_path .. "mtime_interrupt.bin",
             length = 32 << 20,
         },
     }

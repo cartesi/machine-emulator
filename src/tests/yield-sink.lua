@@ -1,11 +1,5 @@
 local cartesi = require"cartesi"
-
-local function adjust_images_path(path)
-    if not path then return "" end
-    return string.gsub(path, "/*$", "") .. "/"
-end
-
-local tests_path = adjust_images_path(os.getenv('CARTESI_TESTS_PATH'))
+local test_utils = require "tests.utils"
 
 -- Config yields 5 times with progress
 local config =  {
@@ -15,11 +9,11 @@ local config =  {
     marchid = -1,
   },
   ram = {
-    image_filename = tests_path .. "htif_devices.bin",
+    image_filename = test_utils.tests_path .. "htif_devices.bin",
     length = 0x4000000,
   },
   rom = {
-    image_filename = tests_path .. "bootstrap.bin"
+    image_filename = test_utils.tests_path .. "bootstrap.bin"
   },
 }
 

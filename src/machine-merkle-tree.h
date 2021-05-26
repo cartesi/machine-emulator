@@ -28,6 +28,7 @@
 #include <unordered_map>
 
 #include "keccak-256-hasher.h"
+#include "merkle-proof.h"
 
 namespace cartesi {
 
@@ -101,19 +102,13 @@ public:
     /// \brief Storage for a hash.
     using hash_type = hasher_type::hash_type;
 
+    /// \brief Storage for the proof of a word value.
+    using proof_type = merkle_proof<hash_type, LOG2_TREE_SIZE-LOG2_WORD_SIZE,
+          address_type>;
+
     /// \brief Storage for the hashes of the siblings of all nodes along
     /// the path from the root to target node.
-    using siblings_type = std::array<hash_type,
-          LOG2_TREE_SIZE-LOG2_WORD_SIZE>;
-
-    /// \brief Storage for the proof of a word value.
-    struct proof_type {
-        address_type address{0};        ///< Address of target node
-        int log2_size{0};               ///< log<sub>2</sub> of size subintended by target node.
-        hash_type target_hash{};        ///< Hash of target node
-        siblings_type sibling_hashes{}; ///< Hashes of siblings
-        hash_type root_hash{};          ///< Hash of root node
-    };
+    using siblings_type = proof_type::siblings_type;
 
 private:
     /// \brief Merkle tree node structure.

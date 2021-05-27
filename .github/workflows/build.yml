@@ -103,10 +103,10 @@ jobs:
           find /opt/cartesi -type f -exec chmod 644 {} +
           find /opt/cartesi/bin -type f \! -iname "*.lua" -exec chmod 755 {} +
           find /opt/cartesi/lib -type f -exec chmod 755 {} +
-          chmod 755 ./tests/test-merkle-tree-hash
+          chmod 755 ./tests/test-merkle-tree-hash ./tests/test-machine-c-api ./tests/test-rollup-machine-manager
           patchelf --set-rpath /opt/cartesi/lib ./tests/test-merkle-tree-hash
-          chmod 755 ./tests/test-machine-c-api
           patchelf --set-rpath /opt/cartesi/lib ./tests/test-machine-c-api
+          patchelf --set-rpath /opt/cartesi/lib ./tests/test-rollup-machine-manager
 
       - name: Download [rootfs.ext2]
         uses: Legion2/download-release-action@v2.1.0
@@ -159,6 +159,15 @@ jobs:
           /opt/cartesi/bin/cartesi-machine-server 127.0.0.1:5001 &
           timeout 20 bash -c 'while ! nc -q0 127.0.0.1 5001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
           /opt/cartesi/bin/cartesi-machine-tests --server=127.0.0.1:5001 --test-path=/opt/cartesi/tests run
+          pkill -f cartesi-machine-server || true
+
+      - name: Run rollup-machine-manager tests
+        run: |
+          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
+          cd /opt/cartesi/bin && ./rollup-machine-manager --manager-address=127.0.0.1:50001 &
+          timeout 20 bash -c 'while ! nc -q0 127.0.0.1 50001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
+          cd ~/work/machine-emulator/machine-emulator && ./tests/test-rollup-machine-manager 127.0.0.1:50001
+          pkill -f rollup-machine-manager || true
           pkill -f cartesi-machine-server || true
 
       - name: Run test scripts

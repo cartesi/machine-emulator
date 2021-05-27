@@ -2,3 +2,4 @@
 *.pb.cc
 *.ext2
 *.bin
+compile_flags.txt

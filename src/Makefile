@@ -99,6 +99,7 @@ LUACARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB) $(GRPC_LIB)
 CARTESI_MACHINE_SERVER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_SERIAL_LIB)
 CARTESI_MACHINE_PROXY_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
 ROLLUP_MACHINE_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
+TEST_ROLLUP_MACHINE_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_SERIAL_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
 
@@ -150,7 +151,7 @@ CFLAGS=-O2 -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS
 
 all: luacartesi grpc hash c-api
 
-.PHONY: all generate use clean test lint luacartesi grpc hash docker c-api test-merkle-tree-hash
+.PHONY: all generate use clean test lint luacartesi grpc hash docker c-api compile_flags.txt
 
 CARTESI_OBJS:= \
 	clint.o \
@@ -273,9 +274,12 @@ use: CXXFLAGS += -fprofile-use
 use: SOLDFLAGS += -fprofile-use
 use: $(PROFILE_DATA_$(UNAME)) luacartesi
 
+compile_flags.txt:
+	@echo "$(CXXFLAGS)" "-xc++" | sed -e $$'s/ \{1,\}/\\\n/g' | grep -v "MMD" > $@
+
 luacartesi: cartesi.so
 
-grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy rollup-machine-manager
+grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy rollup-machine-manager tests/test-rollup-machine-manager
 
 hash: merkle-tree-hash tests/test-merkle-tree-hash
 
@@ -327,6 +331,15 @@ ROLLUP_MACHINE_MANAGER_OBJS:= \
 	pristine-merkle-tree.o \
 	grpc-util.o \
 	rollup-machine-manager.o
+
+TEST_ROLLUP_MACHINE_MANAGER_OBJS:= \
+	$(CARTESI_MACHINE_PROTO_OBJS) \
+	$(ROLLUP_MACHINE_MANAGER_PROTO_OBJS) \
+	machine-config.o \
+	grpc-util.o \
+	pristine-merkle-tree.o \
+	complete-merkle-tree.o \
+	test-rollup-machine-manager.o
 
 CARTESI_MACHINE_SERVER_OBJS:= \
 	$(CARTESI_MACHINE_PROTO_OBJS) \
@@ -423,7 +436,10 @@ cartesi-machine-proxy: $(CARTESI_MACHINE_PROXY_OBJS)
 rollup-machine-manager: $(ROLLUP_MACHINE_MANAGER_OBJS)
 	$(CXX) -o $@ $^ $(ROLLUP_MACHINE_MANAGER_LIBS)
 
-cartesi-machine-server cartesi-machine-proxy rollup-machine-manager: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
+tests/test-rollup-machine-manager: $(TEST_ROLLUP_MACHINE_MANAGER_OBJS)
+	$(CXX) -o $@ $^ $(TEST_ROLLUP_MACHINE_MANAGER_LIBS)
+
+cartesi-machine-server cartesi-machine-proxy rollup-machine-manager tests/test-rollup-machine-manager: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
 tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI)
 	$(CXX) $(LIBCARTESI_TESTS_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI_LIB)
@@ -458,7 +474,13 @@ grpc-util.o grpc-virtual-machine.o: $(LUACARTESI_GRPC_GEN_OBJS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d *.clang-tidy $(LIBCARTESI) cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy merkle-tree-hash tests/test-merkle-tree-hash tests/test-machine-c-api rollup-machine-manager
+	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d *.clang-tidy \
+		$(LIBCARTESI) cartesi.so cartesi/grpc.so \
+		cartesi-machine-server cartesi-machine-proxy \
+		merkle-tree-hash rollup-machine-manager \
+		tests/test-merkle-tree-hash \
+		tests/test-machine-c-api \
+		tests/test-rollup-machine-manager
 
 profile-clean:
 	rm -f *.profdata *.profraw *.gcda

@@ -220,7 +220,7 @@ public:
     /// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
     /// \param proof Receives the proof.
     /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
-    void get_proof(uint64_t address, int log2_size, machine_merkle_tree::proof_type &proof) const;
+    machine_merkle_tree::proof_type get_proof(uint64_t address, int log2_size) const;
 
     /// \brief Obtains the root hash of the Merkle tree.
     /// \param hash Receives the hash.

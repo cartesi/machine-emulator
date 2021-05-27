@@ -19,7 +19,7 @@
 #include <exception>
 
 #define SERVER_VERSION_MAJOR UINT32_C(0)
-#define SERVER_VERSION_MINOR UINT32_C(3)
+#define SERVER_VERSION_MINOR UINT32_C(4)
 #define SERVER_VERSION_PATCH UINT32_C(0)
 #define SERVER_VERSION_PRE_RELEASE ""
 #define SERVER_VERSION_BUILD ""
@@ -568,13 +568,12 @@ class handler_GetProof final: public handler<GetProofRequest, GetProofResponse> 
         }
         uint64_t address = req->address();
         int log2_size = static_cast<int>(req->log2_size());
-        machine_merkle_tree::proof_type p{};
         if (!hctx.m->update_merkle_tree()) {
             throw std::runtime_error{"Merkle tree update failed"};
         }
-        hctx.m->get_proof(address, log2_size, p);
         GetProofResponse resp;
-        set_proto_proof(p, resp.mutable_proof());
+        set_proto_proof(hctx.m->get_proof(address, log2_size),
+            resp.mutable_proof());
         return finish_ok(writer, resp);
     }
 

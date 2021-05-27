@@ -47,8 +47,8 @@ bool virtual_machine::do_update_merkle_tree(void) {
     return m_machine->update_merkle_tree();
 }
 
-void virtual_machine::do_get_proof(uint64_t address, int log2_size, machine_merkle_tree::proof_type &proof) {
-    m_machine->get_proof(address, log2_size, proof);
+machine_merkle_tree::proof_type virtual_machine::do_get_proof(uint64_t address, int log2_size) {
+    return m_machine->get_proof(address, log2_size);
 }
 
 void virtual_machine::do_get_root_hash(hash_type &hash) {

@@ -81,13 +81,13 @@ void set_proto_hash(const machine_merkle_tree::hash_type &h,
 /// \param p C++ proof to convert
 /// \param proto_p Pointer to proto Proof receiving result of conversion
 void set_proto_proof(const machine_merkle_tree::proof_type &p,
-    CartesiMachine::Proof *proto_p);
+    CartesiMachine::MerkleTreeProof *proto_p);
 
 /// \brief Converts proto Proof to C++ proof
 /// \param proto_proof Proto proof to convert
 /// \returns Converted C++ proof
 machine_merkle_tree::proof_type get_proto_proof(
-    const CartesiMachine::Proof &proto_proof);
+    const CartesiMachine::MerkleTreeProof &proto_proof);
 
 /// \brief Converts C++ access_log to proto Access_Log
 /// \param al C++ access_log to convert

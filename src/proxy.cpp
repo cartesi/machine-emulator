@@ -19,7 +19,7 @@
 #include <boost/coroutine2/coroutine.hpp>
 
 #define PROXY_VERSION_MAJOR UINT32_C(0)
-#define PROXY_VERSION_MINOR UINT32_C(3)
+#define PROXY_VERSION_MINOR UINT32_C(4)
 #define PROXY_VERSION_PATCH UINT32_C(0)
 #define PROXY_VERSION_PRE_RELEASE ""
 #define PROXY_VERSION_BUILD ""

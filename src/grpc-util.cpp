@@ -152,41 +152,33 @@ machine_merkle_tree::hash_type get_proto_hash(const CartesiMachine::Hash &proto_
 }
 
 machine_merkle_tree::proof_type get_proto_proof(
-    const CartesiMachine::Proof &proto_proof) {
-    machine_merkle_tree::proof_type proof;
-    proof.address = proto_proof.address();
-    proof.log2_size = proto_proof.log2_size();
-    if (proof.log2_size > machine_merkle_tree::get_log2_tree_size() ||
-        proof.log2_size < machine_merkle_tree::get_log2_word_size())
-        throw std::invalid_argument("invalid log2_size");
-
-    proof.target_hash = get_proto_hash(proto_proof.target_hash());
-    proof.root_hash = get_proto_hash(proto_proof.root_hash());
+    const CartesiMachine::MerkleTreeProof &proto_proof) {
+    int log2_target_size = static_cast<int>(proto_proof.log2_target_size());
+    int log2_root_size = static_cast<int>(proto_proof.log2_root_size());
+    machine_merkle_tree::proof_type p{log2_root_size, log2_target_size};
+    p.set_target_address(proto_proof.target_address());
+    p.set_target_hash(get_proto_hash(proto_proof.target_hash()));
+    p.set_root_hash(get_proto_hash(proto_proof.root_hash()));
     const auto &proto_sibs = proto_proof.sibling_hashes();
-    if (proto_sibs.size() + proof.log2_size !=
-        machine_merkle_tree::get_log2_tree_size()) {
+    if (log2_root_size - proto_sibs.size() != log2_target_size) {
         throw std::invalid_argument("wrong number of sibling hashes");
     }
     for (int i = 0; i < proto_sibs.size(); i++) {
-        proof.sibling_hashes[i] = get_proto_hash(proto_sibs[i]);
+        p.set_sibling_hash(get_proto_hash(proto_sibs[i]), log2_root_size-1-i);
     }
-    return proof;
+    return p;
 }
 
 void set_proto_proof(const machine_merkle_tree::proof_type &p,
-    CartesiMachine::Proof *proto_p) {
-    proto_p->set_address(p.address);
-    proto_p->set_log2_size(p.log2_size);
-    proto_p->mutable_target_hash()->set_data(p.target_hash.data(),
-        p.target_hash.size());
-    proto_p->mutable_root_hash()->set_data(p.root_hash.data(),
-        p.root_hash.size());
-    for (int log2_size = machine_merkle_tree::get_log2_tree_size()-1;
-        log2_size >= p.log2_size; --log2_size) {
-        const auto &h = machine_merkle_tree::get_sibling_hash(p.sibling_hashes,
-            log2_size);
-        auto proto_h = proto_p->add_sibling_hashes();
-        proto_h->set_data(h.data(), h.size());
+    CartesiMachine::MerkleTreeProof *proto_p) {
+    proto_p->set_target_address(p.get_target_address());
+    proto_p->set_log2_target_size(p.get_log2_target_size());
+    proto_p->set_log2_root_size(p.get_log2_root_size());
+    set_proto_hash(p.get_target_hash(), proto_p->mutable_target_hash());
+    set_proto_hash(p.get_root_hash(), proto_p->mutable_root_hash());
+    for (int log2_size = p.get_log2_root_size()-1;
+        log2_size >= p.get_log2_target_size(); --log2_size) {
+        set_proto_hash(p.get_sibling_hash(log2_size), proto_p->add_sibling_hashes());
     }
 }
 
@@ -198,7 +190,7 @@ void set_proto_access_log(const access_log &al,
     proto_al->mutable_log_type()->set_proofs(al.get_log_type().has_proofs());
     for (const auto &a: al.get_accesses()) {
         auto proto_a = proto_al->add_accesses();
-        switch (a.type) {
+        switch (a.get_type()) {
             case access_type::read:
                 proto_a->set_type(CartesiMachine::AccessType::READ);
                 break;
@@ -209,12 +201,12 @@ void set_proto_access_log(const access_log &al,
                 throw std::invalid_argument{"invalid AccessType"};
                 break;
         }
-        proto_a->set_log2_size(a.log2_size);
-        proto_a->set_address(a.address);
-        proto_a->set_read(a.read.data(), a.read.size());
-        proto_a->set_written(a.written.data(), a.written.size());
-        if (al.get_log_type().has_proofs()) {
-            set_proto_proof(a.proof, proto_a->mutable_proof());
+        proto_a->set_log2_size(a.get_log2_size());
+        proto_a->set_address(a.get_address());
+        proto_a->set_read(a.get_read().data(), a.get_read().size());
+        proto_a->set_written(a.get_written().data(), a.get_written().size());
+        if (al.get_log_type().has_proofs() && a.get_proof().has_value()) {
+            set_proto_proof(a.get_proof().value(), proto_a->mutable_proof());
         }
     }
     if (al.get_log_type().has_annotations()) {
@@ -291,17 +283,18 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
         }
         if (pac != proto_accesses.end()) {
             access a;
-            a.type = get_proto_access_type(pac->type());
-            a.address = pac->address();
-            a.log2_size = pac->log2_size();
-            a.read.insert(a.read.end(), pac->read().begin(), pac->read().end());
-            a.written.insert(a.written.end(), pac->written().begin(),
-                pac->written().end());
+            a.set_type(get_proto_access_type(pac->type()));
+            a.set_address(pac->address());
+            a.set_log2_size(pac->log2_size());
+            a.get_read().insert(a.get_read().end(),
+                pac->read().begin(), pac->read().end());
+            a.get_written().insert(a.get_written().end(),
+                pac->written().begin(), pac->written().end());
             std::string note;
             if (has_annotations)
                 note = *pnt++;
             if (has_proofs)
-                a.proof = get_proto_proof(pac->proof());
+                a.set_proof(get_proto_proof(pac->proof()));
             al.push_access(a, note.c_str());
             pac++;
             iac++;

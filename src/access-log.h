@@ -23,7 +23,7 @@
 #include <cstdint>
 #include <cstring>
 #include <vector>
-#include <tuple>
+#include <optional>
 #include <boost/container/small_vector.hpp>
 
 #include "machine-merkle-tree.h"
@@ -53,13 +53,71 @@ static inline uint64_t get_word_access_data(const access_data &ad) {
 }
 
 /// \brief Records an access to the machine state
-struct access {
-    access_type type{0};             ///< Type of access
-    uint64_t address;                ///< Address of access
-    uint64_t log2_size;              ///< Log2 of size of access
-    access_data read;                ///< Data before access
-    access_data written;             ///< Data after access (if writing)
-    machine_merkle_tree::proof_type proof{}; ///< Proof of data before access
+class access {
+
+    using proof_type = machine_merkle_tree::proof_type;
+
+public:
+
+    void set_type(access_type type) { m_type = type; }
+    access_type get_type(void) const { return m_type; }
+
+    /// \brief Sets log<sub>2</sub> of size of access.
+    /// \param log2_size New log<sub>2</sub> of size of access.
+    void set_log2_size(int log2_size) { m_log2_size = log2_size; }
+
+    /// \brief Gets log<sub>2</sub> of size of access.
+    /// \returns log<sub>2</sub> of size.
+    int get_log2_size(void) const { return m_log2_size; }
+
+    /// \brief Sets address of access.
+    /// \param address New address.
+    void set_address(uint64_t address) { m_address = address; }
+
+    /// \brief Gets address of access.
+    /// \returns Address.
+    uint64_t get_address(void) const { return m_address; }
+
+    /// \brief Sets data that can be read at address before access.
+    /// \param read Data at address.
+    void set_read(const access_data &read) { m_read = read; }
+
+    /// \brief Gets data that can be read at address before access.
+    /// \returns Data at address.
+    const access_data &get_read(void) const { return m_read; }
+    access_data &get_read(void) { return m_read; }
+
+    /// \brief Sets data that was written at address after access.
+    /// \param written New data at address.
+    void set_written(const access_data &written) { m_written = written; }
+
+    /// \brief Gets data that was written at address after access.
+    /// \returns Data at address.
+    const access_data &get_written(void) const { return m_written; }
+    access_data &get_written(void) { return m_written; }
+
+    /// \brief Sets proof that data read at address was in
+    /// Merkle tree before access.
+    /// \param proof Corresponding Merkle tree proof.
+    void set_proof(const proof_type &proof) { m_proof = proof; }
+    void set_proof(proof_type &&proof) { m_proof = std::move(proof); }
+
+    /// \brief Gets proof that data read at address was in
+    /// Merkle tree before access.
+    /// \returns Proof, if one is available.
+    const std::optional<proof_type> &get_proof(void) const { return m_proof; }
+
+    /// \brief Removes proof that data read at address was in
+    /// Merkle tree before access.
+    void clear_proof(void) { m_proof = std::nullopt; }
+
+private:
+    access_type m_type{0};   ///< Type of access
+    uint64_t m_address{0};   ///< Address of access
+    int m_log2_size{0};      ///< Log2 of size of access
+    access_data m_read;      ///< Data before access
+    access_data m_written;   ///< Data after access (if writing)
+    std::optional<proof_type> m_proof{}; ///< Proof of data before access
 };
 
 /// \brief Log of state accesses

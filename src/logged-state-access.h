@@ -129,13 +129,13 @@ private:
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
         access a;
         if (m_log->get_log_type().has_proofs()) {
-            m_m.get_proof(paligned,
-                machine_merkle_tree::get_log2_word_size(), a.proof);
+            a.set_proof(m_m.get_proof(paligned,
+                machine_merkle_tree::get_log2_word_size()));
         }
-        a.type = access_type::read;
-        a.address = paligned;
-        a.log2_size = 3;
-        set_word_access_data(val, a.read);
+        a.set_type(access_type::read);
+        a.set_address(paligned);
+        a.set_log2_size(machine_merkle_tree::get_log2_word_size());
+        set_word_access_data(val, a.get_read());
         m_log->push_access(std::move(a), text);
         return val;
     }
@@ -152,14 +152,14 @@ private:
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
         access a;
         if (m_log->get_log_type().has_proofs()) {
-            m_m.get_proof(paligned,
-                machine_merkle_tree::get_log2_word_size(), a.proof);
+            a.set_proof(m_m.get_proof(paligned,
+                machine_merkle_tree::get_log2_word_size()));
         }
-        a.type = access_type::write;
-        a.address = paligned;
-        a.log2_size = 3;
-        set_word_access_data(dest, a.read);
-        set_word_access_data(val, a.written);
+        a.set_type(access_type::write);
+        a.set_address(paligned);
+        a.set_log2_size(machine_merkle_tree::get_log2_word_size());
+        set_word_access_data(dest, a.get_read());
+        set_word_access_data(val, a.get_written());
         m_log->push_access(std::move(a), text);
     }
 
@@ -625,14 +625,16 @@ friend i_state_access<logged_state_access>;
         uint64_t size = UINT64_C(1) << log2_size;
         access a;
         if (m_log->get_log_type().has_proofs()) {
-            m_m.get_proof(paddr, log2_size, a.proof);
+            a.set_proof(m_m.get_proof(paddr, log2_size));
         }
-        a.type = access_type::write;
-        a.address = paddr;
-        a.log2_size = log2_size;
-        a.read.resize(size); // not very efficient...
-        m_m.read_memory(paddr, a.read.data(), size);
-        a.written.insert(a.written.end(), data, data+size); // more efficient
+        a.set_type(access_type::write);
+        a.set_address(paddr);
+        a.set_log2_size(log2_size);
+        // not very efficient way to get read data...
+        a.get_read().resize(size);
+        m_m.read_memory(paddr, a.get_read().data(), size);
+        // more efficient way of getting written data
+        a.get_written().insert(a.get_written().end(), data, data+size);
         m_log->push_access(std::move(a), "memory block");
         m_m.write_memory(paddr, data, size);
         if (m_log->get_log_type().has_proofs()) {

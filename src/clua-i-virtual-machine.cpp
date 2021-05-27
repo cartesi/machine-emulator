@@ -86,9 +86,7 @@ static int machine_obj__index_dump_regs(lua_State *L) try {
 /// \param L Lua state.
 static int machine_obj__index_get_proof(lua_State *L) try {
     auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    machine_merkle_tree::proof_type proof;
-    m->get_proof(luaL_checkinteger(L, 2), luaL_checkinteger(L, 3), proof);
-    clua_push_proof(L, proof);
+    clua_push_proof(L, m->get_proof(luaL_checkinteger(L, 2), luaL_checkinteger(L, 3)));
     return 1;
 } catch (std::exception &x) {
     luaL_error(L, x.what());

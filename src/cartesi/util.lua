@@ -40,8 +40,9 @@ local function dump_json_sibling_hashes(sibling_hashes, out, indent)
 end
 
 local function dump_json_proof(proof, out, indent)
-    indentout(out, indent, '"address": %u,\n', proof.address)
-    indentout(out, indent, '"log2_size": %u,\n', proof.log2_size)
+    indentout(out, indent, '"target_address": %u,\n', proof.target_address)
+    indentout(out, indent, '"log2_target_size": %u,\n', proof.log2_target_size)
+    indentout(out, indent, '"log2_root_size": %u,\n', proof.log2_root_size)
     indentout(out, indent, '"target_hash": "%s",\n', hexhash(proof.target_hash))
     indentout(out, indent, '"sibling_hashes": [\n')
     dump_json_sibling_hashes(proof.sibling_hashes, out, indent+1)

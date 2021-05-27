@@ -1194,10 +1194,11 @@ bool machine::verify_merkle_tree(void) const {
     return m_t.verify_tree();
 }
 
-void machine::get_proof(uint64_t address, int log2_size, machine_merkle_tree::proof_type &proof) const {
+machine_merkle_tree::proof_type machine::get_proof(uint64_t address,
+    int log2_size) const {
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(), "PMA and machine_merkle_tree page sizes must match");
     // Check for valid target node size
-    if (log2_size > machine_merkle_tree::get_log2_tree_size() ||
+    if (log2_size > machine_merkle_tree::get_log2_root_size() ||
         log2_size < machine_merkle_tree::get_log2_word_size()) {
         throw std::invalid_argument{"invalid log2_size"};
     }
@@ -1229,15 +1230,11 @@ void machine::get_proof(uint64_t address, int log2_size, machine_merkle_tree::pr
                 throw std::runtime_error{"PMA peek failed"};
             }
         }
-        if (!m_t.get_proof(address, log2_size, page_data, proof)) {
-            throw std::runtime_error{"machine_merkle_tree::get_proof() failed"};
-        }
+        return m_t.get_proof(address, log2_size, page_data);
     // If proof concerns range bigger than a page, we already have its hash
     // stored in the tree itself
     } else {
-        if (!m_t.get_proof(address, log2_size, nullptr, proof)) {
-            throw std::runtime_error{"machine_merkle_tree::get_proof() failed"};
-        }
+        return m_t.get_proof(address, log2_size, nullptr);
     }
 }
 
@@ -1313,12 +1310,12 @@ static uint64_t get_next_mcycle_from_log(const access_log &log) {
         shadow_get_csr_rel_addr(shadow_csr::mcycle);
 
     // The first access should always be a read to mcycle
-    if (first_access.type != access_type::read ||
-        first_access.address != mcycle_address) {
+    if (first_access.get_type() != access_type::read ||
+        first_access.get_address() != mcycle_address) {
         throw std::invalid_argument{"invalid access log"};
     }
 
-    uint64_t mcycle = get_word_access_data(first_access.read);
+    uint64_t mcycle = get_word_access_data(first_access.get_read());
     return saturate_next_mcycle(mcycle);
 }
 
@@ -1351,8 +1348,13 @@ void machine::verify_state_transition(const hash_type &root_hash_before,
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
+    // It must contain proofs
+    if (!log.get_accesses().front().get_proof().has_value()) {
+        throw std::invalid_argument{"access has no proof"};
+    }
     // Make sure the access log starts from the same root hash as the state
-    if (log.get_accesses().front().proof.root_hash != root_hash_before) {
+    if (log.get_accesses().front().get_proof().value().get_root_hash() !=
+        root_hash_before) {
         throw std::invalid_argument{"mismatch in root hash before step"};
     }
     // Verify all intermediate state transitions

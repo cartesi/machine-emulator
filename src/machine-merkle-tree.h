@@ -28,7 +28,7 @@
 #include <unordered_map>
 
 #include "keccak-256-hasher.h"
-#include "merkle-proof.h"
+#include "merkle-tree-proof.h"
 
 namespace cartesi {
 
@@ -36,7 +36,7 @@ namespace cartesi {
 /// \brief Merkle tree implementation.
 ///
 /// \details The machine_merkle_tree class implements a Merkle tree
-/// covering LOG2_TREE_SIZE bits of address space.
+/// covering LOG2_ROOT_SIZE bits of address space.
 ///
 /// Upon creation, the memory is *pristine*, i.e., completely
 /// filled with zeros.
@@ -62,9 +62,9 @@ public:
     using address_type = uint64_t;
 
 private:
-    /// \brief LOG2_TREE_SIZE Number of bits covered by the address space.
+    /// \brief LOG2_ROOT_SIZE Number of bits covered by the address space.
     /// I.e., log<sub>2</sub> of number of bytes subintended by the tree root.
-    static constexpr int LOG2_TREE_SIZE = 64;
+    static constexpr int LOG2_ROOT_SIZE = 64;
     /// \brief LOG2_PAGE_SIZE Number of bits covered by a page.
     /// I.e., log<sub>2</sub> of number of bytes subintended by the
     /// the deepest explicitly represented nodes.
@@ -73,11 +73,13 @@ private:
     /// I.e., log<sub>2</sub> of number of bytes subintended by the
     /// the deepest tree nodes.
     static constexpr int LOG2_WORD_SIZE = 3;
+    /// \brief DEPTH Depth of Merkle tree.
+    static constexpr int DEPTH = LOG2_ROOT_SIZE-LOG2_WORD_SIZE;
 
     static constexpr size_t m_word_size = size_t(1) << LOG2_WORD_SIZE;
 
     static constexpr address_type m_page_index_mask =
-        ((~UINT64_C(0)) >> (64-LOG2_TREE_SIZE)) << LOG2_PAGE_SIZE;
+        ((~UINT64_C(0)) >> (64-LOG2_ROOT_SIZE)) << LOG2_PAGE_SIZE;
 
     static constexpr address_type m_page_offset_mask = ~m_page_index_mask;
 
@@ -85,12 +87,14 @@ private:
 
 public:
 
-    /// \brief Returns the LOG2_TREE_SIZE template parameter.
-    static constexpr int get_log2_tree_size(void) { return LOG2_TREE_SIZE; }
-    /// \brief Returns the LOG2_PAGE_SIZE template parameter.
+    /// \brief Returns the LOG2_ROOT_SIZE parameter.
+    static constexpr int get_log2_root_size(void) { return LOG2_ROOT_SIZE; }
+    /// \brief Returns the LOG2_PAGE_SIZE parameter.
     static constexpr int get_log2_page_size(void) { return LOG2_PAGE_SIZE; }
-    /// \brief Returns the LOG2_WORD_SIZE template parameter.
+    /// \brief Returns the LOG2_WORD_SIZE parameter.
     static constexpr int get_log2_word_size(void) { return LOG2_WORD_SIZE; }
+    /// \brief Returns the tree DEPTH.
+    static constexpr int get_depth(void) { return DEPTH; }
     /// \brief Returns the page size.
     static constexpr size_t get_page_size(void) { return m_page_size; }
     /// \brief Returns the word size.
@@ -103,12 +107,11 @@ public:
     using hash_type = hasher_type::hash_type;
 
     /// \brief Storage for the proof of a word value.
-    using proof_type = merkle_proof<hash_type, LOG2_TREE_SIZE-LOG2_WORD_SIZE,
-          address_type>;
+    using proof_type = merkle_tree_proof<hash_type, address_type>;
 
     /// \brief Storage for the hashes of the siblings of all nodes along
     /// the path from the root to target node.
-    using siblings_type = proof_type::siblings_type;
+    using siblings_type = proof_type::sibling_hashes_type;
 
 private:
     /// \brief Merkle tree node structure.
@@ -135,8 +138,8 @@ private:
 
     // Precomputed hashes of spans of zero bytes with
     // increasing power-of-two sizes, from 2^LOG2_WORD_SIZE
-    // to 2^LOG2_TREE_SIZE bytes.
-    std::array<hash_type, LOG2_TREE_SIZE - LOG2_WORD_SIZE+1> m_pristine_hashes;
+    // to 2^LOG2_ROOT_SIZE bytes.
+    std::array<hash_type, DEPTH+1> m_pristine_hashes;
 
     // Used to mark visited nodes when traversing the tree
     // bottom up in breadth to propagate changes from dirty
@@ -261,12 +264,12 @@ private:
     /// is not in path from root to target node.
     /// \param curr_diverged True if node currently being visited is
     /// itself not in path from root to target node.
-    /// \param sibling_hashes Receives the sibling hashes.
+    /// \param proof Proof to receive sibling hashes.
     void get_inside_page_sibling_hashes(hasher_type &h,
         address_type address, int log2_size, hash_type &hash,
         const unsigned char *curr_data, int log2_curr_size,
         hash_type &curr_hash, int parent_diverged, int curr_diverged,
-        siblings_type &sibling_hashes) const;
+        proof_type &proof) const;
 
     /// \brief Gets the sibling hashes along the path from a
     /// page node towards a target node.
@@ -275,11 +278,11 @@ private:
     /// \param hash Receives target node hash.
     /// \param page_data Pointer to start of contiguous page data.
     /// \param page_hash Receives the hash for the page.
-    /// \param sibling_hashes Receives the sibling hashes.
+    /// \param proof Proof to receive sibling hashes.
     void get_inside_page_sibling_hashes(
         address_type address, int log2_size, hash_type &hash,
         const unsigned char *page_data, hash_type &page_hash,
-        siblings_type &sibling_hashes) const;
+        proof_type &proof) const;
 
     /// \brief Obtains hash of a \p parent node from the
     /// handles of its children nodes.
@@ -292,19 +295,6 @@ private:
             const hash_type &child1, hash_type &parent);
 
 public:
-
-    /// \brief Get hash corresponding to log2_size from the list of siblings.
-    /// \param sibling_hashes List of siblings.
-    /// \param log2_size log<sub>2</sub> of size subintended by hash.
-    /// \return Reference to hash inside list of siblings.
-    static const hash_type &get_sibling_hash(const siblings_type &sibling_hashes,
-        int log2_size);
-
-    /// \brief Modify hash corresponding to log2_size in the list of siblings.
-    /// \param hash New hash.
-    /// \param log2_size log<sub>2</sub> of size subintended by hash.
-    /// \param sibling_hashes List of siblings.
-    static void set_sibling_hash(const hash_type &hash, int log2_size, siblings_type &sibling_hashes);
 
     /// \brief Verifies the entire Merkle tree.
     /// \return True if tree is consistent, false otherwise.
@@ -353,17 +343,17 @@ public:
     bool end_update(hasher_type &h);
 
     /// \brief Returns the proof for a node in the tree.
-    /// \param address Address of target node. Must be aligned
-    /// to a 2<sup>log2_size</sup> boundary.
-    /// \param log2_size log<sub>2</sub> of size subintended by target node.
-    /// Must be between LOG2_WORD_SIZE and LOG2_TREE_SIZE, inclusive.
-    /// \param page_data When log2_size smaller than LOG2_PAGE_SIZE,
+    /// \param target_address Address of target node. Must be aligned
+    /// to a 2<sup>log2_target_size</sup> boundary.
+    /// \param log2_target_size log<sub>2</sub> of size subintended by
+    /// target node. Must be between LOG2_WORD_SIZE and LOG2_ROOT_SIZE,
+    /// inclusive.
+    /// \param page_data When log2_target_size smaller than LOG2_PAGE_SIZE,
     /// \p page_data must point to start of contiguous page containing
-    /// the node, or nullptr if is the page is pristine (i.e., filled with zeros).
-    /// \param proof Receives proof.
-    /// \returns True if succeeded, false otherwise.
-    bool get_proof(address_type address, int log2_size,
-            const unsigned char *page_data, proof_type &proof) const;
+    /// the node, or nullptr if the page is pristine (i.e., filled with zeros).
+    /// \returns Proof if successful, otherwise throws exception.
+    proof_type get_proof(address_type target_address, int log2_target_size,
+            const unsigned char *page_data) const;
 
     /// \brief Recursively builds hash for page node from contiguous memory.
     /// \param h Hasher object.

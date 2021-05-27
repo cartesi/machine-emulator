@@ -621,14 +621,16 @@ void grpc_virtual_machine::do_get_root_hash(hash_type &hash)  {
     hash = get_proto_hash(response.hash());
 }
 
-void grpc_virtual_machine::do_get_proof(uint64_t address, int log2_size, machine_merkle_tree::proof_type &proof)  {
+
+machine_merkle_tree::proof_type
+grpc_virtual_machine::do_get_proof(uint64_t address, int log2_size)  {
     GetProofRequest request;
     GetProofResponse response;
     request.set_address(address);
     request.set_log2_size(log2_size);
     ClientContext context;
     check_status(m_stub->get_stub()->GetProof(&context, request, &response));
-    proof = get_proto_proof(response.proof());
+    return get_proto_proof(response.proof());
 }
 
 void grpc_virtual_machine::do_replace_flash_drive(const flash_drive_config &new_flash)  {

@@ -84,13 +84,13 @@ addr.ilrsc = 0x1c8;
 
 local function check_proof(proof)
     local hash = proof.target_hash
-    for log2_size = proof.log2_size, 63 do
-        local bit = (proof.address & (1 << log2_size)) ~= 0
+    for log2_size = proof.log2_target_size, proof.log2_root_size-1 do
+        local bit = (proof.target_address & (1 << log2_size)) ~= 0
         local first, second
         if bit then
-            first, second = proof.sibling_hashes[64-log2_size], hash
+            first, second = proof.sibling_hashes[proof.log2_root_size-log2_size], hash
         else
-            first, second = hash, proof.sibling_hashes[64-log2_size]
+            first, second = hash, proof.sibling_hashes[proof.log2_root_size-log2_size]
         end
         hash = cartesi.keccak(first, second)
     end

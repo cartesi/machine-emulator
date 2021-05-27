@@ -106,7 +106,11 @@ public:
             throw std::invalid_argument{"log has no proofs"};
         }
         if (!m_accesses.empty() && m_verify_proofs) {
-            m_root_hash = m_accesses.front().proof.root_hash;
+            const auto &access = m_accesses.front();
+            if (!access.get_proof().has_value()) {
+                throw std::invalid_argument{"initial access has no proof"};
+            }
+            m_root_hash = access.get_proof().value().get_root_hash();
         }
     }
 
@@ -146,9 +150,12 @@ private:
     static void roll_hash_up_tree(machine_merkle_tree::hasher_type &hasher,
         const machine_merkle_tree::proof_type &proof,
         machine_merkle_tree::hash_type &rolling_hash) {
-        for (int log2_size = proof.log2_size; log2_size < 64; ++log2_size) {
-           int bit = (proof.address & (UINT64_C(1) << log2_size)) != 0;
-           const auto &sibling_hash = proof.sibling_hashes[63-log2_size];
+        for (int log2_size = proof.get_log2_target_size();
+            log2_size < proof.get_log2_root_size();
+            ++log2_size) {
+           int bit = (proof.get_target_address() & (UINT64_C(1) << log2_size))
+               != 0;
+           const auto &sibling_hash = proof.get_sibling_hash(log2_size);
            hasher.begin();
            if (bit) {
                hasher.add_data(sibling_hash.data(), sibling_hash.size());
@@ -201,7 +208,7 @@ private:
     /// \param log2_size Log2 of access size.
     /// \param text Textual description of the access.
     /// \returns Value read.
-    const access_data &check_read(uint64_t paligned, uint64_t log2_size,
+    const access_data &check_read(uint64_t paligned, int log2_size,
         const char *text) {
         if (log2_size < 3 || log2_size > 63) {
             throw std::invalid_argument{"invalid access size"};
@@ -213,22 +220,22 @@ private:
             throw std::invalid_argument{"too few accesses in log"};
         }
         const auto &access = m_accesses[m_next_access];
-        if (access.type != access_type::read) {
+        if (access.get_type() != access_type::read) {
             throw std::invalid_argument{"expected access " +
                 std::to_string(access_to_report()) +
                 " to read " + text};
         }
-        if (access.log2_size != log2_size) {
+        if (access.get_log2_size() != log2_size) {
             throw std::invalid_argument{"expected access " +
                 std::to_string(access_to_report()) + " to read 2^" +
                 std::to_string(log2_size) + " bytes from " + text};
         }
-        if (access.read.size() != UINT64_C(1) << log2_size) {
+        if (access.get_read().size() != UINT64_C(1) << log2_size) {
             throw std::invalid_argument{"expected read access data" +
                 std::to_string(access_to_report()) + " to contain 2^" +
                 std::to_string(log2_size) + " bytes"};
         }
-        if (access.address != paligned) {
+        if (access.get_address() != paligned) {
             std::ostringstream err;
             err << "expected access " << access_to_report() <<
                 " to read " << text << " at address 0x" << std::hex <<
@@ -236,31 +243,36 @@ private:
             throw std::invalid_argument{err.str()};
         }
         if (m_verify_proofs) {
-            const auto &proof = access.proof;
-            if (proof.address != access.address) {
+            if (!access.get_proof().has_value()) {
+                throw std::invalid_argument{"read access " +
+                    std::to_string(access_to_report()) +
+                    " has no proof"};
+            }
+            const auto &proof = access.get_proof().value();
+            if (proof.get_target_address() != access.get_address()) {
                 throw std::invalid_argument{"mismatch in read access " +
                     std::to_string(access_to_report()) +
                     " address and its proof address"};
             }
-            if (m_root_hash != proof.root_hash) {
+            if (m_root_hash != proof.get_root_hash()) {
                 throw std::invalid_argument{"mismatch in read access " +
                     std::to_string(access_to_report()) + " root hash"};
             }
             machine_merkle_tree::hash_type rolling_hash;
-            get_hash(m_hasher, access.read, rolling_hash);
-            if (rolling_hash != proof.target_hash) {
+            get_hash(m_hasher, access.get_read(), rolling_hash);
+            if (rolling_hash != proof.get_target_hash()) {
                 throw std::invalid_argument{"value in read access " +
                     std::to_string(access_to_report()) +
                     " does not match target hash"};
             }
             roll_hash_up_tree(m_hasher, proof, rolling_hash);
-            if (rolling_hash != proof.root_hash) {
+            if (rolling_hash != proof.get_root_hash()) {
                 throw std::invalid_argument{"word value in read access " +
                     std::to_string(access_to_report()) + " fails proof"};
             }
         }
         m_next_access++;
-        return access.read;
+        return access.get_read();
     }
 
     /// \brief Checks a logged word write and advances log.
@@ -282,7 +294,7 @@ private:
     /// \param log2_size Log2 of access size.
     /// \param text Textual description of the access.
     void check_write(uint64_t paligned, const access_data &val,
-        uint64_t log2_size, const char *text) {
+        int log2_size, const char *text) {
         if (log2_size < 3 || log2_size > 63) {
             throw std::invalid_argument{"invalid access size"};
         }
@@ -293,26 +305,26 @@ private:
             throw std::invalid_argument{"too few word accesses in log"};
         }
         const auto &access = m_accesses[m_next_access];
-        if (access.type != access_type::write) {
+        if (access.get_type() != access_type::write) {
             throw std::invalid_argument{"expected access " +
                 std::to_string(access_to_report()) + " to write " + text};
         }
-        if (access.log2_size != log2_size) {
+        if (access.get_log2_size() != log2_size) {
             throw std::invalid_argument{"expected access " +
                 std::to_string(access_to_report()) + " to write 2^" +
                 std::to_string(log2_size) + " bytes from " + text};
         }
-        if (access.read.size() != UINT64_C(1) << log2_size) {
+        if (access.get_read().size() != UINT64_C(1) << log2_size) {
             throw std::invalid_argument{"expected overwritten data" +
                 std::to_string(access_to_report()) + " to contain 2^" +
                 std::to_string(log2_size) + " bytes"};
         }
-        if (access.written.size() != UINT64_C(1) << log2_size) {
+        if (access.get_written().size() != UINT64_C(1) << log2_size) {
             throw std::invalid_argument{"expected written data" +
                 std::to_string(access_to_report()) + " to contain 2^" +
                 std::to_string(log2_size) + " bytes"};
         }
-        if (access.address != paligned) {
+        if (access.get_address() != paligned) {
             std::ostringstream err;
             err << "expected access " << access_to_report() << " to write "
                 << text << " at address 0x" << std::hex << paligned <<
@@ -320,36 +332,39 @@ private:
             throw std::invalid_argument{err.str()};
         }
         if (m_verify_proofs) {
-            const auto &proof = access.proof;
-            if (proof.address != access.address) {
+            if (!access.get_proof().has_value()) {
+                throw std::invalid_argument{"write access " +
+                    std::to_string(access_to_report()) +
+                    " has no proof"};
+            }
+            const auto &proof = access.get_proof().value();
+            if (proof.get_target_address() != access.get_address()) {
                 throw std::invalid_argument{"mismatch in write access " +
                     std::to_string(access_to_report()) +
                     " address and its proof address"};
             }
-            if (m_root_hash != proof.root_hash) {
+            if (m_root_hash != proof.get_root_hash()) {
                 throw std::invalid_argument{"mismatch in write access " +
                     std::to_string(access_to_report()) + " root hash"};
             }
             machine_merkle_tree::hash_type rolling_hash;
-            get_hash(m_hasher, access.read, rolling_hash);
-            if (rolling_hash != proof.target_hash) {
+            get_hash(m_hasher, access.get_read(), rolling_hash);
+            if (rolling_hash != proof.get_target_hash()) {
                 throw std::invalid_argument{"value before write access " +
                     std::to_string(access_to_report()) +
                     " does not match target hash"};
             }
             roll_hash_up_tree(m_hasher, proof, rolling_hash);
-            if (rolling_hash != proof.root_hash) {
+            if (rolling_hash != proof.get_root_hash()) {
                 throw std::invalid_argument{"value before write access " +
                     std::to_string(access_to_report()) + " fails proof"};
             }
-            if (access.written != val) {
+            if (access.get_written() != val) {
                 throw std::invalid_argument{"value written in access " +
                     std::to_string(access_to_report()) + " does not match log"};
             }
-            if (access.type == access_type::write) {
-                get_hash(m_hasher, access.written, m_root_hash);
-                roll_hash_up_tree(m_hasher, proof, m_root_hash);
-            }
+            get_hash(m_hasher, access.get_written(), m_root_hash);
+            roll_hash_up_tree(m_hasher, proof, m_root_hash);
         }
         m_next_access++;
     }

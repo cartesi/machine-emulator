@@ -117,14 +117,11 @@ void htif::poll_console(void) {
     // Obviously, somethind different must be done in blockchain
     // If we don't have any characters left in buffer, try to obtain more
     if (m_buf_pos >= m_buf_len) {
-        fd_set rfds;
-        int fd_max;
-        struct timeval tv;
+        int fd_max{0};
+        fd_set rfds{};
+        timeval tv{};
         FD_ZERO(&rfds);
         FD_SET(STDIN_FILENO, &rfds);
-        fd_max = 0;
-        tv.tv_sec = 0;
-        tv.tv_usec = 0;
         if (select(fd_max+1, &rfds, nullptr, nullptr, &tv) > 0 &&
             FD_ISSET(0, &rfds)) {
             m_buf_pos = 0;

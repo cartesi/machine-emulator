@@ -250,10 +250,9 @@ int main(int argc, char *argv[]) {
 
     uint64_t max_leaves = UINT64_C(1) << (log2_root_size - log2_leaf_size);
     uint64_t leaf_count = 0;
-    size_t got = leaf_size;
     // Loop reading leaves from file until done or error
     while (1) {
-        got = fread(leaf_buf.get(), 1, leaf_size, input_file.get());
+        auto got = fread(leaf_buf.get(), 1, leaf_size, input_file.get());
         if (got == 0) {
             if (ferror(input_file.get())) {
                 error("error reading input\n");

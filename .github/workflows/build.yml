@@ -20,7 +20,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-serialization-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake
+          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-serialization-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-11
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/bin/luapp5.3
@@ -49,6 +49,9 @@ jobs:
 
       - name: Build
         run: make -j$(nproc)
+
+      - name: Lint
+        run: make -j$(nproc) lint
 
       - name: Install [/opt/cartesi]
         run: make install

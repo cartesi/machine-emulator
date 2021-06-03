@@ -70,6 +70,14 @@ The default search path for binaries is `machine-emulator/tests`. Alternatively 
 $ make test TEST_PATH=/full/path/to/test/binaries
 ```
 
+## Linter
+
+Install clang-tidy-11 and run:
+
+```bash
+$ make lint
+```
+
 ## Usage
 
 ```bash

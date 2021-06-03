@@ -1,0 +1,8 @@
+Checks: >-
+  boost*,
+  clang-analyzer*,
+  portability*
+WarningsAsErrors: >-
+  boost*,
+  clang-analyzer*,
+  portability*

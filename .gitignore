@@ -11,6 +11,7 @@ third-party/luasocket
 src/cartesi-machine-client
 src/cartesi-machine-server
 src/merkle-tree-hash
+src/c-machine
 
 doc/html
 doc/api.md

@@ -84,11 +84,14 @@ BOOST_CORO_LIB=$(BOOST_CORO_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
 GRPC_LIB=$(GRPC_LIB_$(UNAME))
 GRPC_INC=$(GRPC_INC_$(UNAME))
+LIBCARTESI_LIB=
 
+CARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB)
 LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB)
 LUACARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB) $(GRPC_LIB)
 GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_SERIAL_LIB)
 GRPC_PRX_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
+C_MACHINE_LIBS:=
 
 #DEFS+= -DMT_ALL_DIRTY
 
@@ -122,10 +125,27 @@ endif
 
 # -fsanitize=undefined
 CXXFLAGS=-O2 -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
+CCFLAGS=-O2 -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
-all: luacartesi grpc hash
+all: luacartesi grpc hash libcartesi.so
 
 .PHONY: all generate use clean test luacartesi grpc hash docker test-merkle-tree-hash
+
+CARTESI_OBJS:= \
+	clint.o \
+	rom.o \
+	htif.o \
+	dhd.o \
+	dhd-source.o \
+	shadow.o \
+	machine-merkle-tree.o \
+	pristine-merkle-tree.o \
+	pma.o \
+	machine.o \
+	machine-config.o \
+	interpret.o \
+	virtual-machine.o \
+	machine-c-api.o
 
 LUACARTESI_OBJS:= \
 	clint.o \
@@ -168,8 +188,12 @@ LUACARTESI_GRPC_OBJS:= \
 
 ifeq ($(gperf),yes)
 DEFS+=-DGPERF
+CARTESI_LIBS+=-lprofiler
 LUACARTESI_LIBS+=-lprofiler
 endif
+
+libcartesi.so: $(CARTESI_OBJS)
+	$(CXX) $(SOLDFLAGS) -o $@ $^ $(CARTESI_LIBS)
 
 cartesi.so: $(LUACARTESI_OBJS)
 	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LUACARTESI_LIBS)
@@ -239,6 +263,9 @@ TEST_MERKLE_TREE_HASH_OBJS:= \
 	complete-merkle-tree.o \
 	full-merkle-tree.o \
 	test-merkle-tree-hash.o
+
+C_MACHINE_OBJS:= \
+    c-machine.o
 
 PROTO_OBJS:= \
 	versioning.pb.o \
@@ -346,6 +373,9 @@ cartesi-machine-proxy: $(GRPC_PRX_OBJS)
 
 cartesi-machine-server cartesi-machine-proxy: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
+c-machine: $(C_MACHINE_OBJS) libcartesi.so
+	$(CC) -o $@ $^ $(C_MACHINE_LIBS)
+
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 
 %.grpc.pb.cc: $(GRPC_DIR)/%.proto
@@ -362,8 +392,11 @@ grpc-util.o grpc-virtual-machine.o: $(LUACARTESI_GRPC_GEN_OBJS)
 %.o: %.cc
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+%.o: %.c
+	$(CC) $(CCFLAGS) -c -o $@ $<
+
 clean:
-	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy merkle-tree-hash test-merkle-tree-hash
+	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d libcartesi.so cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy merkle-tree-hash test-merkle-tree-hash
 
 profile-clean:
 	rm -f *.profdata *.profraw *.gcda

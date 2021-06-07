@@ -21,6 +21,7 @@ STRIP_EXEC= strip -x
 DEP_TO_BIN= luapp5.3 luacpp5.3
 DEP_TO_LIB=
 EMU_TO_BIN= cartesi-machine-server cartesi-machine-proxy merkle-tree-hash
+EMU_TO_LIB= libcartesi.so
 EMU_LUA_TO_BIN= cartesi-machine-tests.lua cartesi-machine.lua cartesi-machine-stored-hash.lua
 EMU_TO_LUA_PATH= cartesi/util.lua cartesi/proof.lua
 EMU_TO_LUA_CPATH= cartesi.so
@@ -206,6 +207,7 @@ install-dep: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_I
 
 install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_TO_BIN) $(BIN_INSTALL_PATH)
+	cd src && $(INSTALL) $(EMU_TO_LIB) $(LIB_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_LUA_TO_BIN) $(BIN_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_TO_LUA_CPATH) $(LUA_INSTALL_CPATH)
 	cd src && $(INSTALL) $(EMU_TO_LUA_CARTESI_CPATH) $(LUA_INSTALL_CPATH)/cartesi

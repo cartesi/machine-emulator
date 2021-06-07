@@ -124,7 +124,7 @@ private:
     /// \param text Textual description of the access.
     uint64_t log_read(uint64_t paligned, uint64_t val, const char *text) const {
         static_assert(machine_merkle_tree::get_log2_word_size() ==
-            size_log2<uint64_t>::value,
+            log2_size<uint64_t>::value,
             "Machine and machine_merkle_tree word sizes must match");
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
         access a;
@@ -147,7 +147,7 @@ private:
     /// \param text Textual description of the access.
     void log_before_write(uint64_t paligned, uint64_t dest, uint64_t val, const char *text) {
         static_assert(machine_merkle_tree::get_log2_word_size() ==
-            size_log2<uint64_t>::value,
+            log2_size<uint64_t>::value,
             "Machine and machine_merkle_tree word sizes must match");
         assert((paligned & (sizeof(uint64_t)-1)) == 0);
         access a;

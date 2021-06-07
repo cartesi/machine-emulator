@@ -36,8 +36,7 @@ namespace detail {
         struct no {};
         struct yes {};
         no operator()(...);
-        template <typename ...T>
-        yes operator()(const BASE<T...> &);
+        template <typename ...T> yes operator()(const BASE<T...> &);
     };
 }
 
@@ -66,32 +65,32 @@ using is_template_base_of = std::integral_constant<
     >::value>;
 
 
-/// \class size_log2
+/// \class log2_size
 /// \brief Provides an int member value with the log<sub>2</sub> of size of \p T
 /// \param T Type from which the size is needed.
 template <typename T>
-struct size_log2 {
+struct log2_size {
 };
 
 /// \cond HIDDEN_SYMBOLS
 
 template <>
-struct size_log2<uint8_t> {
+struct log2_size<uint8_t> {
     static constexpr int value = 0;
 };
 
 template <>
-struct size_log2<uint16_t> {
+struct log2_size<uint16_t> {
     static constexpr int value = 1;
 };
 
 template <>
-struct size_log2<uint32_t> {
+struct log2_size<uint32_t> {
     static constexpr int value = 2;
 };
 
 template <>
-struct size_log2<uint64_t> {
+struct log2_size<uint64_t> {
     static constexpr int value = 3;
 };
 

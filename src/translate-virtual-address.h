@@ -146,17 +146,17 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
     // Initialize pte_addr with the base address for the root page table
     uint64_t pte_addr = (satp & (((uint64_t)1 << satp_ppn_bits) - 1)) << PAGE_NUMBER_SHIFT;
     // All page table entries have 8 bytes
-    const int pte_size_log2 = 3;
+    const int log2_pte_size = 3;
     // Each page table has 4k/pte_size entries
     // To index all entries, we need vpn_bits
-    const int vpn_bits = 12 - pte_size_log2;
+    const int vpn_bits = 12 - log2_pte_size;
     uint64_t vpn_mask = (1 << vpn_bits) - 1;
     for (int i = 0; i < levels; i++) {
         // Mask out VPN[levels-i-1]
         vaddr_shift = PAGE_NUMBER_SHIFT + vpn_bits * (levels - 1 - i);
         uint64_t vpn = (vaddr >> vaddr_shift) & vpn_mask;
         // Add offset to find physical address of page table entry
-        pte_addr += vpn << pte_size_log2; //??D we can probably save this shift here
+        pte_addr += vpn << log2_pte_size; //??D we can probably save this shift here
         // Read page table entry from physical memory
         uint64_t pte = 0;
         if (!read_ram_uint64(a, pte_addr, &pte)) {

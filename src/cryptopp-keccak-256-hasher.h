@@ -17,6 +17,7 @@
 #ifndef CRYPTOPP_KECCAK_256_HASHER_H
 #define CRYPTOPP_KECCAK_256_HASHER_H
 
+#include <type_traits>
 #include <cryptopp/keccak.h>
 #include "i-hasher.h"
 
@@ -24,7 +25,7 @@ namespace cartesi {
 
 class cryptopp_keccak_256_hasher final:
     public i_hasher<cryptopp_keccak_256_hasher,
-        CryptoPP::Keccak_256::DIGESTSIZE> {
+        std::integral_constant<int, CryptoPP::Keccak_256::DIGESTSIZE>> {
 
     CryptoPP::Keccak_256 kc{};
 
@@ -37,7 +38,7 @@ class cryptopp_keccak_256_hasher final:
     /// \brief No move assignment
     cryptopp_keccak_256_hasher& operator=(cryptopp_keccak_256_hasher &&) = delete;
 
-friend i_hasher<cryptopp_keccak_256_hasher, CryptoPP::Keccak_256::DIGESTSIZE>;
+friend i_hasher<cryptopp_keccak_256_hasher, std::integral_constant<int, CryptoPP::Keccak_256::DIGESTSIZE>>;
 
     void do_begin(void) {
         return kc.Restart();

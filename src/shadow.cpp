@@ -125,11 +125,11 @@ static bool shadow_peek(const pma_entry &pma, const machine &m,
 }
 
 /// \brief Shadow device read callback. See ::pma_read.
-static bool shadow_read(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t *pval, int size_log2) {
+static bool shadow_read(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t *pval, int log2_size) {
     (void) pma;
 
     // Our shadow only supports aligned 64-bit reads
-    if (size_log2 != 3 || offset & 7) return false;
+    if (log2_size != 3 || offset & 7) return false;
 
     // If offset is past start of PMA range
     if (offset >= PMA_constants::PMA_BOARD_SHADOW_START) {

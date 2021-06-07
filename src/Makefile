@@ -126,7 +126,7 @@ CXXFLAGS=-O2 -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCF
 
 all: luacartesi grpc hash
 
-.PHONY: all generate use clean test luacartesi grpc hash docker
+.PHONY: all generate use clean test luacartesi grpc hash docker test-merkle-tree-hash
 
 LUACARTESI_OBJS:= \
 	clint.o \
@@ -179,6 +179,9 @@ cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS)
 test: luacartesi
 	$(LUA_BIN) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
 
+test-merkle-tree-hash: hash
+	tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
+
 test-grpc: luacartesi grpc
 	./cartesi-machine-server -a 127.0.0.1:5001 && sleep 1
 	$(LUA_BIN) cartesi-machine-tests.lua --server=127.0.0.1:5001 --test-path="$(TEST_PATH)" --test=".*" run
@@ -222,10 +225,13 @@ luacartesi: cartesi.so
 
 grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy
 
-hash: merkle-tree-hash
+hash: merkle-tree-hash tests/test-merkle-tree-hash
 
 MERKLE_TREE_HASH_OBJS:= \
 	merkle-tree-hash.o
+
+TEST_MERKLE_TREE_HASH_OBJS:= \
+	test-merkle-tree-hash.o
 
 PROTO_OBJS:= \
 	versioning.pb.o \
@@ -318,6 +324,9 @@ $(GROUND_TRUTH_DIR)/$(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(GROUND_TRUTH_DIR)
 	brotli -j -f $(basename $@)
 
 merkle-tree-hash: $(MERKLE_TREE_HASH_OBJS)
+	$(CXX) -o $@ $^ $(CRYPTOPP_LIB)
+
+tests/test-merkle-tree-hash: $(TEST_MERKLE_TREE_HASH_OBJS)
 	$(CXX) -o $@ $^ $(CRYPTOPP_LIB)
 
 cartesi-machine-server: $(GRPC_SRV_OBJS)

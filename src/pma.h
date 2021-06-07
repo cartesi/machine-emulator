@@ -52,9 +52,9 @@ bool pma_peek_error(const pma_entry &, const machine &, uint64_t, const unsigned
 /// \param da Object through which the machine state can be accessed.
 /// \param offset Offset of requested value from range base address.
 /// \param val Pointer to word where value will be stored.
-/// \param size_log2 log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
+/// \param log2_size log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
 /// \returns True if operation succeeded, false otherwise.
-typedef bool (*pma_read)(const pma_entry &pma, i_device_state_access *da, uint64_t offset, uint64_t *val, int size_log2);
+typedef bool (*pma_read)(const pma_entry &pma, i_device_state_access *da, uint64_t offset, uint64_t *val, int log2_size);
 
 /// \brief Default read callback issues error on reads.
 bool pma_read_error(const pma_entry &, i_device_state_access *, uint64_t, uint64_t *, int);
@@ -64,9 +64,9 @@ bool pma_read_error(const pma_entry &, i_device_state_access *, uint64_t, uint64
 /// \param da Object through which the machine state can be accessed.
 /// \param offset Offset of requested value from range base address.
 /// \param val Word to be written at \p offset.
-/// \param size_log2 log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
+/// \param log2_size log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
 /// \returns True if operation succeeded, false otherwise.
-typedef bool (*pma_write)(const pma_entry &pma, i_device_state_access *da, uint64_t offset, uint64_t val, int size_log2);
+typedef bool (*pma_write)(const pma_entry &pma, i_device_state_access *da, uint64_t offset, uint64_t val, int log2_size);
 
 /// \brief Default write callback issues error on write.
 bool pma_write_error(const pma_entry &, i_device_state_access *, uint64_t, uint64_t, int);

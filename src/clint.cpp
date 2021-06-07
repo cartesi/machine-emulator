@@ -33,24 +33,24 @@ uint64_t clint_get_csr_rel_addr(clint_csr reg) {
 }
 
 static bool clint_read_msip(i_device_state_access *a, uint64_t *val,
-    int size_log2) {
-    if (size_log2 == 2) {
+    int log2_size) {
+    if (log2_size == 2) {
         *val = ((a->read_mip() & MIP_MSIP_MASK) == MIP_MSIP_MASK);
         return true;
     }
     return false;
 }
 
-static bool clint_read_mtime(i_device_state_access *a, uint64_t *val, int size_log2) {
-    if (size_log2 == 3) {
+static bool clint_read_mtime(i_device_state_access *a, uint64_t *val, int log2_size) {
+    if (log2_size == 3) {
         *val = rtc_cycle_to_time(a->read_mcycle());
         return true;
     }
     return false;
 }
 
-static bool clint_read_mtimecmp(i_device_state_access *a, uint64_t *val, int size_log2) {
-    if (size_log2 == 3) {
+static bool clint_read_mtimecmp(i_device_state_access *a, uint64_t *val, int log2_size) {
+    if (log2_size == 3) {
         *val = a->read_clint_mtimecmp();
         return true;
     }
@@ -58,16 +58,16 @@ static bool clint_read_mtimecmp(i_device_state_access *a, uint64_t *val, int siz
 }
 
 /// \brief CLINT device read callback. See ::pma_read.
-static bool clint_read(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t *val, int size_log2) {
+static bool clint_read(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t *val, int log2_size) {
     (void) pma;
 
     switch (offset) {
         case CLINT_MSIP0_REL_ADDR:
-            return clint_read_msip(a, val, size_log2);
+            return clint_read_msip(a, val, log2_size);
         case CLINT_MTIMECMP_REL_ADDR:
-            return clint_read_mtimecmp(a, val, size_log2);
+            return clint_read_mtimecmp(a, val, log2_size);
         case CLINT_MTIME_REL_ADDR:
-            return clint_read_mtime(a, val, size_log2);
+            return clint_read_mtime(a, val, log2_size);
         default:
             // other reads are exceptions
             return false;
@@ -75,12 +75,12 @@ static bool clint_read(const pma_entry &pma, i_device_state_access *a, uint64_t 
 }
 
 /// \brief CLINT device read callback. See ::pma_write.
-static bool clint_write(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t val, int size_log2) {
+static bool clint_write(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t val, int log2_size) {
     (void) pma;
 
     switch (offset) {
         case CLINT_MSIP0_REL_ADDR:
-            if (size_log2 == 2) {
+            if (log2_size == 2) {
                 //??D I don't yet know why Linux tries to raise MSIP when we only have a single hart
                 //    It does so repeatedly before and after every command run in the shell
                 //    Will investigate.
@@ -93,7 +93,7 @@ static bool clint_write(const pma_entry &pma, i_device_state_access *a, uint64_t
             }
             return false;
         case CLINT_MTIMECMP_REL_ADDR:
-            if (size_log2 == 3) {
+            if (log2_size == 3) {
                 a->write_clint_mtimecmp(val);
                 a->reset_mip(MIP_MTIP_MASK);
                 return true;

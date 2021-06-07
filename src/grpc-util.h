@@ -77,7 +77,7 @@ machine_merkle_tree::hash_type get_proto_hash(const CartesiMachine::Hash &proto_
 void set_proto_hash(const machine_merkle_tree::hash_type &h,
     CartesiMachine::Hash *proto_h);
 
-/// \brief Convertes C++ proof to proto Proof
+/// \brief Converts C++ proof to proto Proof
 /// \param p C++ proof to convert
 /// \param proto_p Pointer to proto Proof receiving result of conversion
 void set_proto_proof(const machine_merkle_tree::proof_type &p,

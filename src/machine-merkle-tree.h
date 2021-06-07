@@ -29,6 +29,7 @@
 
 #include "keccak-256-hasher.h"
 #include "merkle-tree-proof.h"
+#include "pristine-merkle-tree.h"
 
 namespace cartesi {
 
@@ -114,6 +115,7 @@ public:
     using siblings_type = proof_type::sibling_hashes_type;
 
 private:
+
     /// \brief Merkle tree node structure.
     /// \details A node is known to be an inner-node or a page-node implicitly
     /// based on its height in the tree.
@@ -135,11 +137,6 @@ private:
     // Root of the Merkle tree.
     tree_node m_root_storage;
     tree_node *m_root;
-
-    // Precomputed hashes of spans of zero bytes with
-    // increasing power-of-two sizes, from 2^LOG2_WORD_SIZE
-    // to 2^LOG2_ROOT_SIZE bytes.
-    std::array<hash_type, DEPTH+1> m_pristine_hashes;
 
     // Used to mark visited nodes when traversing the tree
     // bottom up in breadth to propagate changes from dirty
@@ -184,11 +181,6 @@ private:
     /// \param hash Hash to be dumped.
     void dump_hash(const hash_type &hash) const;
 
-    /// \brief Defines the hash for a log2_size pristine node.
-    /// \param hash New hash.
-    /// \param log2_size log<sub>2</sub> of size subintended by node.
-    void set_pristine_hash(const hash_type &hash, int log2_size);
-
     /// \brief Returns the hash for a child of a given node.
     /// \param child_log2_size log2_size of child node.
     /// \param node Node from which to obtain child.
@@ -197,9 +189,6 @@ private:
     /// returns a pristine hash.
     const hash_type &get_child_hash(int child_log2_size,
         const tree_node *node, int bit) const;
-
-    /// \brief Precomputes hashes for pristine nodes of all sizes.
-    void initialize_pristine_hashes(void);
 
     /// \brief Dumps tree rooted at node to std::cerr.
     /// \param node Root of subtree.
@@ -284,15 +273,10 @@ private:
         const unsigned char *page_data, hash_type &page_hash,
         proof_type &proof) const;
 
-    /// \brief Obtains hash of a \p parent node from the
-    /// handles of its children nodes.
-    /// \param h Hasher object.
-    /// \param child0 Hash of first child.
-    /// \param child1 Hash of second child.
-    /// \param parent Receives parent hash.
-    /// \details It is safe to use the same hash variable as both input and output to this function.
-    static void get_concat_hash(hasher_type &h, const hash_type &child0,
-            const hash_type &child1, hash_type &parent);
+    // Precomputed hashes of spans of zero bytes with
+    // increasing power-of-two sizes, from 2^LOG2_WORD_SIZE
+    // to 2^LOG2_ROOT_SIZE bytes.
+    static const pristine_merkle_tree m_pristine_hashes;
 
 public:
 
@@ -362,20 +346,16 @@ public:
     void get_page_node_hash(hasher_type &h, const unsigned char *page_data,
         hash_type &hash) const;
 
-    /// \brief Returns the hash for a log2_size pristine node.
-    /// \param log2_size log<sub>2</sub> of size subintended by node.
-    /// \return Reference to precomputed hash.
-    const hash_type &get_pristine_hash(int log2_size) const;
-
     /// \brief Gets currently stored hash for page node.
     /// \param page_index Page index for node.
     /// \param hash Receives the hash.
     void get_page_node_hash(address_type page_index, hash_type &hash) const;
 
-    /// \brief Verifies a proof.
-    /// \param proof Proof to be verified.
-    /// \return True if proof is consistent, false otherwise.
-    static bool verify_proof(const proof_type &proof);
+    /// \brief Returns the hash for a log2_size pristine node.
+    /// \param log2_size log<sub>2</sub> of size subintended by node.
+    /// \return Reference to precomputed hash.
+    static const hash_type &get_pristine_hash(int log2_size);
+
 };
 
 std::ostream &operator<<(std::ostream &out, const machine_merkle_tree::hash_type &hash);

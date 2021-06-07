@@ -23,12 +23,14 @@
 #include <cstdint>
 #include <array>
 
+#include "meta.h"
+
 namespace cartesi {
 
 /// \brief Hasher interface.
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
 /// \tparam HASH_SIZE Size of hash.
-template <typename DERIVED, int HASH_SIZE> class i_hasher { // CRTP
+template <typename DERIVED, typename HASH_SIZE> class i_hasher { // CRTP
 
     /// \brief Returns object cast as the derived class
     DERIVED &derived(void) {
@@ -42,7 +44,7 @@ template <typename DERIVED, int HASH_SIZE> class i_hasher { // CRTP
 
 public:
 
-    constexpr static size_t hash_size = HASH_SIZE;
+    constexpr static size_t hash_size = HASH_SIZE::value;
 
     using hash_type = std::array<unsigned char, hash_size>;
 
@@ -60,6 +62,55 @@ public:
     }
 
 };
+
+template <typename DERIVED>
+using is_an_i_hasher = std::integral_constant<
+    bool,
+    is_template_base_of<
+        i_hasher,
+        typename remove_cvref<DERIVED>::type
+    >::value>;
+
+/// \brief Computes the hash of concatenated hashes
+/// \tparam H Hasher class
+/// \param h Hasher object
+/// \param left Left hash to concatenate
+/// \param right Right hash to concatenate
+/// \param result Receives the hash of the concatenation
+template <typename H>
+inline static void get_concat_hash(
+    H &h,
+    const typename H::hash_type &left,
+    const typename H::hash_type &right,
+    typename H::hash_type &result
+) {
+	static_assert(is_an_i_hasher<H>::value, "not an i_hasher");
+    h.begin();
+    h.add_data(left.data(), left.size());
+    h.add_data(right.data(), right.size());
+    h.end(result);
+}
+
+/// \brief Computes the hash of concatenated hashes
+/// \tparam H Hasher class
+/// \param h Hasher object
+/// \param left Left hash to concatenate
+/// \param right Right hash to concatenate
+/// \return The hash of the concatenation
+template <typename H>
+inline static typename H::hash_type get_concat_hash(
+    H &h,
+    const typename H::hash_type &left,
+    const typename H::hash_type &right
+) {
+	static_assert(is_an_i_hasher<H>::value, "not an i_hasher");
+    h.begin();
+    h.add_data(left.data(), left.size());
+    h.add_data(right.data(), right.size());
+    typename H::hash_type result;
+    h.end(result);
+    return result;
+}
 
 } // namespace cartesi
 

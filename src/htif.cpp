@@ -173,11 +173,11 @@ void htif::interact(void) {
 }
 
 /// \brief HTIF device read callback. See ::pma_read.
-static bool htif_read(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t *pval, int size_log2) {
+static bool htif_read(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t *pval, int log2_size) {
     (void) pma;
 
     // Our HTIF only supports aligned 64-bit reads
-    if (size_log2 != 3 || offset & 7) return false;
+    if (log2_size != 3 || offset & 7) return false;
 
     switch (offset) {
         case HTIF_TOHOST_REL_ADDR:
@@ -283,11 +283,11 @@ static bool htif_write_tohost(i_device_state_access *a, htif *h,
 }
 
 /// \brief HTIF device write callback. See ::pma_write.
-static bool htif_write(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t val, int size_log2) {
+static bool htif_write(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t val, int log2_size) {
     htif *h = reinterpret_cast<htif *>(pma.get_device().get_context());
 
     // Our HTIF only supports aligned 64-bit writes
-    if (size_log2 != 3 || offset & 7) return false;
+    if (log2_size != 3 || offset & 7) return false;
 
     switch (offset) {
         case HTIF_TOHOST_REL_ADDR:

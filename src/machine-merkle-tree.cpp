@@ -29,6 +29,12 @@
 
 namespace cartesi {
 
+// Initialize static pristine hashes
+const cartesi::pristine_merkle_tree machine_merkle_tree::m_pristine_hashes{
+    machine_merkle_tree::get_log2_root_size(),
+    machine_merkle_tree::get_log2_word_size()
+};
+
 constexpr machine_merkle_tree::address_type
 machine_merkle_tree::
 get_page_index(address_type address) const {
@@ -178,34 +184,8 @@ dump_hash(const hash_type &hash) const {
 
 const machine_merkle_tree::hash_type &
 machine_merkle_tree::
-get_pristine_hash(int log2_size) const {
-    int index = get_log2_root_size()-log2_size;
-    assert(index >= 0 && index < (int) m_pristine_hashes.size());
-    return m_pristine_hashes[index];
-}
-
-void
-machine_merkle_tree::
-set_pristine_hash(const hash_type &hash, int log2_size) {
-    int index = get_log2_root_size()-log2_size;
-    assert(index >= 0 && index < (int) m_pristine_hashes.size());
-    m_pristine_hashes[index] = hash;
-}
-
-void
-machine_merkle_tree::
-initialize_pristine_hashes(void) {
-    hasher_type h;
-    word_type zero = 0;
-    hash_type hash;
-    h.begin();
-    h.add_data(reinterpret_cast<const unsigned char *>(&zero), sizeof(zero));
-    h.end(hash);
-    set_pristine_hash(hash, get_log2_word_size());
-    for (int i = get_log2_word_size()+1; i <= get_log2_root_size(); ++i) {
-        get_concat_hash(h, hash, hash, hash);
-        set_pristine_hash(hash, i);
-    }
+get_pristine_hash(int log2_size) {
+    return m_pristine_hashes.get_hash(log2_size);
 }
 
 void
@@ -366,7 +346,6 @@ machine_merkle_tree::
 machine_merkle_tree(void) {
     memset(&m_root_storage, 0, sizeof(m_root_storage));
     m_root = &m_root_storage;
-    initialize_pristine_hashes();
     m_root->hash = get_pristine_hash(get_log2_root_size());
     m_merkle_update_nonce = 1;
 #ifdef MERKLE_DUMP_STATS
@@ -398,16 +377,6 @@ machine_merkle_tree::
 verify_tree(void) const {
     hasher_type h;
     return verify_tree(h, m_root, get_log2_root_size());
-}
-
-void
-machine_merkle_tree::
-get_concat_hash(hasher_type &h, const hash_type &child0,
-    const hash_type &child1, hash_type &parent) {
-    h.begin();
-    h.add_data(child0.data(), child0.size());
-    h.add_data(child1.data(), child1.size());
-    h.end(parent);
 }
 
 bool
@@ -523,34 +492,14 @@ get_proof(address_type target_address, int log2_target_size,
     // Copy remaining proof values
     proof.set_target_address(target_address);
     proof.set_root_hash(m_root->hash);
+#ifndef NDEBUG
     // Return proof only if it passes verification
-    if (!verify_proof(proof)) {
+    if (!proof.verify(hasher_type{})) {
         throw std::runtime_error{"proof failed verification"};
     }
+#endif
     return proof;
 }
-
-bool
-machine_merkle_tree::
-verify_proof(const proof_type &proof) {
-    if (proof.get_log2_root_size() != get_log2_root_size()) {
-        return false;
-    }
-    hash_type hash = proof.get_target_hash();
-    hasher_type h;
-    for (int log2_size = proof.get_log2_target_size();
-         log2_size < get_log2_root_size();
-         ++log2_size) {
-       int bit = (proof.get_target_address() & (UINT64_C(1) << log2_size)) != 0;
-       if (bit) {
-           get_concat_hash(h, proof.get_sibling_hash(log2_size), hash, hash);
-       } else {
-           get_concat_hash(h, hash, proof.get_sibling_hash(log2_size), hash);
-       }
-    }
-    return hash == proof.get_root_hash();
-}
-
 
 std::ostream &operator<<(std::ostream &out, const machine_merkle_tree::hash_type &hash) {
     auto f = out.flags();

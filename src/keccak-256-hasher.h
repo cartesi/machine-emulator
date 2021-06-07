@@ -21,6 +21,7 @@
 
 namespace cartesi {
 
+/// \brief Class used to compute Keccak 256 hashes
 using keccak_256_hasher = cryptopp_keccak_256_hasher;
 
 }

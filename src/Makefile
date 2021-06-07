@@ -136,6 +136,7 @@ LUACARTESI_OBJS:= \
 	dhd-source.o \
 	shadow.o \
 	machine-merkle-tree.o \
+	pristine-merkle-tree.o \
 	pma.o \
 	machine.o \
 	machine-config.o \
@@ -155,6 +156,7 @@ LUACARTESI_GRPC_GEN_OBJS:= \
 
 LUACARTESI_GRPC_OBJS:= \
 	machine-merkle-tree.o \
+	pristine-merkle-tree.o \
 	clua-i-virtual-machine.o \
 	clua-htif.o \
 	clua-machine-util.o \
@@ -179,7 +181,7 @@ cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS)
 test: luacartesi
 	$(LUA_BIN) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
 
-test-merkle-tree-hash: hash
+test-hash: hash
 	tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
 
 test-grpc: luacartesi grpc
@@ -228,9 +230,15 @@ grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy
 hash: merkle-tree-hash tests/test-merkle-tree-hash
 
 MERKLE_TREE_HASH_OBJS:= \
+	back-merkle-tree.o \
+	pristine-merkle-tree.o \
 	merkle-tree-hash.o
 
 TEST_MERKLE_TREE_HASH_OBJS:= \
+	back-merkle-tree.o \
+	pristine-merkle-tree.o \
+	complete-merkle-tree.o \
+	full-merkle-tree.o \
 	test-merkle-tree-hash.o
 
 PROTO_OBJS:= \
@@ -244,6 +252,7 @@ GRPC_PRX_OBJS:= \
 	$(PROTO_OBJS) \
 	grpc-util.o \
 	machine-merkle-tree.o \
+	pristine-merkle-tree.o \
 	proxy.o
 
 GRPC_SRV_OBJS:= \
@@ -257,6 +266,7 @@ GRPC_SRV_OBJS:= \
 	dhd-source.o \
 	shadow.o \
 	machine-merkle-tree.o \
+	pristine-merkle-tree.o \
 	pma.o \
 	machine.o \
 	machine-config.o \
@@ -354,7 +364,7 @@ grpc-util.o grpc-virtual-machine.o: $(LUACARTESI_GRPC_GEN_OBJS)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy merkle-tree-hash
+	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy merkle-tree-hash test-merkle-tree-hash
 
 profile-clean:
 	rm -f *.profdata *.profraw *.gcda

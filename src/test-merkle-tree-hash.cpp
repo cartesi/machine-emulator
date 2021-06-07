@@ -157,10 +157,10 @@ static hash_type get_leaf_hash(int log2_word_size, const unsigned char *leaf_dat
 }
 
 /// \brief Prints help message
-static void help(void) {
-    fprintf(stderr, "Usage:\n  hash [--input=<filename>] "
+static void help(const char *name) {
+    fprintf(stderr, "Usage:\n  %s [--input=<filename>] "
                     "[--log2-word-size=<w>] [--log2-leaf-size=<p>] "
-                    "[--log2-root-size=<t>]\n");
+                    "[--log2-root-size=<t>]\n", name);
     exit(0);
 }
 
@@ -173,7 +173,7 @@ int main(int argc, char *argv[]) try {
     // Process command line arguments
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--help") == 0) {
-            help();
+            help(argv[0]);
             return 1;
         } else if (stringval("--input=", argv[i], &input_name)) {
             ;

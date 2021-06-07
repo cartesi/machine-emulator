@@ -84,7 +84,7 @@ inline static void get_concat_hash(
     const typename H::hash_type &right,
     typename H::hash_type &result
 ) {
-	static_assert(is_an_i_hasher<H>::value, "not an i_hasher");
+    static_assert(is_an_i_hasher<H>::value, "not an i_hasher");
     h.begin();
     h.add_data(left.data(), left.size());
     h.add_data(right.data(), right.size());
@@ -103,7 +103,7 @@ inline static typename H::hash_type get_concat_hash(
     const typename H::hash_type &left,
     const typename H::hash_type &right
 ) {
-	static_assert(is_an_i_hasher<H>::value, "not an i_hasher");
+    static_assert(is_an_i_hasher<H>::value, "not an i_hasher");
     h.begin();
     h.add_data(left.data(), left.size());
     h.add_data(right.data(), right.size());

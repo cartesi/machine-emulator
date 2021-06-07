@@ -22,6 +22,9 @@
 #include "pristine-merkle-tree.h"
 #include "merkle-tree-proof.h"
 
+/// \file
+/// \brief Full Merkle tree interface.
+
 namespace cartesi {
 
 /// \brief Full Merkle tree
@@ -46,38 +49,15 @@ public:
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
     full_merkle_tree(int log2_root_size, int log2_leaf_size,
-        int log2_word_size):
-        m_log2_root_size{log2_root_size},
-        m_log2_leaf_size{log2_leaf_size},
-        m_max_leaves{address_type{1} << std::max(0,
-            log2_root_size-log2_leaf_size)} {
-        check_log2_sizes(log2_root_size, log2_leaf_size, log2_word_size);
-        m_tree.resize(2*m_max_leaves);
-        init_pristine_subtree(pristine_merkle_tree{log2_root_size,
-            log2_word_size}, 1, log2_root_size);
-    }
+        int log2_word_size);
 
     /// \brief Constructor for list of consecutive leaf hashes
     /// \param log2_root_size Log<sub>2</sub> of root node
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
     /// \param leaves List of leaf hashes
-    full_merkle_tree(
-        int log2_root_size,
-        int log2_leaf_size,
-        int log2_word_size,
-        const std::vector<hash_type> &leaves):
-        m_log2_root_size(log2_root_size),
-        m_log2_leaf_size(log2_leaf_size),
-        m_max_leaves{address_type{1} << std::max(0,
-            log2_root_size-log2_leaf_size)} {
-        check_log2_sizes(log2_root_size, log2_leaf_size, log2_word_size);
-        if (leaves.size() > m_max_leaves) {
-            throw std::out_of_range{"too many leaves"};
-        }
-        m_tree.resize(2*m_max_leaves);
-        init_tree(pristine_merkle_tree{log2_root_size, log2_word_size}, leaves);
-    }
+    full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size,
+        const std::vector<hash_type> &leaves);
 
     /// \brief Returns log<sub>2</sub> of size of tree
     int get_log2_root_size(void) const {
@@ -106,31 +86,7 @@ public:
     /// \param address Node address
     /// \param log2_size Log<sub>2</sub> size subintended by node
     /// \returns Proof, or throws exception
-    proof_type get_proof(address_type address, int log2_size) const {
-        if (log2_size < get_log2_leaf_size() ||
-            log2_size > get_log2_root_size()) {
-            throw std::out_of_range{"log2_size is out of bounds"};
-        }
-        proof_type proof{get_log2_root_size(), log2_size};
-        proof.set_root_hash(get_root_hash());
-        proof.set_target_address(address);
-        proof.set_target_hash(get_node_hash(address, log2_size));
-        for (int log2_sibling_size = log2_size;
-            log2_sibling_size < get_log2_root_size();
-            ++log2_sibling_size) {
-            auto sibling_address = address ^
-                (address_type{1} << log2_sibling_size);
-            proof.set_sibling_hash(
-                get_node_hash(sibling_address, log2_sibling_size),
-                log2_sibling_size);
-        }
-#ifndef NDEBUG
-        if (!proof.verify(hasher_type{})) {
-            throw std::runtime_error{"produced invalid proof"};
-        }
-#endif
-        return proof;
-    }
+    proof_type get_proof(address_type address, int log2_size) const;
 
 private:
 
@@ -140,28 +96,7 @@ private:
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
     void check_log2_sizes(int log2_root_size, int log2_leaf_size,
-        int log2_word_size) {
-        if (log2_root_size < 0) {
-            throw std::out_of_range{"log2_root_size is negative"};
-        }
-        if (log2_leaf_size < 0) {
-            throw std::out_of_range{"log2_leaf_size is negative"};
-        }
-        if (log2_word_size < 0) {
-            throw std::out_of_range{"log2_word_size is negative"};
-        }
-        if (log2_leaf_size > log2_root_size) {
-            throw std::out_of_range{
-                "log2_leaf_size is greater than log2_root_size"};
-        }
-        if (log2_word_size > log2_leaf_size) {
-            throw std::out_of_range{
-                "log2_word_size is greater than log2_word_size"};
-        }
-        if (log2_root_size >= std::numeric_limits<address_type>::digits) {
-            throw std::out_of_range{"tree is too large for address type"};
-        }
-    }
+        int log2_word_size);
 
     /// \brief Returns the index of the left child of node at given index
     int left_child_index(int index) const {
@@ -179,15 +114,7 @@ private:
     /// \param index Index of root for subtree to initialize
     /// \param log2_size Log<sub>2</sub> size of root at index
     void init_pristine_subtree(const pristine_merkle_tree &pristine,
-        int index, int log2_size) {
-        if (log2_size >= get_log2_leaf_size()) {
-            m_tree[index] = pristine.get_hash(log2_size);
-            init_pristine_subtree(pristine, left_child_index(index),
-                log2_size-1);
-            init_pristine_subtree(pristine, right_child_index(index),
-                log2_size-1);
-        }
-    }
+        int index, int log2_size);
 
     /// \brief Initialize all nodes for the subtree with root at a given index
     /// \param h Hasher object
@@ -195,14 +122,7 @@ private:
     /// \param log2_size Log<sub>2</sub> size of root at index
     /// \details The nodes corresponding to subtrees of size log2_leaf_size
     /// are assumed to have already been set prior to calling this function
-    void init_subtree(hasher_type &h, int index, int log2_size) {
-        if (log2_size > get_log2_leaf_size()) {
-            init_subtree(h, left_child_index(index), log2_size-1);
-            init_subtree(h, right_child_index(index), log2_size-1);
-            get_concat_hash(h, m_tree[left_child_index(index)],
-                m_tree[right_child_index(index)], m_tree[index]);
-        }
-    }
+    void init_subtree(hasher_type &h, int index, int log2_size);
 
     /// \brief Initialize tree from a list of consecutive page hashes
     /// \param leaves List of page hashes
@@ -210,40 +130,12 @@ private:
     /// subtree nodes, in order, and the rest are filled with pristine
     /// page hashes
     void init_tree(const pristine_merkle_tree &pristine,
-        const std::vector<hash_type> &leaves) {
-        std::copy(leaves.begin(), leaves.end(), &m_tree[m_max_leaves]);
-        std::fill_n(&m_tree[m_max_leaves+leaves.size()],
-            m_max_leaves-leaves.size(),
-            pristine.get_hash(get_log2_leaf_size()));
-        hasher_type h;
-        init_subtree(h, 1, get_log2_root_size());
-    }
+        const std::vector<hash_type> &leaves);
 
     /// \brief Returns index of a node in the tree array
     /// \param address Node address
     /// \param log2_size
-    address_type get_node_index(address_type address, int log2_size) const {
-        if (log2_size < get_log2_leaf_size() ||
-            log2_size > get_log2_root_size()) {
-            throw std::out_of_range{"log2_size is out of bounds"};
-        }
-        address_type base = address_type{1} << (get_log2_root_size()-log2_size);
-        // Nodes of log2_size live in indices [base, 2*base)
-        // 0 <unused>
-        // 1 log2_root_size
-        // 2 log2_root_size-1
-        // 3 log2_root_size-1
-        // 4 log2_root_size-2
-        // 5 log2_root_size-2
-        // 6 log2_root_size-2
-        // 7 log2_root_size-2
-        // 0 ...
-        address >>= log2_size;
-        if (address >= base) {
-            throw std::out_of_range{"address is out of bounds"};
-        }
-        return base+address;
-    }
+    address_type get_node_index(address_type address, int log2_size) const;
 
     int m_log2_root_size;            ///< Log<sub>2</sub> of tree size
     int m_log2_leaf_size;            ///< Log<sub>2</sub> of leaf size

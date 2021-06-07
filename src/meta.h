@@ -18,6 +18,7 @@
 #define META_H
 
 #include <type_traits>
+#include <cinttypes>
 
 /// \file
 /// \brief Meta-programming helper functions.

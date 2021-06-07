@@ -59,29 +59,43 @@ jobs:
           name: emulator
           path: /opt/cartesi
 
+      - name: Upload emulator tests
+        uses: actions/upload-artifact@master
+        with:
+          name: emulator-tests
+          path: src/tests
+
   test:
     name: Test
     needs: build
     runs-on: ubuntu-20.04
     steps:
+      - name: Install Ubuntu dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.71.0 libboost-coroutine1.71.0 libboost-serialization1.71.0 libprotobuf17 libprotobuf-lite17 libgrpc++1 netcat patchelf
+
       - name: Download emulator
         uses: actions/download-artifact@master
         with:
           name: emulator
           path: /opt/cartesi
 
+      - name: Download emulator tests
+        uses: actions/download-artifact@master
+        with:
+          name: emulator-tests
+          path: tests
+
       - name: Create images folder
         run: mkdir -m 755 -p /opt/cartesi/share/images
 
-      - name: Fix install directories and permissions [/opt/cartesi]
+      - name: Fix install directories and permissions [/opt/cartesi, ./tests]
         run: |
           find /opt/cartesi -type d -exec chmod 755 {} +
           find /opt/cartesi -type f -exec chmod 644 {} +
           find /opt/cartesi/bin -type f \! -iname "*.lua" -exec chmod 755 {} +
           find /opt/cartesi/lib -type f -exec chmod 755 {} +
-
-      - name: Install Ubuntu dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.71.0 libboost-coroutine1.71.0 libboost-serialization1.71.0 libprotobuf17 libprotobuf-lite17 libgrpc++1 netcat
+          chmod 755 ./tests/test-merkle-tree-hash
+          patchelf --set-rpath /opt/cartesi/lib ./tests/test-merkle-tree-hash
 
       - name: Download [rootfs.ext2]
         uses: Legion2/download-release-action@v2.1.0
@@ -136,17 +150,15 @@ jobs:
           /opt/cartesi/bin/cartesi-machine-tests --server=127.0.0.1:5001 --test-path=/opt/cartesi/tests run
           pkill -f cartesi-machine-server || true
 
-      - name: Checkout emulator source code
-        uses: actions/checkout@v2
-        with:
-          submodules: recursive
-          token: ${{ secrets.CI_TOKEN }}
-
       - name: Run test scripts
         run: |
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
-          cd src && for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do /opt/cartesi/bin/luapp5.3 $x; done
+          for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do /opt/cartesi/bin/luapp5.3 $x; done
+
+      - name: Run Merkle tree tests
+        run: |
+         ./tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
 
   verify:
     name: Verify

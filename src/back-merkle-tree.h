@@ -17,10 +17,12 @@
 #ifndef BACK_MERKLE_TREE_H
 #define BACK_MERKLE_TREE_H
 
-#include <limits>
 #include "keccak-256-hasher.h"
 #include "pristine-merkle-tree.h"
 #include "merkle-tree-proof.h"
+
+/// \file
+/// \brief Back Merkle tree interface.
 
 namespace cartesi {
 
@@ -51,34 +53,7 @@ public:
     /// \param log2_root_size Log<sub>2</sub> of root node
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
-    back_merkle_tree(int log2_root_size, int log2_leaf_size,
-        int log2_word_size):
-        m_log2_root_size{log2_root_size},
-        m_log2_leaf_size{log2_leaf_size},
-        m_leaf_count{0}, m_max_leaves{address_type{1} << (log2_root_size-log2_leaf_size)},
-        m_context(std::max(1,log2_root_size-log2_leaf_size+1)),
-        m_pristine_hashes{log2_root_size, log2_word_size} {
-        if (log2_root_size < 0) {
-            throw std::out_of_range{"log2_root_size is negative"};
-        }
-        if (log2_leaf_size < 0) {
-            throw std::out_of_range{"log2_leaf_size is negative"};
-        }
-        if (log2_word_size < 0) {
-            throw std::out_of_range{"log2_word_size is negative"};
-        }
-        if (log2_leaf_size > log2_root_size) {
-            throw std::out_of_range{
-                "log2_leaf_size is greater than log2_root_size"};
-        }
-        if (log2_word_size > log2_leaf_size) {
-            throw std::out_of_range{
-                "log2_word_size is greater than log2_word_size"};
-        }
-        if (log2_root_size >= std::numeric_limits<address_type>::digits) {
-            throw std::out_of_range{"tree is too large for address type"};
-        }
-    }
+    back_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size);
 
     /// \brief Appends a new hash to the tree
     /// \param hash Hash of leaf data
@@ -111,24 +86,7 @@ public:
     /// If the bit is not set, we simply store context[i] = right and break
     /// In other words, we can update the context in
     /// log time (log2_root_size-log2_leaf_size)
-    void push_back(const hash_type &leaf_hash) {
-        hasher_type h;
-        hash_type right = leaf_hash;
-        if (m_leaf_count >= m_max_leaves) {
-            throw std::out_of_range{"too many leaves"};
-        }
-        int depth = m_log2_root_size-m_log2_leaf_size;
-        for (int i = 0; i <= depth; ++i) {
-            if (m_leaf_count & (address_type{1} << i)) {
-                const auto &left = m_context[i];
-                get_concat_hash(h, left, right, right);
-            } else {
-                m_context[i] = right;
-                break;
-            }
-        }
-        ++m_leaf_count;
-    }
+    void push_back(const hash_type &leaf_hash);
 
     /// \brief Returns the root tree hash
     /// \returns Root tree hash
@@ -151,62 +109,13 @@ public:
     /// root = hash(root, pristine[i+log2_leaf_size]) and move up a bit
     /// (i.e., to grow our subtree, we need to pad it on the right with
     /// a pristine subtree of the same size)
-    hash_type get_root_hash(void) const {
-        hasher_type h;
-        assert(m_leaf_count <= m_max_leaves);
-        int depth = m_log2_root_size-m_log2_leaf_size;
-        if (m_leaf_count < m_max_leaves) {
-            auto root = m_pristine_hashes.get_hash(m_log2_leaf_size);
-            for (int i = 0; i < depth; ++i) {
-                if (m_leaf_count & (address_type{1} << i)) {
-                    const auto &left = m_context[i];
-                    get_concat_hash(h, left, root, root);
-                } else {
-                    const auto &right = m_pristine_hashes.get_hash(
-                        m_log2_leaf_size+i);
-                    get_concat_hash(h, root, right, root);
-                }
-            }
-            return root;
-        } else {
-            return m_context[depth];
-        }
-    }
+    hash_type get_root_hash(void) const;
 
     /// \brief Returns proof for the next pristine leaf
     /// \returns Proof for leaf at given index, or throws exception
     /// \details This is basically the same algorithm as
     /// back_merkle_tree::get_root_hash.
-    proof_type get_next_leaf_proof(void) const {
-        int depth = m_log2_root_size-m_log2_leaf_size;
-        if (m_leaf_count >= m_max_leaves) {
-            throw std::out_of_range{"tree is full"};
-        }
-        hasher_type h;
-        proof_type proof{m_log2_root_size, m_log2_leaf_size};
-        proof.set_target_address(m_leaf_count << m_log2_leaf_size);
-        proof.set_target_hash(m_pristine_hashes.get_hash(m_log2_leaf_size));
-        hash_type hash = m_pristine_hashes.get_hash(m_log2_leaf_size);
-        for (int i = 0; i < depth; ++i) {
-            if (m_leaf_count & (address_type{1} << i)) {
-                const auto &left = m_context[i];
-                proof.set_sibling_hash(left, m_log2_leaf_size+i);
-                get_concat_hash(h, left, hash, hash);
-            } else {
-                const auto &right = m_pristine_hashes.get_hash(
-                    m_log2_leaf_size+i);
-                proof.set_sibling_hash(right, m_log2_leaf_size+i);
-                get_concat_hash(h, hash, right, hash);
-            }
-        }
-        proof.set_root_hash(hash);
-#ifndef NDEBUG
-        if (!proof.verify(h)) {
-            throw std::runtime_error{"produced invalid proof"};
-        }
-#endif
-        return proof;
-    }
+    proof_type get_next_leaf_proof(void) const;
 
 private:
 

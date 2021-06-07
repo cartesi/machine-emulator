@@ -167,6 +167,22 @@ CARTESI_OBJS:= \
 	virtual-machine.o \
 	machine-c-api.o
 
+CARTESI_OBJS:= \
+	clint.o \
+	rom.o \
+	htif.o \
+	dhd.o \
+	dhd-source.o \
+	shadow.o \
+	machine-merkle-tree.o \
+	pristine-merkle-tree.o \
+	pma.o \
+	machine.o \
+	machine-config.o \
+	interpret.o \
+	virtual-machine.o \
+	machine-c-api.o
+
 LUACARTESI_OBJS:= \
 	clint.o \
 	rom.o \
@@ -406,6 +422,9 @@ cartesi-machine-server cartesi-machine-proxy: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS
 
 tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI)
 	$(CC) $(LIBCARTESI_TESTS_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI_LIB)
+
+c-machine: $(C_MACHINE_OBJS) libcartesi.so
+	$(CC) -o $@ $^ $(C_MACHINE_LIBS)
 
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 

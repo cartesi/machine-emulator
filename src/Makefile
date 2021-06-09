@@ -299,6 +299,8 @@ TEST_MACHINE_C_API_OBJS:= \
 CARTESI_MACHINE_PROTO_OBJS:= \
 	versioning.pb.o \
 	cartesi-machine.pb.o \
+	cartesi-machine-checkin.pb.o \
+	cartesi-machine-checkin.grpc.pb.o \
 	cartesi-machine.grpc.pb.o
 
 ROLLUP_MACHINE_MANAGER_PROTO_OBJS:= \

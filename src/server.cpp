@@ -35,6 +35,7 @@
 #include <grpc++/grpc++.h>
 #include <grpc++/resource_quota.h>
 #include "cartesi-machine.grpc.pb.h"
+#include "cartesi-machine-checkin.grpc.pb.h"
 #pragma GCC diagnostic pop
 
 #include "grpc-util.h"
@@ -1064,30 +1065,132 @@ public:
     }
 };
 
-std::unique_ptr<Server> build_server(const std::string &address, handler_context &hctx) {
+static std::string replace_port(const std::string &address, int port) {
+    // Unix address?
+    if (address.find("unix:") == 0) {
+        return address;
+    }
+    auto pos = address.find_last_of(':');
+    // If already has a port, replace
+    if (pos != address.npos) {
+        return address.substr(0, pos) + ":" + std::to_string(port);
+    // Otherwise, concatenate
+    } else {
+        return address + ":" + std::to_string(port);
+    }
+}
+
+std::unique_ptr<Server> build_server(
+    const char *server_address,
+    const char *session_id,
+    const char *checkin_address,
+    handler_context &hctx) {
     ServerBuilder builder;
     builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
-    builder.AddListeningPort(address, grpc::InsecureServerCredentials());
+    int server_port = 0;
+    builder.AddListeningPort(server_address,
+        grpc::InsecureServerCredentials(), &server_port);
     builder.RegisterService(&hctx.s);
     hctx.cq = builder.AddCompletionQueue();
-    return builder.BuildAndStart();
+    auto server = builder.BuildAndStart();
+    if (session_id && checkin_address) {
+         auto stub = MachineCheckIn::NewStub(grpc::CreateChannel(checkin_address, grpc::InsecureChannelCredentials()));
+         grpc::ClientContext context;
+         CheckInRequest request;
+         Void response;
+         request.set_session_id(session_id);
+         request.set_address(replace_port(server_address, server_port));
+         auto status = stub->CheckIn(&context, request, &response);
+         if (!status.ok()) {
+             std::cerr << "unable to check-in\n";
+             return nullptr;
+         } 
+    }
+    return server;
 }
+
+
+/// \brief Checks if string matches prefix and captures remaninder
+/// \param pre Prefix to match in str.
+/// \param str Input string
+/// \param val If string matches prefix, points to remaninder
+/// \returns True if string matches prefix, false otherwise
+static bool stringval(const char *pre, const char *str, const char **val) {
+    int len = strlen(pre);
+    if (strncmp(pre, str, len) == 0) {
+        *val = str + len;
+        return true;
+    }
+    return false;
+}
+
+
+static void help(const char *name) {
+	fprintf(stderr,
+R"(Usage:
+
+	%s [options] [<server-address>]
+
+where
+
+    --server-address=<server-address> or [<server-address>]
+      gives the address of the server
+      <server-address> can be
+        <ipv4-hostname/address>:<port>
+        <ipv6-hostname/address>:<port>
+        unix:<path>
+      when <port> is 0, an ephemeral port will be automatically selected
+
+and options are
+
+    --checkin-address=<checkin-address>
+      address to which a check-in message will be sent informing the
+      new server is ready. The check-in message also informs the <port>
+      selected for the server and the session id <string>
+
+    --session-id=<string>
+      arbitrary string used when sending the check-in message
+
+    --help
+      prints this message and exits
+
+)", name);
+
+};
 
 int main(int argc, char *argv[]) {
 
-    if (argc < 2) {
-        std::cerr << "Usage:\n";
-        std::cerr << "  " << argv[0] << " <address>\n";
-        std::cerr << "where <address> can be\n";
-        std::cerr << "  <ipv4-hostname/address>:<port>\n";
-        std::cerr << "  <ipv6-hostname/address>:<port>\n";
-        std::cerr << "  unix:<path>\n";
+	const char *server_address = nullptr;
+	const char *session_id = nullptr;
+	const char *checkin_address = nullptr;
+
+    for (int i = 1; i < argc; i++) {
+        if (stringval("--server-address=", argv[i], &server_address)) {
+            ;
+        } else if (stringval("--checkin-address=", argv[i], &checkin_address)) {
+            ;
+        } else if (stringval("--session-id=", argv[i], &session_id)) {
+            ;
+        } else if (strcmp(argv[i], "--help") == 0) {
+            help(argv[0]);
+            exit(0);
+		} else {
+            server_address = argv[i];
+        }
+    }
+
+    if (!server_address) {
+        fprintf(stderr, "missing server-address\n");
         exit(1);
     }
 
-    const char *address = argv[1];
+    if ((session_id == nullptr) != (checkin_address == nullptr)) {
+        fprintf(stderr, "session-id and checkin-address must be used together\n");
+        exit(1);
+    }
+
     handler_context hctx{};
-    auto server = build_server(address, hctx);
+    auto server = build_server(server_address, session_id, checkin_address, hctx);
     if (!server) {
         std::cerr << "server creation failed\n";
         exit(1);

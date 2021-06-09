@@ -16,7 +16,13 @@
 
 #include <new>
 #include <string>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #include <boost/coroutine2/coroutine.hpp>
+#include <boost/process.hpp>
+#pragma GCC diagnostic pop
 
 #define PROXY_VERSION_MAJOR UINT32_C(0)
 #define PROXY_VERSION_MINOR UINT32_C(4)
@@ -32,6 +38,7 @@
 #include <grpc++/grpc++.h>
 #include <grpc++/resource_quota.h>
 #include "cartesi-machine.grpc.pb.h"
+#include "cartesi-machine-checkin.grpc.pb.h"
 #pragma GCC diagnostic pop
 
 using namespace CartesiMachine;
@@ -113,7 +120,9 @@ using namespace Versioning;
 // queue. THIS WILL CRASH!
 //
 struct handler_context {
+    int proxy_port;
     Machine::AsyncService async_service;
+    MachineCheckIn::AsyncService checkin_async_service;
     std::unique_ptr<Machine::Stub> stub;
     std::unique_ptr<grpc::ServerCompletionQueue> completion_queue;
     bool ok;
@@ -619,84 +628,18 @@ static auto new_VerifyStateTransition_handler(handler_context &hctx) {
     );
 }
 
-static auto build_server(const std::string &address, handler_context &hctx) {
+static auto build_proxy(const char *address, handler_context &hctx) {
     grpc::ServerBuilder builder;
     builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
-    builder.AddListeningPort(address, grpc::InsecureServerCredentials());
+    builder.AddListeningPort(address, grpc::InsecureServerCredentials(),
+        &hctx.proxy_port);
     builder.RegisterService(&hctx.async_service);
+    builder.RegisterService(&hctx.checkin_async_service);
     hctx.completion_queue = builder.AddCompletionQueue();
     return builder.BuildAndStart();
 }
 
-static bool build_client(const std::string &address, handler_context &hctx) {
-    hctx.stub = Machine::NewStub(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()));
-    if (!hctx.stub) {
-        return false;
-    }
-    Void request;
-    GetVersionResponse response;
-    grpc::ClientContext context;
-    auto status = hctx.stub->GetVersion(&context, request, &response);
-    if (!status.ok()) {
-        return false;
-    }
-    std::cerr << "connected to server: version is " <<
-        response.version().major() << "." <<
-        response.version().minor() << "." <<
-        response.version().patch() << "\n";
-
-    if (response.version().major() != PROXY_VERSION_MAJOR ||
-        response.version().minor() != PROXY_VERSION_MINOR) {
-        std::cerr << "proxy is incompatible with server\n";
-        return false;
-    }
-
-    return true;
-}
-
-static void drain_completion_queue(grpc::ServerCompletionQueue *completion_queue) {
-    completion_queue->Shutdown();
-    bool ok = false;
-    handler::pull_type *h = nullptr;
-    while (completion_queue->Next(reinterpret_cast<void **>(&h), &ok)) {
-        delete h;
-    }
-}
-
-static bool finished(handler::pull_type *c) {
-    return !(*c);
-}
-
-int main(int argc, char *argv[]) {
-
-    if (argc < 3) {
-        std::cerr << "Usage:\n";
-        std::cerr << "  " << argv[0] << " <proxy-address> <remote-address>\n";
-        std::cerr << "where <address> can be\n";
-        std::cerr << "  <ipv4-hostname/address>:<port>\n";
-        std::cerr << "  <ipv6-hostname/address>:<port>\n";
-        std::cerr << "  unix:<path>\n";
-        exit(1);
-    }
-
-    handler_context hctx{};
-
-    std::cerr << "proxy version is " <<
-        PROXY_VERSION_MAJOR << "." <<
-        PROXY_VERSION_MINOR << "." <<
-        PROXY_VERSION_PATCH << "\n";
-
-    if (!build_client(argv[2], hctx)) {
-        std::cerr << "client creation failed\n";
-        exit(1);
-    }
-
-    auto server = build_server(argv[1], hctx);
-    if (!server) {
-        std::cerr << "server creation failed\n";
-        exit(1);
-    }
-
+void enable_handlers(handler_context &hctx) {
     new_GetVersion_handler(hctx);
     new_Machine_handler(hctx);
     new_Run_handler(hctx);
@@ -730,6 +673,178 @@ int main(int argc, char *argv[]) {
     new_GetDefaultConfig_handler(hctx);
     new_VerifyAccessLog_handler(hctx);
     new_VerifyStateTransition_handler(hctx);
+}
+
+static bool build_client(handler_context &hctx, const CheckInRequest &request,
+    handler::push_type &yield) {
+    // Instantiate client connection
+    hctx.stub = Machine::NewStub(grpc::CreateChannel(request.address(),
+        grpc::InsecureChannelCredentials()));
+    if (!hctx.stub) {
+        std::cerr << "failed to connect to server\n";
+        yield(side_effect::shutdown);
+        return false;
+    }
+    // Try to get version from client
+    Void version_request;
+    GetVersionResponse version_response;
+    grpc::ClientContext client_context;
+    auto status = hctx.stub->GetVersion(&client_context,
+        version_request, &version_response);
+    if (!status.ok()) {
+        std::cerr << "failed to obtain server version\n";
+        yield(side_effect::shutdown);
+        return false;
+    }
+    std::cerr << "connected to server: version is " <<
+        version_response.version().major() << "." <<
+        version_response.version().minor() << "." <<
+        version_response.version().patch() << "\n";
+    if (version_response.version().major() != PROXY_VERSION_MAJOR ||
+        version_response.version().minor() != PROXY_VERSION_MINOR) {
+        std::cerr << "proxy is incompatible with server\n";
+        yield(side_effect::shutdown);
+        return false;
+    }
+    return true;
+}
+
+static void new_CheckIn_handler(handler_context &hctx) {
+    handler::pull_type* self = reinterpret_cast<handler::pull_type *>(operator new(sizeof(handler::pull_type)));
+    new (self) handler::pull_type {
+        [self, &hctx](handler::push_type &yield) {
+            using namespace grpc;
+            ServerContext server_context;
+            CheckInRequest request;
+            ServerAsyncResponseWriter<Void> writer(&server_context);
+            auto cq = hctx.completion_queue.get();
+            // Install handler for CheckIn and wait
+            hctx.checkin_async_service.RequestCheckIn(&server_context,
+                &request, &writer, cq, cq, self);
+            yield(side_effect::none);
+            // Acknowledge check-in
+            Void response;
+            writer.Finish(response, grpc::Status::OK, self);
+            yield(side_effect::none);
+            //
+            if (build_client(hctx, request, yield)) {
+                enable_handlers(hctx);
+            }
+        }
+    };
+}
+
+static void drain_completion_queue(
+    grpc::ServerCompletionQueue *completion_queue) {
+    completion_queue->Shutdown();
+    bool ok = false;
+    handler::pull_type *h = nullptr;
+    while (completion_queue->Next(reinterpret_cast<void **>(&h), &ok)) {
+        delete h;
+    }
+}
+
+static bool finished(handler::pull_type *c) {
+    return !(*c);
+}
+
+/// \brief Checks if string matches prefix and captures remaninder
+/// \param pre Prefix to match in str.
+/// \param str Input string
+/// \param val If string matches prefix, points to remaninder
+/// \returns True if string matches prefix, false otherwise
+static bool stringval(const char *pre, const char *str, const char **val) {
+    int len = strlen(pre);
+    if (strncmp(pre, str, len) == 0) {
+        *val = str + len;
+        return true;
+    }
+    return false;
+}
+
+static void help(const char *name) {
+	fprintf(stderr,
+R"(Usage:
+
+	%s --proxy-address=<address> --server-address=<address> [--help]
+
+where
+
+      --proxy-address=<address>
+      gives the address proxy will bind to, where <address> can be
+        <ipv4-hostname/address>:<port>
+        <ipv6-hostname/address>:<port>
+        unix:<path>
+
+    --server-address=<server-address> or [<server-address>]
+      passed to the spawned Cartesi Machine Server
+      default: localhost:0
+
+    --help
+      prints this message and exits
+
+)", name);
+
+};
+
+static std::string replace_port(const std::string &address, int port) {
+    // Unix address?
+    if (address.find("unix:") == 0) {
+        return address;
+    }
+    auto pos = address.find_last_of(':');
+    // If already has a port, replace
+    if (pos != address.npos) {
+        return address.substr(0, pos) + ":" + std::to_string(port);
+    // Otherwise, concatenate
+    } else {
+        return address + ":" + std::to_string(port);
+    }
+}
+
+int main(int argc, char *argv[]) {
+
+    const char *proxy_address = nullptr;
+    const char *server_address = "localhost:0";
+
+    for (int i = 1; i < argc; i++) {
+        if (stringval("--proxy-address=", argv[i], &proxy_address)) {
+            ;
+        } else if (stringval("--server-address=", argv[i], &server_address)) {
+            ;
+        } else if (strcmp(argv[i], "--help") == 0) {
+            help(argv[0]);
+            exit(0);
+		} else {
+            server_address = argv[i];
+        }
+    }
+
+    if (!proxy_address) {
+        std::cerr << "missing proxy-address\n";
+        exit(1);
+    }
+
+    handler_context hctx{};
+
+    std::cerr << "proxy version is " <<
+        PROXY_VERSION_MAJOR << "." <<
+        PROXY_VERSION_MINOR << "." <<
+        PROXY_VERSION_PATCH << "\n";
+
+    auto proxy = build_proxy(proxy_address, hctx);
+    if (!proxy) {
+        std::cerr << "proxy creation failed\n";
+        exit(1);
+    }
+
+    // spawn server
+    boost::process::group server_group;
+    auto cmdline = "./cartesi-machine-server --session-id=proxy --checkin-address=" + replace_port(proxy_address, hctx.proxy_port) +  " --server-address=" + server_address;
+    boost::process::spawn(cmdline, server_group);
+
+    // Only handler we accept initially is the CheckIn from the server
+    new_CheckIn_handler(hctx);
 
     for ( ;; ) {
         // Obtain the next active handler coroutine
@@ -762,10 +877,11 @@ int main(int argc, char *argv[]) {
     }
 
 shutdown:
-    // Shutdown server before completion queue
-    server->Shutdown();
+    // Shutdown proxy before completion queue
+    proxy->Shutdown();
     drain_completion_queue(hctx.completion_queue.get());
-    // Make sure we don't leave a snapshot burried
+    server_group.terminate();
+    server_group.wait();
     return 0;
 }
 

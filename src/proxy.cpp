@@ -639,7 +639,7 @@ static auto build_proxy(const char *address, handler_context &hctx) {
     return builder.BuildAndStart();
 }
 
-void enable_handlers(handler_context &hctx) {
+void enable_server_handlers(handler_context &hctx) {
     new_GetVersion_handler(hctx);
     new_Machine_handler(hctx);
     new_Run_handler(hctx);
@@ -675,14 +675,12 @@ void enable_handlers(handler_context &hctx) {
     new_VerifyStateTransition_handler(hctx);
 }
 
-static bool build_client(handler_context &hctx, const CheckInRequest &request,
-    handler::push_type &yield) {
+static bool build_client(handler_context &hctx, const CheckInRequest &request) {
     // Instantiate client connection
     hctx.stub = Machine::NewStub(grpc::CreateChannel(request.address(),
         grpc::InsecureChannelCredentials()));
     if (!hctx.stub) {
         std::cerr << "failed to connect to server\n";
-        yield(side_effect::shutdown);
         return false;
     }
     // Try to get version from client
@@ -693,7 +691,6 @@ static bool build_client(handler_context &hctx, const CheckInRequest &request,
         version_request, &version_response);
     if (!status.ok()) {
         std::cerr << "failed to obtain server version\n";
-        yield(side_effect::shutdown);
         return false;
     }
     std::cerr << "connected to server: version is " <<
@@ -703,7 +700,6 @@ static bool build_client(handler_context &hctx, const CheckInRequest &request,
     if (version_response.version().major() != PROXY_VERSION_MAJOR ||
         version_response.version().minor() != PROXY_VERSION_MINOR) {
         std::cerr << "proxy is incompatible with server\n";
-        yield(side_effect::shutdown);
         return false;
     }
     return true;
@@ -726,9 +722,13 @@ static void new_CheckIn_handler(handler_context &hctx) {
             Void response;
             writer.Finish(response, grpc::Status::OK, self);
             yield(side_effect::none);
-            //
-            if (build_client(hctx, request, yield)) {
-                enable_handlers(hctx);
+            // If we succeeded building a compatible client connection
+            // to the server, enable all handlers
+            if (build_client(hctx, request)) {
+                enable_server_handlers(hctx);
+            // Otherwise, shutdown proxy
+            } else {
+                yield(side_effect::shutdown);
             }
         }
     };

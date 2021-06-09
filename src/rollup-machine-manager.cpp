@@ -17,22 +17,18 @@
 #include <new>
 #include <cstdint>
 #include <string>
-#include <boost/coroutine2/coroutine.hpp>
 #include <unordered_map>
 #include <deque>
 #include <array>
+#include <variant>
+#include <optional>
 
-#define MANAGER_VERSION_MAJOR UINT32_C(0)
-#define MANAGER_VERSION_MINOR UINT32_C(0)
-#define MANAGER_VERSION_PATCH UINT32_C(0)
-#define MANAGER_VERSION_PRE_RELEASE ""
-#define MANAGER_VERSION_BUILD ""
-
-#define SERVER_VERSION_MAJOR UINT32_C(0)
-#define SERVER_VERSION_MINOR UINT32_C(3)
-#define SERVER_VERSION_PATCH UINT32_C(0)
-#define SERVER_VERSION_PRE_RELEASE ""
-#define SERVER_VERSION_BUILD ""
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wdeprecated-copy"
+#include <boost/coroutine2/coroutine.hpp>
+#include <boost/process.hpp>
+#pragma GCC diagnostic pop
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -41,8 +37,21 @@
 #include <grpc++/grpc++.h>
 #include <grpc++/resource_quota.h>
 #include "cartesi-machine.grpc.pb.h"
+#include "cartesi-machine-checkin.grpc.pb.h"
 #include "rollup-machine-manager.grpc.pb.h"
 #pragma GCC diagnostic pop
+
+#define MANAGER_VERSION_MAJOR UINT32_C(0)
+#define MANAGER_VERSION_MINOR UINT32_C(0)
+#define MANAGER_VERSION_PATCH UINT32_C(0)
+#define MANAGER_VERSION_PRE_RELEASE ""
+#define MANAGER_VERSION_BUILD ""
+
+#define MACHINE_VERSION_MAJOR UINT32_C(0)
+#define MACHINE_VERSION_MINOR UINT32_C(3)
+#define MACHINE_VERSION_PATCH UINT32_C(0)
+#define MACHINE_VERSION_PRE_RELEASE ""
+#define MACHINE_VERSION_BUILD ""
 
 using namespace CartesiRollupMachineManager;
 using namespace CartesiMachine;
@@ -51,6 +60,7 @@ using namespace Versioning;
 #include "keccak-256-hasher.h"
 #include "merkle-tree-proof.h"
 #include "complete-merkle-tree.h"
+#include "grpc-util.h"
 
 // gRPC async server calls involve a variety of objects:
 // 1) The service object;
@@ -204,11 +214,18 @@ struct epoch {
     std::deque<input> pending_inputs;
 };
 
+struct machine_request {
+    std::variant<cartesi::machine_config, std::string> config_or_directory;
+    cartesi::machine_runtime_config runtime;
+};
+
 struct session {
     session_id id;
-    std::unique_ptr<Machine::Stub> stub;
+    std::optional<machine_request> initial_config;
+    std::unique_ptr<Machine::Stub> server_stub;
     uint64_t active_epoch_index;
-    uint64_t max_mcycle_per_input;
+    uint64_t current_input_index;
+    uint64_t max_cycles_per_input;
     payload_and_metadata input_description;
     payload_and_metadata_array outputs_description;
     payload_and_metadata_array messages_description;
@@ -216,9 +233,12 @@ struct session {
 };
 
 struct handler_context {
+    std::string manager_address, server_address;
     std::unordered_map<session_id, session> sessions;
-    RollupMachineManager::AsyncService async_service;
+    RollupMachineManager::AsyncService manager_async_service;
+    MachineCheckIn::AsyncService checkin_async_service;
     std::unique_ptr<grpc::ServerCompletionQueue> completion_queue;
+    boost::process::group server_group;
     bool ok;
 };
 
@@ -228,72 +248,6 @@ enum class side_effect {
 };
 
 using handler = boost::coroutines2::coroutine<side_effect>;
-
-#if 0
-
-template <typename RESP>
-static void writer_finish(grpc::ServerAsyncResponseWriter<RESP> &writer, const RESP &response, const grpc::Status &status, handler::pull_type *self) {
-    if (status.ok()) {
-        writer.Finish(response, grpc::Status::OK, self);
-    } else {
-        writer.FinishWithError(status, self);
-    }
-}
-
-template <
-    typename REQ_TYPE,  // <rpc-name> request message type
-    typename RESP_TYPE, // <rpc-name> response message type
-    typename SRV_REQ,   // functor that invokes Request<rpc-name>
-    typename CLNT_REQ   // functor that invokes Async<rpc-name>
->
-static handler::pull_type *new_handler(const std::string &rpc_name,
-    SRV_REQ start_server_request, CLNT_REQ start_client_request, side_effect last_effect = side_effect::none) {
-    // Here we had a fun conundrum to solve.  We want to allocate a new
-    // handler::pull_type object and initialize it with a lambda function that
-    // contains the coroutine implementation.  However, we want to give this lambda
-    // access to the value of the pointer holding the new handler::pull_type object.
-    // This is because it needs to use this this pointer in gRPC calls that will
-    // return it in the completion queue.  If we used the normal new operator, the
-    // lambda would be constructed before the value was returned by the operator, and
-    // therefore would capture an uninitialized value. So we break the
-    // construction into an allocation with operator new and construction with
-    // placement new.
-    handler::pull_type* self = reinterpret_cast<handler::pull_type *>(operator new(sizeof(handler::pull_type)));
-    new (self) handler::pull_type {
-        [self, rpc_name, start_server_request, start_client_request, last_effect](handler::push_type &yield) {
-            using namespace grpc;
-            ServerContext server_context;
-            REQ_TYPE request;
-            ServerAsyncResponseWriter<RESP_TYPE> writer(&server_context);
-            // Advertise we are ready to process requests
-            start_server_request(server_context, request, writer, self);
-            // Yield until a request arrives, we are returned in the completion
-            // queue, and the dispatcher resumes us
-            yield(side_effect::none);
-            ClientContext client_context;
-            Status status;
-            // Start a client request
-            auto reader = start_client_request(client_context, request);
-            RESP_TYPE response;
-            // Advertise we are waiting for the response
-            reader->Finish(&response, &status, self);
-            // Yield until the response arrives, we are returned in the
-            // completion queue, and the dispatcher resumes us
-            yield(side_effect::none);
-            // Start client response
-            writer_finish(writer, response, status, self);
-            // Yield until done sending response, we are returned in the
-            // completion queue, and the dispatcher resumes us
-            yield(last_effect);
-            // Create a new handler for the same <rpc-name>
-            new_handler<REQ_TYPE, RESP_TYPE>(rpc_name, start_server_request, start_client_request);
-            // Allow the coroutine to finish. The dispatcher loop will
-            // immediately delete it.
-        }
-    };
-    return self;
-}
-#endif
 
 static void new_GetVersion_handler(handler_context &hctx) {
     using REQ_TYPE = Void;
@@ -306,8 +260,8 @@ static void new_GetVersion_handler(handler_context &hctx) {
             REQ_TYPE request;
             ServerAsyncResponseWriter<RESP_TYPE> writer(&server_context);
             auto cq = hctx.completion_queue.get();
-            hctx.async_service.RequestGetVersion(&server_context, &request,
-                &writer, cq, cq, self);
+            hctx.manager_async_service.RequestGetVersion(&server_context,
+                &request, &writer, cq, cq, self);
             yield(side_effect::none);
             Status status;
             RESP_TYPE response;
@@ -324,39 +278,193 @@ static void new_GetVersion_handler(handler_context &hctx) {
     };
 }
 
-static auto build_server(const std::string &address, handler_context &hctx) {
-    grpc::ServerBuilder builder;
-    builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
-    builder.AddListeningPort(address, grpc::InsecureServerCredentials());
-    builder.RegisterService(&hctx.async_service);
-    hctx.completion_queue = builder.AddCompletionQueue();
-    return builder.BuildAndStart();
+static payload_and_metadata get_proto_payload_and_metadata(
+    const PayloadAndMetadata &proto_p) {
+    payload_and_metadata p;
+    p.metadata_flash_drive_index = proto_p.metadata_flash_drive_index();
+    p.payload_flash_drive_index = proto_p.payload_flash_drive_index();
+    return p;
 }
 
-static bool test_machine_server(const std::string &address) {
-    auto stub = Machine::NewStub(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()));
-    if (!stub) {
-        return false;
-    }
-    Void request;
-    GetVersionResponse response;
-    grpc::ClientContext context;
-    auto status = stub->GetVersion(&context, request, &response);
-    if (!status.ok()) {
-        return false;
-    }
-    std::cerr << "connected to server: version is " <<
-        response.version().major() << "." <<
-        response.version().minor() << "." <<
-        response.version().patch() << "\n";
+static payload_and_metadata_array get_proto_payload_and_metadata_array(
+    const PayloadAndMetadataArray &proto_p) {
+    payload_and_metadata_array p;
+    p.drive_pair = get_proto_payload_and_metadata(proto_p.drive_pair());
+    p.entry_count = proto_p.entry_count();
+    p.payload_entry_length = proto_p.payload_entry_length();
+    return p;
+}
 
-    if (response.version().major() != SERVER_VERSION_MAJOR ||
-        response.version().minor() != SERVER_VERSION_MINOR) {
-        std::cerr << "machine manager is incompatible with server\n";
-        return false;
+static std::optional<machine_request> get_proto_machine_request(const
+    MachineRequest &proto_m) {
+    machine_request m;
+    m.runtime = cartesi::get_proto_machine_runtime_config(proto_m.runtime());
+    switch (proto_m.machine_oneof_case()) {
+        case MachineRequest::kConfig:
+            m.config_or_directory = cartesi::get_proto_machine_config(
+                proto_m.config());
+            return m;
+        case MachineRequest::kDirectory:
+            m.config_or_directory = proto_m.directory();
+            return m;
+        default:
+            return {};
     }
+}
 
-    return true;
+static session get_proto_session(const StartSessionRequest &req) {
+    session s;
+    s.id = req.session_id();
+    s.initial_config = get_proto_machine_request(req.machine());
+    s.active_epoch_index = req.active_epoch_index();
+    s.current_input_index = req.current_input_index();
+    s.max_cycles_per_input = req.max_cycles_per_input();
+    s.input_description = get_proto_payload_and_metadata(req.
+        input_description());
+    s.outputs_description = get_proto_payload_and_metadata_array(req.
+        outputs_description());
+    s.messages_description = get_proto_payload_and_metadata_array(req.
+        messages_description());
+    return s;
+}
+
+static void new_StartSession_handler(handler_context &hctx) {
+    handler::pull_type* self = reinterpret_cast<handler::pull_type *>(operator new(sizeof(handler::pull_type)));
+    new (self) handler::pull_type {
+        [self, &hctx](handler::push_type &yield) {
+            using namespace grpc;
+            ServerContext start_session_context;
+            StartSessionRequest start_session_request;
+            ServerAsyncResponseWriter<Void> start_session_writer(
+                &start_session_context);
+            auto cq = hctx.completion_queue.get();
+            // Wait for a StartSession rpc
+            hctx.manager_async_service.RequestStartSession(
+                &start_session_context, &start_session_request,
+                &start_session_writer, cq, cq, self);
+            yield(side_effect::none);
+            // If session with same id already exists
+            auto &sessions = hctx.sessions;
+            auto id = start_session_request.session_id();
+            // If this is not a new session, bail out
+            if (sessions.find(id) != sessions.end()) {
+                // Start handling the next StartSession rpc
+                new_StartSession_handler(hctx);
+                // Return error for this rpc and we are done
+                start_session_writer.FinishWithError(
+                    Status{StatusCode::ALREADY_EXISTS,
+                    "session id is taken"}, self);
+                yield(side_effect::none);
+                return;
+            }
+            // Otherwise, add entry for session
+            auto &s = (sessions[id] = get_proto_session(start_session_request));
+            // If no machine specification, bail out
+            if (!s.initial_config.has_value()) {
+                // Unreserve session id
+                sessions.erase(id);
+                // Start handling the next StartSession rpc
+                new_StartSession_handler(hctx);
+                // Return error for this rpc and we are done
+                start_session_writer.FinishWithError(
+                    Status{StatusCode::INVALID_ARGUMENT,
+                    "missing initial machine config"}, self);
+                yield(side_effect::none);
+                return;
+            }
+            // Spawn a new server
+            auto cmdline = "./cartesi-machine-server --session-id='" +
+                id + "' --checkin-address=" + hctx.manager_address +  " --server-address=" + hctx.server_address;
+            boost::process::spawn(cmdline, hctx.server_group);
+            // Wait for a CheckIn rpc
+            ServerContext checkin_context;
+            CheckInRequest checkin_request;
+            ServerAsyncResponseWriter<Void> checkin_writer(&checkin_context);
+            hctx.checkin_async_service.RequestCheckIn(&checkin_context,
+                &checkin_request, &checkin_writer, cq, cq, self);
+            yield(side_effect::none);
+            // Acknowledge check-in
+            Void checkin_response;
+            checkin_writer.Finish(checkin_response, grpc::Status::OK, self);
+            yield(side_effect::none);
+            // At this point, we can safely start processing
+            // new StartSession rpcs
+            new_StartSession_handler(hctx);
+            // Instantiate client connection
+            s.server_stub = Machine::NewStub(
+                grpc::CreateChannel(checkin_request.address(),
+                    grpc::InsecureChannelCredentials()));
+            // If unable to create stub, bail out
+            if (!s.server_stub) {
+                // Return error for this rpc and we are done
+                start_session_writer.FinishWithError(
+                    Status{StatusCode::RESOURCE_EXHAUSTED,
+                    "unable to create machine stub for session"}, self);
+                yield(side_effect::none);
+                return;
+            }
+            // Try to get version from client
+            Void version_request;
+            GetVersionResponse version_response;
+            grpc::ClientContext client_context;
+            auto version_status = s.server_stub->GetVersion(&client_context,
+                version_request, &version_response);
+            // If getversion failed on the server, bail out
+            if (!version_status.ok()) {
+                // Return error for this rpc and we are done
+                start_session_writer.FinishWithError(version_status, self);
+                yield(side_effect::none);
+                return;
+            }
+            // If version is incompatible, bail out
+            if (version_response.version().major() != MACHINE_VERSION_MAJOR ||
+                version_response.version().minor() != MACHINE_VERSION_MINOR) {
+                // Return error for this rpc and we are done
+                start_session_writer.FinishWithError(
+                    Status{StatusCode::FAILED_PRECONDITION,
+                    "manager is incompatible with machine server"}, self);
+                yield(side_effect::none);
+                return;
+            }
+
+            // Still need to instantiate the machine in the server
+            // Still need to get the initial config returned by the instance
+            // and see if our descriptions are compatible with it
+
+            Void start_session_response;
+            start_session_writer.Finish(start_session_response,
+                grpc::Status::OK, self);
+            yield(side_effect::none);
+        }
+    };
+}
+
+static std::string replace_port(const std::string &address, int port) {
+    // Unix address?
+    if (address.find("unix:") == 0) {
+        return address;
+    }
+    auto pos = address.find_last_of(':');
+    // If already has a port, replace
+    if (pos != address.npos) {
+        return address.substr(0, pos) + ":" + std::to_string(port);
+    // Otherwise, concatenate
+    } else {
+        return address + ":" + std::to_string(port);
+    }
+}
+
+static auto build_manager(const char *manager_address, handler_context &hctx) {
+    grpc::ServerBuilder builder;
+    int manager_port = 0;
+    builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
+    builder.AddListeningPort(manager_address, grpc::InsecureServerCredentials(),
+        &manager_port);
+    hctx.manager_address = replace_port(manager_address, manager_port);
+    builder.RegisterService(&hctx.manager_async_service);
+    builder.RegisterService(&hctx.checkin_async_service);
+    hctx.completion_queue = builder.AddCompletionQueue();
+    return builder.BuildAndStart();
 }
 
 static void drain_completion_queue(grpc::ServerCompletionQueue *completion_queue) {
@@ -374,37 +482,86 @@ static bool finished(handler::pull_type *c) {
     return !(*c);
 }
 
+static void help(const char *name) {
+	fprintf(stderr,
+R"(Usage:
+
+	%s --manager-address=<address> --server-address=<address> [--help]
+
+where
+
+      --manager-address=<address>
+      gives the address manager will bind to, where <address> can be
+        <ipv4-hostname/address>:<port>
+        <ipv6-hostname/address>:<port>
+        unix:<path>
+
+    --server-address=<server-address> or [<server-address>]
+      passed spawned Cartesi Machine Servers
+      default: localhost:0
+
+    --help
+      prints this message and exits
+
+)", name);
+
+};
+
+/// \brief Checks if string matches prefix and captures remaninder
+/// \param pre Prefix to match in str.
+/// \param str Input string
+/// \param val If string matches prefix, points to remaninder
+/// \returns True if string matches prefix, false otherwise
+static bool stringval(const char *pre, const char *str, const char **val) {
+    int len = strlen(pre);
+    if (strncmp(pre, str, len) == 0) {
+        *val = str + len;
+        return true;
+    }
+    return false;
+}
+
 int main(int argc, char *argv[]) {
 
-    if (argc < 3) {
-        std::cerr << "Usage:\n";
-        std::cerr << "  " << argv[0] << " <proxy-address> <remote-address>\n";
-        std::cerr << "where <address> can be\n";
-        std::cerr << "  <ipv4-hostname/address>:<port>\n";
-        std::cerr << "  <ipv6-hostname/address>:<port>\n";
-        std::cerr << "  unix:<path>\n";
+    const char *manager_address = nullptr;
+    const char *server_address = "localhost:0";
+
+    for (int i = 1; i < argc; i++) {
+        if (stringval("--manager-address=", argv[i], &manager_address)) {
+            ;
+        } else if (stringval("--server-address=", argv[i], &server_address)) {
+            ;
+        } else if (strcmp(argv[i], "--help") == 0) {
+            help(argv[0]);
+            exit(0);
+		} else {
+            server_address = argv[i];
+        }
+    }
+
+    if (!manager_address) {
+        std::cerr << "missing manager-address\n";
         exit(1);
     }
 
     handler_context hctx{};
 
-    std::cerr << "proxy version is " <<
+    hctx.manager_address = manager_address;
+    hctx.server_address = server_address;
+
+    std::cerr << "manager version is " <<
         MANAGER_VERSION_MAJOR << "." <<
         MANAGER_VERSION_MINOR << "." <<
         MANAGER_VERSION_PATCH << "\n";
 
-    if (!test_machine_server(argv[2])) {
-        std::cerr << "machine server connection failed\n";
-        exit(1);
-    }
-
-    auto server = build_server(argv[1], hctx);
-    if (!server) {
-        std::cerr << "server creation failed\n";
+    auto manager = build_manager(manager_address, hctx);
+    if (!manager) {
+        std::cerr << "manager server creation failed\n";
         exit(1);
     }
 
     new_GetVersion_handler(hctx);
+    new_StartSession_handler(hctx);
 
     for ( ;; ) {
         // Obtain the next active handler coroutine
@@ -438,9 +595,10 @@ int main(int argc, char *argv[]) {
 
 shutdown:
     // Shutdown server before completion queue
-    server->Shutdown();
+    manager->Shutdown();
     drain_completion_queue(hctx.completion_queue.get());
-    // Make sure we don't leave a snapshot burried
+    hctx.server_group.terminate();
+    hctx.server_group.wait();
     return 0;
 }
 

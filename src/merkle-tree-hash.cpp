@@ -31,7 +31,6 @@
 using namespace cartesi;
 using hasher_type = cryptopp_keccak_256_hasher;
 using hash_type = hasher_type::hash_type;
-constexpr int LOG2_WORD_SIZE = 3;
 
 /// \brief Checks if string matches prefix and captures remaninder
 /// \param pre Prefix to match in str.
@@ -108,12 +107,14 @@ static void error(const char *fmt, ...) {
 
 /// \brief Computes the hash of a word
 /// \param h Hasher object
-/// \param leaf Pointer to leaf data. Must contain 2^LOG2_WORD_SIZE bytes
-/// \param hash Receives the leaf hash
+/// \param word Pointer to word data. Must contain 2^log2_word_size bytes
+/// \param log2_word_size Log<sub>2</sub> of word size
+/// \param hash Receives the word hash
 static void get_word_hash(hasher_type &h,
-    const unsigned char *word, hash_type &hash) {
+    const unsigned char *word, int log2_word_size,
+    hash_type &hash) {
     h.begin();
-    h.add_data(word, 1 << LOG2_WORD_SIZE);
+    h.add_data(word, 1 << log2_word_size);
     h.end(hash);
 }
 
@@ -122,19 +123,21 @@ static void get_word_hash(hasher_type &h,
 /// \param leaf_data Pointer to buffer containing leaf data with
 /// at least 2^log2_leaf_size bytes
 /// \param log2_leaf_size Log<sub>2</sub> of leaf size
+/// \param log2_word_size Log<sub>2</sub> of word size
 /// \returns Merkle hash of leaf data
 static hash_type get_leaf_hash(hasher_type &h, const unsigned char *leaf_data,
-    int log2_leaf_size) {
-    assert(log2_leaf_size >= LOG2_WORD_SIZE);
-    if (log2_leaf_size > LOG2_WORD_SIZE) {
-        hash_type left = get_leaf_hash(h, leaf_data, log2_leaf_size-1);
+    int log2_leaf_size, int log2_word_size) {
+    assert(log2_leaf_size >= log2_word_size);
+    if (log2_leaf_size > log2_word_size) {
+        hash_type left = get_leaf_hash(h, leaf_data,
+            log2_leaf_size-1, log2_word_size);
         hash_type right = get_leaf_hash(h, leaf_data+(1<<(log2_leaf_size-1)),
-            log2_leaf_size-1);
+            log2_leaf_size-1, log2_word_size);
         get_concat_hash(h, left, right, left);
         return left;
     } else {
         hash_type leaf;
-        get_word_hash(h, leaf_data, leaf);
+        get_word_hash(h, leaf_data, log2_word_size, leaf);
         return leaf;
     }
 }
@@ -143,29 +146,68 @@ static hash_type get_leaf_hash(hasher_type &h, const unsigned char *leaf_data,
 /// \param leaf_data Pointer to buffer containing leaf data with
 /// at least 2^log2_leaf_size bytes
 /// \param log2_leaf_size Log<sub>2</sub> of leaf size
+/// \param log2_word_size Log<sub>2</sub> of word size
 /// \returns Merkle hash of leaf data
 static hash_type get_leaf_hash(const unsigned char *leaf_data,
-    int log2_leaf_size) {
+    int log2_leaf_size, int log2_word_size) {
     hasher_type h;
-    return get_leaf_hash(h, leaf_data, log2_leaf_size);
+    return get_leaf_hash(h, leaf_data, log2_leaf_size, log2_word_size);
 }
 
 /// \brief Prints help message
 static void help(const char *name) {
-    fprintf(stderr, "Usage:\n  %s [--input=<filename>] "
-                    "--log2-leaf-size=<p> --log2-root-size=<t>\n", name);
+    fprintf(stderr, R"(Usage:
+
+  %s --log2-root-size=<integer> [options]
+
+Computes the Merkle tree root hash of 2^log2_root_size bytes read from
+a file. If the file contains fewer than 2^log2_root_size bytes, it is
+ostensibly padded with zeros to 2^log2_root_size bytes.
+
+Each node hash corresponding to a data range with 2^log2_node_size bytes
+is the hash of the concatenation of the node hashes of its two subranges
+with 2^(log2_node_size-1) bytes.
+
+The node hash corresponding to word with 2^log2_word_size bytes is simply
+the hash of the data in the range.
+
+The Merkle tree root hash is simply the node hash corresponding to the
+entire 2^log2_root_size range.
+
+The hash function used is Keccak-256.
+
+Options:
+
+  --input=<filename>                    default: reads from standard input
+  Gives the input filename.
+
+  --log2-word-size=<integer>            default: 3
+  (> 0 and <= 64)
+  Number of bytes subintended by each word, i.e., the number of bytes in the
+  input data from which each hash is computed.
+
+  --log2-leaf-size=<integer>            default: 12
+  (> 0 and <= log2_root_size)
+  The granularity in which bytes are read from the input file.
+
+  --help
+  Prints this message and returns.
+)", name);
     exit(0);
 }
 
 int main(int argc, char *argv[]) {
     const char *input_name = nullptr;
-    int log2_leaf_size = 10;
+    int log2_word_size = 3;
+    int log2_leaf_size = 12;
     int log2_root_size = 0;
     // Process command line arguments
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--help") == 0) {
             help(argv[0]);
         } else if (stringval("--input=", argv[i], &input_name)) {
+            ;
+        } else if (intval("--log2-word-size=", argv[i], &log2_word_size)) {
             ;
         } else if (intval("--log2-leaf-size=", argv[i], &log2_leaf_size)) {
             ;
@@ -181,10 +223,9 @@ int main(int argc, char *argv[]) {
             error("unrecognized option '%s'\n", argv[i]);
         }
     }
-    if (log2_leaf_size < LOG2_WORD_SIZE || log2_leaf_size >= 64 ||
+    if (log2_leaf_size < log2_word_size || log2_leaf_size >= 64 ||
         log2_root_size >= 64 || log2_leaf_size > log2_root_size) {
-        error("invalid leaf size (%d) / tree size (%d) combination\n",
-            log2_leaf_size, log2_root_size);
+        error("invalid word size (%d) / invalid leaf size (%d) / root size (%d) combination\n", log2_word_size, log2_leaf_size, log2_root_size);
         return 1;
     }
     // Read from stdin if no input name was given
@@ -205,7 +246,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    back_merkle_tree back_tree{log2_root_size, log2_leaf_size, LOG2_WORD_SIZE};
+    back_merkle_tree back_tree{log2_root_size, log2_leaf_size, log2_word_size};
 
     uint64_t max_leaves = UINT64_C(1) << (log2_root_size - log2_leaf_size);
     uint64_t leaf_count = 0;
@@ -224,7 +265,8 @@ int main(int argc, char *argv[]) {
         // Pad leaf with zeros if file ended before next leaf boundary
         memset(leaf_buf.get()+got, 0, leaf_size-got);
         // Compute leaf hash
-        auto leaf_hash = get_leaf_hash(leaf_buf.get(), log2_leaf_size);
+        auto leaf_hash = get_leaf_hash(leaf_buf.get(), log2_leaf_size,
+            log2_word_size);
         // Add leaf to incremental tree
         back_tree.push_back(leaf_hash);
         // Compare the root hash for the incremental tree and the

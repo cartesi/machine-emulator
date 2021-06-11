@@ -323,7 +323,7 @@ CARTESI_MACHINE_PROXY_OBJS:= \
 ROLLUP_MACHINE_MANAGER_OBJS:= \
 	$(CARTESI_MACHINE_PROTO_OBJS) \
 	$(ROLLUP_MACHINE_MANAGER_PROTO_OBJS) \
-	machine-merkle-tree.o \
+	complete-merkle-tree.o \
 	pristine-merkle-tree.o \
 	grpc-util.o \
 	rollup-machine-manager.o

@@ -87,6 +87,11 @@ public:
     /// \param hash Hash to append
     void push_back(const hash_type &hash);
 
+    /// \brief Returns number of leaves in tree
+    address_type size(void) const {
+        return get_level(get_log2_leaf_size()).size();
+    };
+
 private:
 
     /// \brief Throws exception if log<sub>2</sub> sizes are inconsistent

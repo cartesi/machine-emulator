@@ -56,12 +56,10 @@ public:
         m_root_hash{},
         m_sibling_hashes(std::max(0,log2_root_size-log2_target_size)) {
         if (log2_root_size <= 0) {
-            throw std::out_of_range{
-                "log2_root_size is not positive"};
+            throw std::out_of_range{"log2_root_size is not positive"};
         }
         if (log2_target_size < 0) {
-            throw std::out_of_range{
-                "log2_target_size is negative"};
+            throw std::out_of_range{"log2_target_size is negative"};
         }
         if (log2_target_size > log2_root_size) {
             throw std::out_of_range{
@@ -192,6 +190,65 @@ public:
            }
         }
         return hash;
+    }
+
+    template <typename HASHER_TYPE>
+    merkle_tree_proof<hash_type, address_type> slice(HASHER_TYPE &&h,
+        int new_log2_root_size, int new_log2_target_size) const {
+        static_assert(is_an_i_hasher<HASHER_TYPE>::value, "not an i_hasher");
+        static_assert(std::is_same<
+            typename remove_cvref<HASHER_TYPE>::type::hash_type,
+            hash_type
+        >::value, "incompatible hash types");
+        if (new_log2_root_size <= 0) {
+            throw std::out_of_range{"log2_root_size is not positive"};
+        }
+        if (new_log2_target_size < 0) {
+            throw std::out_of_range{"log2_target_size is negative"};
+        }
+        if (new_log2_target_size > new_log2_root_size) {
+            throw std::out_of_range{
+                "log2_target_size is greater than log2_root_size"};
+        }
+        if (new_log2_root_size > get_log2_root_size()) {
+            throw std::out_of_range{"log2_root_size is too large"};
+        }
+        if (new_log2_target_size < get_log2_target_size()) {
+            throw std::out_of_range{"log2_taget_size is too small"};
+        }
+        merkle_tree_proof<HASH_TYPE, ADDRESS_TYPE> sliced(new_log2_root_size,
+            new_log2_target_size);
+        hash_type hash = get_target_hash();
+        for (int log2_size = get_log2_target_size();
+            log2_size < new_log2_target_size; ++log2_size) {
+           int bit = (get_target_address() &
+               (address_type(1) << log2_size)) != 0;
+           if (bit) {
+               get_concat_hash(h, get_sibling_hash(log2_size), hash, hash);
+           } else {
+               get_concat_hash(h, hash, get_sibling_hash(log2_size), hash);
+           }
+        }
+        sliced.set_target_hash(hash);
+        for (int log2_size = new_log2_target_size;
+            log2_size < new_log2_root_size; ++log2_size) {
+           int bit = (get_target_address() &
+               (address_type(1) << log2_size)) != 0;
+           const hash_type &sibling_hash = get_sibling_hash(log2_size);
+           if (bit) {
+               get_concat_hash(h, sibling_hash, hash, hash);
+           } else {
+               get_concat_hash(h, hash, sibling_hash, hash);
+           }
+           sliced.set_sibling_hash(sibling_hash, log2_size);
+        }
+        sliced.set_root_hash(hash);
+        sliced.set_target_address((get_target_address() >>
+                new_log2_target_size) << new_log2_target_size);
+        if (!sliced.verify(h)) {
+            throw std::logic_error{"produced invalid sliced proof"};
+        }
+        return sliced;
     }
 
 private:

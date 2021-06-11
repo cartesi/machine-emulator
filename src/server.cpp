@@ -1103,8 +1103,9 @@ std::unique_ptr<Server> build_server(
          auto status = stub->CheckIn(&context, request, &response);
          if (!status.ok()) {
              std::cerr << "unable to check-in\n";
+             std::cerr << "  " << status.error_message() << '\n';
              return nullptr;
-         } 
+         }
     }
     return server;
 }

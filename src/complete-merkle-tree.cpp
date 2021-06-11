@@ -41,6 +41,10 @@ complete_merkle_tree::get_proof(address_type address, int log2_size) const {
         log2_size > get_log2_root_size()) {
         throw std::out_of_range{"log2_size is out of bounds"};
     }
+    auto aligned_address = (address >> log2_size) << log2_size;
+    if (address != aligned_address) {
+        throw std::out_of_range{"address is misaligned"};
+    }
     proof_type proof{get_log2_root_size(), log2_size};
     proof.set_root_hash(get_root_hash());
     proof.set_target_address(address);

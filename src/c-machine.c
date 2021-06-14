@@ -67,6 +67,13 @@ void cleanup_machine_config(cm_machine_config *config) {
 
 }
 
+void print_hash(const uint8_t* hash) {
+    for (long unsigned i=0; i<sizeof(cm_hash); ++i) {
+        printf("%02X", hash[i] & 0xff);
+    }
+    printf("\n");
+}
+
 /* main.c */
 int main() {
 
@@ -100,13 +107,54 @@ int main() {
         printf("Machine successfully created!\n");
     }
 
+    //Get machine hash
+    cm_hash my_hash;
+    memset(&my_hash, 0, sizeof(my_hash));
+    cm_get_root_hash(my_machine, &my_hash);
+    printf("Initial hash of the machine is:");
+    print_hash(my_hash);
+
+    //Verify merkle tree
+    printf("Checking merkle tree %d\n",cm_verify_merkle_tree(my_machine));
+
+    //Read write some register
+    cm_write_csr(my_machine, cm_proc_mcycle, 3);
+    printf("New value of mcycle is %ld\n", cm_read_csr(my_machine, cm_proc_mcycle));
+
+    //Get csr address
+    printf("Address of pc counter is %lx\n", cm_get_csr_address(cm_proc_pc));;
+
+    // Read word
+    uint64_t read_word_value = 0;
+    cm_read_word(my_machine, 0x100, &read_word_value);
+    printf("Read memory from location 0x100 is %ld\n", read_word_value);
+
+    //Write memory
+    uint8_t data_to_write[] = "This is some data";
+    cm_write_memory(my_machine, 0x80000000, data_to_write, strlen((char *)data_to_write)+1);
+
+    uint8_t data_read[128];
+    cm_read_memory(my_machine, 0x80000000, data_read, strlen((char *)data_to_write)+1);
+    printf("Data written '%s' and data read: '%s'\n", data_to_write, data_read);
+
+
+    uint64_t  x_to_write = 78;
+    cm_write_x(my_machine, 4, x_to_write);
+    printf("X written '%ld' and x read: '%ld' and x address is %lx\n", x_to_write, cm_read_x(my_machine, 4),
+           cm_get_x_address(4));
+
+
+
+
+
+
     //Run machine to end mcycle
     uint64_t current_mcycle = 0;
     while (current_mcycle < 1000) {
         if ((error_code = cm_machine_run(my_machine, 0xfffffffff, &err_msg)) != 0) {
             printf("Error running macihne: %d message: %s\n", error_code, err_msg);
         }
-        current_mcycle =cm_read_mcycle(my_machine);
+        current_mcycle = cm_read_mcycle(my_machine);
     }
 
     printf("Machine stopped after %ld cycles\n", current_mcycle);

@@ -278,7 +278,7 @@ void grpc_virtual_machine::do_read_memory(uint64_t address, unsigned char *data,
     ClientContext context;
     check_status(m_stub->get_stub()->ReadMemory(&context, request, &response));
     assert(response.data().size() == length);
-    memcpy(data, response.data().data(), response.data().size());
+    memcpy(data, response.data().data(), length);
 }
 
 void grpc_virtual_machine::do_write_memory(uint64_t address, const unsigned char *data, size_t length)  {

@@ -62,7 +62,7 @@ static bool dhd_read(const pma_entry &pma, i_device_state_access *a, uint64_t of
             if (offset >= DHD_H0_REL_ADDR &&
                 offset < DHD_H0_REL_ADDR+DHD_H_REG_COUNT*sizeof(uint64_t)
                 && (offset & (sizeof(uint64_t)-1)) == 0) {
-                int i = (offset - DHD_H0_REL_ADDR)/sizeof(uint64_t);
+                auto i = (offset - DHD_H0_REL_ADDR)/sizeof(uint64_t);
                 *val = a->read_dhd_h(i);
                 return true;
             }
@@ -141,7 +141,7 @@ static bool dhd_write(const pma_entry &pma, i_device_state_access *a, uint64_t o
             if (offset >= DHD_H0_REL_ADDR &&
                 offset < DHD_H0_REL_ADDR+DHD_H_REG_COUNT*sizeof(uint64_t)
                 && (offset & (sizeof(uint64_t)-1)) == 0) {
-                int i = (offset - DHD_H0_REL_ADDR)/sizeof(uint64_t);
+                auto i = (offset - DHD_H0_REL_ADDR)/sizeof(uint64_t);
                 a->write_dhd_h(i, val);
                 return true;
             }

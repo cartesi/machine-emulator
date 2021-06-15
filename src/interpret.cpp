@@ -633,7 +633,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
     using U = std::make_unsigned_t<T>;
     // If we have a TLB, try hitting it
     if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
-        int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
+        auto tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
         const tlb_entry &tlb = a.get_naked_state().tlb_read[tlb_idx];
         if (tlb_hit<T>(tlb, vaddr)) {
             *pval = aliased_aligned_read<T>(tlb.hpage +
@@ -661,7 +661,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
         } else if (pma.get_istart_M()) {
             unsigned char *hpage = nullptr;
             if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
-                int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
+                auto tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
                 tlb_entry &tlb = a.get_naked_state().tlb_read[tlb_idx];
                 hpage = tlb_replace_read(pma, vaddr, paddr, tlb);
             } else {
@@ -702,7 +702,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
     using U = std::make_unsigned_t<T>;
     // If we have a TLB, try hitting it
     if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
-        int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
+        auto tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
         tlb_entry &tlb = a.get_naked_state().tlb_write[tlb_idx];
         if (tlb_hit<T>(tlb, vaddr)) {
             aliased_aligned_write<T>(tlb.hpage + (vaddr & PAGE_OFFSET_MASK),
@@ -730,7 +730,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
         } else if (pma.get_istart_M()) {
             unsigned char *hpage = nullptr;
             if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
-                int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
+                auto tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
                 tlb_entry &tlb = a.get_naked_state().tlb_write[tlb_idx];
                 hpage = tlb_replace_write(pma, vaddr, paddr, tlb);
             } else {
@@ -1590,8 +1590,8 @@ static bool write_csr_sip(STATE_ACCESS &a, uint64_t val) {
 template <typename STATE_ACCESS>
 static bool write_csr_satp(STATE_ACCESS &a, uint64_t val) {
     uint64_t satp = a.read_satp();
-    int mode = satp >> 60;
-    int new_mode = (val >> 60) & 0xf;
+    auto mode = satp >> 60;
+    auto new_mode = (val >> 60) & 0xf;
     if (new_mode == 0 || (new_mode >= 8 && new_mode <= 9))
         mode = new_mode;
     // no ASID implemented
@@ -1968,9 +1968,9 @@ static inline execute_status execute_SRET(STATE_ACCESS &a, uint64_t pc, uint32_t
     if (priv < PRV_S || (priv == PRV_S && (mstatus & MSTATUS_TSR_MASK))) {
         return raise_illegal_insn_exception(a, pc, insn);
     } else {
-        int spp = (mstatus & MSTATUS_SPP_MASK) >> MSTATUS_SPP_SHIFT;
+        auto spp = (mstatus & MSTATUS_SPP_MASK) >> MSTATUS_SPP_SHIFT;
         /* set the IE state to previous IE state */
-        int spie = (mstatus & MSTATUS_SPIE_MASK) >> MSTATUS_SPIE_SHIFT;
+        auto spie = (mstatus & MSTATUS_SPIE_MASK) >> MSTATUS_SPIE_SHIFT;
         mstatus = (mstatus & ~MSTATUS_SIE_MASK) | (spie << MSTATUS_SIE_SHIFT);
         /* set SPIE to 1 */
         mstatus |= MSTATUS_SPIE_MASK;
@@ -1993,10 +1993,10 @@ static inline execute_status execute_MRET(STATE_ACCESS &a, uint64_t pc, uint32_t
         return raise_illegal_insn_exception(a, pc, insn);
     } else {
         uint64_t mstatus = a.read_mstatus();
-        int mpp = (mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
+        auto mpp = (mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
         //??D we can save one shift here, but maybe the compiler already does
         /* set the IE state to previous IE state */
-        int mpie = (mstatus & MSTATUS_MPIE_MASK) >> MSTATUS_MPIE_SHIFT;
+        auto mpie = (mstatus & MSTATUS_MPIE_MASK) >> MSTATUS_MPIE_SHIFT;
         mstatus = (mstatus & ~MSTATUS_MIE_MASK) | (mpie << MSTATUS_MIE_SHIFT);
         /* set MPIE to 1 */
         mstatus |= MSTATUS_MPIE_MASK;
@@ -3118,7 +3118,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
     uint64_t vaddr = *pc = a.read_pc();
     // If we have a TLB, try hitting it
     if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
-        int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
+        auto tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
         const tlb_entry &tlb = a.get_naked_state().tlb_code[tlb_idx];
         if (tlb_hit<uint32_t>(tlb, vaddr)) {
             *pinsn = aliased_aligned_read<uint32_t>(tlb.hpage + (vaddr & PAGE_OFFSET_MASK));
@@ -3143,7 +3143,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
     }
     unsigned char *hpage = nullptr;
     if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
-        int tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
+        auto tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
         tlb_entry &tlb = a.get_naked_state().tlb_code[tlb_idx];
         hpage = tlb_replace_read(pma, vaddr, paddr, tlb);
     } else {

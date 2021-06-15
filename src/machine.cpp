@@ -1256,8 +1256,8 @@ void machine::write_memory(uint64_t address, const unsigned char *data,
     uint64_t page_in_range = ((address - pma.get_start()) >> log2_page_size)
         << log2_page_size;
     constexpr const auto page_size = PMA_constants::PMA_PAGE_SIZE;
-    int npages = (length+page_size-1)/page_size;
-    for (int i = 0; i < npages; ++i) {
+    auto npages = (length+page_size-1)/page_size;
+    for (decltype(npages) i = 0; i < npages; ++i) {
         pma.mark_dirty_page(page_in_range);
         page_in_range += page_size;
     }

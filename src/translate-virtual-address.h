@@ -117,7 +117,7 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
     //   0: Bare: No translation or protection
     //   8: sv39: Page-based 39-bit virtual addressing
     //   9: sv48: Page-based 48-bit virtual addressing
-    int mode = (satp >> 60) & 0xf;
+    auto mode = static_cast<int>(satp >> 60) & 0xf;
     if (mode == 0) {
         *ppaddr = vaddr;
         return true;
@@ -138,7 +138,7 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
     // most significant bit in VPN[levels]
     // Hence, the use of arithmetic shifts here
     int vaddr_shift = XLEN - (PAGE_NUMBER_SHIFT + levels * 9);
-    if ((((int64_t)vaddr << vaddr_shift) >> vaddr_shift) != (int64_t) vaddr)
+    if (((static_cast<int64_t>(vaddr) << vaddr_shift) >> vaddr_shift) != static_cast<int64_t>(vaddr))
         return false;
 
     // The least significant 44 bits of satp contain the physical page number for the root page table
@@ -169,7 +169,7 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
         // Clear all flags in least significant bits, then shift back to multiple of page size to form physical address
         uint64_t ppn = (pte >> 10) << PAGE_NUMBER_SHIFT;
         // Obtain X, W, R protection bits
-        int xwr = (pte >> 1) & 7;
+        auto xwr = (pte >> 1) & 7;
         // xwr != 0 means we are done walking the page tables
         if (xwr != 0) {
             // These protection bit combinations are reserved for future use

@@ -135,7 +135,7 @@ public:
 
 private:
 
-    int access_to_report(void) const {
+    auto access_to_report(void) const {
         return m_next_access + m_one_based;
     }
 

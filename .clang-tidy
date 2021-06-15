@@ -1,10 +1,12 @@
 Checks: >-
   boost*,
   bugprone*,-bugprone-branch-clone,
+  cert*,
   clang-analyzer*,
   portability*
 WarningsAsErrors: >-
   boost*,
   bugprone*,
+  cert*,
   clang-analyzer*,
   portability*

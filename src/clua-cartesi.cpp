@@ -29,13 +29,13 @@
 #endif
 
 #ifdef GPERF
-static int gperf__gc(lua_State *) {
+static int gperf_gc(lua_State *) {
     ProfilerStop();
     return 0;
 }
 
 static const luaL_Reg gperf_meta[] = {
-    {"__gc", gperf__gc},
+    {"__gc", gperf_gc},
     { NULL, NULL }
 };
 #endif

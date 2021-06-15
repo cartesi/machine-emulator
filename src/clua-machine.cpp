@@ -26,13 +26,13 @@ namespace cartesi {
 
 /// \brief This is the machine.get_default_machine_config()
 /// method implementation.
-static int machine_class__index_get_default_config(lua_State *L) {
+static int machine_class_index_get_default_config(lua_State *L) {
     clua_push_machine_config(L, machine::get_default_config());
     return 1;
 }
 
 /// \brief This is the machine.verify_access_log() method implementation.
-static int machine_class__index_verify_access_log(lua_State *L) try {
+static int machine_class_index_verify_access_log(lua_State *L) try {
     machine::verify_access_log(clua_check_access_log(L, 1),
         clua_check_machine_runtime_config(L, 2),
         true /* 1-based indices in errors */ );
@@ -45,7 +45,7 @@ static int machine_class__index_verify_access_log(lua_State *L) try {
 }
 
 /// \brief This is the machine.verify_state_transition() method implementation.
-static int machine_class__index_verify_state_transition(lua_State *L) try {
+static int machine_class_index_verify_state_transition(lua_State *L) try {
     machine::verify_state_transition(clua_check_hash(L, 1),
         clua_check_access_log(L, 2),
         clua_check_hash(L, 3),
@@ -60,7 +60,7 @@ static int machine_class__index_verify_state_transition(lua_State *L) try {
 }
 
 /// \brief This is the machine.get_x_address() method implementation.
-static int machine_class__index_get_x_address(lua_State *L) try {
+static int machine_class_index_get_x_address(lua_State *L) try {
     lua_pushnumber(L, machine::get_x_address(luaL_checkinteger(L, 1)));
     return 1;
 } catch (std::exception &x) {
@@ -70,7 +70,7 @@ static int machine_class__index_get_x_address(lua_State *L) try {
 }
 
 /// \brief This is the machine.get_csr_address() method implementation.
-static int machine_class__index_get_csr_address(lua_State *L) try {
+static int machine_class_index_get_csr_address(lua_State *L) try {
     lua_pushnumber(L, machine::get_csr_address(clua_check_csr(L, 1)));
     return 1;
 } catch (std::exception &x) {
@@ -80,7 +80,7 @@ static int machine_class__index_get_csr_address(lua_State *L) try {
 }
 
 /// \brief This is the machine.get_dhd_h_address() method implementation.
-static int machine_class__index_get_dhd_h_address(lua_State *L) try {
+static int machine_class_index_get_dhd_h_address(lua_State *L) try {
     lua_pushnumber(L, machine::get_dhd_h_address(luaL_checkinteger(L, 1)));
     return 1;
 } catch (std::exception &x) {
@@ -90,13 +90,13 @@ static int machine_class__index_get_dhd_h_address(lua_State *L) try {
 }
 
 /// \brief Contents of the machine class metatable __index table.
-static const luaL_Reg machine_class__index[] = {
-    {"get_default_config", machine_class__index_get_default_config},
-    {"verify_access_log", machine_class__index_verify_access_log},
-    {"verify_state_transition", machine_class__index_verify_state_transition},
-    {"get_x_address", machine_class__index_get_x_address},
-    {"get_csr_address", machine_class__index_get_csr_address},
-    {"get_dhd_h_address", machine_class__index_get_dhd_h_address},
+static const luaL_Reg machine_class_index[] = {
+    {"get_default_config", machine_class_index_get_default_config},
+    {"verify_access_log", machine_class_index_verify_access_log},
+    {"verify_state_transition", machine_class_index_verify_state_transition},
+    {"get_x_address", machine_class_index_get_x_address},
+    {"get_csr_address", machine_class_index_get_csr_address},
+    {"get_dhd_h_address", machine_class_index_get_dhd_h_address},
     { nullptr, nullptr }
 };
 
@@ -128,7 +128,7 @@ struct machine_class {};
 int clua_machine_init(lua_State *L, int ctxidx) {
     if (!clua_typeexists<machine_class>(L, ctxidx)) {
         clua_createtype<machine_class>(L, "cartesi machine class", ctxidx);
-        clua_setmethods<machine_class>(L, machine_class__index, 0, ctxidx);
+        clua_setmethods<machine_class>(L, machine_class_index, 0, ctxidx);
         static luaL_Reg machine_class_meta[] = {
             { "__call", machine_ctor },
             { nullptr, nullptr }

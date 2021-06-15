@@ -742,6 +742,34 @@ void cm_reset_mip(cm_machine *m, uint32_t mask);
 /// \param m Pointer to valid machine instance
 void cm_dump_pmas(const cm_machine *m);
 
+/// \brief Interact with console
+/// \param m Pointer to valid machine instance
+void cm_interact(cm_machine *m);
+
+/// \brief Verify if dirty page maps are consistent.
+/// \param m Pointer to valid machine instance
+/// \returns true if they are, false if there is an error.
+bool cm_verify_dirty_page_maps(const cm_machine *m);
+
+/// \brief Copies the current state into a configuration for serialization
+/// \param m Pointer to valid machine instance
+/// \returns The configuration
+/// \details Object acquired from this function must not be changed and
+/// must be deleted with cm_delete_machine_config
+const cm_machine_config *cm_get_serialization_config(const cm_machine *m);
+
+/// \brief Returns copy of initialization config.
+/// \param m Pointer to valid machine instance
+/// \details Object acquired from this function must not be changed and
+/// must be deleted with cm_delete_machine_config
+const cm_machine_config *get_initial_config(const cm_machine *m);
+
+/// \brief Saves PMAs into files for serialization
+/// \param m Pointer to valid machine instance
+/// \param c Machine config to be stored
+/// \param dir Directory where PMAs will be stored
+void store_pmas(const cm_machine *m, const cm_machine_config *c, const char* dir);
+
 
 #ifdef __cplusplus
 

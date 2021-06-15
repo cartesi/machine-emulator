@@ -316,6 +316,24 @@ static cartesi::machine_config convert_from_c(const cm_machine_config *c_config)
     return new_cpp_machine_config;
 }
 
+static const cm_machine_config *convert_to_c(cartesi::machine_config &cpp_config) {
+    cm_machine_config *new_machine_config = static_cast<cm_machine_config *>
+            (malloc(sizeof(cm_machine_config)));
+    memset(new_machine_config, 0, sizeof(cm_machine_config));
+
+    new_machine_config->processor = convert_to_c(cpp_config.processor);
+    new_machine_config->ram = convert_to_c(cpp_config.ram);
+    new_machine_config->rom = convert_to_c(cpp_config.rom);
+    new_machine_config->flash_drive_count = cpp_config.flash_drive.size();
+    new_machine_config->flash_drive = new cm_flash_drive_config[cpp_config.flash_drive.size()];
+    memset(new_machine_config->flash_drive, 0, sizeof(cm_flash_drive_config) * new_machine_config->flash_drive_count);
+    new_machine_config->clint = convert_to_c(cpp_config.clint);
+    new_machine_config->htif = convert_to_c(cpp_config.htif);
+    new_machine_config->dhd = convert_to_c(cpp_config.dhd);
+
+    return new_machine_config;
+}
+
 // ----------------------------------------------
 // Machine conversion functions
 // ----------------------------------------------
@@ -333,21 +351,9 @@ static const cartesi::machine *convert_from_c(const cm_machine *m) {
 // Public API functions for generation of default configs
 // -----------------------------------------------------
 const cm_machine_config *cm_new_default_machine_config() {
-    cm_machine_config *new_machine = static_cast<cm_machine_config *>(malloc(sizeof(cm_machine_config)));
-    memset(new_machine, 0, sizeof(cm_machine_config));
-
     cartesi::machine_config cpp_config = cartesi::machine::get_default_config();
-    new_machine->processor = convert_to_c(cpp_config.processor);
-    new_machine->ram = convert_to_c(cpp_config.ram);
-    new_machine->rom = convert_to_c(cpp_config.rom);
-    new_machine->flash_drive_count = cpp_config.flash_drive.size();
-    new_machine->flash_drive = new cm_flash_drive_config[cpp_config.flash_drive.size()];
-    memset(new_machine->flash_drive, 0, sizeof(cm_flash_drive_config) * new_machine->flash_drive_count);
-    new_machine->clint = convert_to_c(cpp_config.clint);
-    new_machine->htif = convert_to_c(cpp_config.htif);
-    new_machine->dhd = convert_to_c(cpp_config.dhd);
 
-    return new_machine;
+    return convert_to_c(cpp_config);
 }
 
 void cm_delete_machine_config(const cm_machine_config *config) {
@@ -890,6 +896,39 @@ void cm_reset_mip(cm_machine *m, uint32_t mask) {
 }
 
 void cm_dump_pmas(const cm_machine *m) {
+    //TODO add error handling here
     const cartesi::machine *cpp_machine = convert_from_c(m);
     cpp_machine->dump_pmas();
+}
+
+void cm_interact(cm_machine *m) {
+    cartesi::machine *cpp_machine = convert_from_c(m);
+    cpp_machine->interact();
+}
+
+bool cm_verify_dirty_page_maps(const cm_machine *m) {
+    const cartesi::machine *cpp_machine = convert_from_c(m);
+    return cpp_machine->verify_dirty_page_maps();
+}
+
+const cm_machine_config *cm_get_serialization_config(const cm_machine *m) {
+    const cartesi::machine *cpp_machine = convert_from_c(m);
+    cartesi::machine_config cpp_config = cpp_machine->get_serialization_config();
+
+    return convert_to_c(cpp_config);
+}
+
+const cm_machine_config *get_initial_config(const cm_machine *m) {
+    const cartesi::machine *cpp_machine = convert_from_c(m);
+    cartesi::machine_config cpp_config = cpp_machine->get_initial_config();
+
+    return convert_to_c(cpp_config);
+}
+
+void store_pmas(const cm_machine *m, const cm_machine_config *c, const char* dir) {
+    //TODO add error handling here
+    const cartesi::machine *cpp_machine = convert_from_c(m);
+    std::string cpp_dir{dir};
+    cartesi::machine_config cpp_machine_config = convert_from_c(c);
+    cpp_machine->store_pmas(cpp_machine_config, cpp_dir);
 }

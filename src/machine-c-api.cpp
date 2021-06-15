@@ -409,19 +409,19 @@ bool cm_verify_merkle_tree(const cm_machine *m) {
     return cpp_machine->verify_merkle_tree();
 }
 
-uint64_t cm_read_csr(const cm_machine *m, cm_proc_csr r) {
+uint64_t cm_read_csr(const cm_machine *m, CM_PROC_CSR r) {
     const cartesi::machine *cpp_machine = convert_from_c(m);
     cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(r);
     return cpp_machine->read_csr(cpp_csr);
 }
 
-void cm_write_csr(cm_machine *m, cm_proc_csr w, uint64_t val) {
+void cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val) {
     cartesi::machine *cpp_machine = convert_from_c(m);
     cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(w);
     cpp_machine->write_csr(cpp_csr, val);
 }
 
-uint64_t cm_get_csr_address(enum cm_proc_csr w) {
+uint64_t cm_get_csr_address(CM_PROC_CSR w) {
     cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(w);
     return cartesi::machine::get_csr_address(cpp_csr);
 }

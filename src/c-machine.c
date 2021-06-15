@@ -118,11 +118,11 @@ int main() {
     printf("Checking merkle tree %d\n",cm_verify_merkle_tree(my_machine));
 
     //Read write some register
-    cm_write_csr(my_machine, cm_proc_mcycle, 3);
-    printf("New value of mcycle is %ld\n", cm_read_csr(my_machine, cm_proc_mcycle));
+    cm_write_csr(my_machine, CM_PROC_MCYCLE, 3);
+    printf("New value of mcycle is %ld\n", cm_read_csr(my_machine, CM_PROC_MCYCLE));
 
     //Get csr address
-    printf("Address of pc counter is %lx\n", cm_get_csr_address(cm_proc_pc));;
+    printf("Address of pc counter is %lx\n", cm_get_csr_address(CM_PROC_PC));;
 
     // Read word
     uint64_t read_word_value = 0;

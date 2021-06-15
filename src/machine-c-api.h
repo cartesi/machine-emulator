@@ -46,45 +46,45 @@ extern "C" {
 typedef uint8_t cm_hash[CM_MACHINE_HASH_BYTE_SIZE];
 
 /// \brief List of CSRs to use with read_csr and write_csr
-enum cm_proc_csr {
-    cm_proc_pc,
-    cm_proc_mvendorid,
-    cm_proc_marchid,
-    cm_proc_mimpid,
-    cm_proc_mcycle,
-    cm_proc_minstret,
-    cm_proc_mstatus,
-    cm_proc_mtvec,
-    cm_proc_mscratch,
-    cm_proc_mepc,
-    cm_proc_mcause,
-    cm_proc_mtval,
-    cm_proc_misa,
-    cm_proc_mie,
-    cm_proc_mip,
-    cm_proc_medeleg,
-    cm_proc_mideleg,
-    cm_proc_mcounteren,
-    cm_proc_stvec,
-    cm_proc_sscratch,
-    cm_proc_sepc,
-    cm_proc_scause,
-    cm_proc_stval,
-    cm_proc_satp,
-    cm_proc_scounteren,
-    cm_proc_ilrsc,
-    cm_proc_iflags,
-    cm_proc_clint_mtimecmp,
-    cm_proc_htif_tohost,
-    cm_proc_htif_fromhost,
-    cm_proc_htif_ihalt,
-    cm_proc_htif_iconsole,
-    cm_proc_htif_iyield,
-    cm_proc_dhd_tstart,
-    cm_proc_dhd_tlength,
-    cm_proc_dhd_dlength,
-    cm_proc_dhd_hlength,
-};
+typedef enum {
+    CM_PROC_PC,
+    CM_PROC_MVENDORID,
+    CM_PROC_MARCHID,
+    CM_PROC_MIMPID,
+    CM_PROC_MCYCLE,
+    CM_PROC_MINSTRET,
+    CM_PROC_MSTATUS,
+    CM_PROC_MTVEC,
+    CM_PROC_MSCRATCH,
+    CM_PROC_MEPC,
+    CM_PROC_MCAUSE,
+    CM_PROC_MTVAL,
+    CM_PROC_MISA,
+    CM_PROC_MIE,
+    CM_PROC_MIP,
+    CM_PROC_MEDELEG,
+    CM_PROC_MIDELEG,
+    CM_PROC_MCOUNTEREN,
+    CM_PROC_STVEC,
+    CM_PROC_SSCRATCH,
+    CM_PROC_SEPC,
+    CM_PROC_SCAUSE,
+    CM_PROC_STVAL,
+    CM_PROC_SATP,
+    CM_PROC_SCOUNTEREN,
+    CM_PROC_ILRSC,
+    CM_PROC_IFLAGS,
+    CM_PROC_CLINT_MTIMECMP,
+    CM_PROC_HTIF_TOHOST,
+    CM_PROC_HTIF_FROMHOST,
+    CM_PROC_HTIF_IHALT,
+    CM_PROC_HTIF_ICONSOLE,
+    CM_PROC_HTIF_IYIELD,
+    CM_PROC_DHD_TSTART,
+    CM_PROC_DHD_TLENGTH,
+    CM_PROC_DHD_DLENGTH,
+    CM_PROC_DHD_HLENGTH
+} CM_PROC_CSR;
 
 typedef struct {
     uint64_t x[CM_MACHINE_X_REG_COUNT];          ///< Value of general-purpose registers
@@ -250,18 +250,18 @@ bool cm_verify_merkle_tree(const cm_machine *m);
 /// \brief Read the value of any CSR
 /// \param m Pointer to valid machine instance
 /// \returns The value of the CSR
-uint64_t cm_read_csr(const cm_machine *m, enum cm_proc_csr r);
+uint64_t cm_read_csr(const cm_machine *m, CM_PROC_CSR r);
 
 /// \brief Write the value of any CSR
 /// \param m Pointer to valid machine instance
 /// \param w CSR to write
 /// \param val Value to write
-void cm_write_csr(cm_machine *m, enum cm_proc_csr w, uint64_t val);
+void cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val);
 
 /// \brief Gets the address of any CSR
 /// \param w The CSR
 /// \returns The address of the specified CSR
-uint64_t cm_get_csr_address(enum cm_proc_csr w);
+uint64_t cm_get_csr_address(CM_PROC_CSR w);
 
 /// \brief Read the value of a word in the machine state.
 /// \param m Pointer to valid machine instance

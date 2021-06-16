@@ -30,10 +30,13 @@
 namespace cartesi {
 
 // Initialize static pristine hashes
-const cartesi::pristine_merkle_tree machine_merkle_tree::m_pristine_hashes{
-    machine_merkle_tree::get_log2_root_size(),
-    machine_merkle_tree::get_log2_word_size()
-};
+const cartesi::pristine_merkle_tree& machine_merkle_tree::pristine_hashes() {
+    static const cartesi::pristine_merkle_tree tree{
+        machine_merkle_tree::get_log2_root_size(),
+        machine_merkle_tree::get_log2_word_size()
+    };
+    return tree;
+}
 
 constexpr machine_merkle_tree::address_type
 machine_merkle_tree::
@@ -185,7 +188,7 @@ dump_hash(const hash_type &hash) const {
 const machine_merkle_tree::hash_type &
 machine_merkle_tree::
 get_pristine_hash(int log2_size) {
-    return m_pristine_hashes.get_hash(log2_size);
+    return pristine_hashes().get_hash(log2_size);
 }
 
 void

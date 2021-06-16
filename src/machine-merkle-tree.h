@@ -276,7 +276,7 @@ private:
     // Precomputed hashes of spans of zero bytes with
     // increasing power-of-two sizes, from 2^LOG2_WORD_SIZE
     // to 2^LOG2_ROOT_SIZE bytes.
-    static const pristine_merkle_tree m_pristine_hashes;
+    static const pristine_merkle_tree& pristine_hashes();
 
 public:
 

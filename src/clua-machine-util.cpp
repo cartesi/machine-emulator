@@ -21,46 +21,51 @@
 
 namespace cartesi {
 
+using csr_map = std::unordered_map<std::string, machine::csr>;
+
 /// \brief Mapping between CSR names and constants
-const static std::unordered_map<std::string, machine::csr> g_csr_name = {
-    {"pc", machine::csr::pc},
-    {"mvendorid", machine::csr::mvendorid},
-    {"marchid", machine::csr::marchid},
-    {"mimpid", machine::csr::mimpid},
-    {"mcycle", machine::csr::mcycle},
-    {"minstret", machine::csr::minstret},
-    {"mstatus", machine::csr::mstatus},
-    {"mtvec", machine::csr::mtvec},
-    {"mscratch", machine::csr::mscratch},
-    {"mepc", machine::csr::mepc},
-    {"mcause", machine::csr::mcause},
-    {"mtval", machine::csr::mtval},
-    {"misa", machine::csr::misa},
-    {"mie", machine::csr::mie},
-    {"mip", machine::csr::mip},
-    {"medeleg", machine::csr::medeleg},
-    {"mideleg", machine::csr::mideleg},
-    {"mcounteren", machine::csr::mcounteren},
-    {"stvec", machine::csr::stvec},
-    {"sscratch", machine::csr::sscratch},
-    {"sepc", machine::csr::sepc},
-    {"scause", machine::csr::scause},
-    {"stval", machine::csr::stval},
-    {"satp", machine::csr::satp},
-    {"scounteren", machine::csr::scounteren},
-    {"ilrsc", machine::csr::ilrsc},
-    {"iflags", machine::csr::iflags},
-    {"clint_mtimecmp", machine::csr::clint_mtimecmp},
-    {"htif_tohost", machine::csr::htif_tohost},
-    {"htif_fromhost", machine::csr::htif_fromhost},
-    {"htif_ihalt", machine::csr::htif_ihalt},
-    {"htif_iconsole", machine::csr::htif_iconsole},
-    {"htif_iyield", machine::csr::htif_iyield},
-    {"dhd_tstart", machine::csr::dhd_tstart},
-    {"dhd_tlength", machine::csr::dhd_tlength},
-    {"dhd_dlength", machine::csr::dhd_dlength},
-    {"dhd_hlength", machine::csr::dhd_hlength}
-};
+static const csr_map& csr_names() {
+    static const csr_map map = {
+        {"pc", machine::csr::pc},
+        {"mvendorid", machine::csr::mvendorid},
+        {"marchid", machine::csr::marchid},
+        {"mimpid", machine::csr::mimpid},
+        {"mcycle", machine::csr::mcycle},
+        {"minstret", machine::csr::minstret},
+        {"mstatus", machine::csr::mstatus},
+        {"mtvec", machine::csr::mtvec},
+        {"mscratch", machine::csr::mscratch},
+        {"mepc", machine::csr::mepc},
+        {"mcause", machine::csr::mcause},
+        {"mtval", machine::csr::mtval},
+        {"misa", machine::csr::misa},
+        {"mie", machine::csr::mie},
+        {"mip", machine::csr::mip},
+        {"medeleg", machine::csr::medeleg},
+        {"mideleg", machine::csr::mideleg},
+        {"mcounteren", machine::csr::mcounteren},
+        {"stvec", machine::csr::stvec},
+        {"sscratch", machine::csr::sscratch},
+        {"sepc", machine::csr::sepc},
+        {"scause", machine::csr::scause},
+        {"stval", machine::csr::stval},
+        {"satp", machine::csr::satp},
+        {"scounteren", machine::csr::scounteren},
+        {"ilrsc", machine::csr::ilrsc},
+        {"iflags", machine::csr::iflags},
+        {"clint_mtimecmp", machine::csr::clint_mtimecmp},
+        {"htif_tohost", machine::csr::htif_tohost},
+        {"htif_fromhost", machine::csr::htif_fromhost},
+        {"htif_ihalt", machine::csr::htif_ihalt},
+        {"htif_iconsole", machine::csr::htif_iconsole},
+        {"htif_iyield", machine::csr::htif_iyield},
+        {"dhd_tstart", machine::csr::dhd_tstart},
+        {"dhd_tlength", machine::csr::dhd_tlength},
+        {"dhd_dlength", machine::csr::dhd_dlength},
+        {"dhd_hlength", machine::csr::dhd_hlength}
+    };
+    return map;
+}
 
 /// \brief Returns an optional boolean field indexed by string in a table.
 /// \param L Lua state.
@@ -441,8 +446,8 @@ machine_merkle_tree::hash_type clua_check_hash(lua_State *L, int idx) {
 
 machine::csr clua_check_csr(lua_State *L, int idx) {
     std::string name = luaL_checkstring(L, idx);
-    auto got = g_csr_name.find(name);
-    if (got == g_csr_name.end()) {
+    auto got = csr_names().find(name);
+    if (got == csr_names().end()) {
         luaL_argerror(L, idx, "unknown csr");
     }
     return got->second;

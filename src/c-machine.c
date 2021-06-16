@@ -95,17 +95,35 @@ int main() {
     my_runtime_config.dhd.source_address = "";
     my_runtime_config.concurrency.update_merkle_tree = 1;
 
-
-    //Create machine
-    printf("Creating machine\n");
     cm_machine* my_machine;
     int error_code = 0;
-    error_message err_msg;
-    if ((error_code = cm_create_machine(&my_machine_config, &my_runtime_config, &my_machine, &err_msg)) != 0) {
-        printf("Error creating machine: %d message: %s\n", error_code, err_msg);
+    char* err_msg;
+
+
+
+    printf("Creating machine from directory, expecting error:\n");
+    if ((error_code = cm_create_machine_from_dir("/unknown_dir", &my_runtime_config, &my_machine, &err_msg)) != 0) {
+        printf("Error creating from directory machine, error code: %d message: %s\n", error_code, err_msg);
     } else {
         printf("Machine successfully created!\n");
     }
+
+    //Create machine
+    printf("Creating machine\n");
+    if ((error_code = cm_create_machine(&my_machine_config, &my_runtime_config, &my_machine, &err_msg)) != 0) {
+        printf("Error creating machine, error code: %d message: %s\n", error_code, err_msg);
+    } else {
+        printf("Machine successfully created!\n");
+    }
+
+
+    //Update merkle tree
+    if ((error_code = cm_update_merkle_tree(my_machine, &err_msg)) != 0) {
+        printf("Error updating merkle tree, error code: %d message: %s\n", error_code, err_msg);
+    } else {
+        printf("Merkle tree successfully updated!\n");
+    }
+
 
     //Get machine hash
     cm_hash my_hash;
@@ -113,6 +131,21 @@ int main() {
     cm_get_root_hash(my_machine, &my_hash);
     printf("Initial hash of the machine is:");
     print_hash(my_hash);
+
+
+    cm_merkle_tree_proof *proof;
+    //Get proof for first page of memory space
+    if ((error_code = cm_get_proof(my_machine, 0, 12, &proof, &err_msg)) != 0) {
+        printf("Error getting proof, error code: %d message: %s\n", error_code, err_msg);
+    } else {
+        printf("Proof acquire is successfull!\n");
+        printf("Root hash:\n");
+        print_hash(proof->root_hash);
+        printf("First page in memory hash:\n");
+        print_hash(proof->target_hash);
+
+        cm_delete_proof(proof);
+    }
 
     //Verify merkle tree
     printf("Checking merkle tree %d\n",cm_verify_merkle_tree(my_machine));

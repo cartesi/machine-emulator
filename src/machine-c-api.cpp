@@ -17,6 +17,14 @@
 #include <alloca.h>
 #include <cstring>
 #include <iostream>
+#include <exception>
+#include <stdexcept>
+#include <future>
+#include <optional>
+#include <regex>
+#include <ios>
+#include <filesystem>
+#include <any>
 
 #include "machine-c-api.h"
 #include "riscv-constants.h"
@@ -41,68 +49,121 @@ enum CM_ERROR {
     CM_ERROR_LENGTH_ERROR = 3,
     CM_ERROR_OUT_OF_RANGE = 4,
     CM_ERROR_FUTURE_ERROR = 5,
+    CM_ERROR_LOGIC_ERROR = 6,
     // Bad optional access error
-    CM_ERROR_BAD_OPTIONAL_ACCESS = 6,
+    CM_ERROR_BAD_OPTIONAL_ACCESS = 7,
     // Runtime errors
-    CM_ERROR_RANGE_ERROR = 7,
-    CM_ERROR_OVERFLOW_ERROR = 8,
-    CM_ERROR_UNDERFLOW_ERROR = 9,
-    CM_ERROR_REGEX_ERROR = 10,
-    CM_ERROR_SYSTEM_IOS_BASE_FAILURE = 11,
-    CM_ERROR_FILESYSTEM_ERROR = 12,
-    CM_ERROR_ATOMIC_TX_ERROR = 13,
-    CM_ERROR_NONEXISTING_LOCAL_TIME = 14,
-    CM_ERROR_AMBIGOUS_LOCAL_TIME = 15,
-    CM_ERROR_FORMAT_ERROR = 16,
+    CM_ERROR_RUNTIME_ERROR = 10,
+    CM_ERROR_RANGE_ERROR = 11,
+    CM_ERROR_OVERFLOW_ERROR = 12,
+    CM_ERROR_UNDERFLOW_ERROR = 13,
+    CM_ERROR_REGEX_ERROR = 14,
+    CM_ERROR_SYSTEM_IOS_BASE_FAILURE = 15,
+    CM_ERROR_FILESYSTEM_ERROR = 16,
+    CM_ERROR_ATOMIC_TX_ERROR = 17,
+    CM_ERROR_NONEXISTING_LOCAL_TIME = 18,
+    CM_ERROR_AMBIGOUS_LOCAL_TIME = 19,
+    CM_ERROR_FORMAT_ERROR = 20,
     //Other errors
-    CM_ERROR_BAD_TYPEID = 17,
-    CM_ERROR_BAD_CAST = 18,
-    CM_ERROR_BAD_WEAK_PTR = 19,
-    CM_ERROR_BAD_FUNCTION_CALL = 20,
-    CM_ERROR_BAD_ALLOC = 21,
-    CM_ERROR_BAD_EXCEPTION = 22,
-    CM_ERROR_IOS_BASE_FAILURE = 23,
-    CM_ERROR_BAD_VARIANT_ACCESS = 24,
-    CM_ERROR_UNKNOWN = 25,
+    CM_ERROR_BAD_TYPEID = 30,
+    CM_ERROR_BAD_CAST = 31,
+    CM_ERROR_BAD_ANY_CAST = 32,
+    CM_ERROR_BAD_WEAK_PTR = 33,
+    CM_ERROR_BAD_FUNCTION_CALL = 34,
+    CM_ERROR_BAD_ALLOC = 35,
+    CM_ERROR_BAD_ARRAY_NEW_LENGTH = 36,
+    CM_ERROR_BAD_EXCEPTION = 37,
+    CM_ERROR_BAD_VARIANT_ACCESS = 38,
+    //C API Errors
+    CM_ERROR_UNKNOWN = 40,
+
 };
 
 
-static error_message get_error_message(int error) {
-    static const char *lookup[] = {
-            "OK",
-            "Argument value has not been accepted", //1 invalid argument
-            "Inputs are outside of domain for which operation is defined", //2 domain error
-            "Implementation defined length limits for object is exceeded", //3 length error
-            "Attempt do access elements out of defined range", //4 out of range
-            "Error with asynchronous execution and shared states ", //5 future error
-            "Accessing optional object that does not contain a value", //6 bad optional access
-            "Result of a computation cannot be represented by the destination type", //7 range error
-            "Arithmetic overflow error", //8 overflow error
-            "Arithmetic underflow error", //9 underflow error
-            "Errors in the regular expressions processing", //10 regex error
-            "Failure in input/output operation", //11 system error ios_base_failure
-            "Filesystem error", //12 filesystem error
-            "Atomic transaction error", //13 tx exception
-            "Error in local time conversion", //14 nonexistent local time
-            "Attempt to convert ambiguous local time", // 15 ambiguous local time
-            "Error in formatting library operation", // 16 format error
-            "Bad type: dereferenced null pointer value of polymorphic type", //17 bad typeid
-            "Dynamic cast run time check failure", //18 bad cast
-            "Weak pointer refers to already deleted object", //19 bad weak ptr
-            "Bad function call: function wrapper has no target", //20 bad function call
-            "Failure to allocate storage", //21 bad alloc
-            "Bad runtime exception", //22 bad expception
-            "Failure of input/output function operation", //23 ios base failure
-            "Bad variant access", //24 bad variant access
-            "Unknown error occurred", //25 unknown error
-    };
-    return lookup[error];
+static char *get_error_message_ok() {
+    return strdup("OK");
 }
 
-static void convert_cpp_error(const std::exception &err_cpp, int *error_code, error_message *error_message) {
-    //TODO convert cpp exceptin type using dynamic cast checks to C error code and
-    *error_code = 0;
-    *error_message = get_error_message(*error_code);
+static char *get_error_message_unknown() {
+    return strdup("Unknown error");
+}
+
+static char *get_error_message(const std::exception &ex) {
+    return strdup(ex.what());
+}
+
+/// \warning: This function rethrows current exception, so it must be called
+/// from the catch error handling block
+static void convert_cpp_error(const std::exception &cpp_error, int *error_code, char **error_message) {
+    try {
+        std::rethrow_exception(std::current_exception());
+    } catch (std::invalid_argument &ex) {
+        *error_code = CM_ERROR_INVALID_ARGUMENT;
+    } catch (std::domain_error &ex) {
+        *error_code = CM_ERROR_DOMAIN_ERROR;
+    } catch (std::length_error &ex) {
+        *error_code = CM_ERROR_LENGTH_ERROR;
+    } catch (std::out_of_range &ex) {
+        *error_code = CM_ERROR_OUT_OF_RANGE;
+    }
+    catch (std::future_error &ex) {
+        *error_code = CM_ERROR_FUTURE_ERROR;
+    }
+    catch (std::logic_error &ex) {
+        *error_code = CM_ERROR_LOGIC_ERROR;
+    }
+    catch (std::bad_optional_access &ex) {
+        *error_code = CM_ERROR_BAD_OPTIONAL_ACCESS;
+    }
+    catch (std::range_error &ex) {
+        *error_code = CM_ERROR_RANGE_ERROR;
+    }
+    catch (std::overflow_error &ex) {
+        *error_code = CM_ERROR_OVERFLOW_ERROR;
+    }
+    catch (std::underflow_error &ex) {
+        *error_code = CM_ERROR_UNDERFLOW_ERROR;
+    }
+    catch (std::regex_error &ex) {
+        *error_code = CM_ERROR_REGEX_ERROR;
+    }
+    catch (std::ios_base::failure &ex) {
+        *error_code = CM_ERROR_SYSTEM_IOS_BASE_FAILURE;
+    }
+    catch (std::filesystem::filesystem_error &ex) {
+        *error_code = CM_ERROR_FILESYSTEM_ERROR;
+    }
+    catch (std::runtime_error &ex) {
+        *error_code = CM_ERROR_RUNTIME_ERROR;
+    }
+    catch (std::bad_typeid &ex) {
+        *error_code = CM_ERROR_BAD_TYPEID;
+    }
+    catch (std::bad_any_cast &ex) {
+        *error_code = CM_ERROR_BAD_ANY_CAST;
+    }
+    catch (std::bad_cast &ex) {
+        *error_code = CM_ERROR_BAD_CAST;
+    }
+    catch (std::bad_weak_ptr &ex) {
+        *error_code = CM_ERROR_BAD_WEAK_PTR;
+    }
+    catch (std::bad_function_call &ex) {
+        *error_code = CM_ERROR_BAD_FUNCTION_CALL;
+    }
+    catch (std::bad_array_new_length &ex) {
+        *error_code = CM_ERROR_BAD_ARRAY_NEW_LENGTH;
+    }
+    catch (std::bad_alloc &ex) {
+        *error_code = CM_ERROR_BAD_ALLOC;
+    }
+    catch (std::bad_exception &ex) {
+        *error_code = CM_ERROR_BAD_EXCEPTION;
+    }
+    catch (...) {
+        *error_code = CM_ERROR_UNKNOWN;
+    }
+    *error_message = get_error_message(cpp_error);
 }
 
 
@@ -346,6 +407,45 @@ static const cartesi::machine *convert_from_c(const cm_machine *m) {
     return static_cast<const cartesi::machine *>(m);
 }
 
+// ----------------------------------------------
+// Merkle tree proof conversion functions
+// ----------------------------------------------
+
+/// \brief Converts log2_size to index into siblings array
+static int cm_log2_size_to_index(int log2_size, int log2_root_size) {
+    // We know log2_root_size > 0, so log2_root_size-1 >= 0
+    int index = log2_root_size - 1 - log2_size;
+    return index;
+}
+
+cm_merkle_tree_proof *convert_to_c(const cartesi::machine_merkle_tree::proof_type &proof) {
+    cm_merkle_tree_proof *new_merkle_tree_proof = static_cast<cm_merkle_tree_proof *>
+    (malloc(sizeof(cm_merkle_tree_proof)));
+    memset(new_merkle_tree_proof, 0, sizeof(cm_merkle_tree_proof));
+
+    new_merkle_tree_proof->log2_root_size = proof.get_log2_root_size();
+    new_merkle_tree_proof->log2_target_size = proof.get_log2_target_size();
+    new_merkle_tree_proof->target_address = proof.get_target_address();
+
+    memmove(&new_merkle_tree_proof->root_hash, static_cast<const uint8_t *>(proof.get_root_hash().data()), sizeof(cm_hash));
+    memmove(&new_merkle_tree_proof->target_hash, static_cast<const uint8_t *>(proof.get_target_hash().data()), sizeof(cm_hash));
+
+    new_merkle_tree_proof->sibling_hashes_size = new_merkle_tree_proof->log2_root_size - new_merkle_tree_proof->log2_target_size;
+    new_merkle_tree_proof->sibling_hashes = new cm_hash[new_merkle_tree_proof->sibling_hashes_size];
+    memset(new_merkle_tree_proof->sibling_hashes, 0, sizeof(cm_hash) * new_merkle_tree_proof->sibling_hashes_size);
+
+
+    for (int log2_size = new_merkle_tree_proof->log2_target_size;
+         log2_size < new_merkle_tree_proof->log2_root_size; ++log2_size) {
+        int current_index = cm_log2_size_to_index(log2_size, new_merkle_tree_proof->log2_root_size);
+        const cartesi::machine_merkle_tree::hash_type sibling_hash = proof.get_sibling_hash(log2_size);
+        memmove(&(new_merkle_tree_proof->sibling_hashes[current_index]),
+                static_cast<const uint8_t *>(sibling_hash.data()), sizeof(cm_hash));
+    }
+
+    return new_merkle_tree_proof;
+}
+
 
 // -----------------------------------------------------
 // Public API functions for generation of default configs
@@ -369,15 +469,57 @@ void cm_delete_machine_config(const cm_machine_config *config) {
 
 
 int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
-                      cm_machine **new_machine, error_message *err_msg) {
+                      cm_machine **new_machine, char **err_msg) {
+    try {
+        const cartesi::machine_config c = convert_from_c(config);
+        const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
+        cartesi::machine *m = new cartesi::machine(c, r);
+        *new_machine = static_cast<cm_machine *>(m);
+        *err_msg = NULL;
+        return 0;
+    } catch (std::exception &ex) {
+        int error_code;
+        convert_cpp_error(ex, &error_code, err_msg);
+        return error_code;
+    } catch (...) {
+        *err_msg = get_error_message_unknown();
+        return CM_ERROR_UNKNOWN;
+    }
+}
 
-    cartesi::machine_config c = convert_from_c(config);
-    cartesi::machine_runtime_config r = convert_from_c(runtime_config);
+int
+cm_create_machine_from_dir(const char *dir, const cm_machine_runtime_config *runtime_config, cm_machine **new_machine,
+                           char **err_msg) {
+    try {
+        const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
+        cartesi::machine *m = new cartesi::machine(std::string{dir}, r);
+        *new_machine = static_cast<cm_machine *>(m);
+        *err_msg = NULL;
+        return 0;
+    } catch (std::exception &ex) {
+        int error_code;
+        convert_cpp_error(ex, &error_code, err_msg);
+        return error_code;
+    } catch (...) {
+        *err_msg = get_error_message_unknown();
+        return CM_ERROR_UNKNOWN;
+    }
+}
 
-    cartesi::machine *m = new cartesi::machine(c, r);
-    *new_machine = static_cast<cm_machine *>(m);
-
-    return 0;
+int cm_store(cm_machine *m, const char *dir, char **err_msg) {
+    try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
+        cpp_machine->store(std::string{dir});
+        *err_msg = NULL;
+        return 0;
+    } catch (std::exception &ex) {
+        int error_code;
+        convert_cpp_error(ex, &error_code, err_msg);
+        return error_code;
+    } catch (...) {
+        *err_msg = get_error_message_unknown();
+        return CM_ERROR_UNKNOWN;
+    }
 }
 
 void cm_delete_machine(cm_machine *m) {
@@ -385,22 +527,64 @@ void cm_delete_machine(cm_machine *m) {
     delete car_machine;
 }
 
-int cm_machine_run(cm_machine *m, uint64_t mcycle_end, error_message *err_msg) {
+int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg) {
 
     cartesi::machine *cpp_machine = convert_from_c(m);
     try {
         cpp_machine->run(mcycle_end);
-        *err_msg = get_error_message(CM_ERROR_OK);
+        *err_msg = NULL;
         return 0;
     } catch (std::exception &ex) {
         int error_code;
         convert_cpp_error(ex, &error_code, err_msg);
         return error_code;
     } catch (...) {
-        *err_msg = get_error_message(CM_ERROR_UNKNOWN);
+        *err_msg = get_error_message_unknown();
         return CM_ERROR_UNKNOWN;
     }
+}
 
+int cm_update_merkle_tree(cm_machine *m, char **err_msg) {
+    cartesi::machine *cpp_machine = convert_from_c(m);
+    try {
+        bool result = cpp_machine->update_merkle_tree();
+        if (result) {
+            *err_msg = NULL;
+            return 0;
+        } else {
+            *err_msg = get_error_message_unknown();
+            return CM_ERROR_UNKNOWN;
+        }
+    } catch (std::exception &ex) {
+        int error_code;
+        convert_cpp_error(ex, &error_code, err_msg);
+        return error_code;
+    } catch (...) {
+        *err_msg = get_error_message_unknown();
+        return CM_ERROR_UNKNOWN;
+    }
+}
+
+int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm_merkle_tree_proof **proof, char **err_msg) {
+    const cartesi::machine *cpp_machine = convert_from_c(m);
+    try {
+        const cartesi::machine_merkle_tree::proof_type cpp_proof = cpp_machine->get_proof(address, log2_size);
+        *proof = convert_to_c(cpp_proof);
+        *err_msg = NULL;
+        return 0;
+    } catch (std::exception &ex) {
+        int error_code;
+        convert_cpp_error(ex, &error_code, err_msg);
+        return error_code;
+    } catch (...) {
+        *err_msg = get_error_message_unknown();
+        return CM_ERROR_UNKNOWN;
+    }
+}
+
+void cm_delete_proof(cm_merkle_tree_proof *proof) {
+    delete[] proof->sibling_hashes;
+    free(proof);
 }
 
 void cm_get_root_hash(const cm_machine *m, cm_hash *hash) {
@@ -907,6 +1091,7 @@ void cm_interact(cm_machine *m) {
 }
 
 bool cm_verify_dirty_page_maps(const cm_machine *m) {
+    //TODO add error handling here, vector at can throw
     const cartesi::machine *cpp_machine = convert_from_c(m);
     return cpp_machine->verify_dirty_page_maps();
 }
@@ -918,17 +1103,9 @@ const cm_machine_config *cm_get_serialization_config(const cm_machine *m) {
     return convert_to_c(cpp_config);
 }
 
-const cm_machine_config *get_initial_config(const cm_machine *m) {
+const cm_machine_config *cm_get_initial_config(const cm_machine *m) {
     const cartesi::machine *cpp_machine = convert_from_c(m);
     cartesi::machine_config cpp_config = cpp_machine->get_initial_config();
 
     return convert_to_c(cpp_config);
-}
-
-void store_pmas(const cm_machine *m, const cm_machine_config *c, const char* dir) {
-    //TODO add error handling here
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    std::string cpp_dir{dir};
-    cartesi::machine_config cpp_machine_config = convert_from_c(c);
-    cpp_machine->store_pmas(cpp_machine_config, cpp_dir);
 }

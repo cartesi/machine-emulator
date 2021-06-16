@@ -173,6 +173,16 @@ typedef struct {
     cm_dhd_config dhd;
 } cm_machine_config;
 
+typedef struct {
+    uint64_t target_address;
+    int log2_target_size;
+    cm_hash target_hash;
+    int log2_root_size;
+    cm_hash root_hash;
+    cm_hash* sibling_hashes;
+    int sibling_hashes_size;
+} cm_merkle_tree_proof;
+
 
 /// \brief DHD runtime configuration
 typedef struct {
@@ -192,9 +202,6 @@ typedef struct {
 
 /// \brief Machine instance handle
 typedef void cm_machine;
-
-/// \brief Machine operation error message
-typedef const char *error_message;
 
 
 // ---------------------------------
@@ -218,11 +225,35 @@ void cm_delete_machine_config(const cm_machine_config *config);
 /// \brief Creates new machine instance from configuration
 /// \param config Machine configuration
 /// \param runtime_config Machine runtime configuration
-/// \param  new_machine Receives the pointer to new machine instance
-/// \param error_msg Receives the message about result of the operation
+/// \param new_machine Receives the pointer to new machine instance
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
 /// \returns 0 for success, non zero code for error
 int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
-                      cm_machine **new_machine, error_message *err_msg);
+                      cm_machine **new_machine, char **err_msg);
+
+/// \brief Constructor from previously serialized directory
+/// \param dir Directory where previous machine is serialized
+/// \param runtime_config Machine runtime configuration
+/// \param new_machine Receives the pointer to new machine instance
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
+/// \returns 0 for success, non zero code for error
+int
+cm_create_machine_from_dir(const char *dir, const cm_machine_runtime_config *runtime_config, cm_machine **new_machine,
+                           char **err_msg);
+
+/// \brief Serialize entire state to directory
+/// \param m Pointer to valid machine instance
+/// \param dir Directory where the machine will be serialized
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
+/// \details The method changes machine because it updates the root hash
+int j(cm_machine *m, const char *dir, char **err_msg);
+
 
 /// \brief Deletes machine instance
 /// \param m Valid pointer to the existing machine instance
@@ -232,9 +263,47 @@ void cm_delete_machine(cm_machine *m);
 /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
 /// \param m Pointer to valid machine instance
 /// \param mcycle_end End cycle value
-/// \param error_msg Receives the message about result of the operation
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
 /// \returns 0 for success, non zero code for error
-int cm_machine_run(cm_machine *m, uint64_t mcycle_end, error_message *err_msg);
+int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg);
+
+//TODO machine step
+//TODO machine verify proof
+//TODO machine verify_access_log
+//TODO machine verify_state_transition
+//TODO machine get_state for read only access
+//TODO machine dehash
+//TODO machine update merkle tree
+//TODO machine update_merkle_tree_page
+
+/// \brief Update the Merkle tree so it matches the contents of the machine state.
+/// \param m Pointer to valid machine instance
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
+/// \returns 0 for success, non zero code for error
+int cm_update_merkle_tree(cm_machine *m, char **err_msg);
+
+
+/// \brief Obtains the proof for a node in the Merkle tree.
+/// \param m Pointer to valid machine instance
+/// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
+/// \param log2_size log<sub>2</sub> of size subintended by target node.
+/// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
+/// \param proof Receives the proof
+/// proof must be deleted with the function cm_delete_proof
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
+/// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
+int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm_merkle_tree_proof **proof, char **err_msg);
+
+/// \brief  Deletes the instance of cm_merkle_tree_proof acquired from cm_get_proof
+/// \param proof Valid pointer to cm_merkle_tree_proof object
+void cm_delete_proof(cm_merkle_tree_proof *proof);
+
 
 /// \brief Obtains the root hash of the Merkle tree.
 /// \param m Pointer to valid machine instance
@@ -762,14 +831,9 @@ const cm_machine_config *cm_get_serialization_config(const cm_machine *m);
 /// \param m Pointer to valid machine instance
 /// \details Object acquired from this function must not be changed and
 /// must be deleted with cm_delete_machine_config
-const cm_machine_config *get_initial_config(const cm_machine *m);
+const cm_machine_config *cm_get_initial_config(const cm_machine *m);
 
-/// \brief Saves PMAs into files for serialization
-/// \param m Pointer to valid machine instance
-/// \param c Machine config to be stored
-/// \param dir Directory where PMAs will be stored
-void store_pmas(const cm_machine *m, const cm_machine_config *c, const char* dir);
-
+//TODO replace flash drive
 
 #ifdef __cplusplus
 

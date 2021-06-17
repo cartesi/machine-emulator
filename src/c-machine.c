@@ -74,6 +74,51 @@ void print_hash(const uint8_t* hash) {
     printf("\n");
 }
 
+void print_data(const uint8_t* data, int data_size) {
+    for (long unsigned i=0; i<sizeof(data_size); ++i) {
+        printf("%02X", data[i] & 0xff);
+    }
+    printf("\n");
+}
+
+void print_merkle_tree_proof(const cm_merkle_tree_proof* proof) {
+    printf("Merkle tree proof:");
+    printf("\t\ttarget_address: %lx", proof->target_address);
+    printf("\t\tlog2_target_size: %d", proof->log2_target_size);
+    printf("\t\ttarget_hash:");
+    print_hash(proof->target_hash);
+    printf("\t\tlog2_root_size: %d", proof->log2_root_size);
+    printf("\t\troot_hash:");
+    print_hash(proof->root_hash);
+    printf("\t\tsibling_hashes_size: %d", proof->sibling_hashes_size);
+    //todo print sibling hashes if needed
+}
+
+void print_access(const cm_access* cm_acc) {
+    printf("CM access:");
+    printf("\t\ttype: %d\n", cm_acc->type);
+    printf("\t\taddress %lx\n", cm_acc->address);
+    printf("\t\tlog2 size %d\n", cm_acc->log2_size);
+    printf("\t\tread data size=%d\n data:", cm_acc->read_data_size);
+    print_data(cm_acc->read_data, cm_acc->read_data_size);
+    printf("\t\twritten data size=%d\n data:", cm_acc->written_data_size);
+    print_data(cm_acc->written_data, cm_acc->written_data_size);
+    printf("\t\tproof:");
+    print_merkle_tree_proof(cm_acc->proof);
+}
+
+void print_access_log(const cm_access_log* access_log) {
+
+    printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n");
+    for (int i=0; i<access_log->accesses_size; ++i) {
+        print_access(&access_log->accesses[i]);
+    }
+    //todo add rest
+    printf("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
+}
+
+
+
 /* main.c */
 int main() {
 
@@ -104,6 +149,7 @@ int main() {
     printf("Creating machine from directory, expecting error:\n");
     if ((error_code = cm_create_machine_from_dir("/unknown_dir", &my_runtime_config, &my_machine, &err_msg)) != 0) {
         printf("Error creating from directory machine, error code: %d message: %s\n", error_code, err_msg);
+        free(err_msg);
     } else {
         printf("Machine successfully created!\n");
     }
@@ -112,6 +158,7 @@ int main() {
     printf("Creating machine\n");
     if ((error_code = cm_create_machine(&my_machine_config, &my_runtime_config, &my_machine, &err_msg)) != 0) {
         printf("Error creating machine, error code: %d message: %s\n", error_code, err_msg);
+        free(err_msg);
     } else {
         printf("Machine successfully created!\n");
     }
@@ -120,6 +167,7 @@ int main() {
     //Update merkle tree
     if ((error_code = cm_update_merkle_tree(my_machine, &err_msg)) != 0) {
         printf("Error updating merkle tree, error code: %d message: %s\n", error_code, err_msg);
+        free(err_msg);
     } else {
         printf("Merkle tree successfully updated!\n");
     }
@@ -137,6 +185,7 @@ int main() {
     //Get proof for first page of memory space
     if ((error_code = cm_get_proof(my_machine, 0, 12, &proof, &err_msg)) != 0) {
         printf("Error getting proof, error code: %d message: %s\n", error_code, err_msg);
+        free(err_msg);
     } else {
         printf("Proof acquire is successfull!\n");
         printf("Root hash:\n");
@@ -146,6 +195,20 @@ int main() {
 
         cm_delete_proof(proof);
     }
+
+    // Check dehash
+    uint8_t dehash_data[10000];
+    memset(dehash_data, 0, sizeof(dehash_data));
+    uint64_t dehash_data_length = sizeof(dehash_data);
+    if ((error_code = cm_dehash(my_machine, proof->target_hash, 32, &dehash_data_length,
+                                dehash_data, &err_msg)) != 0) {
+        printf("Error performing dehash, error code: %d message: %s\n", error_code, err_msg);
+        free(err_msg);
+    } else {
+        printf("Dehash successfull, size acquired: %ld, first byte: %x\n", dehash_data_length,
+               dehash_data[0]);
+    }
+
 
     //Verify merkle tree
     printf("Checking merkle tree %d\n",cm_verify_merkle_tree(my_machine));
@@ -186,6 +249,7 @@ int main() {
     while (current_mcycle < 1000) {
         if ((error_code = cm_machine_run(my_machine, 0xfffffffff, &err_msg)) != 0) {
             printf("Error running macihne: %d message: %s\n", error_code, err_msg);
+            free(err_msg);
         }
         current_mcycle = cm_read_mcycle(my_machine);
     }

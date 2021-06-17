@@ -86,6 +86,7 @@ typedef enum {
     CM_PROC_DHD_HLENGTH
 } CM_PROC_CSR;
 
+/// \brief Processor state configuration
 typedef struct {
     uint64_t x[CM_MACHINE_X_REG_COUNT];          ///< Value of general-purpose registers
     uint64_t pc;                  ///< Value of pc
@@ -173,6 +174,11 @@ typedef struct {
     cm_dhd_config dhd;
 } cm_machine_config;
 
+
+/// \brief Merkle tree proof structure
+/// \details
+/// This structure holds a proof that the node spanning a log2_target_size
+/// at a given address in the tree has a certain hash.
 typedef struct {
     uint64_t target_address;
     int log2_target_size;
@@ -182,6 +188,56 @@ typedef struct {
     cm_hash* sibling_hashes;
     int sibling_hashes_size;
 } cm_merkle_tree_proof;
+
+/// \brief Type of state access
+typedef enum {
+    CM_ACCESS_READ, ///< Read operation
+    CM_ACCESS_WRITE, ///< Write operation
+}  CM_ACCESS_TYPE;
+
+/// \brief Type of access log
+typedef struct {
+    bool proofs; ///< Includes proofs
+    bool annotations; ///< Includes annotations
+} cm_access_log_type;
+
+/// \brief Bracket type
+typedef enum {
+    CM_BRACKET_BEGIN,    ///< Start of scope
+    CM_BRACKET_END       ///< End of scope
+}  CM_BRACKET_TYPE;
+
+
+/// \brief Bracket note
+typedef struct {
+    CM_BRACKET_TYPE type;   ///< Bracket type
+    uint64_t where;         ///< Where it points to in the log
+    char* text;           ///< Note text
+    int text_size; ///< Size of note text
+} cm_bracket_note;
+
+/// \brief Records an access to the machine state
+typedef struct {
+    CM_ACCESS_TYPE type; ///< Type of access
+    uint64_t address;   ///< Address of access
+    int log2_size;      ///< Log2 of size of access
+    uint8_t* read_data; ///< Data before access
+    int read_data_size; ///< Size of data before access
+    uint8_t* written_data;  ///< Data after access (if writing)
+    int written_data_size; ///< Size of data after access
+    cm_merkle_tree_proof* proof; ///< Proof of data before access
+} cm_access;
+
+/// \brief Log of state accesses
+typedef struct {
+    cm_access *accesses; ///< List of all accesses
+    int accesses_size; ///< Size of list of all accesses
+    cm_bracket_note *brackets; ///< Begin/End annotations
+    int brackets_size; ///< Size of begin/end annotations
+    char **notes;  ///< Per-access annotations
+    int notes_size; ///< Number of per-access annotations
+    cm_access_log_type log_type; ///< Log type
+} cm_access_log;
 
 
 /// \brief DHD runtime configuration
@@ -252,7 +308,7 @@ cm_create_machine_from_dir(const char *dir, const cm_machine_runtime_config *run
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \details The method changes machine because it updates the root hash
-int j(cm_machine *m, const char *dir, char **err_msg);
+int cm_store(cm_machine *m, const char *dir, char **err_msg);
 
 
 /// \brief Deletes machine instance
@@ -269,14 +325,41 @@ void cm_delete_machine(cm_machine *m);
 /// \returns 0 for success, non zero code for error
 int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg);
 
-//TODO machine step
+/// \brief Runs the machine for one cycle logging all accesses to the state.
+/// \param m Pointer to valid machine instance
+/// \param log_type Type of access log to generate.
+/// \param one_based Use 1-based indices when reporting errors.
+/// \param access_log Receives the state access log.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
+/// \returns 0 for success, non zero code for error
+int cm_step(cm_machine *m, const cm_access_log_type log_type, bool one_based,
+         cm_access_log** access_log, char **err_msg);
+
+/// \brief  Deletes the instance of cm_access_log acquired from cm_step
+/// \param acc_log Valid pointer to cm_access_log object
+void cm_delete_access_log(cm_access_log *acc_log);
+
 //TODO machine verify proof
 //TODO machine verify_access_log
 //TODO machine verify_state_transition
-//TODO machine get_state for read only access
-//TODO machine dehash
-//TODO machine update merkle tree
-//TODO machine update_merkle_tree_page
+
+/// \brief Obtains the block of data that has a given hash
+/// \param m Pointer to valid machine instance
+/// \param hash Pointer to buffer containing hash
+/// \param hlength Length  of hash in bytes
+/// \param out_dlength Maximum length of desired block of data with that hash.
+/// On return, contains the actual length of the block found. Or
+/// DHD_NOT_FOUND if no matching block was found.
+/// \param out_data The block of data with the given hash, or an empty block
+/// if not found
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
+/// \returns 0 for success, non zero code for error
+int cm_dehash(cm_machine *m, const uint8_t* hash, uint64_t hlength,
+                uint64_t *out_dlength, uint8_t *out_data, char **err_msg);
 
 /// \brief Update the Merkle tree so it matches the contents of the machine state.
 /// \param m Pointer to valid machine instance
@@ -285,6 +368,15 @@ int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg);
 /// by the function caller in case of function execution error
 /// \returns 0 for success, non zero code for error
 int cm_update_merkle_tree(cm_machine *m, char **err_msg);
+
+/// \brief Update the Merkle tree after a page has been modified in the machine state.
+/// \param m Pointer to valid machine instance
+/// \param address Any address inside modified page.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
+/// \returns 0 for success, non zero code for error
+int cm_update_merkle_tree_page(cm_machine *m, uint64_t address, char **err_msg);
 
 
 /// \brief Obtains the proof for a node in the Merkle tree.
@@ -833,7 +925,17 @@ const cm_machine_config *cm_get_serialization_config(const cm_machine *m);
 /// must be deleted with cm_delete_machine_config
 const cm_machine_config *cm_get_initial_config(const cm_machine *m);
 
-//TODO replace flash drive
+
+/// \brief Replaces a flash drive.
+/// \param m Pointer to valid machine instance
+/// \param new_flash Configuration of the new flash drive.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
+/// \returns 0 for success, non zero code for error
+/// \details The machine must contain an existing flash
+/// drive matching the start and length specified in new_flash.
+int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash, char **err_msg);
 
 #ifdef __cplusplus
 

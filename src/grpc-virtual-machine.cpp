@@ -187,7 +187,6 @@ uint64_t grpc_virtual_machine::do_read_csr(csr r) const  {
     ReadCsrResponse response;
     ClientContext context;
     check_status(m_stub->get_stub()->ReadCsr(&context, request, &response));
-    auto name = CartesiMachine::Csr_Name((Csr)r);
     return response.value();
 }
 

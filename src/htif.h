@@ -55,13 +55,13 @@ enum HTIF_masks: uint64_t {
      ((static_cast<uint64_t>(cmd)  << HTIF_CMD_SHIFT)  & HTIF_CMD_MASK) | \
      ((static_cast<uint64_t>(data) << HTIF_DATA_SHIFT) & HTIF_DATA_MASK))
 
-#define HTIF_DEV_FIELD(reg)  ((reg & HTIF_DEV_MASK)  >> HTIF_DEV_SHIFT)
-#define HTIF_CMD_FIELD(reg)  ((reg & HTIF_CMD_MASK)  >> HTIF_CMD_SHIFT)
-#define HTIF_DATA_FIELD(reg) ((reg & HTIF_DATA_MASK) >> HTIF_DATA_SHIFT)
+#define HTIF_DEV_FIELD(reg)  (((reg) & HTIF_DEV_MASK)  >> HTIF_DEV_SHIFT)
+#define HTIF_CMD_FIELD(reg)  (((reg) & HTIF_CMD_MASK)  >> HTIF_CMD_SHIFT)
+#define HTIF_DATA_FIELD(reg) (((reg) & HTIF_DATA_MASK) >> HTIF_DATA_SHIFT)
 
 #define HTIF_REPLACE_DATA(reg, data) \
     ((static_cast<uint64_t>(reg) & (~HTIF_DATA_MASK)) | \
-        ((data << HTIF_DATA_SHIFT) & HTIF_DATA_MASK))
+        (((data) << HTIF_DATA_SHIFT) & HTIF_DATA_MASK))
 
 /// \brief HTIF constants
 enum HTIF_constants {

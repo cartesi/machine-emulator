@@ -83,7 +83,7 @@ public:
         /// \param text Pointer to annotation text
         /// \details A note is added at the moment of construction
         scoped_note(std::shared_ptr<access_log> log, const char *text):
-            m_log(log),
+            m_log(std::move(log)),
             m_text(text) {
             if (m_log) {
                 m_log->push_bracket(bracket_type::begin, text);

@@ -100,7 +100,7 @@ public:
         m_accesses(log.get_accesses()),
         m_verify_proofs(verify_proofs),
         m_next_access{0},
-        m_source{source},
+        m_source{std::move(source)},
         m_one_based{one_based} {
         if (m_verify_proofs && !log.get_log_type().has_proofs()) {
             throw std::invalid_argument{"log has no proofs"};

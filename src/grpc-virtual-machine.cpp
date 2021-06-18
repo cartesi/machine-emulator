@@ -86,7 +86,7 @@ static void check_status(const Status &status) {
 }
 
 grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
-    const std::string &dir, const machine_runtime_config &r): m_stub(stub) {
+    const std::string &dir, const machine_runtime_config &r): m_stub(std::move(stub)) {
     MachineRequest request;
     request.set_directory(dir);
     set_proto_machine_runtime_config(r, request.mutable_runtime());
@@ -96,7 +96,7 @@ grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
 }
 
 grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
-    const machine_config &c, const machine_runtime_config &r): m_stub(stub) {
+    const machine_config &c, const machine_runtime_config &r): m_stub(std::move(stub)) {
     MachineRequest request;
     set_proto_machine_config(c, request.mutable_config());
     set_proto_machine_runtime_config(r, request.mutable_runtime());

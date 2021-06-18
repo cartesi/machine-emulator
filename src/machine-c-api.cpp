@@ -407,6 +407,19 @@ static const cartesi::machine *convert_from_c(const cm_machine *m) {
     return static_cast<const cartesi::machine *>(m);
 }
 
+
+// ----------------------------------------------
+// Hash conversion functions
+// ----------------------------------------------
+
+cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash* c_hash) {
+    cartesi::machine_merkle_tree::hash_type cpp_hash; //In emulator this is std::array<unsigned char, hash_size>;
+    memmove(cpp_hash.data(), c_hash, sizeof(cm_hash));
+    return cpp_hash;
+}
+
+
+
 // ----------------------------------------------
 // Merkle tree proof conversion functions
 // ----------------------------------------------
@@ -418,7 +431,7 @@ static int cm_log2_size_to_index(int log2_size, int log2_root_size) {
     return index;
 }
 
-cm_merkle_tree_proof *convert_to_c(const cartesi::machine_merkle_tree::proof_type &proof) {
+static cm_merkle_tree_proof *convert_to_c(const cartesi::machine_merkle_tree::proof_type &proof) {
     cm_merkle_tree_proof *new_merkle_tree_proof = static_cast<cm_merkle_tree_proof *>
     (malloc(sizeof(cm_merkle_tree_proof)));
     memset(new_merkle_tree_proof, 0, sizeof(cm_merkle_tree_proof));
@@ -449,17 +462,29 @@ cm_merkle_tree_proof *convert_to_c(const cartesi::machine_merkle_tree::proof_typ
     return new_merkle_tree_proof;
 }
 
-void cm_delete_proof(cm_merkle_tree_proof *proof) {
-    delete[] proof->sibling_hashes;
-    free(proof);
-}
+static cartesi::machine_merkle_tree::proof_type convert_from_c(const cm_merkle_tree_proof *c_proof) {
+    cartesi::machine_merkle_tree::proof_type cpp_proof(c_proof->log2_root_size, c_proof->log2_target_size);
+    cpp_proof.set_target_address(c_proof->target_address);
 
+    cpp_proof.set_root_hash(convert_from_c(&c_proof->root_hash));
+    cpp_proof.set_target_hash(convert_from_c(&c_proof->target_hash));
+
+    for (int log2_size = cpp_proof.get_log2_target_size();
+         log2_size < cpp_proof.get_log2_root_size(); ++log2_size) {
+        const int current_index = cm_log2_size_to_index(log2_size, cpp_proof.get_log2_root_size());
+        cartesi::machine_merkle_tree::hash_type cpp_sibling_hash = convert_from_c(&c_proof->sibling_hashes[current_index]);
+        cpp_proof.set_sibling_hash(cpp_sibling_hash, log2_size);
+    }
+
+    return cpp_proof;
+
+}
 
 // ----------------------------------------------
 // Access log conversion functions
 // ----------------------------------------------
 
-CM_ACCESS_TYPE convert_to_c(const cartesi::access_type type) {
+static CM_ACCESS_TYPE convert_to_c(const cartesi::access_type type) {
     if (type == cartesi::access_type::read) {
         return CM_ACCESS_READ;
     } else {
@@ -467,7 +492,20 @@ CM_ACCESS_TYPE convert_to_c(const cartesi::access_type type) {
     }
 }
 
-cm_access convert_to_c(const cartesi::access &cpp_access) {
+static cartesi::access_type convert_from_c(const CM_ACCESS_TYPE c_type) {
+    if (c_type == CM_ACCESS_READ) {
+        return cartesi::access_type::read;
+    } else {
+        return cartesi::access_type::write;
+    }
+}
+
+static cartesi::access_log::type convert_from_c(const cm_access_log_type *type) {
+    cartesi::access_log::type cpp_type(type->proofs, type->annotations);
+    return cpp_type;
+}
+
+static cm_access convert_to_c(const cartesi::access &cpp_access) {
     cm_access new_access;
     memset(&new_access, 0, sizeof(cm_access));
     new_access.type = convert_to_c(cpp_access.get_type());
@@ -488,6 +526,32 @@ cm_access convert_to_c(const cartesi::access &cpp_access) {
     return new_access;
 }
 
+static cartesi::access convert_from_c(const cm_access *c_access) {
+    cartesi::access cpp_access{};
+    cpp_access.set_type(convert_from_c(c_access->type));
+    cpp_access.set_log2_size(c_access->log2_size);
+    cpp_access.set_address(c_access->address);
+    if (c_access->proof != NULL) {
+        cartesi::machine_merkle_tree::proof_type proof = convert_from_c(c_access->proof);
+        cpp_access.set_proof(proof);
+    }
+
+    cartesi::access_data cpp_read_data{};
+    for (int i=0; i<c_access->read_data_size; ++i) {
+        cpp_read_data.push_back(c_access->read_data[i]); //todo optimize this, use iterators?
+    }
+    cpp_access.set_read(cpp_read_data);
+
+    cartesi::access_data cpp_written_data{};
+    for (int i=0; i<c_access->written_data_size; ++i) {
+        cpp_written_data.push_back(c_access->written_data[i]); //todo optimize this, use iterators?
+    }
+    cpp_access.set_written(cpp_written_data);
+
+
+    return cpp_access;
+}
+
 static void cm_cleanup_access(cm_access *access) {
     cm_delete_proof(access->proof);
     free(access->written_data);
@@ -495,7 +559,7 @@ static void cm_cleanup_access(cm_access *access) {
 }
 
 
-CM_BRACKET_TYPE convert_to_c(const cartesi::bracket_type type) {
+static CM_BRACKET_TYPE convert_to_c(const cartesi::bracket_type type) {
     if (type == cartesi::bracket_type::begin) {
         return CM_BRACKET_BEGIN;
     } else {
@@ -503,7 +567,16 @@ CM_BRACKET_TYPE convert_to_c(const cartesi::bracket_type type) {
     }
 }
 
-cm_bracket_note convert_to_c(const cartesi::bracket_note &cpp_bracket_note) {
+static cartesi::bracket_type convert_from_c(const CM_BRACKET_TYPE c_type) {
+    if (c_type == CM_BRACKET_BEGIN) {
+        return cartesi::bracket_type::begin;
+    } else {
+        return cartesi::bracket_type::end;
+    }
+}
+
+
+static cm_bracket_note convert_to_c(const cartesi::bracket_note &cpp_bracket_note) {
     cm_bracket_note new_bracket_note;
     memset(&new_bracket_note, 0, sizeof(cm_bracket_note));
     new_bracket_note.type = convert_to_c(cpp_bracket_note.type);
@@ -511,15 +584,22 @@ cm_bracket_note convert_to_c(const cartesi::bracket_note &cpp_bracket_note) {
     new_bracket_note.text_size = cpp_bracket_note.text.size();
     new_bracket_note.text = static_cast<char *>(malloc(new_bracket_note.text_size));
     memmove(new_bracket_note.text, cpp_bracket_note.text.data(), new_bracket_note.text_size);
-
     return new_bracket_note;
+}
+
+static cartesi::bracket_note convert_from_c(const cm_bracket_note *c_bracket_note) {
+    cartesi::bracket_note cpp_bracket_note{};
+    cpp_bracket_note.type = convert_from_c(c_bracket_note->type);
+    cpp_bracket_note.where = c_bracket_note->where;
+    cpp_bracket_note.text = std::string{c_bracket_note->text};
+    return cpp_bracket_note;
 }
 
 static void cm_cleanup_bracket_note(cm_bracket_note *bracket_note) {
     free(bracket_note->text);
 }
 
-cm_access_log *convert_to_c(const cartesi::access_log &cpp_access_log) {
+static cm_access_log *convert_to_c(const cartesi::access_log &cpp_access_log) {
     cm_access_log *new_access_log = static_cast<cm_access_log *>
     (malloc(sizeof(cm_access_log)));
     memset(new_access_log, 0, sizeof(cm_access_log));
@@ -548,20 +628,23 @@ cm_access_log *convert_to_c(const cartesi::access_log &cpp_access_log) {
     return new_access_log;
 }
 
-void cm_delete_access_log(cm_access_log *acc_log) {
-    for (int i = 0; i < acc_log->notes_size; ++i) {
-        free(acc_log->notes[i]);
+static cartesi::access_log convert_from_c(const cm_access_log *c_acc_log) {
+
+    std::vector <cartesi::access> accesses;
+    for (int i = 0; i < c_acc_log->accesses_size; ++i) {
+        accesses.push_back(convert_from_c(&c_acc_log->accesses[i]));
     }
-    delete[] acc_log->notes;
-    for (int i = 0; i < acc_log->brackets_size; ++i) {
-        cm_cleanup_bracket_note(&acc_log->brackets[i]);
+    std::vector <cartesi::bracket_note> brackets;
+    for (int i = 0; i < c_acc_log->brackets_size; ++i) {
+        brackets.push_back(convert_from_c(&c_acc_log->brackets[i]));
     }
-    delete[] acc_log->brackets;
-    for (int i = 0; i < acc_log->accesses_size; ++i) {
-        cm_cleanup_access(&acc_log->accesses[i]);
+
+    std::vector <std::string> notes;
+    for (int i = 0; i < c_acc_log->notes_size; ++i) {
+        notes.push_back(std::string{c_acc_log->notes[i]});
     }
-    delete[] acc_log->accesses;
-    free(acc_log);
+    cartesi::access_log new_cpp_acc_log(accesses, brackets, notes, convert_from_c(&c_acc_log->log_type));
+    return new_cpp_acc_log;
 }
 
 
@@ -683,6 +766,63 @@ int cm_step(cm_machine *m, const cm_access_log_type log_type, bool one_based,
     }
 }
 
+void cm_delete_access_log(cm_access_log *acc_log) {
+    for (int i = 0; i < acc_log->notes_size; ++i) {
+        free(acc_log->notes[i]);
+    }
+    delete[] acc_log->notes;
+    for (int i = 0; i < acc_log->brackets_size; ++i) {
+        cm_cleanup_bracket_note(&acc_log->brackets[i]);
+    }
+    delete[] acc_log->brackets;
+    for (int i = 0; i < acc_log->accesses_size; ++i) {
+        cm_cleanup_access(&acc_log->accesses[i]);
+    }
+    delete[] acc_log->accesses;
+    free(acc_log);
+}
+
+int cm_verify_access_log(const cm_access_log* log, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg) {
+    try {
+        const cartesi::access_log cpp_log = convert_from_c(log);
+        const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
+        cartesi::machine::verify_access_log(cpp_log, cpp_runtime_config, one_based);
+        *err_msg = NULL;
+        return 0;
+    } catch (std::exception &ex) {
+        int error_code;
+        convert_cpp_error(ex, &error_code, err_msg);
+        return error_code;
+    } catch (...) {
+        *err_msg = get_error_message_unknown();
+        return CM_ERROR_UNKNOWN;
+    }
+}
+
+int cm_verify_state_transition(const cm_hash *root_hash_before,
+                               const cm_access_log *log, const cm_hash *root_hash_after,
+                               const cm_machine_runtime_config *runtime_config, bool one_based,
+                               char **err_msg) {
+    try {
+        const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+        const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+        const cartesi::access_log cpp_log = convert_from_c(log);
+        const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
+        cartesi::machine::verify_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
+                                                  cpp_runtime_config, one_based);
+        *err_msg = NULL;
+        return 0;
+    } catch (std::exception &ex) {
+        int error_code;
+        convert_cpp_error(ex, &error_code, err_msg);
+        return error_code;
+    } catch (...) {
+        *err_msg = get_error_message_unknown();
+        return CM_ERROR_UNKNOWN;
+    }
+}
+
+
 int cm_dehash(cm_machine *m, const uint8_t *hash, uint64_t hlength,
               uint64_t *out_dlength, uint8_t *out_data, char **err_msg) {
     cartesi::machine *cpp_machine = convert_from_c(m);
@@ -765,6 +905,12 @@ int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm_merkle
         return CM_ERROR_UNKNOWN;
     }
 }
+
+void cm_delete_proof(cm_merkle_tree_proof *proof) {
+    delete[] proof->sibling_hashes;
+    free(proof);
+}
+
 
 void cm_get_root_hash(const cm_machine *m, cm_hash *hash) {
     const cartesi::machine *cpp_machine = convert_from_c(m);

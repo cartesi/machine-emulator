@@ -341,9 +341,33 @@ int cm_step(cm_machine *m, const cm_access_log_type log_type, bool one_based,
 /// \param acc_log Valid pointer to cm_access_log object
 void cm_delete_access_log(cm_access_log *acc_log);
 
-//TODO machine verify proof
-//TODO machine verify_access_log
-//TODO machine verify_state_transition
+
+/// \brief Checks the internal consistency of an access log.
+/// \param log State access log to be verified.
+/// \param r Machine runtime configuration to use during verification.
+/// \param one_based Use 1-based indices when reporting errors.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
+/// \returns 0 for success, non zero code for error
+int cm_verify_access_log(const cm_access_log* log, const cm_machine_runtime_config *runtime_config,
+                         bool one_based, char **err_msg);
+
+/// \brief Checks the validity of a state transition.
+/// \param root_hash_before State hash before step.
+/// \param log Step state access log.
+/// \param root_hash_after State hash after step.
+/// \param runtime_config Machine runtime configuration to use during verification.
+/// \param one_based Use 1-based indices when reporting errors.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
+/// \returns 0 for successfull verification, non zero code for error
+int cm_verify_state_transition(const cm_hash *root_hash_before,
+                                    const cm_access_log *log, const cm_hash *root_hash_after,
+                                    const cm_machine_runtime_config *runtime_config, bool one_based,
+                                    char **err_msg);
+
 
 /// \brief Obtains the block of data that has a given hash
 /// \param m Pointer to valid machine instance

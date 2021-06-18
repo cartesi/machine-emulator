@@ -70,9 +70,9 @@ public:
     }
 
     merkle_tree_proof(const merkle_tree_proof &other) = default;
-    merkle_tree_proof(merkle_tree_proof &&other) = default;
+    merkle_tree_proof(merkle_tree_proof &&other) noexcept = default;
     merkle_tree_proof &operator=(const merkle_tree_proof &other) = default;
-    merkle_tree_proof &operator=(merkle_tree_proof &&other) = default;
+    merkle_tree_proof &operator=(merkle_tree_proof &&other) noexcept = default;
 
     /// \brief Storage for the hashes of the siblings of all nodes along
     /// the path from the root node to the target node.

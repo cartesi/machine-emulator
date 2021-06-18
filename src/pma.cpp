@@ -50,7 +50,7 @@ pma_memory::~pma_memory() {
     release();
 }
 
-pma_memory::pma_memory(pma_memory &&other):
+pma_memory::pma_memory(pma_memory &&other) noexcept:
     m_length{std::move(other.m_length)},
     m_host_memory{std::move(other.m_host_memory)},
     m_backing_file{std::move(other.m_backing_file)} {
@@ -150,7 +150,7 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
     m_backing_file = backing_file;
 }
 
-pma_memory& pma_memory::operator=(pma_memory &&other) {
+pma_memory& pma_memory::operator=(pma_memory &&other) noexcept {
     release();
     // copy from other
     m_host_memory = std::move(other.m_host_memory);

@@ -171,10 +171,10 @@ public:
     pma_memory &operator=(const pma_memory &) = delete;
 
     /// \brief Move constructor
-    pma_memory(pma_memory &&);
+    pma_memory(pma_memory &&) noexcept;
 
     /// \brief Move assignment
-    pma_memory &operator=(pma_memory &&);
+    pma_memory &operator=(pma_memory &&) noexcept;
 
     /// \brief Destructor
     ~pma_memory(void);

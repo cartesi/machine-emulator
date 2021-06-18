@@ -3,10 +3,17 @@ Checks: >-
   bugprone*,-bugprone-branch-clone,
   cert*,
   clang-analyzer*,
+  misc*,-misc-no-recursion,-misc-non-private-member-variables-in-classes,
+  performance*,
   portability*
 WarningsAsErrors: >-
   boost*,
   bugprone*,
   cert*,
   clang-analyzer*,
+  misc*,
+  performance*,
   portability*
+CheckOptions:
+  - key: performance-move-const-arg.CheckTriviallyCopyableMove
+    value: 'false'

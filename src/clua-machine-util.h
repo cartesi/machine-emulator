@@ -30,7 +30,7 @@ namespace cartesi {
 /// \brief Pushes a proof to the Lua stack
 /// \param L Lua state.
 /// \param proof Proof to be pushed.
-void clua_push_proof(lua_State *L, const machine_merkle_tree::proof_type proof);
+void clua_push_proof(lua_State *L, const machine_merkle_tree::proof_type &proof);
 
 /// \brief Pushes a semantic_version to the Lua stack
 /// \param L Lua state.

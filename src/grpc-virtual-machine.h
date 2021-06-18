@@ -61,24 +61,24 @@ public:
 
     virtual ~grpc_virtual_machine();
 
-    static semantic_version get_version(grpc_machine_stub_ptr stub);
+    static semantic_version get_version(const grpc_machine_stub_ptr &stub);
 
-    static void shutdown(grpc_machine_stub_ptr stub);
+    static void shutdown(const grpc_machine_stub_ptr &stub);
 
-    static machine_config get_default_config(grpc_machine_stub_ptr stub);
+    static machine_config get_default_config(const grpc_machine_stub_ptr &stub);
 
-    static void verify_access_log(grpc_machine_stub_ptr stub,
+    static void verify_access_log(const grpc_machine_stub_ptr &stub,
         const access_log &log, bool one_based = false);
 
-    static void verify_state_transition(grpc_machine_stub_ptr stub,
+    static void verify_state_transition(const grpc_machine_stub_ptr &stub,
         const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after, bool one_based = false);
 
-    static uint64_t get_x_address(grpc_machine_stub_ptr stub, int i);
+    static uint64_t get_x_address(const grpc_machine_stub_ptr &stub, int i);
 
-    static uint64_t get_dhd_h_address(grpc_machine_stub_ptr stub, int i);
+    static uint64_t get_dhd_h_address(const grpc_machine_stub_ptr &stub, int i);
 
-    static uint64_t get_csr_address(grpc_machine_stub_ptr stub, csr w);
+    static uint64_t get_csr_address(const grpc_machine_stub_ptr &stub, csr w);
 
 private:
     machine_config do_get_initial_config(void) const override;

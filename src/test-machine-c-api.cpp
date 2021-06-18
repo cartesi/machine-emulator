@@ -1256,7 +1256,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_basic_test, ordinary_machine_fixture)
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
-    for (auto file : dump_list) {
+    for (const auto &file : dump_list) {
         BOOST_CHECK(std::filesystem::exists(file));
         std::filesystem::remove(file);
     }

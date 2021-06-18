@@ -573,7 +573,7 @@ void clua_push_semantic_version(lua_State *L, const semantic_version &v) {
     lua_pushlstring(L, v.build.data(), v.build.size()); lua_setfield(L, -2, "build"); // version
 }
 
-void clua_push_proof(lua_State *L, const machine_merkle_tree::proof_type proof) {
+void clua_push_proof(lua_State *L, const machine_merkle_tree::proof_type &proof) {
     lua_newtable(L); // proof
     lua_newtable(L); // proof siblings
     for (int log2_size = proof.get_log2_target_size();

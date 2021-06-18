@@ -117,7 +117,7 @@ machine_config grpc_virtual_machine::do_get_initial_config(void) const {
 }
 
 machine_config grpc_virtual_machine::get_default_config(
-    grpc_machine_stub_ptr stub) {
+    const grpc_machine_stub_ptr &stub) {
     Void request;
     GetDefaultConfigResponse response;
     ClientContext context;
@@ -127,7 +127,7 @@ machine_config grpc_virtual_machine::get_default_config(
 }
 
 semantic_version grpc_virtual_machine::get_version(
-    grpc_machine_stub_ptr stub) {
+    const grpc_machine_stub_ptr &stub) {
     Void request;
     GetVersionResponse response;
     ClientContext context;
@@ -135,14 +135,14 @@ semantic_version grpc_virtual_machine::get_version(
     return get_proto_semantic_version(response.version());
 }
 
-void grpc_virtual_machine::shutdown(grpc_machine_stub_ptr stub) {
+void grpc_virtual_machine::shutdown(const grpc_machine_stub_ptr &stub) {
     Void request;
     Void response;
     ClientContext context;
     check_status(stub->get_stub()->Shutdown(&context, request, &response));
 }
 
-void grpc_virtual_machine::verify_access_log(grpc_machine_stub_ptr stub,
+void grpc_virtual_machine::verify_access_log(const grpc_machine_stub_ptr &stub,
         const access_log &log, bool one_based) {
     VerifyAccessLogRequest request;
     Void response;
@@ -152,7 +152,7 @@ void grpc_virtual_machine::verify_access_log(grpc_machine_stub_ptr stub,
     check_status(stub->get_stub()->VerifyAccessLog(&context, request, &response));
 }
 
-void grpc_virtual_machine::verify_state_transition(grpc_machine_stub_ptr stub,
+void grpc_virtual_machine::verify_state_transition(const grpc_machine_stub_ptr &stub,
         const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after, bool one_based) {
     VerifyStateTransitionRequest request;
@@ -200,7 +200,7 @@ void grpc_virtual_machine::do_write_csr(csr w, uint64_t val)   {
     check_status(m_stub->get_stub()->WriteCsr(&context, request, &response));
 }
 
-uint64_t grpc_virtual_machine::get_csr_address(grpc_machine_stub_ptr stub,
+uint64_t grpc_virtual_machine::get_csr_address(const grpc_machine_stub_ptr &stub,
     csr w) {
     GetCsrAddressRequest request;
     request.set_csr((Csr)w);
@@ -247,7 +247,7 @@ void grpc_virtual_machine::do_write_dhd_h(int i, uint64_t val)  {
 }
 
 uint64_t grpc_virtual_machine::get_x_address(
-    grpc_machine_stub_ptr stub,
+    const grpc_machine_stub_ptr &stub,
     int i
 ) {
     GetXAddressRequest request;
@@ -259,7 +259,7 @@ uint64_t grpc_virtual_machine::get_x_address(
 }
 
 uint64_t grpc_virtual_machine::get_dhd_h_address(
-    grpc_machine_stub_ptr stub,
+    const grpc_machine_stub_ptr &stub,
     int i
 ) {
     GetDhdHAddressRequest request;

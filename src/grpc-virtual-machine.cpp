@@ -21,7 +21,6 @@
 #include "grpc-util.h"
 #include "grpc-virtual-machine.h"
 
-using grpc::Channel;
 using grpc::Status;
 using grpc::ClientContext;
 using grpc::StatusCode;

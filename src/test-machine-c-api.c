@@ -33,13 +33,14 @@
 //Clone machine config allocating memory for dynamic members
 void clone_machine_config(const cm_machine_config *source, cm_machine_config *target) {
     target->processor = source->processor;
-    target->ram = source->ram;
+    target->ram.length = source->ram.length;
     target->ram.image_filename = strdup(source->ram.image_filename);
+
     target->rom.bootargs = strdup(source->rom.bootargs);
     target->rom.image_filename = strdup(source->rom.image_filename);
 
     target->flash_drive_count = source->flash_drive_count;
-    target->flash_drive = (cm_flash_drive_config *)malloc(sizeof(cm_flash_drive_config) * source->flash_drive_count);
+    target->flash_drive = (cm_flash_drive_config *) malloc(sizeof(cm_flash_drive_config) * source->flash_drive_count);
     memset(target->flash_drive, 0, sizeof(cm_flash_drive_config) * target->flash_drive_count);
     for (int i=0; i<target->flash_drive_count; ++i) {
         target->flash_drive[i] = source->flash_drive[i];
@@ -61,6 +62,7 @@ void cleanup_machine_config(cm_machine_config *config) {
     for (int i=0; i<config->flash_drive_count; ++i) {
         free((char*)config->flash_drive[i].image_filename);
     }
+    free(config->flash_drive);
     free((char*)config->rom.image_filename);
     free((char*)config->rom.bootargs);
     free((char*)config->ram.image_filename);
@@ -75,33 +77,33 @@ void print_hash(const uint8_t* hash) {
 }
 
 void print_data(const uint8_t* data, int data_size) {
-    for (long unsigned i=0; i<sizeof(data_size); ++i) {
+    for (int i=0; i<data_size; ++i) {
         printf("%02X", data[i] & 0xff);
     }
     printf("\n");
 }
 
 void print_merkle_tree_proof(const cm_merkle_tree_proof* proof) {
-    printf("Merkle tree proof:");
-    printf("\t\ttarget_address: %lx", proof->target_address);
-    printf("\t\tlog2_target_size: %d", proof->log2_target_size);
-    printf("\t\ttarget_hash:");
+    printf("\n\t\tMerkle tree proof:\n");
+    printf("\t\t\ttarget_address: %lx\n", proof->target_address);
+    printf("\t\t\tlog2_target_size: %d\n", proof->log2_target_size);
+    printf("\t\t\ttarget_hash:");
     print_hash(proof->target_hash);
-    printf("\t\tlog2_root_size: %d", proof->log2_root_size);
-    printf("\t\troot_hash:");
+    printf("\t\t\tlog2_root_size: %d\n", proof->log2_root_size);
+    printf("\t\t\troot_hash:");
     print_hash(proof->root_hash);
-    printf("\t\tsibling_hashes_size: %d", proof->sibling_hashes_size);
+    printf("\t\t\tsibling_hashes_size: %d\n", proof->sibling_hashes_size);
     //todo print sibling hashes if needed
 }
 
 void print_access(const cm_access* cm_acc) {
-    printf("CM access:");
+    printf("\tCM access:\n");
     printf("\t\ttype: %d\n", cm_acc->type);
     printf("\t\taddress %lx\n", cm_acc->address);
     printf("\t\tlog2 size %d\n", cm_acc->log2_size);
-    printf("\t\tread data size=%d\n data:", cm_acc->read_data_size);
+    printf("\t\tread data size=%d data:", cm_acc->read_data_size);
     print_data(cm_acc->read_data, cm_acc->read_data_size);
-    printf("\t\twritten data size=%d\n data:", cm_acc->written_data_size);
+    printf("\t\twritten data size=%d data:", cm_acc->written_data_size);
     print_data(cm_acc->written_data, cm_acc->written_data_size);
     printf("\t\tproof:");
     print_merkle_tree_proof(cm_acc->proof);
@@ -110,6 +112,7 @@ void print_access(const cm_access* cm_acc) {
 void print_access_log(const cm_access_log* access_log) {
 
     printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n");
+    printf("ACCESS LOG:\n");
     for (int i=0; i<access_log->accesses_size; ++i) {
         print_access(&access_log->accesses[i]);
     }
@@ -132,6 +135,7 @@ int main() {
     cm_machine_config my_machine_config;
     clone_machine_config(default_machine_config, &my_machine_config);
     const char rom_image[] = "/opt/cartesi/share/images/rom.bin";
+    free((char*)my_machine_config.rom.image_filename); //free cloned image filename
     my_machine_config.rom.image_filename = strdup(rom_image);
     my_machine_config.ram.length = 1 << 20;
 
@@ -174,11 +178,11 @@ int main() {
 
 
     //Get machine hash
-    cm_hash my_hash;
-    memset(&my_hash, 0, sizeof(my_hash));
-    cm_get_root_hash(my_machine, &my_hash);
+    cm_hash root_hash_step0;
+    memset(&root_hash_step0, 0, sizeof(root_hash_step0));
+    cm_get_root_hash(my_machine, &root_hash_step0);
     printf("Initial hash of the machine is:");
-    print_hash(my_hash);
+    print_hash(root_hash_step0);
 
 
     cm_merkle_tree_proof *proof;
@@ -241,7 +245,46 @@ int main() {
 
 
 
+    //Test step command and access log verifications
+    cm_access_log* access_log;
+    cm_access_log_type log_type = {true, true};
+    if ((error_code = cm_update_merkle_tree(my_machine, &err_msg)) != 0) {
+        printf("Error updating merkle tree, error code: %d message: %s\n", error_code, err_msg);
+        cm_delete_error_msg(err_msg);
+    }
+    cm_get_root_hash(my_machine, &root_hash_step0);
+    if ((error_code = cm_step(my_machine, log_type, false, &access_log, &err_msg)) != 0) {
+        printf("Error performing step, error code: %d message: %s\n", error_code, err_msg);
+        cm_delete_error_msg(err_msg);
+    } else {
+        printf("Step succesfully performed\n");
+        print_access_log(access_log);
 
+        //Verify access log
+        if ((error_code = cm_verify_access_log(access_log, &my_runtime_config, false, &err_msg)) != 0) {
+            printf("Error verifying access log, error code: %d message: %s\n", error_code, err_msg);
+            cm_delete_error_msg(err_msg);
+        } else {
+            printf("Access log successfully verified\n");
+        }
+
+
+        cm_hash root_hash_step1;
+        memset(&root_hash_step1, 0, sizeof(root_hash_step1));
+        cm_get_root_hash(my_machine, &root_hash_step1);
+        if ((error_code = cm_verify_state_transition((const cm_hash *)&root_hash_step0, access_log,
+                                                     (const cm_hash *)root_hash_step1,
+                                                     &my_runtime_config, false, &err_msg)) != 0) {
+            printf("Error verifying state transition, error code: %d message: %s\n", error_code, err_msg);
+            cm_delete_error_msg(err_msg);
+        } else {
+            printf("State transition successfully verified\n");
+        }
+
+
+
+        cm_delete_access_log(access_log);
+    }
 
 
     //Run machine to end mcycle
@@ -262,6 +305,7 @@ int main() {
 
     printf("Cleaning up\n");
     cleanup_machine_config(&my_machine_config);
+
     cm_delete_machine_config(default_machine_config);
 
     return 0;

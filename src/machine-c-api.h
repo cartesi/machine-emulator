@@ -20,6 +20,7 @@
 #ifndef CM_C_API_H
 #define CM_C_API_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <assert.h>
 
@@ -44,6 +45,45 @@ extern "C" {
 // ---------------------------------
 
 typedef uint8_t cm_hash[CM_MACHINE_HASH_BYTE_SIZE];
+
+///brief Error codes returned from machine emulator C API
+enum CM_ERROR {
+    CM_ERROR_OK = 0,
+    //Logic errors
+    CM_ERROR_INVALID_ARGUMENT = 1,
+    CM_ERROR_DOMAIN_ERROR = 2,
+    CM_ERROR_LENGTH_ERROR = 3,
+    CM_ERROR_OUT_OF_RANGE = 4,
+    CM_ERROR_FUTURE_ERROR = 5,
+    CM_ERROR_LOGIC_ERROR = 6,
+    // Bad optional access error
+    CM_ERROR_BAD_OPTIONAL_ACCESS = 7,
+    // Runtime errors
+    CM_ERROR_RUNTIME_ERROR = 10,
+    CM_ERROR_RANGE_ERROR = 11,
+    CM_ERROR_OVERFLOW_ERROR = 12,
+    CM_ERROR_UNDERFLOW_ERROR = 13,
+    CM_ERROR_REGEX_ERROR = 14,
+    CM_ERROR_SYSTEM_IOS_BASE_FAILURE = 15,
+    CM_ERROR_FILESYSTEM_ERROR = 16,
+    CM_ERROR_ATOMIC_TX_ERROR = 17,
+    CM_ERROR_NONEXISTING_LOCAL_TIME = 18,
+    CM_ERROR_AMBIGOUS_LOCAL_TIME = 19,
+    CM_ERROR_FORMAT_ERROR = 20,
+    //Other errors
+    CM_ERROR_BAD_TYPEID = 30,
+    CM_ERROR_BAD_CAST = 31,
+    CM_ERROR_BAD_ANY_CAST = 32,
+    CM_ERROR_BAD_WEAK_PTR = 33,
+    CM_ERROR_BAD_FUNCTION_CALL = 34,
+    CM_ERROR_BAD_ALLOC = 35,
+    CM_ERROR_BAD_ARRAY_NEW_LENGTH = 36,
+    CM_ERROR_BAD_EXCEPTION = 37,
+    CM_ERROR_BAD_VARIANT_ACCESS = 38,
+    //C API Errors
+    CM_ERROR_UNKNOWN = 40,
+
+};
 
 /// \brief List of CSRs to use with read_csr and write_csr
 typedef enum {
@@ -960,6 +1000,14 @@ const cm_machine_config *cm_get_initial_config(const cm_machine *m);
 /// \details The machine must contain an existing flash
 /// drive matching the start and length specified in new_flash.
 int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash, char **err_msg);
+
+
+/// \brief Deletes the error message
+/// \param err_msg Pointer to error message received from some other function
+/// \details This C API is meant to be used for various language bindings.
+/// Many of them could not directly call C free function,
+/// so this is a convenience function for cleanup of error messages
+void cm_delete_error_msg(char* err_msg);
 
 #ifdef __cplusplus
 

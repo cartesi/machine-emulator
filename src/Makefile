@@ -127,9 +127,9 @@ endif
 CXXFLAGS=-O2 -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 CFLAGS=-O2 -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
-all: luacartesi grpc hash libcartesi.so
+all: luacartesi grpc hash c-api
 
-.PHONY: all generate use clean test luacartesi grpc hash docker test-merkle-tree-hash
+.PHONY: all generate use clean test luacartesi grpc hash docker c-api test-merkle-tree-hash
 
 CARTESI_OBJS:= \
 	clint.o \
@@ -214,6 +214,9 @@ test-grpc: luacartesi grpc
 test-scripts: luacartesi
 	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do $(LUA_BIN) $$x || exit 1; done
 
+test-c-api: c-api
+	tests/test-machine-c-api
+
 fs.ext2: fs/*
 	genext2fs -f -i 512 -b 8192 -d fs fs.ext2
 	truncate -s %4096 fs.ext2
@@ -252,6 +255,8 @@ grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy
 
 hash: merkle-tree-hash tests/test-merkle-tree-hash
 
+c-api: libcartesi.so tests/test-machine-c-api
+
 MERKLE_TREE_HASH_OBJS:= \
 	back-merkle-tree.o \
 	pristine-merkle-tree.o \
@@ -264,8 +269,8 @@ TEST_MERKLE_TREE_HASH_OBJS:= \
 	full-merkle-tree.o \
 	test-merkle-tree-hash.o
 
-C_MACHINE_OBJS:= \
-    c-machine.o
+TEST_MACHINE_C_API_OBJS:= \
+    test-machine-c-api.o
 
 PROTO_OBJS:= \
 	versioning.pb.o \
@@ -373,7 +378,7 @@ cartesi-machine-proxy: $(GRPC_PRX_OBJS)
 
 cartesi-machine-server cartesi-machine-proxy: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
-c-machine: $(C_MACHINE_OBJS) libcartesi.so
+tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) libcartesi.so
 	$(CC) -o $@ $^ $(C_MACHINE_LIBS)
 
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
@@ -396,7 +401,7 @@ grpc-util.o grpc-virtual-machine.o: $(LUACARTESI_GRPC_GEN_OBJS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d libcartesi.so cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy merkle-tree-hash test-merkle-tree-hash
+	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d libcartesi.so cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy merkle-tree-hash tests/test-merkle-tree-hash tests/test-machine-c-api
 
 profile-clean:
 	rm -f *.profdata *.profraw *.gcda

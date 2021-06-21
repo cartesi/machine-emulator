@@ -33,53 +33,6 @@
 
 
 
-// Various cpp - c conversion functions
-// Overloads for various classes
-// Important:
-// convert_from_c C structures are returned by value
-// convert_from_c_al C structures are returned as malloced pointers and need to be manually deallocated
-// and require manual free
-
-///brief Error codes returned from machine emulator C API
-enum CM_ERROR {
-    CM_ERROR_OK = 0,
-    //Logic errors
-    CM_ERROR_INVALID_ARGUMENT = 1,
-    CM_ERROR_DOMAIN_ERROR = 2,
-    CM_ERROR_LENGTH_ERROR = 3,
-    CM_ERROR_OUT_OF_RANGE = 4,
-    CM_ERROR_FUTURE_ERROR = 5,
-    CM_ERROR_LOGIC_ERROR = 6,
-    // Bad optional access error
-    CM_ERROR_BAD_OPTIONAL_ACCESS = 7,
-    // Runtime errors
-    CM_ERROR_RUNTIME_ERROR = 10,
-    CM_ERROR_RANGE_ERROR = 11,
-    CM_ERROR_OVERFLOW_ERROR = 12,
-    CM_ERROR_UNDERFLOW_ERROR = 13,
-    CM_ERROR_REGEX_ERROR = 14,
-    CM_ERROR_SYSTEM_IOS_BASE_FAILURE = 15,
-    CM_ERROR_FILESYSTEM_ERROR = 16,
-    CM_ERROR_ATOMIC_TX_ERROR = 17,
-    CM_ERROR_NONEXISTING_LOCAL_TIME = 18,
-    CM_ERROR_AMBIGOUS_LOCAL_TIME = 19,
-    CM_ERROR_FORMAT_ERROR = 20,
-    //Other errors
-    CM_ERROR_BAD_TYPEID = 30,
-    CM_ERROR_BAD_CAST = 31,
-    CM_ERROR_BAD_ANY_CAST = 32,
-    CM_ERROR_BAD_WEAK_PTR = 33,
-    CM_ERROR_BAD_FUNCTION_CALL = 34,
-    CM_ERROR_BAD_ALLOC = 35,
-    CM_ERROR_BAD_ARRAY_NEW_LENGTH = 36,
-    CM_ERROR_BAD_EXCEPTION = 37,
-    CM_ERROR_BAD_VARIANT_ACCESS = 38,
-    //C API Errors
-    CM_ERROR_UNKNOWN = 40,
-
-};
-
-
 static char *get_error_message_ok() {
     return strdup("OK");
 }
@@ -90,6 +43,10 @@ static char *get_error_message_unknown() {
 
 static char *get_error_message(const std::exception &ex) {
     return strdup(ex.what());
+}
+
+static std::string null_to_empty(const char *s) {
+    return std::string{s != NULL ? s : ""};
 }
 
 /// \warning: This function rethrows current exception, so it must be called
@@ -164,11 +121,6 @@ static void convert_cpp_error(const std::exception &cpp_error, int *error_code, 
         *error_code = CM_ERROR_UNKNOWN;
     }
     *error_message = get_error_message(cpp_error);
-}
-
-
-static std::string null_to_empty(const char *s) {
-    return std::string{s != NULL ? s : ""};
 }
 
 
@@ -350,7 +302,7 @@ static cartesi::machine_runtime_config convert_from_c(const cm_machine_runtime_c
 }
 
 // ----------------------------------------------
-// Configuration conversion functions
+// Machine configuration conversion functions
 // ----------------------------------------------
 static cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
     cartesi::processor_config processor = convert_from_c(&c_config->processor);
@@ -417,7 +369,6 @@ cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash* c_hash) {
     memmove(cpp_hash.data(), c_hash, sizeof(cm_hash));
     return cpp_hash;
 }
-
 
 
 // ----------------------------------------------
@@ -512,11 +463,20 @@ static cm_access convert_to_c(const cartesi::access &cpp_access) {
     new_access.address = cpp_access.get_address();
     new_access.log2_size = cpp_access.get_log2_size();
     new_access.read_data_size = cpp_access.get_read().size();
-    new_access.read_data = static_cast<uint8_t *>(malloc(new_access.read_data_size));
-    memmove(new_access.read_data, cpp_access.get_read().data(), new_access.read_data_size);
+    if (new_access.read_data_size > 0) {
+        new_access.read_data = static_cast<uint8_t *>(malloc(new_access.read_data_size));
+        memmove(new_access.read_data, cpp_access.get_read().data(), new_access.read_data_size);
+    } else {
+        new_access.read_data = NULL;
+    }
     new_access.written_data_size = cpp_access.get_written().size();
-    new_access.written_data = static_cast<uint8_t *>(malloc(new_access.written_data_size));
-    memmove(new_access.written_data, cpp_access.get_written().data(), new_access.written_data_size);
+    if (new_access.written_data_size > 0) {
+        new_access.written_data = static_cast<uint8_t *>(malloc(new_access.written_data_size));
+        memmove(new_access.written_data, cpp_access.get_written().data(), new_access.written_data_size);
+    } else {
+        new_access.written_data = NULL;
+    }
+
     if (cpp_access.get_proof()) {
         new_access.proof = convert_to_c(*cpp_access.get_proof());
     } else {
@@ -582,7 +542,11 @@ static cm_bracket_note convert_to_c(const cartesi::bracket_note &cpp_bracket_not
     new_bracket_note.type = convert_to_c(cpp_bracket_note.type);
     new_bracket_note.where = cpp_bracket_note.where;
     new_bracket_note.text_size = cpp_bracket_note.text.size();
-    new_bracket_note.text = static_cast<char *>(malloc(new_bracket_note.text_size));
+    if (new_bracket_note.text_size > 0) {
+        new_bracket_note.text = static_cast<char *>(malloc(new_bracket_note.text_size));
+    } else {
+        new_bracket_note.text = NULL;
+    }
     memmove(new_bracket_note.text, cpp_bracket_note.text.data(), new_bracket_note.text_size);
     return new_bracket_note;
 }
@@ -591,7 +555,7 @@ static cartesi::bracket_note convert_from_c(const cm_bracket_note *c_bracket_not
     cartesi::bracket_note cpp_bracket_note{};
     cpp_bracket_note.type = convert_from_c(c_bracket_note->type);
     cpp_bracket_note.where = c_bracket_note->where;
-    cpp_bracket_note.text = std::string{c_bracket_note->text};
+    cpp_bracket_note.text = null_to_empty(c_bracket_note->text);
     return cpp_bracket_note;
 }
 
@@ -622,8 +586,8 @@ static cm_access_log *convert_to_c(const cartesi::access_log &cpp_access_log) {
         new_access_log->notes[i] = strdup((cpp_access_log.get_notes()[i]).c_str());
     }
 
-    new_access_log->log_type.annotations = new_access_log->log_type.annotations;
-    new_access_log->log_type.proofs = new_access_log->log_type.proofs;
+    new_access_log->log_type.annotations = cpp_access_log.get_log_type().has_annotations();
+    new_access_log->log_type.proofs = cpp_access_log.get_log_type().has_proofs();
 
     return new_access_log;
 }
@@ -1450,4 +1414,8 @@ int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash
         *err_msg = get_error_message_unknown();
         return CM_ERROR_UNKNOWN;
     }
+}
+
+void cm_delete_error_msg(char* err_msg) {
+    free(err_msg);
 }

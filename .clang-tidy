@@ -1,11 +1,20 @@
 Checks: >-
   boost*,
-  bugprone*,-bugprone-branch-clone,
+  bugprone*,
+  -bugprone-branch-clone,
   cert*,
   clang-analyzer*,
-  misc*,-misc-no-recursion,-misc-non-private-member-variables-in-classes,
+  misc*,
+  -misc-no-recursion,
+  -misc-non-private-member-variables-in-classes,
   performance*,
-  portability*
+  portability*,
+  readability*,
+  -readability-else-after-return,
+  -readability-named-parameter,
+  -readability-magic-numbers,
+  -readability-redundant-member-init,
+  -readability-implicit-bool-conversion
 WarningsAsErrors: >-
   boost*,
   bugprone*,
@@ -13,7 +22,8 @@ WarningsAsErrors: >-
   clang-analyzer*,
   misc*,
   performance*,
-  portability*
+  portability*,
+  readability*
 CheckOptions:
   - key: performance-move-const-arg.CheckTriviallyCopyableMove
     value: 'false'

@@ -4,18 +4,18 @@ RUN apk add --no-cache \
     build-base \
     autoconf \
     automake \
-    boost \
-    boost-dev \
     cmake \
     curl \
     git \
+    pkgconf \
     libtool \
     libgomp \
-    grpc-dev \
-    openssl \
-    patchelf \
-    readline \
+    boost-dev \
+    openssl-dev \
+    c-ares-dev \
+    zlib-dev \
     readline-dev \
+    patchelf \
     unzip \
     wget
 
@@ -40,7 +40,7 @@ RUN \
 
 FROM alpine:3.12
 
-RUN apk add --no-cache boost libstdc++ libgomp grpc
+RUN apk add --no-cache boost libstdc++ libgomp openssl c-ares zlib readline
 
 ENV PATH="/opt/cartesi/bin:${PATH}"
 WORKDIR /opt/cartesi

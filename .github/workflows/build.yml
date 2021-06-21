@@ -6,7 +6,7 @@ env:
   ROOTFS_VERSION: v0.6.0
   TEST_VERSION: v0.11.0
   GROUND_TRUTH_VERSION: v0.11.0-0001
-  BUILD_CACHE_VERSION: v0.6.0-0001
+  BUILD_CACHE_VERSION: v0.6.0-0003
 jobs:
   build:
     name: Build
@@ -20,7 +20,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-serialization-dev protobuf-compiler protobuf-compiler-grpc libprotobuf-dev libgrpc++-dev patchelf automake
+          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-serialization-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/bin/luapp5.3
@@ -35,6 +35,9 @@ jobs:
         id: build_dep
         if: ${{ steps.download_cache.outcome == 'failure' }}
         run: make -j$(nproc) dep
+
+      - name: Fix build dependencies permissions
+        run: chmod +x ./build/`uname`_`uname -m`/bin/protoc ./build/`uname`_`uname -m`/bin/grpc_cpp_plugin
 
       - name: Cache third-party build
         if: ${{ steps.build_dep.outcome == 'success' }}
@@ -71,7 +74,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Install Ubuntu dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.71.0 libboost-coroutine1.71.0 libboost-serialization1.71.0 libprotobuf17 libprotobuf-lite17 libgrpc++1 netcat patchelf
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.71.0 libboost-coroutine1.71.0 libboost-serialization1.71.0 libssl1.1 libc-ares2 zlib1g netcat patchelf
 
       - name: Download emulator
         uses: actions/download-artifact@master
@@ -184,7 +187,7 @@ jobs:
           find /opt/cartesi/lib -type f -exec chmod 755 {} +
 
       - name: Install Ubuntu dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.71.0 libboost-coroutine1.71.0 libboost-serialization1.71.0 libprotobuf17 libprotobuf-lite17 libgrpc++1
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.71.0 libboost-coroutine1.71.0 libboost-serialization1.71.0
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0

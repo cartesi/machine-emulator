@@ -34,9 +34,10 @@ BUILDBASE := $(abspath build)
 BUILDDIR = $(BUILDBASE)/$(UNAME)_$(shell uname -m)
 DOWNLOADDIR := $(DEPDIR)/downloads
 SUBCLEAN := $(addsuffix .clean,$(SRCDIR))
-DEPDIRS := $(addprefix $(DEPDIR)/,cryptopp-CRYPTOPP_7_0_0 lua-5.3.5 luasocket)
+DEPDIRS := $(addprefix $(DEPDIR)/,cryptopp-CRYPTOPP_7_0_0 grpc lua-5.3.5 luasocket)
 DEPCLEAN := $(addsuffix .clean,$(DEPDIRS))
 COREPROTO := lib/grpc-interfaces/core.proto
+GRPC_VERSION ?= v1.38.0
 LUASOCKET_VERSION ?= 5b18e475f38fcf28429b1cc4b17baee3b9793a62
 
 LUAMYCFLAGS = "MYCFLAGS=-std=c++17 -x c++ -fopenmp -DLUA_ROOT=\\\"$(PREFIX)/\\\""
@@ -75,7 +76,7 @@ endif
 
 # Check if some binary dependencies already exists on build directory to skip
 # downloading and building them.
-DEPBINS := $(addprefix $(BUILDDIR)/,bin/luapp5.3 lib/libcryptopp.$(LIB_EXTENSION) $(CDIR)/socket/core.so)
+DEPBINS := $(addprefix $(BUILDDIR)/,bin/luapp5.3 lib/libcryptopp.$(LIB_EXTENSION) lib/libgrpc.$(LIB_EXTENSION) $(CDIR)/socket/core.so)
 
 all: source-default
 
@@ -113,6 +114,8 @@ dep: $(DEPBINS)
 	@rm -f $(BUILDDIR)/lib/*.a
 	@$(STRIP_EXEC) \
 		$(BUILDDIR)/bin/lua* \
+		$(BUILDDIR)/bin/grpc* \
+		$(BUILDDIR)/bin/protoc* \
 		$(BUILDDIR)/lib/*.$(LIB_EXTENSION)*
 
 submodules:
@@ -153,6 +156,13 @@ $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 $(BUILDDIR)/lib/libcryptopp.$(LIB_EXTENSION): 
 	$(MAKE) -C $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 static
 	$(MAKE) -C $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 libcryptopp.pc
 	$(MAKE) -C $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 PREFIX=$(BUILDDIR) install
+	if [ "$(UNAME)" = "Darwin" ]; then install_name_tool -id @rpath/libcryptopp.$(LIB_EXTENSION) $(BUILDDIR)/lib/libcryptopp.$(LIB_EXTENSION); fi
+
+$(DEPDIR)/grpc $(BUILDDIR)/lib/libgrpc.$(LIB_EXTENSION): | $(BUILDDIR)
+	if [ ! -d $(DEPDIR)/grpc ]; then git clone --branch $(GRPC_VERSION) --depth 1 https://github.com/grpc/grpc.git $(DEPDIR)/grpc; fi
+	cd $(DEPDIR)/grpc && git submodule update --init --recursive --depth 1
+	mkdir -p $(DEPDIR)/grpc/cmake/build && cd $(DEPDIR)/grpc/cmake/build && cmake -C $(abspath $(DEPDIR))/grpc.cmake -DCMAKE_INSTALL_PREFIX=$(BUILDDIR) ../..
+	$(MAKE) -C $(DEPDIR)/grpc/cmake/build all install
 
 $(SUBCLEAN) $(DEPCLEAN): %.clean:
 	$(MAKE) -C $* clean
@@ -172,23 +182,19 @@ build-alpine-image:
 install-Darwin:
 	install_name_tool -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi.so
 	install_name_tool -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi/grpc.so
-	install_name_tool -change $(BUILDDIR)/lib/libcryptopp.dylib @rpath/libcryptopp.dylib $(LUA_INSTALL_CPATH)/cartesi.so
-	install_name_tool -change $(BUILDDIR)/lib/libcryptopp.dylib @rpath/libcryptopp.dylib $(LUA_INSTALL_CPATH)/cartesi/grpc.so
 	cd $(BIN_INSTALL_PATH) && \
 		for x in $(DEP_TO_BIN) $(EMU_TO_BIN); do \
 			install_name_tool -add_rpath $(LIB_INSTALL_PATH) $$x ;\
-			install_name_tool -change $(BUILDDIR)/lib/libcryptopp.dylib @rpath/libcryptopp.dylib $$x; \
 		done
 	cd $(LIB_INSTALL_PATH) && \
 		for x in `find . -maxdepth 1 -type f -name "*.dylib" | cut -d "/" -f 2`; do \
 			install_name_tool -add_rpath $(LIB_INSTALL_PATH) $$x ; \
-			install_name_tool -id @rpath/$$x $$x ; \
 		done
 
 install-Linux:
 	cd $(BIN_INSTALL_PATH) && for x in $(DEP_TO_BIN) $(EMU_TO_BIN); do patchelf --set-rpath $(LIB_INSTALL_PATH) $$x ; done
 	cd $(LIB_INSTALL_PATH) && for x in `find . -maxdepth 1 -type f -name "*.so*"`; do patchelf --set-rpath $(LIB_INSTALL_PATH) $$x ; done
-	cd $(LUA_INSTALL_CPATH) && for x in `find . -maxdepth 1 -type f -name "*.so"`; do patchelf --set-rpath $(LIB_INSTALL_PATH) $$x ; done
+	cd $(LUA_INSTALL_CPATH) && for x in `find . -maxdepth 2 -type f -name "*.so"`; do patchelf --set-rpath $(LIB_INSTALL_PATH) $$x ; done
 
 install-dep: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH)
 	cd $(BUILDDIR)/bin && $(INSTALL) $(DEP_TO_BIN) $(BIN_INSTALL_PATH)
@@ -221,5 +227,5 @@ install: install-dep install-emulator install-strip $(INSTALL_PLAT)
 
 .SECONDARY: $(DOWNLOADDIR) $(DEPDIRS) $(COREPROTO)
 
-.PHONY: all submodules doc clean distclean downloads src test luacartesi hash\
+.PHONY: all submodules doc clean distclean downloads src test luacartesi grpc hash\
 	$(SUBDIRS) $(SUBCLEAN) $(DEPCLEAN) $(DEPDIR)/lua.clean

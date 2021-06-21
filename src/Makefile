@@ -26,8 +26,8 @@ CRYPTOPP_LIB:=-L$(BUILDDIR)/lib -lcryptopp
 CRYPTOPP_INC:=-I$(BUILDDIR)/include
 GRPC_DIR:=../lib/grpc-interfaces
 
-PROTOC:=$(shell which protoc)
-GRPC_CPP_PLUGIN=$(shell which grpc_cpp_plugin)
+PROTOC:=$(BUILDDIR)/bin/protoc
+GRPC_CPP_PLUGIN=$(BUILDDIR)/bin/grpc_cpp_plugin
 
 # So we can use gcc to check if there are unused symbols
 ifeq ($(gc),yes)
@@ -42,24 +42,23 @@ CXX_Darwin=clang++
 INCS_Darwin=
 
 ifeq ($(UNAME),Darwin)
+ifndef DYLD_LIBRARY_PATH
+	export DYLD_LIBRARY_PATH=$(BUILDDIR)/lib
+endif
 # Homebrew installation
 ifneq (,$(wildcard /usr/local/opt/boost/lib))
 BOOST_LIB_DIR_Darwin=-L/usr/local/opt/boost/lib
 BOOST_INC_Darwin=-I/usr/local/opt/boost/include
-GRPC_LIB_Darwin=-L/usr/local/opt/grpc/lib -L/usr/local/opt/protobuf/lib
-GRPC_INC_Darwin=-I/usr/local/opt/grpc/include -I/usr/local/opt/protobuf/include
 else # Macports installation
 BOOST_LIB_DIR_Darwin=-L/opt/local/lib
 BOOST_INC_Darwin=-I/opt/local/include
-GRPC_LIB_Darwin=-L/opt/local/lib
-GRPC_INC_Darwin=-I/opt/local/include
 endif
 endif
 
 BOOST_SERIAL_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_serialization-mt
 BOOST_CORO_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_coroutine-mt -lboost_context-mt
-GRPC_LIB_Darwin+=-lgrpc++ -lgrpc -lprotobuf -lpthread
-
+GRPC_INC_Darwin=-I$(BUILDDIR)/include
+GRPC_LIB_Darwin=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread
 PROFILE_DATA_Darwin=default.profdata
 
 # Linux specific setup
@@ -71,8 +70,8 @@ FS_LIB_Linux=-lstdc++fs
 BOOST_SERIAL_LIB_Linux:=-lboost_serialization
 BOOST_CORO_LIB_Linux:=-lboost_coroutine -lboost_context
 BOOST_INC_Linux=
-GRPC_LIB_Linux:=-lgrpc++ -lgrpc -lprotobuf -lpthread
-GRPC_INC_Linux:=
+GRPC_INC_Linux:=-I$(BUILDDIR)/include
+GRPC_LIB_Linux:=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread
 PROFILE_DATA_Linux=
 
 CC=$(CC_$(UNAME))
@@ -345,7 +344,7 @@ cartesi-machine-server: $(GRPC_SRV_OBJS)
 cartesi-machine-proxy: $(GRPC_PRX_OBJS)
 	$(CXX) -o $@ $^ $(GRPC_PRX_LIBS)
 
-cartesi-machine-server cartesi-machine-proxy: CXXFLAGS := $(GRPC_INC_$(UNAME)) $(CXXFLAGS)
+cartesi-machine-server cartesi-machine-proxy: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 

@@ -1127,3 +1127,7 @@ void cm_delete_error_message(char* err_msg) {
     }
     delete[] err_msg;
 }
+
+void cm_delete_error_msg(char* err_msg) {
+    free(err_msg);
+}

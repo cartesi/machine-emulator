@@ -423,7 +423,7 @@ cartesi-machine-server cartesi-machine-proxy: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS
 tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI)
 	$(CC) $(LIBCARTESI_TESTS_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI_LIB)
 
-c-machine: $(C_MACHINE_OBJS) libcartesi.so
+tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) libcartesi.so
 	$(CC) -o $@ $^ $(C_MACHINE_LIBS)
 
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h

@@ -891,383 +891,77 @@ uint64_t cm_get_x_address(int i) {
     return cartesi::machine::get_x_address(i);
 }
 
-uint64_t cm_read_pc(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_pc();
+#define IMPL_MACHINE_READ_WRITE(field) \
+uint64_t cm_read_##field(const cm_machine *m) { \
+    const cartesi::machine *cpp_machine = convert_from_c(m); \
+    return cpp_machine->read_##field(); \
+} \
+void cm_write_##field(cm_machine *m, uint64_t val) { \
+    cartesi::machine *cpp_machine = convert_from_c(m); \
+    cpp_machine->write_##field(val); \
 }
 
-void cm_write_pc(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_pc(val);
+
+#define IMPL_MACHINE_READ(field) \
+uint64_t cm_read_##field(const cm_machine *m) { \
+    const cartesi::machine *cpp_machine = convert_from_c(m); \
+    return cpp_machine->read_##field(); \
 }
 
-uint64_t cm_read_mvendorid(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_mvendorid();
+#define IMPL_MACHINE_WRITE(field) \
+void cm_write_##field(cm_machine *m, uint64_t val) { \
+    cartesi::machine *cpp_machine = convert_from_c(m); \
+    cpp_machine->write_##field(val); \
 }
 
-uint64_t cm_read_marchid(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_marchid();
-}
 
-uint64_t cm_read_mimpid(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_mimpid();
-}
+IMPL_MACHINE_READ_WRITE(pc)
+IMPL_MACHINE_READ(mvendorid)
+IMPL_MACHINE_READ(marchid)
+IMPL_MACHINE_READ(mimpid)
+IMPL_MACHINE_READ_WRITE(mcycle)
+IMPL_MACHINE_READ_WRITE(minstret)
+IMPL_MACHINE_READ_WRITE(mstatus)
+IMPL_MACHINE_READ_WRITE(mtvec)
+IMPL_MACHINE_READ_WRITE(mscratch)
+IMPL_MACHINE_READ_WRITE(mepc)
+IMPL_MACHINE_READ_WRITE(mcause)
+IMPL_MACHINE_READ_WRITE(mtval)
+IMPL_MACHINE_READ_WRITE(misa)
+IMPL_MACHINE_READ_WRITE(mie)
+IMPL_MACHINE_READ_WRITE(mip)
+IMPL_MACHINE_READ_WRITE(medeleg)
+IMPL_MACHINE_READ_WRITE(mideleg)
+IMPL_MACHINE_READ_WRITE(mcounteren)
+IMPL_MACHINE_READ_WRITE(stvec)
+IMPL_MACHINE_READ_WRITE(sscratch)
+IMPL_MACHINE_READ_WRITE(sepc)
+IMPL_MACHINE_READ_WRITE(scause)
+IMPL_MACHINE_READ_WRITE(stval)
+IMPL_MACHINE_READ_WRITE(satp)
+IMPL_MACHINE_READ_WRITE(scounteren)
+IMPL_MACHINE_READ_WRITE(ilrsc)
+IMPL_MACHINE_READ_WRITE(iflags)
+IMPL_MACHINE_READ_WRITE(htif_tohost)
+IMPL_MACHINE_READ(htif_tohost_dev)
+IMPL_MACHINE_READ(htif_tohost_cmd)
+IMPL_MACHINE_READ(htif_tohost_data)
+IMPL_MACHINE_READ_WRITE(htif_fromhost)
+IMPL_MACHINE_WRITE(htif_fromhost_data)
+IMPL_MACHINE_READ_WRITE(htif_ihalt)
+IMPL_MACHINE_READ_WRITE(htif_iconsole)
+IMPL_MACHINE_READ_WRITE(htif_iyield)
+IMPL_MACHINE_READ_WRITE(clint_mtimecmp)
+IMPL_MACHINE_READ_WRITE(dhd_tstart)
+IMPL_MACHINE_READ_WRITE(dhd_tlength)
+IMPL_MACHINE_READ_WRITE(dhd_dlength)
+IMPL_MACHINE_READ_WRITE(dhd_hlength)
 
-uint64_t cm_read_mcycle(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_mcycle();
-}
 
-void cm_write_mcycle(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_mcycle(val);
-}
 
-uint64_t cm_read_minstret(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_minstret();
-}
-
-void cm_write_minstret(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_minstret(val);
-}
-
-uint64_t cm_read_mstatus(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_mstatus();
-}
-
-void cm_write_mstatus(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_mstatus(val);
-}
-
-uint64_t cm_read_mtvec(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_mtvec();
-}
-
-void cm_write_mtvec(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_mtvec(val);
-}
-
-uint64_t cm_read_mscratch(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_mscratch();
-}
-
-void cm_write_mscratch(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_mscratch(val);
-}
-
-uint64_t cm_read_mepc(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_mepc();
-}
-
-void cm_write_mepc(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_mepc(val);
-}
-
-uint64_t cm_read_mcause(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_mcause();
-}
-
-void cm_write_mcause(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_mcause(val);
-}
-
-uint64_t cm_read_mtval(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_mtval();
-}
-
-void cm_write_mtval(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_mtval(val);
-}
-
-uint64_t cm_read_misa(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_misa();
-}
-
-void cm_write_misa(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_misa(val);
-}
-
-uint64_t cm_read_mie(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_mie();
-}
-
-void cm_write_mie(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_mie(val);
-}
-
-uint64_t cm_read_mip(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_mip();
-}
-
-void cm_write_mip(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_mip(val);
-}
-
-uint64_t cm_read_medeleg(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_medeleg();
-}
-
-void cm_write_medeleg(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_medeleg(val);
-}
-
-uint64_t cm_read_mideleg(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_mideleg();
-}
-
-void cm_write_mideleg(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_mideleg(val);
-}
-
-uint64_t cm_read_mcounteren(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_mcounteren();
-}
-
-void cm_write_mcounteren(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_mcounteren(val);
-}
-
-uint64_t cm_read_stvec(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_stvec();
-}
-
-void cm_write_stvec(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_stvec(val);
-}
-
-uint64_t cm_read_sscratch(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_sscratch();
-}
-
-void cm_write_sscratch(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_sscratch(val);
-}
-
-uint64_t cm_read_sepc(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_sepc();
-}
-
-void cm_write_sepc(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_sepc(val);
-}
-
-uint64_t cm_read_scause(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_scause();
-}
-
-void cm_write_scause(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_scause(val);
-}
-
-uint64_t cm_read_stval(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_stval();
-}
-
-void cm_write_stval(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_stval(val);
-}
-
-uint64_t cm_read_satp(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_satp();
-}
-
-void cm_write_satp(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_satp(val);
-}
-
-uint64_t cm_read_scounteren(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_scounteren();
-}
-
-void cm_write_scounteren(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_scounteren(val);
-}
-
-uint64_t cm_read_ilrsc(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_ilrsc();
-}
-
-void cm_write_ilrsc(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_ilrsc(val);
-}
-
-uint64_t cm_read_iflags(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_iflags();
-}
 
 uint64_t cm_packed_iflags(int PRV, int Y, int H) {
     return cartesi::machine_state::packed_iflags(PRV, Y, H);
-}
-
-void cm_write_iflags(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_iflags(val);
-}
-
-uint64_t cm_read_htif_tohost(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_htif_tohost();
-}
-
-uint64_t cm_read_htif_tohost_dev(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_htif_tohost_dev();
-}
-
-uint64_t cm_read_htif_tohost_cmd(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_htif_tohost_cmd();
-}
-
-uint64_t cm_read_htif_tohost_data(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_htif_tohost_data();
-}
-
-void cm_write_htif_tohost(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_htif_tohost(val);
-}
-
-uint64_t cm_read_htif_fromhost(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_htif_fromhost();
-}
-
-void cm_write_htif_fromhost(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_htif_fromhost(val);
-}
-
-void cm_write_htif_fromhost_data(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_htif_fromhost_data(val);
-}
-
-uint64_t cm_read_htif_ihalt(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_htif_ihalt();
-}
-
-void write_htif_ihalt(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_htif_ihalt(val);
-}
-
-uint64_t cm_read_htif_iconsole(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_htif_iconsole();
-}
-
-void cm_write_htif_iconsole(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_htif_iconsole(val);
-}
-
-uint64_t cm_read_htif_iyield(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_htif_iyield();
-}
-
-void cm_write_htif_iyield(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_htif_iyield(val);
-}
-
-uint64_t cm_read_clint_mtimecmp(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_clint_mtimecmp();
-}
-
-void cm_write_clint_mtimecmp(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_clint_mtimecmp(val);
-}
-
-uint64_t cm_read_dhd_tstart(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_dhd_tstart();
-}
-
-void cm_write_dhd_tstart(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_dhd_tstart(val);
-}
-
-uint64_t cm_read_dhd_tlength(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_dhd_tlength();
-}
-
-void cm_write_dhd_tlength(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_dhd_tlength(val);
-}
-
-uint64_t cm_read_dhd_dlength(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_dhd_dlength();
-}
-
-void cm_write_dhd_dlength(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_dhd_dlength(val);
-}
-
-uint64_t cm_read_dhd_hlength(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_dhd_hlength();
-}
-
-void cm_write_dhd_hlength(cm_machine *m, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_dhd_hlength(val);
 }
 
 void cm_write_dhd_h(cm_machine *m, int i, uint64_t val) {

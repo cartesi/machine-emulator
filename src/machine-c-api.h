@@ -848,7 +848,7 @@ CM_API uint64_t cm_read_htif_ihalt(const cm_machine *m);
 /// \brief Writes the value of HTIF's halt register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void write_htif_ihalt(cm_machine *m, uint64_t val);
+CM_API void cm_write_htif_ihalt(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of HTIF's console register.
 /// \param m Pointer to valid machine instance

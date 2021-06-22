@@ -50,11 +50,23 @@ static std::string null_to_empty(const char *s) {
     return std::string{s != NULL ? s : ""};
 }
 
+static void get_error_message(char **error_message) {
+    try {
+        throw;
+    } catch (std::exception &e) {
+        *error_message = get_error_message(e);
+        throw;
+    } catch (...) {
+        *error_message = get_error_message_unknown();
+        throw;
+    }
+}
+
 /// \warning: This function rethrows current exception, so it must be called
 /// from the catch error handling block
-static void convert_cpp_error(const std::exception &cpp_error, int *error_code, char **error_message) {
+static void convert_cpp_error(int *error_code, char **error_message) {
     try {
-        std::rethrow_exception(std::current_exception());
+        get_error_message(error_message);
     } catch (std::invalid_argument &ex) {
         *error_code = CM_ERROR_INVALID_ARGUMENT;
     } catch (std::domain_error &ex) {
@@ -121,8 +133,20 @@ static void convert_cpp_error(const std::exception &cpp_error, int *error_code, 
     catch (...) {
         *error_code = CM_ERROR_UNKNOWN;
     }
-    *error_message = get_error_message(cpp_error);
 }
+
+static inline int result_success(char **err_msg) {
+    *err_msg = nullptr;
+    return 0;
+}
+
+static inline int result_failure(char **err_msg) {
+    int error_code{};
+    convert_cpp_error(&error_code, err_msg);
+    return error_code;
+}
+
+
 
 // --------------------------------------------
 // String conversion (strdup equivalent with new)
@@ -625,15 +649,9 @@ int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_
         const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
         cartesi::machine *m = new cartesi::machine(c, r);
         *new_machine = static_cast<cm_machine *>(m);
-        *err_msg = NULL;
-        return 0;
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
+        return result_success(err_msg);
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -643,15 +661,9 @@ int cm_create_machine_from_dir(const char *dir, const cm_machine_runtime_config 
         const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
         cartesi::machine *m = new cartesi::machine(null_to_empty(dir), r);
         *new_machine = static_cast<cm_machine *>(m);
-        *err_msg = NULL;
-        return 0;
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
+        return result_success(err_msg);
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -664,15 +676,9 @@ int cm_store(cm_machine *m, const char *dir, char **err_msg) {
     try {
         cartesi::machine *cpp_machine = convert_from_c(m);
         cpp_machine->store(null_to_empty(dir));
-        *err_msg = NULL;
-        return 0;
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
+        return result_success(err_msg);
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -682,15 +688,9 @@ int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg) {
     cartesi::machine *cpp_machine = convert_from_c(m);
     try {
         cpp_machine->run(mcycle_end);
-        *err_msg = NULL;
-        return 0;
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
+        return result_success(err_msg);
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -698,19 +698,12 @@ int cm_step(cm_machine *m, const cm_access_log_type log_type, bool one_based,
             cm_access_log **access_log, char **err_msg) {
     cartesi::machine *cpp_machine = convert_from_c(m);
     try {
-
         cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations};
         cartesi::access_log cpp_access_log = cpp_machine->step(cpp_log_type, one_based);
         *access_log = convert_to_c(cpp_access_log);
-        *err_msg = NULL;
-        return 0;
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
+        return result_success(err_msg);
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -735,15 +728,9 @@ int cm_verify_access_log(const cm_access_log* log, const cm_machine_runtime_conf
         const cartesi::access_log cpp_log = convert_from_c(log);
         const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
         cartesi::machine::verify_access_log(cpp_log, cpp_runtime_config, one_based);
-        *err_msg = NULL;
-        return 0;
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
+        return result_success(err_msg);
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -758,15 +745,9 @@ int cm_verify_state_transition(const cm_hash *root_hash_before,
         const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
         cartesi::machine::verify_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
                                                   cpp_runtime_config, one_based);
-        *err_msg = NULL;
-        return 0;
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
+        return result_success(err_msg);
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -783,15 +764,9 @@ int cm_dehash(cm_machine *m, const uint8_t *hash, uint64_t hlength,
             *out_dlength = cpp_dlength;
             memcpy(out_data, cpp_data.data(), cpp_data.size());
         }
-        *err_msg = NULL;
-        return 0;
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
+        return result_success(err_msg);
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -800,19 +775,13 @@ int cm_update_merkle_tree(cm_machine *m, char **err_msg) {
     try {
         bool result = cpp_machine->update_merkle_tree();
         if (result) {
-            *err_msg = NULL;
-            return 0;
+            return result_success(err_msg);
         } else {
             *err_msg = get_error_message_unknown();
             return CM_ERROR_UNKNOWN;
         }
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -821,19 +790,13 @@ int cm_update_merkle_tree_page(cm_machine *m, uint64_t address, char **err_msg) 
     try {
         bool result = cpp_machine->update_merkle_tree_page(address);
         if (result) {
-            *err_msg = NULL;
-            return 0;
+            return result_success(err_msg);
         } else {
             *err_msg = get_error_message_unknown();
             return CM_ERROR_UNKNOWN;
         }
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -842,15 +805,9 @@ int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm_merkle
     try {
         const cartesi::machine_merkle_tree::proof_type cpp_proof = cpp_machine->get_proof(address, log2_size);
         *proof = convert_to_c(cpp_proof);
-        *err_msg = NULL;
-        return 0;
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
+        return result_success(err_msg);
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -883,15 +840,9 @@ int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg) {
         cartesi::machine *cpp_machine = convert_from_c(m);
         cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(w);
         cpp_machine->write_csr(cpp_csr, val);
-        *err_msg = NULL;
-        return 0;
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
+        return result_success(err_msg);
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -920,15 +871,9 @@ int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, 
     try {
         cartesi::machine *cpp_machine = convert_from_c(m);
         cpp_machine->write_memory(address, data, length);
-        *err_msg = NULL;
-        return 0;
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
+        return result_success(err_msg);
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -1378,15 +1323,9 @@ int cm_dump_pmas(const cm_machine *m, char **err_msg) {
     try {
         const cartesi::machine *cpp_machine = convert_from_c(m);
         cpp_machine->dump_pmas();
-        *err_msg = NULL;
-        return 0;
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
+        return result_success(err_msg);
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -1399,15 +1338,9 @@ int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char** err_msg)
     try {
         const cartesi::machine *cpp_machine = convert_from_c(m);
         *result = cpp_machine->verify_dirty_page_maps();
-        *err_msg = NULL;
-        return 0;
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return false;
+        return result_success(err_msg);
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 
@@ -1430,15 +1363,9 @@ int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash
     try {
         cartesi::flash_drive_config cpp_flash_config = convert_from_c(new_flash);
         cpp_machine->replace_flash_drive(cpp_flash_config);
-        *err_msg = NULL;
-        return 0;
-    } catch (std::exception &ex) {
-        int error_code;
-        convert_cpp_error(ex, &error_code, err_msg);
-        return error_code;
+        return result_success(err_msg);
     } catch (...) {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
+        return result_failure(err_msg);
     }
 }
 

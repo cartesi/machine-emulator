@@ -17,6 +17,14 @@
 #ifndef MACHINE_EMULATOR_SDK_MACHINE_C_DEFINES_H
 #define MACHINE_EMULATOR_SDK_MACHINE_C_DEFINES_H
 
+
+
+//GNU compiler visibility definition
+#if __GNUC__ >= 5
+#define CM_API __attribute__ ((visibility ("default")))
+#endif
+
+
 #define CM_MACHINE_HASH_BYTE_SIZE 32
 #define CM_MACHINE_X_REG_COUNT 32
 #define CM_MACHINE_DHD_H_REG_COUNT 4

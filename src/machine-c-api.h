@@ -34,9 +34,6 @@
 
 #ifdef __cplusplus
 extern "C" {
-#if __GNUC__ >= 5
-#pragma GCC visibility push(default)
-#endif
 #endif
 
 
@@ -313,11 +310,11 @@ typedef void cm_machine;
 /// must be deleted with cm_delete_machine_config. To make a custom config based
 /// on default config user must make a deep copy of returned object members and then
 /// customize
-const cm_machine_config *cm_new_default_machine_config();
+CM_API const cm_machine_config *cm_new_default_machine_config();
 
 /// \brief Delete machine config acquired from cm_new_default_machine_config
 /// \returns void
-void cm_delete_machine_config(const cm_machine_config *config);
+CM_API void cm_delete_machine_config(const cm_machine_config *config);
 
 
 /// \brief Creates new machine instance from configuration
@@ -328,7 +325,7 @@ void cm_delete_machine_config(const cm_machine_config *config);
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \returns 0 for success, non zero code for error
-int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
+CM_API int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
                       cm_machine **new_machine, char **err_msg);
 
 /// \brief Constructor from previously serialized directory
@@ -339,9 +336,8 @@ int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \returns 0 for success, non zero code for error
-int
-cm_create_machine_from_dir(const char *dir, const cm_machine_runtime_config *runtime_config, cm_machine **new_machine,
-                           char **err_msg);
+CM_API int cm_create_machine_from_dir(const char *dir, const cm_machine_runtime_config *runtime_config,
+                                      cm_machine **new_machine, char **err_msg);
 
 /// \brief Serialize entire state to directory
 /// \param m Pointer to valid machine instance
@@ -351,12 +347,12 @@ cm_create_machine_from_dir(const char *dir, const cm_machine_runtime_config *run
 /// by the function caller in case of function execution error
 /// \details The method changes machine because it updates the root hash
 /// \returns 0 for success, non zero code for error
-int cm_store(cm_machine *m, const char *dir, char **err_msg);
+CM_API int cm_store(cm_machine *m, const char *dir, char **err_msg);
 
 
 /// \brief Deletes machine instance
 /// \param m Valid pointer to the existing machine instance
-void cm_delete_machine(cm_machine *m);
+CM_API void cm_delete_machine(cm_machine *m);
 
 
 /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
@@ -366,7 +362,7 @@ void cm_delete_machine(cm_machine *m);
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \returns 0 for success, non zero code for error
-int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg);
+CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg);
 
 /// \brief Runs the machine for one cycle logging all accesses to the state.
 /// \param m Pointer to valid machine instance
@@ -377,12 +373,12 @@ int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg);
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \returns 0 for success, non zero code for error
-int cm_step(cm_machine *m, const cm_access_log_type log_type, bool one_based,
+CM_API int cm_step(cm_machine *m, const cm_access_log_type log_type, bool one_based,
          cm_access_log** access_log, char **err_msg);
 
 /// \brief  Deletes the instance of cm_access_log acquired from cm_step
 /// \param acc_log Valid pointer to cm_access_log object
-void cm_delete_access_log(cm_access_log *acc_log);
+CM_API void cm_delete_access_log(cm_access_log *acc_log);
 
 
 /// \brief Checks the internal consistency of an access log.
@@ -393,7 +389,7 @@ void cm_delete_access_log(cm_access_log *acc_log);
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \returns 0 for success, non zero code for error
-int cm_verify_access_log(const cm_access_log* log, const cm_machine_runtime_config *runtime_config,
+CM_API int cm_verify_access_log(const cm_access_log* log, const cm_machine_runtime_config *runtime_config,
                          bool one_based, char **err_msg);
 
 /// \brief Checks the validity of a state transition.
@@ -406,7 +402,7 @@ int cm_verify_access_log(const cm_access_log* log, const cm_machine_runtime_conf
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \returns 0 for successfull verification, non zero code for error
-int cm_verify_state_transition(const cm_hash *root_hash_before,
+CM_API int cm_verify_state_transition(const cm_hash *root_hash_before,
                                     const cm_access_log *log, const cm_hash *root_hash_after,
                                     const cm_machine_runtime_config *runtime_config, bool one_based,
                                     char **err_msg);
@@ -425,7 +421,7 @@ int cm_verify_state_transition(const cm_hash *root_hash_before,
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \returns 0 for success, non zero code for error
-int cm_dehash(cm_machine *m, const uint8_t* hash, uint64_t hlength,
+CM_API int cm_dehash(cm_machine *m, const uint8_t* hash, uint64_t hlength,
                 uint64_t *out_dlength, uint8_t *out_data, char **err_msg);
 
 /// \brief Update the Merkle tree so it matches the contents of the machine state.
@@ -434,7 +430,7 @@ int cm_dehash(cm_machine *m, const uint8_t* hash, uint64_t hlength,
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \returns 0 for success, non zero code for error
-int cm_update_merkle_tree(cm_machine *m, char **err_msg);
+CM_API int cm_update_merkle_tree(cm_machine *m, char **err_msg);
 
 /// \brief Update the Merkle tree after a page has been modified in the machine state.
 /// \param m Pointer to valid machine instance
@@ -443,7 +439,7 @@ int cm_update_merkle_tree(cm_machine *m, char **err_msg);
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \returns 0 for success, non zero code for error
-int cm_update_merkle_tree_page(cm_machine *m, uint64_t address, char **err_msg);
+CM_API int cm_update_merkle_tree_page(cm_machine *m, uint64_t address, char **err_msg);
 
 
 /// \brief Obtains the proof for a node in the Merkle tree.
@@ -457,28 +453,28 @@ int cm_update_merkle_tree_page(cm_machine *m, uint64_t address, char **err_msg);
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
-int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm_merkle_tree_proof **proof, char **err_msg);
+CM_API int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm_merkle_tree_proof **proof, char **err_msg);
 
 /// \brief  Deletes the instance of cm_merkle_tree_proof acquired from cm_get_proof
 /// \param proof Valid pointer to cm_merkle_tree_proof object
-void cm_delete_proof(cm_merkle_tree_proof *proof);
+CM_API void cm_delete_proof(cm_merkle_tree_proof *proof);
 
 
 /// \brief Obtains the root hash of the Merkle tree.
 /// \param m Pointer to valid machine instance
 /// \param hash Valid pointer to cm_hash structure that  receives the hash.
-void cm_get_root_hash(const cm_machine *m, cm_hash *hash);
+CM_API void cm_get_root_hash(const cm_machine *m, cm_hash *hash);
 
 
 /// \brief Verifies integrity of Merkle tree.
 /// \param m Pointer to valid machine instance
 /// \returns True if tree is self-consistent, false otherwise.
-bool cm_verify_merkle_tree(const cm_machine *m);
+CM_API bool cm_verify_merkle_tree(const cm_machine *m);
 
 /// \brief Read the value of any CSR
 /// \param m Pointer to valid machine instance
 /// \returns The value of the CSR
-uint64_t cm_read_csr(const cm_machine *m, CM_PROC_CSR r);
+CM_API uint64_t cm_read_csr(const cm_machine *m, CM_PROC_CSR r);
 
 /// \brief Write the value of any CSR
 /// \param m Pointer to valid machine instance
@@ -488,12 +484,12 @@ uint64_t cm_read_csr(const cm_machine *m, CM_PROC_CSR r);
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \returns 0 for success, non zero code for error
-int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg);
+CM_API int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg);
 
 /// \brief Gets the address of any CSR
 /// \param w The CSR
 /// \returns The address of the specified CSR
-uint64_t cm_get_csr_address(CM_PROC_CSR w);
+CM_API uint64_t cm_get_csr_address(CM_PROC_CSR w);
 
 /// \brief Read the value of a word in the machine state.
 /// \param m Pointer to valid machine instance
@@ -501,7 +497,7 @@ uint64_t cm_get_csr_address(CM_PROC_CSR w);
 /// \param word_value Receives word value.
 /// \returns true if succeeded, false otherwise.
 /// \warning The current implementation of this function is very slow!
-bool cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *word_value);
+CM_API bool cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *word_value);
 
 
 /// \brief Reads a chunk of data from the machine memory.
@@ -512,7 +508,7 @@ bool cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *word_val
 /// \details The entire chunk, from \p address to \p address + \p length must
 /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
 /// and not a device PMA.
-void cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *data, uint64_t length);
+CM_API void cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *data, uint64_t length);
 
 /// \brief Writes a chunk of data to the machine memory.
 /// \param m Pointer to valid machine instance
@@ -526,453 +522,453 @@ void cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *data, 
 /// \details The entire chunk, from \p address to \p address + \p length must
 /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
 /// and not a device PMA.
-int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length, char** err_msg);
+CM_API int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length, char** err_msg);
 
 /// \brief Reads the value of a general-purpose register.
 /// \param m Pointer to valid machine instance
 /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
 /// \returns The value of the register.
-uint64_t cm_read_x(const cm_machine *m, int i);
+CM_API uint64_t cm_read_x(const cm_machine *m, int i);
 
 /// \brief Writes the value of a general-purpose register.
 /// \param m Pointer to valid machine instance
 /// \param i Register index. Between 1 and X_REG_COUNT-1, inclusive.
 /// \param val New register value.
-void cm_write_x(cm_machine *m, int i, uint64_t val);
+CM_API void cm_write_x(cm_machine *m, int i, uint64_t val);
 
 /// \brief Gets the address of a general-purpose register.
 /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
 /// \returns Address of the specified register
-uint64_t cm_get_x_address(int i);
+CM_API uint64_t cm_get_x_address(int i);
 
 /// \brief Reads the value of the pc register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_pc(const cm_machine *m);
+CM_API uint64_t cm_read_pc(const cm_machine *m);
 
 /// \brief Writes the value of the pc register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_pc(cm_machine *m, uint64_t val);
+CM_API void cm_write_pc(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the mvendorid register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_mvendorid(const cm_machine *m);
+CM_API uint64_t cm_read_mvendorid(const cm_machine *m);
 
 /// \brief Reads the value of the marchid register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_marchid(const cm_machine *m);
+CM_API uint64_t cm_read_marchid(const cm_machine *m);
 
 /// \brief Reads the value of the mimpid register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_mimpid(const cm_machine *m);
+CM_API uint64_t cm_read_mimpid(const cm_machine *m);
 
 /// \brief Reads the value of the mcycle register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_mcycle(const cm_machine *m);
+CM_API uint64_t cm_read_mcycle(const cm_machine *m);
 
 /// \brief Writes the value of the mcycle register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_mcycle(cm_machine *m, uint64_t val);
+CM_API void cm_write_mcycle(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the minstret register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_minstret(const cm_machine *m);
+CM_API uint64_t cm_read_minstret(const cm_machine *m);
 
 /// \brief Writes the value of the minstret register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_minstret(cm_machine *m, uint64_t val);
+CM_API void cm_write_minstret(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the mstatus register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_mstatus(const cm_machine *m);
+CM_API uint64_t cm_read_mstatus(const cm_machine *m);
 
 /// \brief Writes the value of the mstatus register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_mstatus(cm_machine *m, uint64_t val);
+CM_API void cm_write_mstatus(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the mtvec register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_mtvec(const cm_machine *m);
+CM_API uint64_t cm_read_mtvec(const cm_machine *m);
 
 /// \brief Writes the value of the mtvec register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_mtvec(cm_machine *m, uint64_t val);
+CM_API void cm_write_mtvec(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the mscratch register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_mscratch(const cm_machine *m);
+CM_API uint64_t cm_read_mscratch(const cm_machine *m);
 
 /// \brief Writes the value of the mscratch register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_mscratch(cm_machine *m, uint64_t val);
+CM_API void cm_write_mscratch(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the mepc register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_mepc(const cm_machine *m);
+CM_API uint64_t cm_read_mepc(const cm_machine *m);
 
 /// \brief Writes the value of the mepc register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_mepc(cm_machine *m, uint64_t val);
+CM_API void cm_write_mepc(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the mcause register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_mcause(const cm_machine *m);
+CM_API uint64_t cm_read_mcause(const cm_machine *m);
 
 /// \brief Writes the value of the mcause register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_mcause(cm_machine *m, uint64_t val);
+CM_API void cm_write_mcause(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the mtval register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_mtval(const cm_machine *m);
+CM_API uint64_t cm_read_mtval(const cm_machine *m);
 
 /// \brief Writes the value of the mtval register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_mtval(cm_machine *m, uint64_t val);
+CM_API void cm_write_mtval(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the misa register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_misa(const cm_machine *m);
+CM_API uint64_t cm_read_misa(const cm_machine *m);
 
 /// \brief Writes the value of the misa register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_misa(cm_machine *m, uint64_t val);
+CM_API void cm_write_misa(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the mie register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_mie(const cm_machine *m);
+CM_API uint64_t cm_read_mie(const cm_machine *m);
 
 /// \brief Reads the value of the mie register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_mie(cm_machine *m, uint64_t val);
+CM_API void cm_write_mie(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the mip register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_mip(const cm_machine *m);
+CM_API uint64_t cm_read_mip(const cm_machine *m);
 
 /// \brief Reads the value of the mip register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_mip(cm_machine *m, uint64_t val);
+CM_API void cm_write_mip(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the medeleg register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_medeleg(const cm_machine *m);
+CM_API uint64_t cm_read_medeleg(const cm_machine *m);
 
 /// \brief Writes the value of the medeleg register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_medeleg(cm_machine *m, uint64_t val);
+CM_API void cm_write_medeleg(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the mideleg register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_mideleg(const cm_machine *m);
+CM_API uint64_t cm_read_mideleg(const cm_machine *m);
 
 /// \brief Writes the value of the mideleg register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_mideleg(cm_machine *m, uint64_t val);
+CM_API void cm_write_mideleg(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the mcounteren register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_mcounteren(const cm_machine *m);
+CM_API uint64_t cm_read_mcounteren(const cm_machine *m);
 
 /// \brief Writes the value of the mcounteren register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_mcounteren(cm_machine *m, uint64_t val);
+CM_API void cm_write_mcounteren(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the stvec register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_stvec(const cm_machine *m);
+CM_API uint64_t cm_read_stvec(const cm_machine *m);
 
 
 /// \brief Writes the value of the stvec register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_stvec(cm_machine *m, uint64_t val);
+CM_API void cm_write_stvec(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the sscratch register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_sscratch(const cm_machine *m);
+CM_API uint64_t cm_read_sscratch(const cm_machine *m);
 
 /// \brief Writes the value of the sscratch register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_sscratch(cm_machine *m, uint64_t val);
+CM_API void cm_write_sscratch(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the sepc register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_sepc(const cm_machine *m);
+CM_API uint64_t cm_read_sepc(const cm_machine *m);
 
 /// \brief Writes the value of the sepc register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_sepc(cm_machine *m, uint64_t val);
+CM_API void cm_write_sepc(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the scause register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_scause(const cm_machine *m);
+CM_API uint64_t cm_read_scause(const cm_machine *m);
 
 /// \brief Writes the value of the scause register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_scause(cm_machine *m, uint64_t val);
+CM_API void cm_write_scause(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the stval register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_stval(const cm_machine *m);
+CM_API uint64_t cm_read_stval(const cm_machine *m);
 
 /// \brief Writes the value of the stval register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_stval(cm_machine *m, uint64_t val);
+CM_API void cm_write_stval(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the satp register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_satp(const cm_machine *m);
+CM_API uint64_t cm_read_satp(const cm_machine *m);
 
 /// \brief Writes the value of the satp register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_satp(cm_machine *m, uint64_t val);
+CM_API void cm_write_satp(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the scounteren register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_scounteren(const cm_machine *m);
+CM_API uint64_t cm_read_scounteren(const cm_machine *m);
 
 /// \brief Writes the value of the scounteren register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_scounteren(cm_machine *m, uint64_t val);
+CM_API void cm_write_scounteren(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the ilrsc register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_ilrsc(const cm_machine *m);
+CM_API uint64_t cm_read_ilrsc(const cm_machine *m);
 
 /// \brief Writes the value of the ilrsc register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_ilrsc(cm_machine *m, uint64_t val);
+CM_API void cm_write_ilrsc(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the iflags register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_iflags(const cm_machine *m);
+CM_API uint64_t cm_read_iflags(const cm_machine *m);
 
 /// \brief Returns packed iflags from its component fields.
 /// \returns The value of the register.
-uint64_t cm_packed_iflags(int PRV, int Y, int H);
+CM_API uint64_t cm_packed_iflags(int PRV, int Y, int H);
 
 /// \brief Reads the value of the iflags register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_iflags(cm_machine *m, uint64_t val);
+CM_API void cm_write_iflags(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of HTIF's tohost register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_htif_tohost(const cm_machine *m);
+CM_API uint64_t cm_read_htif_tohost(const cm_machine *m);
 
 /// \brief Reads the value of the device field of HTIF's tohost register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the field.
-uint64_t cm_read_htif_tohost_dev(const cm_machine *m);
+CM_API uint64_t cm_read_htif_tohost_dev(const cm_machine *m);
 
 /// \brief Reads the value of the command field of HTIF's tohost register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the field.
-uint64_t cm_read_htif_tohost_cmd(const cm_machine *m);
+CM_API uint64_t cm_read_htif_tohost_cmd(const cm_machine *m);
 
 /// \brief Reads the value of the data field of HTIF's tohost register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the field.
-uint64_t cm_read_htif_tohost_data(const cm_machine *m);
+CM_API uint64_t cm_read_htif_tohost_data(const cm_machine *m);
 
 /// \brief Writes the value of HTIF's tohost register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_htif_tohost(cm_machine *m, uint64_t val);
+CM_API void cm_write_htif_tohost(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of HTIF's fromhost register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_htif_fromhost(const cm_machine *m);
+CM_API uint64_t cm_read_htif_fromhost(const cm_machine *m);
 
 /// \brief Writes the value of HTIF's fromhost register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_htif_fromhost(cm_machine *m, uint64_t val);
+CM_API void cm_write_htif_fromhost(cm_machine *m, uint64_t val);
 
 /// \brief Writes the value of the data field in HTIF's fromhost register.
 /// \param m Pointer to valid machine instance
 /// \param val New value for the field.
-void cm_write_htif_fromhost_data(cm_machine *m, uint64_t val);
+CM_API void cm_write_htif_fromhost_data(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of HTIF's halt register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_htif_ihalt(const cm_machine *m);
+CM_API uint64_t cm_read_htif_ihalt(const cm_machine *m);
 
 /// \brief Writes the value of HTIF's halt register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void write_htif_ihalt(cm_machine *m, uint64_t val);
+CM_API void write_htif_ihalt(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of HTIF's console register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_htif_iconsole(const cm_machine *m);
+CM_API uint64_t cm_read_htif_iconsole(const cm_machine *m);
 
 /// \brief Writes the value of HTIF's console register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_htif_iconsole(cm_machine *m, uint64_t val);
+CM_API void cm_write_htif_iconsole(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of HTIF's yield register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_htif_iyield(const cm_machine *m);
+CM_API uint64_t cm_read_htif_iyield(const cm_machine *m);
 
 /// \brief Writes the value of HTIF's yield register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_htif_iyield(cm_machine *m, uint64_t val);
+CM_API void cm_write_htif_iyield(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of CLINT's mtimecmp register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_clint_mtimecmp(const cm_machine *m);
+CM_API uint64_t cm_read_clint_mtimecmp(const cm_machine *m);
 
 /// \brief Writes the value of CLINT's mtimecmp register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_clint_mtimecmp(cm_machine *m, uint64_t val);
+CM_API void cm_write_clint_mtimecmp(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of DHD's tstart register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_dhd_tstart(const cm_machine *m);
+CM_API uint64_t cm_read_dhd_tstart(const cm_machine *m);
 
 /// \brief Writes the value of DHD's tstart register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_dhd_tstart(cm_machine *m, uint64_t val);
+CM_API void cm_write_dhd_tstart(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of DHD's tlength register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_dhd_tlength(const cm_machine *m);
+CM_API uint64_t cm_read_dhd_tlength(const cm_machine *m);
 
 /// \brief Writes the value of DHD's tlength register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_dhd_tlength(cm_machine *m, uint64_t val);
+CM_API void cm_write_dhd_tlength(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of DHD's dlength register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_dhd_dlength(const cm_machine *m);
+CM_API uint64_t cm_read_dhd_dlength(const cm_machine *m);
 
 /// \brief Writes the value of DHD's dlength register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_dhd_dlength(cm_machine *m, uint64_t val);
+CM_API void cm_write_dhd_dlength(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of DHD's hlength register.
 /// \param m Pointer to valid machine instance
 /// \returns The value of the register.
-uint64_t cm_read_dhd_hlength(const cm_machine *m);
+CM_API uint64_t cm_read_dhd_hlength(const cm_machine *m);
 
 /// \brief Writes the value of DHD's hlength register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-void cm_write_dhd_hlength(cm_machine *m, uint64_t val);
+CM_API void cm_write_dhd_hlength(cm_machine *m, uint64_t val);
 
 /// \brief Writes the value of DHD's input hash word.
 /// \param m Pointer to valid machine instance
 /// \param i Index of input hash word.
 /// Between 0 and DHD_H_REG_COUNT-1, inclusive.
 /// \param val New value for word.
-void cm_write_dhd_h(cm_machine *m, int i, uint64_t val);
+CM_API void cm_write_dhd_h(cm_machine *m, int i, uint64_t val);
 
 /// \brief Gets the address of a DHD h register.
 /// \param i Register index. Between 0 and DHD_H_REG_COUNT-1, inclusive.
 /// \returns Address of the specified register
-uint64_t cm_get_dhd_h_address(int i);
+CM_API uint64_t cm_get_dhd_h_address(int i);
 
 /// \brief Checks the value of the iflags_Y flag.
 /// \param m Pointer to valid machine instance
 /// \returns The flag value.
-bool cm_read_iflags_Y(const cm_machine *m);
+CM_API bool cm_read_iflags_Y(const cm_machine *m);
 
 /// \brief Resets the value of the iflags_Y flag.
 /// \param m Pointer to valid machine instance
-void cm_reset_iflags_Y(cm_machine *m);
+CM_API void cm_reset_iflags_Y(cm_machine *m);
 
 /// \brief Sets the iflags_Y flag.
 /// \param m Pointer to valid machine instance
-void cm_set_iflags_Y(cm_machine *m);
+CM_API void cm_set_iflags_Y(cm_machine *m);
 
 /// \brief Checks the value of the iflags_H flag.
 /// \param m Pointer to valid machine instance
 /// \returns The flag value.
-bool cm_read_iflags_H(const cm_machine *m);
+CM_API bool cm_read_iflags_H(const cm_machine *m);
 
 /// \brief Checks the value of the iflags_PRV field.
 /// \param m Pointer to valid machine instance
 /// \returns The field value.
-uint8_t cm_read_iflags_PRV(const cm_machine *m);
+CM_API uint8_t cm_read_iflags_PRV(const cm_machine *m);
 
 /// \brief Sets the iflags_H flag.
 /// \param m Pointer to valid machine instance
-void cm_set_iflags_H(cm_machine *m);
+CM_API void cm_set_iflags_H(cm_machine *m);
 
 /// \brief Sets bits in mip.
 /// \param m Pointer to valid machine instance
 /// \param mask Bits set in \p mask will also be set in mip
-void cm_set_mip(cm_machine *m, uint32_t mask);
+CM_API void cm_set_mip(cm_machine *m, uint32_t mask);
 
 /// \brief Resets bits in mip.
 /// \param m Pointer to valid machine instance
 /// \param mask Bits set in \p mask will also be reset in mip
-void cm_reset_mip(cm_machine *m, uint32_t mask);
+CM_API void cm_reset_mip(cm_machine *m, uint32_t mask);
 
 /// \brief Dump all memory ranges to files in current working directory.
 /// \param m Pointer to valid machine instance
@@ -980,11 +976,11 @@ void cm_reset_mip(cm_machine *m, uint32_t mask);
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \returns 0 for success, non zero code for error
-int cm_dump_pmas(const cm_machine *m, char **err_msg);
+CM_API int cm_dump_pmas(const cm_machine *m, char **err_msg);
 
 /// \brief Interact with console
 /// \param m Pointer to valid machine instance
-void cm_interact(cm_machine *m);
+CM_API void cm_interact(cm_machine *m);
 
 /// \brief Verify if dirty page maps are consistent.
 /// \param m Pointer to valid machine instance
@@ -993,20 +989,20 @@ void cm_interact(cm_machine *m);
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \returns 0 for success, non zero code for error
-int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char** err_msg);
+CM_API int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char** err_msg);
 
 /// \brief Copies the current state into a configuration for serialization
 /// \param m Pointer to valid machine instance
 /// \returns The configuration
 /// \details Object acquired from this function must not be changed and
 /// must be deleted with cm_delete_machine_config
-const cm_machine_config *cm_get_serialization_config(const cm_machine *m);
+CM_API const cm_machine_config *cm_get_serialization_config(const cm_machine *m);
 
 /// \brief Returns copy of initialization config.
 /// \param m Pointer to valid machine instance
 /// \details Object acquired from this function must not be changed and
 /// must be deleted with cm_delete_machine_config
-const cm_machine_config *cm_get_initial_config(const cm_machine *m);
+CM_API const cm_machine_config *cm_get_initial_config(const cm_machine *m);
 
 
 /// \brief Replaces a flash drive.
@@ -1018,7 +1014,7 @@ const cm_machine_config *cm_get_initial_config(const cm_machine *m);
 /// \returns 0 for success, non zero code for error
 /// \details The machine must contain an existing flash
 /// drive matching the start and length specified in new_flash.
-int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash, char **err_msg);
+CM_API int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash, char **err_msg);
 
 
 /// \brief Deletes the error message
@@ -1026,14 +1022,9 @@ int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash
 /// \details This C API is meant to be used for various language bindings.
 /// Many of them could not directly call C free function,
 /// so this is a convenience function for cleanup of error messages
-void cm_delete_error_msg(char* err_msg);
+CM_API void cm_delete_error_msg(char* err_msg);
 
 #ifdef __cplusplus
-
-#if __GNUC__ >= 5
-#pragma GCC visibility pop
-#endif
-
 }
 #endif
 

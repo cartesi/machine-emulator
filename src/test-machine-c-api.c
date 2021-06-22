@@ -153,7 +153,7 @@ int main() {
     printf("Creating machine from directory, expecting error:\n");
     if ((error_code = cm_create_machine_from_dir("/unknown_dir", &my_runtime_config, &my_machine, &err_msg)) != 0) {
         printf("Error creating from directory machine, error code: %d message: %s\n", error_code, err_msg);
-        free(err_msg);
+        cm_delete_error_msg(err_msg);
     } else {
         printf("Machine successfully created!\n");
     }
@@ -162,7 +162,7 @@ int main() {
     printf("Creating machine\n");
     if ((error_code = cm_create_machine(&my_machine_config, &my_runtime_config, &my_machine, &err_msg)) != 0) {
         printf("Error creating machine, error code: %d message: %s\n", error_code, err_msg);
-        free(err_msg);
+        cm_delete_error_msg(err_msg);
     } else {
         printf("Machine successfully created!\n");
     }
@@ -171,7 +171,7 @@ int main() {
     //Update merkle tree
     if ((error_code = cm_update_merkle_tree(my_machine, &err_msg)) != 0) {
         printf("Error updating merkle tree, error code: %d message: %s\n", error_code, err_msg);
-        free(err_msg);
+        cm_delete_error_msg(err_msg);
     } else {
         printf("Merkle tree successfully updated!\n");
     }
@@ -189,7 +189,7 @@ int main() {
     //Get proof for first page of memory space
     if ((error_code = cm_get_proof(my_machine, 0, 12, &proof, &err_msg)) != 0) {
         printf("Error getting proof, error code: %d message: %s\n", error_code, err_msg);
-        free(err_msg);
+        cm_delete_error_msg(err_msg);
     } else {
         printf("Proof acquire is successfull!\n");
         printf("Root hash:\n");
@@ -207,7 +207,7 @@ int main() {
     if ((error_code = cm_dehash(my_machine, proof->target_hash, 32, &dehash_data_length,
                                 dehash_data, &err_msg)) != 0) {
         printf("Error performing dehash, error code: %d message: %s\n", error_code, err_msg);
-        free(err_msg);
+        cm_delete_error_msg(err_msg);
     } else {
         printf("Dehash successfull, size acquired: %ld, first byte: %x\n", dehash_data_length,
                dehash_data[0]);
@@ -299,7 +299,7 @@ int main() {
     while (current_mcycle < 1000) {
         if ((error_code = cm_machine_run(my_machine, 0xfffffffff, &err_msg)) != 0) {
             printf("Error running macihne: %d message: %s\n", error_code, err_msg);
-            free(err_msg);
+            cm_delete_error_msg(err_msg);
         }
         current_mcycle = cm_read_mcycle(my_machine);
     }

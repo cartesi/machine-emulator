@@ -252,7 +252,6 @@ typedef struct {
     CM_BRACKET_TYPE type;   ///< Bracket type
     uint64_t where;         ///< Where it points to in the log
     char* text;           ///< Note text
-    size_t text_size; ///< Size of note text
 } cm_bracket_note;
 
 /// \brief Records an access to the machine state
@@ -273,7 +272,7 @@ typedef struct {
     size_t accesses_count; ///< Size of list of all accesses
     cm_bracket_note *brackets; ///< Begin/End annotations
     size_t brackets_count; ///< Size of begin/end annotations
-    char **notes;  ///< Per-access annotations
+    const char **notes;  ///< Per-access annotations
     size_t notes_count; ///< Number of per-access annotations
     cm_access_log_type log_type; ///< Log type
 } cm_access_log;

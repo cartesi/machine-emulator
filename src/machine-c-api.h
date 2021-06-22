@@ -50,39 +50,41 @@ typedef uint8_t cm_hash[CM_MACHINE_HASH_BYTE_SIZE];
 enum CM_ERROR {
     CM_ERROR_OK = 0,
     //Logic errors
-    CM_ERROR_INVALID_ARGUMENT = 1,
-    CM_ERROR_DOMAIN_ERROR = 2,
-    CM_ERROR_LENGTH_ERROR = 3,
-    CM_ERROR_OUT_OF_RANGE = 4,
-    CM_ERROR_FUTURE_ERROR = 5,
-    CM_ERROR_LOGIC_ERROR = 6,
+    CM_ERROR_INVALID_ARGUMENT,
+    CM_ERROR_DOMAIN_ERROR,
+    CM_ERROR_LENGTH_ERROR,
+    CM_ERROR_OUT_OF_RANGE,
+    CM_ERROR_FUTURE_ERROR,
+    CM_ERROR_LOGIC_ERROR,
+    CM_LOGIC_ERROR_END,
     // Bad optional access error
-    CM_ERROR_BAD_OPTIONAL_ACCESS = 7,
+    CM_ERROR_BAD_OPTIONAL_ACCESS,
     // Runtime errors
-    CM_ERROR_RUNTIME_ERROR = 10,
-    CM_ERROR_RANGE_ERROR = 11,
-    CM_ERROR_OVERFLOW_ERROR = 12,
-    CM_ERROR_UNDERFLOW_ERROR = 13,
-    CM_ERROR_REGEX_ERROR = 14,
-    CM_ERROR_SYSTEM_IOS_BASE_FAILURE = 15,
-    CM_ERROR_FILESYSTEM_ERROR = 16,
-    CM_ERROR_ATOMIC_TX_ERROR = 17,
-    CM_ERROR_NONEXISTING_LOCAL_TIME = 18,
-    CM_ERROR_AMBIGOUS_LOCAL_TIME = 19,
-    CM_ERROR_FORMAT_ERROR = 20,
+    CM_ERROR_RUNTIME_ERROR,
+    CM_ERROR_RANGE_ERROR,
+    CM_ERROR_OVERFLOW_ERROR,
+    CM_ERROR_UNDERFLOW_ERROR,
+    CM_ERROR_REGEX_ERROR,
+    CM_ERROR_SYSTEM_IOS_BASE_FAILURE,
+    CM_ERROR_FILESYSTEM_ERROR,
+    CM_ERROR_ATOMIC_TX_ERROR,
+    CM_ERROR_NONEXISTING_LOCAL_TIME,
+    CM_ERROR_AMBIGOUS_LOCAL_TIME,
+    CM_ERROR_FORMAT_ERROR,
+    CM_RUNTIME_ERROR_END,
     //Other errors
-    CM_ERROR_BAD_TYPEID = 30,
-    CM_ERROR_BAD_CAST = 31,
-    CM_ERROR_BAD_ANY_CAST = 32,
-    CM_ERROR_BAD_WEAK_PTR = 33,
-    CM_ERROR_BAD_FUNCTION_CALL = 34,
-    CM_ERROR_BAD_ALLOC = 35,
-    CM_ERROR_BAD_ARRAY_NEW_LENGTH = 36,
-    CM_ERROR_BAD_EXCEPTION = 37,
-    CM_ERROR_BAD_VARIANT_ACCESS = 38,
+    CM_ERROR_BAD_TYPEID,
+    CM_ERROR_BAD_CAST,
+    CM_ERROR_BAD_ANY_CAST,
+    CM_ERROR_BAD_WEAK_PTR,
+    CM_ERROR_BAD_FUNCTION_CALL,
+    CM_ERROR_BAD_ALLOC,
+    CM_ERROR_BAD_ARRAY_NEW_LENGTH,
+    CM_ERROR_BAD_EXCEPTION,
+    CM_ERROR_BAD_VARIANT_ACCESS,
+    CM_OTHER_ERROR_END,
     //C API Errors
-    CM_ERROR_UNKNOWN = 40,
-
+    CM_ERROR_UNKNOWN
 };
 
 /// \brief List of CSRs to use with read_csr and write_csr
@@ -208,7 +210,7 @@ typedef struct {
     cm_ram_config ram;
     cm_rom_config rom;
     cm_flash_drive_config *flash_drive;
-    int flash_drive_count;
+    size_t flash_drive_count;
     cm_clint_config clint;
     cm_htif_config htif;
     cm_dhd_config dhd;
@@ -221,12 +223,12 @@ typedef struct {
 /// at a given address in the tree has a certain hash.
 typedef struct {
     uint64_t target_address;
-    int log2_target_size;
+    size_t log2_target_size;
     cm_hash target_hash;
-    int log2_root_size;
+    size_t log2_root_size;
     cm_hash root_hash;
     cm_hash* sibling_hashes;
-    int sibling_hashes_size;
+    size_t sibling_hashes_count;
 } cm_merkle_tree_proof;
 
 /// \brief Type of state access
@@ -253,7 +255,7 @@ typedef struct {
     CM_BRACKET_TYPE type;   ///< Bracket type
     uint64_t where;         ///< Where it points to in the log
     char* text;           ///< Note text
-    int text_size; ///< Size of note text
+    size_t text_size; ///< Size of note text
 } cm_bracket_note;
 
 /// \brief Records an access to the machine state
@@ -262,20 +264,20 @@ typedef struct {
     uint64_t address;   ///< Address of access
     int log2_size;      ///< Log2 of size of access
     uint8_t* read_data; ///< Data before access
-    int read_data_size; ///< Size of data before access
+    size_t read_data_size; ///< Size of data before access in bytes
     uint8_t* written_data;  ///< Data after access (if writing)
-    int written_data_size; ///< Size of data after access
+    size_t written_data_size; ///< Size of data after access in bytes
     cm_merkle_tree_proof* proof; ///< Proof of data before access
 } cm_access;
 
 /// \brief Log of state accesses
 typedef struct {
     cm_access *accesses; ///< List of all accesses
-    int accesses_size; ///< Size of list of all accesses
+    size_t accesses_count; ///< Size of list of all accesses
     cm_bracket_note *brackets; ///< Begin/End annotations
-    int brackets_size; ///< Size of begin/end annotations
+    size_t brackets_count; ///< Size of begin/end annotations
     char **notes;  ///< Per-access annotations
-    int notes_size; ///< Number of per-access annotations
+    size_t notes_count; ///< Number of per-access annotations
     cm_access_log_type log_type; ///< Log type
 } cm_access_log;
 
@@ -348,6 +350,7 @@ cm_create_machine_from_dir(const char *dir, const cm_machine_runtime_config *run
 /// or NULL in case of successfull function execution. error_msg must be freed
 /// by the function caller in case of function execution error
 /// \details The method changes machine because it updates the root hash
+/// \returns 0 for success, non zero code for error
 int cm_store(cm_machine *m, const char *dir, char **err_msg);
 
 
@@ -481,7 +484,11 @@ uint64_t cm_read_csr(const cm_machine *m, CM_PROC_CSR r);
 /// \param m Pointer to valid machine instance
 /// \param w CSR to write
 /// \param val Value to write
-void cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
+/// \returns 0 for success, non zero code for error
+int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg);
 
 /// \brief Gets the address of any CSR
 /// \param w The CSR
@@ -512,10 +519,14 @@ void cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *data, 
 /// \param address Physical address to start writing.
 /// \param data Source for chunk of data.
 /// \param length Size of chunk.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
+/// \returns 0 for success, non zero code for error
 /// \details The entire chunk, from \p address to \p address + \p length must
 /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
 /// and not a device PMA.
-void cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length);
+int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length, char** err_msg);
 
 /// \brief Reads the value of a general-purpose register.
 /// \param m Pointer to valid machine instance
@@ -965,7 +976,11 @@ void cm_reset_mip(cm_machine *m, uint32_t mask);
 
 /// \brief Dump all memory ranges to files in current working directory.
 /// \param m Pointer to valid machine instance
-void cm_dump_pmas(const cm_machine *m);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
+/// \returns 0 for success, non zero code for error
+int cm_dump_pmas(const cm_machine *m, char **err_msg);
 
 /// \brief Interact with console
 /// \param m Pointer to valid machine instance
@@ -973,8 +988,12 @@ void cm_interact(cm_machine *m);
 
 /// \brief Verify if dirty page maps are consistent.
 /// \param m Pointer to valid machine instance
-/// \returns true if they are, false if there is an error.
-bool cm_verify_dirty_page_maps(const cm_machine *m);
+/// \param result True if dirty page maps are consistent, false if there is an error.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. error_msg must be freed
+/// by the function caller in case of function execution error
+/// \returns 0 for success, non zero code for error
+int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char** err_msg);
 
 /// \brief Copies the current state into a configuration for serialization
 /// \param m Pointer to valid machine instance

@@ -32,11 +32,6 @@
 #include "machine.h"
 
 
-
-static char *get_error_message_ok() {
-    return strdup("OK");
-}
-
 static char *get_error_message_unknown() {
     return strdup("Unknown error");
 }
@@ -131,17 +126,15 @@ static cartesi::processor_config convert_from_c(const cm_processor_config *c_con
     cartesi::processor_config new_cpp_config{};
     //Both C and C++ structs contain only aligned uint64_t values
     //so it is safe to do copy
-    assert(sizeof(cm_processor_config) == sizeof(new_cpp_config));
-    memmove(&new_cpp_config.x, c_config, sizeof(cm_processor_config));
+    static_assert(sizeof(cm_processor_config) == sizeof(new_cpp_config));
+    memcpy(&new_cpp_config.x, c_config, sizeof(cm_processor_config));
     return new_cpp_config;
 }
 
 static cm_processor_config convert_to_c(const cartesi::processor_config &cpp_config) {
-    cm_processor_config new_c_config;
-    memset(&new_c_config, 0, sizeof(cm_processor_config));
-
-    assert(sizeof(new_c_config) == sizeof(cpp_config));
-    memmove(&new_c_config, &cpp_config.x, sizeof(cm_processor_config));
+    cm_processor_config new_c_config{};
+    static_assert(sizeof(new_c_config) == sizeof(cpp_config));
+    memcpy(&new_c_config, &cpp_config.x, sizeof(cm_processor_config));
     return new_c_config;
 }
 
@@ -150,7 +143,6 @@ static cm_processor_config convert_to_c(const cartesi::processor_config &cpp_con
 // Ram configuration conversion functions
 // --------------------------------------------
 static cartesi::ram_config convert_from_c(const cm_ram_config *c_config) {
-
     cartesi::ram_config new_cpp_ram_config{};
     new_cpp_ram_config.length = c_config->length;
     new_cpp_ram_config.image_filename = null_to_empty(c_config->image_filename);
@@ -158,9 +150,7 @@ static cartesi::ram_config convert_from_c(const cm_ram_config *c_config) {
 }
 
 static cm_ram_config convert_to_c(const cartesi::ram_config &cpp_config) {
-
-    cm_ram_config new_c_ram_config;
-    memset(&new_c_ram_config, 0, sizeof(cm_ram_config));
+    cm_ram_config new_c_ram_config{};
     new_c_ram_config.length = cpp_config.length;
     new_c_ram_config.image_filename = strdup(cpp_config.image_filename.c_str());
     return new_c_ram_config;
@@ -171,7 +161,6 @@ static cm_ram_config convert_to_c(const cartesi::ram_config &cpp_config) {
 // --------------------------------------------
 
 static cartesi::rom_config convert_from_c(const cm_rom_config *c_config) {
-    assert(c_config != NULL);
     cartesi::rom_config new_cpp_rom_config{};
     new_cpp_rom_config.bootargs = null_to_empty(c_config->bootargs);
     new_cpp_rom_config.image_filename = null_to_empty(c_config->image_filename);
@@ -179,8 +168,7 @@ static cartesi::rom_config convert_from_c(const cm_rom_config *c_config) {
 }
 
 static cm_rom_config convert_to_c(const cartesi::rom_config &cpp_config) {
-    cm_rom_config new_c_rom_config;
-    memset(&new_c_rom_config, 0, sizeof(cm_rom_config));
+    cm_rom_config new_c_rom_config{};
     new_c_rom_config.bootargs = strdup(cpp_config.bootargs.c_str());
     new_c_rom_config.image_filename = strdup(cpp_config.image_filename.c_str());
     return new_c_rom_config;
@@ -201,9 +189,7 @@ static cartesi::flash_drive_config convert_from_c(const cm_flash_drive_config *c
 }
 
 static cm_flash_drive_config convert_to_c(const cartesi::flash_drive_config &cpp_config) {
-
-    cm_flash_drive_config new_c_flash_drive_config;
-    memset(&new_c_flash_drive_config, 0, sizeof(cm_flash_drive_config));
+    cm_flash_drive_config new_c_flash_drive_config{};
     new_c_flash_drive_config.start = cpp_config.start;
     new_c_flash_drive_config.length = cpp_config.length;
     new_c_flash_drive_config.shared = cpp_config.shared;
@@ -222,8 +208,7 @@ static cartesi::clint_config convert_from_c(const cm_clint_config *c_config) {
 }
 
 static cm_clint_config convert_to_c(const cartesi::clint_config &cpp_config) {
-
-    cm_clint_config new_c_clint_config;
+    cm_clint_config new_c_clint_config{};
     memset(&new_c_clint_config, 0, sizeof(cm_clint_config));
     new_c_clint_config.mtimecmp = cpp_config.mtimecmp;
     return new_c_clint_config;
@@ -244,8 +229,7 @@ static cartesi::htif_config convert_from_c(const cm_htif_config *c_config) {
 }
 
 static cm_htif_config convert_to_c(const cartesi::htif_config &cpp_config) {
-
-    cm_htif_config new_c_htif_config;
+    cm_htif_config new_c_htif_config{};
     memset(&new_c_htif_config, 0, sizeof(cm_htif_config));
     new_c_htif_config.fromhost = cpp_config.fromhost;
     new_c_htif_config.tohost = cpp_config.tohost;
@@ -260,7 +244,7 @@ static cm_htif_config convert_to_c(const cartesi::htif_config &cpp_config) {
 // HTIF configuration conversion functions
 // ----------------------------------------------
 static cartesi::dhd_config convert_from_c(const cm_dhd_config *c_config) {
-    cartesi::dhd_config new_cpp_dhd_config;
+    cartesi::dhd_config new_cpp_dhd_config{};
     new_cpp_dhd_config.tstart = c_config->tstart;
     new_cpp_dhd_config.tlength = c_config->tlength;
     new_cpp_dhd_config.image_filename = null_to_empty(c_config->image_filename);
@@ -268,15 +252,14 @@ static cartesi::dhd_config convert_from_c(const cm_dhd_config *c_config) {
     new_cpp_dhd_config.hlength = c_config->hlength;
 
     assert(sizeof(new_cpp_dhd_config.h) == sizeof(c_config->h));
-    memmove(&new_cpp_dhd_config.h, &c_config->h, sizeof(uint64_t) * CM_MACHINE_DHD_H_REG_COUNT);
+    memcpy(&new_cpp_dhd_config.h, &c_config->h, sizeof(uint64_t) * CM_MACHINE_DHD_H_REG_COUNT);
 
     return new_cpp_dhd_config;
 }
 
 static cm_dhd_config convert_to_c(const cartesi::dhd_config &cpp_config) {
 
-    cm_dhd_config new_c_dhd_config;
-    memset(&new_c_dhd_config, 0, sizeof(cm_dhd_config));
+    cm_dhd_config new_c_dhd_config{};
     new_c_dhd_config.tstart = cpp_config.tstart;
     new_c_dhd_config.tlength = cpp_config.tlength;
     new_c_dhd_config.image_filename = strdup(cpp_config.image_filename.c_str());
@@ -284,7 +267,7 @@ static cm_dhd_config convert_to_c(const cartesi::dhd_config &cpp_config) {
     new_c_dhd_config.hlength = cpp_config.hlength;
 
     assert(sizeof(new_c_dhd_config.h) == sizeof(cpp_config.h));
-    memmove(&new_c_dhd_config.h, &cpp_config.h, sizeof(uint64_t) * CM_MACHINE_DHD_H_REG_COUNT);
+    memcpy(&new_c_dhd_config.h, &cpp_config.h, sizeof(uint64_t) * CM_MACHINE_DHD_H_REG_COUNT);
     return new_c_dhd_config;
 }
 
@@ -294,7 +277,7 @@ static cm_dhd_config convert_to_c(const cartesi::dhd_config &cpp_config) {
 // ----------------------------------------------
 static cartesi::machine_runtime_config convert_from_c(const cm_machine_runtime_config *c_config) {
     cartesi::machine_runtime_config new_cpp_machine_runtime_config{
-            cartesi::dhd_runtime_config{std::string{c_config->dhd.source_address}},
+            cartesi::dhd_runtime_config{null_to_empty(c_config->dhd.source_address)},
             cartesi::concurrency_config{c_config->concurrency.update_merkle_tree}
     };
 
@@ -305,31 +288,25 @@ static cartesi::machine_runtime_config convert_from_c(const cm_machine_runtime_c
 // Machine configuration conversion functions
 // ----------------------------------------------
 static cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
-    cartesi::processor_config processor = convert_from_c(&c_config->processor);
-    cartesi::ram_config ram = convert_from_c(&c_config->ram);
-    cartesi::rom_config rom = convert_from_c(&c_config->rom);
+
     cartesi::flash_drive_configs flash_configs{};
-    for (int i = 0; i < c_config->flash_drive_count; ++i) {
+    for (size_t i = 0; i < c_config->flash_drive_count; ++i) {
         flash_configs.push_back(convert_from_c(&(c_config->flash_drive[i])));
     }
-    cartesi::clint_config clint = convert_from_c(&c_config->clint);
-    cartesi::htif_config htif = convert_from_c(&c_config->htif);
-    cartesi::dhd_config dhd = convert_from_c(&c_config->dhd);
-
 
     cartesi::machine_config new_cpp_machine_config{};
-    new_cpp_machine_config.processor = processor;
-    new_cpp_machine_config.ram = ram;
-    new_cpp_machine_config.rom = rom;
+    new_cpp_machine_config.processor = convert_from_c(&c_config->processor);
+    new_cpp_machine_config.ram = convert_from_c(&c_config->ram);
+    new_cpp_machine_config.rom = convert_from_c(&c_config->rom);
     new_cpp_machine_config.flash_drive = flash_configs;
-    new_cpp_machine_config.clint = clint;
-    new_cpp_machine_config.htif = htif;
-    new_cpp_machine_config.dhd = dhd;
+    new_cpp_machine_config.clint =  convert_from_c(&c_config->clint);
+    new_cpp_machine_config.htif = convert_from_c(&c_config->htif);
+    new_cpp_machine_config.dhd = convert_from_c(&c_config->dhd);
 
     return new_cpp_machine_config;
 }
 
-static const cm_machine_config *convert_to_c(cartesi::machine_config &cpp_config) {
+static const cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config) {
     cm_machine_config *new_machine_config = static_cast<cm_machine_config *>
     (malloc(sizeof(cm_machine_config)));
     memset(new_machine_config, 0, sizeof(cm_machine_config));
@@ -366,7 +343,7 @@ static const cartesi::machine *convert_from_c(const cm_machine *m) {
 
 cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash* c_hash) {
     cartesi::machine_merkle_tree::hash_type cpp_hash; //In emulator this is std::array<unsigned char, hash_size>;
-    memmove(cpp_hash.data(), c_hash, sizeof(cm_hash));
+    memcpy(cpp_hash.data(), c_hash, sizeof(cm_hash));
     return cpp_hash;
 }
 
@@ -391,22 +368,22 @@ static cm_merkle_tree_proof *convert_to_c(const cartesi::machine_merkle_tree::pr
     new_merkle_tree_proof->log2_target_size = proof.get_log2_target_size();
     new_merkle_tree_proof->target_address = proof.get_target_address();
 
-    memmove(&new_merkle_tree_proof->root_hash, static_cast<const uint8_t *>(proof.get_root_hash().data()),
+    memcpy(&new_merkle_tree_proof->root_hash, static_cast<const uint8_t *>(proof.get_root_hash().data()),
             sizeof(cm_hash));
-    memmove(&new_merkle_tree_proof->target_hash, static_cast<const uint8_t *>(proof.get_target_hash().data()),
+    memcpy(&new_merkle_tree_proof->target_hash, static_cast<const uint8_t *>(proof.get_target_hash().data()),
             sizeof(cm_hash));
 
-    new_merkle_tree_proof->sibling_hashes_size =
+    new_merkle_tree_proof->sibling_hashes_count =
             new_merkle_tree_proof->log2_root_size - new_merkle_tree_proof->log2_target_size;
-    new_merkle_tree_proof->sibling_hashes = new cm_hash[new_merkle_tree_proof->sibling_hashes_size];
-    memset(new_merkle_tree_proof->sibling_hashes, 0, sizeof(cm_hash) * new_merkle_tree_proof->sibling_hashes_size);
+    new_merkle_tree_proof->sibling_hashes = new cm_hash[new_merkle_tree_proof->sibling_hashes_count];
+    memset(new_merkle_tree_proof->sibling_hashes, 0, sizeof(cm_hash) * new_merkle_tree_proof->sibling_hashes_count);
 
 
-    for (int log2_size = new_merkle_tree_proof->log2_target_size;
+    for (size_t log2_size = new_merkle_tree_proof->log2_target_size;
          log2_size < new_merkle_tree_proof->log2_root_size; ++log2_size) {
         int current_index = cm_log2_size_to_index(log2_size, new_merkle_tree_proof->log2_root_size);
         const cartesi::machine_merkle_tree::hash_type sibling_hash = proof.get_sibling_hash(log2_size);
-        memmove(&(new_merkle_tree_proof->sibling_hashes[current_index]),
+        memcpy(&(new_merkle_tree_proof->sibling_hashes[current_index]),
                 static_cast<const uint8_t *>(sibling_hash.data()), sizeof(cm_hash));
     }
 
@@ -465,14 +442,14 @@ static cm_access convert_to_c(const cartesi::access &cpp_access) {
     new_access.read_data_size = cpp_access.get_read().size();
     if (new_access.read_data_size > 0) {
         new_access.read_data = static_cast<uint8_t *>(malloc(new_access.read_data_size));
-        memmove(new_access.read_data, cpp_access.get_read().data(), new_access.read_data_size);
+        memcpy(new_access.read_data, cpp_access.get_read().data(), new_access.read_data_size);
     } else {
         new_access.read_data = NULL;
     }
     new_access.written_data_size = cpp_access.get_written().size();
     if (new_access.written_data_size > 0) {
         new_access.written_data = static_cast<uint8_t *>(malloc(new_access.written_data_size));
-        memmove(new_access.written_data, cpp_access.get_written().data(), new_access.written_data_size);
+        memcpy(new_access.written_data, cpp_access.get_written().data(), new_access.written_data_size);
     } else {
         new_access.written_data = NULL;
     }
@@ -497,13 +474,13 @@ static cartesi::access convert_from_c(const cm_access *c_access) {
     }
 
     cartesi::access_data cpp_read_data{};
-    for (int i=0; i<c_access->read_data_size; ++i) {
+    for (size_t  i=0; i<c_access->read_data_size; ++i) {
         cpp_read_data.push_back(c_access->read_data[i]); //todo optimize this, use iterators?
     }
     cpp_access.set_read(cpp_read_data);
 
     cartesi::access_data cpp_written_data{};
-    for (int i=0; i<c_access->written_data_size; ++i) {
+    for (size_t  i=0; i<c_access->written_data_size; ++i) {
         cpp_written_data.push_back(c_access->written_data[i]); //todo optimize this, use iterators?
     }
     cpp_access.set_written(cpp_written_data);
@@ -547,7 +524,7 @@ static cm_bracket_note convert_to_c(const cartesi::bracket_note &cpp_bracket_not
     } else {
         new_bracket_note.text = NULL;
     }
-    memmove(new_bracket_note.text, cpp_bracket_note.text.data(), new_bracket_note.text_size);
+    memcpy(new_bracket_note.text, cpp_bracket_note.text.data(), new_bracket_note.text_size);
     return new_bracket_note;
 }
 
@@ -568,21 +545,21 @@ static cm_access_log *convert_to_c(const cartesi::access_log &cpp_access_log) {
     (malloc(sizeof(cm_access_log)));
     memset(new_access_log, 0, sizeof(cm_access_log));
 
-    new_access_log->accesses_size = cpp_access_log.get_accesses().size();
-    new_access_log->accesses = new cm_access[new_access_log->accesses_size];
-    for (int i = 0; i < new_access_log->accesses_size; ++i) {
+    new_access_log->accesses_count = cpp_access_log.get_accesses().size();
+    new_access_log->accesses = new cm_access[new_access_log->accesses_count];
+    for (size_t  i = 0; i < new_access_log->accesses_count; ++i) {
         new_access_log->accesses[i] = convert_to_c(cpp_access_log.get_accesses()[i]);
     }
 
-    new_access_log->brackets_size = cpp_access_log.get_brackets().size();
-    new_access_log->brackets = new cm_bracket_note[new_access_log->brackets_size];
-    for (int i = 0; i < new_access_log->brackets_size; ++i) {
+    new_access_log->brackets_count = cpp_access_log.get_brackets().size();
+    new_access_log->brackets = new cm_bracket_note[new_access_log->brackets_count];
+    for (size_t  i = 0; i < new_access_log->brackets_count; ++i) {
         new_access_log->brackets[i] = convert_to_c(cpp_access_log.get_brackets()[i]);
     }
 
-    new_access_log->notes_size = cpp_access_log.get_notes().size();
-    new_access_log->notes = new char *[new_access_log->notes_size];
-    for (int i = 0; i < new_access_log->notes_size; ++i) {
+    new_access_log->notes_count = cpp_access_log.get_notes().size();
+    new_access_log->notes = new char *[new_access_log->notes_count];
+    for (size_t  i = 0; i < new_access_log->notes_count; ++i) {
         new_access_log->notes[i] = strdup((cpp_access_log.get_notes()[i]).c_str());
     }
 
@@ -595,17 +572,17 @@ static cm_access_log *convert_to_c(const cartesi::access_log &cpp_access_log) {
 static cartesi::access_log convert_from_c(const cm_access_log *c_acc_log) {
 
     std::vector <cartesi::access> accesses;
-    for (int i = 0; i < c_acc_log->accesses_size; ++i) {
+    for (size_t i = 0; i < c_acc_log->accesses_count; ++i) {
         accesses.push_back(convert_from_c(&c_acc_log->accesses[i]));
     }
     std::vector <cartesi::bracket_note> brackets;
-    for (int i = 0; i < c_acc_log->brackets_size; ++i) {
+    for (size_t i = 0; i < c_acc_log->brackets_count; ++i) {
         brackets.push_back(convert_from_c(&c_acc_log->brackets[i]));
     }
 
     std::vector <std::string> notes;
-    for (int i = 0; i < c_acc_log->notes_size; ++i) {
-        notes.push_back(std::string{c_acc_log->notes[i]});
+    for (size_t i = 0; i < c_acc_log->notes_count; ++i) {
+        notes.push_back(null_to_empty(c_acc_log->notes[i]));
     }
     cartesi::access_log new_cpp_acc_log(accesses, brackets, notes, convert_from_c(&c_acc_log->log_type));
     return new_cpp_acc_log;
@@ -652,12 +629,11 @@ int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_
     }
 }
 
-int
-cm_create_machine_from_dir(const char *dir, const cm_machine_runtime_config *runtime_config, cm_machine **new_machine,
+int cm_create_machine_from_dir(const char *dir, const cm_machine_runtime_config *runtime_config, cm_machine **new_machine,
                            char **err_msg) {
     try {
         const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
-        cartesi::machine *m = new cartesi::machine(std::string{dir}, r);
+        cartesi::machine *m = new cartesi::machine(null_to_empty(dir), r);
         *new_machine = static_cast<cm_machine *>(m);
         *err_msg = NULL;
         return 0;
@@ -672,14 +648,14 @@ cm_create_machine_from_dir(const char *dir, const cm_machine_runtime_config *run
 }
 
 void cm_delete_machine(cm_machine *m) {
-    cartesi::machine *car_machine = static_cast<cartesi::machine *>(m);
-    delete car_machine;
+    cartesi::machine *cpp_machine = convert_from_c(m);
+    delete cpp_machine;
 }
 
 int cm_store(cm_machine *m, const char *dir, char **err_msg) {
     try {
         cartesi::machine *cpp_machine = convert_from_c(m);
-        cpp_machine->store(std::string{dir});
+        cpp_machine->store(null_to_empty(dir));
         *err_msg = NULL;
         return 0;
     } catch (std::exception &ex) {
@@ -731,15 +707,15 @@ int cm_step(cm_machine *m, const cm_access_log_type log_type, bool one_based,
 }
 
 void cm_delete_access_log(cm_access_log *acc_log) {
-    for (int i = 0; i < acc_log->notes_size; ++i) {
+    for (size_t i = 0; i < acc_log->notes_count; ++i) {
         free(acc_log->notes[i]);
     }
     delete[] acc_log->notes;
-    for (int i = 0; i < acc_log->brackets_size; ++i) {
+    for (size_t i = 0; i < acc_log->brackets_count; ++i) {
         cm_cleanup_bracket_note(&acc_log->brackets[i]);
     }
     delete[] acc_log->brackets;
-    for (int i = 0; i < acc_log->accesses_size; ++i) {
+    for (size_t i = 0; i < acc_log->accesses_count; ++i) {
         cm_cleanup_access(&acc_log->accesses[i]);
     }
     delete[] acc_log->accesses;
@@ -797,7 +773,7 @@ int cm_dehash(cm_machine *m, const uint8_t *hash, uint64_t hlength,
             *out_dlength = CM_DHD_NOT_FOUND;
         } else {
             *out_dlength = cpp_dlength;
-            memmove(out_data, cpp_data.data(), cpp_data.size());
+            memcpy(out_data, cpp_data.data(), cpp_data.size());
         }
         *err_msg = NULL;
         return 0;
@@ -880,7 +856,7 @@ void cm_get_root_hash(const cm_machine *m, cm_hash *hash) {
     const cartesi::machine *cpp_machine = convert_from_c(m);
     cartesi::machine_merkle_tree::hash_type cpp_hash;
     cpp_machine->get_root_hash(cpp_hash);
-    memmove(hash, static_cast<const uint8_t *>(cpp_hash.data()), sizeof(cm_hash));
+    memcpy(hash, static_cast<const uint8_t *>(cpp_hash.data()), sizeof(cm_hash));
 }
 
 bool cm_verify_merkle_tree(const cm_machine *m) {
@@ -894,10 +870,21 @@ uint64_t cm_read_csr(const cm_machine *m, CM_PROC_CSR r) {
     return cpp_machine->read_csr(cpp_csr);
 }
 
-void cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(w);
-    cpp_machine->write_csr(cpp_csr, val);
+int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg) {
+    try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
+        cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(w);
+        cpp_machine->write_csr(cpp_csr, val);
+        *err_msg = NULL;
+        return 0;
+    } catch (std::exception &ex) {
+        int error_code;
+        convert_cpp_error(ex, &error_code, err_msg);
+        return error_code;
+    } catch (...) {
+        *err_msg = get_error_message_unknown();
+        return CM_ERROR_UNKNOWN;
+    }
 }
 
 uint64_t cm_get_csr_address(CM_PROC_CSR w) {
@@ -921,9 +908,20 @@ void cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *data, 
     cpp_machine->read_memory(address, data, length);
 }
 
-void cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_memory(address, data, length);
+int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length, char** err_msg) {
+    try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
+        cpp_machine->write_memory(address, data, length);
+        *err_msg = NULL;
+        return 0;
+    } catch (std::exception &ex) {
+        int error_code;
+        convert_cpp_error(ex, &error_code, err_msg);
+        return error_code;
+    } catch (...) {
+        *err_msg = get_error_message_unknown();
+        return CM_ERROR_UNKNOWN;
+    }
 }
 
 uint64_t cm_read_x(const cm_machine *m, int i) {
@@ -1368,10 +1366,20 @@ void cm_reset_mip(cm_machine *m, uint32_t mask) {
     cpp_machine->reset_mip(mask);
 }
 
-void cm_dump_pmas(const cm_machine *m) {
-    //TODO add error handling here
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->dump_pmas();
+int cm_dump_pmas(const cm_machine *m, char **err_msg) {
+    try {
+        const cartesi::machine *cpp_machine = convert_from_c(m);
+        cpp_machine->dump_pmas();
+        *err_msg = NULL;
+        return 0;
+    } catch (std::exception &ex) {
+        int error_code;
+        convert_cpp_error(ex, &error_code, err_msg);
+        return error_code;
+    } catch (...) {
+        *err_msg = get_error_message_unknown();
+        return CM_ERROR_UNKNOWN;
+    }
 }
 
 void cm_interact(cm_machine *m) {
@@ -1379,10 +1387,20 @@ void cm_interact(cm_machine *m) {
     cpp_machine->interact();
 }
 
-bool cm_verify_dirty_page_maps(const cm_machine *m) {
-    //TODO add error handling here, vector at can throw
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->verify_dirty_page_maps();
+int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char** err_msg) {
+    try {
+        const cartesi::machine *cpp_machine = convert_from_c(m);
+        *result = cpp_machine->verify_dirty_page_maps();
+        *err_msg = NULL;
+        return 0;
+    } catch (std::exception &ex) {
+        int error_code;
+        convert_cpp_error(ex, &error_code, err_msg);
+        return false;
+    } catch (...) {
+        *err_msg = get_error_message_unknown();
+        return CM_ERROR_UNKNOWN;
+    }
 }
 
 const cm_machine_config *cm_get_serialization_config(const cm_machine *m) {

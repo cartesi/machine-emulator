@@ -42,7 +42,7 @@ void clone_machine_config(const cm_machine_config *source, cm_machine_config *ta
     target->flash_drive_count = source->flash_drive_count;
     target->flash_drive = (cm_flash_drive_config *) malloc(sizeof(cm_flash_drive_config) * source->flash_drive_count);
     memset(target->flash_drive, 0, sizeof(cm_flash_drive_config) * target->flash_drive_count);
-    for (int i=0; i<target->flash_drive_count; ++i) {
+    for (size_t i=0; i<target->flash_drive_count; ++i) {
         target->flash_drive[i] = source->flash_drive[i];
         target->flash_drive[i].image_filename = strdup(source->flash_drive[i].image_filename);
     }
@@ -59,7 +59,7 @@ void clone_machine_config(const cm_machine_config *source, cm_machine_config *ta
 void cleanup_machine_config(cm_machine_config *config) {
 
     free((char*)config->dhd.image_filename);
-    for (int i=0; i<config->flash_drive_count; ++i) {
+    for (size_t i=0; i<config->flash_drive_count; ++i) {
         free((char*)config->flash_drive[i].image_filename);
     }
     free(config->flash_drive);
@@ -86,13 +86,13 @@ void print_data(const uint8_t* data, int data_size) {
 void print_merkle_tree_proof(const cm_merkle_tree_proof* proof) {
     printf("\n\t\tMerkle tree proof:\n");
     printf("\t\t\ttarget_address: %lx\n", proof->target_address);
-    printf("\t\t\tlog2_target_size: %d\n", proof->log2_target_size);
+    printf("\t\t\tlog2_target_size: %ld\n", proof->log2_target_size);
     printf("\t\t\ttarget_hash:");
     print_hash(proof->target_hash);
-    printf("\t\t\tlog2_root_size: %d\n", proof->log2_root_size);
+    printf("\t\t\tlog2_root_size: %ld\n", proof->log2_root_size);
     printf("\t\t\troot_hash:");
     print_hash(proof->root_hash);
-    printf("\t\t\tsibling_hashes_size: %d\n", proof->sibling_hashes_size);
+    printf("\t\t\tsibling_hashes_count: %ld\n", proof->sibling_hashes_count);
     //todo print sibling hashes if needed
 }
 
@@ -101,9 +101,9 @@ void print_access(const cm_access* cm_acc) {
     printf("\t\ttype: %d\n", cm_acc->type);
     printf("\t\taddress %lx\n", cm_acc->address);
     printf("\t\tlog2 size %d\n", cm_acc->log2_size);
-    printf("\t\tread data size=%d data:", cm_acc->read_data_size);
+    printf("\t\tread data size=%ld data:", cm_acc->read_data_size);
     print_data(cm_acc->read_data, cm_acc->read_data_size);
-    printf("\t\twritten data size=%d data:", cm_acc->written_data_size);
+    printf("\t\twritten data size=%ld data:", cm_acc->written_data_size);
     print_data(cm_acc->written_data, cm_acc->written_data_size);
     printf("\t\tproof:");
     print_merkle_tree_proof(cm_acc->proof);
@@ -113,7 +113,7 @@ void print_access_log(const cm_access_log* access_log) {
 
     printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n");
     printf("ACCESS LOG:\n");
-    for (int i=0; i<access_log->accesses_size; ++i) {
+    for (size_t i=0; i<access_log->accesses_count; ++i) {
         print_access(&access_log->accesses[i]);
     }
     //todo add rest
@@ -218,7 +218,10 @@ int main() {
     printf("Checking merkle tree %d\n",cm_verify_merkle_tree(my_machine));
 
     //Read write some register
-    cm_write_csr(my_machine, CM_PROC_MCYCLE, 3);
+    if ((error_code = cm_write_csr(my_machine, CM_PROC_MCYCLE, 3, &err_msg))!= 0) {
+        printf("Error performing write scr, error code: %d message: %s\n", error_code, err_msg);
+        cm_delete_error_msg(err_msg);
+    };
     printf("New value of mcycle is %ld\n", cm_read_csr(my_machine, CM_PROC_MCYCLE));
 
     //Get csr address
@@ -231,7 +234,11 @@ int main() {
 
     //Write memory
     uint8_t data_to_write[] = "This is some data";
-    cm_write_memory(my_machine, 0x80000000, data_to_write, strlen((char *)data_to_write)+1);
+    if ((error_code = cm_write_memory(my_machine, 0x80000000, data_to_write,
+                                     strlen((char *)data_to_write)+1, &err_msg)) !=0) {
+        printf("Error writing memory, error code: %d message: %s\n", error_code, err_msg);
+        cm_delete_error_msg(err_msg);
+    };
 
     uint8_t data_read[128];
     cm_read_memory(my_machine, 0x80000000, data_read, strlen((char *)data_to_write)+1);

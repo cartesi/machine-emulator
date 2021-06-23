@@ -180,7 +180,7 @@ int main() {
     //Get machine hash
     cm_hash root_hash_step0;
     memset(&root_hash_step0, 0, sizeof(root_hash_step0));
-    cm_get_root_hash(my_machine, &root_hash_step0);
+    cm_get_root_hash(my_machine, &root_hash_step0, &err_msg);
     printf("Initial hash of the machine is:");
     print_hash(root_hash_step0);
 
@@ -215,21 +215,24 @@ int main() {
 
 
     //Verify merkle tree
-    printf("Checking merkle tree %d\n",cm_verify_merkle_tree(my_machine));
+    bool merkle_check;
+    printf("Checking merkle tree %d\n", cm_verify_merkle_tree(my_machine, &merkle_check, &err_msg));
 
     //Read write some register
     if ((error_code = cm_write_csr(my_machine, CM_PROC_MCYCLE, 3, &err_msg))!= 0) {
         printf("Error performing write scr, error code: %d message: %s\n", error_code, err_msg);
         cm_delete_error_msg(err_msg);
     };
-    printf("New value of mcycle is %ld\n", cm_read_csr(my_machine, CM_PROC_MCYCLE));
+    uint64_t reg_value;
+    cm_read_csr(my_machine, CM_PROC_MCYCLE, &reg_value, &err_msg);
+    printf("New value of mcycle is %ld\n", reg_value);
 
     //Get csr address
     printf("Address of pc counter is %lx\n", cm_get_csr_address(CM_PROC_PC));;
 
     // Read word
     uint64_t read_word_value = 0;
-    cm_read_word(my_machine, 0x100, &read_word_value);
+    cm_read_word(my_machine, 0x100, &read_word_value, &err_msg);
     printf("Read memory from location 0x100 is %ld\n", read_word_value);
 
     //Write memory
@@ -241,13 +244,14 @@ int main() {
     };
 
     uint8_t data_read[128];
-    cm_read_memory(my_machine, 0x80000000, data_read, strlen((char *)data_to_write)+1);
+    cm_read_memory(my_machine, 0x80000000, data_read, strlen((char *)data_to_write)+1, &err_msg);
     printf("Data written '%s' and data read: '%s'\n", data_to_write, data_read);
 
 
     uint64_t  x_to_write = 78;
-    cm_write_x(my_machine, 4, x_to_write);
-    printf("X written '%ld' and x read: '%ld' and x address is %lx\n", x_to_write, cm_read_x(my_machine, 4),
+    cm_write_x(my_machine, 4, x_to_write, &err_msg);
+    cm_read_x(my_machine, 4, &reg_value, &err_msg);
+    printf("X written '%ld' and x read: '%ld' and x address is %lx\n", x_to_write, reg_value,
            cm_get_x_address(4));
 
 
@@ -259,7 +263,7 @@ int main() {
         printf("Error updating merkle tree, error code: %d message: %s\n", error_code, err_msg);
         cm_delete_error_msg(err_msg);
     }
-    cm_get_root_hash(my_machine, &root_hash_step0);
+    cm_get_root_hash(my_machine, &root_hash_step0, &err_msg);
     if ((error_code = cm_step(my_machine, log_type, false, &access_log, &err_msg)) != 0) {
         printf("Error performing step, error code: %d message: %s\n", error_code, err_msg);
         cm_delete_error_msg(err_msg);
@@ -278,7 +282,7 @@ int main() {
 
         cm_hash root_hash_step1;
         memset(&root_hash_step1, 0, sizeof(root_hash_step1));
-        cm_get_root_hash(my_machine, &root_hash_step1);
+        cm_get_root_hash(my_machine, &root_hash_step1, &err_msg);
         if ((error_code = cm_verify_state_transition((const cm_hash *)&root_hash_step0, access_log,
                                                      (const cm_hash *)root_hash_step1,
                                                      &my_runtime_config, false, &err_msg)) != 0) {
@@ -301,7 +305,7 @@ int main() {
             printf("Error running macihne: %d message: %s\n", error_code, err_msg);
             cm_delete_error_msg(err_msg);
         }
-        current_mcycle = cm_read_mcycle(my_machine);
+        cm_read_mcycle(my_machine, &current_mcycle, &err_msg);
     }
 
     printf("Machine stopped after %ld cycles\n", current_mcycle);

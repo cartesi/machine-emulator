@@ -79,6 +79,7 @@ enum CM_ERROR {
     CM_ERROR_BAD_ARRAY_NEW_LENGTH,
     CM_ERROR_BAD_EXCEPTION,
     CM_ERROR_BAD_VARIANT_ACCESS,
+    CM_ERROR_EXCEPTION,
     CM_OTHER_ERROR_END,
     //C API Errors
     CM_ERROR_UNKNOWN
@@ -321,8 +322,8 @@ CM_API void cm_delete_machine_config(const cm_machine_config *config);
 /// \param runtime_config Machine runtime configuration
 /// \param new_machine Receives the pointer to new machine instance
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 CM_API int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
                       cm_machine **new_machine, char **err_msg);
@@ -332,8 +333,8 @@ CM_API int cm_create_machine(const cm_machine_config *config, const cm_machine_r
 /// \param runtime_config Machine runtime configuration
 /// \param new_machine Receives the pointer to new machine instance
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 CM_API int cm_create_machine_from_dir(const char *dir, const cm_machine_runtime_config *runtime_config,
                                       cm_machine **new_machine, char **err_msg);
@@ -342,8 +343,8 @@ CM_API int cm_create_machine_from_dir(const char *dir, const cm_machine_runtime_
 /// \param m Pointer to valid machine instance
 /// \param dir Directory where the machine will be serialized
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \details The method changes machine because it updates the root hash
 /// \returns 0 for success, non zero code for error
 CM_API int cm_store(cm_machine *m, const char *dir, char **err_msg);
@@ -358,8 +359,8 @@ CM_API void cm_delete_machine(cm_machine *m);
 /// \param m Pointer to valid machine instance
 /// \param mcycle_end End cycle value
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg);
 
@@ -369,8 +370,8 @@ CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg);
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param access_log Receives the state access log.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 CM_API int cm_step(cm_machine *m, const cm_access_log_type log_type, bool one_based,
          cm_access_log** access_log, char **err_msg);
@@ -385,8 +386,8 @@ CM_API void cm_delete_access_log(cm_access_log *acc_log);
 /// \param r Machine runtime configuration to use during verification.
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 CM_API int cm_verify_access_log(const cm_access_log* log, const cm_machine_runtime_config *runtime_config,
                          bool one_based, char **err_msg);
@@ -398,8 +399,8 @@ CM_API int cm_verify_access_log(const cm_access_log* log, const cm_machine_runti
 /// \param runtime_config Machine runtime configuration to use during verification.
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_verify_state_transition(const cm_hash *root_hash_before,
                                     const cm_access_log *log, const cm_hash *root_hash_after,
@@ -417,8 +418,8 @@ CM_API int cm_verify_state_transition(const cm_hash *root_hash_before,
 /// \param out_data The block of data with the given hash, or an empty block
 /// if not found
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 CM_API int cm_dehash(cm_machine *m, const uint8_t* hash, uint64_t hlength,
                 uint64_t *out_dlength, uint8_t *out_data, char **err_msg);
@@ -426,8 +427,8 @@ CM_API int cm_dehash(cm_machine *m, const uint8_t* hash, uint64_t hlength,
 /// \brief Update the Merkle tree so it matches the contents of the machine state.
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 CM_API int cm_update_merkle_tree(cm_machine *m, char **err_msg);
 
@@ -435,8 +436,8 @@ CM_API int cm_update_merkle_tree(cm_machine *m, char **err_msg);
 /// \param m Pointer to valid machine instance
 /// \param address Any address inside modified page.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 CM_API int cm_update_merkle_tree_page(cm_machine *m, uint64_t address, char **err_msg);
 
@@ -449,8 +450,9 @@ CM_API int cm_update_merkle_tree_page(cm_machine *m, uint64_t address, char **er
 /// \param proof Receives the proof
 /// proof must be deleted with the function cm_delete_proof
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
 /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
 CM_API int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm_merkle_tree_proof **proof, char **err_msg);
 
@@ -462,26 +464,38 @@ CM_API void cm_delete_proof(cm_merkle_tree_proof *proof);
 /// \brief Obtains the root hash of the Merkle tree.
 /// \param m Pointer to valid machine instance
 /// \param hash Valid pointer to cm_hash structure that  receives the hash.
-CM_API void cm_get_root_hash(const cm_machine *m, cm_hash *hash);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_get_root_hash(const cm_machine *m, cm_hash *hash, char **err_msg);
 
 
 /// \brief Verifies integrity of Merkle tree.
 /// \param m Pointer to valid machine instance
-/// \returns True if tree is self-consistent, false otherwise.
-CM_API bool cm_verify_merkle_tree(const cm_machine *m);
+/// \param result True if tree is self-consistent, false otherwise.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_verify_merkle_tree(const cm_machine *m, bool *result, char **err_msg);
 
 /// \brief Read the value of any CSR
 /// \param m Pointer to valid machine instance
-/// \returns The value of the CSR
-CM_API uint64_t cm_read_csr(const cm_machine *m, CM_PROC_CSR r);
+/// \param val Receives value read from the CSR
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_csr(const cm_machine *m, CM_PROC_CSR r, uint64_t *val, char **err_msg);
 
 /// \brief Write the value of any CSR
 /// \param m Pointer to valid machine instance
 /// \param w CSR to write
 /// \param val Value to write
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg);
 
@@ -494,9 +508,12 @@ CM_API uint64_t cm_get_csr_address(CM_PROC_CSR w);
 /// \param m Pointer to valid machine instance
 /// \param word_address Word address (aligned to 64-bit boundary).
 /// \param word_value Receives word value.
-/// \returns true if succeeded, false otherwise.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
 /// \warning The current implementation of this function is very slow!
-CM_API bool cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *word_value);
+CM_API int cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *word_value, char **err_msg);
 
 
 /// \brief Reads a chunk of data from the machine memory.
@@ -504,10 +521,14 @@ CM_API bool cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *w
 /// \param address Physical address to start reading.
 /// \param data Receives chunk of memory.
 /// \param length Size of chunk.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
 /// \details The entire chunk, from \p address to \p address + \p length must
 /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
 /// and not a device PMA.
-CM_API void cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *data, uint64_t length);
+CM_API int cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *data, uint64_t length, char **err_msg);
 
 /// \brief Writes a chunk of data to the machine memory.
 /// \param m Pointer to valid machine instance
@@ -515,25 +536,33 @@ CM_API void cm_read_memory(const cm_machine *m, uint64_t address, unsigned char 
 /// \param data Source for chunk of data.
 /// \param length Size of chunk.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 /// \details The entire chunk, from \p address to \p address + \p length must
 /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
 /// and not a device PMA.
-CM_API int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length, char** err_msg);
+CM_API int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length, char **err_msg);
 
 /// \brief Reads the value of a general-purpose register.
 /// \param m Pointer to valid machine instance
 /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
-/// \returns The value of the register.
-CM_API uint64_t cm_read_x(const cm_machine *m, int i);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_x(const cm_machine *m, int i, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of a general-purpose register.
 /// \param m Pointer to valid machine instance
 /// \param i Register index. Between 1 and X_REG_COUNT-1, inclusive.
 /// \param val New register value.
-CM_API void cm_write_x(cm_machine *m, int i, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_x(cm_machine *m, int i, uint64_t val, char **err_msg);
 
 /// \brief Gets the address of a general-purpose register.
 /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
@@ -542,390 +571,694 @@ CM_API uint64_t cm_get_x_address(int i);
 
 /// \brief Reads the value of the pc register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_pc(const cm_machine *m);
+/// \param val Receives the value of the register
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_pc(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the pc register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_pc(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_pc(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the mvendorid register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_mvendorid(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_mvendorid(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Reads the value of the marchid register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_marchid(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_marchid(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Reads the value of the mimpid register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_mimpid(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_mimpid(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Reads the value of the mcycle register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_mcycle(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_mcycle(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the mcycle register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_mcycle(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_mcycle(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the minstret register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_minstret(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_minstret(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the minstret register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_minstret(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_minstret(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the mstatus register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_mstatus(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_mstatus(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the mstatus register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_mstatus(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_mstatus(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the mtvec register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_mtvec(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_mtvec(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the mtvec register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_mtvec(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_mtvec(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the mscratch register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_mscratch(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_mscratch(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the mscratch register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_mscratch(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_mscratch(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the mepc register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_mepc(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_mepc(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the mepc register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_mepc(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_mepc(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the mcause register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_mcause(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_mcause(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the mcause register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_mcause(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_mcause(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the mtval register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_mtval(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_mtval(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the mtval register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_mtval(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_mtval(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the misa register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_misa(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_misa(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the misa register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_misa(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_misa(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the mie register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_mie(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_mie(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Reads the value of the mie register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_mie(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_mie(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the mip register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_mip(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_mip(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Reads the value of the mip register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_mip(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_mip(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the medeleg register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_medeleg(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_medeleg(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the medeleg register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_medeleg(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_medeleg(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the mideleg register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_mideleg(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_mideleg(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the mideleg register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_mideleg(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_mideleg(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the mcounteren register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_mcounteren(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_mcounteren(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the mcounteren register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_mcounteren(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_mcounteren(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the stvec register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_stvec(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_stvec(const cm_machine *m, uint64_t *val, char **err_msg);
 
 
 /// \brief Writes the value of the stvec register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_stvec(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_stvec(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the sscratch register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_sscratch(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_sscratch(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the sscratch register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_sscratch(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_sscratch(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the sepc register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_sepc(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_sepc(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the sepc register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_sepc(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_sepc(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the scause register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_scause(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_scause(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the scause register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_scause(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_scause(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the stval register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_stval(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_stval(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the stval register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_stval(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_stval(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the satp register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_satp(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_satp(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the satp register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_satp(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_satp(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the scounteren register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_scounteren(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_scounteren(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the scounteren register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_scounteren(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_scounteren(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the ilrsc register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_ilrsc(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_ilrsc(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the ilrsc register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_ilrsc(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_ilrsc(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the iflags register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_iflags(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_iflags(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Returns packed iflags from its component fields.
-/// \returns The value of the register.
+/// \param val Receives value of the register.
 CM_API uint64_t cm_packed_iflags(int PRV, int Y, int H);
 
 /// \brief Reads the value of the iflags register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_iflags(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_iflags(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of HTIF's tohost register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_htif_tohost(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_htif_tohost(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Reads the value of the device field of HTIF's tohost register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the field.
-CM_API uint64_t cm_read_htif_tohost_dev(const cm_machine *m);
+/// \param val Receives the value of the field
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_htif_tohost_dev(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Reads the value of the command field of HTIF's tohost register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the field.
-CM_API uint64_t cm_read_htif_tohost_cmd(const cm_machine *m);
+/// \param val Receives the value of the field
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_htif_tohost_cmd(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Reads the value of the data field of HTIF's tohost register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the field.
-CM_API uint64_t cm_read_htif_tohost_data(const cm_machine *m);
+/// \param val Receives the value of the field
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_htif_tohost_data(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of HTIF's tohost register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_htif_tohost(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_htif_tohost(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of HTIF's fromhost register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_htif_fromhost(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_htif_fromhost(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of HTIF's fromhost register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_htif_fromhost(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_htif_fromhost(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Writes the value of the data field in HTIF's fromhost register.
 /// \param m Pointer to valid machine instance
 /// \param val New value for the field.
-CM_API void cm_write_htif_fromhost_data(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_htif_fromhost_data(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Reads the value of HTIF's halt register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_htif_ihalt(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_htif_ihalt(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of HTIF's halt register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_htif_ihalt(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_htif_ihalt(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of HTIF's console register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_htif_iconsole(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_htif_iconsole(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of HTIF's console register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_htif_iconsole(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_htif_iconsole(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of HTIF's yield register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_htif_iyield(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_htif_iyield(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of HTIF's yield register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_htif_iyield(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_htif_iyield(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of CLINT's mtimecmp register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_clint_mtimecmp(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_clint_mtimecmp(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of CLINT's mtimecmp register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_clint_mtimecmp(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_clint_mtimecmp(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of DHD's tstart register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_dhd_tstart(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_dhd_tstart(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of DHD's tstart register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_dhd_tstart(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_dhd_tstart(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of DHD's tlength register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_dhd_tlength(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_dhd_tlength(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of DHD's tlength register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_dhd_tlength(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_dhd_tlength(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of DHD's dlength register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_dhd_dlength(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_dhd_dlength(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of DHD's dlength register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_dhd_dlength(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_dhd_dlength(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of DHD's hlength register.
 /// \param m Pointer to valid machine instance
-/// \returns The value of the register.
-CM_API uint64_t cm_read_dhd_hlength(const cm_machine *m);
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_dhd_hlength(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of DHD's hlength register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
-CM_API void cm_write_dhd_hlength(cm_machine *m, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_dhd_hlength(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Writes the value of DHD's input hash word.
 /// \param m Pointer to valid machine instance
 /// \param i Index of input hash word.
 /// Between 0 and DHD_H_REG_COUNT-1, inclusive.
 /// \param val New value for word.
-CM_API void cm_write_dhd_h(cm_machine *m, int i, uint64_t val);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_dhd_h(cm_machine *m, int i, uint64_t val, char **err_msg);
 
 /// \brief Gets the address of a DHD h register.
 /// \param i Register index. Between 0 and DHD_H_REG_COUNT-1, inclusive.
@@ -934,82 +1267,127 @@ CM_API uint64_t cm_get_dhd_h_address(int i);
 
 /// \brief Checks the value of the iflags_Y flag.
 /// \param m Pointer to valid machine instance
-/// \returns The flag value.
-CM_API bool cm_read_iflags_Y(const cm_machine *m);
+/// \param val Receives the flag value
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_iflags_Y(const cm_machine *m, bool *val, char **err_msg);
 
 /// \brief Resets the value of the iflags_Y flag.
 /// \param m Pointer to valid machine instance
-CM_API void cm_reset_iflags_Y(cm_machine *m);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_reset_iflags_Y(cm_machine *m, char **err_msg);
 
 /// \brief Sets the iflags_Y flag.
 /// \param m Pointer to valid machine instance
-CM_API void cm_set_iflags_Y(cm_machine *m);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_set_iflags_Y(cm_machine *m, char **err_msg);
 
 /// \brief Checks the value of the iflags_H flag.
 /// \param m Pointer to valid machine instance
-/// \returns The flag value.
-CM_API bool cm_read_iflags_H(const cm_machine *m);
+/// \param val Receives the flag value
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_iflags_H(const cm_machine *m, bool *val, char **err_msg);
 
 /// \brief Checks the value of the iflags_PRV field.
 /// \param m Pointer to valid machine instance
-/// \returns The field value.
-CM_API uint8_t cm_read_iflags_PRV(const cm_machine *m);
+/// \param val Receives the field value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_iflags_PRV(const cm_machine *m, uint8_t *val, char **err_msg);
 
 /// \brief Sets the iflags_H flag.
 /// \param m Pointer to valid machine instance
-CM_API void cm_set_iflags_H(cm_machine *m);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_set_iflags_H(cm_machine *m, char **err_msg);
 
 /// \brief Sets bits in mip.
 /// \param m Pointer to valid machine instance
 /// \param mask Bits set in \p mask will also be set in mip
-CM_API void cm_set_mip(cm_machine *m, uint32_t mask);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_set_mip(cm_machine *m, uint32_t mask, char **err_msg);
 
 /// \brief Resets bits in mip.
 /// \param m Pointer to valid machine instance
 /// \param mask Bits set in \p mask will also be reset in mip
-CM_API void cm_reset_mip(cm_machine *m, uint32_t mask);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_reset_mip(cm_machine *m, uint32_t mask, char **err_msg);
 
 /// \brief Dump all memory ranges to files in current working directory.
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 CM_API int cm_dump_pmas(const cm_machine *m, char **err_msg);
 
 /// \brief Interact with console
 /// \param m Pointer to valid machine instance
-CM_API void cm_interact(cm_machine *m);
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_interact(cm_machine *m, char **err_msg);
 
 /// \brief Verify if dirty page maps are consistent.
 /// \param m Pointer to valid machine instance
 /// \param result True if dirty page maps are consistent, false if there is an error.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 CM_API int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char** err_msg);
 
 /// \brief Copies the current state into a configuration for serialization
 /// \param m Pointer to valid machine instance
-/// \returns The configuration
+/// \param config Receives the configuration
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
 /// \details Object acquired from this function must not be changed and
 /// must be deleted with cm_delete_machine_config
-CM_API const cm_machine_config *cm_get_serialization_config(const cm_machine *m);
+CM_API int cm_get_serialization_config(const cm_machine *m, const cm_machine_config **config, char** err_msg);
 
 /// \brief Returns copy of initialization config.
 /// \param m Pointer to valid machine instance
+/// \param config Receives the initial configuration
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
 /// \details Object acquired from this function must not be changed and
 /// must be deleted with cm_delete_machine_config
-CM_API const cm_machine_config *cm_get_initial_config(const cm_machine *m);
+CM_API int cm_get_initial_config(const cm_machine *m, const cm_machine_config **config, char **err_msg);
 
 
 /// \brief Replaces a flash drive.
 /// \param m Pointer to valid machine instance
 /// \param new_flash Configuration of the new flash drive.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. error_msg must be freed
-/// by the function caller in case of function execution error
+/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 /// \details The machine must contain an existing flash
 /// drive matching the start and length specified in new_flash.

@@ -31,7 +31,6 @@
 #include "machine-config.h"
 #include "machine.h"
 
-
 static char *get_error_message_unknown() {
     const char* err = "Unknown error";
     char *c_str = new char[strlen(err)+1];
@@ -47,92 +46,65 @@ static char *get_error_message(const std::exception &ex) {
 }
 
 static std::string null_to_empty(const char *s) {
-    return std::string{s != NULL ? s : ""};
+    return std::string{s != nullptr ? s : ""};
 }
 
-static void get_error_message(char **error_message) {
+static int result_failure(char **err_msg) try {
+    throw;
+} catch (std::exception &e) {
+    *err_msg = get_error_message(e);
     try {
         throw;
-    } catch (std::exception &e) {
-        *error_message = get_error_message(e);
-        throw;
-    } catch (...) {
-        *error_message = get_error_message_unknown();
-        throw;
-    }
-}
-
-/// \warning: This function rethrows current exception, so it must be called
-/// from the catch error handling block
-static void convert_cpp_error(int *error_code, char **error_message) {
-    try {
-        get_error_message(error_message);
     } catch (std::invalid_argument &ex) {
-        *error_code = CM_ERROR_INVALID_ARGUMENT;
+        return CM_ERROR_INVALID_ARGUMENT;
     } catch (std::domain_error &ex) {
-        *error_code = CM_ERROR_DOMAIN_ERROR;
+        return CM_ERROR_DOMAIN_ERROR;
     } catch (std::length_error &ex) {
-        *error_code = CM_ERROR_LENGTH_ERROR;
+        return CM_ERROR_LENGTH_ERROR;
     } catch (std::out_of_range &ex) {
-        *error_code = CM_ERROR_OUT_OF_RANGE;
+        return CM_ERROR_OUT_OF_RANGE;
+    } catch (std::future_error &ex) {
+        return CM_ERROR_FUTURE_ERROR;
+    } catch (std::logic_error &ex) {
+        return CM_ERROR_LOGIC_ERROR;
+    } catch (std::bad_optional_access &ex) {
+        return CM_ERROR_BAD_OPTIONAL_ACCESS;
+    } catch (std::range_error &ex) {
+        return CM_ERROR_RANGE_ERROR;
+    } catch (std::overflow_error &ex) {
+        return CM_ERROR_OVERFLOW_ERROR;
+    } catch (std::underflow_error &ex) {
+        return CM_ERROR_UNDERFLOW_ERROR;
+    } catch (std::regex_error &ex) {
+        return CM_ERROR_REGEX_ERROR;
+    } catch (std::ios_base::failure &ex) {
+        return CM_ERROR_SYSTEM_IOS_BASE_FAILURE;
+    } catch (std::filesystem::filesystem_error &ex) {
+        return CM_ERROR_FILESYSTEM_ERROR;
+    } catch (std::runtime_error &ex) {
+        return CM_ERROR_RUNTIME_ERROR;
+    } catch (std::bad_typeid &ex) {
+        return CM_ERROR_BAD_TYPEID;
+    } catch (std::bad_any_cast &ex) {
+        return CM_ERROR_BAD_ANY_CAST;
+    } catch (std::bad_cast &ex) {
+        return CM_ERROR_BAD_CAST;
+    } catch (std::bad_weak_ptr &ex) {
+        return CM_ERROR_BAD_WEAK_PTR;
+    } catch (std::bad_function_call &ex) {
+        return CM_ERROR_BAD_FUNCTION_CALL;
+    } catch (std::bad_array_new_length &ex) {
+        return CM_ERROR_BAD_ARRAY_NEW_LENGTH;
+    } catch (std::bad_alloc &ex) {
+        return CM_ERROR_BAD_ALLOC;
+    } catch (std::bad_exception &ex) {
+        return CM_ERROR_BAD_EXCEPTION;
+    } catch (std::exception &e) {
+        return CM_ERROR_EXCEPTION;
     }
-    catch (std::future_error &ex) {
-        *error_code = CM_ERROR_FUTURE_ERROR;
-    }
-    catch (std::logic_error &ex) {
-        *error_code = CM_ERROR_LOGIC_ERROR;
-    }
-    catch (std::bad_optional_access &ex) {
-        *error_code = CM_ERROR_BAD_OPTIONAL_ACCESS;
-    }
-    catch (std::range_error &ex) {
-        *error_code = CM_ERROR_RANGE_ERROR;
-    }
-    catch (std::overflow_error &ex) {
-        *error_code = CM_ERROR_OVERFLOW_ERROR;
-    }
-    catch (std::underflow_error &ex) {
-        *error_code = CM_ERROR_UNDERFLOW_ERROR;
-    }
-    catch (std::regex_error &ex) {
-        *error_code = CM_ERROR_REGEX_ERROR;
-    }
-    catch (std::ios_base::failure &ex) {
-        *error_code = CM_ERROR_SYSTEM_IOS_BASE_FAILURE;
-    }
-    catch (std::filesystem::filesystem_error &ex) {
-        *error_code = CM_ERROR_FILESYSTEM_ERROR;
-    }
-    catch (std::runtime_error &ex) {
-        *error_code = CM_ERROR_RUNTIME_ERROR;
-    }
-    catch (std::bad_typeid &ex) {
-        *error_code = CM_ERROR_BAD_TYPEID;
-    }
-    catch (std::bad_any_cast &ex) {
-        *error_code = CM_ERROR_BAD_ANY_CAST;
-    }
-    catch (std::bad_cast &ex) {
-        *error_code = CM_ERROR_BAD_CAST;
-    }
-    catch (std::bad_weak_ptr &ex) {
-        *error_code = CM_ERROR_BAD_WEAK_PTR;
-    }
-    catch (std::bad_function_call &ex) {
-        *error_code = CM_ERROR_BAD_FUNCTION_CALL;
-    }
-    catch (std::bad_array_new_length &ex) {
-        *error_code = CM_ERROR_BAD_ARRAY_NEW_LENGTH;
-    }
-    catch (std::bad_alloc &ex) {
-        *error_code = CM_ERROR_BAD_ALLOC;
-    }
-    catch (std::bad_exception &ex) {
-        *error_code = CM_ERROR_BAD_EXCEPTION;
-    }
-    catch (...) {
-        *error_code = CM_ERROR_UNKNOWN;
-    }
+} catch (...) {
+    *err_msg = get_error_message_unknown();
+    return CM_ERROR_UNKNOWN;
 }
 
 static inline int result_success(char **err_msg) {
@@ -140,10 +112,9 @@ static inline int result_success(char **err_msg) {
     return 0;
 }
 
-static inline int result_failure(char **err_msg) {
-    int error_code{};
-    convert_cpp_error(&error_code, err_msg);
-    return error_code;
+static inline int result_unknown_error(char **err_msg) {
+    *err_msg = get_error_message_unknown();
+    return CM_ERROR_UNKNOWN;
 }
 
 
@@ -482,20 +453,20 @@ static cm_access convert_to_c(const cartesi::access &cpp_access) {
         new_access.read_data = new uint8_t[new_access.read_data_size];
         memcpy(new_access.read_data, cpp_access.get_read().data(), new_access.read_data_size);
     } else {
-        new_access.read_data = NULL;
+        new_access.read_data = nullptr;
     }
     new_access.written_data_size = cpp_access.get_written().size();
     if (new_access.written_data_size > 0) {
         new_access.written_data = new uint8_t[new_access.written_data_size];
         memcpy(new_access.written_data, cpp_access.get_written().data(), new_access.written_data_size);
     } else {
-        new_access.written_data = NULL;
+        new_access.written_data = nullptr;
     }
 
     if (cpp_access.get_proof()) {
         new_access.proof = convert_to_c(*cpp_access.get_proof());
     } else {
-        new_access.proof = NULL;
+        new_access.proof = nullptr;
     }
 
     return new_access;
@@ -506,7 +477,7 @@ static cartesi::access convert_from_c(const cm_access *c_access) {
     cpp_access.set_type(convert_from_c(c_access->type));
     cpp_access.set_log2_size(c_access->log2_size);
     cpp_access.set_address(c_access->address);
-    if (c_access->proof != NULL) {
+    if (c_access->proof != nullptr) {
         cartesi::machine_merkle_tree::proof_type proof = convert_from_c(c_access->proof);
         cpp_access.set_proof(proof);
     }
@@ -684,9 +655,8 @@ int cm_store(cm_machine *m, const char *dir, char **err_msg) {
 
 
 int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg) {
-
-    cartesi::machine *cpp_machine = convert_from_c(m);
     try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
         cpp_machine->run(mcycle_end);
         return result_success(err_msg);
     } catch (...) {
@@ -696,8 +666,8 @@ int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg) {
 
 int cm_step(cm_machine *m, const cm_access_log_type log_type, bool one_based,
             cm_access_log **access_log, char **err_msg) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
     try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
         cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations};
         cartesi::access_log cpp_access_log = cpp_machine->step(cpp_log_type, one_based);
         *access_log = convert_to_c(cpp_access_log);
@@ -754,8 +724,8 @@ int cm_verify_state_transition(const cm_hash *root_hash_before,
 
 int cm_dehash(cm_machine *m, const uint8_t *hash, uint64_t hlength,
               uint64_t *out_dlength, uint8_t *out_data, char **err_msg) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
     try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
         uint64_t cpp_dlength;
         cartesi::dhd_data cpp_data = cpp_machine->dehash(hash, hlength, cpp_dlength);
         if (cpp_dlength == cartesi::DHD_NOT_FOUND) {
@@ -771,8 +741,8 @@ int cm_dehash(cm_machine *m, const uint8_t *hash, uint64_t hlength,
 }
 
 int cm_update_merkle_tree(cm_machine *m, char **err_msg) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
     try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
         bool result = cpp_machine->update_merkle_tree();
         if (result) {
             return result_success(err_msg);
@@ -786,14 +756,13 @@ int cm_update_merkle_tree(cm_machine *m, char **err_msg) {
 }
 
 int cm_update_merkle_tree_page(cm_machine *m, uint64_t address, char **err_msg) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
     try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
         bool result = cpp_machine->update_merkle_tree_page(address);
         if (result) {
             return result_success(err_msg);
         } else {
-            *err_msg = get_error_message_unknown();
-            return CM_ERROR_UNKNOWN;
+            return result_unknown_error(err_msg);
         }
     } catch (...) {
         return result_failure(err_msg);
@@ -801,8 +770,8 @@ int cm_update_merkle_tree_page(cm_machine *m, uint64_t address, char **err_msg) 
 }
 
 int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm_merkle_tree_proof **proof, char **err_msg) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
     try {
+        const cartesi::machine *cpp_machine = convert_from_c(m);
         const cartesi::machine_merkle_tree::proof_type cpp_proof = cpp_machine->get_proof(address, log2_size);
         *proof = convert_to_c(cpp_proof);
         return result_success(err_msg);
@@ -817,22 +786,37 @@ void cm_delete_proof(cm_merkle_tree_proof *proof) {
 }
 
 
-void cm_get_root_hash(const cm_machine *m, cm_hash *hash) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    cartesi::machine_merkle_tree::hash_type cpp_hash;
-    cpp_machine->get_root_hash(cpp_hash);
-    memcpy(hash, static_cast<const uint8_t *>(cpp_hash.data()), sizeof(cm_hash));
+int cm_get_root_hash(const cm_machine *m, cm_hash *hash, char **err_msg) {
+    try {
+        const cartesi::machine *cpp_machine = convert_from_c(m);
+        cartesi::machine_merkle_tree::hash_type cpp_hash;
+        cpp_machine->get_root_hash(cpp_hash);
+        memcpy(hash, static_cast<const uint8_t *>(cpp_hash.data()), sizeof(cm_hash));
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
-bool cm_verify_merkle_tree(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->verify_merkle_tree();
+int cm_verify_merkle_tree(const cm_machine *m, bool *result, char **err_msg) {
+    try {
+        const cartesi::machine *cpp_machine = convert_from_c(m);
+        *result = cpp_machine->verify_merkle_tree();
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
-uint64_t cm_read_csr(const cm_machine *m, CM_PROC_CSR r) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(r);
-    return cpp_machine->read_csr(cpp_csr);
+int cm_read_csr(const cm_machine *m, CM_PROC_CSR r, uint64_t *val, char **err_msg) {
+    try {
+        const cartesi::machine *cpp_machine = convert_from_c(m);
+        cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(r);
+        *val = cpp_machine->read_csr(cpp_csr);
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
 int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg) {
@@ -851,23 +835,32 @@ uint64_t cm_get_csr_address(CM_PROC_CSR w) {
     return cartesi::machine::get_csr_address(cpp_csr);
 }
 
-bool cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *word_value) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    uint64_t cpp_word_value{0};
-    if (cpp_machine->read_word(word_address, cpp_word_value)) {
-        *word_value = cpp_word_value;
-        return true;
-    } else {
-        return false;
+int cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *word_value, char **err_msg) {
+    try {
+        const cartesi::machine *cpp_machine = convert_from_c(m);
+        uint64_t cpp_word_value{0};
+        if (cpp_machine->read_word(word_address, cpp_word_value)) {
+            *word_value = cpp_word_value;
+            return result_success(err_msg);
+        } else {
+            return result_unknown_error(err_msg);
+        }
+    } catch (...) {
+        return result_failure(err_msg);
     }
 }
 
-void cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *data, uint64_t length) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->read_memory(address, data, length);
+int cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *data, uint64_t length, char **err_msg) {
+    try {
+        const cartesi::machine *cpp_machine = convert_from_c(m);
+        cpp_machine->read_memory(address, data, length);
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
-int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length, char** err_msg) {
+int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length, char **err_msg) {
     try {
         cartesi::machine *cpp_machine = convert_from_c(m);
         cpp_machine->write_memory(address, data, length);
@@ -877,14 +870,24 @@ int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, 
     }
 }
 
-uint64_t cm_read_x(const cm_machine *m, int i) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_x(i);
+int cm_read_x(const cm_machine *m, int i, uint64_t *val, char **err_msg) {
+    try {
+        const cartesi::machine *cpp_machine = convert_from_c(m);
+        *val = cpp_machine->read_x(i);
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
-void cm_write_x(cm_machine *m, int i, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_x(i, val);
+int cm_write_x(cm_machine *m, int i, uint64_t val, char **err_msg) {
+    try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
+        cpp_machine->write_x(i, val);
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
 uint64_t cm_get_x_address(int i) {
@@ -892,28 +895,38 @@ uint64_t cm_get_x_address(int i) {
 }
 
 #define IMPL_MACHINE_READ_WRITE(field) \
-uint64_t cm_read_##field(const cm_machine *m) { \
+int cm_read_##field(const cm_machine *m, uint64_t *val, char **err_msg) try { \
     const cartesi::machine *cpp_machine = convert_from_c(m); \
-    return cpp_machine->read_##field(); \
+    *val = cpp_machine->read_##field();\
+    return result_success(err_msg);    \
+} catch (...) {                        \
+    return result_failure(err_msg);    \
 } \
-void cm_write_##field(cm_machine *m, uint64_t val) { \
+int cm_write_##field(cm_machine *m, uint64_t val, char **err_msg) try { \
     cartesi::machine *cpp_machine = convert_from_c(m); \
-    cpp_machine->write_##field(val); \
+    cpp_machine->write_##field(val);   \
+    return result_success(err_msg);    \
+} catch (...) {                        \
+    return result_failure(err_msg);                                   \
 }
 
-
 #define IMPL_MACHINE_READ(field) \
-uint64_t cm_read_##field(const cm_machine *m) { \
+int cm_read_##field(const cm_machine *m, uint64_t *val, char **err_msg) try { \
     const cartesi::machine *cpp_machine = convert_from_c(m); \
-    return cpp_machine->read_##field(); \
+    *val = cpp_machine->read_##field();\
+    return result_success(err_msg);    \
+} catch (...) {                        \
+    return result_failure(err_msg);    \
 }
 
 #define IMPL_MACHINE_WRITE(field) \
-void cm_write_##field(cm_machine *m, uint64_t val) { \
+int cm_write_##field(cm_machine *m, uint64_t val, char **err_msg) try { \
     cartesi::machine *cpp_machine = convert_from_c(m); \
-    cpp_machine->write_##field(val); \
+    cpp_machine->write_##field(val);   \
+    return result_success(err_msg);    \
+} catch (...) {                        \
+    return result_failure(err_msg);                                   \
 }
-
 
 IMPL_MACHINE_READ_WRITE(pc)
 IMPL_MACHINE_READ(mvendorid)
@@ -964,53 +977,98 @@ uint64_t cm_packed_iflags(int PRV, int Y, int H) {
     return cartesi::machine_state::packed_iflags(PRV, Y, H);
 }
 
-void cm_write_dhd_h(cm_machine *m, int i, uint64_t val) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->write_dhd_h(i, val);
+int cm_write_dhd_h(cm_machine *m, int i, uint64_t val, char **err_msg) {
+    try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
+        cpp_machine->write_dhd_h(i, val);
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
 uint64_t cm_get_dhd_h_address(int i) {
     return cartesi::machine::get_dhd_h_address(i);
 }
 
-bool cm_read_iflags_Y(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_iflags_Y();
+int cm_read_iflags_Y(const cm_machine *m, bool *val, char **err_msg) {
+    try {
+        const cartesi::machine *cpp_machine = convert_from_c(m);
+        *val = cpp_machine->read_iflags_Y();
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
-void cm_reset_iflags_Y(cm_machine *m) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->reset_iflags_Y();
+int cm_reset_iflags_Y(cm_machine *m, char **err_msg) {
+    try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
+        cpp_machine->reset_iflags_Y();
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
-void cm_set_iflags_Y(cm_machine *m) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->set_iflags_Y();
+int cm_set_iflags_Y(cm_machine *m, char **err_msg) {
+    try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
+        cpp_machine->set_iflags_Y();
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
-bool cm_read_iflags_H(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_iflags_H();
+int cm_read_iflags_H(const cm_machine *m, bool *val, char **err_msg) {
+    try {
+        const cartesi::machine *cpp_machine = convert_from_c(m);
+        *val = cpp_machine->read_iflags_H();
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
-uint8_t cm_read_iflags_PRV(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    return cpp_machine->read_iflags_PRV();
+int cm_read_iflags_PRV(const cm_machine *m, uint8_t *val, char **err_msg) {
+    try {
+        const cartesi::machine *cpp_machine = convert_from_c(m);
+        *val = cpp_machine->read_iflags_PRV();
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
-void cm_set_iflags_H(cm_machine *m) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->set_iflags_H();
+int cm_set_iflags_H(cm_machine *m, char **err_msg) {
+    try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
+        cpp_machine->set_iflags_H();
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
-void cm_set_mip(cm_machine *m, uint32_t mask) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->set_mip(mask);
+int cm_set_mip(cm_machine *m, uint32_t mask, char **err_msg) {
+    try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
+        cpp_machine->set_mip(mask);
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
-void cm_reset_mip(cm_machine *m, uint32_t mask) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->reset_mip(mask);
+int cm_reset_mip(cm_machine *m, uint32_t mask, char **err_msg) {
+    try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
+        cpp_machine->reset_mip(mask);
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
 int cm_dump_pmas(const cm_machine *m, char **err_msg) {
@@ -1023,9 +1081,14 @@ int cm_dump_pmas(const cm_machine *m, char **err_msg) {
     }
 }
 
-void cm_interact(cm_machine *m) {
-    cartesi::machine *cpp_machine = convert_from_c(m);
-    cpp_machine->interact();
+int cm_interact(cm_machine *m, char **err_msg) {
+    try {
+        cartesi::machine *cpp_machine = convert_from_c(m);
+        cpp_machine->interact();
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
 int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char** err_msg) {
@@ -1038,18 +1101,26 @@ int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char** err_msg)
     }
 }
 
-const cm_machine_config *cm_get_serialization_config(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    cartesi::machine_config cpp_config = cpp_machine->get_serialization_config();
-
-    return convert_to_c(cpp_config);
+int cm_get_serialization_config(const cm_machine *m, const cm_machine_config **config, char **err_msg) {
+    try {
+        const cartesi::machine *cpp_machine = convert_from_c(m);
+        cartesi::machine_config cpp_config = cpp_machine->get_serialization_config();
+        *config = convert_to_c(cpp_config);
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
-const cm_machine_config *cm_get_initial_config(const cm_machine *m) {
-    const cartesi::machine *cpp_machine = convert_from_c(m);
-    cartesi::machine_config cpp_config = cpp_machine->get_initial_config();
-
-    return convert_to_c(cpp_config);
+int cm_get_initial_config(const cm_machine *m, const cm_machine_config **config, char **err_msg) {
+    try {
+        const cartesi::machine *cpp_machine = convert_from_c(m);
+        cartesi::machine_config cpp_config = cpp_machine->get_initial_config();
+        *config = convert_to_c(cpp_config);
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
 }
 
 int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash, char **err_msg) {

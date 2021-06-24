@@ -318,8 +318,8 @@ CM_API void cm_delete_machine_config(const cm_machine_config *config);
 
 
 /// \brief Creates new machine instance from configuration
-/// \param config Machine configuration
-/// \param runtime_config Machine runtime configuration
+/// \param config Machine configuration. Must be pointer to valid object
+/// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param new_machine Receives the pointer to new machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg 
@@ -330,7 +330,7 @@ CM_API int cm_create_machine(const cm_machine_config *config, const cm_machine_r
 
 /// \brief Constructor from previously serialized directory
 /// \param dir Directory where previous machine is serialized
-/// \param runtime_config Machine runtime configuration
+/// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param new_machine Receives the pointer to new machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg 
@@ -383,7 +383,7 @@ CM_API void cm_delete_access_log(cm_access_log *acc_log);
 
 /// \brief Checks the internal consistency of an access log.
 /// \param log State access log to be verified.
-/// \param r Machine runtime configuration to use during verification.
+/// \param r Machine runtime configuration to use during verification. Must be pointer to valid object
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg 
@@ -396,7 +396,7 @@ CM_API int cm_verify_access_log(const cm_access_log* log, const cm_machine_runti
 /// \param root_hash_before State hash before step.
 /// \param log Step state access log.
 /// \param root_hash_after State hash after step.
-/// \param runtime_config Machine runtime configuration to use during verification.
+/// \param runtime_config Machine runtime configuration to use during verification. Must be pointer to valid object
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg 

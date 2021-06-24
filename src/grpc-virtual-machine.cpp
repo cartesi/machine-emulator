@@ -108,7 +108,7 @@ grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
 grpc_virtual_machine::~grpc_virtual_machine(void) {
 }
 
-machine_config grpc_virtual_machine::do_get_initial_config(void) {
+machine_config grpc_virtual_machine::do_get_initial_config(void) const {
     Void request;
     GetInitialConfigResponse response;
     ClientContext context;
@@ -181,7 +181,7 @@ void grpc_virtual_machine::do_store(const std::string &dir) {
     check_status(m_stub->get_stub()->Store(&context, request, &response));
 }
 
-uint64_t grpc_virtual_machine::do_read_csr(csr r)  {
+uint64_t grpc_virtual_machine::do_read_csr(csr r) const  {
     ReadCsrRequest request;
     request.set_csr((Csr)r);
     ReadCsrResponse response;
@@ -210,7 +210,7 @@ uint64_t grpc_virtual_machine::get_csr_address(grpc_machine_stub_ptr stub,
     return response.address();
 }
 
-uint64_t grpc_virtual_machine::do_read_x(int i) {
+uint64_t grpc_virtual_machine::do_read_x(int i) const {
     ReadXRequest request;
     request.set_index(i);
     ReadXResponse response;
@@ -228,7 +228,7 @@ void grpc_virtual_machine::do_write_x(int i, uint64_t val)  {
     check_status(m_stub->get_stub()->WriteX(&context, request, &response));
 }
 
-uint64_t grpc_virtual_machine::do_read_dhd_h(int i) {
+uint64_t grpc_virtual_machine::do_read_dhd_h(int i) const {
     ReadDhdHRequest request;
     request.set_index(i);
     ReadDhdHResponse response;
@@ -270,7 +270,7 @@ uint64_t grpc_virtual_machine::get_dhd_h_address(
     return response.address();
 }
 
-void grpc_virtual_machine::do_read_memory(uint64_t address, unsigned char *data, uint64_t length)  {
+void grpc_virtual_machine::do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const {
     ReadMemoryRequest request;
     request.set_address(address);
     request.set_length(length);
@@ -290,7 +290,7 @@ void grpc_virtual_machine::do_write_memory(uint64_t address, const unsigned char
     check_status(m_stub->get_stub()->WriteMemory(&context, request, &response));
 }
 
-uint64_t grpc_virtual_machine::do_read_pc(void) {
+uint64_t grpc_virtual_machine::do_read_pc(void) const {
     return read_csr(csr::pc);
 }
 
@@ -298,19 +298,19 @@ void grpc_virtual_machine::do_write_pc(uint64_t val) {
     write_csr(csr::pc, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_mvendorid(void) {
+uint64_t grpc_virtual_machine::do_read_mvendorid(void) const {
     return read_csr(csr::mvendorid);
 }
 
-uint64_t grpc_virtual_machine::do_read_marchid(void) {
+uint64_t grpc_virtual_machine::do_read_marchid(void) const {
     return read_csr(csr::marchid);
 }
 
-uint64_t grpc_virtual_machine::do_read_mimpid(void) {
+uint64_t grpc_virtual_machine::do_read_mimpid(void) const {
     return read_csr(csr::mimpid);
 }
 
-uint64_t grpc_virtual_machine::do_read_mcycle(void) {
+uint64_t grpc_virtual_machine::do_read_mcycle(void) const {
     return read_csr(csr::mcycle);
 }
 
@@ -318,7 +318,7 @@ void grpc_virtual_machine::do_write_mcycle(uint64_t val) {
     write_csr(csr::mcycle, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_minstret(void) {
+uint64_t grpc_virtual_machine::do_read_minstret(void) const {
     return read_csr(csr::minstret);
 }
 
@@ -326,7 +326,7 @@ void grpc_virtual_machine::do_write_minstret(uint64_t val) {
     write_csr(csr::minstret, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_mstatus(void) {
+uint64_t grpc_virtual_machine::do_read_mstatus(void) const {
     return read_csr(csr::mstatus);
 }
 
@@ -334,7 +334,7 @@ void grpc_virtual_machine::do_write_mstatus(uint64_t val) {
     write_csr(csr::mstatus, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_mtvec(void) {
+uint64_t grpc_virtual_machine::do_read_mtvec(void) const {
     return read_csr(csr::mtvec);
 }
 
@@ -342,7 +342,7 @@ void grpc_virtual_machine::do_write_mtvec(uint64_t val) {
     write_csr(csr::mtvec, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_mscratch(void) {
+uint64_t grpc_virtual_machine::do_read_mscratch(void) const {
     return read_csr(csr::mscratch);
 }
 
@@ -350,7 +350,7 @@ void grpc_virtual_machine::do_write_mscratch(uint64_t val) {
     write_csr(csr::mscratch, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_mepc(void) {
+uint64_t grpc_virtual_machine::do_read_mepc(void) const {
     return read_csr(csr::mepc);
 }
 
@@ -358,7 +358,7 @@ void grpc_virtual_machine::do_write_mepc(uint64_t val) {
     write_csr(csr::mepc, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_mcause(void) {
+uint64_t grpc_virtual_machine::do_read_mcause(void) const {
     return read_csr(csr::mcause);
 }
 
@@ -366,7 +366,7 @@ void grpc_virtual_machine::do_write_mcause(uint64_t val) {
     write_csr(csr::mcause, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_mtval(void) {
+uint64_t grpc_virtual_machine::do_read_mtval(void) const {
     return read_csr(csr::mtval);
  }
 
@@ -374,7 +374,7 @@ void grpc_virtual_machine::do_write_mtval(uint64_t val) {
     write_csr(csr::mtval, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_misa(void) {
+uint64_t grpc_virtual_machine::do_read_misa(void) const {
     return read_csr(csr::misa);
 }
 
@@ -382,7 +382,7 @@ void grpc_virtual_machine::do_write_misa(uint64_t val) {
     write_csr(csr::misa, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_mie(void) {
+uint64_t grpc_virtual_machine::do_read_mie(void) const {
     return read_csr(csr::mie);
 }
 
@@ -390,7 +390,7 @@ void grpc_virtual_machine::do_write_mie(uint64_t val) {
     write_csr(csr::mie, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_mip(void) {
+uint64_t grpc_virtual_machine::do_read_mip(void) const {
     return read_csr(csr::mip);
 }
 
@@ -398,7 +398,7 @@ void grpc_virtual_machine::do_write_mip(uint64_t val) {
     write_csr(csr::mip, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_medeleg(void) {
+uint64_t grpc_virtual_machine::do_read_medeleg(void) const {
     return read_csr(csr::medeleg);
 }
 
@@ -406,7 +406,7 @@ void grpc_virtual_machine::do_write_medeleg(uint64_t val) {
     write_csr(csr::medeleg, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_mideleg(void) {
+uint64_t grpc_virtual_machine::do_read_mideleg(void) const {
     return read_csr(csr::mideleg);
 }
 
@@ -414,7 +414,7 @@ void grpc_virtual_machine::do_write_mideleg(uint64_t val) {
     write_csr(csr::mideleg, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_mcounteren(void) {
+uint64_t grpc_virtual_machine::do_read_mcounteren(void) const {
     return read_csr(csr::mcounteren);
 }
 
@@ -422,7 +422,7 @@ void grpc_virtual_machine::do_write_mcounteren(uint64_t val) {
     write_csr(csr::mcounteren, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_stvec(void) {
+uint64_t grpc_virtual_machine::do_read_stvec(void) const {
     return read_csr(csr::stvec);
 }
 
@@ -430,7 +430,7 @@ void grpc_virtual_machine::do_write_stvec(uint64_t val) {
     write_csr(csr::stvec, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_sscratch(void) {
+uint64_t grpc_virtual_machine::do_read_sscratch(void) const {
     return read_csr(csr::sscratch);
 }
 
@@ -438,7 +438,7 @@ void grpc_virtual_machine::do_write_sscratch(uint64_t val) {
     write_csr(csr::sscratch, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_sepc(void) {
+uint64_t grpc_virtual_machine::do_read_sepc(void) const {
     return read_csr(csr::sepc);
 }
 
@@ -446,7 +446,7 @@ void grpc_virtual_machine::do_write_sepc(uint64_t val) {
     write_csr(csr::sepc, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_scause(void) {
+uint64_t grpc_virtual_machine::do_read_scause(void) const {
     return read_csr(csr::scause);
 }
 
@@ -454,7 +454,7 @@ void grpc_virtual_machine::do_write_scause(uint64_t val) {
     write_csr(csr::scause, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_stval(void) {
+uint64_t grpc_virtual_machine::do_read_stval(void) const {
     return read_csr(csr::stval);
 }
 
@@ -462,7 +462,7 @@ void grpc_virtual_machine::do_write_stval(uint64_t val) {
     write_csr(csr::stval, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_satp(void) {
+uint64_t grpc_virtual_machine::do_read_satp(void) const {
     return read_csr(csr::satp);
 }
 
@@ -470,7 +470,7 @@ void grpc_virtual_machine::do_write_satp(uint64_t val) {
     write_csr(csr::satp, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_scounteren(void) {
+uint64_t grpc_virtual_machine::do_read_scounteren(void) const {
     return read_csr(csr::scounteren);
 }
 
@@ -478,7 +478,7 @@ void grpc_virtual_machine::do_write_scounteren(uint64_t val) {
     write_csr(csr::scounteren, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_ilrsc(void) {
+uint64_t grpc_virtual_machine::do_read_ilrsc(void) const {
     return read_csr(csr::ilrsc);
 }
 
@@ -486,15 +486,15 @@ void grpc_virtual_machine::do_write_ilrsc(uint64_t val) {
     write_csr(csr::ilrsc, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_iflags(void) {
+uint64_t grpc_virtual_machine::do_read_iflags(void) const {
     return read_csr(csr::iflags);
 }
 
-bool grpc_virtual_machine::do_read_iflags_H(void) {
+bool grpc_virtual_machine::do_read_iflags_H(void) const {
     return (read_csr(csr::iflags) >> IFLAGS_H_SHIFT) & 1;
 }
 
-bool grpc_virtual_machine::do_read_iflags_Y(void) {
+bool grpc_virtual_machine::do_read_iflags_Y(void) const {
     return (read_csr(csr::iflags) >> IFLAGS_Y_SHIFT) & 1;
 }
 
@@ -517,19 +517,19 @@ void grpc_virtual_machine::do_write_iflags(uint64_t val) {
     write_csr(csr::iflags, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_htif_tohost(void) {
+uint64_t grpc_virtual_machine::do_read_htif_tohost(void) const {
     return read_csr(csr::htif_tohost);
 }
 
-uint64_t grpc_virtual_machine::do_read_htif_tohost_dev(void) {
+uint64_t grpc_virtual_machine::do_read_htif_tohost_dev(void) const {
     return HTIF_DEV_FIELD(read_htif_tohost());
 }
 
-uint64_t grpc_virtual_machine::do_read_htif_tohost_cmd(void) {
+uint64_t grpc_virtual_machine::do_read_htif_tohost_cmd(void) const {
     return HTIF_CMD_FIELD(read_htif_tohost());
 }
 
-uint64_t grpc_virtual_machine::do_read_htif_tohost_data(void) {
+uint64_t grpc_virtual_machine::do_read_htif_tohost_data(void) const {
     return HTIF_DATA_FIELD(read_htif_tohost());
 }
 
@@ -537,7 +537,7 @@ void grpc_virtual_machine::do_write_htif_tohost(uint64_t val) {
     write_csr(csr::htif_tohost, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_htif_fromhost(void) {
+uint64_t grpc_virtual_machine::do_read_htif_fromhost(void) const {
     return read_csr(csr::htif_fromhost);
 }
 
@@ -549,7 +549,7 @@ void grpc_virtual_machine::do_write_htif_fromhost_data(uint64_t val) {
     write_htif_fromhost(HTIF_REPLACE_DATA(read_htif_fromhost(), val));
 }
 
-uint64_t grpc_virtual_machine::do_read_htif_ihalt(void) {
+uint64_t grpc_virtual_machine::do_read_htif_ihalt(void) const {
     return read_csr(csr::htif_ihalt);
 }
 
@@ -557,7 +557,7 @@ void grpc_virtual_machine::do_write_htif_ihalt(uint64_t val)  {
     write_csr(csr::htif_ihalt, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_htif_iconsole(void) {
+uint64_t grpc_virtual_machine::do_read_htif_iconsole(void) const {
     return read_csr(csr::htif_iconsole);
 }
 
@@ -565,7 +565,7 @@ void grpc_virtual_machine::do_write_htif_iconsole(uint64_t val) {
     write_csr(csr::htif_iconsole, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_htif_iyield(void) {
+uint64_t grpc_virtual_machine::do_read_htif_iyield(void) const {
     return read_csr(csr::htif_iyield);
 }
 
@@ -573,7 +573,7 @@ void grpc_virtual_machine::do_write_htif_iyield(uint64_t val)  {
     write_csr(csr::htif_iyield, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_clint_mtimecmp(void) {
+uint64_t grpc_virtual_machine::do_read_clint_mtimecmp(void) const {
     return read_csr(csr::clint_mtimecmp);
 }
 
@@ -581,7 +581,7 @@ void grpc_virtual_machine::do_write_clint_mtimecmp(uint64_t val) {
     write_csr(csr::clint_mtimecmp, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_dhd_tstart(void) {
+uint64_t grpc_virtual_machine::do_read_dhd_tstart(void) const {
     return read_csr(csr::dhd_tstart);
 }
 
@@ -589,7 +589,7 @@ void grpc_virtual_machine::do_write_dhd_tstart(uint64_t val) {
     write_csr(csr::dhd_tstart, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_dhd_tlength(void) {
+uint64_t grpc_virtual_machine::do_read_dhd_tlength(void) const {
     return read_csr(csr::dhd_tlength);
 }
 
@@ -597,7 +597,7 @@ void grpc_virtual_machine::do_write_dhd_tlength(uint64_t val) {
     write_csr(csr::dhd_tlength, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_dhd_dlength(void) {
+uint64_t grpc_virtual_machine::do_read_dhd_dlength(void) const {
     return read_csr(csr::dhd_dlength);
 }
 
@@ -605,7 +605,7 @@ void grpc_virtual_machine::do_write_dhd_dlength(uint64_t val) {
     write_csr(csr::dhd_dlength, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_dhd_hlength(void) {
+uint64_t grpc_virtual_machine::do_read_dhd_hlength(void) const {
     return read_csr(csr::dhd_hlength);
 }
 
@@ -613,7 +613,7 @@ void grpc_virtual_machine::do_write_dhd_hlength(uint64_t val) {
     write_csr(csr::dhd_hlength, val);
 }
 
-void grpc_virtual_machine::do_get_root_hash(hash_type &hash)  {
+void grpc_virtual_machine::do_get_root_hash(hash_type &hash) const {
     GetRootHashResponse response;
     Void request;
     ClientContext context;
@@ -623,7 +623,7 @@ void grpc_virtual_machine::do_get_root_hash(hash_type &hash)  {
 
 
 machine_merkle_tree::proof_type
-grpc_virtual_machine::do_get_proof(uint64_t address, int log2_size)  {
+grpc_virtual_machine::do_get_proof(uint64_t address, int log2_size) const {
     GetProofRequest request;
     GetProofResponse response;
     request.set_address(address);
@@ -680,7 +680,7 @@ void grpc_virtual_machine::do_rollback() {
     m_stub->reconnect();
 }
 
-bool grpc_virtual_machine::do_verify_dirty_page_maps(void) {
+bool grpc_virtual_machine::do_verify_dirty_page_maps(void) const {
     Void request;
     VerifyDirtyPageMapsResponse response;
     ClientContext context;
@@ -688,14 +688,14 @@ bool grpc_virtual_machine::do_verify_dirty_page_maps(void) {
     return response.success();
 }
 
-void grpc_virtual_machine::do_dump_pmas(void) {
+void grpc_virtual_machine::do_dump_pmas(void) const {
     Void request;
     Void response;
     ClientContext context;
     check_status(m_stub->get_stub()->DumpPmas(&context, request, &response));
 }
 
-bool grpc_virtual_machine::do_read_word(uint64_t word_address, uint64_t &word_value) {
+bool grpc_virtual_machine::do_read_word(uint64_t word_address, uint64_t &word_value) const {
     ReadWordRequest request;
     request.set_address(word_address);
     ReadWordResponse response;
@@ -705,7 +705,7 @@ bool grpc_virtual_machine::do_read_word(uint64_t word_address, uint64_t &word_va
     return response.success();
 }
 
-bool grpc_virtual_machine::do_verify_merkle_tree(void) {
+bool grpc_virtual_machine::do_verify_merkle_tree(void) const {
     Void request;
     ClientContext context;
     VerifyMerkleTreeResponse response;

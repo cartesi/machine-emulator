@@ -66,22 +66,22 @@ public:
     }
 
     /// \brief Obtains the proof for a node in the Merkle tree.
-    machine_merkle_tree::proof_type get_proof(uint64_t address, int log2_size) {
+    machine_merkle_tree::proof_type get_proof(uint64_t address, int log2_size) const {
         return do_get_proof(address, log2_size);
     }
 
     /// \brief Obtains the root hash of the Merkle tree.
-    void get_root_hash(hash_type &hash) {
+    void get_root_hash(hash_type &hash) const {
         do_get_root_hash(hash);
     }
 
     /// \brief Verifies integrity of Merkle tree.
-    bool verify_merkle_tree(void) {
+    bool verify_merkle_tree(void) const {
         return do_verify_merkle_tree();
     }
 
     /// \brief Reads the value of any CSR
-    uint64_t read_csr(csr r) {
+    uint64_t read_csr(csr r) const {
         return do_read_csr(r);
     }
 
@@ -91,7 +91,7 @@ public:
     }
 
     /// \brief Reads a chunk of data from the machine memory.
-    void read_memory(uint64_t address, unsigned char *data, uint64_t length) {
+    void read_memory(uint64_t address, unsigned char *data, uint64_t length) const {
         do_read_memory(address, data, length);
     }
 
@@ -101,7 +101,7 @@ public:
     }
 
     /// \brief Reads the value of a general-purpose register.
-    uint64_t read_x(int i) {
+    uint64_t read_x(int i) const {
         return do_read_x(i);
     }
 
@@ -116,22 +116,22 @@ public:
     }
 
     /// \brief Dump all memory ranges to files in current working directory.
-    void dump_pmas(void) {
+    void dump_pmas(void) const {
         do_dump_pmas();
     }
 
     /// \brief Read the value of a word in the machine state.
-    bool read_word(uint64_t word_address, uint64_t &word_value) {
+    bool read_word(uint64_t word_address, uint64_t &word_value) const {
         return do_read_word(word_address, word_value);
     }
 
     /// \brief Verify if dirty page maps are consistent.
-    bool verify_dirty_page_maps(void) {
+    bool verify_dirty_page_maps(void) const {
         return do_verify_dirty_page_maps();
     }
 
     /// \brief Returns copy of initialization config.
-    machine_config get_initial_config(void) {
+    machine_config get_initial_config(void) const {
         return do_get_initial_config();
     }
 
@@ -151,7 +151,7 @@ public:
     }
 
     /// \brief Reads the pc register
-    uint64_t read_pc(void) {
+    uint64_t read_pc(void) const {
         return  do_read_pc();
     }
 
@@ -161,22 +161,22 @@ public:
     };
 
     /// \brief Reads the mvendorid register
-    uint64_t read_mvendorid(void) {
+    uint64_t read_mvendorid(void) const {
         return  do_read_mvendorid();
     }
 
     /// \brief Reads the marchid register
-    uint64_t read_marchid(void) {
+    uint64_t read_marchid(void) const {
         return  do_read_marchid();
     }
 
     /// \brief Reads the mimpid register
-    uint64_t read_mimpid(void) {
+    uint64_t read_mimpid(void) const {
         return  do_read_mimpid();
     }
 
     /// \brief Reads the mcycle register
-    uint64_t read_mcycle(void) {
+    uint64_t read_mcycle(void) const {
         return  do_read_mcycle();
     }
 
@@ -186,7 +186,7 @@ public:
     }
 
     /// \brief Reads the minstret register
-    uint64_t read_minstret(void) {
+    uint64_t read_minstret(void) const {
         return  do_read_minstret();
     }
 
@@ -196,7 +196,7 @@ public:
     }
 
     /// \brief Reads the mstatus register
-    uint64_t read_mstatus(void) {
+    uint64_t read_mstatus(void) const {
         return  do_read_mstatus();
     }
 
@@ -206,7 +206,7 @@ public:
     }
 
     /// \brief Reads the mtvec register
-    uint64_t read_mtvec(void) {
+    uint64_t read_mtvec(void) const {
         return  do_read_mtvec();
     }
 
@@ -216,7 +216,7 @@ public:
     }
 
     /// \brief Reads the mscratch register
-    uint64_t read_mscratch(void) {
+    uint64_t read_mscratch(void) const {
         return  do_read_mscratch();
     }
 
@@ -226,7 +226,7 @@ public:
     }
 
     /// \brief Reads the mepc register
-    uint64_t read_mepc(void) {
+    uint64_t read_mepc(void) const {
         return  do_read_mepc();
     }
 
@@ -236,7 +236,7 @@ public:
     }
 
     /// \brief Reads the mcause register
-    uint64_t read_mcause(void) {
+    uint64_t read_mcause(void) const {
         return  do_read_mcause();
     }
 
@@ -246,7 +246,7 @@ public:
     }
 
     /// \brief Reads the mtval register
-    uint64_t read_mtval(void) {
+    uint64_t read_mtval(void) const {
         return  do_read_mtval();
      }
 
@@ -256,7 +256,7 @@ public:
     }
 
     /// \brief Reads the misa register
-    uint64_t read_misa(void) {
+    uint64_t read_misa(void) const {
         return  do_read_misa();
     }
 
@@ -266,7 +266,7 @@ public:
     }
 
     /// \brief Reads the mie register
-    uint64_t read_mie(void) {
+    uint64_t read_mie(void) const {
         return  do_read_mie();
     }
 
@@ -276,7 +276,7 @@ public:
     }
 
     /// \brief Reads the mip register
-    uint64_t read_mip(void) {
+    uint64_t read_mip(void) const {
         return  do_read_mip();
     }
 
@@ -286,7 +286,7 @@ public:
     }
 
     /// \brief Reads the medeleg register
-    uint64_t read_medeleg(void) {
+    uint64_t read_medeleg(void) const {
         return  do_read_medeleg();
     }
 
@@ -296,7 +296,7 @@ public:
     }
 
     /// \brief Reads the mideleg register
-    uint64_t read_mideleg(void) {
+    uint64_t read_mideleg(void) const {
         return  do_read_mideleg();
     }
 
@@ -307,7 +307,7 @@ public:
     }
 
     /// \brief Reads the mcounteren register
-    uint64_t read_mcounteren(void) {
+    uint64_t read_mcounteren(void) const {
         return  do_read_mcounteren();
     }
 
@@ -317,7 +317,7 @@ public:
     }
 
     /// \brief Reads the stvec register
-    uint64_t read_stvec(void) {
+    uint64_t read_stvec(void) const {
         return  do_read_stvec();
     }
 
@@ -327,7 +327,7 @@ public:
     }
 
     /// \brief Reads the sscratch register
-    uint64_t read_sscratch(void) {
+    uint64_t read_sscratch(void) const {
         return  do_read_sscratch();
     }
 
@@ -337,7 +337,7 @@ public:
     }
 
     /// \brief Reads the sepc register
-    uint64_t read_sepc(void) {
+    uint64_t read_sepc(void) const {
         return  do_read_sepc();
     }
 
@@ -347,7 +347,7 @@ public:
     }
 
     /// \brief Reads the scause register
-    uint64_t read_scause(void) {
+    uint64_t read_scause(void) const {
         return  do_read_scause();
     }
 
@@ -357,7 +357,7 @@ public:
     }
 
     /// \brief Reads the stval register
-    uint64_t read_stval(void) {
+    uint64_t read_stval(void) const {
         return  do_read_stval();
     }
 
@@ -367,7 +367,7 @@ public:
     }
 
     /// \brief Reads the satp register
-    uint64_t read_satp(void) {
+    uint64_t read_satp(void) const {
         return  do_read_satp();
     }
 
@@ -377,7 +377,7 @@ public:
     }
 
     /// \brief Reads the scounteren register
-    uint64_t read_scounteren(void) {
+    uint64_t read_scounteren(void) const {
         return  do_read_scounteren();
     }
 
@@ -387,7 +387,7 @@ public:
     }
 
     /// \brief Reads the ilrsc register
-    uint64_t read_ilrsc(void) {
+    uint64_t read_ilrsc(void) const {
         return  do_read_ilrsc();
     }
 
@@ -397,17 +397,17 @@ public:
     }
 
     /// \brief Reads the iflags register
-    uint64_t read_iflags(void) {
+    uint64_t read_iflags(void) const {
         return  do_read_iflags();
     }
 
     /// \brief Reads the H iflag
-    bool read_iflags_H(void) {
+    bool read_iflags_H(void) const {
         return do_read_iflags_H();
     }
 
     /// \brief Reads the Y iflag
-    bool read_iflags_Y(void) {
+    bool read_iflags_Y(void) const {
         return do_read_iflags_Y();
     }
 
@@ -432,22 +432,22 @@ public:
     }
 
     /// \brief Reads htif's tohost
-    uint64_t read_htif_tohost(void) {
+    uint64_t read_htif_tohost(void) const {
         return  do_read_htif_tohost();
     }
 
     /// \brief Reads htif's tohost dev
-    uint64_t read_htif_tohost_dev(void) {
+    uint64_t read_htif_tohost_dev(void) const {
         return do_read_htif_tohost_dev();
     }
 
     /// \brief Reads htif's tohost cmd
-    uint64_t read_htif_tohost_cmd(void) {
+    uint64_t read_htif_tohost_cmd(void) const {
         return do_read_htif_tohost_cmd();
     }
 
     /// \brief Reads htif's tohost data
-    uint64_t read_htif_tohost_data(void) {
+    uint64_t read_htif_tohost_data(void) const {
         return do_read_htif_tohost_data();
     }
 
@@ -457,7 +457,7 @@ public:
     }
 
     /// \brief Reads htif's fromhost
-    uint64_t read_htif_fromhost(void) {
+    uint64_t read_htif_fromhost(void) const {
         return  do_read_htif_fromhost();
     }
 
@@ -472,7 +472,7 @@ public:
     }
 
     /// \brief Reads htif's ihalt
-    uint64_t read_htif_ihalt(void) {
+    uint64_t read_htif_ihalt(void) const {
         return  do_read_htif_ihalt();
     }
 
@@ -482,7 +482,7 @@ public:
     }
 
     /// \brief Reads htif's iconsole
-    uint64_t read_htif_iconsole(void) {
+    uint64_t read_htif_iconsole(void) const {
         return  do_read_htif_iconsole();
     }
 
@@ -492,7 +492,7 @@ public:
     }
 
     /// \brief Reads htif's iyield
-    uint64_t read_htif_iyield(void) {
+    uint64_t read_htif_iyield(void) const {
         return  do_read_htif_iyield();
     }
 
@@ -502,7 +502,7 @@ public:
     }
 
     /// \brief Reads clint's mtimecmp
-    uint64_t read_clint_mtimecmp(void) {
+    uint64_t read_clint_mtimecmp(void) const {
         return  do_read_clint_mtimecmp();
     }
 
@@ -512,7 +512,7 @@ public:
     }
 
     /// \brief Reads dhd's tstart
-    uint64_t read_dhd_tstart(void) {
+    uint64_t read_dhd_tstart(void) const {
         return  do_read_dhd_tstart();
     }
 
@@ -522,7 +522,7 @@ public:
     }
 
     /// \brief Reads dhd's tlength
-    uint64_t read_dhd_tlength(void) {
+    uint64_t read_dhd_tlength(void) const {
         return  do_read_dhd_tlength();
     }
 
@@ -532,7 +532,7 @@ public:
     }
 
     /// \brief Reads dhd's dlength
-    uint64_t read_dhd_dlength(void) {
+    uint64_t read_dhd_dlength(void) const {
         return  do_read_dhd_dlength();
     }
 
@@ -542,7 +542,7 @@ public:
     }
 
     /// \brief Reads dhd's hlength
-    uint64_t read_dhd_hlength(void) {
+    uint64_t read_dhd_hlength(void) const {
         return  do_read_dhd_hlength();
     }
 
@@ -552,7 +552,7 @@ public:
     }
 
     /// \brief Reads the value of a dhd h register.
-    uint64_t read_dhd_h(int i) {
+    uint64_t read_dhd_h(int i) const {
         return do_read_dhd_h(i);
     }
 
@@ -566,102 +566,102 @@ private:
     virtual void do_store(const std::string &dir) = 0;
     virtual access_log do_step(const access_log::type &log_type, bool one_based = false) = 0;
     virtual bool do_update_merkle_tree(void) = 0;
-    virtual machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) = 0;
-    virtual void do_get_root_hash(hash_type &hash) = 0;
-    virtual bool do_verify_merkle_tree(void) = 0;
-    virtual uint64_t do_read_csr(csr r) = 0;
+    virtual machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const = 0;
+    virtual void do_get_root_hash(hash_type &hash) const = 0;
+    virtual bool do_verify_merkle_tree(void) const = 0;
+    virtual uint64_t do_read_csr(csr r) const = 0;
     virtual void do_write_csr(csr w, uint64_t val) = 0;
-    virtual void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) = 0;
+    virtual void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const = 0;
     virtual void do_write_memory(uint64_t address, const unsigned char *data, size_t length) = 0;
-    virtual uint64_t do_read_x(int i) = 0;
+    virtual uint64_t do_read_x(int i) const = 0;
     virtual void do_write_x(int i, uint64_t val) = 0;
-    virtual uint64_t do_read_pc(void) = 0;
+    virtual uint64_t do_read_pc(void) const = 0;
     virtual void do_write_pc(uint64_t val) = 0;
-    virtual uint64_t do_read_mvendorid(void) = 0;
-    virtual uint64_t do_read_marchid(void) = 0;
-    virtual uint64_t do_read_mimpid(void) = 0;
-    virtual uint64_t do_read_mcycle(void) = 0;
+    virtual uint64_t do_read_mvendorid(void) const = 0;
+    virtual uint64_t do_read_marchid(void) const = 0;
+    virtual uint64_t do_read_mimpid(void) const = 0;
+    virtual uint64_t do_read_mcycle(void) const = 0;
     virtual void do_write_mcycle(uint64_t val) = 0;
-    virtual uint64_t do_read_minstret(void) = 0;
+    virtual uint64_t do_read_minstret(void) const = 0;
     virtual void do_write_minstret(uint64_t val) = 0;
-    virtual uint64_t do_read_mstatus(void) = 0;
+    virtual uint64_t do_read_mstatus(void) const = 0;
     virtual void do_write_mstatus(uint64_t val) = 0;
-    virtual uint64_t do_read_mtvec(void) = 0;
+    virtual uint64_t do_read_mtvec(void) const = 0;
     virtual void do_write_mtvec(uint64_t val) = 0;
-    virtual uint64_t do_read_mscratch(void) = 0;
+    virtual uint64_t do_read_mscratch(void) const = 0;
     virtual void do_write_mscratch(uint64_t val) = 0;
-    virtual uint64_t do_read_mepc(void) = 0;
+    virtual uint64_t do_read_mepc(void) const = 0;
     virtual void do_write_mepc(uint64_t val) = 0;
-    virtual uint64_t do_read_mcause(void) = 0;
+    virtual uint64_t do_read_mcause(void) const = 0;
     virtual void do_write_mcause(uint64_t val) = 0;
-    virtual uint64_t do_read_mtval(void) = 0;
+    virtual uint64_t do_read_mtval(void) const = 0;
     virtual void do_write_mtval(uint64_t val) = 0;
-    virtual uint64_t do_read_misa(void) = 0;
+    virtual uint64_t do_read_misa(void) const = 0;
     virtual void do_write_misa(uint64_t val) = 0;
-    virtual uint64_t do_read_mie(void) = 0;
+    virtual uint64_t do_read_mie(void) const = 0;
     virtual void do_write_mie(uint64_t val) = 0;
-    virtual uint64_t do_read_mip(void) = 0;
+    virtual uint64_t do_read_mip(void) const = 0;
     virtual void do_write_mip(uint64_t val) = 0;
-    virtual uint64_t do_read_medeleg(void) = 0;
+    virtual uint64_t do_read_medeleg(void) const = 0;
     virtual void do_write_medeleg(uint64_t val) = 0;
-    virtual uint64_t do_read_mideleg(void) = 0;
+    virtual uint64_t do_read_mideleg(void) const = 0;
     virtual void do_write_mideleg(uint64_t val) = 0;
-    virtual uint64_t do_read_mcounteren(void) = 0;
+    virtual uint64_t do_read_mcounteren(void) const = 0;
     virtual void do_write_mcounteren(uint64_t val) = 0;
-    virtual uint64_t do_read_stvec(void) = 0;
+    virtual uint64_t do_read_stvec(void) const = 0;
     virtual void do_write_stvec(uint64_t val) = 0;
-    virtual uint64_t do_read_sscratch(void) = 0;
+    virtual uint64_t do_read_sscratch(void) const = 0;
     virtual void do_write_sscratch(uint64_t val) = 0;
-    virtual uint64_t do_read_sepc(void) = 0;
+    virtual uint64_t do_read_sepc(void) const = 0;
     virtual void do_write_sepc(uint64_t val) = 0;
-    virtual uint64_t do_read_scause(void) = 0;
+    virtual uint64_t do_read_scause(void) const = 0;
     virtual void do_write_scause(uint64_t val) = 0;
-    virtual uint64_t do_read_stval(void) = 0;
+    virtual uint64_t do_read_stval(void) const = 0;
     virtual void do_write_stval(uint64_t val) = 0;
-    virtual uint64_t do_read_satp(void) = 0;
+    virtual uint64_t do_read_satp(void) const = 0;
     virtual void do_write_satp(uint64_t val) = 0;
-    virtual uint64_t do_read_scounteren(void) = 0;
+    virtual uint64_t do_read_scounteren(void) const = 0;
     virtual void do_write_scounteren(uint64_t val) = 0;
-    virtual uint64_t do_read_ilrsc(void) = 0;
+    virtual uint64_t do_read_ilrsc(void) const = 0;
     virtual void do_write_ilrsc(uint64_t val) = 0;
-    virtual uint64_t do_read_iflags(void) = 0;
-    virtual bool do_read_iflags_H(void) = 0;
-    virtual bool do_read_iflags_Y(void) = 0;
+    virtual uint64_t do_read_iflags(void) const = 0;
+    virtual bool do_read_iflags_H(void) const = 0;
+    virtual bool do_read_iflags_Y(void) const = 0;
     virtual void do_set_iflags_H(void) = 0;
     virtual void do_set_iflags_Y(void) = 0;
     virtual void do_reset_iflags_Y(void) = 0;
     virtual void do_write_iflags(uint64_t val) = 0;
-    virtual uint64_t do_read_htif_tohost(void) = 0;
-    virtual uint64_t do_read_htif_tohost_dev(void) = 0;
-    virtual uint64_t do_read_htif_tohost_cmd(void) = 0;
-    virtual uint64_t do_read_htif_tohost_data(void) = 0;
+    virtual uint64_t do_read_htif_tohost(void) const = 0;
+    virtual uint64_t do_read_htif_tohost_dev(void) const = 0;
+    virtual uint64_t do_read_htif_tohost_cmd(void) const = 0;
+    virtual uint64_t do_read_htif_tohost_data(void) const = 0;
     virtual void do_write_htif_tohost(uint64_t val) = 0;
-    virtual uint64_t do_read_htif_fromhost(void) = 0;
+    virtual uint64_t do_read_htif_fromhost(void) const = 0;
     virtual void do_write_htif_fromhost(uint64_t val) = 0;
     virtual void do_write_htif_fromhost_data(uint64_t val) = 0;
-    virtual uint64_t do_read_htif_ihalt(void) = 0;
+    virtual uint64_t do_read_htif_ihalt(void) const = 0;
     virtual void do_write_htif_ihalt(uint64_t val) = 0;
-    virtual uint64_t do_read_htif_iconsole(void) = 0;
+    virtual uint64_t do_read_htif_iconsole(void) const = 0;
     virtual void do_write_htif_iconsole(uint64_t val) = 0;
-    virtual uint64_t do_read_htif_iyield(void) = 0;
+    virtual uint64_t do_read_htif_iyield(void) const = 0;
     virtual void do_write_htif_iyield(uint64_t val) = 0;
-    virtual uint64_t do_read_clint_mtimecmp(void) = 0;
+    virtual uint64_t do_read_clint_mtimecmp(void) const = 0;
     virtual void do_write_clint_mtimecmp(uint64_t val) = 0;
-    virtual uint64_t do_read_dhd_tstart(void) = 0;
+    virtual uint64_t do_read_dhd_tstart(void) const = 0;
     virtual void do_write_dhd_tstart(uint64_t val) = 0;
-    virtual uint64_t do_read_dhd_tlength(void) = 0;
+    virtual uint64_t do_read_dhd_tlength(void) const = 0;
     virtual void do_write_dhd_tlength(uint64_t val) = 0;
-    virtual uint64_t do_read_dhd_dlength(void) = 0;
+    virtual uint64_t do_read_dhd_dlength(void) const = 0;
     virtual void do_write_dhd_dlength(uint64_t val) = 0;
-    virtual uint64_t do_read_dhd_hlength(void) = 0;
+    virtual uint64_t do_read_dhd_hlength(void) const = 0;
     virtual void do_write_dhd_hlength(uint64_t val) = 0;
-    virtual uint64_t do_read_dhd_h(int i) = 0;
+    virtual uint64_t do_read_dhd_h(int i) const = 0;
     virtual void do_write_dhd_h(int i, uint64_t val) = 0;
     virtual void do_replace_flash_drive(const flash_drive_config &new_flash) = 0;
-    virtual void do_dump_pmas(void) = 0;
-    virtual bool do_read_word(uint64_t word_address, uint64_t &word_value) = 0;
-    virtual bool do_verify_dirty_page_maps(void) = 0;
-    virtual machine_config do_get_initial_config(void) = 0;
+    virtual void do_dump_pmas(void) const = 0;
+    virtual bool do_read_word(uint64_t word_address, uint64_t &word_value) const = 0;
+    virtual bool do_verify_dirty_page_maps(void) const = 0;
+    virtual machine_config do_get_initial_config(void) const = 0;
     virtual void do_snapshot() = 0;
     virtual void do_destroy() = 0;
     virtual void do_rollback() = 0;

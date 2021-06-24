@@ -350,7 +350,7 @@ CM_API int cm_load_machine(const char *dir, const cm_machine_runtime_config *run
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
-int cm_create_grpc_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
+CM_API int cm_create_grpc_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
                            const char *address, cm_machine **new_machine, char **err_msg);
 
 /// \brief Create remote machine instance from previously serialized directory
@@ -362,7 +362,7 @@ int cm_create_grpc_machine(const cm_machine_config *config, const cm_machine_run
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
-int cm_load_grpc_machine(const char *dir, const cm_machine_runtime_config *runtime_config,
+CM_API int cm_load_grpc_machine(const char *dir, const cm_machine_runtime_config *runtime_config,
                          const char *address, cm_machine **new_machine, char **err_msg);
 
 /// \brief Serialize entire state to directory

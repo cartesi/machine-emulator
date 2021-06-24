@@ -103,8 +103,11 @@ complete_merkle_tree::get_node_hash(address_type address, int log2_size) const {
     if (address >= (address_type{1} << (get_log2_root_size()-log2_size))) {
         throw std::out_of_range{"log2_size is out of bounds"};
     }
-    if (address < level.size()) return level[address];
-    else return m_pristine.get_hash(log2_size);
+    if (address < level.size()) {
+        return level[address];
+    } else {
+        return m_pristine.get_hash(log2_size);
+    }
 }
 
 void

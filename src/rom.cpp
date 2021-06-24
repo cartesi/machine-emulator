@@ -27,8 +27,9 @@
 namespace cartesi {
 
 void rom_init(const machine_config &c, unsigned char *rom_start, uint64_t length) {
-    if (length < PMA_ROM_EXTRASPACE_LENGTH_DEF)
+    if (length < PMA_ROM_EXTRASPACE_LENGTH_DEF) {
         throw std::runtime_error{"Not enough space on ROM for bootargs"};
+    }
 
     char *bootargs = (char *)(rom_start + length - PMA_ROM_EXTRASPACE_LENGTH_DEF);
 

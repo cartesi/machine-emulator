@@ -431,8 +431,9 @@ private:
             auto &pma = m_m.get_state().pmas[i];
             // The pmas array always contain a sentinel. It is an entry with
             // zero length. If we hit it, return it
-            if (pma.get_length() == 0)
+            if (pma.get_length() == 0) {
                 return pma;
+            }
             // Otherwise, if we found an entry where the access fits, return it
             // Note the "strange" order of arithmetic operations.
             // This is to ensure there is no overflow.

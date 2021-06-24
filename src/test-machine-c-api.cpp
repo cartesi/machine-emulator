@@ -413,9 +413,11 @@ bool operator==(const cm_htif_config& lhs, const cm_htif_config& rhs) {
 }
 
 bool operator==(const cm_dhd_config& lhs, const cm_dhd_config& rhs) {
-    for (size_t i = 0; i < CM_MACHINE_DHD_H_REG_COUNT; ++i)
-        if (lhs.h[i] != rhs.h[i])
+    for (size_t i = 0; i < CM_MACHINE_DHD_H_REG_COUNT; ++i) {
+        if (lhs.h[i] != rhs.h[i]) {
             return false;
+        }
+    }
     return ((lhs.tstart == rhs.tstart) && (lhs.tlength == rhs.tlength) &&
             (lhs.dlength == rhs.dlength) && (lhs.hlength == rhs.hlength) &&
             (strcmp(lhs.image_filename, rhs.image_filename) == 0));

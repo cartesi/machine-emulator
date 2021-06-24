@@ -48,7 +48,9 @@ using unique_file_ptr = std::unique_ptr<FILE, detail::fclose_deleter>;
 template <typename T>
 static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb) {
     T *ptr = reinterpret_cast<T *>(calloc(nmemb, sizeof(T)));
-    if (!ptr) throw std::bad_alloc{};
+    if (!ptr) {
+        throw std::bad_alloc{};
+    }
     return unique_calloc_ptr<T>(ptr);
 }
 
@@ -60,10 +62,11 @@ static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb, const std::nothro
 
 static inline unique_file_ptr unique_fopen(const char *pathname, const char *mode) {
     FILE *fp = fopen(pathname, mode);
-    if (!fp)
+    if (!fp) {
         throw std::system_error(errno, std::generic_category(),
             "unable to open '" + std::string{pathname} +
             "' in mode '" + std::string{mode} + "'");
+    }
     return unique_file_ptr{fp};
 }
 

@@ -48,9 +48,10 @@ void clua_gettypemetatable(lua_State *L, int ctxidx = lua_upvalueindex(1)) {
     ctxidx = lua_absindex(L, ctxidx);
     lua_pushstring(L, clua_rawname<T>());
     lua_rawget(L, ctxidx);
-    if (lua_isnil(L, -1))
+    if (lua_isnil(L, -1)) {
         luaL_error(L, "unknown type (%s)",
             boost::typeindex::type_id_with_cvr<T>().pretty_name().c_str());
+    }
 }
 
 /// \brief Checks if a type has been previously defined
@@ -76,7 +77,9 @@ template <typename T>
 int clua_is(lua_State *L, int idx, int ctxidx = lua_upvalueindex(1)) {
     idx = lua_absindex(L, idx);
     clua_gettypemetatable<T>(L, ctxidx);
-    if (!lua_getmetatable(L, idx)) lua_pushnil(L);
+    if (!lua_getmetatable(L, idx)) {
+        lua_pushnil(L);
+    }
     int ret = lua_compare(L, -1, -2, LUA_OPEQ);
     lua_pop(L, 2);
     return ret;
@@ -150,8 +153,9 @@ void clua_argerror(lua_State *L, int idx, int ctxidx = lua_upvalueindex(1)) {
 /// \param ctxidx Index (or pseudo-index) of clua context
 template <typename T>
 T &clua_check(lua_State *L, int idx, int ctxidx = lua_upvalueindex(1)) {
-    if (!clua_is<T>(L, idx, ctxidx))
+    if (!clua_is<T>(L, idx, ctxidx)) {
         clua_argerror<T>(L, idx, ctxidx);
+    }
     return clua_to<T>(L, idx);
 }
 

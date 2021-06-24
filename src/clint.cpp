@@ -144,9 +144,8 @@ static bool clint_peek(const pma_entry &pma, const machine &m,
             return true;
         default:
             *page_data = nullptr;
-            if (page_offset % PMA_PAGE_SIZE == 0 && page_offset <
-                pma.get_length()) return true;
-            else return false;
+            return (page_offset % PMA_PAGE_SIZE) == 0 &&
+                   page_offset < pma.get_length();
     }
 }
 #undef base

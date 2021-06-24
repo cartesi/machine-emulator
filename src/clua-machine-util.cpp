@@ -145,9 +145,10 @@ static int check_int_field(lua_State *L, int tabidx, const char *field) {
     tabidx = lua_absindex(L, tabidx);
     lua_Integer ival;
     lua_getfield(L, tabidx, field);
-    if (!lua_isinteger(L, -1))
+    if (!lua_isinteger(L, -1)) {
         luaL_error(L, "invalid %s (expected integer, got %s)", field,
             lua_typename(L, lua_type(L, -1)));
+    }
     ival = lua_tointeger(L, -1);
     lua_pop(L, 1);
     return (int) ival;
@@ -162,9 +163,10 @@ static uint64_t check_uint_field(lua_State *L, int tabidx, const char *field) {
     tabidx = lua_absindex(L, tabidx);
     lua_Integer ival;
     lua_getfield(L, tabidx, field);
-    if (!lua_isinteger(L, -1))
+    if (!lua_isinteger(L, -1)) {
         luaL_error(L, "invalid %s (expected unsigned integer, got %s)", field,
             lua_typename(L, lua_type(L, -1)));
+    }
     ival = lua_tointeger(L, -1);
     lua_pop(L, 1);
     return (uint64_t) ival;
@@ -325,9 +327,10 @@ static access_data aux_access_data_field(lua_State *L, int tabidx,
         size_t len = 0;
         const char *s = lua_tolstring(L, -1, &len);
         uint64_t expected_len = UINT64_C(1) << log2_size;
-        if (len != expected_len)
+        if (len != expected_len) {
             luaL_error(L, "invalid %s (expected string with 2^%d bytes)", field,
                 (int) log2_size);
+        }
         a.insert(a.end(), s, s+len);
     } else if (!opt || !lua_isnil(L, -1)) {
         luaL_error(L, "invalid %s (expected string)", field);
@@ -788,8 +791,9 @@ static void check_ram_config(lua_State *L, int tabidx, ram_config &r) {
 /// \param tabidx Config stack index.
 /// \param r ROM config structure to receive results.
 static void check_rom_config(lua_State *L, int tabidx, rom_config &r) {
-    if (!opt_table_field(L, tabidx, "rom"))
+    if (!opt_table_field(L, tabidx, "rom")) {
         return;
+    }
     r.image_filename = opt_string_field(L, -1, "image_filename");
     r.bootargs = opt_string_field(L, -1, "bootargs");
     lua_pop(L, 1);
@@ -813,8 +817,9 @@ flash_drive_config clua_check_flash_drive_config(lua_State *L, int tabidx) {
 /// \param f Flash_configs structure to receive results.
 void check_flash_drive_configs(lua_State *L, int tabidx,
     flash_drive_configs &fs) {
-    if (!opt_table_field(L, tabidx, "flash_drive"))
+    if (!opt_table_field(L, tabidx, "flash_drive")) {
         return;
+    }
     int len = luaL_len(L, -1);
     if (len > (int) fs.capacity()) {
         luaL_error(L, "too many flash drives");
@@ -833,8 +838,9 @@ void check_flash_drive_configs(lua_State *L, int tabidx,
 /// \param p Processor config structure to receive results.
 static void check_processor_config(lua_State *L, int tabidx,
     processor_config &p) {
-    if (!opt_table_field(L, tabidx, "processor"))
+    if (!opt_table_field(L, tabidx, "processor")) {
         return;
+    }
     lua_getfield(L, -1, "x");
     if (lua_istable(L, -1)) {
         for (int i = 1; i < X_REG_COUNT; i++) {
@@ -879,8 +885,9 @@ static void check_processor_config(lua_State *L, int tabidx,
 /// \param tabidx Config stack index.
 /// \param h HTIF config structure to receive results.
 static void check_htif_config(lua_State *L, int tabidx, htif_config &h) {
-    if (!opt_table_field(L, tabidx, "htif"))
+    if (!opt_table_field(L, tabidx, "htif")) {
         return;
+    }
     h.tohost = opt_uint_field(L, -1, "tohost", h.tohost);
     h.fromhost = opt_uint_field(L, -1, "fromhost", h.fromhost);
     h.console_getchar = opt_boolean_field(L, -1, "console_getchar");
@@ -894,8 +901,9 @@ static void check_htif_config(lua_State *L, int tabidx, htif_config &h) {
 /// \param tabidx Config stack index.
 /// \param c CLINT config structure to receive results.
 static void check_clint_config(lua_State *L, int tabidx, clint_config &c) {
-    if (!opt_table_field(L, tabidx, "clint"))
+    if (!opt_table_field(L, tabidx, "clint")) {
         return;
+    }
     c.mtimecmp = opt_uint_field(L, -1, "mtimecmp", c.mtimecmp);
     lua_pop(L, 1);
 }
@@ -905,8 +913,9 @@ static void check_clint_config(lua_State *L, int tabidx, clint_config &c) {
 /// \param tabidx Config stack index.
 /// \param d DHD config structure to receive results.
 static void check_dhd_config(lua_State *L, int tabidx, dhd_config &d) {
-    if (!opt_table_field(L, tabidx, "dhd"))
+    if (!opt_table_field(L, tabidx, "dhd")) {
         return;
+    }
     d.tstart = check_uint_field(L, -1, "tstart");
     d.tlength = check_uint_field(L, -1, "tlength");
     d.dlength = opt_uint_field(L, -1, "dlength", d.dlength);
@@ -943,8 +952,9 @@ machine_config clua_check_machine_config(lua_State *L, int tabidx) {
 /// \param d DHD runtime config structure to receive results.
 static void check_dhd_runtime_config(lua_State *L, int tabidx,
     dhd_runtime_config &d) {
-    if (!opt_table_field(L, tabidx, "dhd"))
+    if (!opt_table_field(L, tabidx, "dhd")) {
         return;
+    }
     d.source_address = opt_string_field(L, -1, "source_address");
     lua_pop(L, 1);
 }
@@ -955,8 +965,9 @@ static void check_dhd_runtime_config(lua_State *L, int tabidx,
 /// \param c concurrency runtime config structure to receive results.
 static void check_concurrency_runtime_config(lua_State *L, int tabidx,
     concurrency_config &c) {
-    if (!opt_table_field(L, tabidx, "concurrency"))
+    if (!opt_table_field(L, tabidx, "concurrency")) {
         return;
+    }
     c.update_merkle_tree = opt_uint_field(L, -1, "update_merkle_tree");
     lua_pop(L, 1);
 }

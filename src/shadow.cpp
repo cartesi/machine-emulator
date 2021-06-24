@@ -129,7 +129,9 @@ static bool shadow_read(const pma_entry &pma, i_device_state_access *a, uint64_t
     (void) pma;
 
     // Our shadow only supports aligned 64-bit reads
-    if (log2_size != 3 || offset & 7) return false;
+    if (log2_size != 3 || offset & 7) {
+        return false;
+    }
 
     // If offset is past start of PMA range
     if (offset >= PMA_constants::PMA_BOARD_SHADOW_START) {

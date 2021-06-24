@@ -89,14 +89,17 @@ pma_entry machine::make_flash_pma_entry(const flash_drive_config &c) {
 
 
 pma_entry &machine::register_pma_entry(pma_entry &&pma) {
-    if (m_s.pmas.capacity() <= m_s.pmas.size())
+    if (m_s.pmas.capacity() <= m_s.pmas.size()) {
         throw std::runtime_error{"too many PMAs"};
+    }
     auto start = pma.get_start();
-    if ((start & (PMA_PAGE_SIZE-1)) != 0)
+    if ((start & (PMA_PAGE_SIZE-1)) != 0) {
         throw std::invalid_argument{"PMA start must be aligned to page boundary"};
+    }
     auto length = pma.get_length();
-    if ((length & (PMA_PAGE_SIZE-1)) != 0)
+    if ((length & (PMA_PAGE_SIZE-1)) != 0) {
         throw std::invalid_argument{"PMA length must be multiple of page size"};
+    }
     // Range A overlaps with B if A starts before B ends and A ends after B starts
     for (const auto &existing_pma: m_s.pmas) {
         if (start < existing_pma.get_start() + existing_pma.get_length() &&
@@ -188,8 +191,9 @@ machine::machine(const machine_config &c,
     write_ilrsc(m_c.processor.ilrsc);
     write_iflags(m_c.processor.iflags);
 
-    if (m_c.rom.image_filename.empty())
+    if (m_c.rom.image_filename.empty()) {
         throw std::invalid_argument{"ROM image filename is undefined"};
+    }
 
     // Register RAM
     if (m_c.ram.image_filename.empty()) {
@@ -384,8 +388,9 @@ pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) {
 const pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) const {
     for (auto &pma: m_s.pmas) {
         // Stop at first empty PMA
-        if (pma.get_length() == 0)
+        if (pma.get_length() == 0) {
             return pma;
+        }
         // Check if data is in range
         if (paddr >= pma.get_start() && pma.get_length() >= length &&
             paddr - pma.get_start() <= pma.get_length() - length) {
@@ -469,7 +474,9 @@ uint64_t machine::get_x_address(int i) {
 }
 
 void machine::write_x(int i, uint64_t val) {
-    if (i > 0) m_s.x[i] = val;
+    if (i > 0) {
+        m_s.x[i] = val;
+    }
 }
 
 uint64_t machine::read_pc(void) const {
@@ -997,7 +1004,9 @@ bool machine::verify_dirty_page_maps(void) const {
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(), "PMA and machine_merkle_tree page sizes must match");
     machine_merkle_tree::hasher_type h;
     auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
-    if (!scratch) return false;
+    if (!scratch) {
+        return false;
+    }
     bool broken = false;
     if constexpr(!avoid_tlb<machine_state>::value) {
         // Go over the write TLB and mark as dirty all pages currently there
@@ -1086,7 +1095,9 @@ bool machine::update_merkle_tree(void) {
         for (uint64_t j = 0; j < n; ++j) {
             futures.emplace_back(std::async(std::launch::async, [&](int j) -> bool {
                 auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
-                if (!scratch) return false;
+                if (!scratch) {
+                    return false;
+                }
                 machine_merkle_tree::hasher_type h;
                 // Thread j is responsible for page i if i % n == j.
                 for (uint64_t i = j; i < pages_in_range; i+=n) {
@@ -1094,8 +1105,9 @@ bool machine::update_merkle_tree(void) {
                     uint64_t page_address = pma.get_start() + page_start_in_range;
                     const unsigned char *page_data = nullptr;
                     // Skip any clean pages
-                    if (!pma.is_page_marked_dirty(page_start_in_range))
+                    if (!pma.is_page_marked_dirty(page_start_in_range)) {
                         continue;
+                    }
                     // If the peek failed, or if it returned a page for update but
                     // we failed updating it, the entire process failed
                     if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
@@ -1143,7 +1155,9 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     uint64_t page_start_in_range = address - pma.get_start();
     machine_merkle_tree::hasher_type h;
     auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
-    if (!scratch) return false;
+    if (!scratch) {
+        return false;
+    }
     m_t.begin_update();
     const unsigned char *page_data = nullptr;
     auto peek = pma.get_peek();
@@ -1171,7 +1185,9 @@ const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas(voi
 void machine::dump_pmas(void) const {
     auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
     for (auto &pma: m_s.pmas) {
-        if (pma.get_length() == 0) break;
+        if (pma.get_length() == 0) {
+            break;
+        }
         char filename[256];
         sprintf(filename, "%016" PRIx64 "--%016" PRIx64 ".bin", pma.get_start(), pma.get_length());
         auto fp = unique_fopen(filename, "wb");
@@ -1243,8 +1259,9 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address,
 void machine::read_memory(uint64_t address, unsigned char *data,
     uint64_t length) const {
     const pma_entry &pma = find_pma_entry(address, length);
-    if (!pma.get_istart_M() || pma.get_istart_E())
+    if (!pma.get_istart_M() || pma.get_istart_E()) {
         throw std::invalid_argument{"address range not entirely in memory PMA"};
+    }
     memcpy(data, pma.get_memory().get_host_memory()+(address-pma.get_start()),
             length);
 }
@@ -1252,8 +1269,9 @@ void machine::read_memory(uint64_t address, unsigned char *data,
 void machine::write_memory(uint64_t address, const unsigned char *data,
     size_t length) {
     pma_entry &pma = find_pma_entry(address, length);
-    if (!pma.get_istart_M() || pma.get_istart_E())
+    if (!pma.get_istart_M() || pma.get_istart_E()) {
         throw std::invalid_argument{"address range not entirely in memory PMA"};
+    }
     constexpr const auto log2_page_size = PMA_constants::PMA_PAGE_SIZE_LOG2;
     uint64_t page_in_range = ((address - pma.get_start()) >> log2_page_size)
         << log2_page_size;
@@ -1269,14 +1287,17 @@ void machine::write_memory(uint64_t address, const unsigned char *data,
 
 bool machine::read_word(uint64_t word_address, uint64_t &word_value) const {
     // Make sure address is aligned
-    if (word_address & (PMA_WORD_SIZE-1))
+    if (word_address & (PMA_WORD_SIZE-1)) {
         return false;
+    }
     const pma_entry &pma = find_pma_entry<uint64_t>(word_address);
     // ??D We should split peek into peek_word and peek_page
     // for performance. On the other hand, this function
     // will almost never be used, so one wonders if it is worth it...
     auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
-    if (!scratch) return false;
+    if (!scratch) {
+        return false;
+    }
     const unsigned char *page_data = nullptr;
     uint64_t page_start_in_range = (word_address - pma.get_start()) & (~(PMA_PAGE_SIZE-1));
     auto peek = pma.get_peek();

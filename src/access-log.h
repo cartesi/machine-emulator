@@ -184,8 +184,9 @@ public:
     /// \param type Bracket type
     /// \param text Annotation contents
     void push_bracket(bracket_type type, const char *text) {
-        if (m_log_type.has_annotations())
+        if (m_log_type.has_annotations()) {
             m_brackets.push_back(bracket_note{type, m_accesses.size(), text});
+        }
     }
 
     /// \brief Adds a new access to the log
@@ -196,8 +197,9 @@ public:
     template <typename A>
     void push_access(A &&a, const char *text) {
         m_accesses.push_back(std::forward<A>(a));
-        if (m_log_type.has_annotations())
+        if (m_log_type.has_annotations()) {
             m_notes.push_back(text);
+        }
     }
 
     /// \brief Returns the array of notes

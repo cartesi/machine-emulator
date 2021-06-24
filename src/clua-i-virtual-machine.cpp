@@ -186,8 +186,9 @@ static int machine_obj_index_read_dhd_hlength(lua_State *L) try {
 static int machine_obj_index_read_x(lua_State *L) try {
     auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
     int i = luaL_checkinteger(L, 2);
-    if (i < 0 || i >= X_REG_COUNT)
+    if (i < 0 || i >= X_REG_COUNT) {
         throw std::invalid_argument{"register index out of range"};
+    }
     lua_pushinteger(L, m->read_x(i));
     return 1;
 } catch (std::exception &x) {
@@ -200,8 +201,9 @@ static int machine_obj_index_read_x(lua_State *L) try {
 static int machine_obj_index_read_dhd_h(lua_State *L) try {
     auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
     int i = luaL_checkinteger(L, 2);
-    if (i < 0 || i >= DHD_H_REG_COUNT)
+    if (i < 0 || i >= DHD_H_REG_COUNT) {
         throw std::invalid_argument{"register index out of range"};
+    }
     lua_pushinteger(L, m->read_dhd_h(i));
     return 1;
 } catch (std::exception &x) {
@@ -814,8 +816,9 @@ static int machine_obj_index_write_dhd_hlength(lua_State *L) try {
 static int machine_obj_index_write_x(lua_State *L) try {
     auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
     int i = luaL_checkinteger(L, 2);
-    if (i < 1 || i >= X_REG_COUNT)
+    if (i < 1 || i >= X_REG_COUNT) {
         throw std::invalid_argument{"register index out of range"};
+    }
     m->write_x(i, luaL_checkinteger(L, 3));
     return 0;
 } catch (std::exception &x) {
@@ -828,8 +831,9 @@ static int machine_obj_index_write_x(lua_State *L) try {
 static int machine_obj_index_write_dhd_h(lua_State *L) try {
     auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
     int i = luaL_checkinteger(L, 2);
-    if (i < 0 || i >= DHD_H_REG_COUNT)
+    if (i < 0 || i >= DHD_H_REG_COUNT) {
         throw std::invalid_argument{"register index out of range"};
+    }
     m->write_dhd_h(i, luaL_checkinteger(L, 3));
     return 0;
 } catch (std::exception &x) {

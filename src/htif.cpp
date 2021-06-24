@@ -62,16 +62,17 @@ static int new_ttyfd(const char *path) {
 
 static int get_ttyfd(void) {
     char *path;
-    if ((path = ttyname(STDERR_FILENO)) != nullptr)
+    if ((path = ttyname(STDERR_FILENO)) != nullptr) {
         return new_ttyfd(path);
-    else if ((path = ttyname(STDOUT_FILENO)) != nullptr)
+    } else if ((path = ttyname(STDOUT_FILENO)) != nullptr) {
         return new_ttyfd(path);
-    else if ((path = ttyname(STDIN_FILENO)) != nullptr)
+    } else if ((path = ttyname(STDIN_FILENO)) != nullptr) {
         return new_ttyfd(path);
-    else if ((path = ctermid(nullptr)) != nullptr)
+    } else if ((path = ctermid(nullptr)) != nullptr) {
         return new_ttyfd(path);
-    else
+    } else {
         errno = ENOTTY; /* No terminal */
+    }
     return -1;
 }
 
@@ -174,7 +175,9 @@ static bool htif_read(const pma_entry &pma, i_device_state_access *a, uint64_t o
     (void) pma;
 
     // Our HTIF only supports aligned 64-bit reads
-    if (log2_size != 3 || offset & 7) return false;
+    if (log2_size != 3 || offset & 7) {
+        return false;
+    }
 
     switch (offset) {
         case HTIF_TOHOST_REL_ADDR:
@@ -284,7 +287,9 @@ static bool htif_write(const pma_entry &pma, i_device_state_access *a, uint64_t 
     htif *h = reinterpret_cast<htif *>(pma.get_device().get_context());
 
     // Our HTIF only supports aligned 64-bit writes
-    if (log2_size != 3 || offset & 7) return false;
+    if (log2_size != 3 || offset & 7) {
+        return false;
+    }
 
     switch (offset) {
         case HTIF_TOHOST_REL_ADDR:

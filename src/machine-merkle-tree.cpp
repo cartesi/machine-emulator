@@ -101,15 +101,17 @@ new_page_node(address_type page_index) {
         tree_node *child = node->child[bit];
         if (!child) {
             child = create_node();
-            if (!child)
+            if (!child) {
                 return nullptr;
+            }
             child->parent = node;
             node->child[bit] = child;
         }
         node = child;
         bit_mask >>= 1;
-        if (!(bit_mask & m_page_index_mask))
+        if (!(bit_mask & m_page_index_mask)) {
             break;
+        }
     }
     // Finally associate page node to page index
     if (!set_page_node_map(page_index, node)) {

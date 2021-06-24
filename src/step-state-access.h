@@ -751,7 +751,9 @@ private:
 
     dhd_data do_dehash(const unsigned char* hash, uint64_t hlength,
         uint64_t &dlength) {
-        if (!m_source) throw std::runtime_error("no dhd source");
+        if (!m_source) {
+            throw std::runtime_error("no dhd source");
+        }
         return m_source->dehash(hash, hlength, dlength);
     }
 
@@ -931,8 +933,9 @@ private:
         while (1) {
             auto istart = this->read_pma_istart(i);
             auto ilength = this->read_pma_ilength(i);
-            if (ilength == 0)
+            if (ilength == 0) {
                 return this->build_mock_pma_entry(istart, ilength);
+            }
             uint64_t start = istart & PMA_ISTART_START_MASK;
             if (paddr >= start && paddr - start <= ilength - sizeof(T)) {
                 return this->build_mock_pma_entry(istart, ilength);

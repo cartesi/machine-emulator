@@ -145,8 +145,9 @@ void set_proto_hash(const machine_merkle_tree::hash_type &h,
 
 machine_merkle_tree::hash_type get_proto_hash(const CartesiMachine::Hash &proto_hash) {
     machine_merkle_tree::hash_type hash;
-    if (proto_hash.data().size() != hash.size())
+    if (proto_hash.data().size() != hash.size()) {
         throw std::invalid_argument("invalid hash size");
+    }
     memcpy(hash.data(), proto_hash.data().data(), proto_hash.data().size());
     return hash;
 }
@@ -259,8 +260,9 @@ access_type get_proto_access_type(CartesiMachine::AccessType proto_at) {
 
 access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
     if (proto_al.log_type().annotations() &&
-        proto_al.accesses().size() != proto_al.notes().size())
+        proto_al.accesses().size() != proto_al.notes().size()) {
         throw std::invalid_argument("size of log accesses and notes differ");
+    }
 
     bool has_annotations = proto_al.log_type().annotations();
     bool has_proofs =  proto_al.log_type().proofs();
@@ -291,10 +293,12 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
             a.get_written().insert(a.get_written().end(),
                 pac->written().begin(), pac->written().end());
             std::string note;
-            if (has_annotations)
+            if (has_annotations) {
                 note = *pnt++;
-            if (has_proofs)
+            }
+            if (has_proofs) {
                 a.set_proof(get_proto_proof(pac->proof()));
+            }
             al.push_access(a, note.c_str());
             pac++;
             iac++;

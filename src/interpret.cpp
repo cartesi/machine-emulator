@@ -235,10 +235,11 @@ static void dump_regs(const machine_state &s) {
     for(i = 1; i < X_REG_COUNT; i++) {
         fprintf(stderr, "%-3s= ", reg_name[i]);
         print_uint64_t(s.x[i]);
-        if ((i & (cols - 1)) == (cols - 1))
+        if ((i & (cols - 1)) == (cols - 1)) {
             fprintf(stderr, "\n");
-        else
+        } else {
             fprintf(stderr, " ");
+        }
     }
     fprintf(stderr, "priv=%c", priv_str[s.iflags.PRV]);
     fprintf(stderr, " mstatus=");
@@ -468,8 +469,9 @@ static inline uint32_t get_pending_irq_mask(STATE_ACCESS &a) {
     uint64_t mie = a.read_mie();
 
     uint32_t pending_ints = mip & mie;
-    if (pending_ints == 0)
+    if (pending_ints == 0) {
         return 0;
+    }
 
     uint32_t enabled_ints = 0;
     auto priv = a.read_iflags_PRV();
@@ -487,8 +489,9 @@ static inline uint32_t get_pending_irq_mask(STATE_ACCESS &a) {
             // Interrupts not set in mideleg are machine-mode
             // and cannot be masked by supervisor mode
             enabled_ints = ~mideleg;
-            if (mstatus & MSTATUS_SIE_MASK)
+            if (mstatus & MSTATUS_SIE_MASK) {
                 enabled_ints |= mideleg;
+            }
             break;
         }
         default:
@@ -864,12 +867,14 @@ template <typename T, typename STATE_ACCESS>
 static inline execute_status execute_LR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     T val = 0;
-    if (!read_virtual_memory<T>(a, vaddr, &val))
+    if (!read_virtual_memory<T>(a, vaddr, &val)) {
         return advance_to_raised_exception(a);
+    }
     a.write_ilrsc(vaddr);
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0)
+    if (rd != 0) {
         a.write_x(rd, static_cast<uint64_t>(val));
+    }
     return advance_to_next_insn(a, pc);
 }
 
@@ -883,15 +888,17 @@ static inline execute_status execute_SC(STATE_ACCESS &a, uint64_t pc, uint32_t i
     uint64_t val = 0;
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     if (a.read_ilrsc() == vaddr) {
-        if (!write_virtual_memory<T>(a, vaddr, static_cast<T>(a.read_x(insn_get_rs2(insn)))))
+        if (!write_virtual_memory<T>(a, vaddr, static_cast<T>(a.read_x(insn_get_rs2(insn))))) {
             return advance_to_raised_exception(a);
+        }
         a.write_ilrsc(-1);
     } else {
         val = 1;
     }
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0)
+    if (rd != 0) {
         a.write_x(rd, val);
+    }
     return advance_to_next_insn(a, pc);
 }
 
@@ -920,15 +927,18 @@ template <typename T, typename STATE_ACCESS, typename F>
 static inline execute_status execute_AMO(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     T valm = 0;
-    if (!read_virtual_memory<T>(a, vaddr, &valm))
+    if (!read_virtual_memory<T>(a, vaddr, &valm)) {
         return execute_status::retired;
+    }
     T valr = static_cast<T>(a.read_x(insn_get_rs2(insn)));
     valr = f(valm, valr);
-    if (!write_virtual_memory<T>(a, vaddr, valr))
+    if (!write_virtual_memory<T>(a, vaddr, valr)) {
         return execute_status::retired;
+    }
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0)
+    if (rd != 0) {
         a.write_x(rd, static_cast<uint64_t>(valm));
+    }
     return advance_to_next_insn(a, pc);
 }
 
@@ -1455,8 +1465,9 @@ static inline uint64_t read_csr_mimpid(STATE_ACCESS &a, bool *status) {
 template <typename STATE_ACCESS>
 static uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
 
-    if (csr_priv(csraddr) > a.read_iflags_PRV())
+    if (csr_priv(csraddr) > a.read_iflags_PRV()) {
         return read_csr_fail(status);
+    }
 
     switch (csraddr) {
         case CSR_address::ucycle: return read_csr_cycle(a, csraddr, status);
@@ -1593,8 +1604,9 @@ static bool write_csr_satp(STATE_ACCESS &a, uint64_t val) {
     uint64_t satp = a.read_satp();
     auto mode = satp >> 60;
     auto new_mode = (val >> 60) & 0xf;
-    if (new_mode == 0 || (new_mode >= 8 && new_mode <= 9))
+    if (new_mode == 0 || (new_mode >= 8 && new_mode <= 9)) {
         mode = new_mode;
+    }
     // no ASID implemented
     a.write_satp((val & (((uint64_t)1 << 44) - 1)) | ((uint64_t)mode << 60));
     // Since MMU configuration was changted, flush the TLBs
@@ -1622,7 +1634,9 @@ static bool write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
     // Modify only bits that can be written to
     mstatus = (mstatus & ~MSTATUS_W_MASK) | (val & MSTATUS_W_MASK);
     // Update the SD bit
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_MASK) mstatus |= MSTATUS_SD_MASK;
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_MASK) {
+        mstatus |= MSTATUS_SD_MASK;
+    }
     // Store results
     a.write_mstatus(mstatus);
     return true;
@@ -1728,8 +1742,12 @@ static bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t val) {
     print_uint64_t(val);
     fprintf(stderr, "\n");
 #endif
-    if (csr_is_read_only(csraddr)) return false;
-    if (csr_priv(csraddr) > a.read_iflags_PRV()) return false;
+    if (csr_is_read_only(csraddr)) {
+        return false;
+    }
+    if (csr_priv(csraddr) > a.read_iflags_PRV()) {
+        return false;
+    }
 
     switch (csraddr) {
         case CSR_address::sstatus: return write_csr_sstatus(a, val);
@@ -1808,19 +1826,23 @@ static inline execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t pc, uint32
     uint64_t csrval = 0;
     // If rd=r0, we do not read from the CSR to avoid side-effects
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0)
+    if (rd != 0) {
         csrval = read_csr(a, csraddr, &status);
-    if (!status)
+    }
+    if (!status) {
         return raise_illegal_insn_exception(a, pc, insn);
+    }
     // Try to write new CSR value
     //??D When we optimize the inner interpreter loop, we
     //    will have to check if there was a change to the
     //    memory manager and report back from here so we
     //    break out of the inner loop
-    if (!write_csr(a, csraddr, rs1val(a, insn)))
+    if (!write_csr(a, csraddr, rs1val(a, insn))) {
         return raise_illegal_insn_exception(a, pc, insn);
-    if (rd != 0)
+    }
+    if (rd != 0) {
         a.write_x(rd, csrval);
+    }
     return advance_to_next_insn(a, pc);
 
 }
@@ -1851,22 +1873,25 @@ static inline execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, uint32
     // Try to read old CSR value
     bool status = false;
     uint64_t csrval = read_csr(a, csraddr, &status);
-    if (!status)
+    if (!status) {
         return raise_illegal_insn_exception(a, pc, insn);
+    }
     // Load value of rs1 before potentially overwriting it
     // with the value of the csr when rd=rs1
     uint32_t rs1 = insn_get_rs1(insn);
     uint64_t rs1val = a.read_x(rs1);
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0)
+    if (rd != 0) {
         a.write_x(rd, csrval);
+    }
     if (rs1 != 0) {
         //??D When we optimize the inner interpreter loop, we
         //    will have to check if there was a change to the
         //    memory manager and report back from here so we
         //    break out of the inner loop
-        if (!write_csr(a, csraddr, f(csrval, rs1val)))
+        if (!write_csr(a, csraddr, f(csrval, rs1val))) {
             return raise_illegal_insn_exception(a, pc, insn);
+        }
     }
     return advance_to_next_insn(a, pc);
 }
@@ -1895,19 +1920,22 @@ static inline execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc, uint3
     // Try to read old CSR value
     bool status = false;
     uint64_t csrval = read_csr(a, csraddr, &status);
-    if (!status)
+    if (!status) {
         return raise_illegal_insn_exception(a, pc, insn);
+    }
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0)
+    if (rd != 0) {
         a.write_x(rd, csrval);
+   }
     uint32_t rs1 = insn_get_rs1(insn);
     if (rs1 != 0) {
         //??D When we optimize the inner interpreter loop, we
         //    will have to check if there was a change to the
         //    memory manager and report back from here so we
         //    break out of the inner loop
-        if (!write_csr(a, csraddr, f(csrval, rs1)))
+        if (!write_csr(a, csraddr, f(csrval, rs1))) {
             return raise_illegal_insn_exception(a, pc, insn);
+        }
     }
     return advance_to_next_insn(a, pc);
 }
@@ -2018,8 +2046,9 @@ static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t 
     // Check privileges and do nothing else
     auto priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
-    if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TW_MASK)))
+    if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TW_MASK))) {
         return raise_illegal_insn_exception(a, pc, insn);
+    }
     return advance_to_next_insn(a, pc);
 }
 
@@ -2636,8 +2665,9 @@ static inline execute_status execute_LUI(STATE_ACCESS &a, uint64_t pc, uint32_t 
     dump_insn(a, pc, insn, "lui");
     auto note = a.make_scoped_note("lui"); (void) note;
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0)
+    if (rd != 0) {
         a.write_x(rd, insn_U_get_imm(insn));
+    }
     return advance_to_next_insn(a, pc);
 }
 
@@ -2647,8 +2677,9 @@ static inline execute_status execute_AUIPC(STATE_ACCESS &a, uint64_t pc, uint32_
     dump_insn(a, pc, insn, "auipc");
     auto note = a.make_scoped_note("auipc"); (void) note;
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0)
+    if (rd != 0) {
         a.write_x(rd, pc + insn_U_get_imm(insn));
+    }
     return advance_to_next_insn(a, pc);
 }
 
@@ -2662,8 +2693,9 @@ static inline execute_status execute_JAL(STATE_ACCESS &a, uint64_t pc, uint32_t 
         return raise_misaligned_fetch_exception(a, new_pc);
     }
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0)
+    if (rd != 0) {
         a.write_x(rd, pc + 4);
+    }
     return execute_jump(a, new_pc);
 }
 
@@ -2674,11 +2706,13 @@ static inline execute_status execute_JALR(STATE_ACCESS &a, uint64_t pc, uint32_t
     auto note = a.make_scoped_note("jalr"); (void) note;
     uint64_t val = pc + 4;
     uint64_t new_pc = static_cast<int64_t>(a.read_x(insn_get_rs1(insn)) + insn_I_get_imm(insn)) & ~static_cast<uint64_t>(1);
-    if (new_pc & 3)
+    if (new_pc & 3) {
         return raise_misaligned_fetch_exception(a, new_pc);
+    }
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0)
+    if (rd != 0) {
         a.write_x(rd, val);
+    }
     return execute_jump(a, new_pc);
 }
 
@@ -2692,8 +2726,9 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
         auto note = a.make_scoped_note("sfence.vma"); (void) note;
         auto priv = a.read_iflags_PRV();
         uint64_t mstatus = a.read_mstatus();
-        if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK)))
+        if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK))) {
             return raise_illegal_insn_exception(a, pc, insn);
+        }
         uint32_t rs1 = insn_get_rs1(insn);
         if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
             if (rs1 == 0) {

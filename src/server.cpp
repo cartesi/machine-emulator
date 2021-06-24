@@ -1131,8 +1131,9 @@ int main(int argc, char *argv[]) {
     for ( ;; ) {
         using side_effect = i_handler::side_effect;
         i_handler *h = nullptr;
-        if (!hctx.cq->Next(reinterpret_cast<void **>(&h), &hctx.ok))
+        if (!hctx.cq->Next(reinterpret_cast<void **>(&h), &hctx.ok)) {
             goto shutdown;
+        }
         switch (h->advance(hctx)) {
             case side_effect::none:
                 // do nothing
@@ -1156,7 +1157,9 @@ shutdown:
         // Drain completion queue before exiting
         bool ok = false;
         i_handler *h = nullptr;
-        while (hctx.cq->Next(reinterpret_cast<void **>(&h), &ok));
+        while (hctx.cq->Next(reinterpret_cast<void **>(&h), &ok)) {
+            ;
+        }
     }
     // Make sure we don't leave a snapshot burried
     squash_parent(hctx.forked);

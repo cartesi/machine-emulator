@@ -43,7 +43,9 @@ uint64_t dhd_get_h_rel_addr(int i) {
 static bool dhd_read(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t *val, int log2_size) {
     (void) pma;
 
-    if (log2_size != 3) return false;
+    if (log2_size != 3) {
+        return false;
+    }
 
     switch (offset) {
         case DHD_TSTART_REL_ADDR:
@@ -129,7 +131,9 @@ static bool dhd_write_hlength(const pma_entry &pma, i_device_state_access *a,
 /// \brief DHD device read callback. See ::pma_write.
 static bool dhd_write(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t val, int log2_size) {
 
-    if (log2_size != 3) return false;
+    if (log2_size != 3) {
+        return false;
+    }
 
     switch (offset) {
         case DHD_DLENGTH_REL_ADDR:

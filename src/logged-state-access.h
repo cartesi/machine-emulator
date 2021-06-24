@@ -111,8 +111,9 @@ public:
         /// \brief Destructor adds the "end" bracketting note
         /// if the log shared_ptr is not empty
         ~scoped_note() {
-            if (m_log)
+            if (m_log) {
                 m_log->push_bracket(bracket_type::end, m_text.c_str());
+            }
         }
     };
 
@@ -610,8 +611,9 @@ friend i_state_access<logged_state_access>;
         // access to build the new_val64 when writing at smaller granularities.
         // We therefore log a superfluous read access.
         uint64_t paligned = paddr & (~(sizeof(uint64_t)-1));
-        if (sizeof(T) < sizeof(uint64_t))
+        if (sizeof(T) < sizeof(uint64_t)) {
             log_read(paligned, old_val64, "memory (superfluous)");
+        }
         // Log the real write access
         log_before_write(paligned, old_val64, new_val64, "memory");
         // Actually modify the state
@@ -655,8 +657,9 @@ friend i_state_access<logged_state_access>;
             (void) istart; (void) ilength;
             // The pmas array always contain a sentinel. It is an entry with
             // zero length. If we hit it, return it
-            if (pma.get_length() == 0)
+            if (pma.get_length() == 0) {
                 return pma;
+            }
             // Otherwise, if we found an entry where the access fits, return it
             // Note the "strange" order of arithmetic operations.
             // This is to ensure there is no overflow.

@@ -66,8 +66,9 @@ pma_memory::pma_memory(uint64_t length, const callocd &c):
     m_backing_file{-1} {
     (void) c;
     m_host_memory = reinterpret_cast<unsigned char *>(calloc(1, length));
-    if (!m_host_memory)
+    if (!m_host_memory) {
         throw std::bad_alloc{};
+    }
 }
 
 pma_memory::pma_memory(uint64_t length, const mockd &m):
@@ -110,17 +111,19 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
     m_length{length},
     m_host_memory{nullptr},
     m_backing_file{-1} {
-    if (path.empty())
+    if (path.empty()) {
         throw std::runtime_error{"backing file required"};
+    }
 
     int oflag = m.shared? O_RDWR: O_RDONLY;
     int mflag = m.shared? MAP_SHARED: MAP_PRIVATE;
 
     // Try to open backing file
     int backing_file = open(path.c_str(), oflag);
-    if (backing_file < 0)
+    if (backing_file < 0) {
         throw std::system_error{errno, std::generic_category(),
             "could not open backing file '"s + path + "'"s};
+    }
 
     // Try to get file size
     struct stat statbuf;

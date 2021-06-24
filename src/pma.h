@@ -257,8 +257,9 @@ public:
         m_flags{},
         m_peek{pma_peek_error},
         m_data{pma_empty{}} {
-        if (length & (PMA_PAGE_SIZE-1))
+        if (length & (PMA_PAGE_SIZE-1)) {
             throw std::invalid_argument{"PMA length must be multiple of page size"};
+        }
     }
 
     /// \brief Default constructor creates an empty entry
@@ -275,8 +276,9 @@ public:
         m_data{std::move(memory)} {
         // allocate dirty page map and mark all pages as dirty
         m_dirty_page_map.resize(length/(8*PMA_PAGE_SIZE)+1, 0xff);
-        if (length & (PMA_PAGE_SIZE-1))
+        if (length & (PMA_PAGE_SIZE-1)) {
             throw std::invalid_argument{"PMA length must be multiple of page size"};
+        }
     }
 
     /// \brief Constructor for device entry
@@ -287,8 +289,9 @@ public:
         m_flags{},
         m_peek{peek},
         m_data{std::move(device)} {
-        if (length & (PMA_PAGE_SIZE-1))
+        if (length & (PMA_PAGE_SIZE-1)) {
             throw std::invalid_argument{"PMA length must be multiple of page size"};
+        }
     }
 
     /// \brief Set flags for lvalue references
@@ -425,7 +428,9 @@ public:
         if (!m_dirty_page_map.empty()) {
             auto page_number = address_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
             return m_dirty_page_map.at(page_number >> 3) & (1 << (page_number & 7));
-        } else return true;
+        } else {
+            return true;
+        }
     }
 
     /// \brief Marks all pages in range as clean

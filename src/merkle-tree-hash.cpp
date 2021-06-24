@@ -79,15 +79,17 @@ static void print_hash(const hash_type &hash, FILE *f) {
 /// \returns Hash if successful, nothing otherwise
 static std::optional<hash_type> read_hash(FILE *f) {
     char hex_hash[hasher_type::hash_size*2];
-    if (fread(hex_hash, 1, sizeof(hex_hash), f) != sizeof(hex_hash))
+    if (fread(hex_hash, 1, sizeof(hex_hash), f) != sizeof(hex_hash)) {
         return {};
+    }
     hash_type h;
     for (unsigned i = 0; i < hasher_type::hash_size; ++i) {
         char hex_c[3] = {hex_hash[2*i], hex_hash[2*i+1], 0};
         unsigned c = 0;
         // NOLINTNEXTLINE(cert-err34-c): we just generated the string so we don't need to verify it
-        if (sscanf(hex_c, "%x", &c) != 1)
+        if (sscanf(hex_c, "%x", &c) != 1) {
             return {};
+        }
         h[i] = c;
     }
     return h;
@@ -256,7 +258,9 @@ int main(int argc, char *argv[]) {
         if (got == 0) {
             if (ferror(input_file.get())) {
                 error("error reading input\n");
-            } else break;
+            } else {
+               break;
+            }
         }
         if (leaf_count >= max_leaves) {
             error("too many leaves for tree\n");

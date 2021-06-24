@@ -158,6 +158,11 @@ typedef struct {
     uint64_t iflags;          ///< Value of iflags CSR
 } cm_processor_config;
 
+typedef enum {
+    CM_MACHINE_LOCAL,
+    CM_MACHINE_GRPC
+} CM_MACHINE_TYPE;
+
 /// \brief RAM state configuration
 typedef struct {
     uint64_t length; ///< RAM length
@@ -407,23 +412,6 @@ CM_API int cm_verify_state_transition(const cm_hash *root_hash_before,
                                     const cm_machine_runtime_config *runtime_config, bool one_based,
                                     char **err_msg);
 
-
-/// \brief Obtains the block of data that has a given hash
-/// \param m Pointer to valid machine instance
-/// \param hash Pointer to buffer containing hash
-/// \param hlength Length  of hash in bytes
-/// \param out_dlength Maximum length of desired block of data with that hash.
-/// On return, contains the actual length of the block found. Or
-/// DHD_NOT_FOUND if no matching block was found.
-/// \param out_data The block of data with the given hash, or an empty block
-/// if not found
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
-/// must be deleted by the function caller using cm_delete_error_msg
-/// \returns 0 for success, non zero code for error
-CM_API int cm_dehash(cm_machine *m, const uint8_t* hash, uint64_t hlength,
-                uint64_t *out_dlength, uint8_t *out_data, char **err_msg);
-
 /// \brief Update the Merkle tree so it matches the contents of the machine state.
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
@@ -431,16 +419,6 @@ CM_API int cm_dehash(cm_machine *m, const uint8_t* hash, uint64_t hlength,
 /// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 CM_API int cm_update_merkle_tree(cm_machine *m, char **err_msg);
-
-/// \brief Update the Merkle tree after a page has been modified in the machine state.
-/// \param m Pointer to valid machine instance
-/// \param address Any address inside modified page.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
-/// must be deleted by the function caller using cm_delete_error_msg
-/// \returns 0 for success, non zero code for error
-CM_API int cm_update_merkle_tree_page(cm_machine *m, uint64_t address, char **err_msg);
-
 
 /// \brief Obtains the proof for a node in the Merkle tree.
 /// \param m Pointer to valid machine instance
@@ -1299,15 +1277,6 @@ CM_API int cm_set_iflags_Y(cm_machine *m, char **err_msg);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_iflags_H(const cm_machine *m, bool *val, char **err_msg);
 
-/// \brief Checks the value of the iflags_PRV field.
-/// \param m Pointer to valid machine instance
-/// \param val Receives the field value.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_msg
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_iflags_PRV(const cm_machine *m, uint8_t *val, char **err_msg);
-
 /// \brief Sets the iflags_H flag.
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
@@ -1315,24 +1284,6 @@ CM_API int cm_read_iflags_PRV(const cm_machine *m, uint8_t *val, char **err_msg)
 /// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 CM_API int cm_set_iflags_H(cm_machine *m, char **err_msg);
-
-/// \brief Sets bits in mip.
-/// \param m Pointer to valid machine instance
-/// \param mask Bits set in \p mask will also be set in mip
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_msg
-/// \returns 0 for success, non zero code for error
-CM_API int cm_set_mip(cm_machine *m, uint32_t mask, char **err_msg);
-
-/// \brief Resets bits in mip.
-/// \param m Pointer to valid machine instance
-/// \param mask Bits set in \p mask will also be reset in mip
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_msg
-/// \returns 0 for success, non zero code for error
-CM_API int cm_reset_mip(cm_machine *m, uint32_t mask, char **err_msg);
 
 /// \brief Dump all memory ranges to files in current working directory.
 /// \param m Pointer to valid machine instance
@@ -1342,13 +1293,6 @@ CM_API int cm_reset_mip(cm_machine *m, uint32_t mask, char **err_msg);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_dump_pmas(const cm_machine *m, char **err_msg);
 
-/// \brief Interact with console
-/// \param m Pointer to valid machine instance
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_msg
-/// \returns 0 for success, non zero code for error
-CM_API int cm_interact(cm_machine *m, char **err_msg);
 
 /// \brief Verify if dirty page maps are consistent.
 /// \param m Pointer to valid machine instance
@@ -1358,17 +1302,6 @@ CM_API int cm_interact(cm_machine *m, char **err_msg);
 /// must be deleted by the function caller using cm_delete_error_msg
 /// \returns 0 for success, non zero code for error
 CM_API int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char** err_msg);
-
-/// \brief Copies the current state into a configuration for serialization
-/// \param m Pointer to valid machine instance
-/// \param config Receives the configuration
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_msg
-/// \returns 0 for success, non zero code for error
-/// \details Object acquired from this function must not be changed and
-/// must be deleted with cm_delete_machine_config
-CM_API int cm_get_serialization_config(const cm_machine *m, const cm_machine_config **config, char** err_msg);
 
 /// \brief Returns copy of initialization config.
 /// \param m Pointer to valid machine instance

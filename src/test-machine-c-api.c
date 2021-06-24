@@ -200,23 +200,14 @@ int main() {
         cm_delete_proof(proof);
     }
 
-    // Check dehash
-    uint8_t dehash_data[10000];
-    memset(dehash_data, 0, sizeof(dehash_data));
-    uint64_t dehash_data_length = sizeof(dehash_data);
-    if ((error_code = cm_dehash(my_machine, proof->target_hash, 32, &dehash_data_length,
-                                dehash_data, &err_msg)) != 0) {
-        printf("Error performing dehash, error code: %d message: %s\n", error_code, err_msg);
-        cm_delete_error_msg(err_msg);
-    } else {
-        printf("Dehash successfull, size acquired: %ld, first byte: %x\n", dehash_data_length,
-               dehash_data[0]);
-    }
-
 
     //Verify merkle tree
-    bool merkle_check;
-    printf("Checking merkle tree %d\n", cm_verify_merkle_tree(my_machine, &merkle_check, &err_msg));
+    bool merkle_check = 0;
+    if ((error_code = cm_verify_merkle_tree(my_machine, &merkle_check, &err_msg))!= 0) {
+        printf("Error checking merkle tree, error code: %d message: %s\n", error_code, err_msg);
+        cm_delete_error_msg(err_msg);
+    };
+    printf("Checking merkle tree %d\n", merkle_check);
 
     //Read write some register
     if ((error_code = cm_write_csr(my_machine, CM_PROC_MCYCLE, 3, &err_msg))!= 0) {

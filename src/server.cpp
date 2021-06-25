@@ -137,7 +137,7 @@ protected:
 
     side_effect finish_ok(ServerAsyncResponseWriter<RESPONSE> *writer,
         const RESPONSE &resp, side_effect se = side_effect::none) {
-        writer->Finish(resp, Status::OK, this);
+        writer->Finish(resp, Status::OK, this); // NOLINT: suppress warning caused by gRPC
         return se;
     }
 

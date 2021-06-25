@@ -175,7 +175,7 @@ static handler::pull_type *new_handler(const std::string &rpc_name,
             // completion queue, and the dispatcher resumes us
             yield(side_effect::none);
             // Start client response
-            writer_finish(writer, response, status, self);
+            writer_finish(writer, response, status, self); // NOLINT: suppress warning caused by gRPC
             // Yield until done sending response, we are returned in the
             // completion queue, and the dispatcher resumes us
             yield(last_effect);

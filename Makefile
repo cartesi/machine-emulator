@@ -164,6 +164,7 @@ $(DEPDIR)/grpc $(BUILDDIR)/lib/libgrpc.$(LIB_EXTENSION): | $(BUILDDIR)
 	cd $(DEPDIR)/grpc && git submodule update --init --recursive --depth 1
 	mkdir -p $(DEPDIR)/grpc/cmake/build && cd $(DEPDIR)/grpc/cmake/build && cmake -C $(abspath $(DEPDIR))/grpc.cmake -DCMAKE_INSTALL_PREFIX=$(BUILDDIR) ../..
 	$(MAKE) -C $(DEPDIR)/grpc/cmake/build all install
+	if [ "$(UNAME)" = "Darwin" ]; then install_name_tool -add_rpath @loader_path/../lib $(BUILDDIR)/bin/grpc_cpp_plugin; fi
 
 $(SUBCLEAN) $(DEPCLEAN): %.clean:
 	$(MAKE) -C $* clean
@@ -181,15 +182,11 @@ build-alpine-image:
 	docker build -t cartesi/machine-emulator:$(TAG)-alpine -f .github/workflows/Dockerfile.alpine .
 
 install-Darwin:
-	install_name_tool -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi.so
-	install_name_tool -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi/grpc.so
+	install_name_tool -delete_rpath $(BUILDDIR)/lib -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi.so
+	install_name_tool -delete_rpath $(BUILDDIR)/lib -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi/grpc.so
 	cd $(BIN_INSTALL_PATH) && \
 		for x in $(DEP_TO_BIN) $(EMU_TO_BIN); do \
 			install_name_tool -add_rpath $(LIB_INSTALL_PATH) $$x ;\
-		done
-	cd $(LIB_INSTALL_PATH) && \
-		for x in `find . -maxdepth 1 -type f -name "*.dylib" | cut -d "/" -f 2`; do \
-			install_name_tool -add_rpath $(LIB_INSTALL_PATH) $$x ; \
 		done
 
 install-Linux:

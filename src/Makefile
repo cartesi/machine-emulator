@@ -42,9 +42,7 @@ CXX_Darwin=clang++
 INCS_Darwin=
 
 ifeq ($(UNAME),Darwin)
-ifndef DYLD_LIBRARY_PATH
-	export DYLD_LIBRARY_PATH=$(BUILDDIR)/lib
-endif
+SOLDFLAGS_Darwin+=-Wl,-rpath,$(BUILDDIR)/lib
 # Homebrew installation
 ifneq (,$(wildcard /usr/local/opt/boost/lib))
 BOOST_LIB_DIR_Darwin=-L/usr/local/opt/boost/lib

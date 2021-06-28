@@ -243,8 +243,12 @@ constexpr const int LOG2_KECCAK_SIZE = 5;
 constexpr const uint64_t KECCAK_SIZE = UINT64_C(1) << LOG2_KECCAK_SIZE;
 constexpr const uint64_t INPUT_METADATA_LENGTH = 128;
 constexpr const uint64_t OUTPUT_PAYLOAD_ADDRESS_LENGTH = 32;
+constexpr const uint64_t OUTPUT_PAYLOAD_OFFSET_LENGTH = 32;
 constexpr const uint64_t OUTPUT_PAYLOAD_LENGTH_LENGTH = 32;
+constexpr const uint64_t OUTPUT_PAYLOAD_MINIMUM_LENGTH = OUTPUT_PAYLOAD_ADDRESS_LENGTH+OUTPUT_PAYLOAD_OFFSET_LENGTH+OUTPUT_PAYLOAD_LENGTH_LENGTH;
+constexpr const uint64_t MESSAGE_PAYLOAD_OFFSET_LENGTH = 32;
 constexpr const uint64_t MESSAGE_PAYLOAD_LENGTH_LENGTH = 32;
+constexpr const uint64_t MESSAGE_PAYLOAD_MINIMUM_LENGTH = MESSAGE_PAYLOAD_OFFSET_LENGTH+MESSAGE_PAYLOAD_LENGTH_LENGTH;
 
 /// \brief Type holding an input for processing
 struct input_type {
@@ -1177,9 +1181,9 @@ static void check_server_stub(session_type &session, const std::string &address)
 /// mandatory address and payload length fields
 /// \param session Associated session
 static void check_outputs_payload_entry_length(const session_type &session) {
-    if (session.outputs_description.payload_entry_length < OUTPUT_PAYLOAD_ADDRESS_LENGTH+OUTPUT_PAYLOAD_LENGTH_LENGTH) {
+    if (session.outputs_description.payload_entry_length < OUTPUT_PAYLOAD_MINIMUM_LENGTH) {
         THROW((finish_error_yield_none{grpc::StatusCode::OUT_OF_RANGE, "output payload entry length must be longer than " +
-            std::to_string(OUTPUT_PAYLOAD_ADDRESS_LENGTH+OUTPUT_PAYLOAD_LENGTH_LENGTH) + "bytes"}));
+            std::to_string(OUTPUT_PAYLOAD_MINIMUM_LENGTH) + "bytes"}));
     }
 }
 
@@ -1187,9 +1191,9 @@ static void check_outputs_payload_entry_length(const session_type &session) {
 /// mandatory payload length field
 /// \param session Associated session
 static void check_messages_payload_entry_length(const session_type &session) {
-    if (session.messages_description.payload_entry_length < MESSAGE_PAYLOAD_LENGTH_LENGTH) {
+    if (session.messages_description.payload_entry_length < MESSAGE_PAYLOAD_MINIMUM_LENGTH) {
         THROW((finish_error_yield_none{grpc::StatusCode::OUT_OF_RANGE, "message payload entry length must be longer than " +
-            std::to_string(MESSAGE_PAYLOAD_LENGTH_LENGTH) + "bytes"}));
+            std::to_string(MESSAGE_PAYLOAD_MINIMUM_LENGTH) + "bytes"}));
     }
 }
 
@@ -1282,11 +1286,11 @@ dout{request_context} << "Received StartSession request for id " << id;
                    THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT, "max cycles per input is less than cycles per input chunk"}));
                 }
                 // If output payload entry lengths too small for required data, bail out
-                if (session.outputs_description.payload_entry_length <  OUTPUT_PAYLOAD_ADDRESS_LENGTH+OUTPUT_PAYLOAD_LENGTH_LENGTH) {
+                if (session.outputs_description.payload_entry_length < OUTPUT_PAYLOAD_MINIMUM_LENGTH) {
                    THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT, "output payload entry length to small"}));
                 }
                 // If message payload entry lengths too small for required data, bail out
-                if (session.messages_description.payload_entry_length < MESSAGE_PAYLOAD_LENGTH_LENGTH) {
+                if (session.messages_description.payload_entry_length < MESSAGE_PAYLOAD_MINIMUM_LENGTH) {
                    THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT, "message payload entry length to small"}));
                 }
                 // Start accepting CheckIn rpcs. At this point we are not accepting other StartSession rpcs.
@@ -1525,6 +1529,7 @@ static uint64_t count_null_terminated_entries(const std::string &data, uint64_t 
         if (is_null(begin, begin + entry_length)) {
             return count;
         }
+        count++;
         begin += entry_length;
     }
     return count;
@@ -1555,9 +1560,10 @@ static inline uint64_t get_payload_length(session_type &session, IT begin, IT en
         THROW((taint_session{session, grpc::StatusCode::OUT_OF_RANGE, "payload length too large"}));
     }
     uint64_t length = 0;
-    for (unsigned i = 0; i < sizeof(uint64_t) && end != begin; ++i) {
-        length += static_cast<uint8_t>(*end) << 8*i;
-        ++end;
+    IT byte_iterator = end - 1;
+    for (unsigned i = 0; i < sizeof(uint64_t) && byte_iterator != begin; ++i) {
+        length += static_cast<uint8_t>(*byte_iterator) << 8*i;
+        --byte_iterator;
     }
     return length;
 }
@@ -1572,7 +1578,7 @@ static hash_type read_output_address_and_payload_data_length(async_context &actx
     const FlashDriveConfig &drive = actx.session.outputs_description.drive_pair.payload_flash_drive_config;
     auto entry_start = entry_index*actx.session.outputs_description.payload_entry_length;
     read_request.set_address(drive.start()+entry_start);
-    read_request.set_length(OUTPUT_PAYLOAD_ADDRESS_LENGTH+OUTPUT_PAYLOAD_LENGTH_LENGTH);
+    read_request.set_length(OUTPUT_PAYLOAD_MINIMUM_LENGTH);
     grpc::ClientContext client_context;
     set_deadline(client_context, actx.session.server_deadline.fast);
     auto reader = actx.session.server_stub->AsyncReadMemory(&client_context, read_request, actx.completion_queue);
@@ -1586,7 +1592,7 @@ static hash_type read_output_address_and_payload_data_length(async_context &actx
     if (read_response.data().size() != read_request.length()) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
     }
-    auto payload_data_length_begin = read_response.data().begin()+OUTPUT_PAYLOAD_ADDRESS_LENGTH;
+    auto payload_data_length_begin = read_response.data().begin()+OUTPUT_PAYLOAD_ADDRESS_LENGTH+OUTPUT_PAYLOAD_OFFSET_LENGTH;
     auto payload_data_length_end = payload_data_length_begin+OUTPUT_PAYLOAD_LENGTH_LENGTH;
     *payload_data_length = get_payload_length(actx.session, payload_data_length_begin, payload_data_length_end);
     auto address_begin = read_response.data().begin();
@@ -1600,7 +1606,7 @@ static hash_type read_output_address_and_payload_data_length(async_context &actx
 /// \param payload_data_length Length of payload data in entry
 /// \return Contents of output payload data
 static std::string read_output_payload_data(async_context &actx, uint64_t entry_index, uint64_t payload_data_length) {
-    auto payload_data_offset = OUTPUT_PAYLOAD_ADDRESS_LENGTH+OUTPUT_PAYLOAD_LENGTH_LENGTH;
+    auto payload_data_offset = OUTPUT_PAYLOAD_MINIMUM_LENGTH;
     const FlashDriveConfig &drive = actx.session.outputs_description.drive_pair.payload_flash_drive_config;
     if (payload_data_length > actx.session.outputs_description.payload_entry_length-payload_data_offset) {
         THROW((taint_session{actx.session, grpc::StatusCode::OUT_OF_RANGE, "output payload length is out of bounds"}));
@@ -1635,7 +1641,7 @@ static uint64_t read_message_payload_data_length(async_context &actx, uint64_t e
     const FlashDriveConfig &drive = actx.session.messages_description.drive_pair.payload_flash_drive_config;
     auto entry_start = entry_index*actx.session.messages_description.payload_entry_length;
     read_request.set_address(drive.start()+entry_start);
-    read_request.set_length(MESSAGE_PAYLOAD_LENGTH_LENGTH);
+    read_request.set_length(MESSAGE_PAYLOAD_MINIMUM_LENGTH);
     grpc::ClientContext client_context;
     set_deadline(client_context, actx.session.server_deadline.fast);
     auto reader = actx.session.server_stub->AsyncReadMemory(&client_context, read_request, actx.completion_queue);
@@ -1649,7 +1655,9 @@ static uint64_t read_message_payload_data_length(async_context &actx, uint64_t e
     if (read_response.data().size() != read_request.length()) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
     }
-    return get_payload_length(actx.session, read_response.data().begin(), read_response.data().end());
+    auto payload_data_length_begin = read_response.data().begin()+MESSAGE_PAYLOAD_OFFSET_LENGTH;
+    auto payload_data_length_end = payload_data_length_begin+MESSAGE_PAYLOAD_LENGTH_LENGTH;
+    return get_payload_length(actx.session, payload_data_length_begin, payload_data_length_end);
 }
 
 /// \brief Asynchronously reads a message payload data from the messages payload drive
@@ -1658,7 +1666,7 @@ static uint64_t read_message_payload_data_length(async_context &actx, uint64_t e
 /// \param payload_data_length Length of payload data in entry
 /// \return Contents of message payload data
 static std::string read_message_payload_data(async_context &actx, uint64_t entry_index, uint64_t payload_data_length) {
-    auto payload_data_offset = MESSAGE_PAYLOAD_LENGTH_LENGTH;
+    auto payload_data_offset = MESSAGE_PAYLOAD_MINIMUM_LENGTH;
     const FlashDriveConfig &drive = actx.session.messages_description.drive_pair.payload_flash_drive_config;
     if (payload_data_length > actx.session.messages_description.payload_entry_length-payload_data_offset) {
         THROW((taint_session{actx.session, grpc::StatusCode::OUT_OF_RANGE, "message payload length is out of bounds"}));
@@ -1712,7 +1720,7 @@ static proof_type get_proof(async_context &actx, uint64_t address, uint64_t log2
 /// \param entry_index Index of output entry to read
 /// \return Output at entry_index
 static output_type read_output(async_context &actx, const std::string &output_metadata, uint64_t entry_index) {
-    if ((entry_index+1)*KECCAK_SIZE < output_metadata.size()) {
+    if ((entry_index+1)*KECCAK_SIZE > output_metadata.size()) {
         THROW((taint_session{actx.session, grpc::StatusCode::OUT_OF_RANGE, "too few hashes in metadata"}));
     }
     auto keccak = get_hash(actx.session, &output_metadata[entry_index*KECCAK_SIZE], &output_metadata[(entry_index+1)*KECCAK_SIZE]);
@@ -1722,7 +1730,7 @@ dout{actx.request_context} << "      Getting proof of keccak in output metadata 
     uint64_t payload_data_length = 0;
 dout{actx.request_context} << "      Reading output address and length";
     auto address = read_output_address_and_payload_data_length(actx, entry_index, &payload_data_length);
-dout{actx.request_context} << "      Reading output payload";
+dout{actx.request_context} << "      Reading output payload at " << entry_index << " of length " << payload_data_length;
     auto payload_data = read_output_payload_data(actx, entry_index, payload_data_length);
     return { std::move(keccak), std::move(address), std::move(payload_data), std::move(keccak_in_output_metadata_flash_drive) };
 }
@@ -1733,7 +1741,7 @@ dout{actx.request_context} << "      Reading output payload";
 /// \param entry_index Index of message entry to read
 /// \return Message at entry_index
 static message_type read_message(async_context &actx, const std::string &message_metadata, uint64_t entry_index) {
-    if ((entry_index+1)*KECCAK_SIZE < message_metadata.size()) {
+    if ((entry_index+1)*KECCAK_SIZE > message_metadata.size()) {
         THROW((taint_session{actx.session, grpc::StatusCode::OUT_OF_RANGE, "too few hashes in metadata"}));
     }
     auto keccak = get_hash(actx.session, &message_metadata[entry_index*KECCAK_SIZE], &message_metadata[(entry_index+1)*KECCAK_SIZE]);
@@ -1742,7 +1750,7 @@ dout{actx.request_context} << "      Getting proof of keccak in message metadata
         LOG2_KECCAK_SIZE).slice(hasher_type{}, actx.session.messages_description.metadata_flash_drive_log2_size, LOG2_KECCAK_SIZE);
 dout{actx.request_context} << "      Reading message length";
     auto payload_data_length = read_message_payload_data_length(actx, entry_index);
-dout{actx.request_context} << "      Reading message payload";
+dout{actx.request_context} << "      Reading message payload at " << entry_index << " of length " << payload_data_length;
     auto payload_data = read_message_payload_data(actx, entry_index, payload_data_length);
     return { std::move(keccak), std::move(payload_data), std::move(keccak_in_message_metadata_flash_drive) };
 }
@@ -1898,6 +1906,7 @@ dout{actx.request_context} << "    Getting output metadata flash drive proof";
 dout{actx.request_context} << "    Reading outputs metadata flash drive";
             auto output_metadata = read_flash_drive(actx, actx.session.outputs_description.drive_pair.metadata_flash_drive_config);
             uint64_t output_count = count_null_terminated_entries(output_metadata, KECCAK_SIZE);
+dout{actx.request_context} << "    Output count " << output_count;
             std::vector<output_type> outputs;
             // Read each output payload
             for (uint64_t output_index = 0; output_index < output_count; ++output_index) {
@@ -1916,8 +1925,10 @@ dout{actx.request_context} << "    Getting message metadata flash drive proof";
             e.messages_tree.push_back(messages_metadata_flash_drive_in_machine.get_target_hash());
             auto messages_metadata_flash_drive_in_epoch = e.messages_tree.get_proof(input_index << LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE);
             // Read messages metadata drive and count the number of messages
+dout{actx.request_context} << "    Reading messages metadata flash drive";
             auto message_metadata = read_flash_drive(actx, actx.session.messages_description.drive_pair.metadata_flash_drive_config);
             uint64_t message_count = count_null_terminated_entries(message_metadata, KECCAK_SIZE);
+dout{actx.request_context} << "    Message count " << message_count;
             std::vector<message_type> messages;
             // Read each message payload
             for (uint64_t message_index = 0; message_index < message_count; ++message_index) {

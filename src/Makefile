@@ -458,7 +458,7 @@ grpc-util.o grpc-virtual-machine.o: $(LUACARTESI_GRPC_GEN_OBJS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d *.clang-tidy $(LIBCARTESI) cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy merkle-tree-hash tests/test-merkle-tree-hash tests/test-machine-c-api
+	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d *.clang-tidy $(LIBCARTESI) cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy merkle-tree-hash tests/test-merkle-tree-hash tests/test-machine-c-api rollup-machine-manager
 
 profile-clean:
 	rm -f *.profdata *.profraw *.gcda

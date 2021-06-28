@@ -168,33 +168,6 @@ void clua_setmetatable(lua_State *L, int objidx,
     lua_setmetatable(L, objidx);
 }
 
-/// \brief Pushes a copy of an object as a Lua object of a previously
-/// created Lua type
-/// \tparam T Associated C++ type
-/// \param L Lua state.
-/// \param value Object to be copied
-/// \param ctxidx Index (or pseudo-index) of clua context
-template <typename T>
-int clua_push(lua_State *L, const T &value, int ctxidx = lua_upvalueindex(1)) {
-    T* ptr = reinterpret_cast<T*>(lua_newuserdata(L, sizeof(T)));
-    new (ptr) T{value};
-    clua_setmetatable<T>(L, -1, ctxidx);
-    return 1;
-}
-
-/// \brief Moves an object to a Lua object of a previously defined Lua type
-/// \tparam T Associated C++ type
-/// \param L Lua state.
-/// \param value Object to be moved
-/// \param ctxidx Index (or pseudo-index) of clua context
-template <typename T>
-int clua_push(lua_State *L, T &&value, int ctxidx = lua_upvalueindex(1)) {
-    T* ptr = reinterpret_cast<T*>(lua_newuserdata(L, sizeof(T)));
-    new (ptr) T{std::move(value)};
-    clua_setmetatable<T>(L, -1, ctxidx);
-    return 1;
-}
-
 /// \brief Sets metamethods of a previously defined Lua type
 /// \tparam T Associated C++ type
 /// \param L Lua state.

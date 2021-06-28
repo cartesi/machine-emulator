@@ -22,6 +22,8 @@
 //GNU compiler visibility definition
 #if __GNUC__ >= 5
 #define CM_API __attribute__ ((visibility ("default")))
+#else 
+#define CM_API  
 #endif
 
 

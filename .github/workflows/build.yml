@@ -99,6 +99,8 @@ jobs:
           find /opt/cartesi/lib -type f -exec chmod 755 {} +
           chmod 755 ./tests/test-merkle-tree-hash
           patchelf --set-rpath /opt/cartesi/lib ./tests/test-merkle-tree-hash
+          chmod 755 ./tests/test-machine-c-api
+          patchelf --set-rpath /opt/cartesi/lib ./tests/test-machine-c-api
 
       - name: Download [rootfs.ext2]
         uses: Legion2/download-release-action@v2.1.0
@@ -162,6 +164,11 @@ jobs:
       - name: Run Merkle tree tests
         run: |
          ./tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
+
+      - name: Run C API tests
+        run: |
+          ./tests/test-machine-c-api
+
 
   verify:
     name: Verify

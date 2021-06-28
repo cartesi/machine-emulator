@@ -154,6 +154,7 @@ int main() {
     if ((error_code = cm_create_machine_from_dir("/unknown_dir", &my_runtime_config, &my_machine, &err_msg)) != 0) {
         printf("Error creating from directory machine, error code: %d message: %s\n", error_code, err_msg);
         cm_delete_error_msg(err_msg);
+        //Do not return here, error expected
     } else {
         printf("Machine successfully created!\n");
     }
@@ -163,6 +164,7 @@ int main() {
     if ((error_code = cm_create_machine(&my_machine_config, &my_runtime_config, &my_machine, &err_msg)) != 0) {
         printf("Error creating machine, error code: %d message: %s\n", error_code, err_msg);
         cm_delete_error_msg(err_msg);
+        return error_code;
     } else {
         printf("Machine successfully created!\n");
     }
@@ -172,6 +174,7 @@ int main() {
     if ((error_code = cm_update_merkle_tree(my_machine, &err_msg)) != 0) {
         printf("Error updating merkle tree, error code: %d message: %s\n", error_code, err_msg);
         cm_delete_error_msg(err_msg);
+        return error_code;
     } else {
         printf("Merkle tree successfully updated!\n");
     }
@@ -196,7 +199,6 @@ int main() {
         print_hash(proof->root_hash);
         printf("First page in memory hash:\n");
         print_hash(proof->target_hash);
-
         cm_delete_proof(proof);
     }
 
@@ -206,6 +208,7 @@ int main() {
     if ((error_code = cm_verify_merkle_tree(my_machine, &merkle_check, &err_msg))!= 0) {
         printf("Error checking merkle tree, error code: %d message: %s\n", error_code, err_msg);
         cm_delete_error_msg(err_msg);
+        return error_code;
     };
     printf("Checking merkle tree %d\n", merkle_check);
 
@@ -213,6 +216,7 @@ int main() {
     if ((error_code = cm_write_csr(my_machine, CM_PROC_MCYCLE, 3, &err_msg))!= 0) {
         printf("Error performing write scr, error code: %d message: %s\n", error_code, err_msg);
         cm_delete_error_msg(err_msg);
+        return error_code;
     };
     uint64_t reg_value;
     cm_read_csr(my_machine, CM_PROC_MCYCLE, &reg_value, &err_msg);
@@ -232,6 +236,7 @@ int main() {
                                      strlen((char *)data_to_write)+1, &err_msg)) !=0) {
         printf("Error writing memory, error code: %d message: %s\n", error_code, err_msg);
         cm_delete_error_msg(err_msg);
+        return error_code;
     };
 
     uint8_t data_read[128];
@@ -253,11 +258,13 @@ int main() {
     if ((error_code = cm_update_merkle_tree(my_machine, &err_msg)) != 0) {
         printf("Error updating merkle tree, error code: %d message: %s\n", error_code, err_msg);
         cm_delete_error_msg(err_msg);
+        return error_code;
     }
     cm_get_root_hash(my_machine, &root_hash_step0, &err_msg);
     if ((error_code = cm_step(my_machine, log_type, false, &access_log, &err_msg)) != 0) {
         printf("Error performing step, error code: %d message: %s\n", error_code, err_msg);
         cm_delete_error_msg(err_msg);
+        return error_code;
     } else {
         printf("Step succesfully performed\n");
         print_access_log(access_log);
@@ -266,6 +273,7 @@ int main() {
         if ((error_code = cm_verify_access_log(access_log, &my_runtime_config, false, &err_msg)) != 0) {
             printf("Error verifying access log, error code: %d message: %s\n", error_code, err_msg);
             cm_delete_error_msg(err_msg);
+            return error_code;
         } else {
             printf("Access log successfully verified\n");
         }
@@ -279,6 +287,7 @@ int main() {
                                                      &my_runtime_config, false, &err_msg)) != 0) {
             printf("Error verifying state transition, error code: %d message: %s\n", error_code, err_msg);
             cm_delete_error_msg(err_msg);
+            return error_code;
         } else {
             printf("State transition successfully verified\n");
         }
@@ -295,6 +304,7 @@ int main() {
         if ((error_code = cm_machine_run(my_machine, 0xfffffffff, &err_msg)) != 0) {
             printf("Error running macihne: %d message: %s\n", error_code, err_msg);
             cm_delete_error_msg(err_msg);
+            return error_code;
         }
         cm_read_mcycle(my_machine, &current_mcycle, &err_msg);
     }

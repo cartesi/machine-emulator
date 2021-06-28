@@ -491,7 +491,7 @@ get_proof(address_type target_address, int log2_target_size,
     }
     // Copy remaining proof values
     proof.set_target_address(target_address);
-    proof.set_root_hash(m_root->hash);
+    proof.set_root_hash(m_root->hash); // NOLINT: m_root can't be nullptr
 #ifndef NDEBUG
     // Return proof only if it passes verification
     if (!proof.verify(hasher_type{})) {

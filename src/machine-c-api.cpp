@@ -510,18 +510,14 @@ static cartesi::access convert_from_c(const cm_access *c_access) {
         cpp_access.set_proof(proof);
     }
 
-    cartesi::access_data cpp_read_data{};
-    for (size_t  i=0; i<c_access->read_data_size; ++i) {
-        cpp_read_data.push_back(c_access->read_data[i]); //todo optimize this, use iterators?
+    if (c_access->read_data_size > 0) {
+        cpp_access.set_read(cartesi::access_data{c_access->read_data, c_access->read_data + c_access->read_data_size});
     }
-    cpp_access.set_read(cpp_read_data);
 
-    cartesi::access_data cpp_written_data{};
-    for (size_t  i=0; i<c_access->written_data_size; ++i) {
-        cpp_written_data.push_back(c_access->written_data[i]); //todo optimize this, use iterators?
+    if (c_access->written_data_size > 0) {
+        cpp_access.set_written(cartesi::access_data{c_access->written_data,
+                                                    c_access->written_data + c_access->written_data_size});
     }
-    cpp_access.set_written(cpp_written_data);
-
 
     return cpp_access;
 }

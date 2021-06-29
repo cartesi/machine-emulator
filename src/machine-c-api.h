@@ -1227,6 +1227,17 @@ CM_API int cm_read_dhd_hlength(const cm_machine *m, uint64_t *val, char **err_ms
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_dhd_hlength(cm_machine *m, uint64_t val, char **err_msg);
 
+/// \brief Reads the value of DHD's input hash word.
+/// \param m Pointer to valid machine instance
+/// \param i Index of input hash word.
+/// Between 0 and DHD_H_REG_COUNT-1, inclusive.
+/// \param val Receives value of the hash word.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_msg
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_dhd_h(const cm_machine *m, int i, uint64_t *val, char **err_msg);
+
 /// \brief Writes the value of DHD's input hash word.
 /// \param m Pointer to valid machine instance
 /// \param i Index of input hash word.

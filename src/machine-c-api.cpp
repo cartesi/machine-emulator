@@ -1041,6 +1041,16 @@ uint64_t cm_packed_iflags(int PRV, int Y, int H) {
     return cartesi::machine_state::packed_iflags(PRV, Y, H);
 }
 
+int cm_read_dhd_h(const cm_machine *m, int i, uint64_t *val, char **err_msg) {
+    try {
+        const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+        *val = cpp_machine->read_dhd_h(i);
+        return result_success(err_msg);
+    } catch (...) {
+        return result_failure(err_msg);
+    }
+}
+
 int cm_write_dhd_h(cm_machine *m, int i, uint64_t val, char **err_msg) {
     try {
         cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);

@@ -33,18 +33,19 @@
 #include "i-virtual-machine.h"
 #include "virtual-machine.h"
 
+static char *copy_cstr(const char *str) {
+    auto size = strlen(str) + 1;
+    auto *copy = new char[size];
+    strncpy(copy, str, size);
+    return copy;
+}
+
 static char *get_error_message_unknown() {
-    const char* err = "Unknown error";
-    char *c_str = new char[strlen(err)+1];
-    strcpy(c_str, err);
-    return c_str;
+    return copy_cstr("Unknown error");
 }
 
 static char *get_error_message(const std::exception &ex) {
-    const char* err = ex.what();
-    char *c_str = new char[strlen(err)+1];
-    strcpy(c_str, err);
-    return c_str;
+    return copy_cstr(ex.what());
 }
 
 static std::string null_to_empty(const char *s) {
@@ -125,10 +126,7 @@ static inline int result_unknown_error(char **err_msg) {
 // String conversion (strdup equivalent with new)
 // --------------------------------------------
 static char *convert_to_c(const std::string &cpp_str) {
-    char *c_str = new char[cpp_str.size()+1];
-    std::copy(cpp_str.begin(), cpp_str.end(), c_str);
-    c_str[cpp_str.size()] = '\0';
-    return c_str;
+    return copy_cstr(cpp_str.c_str());
 }
 
 
@@ -661,17 +659,17 @@ static inline cartesi::i_virtual_machine *load_virtual_machine(const char *dir,
     return new cartesi::virtual_machine(null_to_empty(dir), r);
 }
 
-static inline cartesi::i_virtual_machine *create_grpc_virtual_machine(const char* address,
-                                                                      const cartesi::machine_config &c,
-                                                                      const cartesi::machine_runtime_config &r) {
+static inline cartesi::i_virtual_machine *create_grpc_virtual_machine(const char* /* address */,
+                                                                      const cartesi::machine_config& /* c */,
+                                                                      const cartesi::machine_runtime_config& /* r */) {
     //todo Implement
     throw std::runtime_error("Not implemented");
     return nullptr;
 }
 
-static inline cartesi::i_virtual_machine *load_grpc_virtual_machine(const char* address,
-                                                                               const char *dir,
-                                                                               const cartesi::machine_runtime_config &r) {
+static inline cartesi::i_virtual_machine *load_grpc_virtual_machine(const char* /* address */,
+                                                                    const char* /* dir */,
+                                                                    const cartesi::machine_runtime_config& /* r */) {
     //todo Implement
     throw std::runtime_error("Not implemented");
     return nullptr;

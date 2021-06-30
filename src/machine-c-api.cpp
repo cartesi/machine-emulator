@@ -283,7 +283,7 @@ static cartesi::dhd_config convert_from_c(const cm_dhd_config *c_config) {
     new_cpp_dhd_config.dlength = c_config->dlength;
     new_cpp_dhd_config.hlength = c_config->hlength;
 
-    assert(sizeof(new_cpp_dhd_config.h) == sizeof(c_config->h));
+    static_assert(sizeof(new_cpp_dhd_config.h) == sizeof(c_config->h));
     memcpy(&new_cpp_dhd_config.h, &c_config->h, sizeof(uint64_t) * CM_MACHINE_DHD_H_REG_COUNT);
 
     return new_cpp_dhd_config;
@@ -297,7 +297,7 @@ static cm_dhd_config convert_to_c(const cartesi::dhd_config &cpp_config) {
     new_c_dhd_config.dlength = cpp_config.dlength;
     new_c_dhd_config.hlength = cpp_config.hlength;
 
-    assert(sizeof(new_c_dhd_config.h) == sizeof(cpp_config.h));
+    static_assert(sizeof(new_c_dhd_config.h) == sizeof(cpp_config.h));
     memcpy(&new_c_dhd_config.h, &cpp_config.h, sizeof(uint64_t) * CM_MACHINE_DHD_H_REG_COUNT);
     return new_c_dhd_config;
 }

@@ -20,7 +20,7 @@
 
 
 
-#define _POSIX_C_SOURCE 200809L //need for usage of strdup as it is not ANSI C99
+#define _POSIX_C_SOURCE 200809L // NOLINT: need for usage of strdup as it is not ANSI C99
 
 #include <alloca.h>
 #include <stdio.h>

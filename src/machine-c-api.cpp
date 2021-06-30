@@ -16,7 +16,7 @@
 
 #include <alloca.h>
 #include <cstring>
-#include <iostream>
+#include <string>
 #include <exception>
 #include <stdexcept>
 #include <future>
@@ -328,19 +328,17 @@ static cartesi::machine_config convert_from_c(const cm_machine_config *c_config)
         throw std::invalid_argument("Invalid machine configuration");
     }
 
-    cartesi::flash_drive_configs flash_configs{};
-    for (size_t i = 0; i < c_config->flash_drive_count; ++i) {
-        flash_configs.push_back(convert_from_c(&(c_config->flash_drive[i])));
-    }
-
     cartesi::machine_config new_cpp_machine_config{};
     new_cpp_machine_config.processor = convert_from_c(&c_config->processor);
     new_cpp_machine_config.ram = convert_from_c(&c_config->ram);
     new_cpp_machine_config.rom = convert_from_c(&c_config->rom);
-    new_cpp_machine_config.flash_drive = flash_configs;
     new_cpp_machine_config.clint =  convert_from_c(&c_config->clint);
     new_cpp_machine_config.htif = convert_from_c(&c_config->htif);
     new_cpp_machine_config.dhd = convert_from_c(&c_config->dhd);
+
+    for (size_t i = 0; i < c_config->flash_drive_count; ++i) {
+        new_cpp_machine_config.flash_drive.push_back(convert_from_c(&(c_config->flash_drive[i])));
+    }
 
     return new_cpp_machine_config;
 }
@@ -628,7 +626,7 @@ static cartesi::access_log convert_from_c(const cm_access_log *c_acc_log) {
 // -----------------------------------------------------
 // Public API functions for generation of default configs
 // -----------------------------------------------------
-const cm_machine_config *cm_new_default_machine_config() {
+const cm_machine_config *cm_new_default_machine_config(void) {
     cartesi::machine_config cpp_config = cartesi::machine::get_default_config();
 
     return convert_to_c(cpp_config);
@@ -658,6 +656,11 @@ static inline cartesi::i_virtual_machine *create_virtual_machine(const cartesi::
 
 }
 
+static inline cartesi::i_virtual_machine *load_virtual_machine(const char *dir,
+                                                                          const cartesi::machine_runtime_config &r) {
+    return new cartesi::virtual_machine(null_to_empty(dir), r);
+}
+
 static inline cartesi::i_virtual_machine *create_grpc_virtual_machine(const char* address,
                                                                       const cartesi::machine_config &c,
                                                                       const cartesi::machine_runtime_config &r) {
@@ -666,12 +669,7 @@ static inline cartesi::i_virtual_machine *create_grpc_virtual_machine(const char
     return nullptr;
 }
 
-static inline cartesi::i_virtual_machine *create_virtual_machine_from_dir(const char *dir,
-                                                                          const cartesi::machine_runtime_config &r) {
-    return new cartesi::virtual_machine(null_to_empty(dir), r);
-}
-
-static inline cartesi::i_virtual_machine *create_grpc_virtual_machine_from_dir(const char* address,
+static inline cartesi::i_virtual_machine *load_grpc_virtual_machine(const char* address,
                                                                                const char *dir,
                                                                                const cartesi::machine_runtime_config &r) {
     //todo Implement
@@ -680,50 +678,44 @@ static inline cartesi::i_virtual_machine *create_grpc_virtual_machine_from_dir(c
 }
 
 int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
-                      cm_machine **new_machine, char **err_msg) {
-    try {
-        const cartesi::machine_config c = convert_from_c(config);
-        const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
-        *new_machine = static_cast<cm_machine *>(create_virtual_machine(c, r));
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+                      cm_machine **new_machine, char **err_msg) try {
+    const cartesi::machine_config c = convert_from_c(config);
+    const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
+    *new_machine = static_cast<cm_machine *>(create_virtual_machine(c, r));
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
+}
+
+int cm_load_machine(const char *dir, const cm_machine_runtime_config *runtime_config,
+                               cm_machine **new_machine, char **err_msg) try {
+    const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
+    *new_machine = static_cast<cm_machine *>(load_virtual_machine(dir, r));
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
 
 int cm_create_grpc_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
-                           const char *address, cm_machine **new_machine, char **err_msg) {
-    try {
-        const cartesi::machine_config c = convert_from_c(config);
-        const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
-        *new_machine = static_cast<cm_machine *>(create_grpc_virtual_machine(address, c, r));
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+                           const char *address, cm_machine **new_machine, char **err_msg) try {
+    const cartesi::machine_config c = convert_from_c(config);
+    const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
+    *new_machine = static_cast<cm_machine *>(create_grpc_virtual_machine(address, c, r));
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
 
-int cm_create_machine_from_dir(const char *dir, const cm_machine_runtime_config *runtime_config,
-                               cm_machine **new_machine, char **err_msg) {
-    try {
-        const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
-        *new_machine = static_cast<cm_machine *>(create_virtual_machine_from_dir(dir, r));
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+
+int cm_load_grpc_machine(const char *dir, const cm_machine_runtime_config *runtime_config,
+                                    const char *address, cm_machine **new_machine, char **err_msg) try {
+    const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
+    *new_machine = static_cast<cm_machine *>(load_grpc_virtual_machine(address, dir, r));
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
 
-int cm_create_grpc_machine_from_dir(const char *dir, const cm_machine_runtime_config *runtime_config,
-                                    const char *address, cm_machine **new_machine, char **err_msg) {
-    try {
-        const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
-        *new_machine = static_cast<cm_machine *>(create_grpc_virtual_machine_from_dir(address, dir, r));
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
-}
 
 void cm_delete_machine(cm_machine *m) {
     if (m == nullptr) {
@@ -733,39 +725,35 @@ void cm_delete_machine(cm_machine *m) {
     delete cpp_machine;
 }
 
-int cm_store(cm_machine *m, const char *dir, char **err_msg) {
-    try {
-        cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
-        cpp_machine->store(null_to_empty(dir));
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+int cm_store(cm_machine *m, const char *dir, char **err_msg) try {
+    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    cpp_machine->store(null_to_empty(dir));
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
 
 
-int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg) {
-    try {
-        cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
-        cpp_machine->run(mcycle_end);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg) try {
+    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    cpp_machine->run(mcycle_end);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
+
 
 int cm_step(cm_machine *m, const cm_access_log_type log_type, bool one_based,
-            cm_access_log **access_log, char **err_msg) {
-    try {
-        cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
-        cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations};
-        cartesi::access_log cpp_access_log = cpp_machine->step(cpp_log_type, one_based);
-        *access_log = convert_to_c(cpp_access_log);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+            cm_access_log **access_log, char **err_msg) try {
+    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations};
+    cartesi::access_log cpp_access_log = cpp_machine->step(cpp_log_type, one_based);
+    *access_log = convert_to_c(cpp_access_log);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
+
 
 void cm_delete_access_log(cm_access_log *acc_log) {
     if (acc_log == nullptr) {
@@ -787,59 +775,57 @@ void cm_delete_access_log(cm_access_log *acc_log) {
     delete acc_log;
 }
 
-int cm_verify_access_log(const cm_access_log* log, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg) {
-    try {
-        const cartesi::access_log cpp_log = convert_from_c(log);
-        const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
-        cartesi::machine::verify_access_log(cpp_log, cpp_runtime_config, one_based);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+int cm_verify_access_log(const cm_access_log *log, const cm_machine_runtime_config *runtime_config,
+                         bool one_based, char **err_msg) try {
+    const cartesi::access_log cpp_log = convert_from_c(log);
+    const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
+    cartesi::machine::verify_access_log(cpp_log, cpp_runtime_config, one_based);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
+
 
 int cm_verify_state_transition(const cm_hash *root_hash_before,
                                const cm_access_log *log, const cm_hash *root_hash_after,
                                const cm_machine_runtime_config *runtime_config, bool one_based,
-                               char **err_msg) {
-    try {
-        const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-        const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-        const cartesi::access_log cpp_log = convert_from_c(log);
-        const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
-        cartesi::machine::verify_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
-                                                  cpp_runtime_config, one_based);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+                               char **err_msg) try {
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    const cartesi::access_log cpp_log = convert_from_c(log);
+    const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
+    cartesi::machine::verify_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
+                                              cpp_runtime_config, one_based);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
 
-int cm_update_merkle_tree(cm_machine *m, char **err_msg) {
-    try {
-        cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
-        bool result = cpp_machine->update_merkle_tree();
-        if (result) {
-            return result_success(err_msg);
-        } else {
-            *err_msg = get_error_message_unknown();
-            return CM_ERROR_UNKNOWN;
-        }
-    } catch (...) {
-        return result_failure(err_msg);
+
+int cm_update_merkle_tree(cm_machine *m, char **err_msg) try {
+    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    bool result = cpp_machine->update_merkle_tree();
+    if (result) {
+        return result_success(err_msg);
+    } else {
+        *err_msg = get_error_message_unknown();
+        return CM_ERROR_UNKNOWN;
     }
+} catch (...) {
+    return result_failure(err_msg);
 }
 
-int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm_merkle_tree_proof **proof, char **err_msg) {
-    try {
-        const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
-        const cartesi::machine_merkle_tree::proof_type cpp_proof = cpp_machine->get_proof(address, log2_size);
-        *proof = convert_to_c(cpp_proof);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+
+int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size,
+                 cm_merkle_tree_proof **proof, char **err_msg) try {
+    const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    const cartesi::machine_merkle_tree::proof_type cpp_proof = cpp_machine->get_proof(address, log2_size);
+    *proof = convert_to_c(cpp_proof);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
+
 
 void cm_delete_proof(cm_merkle_tree_proof *proof) {
     if (proof == nullptr) {
@@ -850,109 +836,100 @@ void cm_delete_proof(cm_merkle_tree_proof *proof) {
 }
 
 
-int cm_get_root_hash(const cm_machine *m, cm_hash *hash, char **err_msg) {
-    try {
-        const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
-        cartesi::machine_merkle_tree::hash_type cpp_hash;
-        cpp_machine->get_root_hash(cpp_hash);
-        memcpy(hash, static_cast<const uint8_t *>(cpp_hash.data()), sizeof(cm_hash));
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+int cm_get_root_hash(const cm_machine *m, cm_hash *hash, char **err_msg) try {
+    const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    cartesi::machine_merkle_tree::hash_type cpp_hash;
+    cpp_machine->get_root_hash(cpp_hash);
+    memcpy(hash, static_cast<const uint8_t *>(cpp_hash.data()), sizeof(cm_hash));
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
 
-int cm_verify_merkle_tree(const cm_machine *m, bool *result, char **err_msg) {
-    try {
-        const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
-        *result = cpp_machine->verify_merkle_tree();
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+
+int cm_verify_merkle_tree(const cm_machine *m, bool *result, char **err_msg) try {
+    const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    *result = cpp_machine->verify_merkle_tree();
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
 
-int cm_read_csr(const cm_machine *m, CM_PROC_CSR r, uint64_t *val, char **err_msg) {
-    try {
-        const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
-        cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(r);
-        *val = cpp_machine->read_csr(cpp_csr);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+
+int cm_read_csr(const cm_machine *m, CM_PROC_CSR r, uint64_t *val, char **err_msg) try {
+    const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(r);
+    *val = cpp_machine->read_csr(cpp_csr);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
 
-int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg) {
-    try {
-        cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
-        cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(w);
-        cpp_machine->write_csr(cpp_csr, val);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+
+int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg) try {
+    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(w);
+    cpp_machine->write_csr(cpp_csr, val);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
+
 
 uint64_t cm_get_csr_address(CM_PROC_CSR w) {
     cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(w);
     return cartesi::machine::get_csr_address(cpp_csr);
 }
 
-int cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *word_value, char **err_msg) {
-    try {
-        const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
-        uint64_t cpp_word_value{0};
-        if (cpp_machine->read_word(word_address, cpp_word_value)) {
-            *word_value = cpp_word_value;
-            return result_success(err_msg);
-        } else {
-            return result_unknown_error(err_msg);
-        }
-    } catch (...) {
-        return result_failure(err_msg);
+int cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *word_value, char **err_msg) try {
+    const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    uint64_t cpp_word_value{0};
+    if (cpp_machine->read_word(word_address, cpp_word_value)) {
+        *word_value = cpp_word_value;
+        return result_success(err_msg);
+    } else {
+        return result_unknown_error(err_msg);
     }
+} catch (...) {
+    return result_failure(err_msg);
 }
 
-int cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *data, uint64_t length, char **err_msg) {
-    try {
-        const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
-        cpp_machine->read_memory(address, data, length);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+
+int cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *data, uint64_t length, char **err_msg) try {
+    const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    cpp_machine->read_memory(address, data, length);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
 
-int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length, char **err_msg) {
-    try {
-        cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
-        cpp_machine->write_memory(address, data, length);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+
+int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length, char **err_msg) try {
+    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    cpp_machine->write_memory(address, data, length);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
 
-int cm_read_x(const cm_machine *m, int i, uint64_t *val, char **err_msg) {
-    try {
-        const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
-        *val = cpp_machine->read_x(i);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+
+int cm_read_x(const cm_machine *m, int i, uint64_t *val, char **err_msg) try {
+    const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    *val = cpp_machine->read_x(i);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
 
-int cm_write_x(cm_machine *m, int i, uint64_t val, char **err_msg) {
-    try {
-        cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
-        cpp_machine->write_x(i, val);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+
+int cm_write_x(cm_machine *m, int i, uint64_t val, char **err_msg) try {
+    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    cpp_machine->write_x(i, val);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
+
 
 uint64_t cm_get_x_address(int i) {
     return cartesi::machine::get_x_address(i);
@@ -1041,125 +1018,112 @@ uint64_t cm_packed_iflags(int PRV, int Y, int H) {
     return cartesi::machine_state::packed_iflags(PRV, Y, H);
 }
 
-int cm_read_dhd_h(const cm_machine *m, int i, uint64_t *val, char **err_msg) {
-    try {
-        const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
-        *val = cpp_machine->read_dhd_h(i);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+int cm_read_dhd_h(const cm_machine *m, int i, uint64_t *val, char **err_msg) try {
+    const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    *val = cpp_machine->read_dhd_h(i);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
 
-int cm_write_dhd_h(cm_machine *m, int i, uint64_t val, char **err_msg) {
-    try {
-        cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
-        cpp_machine->write_dhd_h(i, val);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+
+int cm_write_dhd_h(cm_machine *m, int i, uint64_t val, char **err_msg) try {
+    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    cpp_machine->write_dhd_h(i, val);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
+
 
 uint64_t cm_get_dhd_h_address(int i) {
     return cartesi::machine::get_dhd_h_address(i);
 }
 
-int cm_read_iflags_Y(const cm_machine *m, bool *val, char **err_msg) {
-    try {
-        const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
-        *val = cpp_machine->read_iflags_Y();
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
-}
-
-int cm_reset_iflags_Y(cm_machine *m, char **err_msg) {
-    try {
-        cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
-        cpp_machine->reset_iflags_Y();
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
-}
-
-int cm_set_iflags_Y(cm_machine *m, char **err_msg) {
-    try {
-        cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
-        cpp_machine->set_iflags_Y();
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
-}
-
-int cm_read_iflags_H(const cm_machine *m, bool *val, char **err_msg) {
-    try {
-        const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
-        *val = cpp_machine->read_iflags_H();
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
-}
-
-int cm_set_iflags_H(cm_machine *m, char **err_msg) {
-    try {
-        cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
-        cpp_machine->set_iflags_H();
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+int cm_read_iflags_Y(const cm_machine *m, bool *val, char **err_msg) try {
+    const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    *val = cpp_machine->read_iflags_Y();
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
 
 
-int cm_dump_pmas(const cm_machine *m, char **err_msg) {
-    try {
-        const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
-        cpp_machine->dump_pmas();
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
-}
-
-int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char** err_msg) {
-    try {
-        const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
-        *result = cpp_machine->verify_dirty_page_maps();
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
-}
-
-
-int cm_get_initial_config(const cm_machine *m, const cm_machine_config **config, char **err_msg) {
-    try {
-        const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
-        cartesi::machine_config cpp_config = cpp_machine->get_initial_config();
-        *config = convert_to_c(cpp_config);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
-}
-
-int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash, char **err_msg) {
+int cm_reset_iflags_Y(cm_machine *m, char **err_msg) try {
     cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
-    try {
-        cartesi::flash_drive_config cpp_flash_config = convert_from_c(new_flash);
-        cpp_machine->replace_flash_drive(cpp_flash_config);
-        return result_success(err_msg);
-    } catch (...) {
-        return result_failure(err_msg);
-    }
+    cpp_machine->reset_iflags_Y();
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }
 
-void cm_delete_error_msg(char* err_msg) {
+
+int cm_set_iflags_Y(cm_machine *m, char **err_msg) try {
+    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    cpp_machine->set_iflags_Y();
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
+}
+
+
+int cm_read_iflags_H(const cm_machine *m, bool *val, char **err_msg) try {
+    const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    *val = cpp_machine->read_iflags_H();
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
+}
+
+
+int cm_set_iflags_H(cm_machine *m, char **err_msg) try {
+    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    cpp_machine->set_iflags_H();
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
+}
+
+
+int cm_dump_pmas(const cm_machine *m, char **err_msg) try {
+    const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    cpp_machine->dump_pmas();
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
+}
+
+
+int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char **err_msg) try {
+    const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    *result = cpp_machine->verify_dirty_page_maps();
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
+}
+
+
+int cm_get_initial_config(const cm_machine *m, const cm_machine_config **config, char **err_msg) try {
+    const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    cartesi::machine_config cpp_config = cpp_machine->get_initial_config();
+    *config = convert_to_c(cpp_config);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
+}
+
+
+int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash, char **err_msg) try {
+    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    cartesi::flash_drive_config cpp_flash_config = convert_from_c(new_flash);
+    cpp_machine->replace_flash_drive(cpp_flash_config);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
+}
+
+
+void cm_delete_error_message(char* err_msg) {
     if (err_msg == nullptr) {
         return;
     }

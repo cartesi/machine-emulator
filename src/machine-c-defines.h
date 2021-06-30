@@ -19,13 +19,10 @@
 
 
 
-//GNU compiler visibility definition
-#if __GNUC__ >= 5
+//Compiler visibility definition
+#ifndef CM_API
 #define CM_API __attribute__ ((visibility ("default")))
-#else 
-#define CM_API  
 #endif
-
 
 #define CM_MACHINE_HASH_BYTE_SIZE 32
 #define CM_MACHINE_X_REG_COUNT 32

@@ -25,7 +25,7 @@ function adjust_images_path(path)
     return string.gsub(path, "/*$", "") .. "/"
 end
 
-local test_utils = {
+local test_util = {
     incremental_merkle_tree_of_pages = {
         m_context = {},
         m_page_log2_size = 0,
@@ -40,7 +40,7 @@ local test_utils = {
 }
 
 
-function test_utils.make_do_test(build_machine)
+function test_util.make_do_test(build_machine)
     return function(description, f)
         io.write("  " .. description .. "...\n")
         local machine = build_machine()
@@ -52,7 +52,7 @@ end
 
 
 
-function test_utils.incremental_merkle_tree_of_pages:new(o, page_log2_size,
+function test_util.incremental_merkle_tree_of_pages:new(o, page_log2_size,
                                                          tree_log2_size)
     o = o or {}
     setmetatable(o, self)
@@ -65,7 +65,7 @@ function test_utils.incremental_merkle_tree_of_pages:new(o, page_log2_size,
     return o
 end
 
-function test_utils.incremental_merkle_tree_of_pages:add_page(new_page_hash)
+function test_util.incremental_merkle_tree_of_pages:add_page(new_page_hash)
     local right = new_page_hash
     assert(self.m_page_count < self.m_max_pages,
            "Page count must be smaller than max pages")
@@ -82,12 +82,12 @@ function test_utils.incremental_merkle_tree_of_pages:add_page(new_page_hash)
     self.m_page_count = self.m_page_count + 1
 end
 
-function test_utils.incremental_merkle_tree_of_pages:get_root_hash()
+function test_util.incremental_merkle_tree_of_pages:get_root_hash()
     assert(self.m_page_count <= self.m_max_pages,
            "Page count must be smaller or equal than max pages")
     local depth = self.m_tree_log2_size - self.m_page_log2_size
     if self.m_page_count < self.m_max_pages then
-        local root = test_utils.fromhex(
+        local root = test_util.fromhex(
                          test_data.zero_keccak_hash_table[self.m_page_log2_size])
         for i = 0, depth - 1 do
             if (self.m_page_count & (0x01 << i)) then
@@ -106,7 +106,7 @@ function test_utils.incremental_merkle_tree_of_pages:get_root_hash()
 
 end
 
-function test_utils.file_exists(name)
+function test_util.file_exists(name)
     local f = io.open(name, "r")
     if f ~= nil then
         io.close(f)
@@ -116,18 +116,18 @@ function test_utils.file_exists(name)
     end
 end
 
-function test_utils.fromhex(str)
+function test_util.fromhex(str)
     return
         (str:gsub('..', function(cc) return string.char(tonumber(cc, 16)) end))
 end
 
-function test_utils.tohex(str)
+function test_util.tohex(str)
     return (str:gsub('.', function(c)
         return string.format('%02X', string.byte(c))
     end))
 end
 
-function test_utils.split_string(inputstr, sep)
+function test_util.split_string(inputstr, sep)
     if sep == nil then sep = "%s" end
     local t = {}
     for str in string.gmatch(inputstr, "([^" .. sep .. "]+)") do
@@ -136,7 +136,7 @@ function test_utils.split_string(inputstr, sep)
     return t
 end
 
-function  test_utils.check_proof(proof)
+function  test_util.check_proof(proof)
     local hash = proof.target_hash
     for log2_size = proof.log2_target_size, proof.log2_root_size-1 do
         local bit = (proof.target_address & (1 << log2_size)) ~= 0
@@ -151,19 +151,19 @@ function  test_utils.check_proof(proof)
     return hash == proof.root_hash
 end
 
-function test_utils.align(v, el) return (v >> el << el) end
+function test_util.align(v, el) return (v >> el << el) end
 
 
 -- Calculate root hash for data buffer of log2_size
-function test_utils.calculate_root_hash(data, log2_size)
-    if log2_size < test_utils.hash.LOG2_WORD_SIZE then
+function test_util.calculate_root_hash(data, log2_size)
+    if log2_size < test_util.hash.LOG2_WORD_SIZE then
         error("Wrong data size", 2)
-    elseif log2_size > test_utils.hash.LOG2_WORD_SIZE then
+    elseif log2_size > test_util.hash.LOG2_WORD_SIZE then
         log2_size = log2_size - 1
         local sz = math.ceil(data:len() / 2)
         local child1 =
-            test_utils.calculate_root_hash(data:sub(1, sz), log2_size)
-        local child2 = test_utils.calculate_root_hash(data:sub(sz + 1,
+            test_util.calculate_root_hash(data:sub(1, sz), log2_size)
+        local child2 = test_util.calculate_root_hash(data:sub(sz + 1,
                                                                data:len()),
                                                       log2_size)
         local hash = cartesi.keccak(child1, child2)
@@ -178,19 +178,19 @@ end
 -- of page size page_log2_size
 -- calculate merke hash for region of up to tree_log2_size,
 -- using zero sibling hashes where needed
-function test_utils.calculate_region_hash(data_buffer, data_number_of_pages,
+function test_util.calculate_region_hash(data_buffer, data_number_of_pages,
                                           page_log2_size, tree_log2_size)
 
     local page_size = 2 ^ page_log2_size
 
-    local incremental_tree = test_utils.incremental_merkle_tree_of_pages:new({},
+    local incremental_tree = test_util.incremental_merkle_tree_of_pages:new({},
                                                                              page_log2_size,
                                                                              tree_log2_size)
 
     for i = 0, data_number_of_pages - 1 do
         local current_page_data = data_buffer:sub(i * page_size + 1,
                                                   (i + 1) * page_size)
-        local current_page_hash = test_utils.calculate_root_hash(
+        local current_page_hash = test_util.calculate_root_hash(
                                       current_page_data, page_log2_size)
         incremental_tree:add_page(current_page_hash)
     end
@@ -202,7 +202,7 @@ end
 
 -- Take data hash of some region and extend it with pristine space
 -- up to tree_log2_size, calculating target hash
-function test_utils.extend_region_hash(data_hash, data_address, data_log2_size,
+function test_util.extend_region_hash(data_hash, data_address, data_log2_size,
                                        tree_log2_size)
 
     local result_hash = data_hash
@@ -210,16 +210,16 @@ function test_utils.extend_region_hash(data_hash, data_address, data_log2_size,
     for n = data_log2_size + 1, tree_log2_size do
         if result_address % (2 ^ n) == 0 then
             local child1 = result_hash
-            local child2 = test_utils.fromhex(
+            local child2 = test_util.fromhex(
                                test_data.zero_keccak_hash_table[n - 1])
             result_hash = cartesi.keccak(child1, child2)
         else
-            local child1 = test_utils.fromhex(
+            local child1 = test_util.fromhex(
                                test_data.zero_keccak_hash_table[n - 1])
             local child2 = result_hash
             result_hash = cartesi.keccak(child1, child2)
             result_address = result_address & (~0x01 << (n - 1))
-            -- print("calculated level: ",n," value: ", test_utils.tohex(result_hash))
+            -- print("calculated level: ",n," value: ", test_util.tohex(result_hash))
         end
     end
 
@@ -230,25 +230,25 @@ end
 -- calculate merke hash for region of up to log2_result_address_space,
 -- using zero sibling hashes where needed. Data_address may not be aligned
 -- to the beginning of the log2_result_address_space
-function test_utils.calculate_region_hash_2(data_address, data_buffer,
+function test_util.calculate_region_hash_2(data_address, data_buffer,
                                             log2_data_size,
                                             log2_result_address_space)
 
     data_address = data_address & (~0x01 << (log2_data_size - 1))
 
     local data_hash =
-        test_utils.calculate_root_hash(data_buffer, log2_data_size)
+        test_util.calculate_root_hash(data_buffer, log2_data_size)
 
     local result_hash = data_hash
     local result_address = data_address
     for n = log2_data_size + 1, log2_result_address_space do
         if result_address % (2 ^ n) == 0 then
             local child1 = result_hash
-            local child2 = test_utils.fromhex(
+            local child2 = test_util.fromhex(
                                test_data.zero_keccak_hash_table[n - 1])
             result_hash = cartesi.keccak(child1, child2)
         else
-            local child1 = test_utils.fromhex(
+            local child1 = test_util.fromhex(
                                test_data.zero_keccak_hash_table[n - 1])
             local child2 = result_hash
             result_hash = cartesi.keccak(child1, child2)
@@ -260,4 +260,4 @@ function test_utils.calculate_region_hash_2(data_address, data_buffer,
 
 end
 
-return test_utils
+return test_util

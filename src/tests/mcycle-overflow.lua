@@ -17,7 +17,7 @@
 --
 
 local cartesi = require"cartesi"
-local test_utils = require "tests.utils"
+local test_util = require "tests.util"
 
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
 local MAX_MCYCLE = -1
@@ -39,10 +39,10 @@ local function build_machine()
             mvendorid = -1
         },
         rom = {
-            image_filename = test_utils.tests_path .. "bootstrap.bin"
+            image_filename = test_util.tests_path .. "bootstrap.bin"
         },
         ram = {
-            image_filename = test_utils.tests_path .. "mcycle_overflow.bin",
+            image_filename = test_util.tests_path .. "mcycle_overflow.bin",
             length = 32 << 20,
         },
     }

@@ -158,9 +158,9 @@ function test_data.get_cpu_addr()
     return cpu_addr
 end
 
-function test_data.get_cpu_reg_names()
+function test_data.get_cpu_csr_names()
 
-    local cpu_reg_names = {
+    local cpu_csr_names = {
         "pc", "mvendorid", "marchid", "mimpid", "mcycle", "minstret", "mstatus",
         "mtvec", "mscratch", "mepc", "mcause", "mtval", "misa", "mie", "mip",
         "medeleg", "mideleg", "mcounteren", "stvec", "sscratch", "sepc",
@@ -170,7 +170,7 @@ function test_data.get_cpu_reg_names()
         "dhd_dlength", "dhd_hlength"
     }
 
-    return cpu_reg_names
+    return cpu_csr_names
 
 end
 

@@ -1,5 +1,5 @@
 local cartesi = require"cartesi"
-local test_utils = require "tests.utils"
+local test_util = require "tests.util"
 
 -- Config yields 5 times with progress
 local config =  {
@@ -9,11 +9,11 @@ local config =  {
     marchid = -1,
   },
   ram = {
-    image_filename = test_utils.tests_path .. "htif_devices.bin",
+    image_filename = test_util.tests_path .. "htif_devices.bin",
     length = 0x4000000,
   },
   rom = {
-    image_filename = test_utils.tests_path .. "bootstrap.bin"
+    image_filename = test_util.tests_path .. "bootstrap.bin"
   },
 }
 

@@ -17,17 +17,17 @@
 --
 
 local cartesi = require"cartesi"
-local test_utils = require "tests.utils"
+local test_util = require "tests.util"
 
 
 
 local function build_machine()
     machine_config = {
         rom = {
-            image_filename = test_utils.tests_path .. "bootstrap.bin"
+            image_filename = test_util.tests_path .. "bootstrap.bin"
         },
         ram = {
-            image_filename = test_utils.tests_path .. "mtime_interrupt.bin",
+            image_filename = test_util.tests_path .. "mtime_interrupt.bin",
             length = 32 << 20,
         },
     }

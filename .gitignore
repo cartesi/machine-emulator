@@ -23,6 +23,7 @@ doc/xml/
 
 .venv
 .vscode
+.ycm_extra_conf.py
 
 *.so
 *.dtb

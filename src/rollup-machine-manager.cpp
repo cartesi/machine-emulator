@@ -1509,7 +1509,8 @@ static std::string read_flash_drive(async_context &actx, const FlashDriveConfig 
     }
     // Here we can't use copy elision because read_response holds the string we
     // want to move out
-    return std::move(*read_response.release_data());
+    auto data = read_response.release_data();
+    return data? std::move(*data): std::string{};
 }
 
 /// \brief Checkes if all values are null
@@ -1636,7 +1637,8 @@ static std::string read_output_payload_data(async_context &actx, uint64_t entry_
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
     }
     // Here we can't use copy elision because read_response holds the string we want to move out
-    return std::move(*read_response.release_data());
+    auto data = read_response.release_data();
+    return data? std::move(*data): std::string{};
 }
 
 /// \brief Asynchronously reads a message payload data length from the messages payload drive
@@ -1696,7 +1698,8 @@ static std::string read_message_payload_data(async_context &actx, uint64_t entry
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
     }
     // Here we can't use copy elision because read_response holds the string we want to move out
-    return std::move(*read_response.release_data());
+    auto data = read_response.release_data();
+    return data? std::move(*data): std::string{};
 }
 
 /// \brief Gets a Merkle tree proof from the machine server

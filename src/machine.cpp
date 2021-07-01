@@ -386,7 +386,7 @@ pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) {
 }
 
 const pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) const {
-    for (auto &pma: m_s.pmas) {
+    for (const auto &pma: m_s.pmas) {
         // Stop at first empty PMA
         if (pma.get_length() == 0) {
             return pma;
@@ -1011,7 +1011,7 @@ bool machine::verify_dirty_page_maps(void) const {
     if constexpr(!avoid_tlb<machine_state>::value) {
         // Go over the write TLB and mark as dirty all pages currently there
         for (int i = 0; i < TLB_SIZE; ++i) {
-            auto &write = m_s.tlb_write[i];
+            const auto &write = m_s.tlb_write[i];
             if (write.vaddr_page != UINT64_C(-1)) {
                 write.pma->mark_dirty_page(write.paddr_page -
                     write.pma->get_start());
@@ -1019,7 +1019,7 @@ bool machine::verify_dirty_page_maps(void) const {
         }
     }
     // Now go over all memory PMAs verifying that all dirty pages are marked
-    for (auto &pma: m_s.pmas) {
+    for (const auto &pma: m_s.pmas) {
         auto peek = pma.get_peek();
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length(); page_start_in_range += PMA_PAGE_SIZE) {
             uint64_t page_address = pma.get_start() + page_start_in_range;
@@ -1184,7 +1184,7 @@ const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas(voi
 
 void machine::dump_pmas(void) const {
     auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
-    for (auto &pma: m_s.pmas) {
+    for (const auto &pma: m_s.pmas) {
         if (pma.get_length() == 0) {
             break;
         }

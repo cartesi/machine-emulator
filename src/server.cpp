@@ -229,7 +229,7 @@ class handler_GetVersion final: public handler<Void, GetVersionResponse> {
         (void) hctx;
         (void) req;
         GetVersionResponse resp;
-        auto version = resp.mutable_version();
+        auto *version = resp.mutable_version();
         version->set_major(SERVER_VERSION_MAJOR);
         version->set_minor(SERVER_VERSION_MINOR);
         version->set_patch(SERVER_VERSION_PATCH);

@@ -810,7 +810,7 @@ private:
         uint64_t paligned = paddr & (~(sizeof(uint64_t)-1));
         uint64_t poffset = paddr & (sizeof(uint64_t)-1);
         uint64_t val64 = check_read_word(paligned, "memory");
-        auto pval64 = reinterpret_cast<const unsigned char *>(&val64);
+        const auto *pval64 = reinterpret_cast<const unsigned char *>(&val64);
         assert((paddr & (sizeof(T)-1)) == 0);
         *pval = aliased_aligned_read<T>(pval64+poffset);
     }

@@ -31,21 +31,21 @@ semantic_version get_proto_semantic_version(
 
 void set_proto_machine_config(const machine_config &c,
     CartesiMachine::MachineConfig* proto_c) {
-    auto proto_rom = proto_c->mutable_rom();
+    auto *proto_rom = proto_c->mutable_rom();
     proto_rom->set_bootargs(c.rom.bootargs);
     proto_rom->set_image_filename(c.rom.image_filename);
-    auto proto_ram = proto_c->mutable_ram();
+    auto *proto_ram = proto_c->mutable_ram();
     proto_ram->set_length(c.ram.length);
     proto_ram->set_image_filename(c.ram.image_filename);
-    auto proto_htif = proto_c->mutable_htif();
+    auto *proto_htif = proto_c->mutable_htif();
     proto_htif->set_console_getchar(c.htif.console_getchar);
     proto_htif->set_yield_progress(c.htif.yield_progress);
     proto_htif->set_yield_rollup(c.htif.yield_rollup);
     proto_htif->set_fromhost(c.htif.fromhost);
     proto_htif->set_tohost(c.htif.tohost);
-    auto proto_clint = proto_c->mutable_clint();
+    auto *proto_clint = proto_c->mutable_clint();
     proto_clint->set_mtimecmp(c.clint.mtimecmp);
-    auto proto_p = proto_c->mutable_processor();
+    auto *proto_p = proto_c->mutable_processor();
     proto_p->set_x1(c.processor.x[1]);
     proto_p->set_x2(c.processor.x[2]);
     proto_p->set_x3(c.processor.x[3]);
@@ -105,13 +105,13 @@ void set_proto_machine_config(const machine_config &c,
     proto_p->set_ilrsc(c.processor.ilrsc);
     proto_p->set_iflags(c.processor.iflags);
     for(const auto &f: c.flash_drive) {
-        auto proto_f = proto_c->add_flash_drive();
+        auto *proto_f = proto_c->add_flash_drive();
         proto_f->set_start(f.start);
         proto_f->set_length(f.length);
         proto_f->set_shared(f.shared);
         proto_f->set_image_filename(f.image_filename);
     }
-    auto proto_dhd = proto_c->mutable_dhd();
+    auto *proto_dhd = proto_c->mutable_dhd();
     proto_dhd->set_tstart(c.dhd.tstart);
     proto_dhd->set_tlength(c.dhd.tlength);
     proto_dhd->set_image_filename(c.dhd.image_filename);
@@ -124,9 +124,9 @@ void set_proto_machine_config(const machine_config &c,
 
 void set_proto_machine_runtime_config(const machine_runtime_config &r,
     CartesiMachine::MachineRuntimeConfig* proto_r) {
-    auto proto_dhd = proto_r->mutable_dhd();
+    auto *proto_dhd = proto_r->mutable_dhd();
     proto_dhd->set_source_address(r.dhd.source_address);
-    auto proto_concurrency = proto_r->mutable_concurrency();
+    auto *proto_concurrency = proto_r->mutable_concurrency();
     proto_concurrency->set_update_merkle_tree(r.concurrency.update_merkle_tree);
 }
 
@@ -190,7 +190,7 @@ void set_proto_access_log(const access_log &al,
         al.get_log_type().has_annotations());
     proto_al->mutable_log_type()->set_proofs(al.get_log_type().has_proofs());
     for (const auto &a: al.get_accesses()) {
-        auto proto_a = proto_al->add_accesses();
+        auto *proto_a = proto_al->add_accesses();
         switch (a.get_type()) {
             case access_type::read:
                 proto_a->set_type(CartesiMachine::AccessType::READ);
@@ -212,7 +212,7 @@ void set_proto_access_log(const access_log &al,
     }
     if (al.get_log_type().has_annotations()) {
         for (const auto &bn: al.get_brackets()) {
-            auto proto_bn = proto_al->add_brackets();
+            auto *proto_bn = proto_al->add_brackets();
             switch (bn.type) {
                 case bracket_type::begin:
                     proto_bn->set_type(

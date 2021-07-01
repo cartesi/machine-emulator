@@ -191,11 +191,11 @@ static handler::pull_type *new_handler(const std::string &rpc_name,
 static auto new_GetVersion_handler(handler_context &hctx) {
     return new_handler<Void, GetVersionResponse>("GetVersion",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetVersion(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetVersion(&client_context, request, cq);
         }
     );
@@ -204,11 +204,11 @@ static auto new_GetVersion_handler(handler_context &hctx) {
 static auto new_Machine_handler(handler_context &hctx) {
     return new_handler<MachineRequest, Void>("Machine",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestMachine(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncMachine(&client_context, request, cq);
         }
     );
@@ -217,11 +217,11 @@ static auto new_Machine_handler(handler_context &hctx) {
 static auto new_Run_handler(handler_context &hctx) {
     return new_handler<RunRequest, RunResponse>("Run",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestRun(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncRun(&client_context, request, cq);
         }
     );
@@ -230,11 +230,11 @@ static auto new_Run_handler(handler_context &hctx) {
 static auto new_Store_handler(handler_context &hctx) {
     return new_handler<StoreRequest, Void>("Store",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestStore(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncStore(&client_context, request, cq);
         }
     );
@@ -243,11 +243,11 @@ static auto new_Store_handler(handler_context &hctx) {
 static auto new_Destroy_handler(handler_context &hctx) {
     return new_handler<Void, Void>("Destroy",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestDestroy(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncDestroy(&client_context, request, cq);
         }
     );
@@ -256,11 +256,11 @@ static auto new_Destroy_handler(handler_context &hctx) {
 static auto new_Snapshot_handler(handler_context &hctx) {
     return new_handler<Void, Void>("Snapshot",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestSnapshot(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncSnapshot(&client_context, request, cq);
         }
     );
@@ -269,11 +269,11 @@ static auto new_Snapshot_handler(handler_context &hctx) {
 static auto new_Rollback_handler(handler_context &hctx) {
     return new_handler<Void, Void>("Rollback",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestRollback(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncRollback(&client_context, request, cq);
         }
     );
@@ -282,11 +282,11 @@ static auto new_Rollback_handler(handler_context &hctx) {
 static auto new_Shutdown_handler(handler_context &hctx) {
     return new_handler<Void, Void>("Shutdown",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestShutdown(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncShutdown(&client_context, request, cq);
         },
         side_effect::shutdown
@@ -296,11 +296,11 @@ static auto new_Shutdown_handler(handler_context &hctx) {
 static auto new_Step_handler(handler_context &hctx) {
     return new_handler<StepRequest, StepResponse>("Step",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestStep(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncStep(&client_context, request, cq);
         }
     );
@@ -309,11 +309,11 @@ static auto new_Step_handler(handler_context &hctx) {
 static auto new_ReadMemory_handler(handler_context &hctx) {
     return new_handler<ReadMemoryRequest, ReadMemoryResponse>("ReadMemory",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestReadMemory(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncReadMemory(&client_context, request, cq);
         }
     );
@@ -322,11 +322,11 @@ static auto new_ReadMemory_handler(handler_context &hctx) {
 static auto new_WriteMemory_handler(handler_context &hctx) {
     return new_handler<WriteMemoryRequest, Void>("WriteMemory",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestWriteMemory(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncWriteMemory(&client_context, request, cq);
         }
     );
@@ -335,11 +335,11 @@ static auto new_WriteMemory_handler(handler_context &hctx) {
 static auto new_ReadWord_handler(handler_context &hctx) {
     return new_handler<ReadWordRequest, ReadWordResponse>("ReadWord",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestReadWord(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncReadWord(&client_context, request, cq);
         }
     );
@@ -348,11 +348,11 @@ static auto new_ReadWord_handler(handler_context &hctx) {
 static auto new_GetRootHash_handler(handler_context &hctx) {
     return new_handler<Void, GetRootHashResponse>("GetRootHash",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetRootHash(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetRootHash(&client_context, request, cq);
         }
     );
@@ -361,11 +361,11 @@ static auto new_GetRootHash_handler(handler_context &hctx) {
 static auto new_GetProof_handler(handler_context &hctx) {
     return new_handler<GetProofRequest, GetProofResponse>("GetProof",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetProof(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetProof(&client_context, request, cq);
         }
     );
@@ -374,11 +374,11 @@ static auto new_GetProof_handler(handler_context &hctx) {
 static auto new_ReplaceFlashDrive_handler(handler_context &hctx) {
     return new_handler<ReplaceFlashDriveRequest, Void>("ReplaceFlashDrive",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestReplaceFlashDrive(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncReplaceFlashDrive(&client_context, request, cq);
         }
     );
@@ -387,11 +387,11 @@ static auto new_ReplaceFlashDrive_handler(handler_context &hctx) {
 static auto new_GetXAddress_handler(handler_context &hctx) {
     return new_handler<GetXAddressRequest, GetXAddressResponse>("GetXAddress",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetXAddress(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetXAddress(&client_context, request, cq);
         }
     );
@@ -400,11 +400,11 @@ static auto new_GetXAddress_handler(handler_context &hctx) {
 static auto new_ReadX_handler(handler_context &hctx) {
     return new_handler<ReadXRequest, ReadXResponse>("ReadX",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestReadX(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncReadX(&client_context, request, cq);
         }
     );
@@ -413,11 +413,11 @@ static auto new_ReadX_handler(handler_context &hctx) {
 static auto new_WriteX_handler(handler_context &hctx) {
     return new_handler<WriteXRequest, Void>("WriteX",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestWriteX(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncWriteX(&client_context, request, cq);
         }
     );
@@ -426,11 +426,11 @@ static auto new_WriteX_handler(handler_context &hctx) {
 static auto new_ResetIflagsY_handler(handler_context &hctx) {
     return new_handler<Void, Void>("ResetIflagsY",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestResetIflagsY(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncResetIflagsY(&client_context, request, cq);
         }
     );
@@ -439,11 +439,11 @@ static auto new_ResetIflagsY_handler(handler_context &hctx) {
 static auto new_GetDhdHAddress_handler(handler_context &hctx) {
     return new_handler<GetDhdHAddressRequest, GetDhdHAddressResponse>("GetDhdHAddress",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetDhdHAddress(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetDhdHAddress(&client_context, request, cq);
         }
     );
@@ -452,11 +452,11 @@ static auto new_GetDhdHAddress_handler(handler_context &hctx) {
 static auto new_ReadDhdH_handler(handler_context &hctx) {
     return new_handler<ReadDhdHRequest, ReadDhdHResponse>("ReadDhdH",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestReadDhdH(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncReadDhdH(&client_context, request, cq);
         }
     );
@@ -465,11 +465,11 @@ static auto new_ReadDhdH_handler(handler_context &hctx) {
 static auto new_WriteDhdH_handler(handler_context &hctx) {
     return new_handler<WriteDhdHRequest, Void>("WriteDhdH",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestWriteDhdH(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncWriteDhdH(&client_context, request, cq);
         }
     );
@@ -478,11 +478,11 @@ static auto new_WriteDhdH_handler(handler_context &hctx) {
 static auto new_GetCsrAddress_handler(handler_context &hctx) {
     return new_handler<GetCsrAddressRequest, GetCsrAddressResponse>("GetCsrAddress",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetCsrAddress(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetCsrAddress(&client_context, request, cq);
         }
     );
@@ -491,11 +491,11 @@ static auto new_GetCsrAddress_handler(handler_context &hctx) {
 static auto new_ReadCsr_handler(handler_context &hctx) {
     return new_handler<ReadCsrRequest, ReadCsrResponse>("ReadCsr",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestReadCsr(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncReadCsr(&client_context, request, cq);
         }
     );
@@ -504,11 +504,11 @@ static auto new_ReadCsr_handler(handler_context &hctx) {
 static auto new_WriteCsr_handler(handler_context &hctx) {
     return new_handler<WriteCsrRequest, Void>("WriteCsr",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestWriteCsr(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncWriteCsr(&client_context, request, cq);
         }
     );
@@ -517,11 +517,11 @@ static auto new_WriteCsr_handler(handler_context &hctx) {
 static auto new_GetInitialConfig_handler(handler_context &hctx) {
     return new_handler<Void, GetInitialConfigResponse>("GetInitialConfig",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetInitialConfig(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetInitialConfig(&client_context, request, cq);
         }
     );
@@ -530,11 +530,11 @@ static auto new_GetInitialConfig_handler(handler_context &hctx) {
 static auto new_VerifyMerkleTree_handler(handler_context &hctx) {
     return new_handler<Void, VerifyMerkleTreeResponse>("VerifyMerkleTree",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestVerifyMerkleTree(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncVerifyMerkleTree(&client_context, request, cq);
         }
     );
@@ -543,11 +543,11 @@ static auto new_VerifyMerkleTree_handler(handler_context &hctx) {
 static auto new_UpdateMerkleTree_handler(handler_context &hctx) {
     return new_handler<Void, UpdateMerkleTreeResponse>("UpdateMerkleTree",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestUpdateMerkleTree(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncUpdateMerkleTree(&client_context, request, cq);
         }
     );
@@ -556,11 +556,11 @@ static auto new_UpdateMerkleTree_handler(handler_context &hctx) {
 static auto new_VerifyDirtyPageMaps_handler(handler_context &hctx) {
     return new_handler<Void, VerifyDirtyPageMapsResponse>("VerifyDirtyPageMaps",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestVerifyDirtyPageMaps(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncVerifyDirtyPageMaps(&client_context, request, cq);
         }
     );
@@ -569,11 +569,11 @@ static auto new_VerifyDirtyPageMaps_handler(handler_context &hctx) {
 static auto new_DumpPmas_handler(handler_context &hctx) {
     return new_handler<Void, Void>("DumpPmas",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestDumpPmas(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncDumpPmas(&client_context, request, cq);
         }
     );
@@ -582,11 +582,11 @@ static auto new_DumpPmas_handler(handler_context &hctx) {
 static auto new_GetDefaultConfig_handler(handler_context &hctx) {
     return new_handler<Void, GetDefaultConfigResponse>("GetDefaultConfig",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetDefaultConfig(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetDefaultConfig(&client_context, request, cq);
         }
     );
@@ -595,11 +595,11 @@ static auto new_GetDefaultConfig_handler(handler_context &hctx) {
 static auto new_VerifyAccessLog_handler(handler_context &hctx) {
     return new_handler<VerifyAccessLogRequest, Void>("VerifyAccessLog",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestVerifyAccessLog(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncVerifyAccessLog(&client_context, request, cq);
         }
     );
@@ -608,11 +608,11 @@ static auto new_VerifyAccessLog_handler(handler_context &hctx) {
 static auto new_VerifyStateTransition_handler(handler_context &hctx) {
     return new_handler<VerifyStateTransitionRequest, Void>("VerifyStateTransition",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestVerifyStateTransition(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncVerifyStateTransition(&client_context, request, cq);
         }
     );

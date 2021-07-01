@@ -125,10 +125,10 @@ endif
 # The file is not being compiled but we want to keep it for reference.
 LINTER_IGNORE_SOURCES=xkcp-keccak-256-hasher.cpp
 LINTER_IGNORE_HEADERS=%.pb.h
-LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(shell find . -regex ".*\.\(cpp\|c\)" -printf '%f\n'))
-LINTER_HEADERS=$(filter-out $(LINTER_IGNORE_HEADERS),$(shell find . -regex ".*\.\(hpp\|h\)" -printf '%f\n'))
+LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard *.cpp) $(wildcard *.c)))
+LINTER_HEADERS=$(filter-out $(LINTER_IGNORE_HEADERS),$(strip $(wildcard *.hpp) $(wildcard *.h)))
 
-CLANG_TIDY=clang-tidy-11
+CLANG_TIDY=$(shell which clang-tidy-11 || which clang-tidy)
 CLANG_TIDY_TARGETS=$(patsubst %.cpp,%.clang-tidy,$(patsubst %.c,%.clang-tidy,$(LINTER_SOURCES)))
 
 EMPTY:=
@@ -293,6 +293,8 @@ PROTO_OBJS:= \
 
 $(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-deprecated-declarations -Wno-deprecated-copy
 
+PROTO_SOURCES:=$(PROTO_OBJS:.o=.cc)
+
 GRPC_PRX_OBJS:= \
 	$(PROTO_OBJS) \
 	grpc-util.o \
@@ -384,6 +386,8 @@ merkle-tree-hash: $(MERKLE_TREE_HASH_OBJS)
 tests/test-merkle-tree-hash: $(TEST_MERKLE_TREE_HASH_OBJS)
 	$(CXX) -o $@ $^ $(CRYPTOPP_LIB)
 
+grpc-interfaces: $(PROTO_SOURCES)
+
 cartesi-machine-server: $(GRPC_SRV_OBJS)
 	$(CXX) -o $@ $^ $(GRPC_SRV_LIBS)
 
@@ -405,7 +409,7 @@ tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) libcartesi.so
 
 grpc-util.o grpc-virtual-machine.o: $(LUACARTESI_GRPC_GEN_OBJS)
 
-%.clang-tidy: %.cpp
+%.clang-tidy: %.cpp $(PROTO_SOURCES)
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) 2>/dev/null
 
 %.clang-tidy: %.c

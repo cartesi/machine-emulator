@@ -120,7 +120,7 @@ void htif::poll_console(void) {
         int fd_max{0};
         fd_set rfds{};
         timeval tv{};
-        FD_ZERO(&rfds);
+        FD_ZERO(&rfds); // NOLINT: suppress cause on MacOSX it resolves to __builtin_bzero
         FD_SET(STDIN_FILENO, &rfds);
         if (select(fd_max+1, &rfds, nullptr, nullptr, &tv) > 0 &&
             FD_ISSET(0, &rfds)) {

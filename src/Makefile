@@ -57,6 +57,9 @@ BOOST_SERIAL_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_serialization-mt
 BOOST_CORO_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_coroutine-mt -lboost_context-mt
 GRPC_INC_Darwin=-I$(BUILDDIR)/include
 GRPC_LIB_Darwin=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread
+LIBCARTESI_Darwin=libcartesi.dylib
+LIBCARTESI_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_Darwin)'
+LIBCARTESI_TESTS_LDFLAGS_Darwin=-Wl,-rpath,'@executable_path/..'
 PROFILE_DATA_Darwin=default.profdata
 
 # Linux specific setup
@@ -70,6 +73,9 @@ BOOST_CORO_LIB_Linux:=-lboost_coroutine -lboost_context
 BOOST_INC_Linux=
 GRPC_INC_Linux:=-I$(BUILDDIR)/include
 GRPC_LIB_Linux:=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread
+LIBCARTESI_Linux=libcartesi.so
+LIBCARTESI_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
+LIBCARTESI_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
 PROFILE_DATA_Linux=
 
 CC=$(CC_$(UNAME))
@@ -82,14 +88,16 @@ BOOST_CORO_LIB=$(BOOST_CORO_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
 GRPC_LIB=$(GRPC_LIB_$(UNAME))
 GRPC_INC=$(GRPC_INC_$(UNAME))
-LIBCARTESI_LIB=
+LIBCARTESI=$(LIBCARTESI_$(UNAME))
+LIBCARTESI_LDFLAGS=$(LIBCARTESI_LDFLAGS_$(UNAME))
+LIBCARTESI_TESTS_LDFLAGS=$(LIBCARTESI_TESTS_LDFLAGS_$(UNAME))
+LIBCARTESI_LIB=-L. -lcartesi
 
 CARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB)
 LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB)
 LUACARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB) $(GRPC_LIB)
 GRPC_SRV_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_SERIAL_LIB)
 GRPC_PRX_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
-C_MACHINE_LIBS:=
 
 #DEFS+= -DMT_ALL_DIRTY
 
@@ -204,8 +212,8 @@ CARTESI_LIBS+=-lprofiler
 LUACARTESI_LIBS+=-lprofiler
 endif
 
-libcartesi.so: $(CARTESI_OBJS)
-	$(CXX) $(SOLDFLAGS) -o $@ $^ $(CARTESI_LIBS)
+$(LIBCARTESI): $(CARTESI_OBJS)
+	$(CXX) $(LIBCARTESI_LDFLAGS) -o $@ $^ $(CARTESI_LIBS)
 
 cartesi.so: $(LUACARTESI_OBJS)
 	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LUACARTESI_LIBS)
@@ -269,7 +277,7 @@ grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy
 
 hash: merkle-tree-hash tests/test-merkle-tree-hash
 
-c-api: libcartesi.so tests/test-machine-c-api
+c-api: $(LIBCARTESI) tests/test-machine-c-api
 
 MERKLE_TREE_HASH_OBJS:= \
 	back-merkle-tree.o \
@@ -396,8 +404,8 @@ cartesi-machine-proxy: $(GRPC_PRX_OBJS)
 
 cartesi-machine-server cartesi-machine-proxy: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
-tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) libcartesi.so
-	$(CC) -o $@ $^ $(C_MACHINE_LIBS)
+tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI)
+	$(CC) $(LIBCARTESI_TESTS_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI_LIB)
 
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 
@@ -425,7 +433,7 @@ grpc-util.o grpc-virtual-machine.o: $(LUACARTESI_GRPC_GEN_OBJS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d libcartesi.so cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy merkle-tree-hash tests/test-merkle-tree-hash tests/test-machine-c-api
+	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d $(LIBCARTESI) cartesi.so cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy merkle-tree-hash tests/test-merkle-tree-hash tests/test-machine-c-api
 
 profile-clean:
 	rm -f *.profdata *.profraw *.gcda

@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 
 #include "machine-c-api.h"
 
@@ -85,7 +86,7 @@ void print_data(const uint8_t* data, int data_size) {
 
 void print_merkle_tree_proof(const cm_merkle_tree_proof* proof) {
     printf("\n\t\tMerkle tree proof:\n");
-    printf("\t\t\ttarget_address: %lx\n", proof->target_address);
+    printf("\t\t\ttarget_address: %" PRIx64 "\n", proof->target_address);
     printf("\t\t\tlog2_target_size: %ld\n", proof->log2_target_size);
     printf("\t\t\ttarget_hash:");
     print_hash(proof->target_hash);
@@ -99,7 +100,7 @@ void print_merkle_tree_proof(const cm_merkle_tree_proof* proof) {
 void print_access(const cm_access* cm_acc) {
     printf("\tCM access:\n");
     printf("\t\ttype: %d\n", cm_acc->type);
-    printf("\t\taddress %lx\n", cm_acc->address);
+    printf("\t\taddress %" PRIx64 "\n", cm_acc->address);
     printf("\t\tlog2 size %d\n", cm_acc->log2_size);
     printf("\t\tread data size=%ld data:", cm_acc->read_data_size);
     print_data(cm_acc->read_data, cm_acc->read_data_size);
@@ -220,15 +221,15 @@ int main() {
     };
     uint64_t reg_value;
     cm_read_csr(my_machine, CM_PROC_MCYCLE, &reg_value, &err_msg);
-    printf("New value of mcycle is %ld\n", reg_value);
+    printf("New value of mcycle is %" PRIu64 "\n", reg_value);
 
     //Get csr address
-    printf("Address of pc counter is %lx\n", cm_get_csr_address(CM_PROC_PC));;
+    printf("Address of pc counter is %" PRIx64 "\n", cm_get_csr_address(CM_PROC_PC));
 
     // Read word
     uint64_t read_word_value = 0;
     cm_read_word(my_machine, 0x100, &read_word_value, &err_msg);
-    printf("Read memory from location 0x100 is %ld\n", read_word_value);
+    printf("Read memory from location 0x100 is %" PRIu64 "\n", read_word_value);
 
     //Write memory
     uint8_t data_to_write[] = "This is some data";
@@ -247,7 +248,7 @@ int main() {
     uint64_t  x_to_write = 78;
     cm_write_x(my_machine, 4, x_to_write, &err_msg);
     cm_read_x(my_machine, 4, &reg_value, &err_msg);
-    printf("X written '%ld' and x read: '%ld' and x address is %lx\n", x_to_write, reg_value,
+    printf("X written '%" PRIu64 "' and x read: '%" PRIu64 "' and x address is %" PRIx64 "\n", x_to_write, reg_value,
            cm_get_x_address(4));
 
 
@@ -309,7 +310,7 @@ int main() {
         cm_read_mcycle(my_machine, &current_mcycle, &err_msg);
     }
 
-    printf("Machine stopped after %ld cycles\n", current_mcycle);
+    printf("Machine stopped after %" PRIu64 " cycles\n", current_mcycle);
 
 
     printf("Deleting machine\n");

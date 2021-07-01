@@ -12,6 +12,8 @@ LUA_INSTALL_CPATH= $(PREFIX)/$(CDIR)
 LUA_INSTALL_PATH= $(PREFIX)/$(LDIR)
 INC_INSTALL_PATH= $(PREFIX)/include/machine-emulator
 INSTALL_PLAT = install-$(UNAME)
+LIBCARTESI_Darwin=libcartesi.dylib
+LIBCARTESI_Linux=libcartesi.so
 
 INSTALL= cp -RP
 CHMOD_EXEC= chmod 0755
@@ -21,7 +23,7 @@ STRIP_EXEC= strip -x
 DEP_TO_BIN= luapp5.3 luacpp5.3
 DEP_TO_LIB=
 EMU_TO_BIN= cartesi-machine-server cartesi-machine-proxy merkle-tree-hash
-EMU_TO_LIB= libcartesi.so
+EMU_TO_LIB= $(LIBCARTESI_$(UNAME))
 EMU_LUA_TO_BIN= cartesi-machine-tests.lua cartesi-machine.lua cartesi-machine-stored-hash.lua
 EMU_TO_LUA_PATH= cartesi/util.lua cartesi/proof.lua
 EMU_TO_LUA_CPATH= cartesi.so
@@ -61,7 +63,7 @@ LUAMYLIBS = "MYLIBS=-L/opt/local/lib/libomp -L/usr/local/opt/llvm/lib -lomp"
 # Linux specific settings
 else ifeq ($(UNAME),Linux)
 LUA_PLAT ?= linux
-LIBRARY_PATH := "export LD_LIBRARY_PATH=$(BUILDDIR)/lib"
+LIBRARY_PATH := "export LD_LIBRARY_PATH=$(BUILDDIR)/lib:$(SRCDIR)"
 LIB_EXTENSION := so
 DEP_TO_LIB += *.$(LIB_EXTENSION)*
 LUACC = "CC=g++"

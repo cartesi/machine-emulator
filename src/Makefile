@@ -170,19 +170,6 @@ CARTESI_OBJS:= \
 	machine-c-api.o
 
 LUACARTESI_OBJS:= \
-	clint.o \
-	rom.o \
-	htif.o \
-	dhd.o \
-	dhd-source.o \
-	shadow.o \
-	machine-merkle-tree.o \
-	pristine-merkle-tree.o \
-	pma.o \
-	machine.o \
-	machine-config.o \
-	interpret.o \
-	virtual-machine.o \
 	clua-cartesi.o \
 	clua-i-virtual-machine.o \
 	clua-machine.o \
@@ -217,7 +204,7 @@ endif
 $(LIBCARTESI): $(CARTESI_OBJS)
 	$(CXX) $(LIBCARTESI_LDFLAGS) -o $@ $^ $(CARTESI_LIBS)
 
-cartesi.so: $(LUACARTESI_OBJS)
+cartesi.so: $(LUACARTESI_OBJS) $(LIBCARTESI)
 	$(CXX) $(SOLDFLAGS) -o $@ $^ $(LUACARTESI_LIBS)
 
 cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS)

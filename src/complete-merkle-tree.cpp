@@ -119,7 +119,7 @@ complete_merkle_tree::bubble_up(void) {
         // Redo last entry (if any) because it may have been constructed
         // from the last non-pristine entry in the previous level paired
         // with a pristine entry (i.e., the previous level was odd).
-        auto first_entry = next.size() > 0? next.size()-1: next.size();
+        auto first_entry = !next.empty() ? next.size()-1: next.size();
         // Next level needs half as many (rounded up) as previous
         next.resize((prev.size()+1)/2);
         assert(first_entry <= next.size());

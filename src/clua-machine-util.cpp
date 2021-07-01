@@ -228,9 +228,9 @@ static bool opt_table_field(lua_State *L, int tabidx, const char *field) {
 static access_type check_access_type_field(lua_State *L, int tabidx,
     const char *field) {
     auto name = check_string_field(L, tabidx, field);
-    if (name.compare("read") == 0) {
+    if (name == "read") {
         return access_type::read;
-    } else if (name.compare("write") == 0) {
+    } else if (name == "write") {
         return access_type::write;
     } else {
         luaL_error(L, "invalid %s (expected access type)", field);
@@ -246,9 +246,9 @@ static access_type check_access_type_field(lua_State *L, int tabidx,
 static bracket_type check_bracket_type_field(lua_State *L, int tabidx,
     const char *field) {
     auto name = check_string_field(L, tabidx, field);
-    if (name.compare("begin") == 0) {
+    if (name == "begin") {
         return bracket_type::begin;
-    } else if (name.compare("end") == 0) {
+    } else if (name == "end") {
         return bracket_type::end;
     } else {
         luaL_error(L, "invalid %s (expected bracket type)", field);

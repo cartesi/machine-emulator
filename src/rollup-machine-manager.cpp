@@ -40,6 +40,7 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #pragma GCC diagnostic ignored "-Wdeprecated-copy"
+#pragma GCC diagnostic ignored "-Wtype-limits"
 #include <grpc++/grpc++.h>
 #include <grpc++/resource_quota.h>
 #include "cartesi-machine.grpc.pb.h"
@@ -479,7 +480,7 @@ private:
 
 /// \brief Creates a new handler for the GetVersion RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
-static void new_GetVersion_handler(handler_context &hctx) {
+static handler_type::pull_type *new_GetVersion_handler(handler_context &hctx) {
     handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
@@ -508,11 +509,12 @@ dout{request_context} << "Received GetVersion";
             yield(side_effect::none);
         }
     };
+    return self;
 }
 
 /// \brief Creates a new handler for the GetStatus RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
-static void new_GetStatus_handler(handler_context &hctx) {
+static handler_type::pull_type *new_GetStatus_handler(handler_context &hctx) {
     handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
@@ -523,9 +525,9 @@ static void new_GetStatus_handler(handler_context &hctx) {
             auto cq = hctx.completion_queue.get();
             hctx.manager_async_service.RequestGetStatus(&request_context, &request, &writer, cq, cq, self);
             yield(side_effect::none);
-            new_GetStatus_handler(hctx);
+            new_GetStatus_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
             // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
-            if (!hctx.ok) {
+            if (!hctx.ok) { // NOLINT: Unknown. Maybe linter bug?
                 return;
             }
 dout{request_context} << "Received GetStatus";
@@ -535,10 +537,11 @@ dout{request_context} << "Received GetStatus";
 dout{request_context} << "  " <<  session_id;
                 response.add_session_id(session_id);
             }
-            writer.Finish(response, grpc::Status::OK, self);
+            writer.Finish(response, grpc::Status::OK, self); // NOLINT: Unknown. Maybe linter bug?
             yield(side_effect::none);
         }
     };
+    return self;
 }
 
 /// \brief Sets a deadline for the request in a ClientContext
@@ -591,7 +594,7 @@ static void start_new_epoch(session_type &session) {
 
 /// \brief Creates a new handler for the FinishEpoch RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
-static void new_FinishEpoch_handler(handler_context &hctx) {
+static handler_type::pull_type *new_FinishEpoch_handler(handler_context &hctx) {
     handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
@@ -674,6 +677,7 @@ dout{request_context} << "  Storing into " << request.storage_directory();
             }
         }
     };
+    return self;
 }
 
 /// \brief Asynchronously shutsdown the machine server
@@ -695,7 +699,7 @@ dout{actx.request_context} << "  Shutting server down";
 
 /// \brief Creates a new handler for the EndSession RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
-static void new_EndSession_handler(handler_context &hctx) {
+static handler_type::pull_type *new_EndSession_handler(handler_context &hctx) {
     handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
@@ -761,11 +765,12 @@ dout{request_context} << "Received EndSession for id " << id;
             }
         }
     };
+    return self;
 }
 
 /// \brief Creates a new handler for the GetSessionStatus RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
-static void new_GetSessionStatus_handler(handler_context &hctx) {
+static handler_type::pull_type *new_GetSessionStatus_handler(handler_context &hctx) {
     handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
@@ -822,6 +827,7 @@ dout{request_context} << "  " <<  index;
             }
         }
     };
+    return self;
 }
 
 /// \brief Fills out Output message from structure
@@ -889,7 +895,7 @@ static void set_proto_processed_input(const processed_input_type &i,
 
 /// \brief Creates a new handler for the GetEpochStatus RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
-static void new_GetEpochStatus_handler(handler_context &hctx) {
+static handler_type::pull_type *new_GetEpochStatus_handler(handler_context &hctx) {
     handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
@@ -900,13 +906,13 @@ static void new_GetEpochStatus_handler(handler_context &hctx) {
             auto cq = hctx.completion_queue.get();
             hctx.manager_async_service.RequestGetEpochStatus(&request_context, &request, &writer, cq, cq, self);
             yield(side_effect::none);
-            new_GetEpochStatus_handler(hctx);
+            new_GetEpochStatus_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
             // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
             if (!hctx.ok) {
                 return;
             }
             try {
-                Status status;
+                Status status; // NOLINT: Unknown. Maybe linter bug?
                 GetEpochStatusResponse response;
                 auto &sessions = hctx.sessions;
                 auto id = request.session_id();
@@ -962,6 +968,7 @@ dout{request_context} << "Received GetEpochStatus for id " << id << " epoch " <<
             }
         }
     };
+    return self;
 }
 
 /// \brief Initializes new payload and metadata structure from request
@@ -1998,7 +2005,7 @@ dout{actx.request_context} << "    Input skipped because cycle limit was exceede
 
 /// \brief Creates a new handler for the EnqueueInput RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
-static void new_EnqueueInput_handler(handler_context &hctx) {
+static handler_type::pull_type *new_EnqueueInput_handler(handler_context &hctx) {
     handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
@@ -2012,14 +2019,14 @@ static void new_EnqueueInput_handler(handler_context &hctx) {
             yield(side_effect::none);
             // We now received a EnqueueInput
             // We will handle other EnqueueInput rpcs if we yield
-            new_EnqueueInput_handler(hctx);
+            new_EnqueueInput_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
             // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
             if (!hctx.ok) {
                 return;
             }
             try {
                 // Check if session id exists
-                auto &sessions = hctx.sessions;
+                auto &sessions = hctx.sessions; // NOLINT: Unknown. Maybe linter bug?
                 auto id = enqueue_input_request.session_id();
 dout{request_context} << "Received EnqueueInput for id " << id << " epoch " << enqueue_input_request.active_epoch_index();
                 // If a session is unknown, a bail out
@@ -2124,6 +2131,7 @@ dout{request_context} << "Received EnqueueInput for id " << id << " epoch " << e
             }
         }
     };
+    return self;
 }
 
 /// \brief Replaces the port specification (i.e., after ':') in an address
@@ -2265,20 +2273,20 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    // Start accepting requests for all rpcsInstall all handlers
-    new_GetVersion_handler(hctx);
-    new_StartSession_handler(hctx);
-    new_EnqueueInput_handler(hctx);
-    new_GetStatus_handler(hctx);
-    new_GetSessionStatus_handler(hctx);
-    new_GetEpochStatus_handler(hctx);
-    new_FinishEpoch_handler(hctx);
-    new_EndSession_handler(hctx);
+    // Start accepting requests for all RPCs
+    new_GetVersion_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_StartSession_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_EnqueueInput_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetStatus_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetSessionStatus_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetEpochStatus_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_FinishEpoch_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_EndSession_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
 
     // Dispatch loop
     for ( ;; ) {
         // Obtain the next active handler
-        handler_type::pull_type *h = nullptr;
+        handler_type::pull_type *h = nullptr; // NOLINT: cannot leak (drain_completion_queue kills remaining)
         if (!hctx.completion_queue->Next(reinterpret_cast<void **>(&h), &hctx.ok)) {
             goto shutdown;
         }

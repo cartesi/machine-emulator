@@ -639,41 +639,41 @@ static auto build_proxy(const char *address, handler_context &hctx) {
     return builder.BuildAndStart();
 }
 
-void enable_server_handlers(handler_context &hctx) {
-    new_GetVersion_handler(hctx);
-    new_Machine_handler(hctx);
-    new_Run_handler(hctx);
-    new_Store_handler(hctx);
-    new_Destroy_handler(hctx);
-    new_Snapshot_handler(hctx);
-    new_Rollback_handler(hctx);
-    new_Shutdown_handler(hctx);
-    new_Step_handler(hctx);
-    new_ReadMemory_handler(hctx);
-    new_WriteMemory_handler(hctx);
-    new_ReadWord_handler(hctx);
-    new_GetRootHash_handler(hctx);
-    new_GetProof_handler(hctx);
-    new_ReplaceFlashDrive_handler(hctx);
-    new_GetXAddress_handler(hctx);
-    new_ReadX_handler(hctx);
-    new_WriteX_handler(hctx);
-    new_ResetIflagsY_handler(hctx);
-    new_GetDhdHAddress_handler(hctx);
-    new_ReadDhdH_handler(hctx);
-    new_WriteDhdH_handler(hctx);
-    new_GetCsrAddress_handler(hctx);
-    new_ReadCsr_handler(hctx);
-    new_WriteCsr_handler(hctx);
-    new_GetInitialConfig_handler(hctx);
-    new_VerifyMerkleTree_handler(hctx);
-    new_UpdateMerkleTree_handler(hctx);
-    new_VerifyDirtyPageMaps_handler(hctx);
-    new_DumpPmas_handler(hctx);
-    new_GetDefaultConfig_handler(hctx);
-    new_VerifyAccessLog_handler(hctx);
-    new_VerifyStateTransition_handler(hctx);
-}
+static void enable_server_handlers(handler_context &hctx) {
+    new_GetVersion_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_Machine_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_Run_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_Store_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_Destroy_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_Snapshot_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_Rollback_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_Shutdown_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_Step_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_ReadMemory_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_WriteMemory_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_ReadWord_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetRootHash_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetProof_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_ReplaceFlashDrive_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetXAddress_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_ReadX_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_WriteX_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_ResetIflagsY_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetDhdHAddress_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_ReadDhdH_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_WriteDhdH_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetCsrAddress_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_ReadCsr_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_WriteCsr_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetInitialConfig_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_VerifyMerkleTree_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_UpdateMerkleTree_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_VerifyDirtyPageMaps_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_DumpPmas_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetDefaultConfig_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_VerifyAccessLog_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_VerifyStateTransition_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+} // NOLINT: cannot leak (pointer is in completion queue)
 
 static bool build_client(handler_context &hctx, const CheckInRequest &request) {
     // Instantiate client connection
@@ -705,7 +705,7 @@ static bool build_client(handler_context &hctx, const CheckInRequest &request) {
     return true;
 }
 
-static void new_CheckIn_handler(handler_context &hctx) {
+static handler::pull_type *new_CheckIn_handler(handler_context &hctx) {
     handler::pull_type* self = reinterpret_cast<handler::pull_type *>(operator new(sizeof(handler::pull_type)));
     new (self) handler::pull_type {
         [self, &hctx](handler::push_type &yield) {
@@ -720,18 +720,19 @@ static void new_CheckIn_handler(handler_context &hctx) {
             yield(side_effect::none);
             // Acknowledge check-in
             Void response;
-            writer.Finish(response, grpc::Status::OK, self);
+            writer.Finish(response, grpc::Status::OK, self); // NOLINT: suppress warning caused by gRPC
             yield(side_effect::none);
             // If we succeeded building a compatible client connection
             // to the server, enable all handlers
             if (build_client(hctx, request)) {
-                enable_server_handlers(hctx);
+                enable_server_handlers(hctx); // NOLINT: cannot leak (pointer is in completion queue)
             // Otherwise, shutdown proxy
             } else {
                 yield(side_effect::shutdown);
             }
         }
     };
+    return self;
 }
 
 static void drain_completion_queue(
@@ -785,7 +786,7 @@ where
 
 )", name);
 
-};
+}
 
 static std::string replace_port(const std::string &address, int port) {
     // Unix address?
@@ -807,7 +808,7 @@ int main(int argc, char *argv[]) {
     const char *proxy_address = nullptr;
     const char *server_address = "localhost:0";
 
-    for (int i = 1; i < argc; i++) {
+    for (int i = 1; i < argc; i++) { // NOLINT: Unknown. Maybe linter bug?
         if (stringval("--proxy-address=", argv[i], &proxy_address)) {
             ;
         } else if (stringval("--server-address=", argv[i], &server_address)) {
@@ -841,14 +842,15 @@ int main(int argc, char *argv[]) {
     // spawn server
     boost::process::group server_group;
     auto cmdline = "./cartesi-machine-server --session-id=proxy --checkin-address=" + replace_port(proxy_address, hctx.proxy_port) +  " --server-address=" + server_address;
-    boost::process::spawn(cmdline, server_group);
+    boost::process::spawn(cmdline, server_group); // NOLINT: suppress warning caused by boost
+
 
     // Only handler we accept initially is the CheckIn from the server
-    new_CheckIn_handler(hctx);
+    new_CheckIn_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
 
     for ( ;; ) {
         // Obtain the next active handler coroutine
-        handler::pull_type *h = nullptr;
+        handler::pull_type *h = nullptr; // NOLINT: cannot leak (drain_completion_queue kills remaining)
         if (!hctx.completion_queue->Next(reinterpret_cast<void **>(&h), &hctx.ok)) {
             goto shutdown;
         }

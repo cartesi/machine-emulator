@@ -1157,7 +1157,7 @@ and options are
 
 )", name);
 
-};
+}
 
 int main(int argc, char *argv[]) {
 

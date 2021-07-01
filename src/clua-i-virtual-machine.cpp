@@ -25,6 +25,15 @@
 
 namespace cartesi {
 
+//Defines err_msg and throws if error was returned from C API
+#define EXECUTE_OR_THROW(func_call) \
+    {                               \
+       char *err_msg{};             \
+       if (func_call != 0) {        \
+          throw std::runtime_error(err_msg); \
+       }                            \
+    }
+
 /// \brief This is the machine:dump_pmas() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_dump_pmas(lua_State *L) try {
@@ -94,8 +103,10 @@ static int machine_obj_index_get_proof(lua_State *L) try {
 }
 
 static int machine_obj_index_get_initial_config(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    clua_push_machine_config(L, m->get_initial_config());
+    auto m = clua_check<clua_cm_machine_ptr>(L, 1);
+    const cm_machine_config *c_config{};
+    EXECUTE_OR_THROW(cm_get_initial_config(m, &c_config, &err_msg));
+    clua_push_cm_machine_config(L, c_config);
     return 1;
 } catch (std::exception &x) {
     luaL_error(L, x.what());

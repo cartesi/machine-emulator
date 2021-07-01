@@ -21,13 +21,20 @@
 #include "clua-htif.h"
 #include "clua-machine-util.h"
 #include "virtual-machine.h"
+#include "machine-c-api.h"
 
 namespace cartesi {
 
 /// \brief This is the machine.get_default_machine_config()
 /// method implementation.
 static int machine_class_index_get_default_config(lua_State *L) {
-    clua_push_machine_config(L, machine::get_default_config());
+    const cm_machine_config *default_config{};
+    char *err_msg{};
+    if (cm_get_default_config(&default_config, &err_msg) != 0) {
+        throw std::runtime_error(err_msg);
+    }
+
+    clua_push_cm_machine_config(L, default_config);
     return 1;
 }
 
@@ -61,7 +68,7 @@ static int machine_class_index_verify_state_transition(lua_State *L) try {
 
 /// \brief This is the machine.get_x_address() method implementation.
 static int machine_class_index_get_x_address(lua_State *L) try {
-    lua_pushnumber(L, machine::get_x_address(luaL_checkinteger(L, 1)));
+    lua_pushnumber(L, cm_get_x_address(luaL_checkinteger(L, 1)));
     return 1;
 } catch (std::exception &x) {
     lua_pushnil(L);
@@ -81,7 +88,7 @@ static int machine_class_index_get_csr_address(lua_State *L) try {
 
 /// \brief This is the machine.get_dhd_h_address() method implementation.
 static int machine_class_index_get_dhd_h_address(lua_State *L) try {
-    lua_pushnumber(L, machine::get_dhd_h_address(luaL_checkinteger(L, 1)));
+    lua_pushnumber(L, cm_get_dhd_h_address(luaL_checkinteger(L, 1)));
     return 1;
 } catch (std::exception &x) {
     lua_pushnil(L);

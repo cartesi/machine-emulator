@@ -1125,6 +1125,14 @@ int cm_get_initial_config(const cm_machine *m, const cm_machine_config **config,
     return result_failure(err_msg);
 }
 
+CM_API int cm_get_default_config(const cm_machine_config **config, char **err_msg) try {
+    const cartesi::machine_config cpp_config = cartesi::machine::get_default_config();
+    *config = convert_to_c(cpp_config);
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
+}
+
 
 int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);

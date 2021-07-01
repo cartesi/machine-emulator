@@ -1340,7 +1340,8 @@ CM_API int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char** e
 
 /// \brief Returns copy of initialization config.
 /// \param m Pointer to valid machine instance
-/// \param config Receives the initial configuration
+/// \param config Receives the initial configuration.
+/// It should be deleted with cm_delete_machine_config.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
@@ -1349,6 +1350,17 @@ CM_API int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char** e
 /// must be deleted with cm_delete_machine_config
 CM_API int cm_get_initial_config(const cm_machine *m, const cm_machine_config **config, char **err_msg);
 
+
+/// \brief Returns copy of default system config.
+/// \param config Receives the default configuration.
+/// It should be deleted with cm_delete_machine_config.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+/// \details Object acquired from this function must not be changed and
+/// must be deleted with cm_delete_machine_config
+CM_API int cm_get_default_config(const cm_machine_config **config, char **err_msg);
 
 /// \brief Replaces a flash drive.
 /// \param m Pointer to valid machine instance

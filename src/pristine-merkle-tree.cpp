@@ -39,7 +39,7 @@ pristine_merkle_tree::pristine_merkle_tree(int log2_root_size,
             "log2_word_size is greater than log2_root_size"};
     }
     std::vector<uint8_t> word(1 << log2_word_size, 0);
-    assert(word.size() == (1u << log2_word_size));
+    assert(word.size() == (UINT64_C(1) << log2_word_size));
     hasher_type h;
     h.begin();
     h.add_data(word.data(), word.size());

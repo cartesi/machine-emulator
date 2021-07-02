@@ -123,7 +123,8 @@ void
 machine_merkle_tree::
 get_page_node_hash(hasher_type &h, const unsigned char *start, int log2_size, hash_type &hash) const {
     if (log2_size > get_log2_word_size()) {
-        hash_type child0, child1;
+        hash_type child0;
+        hash_type child1;
         --log2_size;
         address_type size = UINT64_C(1) << log2_size;
         get_page_node_hash(h, start, log2_size, child0);
@@ -240,7 +241,8 @@ get_inside_page_sibling_hashes(hasher_type &h,
     if (log2_curr_size > get_log2_word_size()) {
         int log2_child_size = log2_curr_size-1;
         address_type child_size = UINT64_C(1) << log2_child_size;
-        hash_type first_hash, second_hash;
+        hash_type first_hash;
+        hash_type second_hash;
         int child_bit = (address & child_size) != 0;
         get_inside_page_sibling_hashes(h,
             address, log2_size, hash,

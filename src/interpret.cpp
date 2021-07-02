@@ -225,7 +225,8 @@ static void dump_regs(const STATE &s) {
 }
 
 static void dump_regs(const machine_state &s) {
-    int i, cols;
+    int i;
+    int cols;
     const char priv_str[] = "USHM";
     cols = 256 / XLEN;
     fprintf(stderr, "pc = ");

@@ -850,7 +850,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_null_error_placeholder_test, ordinar
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_invalid_address_range_test, ordinary_machine_fixture)
 {
-    uint64_t write_value = 0x1234, address = 0x100;
+    uint64_t write_value = 0x1234;
+    uint64_t address = 0x100;
     uint8_t write_data[sizeof(uint64_t)];
     char* err_msg;
     memcpy(write_data, &write_value, sizeof(uint64_t));
@@ -866,7 +867,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_invalid_address_range_test, ordinary
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_word_basic_test, ordinary_machine_fixture)
 {
-    uint64_t read_value = 0, write_value = 0x1234, address = 0x80000000;
+    uint64_t read_value = 0;
+    uint64_t write_value = 0x1234;
+    uint64_t address = 0x80000000;
     uint8_t write_data[sizeof(uint64_t)];
     char* err_msg = NULL;
     memcpy(write_data, &write_value, sizeof(uint64_t));
@@ -883,8 +886,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_word_basic_test, ordinary_machine_fixt
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_memory_basic_test, ordinary_machine_fixture)
 {
-    uint64_t read_value = 0, write_value = 0x1234, address = 0x80000000;
-    uint8_t write_data[sizeof(uint64_t)], read_data[sizeof(uint64_t)];
+    uint64_t read_value = 0;
+    uint64_t write_value = 0x1234;
+    uint64_t address = 0x80000000;
+    uint8_t write_data[sizeof(uint64_t)];
+    uint8_t read_data[sizeof(uint64_t)];
     char* err_msg = NULL;
     memcpy(write_data, &write_value, sizeof(uint64_t));
 
@@ -1042,7 +1048,8 @@ CHECK_WRITER_FAILS_ON_NULL_MACHINE(dhd_hlength)
 BOOST_FIXTURE_TEST_CASE_NOLINT(F##_read_write_test, ordinary_machine_fixture) \
 {                                                                             \
     char* err_msg = NULL;                                                     \
-    uint64_t write_val = 0xad, read_val = 0;                                  \
+    uint64_t write_val = 0xad;                                                \
+    uint64_t read_val = 0;                                                    \
     int error_code = cm_write_##F(_machine, write_val, &err_msg);             \
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);                               \
     error_code = cm_read_##F(_machine, &read_val, &err_msg);                  \
@@ -1114,7 +1121,8 @@ BOOST_AUTO_TEST_CASE_NOLINT(set_iflags_h_null_machine_test)
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_fixture)
 {
-    uint64_t write_value = 0x0b, read_value = 0;
+    uint64_t write_value = 0x0b;
+    uint64_t read_value = 0;
     char* err_msg = NULL;
 
     int error_code = cm_read_iflags(_machine, &read_value, &err_msg);
@@ -1122,7 +1130,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(read_value, 0x18);
 
-    bool yflag, hflag;
+    bool yflag;
+    bool hflag;
     error_code = cm_read_iflags_Y(_machine, &yflag, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
@@ -1163,7 +1172,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_
 BOOST_FIXTURE_TEST_CASE_NOLINT(ids_read_test, ordinary_machine_fixture)
 {
     char* err_msg;
-    uint64_t vendorid, archid, impid;
+    uint64_t vendorid;
+    uint64_t archid;
+    uint64_t impid;
 
     int error_code = cm_read_mvendorid(_machine, &vendorid, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -1188,7 +1199,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_tohost_read_complex_test, ordinary_mach
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
-    uint64_t htif_dev, htif_cmd, htif_data;
+    uint64_t htif_dev;
+    uint64_t htif_cmd;
+    uint64_t htif_data;
     error_code = cm_read_htif_tohost_dev(_machine, &htif_dev, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
@@ -1342,7 +1355,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_dhd_h_null_error_placeholder_test, ordinary
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(dhd_h_read_write_test, ordinary_machine_fixture)
 {
-    uint64_t read_value, write_value = 0xffffffffffffffff;
+    uint64_t read_value;
+    uint64_t write_value = 0xffffffffffffffff;
     char* err_msg = NULL;
     int error_code = cm_read_dhd_h(_machine, 1, &read_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -1642,7 +1656,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_x_null_error_placeholder_test, ordinary_mac
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_x_basic_test, ordinary_machine_fixture)
 {
     char* err_msg = NULL;
-    uint64_t x_origin = 42, x_read;
+    uint64_t x_origin = 42;
+    uint64_t x_read;
     int error_code = cm_write_x(_machine, 2, x_origin, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
@@ -1701,7 +1716,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_csr_null_error_placeholder_test, ordinary_m
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_csr_basic_test, ordinary_machine_fixture)
 {
     char* err_msg = NULL;
-    uint64_t csr_origin = 42, csr_read;
+    uint64_t csr_origin = 42;
+    uint64_t csr_read;
 
     int error_code = cm_write_csr(_machine, CM_PROC_MCYCLE, csr_origin, &err_msg);;
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -1871,7 +1887,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_hash1_test, access_l
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_access_log_test, access_log_machine_fixture)
 {
     char* err_msg;
-    cm_hash hash0, hash1;
+    cm_hash hash0;
+    cm_hash hash1;
     int error_code = cm_verify_state_transition((const cm_hash *)&hash0, NULL,
                                                 (const cm_hash *)&hash1, &_runtime_config,
                                                 false, &err_msg);
@@ -1891,7 +1908,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, acce
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
-    cm_hash hash0, hash1;
+    cm_hash hash0;
+    cm_hash hash1;
     error_code = cm_verify_state_transition((const cm_hash *)&hash0, _access_log,
                                             (const cm_hash *)&hash1, NULL, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
@@ -1906,7 +1924,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, acce
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_error_placeholder_test, access_log_machine_fixture)
 {
     auto f = [l = _access_log, rc = &_runtime_config]() {
-        cm_hash hash0, hash1;
+        cm_hash hash0;
+        cm_hash hash1;
         cm_verify_state_transition((const cm_hash *)&hash0, l, (const cm_hash *)&hash1,
                                    rc, false, NULL);
     };
@@ -1920,7 +1939,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture)
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
-    cm_hash hash0, hash1;
+    cm_hash hash0;
+    cm_hash hash1;
     error_code = cm_get_root_hash(_machine, &hash0, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);

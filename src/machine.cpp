@@ -291,7 +291,8 @@ static void load_hash(const std::string &dir, machine::hash_type &h) {
 
 machine::machine(const std::string &dir, const machine_runtime_config &r):
     machine{machine_config::load(dir), r} {
-    hash_type hstored, hrestored;
+    hash_type hstored;
+    hash_type hrestored;
     load_hash(dir, hstored);
     if (!update_merkle_tree()) {
         throw std::runtime_error{"error updating root hash"};
@@ -1016,7 +1017,8 @@ bool machine::verify_dirty_page_maps(void) const {
             if (pma.get_istart_M()) {
                 const unsigned char *page_data = nullptr;
                 peek(pma, *this, page_start_in_range, &page_data, scratch.get());
-                hash_type stored, real;
+                hash_type stored;
+                hash_type real;
                 m_t.get_page_node_hash(page_address, stored);
                 m_t.get_page_node_hash(h, page_data, real);
                 bool marked_dirty = pma.is_page_marked_dirty(page_start_in_range);

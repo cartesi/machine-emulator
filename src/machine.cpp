@@ -568,8 +568,8 @@ uint64_t machine::read_mip(void) const {
     return m_s.mip;
 }
 
-void machine::write_mip(uint64_t mip) {
-    m_s.mip = mip;
+void machine::write_mip(uint64_t val) {
+    m_s.mip = val;
     m_s.set_brk_from_all();
 }
 

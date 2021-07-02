@@ -48,10 +48,10 @@ machine_runtime_config get_proto_machine_runtime_config(
     const CartesiMachine::MachineRuntimeConfig &proto_r);
 
 /// \brief Converts C++ machine_runtime_config to proto MachineRuntimeConfig
-/// \param c C++ machine_runtime_config to convert
-/// \param proto_c Pointer to proto MachineRuntimeConfig receiving
+/// \param r C++ machine_runtime_config to convert
+/// \param proto_r Pointer to proto MachineRuntimeConfig receiving
 ///  result of conversion
-void set_proto_machine_runtime_config(const machine_runtime_config &c,
+void set_proto_machine_runtime_config(const machine_runtime_config &r,
     CartesiMachine::MachineRuntimeConfig* proto_r);
 
 /// \brief Converts proto ProcessorConfig to C++ processor_config

@@ -63,10 +63,7 @@ static bool intval(const char *pre, const char *str, int *val) {
         str += len;
         int end = 0;
         // NOLINTNEXTLINE(cert-err34-c): %n is used toverify conversion errors
-        if (sscanf(str, "%d%n", val, &end) == 1 && !str[end]) {
-            return true;
-        }
-        return false;
+        return sscanf(str, "%d%n", val, &end) == 1 && !str[end];
     }
     return false;
 }

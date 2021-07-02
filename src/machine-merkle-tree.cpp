@@ -402,11 +402,7 @@ verify_tree(hasher_type &h, tree_node *node, int log2_size) const {
         hash_type hash;
         get_concat_hash(h, get_child_hash(child_log2_size, node, 0),
             get_child_hash(child_log2_size, node, 1), hash);
-        if (hash != node->hash) {
-            return false;
-        } else {
-            return true;
-        }
+        return hash == node->hash;
     // Assume page nodes are correct
     } else {
         return true;

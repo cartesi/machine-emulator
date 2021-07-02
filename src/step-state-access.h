@@ -821,7 +821,7 @@ private:
     }
 
     template <typename T>
-    void do_write_memory_word(uint64_t paddr, unsigned char *hpage,
+    void do_write_memory_word(uint64_t paddr, const unsigned char *hpage,
         uint64_t hoffset, T val) {
         (void) hpage; (void) hoffset;
         assert((paddr & (sizeof(T)-1)) == 0);

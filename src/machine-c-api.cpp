@@ -741,7 +741,7 @@ int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg) try {
 }
 
 
-int cm_step(cm_machine *m, const cm_access_log_type log_type, bool one_based,
+int cm_step(cm_machine *m, cm_access_log_type log_type, bool one_based,
             cm_access_log **access_log, char **err_msg) try {
     cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
     cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations};
@@ -1121,6 +1121,6 @@ int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash
 }
 
 
-void cm_delete_error_message(char* err_msg) {
+void cm_delete_error_message(const char* err_msg) {
     delete[] err_msg;
 }

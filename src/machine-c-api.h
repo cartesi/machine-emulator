@@ -399,7 +399,7 @@ CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg);
 /// or NULL in case of successfull function execution. In case of failure error_msg 
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_step(cm_machine *m, const cm_access_log_type log_type, bool one_based,
+CM_API int cm_step(cm_machine *m, cm_access_log_type log_type, bool one_based,
          cm_access_log** access_log, char **err_msg);
 
 /// \brief  Deletes the instance of cm_access_log acquired from cm_step
@@ -1364,7 +1364,7 @@ CM_API int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *ne
 /// \details This C API is meant to be used for various language bindings.
 /// Many of them could not directly call C free function,
 /// so this is a convenience function for cleanup of error messages
-CM_API void cm_delete_error_message(char* err_msg);
+CM_API void cm_delete_error_message(const char* err_msg);
 
 #ifdef __cplusplus
 }

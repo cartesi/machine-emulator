@@ -40,7 +40,7 @@ void clua_push_semantic_version(lua_State *L, const semantic_version &v);
 /// \brief Pushes a hash to the Lua stack
 /// \param L Lua state.
 /// \param hash Hash to be pushed.
-void clua_push_hash(lua_State *L, const machine_merkle_tree::hash_type hash);
+void clua_push_hash(lua_State *L, const machine_merkle_tree::hash_type &hash);
 
 /// \brief Pushes a machine_config to the Lua stack
 /// \param L Lua state.

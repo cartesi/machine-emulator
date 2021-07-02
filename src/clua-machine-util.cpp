@@ -559,7 +559,7 @@ void clua_push_access_log(lua_State *L, const access_log &log) {
     }
 }
 
-void clua_push_hash(lua_State *L, const machine_merkle_tree::hash_type hash) {
+void clua_push_hash(lua_State *L, const machine_merkle_tree::hash_type &hash) {
     lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()),
         hash.size());
 }

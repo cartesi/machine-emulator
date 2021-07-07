@@ -80,6 +80,12 @@ void clua_push_cm_machine_runtime_config(lua_State *L, const cm_machine_runtime_
 /// \returns CSR selector. Throws error if unknown.
 machine::csr clua_check_csr(lua_State *L, int idx);
 
+/// \brief Returns a CSR selector from Lua
+/// \param L Lua state
+/// \param idx Index in stack
+/// \returns C API CSR selector. Lua argument error if unknown
+CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx);
+
 /// \brief Pushes an access log to the Lua stack
 /// \param L Lua state
 /// \param log Access log to be pushed
@@ -136,8 +142,8 @@ access_log clua_check_access_log(lua_State *L, int tabidx);
 /// \brief Loads an cm_access_log from Lua.
 /// \param L Lua state
 /// \param tabidx Access_log stack index.
-/// \returns The access log.
-cm_access_log clua_check_cm_access_log(lua_State *L, int tabidx);
+/// \returns The access log. Must be delete by the user with cm_delete_access_log
+cm_access_log* clua_check_cm_access_log(lua_State *L, int tabidx);
 
 /// \brief Loads a machine_config object from a Lua table
 /// \param L Lua state
@@ -147,7 +153,8 @@ machine_config clua_check_machine_config(lua_State *L, int tabidx);
 /// \brief Loads a cm_machine_config object from a Lua table
 /// \param L Lua state
 /// \param tabidx Index of table in Lua stack
-cm_machine_config clua_check_cm_machine_config(lua_State *L, int tabidx);
+/// \returns Allocated machine config. It must be deleted with cm_delete_machine_config
+cm_machine_config* clua_check_cm_machine_config(lua_State *L, int tabidx);
 
 /// \brief Loads a machine_runtime_config object from a Lua table
 /// \param L Lua state
@@ -158,7 +165,8 @@ machine_runtime_config clua_check_machine_runtime_config(lua_State *L,
 /// \brief Loads a cm_machine_runtime_config object from a Lua table
 /// \param L Lua state
 /// \param tabidx Index of table in Lua stack
-cm_machine_runtime_config clua_check_cm_machine_runtime_config(lua_State *L,
+/// \returns Allocated machine runtime config object. It must be deleted with cm_delete_machine_runtime_config
+cm_machine_runtime_config* clua_check_cm_machine_runtime_config(lua_State *L,
     int tabidx);
 
 /// \brief Loads an optional machine_runtime_config object from a Lua
@@ -172,7 +180,8 @@ machine_runtime_config clua_opt_machine_runtime_config(lua_State *L,
 /// \param L Lua state
 /// \param tabidx Index of table in Lua stack
 /// \param r Default C api machine runtime config value if optional field not present
-cm_machine_runtime_config clua_opt_cm_machine_runtime_config(lua_State *L,
+/// \returns Allocated machine runtime config object. It must be deleted with cm_delete_machine_runtime_config
+cm_machine_runtime_config* clua_opt_cm_machine_runtime_config(lua_State *L,
     int tabidx, const cm_machine_runtime_config *r);
 
 /// \brief Loads flash drive config from a Lua table.

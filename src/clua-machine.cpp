@@ -31,7 +31,9 @@ static int machine_class_index_get_default_config(lua_State *L) {
     const cm_machine_config *default_config{};
     char *err_msg{};
     if (cm_get_default_config(&default_config, &err_msg) != 0) {
-        throw std::runtime_error(err_msg);
+        lua_pushnil(L);
+        lua_pushstring(L, err_msg);
+        return 2;
     }
 
     clua_push_cm_machine_config(L, default_config);
@@ -39,61 +41,66 @@ static int machine_class_index_get_default_config(lua_State *L) {
 }
 
 /// \brief This is the machine.verify_access_log() method implementation.
-static int machine_class_index_verify_access_log(lua_State *L) try {
-    machine::verify_access_log(clua_check_access_log(L, 1),
-        clua_check_machine_runtime_config(L, 2),
-        true /* 1-based indices in errors */ );
-    lua_pushnumber(L, 1);
-    return 1;
-} catch (std::exception &x) {
-    lua_pushnil(L);
-    lua_pushstring(L, x.what());
-    return 2;
+static int machine_class_index_verify_access_log(lua_State *L) {
+    char *err_msg{};
+    cm_access_log *log = clua_check_cm_access_log(L, 1);
+    cm_machine_runtime_config *runtime_config = clua_check_cm_machine_runtime_config(L, 2);
+
+    int result{};
+    if (cm_verify_access_log(log, runtime_config, true, &err_msg) != 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, err_msg);
+        result = 2;
+    } else {
+        lua_pushnumber(L, 1);
+        result = 1;
+    }
+    cm_delete_machine_runtime_config(runtime_config);
+    cm_delete_access_log(log);
+    return result;
 }
 
 /// \brief This is the machine.verify_state_transition() method implementation.
-static int machine_class_index_verify_state_transition(lua_State *L) try {
-    machine::verify_state_transition(clua_check_hash(L, 1),
-        clua_check_access_log(L, 2),
-        clua_check_hash(L, 3),
-        clua_check_machine_runtime_config(L, 4),
-        true /* 1-based indices in errors */);
-    lua_pushnumber(L, 1);
-    return 1;
-} catch (std::exception &x) {
-    lua_pushnil(L);
-    lua_pushstring(L, x.what());
-    return 2;
+static int machine_class__index_verify_state_transition(lua_State *L) {
+
+    char *err_msg{};
+    cm_hash root_hash{};
+    clua_check_cm_hash(L, 1, &root_hash);
+    cm_access_log *log = clua_check_cm_access_log(L, 2);
+    cm_hash target_hash{};
+    clua_check_cm_hash(L, 3, &target_hash);
+    cm_machine_runtime_config *runtime_config = clua_check_cm_machine_runtime_config(L, 4);
+
+    int result{};
+    if (cm_verify_state_transition(&root_hash, log, &target_hash, runtime_config, true, &err_msg) != 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, err_msg);
+        result = 2;
+    } else {
+        lua_pushnumber(L, 1);
+        result = 1;
+    }
+    cm_delete_machine_runtime_config(runtime_config);
+    cm_delete_access_log(log);
+    return result;
 }
 
 /// \brief This is the machine.get_x_address() method implementation.
-static int machine_class_index_get_x_address(lua_State *L) try {
+static int machine_class_index_get_x_address(lua_State *L) {
     lua_pushnumber(L, cm_get_x_address(luaL_checkinteger(L, 1)));
     return 1;
-} catch (std::exception &x) {
-    lua_pushnil(L);
-    lua_pushstring(L, x.what());
-    return 2;
 }
 
 /// \brief This is the machine.get_csr_address() method implementation.
-static int machine_class_index_get_csr_address(lua_State *L) try {
-    lua_pushnumber(L, machine::get_csr_address(clua_check_csr(L, 1)));
+static int machine_class_index_get_csr_address(lua_State *L) {
+    lua_pushnumber(L, cm_get_csr_address(clua_check_cm_proc_csr(L, 1)));
     return 1;
-} catch (std::exception &x) {
-    lua_pushnil(L);
-    lua_pushstring(L, x.what());
-    return 2;
 }
 
 /// \brief This is the machine.get_dhd_h_address() method implementation.
-static int machine_class_index_get_dhd_h_address(lua_State *L) try {
+static int machine_class__index_get_dhd_h_address(lua_State *L) {
     lua_pushnumber(L, cm_get_dhd_h_address(luaL_checkinteger(L, 1)));
     return 1;
-} catch (std::exception &x) {
-    lua_pushnil(L);
-    lua_pushstring(L, x.what());
-    return 2;
 }
 
 /// \brief Contents of the machine class metatable __index table.

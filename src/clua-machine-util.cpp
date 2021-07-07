@@ -68,6 +68,48 @@ static const csr_map& csr_names() {
     return map;
 }
 
+/// \brief Mapping between CSR names and C API constants
+const static std::unordered_map<std::string, CM_PROC_CSR> g_cm_proc_csr_name = {
+    {"pc", CM_PROC_PC},
+    {"mvendorid", CM_PROC_MVENDORID},
+    {"marchid", CM_PROC_MARCHID},
+    {"mimpid", CM_PROC_MIMPID},
+    {"mcycle", CM_PROC_MCYCLE},
+    {"minstret", CM_PROC_MINSTRET},
+    {"mstatus", CM_PROC_MSTATUS},
+    {"mtvec", CM_PROC_MTVEC},
+    {"mscratch", CM_PROC_MSCRATCH},
+    {"mepc", CM_PROC_MEPC},
+    {"mcause", CM_PROC_MCAUSE},
+    {"mtval", CM_PROC_MTVAL},
+    {"misa", CM_PROC_MISA},
+    {"mie", CM_PROC_MIE},
+    {"mip", CM_PROC_MIP},
+    {"medeleg", CM_PROC_MEDELEG},
+    {"mideleg", CM_PROC_MIDELEG},
+    {"mcounteren", CM_PROC_MCOUNTEREN},
+    {"stvec", CM_PROC_STVEC},
+    {"sscratch", CM_PROC_SSCRATCH},
+    {"sepc", CM_PROC_SEPC},
+    {"scause", CM_PROC_SCAUSE},
+    {"stval", CM_PROC_STVAL},
+    {"satp", CM_PROC_SATP},
+    {"scounteren", CM_PROC_SCOUNTEREN},
+    {"ilrsc", CM_PROC_ILRSC},
+    {"iflags", CM_PROC_IFLAGS},
+    {"clint_mtimecmp", CM_PROC_CLINT_MTIMECMP},
+    {"htif_tohost", CM_PROC_HTIF_TOHOST},
+    {"htif_fromhost", CM_PROC_HTIF_FROMHOST},
+    {"htif_ihalt", CM_PROC_HTIF_IHALT},
+    {"htif_iconsole", CM_PROC_HTIF_ICONSOLE},
+    {"htif_iyield", CM_PROC_HTIF_IYIELD},
+    {"dhd_tstart", CM_PROC_DHD_TSTART},
+    {"dhd_tlength", CM_PROC_DHD_TLENGTH},
+    {"dhd_dlength", CM_PROC_DHD_DLENGTH},
+    {"dhd_hlength", CM_PROC_DHD_HLENGTH}
+};
+
+
 static char *copy_lua_str(lua_State *L, int idx) {
     const char* lua_str = lua_tostring(L, idx);
     auto size = strlen(lua_str) + 1;
@@ -631,7 +673,7 @@ access_log clua_check_access_log(lua_State *L, int tabidx) {
     };
 }
 
-cm_access_log clua_check_cm_access_log(lua_State *L, int tabidx) {
+cm_access_log* clua_check_cm_access_log(lua_State *L, int tabidx) {
 
     luaL_checktype(L, tabidx, LUA_TTABLE);
     check_table_field(L, tabidx, "log_type");
@@ -639,44 +681,44 @@ cm_access_log clua_check_cm_access_log(lua_State *L, int tabidx) {
     bool annotations = opt_boolean_field(L, -1, "annotations");
     lua_pop(L, 1);
 
-    cm_access_log acc_log{};
+    cm_access_log* acc_log = new cm_access_log{};
 
     check_table_field(L, tabidx, "accesses");
-    acc_log.accesses_count = luaL_len(L, -1);
-    acc_log.accesses = new cm_access[acc_log.accesses_count];
-    for (size_t i = 1; i <= acc_log.accesses_count; i++) {
+    acc_log->accesses_count = luaL_len(L, -1);
+    acc_log->accesses = new cm_access[acc_log->accesses_count];
+    for (size_t i = 1; i <= acc_log->accesses_count; i++) {
         lua_geti(L, -1, i);
         if (!lua_istable(L, -1)) {
             luaL_error(L, "access [%d] not a table", i);
         }
-        acc_log.accesses[i-1] = check_cm_access(L, -1, proofs);
+        acc_log->accesses[i-1] = check_cm_access(L, -1, proofs);
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
 
     if (annotations) {
         check_table_field(L, tabidx, "notes");
-        acc_log.notes_count = luaL_len(L, -1);
-        acc_log.notes = new const char *[acc_log.notes_count];
-        for (size_t i = 1; i <= acc_log.notes_count; i++) {
+        acc_log->notes_count = luaL_len(L, -1);
+        acc_log->notes = new const char *[acc_log->notes_count];
+        for (size_t i = 1; i <= acc_log->notes_count; i++) {
             lua_geti(L, -1, i);
             if (!lua_isstring(L, -1)) {
                 luaL_error(L, "note [%d] not a string", i);
             }
-            acc_log.notes[i-1] = copy_lua_str(L, -1);
+            acc_log->notes[i-1] = copy_lua_str(L, -1);
             lua_pop(L, 1);
         }
         lua_pop(L, 1);
 
         check_table_field(L, tabidx, "brackets");
-        acc_log.brackets_count = luaL_len(L, -1);
-        acc_log.brackets = new cm_bracket_note[acc_log.brackets_count];
-        for (size_t i = 1; i <= acc_log.brackets_count; i++) {
+        acc_log->brackets_count = luaL_len(L, -1);
+        acc_log->brackets = new cm_bracket_note[acc_log->brackets_count];
+        for (size_t i = 1; i <= acc_log->brackets_count; i++) {
             lua_geti(L, -1, i);
             if (!lua_istable(L, -1)) {
                 luaL_error(L, "bracket [%d] not a table", i);
             }
-            acc_log.brackets[i-1] = check_cm_bracket_note(L, -1);
+            acc_log->brackets[i-1] = check_cm_bracket_note(L, -1);
             lua_pop(L, 1);
         }
         lua_pop(L, 1);
@@ -718,10 +760,20 @@ void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash) {
     }
 }
 
+
 machine::csr clua_check_csr(lua_State *L, int idx) {
     std::string name = luaL_checkstring(L, idx);
     auto got = csr_names().find(name);
     if (got == csr_names().end()) {
+        luaL_argerror(L, idx, "unknown csr");
+    }
+    return got->second;
+}
+
+CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) {
+    std::string name = luaL_checkstring(L, idx);
+    auto got = g_cm_proc_csr_name.find(name);
+    if (got == g_cm_proc_csr_name.end()) {
         luaL_argerror(L, idx, "unknown csr");
     }
     return got->second;
@@ -1688,17 +1740,17 @@ machine_config clua_check_machine_config(lua_State *L, int tabidx) {
     return c;
 }
 
-cm_machine_config clua_check_cm_machine_config(lua_State *L, int tabidx) {
-    cm_machine_config c{};
+cm_machine_config* clua_check_cm_machine_config(lua_State *L, int tabidx) {
+    cm_machine_config *c = new cm_machine_config{};
     // Check all parameters from Lua initialization table
     // and copy them to the cm_machine_config object
-    check_cm_processor_config(L, tabidx, &c.processor);
-    check_cm_ram_config(L, tabidx, &c.ram);
-    check_cm_rom_config(L, tabidx, &c.rom);
-    check_cm_flash_drive_configs(L, tabidx, &c.flash_drive);
-    check_cm_htif_config(L, tabidx, &c.htif);
-    check_cm_clint_config(L, tabidx, &c.clint);
-    check_cm_dhd_config(L, tabidx, &c.dhd);
+    check_cm_processor_config(L, tabidx, &c->processor);
+    check_cm_ram_config(L, tabidx, &c->ram);
+    check_cm_rom_config(L, tabidx, &c->rom);
+    check_cm_flash_drive_configs(L, tabidx, &c->flash_drive);
+    check_cm_htif_config(L, tabidx, &c->htif);
+    check_cm_clint_config(L, tabidx, &c->clint);
+    check_cm_dhd_config(L, tabidx, &c->dhd);
     return c;
 }
 
@@ -1761,12 +1813,12 @@ machine_runtime_config clua_check_machine_runtime_config(lua_State *L,
     return r;
 }
 
-cm_machine_runtime_config clua_check_cm_machine_runtime_config(lua_State *L,
+cm_machine_runtime_config* clua_check_cm_machine_runtime_config(lua_State *L,
     int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
-    cm_machine_runtime_config r{};
-    check_cm_dhd_runtime_config(L, tabidx, &r.dhd);
-    check_cm_concurrency_runtime_config(L, tabidx, &r.concurrency);
+    cm_machine_runtime_config *r = new cm_machine_runtime_config{};
+    check_cm_dhd_runtime_config(L, tabidx, &r->dhd);
+    check_cm_concurrency_runtime_config(L, tabidx, &r->concurrency);
     return r;
 }
 
@@ -1778,12 +1830,18 @@ machine_runtime_config clua_opt_machine_runtime_config(lua_State *L,
     return r;
 }
 
-cm_machine_runtime_config clua_opt_cm_machine_runtime_config(lua_State *L,
+cm_machine_runtime_config* clua_opt_cm_machine_runtime_config(lua_State *L,
     int tabidx, const cm_machine_runtime_config *r) {
     if (!lua_isnoneornil(L, tabidx)) {
         return clua_check_cm_machine_runtime_config(L, tabidx);
+    } else {
+        cm_machine_runtime_config *def = new cm_machine_runtime_config{};
+        def->concurrency = r->concurrency;
+        auto source_address_size = strlen(r->dhd.source_address)+1;
+        def->dhd.source_address = new char[source_address_size];
+        strncpy(const_cast<char *>(def->dhd.source_address), r->dhd.source_address, source_address_size);
+        return def;
     }
-    return *r;
 }
 
 } // namespace cartesi

@@ -1125,7 +1125,7 @@ int cm_get_initial_config(const cm_machine *m, const cm_machine_config **config,
     return result_failure(err_msg);
 }
 
-CM_API int cm_get_default_config(const cm_machine_config **config, char **err_msg) try {
+int cm_get_default_config(const cm_machine_config **config, char **err_msg) try {
     const cartesi::machine_config cpp_config = cartesi::machine::get_default_config();
     *config = convert_to_c(cpp_config);
     return result_success(err_msg);
@@ -1146,4 +1146,14 @@ int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash
 
 void cm_delete_error_message(const char* err_msg) {
     delete[] err_msg;
+}
+
+void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config) {
+    if (config == nullptr) {
+        return;
+    }
+
+    delete[] config->dhd.source_address;
+    delete config;
+
 }

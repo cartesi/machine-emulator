@@ -1381,6 +1381,11 @@ CM_API int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *ne
 /// so this is a convenience function for cleanup of error messages
 CM_API void cm_delete_error_message(const char* err_msg);
 
+
+/// \brief Deletes machine runtime config
+/// \returns void
+CM_API void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config);
+
 #ifdef __cplusplus
 }
 #endif

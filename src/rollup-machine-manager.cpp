@@ -359,6 +359,7 @@ struct session_type {
     payload_and_metadata_array_type messages_description;
     std::map<uint64_t, epoch_type> epochs; ///< Map of cached epochs
     deadline_config_type server_deadline; ///< Deadlines for interactions with server
+    boost::process::child server_process; ///< cartesi-machine-server process
 };
 
 /// \brief Automatically unlocks a session when out of scope
@@ -751,6 +752,10 @@ dout{request_context} << "Received EndSession for id " << id;
                     THROW((finish_error_yield_none{grpc::StatusCode::INTERNAL, "session is processing inputs!"}));
                 }
                 shutdown_server(actx);
+                if (session.tainted) {
+dout{request_context} << "Session " << id << " is tainted. Terminating cartesi-machine-server process: " << session.server_process.id();
+                    session.server_process.terminate();
+                }
                 sessions.erase(id);
                 writer.Finish(response, grpc::Status::OK, self);
                 yield(side_effect::none);
@@ -1312,7 +1317,8 @@ dout{request_context} << "Received StartSession request for id " << id;
                     " --server-address=" + hctx.server_address;
 dout{request_context} << "  Spawning " << cmdline;
                 try {
-                    boost::process::spawn(cmdline, hctx.server_group);
+                    session.server_process = boost::process::child(cmdline);
+                    session.server_process.detach();
                 } catch (boost::process::process_error &e) {
                    THROW((restart_handler_finish_error_yield_none{StatusCode::INTERNAL, "failed spawning cartesi-machine-server with command-line '" +
                            cmdline + "' (" + e.what() + ")"}));
@@ -2235,6 +2241,11 @@ static bool stringval(const char *pre, const char *str, const char **val) {
     return false;
 }
 
+static void cleanup_child_handler(int signal) {
+    (void) signal;
+    while (waitpid((pid_t) (-1), 0, WNOHANG) > 0) {}
+}
+
 int main(int argc, char *argv[]) {
 
     static_assert(std::tuple_size<hash_type>::value == KECCAK_SIZE, "hash size mismatch");
@@ -2275,6 +2286,11 @@ int main(int argc, char *argv[]) {
         std::cerr << "manager server creation failed\n";
         exit(1);
     }
+
+    struct sigaction sa;
+    sa.sa_handler = cleanup_child_handler;
+    sa.sa_flags = 0;
+    sigaction(SIGCHLD, &sa, NULL);
 
     // Start accepting requests for all RPCs
     new_GetVersion_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)

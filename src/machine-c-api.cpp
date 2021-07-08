@@ -1155,5 +1155,28 @@ void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config) {
 
     delete[] config->dhd.source_address;
     delete config;
+}
 
+int cm_destroy(cm_machine *m, char **err_msg) try {
+    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    cpp_machine->destroy();
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
+}
+
+int cm_snapshot(cm_machine *m, char **err_msg) try {
+    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    cpp_machine->snapshot();
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
+}
+
+int cm_rollback(cm_machine *m, char **err_msg) try {
+    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    cpp_machine->rollback();
+    return result_success(err_msg);
+} catch (...) {
+    return result_failure(err_msg);
 }

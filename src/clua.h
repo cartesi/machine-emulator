@@ -188,6 +188,31 @@ void clua_setmetatable(lua_State *L, int objidx,
     lua_setmetatable(L, objidx);
 }
 
+/// \brief Creates lua managed C++ object on stack
+/// \tparam T Associated C++ type
+/// \param L Lua state.
+/// \param value C++ object for initialization of managed object
+/// \param idx Object index (or pseudo-index)
+///
+template <typename T>
+int clua_push(lua_State *L, T &&value, int ctxidx = lua_upvalueindex(1)) {
+    T* ptr = reinterpret_cast<T*>(lua_newuserdata(L, sizeof(T)));
+    new (ptr) T{std::forward<T>(value)};
+    clua_setmetatable<T>(L, -1, ctxidx);
+    return 1;
+}
+
+/// \brief Creates lua managed C++ object on stack and returns reference to it
+/// \tparam T Associated C++ type
+/// \param L Lua state.
+/// \param value C++ object for initialization of managed object
+/// \param idx Object index (or pseudo-index)
+template <typename T>
+T &clua_push_to(lua_State *L, T &&value, int ctxidx = lua_upvalueindex(1)) {
+    clua_push(L, std::forward<T>(value), ctxidx);
+    return clua_to<T>(L, -1);
+}
+
 /// \brief Sets metamethods of a previously defined Lua type
 /// \tparam T Associated C++ type
 /// \param L Lua state.
@@ -260,6 +285,9 @@ void clua_createtype(lua_State *L, const char *name, int ctxidx) {
     lua_setfield(L, -2, "__metatable"); // T_rawname T_meta
     lua_rawset(L, ctxidx); //
 }
+
+
+
 
 } // namespace cartesi
 

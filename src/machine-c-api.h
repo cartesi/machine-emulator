@@ -1386,6 +1386,27 @@ CM_API void cm_delete_error_message(const char* err_msg);
 /// \returns void
 CM_API void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config);
 
+/// \brief Destroys machine
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_destroy(cm_machine *m, char **err_msg);
+
+/// \brief Do a snapshot of the machine
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_snapshot(cm_machine *m, char **err_msg);
+
+/// \brief Performs rollback
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_rollback(cm_machine *m, char **err_msg);
+
 #ifdef __cplusplus
 }
 #endif

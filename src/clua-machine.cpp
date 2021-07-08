@@ -28,61 +28,46 @@ namespace cartesi {
 /// \brief This is the machine.get_default_machine_config()
 /// method implementation.
 static int machine_class_index_get_default_config(lua_State *L) {
-    const cm_machine_config *default_config{};
-    char *err_msg{};
-    if (cm_get_default_config(&default_config, &err_msg) != 0) {
-        lua_pushnil(L);
-        lua_pushstring(L, err_msg);
-        return 2;
-    }
+    auto &managed_default_config = clua_push_to(L, clua_managed_cm_ptr<const cm_machine_config>(nullptr));
+    TRY_EXECUTE(cm_get_default_config(&managed_default_config.get(), err_msg));
+    clua_push_cm_machine_config(L, managed_default_config.get());
+    managed_default_config.release();
 
-    clua_push_cm_machine_config(L, default_config);
     return 1;
 }
 
 /// \brief This is the machine.verify_access_log() method implementation.
 static int machine_class_index_verify_access_log(lua_State *L) {
-    char *err_msg{};
-    cm_access_log *log = clua_check_cm_access_log(L, 1);
-    cm_machine_runtime_config *runtime_config = clua_check_cm_machine_runtime_config(L, 2);
 
-    int result{};
-    if (cm_verify_access_log(log, runtime_config, true, &err_msg) != 0) {
-        lua_pushnil(L);
-        lua_pushstring(L, err_msg);
-        result = 2;
-    } else {
-        lua_pushnumber(L, 1);
-        result = 1;
-    }
-    cm_delete_machine_runtime_config(runtime_config);
-    cm_delete_access_log(log);
-    return result;
+    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 1)));
+    auto &managed_runtime_config = clua_push_to(L,
+        clua_managed_cm_ptr<cm_machine_runtime_config>(clua_check_cm_machine_runtime_config(L, 2)));
+
+    TRY_EXECUTE(cm_verify_access_log(managed_log.get(), managed_runtime_config.get(), true, err_msg));
+    lua_pushnumber(L, 1);
+
+    managed_runtime_config.release();
+    managed_log.release();
+    return 1;
 }
 
 /// \brief This is the machine.verify_state_transition() method implementation.
-static int machine_class__index_verify_state_transition(lua_State *L) {
+static int machine_class_index_verify_state_transition(lua_State *L) {
 
-    char *err_msg{};
     cm_hash root_hash{};
     clua_check_cm_hash(L, 1, &root_hash);
-    cm_access_log *log = clua_check_cm_access_log(L, 2);
+    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2)));
     cm_hash target_hash{};
     clua_check_cm_hash(L, 3, &target_hash);
-    cm_machine_runtime_config *runtime_config = clua_check_cm_machine_runtime_config(L, 4);
+    auto &managed_runtime_config = clua_push_to(L,
+        clua_managed_cm_ptr<cm_machine_runtime_config>(clua_check_cm_machine_runtime_config(L, 4)));
 
-    int result{};
-    if (cm_verify_state_transition(&root_hash, log, &target_hash, runtime_config, true, &err_msg) != 0) {
-        lua_pushnil(L);
-        lua_pushstring(L, err_msg);
-        result = 2;
-    } else {
-        lua_pushnumber(L, 1);
-        result = 1;
-    }
-    cm_delete_machine_runtime_config(runtime_config);
-    cm_delete_access_log(log);
-    return result;
+    TRY_EXECUTE(cm_verify_state_transition(&root_hash, managed_log.get(), &target_hash, managed_runtime_config.get(),
+        true, err_msg));
+    lua_pushnumber(L, 1);
+    managed_log.release();
+    managed_runtime_config.release();
+    return 1;
 }
 
 /// \brief This is the machine.get_x_address() method implementation.
@@ -98,7 +83,7 @@ static int machine_class_index_get_csr_address(lua_State *L) {
 }
 
 /// \brief This is the machine.get_dhd_h_address() method implementation.
-static int machine_class__index_get_dhd_h_address(lua_State *L) {
+static int machine_class_index_get_dhd_h_address(lua_State *L) {
     lua_pushnumber(L, cm_get_dhd_h_address(luaL_checkinteger(L, 1)));
     return 1;
 }
@@ -115,30 +100,48 @@ static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
 
 /// \brief This is the cartesi.machine() constructor implementation.
 /// \param L Lua state.
-static int machine_ctor(lua_State *L) try {
+static int machine_ctor(lua_State *L) {
     lua_settop(L, 3);
-    // Allocate room for clua_i_virtual_machine_ptr as a Lua userdata
-    auto *p = static_cast<clua_i_virtual_machine_ptr *>(
-        lua_newuserdata(L, sizeof(clua_i_virtual_machine_ptr)));
-    new (p) clua_i_virtual_machine_ptr();
+
+    auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr));
+
     if (lua_type(L, 2) == LUA_TTABLE) {
-        *p = std::make_unique<virtual_machine>(clua_check_machine_config(L, 2),
-            clua_opt_machine_runtime_config(L, 3, {}));
+        auto &managed_config = clua_push_to(L,
+            clua_managed_cm_ptr<cm_machine_config>(clua_check_cm_machine_config(L, 2)));
+        auto &managed_runtime_config = clua_push_to(L,
+            clua_managed_cm_ptr<cm_machine_runtime_config>(clua_opt_cm_machine_runtime_config(L, 3, {})));
+        TRY_EXECUTE(
+            cm_create_machine(managed_config.get(), managed_runtime_config.get(), &managed_machine.get(), err_msg));
+        lua_pop(L, 2);
     } else {
-        *p = std::make_unique<virtual_machine>(luaL_checkstring(L, 2),
-            clua_opt_machine_runtime_config(L, 3, {}));
+        auto &managed_runtime_config = clua_push_to(L,
+            clua_managed_cm_ptr<cm_machine_runtime_config>(clua_opt_cm_machine_runtime_config(L, 3, {})));
+        TRY_EXECUTE(
+            cm_load_machine(luaL_checkstring(L, 2), managed_runtime_config.get(), &managed_machine.get(), err_msg));
+        lua_pop(L, 1);
     }
-    clua_setmetatable<clua_i_virtual_machine_ptr>(L, -1);
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
 /// \brief Tag to identify the machine class-like constructor
 struct machine_class {};
 
 int clua_machine_init(lua_State *L, int ctxidx) {
+
+    CREATE_LUA_TYPE(clua_managed_cm_ptr<const cm_machine_config>, "immutable cartesi machine configuration",
+        ctxidx);
+    CREATE_LUA_TYPE(clua_managed_cm_ptr<cm_machine_config>, "cartesi machine configuration",
+        ctxidx);
+    CREATE_LUA_TYPE(clua_managed_cm_ptr<cm_access_log>, "cartesi machine access log",
+        ctxidx);
+    CREATE_LUA_TYPE(clua_managed_cm_ptr<cm_machine_runtime_config>, "cartesi machine runtime config",
+        ctxidx);
+    CREATE_LUA_TYPE(clua_managed_cm_ptr<char>, "lua C string",
+        ctxidx);
+    CREATE_LUA_TYPE(clua_managed_cm_ptr<cm_merkle_tree_proof>, "merkle tree proof",
+        ctxidx);
+
+
     if (!clua_typeexists<machine_class>(L, ctxidx)) {
         clua_createtype<machine_class>(L, "cartesi machine class", ctxidx);
         clua_setmethods<machine_class>(L, machine_class_index.data(), 0, ctxidx);

@@ -17,6 +17,7 @@
 #ifndef CLUA_MACHINE_UTIL_H
 #define CLUA_MACHINE_UTIL_H
 
+#include "clua.h"
 #include "machine-merkle-tree.h"
 #include "access-log.h"
 #include "machine.h"
@@ -27,6 +28,101 @@
 /// \brief Cartesi machine Lua interface helper functions
 
 namespace cartesi {
+
+#define CREATE_LUA_TYPE(TYPE, DESCRIPTION, ctxidx) \
+        if (!clua_typeexists<TYPE>(L, ctxidx)) { \
+            clua_createtype<TYPE>(L, DESCRIPTION, ctxidx); \
+        }
+
+#define TRY_EXECUTE(func_call) \
+    do {                       \
+       auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr)); \
+       char **err_msg = &managed_err_msg.get();\
+       if (func_call != 0) {                   \
+           return luaL_error(L, *err_msg); \
+       }                                       \
+       lua_pop(L, 1);                           \
+    } while (0)
+
+#define DEMANGLE_TYPEID_NAME(x) abi::__cxa_demangle(typeid((x)).name(), NULL, NULL, NULL)
+
+/// \brief Create overloaded deleters for C API objects
+template<typename T>
+void cm_delete(T *ptr) {
+    fprintf(stderr, "Calling default deleter, maybe specialized deleter "
+                    "is missing for type <%s>?\n", DEMANGLE_TYPEID_NAME(*ptr));
+}
+
+/// \brief Deleter for C string
+template<>
+void cm_delete<char>(char *err_msg);
+
+/// \brief Deleter for C api machine configuration
+template<>
+void cm_delete<const cm_machine_config>(const cm_machine_config *c);
+template<>
+void cm_delete<cm_machine_config>(cm_machine_config *c);
+
+/// \brief Deleter for C api machine
+template<>
+void cm_delete<cm_machine>(cm_machine *m);
+
+/// \brief Deleter for C api runtime machine configuration
+template<>
+void cm_delete(cm_machine_runtime_config *c);
+
+/// \brief Deleter for C api access log
+template<>
+void cm_delete(cm_access_log *a);
+
+/// \brief Deleter for C api merkle tree proof
+template<>
+void cm_delete(cm_merkle_tree_proof *p);
+
+template<typename T>
+class clua_managed_cm_ptr final {
+public:
+    explicit clua_managed_cm_ptr(T *ptr): m_ptr{ptr} {
+    }
+
+    explicit clua_managed_cm_ptr(clua_managed_cm_ptr &&other) {
+        m_ptr = other.m_ptr;
+        other.m_ptr = nullptr;
+    }
+
+    void operator= (clua_managed_cm_ptr &&other) {
+        release();
+        std::swap(m_ptr, other.m_ptr);
+    };
+
+    explicit clua_managed_cm_ptr(const clua_managed_cm_ptr &other) = delete;
+    void operator= (const clua_managed_cm_ptr &other) = delete;
+
+    ~clua_managed_cm_ptr() {
+        cm_delete(m_ptr); // use overloaded deleter
+        m_ptr = nullptr; // not needed, just in end of the world case
+    }
+
+    void operator = (T *ptr) {
+        m_ptr = ptr;
+    }
+
+    void release(void) {
+        cm_delete(m_ptr); // use overloaded deleter
+        m_ptr = nullptr;
+    }
+
+    T *&get(void) { // return reference to internal ptr
+        return m_ptr;
+    }
+
+    const T *get(void) const {
+        return m_ptr;
+    }
+
+private:
+    T *m_ptr{};
+};
 
 /// \brief Pushes a proof to the Lua stack
 /// \param L Lua state
@@ -195,6 +291,7 @@ flash_drive_config clua_check_flash_drive_config(lua_State *L, int tabidx);
 /// \param tabidx Flash config stack index
 /// \returns The cm_flash_drive_config
 cm_flash_drive_config clua_check_cm_flash_drive_config(lua_State *L, int tabidx);
+
 
 } // namespace cartesi
 

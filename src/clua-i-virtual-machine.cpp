@@ -25,1189 +25,422 @@
 
 namespace cartesi {
 
-//Defines err_msg and throws if error was returned from C API
-#define EXECUTE_OR_THROW(func_call) \
-    {                               \
-       char *err_msg{};             \
-       if (func_call != 0) {        \
-          throw std::runtime_error(err_msg); \
-       }                            \
-    }
+
+#define PRINT_PROCESSOR_CSR(machine, regname) \
+    do {                                      \
+        uint64_t val = 0;                     \
+        TRY_EXECUTE(cm_read_##regname(machine, &val, err_msg)); \
+        fprintf(stderr, #regname " = %" PRIx64 "\n", val); \
+    } \
+    while (0)
 
 /// \brief This is the machine:dump_pmas() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_dump_pmas(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->dump_pmas();
+static int machine_obj_index_dump_pmas(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_dump_pmas(m.get(), err_msg));
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
 /// \brief This is the machine:dump_regs() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_dump_regs(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    fprintf(stderr, "pc = %" PRIx64 "\n", m->read_pc());
+static int machine_obj_index_dump_regs(lua_State *L) {
+    auto &managed_machine = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    auto *m = managed_machine.get();
+    PRINT_PROCESSOR_CSR(m, pc);
     for (int i = 0; i < 32; ++i) {
-        fprintf(stderr, "x%d = %" PRIx64 "\n", i, m->read_x(i));
+        uint64_t val = 0;
+        TRY_EXECUTE(cm_read_x(m, i, &val, err_msg));
+        fprintf(stderr, "x%d = %" PRIx64 "\n", i, val);
     }
-    fprintf(stderr, "minstret = %" PRIx64 "\n", m->read_minstret());
-    fprintf(stderr, "mcycle = %" PRIx64 "\n", m->read_mcycle());
-    fprintf(stderr, "mvendorid = %" PRIx64 "\n", m->read_mvendorid());
-    fprintf(stderr, "marchid = %" PRIx64 "\n", m->read_marchid());
-    fprintf(stderr, "mimpid = %" PRIx64 "\n", m->read_mimpid());
-    fprintf(stderr, "mstatus = %" PRIx64 "\n", m->read_mstatus());
-    fprintf(stderr, "mtvec = %" PRIx64 "\n", m->read_mtvec());
-    fprintf(stderr, "mscratch = %" PRIx64 "\n", m->read_mscratch());
-    fprintf(stderr, "mepc = %" PRIx64 "\n", m->read_mepc());
-    fprintf(stderr, "mcause = %" PRIx64 "\n", m->read_mcause());
-    fprintf(stderr, "mtval = %" PRIx64 "\n", m->read_mtval());
-    fprintf(stderr, "misa = %" PRIx64 "\n", m->read_misa());
-    fprintf(stderr, "mie = %" PRIx64 "\n", m->read_mie());
-    fprintf(stderr, "mip = %" PRIx64 "\n", m->read_mip());
-    fprintf(stderr, "medeleg = %" PRIx64 "\n", m->read_medeleg());
-    fprintf(stderr, "mideleg = %" PRIx64 "\n", m->read_mideleg());
-    fprintf(stderr, "mcounteren = %" PRIx64 "\n", m->read_mcounteren());
-    fprintf(stderr, "stvec = %" PRIx64 "\n", m->read_stvec());
-    fprintf(stderr, "sscratch = %" PRIx64 "\n", m->read_sscratch());
-    fprintf(stderr, "sepc = %" PRIx64 "\n", m->read_sepc());
-    fprintf(stderr, "scause = %" PRIx64 "\n", m->read_scause());
-    fprintf(stderr, "stval = %" PRIx64 "\n", m->read_stval());
-    fprintf(stderr, "satp = %" PRIx64 "\n", m->read_satp());
-    fprintf(stderr, "scounteren = %" PRIx64 "\n", m->read_scounteren());
-    fprintf(stderr, "ilrsc = %" PRIx64 "\n", m->read_ilrsc());
-    fprintf(stderr, "iflags = %" PRIx64 "\n", m->read_iflags());
-    fprintf(stderr, "clint_mtimecmp = %" PRIx64 "\n", m->read_clint_mtimecmp());
-    fprintf(stderr, "htif_tohost = %" PRIx64 "\n", m->read_htif_tohost());
-    fprintf(stderr, "htif_fromhost = %" PRIx64 "\n", m->read_htif_fromhost());
-    fprintf(stderr, "htif_ihalt = %" PRIx64 "\n", m->read_htif_ihalt());
-    fprintf(stderr, "htif_iconsole = %" PRIx64 "\n", m->read_htif_iconsole());
-    fprintf(stderr, "htif_iyield = %" PRIx64 "\n", m->read_htif_iyield());
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
+    PRINT_PROCESSOR_CSR(m, minstret);
+    PRINT_PROCESSOR_CSR(m, mcycle);
+    PRINT_PROCESSOR_CSR(m, mvendorid);
+    PRINT_PROCESSOR_CSR(m, marchid);
+    PRINT_PROCESSOR_CSR(m, mimpid);
+    PRINT_PROCESSOR_CSR(m, mstatus);
+    PRINT_PROCESSOR_CSR(m, mtvec);
+    PRINT_PROCESSOR_CSR(m, mscratch);
+    PRINT_PROCESSOR_CSR(m, mepc);
+    PRINT_PROCESSOR_CSR(m, mcause);
+    PRINT_PROCESSOR_CSR(m, mtval);
+    PRINT_PROCESSOR_CSR(m, misa);
+    PRINT_PROCESSOR_CSR(m, mie);
+    PRINT_PROCESSOR_CSR(m, mip);
+    PRINT_PROCESSOR_CSR(m, medeleg);
+    PRINT_PROCESSOR_CSR(m, mideleg);
+    PRINT_PROCESSOR_CSR(m, mcounteren);
+    PRINT_PROCESSOR_CSR(m, stvec);
+    PRINT_PROCESSOR_CSR(m, sscratch);
+    PRINT_PROCESSOR_CSR(m, sepc);
+    PRINT_PROCESSOR_CSR(m, scause);
+    PRINT_PROCESSOR_CSR(m, stval);
+    PRINT_PROCESSOR_CSR(m, satp);
+    PRINT_PROCESSOR_CSR(m, scounteren);
+    PRINT_PROCESSOR_CSR(m, ilrsc);
+    PRINT_PROCESSOR_CSR(m, iflags);
+    PRINT_PROCESSOR_CSR(m, clint_mtimecmp);
+    PRINT_PROCESSOR_CSR(m, htif_tohost);
+    PRINT_PROCESSOR_CSR(m, htif_fromhost);
+    PRINT_PROCESSOR_CSR(m, htif_ihalt);
+    PRINT_PROCESSOR_CSR(m, htif_iconsole);
+    PRINT_PROCESSOR_CSR(m, htif_iyield);
+    printf("\n");
     return 0;
 }
 
 /// \brief This is the machine:get_proof() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_get_proof(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    clua_push_proof(L, m->get_proof(luaL_checkinteger(L, 2), luaL_checkinteger(L, 3)));
+static int machine_obj_index_get_proof(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const uint64_t address = luaL_checkinteger(L, 2);
+    const int log2_size = luaL_checkinteger(L, 3);
+    auto &managed_proof = clua_push_to(L, clua_managed_cm_ptr<cm_merkle_tree_proof>(nullptr));
+    TRY_EXECUTE(cm_get_proof(m.get(), address, log2_size, &managed_proof.get(), err_msg));
+    clua_push_cm_proof(L, managed_proof.get());
+    managed_proof.release();
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
-static int machine_obj_index_get_initial_config(lua_State *L) try {
-    auto m = clua_check<clua_cm_machine_ptr>(L, 1);
-    const cm_machine_config *c_config{};
-    EXECUTE_OR_THROW(cm_get_initial_config(m, &c_config, &err_msg));
-    clua_push_cm_machine_config(L, c_config);
+static int machine_obj_index_get_initial_config(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    auto &managed_config = clua_push_to(L, clua_managed_cm_ptr<const cm_machine_config>(nullptr));
+    TRY_EXECUTE(cm_get_initial_config(m.get(), &managed_config.get(), err_msg));
+    clua_push_cm_machine_config(L, managed_config.get());
+    managed_config.release();
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
 /// \brief This is the machine:get_root_hash() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_get_root_hash(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    machine_merkle_tree::hash_type hash;
-    m->get_root_hash(hash);
-    clua_push_hash(L, hash);
+static int machine_obj_index_get_root_hash(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    cm_hash root_hash{};
+    TRY_EXECUTE(cm_get_root_hash(m.get(), &root_hash, err_msg));
+    clua_push_cm_hash(L, &root_hash);
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
-/// \brief This is the machine:read_clint_mtimecmp() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_clint_mtimecmp(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_clint_mtimecmp());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
+/// \brief Generation of machine getters and setters for CSR registers
+#define IMPL_MACHINE_OBJ_READ_WRITE(field) \
+    static int machine_obj_index_read_##field(lua_State *L) { \
+        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1); \
+        uint64_t val{}; \
+        TRY_EXECUTE(cm_read_##field(m.get(), &val, err_msg)); \
+        lua_pushinteger(L, val);  \
+        return 1; \
+    }                                      \
+    static int machine_obj_index_write_##field(lua_State *L) { \
+        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1); \
+        TRY_EXECUTE(cm_write_##field(m.get(), luaL_checkinteger(L, 2), err_msg)); \
+        return 0; \
+    }
+
+/// \brief Generation of machine getters for CSR registers
+#define IMPL_MACHINE_OBJ_READ(field) \
+    static int machine_obj_index_read_##field(lua_State *L) { \
+        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1); \
+        uint64_t val{}; \
+        TRY_EXECUTE(cm_read_##field(m.get(), &val, err_msg)); \
+        lua_pushinteger(L, val);  \
+        return 1; \
+    }
+
+/// \brief Generation of machine setters for CSR registers
+#define IMPL_MACHINE_OBJ_WRITE(field) \
+    static int machine_obj_index_write_##field(lua_State *L) { \
+        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1); \
+        TRY_EXECUTE(cm_write_##field(m.get(), luaL_checkinteger(L, 2), err_msg)); \
+        return 0; \
+    }
+
+
+IMPL_MACHINE_OBJ_READ_WRITE(pc)
+IMPL_MACHINE_OBJ_READ(mvendorid)
+IMPL_MACHINE_OBJ_READ(marchid)
+IMPL_MACHINE_OBJ_READ(mimpid)
+IMPL_MACHINE_OBJ_READ_WRITE(mcycle)
+IMPL_MACHINE_OBJ_READ_WRITE(minstret)
+IMPL_MACHINE_OBJ_READ_WRITE(mstatus)
+IMPL_MACHINE_OBJ_READ_WRITE(mtvec)
+IMPL_MACHINE_OBJ_READ_WRITE(mscratch)
+IMPL_MACHINE_OBJ_READ_WRITE(mepc)
+IMPL_MACHINE_OBJ_READ_WRITE(mcause)
+IMPL_MACHINE_OBJ_READ_WRITE(mtval)
+IMPL_MACHINE_OBJ_READ_WRITE(misa)
+IMPL_MACHINE_OBJ_READ_WRITE(mie)
+IMPL_MACHINE_OBJ_READ_WRITE(mip)
+IMPL_MACHINE_OBJ_READ_WRITE(medeleg)
+IMPL_MACHINE_OBJ_READ_WRITE(mideleg)
+IMPL_MACHINE_OBJ_READ_WRITE(mcounteren)
+IMPL_MACHINE_OBJ_READ_WRITE(stvec)
+IMPL_MACHINE_OBJ_READ_WRITE(sscratch)
+IMPL_MACHINE_OBJ_READ_WRITE(sepc)
+IMPL_MACHINE_OBJ_READ_WRITE(scause)
+IMPL_MACHINE_OBJ_READ_WRITE(stval)
+IMPL_MACHINE_OBJ_READ_WRITE(satp)
+IMPL_MACHINE_OBJ_READ_WRITE(scounteren)
+IMPL_MACHINE_OBJ_READ_WRITE(ilrsc)
+IMPL_MACHINE_OBJ_READ_WRITE(iflags)
+IMPL_MACHINE_OBJ_READ_WRITE(htif_tohost)
+IMPL_MACHINE_OBJ_READ(htif_tohost_dev)
+IMPL_MACHINE_OBJ_READ(htif_tohost_cmd)
+IMPL_MACHINE_OBJ_READ(htif_tohost_data)
+IMPL_MACHINE_OBJ_READ_WRITE(htif_fromhost)
+IMPL_MACHINE_OBJ_WRITE(htif_fromhost_data)
+IMPL_MACHINE_OBJ_READ_WRITE(htif_ihalt)
+IMPL_MACHINE_OBJ_READ_WRITE(htif_iconsole)
+IMPL_MACHINE_OBJ_READ_WRITE(htif_iyield)
+IMPL_MACHINE_OBJ_READ_WRITE(clint_mtimecmp)
+IMPL_MACHINE_OBJ_READ_WRITE(dhd_tstart)
+IMPL_MACHINE_OBJ_READ_WRITE(dhd_tlength)
+IMPL_MACHINE_OBJ_READ_WRITE(dhd_dlength)
+IMPL_MACHINE_OBJ_READ_WRITE(dhd_hlength)
 
 /// \brief This is the machine:read_csr() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_read_csr(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_csr(clua_check_csr(L, 2)));
+static int machine_obj_index_read_csr(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    uint64_t val{};
+    TRY_EXECUTE(cm_read_csr(m.get(), clua_check_cm_proc_csr(L, 2), &val, err_msg));
+    lua_pushinteger(L, val);
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_dhd_tstart() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_dhd_tstart(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_dhd_tstart());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_dhd_tlength() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_dhd_tlength(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_dhd_tlength());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_dhd_dlength() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_dhd_dlength(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_dhd_dlength());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_dhd_hlength() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_dhd_hlength(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_dhd_hlength());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
 /// \brief This is the machine:read_x() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_read_x(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    int i = luaL_checkinteger(L, 2);
+static int machine_obj_index_read_x(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const int i = luaL_checkinteger(L, 2);
     if (i < 0 || i >= X_REG_COUNT) {
-        throw std::invalid_argument{"register index out of range"};
+        luaL_error(L, "register index out of range");
     }
-    lua_pushinteger(L, m->read_x(i));
+    uint64_t val{};
+    TRY_EXECUTE(cm_read_x(m.get(), i, &val, err_msg));
+    lua_pushinteger(L, val);
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
 /// \brief This is the machine:read_dhd_h() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_read_dhd_h(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    int i = luaL_checkinteger(L, 2);
+static int machine_obj_index_read_dhd_h(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const int i = luaL_checkinteger(L, 2);
     if (i < 0 || i >= DHD_H_REG_COUNT) {
-        throw std::invalid_argument{"register index out of range"};
+        luaL_error(L, "register index out of range");
     }
-    lua_pushinteger(L, m->read_dhd_h(i));
+    uint64_t val{};
+    TRY_EXECUTE(cm_read_dhd_h(m.get(), i, &val, err_msg));
+    lua_pushinteger(L, val);
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_htif_fromhost() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_htif_fromhost(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_htif_fromhost());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_htif_tohost() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_htif_tohost(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_htif_tohost());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_htif_tohost_dev() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_htif_tohost_dev(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_htif_tohost_dev());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_htif_tohost_cmd() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_htif_tohost_cmd(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_htif_tohost_cmd());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_htif_tohost_data() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_htif_tohost_data(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_htif_tohost_data());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_htif_ihalt() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_htif_ihalt(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_htif_ihalt());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_htif_iconsole() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_htif_iconsole(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_htif_iconsole());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_htif_yield() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_htif_iyield(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_htif_iyield());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_iflags() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_iflags(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_iflags());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
 /// \brief This is the machine:read_iflags_H() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_read_iflags_H(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushboolean(L, m->read_iflags_H());
+static int machine_obj_index_read_iflags_H(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    bool val{};
+    TRY_EXECUTE(cm_read_iflags_H(m.get(), &val, err_msg));
+    lua_pushboolean(L, val);
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
 /// \brief This is the machine:read_iflags_Y() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_read_iflags_Y(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushboolean(L, m->read_iflags_Y());
+static int machine_obj_index_read_iflags_Y(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    bool val{};
+    TRY_EXECUTE(cm_read_iflags_Y(m.get(), &val, err_msg));
+    lua_pushboolean(L, val);
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
 /// \brief This is the machine:set_iflags_H() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_set_iflags_H(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->set_iflags_H();
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
+static int machine_obj_index_set_iflags_H(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    bool val{};
+    TRY_EXECUTE(cm_read_iflags_H(m.get(), &val, err_msg));
+    lua_pushboolean(L, val);
+    return 1;
 }
 
 /// \brief This is the machine:set_iflags_Y() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_set_iflags_Y(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->set_iflags_Y();
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
+static int machine_obj_index_set_iflags_Y(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_set_iflags_Y(m.get(), err_msg));
     return 0;
 }
 
 /// \brief This is the machine:reset_iflags_Y() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_reset_iflags_Y(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->reset_iflags_Y();
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
+static int machine_obj_index_reset_iflags_Y(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_reset_iflags_Y(m.get(), err_msg));
     return 0;
 }
 
-/// \brief This is the machine:read_ilrsc() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_ilrsc(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_ilrsc());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_marchid() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_marchid(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_marchid());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_mcause() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_mcause(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_mcause());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_mcounteren() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_mcounteren(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_mcounteren());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_mcycle() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_mcycle(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_mcycle());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_medeleg() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_medeleg(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_medeleg());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
 
 /// \brief This is the machine:read_memory() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_read_memory(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    size_t length = luaL_checkinteger(L, 3);
+static int machine_obj_index_read_memory(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const uint64_t  address = luaL_checkinteger(L, 2);
+    const size_t length = luaL_checkinteger(L, 3);
     auto data = cartesi::unique_calloc<unsigned char>(length);
-    m->read_memory(luaL_checkinteger(L, 2), data.get(), length);
+    TRY_EXECUTE(cm_read_memory(m.get(), address, data.get(), length, err_msg));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     lua_pushlstring(L, reinterpret_cast<const char *>(data.get()), length);
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
-/// \brief This is the machine:read_mepc() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_mepc(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_mepc());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_mideleg() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_mideleg(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_mideleg());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_mie() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_mie(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_mie());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_mimpid() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_mimpid(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_mimpid());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_minstret() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_minstret(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_minstret());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_mip() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_mip(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_mip());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_misa() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_misa(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_misa());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_mscratch() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_mscratch(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_mscratch());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_mstatus() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_mstatus(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_mstatus());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_mtval() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_mtval(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_mtval());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_mtvec() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_mtvec(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_mtvec());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_mvendorid() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_mvendorid(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_mvendorid());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_pc() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_pc(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_pc());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_satp() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_satp(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_satp());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_scause() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_scause(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_scause());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_scounteren() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_scounteren(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_scounteren());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_sepc() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_sepc(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_sepc());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_sscratch() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_sscratch(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_sscratch());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_stval() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_stval(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_stval());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:read_stvec() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_stvec(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushinteger(L, m->read_stvec());
-    return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
 
 /// \brief This is the machine:read_word() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_read_word(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+static int machine_obj_index_read_word(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     uint64_t word_value = 0;
-    if (m->read_word(luaL_checkinteger(L, 2), word_value)) {
-        lua_pushinteger(L, word_value);
-        return 1;
-    } else {
-        lua_pushboolean(L, false);
-        return 1;
-    }
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
+    TRY_EXECUTE(cm_read_word(m.get(), luaL_checkinteger(L, 2), &word_value, err_msg));
+    lua_pushinteger(L, word_value);
+    return 1;
 }
 
 /// \brief This is the machine:run() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_run(lua_State *L) try {
-    clua_check<clua_i_virtual_machine_ptr>(L, 1)->run(luaL_checkinteger(L, 2));
+static int machine_obj_index_run(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_machine_run(m.get(), luaL_checkinteger(L, 2), err_msg));
     lua_pushboolean(L, true);
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
 /// \brief This is the machine:step() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_step(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    clua_push_access_log(L, m->step(clua_check_log_type(L, 2), true));
+static int machine_obj_index_step(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(nullptr));
+    TRY_EXECUTE(cm_step(m.get(), clua_check_cm_log_type(L, 2), true, &managed_log.get(), err_msg));
+    clua_push_cm_access_log(L,  managed_log.get());
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
 /// \brief This is the machine:store() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_store(lua_State *L) try {
-    clua_check<clua_i_virtual_machine_ptr>(L, 1)->store(luaL_checkstring(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
+static int machine_obj_index_store(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_store(m.get(), luaL_checkstring(L, 2), err_msg));
     return 0;
 }
 
 /// \brief This is the machine:update_merkle_tree() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_update_merkle_tree(lua_State *L) try {
-    lua_pushboolean(L, clua_check<clua_i_virtual_machine_ptr>(L, 1)->update_merkle_tree());
+static int machine_obj_index_update_merkle_tree(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_update_merkle_tree(m.get(), err_msg));
+    lua_pushboolean(L, true);
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
 /// \brief This is the machine:verify_dirty_page_maps() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_verify_dirty_page_maps(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    lua_pushboolean(L, m->verify_dirty_page_maps());
+static int machine_obj_index_verify_dirty_page_maps(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    bool result{};
+    TRY_EXECUTE(cm_verify_dirty_page_maps(m.get(), &result,err_msg));
+    lua_pushboolean(L, result);
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
 /// \brief This is the machine:verify_merkle_tree() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_verify_merkle_tree(lua_State *L) try {
-    lua_pushboolean(L, clua_check<clua_i_virtual_machine_ptr>(L, 1)->verify_merkle_tree());
+static int machine_obj_index_verify_merkle_tree(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    bool result{};
+    TRY_EXECUTE(cm_verify_merkle_tree(m.get(), &result, err_msg));
+    lua_pushboolean(L, result);
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
-/// \brief This is the machine:write_clint_mtimecmp() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_clint_mtimecmp(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_clint_mtimecmp(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
 
 /// \brief This is the machine:write_csr() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_write_csr(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_csr(clua_check_csr(L, 2), luaL_checkinteger(L, 3));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
+static int machine_obj_index_write_csr(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_write_csr(m.get(), clua_check_cm_proc_csr(L, 2), luaL_checkinteger(L, 3), err_msg));
     return 0;
 }
 
-/// \brief This is the machine:write_dhd_tstart() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_dhd_tstart(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_dhd_tstart(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_dhd_tlength() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_dhd_tlength(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_dhd_tlength(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_dhd_dlength() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_dhd_dlength(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_dhd_dlength(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_dhd_hlength() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_dhd_hlength(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_dhd_hlength(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
 
 /// \brief This is the machine:write_x() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_write_x(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+static int machine_obj_index_write_x(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     int i = luaL_checkinteger(L, 2);
     if (i < 1 || i >= X_REG_COUNT) {
-        throw std::invalid_argument{"register index out of range"};
+        luaL_error(L, "register index out of range");
     }
-    m->write_x(i, luaL_checkinteger(L, 3));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
+    TRY_EXECUTE(cm_write_x(m.get(), i, luaL_checkinteger(L, 3), err_msg));
     return 0;
 }
 
 /// \brief This is the machine:write_dhd_h() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_write_dhd_h(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+static int machine_obj_index_write_dhd_h(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     int i = luaL_checkinteger(L, 2);
     if (i < 0 || i >= DHD_H_REG_COUNT) {
-        throw std::invalid_argument{"register index out of range"};
+        luaL_error(L, "register index out of range");
     }
-    m->write_dhd_h(i, luaL_checkinteger(L, 3));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-
-/// \brief This is the machine:write_htif_fromhost() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_htif_fromhost(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_htif_fromhost(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_htif_fromhost_data() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_htif_fromhost_data(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_htif_fromhost_data(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_htif_tohost() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_htif_tohost(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_htif_tohost(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_iflags() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_iflags(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_iflags(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_ilrsc() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_ilrsc(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_ilrsc(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_mcause() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_mcause(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_mcause(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_mcounteren() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_mcounteren(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_mcounteren(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_mcycle() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_mcycle(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_mcycle(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_medeleg() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_medeleg(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_medeleg(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
+    TRY_EXECUTE(cm_write_dhd_h(m.get(), i, luaL_checkinteger(L, 3), err_msg));
     return 0;
 }
 
 /// \brief This is the machine:write_memory() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_write_memory(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
+static int machine_obj_index_write_memory(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     size_t length = 0;
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(
         luaL_checklstring(L, 3, &length));
-    m->write_memory(luaL_checkinteger(L, 2), data, length);
+    TRY_EXECUTE(cm_write_memory(m.get(), luaL_checkinteger(L, 2), data, length, err_msg));
     lua_pushboolean(L, true);
     return 1;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
 }
 
-/// \brief This is the machine:write_mepc() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_mepc(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_mepc(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
 
-/// \brief This is the machine:write_mideleg() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_mideleg(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_mideleg(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_mie() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_mie(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_mie(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_minstret() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_minstret(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_minstret(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_mip() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_mip(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_mip(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_misa() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_misa(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_misa(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_mscratch() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_mscratch(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_mscratch(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_mstatus() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_mstatus(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_mstatus(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_mtval() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_mtval(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_mtval(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_mtvec() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_mtvec(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_mtvec(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_pc() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_pc(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_pc(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_satp() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_satp(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_satp(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_scause() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_scause(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_scause(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_scounteren() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_scounteren(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_scounteren(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_sepc() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_sepc(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_sepc(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_sscratch() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_sscratch(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_sscratch(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_stval() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_stval(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_stval(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
-
-/// \brief This is the machine:write_stvec() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_stvec(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->write_stvec(luaL_checkinteger(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
-    return 0;
-}
 
 /// \brief Replaces a flash drive.
 /// \param L Lua state.
-static int machine_obj_index_replace_flash_drive(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->replace_flash_drive(clua_check_flash_drive_config(L, 2));
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
+static int machine_obj_index_replace_flash_drive(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    auto flash_drive_config = clua_check_cm_flash_drive_config(L, 2);
+    TRY_EXECUTE(cm_replace_flash_drive(m.get(), &flash_drive_config, err_msg));
     return 0;
 }
 
 /// \brief This is the machine:destroy() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_destroy(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->destroy();
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
+static int machine_obj_index_destroy(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_destroy(m.get(), err_msg));
     return 0;
 }
 
 /// \brief This is the machine:snapshot() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_snapshot(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->snapshot();
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
+static int machine_obj_index_snapshot(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_snapshot(m.get(), err_msg));
     return 0;
 }
 
 /// \brief This is the machine:rollback() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_rollback(lua_State *L) try {
-    auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
-    m->rollback();
-    return 0;
-} catch (std::exception &x) {
-    luaL_error(L, x.what());
+static int machine_obj_index_rollback(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_rollback(m.get(), err_msg));
     return 0;
 }
 
@@ -1317,10 +550,10 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
 });
 
 int clua_i_virtual_machine_init(lua_State *L, int ctxidx) {
-    if (!clua_typeexists<clua_i_virtual_machine_ptr>(L, ctxidx)) {
-        clua_createtype<clua_i_virtual_machine_ptr>(L,
+    if (!clua_typeexists<clua_managed_cm_ptr<cm_machine>>(L, ctxidx)) {
+        clua_createtype<clua_managed_cm_ptr<cm_machine>>(L,
             "cartesi machine object", ctxidx);
-        clua_setmethods<clua_i_virtual_machine_ptr>(L,
+        clua_setmethods<clua_managed_cm_ptr<cm_machine>>(L,
             machine_obj_index.data(), 0, ctxidx);
     }
     return 1;

@@ -30,7 +30,6 @@ namespace cartesi {
 
 /// \brief Type used to represent virtual machine objects in Lua
 using clua_i_virtual_machine_ptr = std::unique_ptr<i_virtual_machine>;
-using clua_cm_machine_ptr = cm_machine*;
 
 /// \brief Initialize Cartesi machine Lua interface
 /// \param L Lua state

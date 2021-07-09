@@ -99,7 +99,8 @@ static std::optional<hash_type> read_hash(FILE *f) {
 /// \brief Prints formatted message to stderr
 /// \param fmt Format string
 /// \param ... Arguments, if any
-static void error(const char *fmt, ...) {
+__attribute__((format(printf, 1, 2))) 
+static void error(const char *fmt, ...) { // NOLINT(cert-dcl50-cpp): this vararg is safe because the compiler can check the format
     va_list ap;
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);

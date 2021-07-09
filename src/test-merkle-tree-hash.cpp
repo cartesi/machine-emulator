@@ -62,6 +62,7 @@ static bool intval(const char *pre, const char *str, int *val) {
     if (strncmp(pre, str, len) == 0) {
         str += len;
         int end = 0;
+        // NOLINTNEXTLINE(cert-err34-c): %n is used toverify conversion errors
         if (sscanf(str, "%d%n", val, &end) == 1 && !str[end]) {
             return true;
         }
@@ -91,6 +92,7 @@ static std::optional<hash_type> read_hash(FILE *f) {
     for (unsigned i = 0; i < hasher_type::hash_size; ++i) {
         char hex_c[3] = {hex_hash[2*i], hex_hash[2*i+1], 0};
         unsigned c = 0;
+        // NOLINTNEXTLINE(cert-err34-c): we just generated the string so we don't need to verify it
         if (sscanf(hex_c, "%x", &c) != 1)
             return {};
         h[i] = c;

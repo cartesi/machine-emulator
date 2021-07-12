@@ -315,11 +315,12 @@ jobs:
 
       - name: Setup docker image tags
         id: docker_image_tags
-        uses: crazy-max/ghaction-docker-meta@v1
+        uses: docker/metadata-action@v3
         with:
           images: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator
-          tag-semver: |
-            {{version}}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
 
       - name: Set up Docker Buildx
         id: buildx
@@ -410,11 +411,15 @@ jobs:
 
       - name: Setup docker image tags
         id: docker_image_tags
-        uses: crazy-max/ghaction-docker-meta@v1
+        uses: docker/metadata-action@v3
         with:
           images: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator
-          tag-semver: |
-            {{version}}-alpine
+          flavor: |
+            latest=false
+            suffix=-alpine
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
 
       - name: Set up Docker Buildx
         id: buildx
@@ -507,19 +512,24 @@ jobs:
 
       - name: Setup ubuntu docker image tags
         id: ubuntu_docker_image_tags
-        uses: crazy-max/ghaction-docker-meta@v1
+        uses: docker/metadata-action@v3
         with:
           images: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator
-          tag-semver: |
-            {{version}}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
 
       - name: Setup alpine docker image tags
         id: alpine_docker_image_tags
-        uses: crazy-max/ghaction-docker-meta@v1
+        uses: docker/metadata-action@v3
         with:
           images: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator
-          tag-semver: |
-            {{version}}-alpine
+          flavor: |
+            latest=false
+            suffix=-alpine
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
 
       - name: Set up Docker Buildx
         id: buildx

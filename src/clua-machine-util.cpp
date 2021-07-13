@@ -821,7 +821,7 @@ void check_flash_drive_configs(lua_State *L, int tabidx,
         return;
     }
     int len = luaL_len(L, -1);
-    if (len > (int) fs.capacity()) {
+    if (len > (int) fs.capacity()) { // NOLINT(readability-static-accessed-through-instance)
         luaL_error(L, "too many flash drives");
     }
     for (int i = 1; i <= len; i++) {

@@ -50,7 +50,7 @@ template <typename ARX>
 inline void load(ARX &ar, cartesi::flash_drive_configs &t, const unsigned int) {
     boost::serialization::collection_size_type count;
     ar >> BOOST_SERIALIZATION_NVP(count);
-	if (count > t.capacity()) {
+	if (count > t.capacity()) { // NOLINT(readability-static-accessed-through-instance)
 		boost::serialization::throw_exception(
 			boost::archive::archive_exception(
 				boost::archive::archive_exception::array_size_too_short

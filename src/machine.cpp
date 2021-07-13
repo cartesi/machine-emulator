@@ -89,7 +89,7 @@ pma_entry machine::make_flash_pma_entry(const flash_drive_config &c) {
 
 
 pma_entry &machine::register_pma_entry(pma_entry &&pma) {
-    if (m_s.pmas.capacity() <= m_s.pmas.size()) {
+    if (m_s.pmas.capacity() <= m_s.pmas.size()) { // NOLINT(readability-static-accessed-through-instance)
         throw std::runtime_error{"too many PMAs"};
     }
     auto start = pma.get_start();

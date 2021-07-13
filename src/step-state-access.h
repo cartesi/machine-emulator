@@ -840,7 +840,7 @@ private:
     }
 
     pma_entry &allocate_mock_pma_entry(pma_entry &&pma) {
-        if (m_mock_pmas.size() == m_mock_pmas.capacity()) {
+        if (m_mock_pmas.size() == m_mock_pmas.capacity()) { // NOLINT(readability-static-accessed-through-instance)
             throw std::invalid_argument{"too many PMA accesses"};
         }
         m_mock_pmas.push_back(std::move(pma));

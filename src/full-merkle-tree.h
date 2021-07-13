@@ -95,16 +95,16 @@ private:
     /// \param log2_root_size Log<sub>2</sub> of root node
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
-    void check_log2_sizes(int log2_root_size, int log2_leaf_size,
+    static void check_log2_sizes(int log2_root_size, int log2_leaf_size,
         int log2_word_size);
 
     /// \brief Returns the index of the left child of node at given index
-    int left_child_index(int index) const {
+    static constexpr int left_child_index(int index) {
         return 2*index;
     }
 
     /// \brief Returns the index of the right child of node at given index
-    int right_child_index(int index) const {
+    static constexpr int right_child_index(int index) {
         return 2*index+1;
     }
 

@@ -487,15 +487,15 @@ void machine::write_pc(uint64_t val) {
     m_s.pc = val;
 }
 
-uint64_t machine::read_mvendorid(void) const {
+uint64_t machine::read_mvendorid(void) const { // NOLINT(readability-convert-member-functions-to-static)
     return MVENDORID_INIT;
 }
 
-uint64_t machine::read_marchid(void) const {
+uint64_t machine::read_marchid(void) const { // NOLINT(readability-convert-member-functions-to-static)
     return MARCHID_INIT;
 }
 
-uint64_t machine::read_mimpid(void) const {
+uint64_t machine::read_mimpid(void) const { // NOLINT(readability-convert-member-functions-to-static)
     return MIMPID_INIT;
 }
 

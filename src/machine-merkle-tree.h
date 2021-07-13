@@ -175,11 +175,11 @@ private:
     /// \param h Hasher object.
     /// \param log2_size log<sub>2</sub> of size subintended by node.
     /// \param node Node to be updated.
-    void update_inner_node_hash(hasher_type &h, int log2_size, tree_node *node);
+    static void update_inner_node_hash(hasher_type &h, int log2_size, tree_node *node);
 
     /// \brief Dumps a hash to std::cerr.
     /// \param hash Hash to be dumped.
-    void dump_hash(const hash_type &hash) const;
+    static void dump_hash(const hash_type &hash);
 
     /// \brief Returns the hash for a child of a given node.
     /// \param child_log2_size log2_size of child node.
@@ -187,8 +187,8 @@ private:
     /// \param bit Bit corresponding to child_log2_size in child node address.
     /// \return Reference to child hash. If child pointer is null,
     /// returns a pristine hash.
-    const hash_type &get_child_hash(int child_log2_size,
-        const tree_node *node, int bit) const;
+    static const hash_type &get_child_hash(int child_log2_size,
+        const tree_node *node, int bit);
 
     /// \brief Dumps tree rooted at node to std::cerr.
     /// \param node Root of subtree.
@@ -216,12 +216,12 @@ private:
     /// \brief Computes the page index for a memory address.
     /// \param address Memory address.
     /// \return The page index.
-    constexpr address_type get_page_index(address_type address) const;
+    static constexpr address_type get_page_index(address_type address);
 
     /// \brief Computes the offset of a memory address within its page.
     /// \param address Memory address.
     /// \return The offset.
-	constexpr address_type get_offset_in_page(address_type address) const;
+    static constexpr address_type get_offset_in_page(address_type address);
 
     /// \brief Computes the offset of a memory address within its page.
     /// \param page_index Page index associated to node.

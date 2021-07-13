@@ -40,7 +40,7 @@ const cartesi::pristine_merkle_tree& machine_merkle_tree::pristine_hashes() {
 
 constexpr machine_merkle_tree::address_type
 machine_merkle_tree::
-get_page_index(address_type address) const {
+get_page_index(address_type address) {
     return address & m_page_index_mask;
 }
 
@@ -58,7 +58,7 @@ get_page_node(address_type page_index) const {
 
 constexpr machine_merkle_tree::address_type
 machine_merkle_tree::
-get_offset_in_page(address_type address) const {
+get_offset_in_page(address_type address) {
     return address & m_page_offset_mask;
 }
 
@@ -71,7 +71,7 @@ set_page_node_map(address_type page_index, tree_node *node) {
 
 machine_merkle_tree::tree_node *
 machine_merkle_tree::
-create_node(void) const {
+create_node(void) const { // NOLINT(readability-convert-member-functions-to-static)
 #ifdef MERKLE_DUMP_STATS
     m_num_nodes++;
 #endif
@@ -80,7 +80,7 @@ create_node(void) const {
 
 void
 machine_merkle_tree::
-destroy_node(tree_node *node) const {
+destroy_node(tree_node *node) const { // NOLINT(readability-convert-member-functions-to-static)
 #ifdef MERKLE_DUMP_STATS
     --m_num_nodes;
 #endif
@@ -163,7 +163,7 @@ get_page_node_hash(address_type page_index, hash_type &hash) const {
 
 const machine_merkle_tree::hash_type &
 machine_merkle_tree::
-get_child_hash(int child_log2_size, const tree_node *node, int bit) const {
+get_child_hash(int child_log2_size, const tree_node *node, int bit) {
     const tree_node *child = node->child[bit];
     return child? child->hash: get_pristine_hash(child_log2_size);
 }
@@ -177,7 +177,7 @@ update_inner_node_hash(hasher_type &h, int log2_size, tree_node *node) {
 
 void
 machine_merkle_tree::
-dump_hash(const hash_type &hash) const {
+dump_hash(const hash_type &hash) {
     auto f = std::cerr.flags();
     std::cerr << std::hex << std::setfill('0') << std::setw(2);
     for (unsigned i = 0; i < hash.size(); ++i) {

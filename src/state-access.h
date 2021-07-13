@@ -62,11 +62,11 @@ private:
         return m_m.get_state();
     }
 
-    void do_push_bracket(bracket_type type, const char *text) {
+    void do_push_bracket(bracket_type type, const char *text) { // NOLINT(readability-convert-member-functions-to-static)
         (void) type; (void) text;
     }
 
-    int do_make_scoped_note(const char *text) {
+    int do_make_scoped_note(const char *text) { // NOLINT(readability-convert-member-functions-to-static)
         (void) text;
         return 0;
     }
@@ -96,15 +96,15 @@ private:
 		m_m.get_state().minstret = val;
 	}
 
-	uint64_t do_read_mvendorid(void) const {
+	uint64_t do_read_mvendorid(void) const { // NOLINT(readability-convert-member-functions-to-static)
 		return MVENDORID_INIT;
 	}
 
-	uint64_t do_read_marchid(void) const {
+	uint64_t do_read_marchid(void) const { // NOLINT(readability-convert-member-functions-to-static)
 		return MARCHID_INIT;
 	}
 
-	uint64_t do_read_mimpid(void) const {
+	uint64_t do_read_mimpid(void) const { // NOLINT(readability-convert-member-functions-to-static)
 		return MIMPID_INIT;
 	}
 

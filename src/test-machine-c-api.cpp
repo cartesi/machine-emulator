@@ -195,7 +195,7 @@ public:
 protected:
     cm_machine_config _machine_config;
 
-    void _clone_machine_config(const cm_machine_config *source, cm_machine_config *target) {
+    static void _clone_machine_config(const cm_machine_config *source, cm_machine_config *target) {
         target->processor = source->processor;
         target->ram.length = source->ram.length;
         target->ram.image_filename = strdup(source->ram.image_filename);
@@ -218,7 +218,7 @@ protected:
         target->dhd.image_filename = strdup(source->dhd.image_filename);
     }
 
-    void _cleanup_machine_config(cm_machine_config *config) {
+    static void _cleanup_machine_config(cm_machine_config *config) {
         free((char*)config->dhd.image_filename);
         for (size_t i = 0; i < config->flash_drive_count; ++i) {
             free((char*)config->flash_drive[i].image_filename);

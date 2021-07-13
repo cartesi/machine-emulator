@@ -94,7 +94,7 @@ private:
     /// \param log2_root_size Log<sub>2</sub> of root node
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
-    void check_log2_sizes(int log2_root_size, int log2_leaf_size,
+    static void check_log2_sizes(int log2_root_size, int log2_leaf_size,
         int log2_word_size);
 
     /// \brief Returns log<sub>2</sub> of size of tree

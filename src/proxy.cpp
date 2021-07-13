@@ -658,9 +658,7 @@ static void drain_completion_queue(grpc::ServerCompletionQueue *completion_queue
     bool ok = false;
     handler::pull_type *h = nullptr;
     while (completion_queue->Next(reinterpret_cast<void **>(&h), &ok)) {
-        if (h) {
-            delete h;
-        }
+        delete h;
     }
 }
 

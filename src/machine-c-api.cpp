@@ -1122,8 +1122,5 @@ int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash
 
 
 void cm_delete_error_message(char* err_msg) {
-    if (err_msg == nullptr) {
-        return;
-    }
     delete[] err_msg;
 }

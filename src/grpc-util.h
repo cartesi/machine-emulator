@@ -18,6 +18,7 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #pragma GCC diagnostic ignored "-Wdeprecated-copy"
+#pragma GCC diagnostic ignored "-Wtype-limits"
 #include "cartesi-machine.grpc.pb.h"
 #include "versioning.pb.h"
 #pragma GCC diagnostic pop

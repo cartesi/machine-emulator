@@ -1,6 +1,7 @@
 *.o
 *.swp
 *.d
+*.clang-tidy
 
 build
 third-party/cryptopp-CRYPTOPP_7_0_0

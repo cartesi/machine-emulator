@@ -228,7 +228,8 @@ test-hash: hash
 	tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
 
 test-grpc: luacartesi grpc
-	./cartesi-machine-server -a 127.0.0.1:5001 && sleep 1
+	./cartesi-machine-server 127.0.0.1:5001 &
+	sleep 1
 	$(LUA_BIN) cartesi-machine-tests.lua --server=127.0.0.1:5001 --test-path="$(TEST_PATH)" --test=".*" run
 
 test-scripts: luacartesi

@@ -81,7 +81,7 @@ jobs:
           find /opt/cartesi/lib -type f -exec chmod 755 {} +
 
       - name: Install Ubuntu dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y libboost-program-options1.71.0 libboost-serialization1.71.0 libprotobuf17 libprotobuf-lite17 libgrpc++1 netcat
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-program-options1.71.0 libboost-serialization1.71.0 libprotobuf17 libprotobuf-lite17 libgrpc++1 netcat llvm
 
       - name: Set current git organization env var
         id: git_org
@@ -160,6 +160,13 @@ jobs:
 
       - name: Run test suite inside the docker image (Ubuntu)
         run: docker run --rm -v /opt/cartesi/tests:/opt/cartesi/tests -t cartesi/machine-emulator:test /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
+      - name: Calculate coverage
+        run: |
+          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
+          export CARTESI_TESTS_PATH=/opt/cartesi/tests
+          cd src && make coverage
+          bash <(curl -s https://codecov.io/bash) -f coverage.txt || echo "Codecov did not collect coverage reports"
+
 
   test-alpine-build:
     name: Test Alpine Build

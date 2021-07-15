@@ -176,12 +176,22 @@ cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS)
 test: luacartesi
 	$(LUA_BIN) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
 
+test-coverage: luacartesi
+	LLVM_PROFILE_FILE="cartesi-machine-tests.profraw" $(LUA_BIN) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" run
+
 test-grpc: luacartesi grpc
 	./cartesi-machine-server -a 127.0.0.1:5001 && sleep 1
 	$(LUA_BIN) cartesi-machine-tests.lua --server=127.0.0.1:5001 --test-path="$(TEST_PATH)" --test=".*" run
 
+test-grpc-coverage: luacartesi grpc
+	./cartesi-machine-server -a 127.0.0.1:5001 && sleep 1
+	LLVM_PROFILE_FILE="grpc.profraw" $(LUA_BIN) cartesi-machine-tests.lua --server=127.0.0.1:5001 --test-path="$(TEST_PATH)" run
+
 test-scripts: luacartesi
 	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do $(LUA_BIN) $$x; done
+
+test-scripts-coverage: luacartesi
+	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do LLVM_PROFILE_FILE="$$x.profraw" $(LUA_BIN) $$x; done
 
 fs.ext2: fs/*
 	genext2fs -f -i 512 -b 8192 -d fs fs.ext2
@@ -191,16 +201,15 @@ generate: CXXFLAGS += -fprofile-generate
 generate: SOLDFLAGS += -fprofile-generate
 generate: luacartesi
 
-cov: CXXFLAGS += -O0 -g -fprofile-arcs -ftest-coverage
-cov: SOLDFLAGS += -fprofile-arcs
 
-cov: luacartesi
-	$(LUA_BIN) ./cartesi-machine-tests.lua
-	$(LUA_BIN) ./test-machine.lua
-	$(LUA_BIN) ./cartesi-machine.lua --cmdline='-- /bin/true'
-	gcov *.cpp
-	lcov --capture --directory . --output-file cartesi.info
-	genhtml cartesi.info --output-directory coverage
+coverage: CXX = clang++
+coverage: CXXFLAGS += -fprofile-instr-generate -fcoverage-mapping
+coverage: SOLDFLAGS += -fprofile-instr-generate -fcoverage-mapping
+coverage: LIBCARTESI_LDFLAGS += -fprofile-instr-generate -fcoverage-mapping
+coverage: LIBCARTESI_TESTS_LDFLAGS += -fprofile-instr-generate -fcoverage-mapping
+coverage: test-coverage test-grpc-coverage test-scripts-coverage
+	llvm-profdata merge -sparse $(shell find . -name '*profraw' | xargs) -o coverage.profdata
+	llvm-cov show ./libcartesi.so -instr-profile=coverage.profdata > coverage.txt
 
 
 valgrind: luacartesi

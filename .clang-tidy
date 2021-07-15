@@ -4,6 +4,13 @@ Checks: >-
   -bugprone-branch-clone,
   cert*,
   clang-analyzer*,
+  cppcoreguidelines*,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-non-private-member-variables-in-classes,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-bounds*,
+  -cppcoreguidelines-pro-type-vararg,
+  google-readability-*,
   misc*,
   -misc-no-recursion,
   -misc-non-private-member-variables-in-classes,
@@ -20,6 +27,8 @@ WarningsAsErrors: >-
   bugprone*,
   cert*,
   clang-analyzer*,
+  cppcoreguidelines*,
+  google*,
   misc*,
   performance*,
   portability*,
@@ -27,3 +36,5 @@ WarningsAsErrors: >-
 CheckOptions:
   - key: performance-move-const-arg.CheckTriviallyCopyableMove
     value: 'false'
+  - key: cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor
+    value: 'true'

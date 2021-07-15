@@ -50,6 +50,9 @@ jobs:
       - name: Build
         run: make -j$(nproc)
 
+      - name: Setup update-alternatives for clang-tidy
+        run: sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-11 20
+
       - name: Lint
         run: make -j$(nproc) lint
 

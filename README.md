@@ -73,10 +73,23 @@ $ make test TEST_PATH=/full/path/to/test/binaries
 
 ## Linter
 
-Install clang-tidy-11 and run:
+We use clang-tidy 11 as the linter.
+
+### Install
+
+#### Ubuntu 20.04
+
+You need to install the package clang-tidy-11 and set it as the default executable with update-alternatives.
 
 ```bash
-$ make lint
+$ apt install clang-tidy-11
+$ update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-11 20
+```
+
+### Running Lint
+
+```bash
+$ make lint -j$(nproc)
 ```
 
 ## Usage

@@ -47,14 +47,14 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Build
-        run: make -j$(nproc)
-
       - name: Setup update-alternatives for clang-tidy
         run: sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-11 20
 
       - name: Lint
-        run: make -j$(nproc) lint
+        run: make lint -j$(nproc)
+
+      - name: Build
+        run: make -j$(nproc)
 
       - name: Install [/opt/cartesi]
         run: make install

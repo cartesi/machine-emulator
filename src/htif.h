@@ -17,6 +17,7 @@
 #ifndef HTIF_H
 #define HTIF_H
 
+#include <array>
 #include <cstdint>
 #include <termios.h>
 
@@ -98,13 +99,13 @@ enum HTIF_commands: uint64_t {
 /// \brief Host-Target interface implementation
 class htif final {
 
-    bool m_console_getchar;                ///< Provide console getchar.
-    char m_buf[HTIF_CONSOLE_BUF_SIZE];     ///< Console buffer.
-    ssize_t m_buf_pos;                     ///< Next character in buffer.
-    ssize_t m_buf_len;                     ///< Last character in buffer.
-    int m_divisor_counter;                 ///< Ignored calls to interact.
-    int m_ttyfd;                           ///< The tty file descriptor.
-    struct termios m_oldtty;               ///< Saved termios values.
+    bool m_console_getchar;                         ///< Provide console getchar.
+    std::array<char, HTIF_CONSOLE_BUF_SIZE> m_buf;  ///< Console buffer.
+    ssize_t m_buf_pos;                              ///< Next character in buffer.
+    ssize_t m_buf_len;                              ///< Last character in buffer.
+    int m_divisor_counter;                          ///< Ignored calls to interact.
+    int m_ttyfd;                                    ///< The tty file descriptor.
+    struct termios m_oldtty;                        ///< Saved termios values.
 
 public:
 

@@ -775,18 +775,18 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_basic_test, ordinary_machine_fixture)
 BOOST_AUTO_TEST_CASE_NOLINT(read_memory_null_machine_test)
 {
     auto f = []() {
-        uint8_t rd[sizeof(uint64_t)];
+        std::array<uint8_t, sizeof(uint64_t)> rd;
         char* err_msg;
-        cm_read_memory(NULL, 0x100, rd, sizeof(rd), &err_msg);
+        cm_read_memory(NULL, 0x100, rd.data(), rd.size(), &err_msg);
     };
     MONITOR_SYSTEM_THROW(f);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_memory_zero_data_size_test, ordinary_machine_fixture)
 {
-    uint8_t rd[sizeof(uint64_t)];
+    std::array<uint8_t, sizeof(uint64_t)> rd;
     char* err_msg;
-    int error_code = cm_read_memory(_machine, 0x100, rd, 0, &err_msg);
+    int error_code = cm_read_memory(_machine, 0x100, rd.data(), 0, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
@@ -808,8 +808,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_memory_null_data_test, ordinary_machine_fixt
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_memory_null_error_placeholder_test, ordinary_machine_fixture)
 {
     auto f = [m = _machine]() {
-        uint8_t rd[sizeof(uint64_t)];
-        cm_read_memory(m, 0x100, rd, 1, NULL);
+        std::array<uint8_t, sizeof(uint64_t)> rd;
+        cm_read_memory(m, 0x100, rd.data(), 1, NULL);
     };
     MONITOR_SYSTEM_THROW(f);
 }
@@ -817,9 +817,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_memory_null_error_placeholder_test, ordinary
 BOOST_AUTO_TEST_CASE_NOLINT(write_memory_null_machine_test)
 {
     auto f = []() {
-        uint8_t wd[sizeof(uint64_t)];
-        char* err_msg;
-        cm_write_memory(NULL, 0x100, wd, sizeof(wd), &err_msg);
+        std::array<uint8_t, sizeof(uint64_t)> wd{};
+        char *err_msg{};
+        cm_write_memory(NULL, 0x100, wd.data(), wd.size(), &err_msg);
     };
     MONITOR_SYSTEM_THROW(f);
 }
@@ -844,8 +844,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_null_data_size_mismatch_test, ordina
 BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_null_error_placeholder_test, ordinary_machine_fixture)
 {
     auto f = [m = _machine]() {
-        uint8_t wd[sizeof(uint64_t)];
-        cm_write_memory(m, 0x100, wd, sizeof(wd), NULL);
+        std::array<uint8_t, sizeof(uint64_t)> wd;
+        cm_write_memory(m, 0x100, wd.data(), wd.size(), NULL);
     };
     MONITOR_SYSTEM_THROW(f);
 }
@@ -854,11 +854,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_invalid_address_range_test, ordinary
 {
     uint64_t write_value = 0x1234;
     uint64_t address = 0x100;
-    uint8_t write_data[sizeof(uint64_t)];
-    char* err_msg;
-    memcpy(write_data, &write_value, sizeof(uint64_t));
+    std::array<uint8_t, sizeof(uint64_t)> write_data{};
+    char *err_msg{};
+    memcpy(write_data.data(), &write_value, write_data.size());
 
-    int error_code = cm_write_memory(_machine, address, write_data, sizeof(write_data), &err_msg);
+    int error_code = cm_write_memory(_machine, address, write_data.data(), write_data.size(), &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
     std::string origin("address range not entirely in memory PMA");
@@ -872,11 +872,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_word_basic_test, ordinary_machine_fixt
     uint64_t read_value = 0;
     uint64_t write_value = 0x1234;
     uint64_t address = 0x80000000;
-    uint8_t write_data[sizeof(uint64_t)];
-    char* err_msg = NULL;
-    memcpy(write_data, &write_value, sizeof(uint64_t));
+    std::array<uint8_t, sizeof(uint64_t)> write_data{};
+    char* err_msg{};
+    memcpy(write_data.data(), &write_value, write_data.size());
 
-    int error_code = cm_write_memory(_machine, address, write_data, sizeof(write_data), &err_msg);
+    int error_code = cm_write_memory(_machine, address, write_data.data(), write_data.size(), &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
@@ -891,19 +891,19 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_memory_basic_test, ordinary_machine_fi
     uint64_t read_value = 0;
     uint64_t write_value = 0x1234;
     uint64_t address = 0x80000000;
-    uint8_t write_data[sizeof(uint64_t)];
-    uint8_t read_data[sizeof(uint64_t)];
-    char* err_msg = NULL;
-    memcpy(write_data, &write_value, sizeof(uint64_t));
+    std::array<uint8_t, sizeof(uint64_t)> write_data{};
+    std::array<uint8_t, sizeof(uint64_t)> read_data{};
+    char* err_msg{};
+    memcpy(write_data.data(), &write_value, write_data.size());
 
-    int error_code = cm_write_memory(_machine, address, write_data, sizeof(write_data), &err_msg);
+    int error_code = cm_write_memory(_machine, address, write_data.data(), write_data.size(), &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
-    error_code = cm_read_memory(_machine, address, read_data, sizeof(read_data), &err_msg);
+    error_code = cm_read_memory(_machine, address, read_data.data(), read_data.size(), &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    memcpy(&read_value, read_data, sizeof(uint64_t));
+    memcpy(&read_value, read_data.data(), read_data.size());
     BOOST_CHECK_EQUAL(read_value, write_value);
 }
 
@@ -912,20 +912,19 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_memory_massive_test, ordinary_machine_
     constexpr size_t data_size = 12288;
     uint64_t address = 0x80000000;
 
-    uint8_t write_data[data_size];
-    uint8_t read_data[data_size];
+    std::array<uint8_t, data_size> write_data;
+    std::array<uint8_t, data_size> read_data;
     char* err_msg = NULL;
-    memset(write_data, 0xda, data_size);
+    memset(write_data.data(), 0xda, data_size);
 
-    int error_code = cm_write_memory(_machine, address, write_data, sizeof(write_data), &err_msg);
+    int error_code = cm_write_memory(_machine, address, write_data.data(), write_data.size(), &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
-    error_code = cm_read_memory(_machine, address, read_data, sizeof(read_data), &err_msg);
+    error_code = cm_read_memory(_machine, address, read_data.data(), read_data.size(), &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL_COLLECTIONS(write_data, write_data + sizeof(write_data),
-                                  read_data, read_data + sizeof(read_data));
+    BOOST_CHECK_EQUAL_COLLECTIONS(write_data.begin(), write_data.end(), read_data.begin(), read_data.end());
 }
 
 #define CHECK_READER_FAILS_ON_NULL_MACHINE(reader_f)             \
@@ -1257,7 +1256,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_null_placeholder_test, ordinary_machine
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_basic_test, ordinary_machine_fixture)
 {
-    std::string dump_list[] = {
+    std::array dump_list{
         "0000000000000000--0000000000001000.bin",
         "0000000000001000--000000000000f000.bin",
         "0000000002000000--00000000000c0000.bin",
@@ -1602,13 +1601,13 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_flash_drive_basic_test, flash_drive_machi
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
-    uint8_t read_data[20];
+    std::array<uint8_t, 20> read_data;
     error_code = cm_read_memory(_machine, _flash_config.start,
-                                read_data, sizeof(read_data), &err_msg);
+                                read_data.data(), read_data.size(), &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
-    std::string read_string(reinterpret_cast<const char*>(read_data), sizeof(read_data));
+    std::string read_string{reinterpret_cast<char *>(read_data.data()), read_data.size()};
     BOOST_CHECK_EQUAL(_flash_data, read_string);
 }
 

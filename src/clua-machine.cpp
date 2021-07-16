@@ -90,15 +90,14 @@ static int machine_class_index_get_dhd_h_address(lua_State *L) try {
 }
 
 /// \brief Contents of the machine class metatable __index table.
-static const luaL_Reg machine_class_index[] = {
+static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
     {"get_default_config", machine_class_index_get_default_config},
     {"verify_access_log", machine_class_index_verify_access_log},
     {"verify_state_transition", machine_class_index_verify_state_transition},
     {"get_x_address", machine_class_index_get_x_address},
     {"get_csr_address", machine_class_index_get_csr_address},
     {"get_dhd_h_address", machine_class_index_get_dhd_h_address},
-    { nullptr, nullptr }
-};
+});
 
 /// \brief This is the cartesi.machine() constructor implementation.
 /// \param L Lua state.
@@ -128,12 +127,11 @@ struct machine_class {};
 int clua_machine_init(lua_State *L, int ctxidx) {
     if (!clua_typeexists<machine_class>(L, ctxidx)) {
         clua_createtype<machine_class>(L, "cartesi machine class", ctxidx);
-        clua_setmethods<machine_class>(L, machine_class_index, 0, ctxidx);
-        static luaL_Reg machine_class_meta[] = {
-            { "__call", machine_ctor },
-            { nullptr, nullptr }
-        };
-        clua_setmetamethods<machine_class>(L, machine_class_meta, 0, ctxidx);
+        clua_setmethods<machine_class>(L, machine_class_index.data(), 0, ctxidx);
+        static const auto machine_class_meta = cartesi::clua_make_luaL_Reg_array({
+            {"__call", machine_ctor},
+        });
+        clua_setmetamethods<machine_class>(L, machine_class_meta.data(), 0, ctxidx);
         clua_gettypemetatable<machine_class>(L, ctxidx);
         lua_getfield(L, -1, "__index");
         clua_htif_export(L, ctxidx);

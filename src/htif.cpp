@@ -126,7 +126,7 @@ void htif::poll_console(void) {
         if (select(fd_max+1, &rfds, nullptr, nullptr, &tv) > 0 &&
             FD_ISSET(0, &rfds)) {
             m_buf_pos = 0;
-            m_buf_len = read(STDIN_FILENO, m_buf, sizeof(m_buf));
+            m_buf_len = read(STDIN_FILENO, m_buf.data(), m_buf.size());
             // If stdin is closed, pass EOF to client
             if (m_buf_len <= 0) {
                 m_buf_len = 1;

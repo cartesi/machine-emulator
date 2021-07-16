@@ -83,12 +83,12 @@ static bool dhd_write_hlength(const pma_entry &pma, i_device_state_access *a,
     uint64_t hlength) {
     (void) pma;
 
-    unsigned char hash[DHD_H_REG_COUNT*sizeof(uint64_t)];
+    std::array<uint8_t, DHD_H_REG_COUNT*sizeof(uint64_t)> hash;
     // write requested hlength value
     a->write_dhd_hlength(hlength);
     // get h registers into char buffer to build hash
     for (int i = 0; i < DHD_H_REG_COUNT; i++) {
-        aliased_aligned_write<uint64_t>(hash+i*sizeof(uint64_t), a->read_dhd_h(i));
+        aliased_aligned_write<uint64_t>(hash.data()+i*sizeof(uint64_t), a->read_dhd_h(i));
     }
     // get target physical memory range for output data
     uint64_t tstart = a->read_dhd_tstart();
@@ -103,7 +103,7 @@ static bool dhd_write_hlength(const pma_entry &pma, i_device_state_access *a,
     req_dlength = std::min(req_dlength, tlength);
     // obtain data from dhd source
     auto dlength = req_dlength;
-    auto data = a->dehash(hash, hlength, dlength);
+    auto data = a->dehash(hash.data(), hlength, dlength);
     assert((dlength == DHD_NOT_FOUND && data.empty()) ||
         (data.size() == dlength && dlength <= req_dlength));
     if (!(dlength == DHD_NOT_FOUND && data.empty()) &&

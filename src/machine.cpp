@@ -1188,9 +1188,9 @@ void machine::dump_pmas(void) const {
         if (pma.get_length() == 0) {
             break;
         }
-        char filename[256];
-        sprintf(filename, "%016" PRIx64 "--%016" PRIx64 ".bin", pma.get_start(), pma.get_length());
-        auto fp = unique_fopen(filename, "wb");
+        std::array<char, 256> filename;
+        sprintf(filename.data(), "%016" PRIx64 "--%016" PRIx64 ".bin", pma.get_start(), pma.get_length());
+        auto fp = unique_fopen(filename.data(), "wb");
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length(); page_start_in_range += PMA_PAGE_SIZE) {
             const unsigned char *page_data = nullptr;
             auto peek = pma.get_peek();
@@ -1198,7 +1198,7 @@ void machine::dump_pmas(void) const {
                 throw std::runtime_error{"peek failed"};
             } else if (page_data && fwrite(page_data, 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
                 throw std::system_error{errno, std::generic_category(),
-                    "error writing to '"s + filename + "'"s};
+                    "error writing to '"s + filename.data() + "'"s};
             }
         }
     }

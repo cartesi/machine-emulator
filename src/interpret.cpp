@@ -152,7 +152,7 @@ static void print_uint64_t(uint64_t a) {
     fprintf(stderr, "%016" PRIx64, a);
 }
 
-static const char *reg_name[X_REG_COUNT] = {
+static const std::array<const char*, X_REG_COUNT> reg_name{
 "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
 "s0", "s1", "a0", "a1", "a2", "a3", "a4", "a5",
 "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
@@ -227,7 +227,7 @@ static void dump_regs(const STATE &s) {
 static void dump_regs(const machine_state &s) {
     int i;
     int cols;
-    const char priv_str[] = "USHM";
+    const std::string priv_str{"USHM"};
     cols = 256 / XLEN;
     fprintf(stderr, "pc = ");
     print_uint64_t(s.pc);

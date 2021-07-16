@@ -121,10 +121,10 @@ private:
     /// based on its height in the tree.
     //??D This is assumed to be a POD type in the implementation
     struct tree_node {
-        hash_type hash;       ///< Hash of subintended data.
-        tree_node *parent;    ///< Pointer to parent node (nullptr for root).
-        tree_node *child[2];  ///< Children nodes.
-        uint64_t mark;        ///< Helper for traversal algorithms.
+        hash_type hash;                   ///< Hash of subintended data.
+        tree_node *parent;                ///< Pointer to parent node (nullptr for root).
+        std::array<tree_node *, 2> child; ///< Children nodes.
+        uint64_t mark;                    ///< Helper for traversal algorithms.
     };
 
     // Sparse map from virtual page index to the

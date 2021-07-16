@@ -102,7 +102,7 @@ struct machine_state {
     machine_state &operator=(machine_state &&other) = delete;
 
     uint64_t pc;        ///< Program counter.
-    uint64_t x[X_REG_COUNT];  ///< Register file.
+    std::array<uint64_t, X_REG_COUNT> x;  ///< Register file.
 
     uint64_t minstret;  ///< CSR minstret.
     uint64_t mcycle;
@@ -155,7 +155,7 @@ struct machine_state {
         uint64_t tlength;            ///< Length of target physical memory range for output data.
         uint64_t dlength;            ///< Output data length CSR.
         uint64_t hlength;            ///< Input hash length CSR.
-        uint64_t h[DHD_H_REG_COUNT]; ///< Words of input hash.
+        std::array<uint64_t, DHD_H_REG_COUNT> h; ///< Words of input hash.
     } dhd;
 
     /// Map of physical memory ranges
@@ -167,9 +167,9 @@ struct machine_state {
 
     bool brk;           ///< Flag set when the tight loop must be broken.
 
-    tlb_entry tlb_read[TLB_SIZE]; ///< Read TLB
-    tlb_entry tlb_write[TLB_SIZE]; ///< Write TLB
-    tlb_entry tlb_code[TLB_SIZE]; ///< Code TLB
+    std::array<tlb_entry, TLB_SIZE> tlb_read; ///< Read TLB
+    std::array<tlb_entry, TLB_SIZE> tlb_write; ///< Write TLB
+    std::array<tlb_entry, TLB_SIZE> tlb_code; ///< Code TLB
 
 #ifdef DUMP_COUNTERS
     machine_statistics stats;

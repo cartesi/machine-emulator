@@ -34,22 +34,21 @@ int clua_htif_export(lua_State *L, int ctxidx) {
         uint64_t value;
         const char *name;
     };
-    named_constant constants[] = {
-        { HTIF_DEVICE_HALT, "HTIF_DEVICE_HALT" },
-        { HTIF_DEVICE_CONSOLE, "HTIF_DEVICE_CONSOLE" },
-        { HTIF_DEVICE_YIELD, "HTIF_DEVICE_YIELD" },
-        { HTIF_HALT_HALT, "HTIF_HALT_HALT" },
-        { HTIF_YIELD_PROGRESS, "HTIF_YIELD_PROGRESS" },
-        { HTIF_YIELD_ROLLUP, "HTIF_YIELD_ROLLUP" },
-        { HTIF_CONSOLE_GETCHAR, "HTIF_CONSOLE_GETCHAR" },
-        { HTIF_CONSOLE_PUTCHAR, "HTIF_CONSOLE_PUTCHAR" },
-        { 0, nullptr },
+    std::array constants{
+        named_constant{HTIF_DEVICE_HALT, "HTIF_DEVICE_HALT"},
+        named_constant{HTIF_DEVICE_CONSOLE, "HTIF_DEVICE_CONSOLE"},
+        named_constant{HTIF_DEVICE_YIELD, "HTIF_DEVICE_YIELD"},
+        named_constant{HTIF_HALT_HALT, "HTIF_HALT_HALT"},
+        named_constant{HTIF_YIELD_PROGRESS, "HTIF_YIELD_PROGRESS"},
+        named_constant{HTIF_YIELD_ROLLUP, "HTIF_YIELD_ROLLUP"},
+        named_constant{HTIF_CONSOLE_GETCHAR, "HTIF_CONSOLE_GETCHAR"},
+        named_constant{HTIF_CONSOLE_PUTCHAR, "HTIF_CONSOLE_PUTCHAR"},
     };
-    for (auto *nc = constants; nc->name; nc++) {
-        lua_pushinteger(L, nc->value);
-        lua_setfield(L, -2, nc->name);
+    for (const auto &c : constants) {
+        lua_pushinteger(L, c.value);
+        lua_setfield(L, -2, c.name);
     }
-	return 0;
+    return 0;
 }
 
 } // namespace cartesi

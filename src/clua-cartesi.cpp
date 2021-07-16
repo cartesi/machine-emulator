@@ -34,10 +34,9 @@ static int gperf_gc(lua_State *) {
     return 0;
 }
 
-static const luaL_Reg gperf_meta[] = {
+static const auto gperf_meta = cartesi::clua_make_luaL_Reg_array({
     {"__gc", gperf_gc},
-    { NULL, NULL }
-};
+});
 #endif
 
 /// \brief This is the cartesi.keccak() function implementation.
@@ -75,10 +74,9 @@ static int cartesi_mod_keccak(lua_State *L) {
 }
 
 /// \brief Contents of the cartesi module table.
-static const luaL_Reg cartesi_mod[] = {
+static const auto cartesi_mod = cartesi::clua_make_luaL_Reg_array({
     {"keccak", cartesi_mod_keccak},
-    { NULL, NULL }
-};
+});
 
 extern "C"
 __attribute__((visibility("default")))
@@ -90,7 +88,7 @@ int luaopen_cartesi(lua_State *L) {
     lua_newuserdata(L, 1); // gperf
     lua_pushvalue(L, -1); // gperf gperf
     lua_newtable(L); // gperf gperf gperfmeta
-    luaL_setfuncs(L, gperf_meta, 0); // gperf gperf gperfmeta
+    luaL_setfuncs(L, gperf_meta.data(), 0); // gperf gperf gperfmeta
     lua_setmetatable(L, -2); // gperf gperf
     lua_settable(L, LUA_REGISTRYINDEX); //
     ProfilerStart("cartesi.prof");
@@ -104,7 +102,7 @@ int luaopen_cartesi(lua_State *L) {
     clua_machine_export(L, -2); // cluactx cartesi
     // Set module functions
     lua_pushvalue(L, -2); // cluactx cartesi cluactx
-    luaL_setfuncs(L, cartesi_mod, 1); // cluactx cartesi
+    luaL_setfuncs(L, cartesi_mod.data(), 1); // cluactx cartesi
 
     return 1;
 }

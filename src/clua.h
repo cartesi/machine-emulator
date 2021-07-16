@@ -17,6 +17,7 @@
 #ifndef CLUA_H
 #define CLUA_H
 
+#include <array>
 #include <utility>
 
 #include <lua.h>
@@ -29,6 +30,13 @@
 
 namespace cartesi {
 
+namespace detail {
+template <size_t N, std::size_t... I>
+constexpr auto clua_make_luaL_Reg_array_impl(luaL_Reg const (&vec)[N], std::index_sequence<I...>) noexcept { // NOLINT(cppcoreguidelines-avoid-c-arrays)
+    return std::array<luaL_Reg, N+1>{{vec[I]..., {nullptr, nullptr}}};
+}
+}
+
 /// \brief Initizizes clua, leaving the context on top of stack
 /// \param L Lua state.
 int clua_init(lua_State *L);
@@ -37,6 +45,14 @@ int clua_init(lua_State *L);
 /// \tparam T C++ type whose name is desired
 template <typename T> const char *clua_rawname(void) {
     return boost::typeindex::type_id_with_cvr<T>().raw_name();
+}
+
+/// \brief Returns an array with the Regs and the sentinel in the end
+/// \param N number of Regs
+/// \param regs C array with Regs
+template <size_t N>
+constexpr auto clua_make_luaL_Reg_array(luaL_Reg const (&vec)[N]) noexcept { // NOLINT(cppcoreguidelines-avoid-c-arrays)
+    return detail::clua_make_luaL_Reg_array_impl(vec, std::make_index_sequence<N>{});
 }
 
 /// \brief Pushes the metatable of a previously defined type to the top of stack
@@ -230,17 +246,16 @@ void clua_createtype(lua_State *L, const char *name, int ctxidx) {
     }
     lua_pop(L, 1);
     // create new type
-    luaL_Reg default_meta[] = {
+    auto default_meta = clua_make_luaL_Reg_array({
         { "__gc", &clua_gc<T> },
         { "__tostring", &clua_tostring<T> },
-        { nullptr, nullptr },
-    };
+    });
     lua_pushstring(L, clua_rawname<T>()); // T_rawname
     lua_newtable(L); // T_rawname T_meta
     lua_pushstring(L, name); // T_rawname T_meta T_name
     lua_setfield(L, -2, "name"); // T_rawname T_meta
     lua_pushvalue(L, ctxidx); // T_rawname T_meta ctxtab
-    luaL_setfuncs(L, default_meta, 1); // T_rawname T_meta
+    luaL_setfuncs(L, default_meta.data(), 1); // T_rawname T_meta
     lua_pushliteral(L, "access denied"); // T_rawname T_meta "access denied"
     lua_setfield(L, -2, "__metatable"); // T_rawname T_meta
     lua_rawset(L, ctxidx); //

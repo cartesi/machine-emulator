@@ -1199,7 +1199,7 @@ static int machine_obj_index_rollback(lua_State *L) try {
 }
 
 /// \brief Contents of the machine object metatable __index table.
-static const luaL_Reg machine_obj_index[] = {
+static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"dump_pmas", machine_obj_index_dump_pmas},
     {"dump_regs", machine_obj_index_dump_regs},
     {"get_proof", machine_obj_index_get_proof},
@@ -1301,15 +1301,14 @@ static const luaL_Reg machine_obj_index[] = {
     {"destroy", machine_obj_index_destroy},
     {"snapshot", machine_obj_index_snapshot},
     {"rollback", machine_obj_index_rollback},
-    { nullptr, nullptr }
-};
+});
 
 int clua_i_virtual_machine_init(lua_State *L, int ctxidx) {
     if (!clua_typeexists<clua_i_virtual_machine_ptr>(L, ctxidx)) {
         clua_createtype<clua_i_virtual_machine_ptr>(L,
             "cartesi machine object", ctxidx);
         clua_setmethods<clua_i_virtual_machine_ptr>(L,
-            machine_obj_index, 0, ctxidx);
+            machine_obj_index.data(), 0, ctxidx);
     }
     return 1;
 }

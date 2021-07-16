@@ -108,15 +108,14 @@ static int grpc_machine_class_get_dhd_h_address(lua_State *L) try {
 }
 
 /// \brief Contents of the machine class metatable __index table.
-static const luaL_Reg grpc_machine_static_methods[] = {
+static const auto grpc_machine_static_methods = cartesi::clua_make_luaL_Reg_array({
     {"get_default_config", grpc_machine_class_get_default_config},
     {"verify_access_log", grpc_machine_class_verify_access_log},
     {"verify_state_transition", grpc_machine_class_verify_state_transition},
     {"get_x_address", grpc_machine_class_get_x_address},
     {"get_csr_address", grpc_machine_class_get_csr_address},
     {"get_dhd_h_address", grpc_machine_class_get_dhd_h_address},
-    { nullptr, nullptr }
-};
+});
 
 /// \brief Prints a GRPC machine class
 /// \param L Lua state.
@@ -152,11 +151,10 @@ static int grpc_machine_ctor(lua_State *L) try {
 }
 
 /// \brief Contents of the grpc machine class metatable.
-static const luaL_Reg grpc_machine_class_meta[] = {
+static const auto grpc_machine_class_meta = cartesi::clua_make_luaL_Reg_array({
     {"__call", grpc_machine_ctor },
     {"__tostring", grpc_machine_tostring },
-    { nullptr, nullptr }
-};
+});
 
 /// \brief This is the machine.get_version() static method implementation.
 static int grpc_server_class_get_version(lua_State *L) try {
@@ -184,11 +182,10 @@ static int grpc_server_class_shutdown(lua_State *L) try {
 }
 
 /// \brief GRPC server static methods
-static const luaL_Reg grpc_server_static_methods[] = {
-    { "get_version", grpc_server_class_get_version },
-    { "shutdown", grpc_server_class_shutdown},
-    { nullptr, nullptr }
-};
+static const auto grpc_server_static_methods = cartesi::clua_make_luaL_Reg_array({
+    {"get_version", grpc_server_class_get_version},
+    {"shutdown", grpc_server_class_shutdown},
+});
 
 /// \brief This is the grpc.stub() method implementation.
 static int mod_stub(lua_State *L) {
@@ -208,25 +205,24 @@ static int mod_stub(lua_State *L) {
     lua_newtable(L); // stub server grpc_machine_class
     lua_pushvalue(L, -3); // stub server grpc_machine_class stub
     lua_pushvalue(L, lua_upvalueindex(1)); // stub server grpc_machine_class stub cluactx
-    luaL_setfuncs(L, grpc_machine_static_methods, 2); // stub server grpc_machine_class
+    luaL_setfuncs(L, grpc_machine_static_methods.data(), 2); // stub server grpc_machine_class
     clua_htif_export(L, lua_upvalueindex(1)); // stub server grpc_machine_class
     lua_newtable(L); // stub server grpc_machine_class meta
     lua_pushvalue(L, -4); // stub server grpc_machine_class meta stub
     lua_pushvalue(L, lua_upvalueindex(1)); // stub server grpc_machine_class meta stub cluactx
-    luaL_setfuncs(L, grpc_machine_class_meta, 2); // stub server grpc_machine_class meta
+    luaL_setfuncs(L, grpc_machine_class_meta.data(), 2); // stub server grpc_machine_class meta
     lua_setmetatable(L, -2); // stub server grpc_machine_class
     lua_setfield(L, -2, "machine"); // stub server
     lua_pushvalue(L, -2); // stub server stub
     lua_pushvalue(L, lua_upvalueindex(1)); // stub server stub cluactx
-    luaL_setfuncs(L, grpc_server_static_methods, 2);
+    luaL_setfuncs(L, grpc_server_static_methods.data(), 2);
     return 1;
 }
 
 /// \brief Contents of the grpc module.
-static luaL_Reg mod[] = {
-    {"stub", mod_stub },
-    { nullptr, nullptr }
-};
+static const auto mod = cartesi::clua_make_luaL_Reg_array({
+    {"stub", mod_stub},
+});
 
 int clua_grpc_machine_init(lua_State *L, int ctxidx) {
     if (!clua_typeexists<grpc_machine_stub_ptr>(L, ctxidx)) {
@@ -241,7 +237,7 @@ int clua_grpc_machine_export(lua_State *L, int ctxidx) {
     // grpc
     clua_grpc_machine_init(L, ctxabsidx); // grpc
     lua_pushvalue(L, ctxabsidx); // grpc cluactx
-    luaL_setfuncs(L, mod, 1); // grpc
+    luaL_setfuncs(L, mod.data(), 1); // grpc
     return 0;
 }
 

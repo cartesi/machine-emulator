@@ -852,7 +852,7 @@ int main(int argc, char *argv[]) try {
         // Obtain the next active handler coroutine
         handler::pull_type *h = nullptr; // NOLINT: cannot leak (drain_completion_queue kills remaining)
         if (!hctx.completion_queue->Next(reinterpret_cast<void **>(&h), &hctx.ok)) {
-            goto shutdown;
+            goto shutdown; // NOLINT(cppcoreguidelines-avoid-goto)
         }
         // If the coroutine is finished, simply delete it
         // This can't really happen here, because the coroutine ALWAYS yields
@@ -872,7 +872,7 @@ int main(int argc, char *argv[]) try {
                 // we drain the completion queue.
                 if (h->get() == side_effect::shutdown) {
                     delete h;
-                    goto shutdown;
+                    goto shutdown; // NOLINT(cppcoreguidelines-avoid-goto)
                 }
             }
         }

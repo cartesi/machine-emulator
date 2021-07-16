@@ -1237,7 +1237,7 @@ int main(int argc, char *argv[]) {
         using side_effect = i_handler::side_effect;
         i_handler *h = nullptr;
         if (!hctx.cq->Next(reinterpret_cast<void **>(&h), &hctx.ok)) {
-            goto shutdown;
+            goto shutdown; // NOLINT(cppcoreguidelines-avoid-goto)
         }
         switch (h->advance(hctx)) {
             case side_effect::none:
@@ -1250,7 +1250,7 @@ int main(int argc, char *argv[]) {
                 rollback(hctx.forked);
                 break;
             case side_effect::shutdown:
-                goto shutdown;
+                goto shutdown; // NOLINT(cppcoreguidelines-avoid-goto)
         }
     }
 

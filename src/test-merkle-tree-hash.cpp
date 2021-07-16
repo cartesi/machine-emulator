@@ -82,7 +82,7 @@ static void print_hash(const hash_type &hash, FILE *f) {
 /// \param f File to read from
 /// \returns Hash if successful, nothing otherwise
 static std::optional<hash_type> read_hash(FILE *f) {
-    std::array<char, hasher_type::hash_size*2> hex_hash;
+    std::array<char, hasher_type::hash_size*2> hex_hash{};
     if (fread(hex_hash.data(), 1, hex_hash.size(), f) != hex_hash.size()) {
         return {};
     }

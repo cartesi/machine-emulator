@@ -78,8 +78,7 @@ static int get_ttyfd(void) {
 
 void htif::init_console(void) {
     if ((m_ttyfd = get_ttyfd()) >= 0) {
-        struct termios tty;
-        memset(&tty, 0, sizeof(tty));
+        struct termios tty{};
         tcgetattr(m_ttyfd, &tty);
         m_oldtty = tty;
         // Set terminal to "raw" mode
@@ -149,8 +148,8 @@ htif::htif(const htif_config &h):
     m_console_getchar{h.console_getchar},
     m_buf{}, m_buf_pos{}, m_buf_len{},
     m_divisor_counter{},
-    m_ttyfd{-1} {
-    memset(&m_oldtty, 0, sizeof(m_oldtty));
+    m_ttyfd{-1},
+    m_oldtty{} {
     if (m_console_getchar) {
         init_console();
     }

@@ -83,7 +83,7 @@ static bool dhd_write_hlength(const pma_entry &pma, i_device_state_access *a,
     uint64_t hlength) {
     (void) pma;
 
-    std::array<uint8_t, DHD_H_REG_COUNT*sizeof(uint64_t)> hash;
+    std::array<uint8_t, DHD_H_REG_COUNT*sizeof(uint64_t)> hash{};
     // write requested hlength value
     a->write_dhd_hlength(hlength);
     // get h registers into char buffer to build hash

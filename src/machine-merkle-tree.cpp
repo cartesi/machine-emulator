@@ -350,11 +350,11 @@ end_update(hasher_type &h) {
 }
 
 machine_merkle_tree::
-machine_merkle_tree(void) {
-    memset(&m_root_storage, 0, sizeof(m_root_storage));
-    m_root = &m_root_storage;
+machine_merkle_tree(void) :
+    m_root_storage{},
+    m_root{&m_root_storage},
+    m_merkle_update_nonce{1} {
     m_root->hash = get_pristine_hash(get_log2_root_size());
-    m_merkle_update_nonce = 1;
 #ifdef MERKLE_DUMP_STATS
     m_num_nodes = 0;
 #endif

@@ -192,7 +192,8 @@ static char *new_cstr(const char *str) {
 
 class incomplete_machine_fixture : public default_machine_fixture {
 public:
-    incomplete_machine_fixture() {
+    incomplete_machine_fixture() :
+        _machine_config{} {
         _clone_machine_config(_default_machine_config, &_machine_config);
         _machine_config.ram.length = 1 << 20;
     }
@@ -782,7 +783,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_basic_test, ordinary_machine_fixture)
 BOOST_AUTO_TEST_CASE_NOLINT(read_memory_null_machine_test)
 {
     auto f = []() {
-        std::array<uint8_t, sizeof(uint64_t)> rd;
+        std::array<uint8_t, sizeof(uint64_t)> rd{};
         char *err_msg{};
         cm_read_memory(NULL, 0x100, rd.data(), rd.size(), &err_msg);
     };
@@ -791,7 +792,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_memory_null_machine_test)
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_memory_zero_data_size_test, ordinary_machine_fixture)
 {
-    std::array<uint8_t, sizeof(uint64_t)> rd;
+    std::array<uint8_t, sizeof(uint64_t)> rd{};
     char *err_msg{};
     int error_code = cm_read_memory(_machine, 0x100, rd.data(), 0, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
@@ -815,7 +816,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_memory_null_data_test, ordinary_machine_fixt
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_memory_null_error_placeholder_test, ordinary_machine_fixture)
 {
     auto f = [m = _machine]() {
-        std::array<uint8_t, sizeof(uint64_t)> rd;
+        std::array<uint8_t, sizeof(uint64_t)> rd{};
         cm_read_memory(m, 0x100, rd.data(), 1, NULL);
     };
     monitor_system_throw(f);
@@ -851,7 +852,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_null_data_size_mismatch_test, ordina
 BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_null_error_placeholder_test, ordinary_machine_fixture)
 {
     auto f = [m = _machine]() {
-        std::array<uint8_t, sizeof(uint64_t)> wd;
+        std::array<uint8_t, sizeof(uint64_t)> wd{};
         cm_write_memory(m, 0x100, wd.data(), wd.size(), NULL);
     };
     monitor_system_throw(f);
@@ -919,8 +920,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_memory_massive_test, ordinary_machine_
     constexpr size_t data_size = 12288;
     uint64_t address = 0x80000000;
 
-    std::array<uint8_t, data_size> write_data;
-    std::array<uint8_t, data_size> read_data;
+    std::array<uint8_t, data_size> write_data{};
+    std::array<uint8_t, data_size> read_data{};
     char* err_msg{};
     memset(write_data.data(), 0xda, data_size);
 
@@ -1499,8 +1500,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_flash_drive_null_flash_config_test, ordin
 
 class flash_drive_machine_fixture : public ordinary_machine_fixture {
 public:
-    flash_drive_machine_fixture() {
-        _flash_data = "test data 1234567890";
+    flash_drive_machine_fixture() :
+        _flash_config{},
+        _flash_data{"test data 1234567890"} {
 
         size_t flash_size = 0x3c00000;
         std::string flash_file = "data.bin";
@@ -1611,7 +1613,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_flash_drive_basic_test, flash_drive_machi
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
-    std::array<uint8_t, 20> read_data;
+    std::array<uint8_t, 20> read_data{};
     error_code = cm_read_memory(_machine, _flash_config.start,
                                 read_data.data(), read_data.size(), &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
@@ -1782,8 +1784,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_merkle_tree_basic_test, ordinary_machine_f
 
 class access_log_machine_fixture : public ordinary_machine_fixture {
 public:
-    access_log_machine_fixture() {
-        _log_type = {true, true};
+    access_log_machine_fixture() :
+        _access_log{},
+        _log_type{true, true} {
     }
 
     ~access_log_machine_fixture() = default;

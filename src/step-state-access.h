@@ -101,7 +101,10 @@ public:
         m_verify_proofs(verify_proofs),
         m_next_access{0},
         m_source{std::move(source)},
-        m_one_based{one_based} {
+        m_one_based{one_based},
+        m_root_hash{},
+        m_hasher{},
+        m_mock_pmas{} {
         if (m_verify_proofs && !log.get_log_type().has_proofs()) {
             throw std::invalid_argument{"log has no proofs"};
         }

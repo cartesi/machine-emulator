@@ -127,7 +127,7 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
     }
 
     // Try to get file size
-    struct stat statbuf;
+    struct stat statbuf{};
     if (fstat(backing_file, &statbuf) < 0) {
         close(backing_file);
         throw std::system_error{errno, std::generic_category(),

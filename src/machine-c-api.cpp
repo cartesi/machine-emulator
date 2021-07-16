@@ -933,6 +933,7 @@ uint64_t cm_get_x_address(int i) {
     return cartesi::machine::get_x_address(i);
 }
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define IMPL_MACHINE_READ_WRITE(field) \
 int cm_read_##field(const cm_machine *m, uint64_t *val, char **err_msg) try { \
     const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m); \
@@ -949,6 +950,7 @@ int cm_write_##field(cm_machine *m, uint64_t val, char **err_msg) try { \
     return result_failure(err_msg);                                   \
 }
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define IMPL_MACHINE_READ(field) \
 int cm_read_##field(const cm_machine *m, uint64_t *val, char **err_msg) try { \
     const cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<const cartesi::i_virtual_machine *>(m); \
@@ -958,6 +960,7 @@ int cm_read_##field(const cm_machine *m, uint64_t *val, char **err_msg) try { \
     return result_failure(err_msg);    \
 }
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define IMPL_MACHINE_WRITE(field) \
 int cm_write_##field(cm_machine *m, uint64_t val, char **err_msg) try { \
     cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m); \

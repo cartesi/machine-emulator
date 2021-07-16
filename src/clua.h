@@ -26,8 +26,6 @@
 
 #include <boost/type_index.hpp>
 
-#define CLUA_REGISTRY_KEY "clua_key"
-
 namespace cartesi {
 
 namespace detail {
@@ -36,6 +34,8 @@ constexpr auto clua_make_luaL_Reg_array_impl(luaL_Reg const (&vec)[N], std::inde
     return std::array<luaL_Reg, N+1>{{vec[I]..., {nullptr, nullptr}}};
 }
 }
+
+constexpr const char * clua_registry_key = "clua_key";
 
 /// \brief Initizizes clua, leaving the context on top of stack
 /// \param L Lua state.

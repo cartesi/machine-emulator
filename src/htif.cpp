@@ -30,11 +30,11 @@
 
 namespace cartesi {
 
-#define HTIF_TOHOST_REL_ADDR (static_cast<uint64_t>(htif::csr::tohost))
-#define HTIF_FROMHOST_REL_ADDR (static_cast<uint64_t>(htif::csr::fromhost))
-#define HTIF_IHALT_REL_ADDR (static_cast<uint64_t>(htif::csr::ihalt))
-#define HTIF_ICONSOLE_REL_ADDR (static_cast<uint64_t>(htif::csr::iconsole))
-#define HTIF_IYIELD_REL_ADDR (static_cast<uint64_t>(htif::csr::iyield))
+static constexpr auto htif_tohost_rel_addr = static_cast<uint64_t>(htif::csr::tohost);
+static constexpr auto htif_fromhost_rel_addr = static_cast<uint64_t>(htif::csr::fromhost);
+static constexpr auto htif_ihalt_rel_addr = static_cast<uint64_t>(htif::csr::ihalt);
+static constexpr auto htif_iconsole_rel_addr = static_cast<uint64_t>(htif::csr::iconsole);
+static constexpr auto htif_iyield_rel_addr = static_cast<uint64_t>(htif::csr::iyield);
 
 bool htif::console_char_pending(void) const {
     return m_buf_pos < m_buf_len;
@@ -180,19 +180,19 @@ static bool htif_read(const pma_entry &pma, i_device_state_access *a, uint64_t o
     }
 
     switch (offset) {
-        case HTIF_TOHOST_REL_ADDR:
+        case htif_tohost_rel_addr:
             *pval = a->read_htif_tohost();
             return true;
-        case HTIF_FROMHOST_REL_ADDR:
+        case htif_fromhost_rel_addr:
             *pval = a->read_htif_fromhost();
             return true;
-        case HTIF_IHALT_REL_ADDR:
+        case htif_ihalt_rel_addr:
             *pval = a->read_htif_ihalt();
             return true;
-        case HTIF_ICONSOLE_REL_ADDR:
+        case htif_iconsole_rel_addr:
             *pval = a->read_htif_iconsole();
             return true;
-        case HTIF_IYIELD_REL_ADDR:
+        case htif_iyield_rel_addr:
             *pval = a->read_htif_iyield();
             return true;
         default:
@@ -228,7 +228,7 @@ static bool htif_halt(i_device_state_access *a, htif *h, uint64_t cmd,
         a->set_iflags_H();
     }
     //??D Write acknowledgement to fromhost???
-    // a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_HALT,
+    // a->write_htif_fromhost(htif_build(HTIF_DEVICE_HALT,
     //     HTIF_HALT_HALT, cmd))
     return true;
 }
@@ -292,9 +292,9 @@ static bool htif_write(const pma_entry &pma, i_device_state_access *a, uint64_t 
     }
 
     switch (offset) {
-        case HTIF_TOHOST_REL_ADDR:
+        case htif_tohost_rel_addr:
             return htif_write_tohost(a, h, val);
-        case HTIF_FROMHOST_REL_ADDR:
+        case htif_fromhost_rel_addr:
             a->write_htif_fromhost(val);
             return true;
         default:

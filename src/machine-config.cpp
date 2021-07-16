@@ -31,11 +31,11 @@
 #include "machine-config.h"
 #include "pma-constants.h"
 
-#define ARCHIVE_VERSION 1
+static constexpr int archive_version = 1;
 
 // ARCHIVE_VERSION 0 was the first version
 // ARCHIVE_VERSION 1 added the dhd configuration
-BOOST_CLASS_VERSION(cartesi::machine_config, ARCHIVE_VERSION)
+BOOST_CLASS_VERSION(cartesi::machine_config, archive_version)
 
 namespace boost {
 namespace serialization {

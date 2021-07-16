@@ -35,8 +35,10 @@
 #include "riscv-constants.h"
 
 #ifdef DUMP_COUNTERS
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define INC_COUNTER(state, counter) do {state.stats.counter++;} while (0)
 #else
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define INC_COUNTER(state, counter) do {} while (0)
 #endif
 

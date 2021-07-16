@@ -48,29 +48,28 @@
 #include "rollup-machine-manager.grpc.pb.h"
 #pragma GCC diagnostic pop
 
-#define MANAGER_VERSION_MAJOR UINT32_C(0)
-#define MANAGER_VERSION_MINOR UINT32_C(0)
-#define MANAGER_VERSION_PATCH UINT32_C(0)
-#define MANAGER_VERSION_PRE_RELEASE ""
-#define MANAGER_VERSION_BUILD ""
+static constexpr uint32_t manager_version_major = 0;
+static constexpr uint32_t manager_version_minor = 0;
+static constexpr uint32_t manager_version_patch = 0;
+static constexpr const char *manager_version_pre_release = "";
+static constexpr const char *manager_version_build = "";
 
-#define MACHINE_VERSION_MAJOR UINT32_C(0)
-#define MACHINE_VERSION_MINOR UINT32_C(4)
-#define MACHINE_VERSION_PATCH UINT32_C(0)
-#define MACHINE_VERSION_PRE_RELEASE ""
-#define MACHINE_VERSION_BUILD ""
+static constexpr uint32_t machine_version_major = 0;
+static constexpr uint32_t machine_version_minor = 4;
 
 using namespace CartesiRollupMachineManager;
 using namespace CartesiMachine;
 using namespace Versioning;
 
 #ifndef NDEBUG
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define THROW(e) \
     do { \
         std::cerr << "Throwing from " << __FILE__ << ":" << __LINE__ << " at " << __PRETTY_FUNCTION__ << '\n'; \
         throw (e); \
     } while (0);
 #else
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define THROW(e) \
     do { \
         throw (e); \
@@ -83,7 +82,7 @@ class dout {
 public:
     dout(const grpc::ServerContext &context) {
 #ifndef NDEBUG
-        static const std::string keys[] = {"request-id", "test-id"};
+        static const std::array keys = {"request-id", "test-id"};
         for (const auto &key: keys) {
             auto [begin, end] = context.client_metadata().equal_range(key);
             if (begin != end) {
@@ -499,11 +498,11 @@ dout{request_context} << "Received GetVersion";
             Status status;
             GetVersionResponse response;
             auto *version = response.mutable_version();
-            version->set_major(MANAGER_VERSION_MAJOR);
-            version->set_minor(MANAGER_VERSION_MINOR);
-            version->set_patch(MANAGER_VERSION_PATCH);
-            version->set_pre_release(MANAGER_VERSION_PRE_RELEASE);
-            version->set_build(MANAGER_VERSION_BUILD);
+            version->set_major(manager_version_major);
+            version->set_minor(manager_version_minor);
+            version->set_patch(manager_version_patch);
+            version->set_pre_release(manager_version_pre_release);
+            version->set_build(manager_version_build);
             writer.Finish(response, grpc::Status::OK, self);
             yield(side_effect::none);
         }
@@ -1045,7 +1044,7 @@ dout{actx.request_context} << "  Checking server version";
         THROW((finish_error_yield_none{status}));
     }
     // If version is incompatible, bail out
-    if (response.version().major() != MACHINE_VERSION_MAJOR || response.version().minor() != MACHINE_VERSION_MINOR) {
+    if (response.version().major() != machine_version_major || response.version().minor() != machine_version_minor) {
         THROW((finish_error_yield_none{grpc::StatusCode::FAILED_PRECONDITION, "manager is incompatible with machine server"}));
     }
 }
@@ -2275,9 +2274,9 @@ int main(int argc, char *argv[]) try {
     hctx.server_address = server_address;
 
     std::cerr << "manager version is " <<
-        MANAGER_VERSION_MAJOR << "." <<
-        MANAGER_VERSION_MINOR << "." <<
-        MANAGER_VERSION_PATCH << "\n";
+        manager_version_major << "." <<
+        manager_version_minor << "." <<
+        manager_version_patch << "\n";
 
     auto manager = build_manager(manager_address, hctx);
     if (!manager) {

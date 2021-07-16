@@ -19,12 +19,12 @@
 namespace cartesi {
 
 int clua_init(lua_State *L) {
-    lua_pushstring(L, CLUA_REGISTRY_KEY); // key
+    lua_pushstring(L, clua_registry_key); // key
     lua_rawget(L, LUA_REGISTRYINDEX); // ctxtab_or_nil
     if (lua_isnil(L, -1)) { // nil
         lua_pop(L, 1); //
         lua_newtable(L); // ctxtab
-        lua_pushstring(L, CLUA_REGISTRY_KEY); // ctx key
+        lua_pushstring(L, clua_registry_key); // ctx key
         lua_pushvalue(L, -2); // ctxtab key ctxtab
         lua_rawset(L, LUA_REGISTRYINDEX); // ctxtab
     }

@@ -21,14 +21,14 @@
 
 //Compiler visibility definition
 #ifndef CM_API
-#define CM_API __attribute__ ((visibility ("default")))
+#define CM_API __attribute__ ((visibility ("default"))) // NOLINT(cppcoreguidelines-macro-usage)
 #endif
 
-#define CM_MACHINE_HASH_BYTE_SIZE 32
-#define CM_MACHINE_X_REG_COUNT 32
-#define CM_MACHINE_DHD_H_REG_COUNT 4
+#define CM_MACHINE_HASH_BYTE_SIZE 32 // NOLINT(cppcoreguidelines-macro-usage)
+#define CM_MACHINE_X_REG_COUNT 32 // NOLINT(cppcoreguidelines-macro-usage)
+#define CM_MACHINE_DHD_H_REG_COUNT 4 // NOLINT(cppcoreguidelines-macro-usage)
 
 
-#define CM_DHD_NOT_FOUND ((uint64_t)(-1))
+#define CM_DHD_NOT_FOUND ((uint64_t)(-1)) // NOLINT(cppcoreguidelines-macro-usage)
 
 #endif //MACHINE_EMULATOR_SDK_MACHINE_C_DEFINES_H

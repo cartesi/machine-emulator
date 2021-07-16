@@ -24,11 +24,9 @@
 #include <boost/process.hpp>
 #pragma GCC diagnostic pop
 
-#define PROXY_VERSION_MAJOR UINT32_C(0)
-#define PROXY_VERSION_MINOR UINT32_C(4)
-#define PROXY_VERSION_PATCH UINT32_C(0)
-#define PROXY_VERSION_PRE_RELEASE ""
-#define PROXY_VERSION_BUILD ""
+static constexpr uint32_t proxy_version_major = 0;
+static constexpr uint32_t proxy_version_minor = 4;
+static constexpr uint32_t proxy_version_patch = 0;
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -697,8 +695,8 @@ static bool build_client(handler_context &hctx, const CheckInRequest &request) {
         version_response.version().major() << "." <<
         version_response.version().minor() << "." <<
         version_response.version().patch() << "\n";
-    if (version_response.version().major() != PROXY_VERSION_MAJOR ||
-        version_response.version().minor() != PROXY_VERSION_MINOR) {
+    if (version_response.version().major() != proxy_version_major ||
+        version_response.version().minor() != proxy_version_minor) {
         std::cerr << "proxy is incompatible with server\n";
         return false;
     }
@@ -829,9 +827,9 @@ int main(int argc, char *argv[]) try {
     handler_context hctx{};
 
     std::cerr << "proxy version is " <<
-        PROXY_VERSION_MAJOR << "." <<
-        PROXY_VERSION_MINOR << "." <<
-        PROXY_VERSION_PATCH << "\n";
+        proxy_version_major << "." <<
+        proxy_version_minor << "." <<
+        proxy_version_patch << "\n";
 
     auto proxy = build_proxy(proxy_address, hctx);
     if (!proxy) {

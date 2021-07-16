@@ -51,27 +51,26 @@ enum HTIF_masks: uint64_t {
     HTIF_DATA_MASK = EXPAND_UINT64_C(HTIF_DATA_MASK_DEF)
 };
 
-static inline uint64_t HTIF_BUILD(uint64_t dev, uint64_t cmd, uint64_t data) {
-    return (((static_cast<uint64_t>(dev)  << HTIF_DEV_SHIFT)  & HTIF_DEV_MASK) |
-        ((static_cast<uint64_t>(cmd)  << HTIF_CMD_SHIFT)  & HTIF_CMD_MASK) |
-        ((static_cast<uint64_t>(data) << HTIF_DATA_SHIFT) & HTIF_DATA_MASK));
+static constexpr uint64_t HTIF_BUILD(uint64_t dev, uint64_t cmd, uint64_t data) {
+    return ((dev  << HTIF_DEV_SHIFT)  & HTIF_DEV_MASK) |
+           ((cmd  << HTIF_CMD_SHIFT)  & HTIF_CMD_MASK) |
+           ((data << HTIF_DATA_SHIFT) & HTIF_DATA_MASK);
 }
 
-static inline uint64_t HTIF_DEV_FIELD(uint64_t reg) {
-    return ((reg & HTIF_DEV_MASK) >> HTIF_DEV_SHIFT);
+static constexpr uint64_t HTIF_DEV_FIELD(uint64_t reg) {
+    return (reg & HTIF_DEV_MASK) >> HTIF_DEV_SHIFT;
 }
 
-static inline uint64_t HTIF_CMD_FIELD(uint64_t reg) {
-    return ((reg & HTIF_CMD_MASK) >> HTIF_CMD_SHIFT);
+static constexpr uint64_t HTIF_CMD_FIELD(uint64_t reg) {
+    return (reg & HTIF_CMD_MASK) >> HTIF_CMD_SHIFT;
 }
 
-static inline uint64_t HTIF_DATA_FIELD(uint64_t reg) {
-    return ((reg & HTIF_DATA_MASK) >> HTIF_DATA_SHIFT);
+static constexpr uint64_t HTIF_DATA_FIELD(uint64_t reg) {
+    return (reg & HTIF_DATA_MASK) >> HTIF_DATA_SHIFT;
 }
 
-static inline uint64_t HTIF_REPLACE_DATA(uint64_t reg, uint64_t data) {
-    return ((static_cast<uint64_t>(reg) & (~HTIF_DATA_MASK)) |
-        ((data << HTIF_DATA_SHIFT) & HTIF_DATA_MASK));
+static constexpr uint64_t HTIF_REPLACE_DATA(uint64_t reg, uint64_t data) {
+    return (reg & (~HTIF_DATA_MASK)) | ((data << HTIF_DATA_SHIFT) & HTIF_DATA_MASK);
 }
 
 /// \brief HTIF constants

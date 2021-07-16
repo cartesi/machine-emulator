@@ -25,11 +25,11 @@
 
 namespace cartesi {
 
-#define DHD_TSTART_REL_ADDR  (static_cast<uint64_t>(dhd_csr::tstart))
-#define DHD_TLENGTH_REL_ADDR (static_cast<uint64_t>(dhd_csr::tlength))
-#define DHD_DLENGTH_REL_ADDR (static_cast<uint64_t>(dhd_csr::dlength))
-#define DHD_HLENGTH_REL_ADDR (static_cast<uint64_t>(dhd_csr::hlength))
-#define DHD_H0_REL_ADDR      (static_cast<uint64_t>(dhd_csr::h0))
+static constexpr auto dhd_tstart_rel_addr = static_cast<uint64_t>(dhd_csr::tstart);
+static constexpr auto dhd_tlength_rel_addr = static_cast<uint64_t>(dhd_csr::tlength);
+static constexpr auto dhd_dlength_rel_addr = static_cast<uint64_t>(dhd_csr::dlength);
+static constexpr auto dhd_hlength_rel_addr = static_cast<uint64_t>(dhd_csr::hlength);
+static constexpr auto dhd_h0_rel_addr = static_cast<uint64_t>(dhd_csr::h0);
 
 uint64_t dhd_get_csr_rel_addr(dhd_csr reg) {
     return static_cast<uint64_t>(reg);
@@ -48,23 +48,23 @@ static bool dhd_read(const pma_entry &pma, i_device_state_access *a, uint64_t of
     }
 
     switch (offset) {
-        case DHD_TSTART_REL_ADDR:
+        case dhd_tstart_rel_addr:
             *val = a->read_dhd_tstart();
             return true;
-        case DHD_TLENGTH_REL_ADDR:
+        case dhd_tlength_rel_addr:
             *val = a->read_dhd_tlength();
             return true;
-        case DHD_DLENGTH_REL_ADDR:
+        case dhd_dlength_rel_addr:
             *val = a->read_dhd_dlength();
             return true;
-        case DHD_HLENGTH_REL_ADDR:
+        case dhd_hlength_rel_addr:
             *val = a->read_dhd_hlength();
             return true;
         default:
-            if (offset >= DHD_H0_REL_ADDR &&
-                offset < DHD_H0_REL_ADDR+DHD_H_REG_COUNT*sizeof(uint64_t)
+            if (offset >= dhd_h0_rel_addr &&
+                offset < dhd_h0_rel_addr+DHD_H_REG_COUNT*sizeof(uint64_t)
                 && (offset & (sizeof(uint64_t)-1)) == 0) {
-                auto i = (offset - DHD_H0_REL_ADDR)/sizeof(uint64_t);
+                auto i = (offset - dhd_h0_rel_addr)/sizeof(uint64_t);
                 *val = a->read_dhd_h(i);
                 return true;
             }
@@ -136,16 +136,16 @@ static bool dhd_write(const pma_entry &pma, i_device_state_access *a, uint64_t o
     }
 
     switch (offset) {
-        case DHD_DLENGTH_REL_ADDR:
+        case dhd_dlength_rel_addr:
             a->write_dhd_dlength(val);
             return true;
-        case DHD_HLENGTH_REL_ADDR:
+        case dhd_hlength_rel_addr:
             return dhd_write_hlength(pma, a, val);
         default:
-            if (offset >= DHD_H0_REL_ADDR &&
-                offset < DHD_H0_REL_ADDR+DHD_H_REG_COUNT*sizeof(uint64_t)
+            if (offset >= dhd_h0_rel_addr &&
+                offset < dhd_h0_rel_addr+DHD_H_REG_COUNT*sizeof(uint64_t)
                 && (offset & (sizeof(uint64_t)-1)) == 0) {
-                auto i = (offset - DHD_H0_REL_ADDR)/sizeof(uint64_t);
+                auto i = (offset - dhd_h0_rel_addr)/sizeof(uint64_t);
                 a->write_dhd_h(i, val);
                 return true;
             }

@@ -18,11 +18,11 @@
 #include <cstdint>
 #include <exception>
 
-#define SERVER_VERSION_MAJOR UINT32_C(0)
-#define SERVER_VERSION_MINOR UINT32_C(4)
-#define SERVER_VERSION_PATCH UINT32_C(0)
-#define SERVER_VERSION_PRE_RELEASE ""
-#define SERVER_VERSION_BUILD ""
+static constexpr uint32_t server_version_major = 0;
+static constexpr uint32_t server_version_minor = 4;
+static constexpr uint32_t server_version_patch = 0;
+static constexpr const char *server_version_pre_release = "";
+static constexpr const char *server_version_build = "";
 
 #include <signal.h>
 #include <sys/wait.h>
@@ -232,11 +232,11 @@ class handler_GetVersion final: public handler<Void, GetVersionResponse> {
         (void) req;
         GetVersionResponse resp;
         auto *version = resp.mutable_version();
-        version->set_major(SERVER_VERSION_MAJOR);
-        version->set_minor(SERVER_VERSION_MINOR);
-        version->set_patch(SERVER_VERSION_PATCH);
-        version->set_pre_release(SERVER_VERSION_PRE_RELEASE);
-        version->set_build(SERVER_VERSION_BUILD);
+        version->set_major(server_version_major);
+        version->set_minor(server_version_minor);
+        version->set_patch(server_version_patch);
+        version->set_pre_release(server_version_pre_release);
+        version->set_build(server_version_build);
         return finish_ok(writer, resp);
     }
 

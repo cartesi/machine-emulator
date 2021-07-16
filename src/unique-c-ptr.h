@@ -29,6 +29,7 @@ namespace detail {
     struct free_deleter {
         template <typename T>
         void operator()(T *p) const {
+            // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
             std::free(const_cast<std::remove_const_t<T> *>(p));
         }
     };
@@ -47,6 +48,7 @@ using unique_file_ptr = std::unique_ptr<FILE, detail::fclose_deleter>;
 
 template <typename T>
 static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb) {
+    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
     T *ptr = reinterpret_cast<T *>(calloc(nmemb, sizeof(T)));
     if (!ptr) {
         throw std::bad_alloc{};
@@ -57,6 +59,7 @@ static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb) {
 template <typename T>
 static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb, const std::nothrow_t &tag) {
     (void) tag;
+    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
     return unique_calloc_ptr<T>(reinterpret_cast<T*>(calloc(nmemb, sizeof(T))));
 }
 

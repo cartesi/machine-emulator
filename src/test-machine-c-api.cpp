@@ -183,6 +183,12 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_default_machine_test, default_mach
     cm_delete_error_message(err_msg);
 }
 
+static char *new_cstr(const char *str) {
+    auto size = strlen(str) + 1;
+    auto *copy = new char[size];
+    strncpy(copy, str, size);
+    return copy;
+}
 
 class incomplete_machine_fixture : public default_machine_fixture {
 public:
@@ -201,46 +207,44 @@ protected:
     static void _clone_machine_config(const cm_machine_config *source, cm_machine_config *target) {
         target->processor = source->processor;
         target->ram.length = source->ram.length;
-        target->ram.image_filename = strdup(source->ram.image_filename);
+        target->ram.image_filename = new_cstr(source->ram.image_filename);
 
-        target->rom.bootargs = strdup(source->rom.bootargs);
-        target->rom.image_filename = strdup(source->rom.image_filename);
+        target->rom.bootargs = new_cstr(source->rom.bootargs);
+        target->rom.image_filename = new_cstr(source->rom.image_filename);
 
         target->flash_drive_count = source->flash_drive_count;
-        target->flash_drive = (cm_flash_drive_config*)malloc(
-                sizeof(cm_flash_drive_config) * source->flash_drive_count);
-        memset(target->flash_drive, 0, sizeof(cm_flash_drive_config) * target->flash_drive_count);
+        target->flash_drive = new cm_flash_drive_config[source->flash_drive_count]{};
         for (size_t i = 0; i < target->flash_drive_count; ++i) {
             target->flash_drive[i] = source->flash_drive[i];
-            target->flash_drive[i].image_filename = strdup(source->flash_drive[i].image_filename);
+            target->flash_drive[i].image_filename = new_cstr(source->flash_drive[i].image_filename);
         }
 
         target->clint = source->clint;
         target->htif = source->htif;
         target->dhd = source->dhd;
-        target->dhd.image_filename = strdup(source->dhd.image_filename);
+        target->dhd.image_filename = new_cstr(source->dhd.image_filename);
     }
 
     static void _cleanup_machine_config(cm_machine_config *config) {
-        free((char*)config->dhd.image_filename);
+        delete[] config->dhd.image_filename;
         for (size_t i = 0; i < config->flash_drive_count; ++i) {
-            free((char*)config->flash_drive[i].image_filename);
+            delete[] config->flash_drive[i].image_filename;
         }
-        free(config->flash_drive);
-        free((char*)config->rom.image_filename);
-        free((char*)config->rom.bootargs);
-        free((char*)config->ram.image_filename);
+        delete[] config->flash_drive;
+        delete[] config->rom.image_filename;
+        delete[] config->rom.bootargs;
+        delete[] config->ram.image_filename;
     }
 
     void _set_rom_image(const std::string& image_name) {
-        free((char*)_machine_config.rom.image_filename);
-        _machine_config.rom.image_filename = strdup(image_name.c_str());
+        delete[] _machine_config.rom.image_filename;
+        _machine_config.rom.image_filename = new_cstr(image_name.c_str());
     }
 
     void _setup_flash(std::list<cm_flash_drive_config>&& configs) {
         _machine_config.flash_drive_count = configs.size();
-        _machine_config.flash_drive = (cm_flash_drive_config*)realloc(_machine_config.flash_drive,
-                sizeof(cm_flash_drive_config) * configs.size());
+        delete[] _machine_config.flash_drive;
+        _machine_config.flash_drive = new cm_flash_drive_config[configs.size()];
 
         for (auto [cfg_it, i] = std::tuple{configs.begin(), 0};
              cfg_it != configs.end(); ++cfg_it, ++i) {
@@ -252,7 +256,7 @@ protected:
             _machine_config.flash_drive[i].start = cfg_it->start;
             _machine_config.flash_drive[i].length = cfg_it->length;
             _machine_config.flash_drive[i].shared = cfg_it->shared;
-            _machine_config.flash_drive[i].image_filename = strdup(cfg_it->image_filename);
+            _machine_config.flash_drive[i].image_filename = new_cstr(cfg_it->image_filename);
         }
     }
 
@@ -1509,13 +1513,13 @@ public:
             0x8000000000000000,
             flash_size,
             true,
-            strdup(flash_file.c_str())
+            new_cstr(flash_file.c_str())
         };
     }
 
     ~flash_drive_machine_fixture() {
         std::filesystem::remove(std::string{_flash_config.image_filename});
-        free((char*)_flash_config.image_filename);
+        delete[] _flash_config.image_filename;
     }
 protected:
     cm_flash_drive_config _flash_config;

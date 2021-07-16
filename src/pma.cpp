@@ -40,7 +40,7 @@ void pma_memory::release(void) {
         close(m_backing_file);
         m_backing_file = -1;
     } else {
-        free(m_host_memory);
+        std::free(m_host_memory); // NOLINT(cppcoreguidelines-no-malloc)
     }
     m_host_memory = nullptr;
     m_length = 0;
@@ -65,7 +65,8 @@ pma_memory::pma_memory(uint64_t length, const callocd &c):
     m_host_memory{nullptr},
     m_backing_file{-1} {
     (void) c;
-    m_host_memory = reinterpret_cast<unsigned char *>(calloc(1, length));
+    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc): use calloc to improve performance
+    m_host_memory = static_cast<unsigned char *>(std::calloc(1, length));
     if (!m_host_memory) {
         throw std::bad_alloc{};
     }

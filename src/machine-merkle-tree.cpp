@@ -75,7 +75,7 @@ create_node(void) const { // NOLINT(readability-convert-member-functions-to-stat
 #ifdef MERKLE_DUMP_STATS
     m_num_nodes++;
 #endif
-    return reinterpret_cast<tree_node *>(calloc(1, sizeof(tree_node)));
+    return new tree_node{};
 }
 
 void
@@ -84,7 +84,7 @@ destroy_node(tree_node *node) const { // NOLINT(readability-convert-member-funct
 #ifdef MERKLE_DUMP_STATS
     --m_num_nodes;
 #endif
-    free(node);
+    delete node;
 }
 
 machine_merkle_tree::tree_node *

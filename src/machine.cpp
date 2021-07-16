@@ -49,7 +49,7 @@ namespace cartesi {
 
 using namespace std::string_literals;
 
-pma_entry::flags machine::m_ram_flags{
+const pma_entry::flags machine::m_ram_flags{
     true,                   // R
     true,                   // W
     true,                   // X
@@ -58,7 +58,7 @@ pma_entry::flags machine::m_ram_flags{
     PMA_ISTART_DID::memory  // DID
 };
 
-pma_entry::flags machine::m_rom_flags{
+const pma_entry::flags machine::m_rom_flags{
     true,                   // R
     false,                  // W
     true,                   // X
@@ -67,7 +67,7 @@ pma_entry::flags machine::m_rom_flags{
     PMA_ISTART_DID::memory  // DID
 };
 
-pma_entry::flags machine::m_flash_flags{
+const pma_entry::flags machine::m_flash_flags{
     true,                   // R
     true,                   // W
     false,                  // X

@@ -49,9 +49,9 @@ class machine final {
     machine_config m_c;  ///< Copy of initialization config
     machine_runtime_config m_r;  ///< Copy of initialization runtime config
 
-    static pma_entry::flags m_rom_flags;    ///< PMA flags used for ROM
-    static pma_entry::flags m_ram_flags;    ///< PMA flags used for RAM
-    static pma_entry::flags m_flash_flags;  ///< PMA flags used for flash drives
+    static const pma_entry::flags m_rom_flags;    ///< PMA flags used for ROM
+    static const pma_entry::flags m_ram_flags;    ///< PMA flags used for RAM
+    static const pma_entry::flags m_flash_flags;  ///< PMA flags used for flash drives
 
     /// \brief Allocates a new PMA entry.
     /// \param pma PMA entry to add to machine.

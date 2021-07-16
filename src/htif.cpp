@@ -53,7 +53,7 @@ uint64_t htif::get_csr_rel_addr(csr reg) {
 }
 
 static int new_ttyfd(const char *path) {
-    int fd;
+    int fd{};
     do {
         fd = open(path, O_RDWR | O_NOCTTY | O_NONBLOCK);
     } while (fd == -1 && errno == EINTR);
@@ -61,7 +61,7 @@ static int new_ttyfd(const char *path) {
 }
 
 static int get_ttyfd(void) {
-    char *path;
+    char *path{};
     if ((path = ttyname(STDERR_FILENO)) != nullptr) {
         return new_ttyfd(path);
     } else if ((path = ttyname(STDOUT_FILENO)) != nullptr) {

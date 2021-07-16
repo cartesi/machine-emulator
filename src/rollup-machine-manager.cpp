@@ -995,7 +995,7 @@ static auto get_proto_payload_and_metadata_array(const PayloadAndMetadataArray &
 /// \brief Initializes new deadline config structure from request
 /// \param proto_p Corresponding DeadlineConfig
 static auto get_proto_deadline_config(const DeadlineConfig &proto_p) {
-    deadline_config_type d;
+    deadline_config_type d{};
     d.check_in = proto_p.check_in();
     d.update_merkle_tree = proto_p.update_merkle_tree();
     d.run_input = proto_p.run_input();
@@ -2285,7 +2285,7 @@ int main(int argc, char *argv[]) try {
         exit(1);
     }
 
-    struct sigaction sa;
+    struct sigaction sa{};
     sa.sa_handler = cleanup_child_handler;
     sa.sa_flags = 0;
     sigaction(SIGCHLD, &sa, NULL);

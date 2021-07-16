@@ -143,13 +143,12 @@ static std::string opt_string_field(lua_State *L, int tabidx, const char *field)
 /// \returns Field value. Throws error if field is missing.
 static int check_int_field(lua_State *L, int tabidx, const char *field) {
     tabidx = lua_absindex(L, tabidx);
-    lua_Integer ival;
     lua_getfield(L, tabidx, field);
     if (!lua_isinteger(L, -1)) {
         luaL_error(L, "invalid %s (expected integer, got %s)", field,
             lua_typename(L, lua_type(L, -1)));
     }
-    ival = lua_tointeger(L, -1);
+    lua_Integer ival = lua_tointeger(L, -1);
     lua_pop(L, 1);
     return (int) ival;
 }
@@ -161,13 +160,12 @@ static int check_int_field(lua_State *L, int tabidx, const char *field) {
 /// \returns Field value. Throws error if field is missing.
 static uint64_t check_uint_field(lua_State *L, int tabidx, const char *field) {
     tabidx = lua_absindex(L, tabidx);
-    lua_Integer ival;
     lua_getfield(L, tabidx, field);
     if (!lua_isinteger(L, -1)) {
         luaL_error(L, "invalid %s (expected unsigned integer, got %s)", field,
             lua_typename(L, lua_type(L, -1)));
     }
-    ival = lua_tointeger(L, -1);
+    lua_Integer ival = lua_tointeger(L, -1);
     lua_pop(L, 1);
     return (uint64_t) ival;
 }

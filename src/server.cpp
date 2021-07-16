@@ -194,7 +194,7 @@ static void snapshot(bool &forked) {
         forked = true;
     } else {
         // Parent waits on child.
-        int wstatus;
+        int wstatus{};
         waitpid(childid, &wstatus, WUNTRACED);
         if (WIFSTOPPED(wstatus)) {
             // Here the child wants to take our place.

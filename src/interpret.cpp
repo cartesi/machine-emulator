@@ -225,14 +225,12 @@ static void dump_regs(const STATE &s) {
 }
 
 static void dump_regs(const machine_state &s) {
-    int i;
-    int cols;
     const std::string priv_str{"USHM"};
-    cols = 256 / XLEN;
+    int cols = 256 / XLEN;
     fprintf(stderr, "pc = ");
     print_uint64_t(s.pc);
     fprintf(stderr, " ");
-    for(i = 1; i < X_REG_COUNT; i++) {
+    for(int i = 1; i < X_REG_COUNT; i++) {
         fprintf(stderr, "%-3s= ", reg_name[i]);
         print_uint64_t(s.x[i]);
         if ((i & (cols - 1)) == (cols - 1)) {
@@ -652,7 +650,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
         return false;
     // Deal with aligned accesses
     } else {
-        uint64_t paddr;
+        uint64_t paddr{};
         INC_COUNTER(a.get_naked_state(), tlb_rmiss);
         if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) {
             raise_exception(a, MCAUSE_LOAD_PAGE_FAULT, vaddr);
@@ -679,7 +677,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
         } else {
             assert(pma.get_istart_IO());
             uint64_t offset = paddr - pma.get_start();
-            uint64_t val;
+            uint64_t val{};
             device_state_access<STATE_ACCESS> da(a);
             // If we do not know how to read, we treat this as a PMA violation
             if (!pma.get_device().get_driver()->
@@ -721,7 +719,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
         return false;
     // Deal with aligned accesses
     } else {
-        uint64_t paddr;
+        uint64_t paddr{};
         INC_COUNTER(a.get_naked_state(), tlb_wmiss);
         if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_W_SHIFT)) {
             raise_exception(a, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
@@ -3162,7 +3160,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
             return fetch_status::success;
         }
     }
-    uint64_t paddr;
+    uint64_t paddr{};
     INC_COUNTER(a.get_naked_state(), tlb_cmiss);
     // Walk page table and obtain the physical address
     if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_C_SHIFT)) {

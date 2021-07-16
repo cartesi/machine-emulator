@@ -334,8 +334,8 @@ end_update(hasher_type &h) {
     // Now go over the queue of inner nodes updating their hashes and
     // enqueueing their parents until the queue is empty
     while (!m_merkle_update_fifo.empty()) {
-        int log2_size;
-        tree_node *node;
+        int log2_size{};
+        tree_node *node{};
         std::tie(log2_size, node) = m_merkle_update_fifo.front();
         update_inner_node_hash(h, log2_size, node);
         m_merkle_update_fifo.pop_front();

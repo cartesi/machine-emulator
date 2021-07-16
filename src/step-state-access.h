@@ -909,11 +909,11 @@ private:
     }
 
     pma_entry &build_mock_pma_entry(uint64_t istart, uint64_t ilength) {
-        bool M;
-        bool IO;
-        bool E;
-        pma_entry::flags f;
-        uint64_t start;
+        bool M{};
+        bool IO{};
+        bool E{};
+        pma_entry::flags f{};
+        uint64_t start{};
         split_istart(istart, start, M, IO, E, f);
         if (M + IO + E != 1) { // one and only one must be set
             return error_flags("multiple M/IO/E set");

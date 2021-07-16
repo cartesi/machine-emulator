@@ -2246,7 +2246,7 @@ static void cleanup_child_handler(int signal) {
     while (waitpid((pid_t) (-1), 0, WNOHANG) > 0) {}
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) try {
 
     static_assert(std::tuple_size<hash_type>::value == KECCAK_SIZE, "hash size mismatch");
 
@@ -2341,5 +2341,11 @@ shutdown:
     hctx.server_group.terminate();
     hctx.server_group.wait();
     return 0;
+} catch (std::exception &e) {
+    std::cerr << "Caught exception: " << e.what() << '\n';
+    return 1;
+} catch (...) {
+    std::cerr << "Caught unknown exception\n";
+    return 1;
 }
 

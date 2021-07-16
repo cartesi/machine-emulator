@@ -803,7 +803,7 @@ static std::string replace_port(const std::string &address, int port) {
     }
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) try {
 
     const char *proxy_address = nullptr;
     const char *server_address = "localhost:0";
@@ -885,5 +885,11 @@ shutdown:
     server_group.terminate();
     server_group.wait();
     return 0;
+} catch (std::exception &e) {
+    std::cerr << "Caught exception: " << e.what() << '\n';
+    return 1;
+} catch (...) {
+    std::cerr << "Caught unknown exception\n";
+    return 1;
 }
 

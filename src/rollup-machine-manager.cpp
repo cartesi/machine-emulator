@@ -64,8 +64,6 @@ using namespace CartesiRollupMachineManager;
 using namespace CartesiMachine;
 using namespace Versioning;
 
-const static grpc::Status cancelled_status{grpc::StatusCode::CANCELLED, "Deadline exceeded or client cancelled, abandoning."};
-
 #ifndef NDEBUG
 #define THROW(e) \
     do { \
@@ -86,7 +84,7 @@ public:
     dout(const grpc::ServerContext &context) {
 #ifndef NDEBUG
         static const std::string keys[] = {"request-id", "test-id"};
-        for (auto &key: keys) {
+        for (const auto &key: keys) {
             auto [begin, end] = context.client_metadata().equal_range(key);
             if (begin != end) {
                 out() << key << ':';
@@ -101,7 +99,7 @@ public:
 #endif
     }
 
-    std::ostream &out(void) {
+    static std::ostream &out(void) {
         return std::clog;
     }
 
@@ -114,13 +112,13 @@ public:
 
 template <class T>
 dout &operator<<(dout &&os, const T& x) {
-    os.out() << x;
+    dout::out() << x;
     return os;
 }
 
 template <class T>
 dout &operator<<(dout &os, const T& x) {
-    os.out() << x;
+    dout::out() << x;
     return os;
 }
 
@@ -489,7 +487,7 @@ static handler_type::pull_type *new_GetVersion_handler(handler_context &hctx) {
             ServerContext request_context;
             Void request;
             ServerAsyncResponseWriter<GetVersionResponse> writer(&request_context);
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.manager_async_service.RequestGetVersion(&request_context, &request, &writer, cq, cq, self);
             yield(side_effect::none);
             new_GetVersion_handler(hctx);
@@ -500,7 +498,7 @@ static handler_type::pull_type *new_GetVersion_handler(handler_context &hctx) {
 dout{request_context} << "Received GetVersion";
             Status status;
             GetVersionResponse response;
-            auto version = response.mutable_version();
+            auto *version = response.mutable_version();
             version->set_major(MANAGER_VERSION_MAJOR);
             version->set_minor(MANAGER_VERSION_MINOR);
             version->set_patch(MANAGER_VERSION_PATCH);
@@ -523,7 +521,7 @@ static handler_type::pull_type *new_GetStatus_handler(handler_context &hctx) {
             ServerContext request_context;
             Void request;
             ServerAsyncResponseWriter<GetStatusResponse> writer(&request_context);
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.manager_async_service.RequestGetStatus(&request_context, &request, &writer, cq, cq, self);
             yield(side_effect::none);
             new_GetStatus_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
@@ -603,7 +601,7 @@ static handler_type::pull_type *new_FinishEpoch_handler(handler_context &hctx) {
             ServerContext request_context;
             FinishEpochRequest request;
             ServerAsyncResponseWriter<Void> writer(&request_context);
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.manager_async_service.RequestFinishEpoch(&request_context, &request, &writer, cq, cq, self);
             yield(side_effect::none);
             new_FinishEpoch_handler(hctx);
@@ -615,7 +613,7 @@ static handler_type::pull_type *new_FinishEpoch_handler(handler_context &hctx) {
                 Status status;
                 Void response;
                 auto &sessions = hctx.sessions;
-                auto id = request.session_id();
+                const auto &id = request.session_id();
                 auto epoch_index = request.active_epoch_index();
 dout{request_context} << "Received FinishEpoch for id " << id << " epoch " << epoch_index;
                 // If a session is unknown, a bail out
@@ -708,7 +706,7 @@ static handler_type::pull_type *new_EndSession_handler(handler_context &hctx) {
             ServerContext request_context;
             EndSessionRequest request;
             ServerAsyncResponseWriter<Void> writer(&request_context);
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.manager_async_service.RequestEndSession(&request_context, &request, &writer, cq, cq, self);
             yield(side_effect::none);
             new_EndSession_handler(hctx);
@@ -720,7 +718,7 @@ static handler_type::pull_type *new_EndSession_handler(handler_context &hctx) {
                 Status status;
                 Void response;
                 auto &sessions = hctx.sessions;
-                auto id = request.session_id();
+                const auto &id = request.session_id();
 dout{request_context} << "Received EndSession for id " << id;
                 // If a session is unknown, a bail out
                 if (sessions.find(id) == sessions.end()) {
@@ -743,7 +741,7 @@ dout{request_context} << "Received EndSession for id " << id;
                     if (!e.pending_inputs.empty()) {
                         THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "active epoch has pending inputs"}));
                     }
-                    if (e.processed_inputs.size() != 0) {
+                    if (!e.processed_inputs.empty()) {
                         THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "active epoch has processed inputs"}));
                     }
                 }
@@ -783,7 +781,7 @@ static handler_type::pull_type *new_GetSessionStatus_handler(handler_context &hc
             ServerContext request_context;
             GetSessionStatusRequest request;
             ServerAsyncResponseWriter<GetSessionStatusResponse> writer(&request_context);
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.manager_async_service.RequestGetSessionStatus(&request_context, &request, &writer, cq, cq, self);
             yield(side_effect::none);
             new_GetSessionStatus_handler(hctx);
@@ -794,7 +792,7 @@ static handler_type::pull_type *new_GetSessionStatus_handler(handler_context &hc
             Status status;
             GetSessionStatusResponse response;
             auto &sessions = hctx.sessions;
-            auto id = request.session_id();
+            const auto &id = request.session_id();
 dout{request_context} << "Received GetSessionStatus for id " << id;
             try {
                 // If a session is unknown, a bail out
@@ -864,8 +862,8 @@ static void set_proto_processed_input(const processed_input_type &i,
     proto_i->set_input_index(i.input_index);
     cartesi::set_proto_hash(i.machine_hash_after, proto_i->mutable_machine_hash_after());
     if (std::holds_alternative<input_result_type>(i.processed)) {
-        auto &r = std::get<input_result_type>(i.processed);
-        auto result_p = proto_i->mutable_result();
+        const auto &r = std::get<input_result_type>(i.processed);
+        auto *result_p = proto_i->mutable_result();
         cartesi::set_proto_proof(r.outputs_metadata_flash_drive_in_machine,
             result_p->mutable_outputs_metadata_flash_drive_in_machine());
         cartesi::set_proto_proof(r.outputs_metadata_flash_drive_in_epoch,
@@ -908,7 +906,7 @@ static handler_type::pull_type *new_GetEpochStatus_handler(handler_context &hctx
             ServerContext request_context;
             GetEpochStatusRequest request;
             ServerAsyncResponseWriter<GetEpochStatusResponse> writer(&request_context);
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             hctx.manager_async_service.RequestGetEpochStatus(&request_context, &request, &writer, cq, cq, self);
             yield(side_effect::none);
             new_GetEpochStatus_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
@@ -917,10 +915,9 @@ static handler_type::pull_type *new_GetEpochStatus_handler(handler_context &hctx
                 return;
             }
             try {
-                Status status; // NOLINT: Unknown. Maybe linter bug?
-                GetEpochStatusResponse response;
+                GetEpochStatusResponse response; // NOLINT: Unknown. Maybe linter bug?
                 auto &sessions = hctx.sessions;
-                auto id = request.session_id();
+                const auto &id = request.session_id();
                 auto epoch_index = request.epoch_index();
 dout{request_context} << "Received GetEpochStatus for id " << id << " epoch " << epoch_index;
                 // If a session is unknown, a bail out
@@ -1239,7 +1236,7 @@ static handler_type::pull_type* new_StartSession_handler(handler_context &hctx) 
             ServerContext request_context;
             StartSessionRequest start_session_request;
             ServerAsyncResponseWriter<Void> start_session_writer(&request_context);
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             // Wait for a StartSession RPC
             hctx.manager_async_service.RequestStartSession(&request_context, &start_session_request, &start_session_writer, cq, cq, self);
             yield(side_effect::none);
@@ -1252,7 +1249,7 @@ static handler_type::pull_type* new_StartSession_handler(handler_context &hctx) 
             try {
                 // We now received a StartSession RPC, and we are not waiting for additional StartSession rpcs yet.
                 auto &sessions = hctx.sessions;
-                auto id = start_session_request.session_id();
+                const auto &id = start_session_request.session_id();
 dout{request_context} << "Received StartSession request for id " << id;
                 // Empty id is invalid, so a bail out
                 if (id.empty()) {
@@ -1327,7 +1324,7 @@ dout{request_context} << "  Waiting check-in";
                 // Wait for CheckIn
                 yield(side_effect::none);
                 // If check-in is for the wrong session, bail out
-                if (checkin_request.session_id().compare(id) != 0) {
+                if (checkin_request.session_id() != id) {
                     auto err_msg = "check-in with wrong id (expected " + id + ", got " + checkin_request.session_id() + ")";
                     checkin_writer.FinishWithError(Status{StatusCode::INVALID_ARGUMENT, err_msg}, self);
                     yield(side_effect::none);
@@ -1361,7 +1358,8 @@ dout{request_context} << "  Check-in for session " << id << " passed with addres
                     // If there is any error here, we try to shutdown the machine server
                     grpc::ClientContext client_context;
                     set_deadline(client_context, session.server_deadline.fast);
-                    Void request, response;
+                    Void request;
+                    Void response;
                     auto status = session.server_stub->Shutdown(&client_context, request, &response);
                     throw; // rethrow so it is caught outside and we report the error
                 }
@@ -1432,7 +1430,7 @@ template <typename IT>
 static void write_flash_drive(async_context &actx, IT begin, IT end, const FlashDriveConfig &drive) {
     WriteMemoryRequest write_request;
     write_request.set_address(drive.start());
-    auto data = write_request.mutable_data();
+    auto *data = write_request.mutable_data();
     data->insert(data->end(), begin, end);
     Void write_response;
     grpc::ClientContext client_context;
@@ -1515,7 +1513,7 @@ static std::string read_flash_drive(async_context &actx, const FlashDriveConfig 
     }
     // Here we can't use copy elision because read_response holds the string we
     // want to move out
-    auto data = read_response.release_data();
+    auto *data = read_response.release_data();
     return data? std::move(*data): std::string{};
 }
 
@@ -1526,7 +1524,9 @@ static std::string read_flash_drive(async_context &actx, const FlashDriveConfig 
 template <typename IT>
 static inline bool is_null(IT begin, IT end) {
     while (begin != end) {
-        if (*begin) return false;
+        if (*begin) {
+            return false;
+        }
         ++begin;
     }
     return true;
@@ -1643,7 +1643,7 @@ static std::string read_output_payload_data(async_context &actx, uint64_t entry_
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
     }
     // Here we can't use copy elision because read_response holds the string we want to move out
-    auto data = read_response.release_data();
+    auto *data = read_response.release_data();
     return data? std::move(*data): std::string{};
 }
 
@@ -1704,7 +1704,7 @@ static std::string read_message_payload_data(async_context &actx, uint64_t entry
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
     }
     // Here we can't use copy elision because read_response holds the string we want to move out
-    auto data = read_response.release_data();
+    auto *data = read_response.release_data();
     return data? std::move(*data): std::string{};
 }
 
@@ -2022,7 +2022,7 @@ static handler_type::pull_type *new_EnqueueInput_handler(handler_context &hctx) 
             ServerContext request_context;
             EnqueueInputRequest enqueue_input_request;
             ServerAsyncResponseWriter<Void> enqueue_input_writer(&request_context);
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             // Wait for a EnqueueInput RPC
             hctx.manager_async_service.RequestEnqueueInput(&request_context, &enqueue_input_request, &enqueue_input_writer, cq, cq, self);
             yield(side_effect::none);
@@ -2036,7 +2036,7 @@ static handler_type::pull_type *new_EnqueueInput_handler(handler_context &hctx) 
             try {
                 // Check if session id exists
                 auto &sessions = hctx.sessions; // NOLINT: Unknown. Maybe linter bug?
-                auto id = enqueue_input_request.session_id();
+                const auto &id = enqueue_input_request.session_id();
 dout{request_context} << "Received EnqueueInput for id " << id << " epoch " << enqueue_input_request.active_epoch_index();
                 // If a session is unknown, a bail out
                 if (sessions.find(id) == sessions.end()) {
@@ -2155,7 +2155,7 @@ static std::string replace_port(const std::string &address, int port) {
     }
     auto pos = address.find_last_of(':');
     // If already has a port, replace
-    if (pos != address.npos) {
+    if (pos != std::string::npos) {
         return address.substr(0, pos) + ":" + std::to_string(port);
     // Otherwise, concatenate
     } else {
@@ -2187,9 +2187,7 @@ static void drain_completion_queue(grpc::ServerCompletionQueue *cq) {
     bool ok = false;
     handler_type::pull_type *h = nullptr;
     while (cq->Next(reinterpret_cast<void **>(&h), &ok)) {
-        if (h) {
-            delete h;
-        }
+        delete h;
     }
 }
 

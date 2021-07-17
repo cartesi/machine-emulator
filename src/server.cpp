@@ -1072,7 +1072,7 @@ static std::string replace_port(const std::string &address, int port) {
     }
     auto pos = address.find_last_of(':');
     // If already has a port, replace
-    if (pos != address.npos) {
+    if (pos != std::string::npos) {
         return address.substr(0, pos) + ":" + std::to_string(port);
     // Otherwise, concatenate
     } else {

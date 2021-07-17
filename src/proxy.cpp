@@ -713,7 +713,7 @@ static handler::pull_type *new_CheckIn_handler(handler_context &hctx) {
             ServerContext server_context;
             CheckInRequest request;
             ServerAsyncResponseWriter<Void> writer(&server_context);
-            auto cq = hctx.completion_queue.get();
+            auto *cq = hctx.completion_queue.get();
             // Install handler for CheckIn and wait
             hctx.checkin_async_service.RequestCheckIn(&server_context,
                 &request, &writer, cq, cq, self);
@@ -795,7 +795,7 @@ static std::string replace_port(const std::string &address, int port) {
     }
     auto pos = address.find_last_of(':');
     // If already has a port, replace
-    if (pos != address.npos) {
+    if (pos != std::string::npos) {
         return address.substr(0, pos) + ":" + std::to_string(port);
     // Otherwise, concatenate
     } else {

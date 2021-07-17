@@ -289,7 +289,7 @@ struct machine_state {
     /// \returns The block of data with the given hash, or an empty block
     /// if not found
     dhd_data dehash(const unsigned char* hash, uint64_t hlength,
-        uint64_t &dlength) {
+        uint64_t &dlength) const {
         if (!dhd.source) {
             throw std::runtime_error{"no dehash source"};
         }

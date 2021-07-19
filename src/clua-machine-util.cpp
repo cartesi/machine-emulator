@@ -495,6 +495,7 @@ static const char *bracket_type_name(bracket_type type) {
 /// \param L Lua state.
 /// \param a Access_data to be pushed.
 static void push_access_data(lua_State *L, const access_data &a) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     lua_pushlstring(L, reinterpret_cast<const char *>(a.data()), a.size());
 }
 
@@ -561,6 +562,7 @@ void clua_push_access_log(lua_State *L, const access_log &log) {
 }
 
 void clua_push_hash(lua_State *L, const machine_merkle_tree::hash_type &hash) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()),
         hash.size());
 }

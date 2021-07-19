@@ -283,7 +283,7 @@ static bool htif_write_tohost(i_device_state_access *a, htif *h,
 
 /// \brief HTIF device write callback. See ::pma_write.
 static bool htif_write(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t val, int log2_size) {
-    htif *h = reinterpret_cast<htif *>(pma.get_device().get_context());
+    auto *h = static_cast<htif *>(pma.get_device().get_context());
 
     // Our HTIF only supports aligned 64-bit writes
     if (log2_size != 3 || offset & 7) {

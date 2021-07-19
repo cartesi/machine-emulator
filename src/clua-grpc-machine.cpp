@@ -128,11 +128,10 @@ static int grpc_machine_tostring(lua_State *L) {
 /// \param L Lua state.
 static int grpc_machine_ctor(lua_State *L) try {
     lua_settop(L, 3);
-    auto &stub = *reinterpret_cast<grpc_machine_stub_ptr *>(
+    auto &stub = *static_cast<grpc_machine_stub_ptr *>(
         lua_touserdata(L, lua_upvalueindex(1)));
-    clua_i_virtual_machine_ptr *p = reinterpret_cast<
-		clua_i_virtual_machine_ptr *>(lua_newuserdata(L,
-			sizeof(clua_i_virtual_machine_ptr)));
+    auto *p = static_cast<clua_i_virtual_machine_ptr *>(
+        lua_newuserdata(L, sizeof(clua_i_virtual_machine_ptr)));
     new (p) clua_i_virtual_machine_ptr();
     if (lua_type(L, 2) == LUA_TTABLE) {
         *p = std::make_unique<grpc_virtual_machine>(stub,
@@ -190,7 +189,7 @@ static const auto grpc_server_static_methods = cartesi::clua_make_luaL_Reg_array
 /// \brief This is the grpc.stub() method implementation.
 static int mod_stub(lua_State *L) {
     const char *address = luaL_checkstring(L, 1);
-    grpc_machine_stub_ptr *p = reinterpret_cast<grpc_machine_stub_ptr *>(
+    auto *p = static_cast<grpc_machine_stub_ptr *>(
         lua_newuserdata(L, sizeof(grpc_machine_stub_ptr))); // stub
     new (p) grpc_machine_stub_ptr();
     *p = std::make_shared<grpc_machine_stub>(address);

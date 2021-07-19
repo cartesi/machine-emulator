@@ -31,6 +31,7 @@ void rom_init(const machine_config &c, unsigned char *rom_start, uint64_t length
         throw std::runtime_error{"Not enough space on ROM for bootargs"};
     }
 
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     char *bootargs = reinterpret_cast<char *>(rom_start + length - PMA_ROM_EXTRASPACE_LENGTH_DEF);
 
     if (!c.rom.bootargs.empty()) {

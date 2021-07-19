@@ -1619,6 +1619,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_flash_drive_basic_test, flash_drive_machi
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     std::string read_string{reinterpret_cast<char *>(read_data.data()), read_data.size()};
     BOOST_CHECK_EQUAL(_flash_data, read_string);
 }

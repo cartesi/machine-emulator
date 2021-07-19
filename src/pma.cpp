@@ -141,7 +141,7 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
     }
 
     // Try to map backing file to host memory
-    unsigned char *host_memory = reinterpret_cast<unsigned char *>(
+    unsigned char *host_memory = static_cast<unsigned char *>(
         mmap(nullptr, length, PROT_READ | PROT_WRITE, mflag, backing_file, 0));
     if (host_memory == MAP_FAILED) { // NOLINT(cppcoreguidelines-pro-type-cstyle-cast)
         close(backing_file);

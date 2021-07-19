@@ -813,6 +813,7 @@ private:
         uint64_t paligned = paddr & (~(sizeof(uint64_t)-1));
         uint64_t poffset = paddr & (sizeof(uint64_t)-1);
         uint64_t val64 = check_read_word(paligned, "memory");
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         const auto *pval64 = reinterpret_cast<const unsigned char *>(&val64);
         assert((paddr & (sizeof(T)-1)) == 0);
         *pval = aliased_aligned_read<T>(pval64+poffset);
@@ -833,6 +834,7 @@ private:
         if constexpr (sizeof(T) < sizeof(uint64_t)) {
             uint64_t paligned = paddr & (~(sizeof(uint64_t)-1));
             uint64_t val64 = check_read_word(paligned, "memory (superfluous)");
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
             unsigned char *pval64 = reinterpret_cast<unsigned char *>(&val64);
             uint64_t poffset = paddr & (sizeof(uint64_t)-1);
             aliased_aligned_write<T>(pval64+poffset, val);

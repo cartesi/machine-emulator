@@ -492,8 +492,9 @@ class handler_WriteMemory final: public handler<WriteMemoryRequest, Void> {
         uint64_t address = req->address();
         const auto &data = req->data();
         Void resp;
-        hctx.m->write_memory(address,
-            reinterpret_cast<const unsigned char *>(data.data()), data.size());
+
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        hctx.m->write_memory(address, reinterpret_cast<const unsigned char *>(data.data()), data.size());
         return finish_ok(writer, resp);
     }
 
@@ -1236,6 +1237,7 @@ int main(int argc, char *argv[]) {
     for ( ;; ) {
         using side_effect = i_handler::side_effect;
         i_handler *h = nullptr;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         if (!hctx.cq->Next(reinterpret_cast<void **>(&h), &hctx.ok)) {
             goto shutdown; // NOLINT(cppcoreguidelines-avoid-goto)
         }
@@ -1262,6 +1264,7 @@ shutdown:
         // Drain completion queue before exiting
         bool ok = false;
         i_handler *h = nullptr;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         while (hctx.cq->Next(reinterpret_cast<void **>(&h), &ok)) {
             ;
         }

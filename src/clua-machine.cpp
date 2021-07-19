@@ -104,7 +104,7 @@ static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
 static int machine_ctor(lua_State *L) try {
     lua_settop(L, 3);
     // Allocate room for clua_i_virtual_machine_ptr as a Lua userdata
-    clua_i_virtual_machine_ptr *p = reinterpret_cast<clua_i_virtual_machine_ptr *>(
+    auto *p = static_cast<clua_i_virtual_machine_ptr *>(
         lua_newuserdata(L, sizeof(clua_i_virtual_machine_ptr)));
     new (p) clua_i_virtual_machine_ptr();
     if (lua_type(L, 2) == LUA_TTABLE) {

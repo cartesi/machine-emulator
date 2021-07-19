@@ -54,6 +54,7 @@ static int cartesi_mod_keccak(lua_State *L) {
     if (lua_isinteger(L, 1)) {
         uint64_t word = luaL_checkinteger(L, 1);
         h.begin();
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         h.add_data(reinterpret_cast<const unsigned char *>(&word),
             sizeof(word));
         h.end(hash);
@@ -63,9 +64,11 @@ static int cartesi_mod_keccak(lua_State *L) {
         h.begin();
         size_t len1 = 0;
         const char *hash1 = luaL_checklstring(L, 1, &len1);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         h.add_data(reinterpret_cast<const unsigned char *>(hash1), len1);
         size_t len2 = 0;
         const char *hash2 = luaL_optlstring(L, 2, "", &len2);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         h.add_data(reinterpret_cast<const unsigned char *>(hash2), len2);
         h.end(hash);
         clua_push_hash(L, hash);

@@ -160,7 +160,7 @@ static handler::pull_type *new_handler(const std::string &rpc_name,
     // therefore would capture an uninitialized value. So we break the
     // construction into an allocation with operator new and construction with
     // placement new.
-    handler::pull_type* self = reinterpret_cast<handler::pull_type *>(operator new(sizeof(handler::pull_type)));
+    handler::pull_type* self = static_cast<handler::pull_type *>(operator new(sizeof(handler::pull_type)));
     new (self) handler::pull_type {
         [self, rpc_name, start_server_request, start_client_request, last_effect](handler::push_type &yield) {
             using namespace grpc;
@@ -704,7 +704,7 @@ static bool build_client(handler_context &hctx, const CheckInRequest &request) {
 }
 
 static handler::pull_type *new_CheckIn_handler(handler_context &hctx) {
-    handler::pull_type* self = reinterpret_cast<handler::pull_type *>(operator new(sizeof(handler::pull_type)));
+    auto* self = static_cast<handler::pull_type *>(operator new(sizeof(handler::pull_type)));
     new (self) handler::pull_type {
         [self, &hctx](handler::push_type &yield) {
             using namespace grpc;
@@ -738,6 +738,7 @@ static void drain_completion_queue(
     completion_queue->Shutdown();
     bool ok = false;
     handler::pull_type *h = nullptr;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     while (completion_queue->Next(reinterpret_cast<void **>(&h), &ok)) {
         delete h;
     }
@@ -849,6 +850,7 @@ int main(int argc, char *argv[]) try {
     for ( ;; ) {
         // Obtain the next active handler coroutine
         handler::pull_type *h = nullptr; // NOLINT: cannot leak (drain_completion_queue kills remaining)
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         if (!hctx.completion_queue->Next(reinterpret_cast<void **>(&h), &hctx.ok)) {
             goto shutdown; // NOLINT(cppcoreguidelines-avoid-goto)
         }

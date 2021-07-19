@@ -479,7 +479,7 @@ private:
 /// \brief Creates a new handler for the GetVersion RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
 static handler_type::pull_type *new_GetVersion_handler(handler_context &hctx) {
-    handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
+    auto* self = static_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
             using namespace grpc;
@@ -513,7 +513,7 @@ dout{request_context} << "Received GetVersion";
 /// \brief Creates a new handler for the GetStatus RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
 static handler_type::pull_type *new_GetStatus_handler(handler_context &hctx) {
-    handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
+    auto* self = static_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
             using namespace grpc;
@@ -593,7 +593,7 @@ static void start_new_epoch(session_type &session) {
 /// \brief Creates a new handler for the FinishEpoch RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
 static handler_type::pull_type *new_FinishEpoch_handler(handler_context &hctx) {
-    handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
+    auto* self = static_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
             using namespace grpc;
@@ -698,7 +698,7 @@ dout{actx.request_context} << "  Shutting server down";
 /// \brief Creates a new handler for the EndSession RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
 static handler_type::pull_type *new_EndSession_handler(handler_context &hctx) {
-    handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
+    auto* self = static_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
             using namespace grpc;
@@ -773,7 +773,7 @@ dout{request_context} << "Session " << id << " is tainted. Terminating cartesi-m
 /// \brief Creates a new handler for the GetSessionStatus RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
 static handler_type::pull_type *new_GetSessionStatus_handler(handler_context &hctx) {
-    handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
+    auto* self = static_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
             using namespace grpc;
@@ -898,7 +898,7 @@ static void set_proto_processed_input(const processed_input_type &i,
 /// \brief Creates a new handler for the GetEpochStatus RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
 static handler_type::pull_type *new_GetEpochStatus_handler(handler_context &hctx) {
-    handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
+    auto* self = static_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
             using namespace grpc;
@@ -1228,7 +1228,7 @@ static void initial_update_merkle_tree(async_context &actx) {
 /// \brief Creates a new handler for the StartSession RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
 static handler_type::pull_type* new_StartSession_handler(handler_context &hctx) {
-    handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
+    auto* self = static_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
             using namespace grpc;
@@ -2014,7 +2014,7 @@ dout{actx.request_context} << "    Input skipped because cycle limit was exceede
 /// \brief Creates a new handler for the EnqueueInput RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
 static handler_type::pull_type *new_EnqueueInput_handler(handler_context &hctx) {
-    handler_type::pull_type* self = reinterpret_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
+    auto* self = static_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
     new (self) handler_type::pull_type {
         [self, &hctx](handler_type::push_type &yield) {
             using namespace grpc;
@@ -2185,7 +2185,7 @@ static void drain_completion_queue(grpc::ServerCompletionQueue *cq) {
     cq->Shutdown();
     bool ok = false;
     handler_type::pull_type *h = nullptr;
-    while (cq->Next(reinterpret_cast<void **>(&h), &ok)) {
+    while (cq->Next(reinterpret_cast<void **>(&h), &ok)) { // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
         delete h;
     }
 }
@@ -2303,7 +2303,7 @@ int main(int argc, char *argv[]) try {
     for ( ;; ) {
         // Obtain the next active handler
         handler_type::pull_type *h = nullptr; // NOLINT: cannot leak (drain_completion_queue kills remaining)
-        if (!hctx.completion_queue->Next(reinterpret_cast<void **>(&h), &hctx.ok)) {
+        if (!hctx.completion_queue->Next(reinterpret_cast<void **>(&h), &hctx.ok)) { // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
             goto shutdown; // NOLINT(cppcoreguidelines-avoid-goto)
         }
         // If the handler is finished, simply delete it

@@ -107,7 +107,7 @@ int clua_is(lua_State *L, int idx, int ctxidx = lua_upvalueindex(1)) {
 /// \param idx Object index (or pseudo-index)
 template <typename T>
 T &clua_to(lua_State *L, int idx) {
-    return *reinterpret_cast<T *>(lua_touserdata(L, idx));
+    return *static_cast<T *>(lua_touserdata(L, idx));
 }
 
 /// \brief Finalize an object of a previously defined type
@@ -115,7 +115,7 @@ T &clua_to(lua_State *L, int idx) {
 /// \param L Lua state.
 template <typename T>
 int clua_gc(lua_State *L) {
-    T *ptr = reinterpret_cast<T *>(lua_touserdata(L, 1));
+    T *ptr = static_cast<T *>(lua_touserdata(L, 1));
     ptr->~T();
     lua_pushnil(L);
     lua_setmetatable(L, 1);
@@ -132,7 +132,7 @@ int clua_tostring(lua_State *L) {
         name = lua_tostring(L, -1);
     }
     if (lua_type(L, 1) == LUA_TUSERDATA) {
-        T *ptr = reinterpret_cast<T *>(lua_touserdata(L, 1));
+        T *ptr = static_cast<T *>(lua_touserdata(L, 1));
         lua_pushfstring(L, "%s: %p", name, ptr);
     }
     return 1;

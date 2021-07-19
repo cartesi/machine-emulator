@@ -49,7 +49,7 @@ using unique_file_ptr = std::unique_ptr<FILE, detail::fclose_deleter>;
 template <typename T>
 static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb) {
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
-    T *ptr = reinterpret_cast<T *>(calloc(nmemb, sizeof(T)));
+    T *ptr = static_cast<T *>(calloc(nmemb, sizeof(T)));
     if (!ptr) {
         throw std::bad_alloc{};
     }
@@ -60,7 +60,7 @@ template <typename T>
 static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb, const std::nothrow_t &tag) {
     (void) tag;
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
-    return unique_calloc_ptr<T>(reinterpret_cast<T*>(calloc(nmemb, sizeof(T))));
+    return unique_calloc_ptr<T>(static_cast<T*>(calloc(nmemb, sizeof(T))));
 }
 
 static inline unique_file_ptr unique_fopen(const char *pathname, const char *mode) {

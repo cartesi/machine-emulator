@@ -438,6 +438,7 @@ static int machine_obj_index_read_memory(lua_State *L) try {
     size_t length = luaL_checkinteger(L, 3);
     auto data = cartesi::unique_calloc<unsigned char>(length);
     m->read_memory(luaL_checkinteger(L, 2), data.get(), length);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     lua_pushlstring(L, reinterpret_cast<const char *>(data.get()), length);
     return 1;
 } catch (std::exception &x) {
@@ -946,6 +947,7 @@ static int machine_obj_index_write_medeleg(lua_State *L) try {
 static int machine_obj_index_write_memory(lua_State *L) try {
     auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
     size_t length = 0;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const unsigned char *data = reinterpret_cast<const unsigned char *>(
         luaL_checklstring(L, 3, &length));
     m->write_memory(luaL_checkinteger(L, 2), data, length);

@@ -426,7 +426,8 @@ static inline int ilog2(uint64_t v) {
 
 static cryptopp_keccak_256_hasher::hash_type get_data_hash(cryptopp_keccak_256_hasher &h, int log2_root_size, std::string &data) {
     cartesi::complete_merkle_tree tree{log2_root_size, LOG2_WORD_SIZE, LOG2_WORD_SIZE};
-    const unsigned char *data_c_str = reinterpret_cast<const unsigned char*>(data.c_str());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *data_c_str = reinterpret_cast<const unsigned char*>(data.c_str());
     uint64_t leaf_size = UINT64_C(1) << LOG2_WORD_SIZE;
     for (uint64_t i = 0; i < data.size(); i += leaf_size) {
         // Compute leaf hash
@@ -519,9 +520,9 @@ void assert_bool(bool value, const std::string& msg, const std::string& file, in
     }
 }
 
-#define ASSERT(v, msg) assert_bool(v, msg, __FILE__, __LINE__)
-#define ASSERT_STATUS(s, f, v) assert_status(s, f, v, __FILE__, __LINE__)
-#define ASSERT_STATUS_CODE(s, f, v) assert_status_code(s, f, v, __FILE__, __LINE__)
+#define ASSERT(v, msg) assert_bool(v, msg, __FILE__, __LINE__) // NOLINT(cppcoreguidelines-macro-usage)
+#define ASSERT_STATUS(s, f, v) assert_status(s, f, v, __FILE__, __LINE__) // NOLINT(cppcoreguidelines-macro-usage)
+#define ASSERT_STATUS_CODE(s, f, v) assert_status_code(s, f, v, __FILE__, __LINE__) // NOLINT(cppcoreguidelines-macro-usage)
 
 static void test_get_version(const std::function<void(const std::string &title, test_function f)> &test) {
     test("The rollup-machine-manager server version should be 0.0.x", [](RollupMachineManagerClient &manager){

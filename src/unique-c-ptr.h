@@ -29,7 +29,7 @@ namespace detail {
     struct free_deleter {
         template <typename T>
         void operator()(T *p) const {
-            // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
+            // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-pro-type-const-cast)
             std::free(const_cast<std::remove_const_t<T> *>(p));
         }
     };

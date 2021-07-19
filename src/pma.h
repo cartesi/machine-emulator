@@ -103,6 +103,7 @@ public:
     void *get_context(void) const {
         // Discard qualifier on purpose because the context
         // is none of our business.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
         return const_cast<void *>(m_context);
     }
 

@@ -156,7 +156,8 @@ complete_merkle_tree::get_level(int log2_size) const {
 
 complete_merkle_tree::level_type &
 complete_merkle_tree::get_level(int log2_size) {
-    return const_cast<level_type &>(static_cast<const complete_merkle_tree *>(this)->get_level(log2_size));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
+    return const_cast<level_type &>(std::as_const(*this).get_level(log2_size));
 }
 
 } // namespace cartesi

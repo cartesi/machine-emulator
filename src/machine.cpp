@@ -381,8 +381,8 @@ static void store_memory_pma(const pma_entry &pma, const std::string &dir) {
 }
 
 pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) {
-    return const_cast<pma_entry &>(
-        const_cast<const machine *>(this)->find_pma_entry(paddr, length));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
+    return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(paddr, length));
 }
 
 const pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) const {

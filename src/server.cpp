@@ -76,9 +76,7 @@ public:
         return do_advance(hctx);
     }
 
-    virtual ~i_handler(void) {
-        ;
-    }
+    virtual ~i_handler(void) = default;
 
 private:
     virtual side_effect do_advance(handler_context &hctx) = 0;
@@ -163,9 +161,11 @@ protected:
 
 public:
 
-    virtual ~handler() {
-        ;
-    }
+    virtual ~handler() = default;
+    handler(const handler &other) = delete;
+    handler(handler &&other) noexcept = delete;
+    handler &operator=(const handler &other) = delete;
+    handler &operator=(handler &&other) noexcept = delete;
 
     handler(void): m_writer(&m_sctx), m_waiting(false) {
         ;

@@ -55,6 +55,9 @@ friend i_hasher<cryptopp_keccak_256_hasher, std::integral_constant<int, CryptoPP
 public:
     /// \brief Default constructor
     cryptopp_keccak_256_hasher(void) = default;
+
+    /// \brief Default destructor
+    ~cryptopp_keccak_256_hasher(void) = default;
 };
 
 } // namespace cartesi

@@ -49,6 +49,8 @@ public:
     device_state_access(device_state_access &&) = delete;
     /// \brief No move assignment
     device_state_access& operator=(device_state_access &&) = delete;
+    /// \brief Default destructor
+    ~device_state_access() = default;
 
 private:
 

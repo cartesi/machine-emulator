@@ -107,6 +107,11 @@ public:
         out() << std::endl;
 #endif
     }
+
+    dout(const dout &other) = delete;
+    dout(dout &&other) = delete;
+    dout &operator=(const dout &other) = delete;
+    dout &operator=(dout &&other) = delete;
 };
 
 template <class T>
@@ -367,6 +372,11 @@ public:
     auto_lock(bool &lock): m_lock{lock} {
         acquire();
     }
+
+    auto_lock(const auto_lock &other) = delete;
+    auto_lock(auto_lock &&other) = delete;
+    auto_lock &operator=(const auto_lock &other) = delete;
+    auto_lock &operator=(auto_lock &&other) = delete;
 
     /// \brief Acquire lock if it is not already locked
     void acquire(void) {

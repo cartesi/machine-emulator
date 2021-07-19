@@ -125,6 +125,8 @@ public:
     step_state_access& operator=(const step_state_access &) = delete;
     /// \brief No move assignment
     step_state_access& operator=(step_state_access &&) = delete;
+    /// \brief Default destructor
+    ~step_state_access() = default;
 
     void finish(void) {
         if (m_next_access != m_accesses.size()) {

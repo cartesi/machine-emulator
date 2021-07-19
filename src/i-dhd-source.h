@@ -32,9 +32,7 @@ class i_dhd_source {
 public:
 
     /// \brief Virtual destructor
-    virtual ~i_dhd_source() {
-        ;
-    }
+    virtual ~i_dhd_source() = default;
 
     /// \brief Obtains the block of data that has a given hash
     /// \param hash Pointer to buffer containing hash

@@ -250,6 +250,8 @@ public:
     pma_entry(pma_entry &&) = default;
     /// \brief Default move assignment
     pma_entry &operator=(pma_entry &&) = default;
+    /// \bried Default destructor
+    ~pma_entry() = default;
 
     /// \brief Constructor for empty entry
     pma_entry(uint64_t start, uint64_t length):

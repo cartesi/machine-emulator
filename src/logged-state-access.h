@@ -60,6 +60,8 @@ public:
     logged_state_access& operator=(const logged_state_access &) = delete;
     /// \brief No move assignment
     logged_state_access& operator=(logged_state_access &&) = delete;
+    /// \brief Default destructor
+    ~logged_state_access() = default;
 
     /// \brief Returns const pointer to access log.
     std::shared_ptr<const access_log> get_log(void) const {

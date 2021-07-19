@@ -49,6 +49,8 @@ public:
     state_access(state_access &&) = delete;
     /// \brief No move assignment
     state_access& operator=(state_access &&) = delete;
+    /// \brief Default destructor
+    ~state_access() = default;
 
 private:
     // Declare interface as friend to it can forward calls to the "overriden" methods.

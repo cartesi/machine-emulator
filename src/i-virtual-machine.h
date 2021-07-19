@@ -41,9 +41,7 @@ public:
     using csr = machine::csr;
 
     /// \brief Destructor.
-    virtual ~i_virtual_machine(void) {
-        ;
-    }
+    virtual ~i_virtual_machine(void) = default;
 
     /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
     void run(uint64_t mcycle_end) {

@@ -43,9 +43,7 @@ class i_device_state_access {
 public:
 
     /// \brief Virtual destructor.
-    virtual ~i_device_state_access(void) {
-        ;
-    }
+    virtual ~i_device_state_access(void) = default;
 
     /// \brief Sets bits in mip.
     void set_mip(uint32_t mask) {

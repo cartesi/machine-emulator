@@ -35,6 +35,10 @@ public:
         const machine_runtime_config &r = {});
     virtual_machine(const std::string &dir,
         const machine_runtime_config &r = {});
+    virtual_machine(const virtual_machine &other) = delete;
+    virtual_machine(virtual_machine &&other) noexcept = delete;
+    virtual_machine &operator=(const virtual_machine &other) = delete;
+    virtual_machine &operator=(virtual_machine &&other) noexcept = delete;
     virtual ~virtual_machine(void);
 
 private:

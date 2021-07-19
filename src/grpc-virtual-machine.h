@@ -60,6 +60,10 @@ public:
     grpc_virtual_machine(grpc_machine_stub_ptr stub, const machine_config &c,
         const machine_runtime_config &r = {});
 
+    grpc_virtual_machine(const grpc_virtual_machine &other) = delete;
+    grpc_virtual_machine(grpc_virtual_machine &&other) noexcept = delete;
+    grpc_virtual_machine &operator=(const grpc_virtual_machine &other) = delete;
+    grpc_virtual_machine &operator=(grpc_virtual_machine &&other) noexcept = delete;
     virtual ~grpc_virtual_machine();
 
     static semantic_version get_version(const grpc_machine_stub_ptr &stub);

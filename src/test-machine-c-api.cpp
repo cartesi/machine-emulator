@@ -106,6 +106,11 @@ public:
         cm_delete_machine_config(_default_machine_config);
     }
 
+    default_machine_fixture(const default_machine_fixture &other) = delete;
+    default_machine_fixture(default_machine_fixture &&other) noexcept = delete;
+    default_machine_fixture &operator=(const default_machine_fixture &other) = delete;
+    default_machine_fixture &operator=(default_machine_fixture &&other) noexcept = delete;
+
 protected:
     cm_machine_runtime_config _runtime_config{};
     const cm_machine_config* _default_machine_config;
@@ -202,6 +207,11 @@ public:
         _cleanup_machine_config(&_machine_config);
     }
 
+    incomplete_machine_fixture(const incomplete_machine_fixture &other) = delete;
+    incomplete_machine_fixture(incomplete_machine_fixture &&other) noexcept = delete;
+    incomplete_machine_fixture &operator=(const incomplete_machine_fixture &other) = delete;
+    incomplete_machine_fixture &operator=(incomplete_machine_fixture &&other) noexcept = delete;
+
 protected:
     cm_machine_config _machine_config;
 
@@ -282,6 +292,12 @@ public:
     ~machine_rom_fixture() {
         std::filesystem::remove(_rom_path);
     }
+
+    machine_rom_fixture(const machine_rom_fixture &other) = delete;
+    machine_rom_fixture(machine_rom_fixture &&other) noexcept = delete;
+    machine_rom_fixture &operator=(const machine_rom_fixture &other) = delete;
+    machine_rom_fixture &operator=(machine_rom_fixture &&other) noexcept = delete;
+
 protected:
     const std::string _rom_path = "./rom.bin";
 };
@@ -331,6 +347,12 @@ public:
         std::filesystem::remove(_flash1_path);
         std::filesystem::remove(_flash2_path);
     }
+
+    machine_rom_flash_fixture(const machine_rom_flash_fixture &other) = delete;
+    machine_rom_flash_fixture(machine_rom_flash_fixture &&other) noexcept = delete;
+    machine_rom_flash_fixture &operator=(const machine_rom_flash_fixture &other) = delete;
+    machine_rom_flash_fixture &operator=(machine_rom_flash_fixture &&other) noexcept = delete;
+
 private:
     const std::string _flash1_path = "./flash1.bin";
     const std::string _flash2_path = "./flash2.bin";
@@ -359,6 +381,10 @@ public:
         std::filesystem::remove(_flash_path);
     }
 
+    machine_rom_flash_simple_fixture(const machine_rom_flash_simple_fixture &other) = delete;
+    machine_rom_flash_simple_fixture(machine_rom_flash_simple_fixture &&other) noexcept = delete;
+    machine_rom_flash_simple_fixture &operator=(const machine_rom_flash_simple_fixture &other) = delete;
+    machine_rom_flash_simple_fixture &operator=(machine_rom_flash_simple_fixture &&other) noexcept = delete;
 protected:
     const std::string _flash_path = "./flash.bin";
 };
@@ -391,6 +417,11 @@ public:
         std::filesystem::remove_all(_machine_dir_path);
         cm_delete_machine(_machine);
     }
+
+    ordinary_machine_fixture(const ordinary_machine_fixture &other) = delete;
+    ordinary_machine_fixture(ordinary_machine_fixture &&other) noexcept = delete;
+    ordinary_machine_fixture &operator=(const ordinary_machine_fixture &other) = delete;
+    ordinary_machine_fixture &operator=(ordinary_machine_fixture &&other) noexcept = delete;
 protected:
     std::string _machine_dir_path;
 };
@@ -454,6 +485,10 @@ public:
         std::filesystem::remove_all(_broken_machine_path);
     }
 
+    store_file_fixture(const store_file_fixture &other) = delete;
+    store_file_fixture(store_file_fixture &&other) noexcept = delete;
+    store_file_fixture &operator=(const store_file_fixture &other) = delete;
+    store_file_fixture &operator=(store_file_fixture &&other) noexcept = delete;
 protected:
     std::string _broken_machine_path;
 };
@@ -1523,6 +1558,11 @@ public:
         std::filesystem::remove(std::string{_flash_config.image_filename});
         delete[] _flash_config.image_filename;
     }
+
+    flash_drive_machine_fixture(const flash_drive_machine_fixture &other) = delete;
+    flash_drive_machine_fixture(flash_drive_machine_fixture &&other) noexcept = delete;
+    flash_drive_machine_fixture &operator=(const flash_drive_machine_fixture &other) = delete;
+    flash_drive_machine_fixture &operator=(flash_drive_machine_fixture &&other) noexcept = delete;
 protected:
     cm_flash_drive_config _flash_config;
     std::string _flash_data;

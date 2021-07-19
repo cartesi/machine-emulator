@@ -46,6 +46,7 @@ public:
     void reconnect(void);
     CartesiMachine::Machine::Stub *get_stub(void);
     const CartesiMachine::Machine::Stub *get_stub(void) const;
+    std::string get_address(void) const;
 };
 
 using grpc_machine_stub_ptr = std::shared_ptr<grpc_machine_stub>;

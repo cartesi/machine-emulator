@@ -46,6 +46,10 @@ const Machine::Stub *grpc_machine_stub::get_stub(void) const {
     return m_stub.get();
 }
 
+std::string grpc_machine_stub::get_address(void) const {
+    return m_address;
+}
+
 void grpc_machine_stub::reconnect(void) {
     m_stub = Machine::NewStub(grpc::CreateChannel(m_address,
         grpc::InsecureChannelCredentials()));

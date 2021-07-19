@@ -2112,102 +2112,102 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_long_cycle_test, ordinary_machine_fix
                                   hash_end, hash_end + sizeof(cm_hash));
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_config_test, ordinary_machine_fixture)
-{
-    char *err_msg{};
-    cm_machine* new_machine{};
-    int error_code = cm_create_grpc_machine(nullptr, &_runtime_config, "addr", &new_machine, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-
-    std::string result = err_msg;
-    std::string origin("Invalid machine configuration");
-    BOOST_CHECK_EQUAL(origin, result);
-
-    cm_delete_error_message(err_msg);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_rt_config_test, ordinary_machine_fixture)
-{
-    char *err_msg{};
-    cm_machine* new_machine{};
-    int error_code = cm_create_grpc_machine(&_machine_config, nullptr, "addr", &new_machine, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-
-    std::string result = err_msg;
-    std::string origin("Invalid machine runtime configuration");
-    BOOST_CHECK_EQUAL(origin, result);
-
-    cm_delete_error_message(err_msg);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_output_test, ordinary_machine_fixture)
-{
-    char *err_msg{};
-    int error_code = cm_create_grpc_machine(&_machine_config, &_runtime_config, "addr", nullptr, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
-
-    std::string result = err_msg;
-    std::string origin("Not implemented");
-    BOOST_CHECK_EQUAL(origin, result);
-
-    cm_delete_error_message(err_msg);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_error_placeholder_test, ordinary_machine_fixture)
-{
-    auto f = [m = &_machine_config, rt = &_runtime_config]() {
-        cm_machine* new_machine{};
-        cm_create_grpc_machine(m, rt, "addr", &new_machine, nullptr);
-    };
-    monitor_system_throw(f);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_dir_test, ordinary_machine_fixture)
-{
-    char *err_msg{};
-    cm_machine* new_machine{};
-    int error_code = cm_load_grpc_machine(nullptr, &_runtime_config, "addr", &new_machine, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
-
-    std::string result = err_msg;
-    std::string origin("Not implemented");
-    BOOST_CHECK_EQUAL(origin, result);
-
-    cm_delete_error_message(err_msg);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_rt_config_test, ordinary_machine_fixture)
-{
-    char *err_msg{};
-    cm_machine* new_machine{};
-    int error_code = cm_load_grpc_machine("some_dir", nullptr, "addr", &new_machine, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-
-    std::string result = err_msg;
-    std::string origin("Invalid machine runtime configuration");
-    BOOST_CHECK_EQUAL(origin, result);
-
-    cm_delete_error_message(err_msg);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_output_test, ordinary_machine_fixture)
-{
-    char *err_msg{};
-    int error_code = cm_load_grpc_machine("some_dir", &_runtime_config, "addr", nullptr, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
-
-    std::string result = err_msg;
-    std::string origin("Not implemented");
-    BOOST_CHECK_EQUAL(origin, result);
-
-    cm_delete_error_message(err_msg);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_error_placeholder_test, ordinary_machine_fixture)
-{
-    auto f = [rt = &_runtime_config]() {
-        cm_machine* new_machine{};
-        cm_load_grpc_machine("some_dir", rt, "addr", &new_machine, nullptr);
-    };
-    monitor_system_throw(f);
-}
+//BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_config_test, ordinary_machine_fixture)
+//{
+//    char* err_msg;
+//    cm_machine* new_machine;
+//    int error_code = cm_create_grpc_machine(NULL, &_runtime_config, "addr", &new_machine, &err_msg);
+//    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+//
+//    std::string result = err_msg;
+//    std::string origin("Invalid machine configuration");
+//    BOOST_CHECK_EQUAL(origin, result);
+//
+//    cm_delete_error_message(err_msg);
+//}
+//
+//BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_rt_config_test, ordinary_machine_fixture)
+//{
+//    char* err_msg;
+//    cm_machine* new_machine;
+//    int error_code = cm_create_grpc_machine(&_machine_config, NULL, "addr", &new_machine, &err_msg);
+//    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+//
+//    std::string result = err_msg;
+//    std::string origin("Invalid machine runtime configuration");
+//    BOOST_CHECK_EQUAL(origin, result);
+//
+//    cm_delete_error_message(err_msg);
+//}
+//
+//BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_output_test, ordinary_machine_fixture)
+//{
+//    char* err_msg;
+//    int error_code = cm_create_grpc_machine(&_machine_config, &_runtime_config, "addr", NULL, &err_msg);
+//    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
+//
+//    std::string result = err_msg;
+//    std::string origin("Not implemented");
+//    BOOST_CHECK_EQUAL(origin, result);
+//
+//    cm_delete_error_message(err_msg);
+//}
+//
+//BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_error_placeholder_test, ordinary_machine_fixture)
+//{
+//    auto f = [m = &_machine_config, rt = &_runtime_config]() {
+//        cm_machine* new_machine;
+//        cm_create_grpc_machine(m, rt, "addr", &new_machine, NULL);
+//    };
+//    MONITOR_SYSTEM_THROW(f);
+//}
+//
+//BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_dir_test, ordinary_machine_fixture)
+//{
+//    char* err_msg;
+//    cm_machine* new_machine;
+//    int error_code = cm_load_grpc_machine(NULL, &_runtime_config, "addr", &new_machine, &err_msg);
+//    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
+//
+//    std::string result = err_msg;
+//    std::string origin("Not implemented");
+//    BOOST_CHECK_EQUAL(origin, result);
+//
+//    cm_delete_error_message(err_msg);
+//}
+//
+//BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_rt_config_test, ordinary_machine_fixture)
+//{
+//    char* err_msg;
+//    cm_machine* new_machine;
+//    int error_code = cm_load_grpc_machine("some_dir", NULL, "addr", &new_machine, &err_msg);
+//    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+//
+//    std::string result = err_msg;
+//    std::string origin("Invalid machine runtime configuration");
+//    BOOST_CHECK_EQUAL(origin, result);
+//
+//    cm_delete_error_message(err_msg);
+//}
+//
+//BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_output_test, ordinary_machine_fixture)
+//{
+//    char* err_msg;
+//    int error_code = cm_load_grpc_machine("some_dir", &_runtime_config, "addr", NULL, &err_msg);
+//    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
+//
+//    std::string result = err_msg;
+//    std::string origin("Not implemented");
+//    BOOST_CHECK_EQUAL(origin, result);
+//
+//    cm_delete_error_message(err_msg);
+//}
+//
+//BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_error_placeholder_test, ordinary_machine_fixture)
+//{
+//    auto f = [rt = &_runtime_config]() {
+//        cm_machine* new_machine;
+//        cm_load_grpc_machine("some_dir", rt, "addr", &new_machine, NULL);
+//    };
+//    MONITOR_SYSTEM_THROW(f);
+//}

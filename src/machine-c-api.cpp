@@ -112,12 +112,12 @@ int cm_result_failure(char **err_msg) try {
     return CM_ERROR_UNKNOWN;
 }
 
-inline int cm_result_success(char **err_msg) {
+int cm_result_success(char **err_msg) {
     *err_msg = nullptr;
     return 0;
 }
 
-inline int cm_result_unknown_error(char **err_msg) {
+int cm_result_unknown_error(char **err_msg) {
     *err_msg = get_error_message_unknown();
     return CM_ERROR_UNKNOWN;
 }
@@ -127,7 +127,7 @@ inline int cm_result_unknown_error(char **err_msg) {
 // --------------------------------------------
 // String conversion (strdup equivalent with new)
 // --------------------------------------------
-static char *convert_to_c(const std::string &cpp_str) {
+char *convert_to_c(const std::string &cpp_str) {
     return copy_cstr(cpp_str.c_str());
 }
 
@@ -355,8 +355,8 @@ cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
     return new_cpp_machine_config;
 }
 
-static const cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config) {
-    auto *new_machine_config = new cm_machine_config{};
+const cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config) {
+    cm_machine_config *new_machine_config = new cm_machine_config{};
 
     new_machine_config->processor = convert_to_c(cpp_config.processor);
     new_machine_config->ram = convert_to_c(cpp_config.ram);
@@ -470,7 +470,7 @@ static cartesi::access_type convert_from_c(const CM_ACCESS_TYPE c_type) {
     }
 }
 
-static cartesi::access_log::type convert_from_c(const cm_access_log_type *type) {
+cartesi::access_log::type convert_from_c(const cm_access_log_type *type) {
     if (type == nullptr) {
         throw std::invalid_argument("Invalid access log type");
     }
@@ -585,7 +585,7 @@ static void cm_cleanup_bracket_note(cm_bracket_note *bracket_note) {
     delete [] bracket_note->text;
 }
 
-static cm_access_log *convert_to_c(const cartesi::access_log &cpp_access_log) {
+cm_access_log *convert_to_c(const cartesi::access_log &cpp_access_log) {
     auto *new_access_log = new cm_access_log{};
 
     new_access_log->accesses_count = cpp_access_log.get_accesses().size();
@@ -612,7 +612,7 @@ static cm_access_log *convert_to_c(const cartesi::access_log &cpp_access_log) {
     return new_access_log;
 }
 
-static cartesi::access_log convert_from_c(const cm_access_log *c_acc_log) {
+cartesi::access_log convert_from_c(const cm_access_log *c_acc_log) {
     if (c_acc_log == nullptr) {
         throw std::invalid_argument("Invalid access log");
     }
@@ -673,22 +673,6 @@ static inline cartesi::i_virtual_machine *load_virtual_machine(const char *dir,
     return new cartesi::virtual_machine(null_to_empty(dir), r);
 }
 
-static inline cartesi::i_virtual_machine *create_grpc_virtual_machine(const char* /* address */,
-                                                                      const cartesi::machine_config& /* c */,
-                                                                      const cartesi::machine_runtime_config& /* r */) {
-    //todo Implement
-    throw std::runtime_error("Not implemented");
-    return nullptr;
-}
-
-static inline cartesi::i_virtual_machine *load_grpc_virtual_machine(const char* /* address */,
-                                                                    const char* /* dir */,
-                                                                    const cartesi::machine_runtime_config& /* r */) {
-    //todo Implement
-    throw std::runtime_error("Not implemented");
-    return nullptr;
-}
-
 int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
                       cm_machine **new_machine, char **err_msg) try {
     const cartesi::machine_config c = convert_from_c(config);
@@ -703,26 +687,6 @@ int cm_load_machine(const char *dir, const cm_machine_runtime_config *runtime_co
                                cm_machine **new_machine, char **err_msg) try {
     const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
     *new_machine = static_cast<cm_machine *>(load_virtual_machine(dir, r));
-    return cm_result_success(err_msg);
-} catch (...) {
-    return cm_result_failure(err_msg);
-}
-
-int cm_create_grpc_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
-                           const char *address, cm_machine **new_machine, char **err_msg) try {
-    const cartesi::machine_config c = convert_from_c(config);
-    const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
-    *new_machine = static_cast<cm_machine *>(create_grpc_virtual_machine(address, c, r));
-    return cm_result_success(err_msg);
-} catch (...) {
-    return cm_result_failure(err_msg);
-}
-
-
-int cm_load_grpc_machine(const char *dir, const cm_machine_runtime_config *runtime_config,
-                                    const char *address, cm_machine **new_machine, char **err_msg) try {
-    const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
-    *new_machine = static_cast<cm_machine *>(load_grpc_virtual_machine(address, dir, r));
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);

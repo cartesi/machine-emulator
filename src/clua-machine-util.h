@@ -23,6 +23,7 @@
 #include "machine.h"
 #include "semantic-version.h"
 #include "machine-c-api.h"
+#include "grpc-machine-c-api.h"
 
 /// \file
 /// \brief Cartesi machine Lua interface helper functions
@@ -37,6 +38,16 @@ namespace cartesi {
 #define TRY_EXECUTE(func_call) \
     do {                       \
        auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr)); \
+       char **err_msg = &managed_err_msg.get();\
+       if (func_call != 0) {                   \
+           return luaL_error(L, *err_msg); \
+       }                                       \
+       lua_pop(L, 1);                           \
+    } while (0)
+
+#define TRY_EXECUTE_CTX(func_call, ctxidx) \
+    do {                       \
+       auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr), ctxidx); \
        char **err_msg = &managed_err_msg.get();\
        if (func_call != 0) {                   \
            return luaL_error(L, *err_msg); \
@@ -138,6 +149,11 @@ void clua_push_cm_proof(lua_State *L, const cm_merkle_tree_proof *proof);
 /// \param L Lua state
 /// \param v Semantic_version to be pushed.
 void clua_push_semantic_version(lua_State *L, const semantic_version &v);
+
+/// \brief Pushes a cm_semantic_version to the Lua stack
+/// \param L Lua state
+/// \param v C api semantic version to be pushed.
+void clua_push_cm_semantic_version(lua_State *L, const cm_semantic_version *v);
 
 /// \brief Pushes a hash to the Lua stack
 /// \param L Lua state

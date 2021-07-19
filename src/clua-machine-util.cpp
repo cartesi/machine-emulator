@@ -1048,6 +1048,15 @@ void clua_push_semantic_version(lua_State *L, const semantic_version &v) {
     lua_pushlstring(L, v.build.data(), v.build.size()); lua_setfield(L, -2, "build"); // version
 }
 
+void clua_push_cm_semantic_version(lua_State *L, const cm_semantic_version *v) {
+    lua_newtable(L); // version
+    lua_pushinteger(L, v->major); lua_setfield(L, -2, "major"); // version
+    lua_pushinteger(L, v->minor); lua_setfield(L, -2, "minor"); // version
+    lua_pushinteger(L, v->patch); lua_setfield(L, -2, "patch"); // version
+    lua_pushstring(L, v->pre_release); lua_setfield(L, -2, "pre_release"); // version
+    lua_pushstring(L, v->build); lua_setfield(L, -2, "build"); // version
+}
+
 void clua_push_proof(lua_State *L, const machine_merkle_tree::proof_type &proof) {
     lua_newtable(L); // proof
     lua_newtable(L); // proof siblings

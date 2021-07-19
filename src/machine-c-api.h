@@ -344,30 +344,6 @@ CM_API int cm_load_machine(const char *dir, const cm_machine_runtime_config *run
                                       cm_machine **new_machine, char **err_msg);
 
 
-/// \brief Create remote machine instance
-/// \param config Machine configuration. Must be pointer to valid object
-/// \param runtime_config Machine runtime configuration. Must be pointer to valid object
-/// \param address Address of the remote grpc Cartesi machine server
-/// \param new_machine Receives the pointer to new remote machine instance
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
-/// \returns 0 for success, non zero code for error
-CM_API int cm_create_grpc_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
-                           const char *address, cm_machine **new_machine, char **err_msg);
-
-/// \brief Create remote machine instance from previously serialized directory
-/// \param dir Directory where previous machine is serialized
-/// \param runtime_config Machine runtime configuration. Must be pointer to valid object
-/// \param address Address of the remote grpc Cartesi machine server
-/// \param new_machine Receives the pointer to new remote machine instance
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
-/// \returns 0 for success, non zero code for error
-CM_API int cm_load_grpc_machine(const char *dir, const cm_machine_runtime_config *runtime_config,
-                         const char *address, cm_machine **new_machine, char **err_msg);
-
 /// \brief Serialize entire state to directory
 /// \param m Pointer to valid machine instance
 /// \param dir Directory where the machine will be serialized
@@ -410,10 +386,10 @@ CM_API int cm_step(cm_machine *m, cm_access_log_type log_type, bool one_based,
 CM_API void cm_delete_access_log(cm_access_log *acc_log);
 
 
-/// \brief Checks the internal consistency of an access log.
-/// \param log State access log to be verified.
+/// \brief Checks the internal consistency of an access log
+/// \param log State access log to be verified
 /// \param r Machine runtime configuration to use during verification. Must be pointer to valid object
-/// \param one_based Use 1-based indices when reporting errors.
+/// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg 
 /// must be deleted by the function caller using cm_delete_error_message
@@ -421,12 +397,12 @@ CM_API void cm_delete_access_log(cm_access_log *acc_log);
 CM_API int cm_verify_access_log(const cm_access_log* log, const cm_machine_runtime_config *runtime_config,
                          bool one_based, char **err_msg);
 
-/// \brief Checks the validity of a state transition.
-/// \param root_hash_before State hash before step.
-/// \param log Step state access log.
-/// \param root_hash_after State hash after step.
+/// \brief Checks the validity of a state transition
+/// \param root_hash_before State hash before step
+/// \param log Step state access log
+/// \param root_hash_after State hash after step
 /// \param runtime_config Machine runtime configuration to use during verification. Must be pointer to valid object
-/// \param one_based Use 1-based indices when reporting errors.
+/// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg 
 /// must be deleted by the function caller using cm_delete_error_message
@@ -444,11 +420,11 @@ CM_API int cm_verify_state_transition(const cm_hash *root_hash_before,
 /// \returns 0 for success, non zero code for error
 CM_API int cm_update_merkle_tree(cm_machine *m, char **err_msg);
 
-/// \brief Obtains the proof for a node in the Merkle tree.
+/// \brief Obtains the proof for a node in the Merkle tree
 /// \param m Pointer to valid machine instance
-/// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
+/// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary
 /// \param log2_size log<sub>2</sub> of size subintended by target node.
-/// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
+/// Must be between 3 (for a word) and 64 (for the entire address space), inclusive
 /// \param proof Receives the proof
 /// proof must be deleted with the function cm_delete_proof
 /// \param err_msg Receives the error message if function execution fails
@@ -463,7 +439,7 @@ CM_API int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm
 CM_API void cm_delete_proof(cm_merkle_tree_proof *proof);
 
 
-/// \brief Obtains the root hash of the Merkle tree.
+/// \brief Obtains the root hash of the Merkle tree
 /// \param m Pointer to valid machine instance
 /// \param hash Valid pointer to cm_hash structure that  receives the hash.
 /// \param err_msg Receives the error message if function execution fails
@@ -1254,8 +1230,8 @@ CM_API int cm_write_dhd_hlength(cm_machine *m, uint64_t val, char **err_msg);
 /// \brief Reads the value of DHD's input hash word.
 /// \param m Pointer to valid machine instance
 /// \param i Index of input hash word.
-/// Between 0 and DHD_H_REG_COUNT-1, inclusive.
-/// \param val Receives value of the hash word.
+/// Between 0 and DHD_H_REG_COUNT-1, inclusive
+/// \param val Receives value of the hash word
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
@@ -1266,15 +1242,15 @@ CM_API int cm_read_dhd_h(const cm_machine *m, int i, uint64_t *val, char **err_m
 /// \param m Pointer to valid machine instance
 /// \param i Index of input hash word.
 /// Between 0 and DHD_H_REG_COUNT-1, inclusive.
-/// \param val New value for word.
+/// \param val New value for word
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_dhd_h(cm_machine *m, int i, uint64_t val, char **err_msg);
 
-/// \brief Gets the address of a DHD h register.
-/// \param i Register index. Between 0 and DHD_H_REG_COUNT-1, inclusive.
+/// \brief Gets the address of a DHD h register
+/// \param i Register index. Between 0 and DHD_H_REG_COUNT-1, inclusive
 /// \returns Address of the specified register
 CM_API uint64_t cm_get_dhd_h_address(int i);
 
@@ -1353,7 +1329,7 @@ CM_API int cm_get_initial_config(const cm_machine *m, const cm_machine_config **
 
 /// \brief Returns copy of default system config.
 /// \param config Receives the default configuration.
-/// It should be deleted with cm_delete_machine_config.
+/// It should be deleted with cm_delete_machine_config
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
@@ -1362,15 +1338,15 @@ CM_API int cm_get_initial_config(const cm_machine *m, const cm_machine_config **
 /// must be deleted with cm_delete_machine_config
 CM_API int cm_get_default_config(const cm_machine_config **config, char **err_msg);
 
-/// \brief Replaces a flash drive.
+/// \brief Replaces a flash drive
 /// \param m Pointer to valid machine instance
-/// \param new_flash Configuration of the new flash drive.
+/// \param new_flash Configuration of the new flash drive
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg 
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 /// \details The machine must contain an existing flash
-/// drive matching the start and length specified in new_flash.
+/// drive matching the start and length specified in new_flash
 CM_API int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash, char **err_msg);
 
 

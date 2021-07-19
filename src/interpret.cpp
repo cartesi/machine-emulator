@@ -559,7 +559,7 @@ static inline uint32_t insn_get_rs2(uint32_t insn) {
 /// \brief Obtains the immediate value from a I-type instruction.
 /// \param insn Instruction.
 static inline int32_t insn_I_get_imm(uint32_t insn) {
-    return (int32_t)insn >> 20;
+    return static_cast<int32_t>(insn) >> 20;
 }
 
 /// \brief Obtains the unsigned immediate value from a I-type instruction.
@@ -1606,7 +1606,7 @@ static bool write_csr_satp(STATE_ACCESS &a, uint64_t val) {
         mode = new_mode;
     }
     // no ASID implemented
-    a.write_satp((val & (((uint64_t)1 << 44) - 1)) | ((uint64_t)mode << 60));
+    a.write_satp((val & ((UINT64_C(1) << 44) - 1)) | (static_cast<uint64_t>(mode) << 60));
     // Since MMU configuration was changted, flush the TLBs
     // This does not need to be done within the blockchain
     if constexpr(!avoid_tlb<STATE_ACCESS>::value) {
@@ -2247,7 +2247,7 @@ static inline execute_status execute_DIV(STATE_ACCESS &a, uint64_t pc, uint32_t 
         int64_t srs2 = static_cast<int64_t>(rs2);
         if (srs2 == 0) {
             return static_cast<uint64_t>(-1);
-        } else if (srs1 == ((int64_t)1 << (XLEN - 1)) && srs2 == -1) {
+        } else if (srs1 == (INT64_C(1) << (XLEN - 1)) && srs2 == -1) {
             return static_cast<uint64_t>(srs1);
         } else {
             return static_cast<uint64_t>(srs1 / srs2);
@@ -2279,7 +2279,7 @@ static inline execute_status execute_REM(STATE_ACCESS &a, uint64_t pc, uint32_t 
         int64_t srs2 = static_cast<int64_t>(rs2);
         if (srs2 == 0) {
             return srs1;
-        } else if (srs1 == ((int64_t)1 << (XLEN - 1)) && srs2 == -1) {
+        } else if (srs1 == (INT64_C(1) << (XLEN - 1)) && srs2 == -1) {
             return 0;
         } else {
             return static_cast<uint64_t>(srs1 % srs2);
@@ -2590,7 +2590,7 @@ static inline execute_status execute_branch(STATE_ACCESS &a, uint64_t pc, uint32
     uint64_t rs1 = a.read_x(insn_get_rs1(insn));
     uint64_t rs2 = a.read_x(insn_get_rs2(insn));
     if (f(rs1, rs2)) {
-        uint64_t new_pc = (int64_t)(pc + insn_B_get_imm(insn));
+        uint64_t new_pc = static_cast<int64_t>(pc + insn_B_get_imm(insn));
         if (new_pc & 3) {
             return raise_misaligned_fetch_exception(a, new_pc);
         } else {

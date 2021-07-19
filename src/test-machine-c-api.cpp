@@ -1872,7 +1872,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_hash0_test, access_l
 {
     char *err_msg{};
     cm_hash hash1;
-    int error_code = cm_verify_state_transition(NULL, _access_log, (const cm_hash *)&hash1,
+    int error_code = cm_verify_state_transition(NULL, _access_log, &hash1,
                                                 &_runtime_config, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
@@ -1903,8 +1903,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_access_log_test, acc
     char *err_msg{};
     cm_hash hash0;
     cm_hash hash1;
-    int error_code = cm_verify_state_transition((const cm_hash *)&hash0, NULL,
-                                                (const cm_hash *)&hash1, &_runtime_config,
+    int error_code = cm_verify_state_transition(&hash0, NULL,
+                                                &hash1, &_runtime_config,
                                                 false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
@@ -1924,8 +1924,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, acce
 
     cm_hash hash0;
     cm_hash hash1;
-    error_code = cm_verify_state_transition((const cm_hash *)&hash0, _access_log,
-                                            (const cm_hash *)&hash1, NULL, false, &err_msg);
+    error_code = cm_verify_state_transition(&hash0, _access_log, &hash1, NULL, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
@@ -1940,8 +1939,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_error_placeholder_te
     auto f = [l = _access_log, rc = &_runtime_config]() {
         cm_hash hash0;
         cm_hash hash1;
-        cm_verify_state_transition((const cm_hash *)&hash0, l, (const cm_hash *)&hash1,
-                                   rc, false, NULL);
+        cm_verify_state_transition(&hash0, l, &hash1, rc, false, NULL);
     };
     monitor_system_throw(f);
 }
@@ -1971,8 +1969,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture)
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
-    error_code = cm_verify_state_transition((const cm_hash *)&hash0, _access_log,
-                                            (const cm_hash *)&hash1, &_runtime_config,
+    error_code = cm_verify_state_transition(&hash0, _access_log,
+                                            &hash1, &_runtime_config,
                                             false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);

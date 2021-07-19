@@ -182,7 +182,7 @@ void grpc_virtual_machine::do_store(const std::string &dir) {
 
 uint64_t grpc_virtual_machine::do_read_csr(csr r) const  {
     ReadCsrRequest request;
-    request.set_csr((Csr)r);
+    request.set_csr(static_cast<Csr>(r));
     ReadCsrResponse response;
     ClientContext context;
     check_status(m_stub->get_stub()->ReadCsr(&context, request, &response));
@@ -191,7 +191,7 @@ uint64_t grpc_virtual_machine::do_read_csr(csr r) const  {
 
 void grpc_virtual_machine::do_write_csr(csr w, uint64_t val)   {
     WriteCsrRequest request;
-    request.set_csr((Csr)w);
+    request.set_csr(static_cast<Csr>(w));
     request.set_value(val);
     Void response;
     ClientContext context;
@@ -201,7 +201,7 @@ void grpc_virtual_machine::do_write_csr(csr w, uint64_t val)   {
 uint64_t grpc_virtual_machine::get_csr_address(const grpc_machine_stub_ptr &stub,
     csr w) {
     GetCsrAddressRequest request;
-    request.set_csr((Csr)w);
+    request.set_csr(static_cast<Csr>(w));
     GetCsrAddressResponse response;
     ClientContext context;
     check_status(stub->get_stub()->GetCsrAddress(&context, request, &response));

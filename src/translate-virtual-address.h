@@ -148,7 +148,7 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
     // The least significant 44 bits of satp contain the physical page number for the root page table
     const int satp_ppn_bits = 44;
     // Initialize pte_addr with the base address for the root page table
-    uint64_t pte_addr = (satp & (((uint64_t)1 << satp_ppn_bits) - 1)) << PAGE_NUMBER_SHIFT;
+    uint64_t pte_addr = (satp & ((UINT64_C(1) << satp_ppn_bits) - 1)) << PAGE_NUMBER_SHIFT;
     // All page table entries have 8 bytes
     const int log2_pte_size = 3;
     // Each page table has 4k/pte_size entries
@@ -203,7 +203,7 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
                 return false;
             }
             // Check page, megapage, and gigapage alignment
-            uint64_t vaddr_mask = ((uint64_t)1 << vaddr_shift) - 1;
+            uint64_t vaddr_mask = (UINT64_C(1) << vaddr_shift) - 1;
             if (ppn & vaddr_mask) {
                 return false;
             }

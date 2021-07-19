@@ -2240,7 +2240,7 @@ static bool stringval(const char *pre, const char *str, const char **val) {
 
 static void cleanup_child_handler(int signal) {
     (void) signal;
-    while (waitpid((pid_t) (-1), 0, WNOHANG) > 0) {}
+    while (waitpid(static_cast<pid_t>(-1), 0, WNOHANG) > 0) {}
 }
 
 int main(int argc, char *argv[]) try {

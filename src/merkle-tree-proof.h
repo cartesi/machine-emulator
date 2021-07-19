@@ -258,7 +258,7 @@ private:
     int log2_size_to_index(int log2_size) const {
         // We know log2_root_size > 0, so log2_root_size-1 >= 0
         int index = m_log2_root_size-1-log2_size;
-        if (index < 0 || index >= (int) m_sibling_hashes.size()) {
+        if (index < 0 || index >= static_cast<int>(m_sibling_hashes.size())) {
             throw std::out_of_range{"log2_size is out of range"};
         }
         return index;

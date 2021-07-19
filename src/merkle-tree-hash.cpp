@@ -69,7 +69,7 @@ static bool intval(const char *pre, const char *str, int *val) {
 /// \param f File to print to
 static void print_hash(const hash_type &hash, FILE *f) {
     for (auto b: hash) {
-        fprintf(f, "%02x", (int) b);
+        fprintf(f, "%02x", static_cast<int>(b));
     }
     fprintf(f, "\n");
 }

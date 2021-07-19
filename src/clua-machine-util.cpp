@@ -96,7 +96,7 @@ static uint64_t opt_uint_field(lua_State *L, int tabidx, int field, uint64_t def
         luaL_error(L, "invalid entry %d (expected unsigned integer)", field);
     }
     lua_pop(L, 1);
-    return (uint64_t) val;
+    return static_cast<uint64_t>(val);
 }
 
 /// \brief Returns an optional integer field indexed by string in a table.
@@ -115,7 +115,7 @@ static uint64_t opt_uint_field(lua_State *L, int tabidx, const char *field, uint
         luaL_error(L, "invalid %s (expected unsigned integer)", field);
     }
     lua_pop(L, 1);
-    return (uint64_t) val;
+    return static_cast<uint64_t>(val);
 }
 
 /// \brief Returns an optional string field indexed by string in a table.
@@ -150,7 +150,7 @@ static int check_int_field(lua_State *L, int tabidx, const char *field) {
     }
     lua_Integer ival = lua_tointeger(L, -1);
     lua_pop(L, 1);
-    return (int) ival;
+    return static_cast<int>(ival);
 }
 
 /// \brief Returns an integer field indexed by string in a table.
@@ -167,7 +167,7 @@ static uint64_t check_uint_field(lua_State *L, int tabidx, const char *field) {
     }
     lua_Integer ival = lua_tointeger(L, -1);
     lua_pop(L, 1);
-    return (uint64_t) ival;
+    return static_cast<uint64_t>(ival);
 }
 
 
@@ -327,7 +327,7 @@ static access_data aux_access_data_field(lua_State *L, int tabidx,
         uint64_t expected_len = UINT64_C(1) << log2_size;
         if (len != expected_len) {
             luaL_error(L, "invalid %s (expected string with 2^%d bytes)", field,
-                (int) log2_size);
+                static_cast<int>(log2_size));
         }
         a.insert(a.end(), s, s+len);
     } else if (!opt || !lua_isnil(L, -1)) {
@@ -819,7 +819,7 @@ void check_flash_drive_configs(lua_State *L, int tabidx,
         return;
     }
     int len = luaL_len(L, -1);
-    if (len > (int) fs.capacity()) { // NOLINT(readability-static-accessed-through-instance)
+    if (len > static_cast<int>(fs.capacity())) { // NOLINT(readability-static-accessed-through-instance)
         luaL_error(L, "too many flash drives");
     }
     for (int i = 1; i <= len; i++) {

@@ -440,7 +440,7 @@ static inline bool is_power_of_two(uint64_t value) {
 /// \detail The return value is undefined if v == 0
 /// This works on gcc and clang and uses the lzcnt instruction
 static inline uint64_t ilog2(uint64_t v) {
-    return 63 - __builtin_clz(v);
+    return 63 - __builtin_clzll(v);
 }
 
 /// \brief Base class for exceptions holding a grpc::Status

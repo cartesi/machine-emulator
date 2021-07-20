@@ -16,9 +16,7 @@
 
 /// \file
 /// \brief Cartesi machine emulator C API interface helper functions
-
-/// \file
-/// \brief Cartesi machine emulator C API interface
+/// meant use internally inside cartesi library
 
 #ifndef CM_C_API_INTERNAL_H
 #define CM_C_API_INTERNAL_H

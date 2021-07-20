@@ -55,18 +55,20 @@ namespace cartesi {
        lua_pop(L, 1);                           \
     } while (0)
 
-#define DEMANGLE_TYPEID_NAME(x) abi::__cxa_demangle(typeid((x)).name(), NULL, NULL, NULL)
-
 /// \brief Create overloaded deleters for C API objects
 template<typename T>
 void cm_delete(T *ptr) {
     fprintf(stderr, "Calling default deleter, maybe specialized deleter "
-                    "is missing for type <%s>?\n", DEMANGLE_TYPEID_NAME(*ptr));
+                    "is missing for type <%s>?\n", boost::typeindex::type_id_with_cvr<T>().pretty_name());
 }
 
 /// \brief Deleter for C string
 template<>
 void cm_delete<char>(char *err_msg);
+
+/// \brief Deleter for C data buffer
+template<>
+void cm_delete<unsigned char>(unsigned char *ptr);
 
 /// \brief Deleter for C api machine configuration
 template<>
@@ -90,6 +92,10 @@ void cm_delete(cm_access_log *a);
 template<>
 void cm_delete(cm_merkle_tree_proof *p);
 
+/// \brief Deleter for C api flash drive config
+template<>
+void cm_delete(cm_flash_drive_config *p);
+
 template<typename T>
 class clua_managed_cm_ptr final {
 public:
@@ -106,7 +112,7 @@ public:
         std::swap(m_ptr, other.m_ptr);
     };
 
-    explicit clua_managed_cm_ptr(const clua_managed_cm_ptr &other) = delete;
+    clua_managed_cm_ptr(const clua_managed_cm_ptr &other) = delete;
     void operator= (const clua_managed_cm_ptr &other) = delete;
 
     ~clua_managed_cm_ptr() {
@@ -132,7 +138,7 @@ public:
     }
 
 private:
-    T *m_ptr{};
+    T *m_ptr;
 };
 
 /// \brief Pushes a proof to the Lua stack
@@ -152,7 +158,7 @@ void clua_push_semantic_version(lua_State *L, const semantic_version &v);
 
 /// \brief Pushes a cm_semantic_version to the Lua stack
 /// \param L Lua state
-/// \param v C api semantic version to be pushed.
+/// \param v C api semantic version to be pushed
 void clua_push_cm_semantic_version(lua_State *L, const cm_semantic_version *v);
 
 /// \brief Pushes a hash to the Lua stack
@@ -162,34 +168,34 @@ void clua_push_hash(lua_State *L, const machine_merkle_tree::hash_type &hash);
 
 /// \brief Pushes a C api hash object to the Lua stack
 /// \param L Lua state
-/// \param hash Hash to be pushed.
+/// \param hash Hash to be pushed
 void clua_push_cm_hash(lua_State *L, const cm_hash *hash);
 
 
 /// \brief Pushes a machine_config to the Lua stack
 /// \param L Lua state
-/// \param c Machine_config to be pushed.
+/// \param c Machine_config to be pushed
 void clua_push_machine_config(lua_State *L, const machine_config &c);
 
 /// \brief Pushes a C api cm_machine_config to the Lua stack
 /// \param L Lua state
-/// \param c Machine configuration to be pushed.
+/// \param c Machine configuration to be pushed
 void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c);
 
 /// \brief Pushes a machine_runtime_config to the Lua stack
 /// \param L Lua state
-/// \param r Machine_runtime_config to be pushed.
+/// \param r Machine_runtime_config to be pushed
 void clua_push_machine_runtime_config(lua_State *L, const machine_runtime_config &r);
 
 /// \brief Pushes a cm_machine_runtime_config to the Lua stack
 /// \param L Lua state
-/// \param r C api machine runtime config to be pushed.
+/// \param r C api machine runtime config to be pushed
 void clua_push_cm_machine_runtime_config(lua_State *L, const cm_machine_runtime_config *r);
 
 /// \brief Returns a CSR selector from Lua
 /// \param L Lua state
 /// \param idx Index in stack
-/// \returns CSR selector. Throws error if unknown.
+/// \returns CSR selector. Throws error if unknown
 machine::csr clua_check_csr(lua_State *L, int idx);
 
 /// \brief Returns a CSR selector from Lua

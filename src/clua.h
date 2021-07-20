@@ -202,7 +202,7 @@ int clua_push(lua_State *L, T &&value, int ctxidx = lua_upvalueindex(1)) {
     return 1;
 }
 
-/// \brief Creates lua managed C++ object on stack and returns reference to it
+/// \brief Creates lua managed C++/C object on stack and returns reference to it
 /// \tparam T Associated C++ type
 /// \param L Lua state.
 /// \param value C++ object for initialization of managed object
@@ -285,9 +285,6 @@ void clua_createtype(lua_State *L, const char *name, int ctxidx) {
     lua_setfield(L, -2, "__metatable"); // T_rawname T_meta
     lua_rawset(L, ctxidx); //
 }
-
-
-
 
 } // namespace cartesi
 

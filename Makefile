@@ -15,7 +15,7 @@ INSTALL_PLAT = install-$(UNAME)
 LIBCARTESI_Darwin=libcartesi.dylib
 LIBCARTESI_Linux=libcartesi.so
 LIBGRPC_CARTESI_Darwin=libgrpc_cartesi.dylib
-LIBGRPC_CARTESI_Linux=libgrpc_cartesi.so
+LIBGRPC_CARTESI_Linux=libcartesi_grpc.so
 
 INSTALL= cp -RP
 CHMOD_EXEC= chmod 0755

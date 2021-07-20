@@ -426,7 +426,7 @@ CM_API int cm_update_merkle_tree(cm_machine *m, char **err_msg);
 /// \param log2_size log<sub>2</sub> of size subintended by target node.
 /// Must be between 3 (for a word) and 64 (for the entire address space), inclusive
 /// \param proof Receives the proof
-/// proof must be deleted with the function cm_delete_proof
+/// proof must be deleted with the function cm_delete_merkle_tree_proof
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg 
 /// must be deleted by the function caller using cm_delete_error_message
@@ -436,7 +436,7 @@ CM_API int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm
 
 /// \brief  Deletes the instance of cm_merkle_tree_proof acquired from cm_get_proof
 /// \param proof Valid pointer to cm_merkle_tree_proof object
-CM_API void cm_delete_proof(cm_merkle_tree_proof *proof);
+CM_API void cm_delete_merkle_tree_proof(cm_merkle_tree_proof *proof);
 
 
 /// \brief Obtains the root hash of the Merkle tree
@@ -1227,7 +1227,7 @@ CM_API int cm_read_dhd_hlength(const cm_machine *m, uint64_t *val, char **err_ms
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_dhd_hlength(cm_machine *m, uint64_t val, char **err_msg);
 
-/// \brief Reads the value of DHD's input hash word.
+/// \brief Reads the value of DHD's input hash word
 /// \param m Pointer to valid machine instance
 /// \param i Index of input hash word.
 /// Between 0 and DHD_H_REG_COUNT-1, inclusive
@@ -1349,6 +1349,10 @@ CM_API int cm_get_default_config(const cm_machine_config **config, char **err_ms
 /// drive matching the start and length specified in new_flash
 CM_API int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash, char **err_msg);
 
+
+/// \brief Deletes machine flash drive config
+/// \returns void
+CM_API void cm_delete_flash_drive_config(const cm_flash_drive_config *config);
 
 /// \brief Deletes the error message
 /// \param err_msg Pointer to error message received from some other function

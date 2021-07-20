@@ -86,7 +86,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_null_test)
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_proof_null_test)
 {
-    BOOST_CHECK_NO_THROW(cm_delete_proof(nullptr));
+    BOOST_CHECK_NO_THROW(cm_delete_merkle_tree_proof(nullptr));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(new_default_machine_config_basic_test)
@@ -720,7 +720,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_inconsistent_tree_test, ordinary_machin
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
 
-    cm_delete_proof(proof);
+    cm_delete_merkle_tree_proof(proof);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_null_proof_test, ordinary_machine_fixture)
@@ -760,7 +760,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_machine_hash_test, ordinary_machine_fix
     BOOST_CHECK_EQUAL(p->log2_root_size, 64);
     BOOST_CHECK_EQUAL(p->sibling_hashes_count, 52);
 
-    cm_delete_proof(p);
+    cm_delete_merkle_tree_proof(p);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_word_null_machine_test)

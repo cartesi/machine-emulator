@@ -28,6 +28,12 @@ void cm_delete<char>(char *ptr) {
     cm_delete_error_message(ptr);
 }
 
+/// \brief Deleter for C data buffer
+template<>
+void cm_delete<unsigned char>(unsigned char *ptr) {
+    free(ptr);
+}
+
 /// \brief Deleter for C api machine configuration
 template<>
 void cm_delete<const cm_machine_config>(const cm_machine_config *ptr) {
@@ -59,8 +65,16 @@ void cm_delete(cm_access_log *ptr) {
 /// \brief Deleter for C api merkle tree proof
 template<>
 void cm_delete(cm_merkle_tree_proof *p) {
-    cm_delete_proof(p);
+    cm_delete_merkle_tree_proof(p);
 }
+
+/// \brief Deleter for C api flash drive config
+template<>
+void cm_delete(cm_flash_drive_config *p) {
+    cm_delete_flash_drive_config(p);
+}
+
+
 
 using csr_map = std::unordered_map<std::string, machine::csr>;
 

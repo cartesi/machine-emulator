@@ -102,9 +102,7 @@ static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
 /// \param L Lua state.
 static int machine_ctor(lua_State *L) {
     lua_settop(L, 3);
-
     auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr));
-
     if (lua_type(L, 2) == LUA_TTABLE) {
         auto &managed_config = clua_push_to(L,
             clua_managed_cm_ptr<cm_machine_config>(clua_check_cm_machine_config(L, 2)));
@@ -139,6 +137,10 @@ int clua_machine_init(lua_State *L, int ctxidx) {
     CREATE_LUA_TYPE(clua_managed_cm_ptr<char>, "lua C string",
         ctxidx);
     CREATE_LUA_TYPE(clua_managed_cm_ptr<cm_merkle_tree_proof>, "merkle tree proof",
+        ctxidx);
+    CREATE_LUA_TYPE(clua_managed_cm_ptr<unsigned char>, "data buffer",
+        ctxidx);
+    CREATE_LUA_TYPE(clua_managed_cm_ptr<cm_flash_drive_config>, "flash drive config",
         ctxidx);
 
 

@@ -536,7 +536,7 @@ static void cm_cleanup_access(cm_access *access) {
     if (access == nullptr) {
         return;
     }
-    cm_delete_proof(access->proof);
+    cm_delete_merkle_tree_proof(access->proof);
     delete [] access->written_data;
     delete [] access->read_data;
 }
@@ -803,7 +803,7 @@ int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size,
 }
 
 
-void cm_delete_proof(cm_merkle_tree_proof *proof) {
+void cm_delete_merkle_tree_proof(cm_merkle_tree_proof *proof) {
     if (proof == nullptr) {
         return;
     }
@@ -1107,6 +1107,15 @@ int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
+}
+
+void cm_delete_flash_drive_config(const cm_flash_drive_config *config) {
+    if (config == nullptr) {
+        return;
+    }
+
+    delete[] config->image_filename;
+    delete config;
 }
 
 

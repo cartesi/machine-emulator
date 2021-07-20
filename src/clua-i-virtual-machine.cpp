@@ -28,7 +28,7 @@ namespace cartesi {
 
 #define PRINT_PROCESSOR_CSR(machine, regname) \
     do {                                      \
-        uint64_t val = 0;                     \
+        uint64_t val{0};                     \
         TRY_EXECUTE(cm_read_##regname(machine, &val, err_msg)); \
         fprintf(stderr, #regname " = %" PRIx64 "\n", val); \
     } \
@@ -45,11 +45,10 @@ static int machine_obj_index_dump_pmas(lua_State *L) {
 /// \brief This is the machine:dump_regs() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_dump_regs(lua_State *L) {
-    auto &managed_machine = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto *m = managed_machine.get();
+    auto *m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1).get();
     PRINT_PROCESSOR_CSR(m, pc);
     for (int i = 0; i < 32; ++i) {
-        uint64_t val = 0;
+        uint64_t val{0};
         TRY_EXECUTE(cm_read_x(m, i, &val, err_msg));
         fprintf(stderr, "x%d = %" PRIx64 "\n", i, val);
     }
@@ -259,10 +258,8 @@ static int machine_obj_index_read_iflags_Y(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_set_iflags_H(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    bool val{};
-    TRY_EXECUTE(cm_read_iflags_H(m.get(), &val, err_msg));
-    lua_pushboolean(L, val);
-    return 1;
+    TRY_EXECUTE(cm_set_iflags_H(m.get(), err_msg));
+    return 0;
 }
 
 /// \brief This is the machine:set_iflags_Y() method implementation.
@@ -286,12 +283,17 @@ static int machine_obj_index_reset_iflags_Y(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_read_memory(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const uint64_t  address = luaL_checkinteger(L, 2);
+    const uint64_t address = luaL_checkinteger(L, 2);
     const size_t length = luaL_checkinteger(L, 3);
-    auto data = cartesi::unique_calloc<unsigned char>(length);
-    TRY_EXECUTE(cm_read_memory(m.get(), address, data.get(), length, err_msg));
+    unsigned char *data = static_cast<unsigned char *>(malloc(length));
+    if (data == nullptr) {
+        luaL_error(L, "failed to allocate memory for buffer");
+    }
+    auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
+    TRY_EXECUTE(cm_read_memory(m.get(), address, managed_data.get(), length, err_msg));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    lua_pushlstring(L, reinterpret_cast<const char *>(data.get()), length);
+    lua_pushlstring(L, reinterpret_cast<const char *>(managed_data.get()), length);
+    managed_data.release();
     return 1;
 }
 
@@ -300,7 +302,7 @@ static int machine_obj_index_read_memory(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_read_word(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    uint64_t word_value = 0;
+    uint64_t word_value{0};
     TRY_EXECUTE(cm_read_word(m.get(), luaL_checkinteger(L, 2), &word_value, err_msg));
     lua_pushinteger(L, word_value);
     return 1;
@@ -322,6 +324,7 @@ static int machine_obj_index_step(lua_State *L) {
     auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(nullptr));
     TRY_EXECUTE(cm_step(m.get(), clua_check_cm_log_type(L, 2), true, &managed_log.get(), err_msg));
     clua_push_cm_access_log(L,  managed_log.get());
+    managed_log.release();
     return 1;
 }
 
@@ -347,7 +350,7 @@ static int machine_obj_index_update_merkle_tree(lua_State *L) {
 static int machine_obj_index_verify_dirty_page_maps(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     bool result{};
-    TRY_EXECUTE(cm_verify_dirty_page_maps(m.get(), &result,err_msg));
+    TRY_EXECUTE(cm_verify_dirty_page_maps(m.get(), &result, err_msg));
     lua_pushboolean(L, result);
     return 1;
 }
@@ -376,7 +379,7 @@ static int machine_obj_index_write_csr(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_write_x(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    int i = luaL_checkinteger(L, 2);
+    const int i = luaL_checkinteger(L, 2);
     if (i < 1 || i >= X_REG_COUNT) {
         luaL_error(L, "register index out of range");
     }
@@ -388,7 +391,7 @@ static int machine_obj_index_write_x(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_write_dhd_h(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    int i = luaL_checkinteger(L, 2);
+    const int i = luaL_checkinteger(L, 2);
     if (i < 0 || i >= DHD_H_REG_COUNT) {
         luaL_error(L, "register index out of range");
     }
@@ -400,11 +403,11 @@ static int machine_obj_index_write_dhd_h(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_write_memory(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    size_t length = 0;
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    size_t length{0};
+    const uint64_t address = luaL_checkinteger(L, 2);
     const auto *data = reinterpret_cast<const unsigned char *>(
         luaL_checklstring(L, 3, &length));
-    TRY_EXECUTE(cm_write_memory(m.get(), luaL_checkinteger(L, 2), data, length, err_msg));
+    TRY_EXECUTE(cm_write_memory(m.get(), address, data, length, err_msg));
     lua_pushboolean(L, true);
     return 1;
 }
@@ -415,8 +418,11 @@ static int machine_obj_index_write_memory(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_replace_flash_drive(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto flash_drive_config = clua_check_cm_flash_drive_config(L, 2);
-    TRY_EXECUTE(cm_replace_flash_drive(m.get(), &flash_drive_config, err_msg));
+        auto &managed_flash_drive_config = clua_push_to(L,
+            clua_managed_cm_ptr<cm_flash_drive_config>(new cm_flash_drive_config{}));
+    *(managed_flash_drive_config.get()) = clua_check_cm_flash_drive_config(L, 2);
+    TRY_EXECUTE(cm_replace_flash_drive(m.get(), managed_flash_drive_config.get(), err_msg));
+    managed_flash_drive_config.release();
     return 0;
 }
 
@@ -445,7 +451,7 @@ static int machine_obj_index_rollback(lua_State *L) {
 }
 
 /// \brief Contents of the machine object metatable __index table.
-static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
+static const luaL_Reg machine_obj_index[] = {
     {"dump_pmas", machine_obj_index_dump_pmas},
     {"dump_regs", machine_obj_index_dump_regs},
     {"get_proof", machine_obj_index_get_proof},

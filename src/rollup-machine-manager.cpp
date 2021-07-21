@@ -798,7 +798,7 @@ static handler_type::pull_type *new_GetSessionStatus_handler(handler_context &hc
             if (!hctx.ok) {
                 return;
             }
-            Status status;
+            Status status; // NOLINT: cannot leak (pointer is in completion queue)
             GetSessionStatusResponse response;
             auto &sessions = hctx.sessions;
             const auto &id = request.session_id();
@@ -2295,7 +2295,7 @@ int main(int argc, char *argv[]) try {
     }
 
     struct sigaction sa{};
-    sa.sa_handler = cleanup_child_handler;
+    sa.sa_handler = cleanup_child_handler; // NOLINT(cppcoreguidelines-pro-type-union-access)
     sa.sa_flags = 0;
     sigaction(SIGCHLD, &sa, NULL);
 

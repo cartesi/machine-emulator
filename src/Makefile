@@ -456,12 +456,12 @@ grpc-util.o grpc-virtual-machine.o: $(LUACARTESI_GRPC_GEN_OBJS)
 
 %.clang-tidy: %.cpp $(PROTO_SOURCES)
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) 2>/dev/null
-	@$(CXX) $(CXXFLAGS) $< -MM -MT $@ -MF $@.d
+	@$(CXX) $(CXXFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
 %.clang-tidy: %.c $(PROTO_SOURCES)
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CFLAGS) 2>/dev/null
-	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d
+	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
 %.o: %.cpp

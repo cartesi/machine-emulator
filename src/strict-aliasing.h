@@ -44,6 +44,6 @@ static inline T aliased_aligned_read(const void *p) {
     return v;
 }
 
-}
+} // namespace cartesi
 
 #endif

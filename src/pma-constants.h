@@ -93,6 +93,6 @@ enum class PMA_ISTART_DID {
     DHD    = PMA_DHD_DID_DEF     ///< DID for DHD
 };
 
-} // namespace
+} // namespace cartesi
 
 #endif

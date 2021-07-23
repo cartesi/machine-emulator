@@ -39,7 +39,7 @@ namespace detail {
             std::fclose(p);
         }
     };
-}
+} // namespace detail
 
 template <typename T>
 using unique_calloc_ptr = std::unique_ptr<T, detail::free_deleter>;

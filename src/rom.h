@@ -34,6 +34,6 @@ struct machine_config;
 void rom_init(const machine_config &c, unsigned char *rom_start,
     uint64_t length);
 
-} // namesmpace cartesi
+} // namespace cartesi
 
 #endif

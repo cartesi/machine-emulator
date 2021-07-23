@@ -37,8 +37,7 @@ static constexpr int archive_version = 1;
 // ARCHIVE_VERSION 1 added the dhd configuration
 BOOST_CLASS_VERSION(cartesi::machine_config, archive_version)
 
-namespace boost {
-namespace serialization {
+namespace boost::serialization {
 
 template <typename ARX>
 inline void save(ARX &ar, const cartesi::flash_drive_configs &t,
@@ -162,7 +161,7 @@ void serialize(ARX &ar, cartesi::machine_config &m, const unsigned int v) {
     }
 }
 
-} } // namespace boost::serialization
+} // namespace boost::serialization
 
 namespace cartesi {
 

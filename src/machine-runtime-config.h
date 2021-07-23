@@ -45,6 +45,6 @@ enum CONCURRENCY_constants : uint64_t {
     THREADS_MAX = 256 ///< Maximum number of threads
 };
 
-}
+} // namespace cartesi
 
 #endif

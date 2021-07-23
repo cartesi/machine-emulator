@@ -503,6 +503,6 @@ pma_entry make_device_pma_entry(uint64_t start, uint64_t length,
 /// \returns Corresponding PMA entry
 pma_entry make_empty_pma_entry(uint64_t start, uint64_t length);
 
-} // namespace
+} // namespace cartesi
 
 #endif

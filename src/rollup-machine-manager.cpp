@@ -342,9 +342,10 @@ struct session_type {
     payload_and_metadata_type input_description{};
     payload_and_metadata_array_type outputs_description{};
     payload_and_metadata_array_type messages_description{};
-    std::map<uint64_t, epoch_type> epochs{}; ///< Map of cached epochs
-    deadline_config_type server_deadline{};  ///< Deadlines for interactions with server
-    boost::process::child server_process{};  ///< cartesi-machine-server process
+    std::map<uint64_t, epoch_type> epochs{};      ///< Map of cached epochs
+    deadline_config_type server_deadline{};       ///< Deadlines for interactions with server
+    boost::process::group server_process_group{}; ///< cartesi-machine-server process group
+    std::string server_address{};                 ///< cartesi-machine-server address
 };
 
 /// \brief Automatically unlocks a session when out of scope
@@ -399,14 +400,15 @@ using handler_type = boost::coroutines2::coroutine<side_effect>;
 
 /// \brief Context shared by all handlers
 struct handler_context {
-    std::string manager_address;                                   ///< Address to which manager is bound
-    std::string server_address;                                    ///< Address to which machine servers are bound
-    std::unordered_map<id_type, session_type> sessions;            ///< Known sessions
+    std::string manager_address;                        ///< Address to which manager is bound
+    std::string server_address;                         ///< Address to which machine servers are bound
+    std::unordered_map<id_type, session_type> sessions; ///< Known sessions
+    std::unordered_map<id_type, handler_type::pull_type *>
+        sessions_waiting_checkin;                                  ///< Sessions waiting for server checkin
     RollupMachineManager::AsyncService manager_async_service;      ///< Assynchronous manager service
     MachineCheckIn::AsyncService checkin_async_service;            ///< Assynchronous checkin service
     std::unique_ptr<grpc::ServerCompletionQueue> completion_queue; ///< Completion queue where all handlers arrive
-    boost::process::group server_group; ///< Process group to which all machine servers belong
-    bool ok;                            ///< gRPC status of requests arriving in queue
+    bool ok;                                                       ///< gRPC status of requests arriving in queue
 };
 
 /// \brief Context for internal functions that need to perform async operations
@@ -749,9 +751,9 @@ static handler_type::pull_type *new_EndSession_handler(handler_context &hctx) {
             }
             shutdown_server(actx);
             if (session.tainted) {
-                dout{request_context} << "Session " << id << " is tainted. Terminating cartesi-machine-server process: "
-                                      << session.server_process.id();
-                session.server_process.terminate();
+                dout{request_context} << "Session " << id
+                                      << " is tainted. Terminating cartesi-machine-server process group";
+                session.server_process_group.terminate();
             }
             sessions.erase(id);
             writer.Finish(response, grpc::Status::OK, self);
@@ -1181,10 +1183,10 @@ static void check_htif_config(const HTIFConfig &htif) {
 
 /// \brief Start and checks the server stub
 /// \param session Associated session
-/// \param address Server address
-static void check_server_stub(session_type &session, const std::string &address) {
+static void check_server_stub(session_type &session) {
     // Instantiate client connection
-    session.server_stub = Machine::NewStub(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()));
+    session.server_stub =
+        Machine::NewStub(grpc::CreateChannel(session.server_address, grpc::InsecureChannelCredentials()));
     // If unable to create stub, bail out
     if (!session.server_stub) {
         THROW((finish_error_yield_none{grpc::StatusCode::RESOURCE_EXHAUSTED,
@@ -1231,6 +1233,21 @@ static void initial_update_merkle_tree(async_context &actx) {
     if (!response.success()) {
         THROW((finish_error_yield_none{grpc::StatusCode::INTERNAL, "failed updating merkle tree"}));
     }
+}
+
+template <class T>
+void trigger_and_wait_checkin(handler_context &hctx, async_context &actx, T trigger_checkin) {
+    // trigger remote check-in
+    dout{actx.request_context} << "  Triggering machine server check-in";
+    hctx.sessions_waiting_checkin[actx.session.id] = actx.self;
+    trigger_checkin(hctx, actx); // NOLINT: avoid boost warnings?
+    // Wait for CheckIn
+    dout{actx.request_context} << "  Waiting check-in";
+    actx.yield(side_effect::none);
+    dout{actx.request_context} << "  Check-in for session " << actx.session.id << " passed with address "
+                               << actx.session.server_address;
+    // update server stub
+    check_server_stub(actx.session);
 }
 
 /// \brief Creates a new handler for the StartSession RPC and starts accepting requests
@@ -1319,47 +1336,27 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
                 THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
                     "message payload entry length to small"}));
             }
-            // Start accepting CheckIn rpcs. At this point we are not accepting other StartSession rpcs.
-            // In other words, the handshake is "atomic"
-            ServerContext checkin_context;
-            CheckInRequest checkin_request;
-            ServerAsyncResponseWriter<Void> checkin_writer(&checkin_context);
-            // Start expecting check-in rpcs
-            hctx.checkin_async_service.RequestCheckIn(&checkin_context, &checkin_request, &checkin_writer, cq, cq,
-                self);
-            // Spawn a new server and ask it to check-in
-            auto cmdline = "./cartesi-machine-server --session-id=" + id +
-                " --checkin-address=" + hctx.manager_address + " --server-address=" + hctx.server_address;
-            dout{request_context} << "  Spawning " << cmdline;
-            try {
-                session.server_process = boost::process::child(cmdline);
-                session.server_process.detach();
-            } catch (boost::process::process_error &e) {
-                THROW((restart_handler_finish_error_yield_none{StatusCode::INTERNAL,
-                    "failed spawning cartesi-machine-server with command-line '" + cmdline + "' (" + e.what() + ")"}));
-            }
-            dout{request_context} << "  Waiting check-in";
-            // Wait for CheckIn
-            yield(side_effect::none);
-            // If check-in is for the wrong session, bail out
-            if (checkin_request.session_id() != id) {
-                auto err_msg = "check-in with wrong id (expected " + id + ", got " + checkin_request.session_id() + ")";
-                checkin_writer.FinishWithError(Status{StatusCode::INVALID_ARGUMENT, err_msg}, self);
-                yield(side_effect::none);
-                THROW((restart_handler_finish_error_yield_none{StatusCode::INTERNAL, err_msg}));
-            };
-            // Acknowledge check-in
-            Void checkin_response;
-            checkin_writer.Finish(checkin_response, grpc::Status::OK, self);
-            yield(side_effect::none);
-            dout{request_context} << "  Check-in for session " << id << " passed with address "
-                                  << checkin_request.address();
+            // Wait machine server to checkin after spawned
+            async_context actx{session, request_context, cq, self, yield};
+            trigger_and_wait_checkin(hctx, actx, [](handler_context &hctx, async_context &actx) {
+                // Spawn a new server and ask it to check-in
+                auto cmdline = "./cartesi-machine-server --session-id=" + actx.session.id +
+                    " --checkin-address=" + hctx.manager_address + " --server-address=" + hctx.server_address;
+                dout{actx.request_context} << "  Spawning " << cmdline;
+                try {
+                    // NOLINTNEXTLINE: boost generated warnings
+                    auto server_process = boost::process::child(cmdline, actx.session.server_process_group);
+                    server_process.detach();
+                } catch (boost::process::process_error &e) {
+                    THROW((restart_handler_finish_error_yield_none{StatusCode::INTERNAL,
+                        "failed spawning cartesi-machine-server with command-line '" + cmdline + "' (" + e.what() +
+                            ")"}));
+                }
+            });
             // At this point, we can safely start processing additional StartSession rpcs
             // and we are not accepting CheckIn rpcs
             restarted = new_StartSession_handler(hctx);
-            check_server_stub(session, checkin_request.address());
             try {
-                async_context actx{session, request_context, cq, self, yield};
                 check_server_version(actx);
                 check_server_machine(actx, start_session_request.machine());
                 auto config = get_initial_config(actx);
@@ -1918,7 +1915,7 @@ static hash_type get_root_hash(async_context &actx) {
 /// \brief Loops processing all pending inputs
 /// \param actx Context for async operations
 /// \param e Associated epoch
-static void process_pending_inputs(async_context &actx, epoch_type &e) {
+static void process_pending_inputs(handler_context &hctx, async_context &actx, epoch_type &e) {
     // This is just for peace of mind: there is no way two concurrent calls can happen
     // (See discussion where process_pending_inputs is called.)
     if (actx.session.processing_lock) {
@@ -1930,7 +1927,11 @@ static void process_pending_inputs(async_context &actx, epoch_type &e) {
         auto input_index = e.processed_inputs.size();
         dout{actx.request_context} << "  Processing input " << input_index;
         dout{actx.request_context} << "    Creating Snapshot";
-        snapshot(actx);
+        // Wait machine server to checkin after spawned
+        trigger_and_wait_checkin(hctx, actx, [](handler_context &hctx, async_context &actx) {
+            (void) hctx;
+            snapshot(actx);
+        });
         dout{actx.request_context} << "    Clearing flash drives";
         clear_flash_drives(actx);
         const auto &i = e.pending_inputs.front();
@@ -2017,7 +2018,11 @@ static void process_pending_inputs(async_context &actx, epoch_type &e) {
         } else {
             dout{actx.request_context} << "  Skipped input " << input_index;
             dout{actx.request_context} << "    Rolling back";
-            rollback(actx);
+            // Wait machine server to checkin after spawned
+            trigger_and_wait_checkin(hctx, actx, [](handler_context &hctx, async_context &actx) {
+                (void) hctx;
+                rollback(actx);
+            });
             input_skip_reason reason;
             if (!run_response.has_value()) {
                 dout{actx.request_context} << "    Input skipped because time limit was exceeded";
@@ -2160,7 +2165,7 @@ static handler_type::pull_type *new_EnqueueInput_handler(handler_context &hctx) 
             //?? Any better ideas?
             if (e.pending_inputs.size() == 1) {
                 async_context actx{session, request_context, hctx.completion_queue.get(), self, yield};
-                process_pending_inputs(actx, e);
+                process_pending_inputs(hctx, actx, e);
             }
         } catch (finish_error_yield_none &e) {
             dout{request_context} << "Caught finish_error_yield_none '" << e.status().error_message() << '\'';
@@ -2180,6 +2185,64 @@ static handler_type::pull_type *new_EnqueueInput_handler(handler_context &hctx) 
                 session.taint_status =
                     grpc::Status{grpc::StatusCode::INTERNAL, std::string{"unexpected exception "} + e.what()};
             }
+        }
+    }};
+    return self;
+}
+
+/// \brief Creates a new handler for the Checkin RPC and starts accepting requests
+/// \param hctx Handler context shared between all handlers
+static handler_type::pull_type *new_Checkin_handler(handler_context &hctx) {
+    auto *self = static_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
+    new (self) handler_type::pull_type{[self, &hctx](handler_type::push_type &yield) {
+        using namespace grpc;
+        // Start accepting CheckIn rpcs.
+        ServerContext checkin_context;
+        CheckInRequest checkin_request;
+        ServerAsyncResponseWriter<Void> checkin_writer(&checkin_context);
+        auto *cq = hctx.completion_queue.get();
+        // Start expecting check-in rpcs
+        hctx.checkin_async_service.RequestCheckIn(&checkin_context, &checkin_request, &checkin_writer, cq, cq, self);
+        yield(side_effect::none);
+        new_Checkin_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+        // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
+        if (!hctx.ok) {
+            return;
+        }
+        try {
+            const auto &id = checkin_request.session_id(); // NOLINT: Unknown. Maybe linter bug?
+            dout{checkin_context} << "Received CheckIn for id " << id;
+            // If check-in is for the wrong session, bail out
+            if (hctx.sessions_waiting_checkin.find(id) == hctx.sessions_waiting_checkin.end()) {
+                THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
+                    "check-in with wrong session id " + id}));
+            }
+            // If the actual session is unknown, a bail out
+            if (hctx.sessions.find(id) == hctx.sessions.end()) {
+                THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
+                    "could not find an actual session with id " + id}));
+            }
+            // get session and handler coroutine
+            auto &session = hctx.sessions[id];
+            auto *coroutine = hctx.sessions_waiting_checkin[id];
+            hctx.sessions_waiting_checkin.erase(id);
+            session.server_address = checkin_request.address();
+            // Acknowledge check-in
+            Void checkin_response;
+            checkin_writer.Finish(checkin_response, grpc::Status::OK, self);
+            yield(side_effect::none);
+            // Resume after checkin trigger
+            (*coroutine)();
+
+        } catch (finish_error_yield_none &e) {
+            dout{checkin_context} << "Caught finish_error_yield_none " << e.status().error_message();
+            checkin_writer.FinishWithError(e.status(), self);
+            yield(side_effect::none);
+        } catch (std::exception &e) {
+            dout{checkin_context} << "Caught unexpected exception " << e.what();
+            checkin_writer.FinishWithError(
+                grpc::Status{grpc::StatusCode::INTERNAL, std::string{"unexpected exception "} + e.what()}, self);
+            yield(side_effect::none);
         }
     }};
     return self;
@@ -2339,6 +2402,7 @@ int main(int argc, char *argv[]) try {
     new_GetEpochStatus_handler(hctx);   // NOLINT: cannot leak (pointer is in completion queue)
     new_FinishEpoch_handler(hctx);      // NOLINT: cannot leak (pointer is in completion queue)
     new_EndSession_handler(hctx);       // NOLINT: cannot leak (pointer is in completion queue)
+    new_Checkin_handler(hctx);          // NOLINT: cannot leak (pointer is in completion queue)
 
     // Dispatch loop
     for (;;) {
@@ -2377,8 +2441,9 @@ shutdown:
     manager->Shutdown();
     drain_completion_queue(hctx.completion_queue.get());
     // Kill all machine servers
-    hctx.server_group.terminate();
-    hctx.server_group.wait();
+    for (auto &session_pair : hctx.sessions) {
+        session_pair.second.server_process_group.terminate();
+    }
     return 0;
 } catch (std::exception &e) {
     std::cerr << "Caught exception: " << e.what() << '\n';

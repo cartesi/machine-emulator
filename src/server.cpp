@@ -57,7 +57,7 @@ using grpc::StatusCode;
 
 struct handler_context {
     std::unique_ptr<machine> m;
-    Machine::AsyncService s;
+    std::unique_ptr<Machine::AsyncService> s;
     std::unique_ptr<ServerCompletionQueue> cq;
     bool ok;
     bool forked;
@@ -209,7 +209,7 @@ class handler_GetVersion final : public handler<Void, GetVersionResponse> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<GetVersionResponse> *writer) override {
-        hctx.s.RequestGetVersion(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestGetVersion(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -236,7 +236,7 @@ class handler_Machine final : public handler<MachineRequest, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, MachineRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestMachine(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestMachine(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -269,7 +269,7 @@ class handler_Run final : public handler<RunRequest, RunResponse> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, RunRequest *req,
         ServerAsyncResponseWriter<RunResponse> *writer) override {
-        hctx.s.RequestRun(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestRun(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -300,7 +300,7 @@ class handler_Store final : public handler<StoreRequest, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, StoreRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestStore(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestStore(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -323,7 +323,7 @@ class handler_Destroy final : public handler<Void, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestDestroy(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestDestroy(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -347,7 +347,7 @@ class handler_Snapshot final : public handler<Void, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestSnapshot(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestSnapshot(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::snapshot;
     }
 
@@ -368,7 +368,7 @@ class handler_Rollback final : public handler<Void, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestRollback(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestRollback(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::rollback;
     }
 
@@ -389,7 +389,7 @@ class handler_Shutdown final : public handler<Void, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestShutdown(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestShutdown(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::shutdown;
     }
 
@@ -410,7 +410,7 @@ class handler_Step final : public handler<StepRequest, StepResponse> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, StepRequest *req,
         ServerAsyncResponseWriter<StepResponse> *writer) override {
-        hctx.s.RequestStep(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestStep(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -434,7 +434,7 @@ class handler_ReadMemory final : public handler<ReadMemoryRequest, ReadMemoryRes
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, ReadMemoryRequest *req,
         ServerAsyncResponseWriter<ReadMemoryResponse> *writer) override {
-        hctx.s.RequestReadMemory(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestReadMemory(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -462,7 +462,7 @@ class handler_WriteMemory final : public handler<WriteMemoryRequest, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, WriteMemoryRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestWriteMemory(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestWriteMemory(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -489,7 +489,7 @@ class handler_ReadWord final : public handler<ReadWordRequest, ReadWordResponse>
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, ReadWordRequest *req,
         ServerAsyncResponseWriter<ReadWordResponse> *writer) override {
-        hctx.s.RequestReadWord(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestReadWord(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -516,7 +516,7 @@ class handler_GetRootHash final : public handler<Void, GetRootHashResponse> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<GetRootHashResponse> *writer) override {
-        hctx.s.RequestGetRootHash(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestGetRootHash(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -543,7 +543,7 @@ class handler_GetProof final : public handler<GetProofRequest, GetProofResponse>
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, GetProofRequest *req,
         ServerAsyncResponseWriter<GetProofResponse> *writer) override {
-        hctx.s.RequestGetProof(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestGetProof(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -572,7 +572,7 @@ class handler_ReplaceFlashDrive final : public handler<ReplaceFlashDriveRequest,
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, ReplaceFlashDriveRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestReplaceFlashDrive(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestReplaceFlashDrive(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -596,7 +596,7 @@ class handler_GetXAddress final : public handler<GetXAddressRequest, GetXAddress
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, GetXAddressRequest *req,
         ServerAsyncResponseWriter<GetXAddressResponse> *writer) override {
-        hctx.s.RequestGetXAddress(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestGetXAddress(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -622,7 +622,7 @@ class handler_ReadX final : public handler<ReadXRequest, ReadXResponse> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, ReadXRequest *req,
         ServerAsyncResponseWriter<ReadXResponse> *writer) override {
-        hctx.s.RequestReadX(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestReadX(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -650,7 +650,7 @@ class handler_WriteX final : public handler<WriteXRequest, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, WriteXRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestWriteX(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestWriteX(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -677,7 +677,7 @@ class handler_ResetIflagsY final : public handler<Void, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestResetIflagsY(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestResetIflagsY(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -701,7 +701,7 @@ class handler_GetDhdHAddress final : public handler<GetDhdHAddressRequest, GetDh
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, GetDhdHAddressRequest *req,
         ServerAsyncResponseWriter<GetDhdHAddressResponse> *writer) override {
-        hctx.s.RequestGetDhdHAddress(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestGetDhdHAddress(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -727,7 +727,7 @@ class handler_ReadDhdH final : public handler<ReadDhdHRequest, ReadDhdHResponse>
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, ReadDhdHRequest *req,
         ServerAsyncResponseWriter<ReadDhdHResponse> *writer) override {
-        hctx.s.RequestReadDhdH(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestReadDhdH(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -755,7 +755,7 @@ class handler_WriteDhdH final : public handler<WriteDhdHRequest, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, WriteDhdHRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestWriteDhdH(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestWriteDhdH(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -782,7 +782,7 @@ class handler_GetCsrAddress final : public handler<GetCsrAddressRequest, GetCsrA
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, GetCsrAddressRequest *req,
         ServerAsyncResponseWriter<GetCsrAddressResponse> *writer) override {
-        hctx.s.RequestGetCsrAddress(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestGetCsrAddress(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -808,7 +808,7 @@ class handler_ReadCsr final : public handler<ReadCsrRequest, ReadCsrResponse> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, ReadCsrRequest *req,
         ServerAsyncResponseWriter<ReadCsrResponse> *writer) override {
-        hctx.s.RequestReadCsr(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestReadCsr(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -836,7 +836,7 @@ class handler_WriteCsr final : public handler<WriteCsrRequest, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, WriteCsrRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestWriteCsr(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestWriteCsr(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -863,7 +863,7 @@ class handler_GetInitialConfig final : public handler<Void, GetInitialConfigResp
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<GetInitialConfigResponse> *writer) override {
-        hctx.s.RequestGetInitialConfig(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestGetInitialConfig(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -888,7 +888,7 @@ class handler_VerifyMerkleTree final : public handler<Void, VerifyMerkleTreeResp
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<VerifyMerkleTreeResponse> *writer) override {
-        hctx.s.RequestVerifyMerkleTree(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestVerifyMerkleTree(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -913,7 +913,7 @@ class handler_UpdateMerkleTree final : public handler<Void, UpdateMerkleTreeResp
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<UpdateMerkleTreeResponse> *writer) override {
-        hctx.s.RequestUpdateMerkleTree(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestUpdateMerkleTree(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -938,7 +938,7 @@ class handler_VerifyDirtyPageMaps final : public handler<Void, VerifyDirtyPageMa
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<VerifyDirtyPageMapsResponse> *writer) override {
-        hctx.s.RequestVerifyDirtyPageMaps(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestVerifyDirtyPageMaps(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -963,7 +963,7 @@ class handler_DumpPmas final : public handler<Void, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestDumpPmas(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestDumpPmas(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -987,7 +987,7 @@ class handler_GetDefaultConfig final : public handler<Void, GetDefaultConfigResp
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<GetDefaultConfigResponse> *writer) override {
-        hctx.s.RequestGetDefaultConfig(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestGetDefaultConfig(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -1010,7 +1010,7 @@ class handler_VerifyAccessLog final : public handler<VerifyAccessLogRequest, Voi
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, VerifyAccessLogRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestVerifyAccessLog(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestVerifyAccessLog(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -1033,7 +1033,7 @@ class handler_VerifyStateTransition final : public handler<VerifyStateTransition
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, VerifyStateTransitionRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s.RequestVerifyStateTransition(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestVerifyStateTransition(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -1043,7 +1043,7 @@ class handler_VerifyStateTransition final : public handler<VerifyStateTransition
         machine::verify_state_transition(get_proto_hash(req->root_hash_before()), get_proto_access_log(req->log()),
             get_proto_hash(req->root_hash_after()), get_proto_machine_runtime_config(req->runtime()), req->one_based());
         Void resp;
-        return finish_ok(writer, resp);
+        return finish_ok(writer, resp); // NOLINT: suppress warning caused by gRPC
     }
 
 public:
@@ -1069,11 +1069,12 @@ static std::string replace_port(const std::string &address, int port) {
 
 std::unique_ptr<Server> build_server(const char *server_address, const char *session_id, const char *checkin_address,
     handler_context &hctx) {
+    hctx.s = std::make_unique<Machine::AsyncService>();
     ServerBuilder builder;
     builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
     int server_port = 0;
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials(), &server_port);
-    builder.RegisterService(&hctx.s);
+    builder.RegisterService(hctx.s.get());
     hctx.cq = builder.AddCompletionQueue();
     auto server = builder.BuildAndStart();
     if (session_id && checkin_address) {
@@ -1091,6 +1092,103 @@ std::unique_ptr<Server> build_server(const char *server_address, const char *ses
         }
     }
     return server;
+}
+
+static void server_loop(const char *server_address, const char *session_id, const char *checkin_address) {
+    handler_context hctx{};
+    for (;;) {
+        auto server = build_server(server_address, session_id, checkin_address, hctx);
+        if (!server) {
+            std::cerr << "server creation failed\n";
+            exit(1);
+        }
+
+        handler_GetVersion hGetVersion(hctx);
+        handler_Machine hMachine(hctx);
+        handler_Run hRun(hctx);
+        handler_Store hStore(hctx);
+        handler_Destroy hDestroy(hctx);
+        handler_Snapshot hSnapshot(hctx);
+        handler_Rollback hRollback(hctx);
+        handler_Shutdown hShutdown(hctx);
+        handler_Step hStep(hctx);
+        handler_ReadMemory hReadMemory(hctx);
+        handler_WriteMemory hWriteMemory(hctx);
+        handler_ReadWord hReadWord(hctx);
+        handler_GetRootHash hGetRootHash(hctx);
+        handler_GetProof hGetProof(hctx);
+        handler_ReplaceFlashDrive hReplaceFlashDrive(hctx);
+        handler_GetXAddress hGetXAddress(hctx);
+        handler_ReadX hReadX(hctx);
+        handler_WriteX hWriteX(hctx);
+        handler_ResetIflagsY hResetIflagsY(hctx);
+        handler_GetDhdHAddress hGetDhdHAddress(hctx);
+        handler_ReadDhdH hReadDhdH(hctx);
+        handler_WriteDhdH hWriteDhdH(hctx);
+        handler_GetCsrAddress hGetCsrAddress(hctx);
+        handler_ReadCsr hReadCsr(hctx);
+        handler_WriteCsr hWriteCsr(hctx);
+        handler_GetInitialConfig hGetInitialConfig(hctx);
+        handler_VerifyMerkleTree hVerifyMerkleTree(hctx);
+        handler_UpdateMerkleTree hUpdateMerkleTree(hctx);
+        handler_VerifyDirtyPageMaps hVerifyDirtyPageMaps(hctx);
+        handler_DumpPmas hDumpPmas(hctx);
+        handler_GetDefaultConfig hGetDefaultConfig(hctx);
+        handler_VerifyAccessLog hVerifyAccessLog(hctx);
+        handler_VerifyStateTransition hVerifyStateTransition(hctx);
+
+        // The invariant before and after snapshot/rollbacks is that all handlers
+        // are in waiting mode
+        using side_effect = i_handler::side_effect;
+        side_effect s_effect = side_effect::none;
+        for (;;) {
+            i_handler *h = nullptr;
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            if (!hctx.cq->Next(reinterpret_cast<void **>(&h), &hctx.ok)) {
+                s_effect = side_effect::shutdown;
+                break;
+            }
+            if ((s_effect = h->advance(hctx)) != side_effect::none) {
+                break;
+            }
+        }
+
+        // Shutdown server and completion queue before handling side effect
+        // Server must be shutdown before completion queue
+        server->Shutdown();
+        hctx.cq->Shutdown();
+        {
+            // Drain completion queue before exiting
+            bool ok = false;
+            i_handler *h = nullptr;
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            while (hctx.cq->Next(reinterpret_cast<void **>(&h), &ok)) {
+                ;
+            }
+        }
+        server->Wait();
+        // Release and delete
+        server.reset(nullptr);
+        hctx.s.reset(nullptr);
+        hctx.cq.reset(nullptr);
+
+        // Handle side effect
+        switch (s_effect) {
+            case side_effect::none:
+                // do nothing
+                break;
+            case side_effect::snapshot:
+                snapshot(hctx.forked);
+                break;
+            case side_effect::rollback:
+                rollback(hctx.forked);
+                break;
+            case side_effect::shutdown:
+                // Make sure we don't leave a snapshot burried
+                squash_parent(hctx.forked);
+                return;
+        }
+    }
 }
 
 /// \brief Checks if string matches prefix and captures remaninder
@@ -1171,85 +1269,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    handler_context hctx{};
-    auto server = build_server(server_address, session_id, checkin_address, hctx);
-    if (!server) {
-        std::cerr << "server creation failed\n";
-        exit(1);
-    }
+    server_loop(server_address, session_id, checkin_address);
 
-    handler_GetVersion hGetVersion(hctx);
-    handler_Machine hMachine(hctx);
-    handler_Run hRun(hctx);
-    handler_Store hStore(hctx);
-    handler_Destroy hDestroy(hctx);
-    handler_Snapshot hSnapshot(hctx);
-    handler_Rollback hRollback(hctx);
-    handler_Shutdown hShutdown(hctx);
-    handler_Step hStep(hctx);
-    handler_ReadMemory hReadMemory(hctx);
-    handler_WriteMemory hWriteMemory(hctx);
-    handler_ReadWord hReadWord(hctx);
-    handler_GetRootHash hGetRootHash(hctx);
-    handler_GetProof hGetProof(hctx);
-    handler_ReplaceFlashDrive hReplaceFlashDrive(hctx);
-    handler_GetXAddress hGetXAddress(hctx);
-    handler_ReadX hReadX(hctx);
-    handler_WriteX hWriteX(hctx);
-    handler_ResetIflagsY hResetIflagsY(hctx);
-    handler_GetDhdHAddress hGetDhdHAddress(hctx);
-    handler_ReadDhdH hReadDhdH(hctx);
-    handler_WriteDhdH hWriteDhdH(hctx);
-    handler_GetCsrAddress hGetCsrAddress(hctx);
-    handler_ReadCsr hReadCsr(hctx);
-    handler_WriteCsr hWriteCsr(hctx);
-    handler_GetInitialConfig hGetInitialConfig(hctx);
-    handler_VerifyMerkleTree hVerifyMerkleTree(hctx);
-    handler_UpdateMerkleTree hUpdateMerkleTree(hctx);
-    handler_VerifyDirtyPageMaps hVerifyDirtyPageMaps(hctx);
-    handler_DumpPmas hDumpPmas(hctx);
-    handler_GetDefaultConfig hGetDefaultConfig(hctx);
-    handler_VerifyAccessLog hVerifyAccessLog(hctx);
-    handler_VerifyStateTransition hVerifyStateTransition(hctx);
-
-    // The invariant before and after snapshot/rollbacks is that all handlers
-    // are in waiting mode
-    for (;;) {
-        using side_effect = i_handler::side_effect;
-        i_handler *h = nullptr;
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        if (!hctx.cq->Next(reinterpret_cast<void **>(&h), &hctx.ok)) {
-            goto shutdown; // NOLINT(cppcoreguidelines-avoid-goto)
-        }
-        switch (h->advance(hctx)) {
-            case side_effect::none:
-                // do nothing
-                break;
-            case side_effect::snapshot:
-                snapshot(hctx.forked);
-                break;
-            case side_effect::rollback:
-                rollback(hctx.forked);
-                break;
-            case side_effect::shutdown:
-                goto shutdown; // NOLINT(cppcoreguidelines-avoid-goto)
-        }
-    }
-
-shutdown:
-    // Shutdown server before completion queue
-    server->Shutdown();
-    hctx.cq->Shutdown();
-    {
-        // Drain completion queue before exiting
-        bool ok = false;
-        i_handler *h = nullptr;
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        while (hctx.cq->Next(reinterpret_cast<void **>(&h), &ok)) {
-            ;
-        }
-    }
-    // Make sure we don't leave a snapshot burried
-    squash_parent(hctx.forked);
     return 0;
 }

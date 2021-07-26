@@ -677,7 +677,7 @@ int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_
                       cm_machine **new_machine, char **err_msg) try {
     const cartesi::machine_config c = convert_from_c(config);
     const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
-    *new_machine = static_cast<cm_machine *>(create_virtual_machine(c, r));
+    *new_machine = reinterpret_cast<cm_machine *>(create_virtual_machine(c, r));
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
@@ -686,7 +686,7 @@ int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_
 int cm_load_machine(const char *dir, const cm_machine_runtime_config *runtime_config,
                                cm_machine **new_machine, char **err_msg) try {
     const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
-    *new_machine = static_cast<cm_machine *>(load_virtual_machine(dir, r));
+    *new_machine = reinterpret_cast<cm_machine *>(load_virtual_machine(dir, r));
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
@@ -1113,7 +1113,6 @@ void cm_delete_flash_drive_config(const cm_flash_drive_config *config) {
     if (config == nullptr) {
         return;
     }
-
     delete[] config->image_filename;
     delete config;
 }
@@ -1127,7 +1126,6 @@ void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config) {
     if (config == nullptr) {
         return;
     }
-
     delete[] config->dhd.source_address;
     delete config;
 }
@@ -1154,4 +1152,37 @@ int cm_rollback(cm_machine *m, char **err_msg) try {
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
+}
+
+void cm_delete_ram_config(const cm_ram_config *config) {
+    if (config == nullptr) {
+        return;
+    }
+    delete[] config->image_filename;
+    delete config;
+}
+
+void cm_delete_rom_config(const cm_rom_config *config) {
+    if (config == nullptr) {
+        return;
+    }
+    delete[] config->image_filename;
+    delete[] config->bootargs;
+    delete config;
+}
+
+void cm_delete_dhd_config(const cm_dhd_config *config) {
+    if (config == nullptr) {
+        return;
+    }
+    delete[] config->image_filename;
+    delete config;
+}
+
+void cm_delete_dhd_runtime_config(const cm_dhd_runtime_config *config) {
+    if (config == nullptr) {
+        return;
+    }
+    delete[] config->source_address;
+    delete config;
 }

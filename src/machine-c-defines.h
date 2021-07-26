@@ -31,6 +31,7 @@
 #define CM_TREE_LOG2_WORD_SIZE 3
 #define CM_TREE_LOG2_PAGE_SIZE 12
 #define CM_TREE_LOG2_ROOT_SIZE 64
+#define CM_FLASH_DRIVE_CONFIGS_MAX_SIZE 8
 
 
 #define CM_DHD_NOT_FOUND ((uint64_t)(-1)) // NOLINT(cppcoreguidelines-macro-usage)

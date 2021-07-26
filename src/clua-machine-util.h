@@ -30,11 +30,6 @@
 
 namespace cartesi {
 
-#define CREATE_LUA_TYPE(TYPE, DESCRIPTION, ctxidx) \
-        if (!clua_typeexists<TYPE>(L, ctxidx)) { \
-            clua_createtype<TYPE>(L, DESCRIPTION, ctxidx); \
-        }
-
 #define TRY_EXECUTE(func_call) \
     do {                       \
        auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr)); \
@@ -45,7 +40,7 @@ namespace cartesi {
        lua_pop(L, 1);                           \
     } while (0)
 
-#define TRY_EXECUTE_CTX(func_call, ctxidx) \
+#define TRY_EXECUTE_CTXIDX(func_call, ctxidx) \
     do {                       \
        auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr), ctxidx); \
        char **err_msg = &managed_err_msg.get();\
@@ -57,10 +52,7 @@ namespace cartesi {
 
 /// \brief Create overloaded deleters for C API objects
 template<typename T>
-void cm_delete(T *ptr) {
-    fprintf(stderr, "Calling default deleter, maybe specialized deleter "
-                    "is missing for type <%s>?\n", boost::typeindex::type_id_with_cvr<T>().pretty_name());
-}
+void cm_delete(T *ptr);
 
 /// \brief Deleter for C string
 template<>
@@ -96,9 +88,28 @@ void cm_delete(cm_merkle_tree_proof *p);
 template<>
 void cm_delete(cm_flash_drive_config *p);
 
+/// \brief Deleter for C api ram config
+template<>
+void cm_delete(cm_ram_config *p);
+
+/// \brief Deleter for C api rom config
+template<>
+void cm_delete(cm_rom_config *p);
+
+/// \brief Deleter for C api dhd config
+template<>
+void cm_delete(cm_dhd_config *p);
+
+/// \brief Deleter for C api dhd runtime config
+template<>
+void cm_delete(cm_dhd_runtime_config *p);
+
 template<typename T>
 class clua_managed_cm_ptr final {
 public:
+    clua_managed_cm_ptr(): m_ptr{nullptr} {
+    }
+
     explicit clua_managed_cm_ptr(T *ptr): m_ptr{ptr} {
     }
 
@@ -107,17 +118,24 @@ public:
         other.m_ptr = nullptr;
     }
 
-    void operator= (clua_managed_cm_ptr &&other) {
+    void operator=(clua_managed_cm_ptr &&other) {
         release();
         std::swap(m_ptr, other.m_ptr);
     };
+
+    T *operator->() {
+        return m_ptr;
+    }
+
+    const T *operator->() const {
+        return m_ptr;
+    }
 
     clua_managed_cm_ptr(const clua_managed_cm_ptr &other) = delete;
     void operator= (const clua_managed_cm_ptr &other) = delete;
 
     ~clua_managed_cm_ptr() {
-        cm_delete(m_ptr); // use overloaded deleter
-        m_ptr = nullptr; // not needed, just in end of the world case
+        release();
     }
 
     void operator = (T *ptr) {
@@ -271,8 +289,9 @@ machine_config clua_check_machine_config(lua_State *L, int tabidx);
 /// \brief Loads a cm_machine_config object from a Lua table
 /// \param L Lua state
 /// \param tabidx Index of table in Lua stack
+/// \param ctxidx Index of clua context
 /// \returns Allocated machine config. It must be deleted with cm_delete_machine_config
-cm_machine_config* clua_check_cm_machine_config(lua_State *L, int tabidx);
+cm_machine_config* clua_check_cm_machine_config(lua_State *L, int tabidx, int ctxidx = lua_upvalueindex(1));
 
 /// \brief Loads a machine_runtime_config object from a Lua table
 /// \param L Lua state
@@ -283,9 +302,10 @@ machine_runtime_config clua_check_machine_runtime_config(lua_State *L,
 /// \brief Loads a cm_machine_runtime_config object from a Lua table
 /// \param L Lua state
 /// \param tabidx Index of table in Lua stack
+/// \param ctxidx Index of clua context
 /// \returns Allocated machine runtime config object. It must be deleted with cm_delete_machine_runtime_config
 cm_machine_runtime_config* clua_check_cm_machine_runtime_config(lua_State *L,
-    int tabidx);
+    int tabidx, int ctxidx = lua_upvalueindex(1));
 
 /// \brief Loads an optional machine_runtime_config object from a Lua
 /// \param L Lua state
@@ -298,9 +318,10 @@ machine_runtime_config clua_opt_machine_runtime_config(lua_State *L,
 /// \param L Lua state
 /// \param tabidx Index of table in Lua stack
 /// \param r Default C api machine runtime config value if optional field not present
+/// \param ctxidx Index of clua context
 /// \returns Allocated machine runtime config object. It must be deleted with cm_delete_machine_runtime_config
 cm_machine_runtime_config* clua_opt_cm_machine_runtime_config(lua_State *L,
-    int tabidx, const cm_machine_runtime_config *r);
+    int tabidx, const cm_machine_runtime_config *r, int ctxidx = lua_upvalueindex(1));
 
 /// \brief Loads flash drive config from a Lua table.
 /// \param L Lua state
@@ -313,7 +334,6 @@ flash_drive_config clua_check_flash_drive_config(lua_State *L, int tabidx);
 /// \param tabidx Flash config stack index
 /// \returns The cm_flash_drive_config
 cm_flash_drive_config clua_check_cm_flash_drive_config(lua_State *L, int tabidx);
-
 
 } // namespace cartesi
 

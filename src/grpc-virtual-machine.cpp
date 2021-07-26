@@ -46,7 +46,7 @@ const Machine::Stub *grpc_machine_stub::get_stub(void) const {
     return m_stub.get();
 }
 
-std::string grpc_machine_stub::get_address(void) const {
+const std::string &grpc_machine_stub::get_address(void) const {
     return m_address;
 }
 

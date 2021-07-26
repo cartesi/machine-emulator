@@ -44,11 +44,7 @@ typedef struct {
 } cm_semantic_version;
 
 /// \brief Handle of the grpc stub
-/// \details cm_machine is already defined void
-/// so for template specialisation this needs to be different
-/// type
-typedef struct {
-} cm_grpc_machine_stub;
+typedef struct cm_grpc_machine_stub_tag cm_grpc_machine_stub;
 
 
 /// \brief Create server stub for remote Cartesi machine server

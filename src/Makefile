@@ -447,8 +447,8 @@ tests/test-rollup-machine-manager: $(TEST_ROLLUP_MACHINE_MANAGER_OBJS)
 
 cartesi-machine-server cartesi-machine-proxy rollup-machine-manager tests/test-rollup-machine-manager: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
-tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI)
-	$(CXX) $(LIBCARTESI_TESTS_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI_LIB)
+tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_GRPC)
+	$(CXX) $(LIBCARTESI_TESTS_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI_LIB) $(LIBCARTESI_GRPC_LIB)
 
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 

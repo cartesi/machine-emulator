@@ -55,6 +55,7 @@ static int grpc_machine_class_verify_access_log(lua_State *L) {
     TRY_EXECUTE(cm_grpc_verify_access_log(managed_grpc_stub.get(), managed_log.get(),
         lua_toboolean(L, 2), err_msg));
     managed_log.release();
+    lua_pop(L, 1); //managed pointer
     lua_pushnumber(L, 1);
     return 1;
 }
@@ -72,6 +73,7 @@ static int grpc_machine_class_verify_state_transition(lua_State *L) {
     TRY_EXECUTE(cm_grpc_verify_state_transition(managed_grpc_stub.get(), &root_hash, managed_log.get(),
         &target_hash, one_based, err_msg));
     managed_log.release();
+    lua_pop(L, 1); //managed pointer
     lua_pushnumber(L, 1);
     return 1;
 }
@@ -129,23 +131,21 @@ static int grpc_machine_tostring(lua_State *L) {
 static int grpc_machine_ctor(lua_State *L) {
     lua_settop(L, 3);
     auto &managed_grpc_stub = clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
-    const int machine_ctxidx = lua_upvalueindex(2);
-    auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr), machine_ctxidx);
+    const int ctxidx = lua_upvalueindex(2);
+    auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr), ctxidx);
+    auto &managed_runtime_config = clua_push_to(L,
+        clua_managed_cm_ptr<cm_machine_runtime_config>(clua_opt_cm_machine_runtime_config(L, 3, {}, ctxidx)), ctxidx);
     if (lua_type(L, 2) == LUA_TTABLE) {
         auto &managed_config = clua_push_to(L,
-            clua_managed_cm_ptr<cm_machine_config>(clua_check_cm_machine_config(L, 2)), machine_ctxidx);
-        auto &managed_runtime_config = clua_push_to(L,
-            clua_managed_cm_ptr<cm_machine_runtime_config>(clua_opt_cm_machine_runtime_config(L, 3, {})), machine_ctxidx);
-        TRY_EXECUTE_CTX(
+            clua_managed_cm_ptr<cm_machine_config>(clua_check_cm_machine_config(L, 2, ctxidx)), ctxidx);
+        TRY_EXECUTE_CTXIDX(
             cm_create_grpc_machine(managed_grpc_stub.get(), managed_config.get(), managed_runtime_config.get(),
-                &managed_machine.get(), err_msg), machine_ctxidx);
+                &managed_machine.get(), err_msg), ctxidx);
         lua_pop(L, 2);
     } else {
-        auto &managed_runtime_config = clua_push_to(L,
-            clua_managed_cm_ptr<cm_machine_runtime_config>(clua_opt_cm_machine_runtime_config(L, 3, {})), machine_ctxidx);
-        TRY_EXECUTE_CTX(
+        TRY_EXECUTE_CTXIDX(
             cm_load_grpc_machine(managed_grpc_stub.get(), luaL_checkstring(L, 2), managed_runtime_config.get(),
-                &managed_machine.get(), err_msg), machine_ctxidx);
+                &managed_machine.get(), err_msg), ctxidx);
         lua_pop(L, 1);
     }
     return 1;
@@ -162,7 +162,7 @@ static int grpc_server_class_get_version(lua_State *L) {
     auto &managed_grpc_stub = clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     auto &managed_version = clua_push_to(L, clua_managed_cm_ptr<const cm_semantic_version>(nullptr),
         lua_upvalueindex(2));
-    TRY_EXECUTE_CTX(cm_grpc_get_semantic_version(managed_grpc_stub.get(), &managed_version.get(), err_msg),
+    TRY_EXECUTE_CTXIDX(cm_grpc_get_semantic_version(managed_grpc_stub.get(), &managed_version.get(), err_msg),
         lua_upvalueindex(2));
     clua_push_cm_semantic_version(L, managed_version.get());
     managed_version.release();
@@ -172,7 +172,7 @@ static int grpc_server_class_get_version(lua_State *L) {
 /// \brief This is the machine.shutdown() static method implementation.
 static int grpc_server_class_shutdown(lua_State *L) {
     auto &managed_grpc_stub = clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
-    TRY_EXECUTE_CTX(cm_grpc_shutdown(managed_grpc_stub.get(), err_msg),
+    TRY_EXECUTE_CTXIDX(cm_grpc_shutdown(managed_grpc_stub.get(), err_msg),
         lua_upvalueindex(2));
     lua_pushnumber(L, 1);
     return 1;
@@ -190,7 +190,6 @@ static int mod_stub(lua_State *L) {
     //Create stub
     auto &managed_grpc_stub = clua_push_to(L, clua_managed_cm_ptr<cm_grpc_machine_stub>(nullptr));
     TRY_EXECUTE(cm_create_grpc_machine_stub(address, &managed_grpc_stub.get(), err_msg));
-
     lua_newtable(L); // stub server
     lua_newtable(L); // stub server grpc_machine_class
     lua_pushvalue(L, -3); // stub server grpc_machine_class stub
@@ -215,22 +214,18 @@ static const auto mod = cartesi::clua_make_luaL_Reg_array({
 });
 
 int clua_grpc_machine_init(lua_State *L, int ctxidx) {
-    CREATE_LUA_TYPE(clua_managed_cm_ptr<const cm_machine_config>, "immutable cartesi machine configuration",
-        ctxidx);
-    CREATE_LUA_TYPE(clua_managed_cm_ptr<cm_machine_config>, "cartesi machine configuration",
-        ctxidx);
-    CREATE_LUA_TYPE(clua_managed_cm_ptr<cm_access_log>, "cartesi machine access log",
-        ctxidx);
-    CREATE_LUA_TYPE(clua_managed_cm_ptr<cm_machine_runtime_config>, "cartesi machine runtime config",
-        ctxidx);
-    CREATE_LUA_TYPE(clua_managed_cm_ptr<char>, "lua C string",
-        ctxidx);
-    CREATE_LUA_TYPE(clua_managed_cm_ptr<cm_merkle_tree_proof>, "merkle tree proof",
-        ctxidx);
-    CREATE_LUA_TYPE(clua_managed_cm_ptr<const cm_semantic_version>, "semantic version",
-        ctxidx);
-    CREATE_LUA_TYPE(clua_managed_cm_ptr<cm_grpc_machine_stub>, "C api GRPC stub",
-        ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<const cm_machine_config>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<cm_machine_config>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<cm_access_log>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<cm_machine_runtime_config>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<char>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<cm_merkle_tree_proof>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<const cm_semantic_version>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<cm_ram_config>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<cm_rom_config>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<cm_dhd_config>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<cm_dhd_runtime_config>>(L, ctxidx);
     return 1;
 }
 

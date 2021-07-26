@@ -286,6 +286,48 @@ void clua_createtype(lua_State *L, const char *name, int ctxidx) {
     lua_rawset(L, ctxidx); //
 }
 
+/// \brief Creates a new Lua type if it doesn't exists.
+/// Use default C++ type name for lua name description
+/// \tparam T Associated C++ type
+/// \param L Lua state
+/// \param ctxidx Index (or pseudo-index) of clua context
+template<typename T>
+void clua_createnewtype(lua_State *L, int ctxidx) {
+    if (!clua_typeexists<T>(L, ctxidx)) {
+        clua_createtype<T>(L, boost::typeindex::type_id_with_cvr<T>().pretty_name().c_str(), ctxidx);
+    }
+}
+
+
+/// \brief Sets the lua named field to integer value
+/// \param L Lua state
+/// \param val Integer value
+/// \param idx Index (or pseudo-index) of object in stack
+/// \param ctxidx Index (or pseudo-index) of clua context
+void clua_setintegerfield(lua_State *L, uint64_t val, const char *name, int idx);
+
+/// \brief Sets the lua named field to string value
+/// \param L Lua state
+/// \param val String value
+/// \param idx Index (or pseudo-index) of object in stack
+/// \param ctxidx Index (or pseudo-index) of clua context
+void clua_setstringfield(lua_State *L, const char* val, const char *name, int idx);
+
+/// \brief Sets the lua named field to string value of particular size
+/// \param L Lua state
+/// \param val String value
+/// \param len Size of string
+/// \param idx Index (or pseudo-index) of object in stack
+/// \param ctxidx Index (or pseudo-index) of clua context
+void clua_setlstringfield(lua_State *L, const char* val, size_t len, const char *name, int idx);
+
+/// \brief Sets the lua named field to boolean value
+/// \param L Lua state
+/// \param val Boolean value
+/// \param idx Index (or pseudo-index) of object in stack
+/// \param ctxidx Index (or pseudo-index) of clua context
+void clua_setbooleanfield(lua_State *L, bool val, const char *name, int idx);
+
 } // namespace cartesi
 
 #endif

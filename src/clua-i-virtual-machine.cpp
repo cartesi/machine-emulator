@@ -84,7 +84,7 @@ static int machine_obj_index_dump_regs(lua_State *L) {
     PRINT_PROCESSOR_CSR(m, htif_ihalt);
     PRINT_PROCESSOR_CSR(m, htif_iconsole);
     PRINT_PROCESSOR_CSR(m, htif_iyield);
-    printf("\n");
+    fprintf(stderr, "\n");
     return 0;
 }
 
@@ -413,13 +413,12 @@ static int machine_obj_index_write_memory(lua_State *L) {
 }
 
 
-
 /// \brief Replaces a flash drive.
 /// \param L Lua state.
 static int machine_obj_index_replace_flash_drive(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-        auto &managed_flash_drive_config = clua_push_to(L,
-            clua_managed_cm_ptr<cm_flash_drive_config>(new cm_flash_drive_config{}));
+    auto &managed_flash_drive_config = clua_push_to(L,
+        clua_managed_cm_ptr<cm_flash_drive_config>(new cm_flash_drive_config{}));
     *(managed_flash_drive_config.get()) = clua_check_cm_flash_drive_config(L, 2);
     TRY_EXECUTE(cm_replace_flash_drive(m.get(), managed_flash_drive_config.get(), err_msg));
     managed_flash_drive_config.release();
@@ -451,7 +450,7 @@ static int machine_obj_index_rollback(lua_State *L) {
 }
 
 /// \brief Contents of the machine object metatable __index table.
-static const luaL_Reg machine_obj_index[] = {
+static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"dump_pmas", machine_obj_index_dump_pmas},
     {"dump_regs", machine_obj_index_dump_regs},
     {"get_proof", machine_obj_index_get_proof},

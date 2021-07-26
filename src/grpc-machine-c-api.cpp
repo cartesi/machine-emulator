@@ -54,7 +54,7 @@ int cm_create_grpc_machine(const cm_grpc_machine_stub *stub, const cm_machine_co
     const cartesi::machine_config c = convert_from_c(config);
     const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
     const cartesi::grpc_machine_stub_ptr *cpp_stub = reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
-    *new_machine = static_cast<cm_machine *>(create_grpc_virtual_machine(*cpp_stub, c, r));
+    *new_machine = reinterpret_cast<cm_machine *>(create_grpc_virtual_machine(*cpp_stub, c, r));
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
@@ -65,7 +65,7 @@ int cm_load_grpc_machine(const cm_grpc_machine_stub *stub, const char *dir, cons
                      cm_machine **new_machine, char **err_msg) try {
     const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
     const cartesi::grpc_machine_stub_ptr *cpp_stub = reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
-    *new_machine = static_cast<cm_machine *>(load_grpc_virtual_machine(*cpp_stub, dir, r));
+    *new_machine = reinterpret_cast<cm_machine *>(load_grpc_virtual_machine(*cpp_stub, dir, r));
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);

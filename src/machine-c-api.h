@@ -126,7 +126,8 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_DHD_TSTART,
     CM_PROC_DHD_TLENGTH,
     CM_PROC_DHD_DLENGTH,
-    CM_PROC_DHD_HLENGTH
+    CM_PROC_DHD_HLENGTH,
+    CM_PROC_UNKNOWN
 } CM_PROC_CSR;
 
 /// \brief Processor state configuration
@@ -300,7 +301,12 @@ typedef struct { // NOLINT(modernize-use-using)
 } cm_machine_runtime_config;
 
 /// \brief Machine instance handle
-typedef void cm_machine; // NOLINT(modernize-use-using)
+/// \details cm_machine* is handle used from C api users
+/// to pass the machine object when calling C api functions. Currently,
+/// it is merely a pointer to internal C++ object that is  internally casted
+/// back to original C++ machine type. On some obscure CPU arhitectures
+/// where pointer size depend on types, this api might not work
+typedef struct cm_machine_tag cm_machine;
 
 
 // ---------------------------------
@@ -1386,6 +1392,23 @@ CM_API int cm_snapshot(cm_machine *m, char **err_msg);
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_rollback(cm_machine *m, char **err_msg);
+
+
+/// \brief Deletes allocated ram config
+/// \returns void
+CM_API void cm_delete_ram_config(const cm_ram_config *config);
+
+/// \brief Deletes allocated rom config
+/// \returns void
+CM_API void cm_delete_rom_config(const cm_rom_config *config);
+
+/// \brief Deletes allocated dhd config
+/// \returns void
+CM_API void cm_delete_dhd_config(const cm_dhd_config *config);
+
+/// \brief Deletes allocated dhd runtime config
+/// \returns void
+CM_API void cm_delete_dhd_runtime_config(const cm_dhd_runtime_config *config);
 
 #ifdef __cplusplus
 }

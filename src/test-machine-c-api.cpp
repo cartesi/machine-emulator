@@ -1683,7 +1683,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(destroy_null_machine_test)
         char* err_msg{};
         cm_destroy(nullptr, &err_msg);
     };
-    MONITOR_SYSTEM_THROW(f);
+    monitor_system_throw(f);
 }
 
 
@@ -1702,7 +1702,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(snapshot_null_machine_test)
         char *err_msg{};
         cm_snapshot(nullptr, &err_msg);
     };
-    MONITOR_SYSTEM_THROW(f);
+    monitor_system_throw(f);
 }
 
 
@@ -1723,7 +1723,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(rollback_null_machine_test)
         char *err_msg{};
         cm_rollback(nullptr, &err_msg);
     };
-    MONITOR_SYSTEM_THROW(f);
+    monitor_system_throw(f);
 }
 
 
@@ -2309,7 +2309,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_machine_test, grpc_machi
         char *err_msg;
         cm_create_grpc_machine(m_stub, &_machine_config, &_runtime_config, NULL, &err_msg);
     };
-    MONITOR_SYSTEM_THROW(f);
+    monitor_system_throw(f);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_basic_test, grpc_machine_fixture_with_server)
@@ -2332,7 +2332,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_error_placeholder_test, 
         cm_machine* new_machine;
         cm_create_grpc_machine(m_stub, &_machine_config, &_runtime_config,  &new_machine, NULL);
     };
-    MONITOR_SYSTEM_THROW(f);
+    monitor_system_throw(f);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_dir, grpc_machine_fixture_with_server)
@@ -2379,7 +2379,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_error_placeholder_test, gr
         cm_machine* new_machine;
         cm_load_grpc_machine(m_stub, "some_dir", &_runtime_config, &new_machine, NULL);
     };
-    MONITOR_SYSTEM_THROW(f);
+    monitor_system_throw(f);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_default_config_basic_test, grpc_machine_fixture_with_server)

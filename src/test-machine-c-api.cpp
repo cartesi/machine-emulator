@@ -1831,6 +1831,10 @@ public:
     }
 
     ~access_log_machine_fixture() = default;
+    access_log_machine_fixture(const access_log_machine_fixture &other) = delete;
+    access_log_machine_fixture(access_log_machine_fixture &&other) noexcept = delete;
+    access_log_machine_fixture &operator=(const access_log_machine_fixture &other) = delete;
+    access_log_machine_fixture &operator=(access_log_machine_fixture &&other) noexcept = delete;
 
 protected:
     cm_access_log* _access_log;

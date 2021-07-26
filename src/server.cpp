@@ -76,7 +76,12 @@ public:
         return do_advance(hctx);
     }
 
-    virtual ~i_handler(void) = default;
+    i_handler() = default;
+    virtual ~i_handler() = default;
+    i_handler(const i_handler &other) = delete;
+    i_handler(i_handler &&other) noexcept = delete;
+    i_handler &operator=(const i_handler &other) = delete;
+    i_handler &operator=(i_handler &&other) noexcept = delete;
 
 private:
     virtual side_effect do_advance(handler_context &hctx) = 0;

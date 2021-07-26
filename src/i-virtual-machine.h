@@ -40,8 +40,16 @@ public:
     using hash_type = machine_merkle_tree::hash_type;
     using csr = machine::csr;
 
+    /// \brief Constructor
+    i_virtual_machine() = default;
+
     /// \brief Destructor.
-    virtual ~i_virtual_machine(void) = default;
+    virtual ~i_virtual_machine() = default;
+
+    i_virtual_machine(const i_virtual_machine &other) = delete;
+    i_virtual_machine(i_virtual_machine &&other) noexcept = delete;
+    i_virtual_machine &operator=(const i_virtual_machine &other) = delete;
+    i_virtual_machine &operator=(i_virtual_machine &&other) noexcept = delete;
 
     /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
     void run(uint64_t mcycle_end) {

@@ -31,8 +31,16 @@ namespace cartesi {
 class i_dhd_source {
 public:
 
+    /// \brief Default constructor
+    i_dhd_source() = default;
+
     /// \brief Virtual destructor
     virtual ~i_dhd_source() = default;
+
+    i_dhd_source(const i_dhd_source &other) = delete;
+    i_dhd_source(i_dhd_source &&other) noexcept = delete;
+    i_dhd_source &operator=(const i_dhd_source &other) = delete;
+    i_dhd_source &operator=(i_dhd_source &&other) noexcept = delete;
 
     /// \brief Obtains the block of data that has a given hash
     /// \param hash Pointer to buffer containing hash

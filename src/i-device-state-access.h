@@ -42,8 +42,16 @@ namespace cartesi {
 class i_device_state_access {
 public:
 
+    /// \brief Default constructor
+    i_device_state_access() = default;
+
     /// \brief Virtual destructor.
-    virtual ~i_device_state_access(void) = default;
+    virtual ~i_device_state_access() = default;
+
+    i_device_state_access(const i_device_state_access &other) = delete;
+    i_device_state_access(i_device_state_access &&other) noexcept = delete;
+    i_device_state_access &operator=(const i_device_state_access &other) = delete;
+    i_device_state_access &operator=(i_device_state_access &&other) noexcept = delete;
 
     /// \brief Sets bits in mip.
     void set_mip(uint32_t mask) {

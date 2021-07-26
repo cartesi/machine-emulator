@@ -36,5 +36,3 @@ WarningsAsErrors: >-
 CheckOptions:
   - key: performance-move-const-arg.CheckTriviallyCopyableMove
     value: 'false'
-  - key: cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor
-    value: 'true'

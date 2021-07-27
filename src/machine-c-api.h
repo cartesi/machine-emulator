@@ -41,7 +41,7 @@ extern "C" {
 // API Structures
 // ---------------------------------
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays)
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
 typedef uint8_t cm_hash[CM_MACHINE_HASH_BYTE_SIZE];
 
 ///brief Error codes returned from machine emulator C API

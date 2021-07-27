@@ -455,7 +455,7 @@ static inline uint64_t ilog2(uint64_t v) {
 /// \brief Base class for exceptions holding a grpc::Status
 class handler_exception: public std::exception {
 public:
-    explicit handler_exception(const grpc::Status &status): m_status{status} { }
+    explicit handler_exception(grpc::Status status): m_status{std::move(status)} { }
     handler_exception(grpc::StatusCode code, const std::string &message): m_status{code, message} { }
     const grpc::Status &status(void) const { return m_status; }
 private:
@@ -477,7 +477,7 @@ public:
 /// \brief Exception thrown when an error condition prevents further interactions with the session
 class taint_session: public std::exception {
 public:
-    taint_session(session_type &tainted, const grpc::Status &status): m_session{tainted}, m_status{status} { }
+    taint_session(session_type &tainted, grpc::Status status): m_session{tainted}, m_status{std::move(status)} { }
     taint_session(session_type &tainted, grpc::StatusCode code, const std::string &message): m_session{tainted}, m_status{code, message} { }
     const grpc::Status &status(void) const { return m_status; }
     session_type &session(void) const { return m_session; }
@@ -573,7 +573,7 @@ static void store(async_context &actx, const std::string &directory) {
     reader->Finish(&response, &status, actx.self);
     actx.yield(side_effect::none);
     if (!status.ok()) {
-        THROW((finish_error_yield_none{status}));
+        THROW((finish_error_yield_none{std::move(status)}));
     }
 }
 
@@ -701,7 +701,7 @@ dout{actx.request_context} << "  Shutting server down";
     reader->Finish(&response, &status, actx.self);
     actx.yield(side_effect::none);
     if (!status.ok()) {
-        THROW((finish_error_yield_none{status}));
+        THROW((finish_error_yield_none{std::move(status)}));
     }
 }
 
@@ -1051,7 +1051,7 @@ dout{actx.request_context} << "  Checking server version";
     reader->Finish(&response, &status, actx.self);
     actx.yield(side_effect::none);
     if (!status.ok()) {
-        THROW((finish_error_yield_none{status}));
+        THROW((finish_error_yield_none{std::move(status)}));
     }
     // If version is incompatible, bail out
     if (response.version().major() != machine_version_major || response.version().minor() != machine_version_minor) {
@@ -1072,7 +1072,7 @@ dout{actx.request_context} << "  Instantiating machine";
     reader->Finish(&response, &status, actx.self);
     actx.yield(side_effect::none);
     if (!status.ok()) {
-        THROW((finish_error_yield_none{status}));
+        THROW((finish_error_yield_none{std::move(status)}));
     }
 }
 
@@ -1090,7 +1090,7 @@ dout{actx.request_context} << "  Getting initial config";
     reader->Finish(&response, &status, actx.self);
     actx.yield(side_effect::none);
     if (!status.ok()) {
-        THROW((finish_error_yield_none{status}));
+        THROW((finish_error_yield_none{std::move(status)}));
     }
     return response.config();
 }
@@ -1227,7 +1227,7 @@ static void initial_update_merkle_tree(async_context &actx) {
     reader->Finish(&response, &status, actx.self);
     actx.yield(side_effect::none);
     if (!status.ok()) {
-        THROW((finish_error_yield_none{status}));
+        THROW((finish_error_yield_none{std::move(status)}));
     }
     if (!response.success()) {
         THROW((finish_error_yield_none{grpc::StatusCode::INTERNAL,
@@ -1425,7 +1425,7 @@ dout{actx.request_context} << "      clearing " << config.second;
         actx.yield(side_effect::none);
         replace_request.release_config();
         if (!replace_status.ok()) {
-            THROW((taint_session{actx.session, replace_status}));
+            THROW((taint_session{actx.session, std::move(replace_status)}));
         }
     }
 }
@@ -1449,7 +1449,7 @@ static void write_flash_drive(async_context &actx, IT begin, IT end, const Flash
     reader->Finish(&write_response, &write_status, actx.self);
     actx.yield(side_effect::none);
     if (!write_status.ok()) {
-        THROW((taint_session{actx.session, write_status}));
+        THROW((taint_session{actx.session, std::move(write_status)}));
     }
 }
 
@@ -1483,7 +1483,7 @@ dout{actx.request_context} << "  Running input chunk " << i++;
         reader->Finish(&run_response, &run_status, actx.self);
         actx.yield(side_effect::none);
         if (!run_status.ok()) {
-            THROW((taint_session{actx.session, run_status}));
+            THROW((taint_session{actx.session, std::move(run_status)}));
         }
         // Check if yielded or halted or reached max_mcycle and return
         if (run_response.iflags_y() || run_response.iflags_h() || run_response.mcycle() >= max_mcycle) {
@@ -1515,7 +1515,7 @@ static std::string read_flash_drive(async_context &actx, const FlashDriveConfig 
     reader->Finish(&read_response, &read_status, actx.self);
     actx.yield(side_effect::none);
     if (!read_status.ok()) {
-        THROW((taint_session{actx.session, read_status}));
+        THROW((taint_session{actx.session, std::move(read_status)}));
     }
     if (read_response.data().size() != read_request.length()) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
@@ -1610,7 +1610,7 @@ static hash_type read_output_address_and_payload_data_length(async_context &actx
     reader->Finish(&read_response, &read_status, actx.self);
     actx.yield(side_effect::none);
     if (!read_status.ok()) {
-        THROW((taint_session{actx.session, read_status}));
+        THROW((taint_session{actx.session, std::move(read_status)}));
     }
     if (read_response.data().size() != read_request.length()) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
@@ -1646,7 +1646,7 @@ static std::string read_output_payload_data(async_context &actx, uint64_t entry_
     reader->Finish(&read_response, &read_status, actx.self);
     actx.yield(side_effect::none);
     if (!read_status.ok()) {
-        THROW((taint_session{actx.session, read_status}));
+        THROW((taint_session{actx.session, std::move(read_status)}));
     }
     if (read_response.data().size() != payload_data_length) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
@@ -1674,7 +1674,7 @@ static uint64_t read_message_payload_data_length(async_context &actx, uint64_t e
     reader->Finish(&read_response, &read_status, actx.self);
     actx.yield(side_effect::none);
     if (!read_status.ok()) {
-        THROW((taint_session{actx.session, read_status}));
+        THROW((taint_session{actx.session, std::move(read_status)}));
     }
     if (read_response.data().size() != read_request.length()) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
@@ -1707,7 +1707,7 @@ static std::string read_message_payload_data(async_context &actx, uint64_t entry
     reader->Finish(&read_response, &read_status, actx.self);
     actx.yield(side_effect::none);
     if (!read_status.ok()) {
-        THROW((taint_session{actx.session, read_status}));
+        THROW((taint_session{actx.session, std::move(read_status)}));
     }
     if (read_response.data().size() != payload_data_length) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
@@ -1734,7 +1734,7 @@ static proof_type get_proof(async_context &actx, uint64_t address, uint64_t log2
     reader->Finish(&proof_response, &proof_status, actx.self);
     actx.yield(side_effect::none);
     if (!proof_status.ok()) {
-        THROW((taint_session{actx.session, proof_status}));
+        THROW((taint_session{actx.session, std::move(proof_status)}));
     }
     return cartesi::get_proto_proof(proof_response.proof());
 }
@@ -1792,7 +1792,7 @@ static void snapshot(async_context &actx) {
     reader->Finish(&response, &status, actx.self);
     actx.yield(side_effect::none);
     if (!status.ok()) {
-        THROW((taint_session{actx.session, status}));
+        THROW((taint_session{actx.session, std::move(status)}));
     }
 }
 
@@ -1808,7 +1808,7 @@ static void rollback(async_context &actx) {
     reader->Finish(&response, &status, actx.self);
     actx.yield(side_effect::none);
     if (!status.ok()) {
-        THROW((taint_session{actx.session, status}));
+        THROW((taint_session{actx.session, std::move(status)}));
     }
 }
 
@@ -1825,7 +1825,7 @@ static void reset_iflags_y(async_context &actx) {
     reader->Finish(&response, &status, actx.self);
     actx.yield(side_effect::none);
     if (!status.ok()) {
-        THROW((taint_session{actx.session, status}));
+        THROW((taint_session{actx.session, std::move(status)}));
     }
 }
 
@@ -1864,7 +1864,7 @@ static void update_merkle_tree(async_context &actx) {
     reader->Finish(&response, &status, actx.self);
     actx.yield(side_effect::none);
     if (!status.ok()) {
-        THROW((taint_session{actx.session, status}));
+        THROW((taint_session{actx.session, std::move(status)}));
     }
     if (!response.success()) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "failed updating merkle tree"}));
@@ -1883,7 +1883,7 @@ static hash_type get_root_hash(async_context &actx) {
     reader->Finish(&response, &status, actx.self);
     actx.yield(side_effect::none);
     if (!status.ok()) {
-        THROW((taint_session{actx.session, status}));
+        THROW((taint_session{actx.session, std::move(status)}));
     }
     return cartesi::get_proto_hash(response.hash());
 }

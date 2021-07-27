@@ -159,10 +159,10 @@ public:
         m_suite{}, m_total_tests{0} {}
 
     void add_test_set(const std::string &title, test_setup setup) {
-        m_suite.push_back({title, std::vector<std::pair<std::string, test_function>>()});
+        m_suite.emplace_back(title, std::vector<std::pair<std::string, test_function>>());
         auto &tests = m_suite.back().second;
         setup([&tests, this](const std::string &title, test_function f){
-            tests.push_back({title, f});
+            tests.emplace_back(title, f);
             ++m_total_tests;
         });
     }

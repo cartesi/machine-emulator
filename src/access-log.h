@@ -199,7 +199,7 @@ public:
     void push_access(A &&a, const char *text) {
         m_accesses.push_back(std::forward<A>(a));
         if (m_log_type.has_annotations()) {
-            m_notes.push_back(text);
+            m_notes.emplace_back(text);
         }
     }
 

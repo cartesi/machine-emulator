@@ -320,8 +320,7 @@ update_page_node_hash(address_type page_index, const hash_type &hash) {
     node->hash = hash;
     // Add parent to fifo so we propagate changes
     if (node->parent && node->parent->mark != m_merkle_update_nonce) {
-        m_merkle_update_fifo.push_back(
-            std::make_pair(get_log2_page_size()+1, node->parent));
+        m_merkle_update_fifo.emplace_back(get_log2_page_size()+1, node->parent);
         node->parent->mark = m_merkle_update_nonce;
     }
     return true;
@@ -339,8 +338,7 @@ end_update(hasher_type &h) {
         update_inner_node_hash(h, log2_size, node);
         m_merkle_update_fifo.pop_front();
         if (node->parent && node->parent->mark != m_merkle_update_nonce) {
-            m_merkle_update_fifo.push_back(
-                std::make_pair(log2_size+1, node->parent));
+            m_merkle_update_fifo.emplace_back(log2_size+1, node->parent);
             node->parent->mark = m_merkle_update_nonce;
         }
     }

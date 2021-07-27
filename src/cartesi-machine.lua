@@ -159,9 +159,6 @@ where options are:
   --htif-yield-rollup
     honor yield rollup requests by target
 
-  --dump-machine-config
-    dump initial machine config to screen
-
   --load=<directory>
     load prebuilt machine from <directory>
 
@@ -185,6 +182,10 @@ where options are:
 
   --json-steps=<filename>
     output json with step logs for all cycles to <filename>
+
+  --store-config[=<filename>]
+    store initial machine config to <filename>. If <filename> is omitted,
+    print the initial machine config to stderr.
 
   --dump-pmas
     dump all PMA ranges to disk when done
@@ -236,13 +237,13 @@ local final_proof = {}
 local periodic_hashes_period = math.maxinteger
 local periodic_hashes_start = 0
 local dump_pmas = false
-local dump_config = false
 local max_mcycle = math.maxinteger
 local json_steps
 local step = false
 local store_dir = nil
 local load_dir = nil
 local cmdline_opts_finished = false
+local store_config = false
 local exec_arguments = {}
 
 -- List of supported options
@@ -453,11 +454,6 @@ local options = {
         dump_pmas = true
         return true
     end },
-    { "^%-%-dump%-machine%-config$", function(all)
-        if not all then return false end
-        dump_config = true
-        return true
-    end },
     { "^%-%-step$", function(all)
         if not all then return false end
         step = true
@@ -515,6 +511,16 @@ local options = {
         final_hash = true
         return true
     end },
+    { "^%-%-store%-config(%=?)(%g*)$", function(o, v)
+        if not o then return false end
+        if o == '=' then
+            if not v or #v < 1 then return false end
+            store_config = v
+        else
+            store_config = stderr
+        end
+        return true
+    end },
     { ".*", function(all)
         if not all then return false end
         local not_option = all:sub(1,1) ~= "-"
@@ -553,28 +559,27 @@ local function print_root_hash(cycles, machine)
     stderr("%u: %s\n", cycles, util.hexhash(machine:get_root_hash()))
 end
 
-local function comment_default(u, v)
-    if u ~= v then stderr("\n")
-    else stderr(" -- default\n") end
-end
+local function store_machine_config(config, output)
+    local function comment_default(u, v)
+        output(u == v and " -- default\n" or "\n")
+    end
 
-local function dump_machine_config(config)
     local def
     if server then
         def = server.machine.get_default_config()
     else
         def = cartesi.machine.get_default_config()
     end
-    stderr("machine_config = {\n")
-    stderr("  processor = {\n")
-    stderr("    x = {\n")
+    output("machine_config = {\n")
+    output("  processor = {\n")
+    output("    x = {\n")
     local processor = config.processor or { x = {} }
     for i = 1, 31 do
         local xi = processor.x[i] or def.processor.x[i]
-        stderr("      0x%x,",  xi)
+        output("      0x%x,",  xi)
         comment_default(xi, def.processor.x[i])
     end
-    stderr("    },\n")
+    output("    },\n")
     local order = {}
     for i,v in pairs(def.processor) do
         if type(v) == "number" then
@@ -584,77 +589,77 @@ local function dump_machine_config(config)
     table.sort(order)
     for i,csr in ipairs(order) do
         local c = processor[csr] or def.processor[csr]
-        stderr("    %s = 0x%x,", csr, c)
+        output("    %s = 0x%x,", csr, c)
         comment_default(c,  def.processor[csr])
     end
-    stderr("  },\n")
+    output("  },\n")
     local ram = config.ram or {}
-    stderr("  ram = {\n")
-    stderr("    length = 0x%x,", ram.length or def.ram.length)
+    output("  ram = {\n")
+    output("    length = 0x%x,", ram.length or def.ram.length)
     comment_default(ram.length, def.ram.length)
-    stderr("    image_filename = %q,", ram.image_filename or def.ram.image_filename)
+    output("    image_filename = %q,", ram.image_filename or def.ram.image_filename)
     comment_default(ram.image_filename, def.ram.image_filename)
-    stderr("  },\n")
+    output("  },\n")
     local rom = config.rom or {}
-    stderr("  rom = {\n")
-    stderr("    image_filename = %q,", rom.image_filename or def.rom.image_filename)
+    output("  rom = {\n")
+    output("    image_filename = %q,", rom.image_filename or def.rom.image_filename)
     comment_default(rom.image_filename, def.rom.image_filename)
-    stderr("    bootargs = %q,", rom.bootargs or def.rom.bootargs)
+    output("    bootargs = %q,", rom.bootargs or def.rom.bootargs)
     comment_default(rom.bootargs, def.rom.bootargs)
-    stderr("  },\n")
+    output("  },\n")
     local htif = config.htif or {}
-    stderr("  htif = {\n")
-    stderr("    tohost = 0x%x,", htif.tohost or def.htif.tohost)
+    output("  htif = {\n")
+    output("    tohost = 0x%x,", htif.tohost or def.htif.tohost)
     comment_default(htif.tohost, def.htif.tohost)
-    stderr("    fromhost = 0x%x,", htif.fromhost or def.htif.fromhost)
+    output("    fromhost = 0x%x,", htif.fromhost or def.htif.fromhost)
     comment_default(htif.fromhost, def.htif.fromhost)
-    stderr("    console_getchar = %s,", tostring(htif.console_getchar or false))
+    output("    console_getchar = %s,", tostring(htif.console_getchar or false))
     comment_default(htif.console_getchar or false, def.htif.console_getchar)
-    stderr("    yield_progress = %s,", tostring(htif.yield_progress or false))
+    output("    yield_progress = %s,", tostring(htif.yield_progress or false))
     comment_default(htif.yield_progress or false, def.htif.yield_progress)
-    stderr("    yield_rollup = %s,", tostring(htif.yield_rollup or false))
+    output("    yield_rollup = %s,", tostring(htif.yield_rollup or false))
     comment_default(htif.yield_rollup or false, def.htif.yield_rollup)
-    stderr("  },\n")
+    output("  },\n")
     local clint = config.clint or {}
-    stderr("  clint = {\n")
-    stderr("    mtimecmp = 0x%x,", clint.mtimecmp or def.clint.mtimecmp)
+    output("  clint = {\n")
+    output("    mtimecmp = 0x%x,", clint.mtimecmp or def.clint.mtimecmp)
     comment_default(clint.mtimecmp, def.clint.mtimecmp)
-    stderr("  },\n")
+    output("  },\n")
     local dhd = config.dhd or { h = {} }
-    stderr("  dhd = {\n")
-    stderr("    tstart = 0x%x,", dhd.tstart or def.dhd.tstart)
+    output("  dhd = {\n")
+    output("    tstart = 0x%x,", dhd.tstart or def.dhd.tstart)
     comment_default(dhd.tstart, def.dhd.tstart)
-    stderr("    tlength = 0x%x,", dhd.tlength or def.dhd.tlength)
+    output("    tlength = 0x%x,", dhd.tlength or def.dhd.tlength)
     comment_default(dhd.tlength, def.dhd.tlength)
     if dhd.image_filename and dhd.image_filename ~= "" then
-        stderr("      image_filename = %q,\n", dhd.image_filename)
+        output("      image_filename = %q,\n", dhd.image_filename)
     end
-    stderr("    dlength = 0x%x,", dhd.dlength or def.dhd.dlength)
+    output("    dlength = 0x%x,", dhd.dlength or def.dhd.dlength)
     comment_default(dhd.dlength, def.dhd.dlength)
-    stderr("    hlength = 0x%x,", dhd.hlength or def.dhd.hlength)
+    output("    hlength = 0x%x,", dhd.hlength or def.dhd.hlength)
     comment_default(dhd.hlength, def.dhd.hlength)
-    stderr("    h = {\n")
+    output("    h = {\n")
     for i = 1, 4 do
         local hi = dhd.h[i] or def.dhd.h[i]
-        stderr("      0x%x,",  hi)
+        output("      0x%x,",  hi)
         comment_default(hi, def.dhd.h[i])
     end
-    stderr("    },\n")
-    stderr("  },\n")
-    stderr("  flash_drive = {\n")
+    output("    },\n")
+    output("  },\n")
+    output("  flash_drive = {\n")
     for i, f in ipairs(config.flash_drive) do
-        stderr("    {\n", i)
-        stderr("      start = 0x%x,\n", f.start)
-        stderr("      length = 0x%x,\n", f.length)
+        output("    {\n", i)
+        output("      start = 0x%x,\n", f.start)
+        output("      length = 0x%x,\n", f.length)
         if f.image_filename and f.image_filename ~= "" then
-            stderr("      image_filename = %q,\n", f.image_filename)
+            output("      image_filename = %q,\n", f.image_filename)
         end
-        stderr("      shared = %s,", tostring(f.shared or false))
+        output("      shared = %s,", tostring(f.shared or false))
         comment_default(false, f.shared)
-        stderr("    },\n")
+        output("    },\n")
     end
-    stderr("  },\n")
-    stderr("}\n")
+    output("  },\n")
+    output("}\n")
 end
 
 local function resolve_flash_lengths(label_order, image_filename, start, length)
@@ -821,12 +826,19 @@ for _,f in ipairs(flash_drive_replace) do
     machine:replace_flash_drive(f)
 end
 
+if type(store_config) == "string" then
+    store_config = assert(io.open(store_config, "w"))
+    store_machine_config(machine:get_initial_config(), function (...)
+        store_config:write(string.format(...)) end)
+    store_config:close()
+end
+
 if not json_steps then
     if htif_console_getchar then
         stderr("Running in interactive mode!\n")
     end
-    if dump_config then
-        dump_machine_config(machine:get_initial_config())
+    if store_config == stderr then
+        store_machine_config(machine:get_initial_config(), stderr)
     end
     local cycles = machine:read_mcycle()
     if initial_hash then

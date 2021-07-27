@@ -41,7 +41,7 @@ using access_data = boost::container::small_vector<uint8_t, 8>;
 
 static inline void set_word_access_data(uint64_t w, access_data &ad) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    uint8_t *p = reinterpret_cast<uint8_t *>(&w);
+    auto *p = reinterpret_cast<uint8_t *>(&w);
     ad.clear();
     ad.insert(ad.end(), p, p+sizeof(w));
 }

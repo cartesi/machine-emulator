@@ -160,7 +160,7 @@ static handler::pull_type *new_handler(const std::string &rpc_name,
     // therefore would capture an uninitialized value. So we break the
     // construction into an allocation with operator new and construction with
     // placement new.
-    handler::pull_type* self = static_cast<handler::pull_type *>(operator new(sizeof(handler::pull_type)));
+    auto* self = static_cast<handler::pull_type *>(operator new(sizeof(handler::pull_type)));
     new (self) handler::pull_type {
         [self, rpc_name, start_server_request, start_client_request, last_effect](handler::push_type &yield) {
             using namespace grpc;

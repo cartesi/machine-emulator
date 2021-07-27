@@ -948,7 +948,7 @@ static int machine_obj_index_write_memory(lua_State *L) try {
     auto &m = clua_check<clua_i_virtual_machine_ptr>(L, 1);
     size_t length = 0;
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const unsigned char *data = reinterpret_cast<const unsigned char *>(
+    const auto *data = reinterpret_cast<const unsigned char *>(
         luaL_checklstring(L, 3, &length));
     m->write_memory(luaL_checkinteger(L, 2), data, length);
     lua_pushboolean(L, true);

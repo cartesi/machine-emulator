@@ -837,7 +837,7 @@ private:
             uint64_t paligned = paddr & (~(sizeof(uint64_t)-1));
             uint64_t val64 = check_read_word(paligned, "memory (superfluous)");
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            unsigned char *pval64 = reinterpret_cast<unsigned char *>(&val64);
+            auto *pval64 = reinterpret_cast<unsigned char *>(&val64);
             uint64_t poffset = paddr & (sizeof(uint64_t)-1);
             aliased_aligned_write<T>(pval64+poffset, val);
             check_write_word(paligned, val64, "memory");

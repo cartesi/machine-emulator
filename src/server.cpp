@@ -300,7 +300,7 @@ class handler_Run final: public handler<RunRequest, RunResponse> {
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        uint64_t limit = static_cast<uint64_t>(req->limit());
+        auto limit = static_cast<uint64_t>(req->limit());
         if (limit < hctx.m->read_mcycle()) {
             return finish_with_error(writer, StatusCode::INVALID_ARGUMENT,
                 "mcycle is past");

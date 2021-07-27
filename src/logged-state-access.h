@@ -587,7 +587,7 @@ friend i_state_access<logged_state_access>;
         uint64_t hoffset, T *pval) const {
         // Log access to aligned 64-bit word that contains T value
         uint64_t haligned_offset = hoffset & (~(sizeof(uint64_t)-1));
-        uint64_t val64 = aliased_aligned_read<uint64_t>(hpage+haligned_offset);
+        auto val64 = aliased_aligned_read<uint64_t>(hpage+haligned_offset);
         uint64_t paligned = paddr & (~(sizeof(uint64_t)-1));
         log_read(paligned, val64, "memory");
         *pval = aliased_aligned_read<T>(hpage+hoffset);
@@ -601,12 +601,12 @@ friend i_state_access<logged_state_access>;
         // So we first get value before the write
         uint64_t haligned_offset = hoffset & (~(sizeof(uint64_t)-1));
         void *hval64 = hpage+haligned_offset;
-        uint64_t old_val64 = aliased_aligned_read<uint64_t>(hval64);
+        auto old_val64 = aliased_aligned_read<uint64_t>(hval64);
         // Then the value after the write, leaving no trace of our dirty changes
         void *hval = hpage+hoffset;
         T old_val = aliased_aligned_read<T>(hval);
         aliased_aligned_write<T>(hval, val);
-        uint64_t new_val64 = aliased_aligned_read<uint64_t>(hval64);
+        auto new_val64 = aliased_aligned_read<uint64_t>(hval64);
         aliased_aligned_write<T>(hval, old_val);
         // ??D At the moment, the blockchain implementation does not know
         // how to use the old_val64 we already send along with the write

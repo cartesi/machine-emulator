@@ -354,7 +354,7 @@ static cartesi::machine_config convert_from_c(const cm_machine_config *c_config)
 }
 
 static const cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config) {
-    cm_machine_config *new_machine_config = new cm_machine_config{};
+    auto *new_machine_config = new cm_machine_config{};
 
     new_machine_config->processor = convert_to_c(cpp_config.processor);
     new_machine_config->ram = convert_to_c(cpp_config.ram);
@@ -399,7 +399,7 @@ static int cm_log2_size_to_index(int log2_size, int log2_root_size) {
 }
 
 static cm_merkle_tree_proof *convert_to_c(const cartesi::machine_merkle_tree::proof_type &proof) {
-    cm_merkle_tree_proof *new_merkle_tree_proof = new cm_merkle_tree_proof{};
+    auto *new_merkle_tree_proof = new cm_merkle_tree_proof{};
 
     new_merkle_tree_proof->log2_root_size = proof.get_log2_root_size();
     new_merkle_tree_proof->log2_target_size = proof.get_log2_target_size();
@@ -584,7 +584,7 @@ static void cm_cleanup_bracket_note(cm_bracket_note *bracket_note) {
 }
 
 static cm_access_log *convert_to_c(const cartesi::access_log &cpp_access_log) {
-    cm_access_log *new_access_log = new cm_access_log{};
+    auto *new_access_log = new cm_access_log{};
 
     new_access_log->accesses_count = cpp_access_log.get_accesses().size();
     new_access_log->accesses = new cm_access[new_access_log->accesses_count];
@@ -868,7 +868,7 @@ int cm_verify_merkle_tree(const cm_machine *m, bool *result, char **err_msg) try
 
 int cm_read_csr(const cm_machine *m, CM_PROC_CSR r, uint64_t *val, char **err_msg) try {
     const auto *cpp_machine = convert_from_c(m);
-    cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(r);
+    auto cpp_csr = static_cast<cartesi::machine::csr>(r);
     *val = cpp_machine->read_csr(cpp_csr);
     return result_success(err_msg);
 } catch (...) {
@@ -878,7 +878,7 @@ int cm_read_csr(const cm_machine *m, CM_PROC_CSR r, uint64_t *val, char **err_ms
 
 int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
-    cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(w);
+    auto cpp_csr = static_cast<cartesi::machine::csr>(w);
     cpp_machine->write_csr(cpp_csr, val);
     return result_success(err_msg);
 } catch (...) {
@@ -887,7 +887,7 @@ int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg) try
 
 
 uint64_t cm_get_csr_address(CM_PROC_CSR w) {
-    cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(w);
+    auto cpp_csr = static_cast<cartesi::machine::csr>(w);
     return cartesi::machine::get_csr_address(cpp_csr);
 }
 

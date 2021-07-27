@@ -1103,7 +1103,7 @@ dout{actx.request_context} << "  Getting initial config";
 static void check_payload_and_metadata_config(grpc::ServerContext &request_context, payload_and_metadata_type &drive_pair, const std::string &name,
     const MachineConfig &config) {
 dout{request_context} << "  Checking " << name << " payload and metadata description with config";
-    uint64_t flash_drive_size = static_cast<uint64_t>(config.flash_drive_size());
+    auto flash_drive_size = static_cast<uint64_t>(config.flash_drive_size());
     if (drive_pair.metadata_flash_drive_index >= flash_drive_size) {
         THROW((finish_error_yield_none{grpc::StatusCode::OUT_OF_RANGE, name + " metadata flash drive index too large (expected less than " +
             std::to_string(flash_drive_size) + ", got " + std::to_string(drive_pair.metadata_flash_drive_index) + ")"}));

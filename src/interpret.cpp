@@ -1119,8 +1119,8 @@ static inline execute_status execute_ADDW(STATE_ACCESS &a, uint64_t pc, uint32_t
     auto note = a.make_scoped_note("addw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         // Discard upper 32 bits
-        int32_t rs1w = static_cast<int32_t>(rs1);
-        int32_t rs2w = static_cast<int32_t>(rs2);
+        auto rs1w = static_cast<int32_t>(rs1);
+        auto rs2w = static_cast<int32_t>(rs2);
         int32_t val = 0;
         __builtin_add_overflow(rs1w, rs2w, &val);
         return static_cast<uint64_t>(val);
@@ -1134,8 +1134,8 @@ static inline execute_status execute_SUBW(STATE_ACCESS &a, uint64_t pc, uint32_t
     auto note = a.make_scoped_note("subw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         // Convert 64-bit to 32-bit
-        int32_t rs1w = static_cast<int32_t>(rs1);
-        int32_t rs2w = static_cast<int32_t>(rs2);
+        auto rs1w = static_cast<int32_t>(rs1);
+        auto rs2w = static_cast<int32_t>(rs2);
         int32_t val = 0;
         __builtin_sub_overflow(rs1w, rs2w, &val);
         return static_cast<uint64_t>(val);
@@ -1159,7 +1159,7 @@ static inline execute_status execute_SRLW(STATE_ACCESS &a, uint64_t pc, uint32_t
     dump_insn(a, pc, insn, "srlw");
     auto note = a.make_scoped_note("srlw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        int32_t rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) >> (rs2 & 31));
+        auto rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) >> (rs2 & 31));
         return static_cast<uint64_t>(rs1w);
     });
 }
@@ -1181,8 +1181,8 @@ static inline execute_status execute_MULW(STATE_ACCESS &a, uint64_t pc, uint32_t
     dump_insn(a, pc, insn, "mulw");
     auto note = a.make_scoped_note("mulw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        int32_t rs1w = static_cast<int32_t>(rs1);
-        int32_t rs2w = static_cast<int32_t>(rs2);
+        auto rs1w = static_cast<int32_t>(rs1);
+        auto rs2w = static_cast<int32_t>(rs2);
         int32_t val = 0;
         __builtin_mul_overflow(rs1w, rs2w, &val);
         return static_cast<uint64_t>(val);
@@ -1195,8 +1195,8 @@ static inline execute_status execute_DIVW(STATE_ACCESS &a, uint64_t pc, uint32_t
     dump_insn(a, pc, insn, "divw");
     auto note = a.make_scoped_note("divw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        int32_t rs1w = static_cast<int32_t>(rs1);
-        int32_t rs2w = static_cast<int32_t>(rs2);
+        auto rs1w = static_cast<int32_t>(rs1);
+        auto rs2w = static_cast<int32_t>(rs2);
         if (rs2w == 0) {
             return static_cast<uint64_t>(-1);
         } else if (rs1w == ((int32_t)1 << (32 - 1)) && rs2w == -1) {
@@ -1213,8 +1213,8 @@ static inline execute_status execute_DIVUW(STATE_ACCESS &a, uint64_t pc, uint32_
     dump_insn(a, pc, insn, "divuw");
     auto note = a.make_scoped_note("divuw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        uint32_t rs1w = static_cast<uint32_t>(rs1);
-        uint32_t rs2w = static_cast<uint32_t>(rs2);
+        auto rs1w = static_cast<uint32_t>(rs1);
+        auto rs2w = static_cast<uint32_t>(rs2);
         if (rs2w == 0) {
             return static_cast<uint64_t>(-1);
         } else {
@@ -1229,8 +1229,8 @@ static inline execute_status execute_REMW(STATE_ACCESS &a, uint64_t pc, uint32_t
     dump_insn(a, pc, insn, "remw");
     auto note = a.make_scoped_note("remw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        int32_t rs1w = static_cast<int32_t>(rs1);
-        int32_t rs2w = static_cast<int32_t>(rs2);
+        auto rs1w = static_cast<int32_t>(rs1);
+        auto rs2w = static_cast<int32_t>(rs2);
         if (rs2w == 0) {
             return static_cast<uint64_t>(rs1w);
         } else if (rs1w == ((int32_t)1 << (32 - 1)) && rs2w == -1) {
@@ -1248,8 +1248,8 @@ static inline execute_status execute_REMUW(STATE_ACCESS &a, uint64_t pc, uint32_
     dump_insn(a, pc, insn, "remuw");
     auto note = a.make_scoped_note("remuw"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        uint32_t rs1w = static_cast<uint32_t>(rs1);
-        uint32_t rs2w = static_cast<uint32_t>(rs2);
+        auto rs1w = static_cast<uint32_t>(rs1);
+        auto rs2w = static_cast<uint32_t>(rs2);
         if (rs2w == 0) {
             return static_cast<uint64_t>(static_cast<int32_t>(rs1w));
         } else {
@@ -1818,7 +1818,7 @@ static bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t val) {
 
 template <typename STATE_ACCESS, typename RS1VAL>
 static inline execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const RS1VAL &rs1val) {
-    CSR_address csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
+    auto csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
     bool status = true;
     uint64_t csrval = 0;
@@ -1867,7 +1867,7 @@ static inline execute_status execute_CSRRWI(STATE_ACCESS &a, uint64_t pc, uint32
 
 template <typename STATE_ACCESS, typename F>
 static inline execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    CSR_address csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
+    auto csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
     bool status = false;
     uint64_t csrval = read_csr(a, csraddr, &status);
@@ -1914,7 +1914,7 @@ static inline execute_status execute_CSRRC(STATE_ACCESS &a, uint64_t pc, uint32_
 
 template <typename STATE_ACCESS, typename F>
 static inline execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    CSR_address csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
+    auto csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
     bool status = false;
     uint64_t csrval = read_csr(a, csraddr, &status);
@@ -2196,8 +2196,8 @@ static inline execute_status execute_MUL(STATE_ACCESS &a, uint64_t pc, uint32_t 
     dump_insn(a, pc, insn, "mul");
     auto note = a.make_scoped_note("mul"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        int64_t srs1 = static_cast<int64_t>(rs1);
-        int64_t srs2 = static_cast<int64_t>(rs2);
+        auto srs1 = static_cast<int64_t>(rs1);
+        auto srs2 = static_cast<int64_t>(rs2);
         int64_t val = 0;
         __builtin_mul_overflow(srs1, srs2, &val);
         return static_cast<uint64_t>(val);
@@ -2210,8 +2210,8 @@ static inline execute_status execute_MULH(STATE_ACCESS &a, uint64_t pc, uint32_t
     dump_insn(a, pc, insn, "mulh");
     auto note = a.make_scoped_note("mulh"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        int64_t srs1 = static_cast<int64_t>(rs1);
-        int64_t srs2 = static_cast<int64_t>(rs2);
+        auto srs1 = static_cast<int64_t>(rs1);
+        auto srs2 = static_cast<int64_t>(rs2);
         return static_cast<uint64_t>(mul64h(srs1, srs2));
     });
 }
@@ -2222,7 +2222,7 @@ static inline execute_status execute_MULHSU(STATE_ACCESS &a, uint64_t pc, uint32
     dump_insn(a, pc, insn, "mulhsu");
     auto note = a.make_scoped_note("mulhsu"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        int64_t srs1 = static_cast<int64_t>(rs1);
+        auto srs1 = static_cast<int64_t>(rs1);
         return static_cast<uint64_t>(mul64hsu(srs1, rs2));
     });
 }
@@ -2243,8 +2243,8 @@ static inline execute_status execute_DIV(STATE_ACCESS &a, uint64_t pc, uint32_t 
     dump_insn(a, pc, insn, "div");
     auto note = a.make_scoped_note("div"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        int64_t srs1 = static_cast<int64_t>(rs1);
-        int64_t srs2 = static_cast<int64_t>(rs2);
+        auto srs1 = static_cast<int64_t>(rs1);
+        auto srs2 = static_cast<int64_t>(rs2);
         if (srs2 == 0) {
             return static_cast<uint64_t>(-1);
         } else if (srs1 == (INT64_C(1) << (XLEN - 1)) && srs2 == -1) {
@@ -2275,8 +2275,8 @@ static inline execute_status execute_REM(STATE_ACCESS &a, uint64_t pc, uint32_t 
     dump_insn(a, pc, insn, "rem");
     auto note = a.make_scoped_note("rem"); (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        int64_t srs1 = static_cast<int64_t>(rs1);
-        int64_t srs2 = static_cast<int64_t>(rs2);
+        auto srs1 = static_cast<int64_t>(rs1);
+        auto srs2 = static_cast<int64_t>(rs2);
         if (srs2 == 0) {
             return srs1;
         } else if (srs1 == (INT64_C(1) << (XLEN - 1)) && srs2 == -1) {
@@ -2447,7 +2447,7 @@ static inline execute_status execute_SRLIW(STATE_ACCESS &a, uint64_t pc, uint32_
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         // No need to mask lower 5 bits in imm because of funct7 test in caller
         // We do it anyway here to prevent problems if this code is moved
-        int32_t rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) >> (imm & 0b11111));
+        auto rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) >> (imm & 0b11111));
         return static_cast<uint64_t>(rs1w);
     });
 }

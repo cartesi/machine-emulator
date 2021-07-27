@@ -20,14 +20,16 @@
 #ifndef CM_C_API_H
 #define CM_C_API_H
 
-#include <stddef.h>
-#include <stdint.h>
-#include <assert.h>
 
 #ifndef __cplusplus
-
+#include <assert.h>
 #include <stdbool.h>
-
+#include <stddef.h>
+#include <stdint.h>
+#else
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
 #endif
 
 #include "machine-c-defines.h"

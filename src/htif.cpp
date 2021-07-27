@@ -19,13 +19,13 @@
 #include "i-device-state-access.h"
 #include "strict-aliasing.h"
 
-#include <signal.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/select.h>
 #include <unistd.h>
 
+#include <csignal>
 #include <iostream>
 
 namespace cartesi {

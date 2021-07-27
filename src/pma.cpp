@@ -21,9 +21,9 @@
 #include <unistd.h> // close
 #include <sys/stat.h> // fstat
 #include <fcntl.h> // open
-#include <errno.h>
 
 #include <string>
+#include <cerrno>
 #include <cstring>
 #include <system_error>
 

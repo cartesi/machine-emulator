@@ -15,6 +15,7 @@
 //
 
 #include <string>
+#include <csignal>
 #include <cstdint>
 #include <exception>
 
@@ -24,7 +25,6 @@ static constexpr uint32_t server_version_patch = 0;
 static constexpr const char *server_version_pre_release = "";
 static constexpr const char *server_version_build = "";
 
-#include <signal.h>
 #include <sys/wait.h>
 
 #pragma GCC diagnostic push

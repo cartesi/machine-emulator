@@ -249,7 +249,7 @@ int main(int argc, char *argv[]) try {
     // 4) The complete_merkle_tree can receive leaf hashes and maintain
     // only the part of the tree that is not pristine
     hasher_type h;
-    while (1) {
+    while (true) {
         auto got = fread(leaf_buf.get(), 1, leaf_size, input_file.get());
         if (got == 0) {
             if (ferror(input_file.get())) {

@@ -96,7 +96,7 @@ new_page_node(address_type page_index) {
     // Descend tree until we reach the node at the end of the
     // path determined by the page index,
     // creating the needed nodes along the way
-    while (1) {
+    while (true) {
         int bit = (page_index & bit_mask) != 0;
         tree_node *child = node->child[bit];
         if (!child) {

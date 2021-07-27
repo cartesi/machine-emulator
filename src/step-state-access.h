@@ -937,7 +937,7 @@ private:
     template <typename T>
     pma_entry &do_find_pma_entry(uint64_t paddr) {
         int i = 0;
-        while (1) {
+        while (true) {
             auto istart = this->read_pma_istart(i);
             auto ilength = this->read_pma_ilength(i);
             if (ilength == 0) {

@@ -652,7 +652,7 @@ friend i_state_access<logged_state_access>;
         auto note = this->make_scoped_note("find_pma_entry");
         (void) note;
         int i = 0;
-        while (1) {
+        while (true) {
             auto &pma = this->get_naked_state().pmas[i];
             auto istart = this->read_pma_istart(i);
             auto ilength = this->read_pma_ilength(i);

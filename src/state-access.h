@@ -429,7 +429,7 @@ private:
     template <typename T>
     pma_entry &do_find_pma_entry(uint64_t paddr) {
         int i = 0;
-        while (1) {
+        while (true) {
             auto &pma = m_m.get_state().pmas[i];
             // The pmas array always contain a sentinel. It is an entry with
             // zero length. If we hit it, return it

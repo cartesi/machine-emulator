@@ -104,8 +104,7 @@ grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
     check_status(m_stub->get_stub()->Machine(&context, request, &response));
 }
 
-grpc_virtual_machine::~grpc_virtual_machine(void) {
-}
+grpc_virtual_machine::~grpc_virtual_machine(void) = default;
 
 machine_config grpc_virtual_machine::do_get_initial_config(void) const {
     Void request;

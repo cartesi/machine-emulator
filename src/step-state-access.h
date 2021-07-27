@@ -50,7 +50,7 @@ public:
     class mock_machine_state {
     public:
 
-        mock_machine_state(void) { }
+        mock_machine_state(void) = default;
 
         void set_brk(void) { }
         bool get_brk(void) const { return true; } // NOLINT(readability-convert-member-functions-to-static)

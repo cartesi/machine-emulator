@@ -434,6 +434,7 @@ void machine::store(const std::string &dir) {
     store_pmas(c, dir);
 }
 
+// NOLINTNEXTLINE(modernize-use-equals-default)
 machine::~machine() {
 #ifdef DUMP_HIST
     fprintf(stderr, "\nInstruction Histogram:\n");

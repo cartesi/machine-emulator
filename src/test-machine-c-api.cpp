@@ -71,22 +71,22 @@ constexpr cm_hash origin_hash_600000 = {
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_config_null_test)
 {
-    BOOST_CHECK_NO_THROW(cm_delete_machine_config(NULL));
+    BOOST_CHECK_NO_THROW(cm_delete_machine_config(nullptr));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_access_log_null_test)
 {
-    BOOST_CHECK_NO_THROW(cm_delete_access_log(NULL));
+    BOOST_CHECK_NO_THROW(cm_delete_access_log(nullptr));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_null_test)
 {
-    BOOST_CHECK_NO_THROW(cm_delete_machine(NULL));
+    BOOST_CHECK_NO_THROW(cm_delete_machine(nullptr));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_proof_null_test)
 {
-    BOOST_CHECK_NO_THROW(cm_delete_proof(NULL));
+    BOOST_CHECK_NO_THROW(cm_delete_proof(nullptr));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(new_default_machine_config_basic_test)
@@ -98,7 +98,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(new_default_machine_config_basic_test)
 
 class default_machine_fixture {
 public:
-    default_machine_fixture() : _machine(NULL) {
+    default_machine_fixture() : _machine(nullptr) {
         _default_machine_config = cm_new_default_machine_config();
     }
 
@@ -133,7 +133,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_unknown_dir_test, default_machine_fi
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_path_test, default_machine_fixture)
 {
     char *err_msg{};
-    int error_code = cm_load_machine(NULL, &_runtime_config, &_machine, &err_msg);
+    int error_code = cm_load_machine(nullptr, &_runtime_config, &_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
     std::string result = err_msg;
@@ -146,7 +146,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_path_test, default_machine_fixt
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_config_test, default_machine_fixture)
 {
     char *err_msg{};
-    int error_code = cm_create_machine(NULL, &_runtime_config, &_machine, &err_msg);
+    int error_code = cm_create_machine(nullptr, &_runtime_config, &_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
     std::string origin("Invalid machine configuration");
@@ -158,7 +158,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_config_test, default_machine_
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_rt_config_test, default_machine_fixture)
 {
     char *err_msg{};
-    int error_code = cm_create_machine(_default_machine_config, NULL, &_machine, &err_msg);
+    int error_code = cm_create_machine(_default_machine_config, nullptr, &_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
     std::string origin("Invalid machine runtime configuration");
@@ -170,7 +170,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_rt_config_test, default_machi
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_error_placeholder_test, default_machine_fixture)
 {
     auto f = [rtc = &_runtime_config, cfg = _default_machine_config, m = &_machine]() {
-        cm_create_machine(cfg, rtc, m, NULL);
+        cm_create_machine(cfg, rtc, m, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -306,7 +306,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, machine_rom_fix
 {
     auto f = [cfg = &_machine_config, rtc = &_runtime_config]() {
         char *err_msg{};
-        cm_create_machine(cfg, rtc, NULL, &err_msg);
+        cm_create_machine(cfg, rtc, nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -507,7 +507,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_machine_test, ordinary_machine_fixture
 {
     auto f = [p = _machine_dir_path.c_str()]() {
         char *err_msg{};
-        cm_store(NULL, p, &err_msg);
+        cm_store(nullptr, p, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -515,7 +515,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_machine_test, ordinary_machine_fixture
 BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_dir_path_test, ordinary_machine_fixture)
 {
     char *err_msg{};
-    int error_code = cm_store(_machine, NULL, &err_msg);
+    int error_code = cm_store(_machine, nullptr, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     std::string result = err_msg;
     std::string origin("error creating directory ''");
@@ -526,7 +526,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_dir_path_test, ordinary_machine_fixtur
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_error_placeholder_test, ordinary_machine_fixture)
 {
-    auto f = [m = _machine, p = _machine_dir_path.c_str()]() { cm_store(m, p, NULL); };
+    auto f = [m = _machine, p = _machine_dir_path.c_str()]() { cm_store(m, p, nullptr); };
     monitor_system_throw(f);
 }
 
@@ -536,7 +536,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_rtc_test, ordinary_machine_fixt
     int error_code = cm_store(_machine, _machine_dir_path.c_str(), &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
-    error_code = cm_load_machine(_machine_dir_path.c_str(), NULL, &_machine, &err_msg);
+    error_code = cm_load_machine(_machine_dir_path.c_str(), nullptr, &_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
     std::string origin("Invalid machine runtime configuration");
@@ -553,7 +553,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_machine_test, ordinary_machine_
 
     auto f = [p = _machine_dir_path.c_str(), rtc = &_runtime_config]() {
         char *err_msg{};
-        cm_load_machine(p, rtc, NULL, &err_msg);
+        cm_load_machine(p, rtc, nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -565,7 +565,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_error_placeholder_test, ordinar
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
     auto f = [p = _machine_dir_path.c_str(), rtc = &_runtime_config, m = &_machine]() {
-        cm_load_machine(p, rtc, m, NULL);
+        cm_load_machine(p, rtc, m, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -605,7 +605,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_root_hash_null_machine_test)
     auto f = []() {
         cm_hash restored_hash;
         char *err_msg{};
-        cm_get_root_hash(NULL, &restored_hash, &err_msg);
+        cm_get_root_hash(nullptr, &restored_hash, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -614,7 +614,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_null_hash_test, ordinary_machine_fi
 {
     auto f = [m = _machine]() {
         char *err_msg{};
-        cm_get_root_hash(m, NULL, &err_msg);
+        cm_get_root_hash(m, nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -623,7 +623,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_null_error_placeholder_test, ordina
 {
     auto f = [m = _machine]() {
         cm_hash restored_hash;
-        cm_get_root_hash(m, &restored_hash, NULL);
+        cm_get_root_hash(m, &restored_hash, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -632,14 +632,14 @@ BOOST_AUTO_TEST_CASE_NOLINT(update_merkle_tree_null_machine_test)
 {
     auto f = []() {
         char *err_msg{};
-        cm_update_merkle_tree(NULL, &err_msg);
+        cm_update_merkle_tree(nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(update_merkle_tree_null_error_placeholder_test, ordinary_machine_fixture)
 {
-    auto f = [m = _machine]() { cm_update_merkle_tree(m, NULL); };
+    auto f = [m = _machine]() { cm_update_merkle_tree(m, nullptr); };
     monitor_system_throw(f);
 }
 
@@ -664,7 +664,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_proof_null_machine_test)
     auto f = []() {
         char *err_msg{};
         cm_merkle_tree_proof *proof{};
-        cm_get_proof(NULL, 0, 12, &proof, &err_msg);
+        cm_get_proof(nullptr, 0, 12, &proof, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -727,7 +727,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_null_proof_test, ordinary_machine_fixtu
 {
     auto f = [m = _machine]() {
         char *err_msg{};
-        cm_get_proof(m, 0, 12, NULL, &err_msg);
+        cm_get_proof(m, 0, 12, nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -736,7 +736,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_null_error_placeholder_test, ordinary_m
 {
     auto f = [m = _machine]() {
         cm_merkle_tree_proof *proof{};
-        cm_get_proof(m, 0, 12, &proof, NULL);
+        cm_get_proof(m, 0, 12, &proof, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -768,7 +768,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_word_null_machine_test)
     auto f = []() {
         uint64_t word_value = 0;
         char *err_msg{};
-        cm_read_word(NULL, 0x100, &word_value, &err_msg);
+        cm_read_word(nullptr, 0x100, &word_value, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -791,7 +791,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_null_output_test, default_machine_fixtu
 {
     auto f = [m = _machine]() {
         char *err_msg{};
-        cm_read_word(m, 0x100, NULL, &err_msg);
+        cm_read_word(m, 0x100, nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -800,7 +800,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_null_error_placeholder_test, default_ma
 {
     auto f = [m = _machine]() {
         uint64_t word_value = 0;
-        cm_read_word(m, 0x100, &word_value, NULL);
+        cm_read_word(m, 0x100, &word_value, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -820,7 +820,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_memory_null_machine_test)
     auto f = []() {
         std::array<uint8_t, sizeof(uint64_t)> rd{};
         char *err_msg{};
-        cm_read_memory(NULL, 0x100, rd.data(), rd.size(), &err_msg);
+        cm_read_memory(nullptr, 0x100, rd.data(), rd.size(), &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -843,7 +843,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_memory_null_data_test, ordinary_machine_fixt
 {
     auto f = [m = _machine]() {
         char *err_msg{};
-        cm_read_memory(m, 0x80000000, NULL, 1, &err_msg);
+        cm_read_memory(m, 0x80000000, nullptr, 1, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -852,7 +852,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_memory_null_error_placeholder_test, ordinary
 {
     auto f = [m = _machine]() {
         std::array<uint8_t, sizeof(uint64_t)> rd{};
-        cm_read_memory(m, 0x100, rd.data(), 1, NULL);
+        cm_read_memory(m, 0x100, rd.data(), 1, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -862,7 +862,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(write_memory_null_machine_test)
     auto f = []() {
         std::array<uint8_t, sizeof(uint64_t)> wd{};
         char *err_msg{};
-        cm_write_memory(NULL, 0x100, wd.data(), wd.size(), &err_msg);
+        cm_write_memory(nullptr, 0x100, wd.data(), wd.size(), &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -870,7 +870,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(write_memory_null_machine_test)
 BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_zero_data_test, ordinary_machine_fixture)
 {
     char* err_msg{};
-    int error_code = cm_write_memory(_machine, 0x80000000, NULL, 0, &err_msg);
+    int error_code = cm_write_memory(_machine, 0x80000000, nullptr, 0, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 }
@@ -879,7 +879,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_null_data_size_mismatch_test, ordina
 {
     auto f = [m = _machine]() {
         char *err_msg{};
-        cm_write_memory(m, 0x80000000, NULL, 1, &err_msg);
+        cm_write_memory(m, 0x80000000, nullptr, 1, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -888,7 +888,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_null_error_placeholder_test, ordinar
 {
     auto f = [m = _machine]() {
         std::array<uint8_t, sizeof(uint64_t)> wd{};
-        cm_write_memory(m, 0x100, wd.data(), wd.size(), NULL);
+        cm_write_memory(m, 0x100, wd.data(), wd.size(), nullptr);
     };
     monitor_system_throw(f);
 }
@@ -971,64 +971,64 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_memory_massive_test, ordinary_machine_
 }
 
 // NOLINTNEXTLINE
-#define CHECK_READER_FAILS_ON_NULL_MACHINE(reader_f)             \
+#define CHECK_READER_FAILS_ON_nullptr_MACHINE(reader_f)             \
 BOOST_AUTO_TEST_CASE_NOLINT(read_##reader_f##_null_machine_test) \
 {                                                                \
     auto f = []() {                                              \
         char *err_msg{};                                         \
         uint64_t out;                                            \
-        cm_read_##reader_f(NULL, &out, &err_msg);                \
+        cm_read_##reader_f(nullptr, &out, &err_msg);                \
     };                                                           \
     monitor_system_throw(f);                                     \
 }
 
-CHECK_READER_FAILS_ON_NULL_MACHINE(pc)
-CHECK_READER_FAILS_ON_NULL_MACHINE(mcycle)
-CHECK_READER_FAILS_ON_NULL_MACHINE(minstret)
-CHECK_READER_FAILS_ON_NULL_MACHINE(mstatus)
-CHECK_READER_FAILS_ON_NULL_MACHINE(mtvec)
-CHECK_READER_FAILS_ON_NULL_MACHINE(mscratch)
-CHECK_READER_FAILS_ON_NULL_MACHINE(mepc)
-CHECK_READER_FAILS_ON_NULL_MACHINE(mcause)
-CHECK_READER_FAILS_ON_NULL_MACHINE(mtval)
-CHECK_READER_FAILS_ON_NULL_MACHINE(misa)
-CHECK_READER_FAILS_ON_NULL_MACHINE(mie)
-CHECK_READER_FAILS_ON_NULL_MACHINE(mip)
-CHECK_READER_FAILS_ON_NULL_MACHINE(medeleg)
-CHECK_READER_FAILS_ON_NULL_MACHINE(mideleg)
-CHECK_READER_FAILS_ON_NULL_MACHINE(mcounteren)
-CHECK_READER_FAILS_ON_NULL_MACHINE(stvec)
-CHECK_READER_FAILS_ON_NULL_MACHINE(sscratch)
-CHECK_READER_FAILS_ON_NULL_MACHINE(sepc)
-CHECK_READER_FAILS_ON_NULL_MACHINE(scause)
-CHECK_READER_FAILS_ON_NULL_MACHINE(stval)
-CHECK_READER_FAILS_ON_NULL_MACHINE(satp)
-CHECK_READER_FAILS_ON_NULL_MACHINE(scounteren)
-CHECK_READER_FAILS_ON_NULL_MACHINE(ilrsc)
-CHECK_READER_FAILS_ON_NULL_MACHINE(iflags)
-CHECK_READER_FAILS_ON_NULL_MACHINE(htif_tohost)
-CHECK_READER_FAILS_ON_NULL_MACHINE(htif_tohost_dev)
-CHECK_READER_FAILS_ON_NULL_MACHINE(htif_tohost_cmd)
-CHECK_READER_FAILS_ON_NULL_MACHINE(htif_tohost_data)
-CHECK_READER_FAILS_ON_NULL_MACHINE(htif_fromhost)
-CHECK_READER_FAILS_ON_NULL_MACHINE(htif_ihalt)
-CHECK_READER_FAILS_ON_NULL_MACHINE(htif_iconsole)
-CHECK_READER_FAILS_ON_NULL_MACHINE(htif_iyield)
-CHECK_READER_FAILS_ON_NULL_MACHINE(clint_mtimecmp)
-CHECK_READER_FAILS_ON_NULL_MACHINE(dhd_tstart)
-CHECK_READER_FAILS_ON_NULL_MACHINE(dhd_tlength)
-CHECK_READER_FAILS_ON_NULL_MACHINE(dhd_dlength)
-CHECK_READER_FAILS_ON_NULL_MACHINE(dhd_hlength)
-CHECK_READER_FAILS_ON_NULL_MACHINE(mvendorid)
-CHECK_READER_FAILS_ON_NULL_MACHINE(marchid)
-CHECK_READER_FAILS_ON_NULL_MACHINE(mimpid)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(pc)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(mcycle)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(minstret)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(mstatus)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(mtvec)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(mscratch)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(mepc)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(mcause)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(mtval)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(misa)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(mie)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(mip)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(medeleg)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(mideleg)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(mcounteren)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(stvec)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(sscratch)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(sepc)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(scause)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(stval)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(satp)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(scounteren)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(ilrsc)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(iflags)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(htif_tohost)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(htif_tohost_dev)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(htif_tohost_cmd)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(htif_tohost_data)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(htif_fromhost)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(htif_ihalt)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(htif_iconsole)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(htif_iyield)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(clint_mtimecmp)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(dhd_tstart)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(dhd_tlength)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(dhd_dlength)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(dhd_hlength)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(mvendorid)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(marchid)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(mimpid)
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_iflags_Y_null_machine_test)
 {
     auto f = []() {
         char *err_msg{};
         bool out{};
-        cm_read_iflags_Y(NULL, &out, &err_msg);
+        cm_read_iflags_Y(nullptr, &out, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1038,57 +1038,57 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_iflags_H_null_machine_test)
     auto f = []() {
         char *err_msg{};
         bool out{};
-        cm_read_iflags_H(NULL, &out, &err_msg);
+        cm_read_iflags_H(nullptr, &out, &err_msg);
     };
     monitor_system_throw(f);
 }
 
 // NOLINTNEXTLINE
-#define CHECK_WRITER_FAILS_ON_NULL_MACHINE(writer_f)              \
+#define CHECK_WRITER_FAILS_ON_nullptr_MACHINE(writer_f)              \
 BOOST_AUTO_TEST_CASE_NOLINT(write_##writer_f##_null_machine_test) \
 {                                                                 \
     auto f = []() {                                               \
         char *err_msg{};                                          \
-        cm_write_##writer_f(NULL, 0x1, &err_msg);                 \
+        cm_write_##writer_f(nullptr, 0x1, &err_msg);                 \
     };                                                            \
     monitor_system_throw(f);                                      \
 }
 
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(pc)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(mcycle)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(minstret)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(mstatus)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(mtvec)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(mscratch)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(mepc)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(mcause)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(mtval)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(misa)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(mie)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(mip)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(medeleg)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(mideleg)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(mcounteren)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(stvec)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(sscratch)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(sepc)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(scause)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(stval)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(satp)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(scounteren)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(ilrsc)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(iflags)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(htif_tohost)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(htif_fromhost)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(htif_fromhost_data)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(htif_ihalt)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(htif_iconsole)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(htif_iyield)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(clint_mtimecmp)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(dhd_tstart)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(dhd_tlength)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(dhd_dlength)
-CHECK_WRITER_FAILS_ON_NULL_MACHINE(dhd_hlength)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(pc)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mcycle)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(minstret)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mstatus)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mtvec)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mscratch)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mepc)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mcause)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mtval)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(misa)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mie)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mip)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(medeleg)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mideleg)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mcounteren)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(stvec)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(sscratch)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(sepc)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(scause)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(stval)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(satp)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(scounteren)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(ilrsc)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(iflags)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_tohost)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_fromhost)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_fromhost_data)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_ihalt)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_iconsole)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_iyield)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(clint_mtimecmp)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(dhd_tstart)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(dhd_tlength)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(dhd_dlength)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(dhd_hlength)
 
 // NOLINTNEXTLINE
 #define CHECK_REGISTER_READ_WRITE(F)                                          \
@@ -1143,7 +1143,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(set_iflags_y_null_machine_test)
 {
     auto f = []() {
         char *err_msg{};
-        cm_set_iflags_Y(NULL, &err_msg);
+        cm_set_iflags_Y(nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1152,7 +1152,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(reset_iflags_y_null_machine_test)
 {
     auto f = []() {
         char *err_msg{};
-        cm_reset_iflags_Y(NULL, &err_msg);
+        cm_reset_iflags_Y(nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1161,7 +1161,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(set_iflags_h_null_machine_test)
 {
     auto f = []() {
         char *err_msg{};
-        cm_set_iflags_H(NULL, &err_msg);
+        cm_set_iflags_H(nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1289,14 +1289,14 @@ BOOST_AUTO_TEST_CASE_NOLINT(dump_pmas_null_machine_test)
 {
     auto f = []() {
         char *err_msg{};
-        cm_dump_pmas(NULL, &err_msg);
+        cm_dump_pmas(nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_null_placeholder_test, ordinary_machine_fixture)
 {
-    auto f = [m = _machine]() { cm_dump_pmas(m, NULL); };
+    auto f = [m = _machine]() { cm_dump_pmas(m, nullptr); };
     monitor_system_throw(f);
 }
 
@@ -1338,7 +1338,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_dhd_h_null_machine_test)
     auto f = []() {
         uint64_t read_value{};
         char *err_msg{};
-        cm_read_dhd_h(NULL, 1, &read_value, &err_msg);
+        cm_read_dhd_h(nullptr, 1, &read_value, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1358,7 +1358,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_dhd_h_null_output_test, ordinary_machine_fix
 {
     auto f = [m = _machine]() {
         char *err_msg{};
-        cm_read_dhd_h(m, 1, NULL, &err_msg);
+        cm_read_dhd_h(m, 1, nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1367,7 +1367,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_dhd_h_null_error_placeholder_test, ordinary_
 {
     auto f = [m = _machine]() {
         uint64_t read_value{};
-        cm_read_dhd_h(m, 1, &read_value, NULL);
+        cm_read_dhd_h(m, 1, &read_value, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -1376,7 +1376,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(write_dhd_h_null_machine_test)
 {
     auto f = []() {
         char *err_msg{};
-        cm_write_dhd_h(NULL, 1, 0x5, &err_msg);
+        cm_write_dhd_h(nullptr, 1, 0x5, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1395,7 +1395,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_dhd_h_null_error_placeholder_test, ordinary
 {
     auto f = [m = _machine]() {
         uint64_t write_value{};
-        cm_read_dhd_h(m, 1, &write_value, NULL);
+        cm_read_dhd_h(m, 1, &write_value, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -1425,7 +1425,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_initial_config_null_machine_test)
     auto f = []() {
         char *err_msg{};
         const cm_machine_config *cfg{};
-        cm_get_initial_config(NULL, &cfg, &err_msg);
+        cm_get_initial_config(nullptr, &cfg, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1434,7 +1434,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_initial_config_null_output_test, ordinary_mac
 {
     auto f = [m = _machine]() {
         char *err_msg{};
-        cm_get_initial_config(m, NULL, &err_msg);
+        cm_get_initial_config(m, nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1443,7 +1443,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_initial_config_null_error_placeholder_test, o
 {
     auto f = [m = _machine]() {
         const cm_machine_config *cfg{};
-        cm_get_initial_config(m, &cfg, NULL);
+        cm_get_initial_config(m, &cfg, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -1477,7 +1477,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(verify_dirty_page_maps_null_machine_test)
     auto f = []() {
         char *err_msg{};
         bool result{};
-        cm_verify_dirty_page_maps(NULL, &result, &err_msg);
+        cm_verify_dirty_page_maps(nullptr, &result, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1486,7 +1486,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_dirty_page_maps_null_output_test, ordinary
 {
     auto f = [m = _machine]() {
         char *err_msg{};
-        cm_verify_dirty_page_maps(m, NULL, &err_msg);
+        cm_verify_dirty_page_maps(m, nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1495,7 +1495,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_dirty_page_maps_null_error_placeholder_tes
 {
     auto f = [m = _machine]() {
         bool result{};
-        cm_verify_dirty_page_maps(m, &result, NULL);
+        cm_verify_dirty_page_maps(m, &result, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -1523,7 +1523,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_dirty_page_maps_default_machine_test, defa
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_flash_drive_null_flash_config_test, ordinary_machine_fixture)
 {
     char *err_msg{};
-    int error_code = cm_replace_flash_drive(_machine, NULL, &err_msg);
+    int error_code = cm_replace_flash_drive(_machine, nullptr, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
@@ -1572,7 +1572,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_flash_drive_null_machine_test, flash_driv
 {
     auto f = [fd = &_flash_config]() {
         char *err_msg{};
-        cm_replace_flash_drive(NULL, fd, &err_msg);
+        cm_replace_flash_drive(nullptr, fd, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1580,7 +1580,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_flash_drive_null_machine_test, flash_driv
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_flash_drive_null_error_placeholder_test, flash_drive_machine_fixture)
 {
     auto f = [m = _machine, fd = &_flash_config]() {
-        cm_replace_flash_drive(m, fd, NULL);
+        cm_replace_flash_drive(m, fd, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -1669,7 +1669,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_x_null_machine_test)
     auto f = []() {
         char *err_msg{};
         uint64_t val{};
-        cm_read_x(NULL, 4, &val, &err_msg);
+        cm_read_x(nullptr, 4, &val, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1678,7 +1678,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_x_null_output_test, ordinary_machine_fixture
 {
     auto f = [m = _machine]() {
         char *err_msg{};
-        cm_read_x(m, 4, NULL, &err_msg);
+        cm_read_x(m, 4, nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1687,7 +1687,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_x_null_error_placeholder_test, ordinary_mach
 {
     auto f = [m = _machine]() {
         uint64_t val{};
-        cm_read_x(m, 4, &val, NULL);
+        cm_read_x(m, 4, &val, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -1696,14 +1696,14 @@ BOOST_AUTO_TEST_CASE_NOLINT(write_x_null_machine_test)
 {
     auto f = []() {
         char *err_msg{};
-        cm_write_x(NULL, 4, 0, &err_msg);
+        cm_write_x(nullptr, 4, 0, &err_msg);
     };
     monitor_system_throw(f);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(write_x_null_error_placeholder_test, ordinary_machine_fixture)
 {
-    auto f = [m = _machine]() { cm_write_x(m, 4, 0, NULL); };
+    auto f = [m = _machine]() { cm_write_x(m, 4, 0, nullptr); };
     monitor_system_throw(f);
 }
 
@@ -1729,7 +1729,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_csr_null_machine_test)
     auto f = []() {
         char *err_msg{};
         uint64_t val{};
-        cm_read_csr(NULL, CM_PROC_MCYCLE, &val, &err_msg);
+        cm_read_csr(nullptr, CM_PROC_MCYCLE, &val, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1738,7 +1738,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_csr_null_output_test, ordinary_machine_fixtu
 {
     auto f = [m = _machine]() {
         char *err_msg{};
-        cm_read_csr(m, CM_PROC_MCYCLE, NULL, &err_msg);
+        cm_read_csr(m, CM_PROC_MCYCLE, nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1747,7 +1747,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_csr_null_error_placeholder_test, ordinary_ma
 {
     auto f = [m = _machine]() {
         uint64_t val{};
-        cm_read_csr(m, CM_PROC_MCYCLE, &val, NULL);
+        cm_read_csr(m, CM_PROC_MCYCLE, &val, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -1756,14 +1756,14 @@ BOOST_AUTO_TEST_CASE_NOLINT(write_csr_null_machine_test)
 {
     auto f = []() {
         char *err_msg{};
-        cm_write_csr(NULL, CM_PROC_MCYCLE, 3, &err_msg);
+        cm_write_csr(nullptr, CM_PROC_MCYCLE, 3, &err_msg);
     };
     monitor_system_throw(f);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(write_csr_null_error_placeholder_test, ordinary_machine_fixture)
 {
-    auto f = [m = _machine]() { cm_write_csr(m, CM_PROC_MCYCLE, 3, NULL); };
+    auto f = [m = _machine]() { cm_write_csr(m, CM_PROC_MCYCLE, 3, nullptr); };
     monitor_system_throw(f);
 }
 
@@ -1790,7 +1790,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(verify_merkle_tree_null_machine_test)
     auto f = []() {
         char *err_msg{};
         bool ret{};
-        cm_verify_merkle_tree(NULL, &ret, &err_msg);
+        cm_verify_merkle_tree(nullptr, &ret, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1799,7 +1799,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_merkle_tree_null_output_test, ordinary_mac
 {
     auto f = [m = _machine]() {
         char *err_msg{};
-        cm_verify_merkle_tree(m, NULL, &err_msg);
+        cm_verify_merkle_tree(m, nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1808,7 +1808,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_merkle_tree_null_error_placeholder_test, o
 {
     auto f = [m = _machine]() {
         bool ret{};
-        cm_verify_merkle_tree(m, &ret, NULL);
+        cm_verify_merkle_tree(m, &ret, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -1844,7 +1844,7 @@ protected:
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_log_test, default_machine_fixture)
 {
     char *err_msg{};
-    int error_code = cm_verify_access_log(NULL, &_runtime_config, false, &err_msg);
+    int error_code = cm_verify_access_log(nullptr, &_runtime_config, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
@@ -1861,7 +1861,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_rt_config_test, access_log
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
-    error_code = cm_verify_access_log(_access_log, NULL, false, &err_msg);
+    error_code = cm_verify_access_log(_access_log, nullptr, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
@@ -1880,7 +1880,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_error_placeholder_test, ac
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
     auto f = [l = _access_log, rc = &_runtime_config]() {
-        cm_verify_access_log(l, rc, false, NULL);
+        cm_verify_access_log(l, rc, false, nullptr);
     };
     monitor_system_throw(f);
 
@@ -1891,7 +1891,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_machine_test, access_log_machine_fixtur
 {
     auto f = [l = &_access_log, lt = _log_type]() {
         char *err_msg{};
-        cm_step(NULL, lt, false, l, &err_msg);
+        cm_step(nullptr, lt, false, l, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1900,7 +1900,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_access_log_test, access_log_machine_fix
 {
     auto f = [m = _machine, lt = _log_type]() {
         char *err_msg{};
-        cm_step(m, lt, false, NULL, &err_msg);
+        cm_step(m, lt, false, nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
@@ -1908,7 +1908,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_access_log_test, access_log_machine_fix
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_error_placeholder_test, access_log_machine_fixture)
 {
     auto f = [m = _machine, l = &_access_log, lt = _log_type]() {
-        cm_step(m, lt, false, l, NULL);
+        cm_step(m, lt, false, l, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -1917,7 +1917,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_hash0_test, access_l
 {
     char *err_msg{};
     cm_hash hash1;
-    int error_code = cm_verify_state_transition(NULL, _access_log, &hash1,
+    int error_code = cm_verify_state_transition(nullptr, _access_log, &hash1,
                                                 &_runtime_config, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
@@ -1932,7 +1932,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_hash1_test, access_l
 {
     char *err_msg{};
     cm_hash hash0;
-    int error_code = cm_verify_state_transition(&hash0, _access_log, NULL,
+    int error_code = cm_verify_state_transition(&hash0, _access_log, nullptr,
                                                 &_runtime_config, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
@@ -1948,7 +1948,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_access_log_test, acc
     char *err_msg{};
     cm_hash hash0;
     cm_hash hash1;
-    int error_code = cm_verify_state_transition(&hash0, NULL,
+    int error_code = cm_verify_state_transition(&hash0, nullptr,
                                                 &hash1, &_runtime_config,
                                                 false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
@@ -1969,7 +1969,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, acce
 
     cm_hash hash0;
     cm_hash hash1;
-    error_code = cm_verify_state_transition(&hash0, _access_log, &hash1, NULL, false, &err_msg);
+    error_code = cm_verify_state_transition(&hash0, _access_log, &hash1, nullptr, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
@@ -1984,7 +1984,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_error_placeholder_te
     auto f = [l = _access_log, rc = &_runtime_config]() {
         cm_hash hash0;
         cm_hash hash1;
-        cm_verify_state_transition(&hash0, l, &hash1, rc, false, NULL);
+        cm_verify_state_transition(&hash0, l, &hash1, rc, false, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -2049,14 +2049,14 @@ BOOST_AUTO_TEST_CASE_NOLINT(machine_run_null_machine_test)
 {
     auto f = []() {
         char *err_msg{};
-        cm_machine_run(NULL, 1000, &err_msg);
+        cm_machine_run(nullptr, 1000, &err_msg);
     };
     monitor_system_throw(f);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_null_error_placeholder_test, ordinary_machine_fixture)
 {
-    auto f = [m = _machine]() { cm_machine_run(m, 1000, NULL); };
+    auto f = [m = _machine]() { cm_machine_run(m, 1000, nullptr); };
     monitor_system_throw(f);
 }
 
@@ -2116,7 +2116,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_config_test, ordinary_ma
 {
     char *err_msg{};
     cm_machine* new_machine{};
-    int error_code = cm_create_grpc_machine(NULL, &_runtime_config, "addr", &new_machine, &err_msg);
+    int error_code = cm_create_grpc_machine(nullptr, &_runtime_config, "addr", &new_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
@@ -2130,7 +2130,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_rt_config_test, ordinary
 {
     char *err_msg{};
     cm_machine* new_machine{};
-    int error_code = cm_create_grpc_machine(&_machine_config, NULL, "addr", &new_machine, &err_msg);
+    int error_code = cm_create_grpc_machine(&_machine_config, nullptr, "addr", &new_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
@@ -2143,7 +2143,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_rt_config_test, ordinary
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_output_test, ordinary_machine_fixture)
 {
     char *err_msg{};
-    int error_code = cm_create_grpc_machine(&_machine_config, &_runtime_config, "addr", NULL, &err_msg);
+    int error_code = cm_create_grpc_machine(&_machine_config, &_runtime_config, "addr", nullptr, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
     std::string result = err_msg;
@@ -2157,7 +2157,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_error_placeholder_test, 
 {
     auto f = [m = &_machine_config, rt = &_runtime_config]() {
         cm_machine* new_machine{};
-        cm_create_grpc_machine(m, rt, "addr", &new_machine, NULL);
+        cm_create_grpc_machine(m, rt, "addr", &new_machine, nullptr);
     };
     monitor_system_throw(f);
 }
@@ -2166,7 +2166,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_dir_test, ordinary_machine
 {
     char *err_msg{};
     cm_machine* new_machine{};
-    int error_code = cm_load_grpc_machine(NULL, &_runtime_config, "addr", &new_machine, &err_msg);
+    int error_code = cm_load_grpc_machine(nullptr, &_runtime_config, "addr", &new_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
     std::string result = err_msg;
@@ -2180,7 +2180,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_rt_config_test, ordinary_m
 {
     char *err_msg{};
     cm_machine* new_machine{};
-    int error_code = cm_load_grpc_machine("some_dir", NULL, "addr", &new_machine, &err_msg);
+    int error_code = cm_load_grpc_machine("some_dir", nullptr, "addr", &new_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
@@ -2193,7 +2193,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_rt_config_test, ordinary_m
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_output_test, ordinary_machine_fixture)
 {
     char *err_msg{};
-    int error_code = cm_load_grpc_machine("some_dir", &_runtime_config, "addr", NULL, &err_msg);
+    int error_code = cm_load_grpc_machine("some_dir", &_runtime_config, "addr", nullptr, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
     std::string result = err_msg;
@@ -2207,7 +2207,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_error_placeholder_test, or
 {
     auto f = [rt = &_runtime_config]() {
         cm_machine* new_machine{};
-        cm_load_grpc_machine("some_dir", rt, "addr", &new_machine, NULL);
+        cm_load_grpc_machine("some_dir", rt, "addr", &new_machine, nullptr);
     };
     monitor_system_throw(f);
 }

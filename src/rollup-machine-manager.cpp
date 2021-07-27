@@ -2250,7 +2250,7 @@ static bool stringval(const char *pre, const char *str, const char **val) {
 
 static void cleanup_child_handler(int signal) {
     (void) signal;
-    while (waitpid(static_cast<pid_t>(-1), 0, WNOHANG) > 0) {}
+    while (waitpid(static_cast<pid_t>(-1), nullptr, WNOHANG) > 0) {}
 }
 
 int main(int argc, char *argv[]) try {
@@ -2297,7 +2297,7 @@ int main(int argc, char *argv[]) try {
     struct sigaction sa{};
     sa.sa_handler = cleanup_child_handler; // NOLINT(cppcoreguidelines-pro-type-union-access)
     sa.sa_flags = 0;
-    sigaction(SIGCHLD, &sa, NULL);
+    sigaction(SIGCHLD, &sa, nullptr);
 
     // Start accepting requests for all RPCs
     new_GetVersion_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)

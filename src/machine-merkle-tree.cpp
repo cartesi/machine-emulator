@@ -180,8 +180,7 @@ machine_merkle_tree::
 dump_hash(const hash_type &hash) {
     auto f = std::cerr.flags();
     std::cerr << std::hex << std::setfill('0') << std::setw(2);
-    for (unsigned i = 0; i < hash.size(); ++i) {
-        unsigned b = hash[i];
+    for (const auto &b : hash) {
         std::cerr << b;
     }
     std::cerr << '\n';

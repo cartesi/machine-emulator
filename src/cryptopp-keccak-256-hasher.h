@@ -29,15 +29,6 @@ class cryptopp_keccak_256_hasher final:
 
     CryptoPP::Keccak_256 kc{};
 
-    /// \brief No copy constructor
-    cryptopp_keccak_256_hasher(const cryptopp_keccak_256_hasher &) = delete;
-    /// \brief No move constructor
-    cryptopp_keccak_256_hasher(cryptopp_keccak_256_hasher &&) = delete;
-    /// \brief No copy assignment
-    cryptopp_keccak_256_hasher& operator=(const cryptopp_keccak_256_hasher &) = delete;
-    /// \brief No move assignment
-    cryptopp_keccak_256_hasher& operator=(cryptopp_keccak_256_hasher &&) = delete;
-
 friend i_hasher<cryptopp_keccak_256_hasher, std::integral_constant<int, CryptoPP::Keccak_256::DIGESTSIZE>>;
 
     void do_begin(void) {
@@ -58,6 +49,15 @@ public:
 
     /// \brief Default destructor
     ~cryptopp_keccak_256_hasher(void) = default;
+
+    /// \brief No copy constructor
+    cryptopp_keccak_256_hasher(const cryptopp_keccak_256_hasher &) = delete;
+    /// \brief No move constructor
+    cryptopp_keccak_256_hasher(cryptopp_keccak_256_hasher &&) = delete;
+    /// \brief No copy assignment
+    cryptopp_keccak_256_hasher& operator=(const cryptopp_keccak_256_hasher &) = delete;
+    /// \brief No move assignment
+    cryptopp_keccak_256_hasher& operator=(cryptopp_keccak_256_hasher &&) = delete;
 };
 
 } // namespace cartesi

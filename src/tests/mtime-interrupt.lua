@@ -42,7 +42,7 @@ local function do_test(description, f)
     print(" passed")
 end
 
-local EXPECTED_MCYCLE = 200020
+local EXPECTED_MCYCLE = 220
 
 local function check_state(machine)
     assert(machine:read_iflags_H(), "machine did not halt")

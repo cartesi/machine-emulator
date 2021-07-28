@@ -193,7 +193,7 @@ do_test("dumped file merkle tree hashes should match",
         assert(test_util.tohex(root_file_hashes[pmas_file_names[1]]) ==
                 "E0387504AF856C8FDD164CA2EB44FEA5BC4094232D86C86021450687C9180863")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[2]]) ==
-                "3DF875E72A8B29E6F0DB9CFE2934F7B80E7DB855C1729CF140D358A72B9D73BD")
+                "D38CC01FE209FFC301809BAFCC540CE9C493B1C44F88138CC14A90BA828F9ED8")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[3]]) ==
                 "995C871A78EFEC6CA5AFD44B9994B1C88BBBFCDFEA68FD5566C13D4F45BBDE6B")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[4]]) ==
@@ -239,7 +239,7 @@ do_test("machine root hash after step one shold match",
         -- Get starting root hash
         local root_hash = machine:get_root_hash()
         assert(test_util.tohex(root_hash) ==
-                "718D7B97C245EF4F12E67576C5CD8F91EE92028181BD7341E5E7ECF8242DA5B8",
+                "CD41F6BD6FC5FE831908D9F379DC0B9102646831B3DEBC97D5B77A142960BCEE",
             "hash after initial step does not match")
 
         -- Perform step, dump address space to file, calculate emulator root hash
@@ -318,7 +318,7 @@ do_test("mcycle and root hash should match",
         local root_hash = machine:get_root_hash()
         print("1000 cycle hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "CB64669FF4E279E0BF536BB593153B61C7BF95438F3C7092C49F806C684A34EA",
+                "D09C85685500233E9778A5024ECDFF207F956DDB4C2CDE4C76E6F9F1F8188A1F",
             "machine hash does not match after 1000 cycles")
     end
 )
@@ -337,7 +337,7 @@ do_test("mcycle and root hash should match",
         local root_hash = machine:get_root_hash()
         print("End hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "FF2C58BDBAF475BF35FBA52883C31E8912B5DAE3C214BB76C8DD133B2136E546",
+                "B4253ACD88BD55DBB0F0F7F7CA6EC670713AE705C4B626A6B434E242708068CD",
             "machine hash does not match after on end cycle")
     end
 )

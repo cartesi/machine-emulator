@@ -148,7 +148,7 @@ do_test("should return expected value",
         local root_hash = machine:get_root_hash()
         print("Root hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "64E1EB3696A5E3D340D86BECD97A43831FC6CFB2E104F1C4CE8D597DC18A4348",
+                "700C27E3A6635806EAD30476B12EF17366CC025076F805E8F4EE05631865EED3",
             "initial root hash does not match")
     end
 )

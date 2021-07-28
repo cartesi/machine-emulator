@@ -46,9 +46,7 @@ namespace detail {
 /// \note (This is directly available in C++20.)
 template <typename T>
 struct remove_cvref {
-    typedef typename
-        std::remove_reference<typename
-            std::remove_cv<T>::type>::type type;
+    using type = typename std::remove_reference<typename std::remove_cv<T>::type>::type;
 };
 
 /// \class is_template_base_of

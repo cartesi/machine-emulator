@@ -150,8 +150,8 @@ private:
     }
 };
 
-typedef void (*test_function)(RollupMachineManagerClient &manager);
-typedef void (*test_setup)(const std::function<void(const std::string &title, test_function f)> &fn);
+using test_function = void (*)(RollupMachineManagerClient &);
+using test_setup = void (*)(const std::function<void (const std::string &, test_function)> &);
 
 class test_suite final {
 public:

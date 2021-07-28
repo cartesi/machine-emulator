@@ -93,8 +93,8 @@
 #ifdef __SIZEOF_INT128__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
-typedef __int128 int128_t;
-typedef unsigned __int128 uint128_t;
+using int128_t = __int128;
+using uint128_t = unsigned __int128;
 #pragma GCC diagnostic pop
 #endif
 

@@ -43,7 +43,7 @@ extern "C" {
 // API Structures
 // ---------------------------------
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays,modernize-use-using)
 typedef uint8_t cm_hash[CM_MACHINE_HASH_BYTE_SIZE];
 
 ///brief Error codes returned from machine emulator C API
@@ -89,7 +89,7 @@ enum CM_ERROR {
 };
 
 /// \brief List of CSRs to use with read_csr and write_csr
-typedef enum {
+typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_PC,
     CM_PROC_MVENDORID,
     CM_PROC_MARCHID,
@@ -130,7 +130,7 @@ typedef enum {
 } CM_PROC_CSR;
 
 /// \brief Processor state configuration
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     uint64_t x[CM_MACHINE_X_REG_COUNT];          ///< Value of general-purpose registers
     uint64_t pc;                  ///< Value of pc
     uint64_t mvendorid;    ///< Value of mvendorid CSR
@@ -163,19 +163,19 @@ typedef struct {
 
 
 /// \brief RAM state configuration
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     uint64_t length; ///< RAM length
     const char *image_filename; ///< RAM image file name
 } cm_ram_config;
 
 /// \brief ROM state configuration
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     const char *bootargs; ///< Bootargs to pass to kernel
     const char *image_filename; ///< ROM image file
 } cm_rom_config;
 
 /// \brief Flash drive state configuration
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     uint64_t start;           ///< Flash drive start position
     uint64_t length;          ///< Flash drive length
     bool shared;              ///< Target changes to drive affect image file?
@@ -183,12 +183,12 @@ typedef struct {
 } cm_flash_drive_config;
 
 /// \brief CLINT device state configuration
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     uint64_t mtimecmp; ///< Value of mtimecmp CSR
 } cm_clint_config;
 
 /// \brief HTIF device state configuration
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     uint64_t fromhost; ///< Value of fromhost CSR
     uint64_t tohost;     ///< Value of tohost CSR
     bool console_getchar;      ///< Make console getchar available?
@@ -197,7 +197,7 @@ typedef struct {
 } cm_htif_config;
 
 /// \brief DHD device state configuration
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     uint64_t tstart;           ///< Start of target physical memory range for output data
     uint64_t tlength;          ///< Length of target physical memory range for output data
     const char *image_filename; ///< Data image file name
@@ -207,7 +207,7 @@ typedef struct {
 } cm_dhd_config;
 
 /// \brief Machine state configuration
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     cm_processor_config processor;
     cm_ram_config ram;
     cm_rom_config rom;
@@ -223,7 +223,7 @@ typedef struct {
 /// \details
 /// This structure holds a proof that the node spanning a log2_target_size
 /// at a given address in the tree has a certain hash.
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     uint64_t target_address;
     size_t log2_target_size;
     cm_hash target_hash;
@@ -234,33 +234,33 @@ typedef struct {
 } cm_merkle_tree_proof;
 
 /// \brief Type of state access
-typedef enum {
+typedef enum { // NOLINT(modernize-use-using)
     CM_ACCESS_READ, ///< Read operation
     CM_ACCESS_WRITE, ///< Write operation
 }  CM_ACCESS_TYPE;
 
 /// \brief Type of access log
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     bool proofs; ///< Includes proofs
     bool annotations; ///< Includes annotations
 } cm_access_log_type;
 
 /// \brief Bracket type
-typedef enum {
+typedef enum { // NOLINT(modernize-use-using)
     CM_BRACKET_BEGIN,    ///< Start of scope
     CM_BRACKET_END       ///< End of scope
 }  CM_BRACKET_TYPE;
 
 
 /// \brief Bracket note
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     CM_BRACKET_TYPE type;   ///< Bracket type
     uint64_t where;         ///< Where it points to in the log
     char* text;           ///< Note text
 } cm_bracket_note;
 
 /// \brief Records an access to the machine state
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     CM_ACCESS_TYPE type; ///< Type of access
     uint64_t address;   ///< Address of access
     int log2_size;      ///< Log2 of size of access
@@ -272,7 +272,7 @@ typedef struct {
 } cm_access;
 
 /// \brief Log of state accesses
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     cm_access *accesses; ///< List of all accesses
     size_t accesses_count; ///< Size of list of all accesses
     cm_bracket_note *brackets; ///< Begin/End annotations
@@ -284,23 +284,23 @@ typedef struct {
 
 
 /// \brief DHD runtime configuration
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     const char *source_address; ///< Address of dehash source
 } cm_dhd_runtime_config;
 
 /// \brief Concurrency runtime configuration
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     uint64_t update_merkle_tree;
 } cm_concurrency_config;
 
 /// \brief Machine runtime configuration
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     cm_dhd_runtime_config dhd;
     cm_concurrency_config concurrency;
 } cm_machine_runtime_config;
 
 /// \brief Machine instance handle
-typedef void cm_machine;
+typedef void cm_machine; // NOLINT(modernize-use-using)
 
 
 // ---------------------------------

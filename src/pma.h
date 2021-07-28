@@ -42,7 +42,7 @@ class machine;
 /// \param page_data Receives pointer to start of page data, or nullptr if page is constant *and* pristine.
 /// \param scratch Pointer to memory buffer that must be able to hold PMA_PAGE_SIZE bytes.
 /// \returns True if operation succeeded, false otherwise.
-typedef bool (*pma_peek)(const pma_entry &pma, const machine &m, uint64_t page_offset, const unsigned char **page_data, unsigned char *scratch);
+using pma_peek = bool (*)(const pma_entry &, const machine &, uint64_t, const unsigned char **, unsigned char *);
 
 /// \brief Default peek callback issues error on peeks.
 bool pma_peek_error(const pma_entry &, const machine &, uint64_t, const unsigned char **, unsigned char *);
@@ -54,7 +54,7 @@ bool pma_peek_error(const pma_entry &, const machine &, uint64_t, const unsigned
 /// \param val Pointer to word where value will be stored.
 /// \param log2_size log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
 /// \returns True if operation succeeded, false otherwise.
-typedef bool (*pma_read)(const pma_entry &pma, i_device_state_access *da, uint64_t offset, uint64_t *val, int log2_size);
+using pma_read = bool (*)(const pma_entry &, i_device_state_access *, uint64_t, uint64_t *, int);
 
 /// \brief Default read callback issues error on reads.
 bool pma_read_error(const pma_entry &, i_device_state_access *, uint64_t, uint64_t *, int);
@@ -66,7 +66,7 @@ bool pma_read_error(const pma_entry &, i_device_state_access *, uint64_t, uint64
 /// \param val Word to be written at \p offset.
 /// \param log2_size log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
 /// \returns True if operation succeeded, false otherwise.
-typedef bool (*pma_write)(const pma_entry &pma, i_device_state_access *da, uint64_t offset, uint64_t val, int log2_size);
+using pma_write = bool (*)(const pma_entry &, i_device_state_access *, uint64_t, uint64_t, int);
 
 /// \brief Default write callback issues error on write.
 bool pma_write_error(const pma_entry &, i_device_state_access *, uint64_t, uint64_t, int);

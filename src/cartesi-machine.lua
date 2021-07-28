@@ -187,6 +187,11 @@ where options are:
     store initial machine config to <filename>. If <filename> is omitted,
     print the initial machine config to stderr.
 
+  --load-config=<filename>
+    load initial machine config from <filename>. If a field is omitted on
+    machine_config table, it will fall back into the respective command-line
+    argument or into the default value.
+
   --dump-pmas
     dump all PMA ranges to disk when done
 
@@ -244,6 +249,7 @@ local store_dir = nil
 local load_dir = nil
 local cmdline_opts_finished = false
 local store_config = false
+local load_config = false
 local exec_arguments = {}
 
 -- List of supported options
@@ -519,6 +525,11 @@ local options = {
         else
             store_config = stderr
         end
+        return true
+    end },
+    { "^%-%-load%-config%=(%g*)$", function(o)
+        if not o or #o < 1 then return false end
+        load_config = o
         return true
     end },
     { ".*", function(all)
@@ -817,6 +828,20 @@ else
     if #exec_arguments > 0 then
         config.rom.bootargs = append(config.rom.bootargs, "-- " ..
             table.concat(exec_arguments, " "))
+    end
+
+    if load_config then
+        local env = {}
+        local ok, err = loadfile(load_config, 't', env)
+        if ok then
+            local chunk = ok
+            ok, err = pcall(chunk)
+        end
+        if not ok then
+            stderr("Failed to load machine config (%s):\n", load_config)
+            error(err)
+        end
+        config = setmetatable(env.machine_config, {__index = config})
     end
 
     machine = create_machine(config, runtime)

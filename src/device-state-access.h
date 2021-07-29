@@ -50,7 +50,7 @@ public:
     /// \brief No move assignment
     device_state_access& operator=(device_state_access &&) = delete;
     /// \brief Default destructor
-    ~device_state_access() = default;
+    ~device_state_access() override = default;
 
 private:
 

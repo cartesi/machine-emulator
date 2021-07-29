@@ -39,7 +39,7 @@ public:
     virtual_machine(virtual_machine &&other) noexcept = delete;
     virtual_machine &operator=(const virtual_machine &other) = delete;
     virtual_machine &operator=(virtual_machine &&other) noexcept = delete;
-    virtual ~virtual_machine(void);
+    ~virtual_machine(void) override;
 
 private:
     void do_store(const std::string &dir) override;

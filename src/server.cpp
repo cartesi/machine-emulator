@@ -166,7 +166,7 @@ protected:
 
 public:
 
-    virtual ~handler() = default;
+    ~handler() override = default;
     handler(const handler &other) = delete;
     handler(handler &&other) noexcept = delete;
     handler &operator=(const handler &other) = delete;

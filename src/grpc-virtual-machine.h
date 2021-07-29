@@ -64,7 +64,7 @@ public:
     grpc_virtual_machine(grpc_virtual_machine &&other) noexcept = delete;
     grpc_virtual_machine &operator=(const grpc_virtual_machine &other) = delete;
     grpc_virtual_machine &operator=(grpc_virtual_machine &&other) noexcept = delete;
-    virtual ~grpc_virtual_machine();
+    ~grpc_virtual_machine() override;
 
     static semantic_version get_version(const grpc_machine_stub_ptr &stub);
 

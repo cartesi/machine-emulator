@@ -15,13 +15,97 @@
 -- You should have received a copy of the GNU Lesser General Public License
 -- along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 --
+
+-- Note: for grpc machine test to work, cartesi-machine-server must run on same computer and 
+-- cartesi machine server execution path must be provided
+
 local cartesi = require "cartesi"
 local cartesi_util = require "cartesi.util"
 local test_util = require "tests.util"
 local test_data = require "tests.data"
 
 
-print("Testing machine bindings")
+local server_address = nil
+local test_path = "./"
+local cleanup = {}
+
+-- Print help and exit
+local function help()
+    io.stderr:write(string.format([=[
+Usage:
+
+  %s <machine_type> [options] 
+
+where options are:
+  --server=<server-address>
+    run tests on a remote cartesi machine server (when machine type is grpc). 
+    <server-address> should be in one of the following formats:
+        <host>:<port>
+        unix:<path>
+    --test-path=<dir>
+        path to test execution folder. In case of grpc tests it is path to folder
+        where cartesi-machine-server is executed
+        (default: "./")
+]=], arg[0]))
+    os.exit()
+end
+
+
+local options = {
+    { "^%-%-h$", function(all)
+        if not all then return false end
+        help()
+    end },
+    { "^%-%-help$", function(all)
+        if not all then return false end
+        help()
+    end },
+    { "^%-%-server%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        server_address = o
+        return true
+    end },
+    { "^%-%-test%-path%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        test_path = o
+        return true
+    end },
+    { ".*", function(all)
+        error("unrecognized option " .. all)
+    end }
+}
+
+-- Process command line options
+local arguments = {}
+for i, argument in ipairs({...}) do
+    if argument:sub(1,1) == "-" then
+        for j, option in ipairs(options) do
+            if option[2](argument:match(option[1])) then
+                break
+            end
+        end
+    else
+        arguments[#arguments+1] = argument
+    end
+end
+
+local machine_type = assert(arguments[1], "missing machine type")
+assert(machine_type == "local" or machine_type == "grpc", "unknown machine type, should be 'local' or 'grpc'")
+if (machine_type == "grpc") then
+    assert(server_address ~= nil, "cartesi machine server address is missing")
+    assert(test_path ~= nil, "cartesi machine server excution folder path must be provided, server must run on same computer")
+end 
+if server_address then cartesi.grpc = require("cartesi.grpc") end
+
+local function connect()
+    local server = cartesi.grpc.stub(server_address)
+    local version = assert(server.get_version(),
+        "could not connect to cartesi machine GRPC server at " .. server_address)
+    local shutdown = function() server:shutdown() end
+    local mt = { __gc = function() pcall(shutdown) end}
+    setmetatable(cleanup, mt)
+    return server, version
+end
 
 local pmas_file_names = {}
 pmas_file_names["0000000000000000--0000000000001000.bin"] = 4096
@@ -30,29 +114,42 @@ pmas_file_names["0000000002000000--00000000000c0000.bin"] = 12288
 pmas_file_names["0000000040008000--0000000000001000.bin"] = 4096
 pmas_file_names["0000000080000000--0000000000100000.bin"] = 1048576
 
-
-
-local function build_machine()
+local function build_machine(type)
     -- Create new machine
-
+    local concurrency_update_merkle_tree = 0
     local cpu_addr = test_data.get_cpu_addr()
     local cpu_addr_x = test_data.get_cpu_addrx()
     cpu_addr.x = cpu_addr_x
 
-    local machine = cartesi.machine {
+    local config = {
         processor = cpu_addr,
+        rom = {image_filename = test_util.images_path .. "rom.bin"},
         ram = {length = 1 << 20},
-        rom = {image_filename = test_util.images_path .. "rom.bin"}
     }
+    local runtime = {
+        concurrency = {
+            update_merkle_tree = concurrency_update_merkle_tree
+        }
+    }
+    
+    local new_machine = nil
+    if (type == "grpc") then
+        if not server then server = connect() end
+        new_machine = assert(server.machine(config, runtime))
+    else 
+        new_machine = assert(cartesi.machine(config, runtime))
+    end 
 
     cpu_addr.x = nil
     cpu_addr.mvendorid = nil
     cpu_addr.marchid = nil
     cpu_addr.mimpid = nil
-    return machine
+    return new_machine
 end
 
-local do_test = test_util.make_do_test(build_machine)
+local do_test = test_util.make_do_test(build_machine, machine_type)
+
+print("Testing machine bindings for type " .. machine_type)
 
 print("\n\ntesting machine initial flags")
 do_test("machine should not have halt and yield initial flags set",
@@ -220,21 +317,22 @@ do_test("there should exist dumped files of expected size",
         machine:dump_pmas()
 
         for file_name, file_size in pairs(pmas_file_names) do
-
-            local fd = io.open(file_name, "rb")
+            local dumped_file = test_path .. file_name
+            local fd = io.open(dumped_file, "rb")
             local real_file_size = fd:seek("end")
-            fd:close(file_name)
+            fd:close(dumped_file)
 
             assert(real_file_size == file_size,
-                "unexpected pmas file size" .. file_name)
+                "unexpected pmas file size" .. dumped_file)
 
-            assert(test_util.file_exists(file_name),
-                "dumping pmas to file failed " .. file_name)
+            assert(test_util.file_exists(dumped_file),
+                "dumping pmas to file failed " .. dumped_file)
 
-            os.remove(file_name)
+            os.remove(dumped_file)
         end
     end
 )
+
 
 print("\n\n read and write x registers")
 do_test("writen and expected register values should match", 
@@ -401,5 +499,5 @@ do_test("dumped log content should match",
     end
 )
 
-print("\n\nAll machine binding tests passed")
+print("\n\nAll machine binding tests for type " .. machine_type .. " passed")
 

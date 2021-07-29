@@ -20,9 +20,94 @@
 local cartesi = require "cartesi"
 local test_util = require "tests.util"
 
+-- Note: for grpc machine test to work, cartesi-machine-server must run on same computer and 
+-- cartesi machine server execution path must be provided
 
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
 local MAX_MCYCLE = -1
+
+local server_address = nil
+local test_path = "./"
+local cleanup = {}
+
+-- Print help and exit
+local function help()
+    io.stderr:write(string.format([=[
+Usage:
+
+  %s <machine_type> [options] 
+
+where options are:
+  --server=<server-address>
+    run tests on a remote cartesi machine server (when machine type is grpc). 
+    <server-address> should be in one of the following formats:
+        <host>:<port>
+        unix:<path>
+  --test-path=<dir>
+        path to test execution folder. In case of grpc it is path to folder
+        where cartesi-machine-server is executed
+        (default: "./")
+]=], arg[0]))
+    os.exit()
+end
+
+
+local options = {
+    { "^%-%-h$", function(all)
+        if not all then return false end
+        help()
+    end },
+    { "^%-%-help$", function(all)
+        if not all then return false end
+        help()
+    end },
+    { "^%-%-server%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        server_address = o
+        return true
+    end },
+    { "^%-%-test%-path%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        test_path = o
+        return true
+    end },
+    { ".*", function(all)
+        error("unrecognized option " .. all)
+    end }
+}
+
+-- Process command line options
+local arguments = {}
+for i, argument in ipairs({...}) do
+    if argument:sub(1,1) == "-" then
+        for j, option in ipairs(options) do
+            if option[2](argument:match(option[1])) then
+                break
+            end
+        end
+    else
+        arguments[#arguments+1] = argument
+    end
+end
+
+local machine_type = assert(arguments[1], "missing machine type")
+assert(machine_type == "local" or machine_type == "grpc", "unknown machine type, should be 'local' or 'grpc'")
+if (machine_type == "grpc") then
+    assert(server_address ~= nil, "cartesi machine server address is missing")
+    assert(test_path ~= nil, "cartesi machine server execution folder path must be provided, server must run on same computer")
+end 
+if server_address then cartesi.grpc = require("cartesi.grpc") end
+
+local function connect()
+    local server = cartesi.grpc.stub(server_address)
+    local version = assert(server.get_version(),
+        "could not connect to cartesi machine GRPC server at " .. server_address)
+    local shutdown = function() server:shutdown() end
+    local mt = { __gc = function() pcall(shutdown) end}
+    setmetatable(cleanup, mt)
+    return server, version
+end
+
 
 local pmas_file_names = {
     "0000000000000000--0000000000001000.bin",
@@ -48,23 +133,33 @@ local function run_loop(machine, mcycle_end)
     end
 end
 
-local function build_machine()
-    local cpu_addr = {}
-
-
-    -- Use default config to be max reproducible
-    local machine = cartesi.machine {
-        processor = cpu_addr,
+local function build_machine(type)
+    -- Create new machine
+     -- Use default config to be max reproducible
+    local concurrency_update_merkle_tree = 0
+    local config = {
+        processor = {},
         ram = {length = 1 << 20},
         rom = {image_filename = test_util.images_path .. "rom.bin"}
     }
-
-    return machine
+    local runtime = {
+        concurrency = {
+            update_merkle_tree = concurrency_update_merkle_tree
+        }
+    }
+    local new_machine = nil
+    if (type == "grpc") then
+        if not server then server = connect() end
+        new_machine = assert(server.machine(config, runtime))
+    else 
+        new_machine = assert(cartesi.machine(config, runtime))
+    end 
+    return new_machine
 end
 
-local function build_machine_with_flash()
-    local cpu_addr = {}
 
+
+local function build_machine_with_flash(type)
     flash_drive_config = {
 
         start = 0x8000000000000000,
@@ -73,22 +168,36 @@ local function build_machine_with_flash()
         image_filename = test_util.images_path .. "rootfs.ext2"
     }
 
-    -- Use default config to be max reproducible
-    local machine = cartesi.machine {
-        processor = cpu_addr,
+    local config = {
+        processor = {},
         ram = {length = 1 << 20},
         rom = {image_filename = test_util.images_path .. "rom.bin"},
         flash_drive = {flash_drive_config}
     }
+    local concurrency_update_merkle_tree = 0
+    local runtime = {
+        concurrency = {
+            update_merkle_tree = concurrency_update_merkle_tree
+        }
+    }
 
-    return machine
+    -- Use default config to be max reproducible
+    local new_machine = nil
+    if (type == "grpc") then
+        if not server then server = connect() end
+        new_machine = assert(server.machine(config, runtime))
+    else 
+        new_machine = assert(cartesi.machine(config, runtime))
+    end 
+    return new_machine
 end
 
-local do_test = test_util.make_do_test(build_machine)
-local do_test_with_flash = test_util.make_do_test(build_machine_with_flash)
+
+local do_test = test_util.make_do_test(build_machine, machine_type)
+local do_test_with_flash = test_util.make_do_test(build_machine_with_flash, machine_type)
 
 local function remove_files(file_names)
-    for _, file_name in pairs(file_names) do os.remove(file_name) end
+    for _, file_name in pairs(file_names) do os.remove(test_path .. file_name) end
 end
 
 -- Take data from dumped memory files
@@ -96,11 +205,11 @@ end
 local function calculate_emulator_hash(pmas_files)
 
     -- Read Data
-    local procesor_board_shadow = parse_pma_file(pmas_files[1])
-    local rom = parse_pma_file(pmas_files[2])
-    local cli = parse_pma_file(pmas_files[3])
-    local hti = parse_pma_file(pmas_files[4])
-    local ram = parse_pma_file(pmas_files[5])
+    local procesor_board_shadow = parse_pma_file(test_path .. pmas_files[1])
+    local rom = parse_pma_file(test_path .. pmas_files[2])
+    local cli = parse_pma_file(test_path .. pmas_files[3])
+    local hti = parse_pma_file(test_path .. pmas_files[4])
+    local ram = parse_pma_file(test_path .. pmas_files[5])
     
     local cpu_and_rom_data = procesor_board_shadow.data .. rom.data
     local cpu_and_rom_data_pages = (procesor_board_shadow.data_size +
@@ -142,6 +251,8 @@ local function calculate_emulator_hash(pmas_files)
     return total_space_hash
 end
 
+print("Testing machine for type " .. machine_type)
+
 print("\n\ntesting getting machine intial config and iflags")
 do_test("machine halt and yield flags and config matches", 
     function(machine)
@@ -180,7 +291,7 @@ do_test("dumped file merkle tree hashes should match",
             local data_number_of_pages = data_region_size / (2 ^ page_log2_size)
             local tree_log2_size = math.ceil(math.log(data_region_size, 2))
 
-            local pmas_file = parse_pma_file(file_name)
+            local pmas_file = parse_pma_file(test_path .. file_name)
 
             root_file_hashes[file_name] = test_util.calculate_region_hash(pmas_file.data,
                                                                         data_number_of_pages,
@@ -277,7 +388,7 @@ do_test("proof check should pass",
         -- hashes match
         machine:dump_pmas()
         local ram_file_name = pmas_file_names[5]
-        local ram = parse_pma_file(ram_file_name)
+        local ram = parse_pma_file(test_path .. ram_file_name)
 
         remove_files(pmas_file_names)
 
@@ -405,8 +516,9 @@ print("\n\n check replace flash drives")
 do_test_with_flash("should replace flash drive and read something",
     function(machine)
         -- Create temp flash file
-        local p = io.popen(
-                    [[ echo "test data 1234567890" > input.raw && truncate -s 62914560 input.raw]])
+        local input_path =  test_path .. "input.raw"
+        local command  = "echo 'test data 1234567890' > " .. input_path .. " && truncate -s 62914560 " .. input_path
+        local p = io.popen(command)
         p:close()
 
         local initial_config = machine:get_initial_config()
@@ -415,7 +527,7 @@ do_test_with_flash("should replace flash drive and read something",
         flash_drive_config = {
             start = flash_address_start,
             length = 0x3c00000,
-            image_filename = "input.raw",
+            image_filename = input_path,
             shared = true
         }
 
@@ -425,7 +537,7 @@ do_test_with_flash("should replace flash drive and read something",
 
         local flash_data = machine:read_memory(flash_address_start, 20)
         assert(flash_data == "test data 1234567890", "data read from replaced flash failed")
-        os.remove("input.raw")
+        os.remove(input_path)
     end
 )
 
@@ -449,5 +561,5 @@ do_test("register values should match",
     end
 )
 
-print("\n\nAll tests of machine lua API passed")
+print("\n\nAll tests of machine lua API for type " .. machine_type .. "  passed")
 

@@ -40,10 +40,10 @@ local test_util = {
 }
 
 
-function test_util.make_do_test(build_machine)
+function test_util.make_do_test(build_machine, type)
     return function(description, f)
         io.write("  " .. description .. "...\n")
-        local machine = build_machine()
+        local machine = build_machine(type)
         f(machine)
         machine:destroy()
         print("<<<<<<<<<<<<<<<< passed >>>>>>>>>>>>>>>")

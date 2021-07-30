@@ -25,7 +25,7 @@
 
 namespace cartesi {
 
-
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define PRINT_PROCESSOR_CSR(machine, regname) \
     do {                                      \
         uint64_t val{0};                     \
@@ -121,6 +121,7 @@ static int machine_obj_index_get_root_hash(lua_State *L) {
 }
 
 /// \brief Generation of machine getters and setters for CSR registers
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define IMPL_MACHINE_OBJ_READ_WRITE(field) \
     static int machine_obj_index_read_##field(lua_State *L) { \
         auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1); \
@@ -136,6 +137,7 @@ static int machine_obj_index_get_root_hash(lua_State *L) {
     }
 
 /// \brief Generation of machine getters for CSR registers
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define IMPL_MACHINE_OBJ_READ(field) \
     static int machine_obj_index_read_##field(lua_State *L) { \
         auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1); \
@@ -146,6 +148,7 @@ static int machine_obj_index_get_root_hash(lua_State *L) {
     }
 
 /// \brief Generation of machine setters for CSR registers
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define IMPL_MACHINE_OBJ_WRITE(field) \
     static int machine_obj_index_write_##field(lua_State *L) { \
         auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1); \
@@ -285,9 +288,11 @@ static int machine_obj_index_read_memory(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
     const size_t length = luaL_checkinteger(L, 3);
-    unsigned char *data = static_cast<unsigned char *>(malloc(length));
-    if (data == nullptr) {
-        luaL_error(L, "failed to allocate memory for buffer");
+    unsigned char *data{};
+    try {
+        data = new unsigned char[length];
+    } catch (std::bad_alloc &e) {
+        luaL_error(L, "Failed to allocate memory for buffer");
     }
     auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
     TRY_EXECUTE(cm_read_memory(m.get(), address, managed_data.get(), length, err_msg));
@@ -405,6 +410,7 @@ static int machine_obj_index_write_memory(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     size_t length{0};
     const uint64_t address = luaL_checkinteger(L, 2);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(
         luaL_checklstring(L, 3, &length));
     TRY_EXECUTE(cm_write_memory(m.get(), address, data, length, err_msg));

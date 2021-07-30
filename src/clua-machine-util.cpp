@@ -30,8 +30,8 @@ void cm_delete<char>(char *ptr) {
 
 /// \brief Deleter for C data buffer
 template<>
-void cm_delete<unsigned char>(unsigned char *ptr) {
-    free(ptr);
+void cm_delete<unsigned char>(unsigned char *ptr) { // NOLINT(readability-non-const-parameter)
+    delete [] ptr;
 }
 
 /// \brief Deleter for C api machine configuration
@@ -472,7 +472,7 @@ static size_t check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_
     const size_t log2_root_size, cm_hash** sibling_hashes) {
     luaL_checktype(L, idx, LUA_TTABLE);
     auto sibling_hashes_count = log2_root_size - log2_target_size;
-    cm_hash temp_hashes[64]{};
+    std::array<cm_hash, 64> temp_hashes{};
     assert(sibling_hashes_count <= 64);
     for (; log2_target_size < log2_root_size; ++log2_target_size) {
         lua_rawgeti(L, idx, log2_root_size - log2_target_size);
@@ -481,7 +481,7 @@ static size_t check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_
         lua_pop(L, 1);
     }
     *sibling_hashes = new cm_hash[sibling_hashes_count]{};
-    memcpy(*sibling_hashes, temp_hashes, sizeof(cm_hash) * sibling_hashes_count);
+    memcpy(*sibling_hashes, temp_hashes.data(), sizeof(cm_hash) * sibling_hashes_count);
     return sibling_hashes_count;
 }
 
@@ -522,7 +522,7 @@ cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx) 
     clua_check_cm_hash(L, -1, &root_hash);
     lua_pop(L, 1);
     lua_getfield(L, tabidx, "sibling_hashes");
-    cm_hash* sibling_hashes;
+    cm_hash* sibling_hashes{};
     auto sibling_hashes_count = check_sibling_cm_hashes(L, -1, log2_target_size, log2_root_size,
         &sibling_hashes);
     lua_pop(L, 1);
@@ -585,9 +585,9 @@ static access_data opt_access_data_field(lua_State *L, int tabidx,
 /// \param data_size Receives size of the returned data field
 /// \returns Allocated field value. Throws error if field is not optional but is missing.
 /// If field is optional but missing returns nullptr
-static uint8_t *aux_cm_access_data_field(lua_State *L, int tabidx,
+static unsigned char *aux_cm_access_data_field(lua_State *L, int tabidx,
     const char *field, uint64_t log2_size, bool opt, size_t *data_size) {
-    uint8_t *a = nullptr;
+    unsigned char *a = nullptr;
     *data_size = 0;
     tabidx = lua_absindex(L, tabidx);
     lua_getfield(L, tabidx, field);
@@ -597,9 +597,9 @@ static uint8_t *aux_cm_access_data_field(lua_State *L, int tabidx,
         uint64_t expected_len = UINT64_C(1) << log2_size;
         if (len != expected_len) {
             luaL_error(L, "invalid %s (expected string with 2^%d bytes)", field,
-                (int) log2_size);
+                static_cast<int>(log2_size));
         }
-        a = new uint8_t[len];
+        a = new unsigned char[len];
         memcpy(a, s, len);
         *data_size = len;
     } else if (!opt || !lua_isnil(L, -1)) {
@@ -609,12 +609,12 @@ static uint8_t *aux_cm_access_data_field(lua_State *L, int tabidx,
     return a;
 }
 
-static uint8_t *check_cm_access_data_field(lua_State *L, int tabidx, const char *field,
+static unsigned char *check_cm_access_data_field(lua_State *L, int tabidx, const char *field,
     uint64_t log2_size, size_t *data_size) {
     return aux_cm_access_data_field(L, tabidx, field, log2_size, false, data_size);
 }
 
-static uint8_t *opt_cm_access_data_field(lua_State *L, int tabidx, const char *field,
+static unsigned char *opt_cm_access_data_field(lua_State *L, int tabidx, const char *field,
     uint64_t log2_size, size_t *data_size) {
     return aux_cm_access_data_field(L, tabidx, field, log2_size, true, data_size);
 }
@@ -900,6 +900,7 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
 /// \param data Pointer to C array of data
 /// \param data_size Size of array of data
 static void push_raw_data(lua_State *L, const uint8_t* data, size_t data_size) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     lua_pushlstring(L, reinterpret_cast<const char *>(data), data_size);
 }
 
@@ -1094,6 +1095,7 @@ void clua_push_hash(lua_State *L, const machine_merkle_tree::hash_type &hash) {
 }
 
 void clua_push_cm_hash(lua_State *L, const cm_hash *hash) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     lua_pushlstring(L, reinterpret_cast<const char *>(hash),
         CM_MACHINE_HASH_BYTE_SIZE);
 }
@@ -1165,6 +1167,7 @@ cm_access_log_type clua_check_cm_log_type(lua_State *L, int tabidx) {
     };
 }
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define PUSH_PROCESSOR_CONFIG_CSR(regname) \
     do {                                   \
         clua_setintegerfield(L, p.regname, #regname, -1); \
@@ -1211,7 +1214,7 @@ static void push_processor_config(lua_State *L, const processor_config &p) {
     PUSH_PROCESSOR_CONFIG_CSR(iflags);
 }
 
-
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define PUSH_CM_PROCESSOR_CONFIG_CSR(regname) \
     do {                                      \
         clua_setintegerfield(L, p->regname, #regname, -1); \
@@ -1408,7 +1411,7 @@ static void push_flash_drive_configs(lua_State *L,
 /// \brief Pushes cm_flash_drive_config to the Lua stack
 /// \param L Lua state.
 /// \param flash_drive Flash drive configurations to be pushed.
-static void push_cm_flash_drive_configs(lua_State *L, const cm_flash_drive_config flash_drive[],
+static void push_cm_flash_drive_configs(lua_State *L, const cm_flash_drive_config *flash_drive,
                                      size_t flash_drive_count) {
     lua_newtable(L);
     for (size_t j = 0; j < flash_drive_count; ++j) {
@@ -1622,7 +1625,7 @@ static size_t check_cm_flash_drive_configs(lua_State *L, int tabidx,
     }
     auto flash_drive_table_idx = lua_gettop(L);
     auto count = luaL_len(L, flash_drive_table_idx);
-    clua_managed_cm_ptr<cm_flash_drive_config>* managed_configs[CM_FLASH_DRIVE_CONFIGS_MAX_SIZE]{};
+    std::array<clua_managed_cm_ptr<cm_flash_drive_config>*, CM_FLASH_DRIVE_CONFIGS_MAX_SIZE> managed_configs{};
     for (int i = 0; i < count; ++i) {
         managed_configs[i] = &clua_push_to(L, clua_managed_cm_ptr<cm_flash_drive_config>(nullptr), ctxidx);
     }
@@ -1863,6 +1866,7 @@ machine_config clua_check_machine_config(lua_State *L, int tabidx) {
 }
 
 cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ctxidx) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to adjust config
     cm_machine_config *def_config = const_cast<cm_machine_config *>(cm_new_default_machine_config());
     // Use default processor configuration if one is not available
     cm_processor_config processor = def_config->processor;
@@ -2000,6 +2004,7 @@ cm_machine_runtime_config* clua_opt_cm_machine_runtime_config(lua_State *L,
             def->concurrency = r->concurrency;
             auto source_address_size = strlen(r->dhd.source_address) + 1;
             def->dhd.source_address = new char[source_address_size];
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
             strncpy(const_cast<char *>(def->dhd.source_address), r->dhd.source_address, source_address_size);
         }
         return def;

@@ -677,6 +677,7 @@ int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_
                       cm_machine **new_machine, char **err_msg) try {
     const cartesi::machine_config c = convert_from_c(config);
     const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine = reinterpret_cast<cm_machine *>(create_virtual_machine(c, r));
     return cm_result_success(err_msg);
 } catch (...) {
@@ -686,6 +687,7 @@ int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_
 int cm_load_machine(const char *dir, const cm_machine_runtime_config *runtime_config,
                                cm_machine **new_machine, char **err_msg) try {
     const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine = reinterpret_cast<cm_machine *>(load_virtual_machine(dir, r));
     return cm_result_success(err_msg);
 } catch (...) {
@@ -1131,7 +1133,7 @@ void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config) {
 }
 
 int cm_destroy(cm_machine *m, char **err_msg) try {
-    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    auto *cpp_machine = convert_from_c(m);
     cpp_machine->destroy();
     return cm_result_success(err_msg);
 } catch (...) {
@@ -1139,7 +1141,7 @@ int cm_destroy(cm_machine *m, char **err_msg) try {
 }
 
 int cm_snapshot(cm_machine *m, char **err_msg) try {
-    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    auto *cpp_machine = convert_from_c(m);
     cpp_machine->snapshot();
     return cm_result_success(err_msg);
 } catch (...) {
@@ -1147,7 +1149,7 @@ int cm_snapshot(cm_machine *m, char **err_msg) try {
 }
 
 int cm_rollback(cm_machine *m, char **err_msg) try {
-    cartesi::i_virtual_machine *cpp_machine = reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    auto *cpp_machine = convert_from_c(m);
     cpp_machine->rollback();
     return cm_result_success(err_msg);
 } catch (...) {

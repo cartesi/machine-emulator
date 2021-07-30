@@ -99,8 +99,8 @@ BOOST_AUTO_TEST_CASE_NOLINT(new_default_machine_config_basic_test)
 
 BOOST_AUTO_TEST_CASE_NOLINT(get_default_machine_config_basic_test)
 {
-    const cm_machine_config *config;
-    char* err_msg;
+    const cm_machine_config *config{};
+    char* err_msg{};
     int error_code = cm_get_default_config(&config, &err_msg);
     BOOST_TEST_CHECK(config != nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -2190,13 +2190,17 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_long_cycle_test, ordinary_machine_fix
 
 class grpc_machine_fixture : public machine_rom_flash_simple_fixture {
 public:
-    grpc_machine_fixture() {
-        char* err_msg;
+    grpc_machine_fixture(): m_stub{} {
+        char* err_msg{};
         cm_create_grpc_machine_stub("127.0.0.1:5001", &m_stub, &err_msg);
     }
     ~grpc_machine_fixture() {
         cm_delete_grpc_machine_stub(m_stub);
     }
+    grpc_machine_fixture(const grpc_machine_fixture &) = delete;
+    grpc_machine_fixture(grpc_machine_fixture &&) = delete;
+    grpc_machine_fixture &operator=(const grpc_machine_fixture &) = delete;
+    grpc_machine_fixture &operator=(grpc_machine_fixture &&) = delete;
 protected:
     cm_grpc_machine_stub *m_stub;
 };
@@ -2211,16 +2215,21 @@ public:
         system("pkill -f cartesi-machine-server || true"); // NOLINT(cert-env33-c)
         system("sleep 3"); // NOLINT(cert-env33-c)
     }
+    grpc_machine_fixture_with_server(const grpc_machine_fixture_with_server &) = delete;
+    grpc_machine_fixture_with_server(grpc_machine_fixture_with_server &&) = delete;
+    grpc_machine_fixture_with_server &operator=(const grpc_machine_fixture_with_server &) = delete;
+    grpc_machine_fixture_with_server &operator=(grpc_machine_fixture_with_server &&) = delete;
 };
 
 class grpc_access_log_machine_fixture : public grpc_machine_fixture {
 public:
-    grpc_access_log_machine_fixture() {
-        _log_type = {true, true};
+    grpc_access_log_machine_fixture(): _access_log{}, _log_type{true, true} {
     }
-
     ~grpc_access_log_machine_fixture() = default;
-
+    grpc_access_log_machine_fixture(const grpc_access_log_machine_fixture &) = delete;
+    grpc_access_log_machine_fixture(grpc_access_log_machine_fixture &&) = delete;
+    grpc_access_log_machine_fixture &operator=(const grpc_access_log_machine_fixture &) = delete;
+    grpc_access_log_machine_fixture &operator=(grpc_access_log_machine_fixture &&) = delete;
 protected:
     cm_access_log* _access_log;
     cm_access_log_type _log_type;
@@ -2228,7 +2237,7 @@ protected:
 
 BOOST_AUTO_TEST_CASE_NOLINT(create_grpc_machine_stub_wrong_address_test)
 {
-    char *err_msg;
+    char *err_msg{};
     cm_grpc_machine_stub *stub{};
     int error_code = cm_create_grpc_machine_stub("addr", &stub, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -2237,7 +2246,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(create_grpc_machine_stub_wrong_address_test)
 
 BOOST_AUTO_TEST_CASE_NOLINT(create_grpc_machine_stub_no_server_test)
 {
-    char *err_msg;
+    char *err_msg{};
     cm_grpc_machine_stub *stub{};
     int error_code = cm_create_grpc_machine_stub("127.0.0.2:5001", &stub, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -2247,53 +2256,47 @@ BOOST_AUTO_TEST_CASE_NOLINT(create_grpc_machine_stub_no_server_test)
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_config_test, grpc_machine_fixture)
 {
-    char* err_msg;
-    cm_machine* new_machine;
+    char *err_msg{};
+    cm_machine* new_machine{};
     int error_code = cm_create_grpc_machine(m_stub, NULL, &_runtime_config, &new_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-
     std::string result = err_msg;
     std::string origin("Invalid machine configuration");
     BOOST_CHECK_EQUAL(origin, result);
-
     cm_delete_error_message(err_msg);
 }
 
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_rt_config_test, grpc_machine_fixture)
 {
-    char* err_msg;
-    cm_machine* new_machine;
+    char *err_msg{};
+    cm_machine *new_machine{};
     int error_code = cm_create_grpc_machine(m_stub, &_machine_config, NULL, &new_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-
     std::string result = err_msg;
     std::string origin("Invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
-
     cm_delete_error_message(err_msg);
 }
 
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_wrong_address_test, grpc_machine_fixture)
 {
-    char* err_msg;
+    char *err_msg{};
     cm_grpc_machine_stub *stub{};
     cm_create_grpc_machine_stub("addr", &stub, &err_msg);
     int error_code = cm_create_grpc_machine(stub, &_machine_config, &_runtime_config, NULL, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
-
     std::string result = err_msg;
     std::string origin("DNS resolution failed for service: addr");
     BOOST_CHECK_EQUAL(origin, result);
-
     cm_delete_error_message(err_msg);
 }
 
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_no_server_test, grpc_machine_fixture)
 {
-    char *err_msg;
+    char *err_msg{};
     int error_code = cm_create_grpc_machine(m_stub, &_machine_config, &_runtime_config, NULL, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
@@ -2306,7 +2309,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_no_server_test, grpc_machine_
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_machine_test, grpc_machine_fixture_with_server)
 {
     auto f = [this]() {
-        char *err_msg;
+        char *err_msg{};
         cm_create_grpc_machine(m_stub, &_machine_config, &_runtime_config, NULL, &err_msg);
     };
     monitor_system_throw(f);
@@ -2314,8 +2317,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_machine_test, grpc_machi
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_basic_test, grpc_machine_fixture_with_server)
 {
-    char *err_msg;
-    cm_machine *machine;
+    char *err_msg{};
+    cm_machine *machine{};
     int error_code = cm_create_grpc_machine(m_stub, &_machine_config, &_runtime_config, &machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
@@ -2329,7 +2332,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_basic_test, grpc_machine_fixt
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_error_placeholder_test, grpc_machine_fixture)
 {
     auto f = [this]() {
-        cm_machine* new_machine;
+        cm_machine *new_machine{};
         cm_create_grpc_machine(m_stub, &_machine_config, &_runtime_config,  &new_machine, NULL);
     };
     monitor_system_throw(f);
@@ -2337,8 +2340,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_error_placeholder_test, 
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_dir, grpc_machine_fixture_with_server)
 {
-    char* err_msg;
-    cm_machine* new_machine;
+    char *err_msg{};
+    cm_machine *new_machine{};
     int error_code = cm_load_grpc_machine(m_stub, NULL, &_runtime_config, &new_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     std::string result = err_msg;
@@ -2350,8 +2353,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_dir, grpc_machine_fixture_
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_rt_config_test, grpc_machine_fixture_with_server)
 {
-    char* err_msg;
-    cm_machine* new_machine;
+    char *err_msg{};
+    cm_machine *new_machine{};
     int error_code = cm_load_grpc_machine(m_stub, "some_dir", NULL, &new_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
@@ -2363,7 +2366,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_rt_config_test, grpc_machi
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_output_test, grpc_machine_fixture_with_server)
 {
-    char* err_msg;
+    char *err_msg{};
     int error_code = cm_load_grpc_machine(m_stub, "some_dir", &_runtime_config, NULL, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     std::string result = err_msg;
@@ -2376,7 +2379,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_output_test, grpc_machine_
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_error_placeholder_test, grpc_machine_fixture)
 {
     auto f = [this]() {
-        cm_machine* new_machine;
+        cm_machine *new_machine{};
         cm_load_grpc_machine(m_stub, "some_dir", &_runtime_config, &new_machine, NULL);
     };
     monitor_system_throw(f);
@@ -2384,8 +2387,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_error_placeholder_test, gr
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_default_config_basic_test, grpc_machine_fixture_with_server)
 {
-    const cm_machine_config *config;
-    char* err_msg;
+    const cm_machine_config *config{};
+    char *err_msg{};
     int error_code = cm_grpc_get_default_config(m_stub, &config, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
@@ -2398,7 +2401,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_default_config_basic_test, grpc_machine_
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_x_address_basic_test, grpc_machine_fixture_with_server)
 {
-    char* err_msg;
+    char *err_msg{};
     uint64_t val{};
     int error_code = cm_grpc_get_x_address(m_stub, 5, &val, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -2413,7 +2416,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_x_address_basic_test, grpc_machine_fixtu
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_csr_address_basic_test, grpc_machine_fixture_with_server)
 {
-    char* err_msg;
+    char *err_msg{};
     uint64_t val{};
     int error_code = cm_grpc_get_csr_address(m_stub, CM_PROC_MIMPID, &val, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -2427,7 +2430,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_csr_address_basic_test, grpc_machine_fix
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_dhd_h_address_basic_test,  grpc_machine_fixture_with_server)
 {
-    char* err_msg;
+    char *err_msg{};
     uint64_t val{};
     int error_code = cm_grpc_dhd_h_address(m_stub, 1, &val, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -2442,8 +2445,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_dhd_h_address_basic_test,  grpc_machine_fixt
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_version_wrong_addr_test, grpc_machine_fixture_with_server)
 {
-    char* err_msg;
-    const cm_semantic_version *version;
+    char *err_msg{};
+    const cm_semantic_version *version{};
     int error_code = cm_grpc_get_semantic_version(m_stub, &version, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
@@ -2455,10 +2458,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_version_wrong_addr_test, grpc_machine_fi
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_hash0_test, grpc_access_log_machine_fixture)
 {
-    char* err_msg;
+    char *err_msg{};
     cm_hash hash1;
-    int error_code = cm_grpc_verify_state_transition(m_stub, NULL, _access_log, (const cm_hash *)&hash1,
-        false, &err_msg);
+    int error_code = cm_grpc_verify_state_transition(m_stub, NULL, _access_log, &hash1, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
     std::string origin("Invalid hash");
@@ -2468,9 +2470,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_hash0_test, grp
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_hash1_test, grpc_access_log_machine_fixture)
 {
-    char* err_msg;
-    cm_hash hash0;
-    int error_code = cm_grpc_verify_state_transition(m_stub, (const cm_hash *)&hash0, _access_log, NULL,
+    char *err_msg{};
+    cm_hash hash0{};
+    int error_code = cm_grpc_verify_state_transition(m_stub, &hash0, _access_log, NULL,
         false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
@@ -2479,25 +2481,22 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_hash1_test, grp
     cm_delete_error_message(err_msg);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_log_test, grpc_access_log_machine_fixture)
+BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_ljog_test, grpc_access_log_machine_fixture)
 {
-    char* err_msg;
-    cm_hash hash0;
-    cm_hash hash1;
-    int error_code = cm_grpc_verify_state_transition(m_stub, (const cm_hash *)&hash0, NULL,
-        (const cm_hash *)&hash1, false, &err_msg);
+    char *err_msg{};
+    cm_hash hash0{};
+    cm_hash hash1{};
+    int error_code = cm_grpc_verify_state_transition(m_stub, &hash0, NULL, &hash1, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-
     std::string result = err_msg;
     std::string origin("Invalid access log");
     BOOST_CHECK_EQUAL(origin, result);
-
     cm_delete_error_message(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_access_log_null_log_test, grpc_access_log_machine_fixture)
 {
-    char* err_msg;
+    char *err_msg{};
     int error_code = cm_grpc_verify_access_log(m_stub, NULL, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;

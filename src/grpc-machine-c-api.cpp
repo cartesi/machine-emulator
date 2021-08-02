@@ -19,7 +19,7 @@ static cartesi::grpc_machine_stub_ptr *convert_from_c(cm_grpc_machine_stub *stub
 }
 
 static cm_semantic_version *convert_to_c(const cartesi::semantic_version &cpp_version) {
-    cm_semantic_version *new_semantic_version = new cm_semantic_version{};
+    auto *new_semantic_version = new cm_semantic_version{};
     new_semantic_version->major = cpp_version.major;
     new_semantic_version->minor = cpp_version.minor;
     new_semantic_version->patch = cpp_version.patch;
@@ -43,7 +43,7 @@ static inline cartesi::i_virtual_machine *load_grpc_virtual_machine(const cartes
 
 
 int cm_create_grpc_machine_stub(const char *address, cm_grpc_machine_stub **stub, char **err_msg) try {
-    cartesi::grpc_machine_stub_ptr *cpp_stub = new std::shared_ptr<cartesi::grpc_machine_stub>(
+    auto *cpp_stub = new std::shared_ptr<cartesi::grpc_machine_stub>(
         new cartesi::grpc_machine_stub{null_to_empty(address)});
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *stub = reinterpret_cast<cm_grpc_machine_stub *>(cpp_stub);
@@ -56,7 +56,7 @@ void cm_delete_grpc_machine_stub(const cm_grpc_machine_stub *stub) {
     if (stub == nullptr) {
         return;
     }
-    const cartesi::grpc_machine_stub_ptr *stub_wrapper =
+    const auto *stub_wrapper =
         reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);     // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
     delete stub_wrapper;
 }
@@ -67,7 +67,7 @@ int cm_create_grpc_machine(const cm_grpc_machine_stub *stub, const cm_machine_co
     const cartesi::machine_config c = convert_from_c(config);
     const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const cartesi::grpc_machine_stub_ptr *cpp_stub = reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
+    const auto *cpp_stub = reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine = reinterpret_cast<cm_machine *>(create_grpc_virtual_machine(*cpp_stub, c, r));
     return cm_result_success(err_msg);
@@ -80,7 +80,7 @@ int cm_load_grpc_machine(const cm_grpc_machine_stub *stub, const char *dir, cons
                      cm_machine **new_machine, char **err_msg) try {
     const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const cartesi::grpc_machine_stub_ptr *cpp_stub = reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
+    const auto *cpp_stub = reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine = reinterpret_cast<cm_machine *>(load_grpc_virtual_machine(*cpp_stub, dir, r));
     return cm_result_success(err_msg);
@@ -135,7 +135,7 @@ int cm_grpc_get_x_address(const cm_grpc_machine_stub *stub, int i, uint64_t *val
 
 int cm_grpc_get_csr_address(const cm_grpc_machine_stub *stub, CM_PROC_CSR w, uint64_t *val, char **err_msg) try {
     const auto *cpp_stub = convert_from_c(stub);
-    const cartesi::machine::csr cpp_csr = static_cast<cartesi::machine::csr>(w);
+    const auto cpp_csr = static_cast<cartesi::machine::csr>(w);
     *val = cartesi::grpc_virtual_machine::get_csr_address(*cpp_stub, cpp_csr);
     return cm_result_success(err_msg);
 } catch (...) {

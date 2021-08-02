@@ -526,7 +526,7 @@ cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx) 
     auto sibling_hashes_count = check_sibling_cm_hashes(L, -1, log2_target_size, log2_root_size,
         &sibling_hashes);
     lua_pop(L, 1);
-    cm_merkle_tree_proof *proof = new cm_merkle_tree_proof{};
+    auto *proof = new cm_merkle_tree_proof{};
     proof->log2_target_size = log2_target_size;
     proof->log2_root_size = log2_root_size;
     proof->target_address = target_address;
@@ -664,26 +664,23 @@ static cm_access check_cm_access(lua_State *L, int tabidx, bool proofs) {
     auto &managed_proof = clua_push_to(L, clua_managed_cm_ptr<cm_merkle_tree_proof>(nullptr));
     if (proofs) {
         lua_getfield(L, tabidx, "proof");
-        managed_proof = clua_check_cm_merkle_tree_proof(L, -1);
+        managed_proof.reset(clua_check_cm_merkle_tree_proof(L, -1));
         lua_pop(L, 1);
     } else {
-        managed_proof = nullptr; // redundant with cm_access initialization but intentionally explicit for clarity
+        managed_proof.reset(); // redundant with cm_access initialization but intentionally explicit for clarity
     }
     size_t managed_read_data_size{};
     auto &managed_read_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(nullptr));
-    managed_read_data = check_cm_access_data_field(L, tabidx, "read", a.log2_size, &managed_read_data_size);
+    managed_read_data.reset(check_cm_access_data_field(L, tabidx, "read", a.log2_size, &managed_read_data_size));
     size_t managed_written_data_size{};
     auto &managed_written_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(nullptr));
-    managed_written_data = opt_cm_access_data_field(L, tabidx, "written", a.log2_size, &managed_written_data_size);
+    managed_written_data.reset(opt_cm_access_data_field(L, tabidx, "written", a.log2_size, &managed_written_data_size));
     // Assign an allocated object to proof and make managed pointers null
-    a.proof = managed_proof.get();
-    managed_proof = nullptr;
-    a.read_data = managed_read_data.get();
+    a.proof = managed_proof.release();
+    a.read_data = managed_read_data.release();
     a.read_data_size = managed_read_data_size;
-    managed_read_data = nullptr;
-    a.written_data = managed_written_data.get();
+    a.written_data = managed_written_data.release();
     a.written_data_size = managed_written_data_size;
-    managed_written_data = nullptr;
     lua_pop(L, 3); //cleanup managed pointers
     return a;
 }
@@ -790,8 +787,7 @@ cm_access_log* clua_check_cm_access_log(lua_State *L, int tabidx) {
         lua_pop(L, 1);
     }
     //Make pointer to new access log not managed anymore
-    cm_access_log* result = managed_log.get();
-    managed_log = nullptr;
+    cm_access_log* result = managed_log.release();
     lua_pop(L, 1); //cleanup managed log from stack
     return result;
 }
@@ -1632,14 +1628,12 @@ static size_t check_cm_flash_drive_configs(lua_State *L, int tabidx,
     assert(count <= CM_FLASH_DRIVE_CONFIGS_MAX_SIZE);
     for (int i = 1; i <= count; i++) {
         lua_geti(L, flash_drive_table_idx, i);
-        *(managed_configs[i - 1]) = new cm_flash_drive_config{clua_check_cm_flash_drive_config(L, -1)};
+        (*managed_configs[i - 1]).reset(new cm_flash_drive_config{clua_check_cm_flash_drive_config(L, -1)});
         lua_pop(L, 1);
     }
     *fs = new cm_flash_drive_config[count]{};
     for (int i = 0; i < count; ++i) {
-        (*fs)[i] = *(*managed_configs[i]).get();
-        (*managed_configs[i])->image_filename = nullptr; //copied to result so should live
-        (*managed_configs[i]).release();
+        (*fs)[i] = *((*managed_configs[i]).release());
     }
     lua_pop(L, count + 1); //managed pointers and flash drive table
     return count;
@@ -1846,8 +1840,7 @@ static void check_cm_dhd_config(lua_State *L, int tabidx, cm_dhd_config *d) {
     } else if (!lua_isnil(L, -1)) {
         luaL_error(L, "invalid dhd.h (expected table)");
     }
-    d->image_filename = managed_image_filename.get();
-    managed_image_filename = nullptr;
+    d->image_filename = managed_image_filename.release();
     lua_pop(L, 3);
 }
 
@@ -1867,7 +1860,7 @@ machine_config clua_check_machine_config(lua_State *L, int tabidx) {
 
 cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ctxidx) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to adjust config
-    cm_machine_config *def_config = const_cast<cm_machine_config *>(cm_new_default_machine_config());
+    auto *def_config = const_cast<cm_machine_config *>(cm_new_default_machine_config());
     // Use default processor configuration if one is not available
     cm_processor_config processor = def_config->processor;
     cm_delete_machine_config(def_config);
@@ -1888,20 +1881,13 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
     check_cm_dhd_config(L, tabidx, managed_dhd.get());
     auto flash_drive_count = check_cm_flash_drive_configs(L, tabidx, &flash_drives, ctxidx);
     //Allocate new machine config, fill it and return from function
-    cm_machine_config *c = new cm_machine_config{};
+    auto *c = new cm_machine_config{};
     c->processor = processor;
-    c->ram = *managed_ram.get();
-    managed_ram->image_filename = nullptr;
-    managed_ram.release();
-    c->rom = *managed_rom.get();
-    managed_rom->image_filename = nullptr;
-    managed_rom->bootargs = nullptr;
-    managed_rom.release();
+    c->ram = *managed_ram.release();
+    c->rom = *managed_rom.release();
     c->htif = htif;
     c->clint = clint;
-    c->dhd = *managed_dhd.get();
-    managed_dhd->image_filename = nullptr;
-    managed_dhd.release();
+    c->dhd = *managed_dhd.release();
     c->flash_drive_count = flash_drive_count;
     c->flash_drive = flash_drives;
     lua_pop(L, 3);
@@ -1977,10 +1963,8 @@ cm_machine_runtime_config* clua_check_cm_machine_runtime_config(lua_State *L,
     check_cm_dhd_runtime_config(L, tabidx, managed_runtime_dhd.get());
     cm_concurrency_config concurrency{};
     check_cm_concurrency_runtime_config(L, tabidx, &concurrency);
-    cm_machine_runtime_config *r = new cm_machine_runtime_config{};
-    r->dhd = *managed_runtime_dhd.get();
-    managed_runtime_dhd->source_address = nullptr;
-    managed_runtime_dhd.release();
+    auto *r = new cm_machine_runtime_config{};
+    r->dhd = *managed_runtime_dhd.release();
     r->concurrency = concurrency;
     lua_pop(L, 1);
     return r;
@@ -1999,7 +1983,7 @@ cm_machine_runtime_config* clua_opt_cm_machine_runtime_config(lua_State *L,
     if (!lua_isnoneornil(L, tabidx)) {
         return clua_check_cm_machine_runtime_config(L, tabidx, ctxidx);
     } else {
-        cm_machine_runtime_config *def = new cm_machine_runtime_config{};
+        auto *def = new cm_machine_runtime_config{};
         if (r != nullptr) {
             def->concurrency = r->concurrency;
             auto source_address_size = strlen(r->dhd.source_address) + 1;

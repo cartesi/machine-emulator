@@ -91,13 +91,14 @@ static int machine_obj_index_dump_regs(lua_State *L) {
 /// \brief This is the machine:get_proof() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_get_proof(lua_State *L) {
+    lua_settop(L, 3);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
     const int log2_size = luaL_checkinteger(L, 3);
     auto &managed_proof = clua_push_to(L, clua_managed_cm_ptr<cm_merkle_tree_proof>(nullptr));
     TRY_EXECUTE(cm_get_proof(m.get(), address, log2_size, &managed_proof.get(), err_msg));
     clua_push_cm_proof(L, managed_proof.get());
-    managed_proof.release();
+    managed_proof.reset();
     return 1;
 }
 
@@ -106,7 +107,7 @@ static int machine_obj_index_get_initial_config(lua_State *L) {
     auto &managed_config = clua_push_to(L, clua_managed_cm_ptr<const cm_machine_config>(nullptr));
     TRY_EXECUTE(cm_get_initial_config(m.get(), &managed_config.get(), err_msg));
     clua_push_cm_machine_config(L, managed_config.get());
-    managed_config.release();
+    managed_config.reset();
     return 1;
 }
 
@@ -285,6 +286,7 @@ static int machine_obj_index_reset_iflags_Y(lua_State *L) {
 /// \brief This is the machine:read_memory() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_read_memory(lua_State *L) {
+    lua_settop(L, 3);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
     const size_t length = luaL_checkinteger(L, 3);
@@ -298,7 +300,7 @@ static int machine_obj_index_read_memory(lua_State *L) {
     TRY_EXECUTE(cm_read_memory(m.get(), address, managed_data.get(), length, err_msg));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     lua_pushlstring(L, reinterpret_cast<const char *>(managed_data.get()), length);
-    managed_data.release();
+    managed_data.reset();
     return 1;
 }
 
@@ -329,7 +331,7 @@ static int machine_obj_index_step(lua_State *L) {
     auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(nullptr));
     TRY_EXECUTE(cm_step(m.get(), clua_check_cm_log_type(L, 2), true, &managed_log.get(), err_msg));
     clua_push_cm_access_log(L,  managed_log.get());
-    managed_log.release();
+    managed_log.reset();
     return 1;
 }
 
@@ -422,12 +424,13 @@ static int machine_obj_index_write_memory(lua_State *L) {
 /// \brief Replaces a flash drive.
 /// \param L Lua state.
 static int machine_obj_index_replace_flash_drive(lua_State *L) {
+    lua_settop(L, 2);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     auto &managed_flash_drive_config = clua_push_to(L,
         clua_managed_cm_ptr<cm_flash_drive_config>(new cm_flash_drive_config{}));
     *(managed_flash_drive_config.get()) = clua_check_cm_flash_drive_config(L, 2);
     TRY_EXECUTE(cm_replace_flash_drive(m.get(), managed_flash_drive_config.get(), err_msg));
-    managed_flash_drive_config.release();
+    managed_flash_drive_config.reset();
     return 0;
 }
 

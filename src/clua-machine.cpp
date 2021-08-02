@@ -31,24 +31,26 @@ static int machine_class_index_get_default_config(lua_State *L) {
     auto &managed_default_config = clua_push_to(L, clua_managed_cm_ptr<const cm_machine_config>(nullptr));
     TRY_EXECUTE(cm_get_default_config(&managed_default_config.get(), err_msg));
     clua_push_cm_machine_config(L, managed_default_config.get());
-    managed_default_config.release();
+    managed_default_config.reset();
     return 1;
 }
 
 /// \brief This is the machine.verify_access_log() method implementation.
 static int machine_class_index_verify_access_log(lua_State *L) {
+    lua_settop(L, 2);
     auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 1)));
     auto &managed_runtime_config = clua_push_to(L,
         clua_managed_cm_ptr<cm_machine_runtime_config>(clua_check_cm_machine_runtime_config(L, 2)));
     TRY_EXECUTE(cm_verify_access_log(managed_log.get(), managed_runtime_config.get(), true, err_msg));
     lua_pushnumber(L, 1);
-    managed_runtime_config.release();
-    managed_log.release();
+    managed_runtime_config.reset();
+    managed_log.reset();
     return 1;
 }
 
 /// \brief This is the machine.verify_state_transition() method implementation.
 static int machine_class_index_verify_state_transition(lua_State *L) {
+    lua_settop(L, 4);
     cm_hash root_hash{};
     clua_check_cm_hash(L, 1, &root_hash);
     auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2)));
@@ -59,8 +61,8 @@ static int machine_class_index_verify_state_transition(lua_State *L) {
     TRY_EXECUTE(cm_verify_state_transition(&root_hash, managed_log.get(), &target_hash, managed_runtime_config.get(),
         true, err_msg));
     lua_pushnumber(L, 1);
-    managed_log.release();
-    managed_runtime_config.release();
+    managed_log.reset();
+    managed_runtime_config.reset();
     return 1;
 }
 
@@ -104,10 +106,13 @@ static int machine_ctor(lua_State *L) {
             clua_managed_cm_ptr<cm_machine_config>(clua_check_cm_machine_config(L, 2)));
         TRY_EXECUTE(
             cm_create_machine(managed_config.get(), managed_runtime_config.get(), &managed_machine.get(), err_msg));
+        managed_config.reset();
+        managed_runtime_config.reset();
         lua_pop(L, 2);
     } else {
         TRY_EXECUTE(
             cm_load_machine(luaL_checkstring(L, 2), managed_runtime_config.get(), &managed_machine.get(), err_msg));
+        managed_runtime_config.reset();
         lua_pop(L, 1);
     }
     return 1;

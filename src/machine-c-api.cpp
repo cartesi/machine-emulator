@@ -356,7 +356,7 @@ cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
 }
 
 const cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config) {
-    cm_machine_config *new_machine_config = new cm_machine_config{};
+    auto *new_machine_config = new cm_machine_config{};
 
     new_machine_config->processor = convert_to_c(cpp_config.processor);
     new_machine_config->ram = convert_to_c(cpp_config.ram);

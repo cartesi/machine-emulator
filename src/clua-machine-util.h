@@ -118,40 +118,44 @@ public:
         other.m_ptr = nullptr;
     }
 
-    void operator=(clua_managed_cm_ptr &&other) {
-        release();
+    clua_managed_cm_ptr& operator=(clua_managed_cm_ptr &&other) {
+        reset();
         std::swap(m_ptr, other.m_ptr);
+        return *this;
     };
 
-    T *operator->() {
-        return m_ptr;
-    }
-
-    const T *operator->() const {
-        return m_ptr;
+    ~clua_managed_cm_ptr() {
+        reset();
     }
 
     clua_managed_cm_ptr(const clua_managed_cm_ptr &other) = delete;
     void operator= (const clua_managed_cm_ptr &other) = delete;
 
-    ~clua_managed_cm_ptr() {
-        release();
-    }
 
-    void operator = (T *ptr) {
-        m_ptr = ptr;
-    }
-
-    void release(void) {
-        cm_delete(m_ptr); // use overloaded deleter
-        m_ptr = nullptr;
-    }
-
-    T *&get(void) { // return reference to internal ptr
+    T *operator->() const noexcept {
         return m_ptr;
     }
 
-    const T *get(void) const {
+    T &operator*() const {
+        return *m_ptr;
+    }
+
+    void reset(T* ptr = nullptr) {
+        cm_delete(m_ptr); // use overloaded deleter
+        m_ptr = ptr;
+    }
+
+    T* release(void) noexcept {
+        auto* tmp_ptr = m_ptr;
+        m_ptr = nullptr;
+        return tmp_ptr;
+    }
+
+    T *&get(void) noexcept { // return reference to internal ptr
+        return m_ptr;
+    }
+
+    T *get(void) const noexcept {
         return m_ptr;
     }
 

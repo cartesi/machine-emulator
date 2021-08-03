@@ -135,7 +135,7 @@ end
 
 local function build_machine(type)
     -- Create new machine
-     -- Use default config to be max reproducible
+    -- Use default config to be max reproducible
     local concurrency_update_merkle_tree = 0
     local config = {
         processor = {},

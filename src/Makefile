@@ -235,10 +235,20 @@ test: luacartesi
 test-hash: hash
 	tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
 
+# In order to run tests environment variable TEST_PATH with directory path
+# to asset files for cartesi machine tests must be set
 test-grpc: luacartesi grpc
 	./cartesi-machine-server 127.0.0.1:5001 &
-	sleep 1
+	sleep 2
 	$(LUA_BIN) cartesi-machine-tests.lua --server=127.0.0.1:5001 --test-path="$(TEST_PATH)" --test=".*" run
+	sleep 2
+	./cartesi-machine-server 127.0.0.1:5001 &
+	sleep 2
+	$(LUA_BIN) ./tests/machine-bind.lua grpc --server=127.0.0.1:5001 --test-path=./
+	sleep 2
+	./cartesi-machine-server 127.0.0.1:5001 &
+	sleep 2
+	$(LUA_BIN) ./tests/machine-test.lua grpc --server=127.0.0.1:5001 --test-path=./
 
 test-scripts: luacartesi
 	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do $(LUA_BIN) $$x || exit 1; done

@@ -86,7 +86,7 @@ local test_data = {
     }
 }
 
-function test_data.get_cpu_addrx()
+function test_data.get_cpu_xreg_test_values()
 
     local cpu_addr_x = {}
     cpu_addr_x[0] = 0x000
@@ -125,7 +125,7 @@ function test_data.get_cpu_addrx()
     return cpu_addr_x
 end
 
-function test_data.get_cpu_addr()
+function test_data.get_cpu_csr_test_values()
 
     local cpu_addr = {}
     cpu_addr.pc = 0x100

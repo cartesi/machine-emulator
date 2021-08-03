@@ -117,12 +117,12 @@ pmas_file_names["0000000080000000--0000000000100000.bin"] = 1048576
 local function build_machine(type)
     -- Create new machine
     local concurrency_update_merkle_tree = 0
-    local cpu_addr = test_data.get_cpu_addr()
-    local cpu_addr_x = test_data.get_cpu_addrx()
-    cpu_addr.x = cpu_addr_x
+    local initial_csr_values = test_data.get_cpu_csr_test_values()
+    local initial_xreg_values = test_data.get_cpu_xreg_test_values()
+    initial_csr_values.x = initial_xreg_values
 
     local config = {
-        processor = cpu_addr,
+        processor = initial_csr_values,
         rom = {image_filename = test_util.images_path .. "rom.bin"},
         ram = {length = 1 << 20},
     }
@@ -140,10 +140,10 @@ local function build_machine(type)
         new_machine = assert(cartesi.machine(config, runtime))
     end 
 
-    cpu_addr.x = nil
-    cpu_addr.mvendorid = nil
-    cpu_addr.marchid = nil
-    cpu_addr.mimpid = nil
+    initial_csr_values.x = nil
+    initial_csr_values.mvendorid = nil
+    initial_csr_values.marchid = nil
+    initial_csr_values.mimpid = nil
     return new_machine
 end
 
@@ -164,18 +164,18 @@ do_test("machine should not have halt and yield initial flags set",
 print("\n\ntesting machine register initial flag values ")
 do_test("machine should have default config shadow register values",
     function(machine)
-        local cpu_addr = test_data.get_cpu_addr()
-        local cpu_addr_x = test_data.get_cpu_addrx()
-        cpu_addr.x = nil
-        cpu_addr.mvendorid = nil
-        cpu_addr.marchid = nil
-        cpu_addr.mimpid = nil
+        local initial_csr_values = test_data.get_cpu_csr_test_values()
+        local initial_xreg_values = test_data.get_cpu_xreg_test_values()
+        initial_csr_values.x = nil
+        initial_csr_values.mvendorid = nil
+        initial_csr_values.marchid = nil
+        initial_csr_values.mimpid = nil
         -- Check initialization and shadow reads
-        for _, v in pairs(cpu_addr) do
+        for _, v in pairs(initial_csr_values) do
             local r = machine:read_word(v)
             assert(v == r)
         end
-        for _, v in pairs(cpu_addr_x) do
+        for _, v in pairs(initial_xreg_values) do
             local r = machine:read_word(v)
             assert(v == r)
         end
@@ -188,15 +188,15 @@ do_test("should provide proof for values in registers",
         -- Update merkle tree
         machine:update_merkle_tree()
 
-        local cpu_addr = test_data.get_cpu_addr()
-        local cpu_addr_x = test_data.get_cpu_addrx()
-        cpu_addr.x = nil
-        cpu_addr.mvendorid = nil
-        cpu_addr.marchid = nil
-        cpu_addr.mimpid = nil
+        local initial_csr_values = test_data.get_cpu_csr_test_values()
+        local initial_xreg_values = test_data.get_cpu_xreg_test_values()
+        initial_csr_values.x = nil
+        initial_csr_values.mvendorid = nil
+        initial_csr_values.marchid = nil
+        initial_csr_values.mimpid = nil
 
         -- Check proofs
-        for _, v in pairs(cpu_addr) do
+        for _, v in pairs(initial_csr_values) do
             for el = 3, 63 do
                 local a = test_util.align(v, el)
                 assert(test_util.check_proof(assert(machine:get_proof(a, el)),
@@ -204,7 +204,7 @@ do_test("should provide proof for values in registers",
             end
         end
 
-        for _, v in pairs(cpu_addr_x) do
+        for _, v in pairs(initial_xreg_values) do
             for el = 3, 63 do
                 local a = test_util.align(v, el)
                 assert(test_util.check_proof(
@@ -277,19 +277,19 @@ do_test("should have expected values",
 print("\n\n test read_csr")
 do_test("should return expected values", 
     function(machine)
-        local cpu_addr = test_data.get_cpu_addr()
-        cpu_addr.mvendorid = 0x6361727465736920
-        cpu_addr.marchid = 0x7
-        cpu_addr.mimpid = 0x1
-        cpu_addr.htif_tohost = 0x0
-        cpu_addr.htif_fromhost = 0x0
-        cpu_addr.htif_ihalt = 0x0
-        cpu_addr.htif_iconsole = 0x0
-        cpu_addr.htif_iyield = 0x0
-        cpu_addr.dhd_tstart = 0x0
-        cpu_addr.dhd_tlength = 0x0
-        cpu_addr.dhd_dlength = 0x0
-        cpu_addr.dhd_hlength = 0x0
+        local initial_csr_values = test_data.get_cpu_csr_test_values()
+        initial_csr_values.mvendorid = 0x6361727465736920
+        initial_csr_values.marchid = 0x7
+        initial_csr_values.mimpid = 0x1
+        initial_csr_values.htif_tohost = 0x0
+        initial_csr_values.htif_fromhost = 0x0
+        initial_csr_values.htif_ihalt = 0x0
+        initial_csr_values.htif_iconsole = 0x0
+        initial_csr_values.htif_iyield = 0x0
+        initial_csr_values.dhd_tstart = 0x0
+        initial_csr_values.dhd_tlength = 0x0
+        initial_csr_values.dhd_dlength = 0x0
+        initial_csr_values.dhd_hlength = 0x0
 
         -- Check csr register read
         local to_ignore = {
@@ -302,8 +302,8 @@ do_test("should return expected values",
             if not to_ignore[v] then
                 local method_name = "read_" .. v
                 local value = machine[method_name](machine)
-                -- print("Reading k=",k, " value=", value, " v=",v, " expected value:",cpu_addr[v])
-                assert(machine[method_name](machine) == cpu_addr[v],
+                -- print("Reading k=",k, " value=", value, " v=",v, " expected value:",initial_csr_values[v])
+                assert(machine[method_name](machine) == initial_csr_values[v],
                     "wrong " .. v .. " value")
             end
         end
@@ -337,10 +337,10 @@ do_test("there should exist dumped files of expected size",
 print("\n\n read and write x registers")
 do_test("writen and expected register values should match", 
     function(machine)
-        local cpu_addr_x = test_data.get_cpu_addrx()
+        local initial_xreg_values = test_data.get_cpu_xreg_test_values()
         -- Write/Read X registers
         local x1_initial_value = machine:read_x(1)
-        assert(x1_initial_value == cpu_addr_x[1], "error reading x1 register")
+        assert(x1_initial_value == initial_xreg_values[1], "error reading x1 register")
         machine:write_x(1, 0x1122)
         assert(machine:read_x(1) == 0x1122, "error with writing to x1 register")
         machine:write_x(1, x1_initial_value)
@@ -439,10 +439,10 @@ do_test("dumped register values should match",
         local cartesi = require 'cartesi'
         test_util = require 'tests.util'
 
-        local cpu_addr = {}
+        local initial_csr_values = {}
 
         local machine = cartesi.machine {
-        processor = cpu_addr,
+        processor = initial_csr_values,
         ram = {length = 1 << 20},
         rom = {image_filename = test_util.images_path .. 'rom.bin'} 
         }
@@ -473,10 +473,10 @@ do_test("dumped log content should match",
         test_util = require 'tests.util'
         cartesi_util = require 'cartesi.util'
 
-        local cpu_addr = {}
+        local initial_csr_values = {}
 
         local machine = cartesi.machine {
-        processor = cpu_addr,
+        processor = initial_csr_values,
         ram = {length = 1 << 20},
         rom = {image_filename = test_util.images_path .. 'rom.bin'} 
         }

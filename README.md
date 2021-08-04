@@ -22,19 +22,24 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 #### Ubuntu 20.04
 
 ```
-$ apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-serialization-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates
+$ apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-serialization-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates liblua5.3-dev lua-socket
 ```
 #### MacOS
 
 ##### MacPorts
 ```
-sudo port install clang-12 automake boost libtool wget cmake pkgconfig c-ares zlib openssl
+sudo port install clang-12 automake boost libtool wget cmake pkgconfig c-ares zlib openssl lua lua-luasocket
 ```
 
 ##### Homebrew
 ```
-brew install llvm@12 automake boost libomp wget cmake pkg-config c-ares zlib openssl
+brew install llvm@12 automake boost libomp wget cmake pkg-config c-ares zlib openssl lua@5.3 luarocks
+luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install luasocket
 ```
+
+For emulator scripts to work it is expected that `lua5.3` binary is available in the system PATH. If operating system/package manager
+that you are using provides only `lua` or lua binary named in a different way (e.g. on `Homebrew`), please create symbolic 
+link or alias `lua5.3`.
 
 ### Build
 
@@ -95,7 +100,7 @@ $ make lint -j$(nproc)
 ## Usage
 
 ```bash
-$ build/{uname_arch}/luapp5.3 run.lua
+$ lua5.3 run.lua
 ```
 
 ## Code format

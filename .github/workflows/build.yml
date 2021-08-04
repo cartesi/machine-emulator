@@ -6,7 +6,7 @@ env:
   ROOTFS_VERSION: v0.7.0
   TEST_VERSION: v0.12.0
   GROUND_TRUTH_VERSION: v0.12.0-0001
-  BUILD_CACHE_VERSION: v0.6.0-0003
+  BUILD_CACHE_VERSION: v0.7.0-0001
 jobs:
   build:
     name: Build
@@ -20,10 +20,10 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-serialization-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-12 clang-format-12
+          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-serialization-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-12 clang-format-12 liblua5.3-dev lua-socket
 
       - name: Download cache of third-party build
-        run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/bin/luapp5.3
+        run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
         id: download_cache
         continue-on-error: true
         env:
@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Install Ubuntu dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.71.0 libboost-coroutine1.71.0 libboost-serialization1.71.0 libssl1.1 libc-ares2 zlib1g netcat patchelf
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.71.0 libboost-coroutine1.71.0 libboost-serialization1.71.0 libssl1.1 libc-ares2 zlib1g netcat patchelf lua5.3 lua-socket
 
       - name: Download emulator
         uses: actions/download-artifact@master
@@ -181,21 +181,25 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
-          for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do /opt/cartesi/bin/luapp5.3 $x local; done
+          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;"
+          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
+          for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do lua5.3 $x local; done
 
       - name: Run grpc lua test scripts
         run: |
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
+          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;"
+          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
           /opt/cartesi/bin/cartesi-machine-server 127.0.0.1:5001 &
           timeout 20 bash -c 'while ! nc -q0 127.0.0.1 5001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
-          /opt/cartesi/bin/luapp5.3 ./tests/machine-bind.lua grpc --server=127.0.0.1:5001 --test-path=./
+          lua5.3 ./tests/machine-bind.lua grpc --server=127.0.0.1:5001 --test-path=./
           pkill -f cartesi-machine-server || true
           sleep 1
           /opt/cartesi/bin/cartesi-machine-server 127.0.0.1:5001 &
           timeout 20 bash -c 'while ! nc -q0 127.0.0.1 5001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
-          /opt/cartesi/bin/luapp5.3 ./tests/machine-test.lua grpc --server=127.0.0.1:5001 --test-path=./
+          lua5.3 ./tests/machine-test.lua grpc --server=127.0.0.1:5001 --test-path=./
           pkill -f cartesi-machine-server || true
           
           
@@ -287,7 +291,7 @@ jobs:
         id: gen_logs
         if: ${{ steps.download_ground_truth_logs.outcome == 'failure' }}
         run: |
-          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/opt/cartesi/bin/luapp5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
+          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/usr/bin/lua5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
           make -j$(nproc) CYCLE_PERIOD=1 truth-logs
 
       - name: Upload ground truth logs
@@ -300,7 +304,7 @@ jobs:
 
       - name: Verify logs against ground truth
         run: |
-          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/opt/cartesi/bin/luapp5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
+          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/usr/bin/lua5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
           make -j$(nproc) CYCLE_PERIOD=1 test-logs
 
       - name: Download ground truth hashes cache
@@ -318,7 +322,7 @@ jobs:
         id: gen_hashes
         if: ${{ steps.download_ground_truth_hashes.outcome == 'failure' }}
         run: |
-          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/opt/cartesi/bin/luapp5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
+          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/usr/bin/lua5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=1 truth-hashes
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=2 truth-hashes
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=3 truth-hashes
@@ -334,7 +338,7 @@ jobs:
 
       - name: Verify hashes against ground truth
         run: |
-          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/opt/cartesi/bin/luapp5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
+          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/usr/bin/lua5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=1 test-hashes
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=2 compare-hashes
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=3 compare-hashes

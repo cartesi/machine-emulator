@@ -18,10 +18,9 @@ UNAME:=$(shell uname)
 
 BUILDDIR ?= $(abspath ../build/$(UNAME)_$(shell uname -m))
 
-LUA_DIR:=$(BUILDDIR)
-LUA_INC:=-I$(LUA_DIR)/include/luapp/5.3
-LUA_LIB:=-L$(LUA_DIR)/lib -lluapp5.3
-LUA_BIN?=$(LUA_DIR)/bin/luapp5.3
+LUA_INC:=$(shell pkg-config --cflags-only-I lua5.3)
+LUA_LIB:=-llua5.3
+LUA_BIN?=lua5.3
 CRYPTOPP_LIB:=-L$(BUILDDIR)/lib -lcryptopp
 CRYPTOPP_INC:=-I$(BUILDDIR)/include
 GRPC_DIR:=../lib/grpc-interfaces

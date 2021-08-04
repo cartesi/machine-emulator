@@ -1,4 +1,4 @@
-#!/usr/bin/env luapp5.3
+#!/usr/bin/env lua5.3
 
 -- Copyright 2019 Cartesi Pte. Ltd.
 --

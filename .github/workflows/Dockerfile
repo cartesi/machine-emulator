@@ -5,7 +5,7 @@ RUN apt-get update && \
         build-essential wget git \
         libreadline-dev libboost-coroutine-dev libboost-context-dev \
         libboost-serialization-dev libssl-dev libc-ares-dev zlib1g-dev \
-        ca-certificates automake libtool patchelf cmake pkg-config && \
+        ca-certificates automake libtool patchelf cmake pkg-config liblua5.3-dev lua-socket && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/emulator
@@ -19,7 +19,7 @@ RUN make -j$(nproc) dep && \
 
 FROM ubuntu:20.04
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
     libboost-coroutine1.71.0 \
     libboost-context1.71.0 \
     libboost-serialization1.71.0 \
@@ -29,6 +29,8 @@ RUN apt-get update && apt-get install -y \
     zlib1g \
     ca-certificates \
     libgomp1 \
+    lua5.3 \
+    lua-socket \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/opt/cartesi/bin:${PATH}"

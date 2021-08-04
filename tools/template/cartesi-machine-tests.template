@@ -1,0 +1,2 @@
+#!/bin/sh
+LUA_PATH="${LUA_PATH};ARG_LUA_PATH" LUA_CPATH="${LUA_CPATH};ARG_LUA_CPATH" lua5.3 ARG_BIN_INSTALL_PATH/cartesi-machine-tests.lua "$@"

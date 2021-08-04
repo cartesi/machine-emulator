@@ -1,4 +1,4 @@
-#!/usr/bin/env luapp5.3
+#!/usr/bin/env lua5.3
 
 -- Copyright 2019 Cartesi Pte. Ltd.
 --
@@ -28,6 +28,8 @@ local test_data = require "tests.data"
 local server_address = nil
 local test_path = "./"
 local cleanup = {}
+
+local lua_cmd = arg[-1] .. " -e "
 
 -- Print help and exit
 local function help()
@@ -435,19 +437,19 @@ print("\n\n dump register values to console")
 do_test("dumped register values should match", 
     function(machine)
         -- Dump regs and check values
-        local p = io.popen([[luapp5.3 -e "
-        local cartesi = require 'cartesi'
-        test_util = require 'tests.util'
+        local lua_code = [[ "local cartesi = require 'cartesi'
+                                 test_util = require 'tests.util'
 
-        local initial_csr_values = {}
+                                 local initial_csr_values = {}
 
-        local machine = cartesi.machine {
-        processor = initial_csr_values,
-        ram = {length = 1 << 20},
-        rom = {image_filename = test_util.images_path .. 'rom.bin'} 
-        }
-        machine:dump_regs()
-        " 2>&1]])
+                                 local machine = cartesi.machine {
+                                 processor = initial_csr_values,
+                                 ram = {length = 1 << 20},
+                                 rom = {image_filename = test_util.images_path .. 'rom.bin'}
+                                 }
+                                 machine:dump_regs()
+                                 " 2>&1]]
+        local p = io.popen(lua_cmd .. lua_code)
         local output = p:read(2000)
         p:close()
 
@@ -468,22 +470,23 @@ print("\n\n dump log  to console")
 do_test("dumped log content should match", 
     function(machine)
         -- Dump log and check values
-        local p = io.popen([[luapp5.3 -e "
-        local cartesi = require 'cartesi'
-        test_util = require 'tests.util'
-        cartesi_util = require 'cartesi.util'
+        local lua_code = [[ "
+                                 local cartesi = require 'cartesi'
+                                 test_util = require 'tests.util'
+                                 cartesi_util = require 'cartesi.util'
 
-        local initial_csr_values = {}
+                                 local initial_csr_values = {}
 
-        local machine = cartesi.machine {
-        processor = initial_csr_values,
-        ram = {length = 1 << 20},
-        rom = {image_filename = test_util.images_path .. 'rom.bin'} 
-        }
-        local log_type = {}
-        local log = machine:step(log_type)
-        cartesi_util.dump_log(log, io.stdout)
-        " 2>&1]])
+                                 local machine = cartesi.machine {
+                                 processor = initial_csr_values,
+                                 ram = {length = 1 << 20},
+                                 rom = {image_filename = test_util.images_path .. 'rom.bin'}
+                                 }
+                                 local log_type = {}
+                                 local log = machine:step(log_type)
+                                 cartesi_util.dump_log(log, io.stdout)
+                                 " 2>&1]]
+        local p = io.popen(lua_cmd .. lua_code)
         local output = p:read(2000)
         p:close()
 

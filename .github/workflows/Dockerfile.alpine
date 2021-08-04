@@ -15,9 +15,11 @@ RUN apk add --no-cache \
     c-ares-dev \
     zlib-dev \
     readline-dev \
+    lua5.3-dev \
     patchelf \
     unzip \
-    wget
+    wget \
+    lua-socket
 
 # alpine shasum is called sha1sum
 RUN echo -e "#!/bin/sh\nsha1sum \"\$@\"" > /usr/bin/shasum && chmod +x /usr/bin/shasum
@@ -33,14 +35,11 @@ RUN make -j$(nproc) dep && \
 
 # Fix cartesi-machine and cartesi-machine-tests
 RUN \
-    echo -e `cat /opt/cartesi/bin/cartesi-machine` > /tmp/cartesi-machine && \
-    echo -e `cat /opt/cartesi/bin/cartesi-machine-tests` > /tmp/cartesi-machine-tests && \
-    mv /tmp/cartesi-machine /tmp/cartesi-machine-tests /opt/cartesi/bin/ && \
     chmod 0755 /opt/cartesi/bin/cartesi-machine /opt/cartesi/bin/cartesi-machine-tests
 
 FROM alpine:3.12
 
-RUN apk add --no-cache boost libstdc++ libgomp openssl c-ares zlib readline
+RUN apk add --no-cache boost libstdc++ libgomp openssl c-ares zlib readline lua5.3 lua-socket
 
 ENV PATH="/opt/cartesi/bin:${PATH}"
 WORKDIR /opt/cartesi

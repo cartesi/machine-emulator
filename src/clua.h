@@ -20,9 +20,11 @@
 #include <array>
 #include <utility>
 
+extern "C" {
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
+}
 
 #include <boost/type_index.hpp>
 

@@ -139,7 +139,7 @@ static const csr_map& csr_names() {
         {"dhd_tstart", machine::csr::dhd_tstart},
         {"dhd_tlength", machine::csr::dhd_tlength},
         {"dhd_dlength", machine::csr::dhd_dlength},
-        {"dhd_hlength", machine::csr::dhd_hlength}
+        {"dhd_hlength", machine::csr::dhd_hlength},
     };
     return map;
 }

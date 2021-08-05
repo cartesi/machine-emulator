@@ -153,6 +153,10 @@ LINTER_HEADERS=$(filter-out $(LINTER_IGNORE_HEADERS),$(strip $(wildcard *.hpp) $
 CLANG_TIDY=clang-tidy
 CLANG_TIDY_TARGETS=$(patsubst %.cpp,%.clang-tidy,$(patsubst %.c,%.clang-tidy,$(LINTER_SOURCES)))
 
+CLANG_FORMAT=clang-format
+CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.c) $(wildcard *.h) $(wildcard *.hpp)
+CLANG_FORMAT_FILES:=$(filter-out %.pb.h,$(strip $(CLANG_FORMAT_FILES)))
+
 EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
 CLANG_TIDY_HEADER_FILTER=$(PWD)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
@@ -163,7 +167,7 @@ CFLAGS=-O2 -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS
 
 all: luacartesi grpc hash c-api
 
-.PHONY: all generate use clean test lint luacartesi grpc hash docker c-api compile_flags.txt
+.PHONY: all generate use clean test lint format check-format luacartesi grpc hash docker c-api compile_flags.txt
 
 CARTESI_OBJS:= \
 	clint.o \
@@ -257,6 +261,12 @@ test-c-api: c-api
 	tests/test-machine-c-api
 
 lint: $(CLANG_TIDY_TARGETS)
+
+format:
+	@$(CLANG_FORMAT) -i $(CLANG_FORMAT_FILES)
+
+check-format:
+	@$(CLANG_FORMAT) -Werror --dry-run $(CLANG_FORMAT_FILES)
 
 fs.ext2: fs/*
 	genext2fs -f -i 512 -b 8192 -d fs fs.ext2

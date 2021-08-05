@@ -83,7 +83,7 @@ You need to install the package clang-tidy-11 and set it as the default executab
 
 ```bash
 $ apt install clang-tidy-11
-$ update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-11 20
+$ update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-11 110
 ```
 
 ### Running Lint
@@ -96,6 +96,33 @@ $ make lint -j$(nproc)
 
 ```bash
 $ build/{uname_arch}/luapp5.3 run.lua
+```
+
+## Code format
+
+We use clang-format to format the code base.
+
+### Install
+
+#### Ubuntu
+
+You need to install the package clang-format-12 and set is as the default executable with update-alternatives.
+
+```bash
+$ apt install clang-format-12
+$ update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-12 120
+```
+
+### Formatting code
+
+```bash
+$ make format
+```
+
+### Checking whether the code is formatted
+
+```bash
+$ make check-format
 ```
 
 ## Contributing

@@ -20,7 +20,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-serialization-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-11
+          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-serialization-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-11 clang-format-12
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/bin/luapp5.3
@@ -47,8 +47,14 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
+      - name: Setup update-alternatives for clang-format
+        run: sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-12 120
+
+      - name: Check format
+        run: make check-format
+
       - name: Setup update-alternatives for clang-tidy
-        run: sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-11 20
+        run: sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-11 110
 
       - name: Lint
         run: make lint -j$(nproc)

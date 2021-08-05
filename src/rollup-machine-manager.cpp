@@ -2314,7 +2314,8 @@ int main(int argc, char *argv[]) try {
     for ( ;; ) {
         // Obtain the next active handler
         handler_type::pull_type *h = nullptr; // NOLINT: cannot leak (drain_completion_queue kills remaining)
-        if (!hctx.completion_queue->Next(reinterpret_cast<void **>(&h), &hctx.ok)) { // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        if (!hctx.completion_queue->Next(reinterpret_cast<void **>(&h), &hctx.ok)) {
             goto shutdown; // NOLINT(cppcoreguidelines-avoid-goto)
         }
         // If the handler is finished, simply delete it

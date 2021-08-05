@@ -265,7 +265,8 @@ static const std::string DEFAULT_SCRIPT = // NOLINT: ignore static initializatio
         "/opt/cartesi/bin/yield rollup 0; "
         "done";
 
-static const std::string NO_OUTPUT_SCRIPT = "-- while true; do /opt/cartesi/bin/yield rollup 0; done"; // NOLINT: ignore static initialization warning
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string NO_OUTPUT_SCRIPT = "-- while true; do /opt/cartesi/bin/yield rollup 0; done";
 
 static StartSessionRequest create_valid_start_session_request(const std::string &command = DEFAULT_SCRIPT) {
     const char *env_images_path = std::getenv("CARTESI_IMAGES_PATH");
@@ -346,33 +347,52 @@ static StartSessionRequest create_valid_start_session_request(const std::string 
     return session_request;
 }
 
-static const std::string OUTPUT_ADDRESS_1  = "000000000000000000000000fafafafafafafafafafafafafafafafafafafafa"; // NOLINT: ignore static initialization warning
-static const std::string OUTPUT_OFFSET_1   = "0000000000000000000000000000000000000000000000000000000000000040"; // NOLINT: ignore static initialization warning
-static const std::string OUTPUT_LENGTH_1   = "0000000000000000000000000000000000000000000000000000000000000080"; // NOLINT: ignore static initialization warning
-static const std::string OUTPUT_PAYLOAD_1  = "6361727465736920726f6c6c7570206d616368696e65206d616e616765722020"  // NOLINT: ignore static initialization warning
-                                             "6361727465736920726f6c6c7570206d616368696e65206d616e616765722020"
-                                             "6361727465736920726f6c6c7570206d616368696e65206d616e616765722020"
-                                             "6361727465736920726f6c6c7570206d616368696e65206d616e616765720000";
-static const std::string OUTPUT_KECCAK_1   = "028c8a06ce878fcd02522f0ca3174f9e6fe7c9267750a0c45844e597e7cbab03"; // NOLINT: ignore static initialization warning
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string OUTPUT_ADDRESS_1 = "000000000000000000000000fafafafafafafafafafafafafafafafafafafafa";
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string OUTPUT_OFFSET_1 = "0000000000000000000000000000000000000000000000000000000000000040";
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string OUTPUT_LENGTH_1 = "0000000000000000000000000000000000000000000000000000000000000080";
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string OUTPUT_PAYLOAD_1 = "6361727465736920726f6c6c7570206d616368696e65206d616e616765722020"
+                                            "6361727465736920726f6c6c7570206d616368696e65206d616e616765722020"
+                                            "6361727465736920726f6c6c7570206d616368696e65206d616e616765722020"
+                                            "6361727465736920726f6c6c7570206d616368696e65206d616e616765720000";
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string OUTPUT_KECCAK_1 = "028c8a06ce878fcd02522f0ca3174f9e6fe7c9267750a0c45844e597e7cbab03";
 
-static const std::string OUTPUT_ADDRESS_2  = "000000000000000000000000babababababababababababababababababababa"; // NOLINT: ignore static initialization warning
-static const std::string OUTPUT_OFFSET_2   = "0000000000000000000000000000000000000000000000000000000000000040"; // NOLINT: ignore static initialization warning
-static const std::string OUTPUT_LENGTH_2   = "0000000000000000000000000000000000000000000000000000000000000020"; // NOLINT: ignore static initialization warning
-static const std::string OUTPUT_PAYLOAD_2  = "4c6f72656d20697073756d20646f6c6f722073697420616d657420637261732e"; // NOLINT: ignore static initialization warning
-static const std::string OUTPUT_KECCAK_2   = "4af9ac1565a66632741c1cf848847920ae4ef6e7e96ef9fd5bae9fa316f5cb33"; // NOLINT: ignore static initialization warning
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string OUTPUT_ADDRESS_2 = "000000000000000000000000babababababababababababababababababababa";
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string OUTPUT_OFFSET_2 = "0000000000000000000000000000000000000000000000000000000000000040";
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string OUTPUT_LENGTH_2 = "0000000000000000000000000000000000000000000000000000000000000020";
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string OUTPUT_PAYLOAD_2 = "4c6f72656d20697073756d20646f6c6f722073697420616d657420637261732e";
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string OUTPUT_KECCAK_2 = "4af9ac1565a66632741c1cf848847920ae4ef6e7e96ef9fd5bae9fa316f5cb33";
 
-static const std::string EMPTY_32_BYTES    = "0000000000000000000000000000000000000000000000000000000000000000"; // NOLINT: ignore static initialization warning
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string EMPTY_32_BYTES = "0000000000000000000000000000000000000000000000000000000000000000";
 
-static const std::string MESSAGE_OFFSET_1  = "0000000000000000000000000000000000000000000000000000000000000020"; // NOLINT: ignore static initialization warning
-static const std::string MESSAGE_LENGTH_1  = "0000000000000000000000000000000000000000000000000000000000000040"; // NOLINT: ignore static initialization warning
-static const std::string MESSAGE_PAYLOAD_1 = "6361727465736920726f6c6c7570206d616368696e65206d616e616765722020"  // NOLINT: ignore static initialization warning
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string MESSAGE_OFFSET_1 = "0000000000000000000000000000000000000000000000000000000000000020";
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string MESSAGE_LENGTH_1 = "0000000000000000000000000000000000000000000000000000000000000040";
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string MESSAGE_PAYLOAD_1 = "6361727465736920726f6c6c7570206d616368696e65206d616e616765722020"
                                              "6361727465736920726f6c6c7570206d616368696e65206d616e616765722020";
-static const std::string MESSAGE_KECCAK_1  = "d08ae55c73b87ab95ff17b36a4d7d3d8e0683a4e9befae9ec20fb123306ba09b"; // NOLINT: ignore static initialization warning
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string MESSAGE_KECCAK_1 = "d08ae55c73b87ab95ff17b36a4d7d3d8e0683a4e9befae9ec20fb123306ba09b";
 
-static const std::string MESSAGE_OFFSET_2  = "0000000000000000000000000000000000000000000000000000000000000020"; // NOLINT: ignore static initialization warning
-static const std::string MESSAGE_LENGTH_2  = "0000000000000000000000000000000000000000000000000000000000000020"; // NOLINT: ignore static initialization warning
-static const std::string MESSAGE_PAYLOAD_2 = "4c6f72656d20697073756d20646f6c6f722073697420616d657420637261732e"; // NOLINT: ignore static initialization warning
-static const std::string MESSAGE_KECCAK_2  = "8c35a8e6f7e96bf5b0f9200e6cf35db282e9de960e9e958c5d52b14a66af6c47"; // NOLINT: ignore static initialization warning
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string MESSAGE_OFFSET_2 = "0000000000000000000000000000000000000000000000000000000000000020";
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string MESSAGE_LENGTH_2 = "0000000000000000000000000000000000000000000000000000000000000020";
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string MESSAGE_PAYLOAD_2 = "4c6f72656d20697073756d20646f6c6f722073697420616d657420637261732e";
+// NOLINTNEXTLINE: ignore static initialization warning
+static const std::string MESSAGE_KECCAK_2 = "8c35a8e6f7e96bf5b0f9200e6cf35db282e9de960e9e958c5d52b14a66af6c47";
 
 static const std::string DEFAULT_INPUT = // NOLINT: ignore static initialization warning
     OUTPUT_KECCAK_1 + OUTPUT_KECCAK_2 +
@@ -523,7 +543,8 @@ void assert_bool(bool value, const std::string& msg, const std::string& file, in
 
 #define ASSERT(v, msg) assert_bool(v, msg, __FILE__, __LINE__) // NOLINT(cppcoreguidelines-macro-usage)
 #define ASSERT_STATUS(s, f, v) assert_status(s, f, v, __FILE__, __LINE__) // NOLINT(cppcoreguidelines-macro-usage)
-#define ASSERT_STATUS_CODE(s, f, v) assert_status_code(s, f, v, __FILE__, __LINE__) // NOLINT(cppcoreguidelines-macro-usage)
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define ASSERT_STATUS_CODE(s, f, v) assert_status_code(s, f, v, __FILE__, __LINE__)
 
 static void test_get_version(const std::function<void(const std::string &title, test_function f)> &test) {
     test("The rollup-machine-manager server version should be 0.0.x", [](RollupMachineManagerClient &manager){

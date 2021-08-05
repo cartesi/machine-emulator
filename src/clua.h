@@ -30,7 +30,9 @@ namespace cartesi {
 
 namespace detail {
 template <size_t N, std::size_t... I>
-constexpr auto clua_make_luaL_Reg_array_impl(luaL_Reg const (&vec)[N], std::index_sequence<I...>) noexcept { // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+constexpr auto clua_make_luaL_Reg_array_impl(
+    luaL_Reg const (&vec)[N], // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    std::index_sequence<I...>) noexcept {
     return std::array<luaL_Reg, N+1>{{vec[I]..., {nullptr, nullptr}}};
 }
 }

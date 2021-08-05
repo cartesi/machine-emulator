@@ -56,8 +56,8 @@ void cm_delete_grpc_machine_stub(const cm_grpc_machine_stub *stub) {
     if (stub == nullptr) {
         return;
     }
-    const auto *stub_wrapper =
-        reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);     // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *stub_wrapper = reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
     delete stub_wrapper;
 }
 

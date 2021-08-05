@@ -69,18 +69,16 @@ set_page_node_map(address_type page_index, tree_node *node) {
     return 1;
 }
 
-machine_merkle_tree::tree_node *
-machine_merkle_tree::
-create_node(void) const { // NOLINT(readability-convert-member-functions-to-static)
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+machine_merkle_tree::tree_node *machine_merkle_tree::create_node(void) const {
 #ifdef MERKLE_DUMP_STATS
     m_num_nodes++;
 #endif
     return new tree_node{};
 }
 
-void
-machine_merkle_tree::
-destroy_node(tree_node *node) const { // NOLINT(readability-convert-member-functions-to-static)
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+void machine_merkle_tree::destroy_node(tree_node *node) const {
 #ifdef MERKLE_DUMP_STATS
     --m_num_nodes;
 #endif

@@ -53,7 +53,9 @@ public:
         mock_machine_state(void) = default;
 
         void set_brk(void) { }
-        bool get_brk(void) const { return true; } // NOLINT(readability-convert-member-functions-to-static)
+        bool get_brk(void) const { // NOLINT(readability-convert-member-functions-to-static)
+            return true;
+        }
         void or_brk_with_mip_mie(void) { }
         void or_brk_with_iflags_H(void) { }
         void or_brk_with_iflags_Y(void) { }
@@ -378,8 +380,10 @@ private:
     // "overriden" methods.
     friend i_state_access<step_state_access>;
 
-    void do_push_bracket(bracket_type type, const char *text) { // NOLINT(readability-convert-member-functions-to-static)
-        (void) type; (void) text;
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    void do_push_bracket(bracket_type type, const char *text) {
+        (void)type;
+        (void)text;
     }
 
     int do_make_scoped_note(const char *text) { // NOLINT(readability-convert-member-functions-to-static)

@@ -29,6 +29,7 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #include <grpc++/grpc++.h>
 #include <google/protobuf/util/json_util.h>
+
 #include "rollup-machine-manager.grpc.pb.h"
 #include "grpc-util.h"
 #pragma GCC diagnostic pop

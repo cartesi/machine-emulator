@@ -35,6 +35,7 @@ static constexpr uint32_t proxy_version_patch = 0;
 #pragma GCC diagnostic ignored "-Wtype-limits"
 #include <grpc++/grpc++.h>
 #include <grpc++/resource_quota.h>
+
 #include "cartesi-machine.grpc.pb.h"
 #include "cartesi-machine-checkin.grpc.pb.h"
 #pragma GCC diagnostic pop

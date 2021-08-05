@@ -23,6 +23,7 @@
 #include <cstdint>
 
 #include "i-device-state-access.h"
+#include "i-state-access.h"
 #include "machine.h"
 
 namespace cartesi {

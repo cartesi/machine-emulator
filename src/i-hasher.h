@@ -20,6 +20,7 @@
 /// \file
 /// \brief Hasher interface
 
+#include <cstddef>
 #include <cstdint>
 #include <array>
 

@@ -24,6 +24,10 @@
 #include <string>
 #include "machine-c-defines.h"
 
+#include "machine-c-defines.h"
+#include "machine-c-api.h"
+#include "machine.h"
+
 /// \brief Helper function that returns error result from C api function
 CM_API int cm_result_failure(char **err_msg);
 

@@ -995,6 +995,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_##reader_f##_null_machine_test) \
     monitor_system_throw(f);                                     \
 }
 
+// clang-format off
 CHECK_READER_FAILS_ON_nullptr_MACHINE(pc)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(mcycle)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(minstret)
@@ -1035,6 +1036,7 @@ CHECK_READER_FAILS_ON_nullptr_MACHINE(dhd_hlength)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(mvendorid)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(marchid)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(mimpid)
+// clang-format on
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_iflags_Y_null_machine_test)
 {
@@ -1067,6 +1069,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(write_##writer_f##_null_machine_test) \
     monitor_system_throw(f);                                      \
 }
 
+// clang-format off
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(pc)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mcycle)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(minstret)
@@ -1102,6 +1105,7 @@ CHECK_WRITER_FAILS_ON_nullptr_MACHINE(dhd_tstart)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(dhd_tlength)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(dhd_dlength)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(dhd_hlength)
+// clang-format on
 
 // NOLINTNEXTLINE
 #define CHECK_REGISTER_READ_WRITE(F)                                          \
@@ -1118,6 +1122,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(F##_read_write_test, ordinary_machine_fixture) \
     BOOST_CHECK_EQUAL(write_val, read_val);                                   \
 }
 
+// clang-format off
 CHECK_REGISTER_READ_WRITE(pc)
 CHECK_REGISTER_READ_WRITE(mcycle)
 CHECK_REGISTER_READ_WRITE(minstret)
@@ -1151,6 +1156,7 @@ CHECK_REGISTER_READ_WRITE(dhd_tstart)
 CHECK_REGISTER_READ_WRITE(dhd_tlength)
 CHECK_REGISTER_READ_WRITE(dhd_dlength)
 CHECK_REGISTER_READ_WRITE(dhd_hlength)
+// clang-format on
 
 BOOST_AUTO_TEST_CASE_NOLINT(set_iflags_y_null_machine_test)
 {

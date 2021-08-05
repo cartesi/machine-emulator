@@ -950,6 +950,7 @@ int cm_write_##field(cm_machine *m, uint64_t val, char **err_msg) try { \
     return cm_result_failure(err_msg);                                   \
 }
 
+// clang-format-off
 IMPL_MACHINE_READ_WRITE(pc)
 IMPL_MACHINE_READ(mvendorid)
 IMPL_MACHINE_READ(marchid)
@@ -991,7 +992,7 @@ IMPL_MACHINE_READ_WRITE(dhd_tstart)
 IMPL_MACHINE_READ_WRITE(dhd_tlength)
 IMPL_MACHINE_READ_WRITE(dhd_dlength)
 IMPL_MACHINE_READ_WRITE(dhd_hlength)
-
+// clang-format-on
 
 
 

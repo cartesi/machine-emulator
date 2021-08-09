@@ -27,6 +27,7 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #pragma GCC diagnostic ignored "-Wdeprecated-copy"
+#pragma GCC diagnostic ignored "-Wtype-limits"
 #include <grpc++/grpc++.h>
 #include <google/protobuf/util/json_util.h>
 

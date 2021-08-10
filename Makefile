@@ -186,8 +186,8 @@ build-alpine-image:
 	docker build -t cartesi/machine-emulator:$(TAG)-alpine -f .github/workflows/Dockerfile.alpine .
 
 install-Darwin:
-	install_name_tool -delete_rpath $(BUILDDIR)/lib -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi.so
-	install_name_tool -delete_rpath $(BUILDDIR)/lib -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi/grpc.so
+	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi.so
+	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi/grpc.so
 	cd $(BIN_INSTALL_PATH) && \
 		for x in $(DEP_TO_BIN) $(EMU_TO_BIN); do \
 			install_name_tool -add_rpath $(LIB_INSTALL_PATH) $$x ;\

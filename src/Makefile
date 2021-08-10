@@ -42,7 +42,7 @@ CXX_Darwin=clang++
 INCS_Darwin=
 
 ifeq ($(UNAME),Darwin)
-SOLDFLAGS_Darwin+=-Wl,-rpath,$(BUILDDIR)/lib
+SOLDFLAGS_Darwin+=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
 # Homebrew installation
 ifneq (,$(wildcard /usr/local/opt/boost/lib))
 BOOST_LIB_DIR_Darwin=-L/usr/local/opt/boost/lib

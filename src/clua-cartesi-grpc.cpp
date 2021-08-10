@@ -17,15 +17,16 @@
 #include "clua.h"
 #include "clua-i-virtual-machine.h"
 #include "clua-grpc-machine.h"
+#include "machine-c-defines.h"
 
 /// \file
 /// \brief Scripting interface for the Cartesi GRPC API SDK.
 
-extern "C"
-__attribute__((visibility("default")))
+extern "C" {
+
 /// \brief Entrypoint to the Cartesi GRPC Lua library.
 /// \param L Lua state.
-int luaopen_cartesi_grpc(lua_State *L) {
+CM_API int luaopen_cartesi_grpc(lua_State *L) {
     using namespace cartesi;
 
     // Initialize and export grpc machine bind
@@ -37,4 +38,6 @@ int luaopen_cartesi_grpc(lua_State *L) {
     clua_grpc_machine_export(L, -2); // cluactx grpc
 
     return 1;
+}
+
 }

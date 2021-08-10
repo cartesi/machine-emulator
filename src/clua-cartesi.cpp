@@ -20,6 +20,7 @@
 #include "clua-i-virtual-machine.h"
 #include "clua-machine-util.h"
 #include "clua-machine.h"
+#include "machine-c-api.h"
 
 /// \file
 /// \brief Scripting interface for the Cartesi SDK.
@@ -81,11 +82,11 @@ static const auto cartesi_mod = cartesi::clua_make_luaL_Reg_array({
     {"keccak", cartesi_mod_keccak},
 });
 
-extern "C"
-__attribute__((visibility("default")))
+extern "C" {
+
 /// \brief Entrypoint to the Cartesi Lua library.
 /// \param L Lua state.
-int luaopen_cartesi(lua_State *L) {
+CM_API int luaopen_cartesi(lua_State *L) {
     using namespace cartesi;
 #ifdef GPERF
     lua_newuserdata(L, 1); // gperf
@@ -108,4 +109,6 @@ int luaopen_cartesi(lua_State *L) {
     luaL_setfuncs(L, cartesi_mod.data(), 1); // cluactx cartesi
 
     return 1;
+}
+
 }

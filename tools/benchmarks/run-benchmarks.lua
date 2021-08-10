@@ -50,6 +50,31 @@ local benchmarks = {
         exec_format = "/usr/bin/whetstone %d",
         params = {100, 250, 500}
     },
+    {
+        name = "tinymembench",
+        exec_format = "/usr/bin/tinymembench",
+        params = {}
+    },
+    {
+        name = "ramspeed",
+        exec_format = "/usr/bin/ramspeed -b %d -g 1",
+        params = {1, 2, 3, 4, 5, 6}
+    },
+    {
+        name = "iozone",
+        exec_format = "/usr/bin/iozone -a -s 65536 -r %d",
+        params = {64, 512, 2048}
+    },
+    {
+        name = "dieharder",
+        exec_format = "/usr/bin/dieharder -d %d",
+        params = {0, 1, 2}
+    },
+    {
+        name = "bonnie++",
+        exec_format = "/usr/sbin/bonnie++ -d $(mktemp -d) -u root",
+        params = {0, 1, 2}
+    },
 }
 
 local function build_machine(exec_args)
@@ -78,7 +103,7 @@ local function build_machine(exec_args)
         flash_drive = {
             {
                 start = 0x8000000000000000,
-                length = 0x3c00000,
+                length = 0x40000000,
                 image_filename = flash_image_filename,
             }
         },

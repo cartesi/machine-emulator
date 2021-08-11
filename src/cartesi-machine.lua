@@ -1,6 +1,6 @@
 #!/usr/bin/env lua5.3
 
--- Copyright 2019 Cartesi Pte. Ltd.
+-- Copyright 2019-2021 Cartesi Pte. Ltd.
 --
 -- This file is part of the machine-emulator. The machine-emulator is free
 -- software: you can redistribute it and/or modify it under the terms of the GNU

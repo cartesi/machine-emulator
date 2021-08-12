@@ -201,8 +201,6 @@ jobs:
           timeout 20 bash -c 'while ! nc -q0 127.0.0.1 5001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
           lua5.3 ./tests/machine-test.lua grpc --server=127.0.0.1:5001 --test-path=./
           pkill -f cartesi-machine-server || true
-          
-          
 
       - name: Run Merkle tree tests
         run: |
@@ -213,6 +211,110 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           ./tests/test-machine-c-api
 
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Install Ubuntu dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-serialization-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-12 clang-format-12 lua5.3 liblua5.3-dev lua-socket clang llvm
+
+      - name: Download cache of third-party build
+        run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
+        id: download_cache
+        continue-on-error: true
+        env:
+          AWS_REGION: 'us-east-1'
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Build third-party dependencies
+        id: build_dep
+        if: ${{ steps.download_cache.outcome == 'failure' }}
+        run: make -j$(nproc) dep
+
+      - name: Fix build dependencies permissions
+        run: chmod +x ./build/`uname`_`uname -m`/bin/protoc ./build/`uname`_`uname -m`/bin/grpc_cpp_plugin
+
+      - name: Cache third-party build
+        if: ${{ steps.build_dep.outcome == 'success' }}
+        run: aws s3 sync ./build s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION}
+        env:
+          AWS_REGION: 'us-east-1'
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Download [rootfs.ext2]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/image-rootfs
+          tag: ${{ env.ROOTFS_VERSION }}
+          file: rootfs.ext2
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Download [kernel.bin]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/image-kernel
+          tag: ${{ env.KERNEL_VERSION }}
+          file: linux-5.5.19-ctsi-2.bin
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Download [rom.bin]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/machine-emulator-rom
+          tag: ${{ env.ROM_VERSION }}
+          file: rom.bin
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Create images folder
+        run: mkdir -m 755 -p /opt/cartesi/share/images
+
+      - name: Move images to cartesi images folder
+        run: |
+          mv rom.bin linux-5.5.19-ctsi-2.bin rootfs.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-2.bin linux.bin
+
+      - name: Download test suite
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/machine-tests
+          tag: ${{ env.TEST_VERSION }}
+          file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Untar test suite
+        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
+
+      - name: Build
+        run: make coverage-toolchain=clang -j$(nproc)
+
+      - name: Install [/opt/cartesi]
+        run: make install
+
+      - name: Fix install permissions [/opt/cartesi]
+        run: find /opt/cartesi -type d -exec chmod 755 {} +
+
+      - name: Run coverage
+        run: |
+          export TEST_PATH=/opt/cartesi/tests
+          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
+          export CARTESI_TESTS_PATH=/opt/cartesi/tests
+          eval $(make env)
+          make coverage-toolchain=clang coverage-report
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@master
+        with:
+          name: coverage-report
+          path: src/coverage-clang
 
   verify:
     name: Verify

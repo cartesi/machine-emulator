@@ -129,7 +129,7 @@ $(COREPROTO):
 	@exit 1
 
 grpc: | $(COREPROTO)
-hash luacartesi grpc test lint check-format format:
+hash luacartesi grpc test lint coverage-report check-format format:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 
 source-default:

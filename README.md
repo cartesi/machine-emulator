@@ -130,6 +130,57 @@ $ make format
 $ make check-format
 ```
 
+## Coverage
+
+### Dependencies
+
+#### Ubuntu
+
+If you want to run the GCC-based coverage, you should install the lcov package with the following command.
+
+```bash
+$ sudo apt install lcov
+```
+
+If you want to run the clang-based coverage, you should install the clang package with the following command.
+
+```bash
+$ sudo apt install clang llvm
+```
+
+### Compilation
+
+Before running the coverage, you should build the emulator with the flag coverage-toolchain=gcc or coverage-toolchain=clang.
+Make sure you run `make clean` to clean up any previous compilation.
+For GCC-based coverage run the following command.
+
+```bash
+$ make coverage-toolchain=gcc -j$(nproc)
+```
+
+For clang-based coverage run the following command.
+
+```bash
+$ make coverage-toolchain=clang -j$(nproc)
+```
+
+### Running coverage
+
+After building the emulator with coverage enable, you should run the following command.
+You need to specify the binaries test path using the `TEST_PATH` and the `CARTESI_TESTS_PATH` variables.
+You also need to specify the directory containg the ROM, kernel and rootfs with the `CARTESI_IMAGES_PATH` variable.
+For instance:
+
+```bash
+$ make coverage-toolchain=gcc coverage-report \
+    TEST_PATH=$(realpath ../tests/build) \
+    CARTESI_TESTS_PATH=$(realpath ../tests/build) \
+    CARTESI_IMAGES_PATH=$(realpath ./src)
+```
+
+This command will generate a coverage report in the src directory.
+For clang coverage, repeat the same command but with the flag coverage-toolchain=clang.
+
 ## Contributing
 
 Thank you for your interest in Cartesi! Head over to our [Contributing Guidelines](CONTRIBUTING.md) for instructions on how to sign our Contributors Agreement and get started with

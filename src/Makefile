@@ -165,6 +165,38 @@ CLANG_TIDY_HEADER_FILTER=$(PWD)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
 CXXFLAGS=-O2 -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 CFLAGS=-O2 -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
 
+ifeq ($(coverage-toolchain),gcc)
+CC=gcc
+CXX=g++
+CXXFLAGS += -g -O0 --coverage
+SOLDFLAGS += --coverage
+CARTESI_MACHINE_SERVER_LIBS += --coverage
+CARTESI_MACHINE_PROXY_LIBS += --coverage
+ROLLUP_MACHINE_MANAGER_LIBS += --coverage
+TEST_ROLLUP_MACHINE_MANAGER_LIBS += --coverage
+HASH_LIBS += --coverage
+LIBCARTESI_LDFLAGS += --coverage
+LIBCARTESI_GRPC_LDFLAGS += --coverage
+LIBCARTESI_TESTS_LDFLAGS += --coverage
+else ifeq ($(coverage-toolchain),clang)
+CC=clang
+CXX=clang++
+CXXFLAGS += -g -O0 -fprofile-instr-generate -fcoverage-mapping
+SOLDFLAGS += -fprofile-instr-generate -fcoverage-mapping
+CARTESI_MACHINE_SERVER_LIBS += -fprofile-instr-generate -fcoverage-mapping
+CARTESI_MACHINE_PROXY_LIBS += -fprofile-instr-generate -fcoverage-mapping
+ROLLUP_MACHINE_MANAGER_LIBS += -fprofile-instr-generate -fcoverage-mapping
+TEST_ROLLUP_MACHINE_MANAGER_LIBS += -fprofile-instr-generate -fcoverage-mapping
+HASH_LIBS += -fprofile-instr-generate -fcoverage-mapping
+LIBCARTESI_LDFLAGS += -fprofile-instr-generate -fcoverage-mapping
+LIBCARTESI_GRPC_LDFLAGS += -fprofile-instr-generate -fcoverage-mapping
+LIBCARTESI_TESTS_LDFLAGS += -fprofile-instr-generate -fcoverage-mapping
+COVERAGE_SOURCES = $(filter-out %.pb.h, $(wildcard *.h) $(wildcard *.cpp))
+export LLVM_PROFILE_FILE=coverage-%p.profraw
+else ifneq ($(coverage-toolchain),)
+$(error invalid value for coverage-toolchain: $(coverage-toolchain))
+endif
+
 all: luacartesi grpc hash c-api
 
 .PHONY: all generate use clean test lint format check-format luacartesi grpc hash docker c-api compile_flags.txt
@@ -236,14 +268,8 @@ cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS) $(LIBCARTESI_GRPC) $(LIBCARTESI)
 test: luacartesi
 	$(LUA_BIN) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
 
-test-coverage: luacartesi
-	LLVM_PROFILE_FILE="cartesi-machine-tests.profraw" $(LUA_BIN) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" run
-
 test-hash: hash
 	tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
-
-test-hash-coverage: hash
-	LLVM_PROFILE_FILE="merkle-tree-hash.profraw" tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
 
 # In order to run tests environment variable TEST_PATH with directory path
 # to asset files for cartesi machine tests must be set
@@ -260,22 +286,11 @@ test-grpc: luacartesi grpc
 	sleep 2
 	$(LUA_BIN) ./tests/machine-test.lua grpc --server=127.0.0.1:5001 --test-path=./
 
-test-grpc-coverage: luacartesi grpc
-	./cartesi-machine-server 127.0.0.1:5001 &
-	sleep 1
-	LLVM_PROFILE_FILE="grpc.profraw" $(LUA_BIN) cartesi-machine-tests.lua --server=127.0.0.1:5001 --test-path="$(TEST_PATH)" run
-
 test-scripts: luacartesi
 	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do $(LUA_BIN) $$x local || exit 1; done
 
-test-scripts-coverage: luacartesi
-	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do LLVM_PROFILE_FILE="$$x.profraw" $(LUA_BIN) $$x || exit 1; done
-
 test-c-api: c-api
 	tests/test-machine-c-api
-
-test-c-api-coverage: c-api
-	LLVM_PROFILE_FILE="c-api.profraw" tests/test-machine-c-api
 
 lint: $(CLANG_TIDY_TARGETS)
 
@@ -293,40 +308,23 @@ generate: CXXFLAGS += -fprofile-generate
 generate: SOLDFLAGS += -fprofile-generate
 generate: luacartesi
 
-
-coverage-build-clang: CXX = clang++
-coverage-build-clang: CXXFLAGS += -fprofile-instr-generate -fcoverage-mapping
-coverage-build-clang: SOLDFLAGS += -fprofile-instr-generate -fcoverage-mapping
-coverage-build-clang: LIBCARTESI_LDFLAGS += -fprofile-instr-generate -fcoverage-mapping
-coverage-build-clang: LIBCARTESI_TESTS_LDFLAGS += -fprofile-instr-generate -fcoverage-mapping
-coverage-build-clang: CARTESI_MACHINE_SERVER_LIBS += -fprofile-instr-generate -fcoverage-mapping
-coverage-build-clang: CARTESI_MACHINE_PROXY_LIBS += -fprofile-instr-generate -fcoverage-mapping
-coverage-build-clang: ROLLUP_MACHINE_MANAGER_LIBS += -fprofile-instr-generate -fcoverage-mapping
-coverage-build-clang: TEST_ROLLUP_MACHINE_MANAGER_LIBS += -fprofile-instr-generate -fcoverage-mapping
-coverage-build-clang: test-coverage test-hash-coverage test-grpc-coverage test-scripts-coverage test-c-api-coverage
-coverage-report-clang:
-	llvm-profdata merge -sparse $(shell find . -name '*profraw' | xargs) -o coverage.profdata
-	llvm-cov show ./libcartesi.so . -format=html -instr-profile=coverage.profdata -output-dir=coverage-clang
-
-coverage-build-gcc: CXXFLAGS += -g -O0 --coverage
-coverage-build-gcc: SOLDFLAGS += -lgcov --coverage
-coverage-build-gcc: LIBCARTESI_LDFLAGS += -lgcov --coverage
-coverage-build-gcc: LIBCARTESI_TESTS_LDFLAGS += -lgcov --coverage
-coverage-build-gcc: HASH_LIBS += -lgcov --coverage
-coverage-build-gcc: CARTESI_MACHINE_SERVER_LIBS += -lgcov --coverage
-coverage-build-gcc: CARTESI_MACHINE_PROXY_LIBS += -lgcov --coverage
-coverage-build-gcc: ROLLUP_MACHINE_MANAGER_LIBS += -lgcov --coverage
-coverage-build-gcc: TEST_ROLLUP_MACHINE_MANAGER_LIBS += -lgcov --coverage
-coverage-build-gcc: test test-hash test-grpc test-scripts test-c-api
-coverage-report-gcc:
-	lcov --capture --directory . --output-file cartesi.excessive
-	lcov --remove cartesi.excessive '*boost*' '*c++*' '*cryptopp*' -o cartesi.info
-	genhtml cartesi.info --output-directory coverage-gcc
-
-coverage-build: coverage-build-clang
-coverage-report: coverage-report-clang
-coverage: coverage-build coverage-report
-
+ifeq ($(coverage-toolchain),gcc)
+coverage-report: test test-hash test-grpc test-scripts test-c-api
+	lcov --capture --directory . --no-external --exclude '*.pb.*' -o coverage.info
+	genhtml coverage.info -o coverage-gcc
+else ifeq ($(coverage-toolchain),clang)
+coverage-report: test test-hash test-grpc test-scripts test-c-api
+	llvm-profdata merge -sparse $(shell find . -name 'coverage*.profraw') -o coverage.profdata
+	llvm-cov show -format=html -output-dir=coverage-clang -instr-profile=coverage.profdata \
+		./cartesi.so \
+		-object ./cartesi/grpc.so \
+		-object ./libcartesi.so \
+		-object ./libcartesi_grpc.so \
+		-object ./tests/test-merkle-tree-hash \
+		-object ./tests/test-machine-c-api \
+		-object ./cartesi-machine-server \
+		$(COVERAGE_SOURCES)
+endif
 
 valgrind: luacartesi
 	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) cartesi-machine-tests.lua
@@ -539,7 +537,7 @@ grpc-util.o grpc-virtual-machine.o grpc-machine-c-api.o server.o proxy.o: $(CART
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-clean:
+clean: profile-clean
 	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d *.clang-tidy \
 		$(LIBCARTESI) $(LIBCARTESI_GRPC) cartesi.so cartesi/grpc.so \
 		cartesi-machine-server cartesi-machine-proxy \

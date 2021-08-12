@@ -2,4 +2,7 @@
 *.pb.cc
 *.ext2
 *.bin
+*.gcno
+*.gcda
+*.profraw
 compile_flags.txt

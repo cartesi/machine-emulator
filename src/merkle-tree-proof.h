@@ -20,11 +20,11 @@
 /// \file
 /// \brief Merkle tree proof structure
 
-#include <cstdint>
 #include <cassert>
-#include <vector>
+#include <cstdint>
 #include <exception>
 #include <iostream>
+#include <vector>
 
 namespace cartesi {
 
@@ -35,26 +35,22 @@ namespace cartesi {
 /// \}
 /// \tparam HASH_TYPE the type that holds a hash
 /// \tparam ADDRESS_TYPE the type that holds an address
-template <
-    typename HASH_TYPE,
-    typename ADDRESS_TYPE = uint64_t
->
+template <typename HASH_TYPE, typename ADDRESS_TYPE = uint64_t>
 class merkle_tree_proof final {
 public:
-
     using hash_type = HASH_TYPE;
 
     using address_type = ADDRESS_TYPE;
 
     /// \brief Constructs a merkle_tree_proof object and allocates
     /// room for the sibling hashes
-    merkle_tree_proof(int log2_root_size, int log2_target_size):
+    merkle_tree_proof(int log2_root_size, int log2_target_size) :
         m_target_address{0},
         m_log2_target_size{log2_target_size},
         m_target_hash{},
         m_log2_root_size{log2_root_size},
         m_root_hash{},
-        m_sibling_hashes(std::max(0,log2_root_size-log2_target_size)) {
+        m_sibling_hashes(std::max(0, log2_root_size - log2_target_size)) {
         if (log2_root_size <= 0) {
             throw std::out_of_range{"log2_root_size is not positive"};
         }
@@ -62,8 +58,7 @@ public:
             throw std::out_of_range{"log2_target_size is negative"};
         }
         if (log2_target_size > log2_root_size) {
-            throw std::out_of_range{
-                "log2_target_size is greater than log2_root_size"};
+            throw std::out_of_range{"log2_target_size is greater than log2_root_size"};
         }
     }
 
@@ -79,11 +74,15 @@ public:
 
     /// \brief Gets log<sub>2</sub> of size subintended by entire tree.
     /// \returns log<sub>2</sub> of size subintended by entire tree.
-    int get_log2_root_size(void) const { return m_log2_root_size; }
+    int get_log2_root_size(void) const {
+        return m_log2_root_size;
+    }
 
     /// \brief Gets log<sub>2</sub> of size subintended by target node.
     /// \returns log<sub>2</sub> of size subintended by target node.
-    int get_log2_target_size(void) const { return m_log2_target_size; }
+    int get_log2_target_size(void) const {
+        return m_log2_target_size;
+    }
 
     /// \brief Set target node address
     /// \param target_address New address.
@@ -96,25 +95,39 @@ public:
     const address_type &get_target_address(void) const {
         return m_target_address;
     }
-    address_type &get_target_address(void) { return m_target_address; }
+    address_type &get_target_address(void) {
+        return m_target_address;
+    }
 
     /// \brief Set hash of target node
     /// \param hash New hash.
-    void set_target_hash(const hash_type &hash) { m_target_hash = hash; }
+    void set_target_hash(const hash_type &hash) {
+        m_target_hash = hash;
+    }
 
     /// \brief Gets hash of target node
     /// \return Reference to hash.
-    const hash_type &get_target_hash(void) const { return m_target_hash; }
-    hash_type &get_target_hash(void) { return m_target_hash; }
+    const hash_type &get_target_hash(void) const {
+        return m_target_hash;
+    }
+    hash_type &get_target_hash(void) {
+        return m_target_hash;
+    }
 
     /// \brief Set hash of root node
     /// \param hash New hash.
-    void set_root_hash(const hash_type &hash) { m_root_hash = hash; }
+    void set_root_hash(const hash_type &hash) {
+        m_root_hash = hash;
+    }
 
     /// \brief Gets hash of root node
     /// \return Reference to hash.
-    const hash_type &get_root_hash(void) const { return m_root_hash; }
-    hash_type &get_root_hash(void) { return m_root_hash; }
+    const hash_type &get_root_hash(void) const {
+        return m_root_hash;
+    }
+    hash_type &get_root_hash(void) {
+        return m_root_hash;
+    }
 
     /// \brief Get hash corresponding to log2_size from the list of siblings.
     /// \param log2_size log<sub>2</sub> of size subintended by hash.
@@ -162,9 +175,9 @@ public:
     ///< \tparam HASHER_TYPE Hasher class to use
     ///< \param h Hasher object to use
     ///< \return True if proof is valid, false otherwise
-    template <typename HASHER_TYPE> bool verify(HASHER_TYPE &&h) const {
-        return bubble_up(std::forward<HASHER_TYPE>(h),
-            get_target_hash()) == get_root_hash();
+    template <typename HASHER_TYPE>
+    bool verify(HASHER_TYPE &&h) const {
+        return bubble_up(std::forward<HASHER_TYPE>(h), get_target_hash()) == get_root_hash();
     }
 
     ///< \brief Verify if proof is valid
@@ -172,35 +185,29 @@ public:
     ///< \param h Hasher object to use
     ///< \param new_target_hash New target hash to replace
     ///< \return New root hash
-    template <typename HASHER_TYPE> hash_type bubble_up(HASHER_TYPE &&h,
-        const hash_type &new_target_hash) const {
+    template <typename HASHER_TYPE>
+    hash_type bubble_up(HASHER_TYPE &&h, const hash_type &new_target_hash) const {
         static_assert(is_an_i_hasher<HASHER_TYPE>::value, "not an i_hasher");
-        static_assert(std::is_same<
-            typename remove_cvref<HASHER_TYPE>::type::hash_type,
-            hash_type
-        >::value, "incompatible hash types");
+        static_assert(std::is_same<typename remove_cvref<HASHER_TYPE>::type::hash_type, hash_type>::value,
+            "incompatible hash types");
         hash_type hash = new_target_hash;
-        for (int log2_size = get_log2_target_size();
-             log2_size < get_log2_root_size(); ++log2_size) {
-           int bit = (get_target_address() &
-               (address_type(1) << log2_size)) != 0;
-           if (bit) {
-               get_concat_hash(h, get_sibling_hash(log2_size), hash, hash);
-           } else {
-               get_concat_hash(h, hash, get_sibling_hash(log2_size), hash);
-           }
+        for (int log2_size = get_log2_target_size(); log2_size < get_log2_root_size(); ++log2_size) {
+            int bit = (get_target_address() & (address_type(1) << log2_size)) != 0;
+            if (bit) {
+                get_concat_hash(h, get_sibling_hash(log2_size), hash, hash);
+            } else {
+                get_concat_hash(h, hash, get_sibling_hash(log2_size), hash);
+            }
         }
         return hash;
     }
 
     template <typename HASHER_TYPE>
-    merkle_tree_proof<hash_type, address_type> slice(HASHER_TYPE &&h,
-        int new_log2_root_size, int new_log2_target_size) const {
+    merkle_tree_proof<hash_type, address_type> slice(HASHER_TYPE &&h, int new_log2_root_size,
+        int new_log2_target_size) const {
         static_assert(is_an_i_hasher<HASHER_TYPE>::value, "not an i_hasher");
-        static_assert(std::is_same<
-            typename remove_cvref<HASHER_TYPE>::type::hash_type,
-            hash_type
-        >::value, "incompatible hash types");
+        static_assert(std::is_same<typename remove_cvref<HASHER_TYPE>::type::hash_type, hash_type>::value,
+            "incompatible hash types");
         if (new_log2_root_size <= 0) {
             throw std::out_of_range{"log2_root_size is not positive"};
         }
@@ -208,8 +215,7 @@ public:
             throw std::out_of_range{"log2_target_size is negative"};
         }
         if (new_log2_target_size > new_log2_root_size) {
-            throw std::out_of_range{
-                "log2_target_size is greater than log2_root_size"};
+            throw std::out_of_range{"log2_target_size is greater than log2_root_size"};
         }
         if (new_log2_root_size > get_log2_root_size()) {
             throw std::out_of_range{"log2_root_size is too large"};
@@ -217,35 +223,29 @@ public:
         if (new_log2_target_size < get_log2_target_size()) {
             throw std::out_of_range{"log2_taget_size is too small"};
         }
-        merkle_tree_proof<HASH_TYPE, ADDRESS_TYPE> sliced(new_log2_root_size,
-            new_log2_target_size);
+        merkle_tree_proof<HASH_TYPE, ADDRESS_TYPE> sliced(new_log2_root_size, new_log2_target_size);
         hash_type hash = get_target_hash();
-        for (int log2_size = get_log2_target_size();
-            log2_size < new_log2_target_size; ++log2_size) {
-           int bit = (get_target_address() &
-               (address_type(1) << log2_size)) != 0;
-           if (bit) {
-               get_concat_hash(h, get_sibling_hash(log2_size), hash, hash);
-           } else {
-               get_concat_hash(h, hash, get_sibling_hash(log2_size), hash);
-           }
+        for (int log2_size = get_log2_target_size(); log2_size < new_log2_target_size; ++log2_size) {
+            int bit = (get_target_address() & (address_type(1) << log2_size)) != 0;
+            if (bit) {
+                get_concat_hash(h, get_sibling_hash(log2_size), hash, hash);
+            } else {
+                get_concat_hash(h, hash, get_sibling_hash(log2_size), hash);
+            }
         }
         sliced.set_target_hash(hash);
-        for (int log2_size = new_log2_target_size;
-            log2_size < new_log2_root_size; ++log2_size) {
-           int bit = (get_target_address() &
-               (address_type(1) << log2_size)) != 0;
-           const hash_type &sibling_hash = get_sibling_hash(log2_size);
-           if (bit) {
-               get_concat_hash(h, sibling_hash, hash, hash);
-           } else {
-               get_concat_hash(h, hash, sibling_hash, hash);
-           }
-           sliced.set_sibling_hash(sibling_hash, log2_size);
+        for (int log2_size = new_log2_target_size; log2_size < new_log2_root_size; ++log2_size) {
+            int bit = (get_target_address() & (address_type(1) << log2_size)) != 0;
+            const hash_type &sibling_hash = get_sibling_hash(log2_size);
+            if (bit) {
+                get_concat_hash(h, sibling_hash, hash, hash);
+            } else {
+                get_concat_hash(h, hash, sibling_hash, hash);
+            }
+            sliced.set_sibling_hash(sibling_hash, log2_size);
         }
         sliced.set_root_hash(hash);
-        sliced.set_target_address((get_target_address() >>
-                new_log2_target_size) << new_log2_target_size);
+        sliced.set_target_address((get_target_address() >> new_log2_target_size) << new_log2_target_size);
         if (!sliced.verify(h)) {
             throw std::logic_error{"produced invalid sliced proof"};
         }
@@ -253,23 +253,22 @@ public:
     }
 
 private:
-
     /// \brief Converts log2_size to index into siblings array
     /// \return Index into siblings array, or throws exception if out of bouds
     int log2_size_to_index(int log2_size) const {
         // We know log2_root_size > 0, so log2_root_size-1 >= 0
-        int index = m_log2_root_size-1-log2_size;
+        int index = m_log2_root_size - 1 - log2_size;
         if (index < 0 || index >= static_cast<int>(m_sibling_hashes.size())) {
             throw std::out_of_range{"log2_size is out of range"};
         }
         return index;
     }
 
-    address_type m_target_address;  ///< Address of target node
-    int m_log2_target_size;  ///< log<sub>2</sub> of size subintended by target node
-    hash_type m_target_hash; ///< Hash of target node
-    int m_log2_root_size;    ///< log<sub>2</sub> of size subintended by tree
-    hash_type m_root_hash;   ///< Hash of root node
+    address_type m_target_address;        ///< Address of target node
+    int m_log2_target_size;               ///< log<sub>2</sub> of size subintended by target node
+    hash_type m_target_hash;              ///< Hash of target node
+    int m_log2_root_size;                 ///< log<sub>2</sub> of size subintended by tree
+    hash_type m_root_hash;                ///< Hash of root node
     sibling_hashes_type m_sibling_hashes; ///< Hashes of siblings in path from target to root
 };
 

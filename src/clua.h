@@ -20,9 +20,9 @@
 #include <array>
 #include <utility>
 
+#include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
-#include <lauxlib.h>
 
 #include <boost/type_index.hpp>
 
@@ -33,11 +33,11 @@ template <size_t N, std::size_t... I>
 constexpr auto clua_make_luaL_Reg_array_impl(
     luaL_Reg const (&vec)[N], // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
     std::index_sequence<I...>) noexcept {
-    return std::array<luaL_Reg, N+1>{{vec[I]..., {nullptr, nullptr}}};
+    return std::array<luaL_Reg, N + 1>{{vec[I]..., {nullptr, nullptr}}};
 }
-}
+} // namespace detail
 
-constexpr const char * clua_registry_key = "clua_key";
+constexpr const char *clua_registry_key = "clua_key";
 
 /// \brief Initizizes clua, leaving the context on top of stack
 /// \param L Lua state.
@@ -45,7 +45,8 @@ int clua_init(lua_State *L);
 
 /// \brief Returns the C++ type name as a string
 /// \tparam T C++ type whose name is desired
-template <typename T> const char *clua_rawname(void) {
+template <typename T>
+const char *clua_rawname(void) {
     return boost::typeindex::type_id_with_cvr<T>().raw_name();
 }
 
@@ -53,7 +54,8 @@ template <typename T> const char *clua_rawname(void) {
 /// \param N number of Regs
 /// \param regs C array with Regs
 template <size_t N>
-constexpr auto clua_make_luaL_Reg_array(luaL_Reg const (&vec)[N]) noexcept { // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+constexpr auto clua_make_luaL_Reg_array(
+    luaL_Reg const (&vec)[N]) noexcept { // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
     return detail::clua_make_luaL_Reg_array_impl(vec, std::make_index_sequence<N>{});
 }
 
@@ -67,8 +69,7 @@ void clua_gettypemetatable(lua_State *L, int ctxidx = lua_upvalueindex(1)) {
     lua_pushstring(L, clua_rawname<T>());
     lua_rawget(L, ctxidx);
     if (lua_isnil(L, -1)) {
-        luaL_error(L, "unknown type (%s)",
-            boost::typeindex::type_id_with_cvr<T>().pretty_name().c_str());
+        luaL_error(L, "unknown type (%s)", boost::typeindex::type_id_with_cvr<T>().pretty_name().c_str());
     }
 }
 
@@ -160,8 +161,7 @@ template <typename T>
 void clua_argerror(lua_State *L, int idx, int ctxidx = lua_upvalueindex(1)) {
     idx = lua_absindex(L, idx);
     clua_pushname<T>(L, ctxidx);
-    luaL_argerror(L, idx, lua_pushfstring(L, "expected %s",
-        lua_tostring(L, -1)));
+    luaL_argerror(L, idx, lua_pushfstring(L, "expected %s", lua_tostring(L, -1)));
 }
 
 /// \brief Checks if Lua object matches associated type and returns a reference
@@ -183,8 +183,7 @@ T &clua_check(lua_State *L, int idx, int ctxidx = lua_upvalueindex(1)) {
 /// \param L Lua state.
 /// \param ctxidx Index (or pseudo-index) of clua context
 template <typename T>
-void clua_setmetatable(lua_State *L, int objidx,
-    int ctxidx = lua_upvalueindex(1)) {
+void clua_setmetatable(lua_State *L, int objidx, int ctxidx = lua_upvalueindex(1)) {
     objidx = lua_absindex(L, objidx);
     clua_gettypemetatable<T>(L, ctxidx);
     lua_setmetatable(L, objidx);
@@ -198,7 +197,7 @@ void clua_setmetatable(lua_State *L, int objidx,
 ///
 template <typename T>
 int clua_push(lua_State *L, T &&value, int ctxidx = lua_upvalueindex(1)) {
-    T* ptr = reinterpret_cast<T*>(lua_newuserdata(L, sizeof(T)));
+    T *ptr = reinterpret_cast<T *>(lua_newuserdata(L, sizeof(T)));
     new (ptr) T{std::forward<T>(value)};
     clua_setmetatable<T>(L, -1, ctxidx);
     return 1;
@@ -222,14 +221,13 @@ T &clua_push_to(lua_State *L, T &&value, int ctxidx = lua_upvalueindex(1)) {
 /// \param nup Number of upvalues (on top of stack)
 /// \param ctxidx Index (or pseudo-index) of clua context
 template <typename T>
-void clua_setmetamethods(lua_State *L, const luaL_Reg *methods,
-    int nup, int ctxidx) {
-    ctxidx = lua_absindex(L, ctxidx); // up1 .. upn
+void clua_setmetamethods(lua_State *L, const luaL_Reg *methods, int nup, int ctxidx) {
+    ctxidx = lua_absindex(L, ctxidx);    // up1 .. upn
     clua_gettypemetatable<T>(L, ctxidx); // up1 .. upn meta
-    lua_insert(L, -nup-1); // meta up1 .. upn
-    lua_pushvalue(L, ctxidx); // meta up1 .. upn ctxtab
-    luaL_setfuncs(L, methods, nup+1); // meta
-    lua_pop(L, 1); //
+    lua_insert(L, -nup - 1);             // meta up1 .. upn
+    lua_pushvalue(L, ctxidx);            // meta up1 .. upn ctxtab
+    luaL_setfuncs(L, methods, nup + 1);  // meta
+    lua_pop(L, 1);                       //
 }
 
 /// \brief Sets methods of a previously defined Lua type (i.e., fills out the
@@ -240,22 +238,21 @@ void clua_setmetamethods(lua_State *L, const luaL_Reg *methods,
 /// \param nup Number of upvalues (on top of stack)
 /// \param ctxidx Index (or pseudo-index) of clua context
 template <typename T>
-void clua_setmethods(lua_State *L, const luaL_Reg *methods,
-    int nup, int ctxidx) {
-    ctxidx = lua_absindex(L, ctxidx); // up1 .. upn
+void clua_setmethods(lua_State *L, const luaL_Reg *methods, int nup, int ctxidx) {
+    ctxidx = lua_absindex(L, ctxidx);    // up1 .. upn
     clua_gettypemetatable<T>(L, ctxidx); // up1 .. upn meta
     lua_getfield(L, -1, "__index");
     if (!lua_istable(L, -1)) {
         lua_pop(L, 1);
-        lua_newtable(L); // up1 .. upn meta index
+        lua_newtable(L);      // up1 .. upn meta index
         lua_pushvalue(L, -1); // up1 .. upn meta index index
         lua_setfield(L, -3, "__index");
-    } // up1 .. upn meta index
-    lua_insert(L, -nup-2); // index up1 .. upn meta
-    lua_pop(L, 1); // index up1 .. upn
-    lua_pushvalue(L, ctxidx); // index up1 .. upn ctxtab
-    luaL_setfuncs(L, methods, nup+1); // index
-    lua_pop(L, 1); //
+    }                                   // up1 .. upn meta index
+    lua_insert(L, -nup - 2);            // index up1 .. upn meta
+    lua_pop(L, 1);                      // index up1 .. upn
+    lua_pushvalue(L, ctxidx);           // index up1 .. upn ctxtab
+    luaL_setfuncs(L, methods, nup + 1); // index
+    lua_pop(L, 1);                      //
 }
 
 /// \brief Creates a new Lua type
@@ -274,18 +271,18 @@ void clua_createtype(lua_State *L, const char *name, int ctxidx) {
     lua_pop(L, 1);
     // create new type
     auto default_meta = clua_make_luaL_Reg_array({
-        { "__gc", &clua_gc<T> },
-        { "__tostring", &clua_tostring<T> },
+        {"__gc", &clua_gc<T>},
+        {"__tostring", &clua_tostring<T>},
     });
-    lua_pushstring(L, clua_rawname<T>()); // T_rawname
-    lua_newtable(L); // T_rawname T_meta
-    lua_pushstring(L, name); // T_rawname T_meta T_name
-    lua_setfield(L, -2, "name"); // T_rawname T_meta
-    lua_pushvalue(L, ctxidx); // T_rawname T_meta ctxtab
+    lua_pushstring(L, clua_rawname<T>());     // T_rawname
+    lua_newtable(L);                          // T_rawname T_meta
+    lua_pushstring(L, name);                  // T_rawname T_meta T_name
+    lua_setfield(L, -2, "name");              // T_rawname T_meta
+    lua_pushvalue(L, ctxidx);                 // T_rawname T_meta ctxtab
     luaL_setfuncs(L, default_meta.data(), 1); // T_rawname T_meta
-    lua_pushliteral(L, "access denied"); // T_rawname T_meta "access denied"
-    lua_setfield(L, -2, "__metatable"); // T_rawname T_meta
-    lua_rawset(L, ctxidx); //
+    lua_pushliteral(L, "access denied");      // T_rawname T_meta "access denied"
+    lua_setfield(L, -2, "__metatable");       // T_rawname T_meta
+    lua_rawset(L, ctxidx);                    //
 }
 
 /// \brief Creates a new Lua type if it doesn't exists.
@@ -293,13 +290,12 @@ void clua_createtype(lua_State *L, const char *name, int ctxidx) {
 /// \tparam T Associated C++ type
 /// \param L Lua state
 /// \param ctxidx Index (or pseudo-index) of clua context
-template<typename T>
+template <typename T>
 void clua_createnewtype(lua_State *L, int ctxidx) {
     if (!clua_typeexists<T>(L, ctxidx)) {
         clua_createtype<T>(L, boost::typeindex::type_id_with_cvr<T>().pretty_name().c_str(), ctxidx);
     }
 }
-
 
 /// \brief Sets the lua named field to integer value
 /// \param L Lua state
@@ -313,7 +309,7 @@ void clua_setintegerfield(lua_State *L, uint64_t val, const char *name, int idx)
 /// \param val String value
 /// \param idx Index (or pseudo-index) of object in stack
 /// \param ctxidx Index (or pseudo-index) of clua context
-void clua_setstringfield(lua_State *L, const char* val, const char *name, int idx);
+void clua_setstringfield(lua_State *L, const char *val, const char *name, int idx);
 
 /// \brief Sets the lua named field to string value of particular size
 /// \param L Lua state
@@ -321,7 +317,7 @@ void clua_setstringfield(lua_State *L, const char* val, const char *name, int id
 /// \param len Size of string
 /// \param idx Index (or pseudo-index) of object in stack
 /// \param ctxidx Index (or pseudo-index) of clua context
-void clua_setlstringfield(lua_State *L, const char* val, size_t len, const char *name, int idx);
+void clua_setlstringfield(lua_State *L, const char *val, size_t len, const char *name, int idx);
 
 /// \brief Sets the lua named field to boolean value
 /// \param L Lua state

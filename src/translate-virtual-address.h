@@ -58,8 +58,7 @@ static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t va
         return false;
     }
     uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-    unsigned char *hpage = pma.get_memory().get_host_memory() +
-        (paddr_page - pma.get_start());
+    unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
     uint64_t hoffset = paddr - paddr_page;
     // log writes to memory
     a.write_memory_word(paddr, hpage, hoffset, val);
@@ -81,8 +80,7 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
         return false;
     }
     uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-    unsigned char *hpage = pma.get_memory().get_host_memory() +
-        (paddr_page - pma.get_start());
+    unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
     uint64_t hoffset = paddr - paddr_page;
     a.read_memory_word(paddr, hpage, hoffset, pval);
     return true;
@@ -98,7 +96,8 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
-    auto note = a.make_scoped_note("translate_virtual_address"); (void) note;
+    auto note = a.make_scoped_note("translate_virtual_address");
+    (void) note;
     auto priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
 
@@ -220,7 +219,7 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
             // Add page offset in vaddr to ppn to form physical address
             *ppaddr = (vaddr & vaddr_mask) | (ppn & ~vaddr_mask);
             return true;
-        // xwr == 0 means we have a pointer to the start of the next page table
+            // xwr == 0 means we have a pointer to the start of the next page table
         } else {
             pte_addr = ppn;
         }

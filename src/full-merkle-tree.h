@@ -17,10 +17,10 @@
 #ifndef FULL_MERKLE_TREE_H
 #define FULL_MERKLE_TREE_H
 
-#include <limits>
 #include "keccak-256-hasher.h"
-#include "pristine-merkle-tree.h"
 #include "merkle-tree-proof.h"
+#include "pristine-merkle-tree.h"
+#include <limits>
 
 /// \file
 /// \brief Full Merkle tree interface.
@@ -31,7 +31,6 @@ namespace cartesi {
 /// \details This class implements a full merkle tree
 class full_merkle_tree {
 public:
-
     /// \brief Hasher class.
     using hasher_type = keccak_256_hasher;
 
@@ -48,16 +47,14 @@ public:
     /// \param log2_root_size Log<sub>2</sub> of root node
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
-    full_merkle_tree(int log2_root_size, int log2_leaf_size,
-        int log2_word_size);
+    full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size);
 
     /// \brief Constructor for list of consecutive leaf hashes
     /// \param log2_root_size Log<sub>2</sub> of root node
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
     /// \param leaves List of leaf hashes
-    full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size,
-        const std::vector<hash_type> &leaves);
+    full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, const std::vector<hash_type> &leaves);
 
     /// \brief Returns log<sub>2</sub> of size of tree
     int get_log2_root_size(void) const {
@@ -89,23 +86,21 @@ public:
     proof_type get_proof(address_type address, int log2_size) const;
 
 private:
-
     /// \brief Throws exception if log<sub>2</sub> sizes are inconsistent
     ///  with one another
     /// \param log2_root_size Log<sub>2</sub> of root node
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
-    static void check_log2_sizes(int log2_root_size, int log2_leaf_size,
-        int log2_word_size);
+    static void check_log2_sizes(int log2_root_size, int log2_leaf_size, int log2_word_size);
 
     /// \brief Returns the index of the left child of node at given index
     static constexpr int left_child_index(int index) {
-        return 2*index;
+        return 2 * index;
     }
 
     /// \brief Returns the index of the right child of node at given index
     static constexpr int right_child_index(int index) {
-        return 2*index+1;
+        return 2 * index + 1;
     }
 
     /// \brief Initialize all nodes for the pristine subtree with root
@@ -113,8 +108,7 @@ private:
     /// \param pristine Hashes for pristine subtree nodes of all sizes
     /// \param index Index of root for subtree to initialize
     /// \param log2_size Log<sub>2</sub> size of root at index
-    void init_pristine_subtree(const pristine_merkle_tree &pristine,
-        int index, int log2_size);
+    void init_pristine_subtree(const pristine_merkle_tree &pristine, int index, int log2_size);
 
     /// \brief Initialize all nodes for the subtree with root at a given index
     /// \param h Hasher object
@@ -129,19 +123,17 @@ private:
     /// \details The page hashes in leaves are copied to the appropriate
     /// subtree nodes, in order, and the rest are filled with pristine
     /// page hashes
-    void init_tree(const pristine_merkle_tree &pristine,
-        const std::vector<hash_type> &leaves);
+    void init_tree(const pristine_merkle_tree &pristine, const std::vector<hash_type> &leaves);
 
     /// \brief Returns index of a node in the tree array
     /// \param address Node address
     /// \param log2_size
     address_type get_node_index(address_type address, int log2_size) const;
 
-    int m_log2_root_size;            ///< Log<sub>2</sub> of tree size
-    int m_log2_leaf_size;            ///< Log<sub>2</sub> of leaf size
-    address_type m_max_leaves;       ///< Maximum number of leaves
-    std::vector<hash_type> m_tree;   ///< Binary heap with tree node hashes
-
+    int m_log2_root_size;          ///< Log<sub>2</sub> of tree size
+    int m_log2_leaf_size;          ///< Log<sub>2</sub> of leaf size
+    address_type m_max_leaves;     ///< Maximum number of leaves
+    std::vector<hash_type> m_tree; ///< Binary heap with tree node hashes
 };
 
 } // namespace cartesi

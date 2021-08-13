@@ -17,7 +17,6 @@
 /// \file
 /// \brief Cartesi machine emulator C API grpc related interface
 
-
 #ifndef CM_GRPC_C_API_H
 #define CM_GRPC_C_API_H
 
@@ -27,8 +26,8 @@
 
 #endif
 
-#include "machine-c-defines.h"
 #include "machine-c-api.h"
+#include "machine-c-defines.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -45,7 +44,6 @@ typedef struct {
 
 /// \brief Handle of the grpc stub
 typedef struct cm_grpc_machine_stub_tag cm_grpc_machine_stub;
-
 
 /// \brief Create server stub for remote Cartesi machine server
 /// \param address Address of the remove Cartesi server
@@ -70,8 +68,7 @@ CM_API void cm_delete_grpc_machine_stub(const cm_grpc_machine_stub *stub);
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_create_grpc_machine(const cm_grpc_machine_stub *stub, const cm_machine_config *config,
-                                  const cm_machine_runtime_config *runtime_config,
-                                  cm_machine **new_machine, char **err_msg);
+    const cm_machine_runtime_config *runtime_config, cm_machine **new_machine, char **err_msg);
 
 /// \brief Create remote machine instance from previously serialized directory
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object
@@ -83,9 +80,7 @@ CM_API int cm_create_grpc_machine(const cm_grpc_machine_stub *stub, const cm_mac
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_load_grpc_machine(const cm_grpc_machine_stub *stub, const char *dir,
-                                const cm_machine_runtime_config *runtime_config,
-                                cm_machine **new_machine, char **err_msg);
-
+    const cm_machine_runtime_config *runtime_config, cm_machine **new_machine, char **err_msg);
 
 /// \brief Ged default machine config from server
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object
@@ -94,8 +89,8 @@ CM_API int cm_load_grpc_machine(const cm_grpc_machine_stub *stub, const char *di
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_grpc_get_default_config(const cm_grpc_machine_stub *stub, const cm_machine_config **config, char **err_msg);
-
+CM_API int cm_grpc_get_default_config(const cm_grpc_machine_stub *stub, const cm_machine_config **config,
+    char **err_msg);
 
 /// \brief Checks the internal consistency of an access log
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object
@@ -105,7 +100,8 @@ CM_API int cm_grpc_get_default_config(const cm_grpc_machine_stub *stub, const cm
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_7_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_grpc_verify_access_log(const cm_grpc_machine_stub *stub, const cm_access_log *log, bool one_based, char **err_msg);
+CM_API int cm_grpc_verify_access_log(const cm_grpc_machine_stub *stub, const cm_access_log *log, bool one_based,
+    char **err_msg);
 
 /// \brief Checks the validity of a state transition
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object
@@ -118,8 +114,7 @@ CM_API int cm_grpc_verify_access_log(const cm_grpc_machine_stub *stub, const cm_
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_grpc_verify_state_transition(const cm_grpc_machine_stub *stub, const cm_hash *root_hash_before,
-                                           const cm_access_log *log, const cm_hash *root_hash_after,
-                                           bool one_based, char **err_msg);
+    const cm_access_log *log, const cm_hash *root_hash_after, bool one_based, char **err_msg);
 
 /// \brief Gets the address of a general-purpose register from remote cartesi server
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object
@@ -130,7 +125,6 @@ CM_API int cm_grpc_verify_state_transition(const cm_grpc_machine_stub *stub, con
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_grpc_get_x_address(const cm_grpc_machine_stub *stub, int i, uint64_t *val, char **err_msg);
-
 
 /// \brief Gets the address of any CSR from remote server
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object
@@ -160,7 +154,7 @@ CM_API int cm_grpc_dhd_h_address(const cm_grpc_machine_stub *stub, int i, uint64
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_grpc_get_semantic_version(const cm_grpc_machine_stub *stub, const cm_semantic_version **version,
-                                        char **err_msg);
+    char **err_msg);
 
 /// \brief Deletes semantic version instance
 /// \param m Valid pointer to the existing semantic version instance
@@ -178,4 +172,4 @@ CM_API int cm_grpc_shutdown(const cm_grpc_machine_stub *stub, char **err_msg);
 }
 #endif
 
-#endif //CM_GRPC_C_API_H
+#endif // CM_GRPC_C_API_H

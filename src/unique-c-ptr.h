@@ -17,28 +17,28 @@
 #ifndef UNIQUE_C_PTR
 #define UNIQUE_C_PTR
 
+#include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <new>
 #include <system_error>
-#include <cstdlib>
-#include <cstdio>
 
 namespace cartesi {
 
 namespace detail {
-    struct free_deleter {
-        template <typename T>
-        void operator()(T *p) const {
-            // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-pro-type-const-cast)
-            std::free(const_cast<std::remove_const_t<T> *>(p));
-        }
-    };
+struct free_deleter {
+    template <typename T>
+    void operator()(T *p) const {
+        // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-pro-type-const-cast)
+        std::free(const_cast<std::remove_const_t<T> *>(p));
+    }
+};
 
-    struct fclose_deleter {
-        void operator()(FILE *p) const {
-            std::fclose(p);
-        }
-    };
+struct fclose_deleter {
+    void operator()(FILE *p) const {
+        std::fclose(p);
+    }
+};
 } // namespace detail
 
 template <typename T>
@@ -60,15 +60,14 @@ template <typename T>
 static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb, const std::nothrow_t &tag) {
     (void) tag;
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
-    return unique_calloc_ptr<T>(static_cast<T*>(calloc(nmemb, sizeof(T))));
+    return unique_calloc_ptr<T>(static_cast<T *>(calloc(nmemb, sizeof(T))));
 }
 
 static inline unique_file_ptr unique_fopen(const char *pathname, const char *mode) {
     FILE *fp = fopen(pathname, mode);
     if (!fp) {
         throw std::system_error(errno, std::generic_category(),
-            "unable to open '" + std::string{pathname} +
-            "' in mode '" + std::string{mode} + "'");
+            "unable to open '" + std::string{pathname} + "' in mode '" + std::string{mode} + "'");
     }
     return unique_file_ptr{fp};
 }

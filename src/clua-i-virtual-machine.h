@@ -19,9 +19,9 @@
 
 #include <memory>
 
+#include "clua.h"
 #include "i-virtual-machine.h"
 #include "machine-c-api.h"
-#include "clua.h"
 
 /// \file
 /// \brief Cartesi machine Lua interface

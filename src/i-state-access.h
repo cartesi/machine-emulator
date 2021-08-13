@@ -23,8 +23,8 @@
 #include <cstdint>
 #include <type_traits>
 
-#include "meta.h"
 #include "i-dhd-source.h"
+#include "meta.h"
 
 namespace cartesi {
 
@@ -53,7 +53,8 @@ enum class bracket_type;
 /// Methods are provided to read and write each state component.
 /// \}
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
-template <typename DERIVED> class i_state_access { // CRTP
+template <typename DERIVED>
+class i_state_access { // CRTP
 
     /// \brief Returns object cast as the derived class
     DERIVED &derived(void) {
@@ -66,7 +67,6 @@ template <typename DERIVED> class i_state_access { // CRTP
     }
 
 public:
-
     /// \brief Returns machine state for direct access.
     auto &get_naked_state(void) {
         return derived().do_get_naked_state();
@@ -101,7 +101,8 @@ public:
     /// \brief Writes register to general-purpose register.
     /// \tparam reg Register index.
     /// \tparam val New register value.
-    /// \details Writes to register zero *break* the machine. There is an assertion to catch this, but NDEBUG will let the value pass through.
+    /// \details Writes to register zero *break* the machine. There is an assertion to catch this, but NDEBUG will let
+    /// the value pass through.
     void write_x(int reg, uint64_t val) {
         return derived().do_write_x(reg, val);
     }
@@ -531,8 +532,7 @@ public:
     /// DHD_NOT_FOUND if no matching block was found.
     /// \returns The block of data with the given hash, or an empty block
     /// if not found
-    dhd_data dehash(const unsigned char* hash, uint64_t hlength,
-        uint64_t &dlength) {
+    dhd_data dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength) {
         return derived().do_dehash(hash, hlength, dlength);
     }
 
@@ -603,8 +603,7 @@ public:
     /// \param log2_size Log 2 of data length. Must be >= 3 and < 64.
     /// \details The entire chunk of data must fit inside the same memory
     /// PMA range. The search for the PMA range is implicit, and not logged.
-    void write_memory(uint64_t paddr, const unsigned char *data,
-        uint64_t log2_size) {
+    void write_memory(uint64_t paddr, const unsigned char *data, uint64_t log2_size) {
         return derived().do_write_memory(paddr, data, log2_size);
     }
 
@@ -615,8 +614,7 @@ public:
     /// \param hoffset Offset in page (must be aligned to sizeof(T)).
     /// \param pval Pointer to word receiving value.
     template <typename T>
-    void read_memory_word(uint64_t paddr, const unsigned char *hpage,
-        uint64_t hoffset, T *pval) {
+    void read_memory_word(uint64_t paddr, const unsigned char *hpage, uint64_t hoffset, T *pval) {
         static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
         return derived().template do_read_memory_word<T>(paddr, hpage, hoffset, pval);
     }
@@ -628,11 +626,9 @@ public:
     /// \param hoffset Offset in page (must be aligned to sizeof(T)).
     /// \param val Value to be written.
     template <typename T>
-    void write_memory_word(uint64_t paddr, unsigned char *hpage, uint64_t hoffset,
-        T val) {
+    void write_memory_word(uint64_t paddr, unsigned char *hpage, uint64_t hoffset, T val) {
         static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
-        return derived().template do_write_memory_word<T>(paddr, hpage, hoffset,
-            val);
+        return derived().template do_write_memory_word<T>(paddr, hpage, hoffset, val);
     }
 
     /// \brief Obtain PMA entry covering a physical memory word
@@ -644,17 +640,12 @@ public:
     pma_entry &find_pma_entry(uint64_t paddr) {
         return derived().template do_find_pma_entry<T>(paddr);
     }
-
 };
 
 /// \brief SFINAE test implementation of the i_state_access interface
 template <typename DERIVED>
-using is_an_i_state_access = std::integral_constant<
-    bool,
-    is_template_base_of<
-        i_state_access,
-        typename remove_cvref<DERIVED>::type
-    >::value>;
+using is_an_i_state_access =
+    std::integral_constant<bool, is_template_base_of<i_state_access, typename remove_cvref<DERIVED>::type>::value>;
 
 /// \brief Type-trait selecting the use of TLB while
 /// accessing memory in the state

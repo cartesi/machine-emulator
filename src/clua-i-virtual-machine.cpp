@@ -16,23 +16,22 @@
 
 #include <cinttypes>
 
-#include "clua.h"
-#include "clua-i-virtual-machine.h"
 #include "clua-htif.h"
+#include "clua-i-virtual-machine.h"
 #include "clua-machine-util.h"
+#include "clua.h"
 #include "unique-c-ptr.h"
 #include "virtual-machine.h"
 
 namespace cartesi {
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define PRINT_PROCESSOR_CSR(machine, regname) \
-    do {                                      \
-        uint64_t val{0};                     \
-        TRY_EXECUTE(cm_read_##regname(machine, &val, err_msg)); \
-        fprintf(stderr, #regname " = %" PRIx64 "\n", val); \
-    } \
-    while (0)
+#define PRINT_PROCESSOR_CSR(machine, regname)                                                                          \
+    do {                                                                                                               \
+        uint64_t val{0};                                                                                               \
+        TRY_EXECUTE(cm_read_##regname(machine, &val, err_msg));                                                        \
+        fprintf(stderr, #regname " = %" PRIx64 "\n", val);                                                             \
+    } while (0)
 
 /// \brief This is the machine:dump_pmas() method implementation.
 /// \param L Lua state.
@@ -123,40 +122,39 @@ static int machine_obj_index_get_root_hash(lua_State *L) {
 
 /// \brief Generation of machine getters and setters for CSR registers
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define IMPL_MACHINE_OBJ_READ_WRITE(field) \
-    static int machine_obj_index_read_##field(lua_State *L) { \
-        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1); \
-        uint64_t val{}; \
-        TRY_EXECUTE(cm_read_##field(m.get(), &val, err_msg)); \
-        lua_pushinteger(L, val);  \
-        return 1; \
-    }                                      \
-    static int machine_obj_index_write_##field(lua_State *L) { \
-        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1); \
-        TRY_EXECUTE(cm_write_##field(m.get(), luaL_checkinteger(L, 2), err_msg)); \
-        return 0; \
+#define IMPL_MACHINE_OBJ_READ_WRITE(field)                                                                             \
+    static int machine_obj_index_read_##field(lua_State *L) {                                                          \
+        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);                                                   \
+        uint64_t val{};                                                                                                \
+        TRY_EXECUTE(cm_read_##field(m.get(), &val, err_msg));                                                          \
+        lua_pushinteger(L, val);                                                                                       \
+        return 1;                                                                                                      \
+    }                                                                                                                  \
+    static int machine_obj_index_write_##field(lua_State *L) {                                                         \
+        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);                                                   \
+        TRY_EXECUTE(cm_write_##field(m.get(), luaL_checkinteger(L, 2), err_msg));                                      \
+        return 0;                                                                                                      \
     }
 
 /// \brief Generation of machine getters for CSR registers
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define IMPL_MACHINE_OBJ_READ(field) \
-    static int machine_obj_index_read_##field(lua_State *L) { \
-        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1); \
-        uint64_t val{}; \
-        TRY_EXECUTE(cm_read_##field(m.get(), &val, err_msg)); \
-        lua_pushinteger(L, val);  \
-        return 1; \
+#define IMPL_MACHINE_OBJ_READ(field)                                                                                   \
+    static int machine_obj_index_read_##field(lua_State *L) {                                                          \
+        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);                                                   \
+        uint64_t val{};                                                                                                \
+        TRY_EXECUTE(cm_read_##field(m.get(), &val, err_msg));                                                          \
+        lua_pushinteger(L, val);                                                                                       \
+        return 1;                                                                                                      \
     }
 
 /// \brief Generation of machine setters for CSR registers
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define IMPL_MACHINE_OBJ_WRITE(field) \
-    static int machine_obj_index_write_##field(lua_State *L) { \
-        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1); \
-        TRY_EXECUTE(cm_write_##field(m.get(), luaL_checkinteger(L, 2), err_msg)); \
-        return 0; \
+#define IMPL_MACHINE_OBJ_WRITE(field)                                                                                  \
+    static int machine_obj_index_write_##field(lua_State *L) {                                                         \
+        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);                                                   \
+        TRY_EXECUTE(cm_write_##field(m.get(), luaL_checkinteger(L, 2), err_msg));                                      \
+        return 0;                                                                                                      \
     }
-
 
 IMPL_MACHINE_OBJ_READ_WRITE(pc)
 IMPL_MACHINE_OBJ_READ(mvendorid)
@@ -282,7 +280,6 @@ static int machine_obj_index_reset_iflags_Y(lua_State *L) {
     return 0;
 }
 
-
 /// \brief This is the machine:read_memory() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_read_memory(lua_State *L) {
@@ -303,7 +300,6 @@ static int machine_obj_index_read_memory(lua_State *L) {
     managed_data.reset();
     return 1;
 }
-
 
 /// \brief This is the machine:read_word() method implementation.
 /// \param L Lua state.
@@ -330,7 +326,7 @@ static int machine_obj_index_step(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(nullptr));
     TRY_EXECUTE(cm_step(m.get(), clua_check_cm_log_type(L, 2), true, &managed_log.get(), err_msg));
-    clua_push_cm_access_log(L,  managed_log.get());
+    clua_push_cm_access_log(L, managed_log.get());
     managed_log.reset();
     return 1;
 }
@@ -372,7 +368,6 @@ static int machine_obj_index_verify_merkle_tree(lua_State *L) {
     return 1;
 }
 
-
 /// \brief This is the machine:write_csr() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_write_csr(lua_State *L) {
@@ -380,7 +375,6 @@ static int machine_obj_index_write_csr(lua_State *L) {
     TRY_EXECUTE(cm_write_csr(m.get(), clua_check_cm_proc_csr(L, 2), luaL_checkinteger(L, 3), err_msg));
     return 0;
 }
-
 
 /// \brief This is the machine:write_x() method implementation.
 /// \param L Lua state.
@@ -413,21 +407,19 @@ static int machine_obj_index_write_memory(lua_State *L) {
     size_t length{0};
     const uint64_t address = luaL_checkinteger(L, 2);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const auto *data = reinterpret_cast<const unsigned char *>(
-        luaL_checklstring(L, 3, &length));
+    const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
     TRY_EXECUTE(cm_write_memory(m.get(), address, data, length, err_msg));
     lua_pushboolean(L, true);
     return 1;
 }
-
 
 /// \brief Replaces a flash drive.
 /// \param L Lua state.
 static int machine_obj_index_replace_flash_drive(lua_State *L) {
     lua_settop(L, 2);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto &managed_flash_drive_config = clua_push_to(L,
-        clua_managed_cm_ptr<cm_flash_drive_config>(new cm_flash_drive_config{}));
+    auto &managed_flash_drive_config =
+        clua_push_to(L, clua_managed_cm_ptr<cm_flash_drive_config>(new cm_flash_drive_config{}));
     *(managed_flash_drive_config.get()) = clua_check_cm_flash_drive_config(L, 2);
     TRY_EXECUTE(cm_replace_flash_drive(m.get(), managed_flash_drive_config.get(), err_msg));
     managed_flash_drive_config.reset();
@@ -565,10 +557,8 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
 
 int clua_i_virtual_machine_init(lua_State *L, int ctxidx) {
     if (!clua_typeexists<clua_managed_cm_ptr<cm_machine>>(L, ctxidx)) {
-        clua_createtype<clua_managed_cm_ptr<cm_machine>>(L,
-            "cartesi machine object", ctxidx);
-        clua_setmethods<clua_managed_cm_ptr<cm_machine>>(L,
-            machine_obj_index.data(), 0, ctxidx);
+        clua_createtype<clua_managed_cm_ptr<cm_machine>>(L, "cartesi machine object", ctxidx);
+        clua_setmethods<clua_managed_cm_ptr<cm_machine>>(L, machine_obj_index.data(), 0, ctxidx);
     }
     return 1;
 }

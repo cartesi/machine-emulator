@@ -17,12 +17,12 @@
 #ifndef PRISTINE_MERKLE_TREE_H
 #define PRISTINE_MERKLE_TREE_H
 
-#include <cstdint>
 #include <cassert>
+#include <cstdint>
 #include <vector>
 
-#include "meta.h"
 #include "keccak-256-hasher.h"
+#include "meta.h"
 
 /// \file
 /// \brief Pristine Merkle tree interface.
@@ -32,7 +32,6 @@ namespace cartesi {
 /// \brief Hashes of pristine subtrees for a range of sizes
 class pristine_merkle_tree {
 public:
-
     /// \brief Hasher class.
     using hasher_type = keccak_256_hasher;
 
@@ -53,11 +52,9 @@ public:
     const hash_type &get_hash(int log2_size) const;
 
 private:
-
     int m_log2_root_size;            ///< Log<sub>2</sub> of tree size
     int m_log2_word_size;            ///< Log<sub>2</sub> of word size
     std::vector<hash_type> m_hashes; ///< Vector with hashes
-
 };
 
 } // namespace cartesi

@@ -31,18 +31,16 @@ using dhd_data = std::vector<unsigned char>;
 
 /// \brief Mapping between CSRs and their relative addresses in DHD memory
 enum class dhd_csr {
-    reserved  = UINT64_C(0x0),
-    tstart    = UINT64_C(0x8),
-    tlength   = UINT64_C(0x10),
-    dlength   = UINT64_C(0x18),
-    hlength   = UINT64_C(0x20),
-    h0        = UINT64_C(0x28)
+    reserved = UINT64_C(0x0),
+    tstart = UINT64_C(0x8),
+    tlength = UINT64_C(0x10),
+    dlength = UINT64_C(0x18),
+    hlength = UINT64_C(0x20),
+    h0 = UINT64_C(0x28)
 };
 
 /// \brief DHD constants
-enum dhd_constants: uint64_t {
-    DHD_NOT_FOUND = UINT64_C(-1)
-};
+enum dhd_constants : uint64_t { DHD_NOT_FOUND = UINT64_C(-1) };
 
 /// \brief Obtains the relative address of a CSR in DHD memory.
 /// \param reg CSR name.

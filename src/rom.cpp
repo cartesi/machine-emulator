@@ -14,8 +14,8 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#include <stdexcept>
 #include <cinttypes>
+#include <stdexcept>
 
 /// \file
 /// \brief Bootstrap and device tree in ROM

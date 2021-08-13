@@ -17,108 +17,106 @@
 #ifndef CLUA_MACHINE_UTIL_H
 #define CLUA_MACHINE_UTIL_H
 
-#include "clua.h"
-#include "machine-merkle-tree.h"
 #include "access-log.h"
+#include "clua.h"
+#include "grpc-machine-c-api.h"
+#include "machine-c-api.h"
+#include "machine-merkle-tree.h"
 #include "machine.h"
 #include "semantic-version.h"
-#include "machine-c-api.h"
-#include "grpc-machine-c-api.h"
 
 /// \file
 /// \brief Cartesi machine Lua interface helper functions
 
 namespace cartesi {
 
-#define TRY_EXECUTE(func_call) \
-    do {                       \
-       auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr)); \
-       char **err_msg = &managed_err_msg.get();\
-       if (func_call != 0) {                   \
-           return luaL_error(L, *err_msg); \
-       }                                       \
-       lua_pop(L, 1);                           \
+#define TRY_EXECUTE(func_call)                                                                                         \
+    do {                                                                                                               \
+        auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr));                                   \
+        char **err_msg = &managed_err_msg.get();                                                                       \
+        if (func_call != 0) {                                                                                          \
+            return luaL_error(L, *err_msg);                                                                            \
+        }                                                                                                              \
+        lua_pop(L, 1);                                                                                                 \
     } while (0)
 
-#define TRY_EXECUTE_CTXIDX(func_call, ctxidx) \
-    do {                       \
-       auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr), ctxidx); \
-       char **err_msg = &managed_err_msg.get();\
-       if (func_call != 0) {                   \
-           return luaL_error(L, *err_msg); \
-       }                                       \
-       lua_pop(L, 1);                           \
+#define TRY_EXECUTE_CTXIDX(func_call, ctxidx)                                                                          \
+    do {                                                                                                               \
+        auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr), ctxidx);                           \
+        char **err_msg = &managed_err_msg.get();                                                                       \
+        if (func_call != 0) {                                                                                          \
+            return luaL_error(L, *err_msg);                                                                            \
+        }                                                                                                              \
+        lua_pop(L, 1);                                                                                                 \
     } while (0)
 
 /// \brief Create overloaded deleters for C API objects
-template<typename T>
+template <typename T>
 void cm_delete(T *ptr);
 
 /// \brief Deleter for C string
-template<>
+template <>
 void cm_delete<char>(char *err_msg);
 
 /// \brief Deleter for C data buffer
-template<>
+template <>
 void cm_delete<unsigned char>(unsigned char *ptr);
 
 /// \brief Deleter for C api machine configuration
-template<>
+template <>
 void cm_delete<const cm_machine_config>(const cm_machine_config *c);
-template<>
+template <>
 void cm_delete<cm_machine_config>(cm_machine_config *c);
 
 /// \brief Deleter for C api machine
-template<>
+template <>
 void cm_delete<cm_machine>(cm_machine *m);
 
 /// \brief Deleter for C api runtime machine configuration
-template<>
+template <>
 void cm_delete(cm_machine_runtime_config *c);
 
 /// \brief Deleter for C api access log
-template<>
+template <>
 void cm_delete(cm_access_log *a);
 
 /// \brief Deleter for C api merkle tree proof
-template<>
+template <>
 void cm_delete(cm_merkle_tree_proof *p);
 
 /// \brief Deleter for C api flash drive config
-template<>
+template <>
 void cm_delete(cm_flash_drive_config *p);
 
 /// \brief Deleter for C api ram config
-template<>
+template <>
 void cm_delete(cm_ram_config *p);
 
 /// \brief Deleter for C api rom config
-template<>
+template <>
 void cm_delete(cm_rom_config *p);
 
 /// \brief Deleter for C api dhd config
-template<>
+template <>
 void cm_delete(cm_dhd_config *p);
 
 /// \brief Deleter for C api dhd runtime config
-template<>
+template <>
 void cm_delete(cm_dhd_runtime_config *p);
 
-template<typename T>
+template <typename T>
 class clua_managed_cm_ptr final {
 public:
-    clua_managed_cm_ptr(): m_ptr{nullptr} {
-    }
+    clua_managed_cm_ptr() : m_ptr{nullptr} {}
 
-    explicit clua_managed_cm_ptr(T *ptr): m_ptr{ptr} {
-    }
+    explicit clua_managed_cm_ptr(T *ptr) : m_ptr{ptr} {}
 
     explicit clua_managed_cm_ptr(clua_managed_cm_ptr &&other) {
         m_ptr = other.m_ptr;
         other.m_ptr = nullptr;
     }
 
-    clua_managed_cm_ptr& operator=(clua_managed_cm_ptr &&other) {
+    clua_managed_cm_ptr &operator=(clua_managed_cm_ptr &&other) {
         reset();
         std::swap(m_ptr, other.m_ptr);
         return *this;
@@ -129,8 +127,7 @@ public:
     }
 
     clua_managed_cm_ptr(const clua_managed_cm_ptr &other) = delete;
-    void operator= (const clua_managed_cm_ptr &other) = delete;
-
+    void operator=(const clua_managed_cm_ptr &other) = delete;
 
     T *operator->() const noexcept {
         return m_ptr;
@@ -140,13 +137,13 @@ public:
         return *m_ptr;
     }
 
-    void reset(T* ptr = nullptr) {
+    void reset(T *ptr = nullptr) {
         cm_delete(m_ptr); // use overloaded deleter
         m_ptr = ptr;
     }
 
-    T* release(void) noexcept {
-        auto* tmp_ptr = m_ptr;
+    T *release(void) noexcept {
+        auto *tmp_ptr = m_ptr;
         m_ptr = nullptr;
         return tmp_ptr;
     }
@@ -192,7 +189,6 @@ void clua_push_hash(lua_State *L, const machine_merkle_tree::hash_type &hash);
 /// \param L Lua state
 /// \param hash Hash to be pushed
 void clua_push_cm_hash(lua_State *L, const cm_hash *hash);
-
 
 /// \brief Pushes a machine_config to the Lua stack
 /// \param L Lua state
@@ -278,12 +274,11 @@ cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx);
 /// \returns The access_log
 access_log clua_check_access_log(lua_State *L, int tabidx);
 
-
 /// \brief Loads an cm_access_log from Lua.
 /// \param L Lua state
 /// \param tabidx Access_log stack index.
 /// \returns The access log. Must be delete by the user with cm_delete_access_log
-cm_access_log* clua_check_cm_access_log(lua_State *L, int tabidx);
+cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx);
 
 /// \brief Loads a machine_config object from a Lua table
 /// \param L Lua state
@@ -295,28 +290,26 @@ machine_config clua_check_machine_config(lua_State *L, int tabidx);
 /// \param tabidx Index of table in Lua stack
 /// \param ctxidx Index of clua context
 /// \returns Allocated machine config. It must be deleted with cm_delete_machine_config
-cm_machine_config* clua_check_cm_machine_config(lua_State *L, int tabidx, int ctxidx = lua_upvalueindex(1));
+cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ctxidx = lua_upvalueindex(1));
 
 /// \brief Loads a machine_runtime_config object from a Lua table
 /// \param L Lua state
 /// \param tabidx Index of table in Lua stack
-machine_runtime_config clua_check_machine_runtime_config(lua_State *L,
-    int tabidx);
+machine_runtime_config clua_check_machine_runtime_config(lua_State *L, int tabidx);
 
 /// \brief Loads a cm_machine_runtime_config object from a Lua table
 /// \param L Lua state
 /// \param tabidx Index of table in Lua stack
 /// \param ctxidx Index of clua context
 /// \returns Allocated machine runtime config object. It must be deleted with cm_delete_machine_runtime_config
-cm_machine_runtime_config* clua_check_cm_machine_runtime_config(lua_State *L,
-    int tabidx, int ctxidx = lua_upvalueindex(1));
+cm_machine_runtime_config *clua_check_cm_machine_runtime_config(lua_State *L, int tabidx,
+    int ctxidx = lua_upvalueindex(1));
 
 /// \brief Loads an optional machine_runtime_config object from a Lua
 /// \param L Lua state
 /// \param tabidx Index of table in Lua stack
 /// \param r Default value if optional runtime config not present
-machine_runtime_config clua_opt_machine_runtime_config(lua_State *L,
-    int tabidx, const machine_runtime_config &r);
+machine_runtime_config clua_opt_machine_runtime_config(lua_State *L, int tabidx, const machine_runtime_config &r);
 
 /// \brief Loads an optional cm_machine_runtime_config object from a Lua
 /// \param L Lua state
@@ -324,8 +317,8 @@ machine_runtime_config clua_opt_machine_runtime_config(lua_State *L,
 /// \param r Default C api machine runtime config value if optional field not present
 /// \param ctxidx Index of clua context
 /// \returns Allocated machine runtime config object. It must be deleted with cm_delete_machine_runtime_config
-cm_machine_runtime_config* clua_opt_cm_machine_runtime_config(lua_State *L,
-    int tabidx, const cm_machine_runtime_config *r, int ctxidx = lua_upvalueindex(1));
+cm_machine_runtime_config *clua_opt_cm_machine_runtime_config(lua_State *L, int tabidx,
+    const cm_machine_runtime_config *r, int ctxidx = lua_upvalueindex(1));
 
 /// \brief Loads flash drive config from a Lua table.
 /// \param L Lua state

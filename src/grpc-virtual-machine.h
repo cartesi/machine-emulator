@@ -18,8 +18,8 @@
 #define GRPC_VIRTUAL_MACHINE
 
 #include <cstdint>
-#include <string>
 #include <memory>
+#include <string>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -42,6 +42,7 @@ namespace cartesi {
 class grpc_machine_stub {
     std::string m_address;
     std::unique_ptr<CartesiMachine::Machine::Stub> m_stub;
+
 public:
     grpc_machine_stub(const std::string &address);
     void reconnect(void);
@@ -54,13 +55,10 @@ using grpc_machine_stub_ptr = std::shared_ptr<grpc_machine_stub>;
 
 /// \class grpc_virtual_machine
 /// \brief GRPC implementation of the i_virtual_machine interface
-class grpc_virtual_machine: public i_virtual_machine {
+class grpc_virtual_machine : public i_virtual_machine {
 public:
-
-    grpc_virtual_machine(grpc_machine_stub_ptr stub, const std::string &dir,
-        const machine_runtime_config &r = {});
-    grpc_virtual_machine(grpc_machine_stub_ptr stub, const machine_config &c,
-        const machine_runtime_config &r = {});
+    grpc_virtual_machine(grpc_machine_stub_ptr stub, const std::string &dir, const machine_runtime_config &r = {});
+    grpc_virtual_machine(grpc_machine_stub_ptr stub, const machine_config &c, const machine_runtime_config &r = {});
 
     grpc_virtual_machine(const grpc_virtual_machine &other) = delete;
     grpc_virtual_machine(grpc_virtual_machine &&other) noexcept = delete;
@@ -74,12 +72,10 @@ public:
 
     static machine_config get_default_config(const grpc_machine_stub_ptr &stub);
 
-    static void verify_access_log(const grpc_machine_stub_ptr &stub,
-        const access_log &log, bool one_based = false);
+    static void verify_access_log(const grpc_machine_stub_ptr &stub, const access_log &log, bool one_based = false);
 
-    static void verify_state_transition(const grpc_machine_stub_ptr &stub,
-        const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after, bool one_based = false);
+    static void verify_state_transition(const grpc_machine_stub_ptr &stub, const hash_type &root_hash_before,
+        const access_log &log, const hash_type &root_hash_after, bool one_based = false);
 
     static uint64_t get_x_address(const grpc_machine_stub_ptr &stub, int i);
 

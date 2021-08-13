@@ -14,9 +14,9 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#include "clua.h"
-#include "clua-i-virtual-machine.h"
 #include "clua-grpc-machine.h"
+#include "clua-i-virtual-machine.h"
+#include "clua.h"
 #include "machine-c-defines.h"
 
 /// \file
@@ -30,7 +30,7 @@ CM_API int luaopen_cartesi_grpc(lua_State *L) {
     using namespace cartesi;
 
     // Initialize and export grpc machine bind
-    clua_init(L); // cluactx
+    clua_init(L);    // cluactx
     lua_newtable(L); // cluactx grpc
     // Initialize and export machine bind
     clua_i_virtual_machine_export(L, -2); // cluactx grpc
@@ -39,5 +39,4 @@ CM_API int luaopen_cartesi_grpc(lua_State *L) {
 
     return 1;
 }
-
 }

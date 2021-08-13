@@ -14,23 +14,23 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#include <cstdint>
-#include <cstring>
-#include <cstdarg>
-#include <cassert>
-#include <cstdlib>
-#include <cstdio>
-#include <cinttypes>
-#include <optional>
 #include <array>
+#include <cassert>
+#include <cinttypes>
+#include <cstdarg>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <optional>
 
+#include "back-merkle-tree.h"
+#include "complete-merkle-tree.h"
 #include "cryptopp-keccak-256-hasher.h"
-#include "unique-c-ptr.h"
+#include "full-merkle-tree.h"
 #include "merkle-tree-proof.h"
 #include "pristine-merkle-tree.h"
-#include "complete-merkle-tree.h"
-#include "full-merkle-tree.h"
-#include "back-merkle-tree.h"
+#include "unique-c-ptr.h"
 
 using namespace cartesi;
 using hasher_type = cryptopp_keccak_256_hasher;
@@ -72,7 +72,7 @@ static bool intval(const char *pre, const char *str, int *val) {
 /// \param hash Hash to be printed.
 /// \param f File to print to
 static void print_hash(const hash_type &hash, FILE *f) {
-    for (auto b: hash) {
+    for (auto b : hash) {
         fprintf(f, "%02x", static_cast<int>(b));
     }
     fprintf(f, "\n");
@@ -82,13 +82,13 @@ static void print_hash(const hash_type &hash, FILE *f) {
 /// \param f File to read from
 /// \returns Hash if successful, nothing otherwise
 static std::optional<hash_type> read_hash(FILE *f) {
-    std::array<char, hasher_type::hash_size*2> hex_hash{};
+    std::array<char, hasher_type::hash_size * 2> hex_hash{};
     if (fread(hex_hash.data(), 1, hex_hash.size(), f) != hex_hash.size()) {
         return {};
     }
     hash_type h;
     for (unsigned i = 0; i < hasher_type::hash_size; ++i) {
-        std::array<char, 3> hex_c = {hex_hash[2*i], hex_hash[2*i+1], '\0'};
+        std::array<char, 3> hex_c = {hex_hash[2 * i], hex_hash[2 * i + 1], '\0'};
         unsigned c = 0;
         // NOLINTNEXTLINE(cert-err34-c): we just generated the string so we don't need to verify it
         if (sscanf(hex_c.data(), "%x", &c) != 1) {
@@ -116,8 +116,7 @@ __attribute__((format(printf, 1, 2))) static void error(const char *fmt, ...) {
 /// \param leaf Pointer to leaf data. Must contain 2^log2_word_size bytes
 /// \param log2_word Log<sub>2</sub> of word size
 /// \param hash Receives the leaf hash
-static void get_word_hash(hasher_type &h,
-    const unsigned char *word, int log2_word_size, hash_type &hash) {
+static void get_word_hash(hasher_type &h, const unsigned char *word, int log2_word_size, hash_type &hash) {
     h.begin();
     h.add_data(word, 1 << log2_word_size);
     h.end(hash);
@@ -130,13 +129,11 @@ static void get_word_hash(hasher_type &h,
 /// at least 2^log2_leaf_size bytes
 /// \param log2_leaf_size Log<sub>2</sub> of leaf size
 /// \returns Merkle hash of leaf data
-static hash_type get_leaf_hash(hasher_type &h, int log2_word_size,
-    const unsigned char *leaf_data, int log2_leaf_size) {
+static hash_type get_leaf_hash(hasher_type &h, int log2_word_size, const unsigned char *leaf_data, int log2_leaf_size) {
     assert(log2_leaf_size >= log2_word_size);
     if (log2_leaf_size > log2_word_size) {
-        hash_type left = get_leaf_hash(h, log2_word_size, leaf_data, log2_leaf_size-1);
-        hash_type right = get_leaf_hash(h, log2_word_size, leaf_data+(1<<(log2_leaf_size-1)),
-            log2_leaf_size-1);
+        hash_type left = get_leaf_hash(h, log2_word_size, leaf_data, log2_leaf_size - 1);
+        hash_type right = get_leaf_hash(h, log2_word_size, leaf_data + (1 << (log2_leaf_size - 1)), log2_leaf_size - 1);
         get_concat_hash(h, left, right, left);
         return left;
     } else {
@@ -152,17 +149,18 @@ static hash_type get_leaf_hash(hasher_type &h, int log2_word_size,
 /// at least 2^log2_leaf_size bytes
 /// \param log2_leaf_size Log<sub>2</sub> of leaf size
 /// \returns Merkle hash of leaf data
-static hash_type get_leaf_hash(int log2_word_size, const unsigned char *leaf_data,
-    int log2_leaf_size) {
+static hash_type get_leaf_hash(int log2_word_size, const unsigned char *leaf_data, int log2_leaf_size) {
     hasher_type h;
     return get_leaf_hash(h, log2_word_size, leaf_data, log2_leaf_size);
 }
 
 /// \brief Prints help message
 static void help(const char *name) {
-    fprintf(stderr, "Usage:\n  %s [--input=<filename>] "
-                    "[--log2-word-size=<w>] [--log2-leaf-size=<p>] "
-                    "[--log2-root-size=<t>]\n", name);
+    fprintf(stderr,
+        "Usage:\n  %s [--input=<filename>] "
+        "[--log2-word-size=<w>] [--log2-leaf-size=<p>] "
+        "[--log2-root-size=<t>]\n",
+        name);
     exit(0);
 }
 
@@ -171,7 +169,7 @@ int main(int argc, char *argv[]) try {
     int log2_word_size = 3;
     int log2_leaf_size = 12;
     int log2_root_size = 30;
-    //int incremental = false;
+    // int incremental = false;
     // Process command line arguments
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--help") == 0) {
@@ -190,14 +188,10 @@ int main(int argc, char *argv[]) try {
             return 1;
         }
     }
-    if (log2_word_size < 0 ||
-        log2_word_size > 64 ||
-        log2_leaf_size < log2_word_size ||
-        log2_leaf_size >= 64 ||
-        log2_leaf_size > log2_root_size ||
-        log2_root_size >= 64) {
-        error("invalid word size (%d) / leaf size (%d) / root size (%d) combination\n",
-            log2_word_size, log2_leaf_size, log2_root_size);
+    if (log2_word_size < 0 || log2_word_size > 64 || log2_leaf_size < log2_word_size || log2_leaf_size >= 64 ||
+        log2_leaf_size > log2_root_size || log2_root_size >= 64) {
+        error("invalid word size (%d) / leaf size (%d) / root size (%d) combination\n", log2_word_size, log2_leaf_size,
+            log2_root_size);
         return 1;
     }
     // Read from stdin if no input name was given
@@ -219,18 +213,10 @@ int main(int argc, char *argv[]) try {
     }
 
     std::cerr << "instantiating back tree\n";
-    back_merkle_tree back_tree{
-        log2_root_size,
-        log2_leaf_size,
-        log2_word_size
-    };
+    back_merkle_tree back_tree{log2_root_size, log2_leaf_size, log2_word_size};
 
     std::cerr << "instantiating complete tree\n";
-    complete_merkle_tree complete_tree{
-        log2_root_size,
-        log2_leaf_size,
-        log2_word_size
-    };
+    complete_merkle_tree complete_tree{log2_root_size, log2_leaf_size, log2_word_size};
 
     std::vector<hash_type> leaf_hashes;
 
@@ -264,7 +250,7 @@ int main(int argc, char *argv[]) try {
             return 1;
         }
         // Pad leaf with zeros if file ended before next leaf boundary
-        memset(leaf_buf.get()+got, 0, leaf_size-got);
+        memset(leaf_buf.get() + got, 0, leaf_size - got);
         // Compute leaf hash
         auto leaf_hash = get_leaf_hash(log2_word_size, leaf_buf.get(), log2_leaf_size);
         // Add to array of leaf hashes
@@ -276,48 +262,42 @@ int main(int argc, char *argv[]) try {
         // Add new leaf to back tree
         back_tree.push_back(leaf_hash);
         // Build full tree from array of leaf hashes
-        full_merkle_tree tree_from_scratch(log2_root_size, log2_leaf_size,
-            log2_word_size, leaf_hashes);
+        full_merkle_tree tree_from_scratch(log2_root_size, log2_leaf_size, log2_word_size, leaf_hashes);
         // Compare the root hash for the back tree and the tree
         // from scratch
-        if (back_tree.get_root_hash() !=
-            tree_from_scratch.get_root_hash()) {
+        if (back_tree.get_root_hash() != tree_from_scratch.get_root_hash()) {
             error("mismatch in root hash for back tree and "
-                "tree from scratch\n");
+                  "tree from scratch\n");
             return 1;
         }
         // Update back proof with new leaf
-        back_leaf_proof.set_root_hash(
-            back_leaf_proof.bubble_up(h, leaf_hash));
+        back_leaf_proof.set_root_hash(back_leaf_proof.bubble_up(h, leaf_hash));
         back_leaf_proof.set_target_hash(leaf_hash);
         if (!back_leaf_proof.verify(h)) {
             error("updated back leaf proof failed verification\n");
             return 1;
         }
         // Compare updated proof with proof generated from full tree
-        auto from_scratch_leaf_proof = tree_from_scratch.get_proof(
-            leaf_count << log2_leaf_size, log2_leaf_size);
+        auto from_scratch_leaf_proof = tree_from_scratch.get_proof(leaf_count << log2_leaf_size, log2_leaf_size);
         if (back_leaf_proof != from_scratch_leaf_proof) {
             error("mismatch in leaf proofs for back tree and "
-                "tree from scratch\n");
+                  "tree from scratch\n");
         }
         // Add new leaf to complete tree
         complete_tree.push_back(leaf_hash);
         // Compare the root hash for the coimplete tree and the tree
         // from scratch
-        if (complete_tree.get_root_hash() !=
-            tree_from_scratch.get_root_hash()) {
+        if (complete_tree.get_root_hash() != tree_from_scratch.get_root_hash()) {
             error("mismatch in root hash for complete tree and "
-                "tree from scratch\n");
+                  "tree from scratch\n");
             return 1;
         }
         // Compare proof generated from full tree with proof generated
         // from complete tree
-        auto complete_leaf_proof = complete_tree.get_proof(
-            leaf_count << log2_leaf_size, log2_leaf_size);
+        auto complete_leaf_proof = complete_tree.get_proof(leaf_count << log2_leaf_size, log2_leaf_size);
         if (from_scratch_leaf_proof != complete_leaf_proof) {
             error("mismatch in leaf proofs for full tree and "
-                "tree from scratch\n");
+                  "tree from scratch\n");
         }
         ++leaf_count;
     }

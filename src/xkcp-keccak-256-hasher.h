@@ -27,8 +27,7 @@ extern "C" {
 
 namespace cartesi {
 
-class xkcp_keccak_256_hasher final:
-    public i_hasher<xkcp_keccak_256_hasher, std::integral_constant<int, 32>> {
+class xkcp_keccak_256_hasher final : public i_hasher<xkcp_keccak_256_hasher, std::integral_constant<int, 32>> {
 
     KeccakWidth1600_SpongeInstance m_state;
 
@@ -37,11 +36,11 @@ class xkcp_keccak_256_hasher final:
     /// \brief No move constructor
     xkcp_keccak_256_hasher(xkcp_keccak_256_hasher &&) = delete;
     /// \brief No copy assignment
-    xkcp_keccak_256_hasher& operator=(const xkcp_keccak_256_hasher &) = delete;
+    xkcp_keccak_256_hasher &operator=(const xkcp_keccak_256_hasher &) = delete;
     /// \brief No move assignment
-    xkcp_keccak_256_hasher& operator=(xkcp_keccak_256_hasher &&) = delete;
+    xkcp_keccak_256_hasher &operator=(xkcp_keccak_256_hasher &&) = delete;
 
-friend i_hasher<xkcp_keccak_256_hasher, std::integral_constant<int, 32>>;
+    friend i_hasher<xkcp_keccak_256_hasher, std::integral_constant<int, 32>>;
 
     void do_begin(void) {
         KeccakWidth1600_SpongeInitialize(&m_state, 1088, 512);

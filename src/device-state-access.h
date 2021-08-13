@@ -35,26 +35,24 @@ namespace cartesi {
 /// \tparam STATE_ACCESS Class implementing the
 /// i_state_access interface.
 template <typename STATE_ACCESS>
-class device_state_access: public i_device_state_access {
+class device_state_access : public i_device_state_access {
 public:
-
-    explicit device_state_access(STATE_ACCESS &a): m_a(a) {
+    explicit device_state_access(STATE_ACCESS &a) : m_a(a) {
         static_assert(is_an_i_state_access<STATE_ACCESS>::value, "not an i_state_access");
     }
 
     /// \brief No copy constructor
     device_state_access(const device_state_access &) = delete;
     /// \brief No copy assignment
-    device_state_access& operator=(const device_state_access &) = delete;
+    device_state_access &operator=(const device_state_access &) = delete;
     /// \brief No move constructor
     device_state_access(device_state_access &&) = delete;
     /// \brief No move assignment
-    device_state_access& operator=(device_state_access &&) = delete;
+    device_state_access &operator=(device_state_access &&) = delete;
     /// \brief Default destructor
     ~device_state_access() override = default;
 
 private:
-
     STATE_ACCESS &m_a;
 
     void do_set_mip(uint32_t mask) override {
@@ -171,13 +169,11 @@ private:
         return m_a.write_dhd_h(i, val);
     }
 
-    dhd_data do_dehash(const unsigned char* hash,
-        uint64_t hlength, uint64_t &dlength) override {
+    dhd_data do_dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength) override {
         return m_a.dehash(hash, hlength, dlength);
     }
 
-    void do_write_memory(uint64_t paddr, const unsigned char *data,
-        uint64_t log2_length) override {
+    void do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t log2_length) override {
         return m_a.write_memory(paddr, data, log2_length);
     }
 
@@ -188,7 +184,6 @@ private:
     uint64_t do_read_pma_ilength(int p) override {
         return m_a.read_pma_ilength(p);
     }
-
 };
 
 } // namespace cartesi

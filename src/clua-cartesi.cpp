@@ -16,10 +16,10 @@
 
 #include "keccak-256-hasher.h"
 
-#include "clua.h"
 #include "clua-i-virtual-machine.h"
 #include "clua-machine-util.h"
 #include "clua-machine.h"
+#include "clua.h"
 #include "machine-c-api.h"
 
 /// \file
@@ -56,8 +56,7 @@ static int cartesi_mod_keccak(lua_State *L) {
         uint64_t word = luaL_checkinteger(L, 1);
         h.begin();
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        h.add_data(reinterpret_cast<const unsigned char *>(&word),
-            sizeof(word));
+        h.add_data(reinterpret_cast<const unsigned char *>(&word), sizeof(word));
         h.end(hash);
         clua_push_hash(L, hash);
         return 1;
@@ -89,26 +88,25 @@ extern "C" {
 CM_API int luaopen_cartesi(lua_State *L) {
     using namespace cartesi;
 #ifdef GPERF
-    lua_newuserdata(L, 1); // gperf
-    lua_pushvalue(L, -1); // gperf gperf
-    lua_newtable(L); // gperf gperf gperfmeta
+    lua_newuserdata(L, 1);                  // gperf
+    lua_pushvalue(L, -1);                   // gperf gperf
+    lua_newtable(L);                        // gperf gperf gperfmeta
     luaL_setfuncs(L, gperf_meta.data(), 0); // gperf gperf gperfmeta
-    lua_setmetatable(L, -2); // gperf gperf
-    lua_settable(L, LUA_REGISTRYINDEX); //
+    lua_setmetatable(L, -2);                // gperf gperf
+    lua_settable(L, LUA_REGISTRYINDEX);     //
     ProfilerStart("cartesi.prof");
 #endif
 
     // Initialize clua
-    clua_init(L); // cluactx
+    clua_init(L);    // cluactx
     lua_newtable(L); // cluactx cartesi
     // Initialize and export machine bind
     clua_i_virtual_machine_export(L, -2); // cluactx cartesi
-    clua_machine_export(L, -2); // cluactx cartesi
+    clua_machine_export(L, -2);           // cluactx cartesi
     // Set module functions
-    lua_pushvalue(L, -2); // cluactx cartesi cluactx
+    lua_pushvalue(L, -2);                    // cluactx cartesi cluactx
     luaL_setfuncs(L, cartesi_mod.data(), 1); // cluactx cartesi
 
     return 1;
 }
-
 }

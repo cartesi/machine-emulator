@@ -41,7 +41,6 @@ namespace cartesi {
 /// \}
 class i_device_state_access {
 public:
-
     /// \brief Default constructor
     i_device_state_access() = default;
 
@@ -199,8 +198,7 @@ public:
     /// \param log2_size Log 2 of data size. Must be >= 3 and < 64.
     /// \details The entire chunk of data must fit inside the same memory
     /// PMA range. The search for the PMA range is implicit, and not logged.
-    void write_memory(uint64_t paddr, const unsigned char *data,
-        uint64_t log2_size) {
+    void write_memory(uint64_t paddr, const unsigned char *data, uint64_t log2_size) {
         return do_write_memory(paddr, data, log2_size);
     }
 
@@ -212,8 +210,7 @@ public:
     /// DHD_NOT_FOUND if no matching block was found.
     /// \returns The block of data with the given hash, or an empty block
     /// if not found
-    dhd_data dehash(const unsigned char* hash, uint64_t hlength,
-        uint64_t &dlength) {
+    dhd_data dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength) {
         return do_dehash(hash, hlength, dlength);
     }
 
@@ -230,7 +227,6 @@ public:
     }
 
 private:
-
     virtual void do_set_mip(uint32_t mask) = 0;
     virtual void do_reset_mip(uint32_t mask) = 0;
     virtual uint32_t do_read_mip(void) = 0;
@@ -256,10 +252,8 @@ private:
     virtual void do_write_dhd_hlength(uint64_t val) = 0;
     virtual uint64_t do_read_dhd_h(int i) = 0;
     virtual void do_write_dhd_h(int i, uint64_t val) = 0;
-    virtual dhd_data do_dehash(const unsigned char* hash,
-        uint64_t hlength, uint64_t &dlength) = 0;
-    virtual void do_write_memory(uint64_t paddr, const unsigned char *data,
-        uint64_t log2_size) = 0;
+    virtual dhd_data do_dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength) = 0;
+    virtual void do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t log2_size) = 0;
     virtual uint64_t do_read_pma_istart(int p) = 0;
     virtual uint64_t do_read_pma_ilength(int p) = 0;
 };

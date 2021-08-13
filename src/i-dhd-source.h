@@ -30,7 +30,6 @@ namespace cartesi {
 /// \brief Dehash source interface
 class i_dhd_source {
 public:
-
     /// \brief Default constructor
     i_dhd_source() = default;
 
@@ -50,16 +49,12 @@ public:
     /// DHD_NOT_FOUND if no matching block was found.
     /// \returns The block of data with the given hash, or an empty block
     /// if not found
-    dhd_data dehash(const unsigned char* hash, uint64_t hlength,
-        uint64_t &dlength) {
+    dhd_data dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength) {
         return do_dehash(hash, hlength, dlength);
     }
 
 protected:
-
-    virtual dhd_data do_dehash(const unsigned char* hash, uint64_t hlength,
-        uint64_t &dlength) = 0;
-
+    virtual dhd_data do_dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength) = 0;
 };
 
 using i_dhd_source_ptr = std::shared_ptr<i_dhd_source>;

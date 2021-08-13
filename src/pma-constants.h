@@ -27,42 +27,42 @@ namespace cartesi {
 /// \brief Physical memory attributes constants.
 
 /// \brief Fixed PMA ranges.
-enum PMA_ranges: uint64_t {
-    PMA_SHADOW_START  = EXPAND_UINT64_C(PMA_SHADOW_START_DEF),  ///< Start of shadow range
+enum PMA_ranges : uint64_t {
+    PMA_SHADOW_START = EXPAND_UINT64_C(PMA_SHADOW_START_DEF),   ///< Start of shadow range
     PMA_SHADOW_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_LENGTH_DEF), ///< Length of shadow range
-    PMA_ROM_START     = EXPAND_UINT64_C(PMA_ROM_START_DEF),     ///< Start of ROM range
-    PMA_ROM_LENGTH    = EXPAND_UINT64_C(PMA_ROM_LENGTH_DEF),    ///< Length of ROM range
-    PMA_CLINT_START   = EXPAND_UINT64_C(PMA_CLINT_START_DEF),   ///< Start of CLINT range
-    PMA_CLINT_LENGTH  = EXPAND_UINT64_C(PMA_CLINT_LENGTH_DEF),  ///< Length of CLINT range
-    PMA_HTIF_START    = EXPAND_UINT64_C(PMA_HTIF_START_DEF),    ///< Start of HTIF range
-    PMA_HTIF_LENGTH   = EXPAND_UINT64_C(PMA_HTIF_LENGTH_DEF),   ///< Length of HTIF range
-//    PMA_FIRST_VIRTIO_START  = EXPAND_UINT64_C(PMA_FIRST_VIRTIO_START_DEF),   ///< Start of first VIRTIO range
-//    PMA_VIRTIO_LENGTH  = EXPAND_UINT64_C(PMA_VIRTIO_LENGTH_DEF),   ///< Length of each VIRTIO range
-//    PMA_LAST_VIRTIO_END  = EXPAND_UINT64_C(PMA_LAST_VIRTIO_END_DEF),   ///< End of last VIRTIO range
-    PMA_DHD_START    = EXPAND_UINT64_C(PMA_DHD_START_DEF),    ///< Start of DHD range
-    PMA_DHD_LENGTH   = EXPAND_UINT64_C(PMA_DHD_LENGTH_DEF),   ///< Length of DHD range
-//    PMA_PLIC_START    = EXPAND_UINT64_C(PMA_PLIC_START_DEF),    ///< Start of PLIC range
-//    PMA_PLIC_LENGTH   = EXPAND_UINT64_C(PMA_PLIC_LENGTH_DEF),   ///< Length of PLIC range
-    PMA_RAM_START     = EXPAND_UINT64_C(PMA_RAM_START_DEF),     ///< Start of RAM range
+    PMA_ROM_START = EXPAND_UINT64_C(PMA_ROM_START_DEF),         ///< Start of ROM range
+    PMA_ROM_LENGTH = EXPAND_UINT64_C(PMA_ROM_LENGTH_DEF),       ///< Length of ROM range
+    PMA_CLINT_START = EXPAND_UINT64_C(PMA_CLINT_START_DEF),     ///< Start of CLINT range
+    PMA_CLINT_LENGTH = EXPAND_UINT64_C(PMA_CLINT_LENGTH_DEF),   ///< Length of CLINT range
+    PMA_HTIF_START = EXPAND_UINT64_C(PMA_HTIF_START_DEF),       ///< Start of HTIF range
+    PMA_HTIF_LENGTH = EXPAND_UINT64_C(PMA_HTIF_LENGTH_DEF),     ///< Length of HTIF range
+    //    PMA_FIRST_VIRTIO_START  = EXPAND_UINT64_C(PMA_FIRST_VIRTIO_START_DEF),   ///< Start of first VIRTIO range
+    //    PMA_VIRTIO_LENGTH  = EXPAND_UINT64_C(PMA_VIRTIO_LENGTH_DEF),   ///< Length of each VIRTIO range
+    //    PMA_LAST_VIRTIO_END  = EXPAND_UINT64_C(PMA_LAST_VIRTIO_END_DEF),   ///< End of last VIRTIO range
+    PMA_DHD_START = EXPAND_UINT64_C(PMA_DHD_START_DEF),   ///< Start of DHD range
+    PMA_DHD_LENGTH = EXPAND_UINT64_C(PMA_DHD_LENGTH_DEF), ///< Length of DHD range
+    //    PMA_PLIC_START    = EXPAND_UINT64_C(PMA_PLIC_START_DEF),    ///< Start of PLIC range
+    //    PMA_PLIC_LENGTH   = EXPAND_UINT64_C(PMA_PLIC_LENGTH_DEF),   ///< Length of PLIC range
+    PMA_RAM_START = EXPAND_UINT64_C(PMA_RAM_START_DEF), ///< Start of RAM range
 };
 
 /// \brief PMA constants.
-enum PMA_constants: uint64_t {
+enum PMA_constants : uint64_t {
     PMA_PAGE_SIZE_LOG2 = EXPAND_UINT64_C(PMA_PAGE_SIZE_LOG2_DEF), ///< log<sub>2</sub> of physical memory page size.
-    PMA_PAGE_SIZE      = (UINT64_C(1) << PMA_PAGE_SIZE_LOG2_DEF), ///< Physical memory page size.
-    PMA_WORD_SIZE      = EXPAND_UINT64_C(PMA_WORD_SIZE_DEF),      ///< Physical memory word size.
-    PMA_MAX            = EXPAND_UINT64_C(PMA_MAX_DEF),            ///< Maximum number of PMAs
+    PMA_PAGE_SIZE = (UINT64_C(1) << PMA_PAGE_SIZE_LOG2_DEF),      ///< Physical memory page size.
+    PMA_WORD_SIZE = EXPAND_UINT64_C(PMA_WORD_SIZE_DEF),           ///< Physical memory word size.
+    PMA_MAX = EXPAND_UINT64_C(PMA_MAX_DEF),                       ///< Maximum number of PMAs
     PMA_BOARD_SHADOW_START = EXPAND_UINT64_C(PMA_START_DEF)       ///< Base of board shadow, where PMAs start
 };
 
 /// \brief PMA istart shifts
 enum PMA_ISTART_shifts {
-    PMA_ISTART_M_SHIFT  = 0,
+    PMA_ISTART_M_SHIFT = 0,
     PMA_ISTART_IO_SHIFT = 1,
-    PMA_ISTART_E_SHIFT  = 2,
-    PMA_ISTART_R_SHIFT  = 3,
-    PMA_ISTART_W_SHIFT  = 4,
-    PMA_ISTART_X_SHIFT  = 5,
+    PMA_ISTART_E_SHIFT = 2,
+    PMA_ISTART_R_SHIFT = 3,
+    PMA_ISTART_W_SHIFT = 4,
+    PMA_ISTART_X_SHIFT = 5,
     PMA_ISTART_IR_SHIFT = 6,
     PMA_ISTART_IW_SHIFT = 7,
     PMA_ISTART_DID_SHIFT = 8,
@@ -70,16 +70,16 @@ enum PMA_ISTART_shifts {
 };
 
 /// \brief PMA istart masks
-enum PMA_ISTART_masks: uint64_t {
-    PMA_ISTART_M_MASK     = UINT64_C(1)  << PMA_ISTART_M_SHIFT,  ///< Memory range
-    PMA_ISTART_IO_MASK    = UINT64_C(1)  << PMA_ISTART_IO_SHIFT, ///< Device range
-    PMA_ISTART_E_MASK     = UINT64_C(1)  << PMA_ISTART_E_SHIFT,  ///< Empty range
-    PMA_ISTART_R_MASK     = UINT64_C(1)  << PMA_ISTART_R_SHIFT,  ///< Readable
-    PMA_ISTART_W_MASK     = UINT64_C(1)  << PMA_ISTART_W_SHIFT,  ///< Writable
-    PMA_ISTART_X_MASK     = UINT64_C(1)  << PMA_ISTART_X_SHIFT,  ///< Executable
-    PMA_ISTART_IR_MASK    = UINT64_C(1)  << PMA_ISTART_IR_SHIFT, ///< Idempotent reads
-    PMA_ISTART_IW_MASK    = UINT64_C(1)  << PMA_ISTART_IW_SHIFT, ///< Idempotent writes
-    PMA_ISTART_DID_MASK   = UINT64_C(15) << PMA_ISTART_DID_SHIFT, ///< Device id
+enum PMA_ISTART_masks : uint64_t {
+    PMA_ISTART_M_MASK = UINT64_C(1) << PMA_ISTART_M_SHIFT,         ///< Memory range
+    PMA_ISTART_IO_MASK = UINT64_C(1) << PMA_ISTART_IO_SHIFT,       ///< Device range
+    PMA_ISTART_E_MASK = UINT64_C(1) << PMA_ISTART_E_SHIFT,         ///< Empty range
+    PMA_ISTART_R_MASK = UINT64_C(1) << PMA_ISTART_R_SHIFT,         ///< Readable
+    PMA_ISTART_W_MASK = UINT64_C(1) << PMA_ISTART_W_SHIFT,         ///< Writable
+    PMA_ISTART_X_MASK = UINT64_C(1) << PMA_ISTART_X_SHIFT,         ///< Executable
+    PMA_ISTART_IR_MASK = UINT64_C(1) << PMA_ISTART_IR_SHIFT,       ///< Idempotent reads
+    PMA_ISTART_IW_MASK = UINT64_C(1) << PMA_ISTART_IW_SHIFT,       ///< Idempotent writes
+    PMA_ISTART_DID_MASK = UINT64_C(15) << PMA_ISTART_DID_SHIFT,    ///< Device id
     PMA_ISTART_START_MASK = UINT64_C(-1) << PMA_ISTART_START_SHIFT ///< Start of range
 };
 
@@ -87,10 +87,10 @@ enum PMA_ISTART_masks: uint64_t {
 enum class PMA_ISTART_DID {
     memory = PMA_MEMORY_DID_DEF, ///< DID for memory
     shadow = PMA_SHADOW_DID_DEF, ///< DID for shadow device
-    drive  = PMA_DRIVE_DID_DEF,  ///< DID for drive device
-    CLINT  = PMA_CLINT_DID_DEF,  ///< DID for CLINT device
-    HTIF   = PMA_HTIF_DID_DEF,   ///< DID for HTIF device
-    DHD    = PMA_DHD_DID_DEF     ///< DID for DHD
+    drive = PMA_DRIVE_DID_DEF,   ///< DID for drive device
+    CLINT = PMA_CLINT_DID_DEF,   ///< DID for CLINT device
+    HTIF = PMA_HTIF_DID_DEF,     ///< DID for HTIF device
+    DHD = PMA_DHD_DID_DEF        ///< DID for DHD
 };
 
 } // namespace cartesi

@@ -21,11 +21,11 @@
 #ifndef CM_C_API_INTERNAL_H
 #define CM_C_API_INTERNAL_H
 
+#include "machine-c-defines.h"
 #include <string>
-#include "machine-c-defines.h"
 
-#include "machine-c-defines.h"
 #include "machine-c-api.h"
+#include "machine-c-defines.h"
 #include "machine.h"
 
 /// \brief Helper function that returns error result from C api function
@@ -34,16 +34,13 @@ CM_API int cm_result_failure(char **err_msg);
 /// \brief Helper function that returns success result from C api function
 CM_API int cm_result_success(char **err_msg);
 
-
 /// \brief Helper function that returns unknown error result from
 /// C api function
 CM_API int cm_result_unknown_error(char **err_msg);
 
-
 /// \brief Helper function that create empty string in case
 /// that C string is NULL
 CM_API std::string null_to_empty(const char *s);
-
 
 /// \brief Helper function that parses machine configuration cartesi::machine_config
 /// from C api structure cm_machine_config
@@ -57,7 +54,7 @@ CM_API cartesi::machine_runtime_config convert_from_c(const cm_machine_runtime_c
 CM_API const cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config);
 
 /// \brief Helper function that parses hash from C api structure
-CM_API cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash* c_hash);
+CM_API cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash);
 
 /// \brief Helper function that parses access log tyoe from C
 CM_API cartesi::access_log::type convert_from_c(const cm_access_log_type *type);
@@ -71,4 +68,4 @@ CM_API cartesi::access_log convert_from_c(const cm_access_log *c_acc_log);
 /// \brief Helper function converts C++ string to allocated C string
 CM_API char *convert_to_c(const std::string &cpp_str);
 
-#endif //CM_C_API_INTERNAL_H
+#endif // CM_C_API_INTERNAL_H

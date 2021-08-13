@@ -14,8 +14,8 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#include "clua.h"
 #include "clua-htif.h"
+#include "clua.h"
 #include "htif.h"
 
 namespace cartesi {

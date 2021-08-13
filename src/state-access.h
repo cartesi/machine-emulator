@@ -31,24 +31,25 @@ namespace cartesi {
 /// \class state_access
 /// \details The state_access class implements fast, direct
 /// access to the machine state. No logs are kept.
-class state_access: public i_state_access<state_access> {
+class state_access : public i_state_access<state_access> {
 
     machine &m_m; ///< Associated machine
 
 public:
-
     /// \brief Constructor from machine state.
     /// \param m Pointer to machine state.
-    explicit state_access(machine &m): m_m(m) { ; }
+    explicit state_access(machine &m) : m_m(m) {
+        ;
+    }
 
     /// \brief No copy constructor
     state_access(const state_access &) = delete;
     /// \brief No copy assignment
-    state_access& operator=(const state_access &) = delete;
+    state_access &operator=(const state_access &) = delete;
     /// \brief No move constructor
     state_access(state_access &&) = delete;
     /// \brief No move assignment
-    state_access& operator=(state_access &&) = delete;
+    state_access &operator=(state_access &&) = delete;
     /// \brief Default destructor
     ~state_access() = default;
 
@@ -66,13 +67,13 @@ private:
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     void do_push_bracket(bracket_type type, const char *text) {
-        (void)type;
-        (void)text;
+        (void) type;
+        (void) text;
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     int do_make_scoped_note(const char *text) {
-        (void)text;
+        (void) text;
         return 0;
     }
 
@@ -93,193 +94,193 @@ private:
         m_m.get_state().pc = val;
     }
 
-	uint64_t do_read_minstret(void) const {
-		return m_m.get_state().minstret;
-	}
+    uint64_t do_read_minstret(void) const {
+        return m_m.get_state().minstret;
+    }
 
-	void do_write_minstret(uint64_t val) {
-		m_m.get_state().minstret = val;
-	}
+    void do_write_minstret(uint64_t val) {
+        m_m.get_state().minstret = val;
+    }
 
-	uint64_t do_read_mvendorid(void) const { // NOLINT(readability-convert-member-functions-to-static)
-		return MVENDORID_INIT;
-	}
+    uint64_t do_read_mvendorid(void) const { // NOLINT(readability-convert-member-functions-to-static)
+        return MVENDORID_INIT;
+    }
 
-	uint64_t do_read_marchid(void) const { // NOLINT(readability-convert-member-functions-to-static)
-		return MARCHID_INIT;
-	}
+    uint64_t do_read_marchid(void) const { // NOLINT(readability-convert-member-functions-to-static)
+        return MARCHID_INIT;
+    }
 
-	uint64_t do_read_mimpid(void) const { // NOLINT(readability-convert-member-functions-to-static)
-		return MIMPID_INIT;
-	}
+    uint64_t do_read_mimpid(void) const { // NOLINT(readability-convert-member-functions-to-static)
+        return MIMPID_INIT;
+    }
 
-	uint64_t do_read_mcycle(void) const {
-		return m_m.get_state().mcycle;
-	}
+    uint64_t do_read_mcycle(void) const {
+        return m_m.get_state().mcycle;
+    }
 
-	void do_write_mcycle(uint64_t val) {
-		m_m.get_state().mcycle = val;
-	}
+    void do_write_mcycle(uint64_t val) {
+        m_m.get_state().mcycle = val;
+    }
 
-	uint64_t do_read_mstatus(void) const {
+    uint64_t do_read_mstatus(void) const {
         return m_m.get_state().mstatus;
-	}
+    }
 
-	void do_write_mstatus(uint64_t val) {
+    void do_write_mstatus(uint64_t val) {
         m_m.get_state().mstatus = val;
-	}
+    }
 
-	uint64_t do_read_mtvec(void) const {
-		return m_m.get_state().mtvec;
-	}
+    uint64_t do_read_mtvec(void) const {
+        return m_m.get_state().mtvec;
+    }
 
-	void do_write_mtvec(uint64_t val) {
-		m_m.get_state().mtvec = val;
-	}
+    void do_write_mtvec(uint64_t val) {
+        m_m.get_state().mtvec = val;
+    }
 
-	uint64_t do_read_mscratch(void) const {
-		return m_m.get_state().mscratch;
-	}
+    uint64_t do_read_mscratch(void) const {
+        return m_m.get_state().mscratch;
+    }
 
-	void do_write_mscratch(uint64_t val) {
-		m_m.get_state().mscratch = val;
-	}
+    void do_write_mscratch(uint64_t val) {
+        m_m.get_state().mscratch = val;
+    }
 
-	uint64_t do_read_mepc(void) const {
-		return m_m.get_state().mepc;
-	}
+    uint64_t do_read_mepc(void) const {
+        return m_m.get_state().mepc;
+    }
 
-	void do_write_mepc(uint64_t val) {
-		m_m.get_state().mepc = val;
-	}
+    void do_write_mepc(uint64_t val) {
+        m_m.get_state().mepc = val;
+    }
 
-	uint64_t do_read_mcause(void) const {
-		return m_m.get_state().mcause;
-	}
+    uint64_t do_read_mcause(void) const {
+        return m_m.get_state().mcause;
+    }
 
-	void do_write_mcause(uint64_t val) {
-		m_m.get_state().mcause = val;
-	}
+    void do_write_mcause(uint64_t val) {
+        m_m.get_state().mcause = val;
+    }
 
-	uint64_t do_read_mtval(void) const {
-		return m_m.get_state().mtval;
-	}
+    uint64_t do_read_mtval(void) const {
+        return m_m.get_state().mtval;
+    }
 
-	void do_write_mtval(uint64_t val) {
-		m_m.get_state().mtval = val;
-	}
+    void do_write_mtval(uint64_t val) {
+        m_m.get_state().mtval = val;
+    }
 
-	uint64_t do_read_misa(void) const {
-		return m_m.get_state().misa;
-	}
+    uint64_t do_read_misa(void) const {
+        return m_m.get_state().misa;
+    }
 
-	void do_write_misa(uint64_t val) {
-		m_m.get_state().misa = val;
-	}
+    void do_write_misa(uint64_t val) {
+        m_m.get_state().misa = val;
+    }
 
-	uint64_t do_read_mie(void) const {
-		return m_m.get_state().mie;
-	}
+    uint64_t do_read_mie(void) const {
+        return m_m.get_state().mie;
+    }
 
-	void do_write_mie(uint64_t val) {
-		m_m.get_state().mie = val;
-	}
+    void do_write_mie(uint64_t val) {
+        m_m.get_state().mie = val;
+    }
 
-	uint64_t do_read_mip(void) const {
-		return m_m.get_state().mip;
-	}
+    uint64_t do_read_mip(void) const {
+        return m_m.get_state().mip;
+    }
 
-	void do_write_mip(uint64_t val) {
-		m_m.get_state().mip = val;
-	}
+    void do_write_mip(uint64_t val) {
+        m_m.get_state().mip = val;
+    }
 
-	uint64_t do_read_medeleg(void) const {
-		return m_m.get_state().medeleg;
-	}
+    uint64_t do_read_medeleg(void) const {
+        return m_m.get_state().medeleg;
+    }
 
-	void do_write_medeleg(uint64_t val) {
-		m_m.get_state().medeleg = val;
-	}
+    void do_write_medeleg(uint64_t val) {
+        m_m.get_state().medeleg = val;
+    }
 
-	uint64_t do_read_mideleg(void) const {
-		return m_m.get_state().mideleg;
-	}
+    uint64_t do_read_mideleg(void) const {
+        return m_m.get_state().mideleg;
+    }
 
-	void do_write_mideleg(uint64_t val) {
-		m_m.get_state().mideleg = val;
-	}
+    void do_write_mideleg(uint64_t val) {
+        m_m.get_state().mideleg = val;
+    }
 
-	uint64_t do_read_mcounteren(void) const {
-		return m_m.get_state().mcounteren;
-	}
+    uint64_t do_read_mcounteren(void) const {
+        return m_m.get_state().mcounteren;
+    }
 
-	void do_write_mcounteren(uint64_t val) {
-		m_m.get_state().mcounteren = val;
-	}
+    void do_write_mcounteren(uint64_t val) {
+        m_m.get_state().mcounteren = val;
+    }
 
-	uint64_t do_read_stvec(void) const {
-		return m_m.get_state().stvec;
-	}
+    uint64_t do_read_stvec(void) const {
+        return m_m.get_state().stvec;
+    }
 
-	void do_write_stvec(uint64_t val) {
-		m_m.get_state().stvec = val;
-	}
+    void do_write_stvec(uint64_t val) {
+        m_m.get_state().stvec = val;
+    }
 
-	uint64_t do_read_sscratch(void) const {
-		return m_m.get_state().sscratch;
-	}
+    uint64_t do_read_sscratch(void) const {
+        return m_m.get_state().sscratch;
+    }
 
-	void do_write_sscratch(uint64_t val) {
-		m_m.get_state().sscratch = val;
-	}
+    void do_write_sscratch(uint64_t val) {
+        m_m.get_state().sscratch = val;
+    }
 
-	uint64_t do_read_sepc(void) const {
-		return m_m.get_state().sepc;
-	}
+    uint64_t do_read_sepc(void) const {
+        return m_m.get_state().sepc;
+    }
 
-	void do_write_sepc(uint64_t val) {
-		m_m.get_state().sepc = val;
-	}
+    void do_write_sepc(uint64_t val) {
+        m_m.get_state().sepc = val;
+    }
 
-	uint64_t do_read_scause(void) const {
-		return m_m.get_state().scause;
-	}
+    uint64_t do_read_scause(void) const {
+        return m_m.get_state().scause;
+    }
 
-	void do_write_scause(uint64_t val) {
-		m_m.get_state().scause = val;
-	}
+    void do_write_scause(uint64_t val) {
+        m_m.get_state().scause = val;
+    }
 
-	uint64_t do_read_stval(void) const {
-		return m_m.get_state().stval;
-	}
+    uint64_t do_read_stval(void) const {
+        return m_m.get_state().stval;
+    }
 
-	void do_write_stval(uint64_t val) {
-		m_m.get_state().stval = val;
-	}
+    void do_write_stval(uint64_t val) {
+        m_m.get_state().stval = val;
+    }
 
-	uint64_t do_read_satp(void) const {
-		return m_m.get_state().satp;
-	}
+    uint64_t do_read_satp(void) const {
+        return m_m.get_state().satp;
+    }
 
-	void do_write_satp(uint64_t val) {
-		m_m.get_state().satp = val;
-	}
+    void do_write_satp(uint64_t val) {
+        m_m.get_state().satp = val;
+    }
 
-	uint64_t do_read_scounteren(void) const {
-		return m_m.get_state().scounteren;
-	}
+    uint64_t do_read_scounteren(void) const {
+        return m_m.get_state().scounteren;
+    }
 
-	void do_write_scounteren(uint64_t val) {
-		m_m.get_state().scounteren = val;
-	}
+    void do_write_scounteren(uint64_t val) {
+        m_m.get_state().scounteren = val;
+    }
 
-	uint64_t do_read_ilrsc(void) const {
-		return m_m.get_state().ilrsc;
-	}
+    uint64_t do_read_ilrsc(void) const {
+        return m_m.get_state().ilrsc;
+    }
 
-	void do_write_ilrsc(uint64_t val) {
-		m_m.get_state().ilrsc = val;
-	}
+    void do_write_ilrsc(uint64_t val) {
+        m_m.get_state().ilrsc = val;
+    }
 
     void do_set_iflags_H(void) {
         m_m.get_state().iflags.H = true;
@@ -310,7 +311,7 @@ private:
     }
 
     uint64_t do_read_clint_mtimecmp(void) const {
-		return m_m.get_state().clint.mtimecmp;
+        return m_m.get_state().clint.mtimecmp;
     }
 
     void do_write_clint_mtimecmp(uint64_t val) {
@@ -346,7 +347,7 @@ private:
     }
 
     uint64_t do_read_dhd_tstart(void) const {
-		return m_m.get_state().dhd.tstart;
+        return m_m.get_state().dhd.tstart;
     }
 
     void do_write_dhd_tstart(uint64_t val) {
@@ -354,7 +355,7 @@ private:
     }
 
     uint64_t do_read_dhd_tlength(void) const {
-		return m_m.get_state().dhd.tlength;
+        return m_m.get_state().dhd.tlength;
     }
 
     void do_write_dhd_tlength(uint64_t val) {
@@ -362,7 +363,7 @@ private:
     }
 
     uint64_t do_read_dhd_dlength(void) const {
-		return m_m.get_state().dhd.dlength;
+        return m_m.get_state().dhd.dlength;
     }
 
     void do_write_dhd_dlength(uint64_t val) {
@@ -370,7 +371,7 @@ private:
     }
 
     uint64_t do_read_dhd_hlength(void) const {
-		return m_m.get_state().dhd.hlength;
+        return m_m.get_state().dhd.hlength;
     }
 
     void do_write_dhd_hlength(uint64_t val) {
@@ -378,15 +379,14 @@ private:
     }
 
     uint64_t do_read_dhd_h(int i) const {
-		return m_m.get_state().dhd.h[i];
+        return m_m.get_state().dhd.h[i];
     }
 
     void do_write_dhd_h(int i, uint64_t val) {
         m_m.get_state().dhd.h[i] = val;
     }
 
-    dhd_data do_dehash(const unsigned char* hash, uint64_t hlength,
-        uint64_t &dlength) {
+    dhd_data do_dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength) {
         return m_m.get_state().dehash(hash, hlength, dlength);
     }
 
@@ -411,21 +411,18 @@ private:
     }
 
     template <typename T>
-    void do_read_memory_word(uint64_t paddr, const unsigned char *hpage,
-        uint64_t hoffset, T *pval) const {
+    void do_read_memory_word(uint64_t paddr, const unsigned char *hpage, uint64_t hoffset, T *pval) const {
         (void) paddr;
-        *pval = aliased_aligned_read<T>(hpage+hoffset);
+        *pval = aliased_aligned_read<T>(hpage + hoffset);
     }
 
     template <typename T>
-    void do_write_memory_word(uint64_t paddr, unsigned char *hpage,
-        uint64_t hoffset, T val) {
+    void do_write_memory_word(uint64_t paddr, unsigned char *hpage, uint64_t hoffset, T val) {
         (void) paddr;
-        aliased_aligned_write(hpage+hoffset, val);
+        aliased_aligned_write(hpage + hoffset, val);
     }
 
-    void do_write_memory(uint64_t paddr, const unsigned char *data,
-        uint64_t log2_size) {
+    void do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t log2_size) {
         m_m.write_memory(paddr, data, UINT64_C(1) << log2_size);
     }
 
@@ -446,17 +443,14 @@ private:
             // in the first subtraction.
             // Since length is at least 4096 (an entire page), there is no
             // chance of overflow in the second subtraction.
-            if (paddr >= pma.get_start() &&
-                paddr - pma.get_start() <= pma.get_length() - sizeof(T)) {
+            if (paddr >= pma.get_start() && paddr - pma.get_start() <= pma.get_length() - sizeof(T)) {
                 return pma;
             }
             i++;
         }
     }
-
 };
 
 } // namespace cartesi
-
 
 #endif

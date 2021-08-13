@@ -20,7 +20,6 @@
 #ifndef CM_C_API_H
 #define CM_C_API_H
 
-
 #ifndef __cplusplus
 #include <assert.h>
 #include <stdbool.h>
@@ -38,7 +37,6 @@
 extern "C" {
 #endif
 
-
 // ---------------------------------
 // API Structures
 // ---------------------------------
@@ -46,10 +44,10 @@ extern "C" {
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays,modernize-use-using)
 typedef uint8_t cm_hash[CM_MACHINE_HASH_BYTE_SIZE];
 
-///brief Error codes returned from machine emulator C API
+/// brief Error codes returned from machine emulator C API
 enum CM_ERROR {
     CM_ERROR_OK = 0,
-    //Logic errors
+    // Logic errors
     CM_ERROR_INVALID_ARGUMENT,
     CM_ERROR_DOMAIN_ERROR,
     CM_ERROR_LENGTH_ERROR,
@@ -72,7 +70,7 @@ enum CM_ERROR {
     CM_ERROR_AMBIGOUS_LOCAL_TIME,
     CM_ERROR_FORMAT_ERROR,
     CM_RUNTIME_ERROR_END,
-    //Other errors
+    // Other errors
     CM_ERROR_BAD_TYPEID,
     CM_ERROR_BAD_CAST,
     CM_ERROR_BAD_ANY_CAST,
@@ -84,7 +82,7 @@ enum CM_ERROR {
     CM_ERROR_BAD_VARIANT_ACCESS,
     CM_ERROR_EXCEPTION,
     CM_OTHER_ERROR_END,
-    //C API Errors
+    // C API Errors
     CM_ERROR_UNKNOWN
 };
 
@@ -131,79 +129,78 @@ typedef enum { // NOLINT(modernize-use-using)
 } CM_PROC_CSR;
 
 /// \brief Processor state configuration
-typedef struct { // NOLINT(modernize-use-using)
-    uint64_t x[CM_MACHINE_X_REG_COUNT];          ///< Value of general-purpose registers
-    uint64_t pc;                  ///< Value of pc
-    uint64_t mvendorid;    ///< Value of mvendorid CSR
-    uint64_t marchid;        ///< Value of marchid CSR
-    uint64_t mimpid;          ///< Value of mimpid CSR
-    uint64_t mcycle;          ///< Value of mcycle CSR
-    uint64_t minstret;      ///< Value of minstret CSR
-    uint64_t mstatus;        ///< Value of mstatus CSR
-    uint64_t mtvec;            ///< Value of mtvec CSR
-    uint64_t mscratch;      ///< Value of mscratch CSR
-    uint64_t mepc;              ///< Value of mepc CSR
-    uint64_t mcause;          ///< Value of mcause CSR
-    uint64_t mtval;            ///< Value of mtval CSR
-    uint64_t misa;              ///< Value of misa CSR
-    uint64_t mie;                ///< Value of mie CSR
-    uint64_t mip;                ///< Value of mip CSR
-    uint64_t medeleg;        ///< Value of medeleg CSR
-    uint64_t mideleg;        ///< Value of mideleg CSR
-    uint64_t mcounteren;  ///< Value of mcounteren CSR
-    uint64_t stvec;            ///< Value of stvec CSR
-    uint64_t sscratch;      ///< Value of sscratch CSR
-    uint64_t sepc;              ///< Value of sepc CSR
-    uint64_t scause;          ///< Value of scause CSR
-    uint64_t stval;            ///< Value of stval CSR
-    uint64_t satp;              ///< Value of satp CSR
-    uint64_t scounteren;  ///< Value of scounteren CSR
-    uint64_t ilrsc;            ///< Value of ilrsc CSR
-    uint64_t iflags;          ///< Value of iflags CSR
+typedef struct {                        // NOLINT(modernize-use-using)
+    uint64_t x[CM_MACHINE_X_REG_COUNT]; ///< Value of general-purpose registers
+    uint64_t pc;                        ///< Value of pc
+    uint64_t mvendorid;                 ///< Value of mvendorid CSR
+    uint64_t marchid;                   ///< Value of marchid CSR
+    uint64_t mimpid;                    ///< Value of mimpid CSR
+    uint64_t mcycle;                    ///< Value of mcycle CSR
+    uint64_t minstret;                  ///< Value of minstret CSR
+    uint64_t mstatus;                   ///< Value of mstatus CSR
+    uint64_t mtvec;                     ///< Value of mtvec CSR
+    uint64_t mscratch;                  ///< Value of mscratch CSR
+    uint64_t mepc;                      ///< Value of mepc CSR
+    uint64_t mcause;                    ///< Value of mcause CSR
+    uint64_t mtval;                     ///< Value of mtval CSR
+    uint64_t misa;                      ///< Value of misa CSR
+    uint64_t mie;                       ///< Value of mie CSR
+    uint64_t mip;                       ///< Value of mip CSR
+    uint64_t medeleg;                   ///< Value of medeleg CSR
+    uint64_t mideleg;                   ///< Value of mideleg CSR
+    uint64_t mcounteren;                ///< Value of mcounteren CSR
+    uint64_t stvec;                     ///< Value of stvec CSR
+    uint64_t sscratch;                  ///< Value of sscratch CSR
+    uint64_t sepc;                      ///< Value of sepc CSR
+    uint64_t scause;                    ///< Value of scause CSR
+    uint64_t stval;                     ///< Value of stval CSR
+    uint64_t satp;                      ///< Value of satp CSR
+    uint64_t scounteren;                ///< Value of scounteren CSR
+    uint64_t ilrsc;                     ///< Value of ilrsc CSR
+    uint64_t iflags;                    ///< Value of iflags CSR
 } cm_processor_config;
 
-
 /// \brief RAM state configuration
-typedef struct { // NOLINT(modernize-use-using)
-    uint64_t length; ///< RAM length
+typedef struct {                // NOLINT(modernize-use-using)
+    uint64_t length;            ///< RAM length
     const char *image_filename; ///< RAM image file name
 } cm_ram_config;
 
 /// \brief ROM state configuration
-typedef struct { // NOLINT(modernize-use-using)
-    const char *bootargs; ///< Bootargs to pass to kernel
+typedef struct {                // NOLINT(modernize-use-using)
+    const char *bootargs;       ///< Bootargs to pass to kernel
     const char *image_filename; ///< ROM image file
 } cm_rom_config;
 
 /// \brief Flash drive state configuration
-typedef struct { // NOLINT(modernize-use-using)
-    uint64_t start;           ///< Flash drive start position
-    uint64_t length;          ///< Flash drive length
-    bool shared;              ///< Target changes to drive affect image file?
+typedef struct {                // NOLINT(modernize-use-using)
+    uint64_t start;             ///< Flash drive start position
+    uint64_t length;            ///< Flash drive length
+    bool shared;                ///< Target changes to drive affect image file?
     const char *image_filename; ///< Flash drive image file name
 } cm_flash_drive_config;
 
 /// \brief CLINT device state configuration
-typedef struct { // NOLINT(modernize-use-using)
+typedef struct {       // NOLINT(modernize-use-using)
     uint64_t mtimecmp; ///< Value of mtimecmp CSR
 } cm_clint_config;
 
 /// \brief HTIF device state configuration
-typedef struct { // NOLINT(modernize-use-using)
-    uint64_t fromhost; ///< Value of fromhost CSR
-    uint64_t tohost;     ///< Value of tohost CSR
-    bool console_getchar;      ///< Make console getchar available?
-    bool yield_progress;       ///< Make yield progress available?
-    bool yield_rollup;         ///< Make yield rollup available?
+typedef struct {          // NOLINT(modernize-use-using)
+    uint64_t fromhost;    ///< Value of fromhost CSR
+    uint64_t tohost;      ///< Value of tohost CSR
+    bool console_getchar; ///< Make console getchar available?
+    bool yield_progress;  ///< Make yield progress available?
+    bool yield_rollup;    ///< Make yield rollup available?
 } cm_htif_config;
 
 /// \brief DHD device state configuration
-typedef struct { // NOLINT(modernize-use-using)
-    uint64_t tstart;           ///< Start of target physical memory range for output data
-    uint64_t tlength;          ///< Length of target physical memory range for output data
-    const char *image_filename; ///< Data image file name
-    uint64_t dlength;          ///< Output data length CSR
-    uint64_t hlength;          ///< Input hash length CSR
+typedef struct {                            // NOLINT(modernize-use-using)
+    uint64_t tstart;                        ///< Start of target physical memory range for output data
+    uint64_t tlength;                       ///< Length of target physical memory range for output data
+    const char *image_filename;             ///< Data image file name
+    uint64_t dlength;                       ///< Output data length CSR
+    uint64_t hlength;                       ///< Input hash length CSR
     uint64_t h[CM_MACHINE_DHD_H_REG_COUNT]; ///< Input hash words
 } cm_dhd_config;
 
@@ -219,7 +216,6 @@ typedef struct { // NOLINT(modernize-use-using)
     cm_dhd_config dhd;
 } cm_machine_config;
 
-
 /// \brief Merkle tree proof structure
 /// \details
 /// This structure holds a proof that the node spanning a log2_target_size
@@ -230,62 +226,60 @@ typedef struct { // NOLINT(modernize-use-using)
     cm_hash target_hash;
     size_t log2_root_size;
     cm_hash root_hash;
-    cm_hash* sibling_hashes;
+    cm_hash *sibling_hashes;
     size_t sibling_hashes_count;
 } cm_merkle_tree_proof;
 
 /// \brief Type of state access
-typedef enum { // NOLINT(modernize-use-using)
-    CM_ACCESS_READ, ///< Read operation
+typedef enum {       // NOLINT(modernize-use-using)
+    CM_ACCESS_READ,  ///< Read operation
     CM_ACCESS_WRITE, ///< Write operation
-}  CM_ACCESS_TYPE;
+} CM_ACCESS_TYPE;
 
 /// \brief Type of access log
-typedef struct { // NOLINT(modernize-use-using)
-    bool proofs; ///< Includes proofs
+typedef struct {      // NOLINT(modernize-use-using)
+    bool proofs;      ///< Includes proofs
     bool annotations; ///< Includes annotations
 } cm_access_log_type;
 
 /// \brief Bracket type
-typedef enum { // NOLINT(modernize-use-using)
-    CM_BRACKET_BEGIN,    ///< Start of scope
-    CM_BRACKET_END       ///< End of scope
-}  CM_BRACKET_TYPE;
-
+typedef enum {        // NOLINT(modernize-use-using)
+    CM_BRACKET_BEGIN, ///< Start of scope
+    CM_BRACKET_END    ///< End of scope
+} CM_BRACKET_TYPE;
 
 /// \brief Bracket note
-typedef struct { // NOLINT(modernize-use-using)
-    CM_BRACKET_TYPE type;   ///< Bracket type
-    uint64_t where;         ///< Where it points to in the log
-    char* text;           ///< Note text
+typedef struct {          // NOLINT(modernize-use-using)
+    CM_BRACKET_TYPE type; ///< Bracket type
+    uint64_t where;       ///< Where it points to in the log
+    char *text;           ///< Note text
 } cm_bracket_note;
 
 /// \brief Records an access to the machine state
-typedef struct { // NOLINT(modernize-use-using)
-    CM_ACCESS_TYPE type; ///< Type of access
-    uint64_t address;   ///< Address of access
-    int log2_size;      ///< Log2 of size of access
-    uint8_t* read_data; ///< Data before access
-    size_t read_data_size; ///< Size of data before access in bytes
-    uint8_t* written_data;  ///< Data after access (if writing)
-    size_t written_data_size; ///< Size of data after access in bytes
-    cm_merkle_tree_proof* proof; ///< Proof of data before access
+typedef struct {                 // NOLINT(modernize-use-using)
+    CM_ACCESS_TYPE type;         ///< Type of access
+    uint64_t address;            ///< Address of access
+    int log2_size;               ///< Log2 of size of access
+    uint8_t *read_data;          ///< Data before access
+    size_t read_data_size;       ///< Size of data before access in bytes
+    uint8_t *written_data;       ///< Data after access (if writing)
+    size_t written_data_size;    ///< Size of data after access in bytes
+    cm_merkle_tree_proof *proof; ///< Proof of data before access
 } cm_access;
 
 /// \brief Log of state accesses
-typedef struct { // NOLINT(modernize-use-using)
-    cm_access *accesses; ///< List of all accesses
-    size_t accesses_count; ///< Size of list of all accesses
-    cm_bracket_note *brackets; ///< Begin/End annotations
-    size_t brackets_count; ///< Size of begin/end annotations
-    const char **notes;  ///< Per-access annotations
-    size_t notes_count; ///< Number of per-access annotations
+typedef struct {                 // NOLINT(modernize-use-using)
+    cm_access *accesses;         ///< List of all accesses
+    size_t accesses_count;       ///< Size of list of all accesses
+    cm_bracket_note *brackets;   ///< Begin/End annotations
+    size_t brackets_count;       ///< Size of begin/end annotations
+    const char **notes;          ///< Per-access annotations
+    size_t notes_count;          ///< Number of per-access annotations
     cm_access_log_type log_type; ///< Log type
 } cm_access_log;
 
-
 /// \brief DHD runtime configuration
-typedef struct { // NOLINT(modernize-use-using)
+typedef struct {                // NOLINT(modernize-use-using)
     const char *source_address; ///< Address of dehash source
 } cm_dhd_runtime_config;
 
@@ -308,11 +302,9 @@ typedef struct { // NOLINT(modernize-use-using)
 /// where pointer size depend on types, this api might not work
 typedef struct cm_machine_tag cm_machine;
 
-
 // ---------------------------------
 // API function definitions
 // ---------------------------------
-
 
 /// \brief Create new machine config with default parameters
 /// \returns Pointer to new default config object
@@ -326,51 +318,47 @@ CM_API const cm_machine_config *cm_new_default_machine_config(void);
 /// \returns void
 CM_API void cm_delete_machine_config(const cm_machine_config *config);
 
-
 /// \brief Create new machine instance from configuration
 /// \param config Machine configuration. Must be pointer to valid object
 /// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param new_machine Receives the pointer to new machine instance
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
-                      cm_machine **new_machine, char **err_msg);
+    cm_machine **new_machine, char **err_msg);
 
 /// \brief Create machine instance from previously serialized directory
 /// \param dir Directory where previous machine is serialized
 /// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param new_machine Receives the pointer to new machine instance
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_load_machine(const char *dir, const cm_machine_runtime_config *runtime_config,
-                                      cm_machine **new_machine, char **err_msg);
-
+CM_API int cm_load_machine(const char *dir, const cm_machine_runtime_config *runtime_config, cm_machine **new_machine,
+    char **err_msg);
 
 /// \brief Serialize entire state to directory
 /// \param m Pointer to valid machine instance
 /// \param dir Directory where the machine will be serialized
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \details The method changes machine because it updates the root hash
 /// \returns 0 for success, non zero code for error
 CM_API int cm_store(cm_machine *m, const char *dir, char **err_msg);
 
-
 /// \brief Deletes machine instance
 /// \param m Valid pointer to the existing machine instance
 CM_API void cm_delete_machine(cm_machine *m);
-
 
 /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
 /// \param m Pointer to valid machine instance
 /// \param mcycle_end End cycle value
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg);
@@ -381,27 +369,26 @@ CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg);
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param access_log Receives the state access log.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_step(cm_machine *m, cm_access_log_type log_type, bool one_based,
-         cm_access_log** access_log, char **err_msg);
+CM_API int cm_step(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
+    char **err_msg);
 
 /// \brief  Deletes the instance of cm_access_log acquired from cm_step
 /// \param acc_log Valid pointer to cm_access_log object
 CM_API void cm_delete_access_log(cm_access_log *acc_log);
-
 
 /// \brief Checks the internal consistency of an access log
 /// \param log State access log to be verified
 /// \param r Machine runtime configuration to use during verification. Must be pointer to valid object
 /// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_verify_access_log(const cm_access_log* log, const cm_machine_runtime_config *runtime_config,
-                         bool one_based, char **err_msg);
+CM_API int cm_verify_access_log(const cm_access_log *log, const cm_machine_runtime_config *runtime_config,
+    bool one_based, char **err_msg);
 
 /// \brief Checks the validity of a state transition
 /// \param root_hash_before State hash before step
@@ -410,18 +397,16 @@ CM_API int cm_verify_access_log(const cm_access_log* log, const cm_machine_runti
 /// \param runtime_config Machine runtime configuration to use during verification. Must be pointer to valid object
 /// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for successfull verification, non zero code for error
-CM_API int cm_verify_state_transition(const cm_hash *root_hash_before,
-                                    const cm_access_log *log, const cm_hash *root_hash_after,
-                                    const cm_machine_runtime_config *runtime_config, bool one_based,
-                                    char **err_msg);
+CM_API int cm_verify_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
+    const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
 
 /// \brief Update the Merkle tree so it matches the contents of the machine state.
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_update_merkle_tree(cm_machine *m, char **err_msg);
@@ -434,32 +419,31 @@ CM_API int cm_update_merkle_tree(cm_machine *m, char **err_msg);
 /// \param proof Receives the proof
 /// proof must be deleted with the function cm_delete_merkle_tree_proof
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
-CM_API int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm_merkle_tree_proof **proof, char **err_msg);
+CM_API int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm_merkle_tree_proof **proof,
+    char **err_msg);
 
 /// \brief  Deletes the instance of cm_merkle_tree_proof acquired from cm_get_proof
 /// \param proof Valid pointer to cm_merkle_tree_proof object
 CM_API void cm_delete_merkle_tree_proof(cm_merkle_tree_proof *proof);
 
-
 /// \brief Obtains the root hash of the Merkle tree
 /// \param m Pointer to valid machine instance
 /// \param hash Valid pointer to cm_hash structure that  receives the hash.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_get_root_hash(const cm_machine *m, cm_hash *hash, char **err_msg);
-
 
 /// \brief Verifies integrity of Merkle tree.
 /// \param m Pointer to valid machine instance
 /// \param result True if tree is self-consistent, false otherwise.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_verify_merkle_tree(const cm_machine *m, bool *result, char **err_msg);
@@ -468,7 +452,7 @@ CM_API int cm_verify_merkle_tree(const cm_machine *m, bool *result, char **err_m
 /// \param m Pointer to valid machine instance
 /// \param val Receives value read from the CSR
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_csr(const cm_machine *m, CM_PROC_CSR r, uint64_t *val, char **err_msg);
@@ -478,7 +462,7 @@ CM_API int cm_read_csr(const cm_machine *m, CM_PROC_CSR r, uint64_t *val, char *
 /// \param w CSR to write
 /// \param val Value to write
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg);
@@ -493,12 +477,11 @@ CM_API uint64_t cm_get_csr_address(CM_PROC_CSR w);
 /// \param word_address Word address (aligned to 64-bit boundary).
 /// \param word_value Receives word value.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 /// \warning The current implementation of this function is very slow!
 CM_API int cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *word_value, char **err_msg);
-
 
 /// \brief Reads a chunk of data from the machine memory.
 /// \param m Pointer to valid machine instance
@@ -506,7 +489,7 @@ CM_API int cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *wo
 /// \param data Receives chunk of memory.
 /// \param length Size of chunk.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 /// \details The entire chunk, from \p address to \p address + \p length must
@@ -520,7 +503,7 @@ CM_API int cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *
 /// \param data Source for chunk of data.
 /// \param length Size of chunk.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 /// \details The entire chunk, from \p address to \p address + \p length must
@@ -533,7 +516,7 @@ CM_API int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char 
 /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_x(const cm_machine *m, int i, uint64_t *val, char **err_msg);
@@ -543,7 +526,7 @@ CM_API int cm_read_x(const cm_machine *m, int i, uint64_t *val, char **err_msg);
 /// \param i Register index. Between 1 and X_REG_COUNT-1, inclusive.
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_x(cm_machine *m, int i, uint64_t val, char **err_msg);
@@ -557,7 +540,7 @@ CM_API uint64_t cm_get_x_address(int i);
 /// \param m Pointer to valid machine instance
 /// \param val Receives the value of the register
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_pc(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -858,7 +841,6 @@ CM_API int cm_write_mcounteren(cm_machine *m, uint64_t val, char **err_msg);
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_stvec(const cm_machine *m, uint64_t *val, char **err_msg);
-
 
 /// \brief Writes the value of the stvec register.
 /// \param m Pointer to valid machine instance
@@ -1305,20 +1287,19 @@ CM_API int cm_set_iflags_H(cm_machine *m, char **err_msg);
 /// \brief Dump all memory ranges to files in current working directory.
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_dump_pmas(const cm_machine *m, char **err_msg);
-
 
 /// \brief Verify if dirty page maps are consistent.
 /// \param m Pointer to valid machine instance
 /// \param result True if dirty page maps are consistent, false if there is an error.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char** err_msg);
+CM_API int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char **err_msg);
 
 /// \brief Returns copy of initialization config.
 /// \param m Pointer to valid machine instance
@@ -1331,7 +1312,6 @@ CM_API int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char** e
 /// \details Object acquired from this function must not be changed and
 /// must be deleted with cm_delete_machine_config
 CM_API int cm_get_initial_config(const cm_machine *m, const cm_machine_config **config, char **err_msg);
-
 
 /// \brief Returns copy of default system config.
 /// \param config Receives the default configuration.
@@ -1348,13 +1328,12 @@ CM_API int cm_get_default_config(const cm_machine_config **config, char **err_ms
 /// \param m Pointer to valid machine instance
 /// \param new_flash Configuration of the new flash drive
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg 
+/// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 /// \details The machine must contain an existing flash
 /// drive matching the start and length specified in new_flash
 CM_API int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash, char **err_msg);
-
 
 /// \brief Deletes machine flash drive config
 /// \returns void
@@ -1365,8 +1344,7 @@ CM_API void cm_delete_flash_drive_config(const cm_flash_drive_config *config);
 /// \details This C API is meant to be used for various language bindings.
 /// Many of them could not directly call C free function,
 /// so this is a convenience function for cleanup of error messages
-CM_API void cm_delete_error_message(const char* err_msg);
-
+CM_API void cm_delete_error_message(const char *err_msg);
 
 /// \brief Deletes machine runtime config
 /// \returns void
@@ -1393,7 +1371,6 @@ CM_API int cm_snapshot(cm_machine *m, char **err_msg);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_rollback(cm_machine *m, char **err_msg);
 
-
 /// \brief Deletes allocated ram config
 /// \returns void
 CM_API void cm_delete_ram_config(const cm_ram_config *config);
@@ -1414,4 +1391,4 @@ CM_API void cm_delete_dhd_runtime_config(const cm_dhd_runtime_config *config);
 }
 #endif
 
-#endif //CM_C_API_H
+#endif // CM_C_API_H

@@ -17,8 +17,8 @@
 #ifndef META_H
 #define META_H
 
-#include <type_traits>
 #include <cinttypes>
+#include <type_traits>
 
 /// \file
 /// \brief Meta-programming helper functions.
@@ -32,14 +32,15 @@ constexpr auto to_underlying(E e) noexcept {
 }
 
 namespace detail {
-    template <template<typename...> class BASE, typename DERIVED>
-    struct is_template_base_of_helper {
-        struct no {};
-        struct yes {};
-        no operator()(...);
-        template <typename ...T> yes operator()(const BASE<T...> &);
-    };
-}
+template <template <typename...> class BASE, typename DERIVED>
+struct is_template_base_of_helper {
+    struct no {};
+    struct yes {};
+    no operator()(...);
+    template <typename... T>
+    yes operator()(const BASE<T...> &);
+};
+} // namespace detail
 
 /// \class remove_cvref
 /// \brief Provides a member typedef type with reference and topmost cv-qualifiers removed.
@@ -53,23 +54,16 @@ struct remove_cvref {
 /// \brief SFINAE test if class is derived from from a base template class.
 /// \tparam BASE Base template.
 /// \tparam DERIVED Derived class.
-template <template<typename...> class BASE, typename DERIVED>
-using is_template_base_of = std::integral_constant<
-    bool,
-    std::is_same<
-        typename std::result_of<
-            detail::is_template_base_of_helper<BASE, DERIVED>(const DERIVED &)
-        >::type,
-        typename detail::is_template_base_of_helper<BASE, DERIVED>::yes
-    >::value>;
-
+template <template <typename...> class BASE, typename DERIVED>
+using is_template_base_of = std::integral_constant<bool,
+    std::is_same<typename std::result_of<detail::is_template_base_of_helper<BASE, DERIVED>(const DERIVED &)>::type,
+        typename detail::is_template_base_of_helper<BASE, DERIVED>::yes>::value>;
 
 /// \class log2_size
 /// \brief Provides an int member value with the log<sub>2</sub> of size of \p T
 /// \param T Type from which the size is needed.
 template <typename T>
-struct log2_size {
-};
+struct log2_size {};
 
 /// \cond HIDDEN_SYMBOLS
 

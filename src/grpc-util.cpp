@@ -18,8 +18,7 @@
 
 namespace cartesi {
 
-semantic_version get_proto_semantic_version(
-    const Versioning::SemanticVersion &proto_v) {
+semantic_version get_proto_semantic_version(const Versioning::SemanticVersion &proto_v) {
     semantic_version v;
     v.major = proto_v.major();
     v.minor = proto_v.minor();
@@ -29,8 +28,7 @@ semantic_version get_proto_semantic_version(
     return v;
 }
 
-void set_proto_machine_config(const machine_config &c,
-    CartesiMachine::MachineConfig* proto_c) {
+void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineConfig *proto_c) {
     auto *proto_rom = proto_c->mutable_rom();
     proto_rom->set_bootargs(c.rom.bootargs);
     proto_rom->set_image_filename(c.rom.image_filename);
@@ -104,7 +102,7 @@ void set_proto_machine_config(const machine_config &c,
     proto_p->set_scounteren(c.processor.scounteren);
     proto_p->set_ilrsc(c.processor.ilrsc);
     proto_p->set_iflags(c.processor.iflags);
-    for(const auto &f: c.flash_drive) {
+    for (const auto &f : c.flash_drive) {
         auto *proto_f = proto_c->add_flash_drive();
         proto_f->set_start(f.start);
         proto_f->set_length(f.length);
@@ -122,24 +120,18 @@ void set_proto_machine_config(const machine_config &c,
     }
 }
 
-void set_proto_machine_runtime_config(const machine_runtime_config &r,
-    CartesiMachine::MachineRuntimeConfig* proto_r) {
+void set_proto_machine_runtime_config(const machine_runtime_config &r, CartesiMachine::MachineRuntimeConfig *proto_r) {
     auto *proto_dhd = proto_r->mutable_dhd();
     proto_dhd->set_source_address(r.dhd.source_address);
     auto *proto_concurrency = proto_r->mutable_concurrency();
     proto_concurrency->set_update_merkle_tree(r.concurrency.update_merkle_tree);
 }
 
-access_log::type get_proto_log_type(
-    const CartesiMachine::AccessLogType &proto_lt) {
-    return access_log::type{
-        proto_lt.proofs(),
-        proto_lt.annotations()
-    };
+access_log::type get_proto_log_type(const CartesiMachine::AccessLogType &proto_lt) {
+    return access_log::type{proto_lt.proofs(), proto_lt.annotations()};
 }
 
-void set_proto_hash(const machine_merkle_tree::hash_type &h,
-    CartesiMachine::Hash *proto_h) {
+void set_proto_hash(const machine_merkle_tree::hash_type &h, CartesiMachine::Hash *proto_h) {
     proto_h->set_data(h.data(), h.size());
 }
 
@@ -152,8 +144,7 @@ machine_merkle_tree::hash_type get_proto_hash(const CartesiMachine::Hash &proto_
     return hash;
 }
 
-machine_merkle_tree::proof_type get_proto_proof(
-    const CartesiMachine::MerkleTreeProof &proto_proof) {
+machine_merkle_tree::proof_type get_proto_proof(const CartesiMachine::MerkleTreeProof &proto_proof) {
     int log2_target_size = static_cast<int>(proto_proof.log2_target_size());
     int log2_root_size = static_cast<int>(proto_proof.log2_root_size());
     machine_merkle_tree::proof_type p{log2_root_size, log2_target_size};
@@ -165,31 +156,26 @@ machine_merkle_tree::proof_type get_proto_proof(
         throw std::invalid_argument("wrong number of sibling hashes");
     }
     for (int i = 0; i < proto_sibs.size(); i++) {
-        p.set_sibling_hash(get_proto_hash(proto_sibs[i]), log2_root_size-1-i);
+        p.set_sibling_hash(get_proto_hash(proto_sibs[i]), log2_root_size - 1 - i);
     }
     return p;
 }
 
-void set_proto_proof(const machine_merkle_tree::proof_type &p,
-    CartesiMachine::MerkleTreeProof *proto_p) {
+void set_proto_proof(const machine_merkle_tree::proof_type &p, CartesiMachine::MerkleTreeProof *proto_p) {
     proto_p->set_target_address(p.get_target_address());
     proto_p->set_log2_target_size(p.get_log2_target_size());
     proto_p->set_log2_root_size(p.get_log2_root_size());
     set_proto_hash(p.get_target_hash(), proto_p->mutable_target_hash());
     set_proto_hash(p.get_root_hash(), proto_p->mutable_root_hash());
-    for (int log2_size = p.get_log2_root_size()-1;
-        log2_size >= p.get_log2_target_size(); --log2_size) {
+    for (int log2_size = p.get_log2_root_size() - 1; log2_size >= p.get_log2_target_size(); --log2_size) {
         set_proto_hash(p.get_sibling_hash(log2_size), proto_p->add_sibling_hashes());
     }
 }
 
-
-void set_proto_access_log(const access_log &al,
-    CartesiMachine::AccessLog *proto_al) {
-    proto_al->mutable_log_type()->set_annotations(
-        al.get_log_type().has_annotations());
+void set_proto_access_log(const access_log &al, CartesiMachine::AccessLog *proto_al) {
+    proto_al->mutable_log_type()->set_annotations(al.get_log_type().has_annotations());
     proto_al->mutable_log_type()->set_proofs(al.get_log_type().has_proofs());
-    for (const auto &a: al.get_accesses()) {
+    for (const auto &a : al.get_accesses()) {
         auto *proto_a = proto_al->add_accesses();
         switch (a.get_type()) {
             case access_type::read:
@@ -211,16 +197,14 @@ void set_proto_access_log(const access_log &al,
         }
     }
     if (al.get_log_type().has_annotations()) {
-        for (const auto &bn: al.get_brackets()) {
+        for (const auto &bn : al.get_brackets()) {
             auto *proto_bn = proto_al->add_brackets();
             switch (bn.type) {
                 case bracket_type::begin:
-                    proto_bn->set_type(
-                        CartesiMachine::BracketNote_BracketNoteType_BEGIN);
+                    proto_bn->set_type(CartesiMachine::BracketNote_BracketNoteType_BEGIN);
                     break;
                 case bracket_type::end:
-                    proto_bn->set_type(
-                        CartesiMachine::BracketNote_BracketNoteType_END);
+                    proto_bn->set_type(CartesiMachine::BracketNote_BracketNoteType_END);
                     break;
                 default:
                     throw std::invalid_argument{"invalid BracketNoteType"};
@@ -229,15 +213,14 @@ void set_proto_access_log(const access_log &al,
             proto_bn->set_where(bn.where);
             proto_bn->set_text(bn.text);
         }
-        for (const auto &n: al.get_notes()) {
+        for (const auto &n : al.get_notes()) {
             proto_al->add_notes()->assign(n);
         }
     }
 }
 
-bracket_type get_proto_bracket_type(
-    CartesiMachine::BracketNote_BracketNoteType proto_b) {
-    switch(proto_b) {
+bracket_type get_proto_bracket_type(CartesiMachine::BracketNote_BracketNoteType proto_b) {
+    switch (proto_b) {
         case (CartesiMachine::BracketNote_BracketNoteType_BEGIN):
             return bracket_type::begin;
         case (CartesiMachine::BracketNote_BracketNoteType_END):
@@ -259,18 +242,17 @@ access_type get_proto_access_type(CartesiMachine::AccessType proto_at) {
 }
 
 access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
-    if (proto_al.log_type().annotations() &&
-        proto_al.accesses().size() != proto_al.notes().size()) {
+    if (proto_al.log_type().annotations() && proto_al.accesses().size() != proto_al.notes().size()) {
         throw std::invalid_argument("size of log accesses and notes differ");
     }
 
     bool has_annotations = proto_al.log_type().annotations();
-    bool has_proofs =  proto_al.log_type().proofs();
+    bool has_proofs = proto_al.log_type().proofs();
     auto al = access_log(access_log::type{has_proofs, has_annotations});
 
-    const auto& proto_accesses = proto_al.accesses();
-    const auto& proto_brackets = proto_al.brackets();
-    const auto& proto_notes = proto_al.notes();
+    const auto &proto_accesses = proto_al.accesses();
+    const auto &proto_brackets = proto_al.brackets();
+    const auto &proto_notes = proto_al.notes();
     auto pbr = proto_brackets.begin();
     auto pnt = proto_notes.begin();
     auto pac = proto_accesses.begin();
@@ -278,8 +260,7 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
     while (pac != proto_accesses.end() && pbr != proto_brackets.end()) {
         while (pbr != proto_brackets.end() && pbr->where() == iac) {
             // bracket note points to current access
-            al.push_bracket(get_proto_bracket_type(pbr->type()),
-                pbr->text().c_str());
+            al.push_bracket(get_proto_bracket_type(pbr->type()), pbr->text().c_str());
             assert(pbr->where() == al.get_brackets().back().where);
             pbr++;
         }
@@ -288,10 +269,8 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
             a.set_type(get_proto_access_type(pac->type()));
             a.set_address(pac->address());
             a.set_log2_size(pac->log2_size());
-            a.get_read().insert(a.get_read().end(),
-                pac->read().begin(), pac->read().end());
-            a.get_written().insert(a.get_written().end(),
-                pac->written().begin(), pac->written().end());
+            a.get_read().insert(a.get_read().end(), pac->read().begin(), pac->read().end());
+            a.get_written().insert(a.get_written().end(), pac->written().begin(), pac->written().end());
             std::string note;
             if (has_annotations) {
                 note = *pnt++;
@@ -307,8 +286,7 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
     return al;
 }
 
-processor_config get_proto_processor_config(
-    const CartesiMachine::ProcessorConfig &proto_p) {
+processor_config get_proto_processor_config(const CartesiMachine::ProcessorConfig &proto_p) {
     using CartesiMachine::ProcessorConfig;
     processor_config p;
     if (proto_p.x1_oneof_case() == ProcessorConfig::kX1) {
@@ -488,8 +466,7 @@ processor_config get_proto_processor_config(
     return p;
 }
 
-flash_drive_config get_proto_flash_drive_config(
-    const CartesiMachine::FlashDriveConfig &proto_f) {
+flash_drive_config get_proto_flash_drive_config(const CartesiMachine::FlashDriveConfig &proto_f) {
     flash_drive_config f;
     f.start = proto_f.start();
     f.image_filename = proto_f.image_filename();
@@ -498,16 +475,14 @@ flash_drive_config get_proto_flash_drive_config(
     return f;
 }
 
-machine_runtime_config get_proto_machine_runtime_config(
-    const CartesiMachine::MachineRuntimeConfig &proto_r) {
+machine_runtime_config get_proto_machine_runtime_config(const CartesiMachine::MachineRuntimeConfig &proto_r) {
     machine_runtime_config r;
     r.dhd.source_address = proto_r.dhd().source_address();
     r.concurrency.update_merkle_tree = proto_r.concurrency().update_merkle_tree();
     return r;
 }
 
-machine_config get_proto_machine_config(
-    const CartesiMachine::MachineConfig &proto_c) {
+machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &proto_c) {
     machine_config c;
     if (proto_c.has_processor()) {
         c.processor = get_proto_processor_config(proto_c.processor());
@@ -520,13 +495,12 @@ machine_config get_proto_machine_config(
         c.ram.length = proto_c.ram().length();
         c.ram.image_filename = proto_c.ram().image_filename();
     }
-    for (const auto &fs: proto_c.flash_drive()) {
+    for (const auto &fs : proto_c.flash_drive()) {
         c.flash_drive.emplace_back(get_proto_flash_drive_config(fs));
     }
     if (proto_c.has_clint()) {
         const auto &clint = proto_c.clint();
-        if (clint.mtimecmp_oneof_case() ==
-            CartesiMachine::CLINTConfig::kMtimecmp) {
+        if (clint.mtimecmp_oneof_case() == CartesiMachine::CLINTConfig::kMtimecmp) {
             c.clint.mtimecmp = clint.mtimecmp();
         }
     }

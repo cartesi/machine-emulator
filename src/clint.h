@@ -30,9 +30,9 @@ class machine;
 
 /// \brief Mapping between CSRs and their relative addresses in CLINT memory
 enum class clint_csr {
-    msip0    = UINT64_C(0),      // Machine software interrupt for hart 0
+    msip0 = UINT64_C(0), // Machine software interrupt for hart 0
     mtimecmp = UINT64_C(0x4000),
-    mtime    = UINT64_C(0xbff8)
+    mtime = UINT64_C(0xbff8)
 };
 
 /// \brief Obtains the relative address of a CSR in HTIF memory.

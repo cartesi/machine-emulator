@@ -18,8 +18,8 @@
 #define BACK_MERKLE_TREE_H
 
 #include "keccak-256-hasher.h"
-#include "pristine-merkle-tree.h"
 #include "merkle-tree-proof.h"
+#include "pristine-merkle-tree.h"
 
 /// \file
 /// \brief Back Merkle tree interface.
@@ -36,7 +36,6 @@ namespace cartesi {
 /// The class only ever stores log(n) hashes (1 for each tree level).
 class back_merkle_tree {
 public:
-
     /// \brief Hasher class.
     using hasher_type = keccak_256_hasher;
 
@@ -118,14 +117,12 @@ public:
     proof_type get_next_leaf_proof(void) const;
 
 private:
-
-    int m_log2_root_size;             ///< Log<sub>2</sub> of tree size
-    int m_log2_leaf_size;             ///< Log<sub>2</sub> of leaf size
-    address_type m_leaf_count;      ///< Number of leaves already added
-    address_type m_max_leaves;        ///< Maximum number of leaves
-    std::vector<hash_type> m_context; ///< Hashes of bits set in leaf_count
+    int m_log2_root_size;                   ///< Log<sub>2</sub> of tree size
+    int m_log2_leaf_size;                   ///< Log<sub>2</sub> of leaf size
+    address_type m_leaf_count;              ///< Number of leaves already added
+    address_type m_max_leaves;              ///< Maximum number of leaves
+    std::vector<hash_type> m_context;       ///< Hashes of bits set in leaf_count
     pristine_merkle_tree m_pristine_hashes; ///< Hash of pristine subtrees of all sizes
-
 };
 
 } // namespace cartesi

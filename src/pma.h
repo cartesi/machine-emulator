@@ -18,10 +18,10 @@
 #define PMA_H
 
 #include <cstdint>
-#include <vector>
-#include <variant>
-#include <string>
 #include <stdexcept>
+#include <string>
+#include <variant>
+#include <vector>
 
 #include "pma-constants.h"
 
@@ -81,16 +81,14 @@ struct pma_driver final {
 /// \brief Data for IO ranges.
 class pma_device final {
 
-    const pma_driver *m_driver;  ///< Driver with callbacks.
-    void *m_context;             ///< Context to pass to callbacks.
+    const pma_driver *m_driver; ///< Driver with callbacks.
+    void *m_context;            ///< Context to pass to callbacks.
 
 public:
     /// \brief Constructor from entries.
     /// \param context Context to pass to callbacks.
     /// \param driver Pointer to driver with callbacks.
-    explicit pma_device(const pma_driver *driver, void *context):
-        m_driver{driver},
-        m_context{context} {
+    explicit pma_device(const pma_driver *driver, void *context) : m_driver{driver}, m_context{context} {
         ;
     }
 
@@ -121,15 +119,14 @@ public:
 /// \brief Data for memory ranges.
 class pma_memory final {
 
-    uint64_t m_length;             ///< Length of memory range (copy of PMA length field).
-    unsigned char *m_host_memory;  ///< Start of associated memory region in host.
-    int m_backing_file;            ///< File descryptor for mmaped memory.
+    uint64_t m_length;            ///< Length of memory range (copy of PMA length field).
+    unsigned char *m_host_memory; ///< Start of associated memory region in host.
+    int m_backing_file;           ///< File descryptor for mmaped memory.
 
     /// \brief Close file and/or release memory.
     void release(void);
 
 public:
-
     /// \brief Mmap'd range data (shared or not).
     struct mmapd {
         bool shared;
@@ -142,12 +139,10 @@ public:
     pma_memory(uint64_t length, const std::string &path, const mmapd &m);
 
     /// \brief Calloc'd range data (just a tag).
-    struct callocd {
-    };
+    struct callocd {};
 
     /// \brief Mock'd range data (just a tag).
-    struct mockd {
-    };
+    struct mockd {};
 
     /// \brief Constructor for calloc'd ranges.
     /// \param length of range.
@@ -199,19 +194,16 @@ public:
     int get_length(void) const {
         return m_length;
     }
-
 };
 
 /// \brief Data for empty memory ranges (nothing, really)
-struct pma_empty final {
-};
+struct pma_empty final {};
 
 /// \brief Physical Memory Attribute entry.
 /// \details The target's physical memory layout is described by an
 /// array of PMA entries.
 class pma_entry final {
 public:
-
     ///< Exploded flags for PMA entry.
     struct flags {
         // bool M = std::holds_alternative<pma_memory>(data);
@@ -226,20 +218,19 @@ public:
     };
 
 private:
+    uint64_t m_start;  ///< Start of physical memory range in target.
+    uint64_t m_length; ///< Length of physical memory range in target.
+    flags m_flags;     ///< PMA Flags
 
-    uint64_t m_start;   ///< Start of physical memory range in target.
-    uint64_t m_length;  ///< Length of physical memory range in target.
-    flags m_flags;      ///< PMA Flags
+    pma_peek m_peek; ///< Callback for peek operations.
 
-    pma_peek m_peek;    ///< Callback for peek operations.
+    std::vector<uint8_t> m_dirty_page_map; ///< Map of dirty pages.
 
-    std::vector<uint8_t> m_dirty_page_map;  ///< Map of dirty pages.
-
-    std::variant<
-        pma_empty,      ///< Data specific to E ranges
-        pma_device,     ///< Data specific to IO ranges
-        pma_memory      ///< Data specific to M ranges
-    > m_data;
+    std::variant<pma_empty, ///< Data specific to E ranges
+        pma_device,         ///< Data specific to IO ranges
+        pma_memory          ///< Data specific to M ranges
+        >
+        m_data;
 
 public:
     /// \brief No copy constructor
@@ -254,45 +245,45 @@ public:
     ~pma_entry() = default;
 
     /// \brief Constructor for empty entry
-    pma_entry(uint64_t start, uint64_t length):
+    pma_entry(uint64_t start, uint64_t length) :
         m_start{start},
         m_length{length},
         m_flags{},
         m_peek{pma_peek_error},
         m_data{pma_empty{}} {
-        if (length & (PMA_PAGE_SIZE-1)) {
+        if (length & (PMA_PAGE_SIZE - 1)) {
             throw std::invalid_argument{"PMA length must be multiple of page size"};
         }
     }
 
     /// \brief Default constructor creates an empty entry
     /// spanning an empty range
-    pma_entry(void): pma_entry(0, 0) { ; }
+    pma_entry(void) : pma_entry(0, 0) {
+        ;
+    }
 
     /// \brief Constructor for memory entry
-    pma_entry(uint64_t start, uint64_t length, pma_memory &&memory,
-        pma_peek peek = pma_peek_error):
+    pma_entry(uint64_t start, uint64_t length, pma_memory &&memory, pma_peek peek = pma_peek_error) :
         m_start{start},
         m_length{length},
         m_flags{},
         m_peek{peek},
         m_data{std::move(memory)} {
         // allocate dirty page map and mark all pages as dirty
-        m_dirty_page_map.resize(length/(8*PMA_PAGE_SIZE)+1, 0xff);
-        if (length & (PMA_PAGE_SIZE-1)) {
+        m_dirty_page_map.resize(length / (8 * PMA_PAGE_SIZE) + 1, 0xff);
+        if (length & (PMA_PAGE_SIZE - 1)) {
             throw std::invalid_argument{"PMA length must be multiple of page size"};
         }
     }
 
     /// \brief Constructor for device entry
-    pma_entry(uint64_t start, uint64_t length, pma_device &&device,
-        pma_peek peek = pma_peek_error):
+    pma_entry(uint64_t start, uint64_t length, pma_device &&device, pma_peek peek = pma_peek_error) :
         m_start{start},
         m_length{length},
         m_flags{},
         m_peek{peek},
         m_data{std::move(device)} {
-        if (length & (PMA_PAGE_SIZE-1)) {
+        if (length & (PMA_PAGE_SIZE - 1)) {
             throw std::invalid_argument{"PMA length must be multiple of page size"};
         }
     }
@@ -440,7 +431,6 @@ public:
     void mark_pages_clean(void) {
         return std::fill(m_dirty_page_map.begin(), m_dirty_page_map.end(), 0);
     }
-
 };
 
 /// \brief Creates a PMA entry for a new memory range
@@ -456,8 +446,7 @@ pma_entry make_callocd_memory_pma_entry(uint64_t start, uint64_t length);
 /// \param length Length of PMA range.
 /// \param path Path to backing file.
 /// \returns Corresponding PMA entry
-pma_entry make_callocd_memory_pma_entry(uint64_t start, uint64_t length,
-    const std::string &path);
+pma_entry make_callocd_memory_pma_entry(uint64_t start, uint64_t length, const std::string &path);
 
 /// \brief Creates a PMA entry for a new memory region using the host's
 /// mmap functionality.
@@ -472,8 +461,7 @@ pma_entry make_callocd_memory_pma_entry(uint64_t start, uint64_t length,
 /// \returns Corresponding PMA entry
 /// \details \p length must match the size of the backing file.
 /// This function is typically used to map flash drives.
-pma_entry make_mmapd_memory_pma_entry(uint64_t start, uint64_t length,
-    const std::string &path, bool shared);
+pma_entry make_mmapd_memory_pma_entry(uint64_t start, uint64_t length, const std::string &path, bool shared);
 
 /// \brief Creates a PMA entry for a new mock memory region (no allocation).
 /// \param start Start of physical memory range in the target address
@@ -492,8 +480,8 @@ pma_entry make_mockd_memory_pma_entry(uint64_t start, uint64_t length);
 /// \param driver Pointer to driver with callbacks.
 /// \param context Pointer to context to be passed to callbacks.
 /// \returns Corresponding PMA entry
-pma_entry make_device_pma_entry(uint64_t start, uint64_t length,
-    pma_peek peek, const pma_driver *driver, void *context = nullptr);
+pma_entry make_device_pma_entry(uint64_t start, uint64_t length, pma_peek peek, const pma_driver *driver,
+    void *context = nullptr);
 
 /// \brief Creates an empty PMA entry.
 /// \param start Start of physical memory range in the target address

@@ -14,15 +14,15 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
-#include <algorithm>
 
 #include "grpc-util.h"
 #include "grpc-virtual-machine.h"
 
-using grpc::Status;
 using grpc::ClientContext;
+using grpc::Status;
 using grpc::StatusCode;
 using namespace CartesiMachine;
 using namespace Versioning;
@@ -31,10 +31,9 @@ using hash_type = cartesi::machine_merkle_tree::hash_type;
 
 namespace cartesi {
 
-grpc_machine_stub::grpc_machine_stub(const std::string &address):
+grpc_machine_stub::grpc_machine_stub(const std::string &address) :
     m_address(address),
-    m_stub(Machine::NewStub(grpc::CreateChannel(address,
-        grpc::InsecureChannelCredentials()))) {
+    m_stub(Machine::NewStub(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()))) {
     ;
 }
 
@@ -51,30 +50,47 @@ const std::string &grpc_machine_stub::get_address(void) const {
 }
 
 void grpc_machine_stub::reconnect(void) {
-    m_stub = Machine::NewStub(grpc::CreateChannel(m_address,
-        grpc::InsecureChannelCredentials()));
+    m_stub = Machine::NewStub(grpc::CreateChannel(m_address, grpc::InsecureChannelCredentials()));
 }
 
 static std::string status_code_to_string(StatusCode code) {
     switch (code) {
-        case StatusCode::OK: return "ok";
-        case StatusCode::CANCELLED: return "cancelled";
-        case StatusCode::INVALID_ARGUMENT: return "invalid argument";
-        case StatusCode::DEADLINE_EXCEEDED: return "deadline exceeded";
-        case StatusCode::NOT_FOUND: return "not found";
-        case StatusCode::ALREADY_EXISTS: return "already exists";
-        case StatusCode::PERMISSION_DENIED: return "permission denied";
-        case StatusCode::UNAUTHENTICATED: return "unauthenticated";
-        case StatusCode::RESOURCE_EXHAUSTED: return "resource exhausted";
-        case StatusCode::FAILED_PRECONDITION: return "failed precondition";
-        case StatusCode::ABORTED: return "aborted";
-        case StatusCode::OUT_OF_RANGE: return "out of range";
-        case StatusCode::UNIMPLEMENTED: return "unimplemented";
-        case StatusCode::INTERNAL: return "internal";
-        case StatusCode::UNAVAILABLE: return "unavailable";
-        case StatusCode::DATA_LOSS: return "data loss";
-        case StatusCode::UNKNOWN: return "unknown";
-        default: return "unknown";
+        case StatusCode::OK:
+            return "ok";
+        case StatusCode::CANCELLED:
+            return "cancelled";
+        case StatusCode::INVALID_ARGUMENT:
+            return "invalid argument";
+        case StatusCode::DEADLINE_EXCEEDED:
+            return "deadline exceeded";
+        case StatusCode::NOT_FOUND:
+            return "not found";
+        case StatusCode::ALREADY_EXISTS:
+            return "already exists";
+        case StatusCode::PERMISSION_DENIED:
+            return "permission denied";
+        case StatusCode::UNAUTHENTICATED:
+            return "unauthenticated";
+        case StatusCode::RESOURCE_EXHAUSTED:
+            return "resource exhausted";
+        case StatusCode::FAILED_PRECONDITION:
+            return "failed precondition";
+        case StatusCode::ABORTED:
+            return "aborted";
+        case StatusCode::OUT_OF_RANGE:
+            return "out of range";
+        case StatusCode::UNIMPLEMENTED:
+            return "unimplemented";
+        case StatusCode::INTERNAL:
+            return "internal";
+        case StatusCode::UNAVAILABLE:
+            return "unavailable";
+        case StatusCode::DATA_LOSS:
+            return "data loss";
+        case StatusCode::UNKNOWN:
+            return "unknown";
+        default:
+            return "unknown";
     }
 }
 
@@ -88,8 +104,9 @@ static void check_status(const Status &status) {
     }
 }
 
-grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
-    const std::string &dir, const machine_runtime_config &r): m_stub(std::move(stub)) {
+grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub, const std::string &dir,
+    const machine_runtime_config &r) :
+    m_stub(std::move(stub)) {
     MachineRequest request;
     request.set_directory(dir);
     set_proto_machine_runtime_config(r, request.mutable_runtime());
@@ -98,8 +115,9 @@ grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
     check_status(m_stub->get_stub()->Machine(&context, request, &response));
 }
 
-grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub,
-    const machine_config &c, const machine_runtime_config &r): m_stub(std::move(stub)) {
+grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub, const machine_config &c,
+    const machine_runtime_config &r) :
+    m_stub(std::move(stub)) {
     MachineRequest request;
     set_proto_machine_config(c, request.mutable_config());
     set_proto_machine_runtime_config(r, request.mutable_runtime());
@@ -118,18 +136,15 @@ machine_config grpc_virtual_machine::do_get_initial_config(void) const {
     return get_proto_machine_config(response.config());
 }
 
-machine_config grpc_virtual_machine::get_default_config(
-    const grpc_machine_stub_ptr &stub) {
+machine_config grpc_virtual_machine::get_default_config(const grpc_machine_stub_ptr &stub) {
     Void request;
     GetDefaultConfigResponse response;
     ClientContext context;
-    check_status(stub->get_stub()->GetDefaultConfig(&context,
-            request, &response));
+    check_status(stub->get_stub()->GetDefaultConfig(&context, request, &response));
     return get_proto_machine_config(response.config());
 }
 
-semantic_version grpc_virtual_machine::get_version(
-    const grpc_machine_stub_ptr &stub) {
+semantic_version grpc_virtual_machine::get_version(const grpc_machine_stub_ptr &stub) {
     Void request;
     GetVersionResponse response;
     ClientContext context;
@@ -144,8 +159,7 @@ void grpc_virtual_machine::shutdown(const grpc_machine_stub_ptr &stub) {
     check_status(stub->get_stub()->Shutdown(&context, request, &response));
 }
 
-void grpc_virtual_machine::verify_access_log(const grpc_machine_stub_ptr &stub,
-        const access_log &log, bool one_based) {
+void grpc_virtual_machine::verify_access_log(const grpc_machine_stub_ptr &stub, const access_log &log, bool one_based) {
     VerifyAccessLogRequest request;
     Void response;
     ClientContext context;
@@ -154,9 +168,8 @@ void grpc_virtual_machine::verify_access_log(const grpc_machine_stub_ptr &stub,
     check_status(stub->get_stub()->VerifyAccessLog(&context, request, &response));
 }
 
-void grpc_virtual_machine::verify_state_transition(const grpc_machine_stub_ptr &stub,
-        const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after, bool one_based) {
+void grpc_virtual_machine::verify_state_transition(const grpc_machine_stub_ptr &stub, const hash_type &root_hash_before,
+    const access_log &log, const hash_type &root_hash_after, bool one_based) {
     VerifyStateTransitionRequest request;
     Void response;
     ClientContext context;
@@ -183,7 +196,7 @@ void grpc_virtual_machine::do_store(const std::string &dir) {
     check_status(m_stub->get_stub()->Store(&context, request, &response));
 }
 
-uint64_t grpc_virtual_machine::do_read_csr(csr r) const  {
+uint64_t grpc_virtual_machine::do_read_csr(csr r) const {
     ReadCsrRequest request;
     request.set_csr(static_cast<Csr>(r));
     ReadCsrResponse response;
@@ -192,7 +205,7 @@ uint64_t grpc_virtual_machine::do_read_csr(csr r) const  {
     return response.value();
 }
 
-void grpc_virtual_machine::do_write_csr(csr w, uint64_t val)   {
+void grpc_virtual_machine::do_write_csr(csr w, uint64_t val) {
     WriteCsrRequest request;
     request.set_csr(static_cast<Csr>(w));
     request.set_value(val);
@@ -201,8 +214,7 @@ void grpc_virtual_machine::do_write_csr(csr w, uint64_t val)   {
     check_status(m_stub->get_stub()->WriteCsr(&context, request, &response));
 }
 
-uint64_t grpc_virtual_machine::get_csr_address(const grpc_machine_stub_ptr &stub,
-    csr w) {
+uint64_t grpc_virtual_machine::get_csr_address(const grpc_machine_stub_ptr &stub, csr w) {
     GetCsrAddressRequest request;
     request.set_csr(static_cast<Csr>(w));
     GetCsrAddressResponse response;
@@ -220,7 +232,7 @@ uint64_t grpc_virtual_machine::do_read_x(int i) const {
     return response.value();
 }
 
-void grpc_virtual_machine::do_write_x(int i, uint64_t val)  {
+void grpc_virtual_machine::do_write_x(int i, uint64_t val) {
     WriteXRequest request;
     request.set_index(i);
     request.set_value(val);
@@ -238,7 +250,7 @@ uint64_t grpc_virtual_machine::do_read_dhd_h(int i) const {
     return response.value();
 }
 
-void grpc_virtual_machine::do_write_dhd_h(int i, uint64_t val)  {
+void grpc_virtual_machine::do_write_dhd_h(int i, uint64_t val) {
     WriteDhdHRequest request;
     request.set_index(i);
     request.set_value(val);
@@ -247,10 +259,7 @@ void grpc_virtual_machine::do_write_dhd_h(int i, uint64_t val)  {
     check_status(m_stub->get_stub()->WriteDhdH(&context, request, &response));
 }
 
-uint64_t grpc_virtual_machine::get_x_address(
-    const grpc_machine_stub_ptr &stub,
-    int i
-) {
+uint64_t grpc_virtual_machine::get_x_address(const grpc_machine_stub_ptr &stub, int i) {
     GetXAddressRequest request;
     request.set_index(i);
     GetXAddressResponse response;
@@ -259,10 +268,7 @@ uint64_t grpc_virtual_machine::get_x_address(
     return response.address();
 }
 
-uint64_t grpc_virtual_machine::get_dhd_h_address(
-    const grpc_machine_stub_ptr &stub,
-    int i
-) {
+uint64_t grpc_virtual_machine::get_dhd_h_address(const grpc_machine_stub_ptr &stub, int i) {
     GetDhdHAddressRequest request;
     request.set_index(i);
     GetDhdHAddressResponse response;
@@ -282,11 +288,11 @@ void grpc_virtual_machine::do_read_memory(uint64_t address, unsigned char *data,
     memcpy(data, response.data().data(), length);
 }
 
-void grpc_virtual_machine::do_write_memory(uint64_t address, const unsigned char *data, size_t length)  {
+void grpc_virtual_machine::do_write_memory(uint64_t address, const unsigned char *data, size_t length) {
     WriteMemoryRequest request;
     request.set_address(address);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    request.set_data(std::string(reinterpret_cast<const char*>(data), length));
+    request.set_data(std::string(reinterpret_cast<const char *>(data), length));
     ClientContext context;
     Void response;
     check_status(m_stub->get_stub()->WriteMemory(&context, request, &response));
@@ -370,7 +376,7 @@ void grpc_virtual_machine::do_write_mcause(uint64_t val) {
 
 uint64_t grpc_virtual_machine::do_read_mtval(void) const {
     return read_csr(csr::mtval);
- }
+}
 
 void grpc_virtual_machine::do_write_mtval(uint64_t val) {
     write_csr(csr::mtval, val);
@@ -555,7 +561,7 @@ uint64_t grpc_virtual_machine::do_read_htif_ihalt(void) const {
     return read_csr(csr::htif_ihalt);
 }
 
-void grpc_virtual_machine::do_write_htif_ihalt(uint64_t val)  {
+void grpc_virtual_machine::do_write_htif_ihalt(uint64_t val) {
     write_csr(csr::htif_ihalt, val);
 }
 
@@ -571,7 +577,7 @@ uint64_t grpc_virtual_machine::do_read_htif_iyield(void) const {
     return read_csr(csr::htif_iyield);
 }
 
-void grpc_virtual_machine::do_write_htif_iyield(uint64_t val)  {
+void grpc_virtual_machine::do_write_htif_iyield(uint64_t val) {
     write_csr(csr::htif_iyield, val);
 }
 
@@ -623,9 +629,7 @@ void grpc_virtual_machine::do_get_root_hash(hash_type &hash) const {
     hash = get_proto_hash(response.hash());
 }
 
-
-machine_merkle_tree::proof_type
-grpc_virtual_machine::do_get_proof(uint64_t address, int log2_size) const {
+machine_merkle_tree::proof_type grpc_virtual_machine::do_get_proof(uint64_t address, int log2_size) const {
     GetProofRequest request;
     GetProofResponse response;
     request.set_address(address);
@@ -635,9 +639,9 @@ grpc_virtual_machine::do_get_proof(uint64_t address, int log2_size) const {
     return get_proto_proof(response.proof());
 }
 
-void grpc_virtual_machine::do_replace_flash_drive(const flash_drive_config &new_flash)  {
+void grpc_virtual_machine::do_replace_flash_drive(const flash_drive_config &new_flash) {
     ReplaceFlashDriveRequest request;
-    FlashDriveConfig* flash = request.mutable_config();
+    FlashDriveConfig *flash = request.mutable_config();
     flash->set_start(new_flash.start);
     flash->set_length(new_flash.length);
     flash->set_shared(new_flash.shared);
@@ -647,8 +651,7 @@ void grpc_virtual_machine::do_replace_flash_drive(const flash_drive_config &new_
     check_status(m_stub->get_stub()->ReplaceFlashDrive(&context, request, &response));
 }
 
-access_log grpc_virtual_machine::do_step(const access_log::type &log_type,
-    bool one_based) {
+access_log grpc_virtual_machine::do_step(const access_log::type &log_type, bool one_based) {
     StepRequest request;
     request.mutable_log_type()->set_proofs(log_type.has_proofs());
     request.mutable_log_type()->set_annotations(log_type.has_annotations());

@@ -14,86 +14,86 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#include <unordered_map>
 #include <cstring>
+#include <unordered_map>
 
-#include "clua.h"
 #include "clua-machine-util.h"
+#include "clua.h"
 
 namespace cartesi {
 
 /// \brief Deleter for C string
-template<>
+template <>
 void cm_delete<char>(char *ptr) {
     cm_delete_error_message(ptr);
 }
 
 /// \brief Deleter for C data buffer
-template<>
+template <>
 void cm_delete<unsigned char>(unsigned char *ptr) { // NOLINT(readability-non-const-parameter)
-    delete [] ptr;
+    delete[] ptr;
 }
 
 /// \brief Deleter for C api machine configuration
-template<>
+template <>
 void cm_delete<const cm_machine_config>(const cm_machine_config *ptr) {
     cm_delete_machine_config(ptr);
 }
-template<>
+template <>
 void cm_delete<cm_machine_config>(cm_machine_config *ptr) {
     cm_delete_machine_config(ptr);
 }
 
 /// \brief Deleter for C api runtime machine configuration
-template<>
+template <>
 void cm_delete(cm_machine_runtime_config *ptr) {
     cm_delete_machine_runtime_config(ptr);
 }
 
 /// \brief Deleter for C api machine
-template<>
+template <>
 void cm_delete(cm_machine *ptr) {
     cm_delete_machine(ptr);
 }
 
 /// \brief Deleter for C api access log
-template<>
+template <>
 void cm_delete(cm_access_log *ptr) {
     cm_delete_access_log(ptr);
 }
 
 /// \brief Deleter for C api merkle tree proof
-template<>
+template <>
 void cm_delete(cm_merkle_tree_proof *p) {
     cm_delete_merkle_tree_proof(p);
 }
 
 /// \brief Deleter for C api flash drive config
-template<>
+template <>
 void cm_delete(cm_flash_drive_config *p) {
     cm_delete_flash_drive_config(p);
 }
 
 /// \brief Deleter for C api ram config
-template<>
+template <>
 void cm_delete(cm_ram_config *p) {
     cm_delete_ram_config(p);
 }
 
 /// \brief Deleter for C api rom config
-template<>
+template <>
 void cm_delete(cm_rom_config *p) {
     cm_delete_rom_config(p);
 }
 
 /// \brief Deleter for C api dhd config
-template<>
+template <>
 void cm_delete(cm_dhd_config *p) {
     cm_delete_dhd_config(p);
 }
 
 /// \brief Deleter for C api dhd runtime config
-template<>
+template <>
 void cm_delete(cm_dhd_runtime_config *p) {
     cm_delete_dhd_runtime_config(p);
 }
@@ -101,7 +101,7 @@ void cm_delete(cm_dhd_runtime_config *p) {
 using csr_map = std::unordered_map<std::string, machine::csr>;
 
 /// \brief Mapping between CSR names and constants
-static const csr_map& csr_names() {
+static const csr_map &csr_names() {
     static const csr_map map = {
         {"pc", machine::csr::pc},
         {"mvendorid", machine::csr::mvendorid},
@@ -144,10 +144,8 @@ static const csr_map& csr_names() {
     return map;
 }
 
-
-
 static char *copy_lua_str(lua_State *L, int idx) {
-    const char* lua_str = lua_tostring(L, idx);
+    const char *lua_str = lua_tostring(L, idx);
     auto size = strlen(lua_str) + 1;
     auto *copy = new char[size];
     strncpy(copy, lua_str, size);
@@ -251,8 +249,7 @@ static int check_int_field(lua_State *L, int tabidx, const char *field) {
     tabidx = lua_absindex(L, tabidx);
     lua_getfield(L, tabidx, field);
     if (!lua_isinteger(L, -1)) {
-        luaL_error(L, "invalid %s (expected integer, got %s)", field,
-            lua_typename(L, lua_type(L, -1)));
+        luaL_error(L, "invalid %s (expected integer, got %s)", field, lua_typename(L, lua_type(L, -1)));
     }
     lua_Integer ival = lua_tointeger(L, -1);
     lua_pop(L, 1);
@@ -268,14 +265,12 @@ static uint64_t check_uint_field(lua_State *L, int tabidx, const char *field) {
     tabidx = lua_absindex(L, tabidx);
     lua_getfield(L, tabidx, field);
     if (!lua_isinteger(L, -1)) {
-        luaL_error(L, "invalid %s (expected unsigned integer, got %s)", field,
-            lua_typename(L, lua_type(L, -1)));
+        luaL_error(L, "invalid %s (expected unsigned integer, got %s)", field, lua_typename(L, lua_type(L, -1)));
     }
     lua_Integer ival = lua_tointeger(L, -1);
     lua_pop(L, 1);
     return static_cast<uint64_t>(ival);
 }
-
 
 /// \brief Returns a string field indexed by string in a table.
 /// \param L Lua state.
@@ -303,7 +298,7 @@ static std::string check_string_field(lua_State *L, int tabidx, const char *fiel
 /// must be deallocated from the user
 static char *check_copy_string_field(lua_State *L, int tabidx, const char *field) {
     tabidx = lua_absindex(L, tabidx);
-    char* str = nullptr;
+    char *str = nullptr;
     lua_getfield(L, tabidx, field);
     if (lua_isstring(L, -1)) {
         str = copy_lua_str(L, -1);
@@ -350,8 +345,7 @@ static bool opt_table_field(lua_State *L, int tabidx, const char *field) {
 /// \param tabidx Table stack index.
 /// \param field Field index.
 /// \returns Corresponding access_type.
-static access_type check_access_type_field(lua_State *L, int tabidx,
-    const char *field) {
+static access_type check_access_type_field(lua_State *L, int tabidx, const char *field) {
     auto name = check_string_field(L, tabidx, field);
     if (name == "read") {
         return access_type::read;
@@ -368,8 +362,7 @@ static access_type check_access_type_field(lua_State *L, int tabidx,
 /// \param tabidx Table stack index
 /// \param field Field index
 /// \returns Corresponding CM_ACCESS_TYPE
-static CM_ACCESS_TYPE check_cm_access_type_field(lua_State *L, int tabidx,
-    const char *field) {
+static CM_ACCESS_TYPE check_cm_access_type_field(lua_State *L, int tabidx, const char *field) {
     auto name = check_string_field(L, tabidx, field);
     if (name == "read") {
         return CM_ACCESS_READ;
@@ -386,8 +379,7 @@ static CM_ACCESS_TYPE check_cm_access_type_field(lua_State *L, int tabidx,
 /// \param tabidx Table stack index.
 /// \param field Field index.
 /// \returns Corresponding bracket_type.
-static bracket_type check_bracket_type_field(lua_State *L, int tabidx,
-    const char *field) {
+static bracket_type check_bracket_type_field(lua_State *L, int tabidx, const char *field) {
     auto name = check_string_field(L, tabidx, field);
     if (name == "begin") {
         return bracket_type::begin;
@@ -404,8 +396,7 @@ static bracket_type check_bracket_type_field(lua_State *L, int tabidx,
 /// \param tabidx Table stack index
 /// \param field Field index
 /// \returns Corresponding CM_BRACKET_TYPE
-static CM_BRACKET_TYPE check_cm_bracket_type_field(lua_State *L, int tabidx,
-    const char *field) {
+static CM_BRACKET_TYPE check_cm_bracket_type_field(lua_State *L, int tabidx, const char *field) {
     auto name = check_string_field(L, tabidx, field);
     if (name == "begin") {
         return CM_BRACKET_BEGIN;
@@ -423,11 +414,9 @@ static CM_BRACKET_TYPE check_cm_bracket_type_field(lua_State *L, int tabidx,
 /// \returns The bracket_note.
 static bracket_note check_bracket_note(lua_State *L, int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
-    return {
-        check_bracket_type_field(L, -1, "type"),
-        check_uint_field(L, -1, "where")-1, // convert from 1- to 0-based index
-        check_string_field(L, -1, "text")
-    };
+    return {check_bracket_type_field(L, -1, "type"),
+        check_uint_field(L, -1, "where") - 1, // convert from 1- to 0-based index
+        check_string_field(L, -1, "text")};
 }
 
 /// \brief Loads a cm_bracket_note from Lua
@@ -438,7 +427,7 @@ static cm_bracket_note check_cm_bracket_note(lua_State *L, int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
     cm_bracket_note new_bracket_note{};
     new_bracket_note.type = check_cm_bracket_type_field(L, -1, "type");
-    new_bracket_note.where = check_uint_field(L, -1, "where")-1; // convert from 1- to 0-based index
+    new_bracket_note.where = check_uint_field(L, -1, "where") - 1; // convert from 1- to 0-based index
     new_bracket_note.text = check_copy_string_field(L, -1, "text");
     return new_bracket_note;
 }
@@ -448,8 +437,7 @@ static cm_bracket_note check_cm_bracket_note(lua_State *L, int tabidx) {
 /// \param idx Proof stack index.
 /// \param log2_target_size of node from which to obtain siblings.
 /// \param p Proof to receive sibling_hashes.
-static void check_sibling_hashes(lua_State *L,
-    int idx, int log2_target_size, machine_merkle_tree::proof_type &p) {
+static void check_sibling_hashes(lua_State *L, int idx, int log2_target_size, machine_merkle_tree::proof_type &p) {
     luaL_checktype(L, idx, LUA_TTABLE);
     if (log2_target_size < 0) {
         luaL_error(L, "invalid log2_target_size");
@@ -468,8 +456,8 @@ static void check_sibling_hashes(lua_State *L,
 /// \param log2_root_size Root log2 size of tree
 /// \param p Receives array of sibling hashes
 /// \returns Count of sibling hashes
-static size_t check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_size,
-    const size_t log2_root_size, cm_hash** sibling_hashes) {
+static size_t check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_size, const size_t log2_root_size,
+    cm_hash **sibling_hashes) {
     luaL_checktype(L, idx, LUA_TTABLE);
     auto sibling_hashes_count = log2_root_size - log2_target_size;
     std::array<cm_hash, 64> temp_hashes{};
@@ -509,7 +497,7 @@ machine_merkle_tree::proof_type clua_check_proof(lua_State *L, int tabidx) {
 
 cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
-    //Retrieve field values from lua
+    // Retrieve field values from lua
     auto log2_target_size = check_uint_field(L, tabidx, "log2_target_size");
     auto log2_root_size = check_uint_field(L, tabidx, "log2_root_size");
     auto target_address = check_uint_field(L, tabidx, "target_address");
@@ -522,9 +510,8 @@ cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx) 
     clua_check_cm_hash(L, -1, &root_hash);
     lua_pop(L, 1);
     lua_getfield(L, tabidx, "sibling_hashes");
-    cm_hash* sibling_hashes{};
-    auto sibling_hashes_count = check_sibling_cm_hashes(L, -1, log2_target_size, log2_root_size,
-        &sibling_hashes);
+    cm_hash *sibling_hashes{};
+    auto sibling_hashes_count = check_sibling_cm_hashes(L, -1, log2_target_size, log2_root_size, &sibling_hashes);
     lua_pop(L, 1);
     auto *proof = new cm_merkle_tree_proof{};
     proof->log2_target_size = log2_target_size;
@@ -544,8 +531,7 @@ cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx) 
 /// \param log2_size Expected log2 of size of data
 /// \param opt Whether filed is optional
 /// \returns Field value. Throws error if field is not optional but is missing.
-static access_data aux_access_data_field(lua_State *L, int tabidx,
-    const char *field, uint64_t log2_size, bool opt) {
+static access_data aux_access_data_field(lua_State *L, int tabidx, const char *field, uint64_t log2_size, bool opt) {
     access_data a;
     tabidx = lua_absindex(L, tabidx);
     lua_getfield(L, tabidx, field);
@@ -554,10 +540,9 @@ static access_data aux_access_data_field(lua_State *L, int tabidx,
         const char *s = lua_tolstring(L, -1, &len);
         uint64_t expected_len = UINT64_C(1) << log2_size;
         if (len != expected_len) {
-            luaL_error(L, "invalid %s (expected string with 2^%d bytes)", field,
-                static_cast<int>(log2_size));
+            luaL_error(L, "invalid %s (expected string with 2^%d bytes)", field, static_cast<int>(log2_size));
         }
-        a.insert(a.end(), s, s+len);
+        a.insert(a.end(), s, s + len);
     } else if (!opt || !lua_isnil(L, -1)) {
         luaL_error(L, "invalid %s (expected string)", field);
     }
@@ -565,16 +550,13 @@ static access_data aux_access_data_field(lua_State *L, int tabidx,
     return a;
 }
 
-static access_data check_access_data_field(lua_State *L, int tabidx,
-    const char *field, uint64_t log2_size) {
+static access_data check_access_data_field(lua_State *L, int tabidx, const char *field, uint64_t log2_size) {
     return aux_access_data_field(L, tabidx, field, log2_size, false);
 }
 
-static access_data opt_access_data_field(lua_State *L, int tabidx,
-    const char *field, uint64_t log2_size) {
+static access_data opt_access_data_field(lua_State *L, int tabidx, const char *field, uint64_t log2_size) {
     return aux_access_data_field(L, tabidx, field, log2_size, true);
 }
-
 
 /// \brief Returns an access data field indexed by string in a table
 /// \param L Lua state
@@ -585,8 +567,8 @@ static access_data opt_access_data_field(lua_State *L, int tabidx,
 /// \param data_size Receives size of the returned data field
 /// \returns Allocated field value. Throws error if field is not optional but is missing.
 /// If field is optional but missing returns nullptr
-static unsigned char *aux_cm_access_data_field(lua_State *L, int tabidx,
-    const char *field, uint64_t log2_size, bool opt, size_t *data_size) {
+static unsigned char *aux_cm_access_data_field(lua_State *L, int tabidx, const char *field, uint64_t log2_size,
+    bool opt, size_t *data_size) {
     unsigned char *a = nullptr;
     *data_size = 0;
     tabidx = lua_absindex(L, tabidx);
@@ -596,8 +578,7 @@ static unsigned char *aux_cm_access_data_field(lua_State *L, int tabidx,
         const char *s = lua_tolstring(L, -1, &len);
         uint64_t expected_len = UINT64_C(1) << log2_size;
         if (len != expected_len) {
-            luaL_error(L, "invalid %s (expected string with 2^%d bytes)", field,
-                static_cast<int>(log2_size));
+            luaL_error(L, "invalid %s (expected string with 2^%d bytes)", field, static_cast<int>(log2_size));
         }
         a = new unsigned char[len];
         memcpy(a, s, len);
@@ -609,13 +590,13 @@ static unsigned char *aux_cm_access_data_field(lua_State *L, int tabidx,
     return a;
 }
 
-static unsigned char *check_cm_access_data_field(lua_State *L, int tabidx, const char *field,
-    uint64_t log2_size, size_t *data_size) {
+static unsigned char *check_cm_access_data_field(lua_State *L, int tabidx, const char *field, uint64_t log2_size,
+    size_t *data_size) {
     return aux_cm_access_data_field(L, tabidx, field, log2_size, false, data_size);
 }
 
-static unsigned char *opt_cm_access_data_field(lua_State *L, int tabidx, const char *field,
-    uint64_t log2_size, size_t *data_size) {
+static unsigned char *opt_cm_access_data_field(lua_State *L, int tabidx, const char *field, uint64_t log2_size,
+    size_t *data_size) {
     return aux_cm_access_data_field(L, tabidx, field, log2_size, true, data_size);
 }
 
@@ -636,8 +617,7 @@ static access check_access(lua_State *L, int tabidx, bool proofs) {
     a.set_log2_size(check_uint_field(L, tabidx, "log2_size"));
     if (a.get_log2_size() < machine_merkle_tree::get_log2_word_size() ||
         a.get_log2_size() > machine_merkle_tree::get_log2_root_size()) {
-        luaL_error(L, "invalid log2_size (expected integer in {%d..%d})",
-            machine_merkle_tree::get_log2_word_size(),
+        luaL_error(L, "invalid log2_size (expected integer in {%d..%d})", machine_merkle_tree::get_log2_word_size(),
             machine_merkle_tree::get_log2_root_size());
     }
     a.set_read(check_access_data_field(L, tabidx, "read", a.get_log2_size()));
@@ -655,12 +635,11 @@ static cm_access check_cm_access(lua_State *L, int tabidx, bool proofs) {
     a.type = check_cm_access_type_field(L, tabidx, "type");
     a.address = check_uint_field(L, tabidx, "address");
     a.log2_size = check_uint_field(L, tabidx, "log2_size");
-    if (a.log2_size < CM_TREE_LOG2_WORD_SIZE ||
-        a.log2_size > CM_TREE_LOG2_ROOT_SIZE) {
-        luaL_error(L, "invalid log2_size (expected integer in {%d..%d})",
-                   CM_TREE_LOG2_WORD_SIZE, CM_TREE_LOG2_ROOT_SIZE);
+    if (a.log2_size < CM_TREE_LOG2_WORD_SIZE || a.log2_size > CM_TREE_LOG2_ROOT_SIZE) {
+        luaL_error(L, "invalid log2_size (expected integer in {%d..%d})", CM_TREE_LOG2_WORD_SIZE,
+            CM_TREE_LOG2_ROOT_SIZE);
     }
-    //Get fields with managed pointers so that they are cleaned in case of error
+    // Get fields with managed pointers so that they are cleaned in case of error
     auto &managed_proof = clua_push_to(L, clua_managed_cm_ptr<cm_merkle_tree_proof>(nullptr));
     if (proofs) {
         lua_getfield(L, tabidx, "proof");
@@ -681,10 +660,9 @@ static cm_access check_cm_access(lua_State *L, int tabidx, bool proofs) {
     a.read_data_size = managed_read_data_size;
     a.written_data = managed_written_data.release();
     a.written_data_size = managed_written_data_size;
-    lua_pop(L, 3); //cleanup managed pointers
+    lua_pop(L, 3); // cleanup managed pointers
     return a;
 }
-
 
 access_log clua_check_access_log(lua_State *L, int tabidx) {
     std::vector<access> accesses;
@@ -730,15 +708,10 @@ access_log clua_check_access_log(lua_State *L, int tabidx) {
         }
         lua_pop(L, 1);
     }
-    return {
-        std::move(accesses),
-        std::move(brackets),
-        std::move(notes),
-        access_log::type{proofs, annotations}
-    };
+    return {std::move(accesses), std::move(brackets), std::move(notes), access_log::type{proofs, annotations}};
 }
 
-cm_access_log* clua_check_cm_access_log(lua_State *L, int tabidx) {
+cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx) {
 
     luaL_checktype(L, tabidx, LUA_TTABLE);
     check_table_field(L, tabidx, "log_type");
@@ -747,7 +720,7 @@ cm_access_log* clua_check_cm_access_log(lua_State *L, int tabidx) {
     lua_pop(L, 1);
     // Use lua managed log to cleanup cm_access_log in case of error
     auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(new cm_access_log{}));
-    auto& acc_log = managed_log.get();
+    auto &acc_log = managed_log.get();
     check_table_field(L, tabidx, "accesses");
     acc_log->accesses_count = luaL_len(L, -1);
     acc_log->accesses = new cm_access[acc_log->accesses_count];
@@ -756,7 +729,7 @@ cm_access_log* clua_check_cm_access_log(lua_State *L, int tabidx) {
         if (!lua_istable(L, -1)) {
             luaL_error(L, "access [%d] not a table", i);
         }
-        acc_log->accesses[i-1] = check_cm_access(L, -1, proofs);
+        acc_log->accesses[i - 1] = check_cm_access(L, -1, proofs);
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
@@ -769,7 +742,7 @@ cm_access_log* clua_check_cm_access_log(lua_State *L, int tabidx) {
             if (!lua_isstring(L, -1)) {
                 luaL_error(L, "note [%d] not a string", i);
             }
-            acc_log->notes[i-1] = copy_lua_str(L, -1);
+            acc_log->notes[i - 1] = copy_lua_str(L, -1);
             lua_pop(L, 1);
         }
         lua_pop(L, 1);
@@ -781,14 +754,14 @@ cm_access_log* clua_check_cm_access_log(lua_State *L, int tabidx) {
             if (!lua_istable(L, -1)) {
                 luaL_error(L, "bracket [%d] not a table", i);
             }
-            acc_log->brackets[i-1] = check_cm_bracket_note(L, -1);
+            acc_log->brackets[i - 1] = check_cm_bracket_note(L, -1);
             lua_pop(L, 1);
         }
         lua_pop(L, 1);
     }
-    //Make pointer to new access log not managed anymore
-    cm_access_log* result = managed_log.release();
-    lua_pop(L, 1); //cleanup managed log from stack
+    // Make pointer to new access log not managed anymore
+    cm_access_log *result = managed_log.release();
+    lua_pop(L, 1); // cleanup managed log from stack
     return result;
 }
 
@@ -825,7 +798,6 @@ void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash) {
     }
 }
 
-
 machine::csr clua_check_csr(lua_State *L, int idx) {
     std::string name = luaL_checkstring(L, idx);
     auto got = csr_names().find(name);
@@ -837,45 +809,19 @@ machine::csr clua_check_csr(lua_State *L, int idx) {
 
 CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
     /// \brief Mapping between CSR names and C API constants
-    const static std::unordered_map <std::string, CM_PROC_CSR> g_cm_proc_csr_name = {
-        {"pc",             CM_PROC_PC},
-        {"mvendorid",      CM_PROC_MVENDORID},
-        {"marchid",        CM_PROC_MARCHID},
-        {"mimpid",         CM_PROC_MIMPID},
-        {"mcycle",         CM_PROC_MCYCLE},
-        {"minstret",       CM_PROC_MINSTRET},
-        {"mstatus",        CM_PROC_MSTATUS},
-        {"mtvec",          CM_PROC_MTVEC},
-        {"mscratch",       CM_PROC_MSCRATCH},
-        {"mepc",           CM_PROC_MEPC},
-        {"mcause",         CM_PROC_MCAUSE},
-        {"mtval",          CM_PROC_MTVAL},
-        {"misa",           CM_PROC_MISA},
-        {"mie",            CM_PROC_MIE},
-        {"mip",            CM_PROC_MIP},
-        {"medeleg",        CM_PROC_MEDELEG},
-        {"mideleg",        CM_PROC_MIDELEG},
-        {"mcounteren",     CM_PROC_MCOUNTEREN},
-        {"stvec",          CM_PROC_STVEC},
-        {"sscratch",       CM_PROC_SSCRATCH},
-        {"sepc",           CM_PROC_SEPC},
-        {"scause",         CM_PROC_SCAUSE},
-        {"stval",          CM_PROC_STVAL},
-        {"satp",           CM_PROC_SATP},
-        {"scounteren",     CM_PROC_SCOUNTEREN},
-        {"ilrsc",          CM_PROC_ILRSC},
-        {"iflags",         CM_PROC_IFLAGS},
-        {"clint_mtimecmp", CM_PROC_CLINT_MTIMECMP},
-        {"htif_tohost",    CM_PROC_HTIF_TOHOST},
-        {"htif_fromhost",  CM_PROC_HTIF_FROMHOST},
-        {"htif_ihalt",     CM_PROC_HTIF_IHALT},
-        {"htif_iconsole",  CM_PROC_HTIF_ICONSOLE},
-        {"htif_iyield",    CM_PROC_HTIF_IYIELD},
-        {"dhd_tstart",     CM_PROC_DHD_TSTART},
-        {"dhd_tlength",    CM_PROC_DHD_TLENGTH},
-        {"dhd_dlength",    CM_PROC_DHD_DLENGTH},
-        {"dhd_hlength",    CM_PROC_DHD_HLENGTH}
-    };
+    const static std::unordered_map<std::string, CM_PROC_CSR> g_cm_proc_csr_name = {{"pc", CM_PROC_PC},
+        {"mvendorid", CM_PROC_MVENDORID}, {"marchid", CM_PROC_MARCHID}, {"mimpid", CM_PROC_MIMPID},
+        {"mcycle", CM_PROC_MCYCLE}, {"minstret", CM_PROC_MINSTRET}, {"mstatus", CM_PROC_MSTATUS},
+        {"mtvec", CM_PROC_MTVEC}, {"mscratch", CM_PROC_MSCRATCH}, {"mepc", CM_PROC_MEPC}, {"mcause", CM_PROC_MCAUSE},
+        {"mtval", CM_PROC_MTVAL}, {"misa", CM_PROC_MISA}, {"mie", CM_PROC_MIE}, {"mip", CM_PROC_MIP},
+        {"medeleg", CM_PROC_MEDELEG}, {"mideleg", CM_PROC_MIDELEG}, {"mcounteren", CM_PROC_MCOUNTEREN},
+        {"stvec", CM_PROC_STVEC}, {"sscratch", CM_PROC_SSCRATCH}, {"sepc", CM_PROC_SEPC}, {"scause", CM_PROC_SCAUSE},
+        {"stval", CM_PROC_STVAL}, {"satp", CM_PROC_SATP}, {"scounteren", CM_PROC_SCOUNTEREN}, {"ilrsc", CM_PROC_ILRSC},
+        {"iflags", CM_PROC_IFLAGS}, {"clint_mtimecmp", CM_PROC_CLINT_MTIMECMP}, {"htif_tohost", CM_PROC_HTIF_TOHOST},
+        {"htif_fromhost", CM_PROC_HTIF_FROMHOST}, {"htif_ihalt", CM_PROC_HTIF_IHALT},
+        {"htif_iconsole", CM_PROC_HTIF_ICONSOLE}, {"htif_iyield", CM_PROC_HTIF_IYIELD},
+        {"dhd_tstart", CM_PROC_DHD_TSTART}, {"dhd_tlength", CM_PROC_DHD_TLENGTH}, {"dhd_dlength", CM_PROC_DHD_DLENGTH},
+        {"dhd_hlength", CM_PROC_DHD_HLENGTH}};
     const char *name = luaL_checkstring(L, idx);
     auto got = g_cm_proc_csr_name.find(name);
     if (got == g_cm_proc_csr_name.end()) {
@@ -887,15 +833,14 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
     return CM_PROC_UNKNOWN; // will not be reached
 } catch (...) {
     luaL_error(L, "Unknown error with csr type conversion");
-    return CM_PROC_UNKNOWN; //will not be reached
+    return CM_PROC_UNKNOWN; // will not be reached
 }
-
 
 /// \brief Pushes C array of data to the Lua stack
 /// \param L Lua state.
 /// \param data Pointer to C array of data
 /// \param data_size Size of array of data
-static void push_raw_data(lua_State *L, const uint8_t* data, size_t data_size) {
+static void push_raw_data(lua_State *L, const uint8_t *data, size_t data_size) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     lua_pushlstring(L, reinterpret_cast<const char *>(data), data_size);
 }
@@ -989,8 +934,8 @@ void clua_push_access_log(lua_State *L, const access_log &log) {
     lua_setfield(L, -2, "log_type"); // log
     // Add all accesses
     lua_newtable(L); // log accesses
-    int i = 1; // convert from 0- to 1-based index
-    for (const auto &a: log.get_accesses()) {
+    int i = 1;       // convert from 0- to 1-based index
+    for (const auto &a : log.get_accesses()) {
         lua_newtable(L); // log accesses wordaccess
         clua_setstringfield(L, access_type_name(a.get_type()), "type", -1);
         clua_setintegerfield(L, a.get_address(), "address", -1);
@@ -1012,20 +957,20 @@ void clua_push_access_log(lua_State *L, const access_log &log) {
     // Add all brackets
     if (log_type.has_annotations()) {
         lua_newtable(L); // log brackets
-        i = 1; // convert from 0- to 1-based index
-        for (const auto &b: log.get_brackets()) {
+        i = 1;           // convert from 0- to 1-based index
+        for (const auto &b : log.get_brackets()) {
             lua_newtable(L); // log brackets bracket
             clua_setstringfield(L, bracket_type_name(b.type), "type", -1);
-            clua_setintegerfield(L, b.where+1, "where", -1);  // convert from 0- to 1-based index
-            clua_setlstringfield(L,  b.text.data(), b.text.size(), "text", -1);
+            clua_setintegerfield(L, b.where + 1, "where", -1); // convert from 0- to 1-based index
+            clua_setlstringfield(L, b.text.data(), b.text.size(), "text", -1);
             lua_rawseti(L, -2, i);
             ++i;
         }
         lua_setfield(L, -2, "brackets"); // log
 
         lua_newtable(L); // log notes
-        i = 1; // convert from 0- to 1-based index
-        for (const auto &n: log.get_notes()) {
+        i = 1;           // convert from 0- to 1-based index
+        for (const auto &n : log.get_notes()) {
             lua_pushlstring(L, n.data(), n.size());
             lua_rawseti(L, -2, i);
             i++;
@@ -1068,7 +1013,7 @@ void clua_push_cm_access_log(lua_State *L, const cm_access_log *log) {
             const cm_bracket_note *b = &log->brackets[i];
             lua_newtable(L); // log brackets bracket
             clua_setstringfield(L, cm_bracket_type_name(b->type), "type", -1);
-            clua_setintegerfield(L, b->where + 1, "where", -1);  // convert from 0- to 1-based index
+            clua_setintegerfield(L, b->where + 1, "where", -1); // convert from 0- to 1-based index
             clua_setstringfield(L, b->text, "text", -1);
             lua_rawseti(L, -2, i + 1);
         }
@@ -1086,89 +1031,82 @@ void clua_push_cm_access_log(lua_State *L, const cm_access_log *log) {
 
 void clua_push_hash(lua_State *L, const machine_merkle_tree::hash_type &hash) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()),
-        hash.size());
+    lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()), hash.size());
 }
 
 void clua_push_cm_hash(lua_State *L, const cm_hash *hash) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    lua_pushlstring(L, reinterpret_cast<const char *>(hash),
-        CM_MACHINE_HASH_BYTE_SIZE);
+    lua_pushlstring(L, reinterpret_cast<const char *>(hash), CM_MACHINE_HASH_BYTE_SIZE);
 }
 
 void clua_push_semantic_version(lua_State *L, const semantic_version &v) {
-    lua_newtable(L); // version
-    clua_setintegerfield(L, v.major, "major", -1); // version
-    clua_setintegerfield(L, v.minor, "minor", -1); // version
-    clua_setintegerfield(L, v.patch, "patch", -1); // version
+    lua_newtable(L);                                                                        // version
+    clua_setintegerfield(L, v.major, "major", -1);                                          // version
+    clua_setintegerfield(L, v.minor, "minor", -1);                                          // version
+    clua_setintegerfield(L, v.patch, "patch", -1);                                          // version
     clua_setlstringfield(L, v.pre_release.data(), v.pre_release.size(), "pre_release", -1); // version
-    clua_setlstringfield(L, v.build.data(), v.build.size(), "build", -1); // version
+    clua_setlstringfield(L, v.build.data(), v.build.size(), "build", -1);                   // version
 }
 
 void clua_push_cm_semantic_version(lua_State *L, const cm_semantic_version *v) {
-    lua_newtable(L); // version
-    clua_setintegerfield(L, v->major, "major", -1); // version
-    clua_setintegerfield(L, v->minor, "minor", -1); // version
-    clua_setintegerfield(L, v->patch, "patch", -1); // version
+    lua_newtable(L);                                           // version
+    clua_setintegerfield(L, v->major, "major", -1);            // version
+    clua_setintegerfield(L, v->minor, "minor", -1);            // version
+    clua_setintegerfield(L, v->patch, "patch", -1);            // version
     clua_setstringfield(L, v->pre_release, "pre_release", -1); // version
-    clua_setstringfield(L, v->build, "build", -1); // version
+    clua_setstringfield(L, v->build, "build", -1);             // version
 }
 
 void clua_push_proof(lua_State *L, const machine_merkle_tree::proof_type &proof) {
     lua_newtable(L); // proof
     lua_newtable(L); // proof siblings
-    for (int log2_size = proof.get_log2_target_size();
-        log2_size < proof.get_log2_root_size(); ++log2_size) {
+    for (int log2_size = proof.get_log2_target_size(); log2_size < proof.get_log2_root_size(); ++log2_size) {
         clua_push_hash(L, proof.get_sibling_hash(log2_size));
-        lua_rawseti(L, -2, proof.get_log2_root_size()-log2_size);
+        lua_rawseti(L, -2, proof.get_log2_root_size() - log2_size);
     }
-    lua_setfield(L, -2, "sibling_hashes"); // proof
-    clua_setintegerfield(L, proof.get_target_address(), "target_address", -1); // proof
+    lua_setfield(L, -2, "sibling_hashes");                                         // proof
+    clua_setintegerfield(L, proof.get_target_address(), "target_address", -1);     // proof
     clua_setintegerfield(L, proof.get_log2_target_size(), "log2_target_size", -1); // proof
-    clua_setintegerfield(L, proof.get_log2_root_size(), "log2_root_size", -1); // proof
-    clua_push_hash(L, proof.get_root_hash()); lua_setfield(L, -2, "root_hash"); // proof
-    clua_push_hash(L, proof.get_target_hash()); lua_setfield(L, -2, "target_hash"); // proof
+    clua_setintegerfield(L, proof.get_log2_root_size(), "log2_root_size", -1);     // proof
+    clua_push_hash(L, proof.get_root_hash());
+    lua_setfield(L, -2, "root_hash"); // proof
+    clua_push_hash(L, proof.get_target_hash());
+    lua_setfield(L, -2, "target_hash"); // proof
 }
 
 void clua_push_cm_proof(lua_State *L, const cm_merkle_tree_proof *proof) {
     lua_newtable(L); // proof
     lua_newtable(L); // proof siblings
-    for (size_t log2_size = proof->log2_target_size;
-         log2_size < proof->log2_root_size; ++log2_size) {
+    for (size_t log2_size = proof->log2_target_size; log2_size < proof->log2_root_size; ++log2_size) {
         clua_push_cm_hash(L, &proof->sibling_hashes[proof->log2_root_size - 1 - log2_size]);
-        lua_rawseti(L, -2, proof->log2_root_size-log2_size);
+        lua_rawseti(L, -2, proof->log2_root_size - log2_size);
     }
-    lua_setfield(L, -2, "sibling_hashes"); // proof
-    clua_setintegerfield(L, proof->target_address, "target_address", -1);// proof
+    lua_setfield(L, -2, "sibling_hashes");                                    // proof
+    clua_setintegerfield(L, proof->target_address, "target_address", -1);     // proof
     clua_setintegerfield(L, proof->log2_target_size, "log2_target_size", -1); // proof
-    clua_setintegerfield(L, proof->log2_root_size, "log2_root_size", -1); // proof
-    clua_push_cm_hash(L, &proof->root_hash); lua_setfield(L, -2, "root_hash"); // proof
-    clua_push_cm_hash(L, &proof->target_hash); lua_setfield(L, -2, "target_hash"); // proof
+    clua_setintegerfield(L, proof->log2_root_size, "log2_root_size", -1);     // proof
+    clua_push_cm_hash(L, &proof->root_hash);
+    lua_setfield(L, -2, "root_hash"); // proof
+    clua_push_cm_hash(L, &proof->target_hash);
+    lua_setfield(L, -2, "target_hash"); // proof
 }
 
 access_log::type clua_check_log_type(lua_State *L, int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
-    return access_log::type{
-        opt_boolean_field(L, -1, "proofs"),
-        opt_boolean_field(L, -1, "annotations")
-    };
+    return access_log::type{opt_boolean_field(L, -1, "proofs"), opt_boolean_field(L, -1, "annotations")};
 }
 
 cm_access_log_type clua_check_cm_log_type(lua_State *L, int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
 
-    return cm_access_log_type {
-        opt_boolean_field(L, tabidx, "proofs"),
-        opt_boolean_field(L, tabidx, "annotations")
-    };
+    return cm_access_log_type{opt_boolean_field(L, tabidx, "proofs"), opt_boolean_field(L, tabidx, "annotations")};
 }
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define PUSH_PROCESSOR_CONFIG_CSR(regname) \
-    do {                                   \
-        clua_setintegerfield(L, p.regname, #regname, -1); \
+#define PUSH_PROCESSOR_CONFIG_CSR(regname)                                                                             \
+    do {                                                                                                               \
+        clua_setintegerfield(L, p.regname, #regname, -1);                                                              \
     } while (0)
-
 
 /// \brief Pushes a processor_config to the Lua stack
 /// \param L Lua state.
@@ -1176,7 +1114,7 @@ cm_access_log_type clua_check_cm_log_type(lua_State *L, int tabidx) {
 static void push_processor_config(lua_State *L, const processor_config &p) {
     lua_newtable(L); // p
     lua_newtable(L); // p x
-    for (int i = 1; i <= (X_REG_COUNT-1); i++) {
+    for (int i = 1; i <= (X_REG_COUNT - 1); i++) {
         lua_pushinteger(L, p.x[i]);
         lua_rawseti(L, -2, i);
     }
@@ -1211,9 +1149,9 @@ static void push_processor_config(lua_State *L, const processor_config &p) {
 }
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define PUSH_CM_PROCESSOR_CONFIG_CSR(regname) \
-    do {                                      \
-        clua_setintegerfield(L, p->regname, #regname, -1); \
+#define PUSH_CM_PROCESSOR_CONFIG_CSR(regname)                                                                          \
+    do {                                                                                                               \
+        clua_setintegerfield(L, p->regname, #regname, -1);                                                             \
     } while (0)
 
 /// \brief Pushes a cm_processor_config to the Lua stack
@@ -1222,8 +1160,8 @@ static void push_processor_config(lua_State *L, const processor_config &p) {
 static void push_cm_processor_config(lua_State *L, const cm_processor_config *p) {
     lua_newtable(L); // p
     lua_newtable(L); // p x
-    for (int i = 1; i <= (X_REG_COUNT-1); i++) {
-        lua_pushinteger(L, p->x[i-1]);
+    for (int i = 1; i <= (X_REG_COUNT - 1); i++) {
+        lua_pushinteger(L, p->x[i - 1]);
         lua_rawseti(L, -2, i);
     }
     lua_setfield(L, -2, "x");
@@ -1301,7 +1239,6 @@ static void push_cm_rom_config(lua_State *L, const cm_rom_config *r) {
     }
     if (r->image_filename) {
         clua_setstringfield(L, r->image_filename, "image_filename", -1);
-
     }
 }
 
@@ -1313,8 +1250,8 @@ static void push_htif_config(lua_State *L, const htif_config &h) {
     clua_setbooleanfield(L, h.console_getchar, "console_getchar", -1);
     clua_setbooleanfield(L, h.yield_progress, "yield_progress", -1);
     clua_setbooleanfield(L, h.yield_rollup, "yield_rollup", -1);
-    clua_setintegerfield(L,  h.fromhost, "fromhost", -1);
-    clua_setintegerfield(L,  h.tohost, "tohost", -1);
+    clua_setintegerfield(L, h.fromhost, "fromhost", -1);
+    clua_setintegerfield(L, h.tohost, "tohost", -1);
 }
 
 /// \brief Pushes an cm_htif_config to the Lua stack
@@ -1325,8 +1262,8 @@ static void push_cm_htif_config(lua_State *L, const cm_htif_config *h) {
     clua_setbooleanfield(L, h->console_getchar, "console_getchar", -1);
     clua_setbooleanfield(L, h->yield_progress, "yield_progress", -1);
     clua_setbooleanfield(L, h->yield_rollup, "yield_rollup", -1);
-    clua_setintegerfield(L,  h->fromhost, "fromhost", -1);
-    clua_setintegerfield(L,  h->tohost, "tohost", -1);
+    clua_setintegerfield(L, h->fromhost, "fromhost", -1);
+    clua_setintegerfield(L, h->tohost, "tohost", -1);
 }
 
 /// \brief Pushes an clint_config to the Lua stack
@@ -1334,7 +1271,7 @@ static void push_cm_htif_config(lua_State *L, const cm_htif_config *h) {
 /// \param c Clint_config to be pushed.
 static void push_clint_config(lua_State *L, const clint_config &c) {
     lua_newtable(L);
-    clua_setintegerfield(L,  c.mtimecmp, "mtimecmp", -1);
+    clua_setintegerfield(L, c.mtimecmp, "mtimecmp", -1);
 }
 
 /// \brief Pushes an cm_clint_config to the Lua stack
@@ -1342,7 +1279,7 @@ static void push_clint_config(lua_State *L, const clint_config &c) {
 /// \param c Clint configuration to be pushed.
 static void push_cm_clint_config(lua_State *L, const cm_clint_config *c) {
     lua_newtable(L);
-    clua_setintegerfield(L,  c->mtimecmp, "mtimecmp", -1);
+    clua_setintegerfield(L, c->mtimecmp, "mtimecmp", -1);
 }
 
 /// \brief Pushes an dhd_config to the Lua stack
@@ -1350,16 +1287,17 @@ static void push_cm_clint_config(lua_State *L, const cm_clint_config *c) {
 /// \param c Dhd_config to be pushed.
 static void push_dhd_config(lua_State *L, const dhd_config &d) {
     lua_newtable(L);
-    clua_setintegerfield(L,  d.tstart, "tstart", -1);
-    clua_setintegerfield(L,  d.tlength, "tlength", -1);
+    clua_setintegerfield(L, d.tstart, "tstart", -1);
+    clua_setintegerfield(L, d.tlength, "tlength", -1);
     if (!d.image_filename.empty()) {
         clua_setlstringfield(L, d.image_filename.data(), d.image_filename.size(), "image_filename", -1);
     }
-    clua_setintegerfield(L,  d.dlength, "dlength", -1);
-    clua_setintegerfield(L,  d.hlength, "hlength", -1);
+    clua_setintegerfield(L, d.dlength, "dlength", -1);
+    clua_setintegerfield(L, d.hlength, "hlength", -1);
     lua_newtable(L);
     for (int i = 1; i <= DHD_H_REG_COUNT; i++) {
-        lua_pushinteger(L, d.h[i-1]); lua_rawseti(L, -2, i);
+        lua_pushinteger(L, d.h[i - 1]);
+        lua_rawseti(L, -2, i);
     }
     lua_setfield(L, -2, "h");
 }
@@ -1369,16 +1307,17 @@ static void push_dhd_config(lua_State *L, const dhd_config &d) {
 /// \param c Dhd configuration to be pushed.
 static void push_cm_dhd_config(lua_State *L, const cm_dhd_config *d) {
     lua_newtable(L);
-    clua_setintegerfield(L,  d->tstart, "tstart", -1);
-    clua_setintegerfield(L,  d->tlength, "tlength", -1);
+    clua_setintegerfield(L, d->tstart, "tstart", -1);
+    clua_setintegerfield(L, d->tlength, "tlength", -1);
     if (d->image_filename != nullptr) {
         clua_setstringfield(L, d->image_filename, "image_filename", -1);
     }
-    clua_setintegerfield(L,  d->dlength, "dlength", -1);
-    clua_setintegerfield(L,  d->hlength, "hlength", -1);
+    clua_setintegerfield(L, d->dlength, "dlength", -1);
+    clua_setintegerfield(L, d->hlength, "hlength", -1);
     lua_newtable(L);
     for (int i = 1; i <= CM_MACHINE_DHD_H_REG_COUNT; i++) {
-        lua_pushinteger(L, d->h[i-1]); lua_rawseti(L, -2, i);
+        lua_pushinteger(L, d->h[i - 1]);
+        lua_rawseti(L, -2, i);
     }
     lua_setfield(L, -2, "h");
 }
@@ -1386,19 +1325,17 @@ static void push_cm_dhd_config(lua_State *L, const cm_dhd_config *d) {
 /// \brief Pushes flash_drive_configs to the Lua stack
 /// \param L Lua state.
 /// \param flash_drive Flash_drive_configs to be pushed.
-static void push_flash_drive_configs(lua_State *L,
-    const flash_drive_configs &flash_drive) {
+static void push_flash_drive_configs(lua_State *L, const flash_drive_configs &flash_drive) {
     lua_newtable(L);
     int i = 1;
-    for (const auto &f: flash_drive) {
+    for (const auto &f : flash_drive) {
         lua_newtable(L);
-        clua_setintegerfield(L,  f.start, "start", -1);
-        clua_setintegerfield(L,  f.length, "length", -1);
+        clua_setintegerfield(L, f.start, "start", -1);
+        clua_setintegerfield(L, f.length, "length", -1);
         if (!f.image_filename.empty()) {
-            clua_setlstringfield(L, f.image_filename.data(), f.image_filename.size(),
-                "image_filename", -1);
+            clua_setlstringfield(L, f.image_filename.data(), f.image_filename.size(), "image_filename", -1);
         }
-        clua_setbooleanfield(L,  f.shared, "shared", -1);
+        clua_setbooleanfield(L, f.shared, "shared", -1);
         lua_rawseti(L, -2, i);
         i++;
     }
@@ -1408,57 +1345,56 @@ static void push_flash_drive_configs(lua_State *L,
 /// \param L Lua state.
 /// \param flash_drive Flash drive configurations to be pushed.
 static void push_cm_flash_drive_configs(lua_State *L, const cm_flash_drive_config *flash_drive,
-                                     size_t flash_drive_count) {
+    size_t flash_drive_count) {
     lua_newtable(L);
     for (size_t j = 0; j < flash_drive_count; ++j) {
         lua_newtable(L);
         const cm_flash_drive_config *f = &flash_drive[j];
-        clua_setintegerfield(L,  f->start, "start", -1);
-        clua_setintegerfield(L,  f->length, "length", -1);
+        clua_setintegerfield(L, f->start, "start", -1);
+        clua_setintegerfield(L, f->length, "length", -1);
         if (f->image_filename != nullptr) {
             clua_setstringfield(L, f->image_filename, "image_filename", -1);
         }
-        clua_setbooleanfield(L,  f->shared, "shared", -1);
-        lua_rawseti(L, -2, j+1);
+        clua_setbooleanfield(L, f->shared, "shared", -1);
+        lua_rawseti(L, -2, j + 1);
     }
 }
 
 void clua_push_machine_config(lua_State *L, const machine_config &c) {
-    lua_newtable(L); // config
-    push_processor_config(L, c.processor); // config processor
-    lua_setfield(L, -2, "processor"); // config
-    push_htif_config(L, c.htif); // config htif
-    lua_setfield(L, -2, "htif"); // config
-    push_clint_config(L, c.clint); // config clint
-    lua_setfield(L, -2, "clint"); // config
+    lua_newtable(L);                            // config
+    push_processor_config(L, c.processor);      // config processor
+    lua_setfield(L, -2, "processor");           // config
+    push_htif_config(L, c.htif);                // config htif
+    lua_setfield(L, -2, "htif");                // config
+    push_clint_config(L, c.clint);              // config clint
+    lua_setfield(L, -2, "clint");               // config
     push_flash_drive_configs(L, c.flash_drive); // config flash_drive
-    lua_setfield(L, -2, "flash_drive"); // config
-    push_ram_config(L, c.ram); // config ram
-    lua_setfield(L, -2, "ram"); // config
-    push_rom_config(L, c.rom); // config rom
-    lua_setfield(L, -2, "rom"); // config
-    push_dhd_config(L, c.dhd); // config dhd
-    lua_setfield(L, -2, "dhd"); // config
+    lua_setfield(L, -2, "flash_drive");         // config
+    push_ram_config(L, c.ram);                  // config ram
+    lua_setfield(L, -2, "ram");                 // config
+    push_rom_config(L, c.rom);                  // config rom
+    lua_setfield(L, -2, "rom");                 // config
+    push_dhd_config(L, c.dhd);                  // config dhd
+    lua_setfield(L, -2, "dhd");                 // config
 }
 
 void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
-    lua_newtable(L); // config
-    push_cm_processor_config(L, &c->processor); // config processor
-    lua_setfield(L, -2, "processor"); // config
-    push_cm_htif_config(L, &c->htif); // config htif
-    lua_setfield(L, -2, "htif"); // config
-    push_cm_clint_config(L, &c->clint); // config clint
-    lua_setfield(L, -2, "clint"); // config
+    lua_newtable(L);                                                      // config
+    push_cm_processor_config(L, &c->processor);                           // config processor
+    lua_setfield(L, -2, "processor");                                     // config
+    push_cm_htif_config(L, &c->htif);                                     // config htif
+    lua_setfield(L, -2, "htif");                                          // config
+    push_cm_clint_config(L, &c->clint);                                   // config clint
+    lua_setfield(L, -2, "clint");                                         // config
     push_cm_flash_drive_configs(L, c->flash_drive, c->flash_drive_count); // config flash_drive
-    lua_setfield(L, -2, "flash_drive"); // config
-    push_cm_ram_config(L, &c->ram); // config ram
-    lua_setfield(L, -2, "ram"); // config
-    push_cm_rom_config(L, &c->rom); // config rom
-    lua_setfield(L, -2, "rom"); // config
-    push_cm_dhd_config(L, &c->dhd); // config dhd
-    lua_setfield(L, -2, "dhd"); // config
+    lua_setfield(L, -2, "flash_drive");                                   // config
+    push_cm_ram_config(L, &c->ram);                                       // config ram
+    lua_setfield(L, -2, "ram");                                           // config
+    push_cm_rom_config(L, &c->rom);                                       // config rom
+    lua_setfield(L, -2, "rom");                                           // config
+    push_cm_dhd_config(L, &c->dhd);                                       // config dhd
+    lua_setfield(L, -2, "dhd");                                           // config
 }
-
 
 /// \brief Pushes an dhd_runtime_config to the Lua stack
 /// \param L Lua state.
@@ -1466,8 +1402,7 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
 static void push_dhd_runtime_config(lua_State *L, const dhd_runtime_config &d) {
     lua_newtable(L);
     if (!d.source_address.empty()) {
-        clua_setlstringfield(L, d.source_address.data(), d.source_address.size(),
-            "source_address", -1);
+        clua_setlstringfield(L, d.source_address.data(), d.source_address.size(), "source_address", -1);
     }
 }
 
@@ -1486,7 +1421,7 @@ static void push_cm_dhd_runtime_config(lua_State *L, const cm_dhd_runtime_config
 /// \param c concurrency_config to be pushed.
 static void push_concurrency_runtime_config(lua_State *L, const concurrency_config &c) {
     lua_newtable(L);
-    clua_setintegerfield(L,  c.update_merkle_tree, "update_merkle_tree", -1);
+    clua_setintegerfield(L, c.update_merkle_tree, "update_merkle_tree", -1);
 }
 
 /// \brief Pushes an cm_concurrency_config to the Lua stack
@@ -1494,25 +1429,23 @@ static void push_concurrency_runtime_config(lua_State *L, const concurrency_conf
 /// \param c C api concurrency config to be pushed.
 static void push_cm_concurrency_runtime_config(lua_State *L, const cm_concurrency_config *c) {
     lua_newtable(L);
-    clua_setintegerfield(L,  c->update_merkle_tree, "update_merkle_tree", -1);
+    clua_setintegerfield(L, c->update_merkle_tree, "update_merkle_tree", -1);
 }
 
-void clua_push_machine_runtime_config(lua_State *L,
-    const machine_runtime_config &r) {
-    lua_newtable(L); // config
-    push_dhd_runtime_config(L, r.dhd); // config dhd
-    lua_setfield(L, -2, "dhd"); // config
+void clua_push_machine_runtime_config(lua_State *L, const machine_runtime_config &r) {
+    lua_newtable(L);                                   // config
+    push_dhd_runtime_config(L, r.dhd);                 // config dhd
+    lua_setfield(L, -2, "dhd");                        // config
     push_concurrency_runtime_config(L, r.concurrency); // config concurrency
-    lua_setfield(L, -2, "concurrency"); // config
+    lua_setfield(L, -2, "concurrency");                // config
 }
 
-void clua_push_cm_machine_runtime_config(lua_State *L,
-    const cm_machine_runtime_config *r) {
-    lua_newtable(L); // config
-    push_cm_dhd_runtime_config(L, &r->dhd); // config dhd
-    lua_setfield(L, -2, "dhd"); // config
+void clua_push_cm_machine_runtime_config(lua_State *L, const cm_machine_runtime_config *r) {
+    lua_newtable(L);                                        // config
+    push_cm_dhd_runtime_config(L, &r->dhd);                 // config dhd
+    lua_setfield(L, -2, "dhd");                             // config
     push_cm_concurrency_runtime_config(L, &r->concurrency); // config concurrency
-    lua_setfield(L, -2, "concurrency"); // config
+    lua_setfield(L, -2, "concurrency");                     // config
 }
 
 /// \brief Loads RAM config from Lua to machine_config.
@@ -1591,8 +1524,7 @@ cm_flash_drive_config clua_check_cm_flash_drive_config(lua_State *L, int tabidx)
 /// \param L Lua state.
 /// \param tabidx Machine config stack index.
 /// \param f Flash_configs structure to receive results.
-static void check_flash_drive_configs(lua_State *L, int tabidx,
-    flash_drive_configs &fs) {
+static void check_flash_drive_configs(lua_State *L, int tabidx, flash_drive_configs &fs) {
     if (!opt_table_field(L, tabidx, "flash_drive")) {
         return;
     }
@@ -1614,14 +1546,14 @@ static void check_flash_drive_configs(lua_State *L, int tabidx,
 /// \param fs Receives allocate array of flash drive configs
 /// \param ctxidx Index of clua context
 /// \returns Number of flash drives acquired
-static size_t check_cm_flash_drive_configs(lua_State *L, int tabidx,
-    cm_flash_drive_config **fs, int ctxidx = lua_upvalueindex(1)) {
+static size_t check_cm_flash_drive_configs(lua_State *L, int tabidx, cm_flash_drive_config **fs,
+    int ctxidx = lua_upvalueindex(1)) {
     if (!opt_table_field(L, tabidx, "flash_drive")) {
         return 0;
     }
     auto flash_drive_table_idx = lua_gettop(L);
     auto count = luaL_len(L, flash_drive_table_idx);
-    std::array<clua_managed_cm_ptr<cm_flash_drive_config>*, CM_FLASH_DRIVE_CONFIGS_MAX_SIZE> managed_configs{};
+    std::array<clua_managed_cm_ptr<cm_flash_drive_config> *, CM_FLASH_DRIVE_CONFIGS_MAX_SIZE> managed_configs{};
     for (int i = 0; i < count; ++i) {
         managed_configs[i] = &clua_push_to(L, clua_managed_cm_ptr<cm_flash_drive_config>(nullptr), ctxidx);
     }
@@ -1635,7 +1567,7 @@ static size_t check_cm_flash_drive_configs(lua_State *L, int tabidx,
     for (int i = 0; i < count; ++i) {
         (*fs)[i] = *((*managed_configs[i]).release());
     }
-    lua_pop(L, count + 1); //managed pointers and flash drive table
+    lua_pop(L, count + 1); // managed pointers and flash drive table
     return count;
 }
 
@@ -1643,8 +1575,7 @@ static size_t check_cm_flash_drive_configs(lua_State *L, int tabidx,
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param p Processor config structure to receive results.
-static void check_processor_config(lua_State *L, int tabidx,
-    processor_config &p) {
+static void check_processor_config(lua_State *L, int tabidx, processor_config &p) {
     if (!opt_table_field(L, tabidx, "processor")) {
         return;
     }
@@ -1687,14 +1618,13 @@ static void check_processor_config(lua_State *L, int tabidx,
     lua_pop(L, 1);
 }
 
-
 /// \brief Loads processor config from a Lua to C api machine config
 /// \param L Lua state
 /// \param tabidx Config stack index
 /// \param p Pointer to C api processor config structure to receive results
 /// \param def Default configuration
-static void check_cm_processor_config(lua_State *L, int tabidx,
-    cm_processor_config *p, const cm_processor_config *def) {
+static void check_cm_processor_config(lua_State *L, int tabidx, cm_processor_config *p,
+    const cm_processor_config *def) {
     if (!opt_table_field(L, tabidx, "processor")) {
         *p = *def;
         return;
@@ -1810,7 +1740,7 @@ static void check_dhd_config(lua_State *L, int tabidx, dhd_config &d) {
     lua_getfield(L, -1, "h");
     if (lua_istable(L, -1)) {
         for (int i = 1; i <= CM_MACHINE_DHD_H_REG_COUNT; i++) {
-            d.h[i-1] = opt_uint_field(L, -1, i, d.h[i-1]);
+            d.h[i - 1] = opt_uint_field(L, -1, i, d.h[i - 1]);
         }
     } else if (!lua_isnil(L, -1)) {
         luaL_error(L, "invalid dhd.h (expected table)");
@@ -1830,12 +1760,12 @@ static void check_cm_dhd_config(lua_State *L, int tabidx, cm_dhd_config *d) {
     d->tlength = check_uint_field(L, -1, "tlength");
     d->dlength = opt_uint_field(L, -1, "dlength", d->dlength);
     d->hlength = opt_uint_field(L, -1, "hlength", d->hlength);
-    auto* image_filename = opt_copy_string_field(L, -1, "image_filename");
+    auto *image_filename = opt_copy_string_field(L, -1, "image_filename");
     auto &managed_image_filename = clua_push_to(L, clua_managed_cm_ptr<char>(image_filename));
     lua_getfield(L, -2, "h");
     if (lua_istable(L, -1)) {
         for (int i = 1; i <= CM_MACHINE_DHD_H_REG_COUNT; i++) {
-            d->h[i-1] = opt_uint_field(L, -1, i, d->h[i-1]);
+            d->h[i - 1] = opt_uint_field(L, -1, i, d->h[i - 1]);
         }
     } else if (!lua_isnil(L, -1)) {
         luaL_error(L, "invalid dhd.h (expected table)");
@@ -1880,7 +1810,7 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
     check_cm_clint_config(L, tabidx, &clint);
     check_cm_dhd_config(L, tabidx, managed_dhd.get());
     auto flash_drive_count = check_cm_flash_drive_configs(L, tabidx, &flash_drives, ctxidx);
-    //Allocate new machine config, fill it and return from function
+    // Allocate new machine config, fill it and return from function
     auto *c = new cm_machine_config{};
     c->processor = processor;
     c->ram = *managed_ram.release();
@@ -1898,8 +1828,7 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
 /// \param L Lua state
 /// \param tabidx Runtime config stack index
 /// \param d DHD runtime config structure to receive results
-static void check_dhd_runtime_config(lua_State *L, int tabidx,
-    dhd_runtime_config &d) {
+static void check_dhd_runtime_config(lua_State *L, int tabidx, dhd_runtime_config &d) {
     if (!opt_table_field(L, tabidx, "dhd")) {
         return;
     }
@@ -1911,8 +1840,7 @@ static void check_dhd_runtime_config(lua_State *L, int tabidx,
 /// \param L Lua state
 /// \param tabidx Runtime config stack index
 /// \param d C api DHD runtime config structure to receive results
-static void check_cm_dhd_runtime_config(lua_State *L, int tabidx,
-    cm_dhd_runtime_config *d) {
+static void check_cm_dhd_runtime_config(lua_State *L, int tabidx, cm_dhd_runtime_config *d) {
     if (!opt_table_field(L, tabidx, "dhd")) {
         return;
     }
@@ -1924,8 +1852,7 @@ static void check_cm_dhd_runtime_config(lua_State *L, int tabidx,
 /// \param L Lua state.
 /// \param tabidx Runtime config stack index.
 /// \param c concurrency runtime config structure to receive results.
-static void check_concurrency_runtime_config(lua_State *L, int tabidx,
-    concurrency_config &c) {
+static void check_concurrency_runtime_config(lua_State *L, int tabidx, concurrency_config &c) {
     if (!opt_table_field(L, tabidx, "concurrency")) {
         return;
     }
@@ -1937,8 +1864,7 @@ static void check_concurrency_runtime_config(lua_State *L, int tabidx,
 /// \param L Lua state
 /// \param tabidx Runtime config stack index
 /// \param c C api concurrency runtime config structure to receive results
-static void check_cm_concurrency_runtime_config(lua_State *L, int tabidx,
-                                             cm_concurrency_config *c) {
+static void check_cm_concurrency_runtime_config(lua_State *L, int tabidx, cm_concurrency_config *c) {
     if (!opt_table_field(L, tabidx, "concurrency")) {
         return;
     }
@@ -1946,8 +1872,7 @@ static void check_cm_concurrency_runtime_config(lua_State *L, int tabidx,
     lua_pop(L, 1);
 }
 
-machine_runtime_config clua_check_machine_runtime_config(lua_State *L,
-    int tabidx) {
+machine_runtime_config clua_check_machine_runtime_config(lua_State *L, int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
     machine_runtime_config r;
     check_dhd_runtime_config(L, tabidx, r.dhd);
@@ -1955,11 +1880,10 @@ machine_runtime_config clua_check_machine_runtime_config(lua_State *L,
     return r;
 }
 
-cm_machine_runtime_config* clua_check_cm_machine_runtime_config(lua_State *L,
-    int tabidx, int ctxidx) {
+cm_machine_runtime_config *clua_check_cm_machine_runtime_config(lua_State *L, int tabidx, int ctxidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
-    auto &managed_runtime_dhd = clua_push_to(L, clua_managed_cm_ptr<cm_dhd_runtime_config>
-        (new cm_dhd_runtime_config{}), ctxidx);
+    auto &managed_runtime_dhd =
+        clua_push_to(L, clua_managed_cm_ptr<cm_dhd_runtime_config>(new cm_dhd_runtime_config{}), ctxidx);
     check_cm_dhd_runtime_config(L, tabidx, managed_runtime_dhd.get());
     cm_concurrency_config concurrency{};
     check_cm_concurrency_runtime_config(L, tabidx, &concurrency);
@@ -1970,16 +1894,15 @@ cm_machine_runtime_config* clua_check_cm_machine_runtime_config(lua_State *L,
     return r;
 }
 
-machine_runtime_config clua_opt_machine_runtime_config(lua_State *L,
-    int tabidx, const machine_runtime_config &r) {
+machine_runtime_config clua_opt_machine_runtime_config(lua_State *L, int tabidx, const machine_runtime_config &r) {
     if (!lua_isnoneornil(L, tabidx)) {
         return clua_check_machine_runtime_config(L, tabidx);
     }
     return r;
 }
 
-cm_machine_runtime_config* clua_opt_cm_machine_runtime_config(lua_State *L,
-    int tabidx, const cm_machine_runtime_config *r, int ctxidx) {
+cm_machine_runtime_config *clua_opt_cm_machine_runtime_config(lua_State *L, int tabidx,
+    const cm_machine_runtime_config *r, int ctxidx) {
     if (!lua_isnoneornil(L, tabidx)) {
         return clua_check_cm_machine_runtime_config(L, tabidx, ctxidx);
     } else {

@@ -17,8 +17,8 @@
 #ifndef VIRTUAL_MACHINE
 #define VIRTUAL_MACHINE
 
-#include <cstdint>
 #include "unique-c-ptr.h"
+#include <cstdint>
 
 #include "i-virtual-machine.h"
 
@@ -31,10 +31,8 @@ class virtual_machine : public i_virtual_machine {
     machine *m_machine;
 
 public:
-    virtual_machine(const machine_config &c,
-        const machine_runtime_config &r = {});
-    virtual_machine(const std::string &dir,
-        const machine_runtime_config &r = {});
+    virtual_machine(const machine_config &c, const machine_runtime_config &r = {});
+    virtual_machine(const std::string &dir, const machine_runtime_config &r = {});
     virtual_machine(const virtual_machine &other) = delete;
     virtual_machine(virtual_machine &&other) noexcept = delete;
     virtual_machine &operator=(const virtual_machine &other) = delete;

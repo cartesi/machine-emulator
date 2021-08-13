@@ -17,18 +17,18 @@
 /// \file
 /// \brief Physical memory attributes implementation
 
+#include <fcntl.h>    // open
 #include <sys/mman.h> // mmap, munmap
-#include <unistd.h> // close
 #include <sys/stat.h> // fstat
-#include <fcntl.h> // open
+#include <unistd.h>   // close
 
-#include <string>
 #include <cerrno>
 #include <cstring>
+#include <string>
 #include <system_error>
 
-#include "unique-c-ptr.h"
 #include "pma.h"
+#include "unique-c-ptr.h"
 
 namespace cartesi {
 
@@ -50,7 +50,7 @@ pma_memory::~pma_memory() {
     release();
 }
 
-pma_memory::pma_memory(pma_memory &&other) noexcept:
+pma_memory::pma_memory(pma_memory &&other) noexcept :
     m_length{std::move(other.m_length)},
     m_host_memory{std::move(other.m_host_memory)},
     m_backing_file{std::move(other.m_backing_file)} {
@@ -60,7 +60,7 @@ pma_memory::pma_memory(pma_memory &&other) noexcept:
     other.m_length = 0;
 }
 
-pma_memory::pma_memory(uint64_t length, const callocd &c):
+pma_memory::pma_memory(uint64_t length, const callocd &c) :
     m_length{length},
     m_host_memory{nullptr},
     m_backing_file{-1} {
@@ -72,22 +72,16 @@ pma_memory::pma_memory(uint64_t length, const callocd &c):
     }
 }
 
-pma_memory::pma_memory(uint64_t length, const mockd &m):
-    m_length{length},
-    m_host_memory{nullptr},
-    m_backing_file{-1} {
+pma_memory::pma_memory(uint64_t length, const mockd &m) : m_length{length}, m_host_memory{nullptr}, m_backing_file{-1} {
     (void) m;
 }
 
-pma_memory::pma_memory(uint64_t length, const std::string &path,
-    const callocd &c):
-    pma_memory{length, c} {
+pma_memory::pma_memory(uint64_t length, const std::string &path, const callocd &c) : pma_memory{length, c} {
     // Try to load backing file, if any
     if (!path.empty()) {
         auto fp = unique_fopen(path.c_str(), "rb", std::nothrow_t{});
         if (!fp) {
-            throw std::system_error{errno, std::generic_category(),
-                "error opening backing file '"s + path + "'"s};
+            throw std::system_error{errno, std::generic_category(), "error opening backing file '"s + path + "'"s};
         }
         // Get file size
         fseek(fp.get(), 0, SEEK_END);
@@ -95,20 +89,18 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
         fseek(fp.get(), 0, SEEK_SET);
         // Check against PMA range size
         if (static_cast<uint64_t>(file_length) > length) {
-            throw std::runtime_error{
-                "backing file '" + path + "' too large for range"};
+            throw std::runtime_error{"backing file '" + path + "' too large for range"};
         }
         // Read to host memory
-        auto read = fread(m_host_memory, 1, length, fp.get()); (void) read;
+        auto read = fread(m_host_memory, 1, length, fp.get());
+        (void) read;
         if (ferror(fp.get())) {
-            throw std::system_error{errno, std::generic_category(),
-                "error reading from backing file '"s + path + "'"s};
+            throw std::system_error{errno, std::generic_category(), "error reading from backing file '"s + path + "'"s};
         }
     }
 }
 
-pma_memory::pma_memory(uint64_t length, const std::string &path,
-    const mmapd &m):
+pma_memory::pma_memory(uint64_t length, const std::string &path, const mmapd &m) :
     m_length{length},
     m_host_memory{nullptr},
     m_backing_file{-1} {
@@ -116,22 +108,20 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
         throw std::runtime_error{"backing file required"};
     }
 
-    int oflag = m.shared? O_RDWR: O_RDONLY;
-    int mflag = m.shared? MAP_SHARED: MAP_PRIVATE;
+    int oflag = m.shared ? O_RDWR : O_RDONLY;
+    int mflag = m.shared ? MAP_SHARED : MAP_PRIVATE;
 
     // Try to open backing file
     int backing_file = open(path.c_str(), oflag);
     if (backing_file < 0) {
-        throw std::system_error{errno, std::generic_category(),
-            "could not open backing file '"s + path + "'"s};
+        throw std::system_error{errno, std::generic_category(), "could not open backing file '"s + path + "'"s};
     }
 
     // Try to get file size
-    struct stat statbuf{};
+    struct stat statbuf {};
     if (fstat(backing_file, &statbuf) < 0) {
         close(backing_file);
-        throw std::system_error{errno, std::generic_category(),
-            "unable to stat backing file '"s + path + "'"s};
+        throw std::system_error{errno, std::generic_category(), "unable to stat backing file '"s + path + "'"s};
     }
 
     // Check that it matches range length
@@ -141,8 +131,8 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
     }
 
     // Try to map backing file to host memory
-    auto *host_memory = static_cast<unsigned char *>(
-        mmap(nullptr, length, PROT_READ | PROT_WRITE, mflag, backing_file, 0));
+    auto *host_memory =
+        static_cast<unsigned char *>(mmap(nullptr, length, PROT_READ | PROT_WRITE, mflag, backing_file, 0));
     if (host_memory == MAP_FAILED) { // NOLINT(cppcoreguidelines-pro-type-cstyle-cast)
         close(backing_file);
         throw std::system_error{errno, std::generic_category(),
@@ -154,7 +144,7 @@ pma_memory::pma_memory(uint64_t length, const std::string &path,
     m_backing_file = backing_file;
 }
 
-pma_memory& pma_memory::operator=(pma_memory &&other) noexcept {
+pma_memory &pma_memory::operator=(pma_memory &&other) noexcept {
     release();
     // copy from other
     m_host_memory = std::move(other.m_host_memory);
@@ -198,11 +188,11 @@ bool pma_peek_error(const pma_entry &, const machine &, uint64_t, const unsigned
 }
 
 /// \brief Memory range peek callback. See pma_peek.
-static bool memory_peek(const pma_entry &pma, const machine &m, uint64_t page_address, const unsigned char **page_data, unsigned char *scratch) {
+static bool memory_peek(const pma_entry &pma, const machine &m, uint64_t page_address, const unsigned char **page_data,
+    unsigned char *scratch) {
     (void) m;
     // If page_address is not aligned, or if it is out of range, return error
-    if ((page_address & (PMA_PAGE_SIZE-1)) != 0 ||
-        page_address > pma.get_length()) {
+    if ((page_address & (PMA_PAGE_SIZE - 1)) != 0 || page_address > pma.get_length()) {
         *page_data = nullptr;
         return false;
     }
@@ -212,88 +202,44 @@ static bool memory_peek(const pma_entry &pma, const machine &m, uint64_t page_ad
         memcpy(scratch, pma.get_memory().get_host_memory() + page_address, pma.get_length() - page_address);
         *page_data = scratch;
         return true;
-    // Otherwise, return pointer direclty into host memory
+        // Otherwise, return pointer direclty into host memory
     } else {
         *page_data = pma.get_memory().get_host_memory() + page_address;
         return true;
     }
 }
 
-pma_entry make_mmapd_memory_pma_entry(uint64_t start, uint64_t length,
-    const std::string &path, bool shared) {
+pma_entry make_mmapd_memory_pma_entry(uint64_t start, uint64_t length, const std::string &path, bool shared) {
     if (length == 0) {
         throw std::invalid_argument{"PMA length cannot be zero"};
     }
-    return pma_entry{
-        start,
-        length,
-        pma_memory{
-            length,
-            path,
-            pma_memory::mmapd{shared}
-        },
-        memory_peek
-    };
+    return pma_entry{start, length, pma_memory{length, path, pma_memory::mmapd{shared}}, memory_peek};
 }
 
 pma_entry make_callocd_memory_pma_entry(uint64_t start, uint64_t length) {
     if (length == 0) {
         throw std::invalid_argument{"PMA length cannot be zero"};
     }
-    return pma_entry{
-        start,
-        length,
-        pma_memory{
-            length,
-            pma_memory::callocd{}
-        },
-        memory_peek
-    };
+    return pma_entry{start, length, pma_memory{length, pma_memory::callocd{}}, memory_peek};
 }
 
-pma_entry make_callocd_memory_pma_entry(uint64_t start,
-    uint64_t length, const std::string &path) {
+pma_entry make_callocd_memory_pma_entry(uint64_t start, uint64_t length, const std::string &path) {
     if (length == 0) {
         throw std::invalid_argument{"PMA length cannot be zero"};
     }
-    return pma_entry{
-        start,
-        length,
-        pma_memory{
-            length,
-            path,
-            pma_memory::callocd{}
-        },
-        memory_peek
-    };
+    return pma_entry{start, length, pma_memory{length, path, pma_memory::callocd{}}, memory_peek};
 }
 
 pma_entry make_mockd_memory_pma_entry(uint64_t start, uint64_t length) {
     if (length == 0) {
         throw std::invalid_argument{"PMA length cannot be zero"};
     }
-    return pma_entry{
-        start,
-        length,
-        pma_memory{
-            length,
-            pma_memory::mockd{}
-        },
-        pma_peek_error
-    };
+    return pma_entry{start, length, pma_memory{length, pma_memory::mockd{}}, pma_peek_error};
 }
 
-pma_entry make_device_pma_entry(uint64_t start, uint64_t length,
-    pma_peek peek, const pma_driver *driver, void *context) {
-    return pma_entry{
-        start,
-        length,
-        pma_device{
-            driver,
-            context
-        },
-        peek
-    };
+pma_entry make_device_pma_entry(uint64_t start, uint64_t length, pma_peek peek, const pma_driver *driver,
+    void *context) {
+    return pma_entry{start, length, pma_device{driver, context}, peek};
 }
 
 pma_entry make_empty_pma_entry(uint64_t start, uint64_t length) {

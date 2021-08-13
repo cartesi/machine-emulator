@@ -18,9 +18,9 @@
 #define MACHINE_CONFIG_H
 
 #include <array>
+#include <boost/container/static_vector.hpp>
 #include <cstdint>
 #include <string>
-#include <boost/container/static_vector.hpp>
 
 #include "riscv-constants.h"
 
@@ -60,13 +60,13 @@ struct processor_config final {
 
 /// \brief RAM state configuration
 struct ram_config final {
-    uint64_t length{0}; ///< RAM length
+    uint64_t length{0};           ///< RAM length
     std::string image_filename{}; ///< RAM image file name
 };
 
 /// \brief ROM state configuration
 struct rom_config final {
-    std::string bootargs{}; ///< Bootargs to pass to kernel
+    std::string bootargs{};       ///< Bootargs to pass to kernel
     std::string image_filename{}; ///< ROM image file
 };
 
@@ -125,8 +125,7 @@ struct machine_config final {
     static std::string get_config_filename(const std::string &dir);
 
     /// \brief Get the name where memory range will be stored in a directory
-    static std::string get_image_filename(const std::string &dir,
-        uint64_t start, uint64_t length);
+    static std::string get_image_filename(const std::string &dir, uint64_t start, uint64_t length);
 
     /// \brief Loads a machine config from a directory
     /// \param dir Directory from whence "config" will be loaded

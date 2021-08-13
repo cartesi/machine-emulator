@@ -17,9 +17,9 @@
 #ifndef COMPLETE_MERKLE_TREE_H
 #define COMPLETE_MERKLE_TREE_H
 
-#include "meta.h"
 #include "keccak-256-hasher.h"
 #include "merkle-tree-proof.h"
+#include "meta.h"
 #include "pristine-merkle-tree.h"
 
 /// \file
@@ -34,7 +34,6 @@ namespace cartesi {
 /// The tree is optimized to store only the hashes that are not pristine.
 class complete_merkle_tree {
 public:
-
     /// \brief Hasher class.
     using hasher_type = keccak_256_hasher;
 
@@ -54,19 +53,16 @@ public:
     /// \param log2_root_size Log<sub>2</sub> of tree size
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
-    complete_merkle_tree(int log2_root_size, int log2_leaf_size,
-        int log2_word_size);
+    complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size);
 
     /// \brief Constructor from non-pristine leaves (assumed flushed left)
     /// \param log2_root_size Log<sub>2</sub> of tree size
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
     template <typename L>
-    complete_merkle_tree(int log2_root_size, int log2_leaf_size,
-        int log2_word_size, L && leaves):
+    complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, L &&leaves) :
         complete_merkle_tree{log2_root_size, log2_leaf_size, log2_word_size} {
-        static_assert(std::is_same<level_type, typename remove_cvref<L>::type
-            >::value, "not a leaves vector");
+        static_assert(std::is_same<level_type, typename remove_cvref<L>::type>::value, "not a leaves vector");
         get_level(get_log2_leaf_size()) = std::forward<L>(leaves);
         bubble_up();
     }
@@ -93,14 +89,12 @@ public:
     };
 
 private:
-
     /// \brief Throws exception if log<sub>2</sub> sizes are inconsistent
     ///  with one another
     /// \param log2_root_size Log<sub>2</sub> of root node
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
-    static void check_log2_sizes(int log2_root_size, int log2_leaf_size,
-        int log2_word_size);
+    static void check_log2_sizes(int log2_root_size, int log2_leaf_size, int log2_word_size);
 
     /// \brief Returns log<sub>2</sub> of size of tree
     int get_log2_root_size(void) const {

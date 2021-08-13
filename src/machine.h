@@ -22,13 +22,13 @@
 
 #include <memory>
 
-#include "machine-state.h"
-#include "machine-config.h"
-#include "machine-runtime-config.h"
-#include "machine-merkle-tree.h"
 #include "access-log.h"
-#include "htif.h"
 #include "dhd-source.h"
+#include "htif.h"
+#include "machine-config.h"
+#include "machine-merkle-tree.h"
+#include "machine-runtime-config.h"
+#include "machine-state.h"
 
 namespace cartesi {
 
@@ -42,16 +42,16 @@ class machine final {
     //    machine.h. Maybe the compiler can do a good job we we are
     //    not constantly going through the extra indirection. We
     //    should test this.
-    machine_state m_s;   ///< Opaque machine state
-    machine_merkle_tree m_t;     ///< Merkle tree of state
-    htif m_h;            ///< HTIF device
+    machine_state m_s;       ///< Opaque machine state
+    machine_merkle_tree m_t; ///< Merkle tree of state
+    htif m_h;                ///< HTIF device
 
-    machine_config m_c;  ///< Copy of initialization config
-    machine_runtime_config m_r;  ///< Copy of initialization runtime config
+    machine_config m_c;         ///< Copy of initialization config
+    machine_runtime_config m_r; ///< Copy of initialization runtime config
 
-    static const pma_entry::flags m_rom_flags;    ///< PMA flags used for ROM
-    static const pma_entry::flags m_ram_flags;    ///< PMA flags used for RAM
-    static const pma_entry::flags m_flash_flags;  ///< PMA flags used for flash drives
+    static const pma_entry::flags m_rom_flags;   ///< PMA flags used for ROM
+    static const pma_entry::flags m_ram_flags;   ///< PMA flags used for RAM
+    static const pma_entry::flags m_flash_flags; ///< PMA flags used for flash drives
 
     /// \brief Allocates a new PMA entry.
     /// \param pma PMA entry to add to machine.
@@ -64,8 +64,7 @@ class machine final {
     /// \details The first PMA entry matching the size and length
     /// of new_entry will be replaced. Throws std::invalid_argument
     /// if a matching PMA entry can't be found
-    pma_entry& replace_pma_entry(pma_entry&& new_entry);
-
+    pma_entry &replace_pma_entry(pma_entry &&new_entry);
 
     /// \brief Creates a new PMA entry reflecting a flash drive configuration.
     /// \param flash Flash drive configuration.
@@ -84,7 +83,6 @@ class machine final {
     bool should_yield(void) const;
 
 public:
-
     /// \brief Type of hash
     using hash_type = machine_merkle_tree::hash_type;
 
@@ -130,12 +128,10 @@ public:
     };
 
     /// \brief Constructor from machine configuration
-    explicit machine(const machine_config &c,
-        const machine_runtime_config &r = {});
+    explicit machine(const machine_config &c, const machine_runtime_config &r = {});
 
     /// \brief Constructor from previously serialized directory
-    explicit machine(const std::string &dir,
-        const machine_runtime_config &r = {});
+    explicit machine(const std::string &dir, const machine_runtime_config &r = {});
 
     /// \brief Serialize entire state to directory
     /// \details The method is not const because it updates the root hash
@@ -170,8 +166,7 @@ public:
     /// \param log State access log to be verified.
     /// \param r Machine runtime configuration to use during verification.
     /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_access_log(const access_log &log,
-        const machine_runtime_config &r, bool one_based = false);
+    static void verify_access_log(const access_log &log, const machine_runtime_config &r, bool one_based = false);
 
     /// \brief Checks the validity of a state transition.
     /// \param root_hash_before State hash before step.
@@ -179,17 +174,20 @@ public:
     /// \param root_hash_after State hash after step.
     /// \param r Machine runtime configuration to use during verification.
     /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_state_transition(const hash_type &root_hash_before,
-        const access_log &log, const hash_type &root_hash_after,
-        const machine_runtime_config &r, bool one_based = false);
+    static void verify_state_transition(const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after, const machine_runtime_config &r, bool one_based = false);
 
     static machine_config get_default_config(void);
 
     /// \brief Returns machine state for direct access.
-    machine_state &get_state(void) { return m_s; }
+    machine_state &get_state(void) {
+        return m_s;
+    }
 
     /// \brief Returns machine state for direct read-only access.
-    const machine_state &get_state(void) const { return m_s; }
+    const machine_state &get_state(void) const {
+        return m_s;
+    }
 
     /// \brief Destructor.
     ~machine();
@@ -202,8 +200,7 @@ public:
     /// DHD_NOT_FOUND if no matching block was found.
     /// \returns The block of data with the given hash, or an empty block
     /// if not found
-    dhd_data dehash(const unsigned char* hash, uint64_t hlength,
-        uint64_t &dlength);
+    dhd_data dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength);
 
     /// \brief Update the Merkle tree so it matches the contents of the machine state.
     /// \returns true if succeeded, false otherwise.
@@ -693,7 +690,9 @@ public:
     machine_config get_serialization_config(void) const;
 
     /// \brief Returns copy of initialization config.
-    const machine_config &get_initial_config(void) const { return m_c; }
+    const machine_config &get_initial_config(void) const {
+        return m_c;
+    }
 
     /// \brief Saves PMAs into files for serialization
     /// \param c Machine config to be stored

@@ -31,6 +31,6 @@ namespace cartesi {
 /// \returns Requested source, or nullptr if failed
 i_dhd_source_ptr make_dhd_source(const std::string &address);
 
-}
+} // namespace cartesi
 
 #endif

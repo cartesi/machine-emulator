@@ -14,9 +14,9 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#include <unordered_map>
-#include <iostream>
 #include <boost/container_hash/hash.hpp>
+#include <iostream>
+#include <unordered_map>
 
 #include "dhd-source.h"
 
@@ -38,8 +38,7 @@ static const char *strprefix(const char *string, const char *prefix) {
 
 using dhd_map = std::unordered_map<dhd_data, dhd_data, boost::hash<dhd_data>>;
 
-
-static const dhd_map& hash_map() {
+static const dhd_map &hash_map() {
     // clang-format off
     static const dhd_map map = {
         {{209,242,143,11,255,245,29,138,155,5,227,211,63,43,62,229,60,87,133,21,179,53,40,151,62,150,236,40,85,47,193,122,}, {32,0,0,0,0,0,0,0,208,140,42,202,161,118,77,246,173,51,28,145,84,251,7,10,36,51,226,179,183,185,222,63,169,109,175,254,219,82,220,151,100,0,0,0,0,0,0,0,17,0,0,0,0,0,0,0,116,104,105,115,32,105,115,32,98,108,111,99,107,32,49,48,48,}},
@@ -148,11 +147,10 @@ static const dhd_map& hash_map() {
     return map;
 }
 
-class mock_dhd_source: public i_dhd_source {
+class mock_dhd_source : public i_dhd_source {
 protected:
- 	dhd_data do_dehash(const unsigned char* hash, uint64_t hlength,
-        uint64_t &dlength) override {
-        dhd_data h(hash, hash+hlength);
+    dhd_data do_dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength) override {
+        dhd_data h(hash, hash + hlength);
         auto got = hash_map().find(h);
         if (got != hash_map().end() && got->second.size() <= dlength) {
             dlength = got->second.size();
@@ -161,14 +159,14 @@ protected:
             dlength = DHD_NOT_FOUND;
             return {};
         }
-	}
+    }
 };
 
 i_dhd_source_ptr make_dhd_source(const std::string &address) {
-	if (address == "mock") {
+    if (address == "mock") {
         return std::make_shared<mock_dhd_source>();
-	} else  {
-		return nullptr;
+    } else {
+        return nullptr;
     }
 }
 

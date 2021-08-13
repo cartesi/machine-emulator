@@ -14,15 +14,15 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#include "machine.h"
 #include "htif.h"
 #include "i-device-state-access.h"
+#include "machine.h"
 #include "strict-aliasing.h"
 
 #include <fcntl.h>
 #include <sys/ioctl.h>
-#include <sys/stat.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <csignal>
@@ -42,7 +42,7 @@ bool htif::console_char_pending(void) const {
 
 int htif::console_get_char(void) {
     if (m_buf_pos < m_buf_len) {
-        return m_buf[m_buf_pos++]+1;
+        return m_buf[m_buf_pos++] + 1;
     } else {
         return 0;
     }
@@ -78,31 +78,28 @@ static int get_ttyfd(void) {
 
 void htif::init_console(void) {
     if ((m_ttyfd = get_ttyfd()) >= 0) {
-        struct termios tty{};
+        struct termios tty {};
         tcgetattr(m_ttyfd, &tty);
         m_oldtty = tty;
         // Set terminal to "raw" mode
-        tty.c_lflag &= ~(
-            ECHO   | // Echo off
-            ICANON | // Canonical mode off
-            ECHONL | // Do not echo NL (redundant with ECHO and ICANON)
-            ISIG   | // Signal chars off
-            IEXTEN   // Extended input processing off
+        tty.c_lflag &= ~(ECHO | // Echo off
+            ICANON |            // Canonical mode off
+            ECHONL |            // Do not echo NL (redundant with ECHO and ICANON)
+            ISIG |              // Signal chars off
+            IEXTEN              // Extended input processing off
         );
-        tty.c_iflag &= ~(
-            IGNBRK | // Generate \377 \0 \0 on BREAK
-            BRKINT | //
-            PARMRK | //
-            ICRNL  | // No CR-to-NL
-            ISTRIP | // Do not strip off 8th bit
-            INLCR  | // No NL-to-CR
-            IGNCR  | // Do not ignore CR
-            IXON     // Disable XON/XOFF flow control on output
+        tty.c_iflag &= ~(IGNBRK | // Generate \377 \0 \0 on BREAK
+            BRKINT |              //
+            PARMRK |              //
+            ICRNL |               // No CR-to-NL
+            ISTRIP |              // Do not strip off 8th bit
+            INLCR |               // No NL-to-CR
+            IGNCR |               // Do not ignore CR
+            IXON                  // Disable XON/XOFF flow control on output
         );
-        tty.c_oflag |=
-            OPOST;   // Enable output processing
+        tty.c_oflag |= OPOST; // Enable output processing
         // Enable parity generation on output and checking for input
-        tty.c_cflag &= ~(CSIZE|PARENB);
+        tty.c_cflag &= ~(CSIZE | PARENB);
         tty.c_cflag |= CS8;
         // Read returns with 1 char and no delay
         tty.c_cc[VMIN] = 1;
@@ -122,8 +119,7 @@ void htif::poll_console(void) {
         timeval tv{};
         FD_ZERO(&rfds); // NOLINT: suppress cause on MacOSX it resolves to __builtin_bzero
         FD_SET(STDIN_FILENO, &rfds);
-        if (select(fd_max+1, &rfds, nullptr, nullptr, &tv) > 0 &&
-            FD_ISSET(0, &rfds)) {
+        if (select(fd_max + 1, &rfds, nullptr, nullptr, &tv) > 0 && FD_ISSET(0, &rfds)) {
             m_buf_pos = 0;
             m_buf_len = read(STDIN_FILENO, m_buf.data(), m_buf.size());
             // If stdin is closed, pass EOF to client
@@ -144,9 +140,11 @@ void htif::end_console(void) {
 
 // The constructor for the associated machine is typically *not* done
 // yet when the constructor for the HTIF device is invoked.
-htif::htif(const htif_config &h):
+htif::htif(const htif_config &h) :
     m_console_getchar{h.console_getchar},
-    m_buf{}, m_buf_pos{}, m_buf_len{},
+    m_buf{},
+    m_buf_pos{},
+    m_buf_len{},
     m_divisor_counter{},
     m_ttyfd{-1},
     m_oldtty{} {
@@ -202,10 +200,9 @@ static bool htif_read(const pma_entry &pma, i_device_state_access *a, uint64_t o
 
 static bool htif_getchar(i_device_state_access *a, htif *h, uint64_t data) {
     (void) data;
-    int c = h? h->console_get_char(): 0;
+    int c = h ? h->console_get_char() : 0;
     // Write acknowledgement to fromhost
-    a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE,
-        HTIF_CONSOLE_GETCHAR, c));
+    a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, HTIF_CONSOLE_GETCHAR, c));
     return true;
 }
 
@@ -213,15 +210,15 @@ static bool htif_putchar(i_device_state_access *a, htif *h, uint64_t data) {
     (void) h;
     uint8_t ch = data & 0xff;
     // Obviously, something different must be done in blockchain
-    if (write(STDOUT_FILENO, &ch, 1) < 1) { ; }
+    if (write(STDOUT_FILENO, &ch, 1) < 1) {
+        ;
+    }
     // Write acknowledgement to fromhost
-    a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE,
-        HTIF_CONSOLE_PUTCHAR, 0));
+    a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, HTIF_CONSOLE_PUTCHAR, 0));
     return true;
 }
 
-static bool htif_halt(i_device_state_access *a, htif *h, uint64_t cmd,
-    uint64_t data) {
+static bool htif_halt(i_device_state_access *a, htif *h, uint64_t cmd, uint64_t data) {
     (void) h;
     if (cmd == HTIF_HALT_HALT && (data & 1)) {
         a->set_iflags_H();
@@ -232,8 +229,7 @@ static bool htif_halt(i_device_state_access *a, htif *h, uint64_t cmd,
     return true;
 }
 
-static bool htif_yield(i_device_state_access *a, htif *h, uint64_t cmd,
-    uint64_t data) {
+static bool htif_yield(i_device_state_access *a, htif *h, uint64_t cmd, uint64_t data) {
     (void) data;
     (void) h;
     // If yield command is enabled, yield and acknowledge
@@ -247,8 +243,7 @@ static bool htif_yield(i_device_state_access *a, htif *h, uint64_t cmd,
     }
 }
 
-static bool htif_console(i_device_state_access *a, htif *h, uint64_t cmd,
-    uint64_t data) {
+static bool htif_console(i_device_state_access *a, htif *h, uint64_t cmd, uint64_t data) {
     if (cmd == HTIF_CONSOLE_PUTCHAR) {
         return htif_putchar(a, h, data);
     } else if (cmd == HTIF_CONSOLE_GETCHAR) {
@@ -259,8 +254,7 @@ static bool htif_console(i_device_state_access *a, htif *h, uint64_t cmd,
     }
 }
 
-static bool htif_write_tohost(i_device_state_access *a, htif *h,
-    uint64_t tohost) {
+static bool htif_write_tohost(i_device_state_access *a, htif *h, uint64_t tohost) {
     // Decode tohost
     uint32_t device = HTIF_DEV_FIELD(tohost);
     uint32_t cmd = HTIF_CMD_FIELD(tohost);
@@ -303,8 +297,7 @@ static bool htif_write(const pma_entry &pma, i_device_state_access *a, uint64_t 
 }
 
 /// \brief HTIF device peek callback. See ::pma_peek.
-static bool htif_peek(const pma_entry &pma, const machine &m,
-    uint64_t page_offset, const unsigned char **page_data,
+static bool htif_peek(const pma_entry &pma, const machine &m, uint64_t page_offset, const unsigned char **page_data,
     unsigned char *scratch) {
     // Check for alignment and range
     if (page_offset % PMA_PAGE_SIZE != 0 || page_offset >= pma.get_length()) {
@@ -319,50 +312,39 @@ static bool htif_peek(const pma_entry &pma, const machine &m,
     // Clear entire page.
     memset(scratch, 0, PMA_PAGE_SIZE);
     // Copy tohost and fromhost to their places within page.
-    aliased_aligned_write<uint64_t>(scratch +
-        htif::get_csr_rel_addr(htif::csr::tohost), m.read_htif_tohost());
-    aliased_aligned_write<uint64_t>(scratch +
-        htif::get_csr_rel_addr(htif::csr::fromhost), m.read_htif_fromhost());
-    aliased_aligned_write<uint64_t>(scratch +
-        htif::get_csr_rel_addr(htif::csr::ihalt), m.read_htif_ihalt());
-    aliased_aligned_write<uint64_t>(scratch +
-        htif::get_csr_rel_addr(htif::csr::iconsole), m.read_htif_iconsole());
-    aliased_aligned_write<uint64_t>(scratch +
-        htif::get_csr_rel_addr(htif::csr::iyield), m.read_htif_iyield());
+    aliased_aligned_write<uint64_t>(scratch + htif::get_csr_rel_addr(htif::csr::tohost), m.read_htif_tohost());
+    aliased_aligned_write<uint64_t>(scratch + htif::get_csr_rel_addr(htif::csr::fromhost), m.read_htif_fromhost());
+    aliased_aligned_write<uint64_t>(scratch + htif::get_csr_rel_addr(htif::csr::ihalt), m.read_htif_ihalt());
+    aliased_aligned_write<uint64_t>(scratch + htif::get_csr_rel_addr(htif::csr::iconsole), m.read_htif_iconsole());
+    aliased_aligned_write<uint64_t>(scratch + htif::get_csr_rel_addr(htif::csr::iyield), m.read_htif_iyield());
     *page_data = scratch;
     return true;
 }
 
-static const pma_driver htif_driver {
-    "HTIF",
-    htif_read,
-    htif_write
-};
+static const pma_driver htif_driver{"HTIF", htif_read, htif_write};
 
 pma_entry make_htif_pma_entry(uint64_t start, uint64_t length) {
     pma_entry::flags f{
-        true,                   // R
-        true,                   // W
-        false,                  // X
-        false,                  // IR
-        false,                  // IW
-        PMA_ISTART_DID::HTIF    // DID
+        true,                // R
+        true,                // W
+        false,               // X
+        false,               // IR
+        false,               // IW
+        PMA_ISTART_DID::HTIF // DID
     };
-    return make_device_pma_entry(start, length, htif_peek, &htif_driver).
-        set_flags(f);
+    return make_device_pma_entry(start, length, htif_peek, &htif_driver).set_flags(f);
 }
 
 pma_entry make_htif_pma_entry(htif &h, uint64_t start, uint64_t length) {
     pma_entry::flags f{
-        true,                   // R
-        true,                   // W
-        false,                  // X
-        false,                  // IR
-        false,                  // IW
-        PMA_ISTART_DID::HTIF    // DID
+        true,                // R
+        true,                // W
+        false,               // X
+        false,               // IR
+        false,               // IW
+        PMA_ISTART_DID::HTIF // DID
     };
-    return make_device_pma_entry(start, length, htif_peek, &htif_driver, &h).
-        set_flags(f);
+    return make_device_pma_entry(start, length, htif_peek, &htif_driver, &h).set_flags(f);
 }
 
 } // namespace cartesi

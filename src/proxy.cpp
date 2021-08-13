@@ -36,8 +36,8 @@ static constexpr uint32_t proxy_version_patch = 0;
 #include <grpc++/grpc++.h>
 #include <grpc++/resource_quota.h>
 
-#include "cartesi-machine.grpc.pb.h"
 #include "cartesi-machine-checkin.grpc.pb.h"
+#include "cartesi-machine.grpc.pb.h"
 #pragma GCC diagnostic pop
 
 using namespace CartesiMachine;
@@ -127,15 +127,13 @@ struct handler_context {
     bool ok;
 };
 
-enum class side_effect {
-    none,
-    shutdown
-};
+enum class side_effect { none, shutdown };
 
 using handler = boost::coroutines2::coroutine<side_effect>;
 
 template <typename RESP>
-static void writer_finish(grpc::ServerAsyncResponseWriter<RESP> &writer, const RESP &response, const grpc::Status &status, handler::pull_type *self) {
+static void writer_finish(grpc::ServerAsyncResponseWriter<RESP> &writer, const RESP &response,
+    const grpc::Status &status, handler::pull_type *self) {
     if (status.ok()) {
         writer.Finish(response, grpc::Status::OK, self);
     } else {
@@ -143,14 +141,13 @@ static void writer_finish(grpc::ServerAsyncResponseWriter<RESP> &writer, const R
     }
 }
 
-template <
-    typename REQ_TYPE,  // <rpc-name> request message type
-    typename RESP_TYPE, // <rpc-name> response message type
-    typename SRV_REQ,   // functor that invokes Request<rpc-name>
-    typename CLNT_REQ   // functor that invokes Async<rpc-name>
->
-static handler::pull_type *new_handler(const std::string &rpc_name,
-    SRV_REQ start_server_request, CLNT_REQ start_client_request, side_effect last_effect = side_effect::none) {
+template <typename REQ_TYPE, // <rpc-name> request message type
+    typename RESP_TYPE,      // <rpc-name> response message type
+    typename SRV_REQ,        // functor that invokes Request<rpc-name>
+    typename CLNT_REQ        // functor that invokes Async<rpc-name>
+    >
+static handler::pull_type *new_handler(const std::string &rpc_name, SRV_REQ start_server_request,
+    CLNT_REQ start_client_request, side_effect last_effect = side_effect::none) {
     // Here we had a fun conundrum to solve.  We want to allocate a new
     // handler::pull_type object and initialize it with a lambda function that
     // contains the coroutine implementation.  However, we want to give this lambda
@@ -161,8 +158,8 @@ static handler::pull_type *new_handler(const std::string &rpc_name,
     // therefore would capture an uninitialized value. So we break the
     // construction into an allocation with operator new and construction with
     // placement new.
-    auto* self = static_cast<handler::pull_type *>(operator new(sizeof(handler::pull_type)));
-    new (self) handler::pull_type {
+    auto *self = static_cast<handler::pull_type *>(operator new(sizeof(handler::pull_type)));
+    new (self) handler::pull_type{
         [self, rpc_name, start_server_request, start_client_request, last_effect](handler::push_type &yield) {
             using namespace grpc;
             ServerContext server_context;
@@ -192,13 +189,13 @@ static handler::pull_type *new_handler(const std::string &rpc_name,
             new_handler<REQ_TYPE, RESP_TYPE>(rpc_name, start_server_request, start_client_request);
             // Allow the coroutine to finish. The dispatcher loop will
             // immediately delete it.
-        }
-    };
+        }};
     return self;
 }
 
 static auto new_GetVersion_handler(handler_context &hctx) {
-    return new_handler<Void, GetVersionResponse>("GetVersion",
+    return new_handler<Void, GetVersionResponse>(
+        "GetVersion",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetVersion(&server_context, &request, &writer, cq, cq, self);
@@ -206,12 +203,12 @@ static auto new_GetVersion_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetVersion(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_Machine_handler(handler_context &hctx) {
-    return new_handler<MachineRequest, Void>("Machine",
+    return new_handler<MachineRequest, Void>(
+        "Machine",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestMachine(&server_context, &request, &writer, cq, cq, self);
@@ -219,12 +216,12 @@ static auto new_Machine_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncMachine(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_Run_handler(handler_context &hctx) {
-    return new_handler<RunRequest, RunResponse>("Run",
+    return new_handler<RunRequest, RunResponse>(
+        "Run",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestRun(&server_context, &request, &writer, cq, cq, self);
@@ -232,12 +229,12 @@ static auto new_Run_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncRun(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_Store_handler(handler_context &hctx) {
-    return new_handler<StoreRequest, Void>("Store",
+    return new_handler<StoreRequest, Void>(
+        "Store",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestStore(&server_context, &request, &writer, cq, cq, self);
@@ -245,12 +242,12 @@ static auto new_Store_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncStore(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_Destroy_handler(handler_context &hctx) {
-    return new_handler<Void, Void>("Destroy",
+    return new_handler<Void, Void>(
+        "Destroy",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestDestroy(&server_context, &request, &writer, cq, cq, self);
@@ -258,12 +255,12 @@ static auto new_Destroy_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncDestroy(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_Snapshot_handler(handler_context &hctx) {
-    return new_handler<Void, Void>("Snapshot",
+    return new_handler<Void, Void>(
+        "Snapshot",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestSnapshot(&server_context, &request, &writer, cq, cq, self);
@@ -271,12 +268,12 @@ static auto new_Snapshot_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncSnapshot(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_Rollback_handler(handler_context &hctx) {
-    return new_handler<Void, Void>("Rollback",
+    return new_handler<Void, Void>(
+        "Rollback",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestRollback(&server_context, &request, &writer, cq, cq, self);
@@ -284,12 +281,12 @@ static auto new_Rollback_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncRollback(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_Shutdown_handler(handler_context &hctx) {
-    return new_handler<Void, Void>("Shutdown",
+    return new_handler<Void, Void>(
+        "Shutdown",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestShutdown(&server_context, &request, &writer, cq, cq, self);
@@ -298,12 +295,12 @@ static auto new_Shutdown_handler(handler_context &hctx) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncShutdown(&client_context, request, cq);
         },
-        side_effect::shutdown
-    );
+        side_effect::shutdown);
 }
 
 static auto new_Step_handler(handler_context &hctx) {
-    return new_handler<StepRequest, StepResponse>("Step",
+    return new_handler<StepRequest, StepResponse>(
+        "Step",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestStep(&server_context, &request, &writer, cq, cq, self);
@@ -311,12 +308,12 @@ static auto new_Step_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncStep(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_ReadMemory_handler(handler_context &hctx) {
-    return new_handler<ReadMemoryRequest, ReadMemoryResponse>("ReadMemory",
+    return new_handler<ReadMemoryRequest, ReadMemoryResponse>(
+        "ReadMemory",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestReadMemory(&server_context, &request, &writer, cq, cq, self);
@@ -324,12 +321,12 @@ static auto new_ReadMemory_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncReadMemory(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_WriteMemory_handler(handler_context &hctx) {
-    return new_handler<WriteMemoryRequest, Void>("WriteMemory",
+    return new_handler<WriteMemoryRequest, Void>(
+        "WriteMemory",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestWriteMemory(&server_context, &request, &writer, cq, cq, self);
@@ -337,12 +334,12 @@ static auto new_WriteMemory_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncWriteMemory(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_ReadWord_handler(handler_context &hctx) {
-    return new_handler<ReadWordRequest, ReadWordResponse>("ReadWord",
+    return new_handler<ReadWordRequest, ReadWordResponse>(
+        "ReadWord",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestReadWord(&server_context, &request, &writer, cq, cq, self);
@@ -350,12 +347,12 @@ static auto new_ReadWord_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncReadWord(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_GetRootHash_handler(handler_context &hctx) {
-    return new_handler<Void, GetRootHashResponse>("GetRootHash",
+    return new_handler<Void, GetRootHashResponse>(
+        "GetRootHash",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetRootHash(&server_context, &request, &writer, cq, cq, self);
@@ -363,12 +360,12 @@ static auto new_GetRootHash_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetRootHash(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_GetProof_handler(handler_context &hctx) {
-    return new_handler<GetProofRequest, GetProofResponse>("GetProof",
+    return new_handler<GetProofRequest, GetProofResponse>(
+        "GetProof",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetProof(&server_context, &request, &writer, cq, cq, self);
@@ -376,12 +373,12 @@ static auto new_GetProof_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetProof(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_ReplaceFlashDrive_handler(handler_context &hctx) {
-    return new_handler<ReplaceFlashDriveRequest, Void>("ReplaceFlashDrive",
+    return new_handler<ReplaceFlashDriveRequest, Void>(
+        "ReplaceFlashDrive",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestReplaceFlashDrive(&server_context, &request, &writer, cq, cq, self);
@@ -389,12 +386,12 @@ static auto new_ReplaceFlashDrive_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncReplaceFlashDrive(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_GetXAddress_handler(handler_context &hctx) {
-    return new_handler<GetXAddressRequest, GetXAddressResponse>("GetXAddress",
+    return new_handler<GetXAddressRequest, GetXAddressResponse>(
+        "GetXAddress",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetXAddress(&server_context, &request, &writer, cq, cq, self);
@@ -402,12 +399,12 @@ static auto new_GetXAddress_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetXAddress(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_ReadX_handler(handler_context &hctx) {
-    return new_handler<ReadXRequest, ReadXResponse>("ReadX",
+    return new_handler<ReadXRequest, ReadXResponse>(
+        "ReadX",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestReadX(&server_context, &request, &writer, cq, cq, self);
@@ -415,12 +412,12 @@ static auto new_ReadX_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncReadX(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_WriteX_handler(handler_context &hctx) {
-    return new_handler<WriteXRequest, Void>("WriteX",
+    return new_handler<WriteXRequest, Void>(
+        "WriteX",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestWriteX(&server_context, &request, &writer, cq, cq, self);
@@ -428,12 +425,12 @@ static auto new_WriteX_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncWriteX(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_ResetIflagsY_handler(handler_context &hctx) {
-    return new_handler<Void, Void>("ResetIflagsY",
+    return new_handler<Void, Void>(
+        "ResetIflagsY",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestResetIflagsY(&server_context, &request, &writer, cq, cq, self);
@@ -441,12 +438,12 @@ static auto new_ResetIflagsY_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncResetIflagsY(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_GetDhdHAddress_handler(handler_context &hctx) {
-    return new_handler<GetDhdHAddressRequest, GetDhdHAddressResponse>("GetDhdHAddress",
+    return new_handler<GetDhdHAddressRequest, GetDhdHAddressResponse>(
+        "GetDhdHAddress",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetDhdHAddress(&server_context, &request, &writer, cq, cq, self);
@@ -454,12 +451,12 @@ static auto new_GetDhdHAddress_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetDhdHAddress(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_ReadDhdH_handler(handler_context &hctx) {
-    return new_handler<ReadDhdHRequest, ReadDhdHResponse>("ReadDhdH",
+    return new_handler<ReadDhdHRequest, ReadDhdHResponse>(
+        "ReadDhdH",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestReadDhdH(&server_context, &request, &writer, cq, cq, self);
@@ -467,12 +464,12 @@ static auto new_ReadDhdH_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncReadDhdH(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_WriteDhdH_handler(handler_context &hctx) {
-    return new_handler<WriteDhdHRequest, Void>("WriteDhdH",
+    return new_handler<WriteDhdHRequest, Void>(
+        "WriteDhdH",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestWriteDhdH(&server_context, &request, &writer, cq, cq, self);
@@ -480,12 +477,12 @@ static auto new_WriteDhdH_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncWriteDhdH(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_GetCsrAddress_handler(handler_context &hctx) {
-    return new_handler<GetCsrAddressRequest, GetCsrAddressResponse>("GetCsrAddress",
+    return new_handler<GetCsrAddressRequest, GetCsrAddressResponse>(
+        "GetCsrAddress",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetCsrAddress(&server_context, &request, &writer, cq, cq, self);
@@ -493,12 +490,12 @@ static auto new_GetCsrAddress_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetCsrAddress(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_ReadCsr_handler(handler_context &hctx) {
-    return new_handler<ReadCsrRequest, ReadCsrResponse>("ReadCsr",
+    return new_handler<ReadCsrRequest, ReadCsrResponse>(
+        "ReadCsr",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestReadCsr(&server_context, &request, &writer, cq, cq, self);
@@ -506,12 +503,12 @@ static auto new_ReadCsr_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncReadCsr(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_WriteCsr_handler(handler_context &hctx) {
-    return new_handler<WriteCsrRequest, Void>("WriteCsr",
+    return new_handler<WriteCsrRequest, Void>(
+        "WriteCsr",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestWriteCsr(&server_context, &request, &writer, cq, cq, self);
@@ -519,12 +516,12 @@ static auto new_WriteCsr_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncWriteCsr(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_GetInitialConfig_handler(handler_context &hctx) {
-    return new_handler<Void, GetInitialConfigResponse>("GetInitialConfig",
+    return new_handler<Void, GetInitialConfigResponse>(
+        "GetInitialConfig",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetInitialConfig(&server_context, &request, &writer, cq, cq, self);
@@ -532,12 +529,12 @@ static auto new_GetInitialConfig_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetInitialConfig(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_VerifyMerkleTree_handler(handler_context &hctx) {
-    return new_handler<Void, VerifyMerkleTreeResponse>("VerifyMerkleTree",
+    return new_handler<Void, VerifyMerkleTreeResponse>(
+        "VerifyMerkleTree",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestVerifyMerkleTree(&server_context, &request, &writer, cq, cq, self);
@@ -545,12 +542,12 @@ static auto new_VerifyMerkleTree_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncVerifyMerkleTree(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_UpdateMerkleTree_handler(handler_context &hctx) {
-    return new_handler<Void, UpdateMerkleTreeResponse>("UpdateMerkleTree",
+    return new_handler<Void, UpdateMerkleTreeResponse>(
+        "UpdateMerkleTree",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestUpdateMerkleTree(&server_context, &request, &writer, cq, cq, self);
@@ -558,12 +555,12 @@ static auto new_UpdateMerkleTree_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncUpdateMerkleTree(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_VerifyDirtyPageMaps_handler(handler_context &hctx) {
-    return new_handler<Void, VerifyDirtyPageMapsResponse>("VerifyDirtyPageMaps",
+    return new_handler<Void, VerifyDirtyPageMapsResponse>(
+        "VerifyDirtyPageMaps",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestVerifyDirtyPageMaps(&server_context, &request, &writer, cq, cq, self);
@@ -571,12 +568,12 @@ static auto new_VerifyDirtyPageMaps_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncVerifyDirtyPageMaps(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_DumpPmas_handler(handler_context &hctx) {
-    return new_handler<Void, Void>("DumpPmas",
+    return new_handler<Void, Void>(
+        "DumpPmas",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestDumpPmas(&server_context, &request, &writer, cq, cq, self);
@@ -584,12 +581,12 @@ static auto new_DumpPmas_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncDumpPmas(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_GetDefaultConfig_handler(handler_context &hctx) {
-    return new_handler<Void, GetDefaultConfigResponse>("GetDefaultConfig",
+    return new_handler<Void, GetDefaultConfigResponse>(
+        "GetDefaultConfig",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestGetDefaultConfig(&server_context, &request, &writer, cq, cq, self);
@@ -597,12 +594,12 @@ static auto new_GetDefaultConfig_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncGetDefaultConfig(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_VerifyAccessLog_handler(handler_context &hctx) {
-    return new_handler<VerifyAccessLogRequest, Void>("VerifyAccessLog",
+    return new_handler<VerifyAccessLogRequest, Void>(
+        "VerifyAccessLog",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestVerifyAccessLog(&server_context, &request, &writer, cq, cq, self);
@@ -610,12 +607,12 @@ static auto new_VerifyAccessLog_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncVerifyAccessLog(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto new_VerifyStateTransition_handler(handler_context &hctx) {
-    return new_handler<VerifyStateTransitionRequest, Void>("VerifyStateTransition",
+    return new_handler<VerifyStateTransitionRequest, Void>(
+        "VerifyStateTransition",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestVerifyStateTransition(&server_context, &request, &writer, cq, cq, self);
@@ -623,15 +620,13 @@ static auto new_VerifyStateTransition_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncVerifyStateTransition(&client_context, request, cq);
-        }
-    );
+        });
 }
 
 static auto build_proxy(const char *address, handler_context &hctx) {
     grpc::ServerBuilder builder;
     builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
-    builder.AddListeningPort(address, grpc::InsecureServerCredentials(),
-        &hctx.proxy_port);
+    builder.AddListeningPort(address, grpc::InsecureServerCredentials(), &hctx.proxy_port);
     builder.RegisterService(&hctx.async_service);
     builder.RegisterService(&hctx.checkin_async_service);
     hctx.completion_queue = builder.AddCompletionQueue();
@@ -639,45 +634,44 @@ static auto build_proxy(const char *address, handler_context &hctx) {
 }
 
 static void enable_server_handlers(handler_context &hctx) {
-    new_GetVersion_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_Machine_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_Run_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_Store_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_Destroy_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_Snapshot_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_Rollback_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_Shutdown_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_Step_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_ReadMemory_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_WriteMemory_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_ReadWord_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_GetRootHash_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_GetProof_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_ReplaceFlashDrive_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_GetXAddress_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_ReadX_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_WriteX_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_ResetIflagsY_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_GetDhdHAddress_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_ReadDhdH_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_WriteDhdH_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_GetCsrAddress_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_ReadCsr_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_WriteCsr_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_GetInitialConfig_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_VerifyMerkleTree_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_UpdateMerkleTree_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_VerifyDirtyPageMaps_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_DumpPmas_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_GetDefaultConfig_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
-    new_VerifyAccessLog_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetVersion_handler(hctx);            // NOLINT: cannot leak (pointer is in completion queue)
+    new_Machine_handler(hctx);               // NOLINT: cannot leak (pointer is in completion queue)
+    new_Run_handler(hctx);                   // NOLINT: cannot leak (pointer is in completion queue)
+    new_Store_handler(hctx);                 // NOLINT: cannot leak (pointer is in completion queue)
+    new_Destroy_handler(hctx);               // NOLINT: cannot leak (pointer is in completion queue)
+    new_Snapshot_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
+    new_Rollback_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
+    new_Shutdown_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
+    new_Step_handler(hctx);                  // NOLINT: cannot leak (pointer is in completion queue)
+    new_ReadMemory_handler(hctx);            // NOLINT: cannot leak (pointer is in completion queue)
+    new_WriteMemory_handler(hctx);           // NOLINT: cannot leak (pointer is in completion queue)
+    new_ReadWord_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetRootHash_handler(hctx);           // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetProof_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
+    new_ReplaceFlashDrive_handler(hctx);     // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetXAddress_handler(hctx);           // NOLINT: cannot leak (pointer is in completion queue)
+    new_ReadX_handler(hctx);                 // NOLINT: cannot leak (pointer is in completion queue)
+    new_WriteX_handler(hctx);                // NOLINT: cannot leak (pointer is in completion queue)
+    new_ResetIflagsY_handler(hctx);          // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetDhdHAddress_handler(hctx);        // NOLINT: cannot leak (pointer is in completion queue)
+    new_ReadDhdH_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
+    new_WriteDhdH_handler(hctx);             // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetCsrAddress_handler(hctx);         // NOLINT: cannot leak (pointer is in completion queue)
+    new_ReadCsr_handler(hctx);               // NOLINT: cannot leak (pointer is in completion queue)
+    new_WriteCsr_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetInitialConfig_handler(hctx);      // NOLINT: cannot leak (pointer is in completion queue)
+    new_VerifyMerkleTree_handler(hctx);      // NOLINT: cannot leak (pointer is in completion queue)
+    new_UpdateMerkleTree_handler(hctx);      // NOLINT: cannot leak (pointer is in completion queue)
+    new_VerifyDirtyPageMaps_handler(hctx);   // NOLINT: cannot leak (pointer is in completion queue)
+    new_DumpPmas_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetDefaultConfig_handler(hctx);      // NOLINT: cannot leak (pointer is in completion queue)
+    new_VerifyAccessLog_handler(hctx);       // NOLINT: cannot leak (pointer is in completion queue)
     new_VerifyStateTransition_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
 } // NOLINT: cannot leak (pointer is in completion queue)
 
 static bool build_client(handler_context &hctx, const CheckInRequest &request) {
     // Instantiate client connection
-    hctx.stub = Machine::NewStub(grpc::CreateChannel(request.address(),
-        grpc::InsecureChannelCredentials()));
+    hctx.stub = Machine::NewStub(grpc::CreateChannel(request.address(), grpc::InsecureChannelCredentials()));
     if (!hctx.stub) {
         std::cerr << "failed to connect to server\n";
         return false;
@@ -686,16 +680,13 @@ static bool build_client(handler_context &hctx, const CheckInRequest &request) {
     Void version_request;
     GetVersionResponse version_response;
     grpc::ClientContext client_context;
-    auto status = hctx.stub->GetVersion(&client_context,
-        version_request, &version_response);
+    auto status = hctx.stub->GetVersion(&client_context, version_request, &version_response);
     if (!status.ok()) {
         std::cerr << "failed to obtain server version\n";
         return false;
     }
-    std::cerr << "connected to server: version is " <<
-        version_response.version().major() << "." <<
-        version_response.version().minor() << "." <<
-        version_response.version().patch() << "\n";
+    std::cerr << "connected to server: version is " << version_response.version().major() << "."
+              << version_response.version().minor() << "." << version_response.version().patch() << "\n";
     if (version_response.version().major() != proxy_version_major ||
         version_response.version().minor() != proxy_version_minor) {
         std::cerr << "proxy is incompatible with server\n";
@@ -705,37 +696,33 @@ static bool build_client(handler_context &hctx, const CheckInRequest &request) {
 }
 
 static handler::pull_type *new_CheckIn_handler(handler_context &hctx) {
-    auto* self = static_cast<handler::pull_type *>(operator new(sizeof(handler::pull_type)));
-    new (self) handler::pull_type {
-        [self, &hctx](handler::push_type &yield) {
-            using namespace grpc;
-            ServerContext server_context;
-            CheckInRequest request;
-            ServerAsyncResponseWriter<Void> writer(&server_context);
-            auto *cq = hctx.completion_queue.get();
-            // Install handler for CheckIn and wait
-            hctx.checkin_async_service.RequestCheckIn(&server_context,
-                &request, &writer, cq, cq, self);
-            yield(side_effect::none);
-            // Acknowledge check-in
-            Void response;
-            writer.Finish(response, grpc::Status::OK, self); // NOLINT: suppress warning caused by gRPC
-            yield(side_effect::none);
-            // If we succeeded building a compatible client connection
-            // to the server, enable all handlers
-            if (build_client(hctx, request)) {
-                enable_server_handlers(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+    auto *self = static_cast<handler::pull_type *>(operator new(sizeof(handler::pull_type)));
+    new (self) handler::pull_type{[self, &hctx](handler::push_type &yield) {
+        using namespace grpc;
+        ServerContext server_context;
+        CheckInRequest request;
+        ServerAsyncResponseWriter<Void> writer(&server_context);
+        auto *cq = hctx.completion_queue.get();
+        // Install handler for CheckIn and wait
+        hctx.checkin_async_service.RequestCheckIn(&server_context, &request, &writer, cq, cq, self);
+        yield(side_effect::none);
+        // Acknowledge check-in
+        Void response;
+        writer.Finish(response, grpc::Status::OK, self); // NOLINT: suppress warning caused by gRPC
+        yield(side_effect::none);
+        // If we succeeded building a compatible client connection
+        // to the server, enable all handlers
+        if (build_client(hctx, request)) {
+            enable_server_handlers(hctx); // NOLINT: cannot leak (pointer is in completion queue)
             // Otherwise, shutdown proxy
-            } else {
-                yield(side_effect::shutdown);
-            }
+        } else {
+            yield(side_effect::shutdown);
         }
-    };
+    }};
     return self;
 }
 
-static void drain_completion_queue(
-    grpc::ServerCompletionQueue *completion_queue) {
+static void drain_completion_queue(grpc::ServerCompletionQueue *completion_queue) {
     completion_queue->Shutdown();
     bool ok = false;
     handler::pull_type *h = nullptr;
@@ -764,8 +751,8 @@ static bool stringval(const char *pre, const char *str, const char **val) {
 }
 
 static void help(const char *name) {
-	fprintf(stderr,
-R"(Usage:
+    fprintf(stderr,
+        R"(Usage:
 
 	%s --proxy-address=<address> --server-address=<address> [--help]
 
@@ -784,8 +771,8 @@ where
     --help
       prints this message and exits
 
-)", name);
-
+)",
+        name);
 }
 
 static std::string replace_port(const std::string &address, int port) {
@@ -797,7 +784,7 @@ static std::string replace_port(const std::string &address, int port) {
     // If already has a port, replace
     if (pos != std::string::npos) {
         return address.substr(0, pos) + ":" + std::to_string(port);
-    // Otherwise, concatenate
+        // Otherwise, concatenate
     } else {
         return address + ":" + std::to_string(port);
     }
@@ -816,7 +803,7 @@ int main(int argc, char *argv[]) try {
         } else if (strcmp(argv[i], "--help") == 0) {
             help(argv[0]);
             exit(0);
-		} else {
+        } else {
             server_address = argv[i];
         }
     }
@@ -828,10 +815,8 @@ int main(int argc, char *argv[]) try {
 
     handler_context hctx{};
 
-    std::cerr << "proxy version is " <<
-        proxy_version_major << "." <<
-        proxy_version_minor << "." <<
-        proxy_version_patch << "\n";
+    std::cerr << "proxy version is " << proxy_version_major << "." << proxy_version_minor << "." << proxy_version_patch
+              << "\n";
 
     auto proxy = build_proxy(proxy_address, hctx);
     if (!proxy) {
@@ -841,14 +826,14 @@ int main(int argc, char *argv[]) try {
 
     // spawn server
     boost::process::group server_group;
-    auto cmdline = "./cartesi-machine-server --session-id=proxy --checkin-address=" + replace_port(proxy_address, hctx.proxy_port) +  " --server-address=" + server_address;
+    auto cmdline = "./cartesi-machine-server --session-id=proxy --checkin-address=" +
+        replace_port(proxy_address, hctx.proxy_port) + " --server-address=" + server_address;
     boost::process::spawn(cmdline, server_group); // NOLINT: suppress warning caused by boost
-
 
     // Only handler we accept initially is the CheckIn from the server
     new_CheckIn_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
 
-    for ( ;; ) {
+    for (;;) {
         // Obtain the next active handler coroutine
         handler::pull_type *h = nullptr; // NOLINT: cannot leak (drain_completion_queue kills remaining)
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -893,4 +878,3 @@ shutdown:
     std::cerr << "Caught unknown exception\n";
     return 1;
 }
-

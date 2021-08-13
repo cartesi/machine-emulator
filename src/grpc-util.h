@@ -23,9 +23,9 @@
 #include "versioning.pb.h"
 #pragma GCC diagnostic pop
 
+#include "access-log.h"
 #include "machine-config.h"
 #include "machine-runtime-config.h"
-#include "access-log.h"
 #include "semantic-version.h"
 
 namespace cartesi {
@@ -33,39 +33,33 @@ namespace cartesi {
 /// \brief Converts proto MachineConfig to C++ machine_config
 /// \param proto_c Proto MachineConfig to convert
 /// \returns Converted C++ machine_config
-machine_config get_proto_machine_config(
-    const CartesiMachine::MachineConfig &proto_c);
+machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &proto_c);
 
 /// \brief Converts C++ machine_config to proto MachineConfig
 /// \param c C++ machine_config to convert
 /// \param proto_c Pointer to proto MachineConfig receiving result of conversion
-void set_proto_machine_config(const machine_config &c,
-    CartesiMachine::MachineConfig* proto_c);
+void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineConfig *proto_c);
 
 /// \brief Converts proto MachineRuntimeConfig to C++ machine_runtime_config
 /// \param proto_c Proto MachineRuntimeConfig to convert
 /// \returns Converted C++ machine_runtime_config
-machine_runtime_config get_proto_machine_runtime_config(
-    const CartesiMachine::MachineRuntimeConfig &proto_r);
+machine_runtime_config get_proto_machine_runtime_config(const CartesiMachine::MachineRuntimeConfig &proto_r);
 
 /// \brief Converts C++ machine_runtime_config to proto MachineRuntimeConfig
 /// \param r C++ machine_runtime_config to convert
 /// \param proto_r Pointer to proto MachineRuntimeConfig receiving
 ///  result of conversion
-void set_proto_machine_runtime_config(const machine_runtime_config &r,
-    CartesiMachine::MachineRuntimeConfig* proto_r);
+void set_proto_machine_runtime_config(const machine_runtime_config &r, CartesiMachine::MachineRuntimeConfig *proto_r);
 
 /// \brief Converts proto ProcessorConfig to C++ processor_config
 /// \param proto_p Proto ProcessorConfig to convert
 /// \returns Converted C++ processor_config
-processor_config get_proto_processor_config(
-    const CartesiMachine::ProcessorConfig &proto_p);
+processor_config get_proto_processor_config(const CartesiMachine::ProcessorConfig &proto_p);
 
 /// \brief Converts Proto AccessLogType to C++ access_log::type
 /// \param proto_lt Proto AccessLogType to convert
 /// \returns Converted C++ access_log::type
-access_log::type get_proto_log_type(
-    const CartesiMachine::AccessLogType &proto_lt);
+access_log::type get_proto_log_type(const CartesiMachine::AccessLogType &proto_lt);
 
 /// \brief Converts proto Hash to C++ hash
 /// \param proto_hash Proto Hash to convert
@@ -75,26 +69,22 @@ machine_merkle_tree::hash_type get_proto_hash(const CartesiMachine::Hash &proto_
 /// \brief Converts C++ hash to proto Hash
 /// \param h C++ hash to convert
 /// \param proto_h Pointer to proto Hash receiving result of conversion
-void set_proto_hash(const machine_merkle_tree::hash_type &h,
-    CartesiMachine::Hash *proto_h);
+void set_proto_hash(const machine_merkle_tree::hash_type &h, CartesiMachine::Hash *proto_h);
 
 /// \brief Converts C++ proof to proto Proof
 /// \param p C++ proof to convert
 /// \param proto_p Pointer to proto Proof receiving result of conversion
-void set_proto_proof(const machine_merkle_tree::proof_type &p,
-    CartesiMachine::MerkleTreeProof *proto_p);
+void set_proto_proof(const machine_merkle_tree::proof_type &p, CartesiMachine::MerkleTreeProof *proto_p);
 
 /// \brief Converts proto Proof to C++ proof
 /// \param proto_proof Proto proof to convert
 /// \returns Converted C++ proof
-machine_merkle_tree::proof_type get_proto_proof(
-    const CartesiMachine::MerkleTreeProof &proto_proof);
+machine_merkle_tree::proof_type get_proto_proof(const CartesiMachine::MerkleTreeProof &proto_proof);
 
 /// \brief Converts C++ access_log to proto Access_Log
 /// \param al C++ access_log to convert
 /// \param proto_al Pointer to proto AccessLog receiving result of conversion
-void set_proto_access_log(const access_log &al,
-    CartesiMachine::AccessLog *proto_al);
+void set_proto_access_log(const access_log &al, CartesiMachine::AccessLog *proto_al);
 
 /// \brief Converts proto AccessLog to C++ access_log
 /// \param proto_al Proto AccessLog to convert
@@ -104,14 +94,12 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al);
 /// \brief Converts proto FlashDriveConfig to C++ flash_drive_config
 /// \param proto_f Proto FlashDriveConfig to convert
 /// \returns Converted C++ flash_drive_config
-flash_drive_config get_proto_flash_drive_config(
-    const CartesiMachine::FlashDriveConfig &proto_f);
+flash_drive_config get_proto_flash_drive_config(const CartesiMachine::FlashDriveConfig &proto_f);
 
 /// \brief Converts proto BracketType to C++ bracket_type
 /// \param proto_b Proto BracketType  to convert
 /// \returns Converted C++ bracket_type
-bracket_type get_proto_bracket_type(
-    CartesiMachine::BracketNote_BracketNoteType proto_b);
+bracket_type get_proto_bracket_type(CartesiMachine::BracketNote_BracketNoteType proto_b);
 
 /// \brief Converts proto AccessType to C++ access_type
 /// \param proto_at Proto AccessType to convert
@@ -121,7 +109,6 @@ access_type get_proto_access_type(CartesiMachine::AccessType proto_at);
 /// \brief Converts proto SemanticVersion to C++ semantic_version
 /// \param proto_v Proto SemanticVersion to convert
 /// \returns Converted C++ semantic_version
-semantic_version get_proto_semantic_version(
-    const Versioning::SemanticVersion &proto_v);
+semantic_version get_proto_semantic_version(const Versioning::SemanticVersion &proto_v);
 
 } // namespace cartesi

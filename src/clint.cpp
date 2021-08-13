@@ -18,8 +18,8 @@
 #include "i-device-state-access.h"
 #include "machine.h"
 #include "pma.h"
-#include "rtc.h"
 #include "riscv-constants.h"
+#include "rtc.h"
 #include "strict-aliasing.h"
 
 namespace cartesi {
@@ -32,8 +32,7 @@ uint64_t clint_get_csr_rel_addr(clint_csr reg) {
     return static_cast<uint64_t>(reg);
 }
 
-static bool clint_read_msip(i_device_state_access *a, uint64_t *val,
-    int log2_size) {
+static bool clint_read_msip(i_device_state_access *a, uint64_t *val, int log2_size) {
     if (log2_size == 2) {
         *val = ((a->read_mip() & MIP_MSIP_MASK) == MIP_MSIP_MASK);
         return true;
@@ -115,65 +114,54 @@ static constexpr uint64_t offset(uint64_t v) {
 }
 
 /// \brief CLINT device peek callback. See ::pma_peek.
-static bool clint_peek(const pma_entry &pma, const machine &m, 
-    uint64_t page_offset, const unsigned char **page_data,
+static bool clint_peek(const pma_entry &pma, const machine &m, uint64_t page_offset, const unsigned char **page_data,
     unsigned char *scratch) {
-    static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
-        "code assumes little-endian byte ordering");
+    static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "code assumes little-endian byte ordering");
     static_assert(base(clint_msip0_rel_addr) != base(clint_mtimecmp_rel_addr) &&
-        base(clint_mtimecmp_rel_addr) != base(clint_mtime_rel_addr) &&
-        base(clint_mtime_rel_addr) != base(clint_msip0_rel_addr),
+            base(clint_mtimecmp_rel_addr) != base(clint_mtime_rel_addr) &&
+            base(clint_mtime_rel_addr) != base(clint_msip0_rel_addr),
         "code expects msip0, mtimcmp, and mtime to be in different pages");
-    // There are 3 non-pristine pages: base(CLINT_MSIP0_REL_ADDR), base(CLINT_MTIMECMP_REL_ADDR), and base(CLINT_MTIME_REL_ADDR)
+    // There are 3 non-pristine pages: base(CLINT_MSIP0_REL_ADDR), base(CLINT_MTIMECMP_REL_ADDR), and
+    // base(CLINT_MTIME_REL_ADDR)
     switch (page_offset) {
         case base(clint_msip0_rel_addr):
             // This page contains only msip (which is either 0 or 1)
             // Since we are little-endian, we can simply write the bytes
             memset(scratch, 0, PMA_PAGE_SIZE);
-            aliased_aligned_write<uint64_t>(scratch +
-                offset(clint_msip0_rel_addr),
+            aliased_aligned_write<uint64_t>(scratch + offset(clint_msip0_rel_addr),
                 (m.read_mip() & MIP_MSIP_MASK) == MIP_MSIP_MASK);
             *page_data = scratch;
             return true;
         case base(clint_mtimecmp_rel_addr):
             memset(scratch, 0, PMA_PAGE_SIZE);
-            aliased_aligned_write<uint64_t>(scratch +
-                offset(clint_mtimecmp_rel_addr), m.read_clint_mtimecmp());
+            aliased_aligned_write<uint64_t>(scratch + offset(clint_mtimecmp_rel_addr), m.read_clint_mtimecmp());
             *page_data = scratch;
             return true;
         case base(clint_mtime_rel_addr):
             memset(scratch, 0, PMA_PAGE_SIZE);
-            aliased_aligned_write<uint64_t>(scratch +
-                offset(clint_mtime_rel_addr),
-                rtc_cycle_to_time(m.read_mcycle()));
+            aliased_aligned_write<uint64_t>(scratch + offset(clint_mtime_rel_addr), rtc_cycle_to_time(m.read_mcycle()));
             *page_data = scratch;
             return true;
         default:
             *page_data = nullptr;
-            return (page_offset % PMA_PAGE_SIZE) == 0 &&
-                   page_offset < pma.get_length();
+            return (page_offset % PMA_PAGE_SIZE) == 0 && page_offset < pma.get_length();
     }
 }
 #undef base
 #undef offset
 
-static const pma_driver clint_driver = {
-    "CLINT",
-    clint_read,
-    clint_write
-};
+static const pma_driver clint_driver = {"CLINT", clint_read, clint_write};
 
 pma_entry make_clint_pma_entry(uint64_t start, uint64_t length) {
     pma_entry::flags f{
-        true,                   // R
-        true,                   // W
-        false,                  // X
-        false,                  // IR
-        false,                  // IW
-        PMA_ISTART_DID::CLINT   // DID
+        true,                 // R
+        true,                 // W
+        false,                // X
+        false,                // IR
+        false,                // IW
+        PMA_ISTART_DID::CLINT // DID
     };
-    return make_device_pma_entry(start, length, clint_peek, &clint_driver).
-        set_flags(f);
+    return make_device_pma_entry(start, length, clint_peek, &clint_driver).set_flags(f);
 }
 
 } // namespace cartesi

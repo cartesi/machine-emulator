@@ -34,7 +34,7 @@ namespace cartesi {
     do {                                                                                                               \
         auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr));                                   \
         char **err_msg = &managed_err_msg.get();                                                                       \
-        if (func_call != 0) {                                                                                          \
+        if ((func_call) != 0) {                                                                                        \
             return luaL_error(L, *err_msg);                                                                            \
         }                                                                                                              \
         lua_pop(L, 1);                                                                                                 \
@@ -44,7 +44,7 @@ namespace cartesi {
     do {                                                                                                               \
         auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr), ctxidx);                           \
         char **err_msg = &managed_err_msg.get();                                                                       \
-        if (func_call != 0) {                                                                                          \
+        if ((func_call) != 0) {                                                                                        \
             return luaL_error(L, *err_msg);                                                                            \
         }                                                                                                              \
         lua_pop(L, 1);                                                                                                 \

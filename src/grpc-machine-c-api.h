@@ -34,7 +34,7 @@ extern "C" {
 #endif
 
 /// \brief Semantic version
-typedef struct {
+typedef struct { // NOLINT(modernize-use-using)
     uint32_t major;
     uint32_t minor;
     uint32_t patch;
@@ -43,7 +43,7 @@ typedef struct {
 } cm_semantic_version;
 
 /// \brief Handle of the grpc stub
-typedef struct cm_grpc_machine_stub_tag cm_grpc_machine_stub;
+typedef struct cm_grpc_machine_stub_tag cm_grpc_machine_stub; // NOLINT(modernize-use-using)
 
 /// \brief Create server stub for remote Cartesi machine server
 /// \param address Address of the remove Cartesi server

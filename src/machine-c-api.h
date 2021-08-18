@@ -300,7 +300,7 @@ typedef struct { // NOLINT(modernize-use-using)
 /// it is merely a pointer to internal C++ object that is  internally casted
 /// back to original C++ machine type. On some obscure CPU arhitectures
 /// where pointer size depend on types, this api might not work
-typedef struct cm_machine_tag cm_machine;
+typedef struct cm_machine_tag cm_machine; // NOLINT(modernize-use-using)
 
 // ---------------------------------
 // API function definitions

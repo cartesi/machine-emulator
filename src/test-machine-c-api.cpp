@@ -267,7 +267,7 @@ public:
     machine_rom_fixture &operator=(machine_rom_fixture &&other) noexcept = delete;
 
 protected:
-    const std::string _rom_path = "./rom.bin";
+    const std::string _rom_path = "./empty-rom.bin";
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, machine_rom_fixture) {

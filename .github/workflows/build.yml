@@ -178,12 +178,14 @@ jobs:
 
       - name: Run test scripts
         run: |
+          export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
           for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do /opt/cartesi/bin/luapp5.3 $x local; done
 
       - name: Run grpc lua test scripts
         run: |
+          export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
           /opt/cartesi/bin/cartesi-machine-server 127.0.0.1:5001 &
@@ -204,6 +206,7 @@ jobs:
 
       - name: Run C API tests
         run: |
+          export PATH=/opt/cartesi/bin:$PATH
           ./tests/test-machine-c-api
 
 

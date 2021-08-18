@@ -435,7 +435,7 @@ print("\n\n dump register values to console")
 do_test("dumped register values should match", 
     function(machine)
         -- Dump regs and check values
-        local p = io.popen([[/opt/cartesi/bin/luapp5.3 -e "
+        local p = io.popen([[luapp5.3 -e "
         local cartesi = require 'cartesi'
         test_util = require 'tests.util'
 
@@ -468,7 +468,7 @@ print("\n\n dump log  to console")
 do_test("dumped log content should match", 
     function(machine)
         -- Dump log and check values
-        local p = io.popen([[/opt/cartesi/bin/luapp5.3 -e "
+        local p = io.popen([[luapp5.3 -e "
         local cartesi = require 'cartesi'
         test_util = require 'tests.util'
         cartesi_util = require 'cartesi.util'

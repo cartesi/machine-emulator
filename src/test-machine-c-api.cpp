@@ -1997,7 +1997,7 @@ protected:
 class grpc_machine_fixture_with_server : public grpc_machine_fixture {
 public:
     grpc_machine_fixture_with_server() {
-        system("/opt/cartesi/bin/cartesi-machine-server 127.0.0.1:5001 &"); // NOLINT(cert-env33-c)
+        system("cartesi-machine-server 127.0.0.1:5001 &"); // NOLINT(cert-env33-c)
         // NOLINTNEXTLINE(cert-env33-c)
         system(" timeout 20 bash -c 'while ! nc -q0 127.0.0.1 5001 < /dev/null > /dev/null 2>&1; do sleep 1; done'");
     }

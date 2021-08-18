@@ -255,7 +255,7 @@ test-grpc: luacartesi grpc
 	$(LUA_BIN) ./tests/machine-test.lua grpc --server=127.0.0.1:5001 --test-path=./
 
 test-scripts: luacartesi
-	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do $(LUA_BIN) $$x || exit 1; done
+	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do $(LUA_BIN) $$x local || exit 1; done
 
 test-c-api: c-api
 	tests/test-machine-c-api

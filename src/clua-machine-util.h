@@ -30,6 +30,7 @@
 
 namespace cartesi {
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define TRY_EXECUTE(func_call)                                                                                         \
     do {                                                                                                               \
         auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr));                                   \
@@ -40,6 +41,7 @@ namespace cartesi {
         lua_pop(L, 1);                                                                                                 \
     } while (0)
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define TRY_EXECUTE_CTXIDX(func_call, ctxidx)                                                                          \
     do {                                                                                                               \
         auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr), ctxidx);                           \

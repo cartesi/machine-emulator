@@ -197,7 +197,7 @@ void clua_setmetatable(lua_State *L, int objidx, int ctxidx = lua_upvalueindex(1
 ///
 template <typename T>
 int clua_push(lua_State *L, T &&value, int ctxidx = lua_upvalueindex(1)) {
-    T *ptr = reinterpret_cast<T *>(lua_newuserdata(L, sizeof(T)));
+    T *ptr = static_cast<T *>(lua_newuserdata(L, sizeof(T)));
     new (ptr) T{std::forward<T>(value)};
     clua_setmetatable<T>(L, -1, ctxidx);
     return 1;

@@ -58,7 +58,7 @@ void cm_delete(T *ptr);
 
 /// \brief Deleter for C string
 template <>
-void cm_delete<char>(char *err_msg);
+void cm_delete<char>(char *ptr);
 
 /// \brief Deleter for C data buffer
 template <>
@@ -66,21 +66,21 @@ void cm_delete<unsigned char>(unsigned char *ptr);
 
 /// \brief Deleter for C api machine configuration
 template <>
-void cm_delete<const cm_machine_config>(const cm_machine_config *c);
+void cm_delete<const cm_machine_config>(const cm_machine_config *ptr);
 template <>
-void cm_delete<cm_machine_config>(cm_machine_config *c);
+void cm_delete<cm_machine_config>(cm_machine_config *ptr);
 
 /// \brief Deleter for C api machine
 template <>
-void cm_delete<cm_machine>(cm_machine *m);
+void cm_delete<cm_machine>(cm_machine *ptr);
 
 /// \brief Deleter for C api runtime machine configuration
 template <>
-void cm_delete(cm_machine_runtime_config *c);
+void cm_delete(cm_machine_runtime_config *ptr);
 
 /// \brief Deleter for C api access log
 template <>
-void cm_delete(cm_access_log *a);
+void cm_delete(cm_access_log *ptr);
 
 /// \brief Deleter for C api merkle tree proof
 template <>

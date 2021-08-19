@@ -64,38 +64,38 @@ void cm_delete(cm_access_log *ptr) {
 
 /// \brief Deleter for C api merkle tree proof
 template <>
-void cm_delete(cm_merkle_tree_proof *p) {
-    cm_delete_merkle_tree_proof(p);
+void cm_delete(cm_merkle_tree_proof *ptr) {
+    cm_delete_merkle_tree_proof(ptr);
 }
 
 /// \brief Deleter for C api flash drive config
 template <>
-void cm_delete(cm_flash_drive_config *p) {
-    cm_delete_flash_drive_config(p);
+void cm_delete(cm_flash_drive_config *ptr) {
+    cm_delete_flash_drive_config(ptr);
 }
 
 /// \brief Deleter for C api ram config
 template <>
-void cm_delete(cm_ram_config *p) {
-    cm_delete_ram_config(p);
+void cm_delete(cm_ram_config *ptr) {
+    cm_delete_ram_config(ptr);
 }
 
 /// \brief Deleter for C api rom config
 template <>
-void cm_delete(cm_rom_config *p) {
-    cm_delete_rom_config(p);
+void cm_delete(cm_rom_config *ptr) {
+    cm_delete_rom_config(ptr);
 }
 
 /// \brief Deleter for C api dhd config
 template <>
-void cm_delete(cm_dhd_config *p) {
-    cm_delete_dhd_config(p);
+void cm_delete(cm_dhd_config *ptr) {
+    cm_delete_dhd_config(ptr);
 }
 
 /// \brief Deleter for C api dhd runtime config
 template <>
-void cm_delete(cm_dhd_runtime_config *p) {
-    cm_delete_dhd_runtime_config(p);
+void cm_delete(cm_dhd_runtime_config *ptr) {
+    cm_delete_dhd_runtime_config(ptr);
 }
 
 using csr_map = std::unordered_map<std::string, machine::csr>;

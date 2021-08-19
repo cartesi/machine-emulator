@@ -68,19 +68,19 @@ static int machine_class_index_verify_state_transition(lua_State *L) {
 
 /// \brief This is the machine.get_x_address() method implementation.
 static int machine_class_index_get_x_address(lua_State *L) {
-    lua_pushnumber(L, cm_get_x_address(luaL_checkinteger(L, 1)));
+    lua_pushinteger(L, static_cast<lua_Integer>(cm_get_x_address(static_cast<int>(luaL_checkinteger(L, 1)))));
     return 1;
 }
 
 /// \brief This is the machine.get_csr_address() method implementation.
 static int machine_class_index_get_csr_address(lua_State *L) {
-    lua_pushnumber(L, cm_get_csr_address(clua_check_cm_proc_csr(L, 1)));
+    lua_pushinteger(L, static_cast<lua_Integer>(cm_get_csr_address(clua_check_cm_proc_csr(L, 1))));
     return 1;
 }
 
 /// \brief This is the machine.get_dhd_h_address() method implementation.
 static int machine_class_index_get_dhd_h_address(lua_State *L) {
-    lua_pushnumber(L, cm_get_dhd_h_address(luaL_checkinteger(L, 1)));
+    lua_pushinteger(L, static_cast<lua_Integer>(cm_get_dhd_h_address(static_cast<int>(luaL_checkinteger(L, 1)))));
     return 1;
 }
 

@@ -742,7 +742,7 @@ static bool finished(handler::pull_type *c) {
 /// \param val If string matches prefix, points to remaninder
 /// \returns True if string matches prefix, false otherwise
 static bool stringval(const char *pre, const char *str, const char **val) {
-    int len = strlen(pre);
+    size_t len = strlen(pre);
     if (strncmp(pre, str, len) == 0) {
         *val = str + len;
         return true;

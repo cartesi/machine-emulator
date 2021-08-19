@@ -608,7 +608,7 @@ class handler_GetXAddress final : public handler<GetXAddressRequest, GetXAddress
             throw std::invalid_argument{"invalid register index"};
         }
         GetXAddressResponse resp;
-        resp.set_address(cartesi::machine::get_x_address(index));
+        resp.set_address(cartesi::machine::get_x_address(static_cast<int>(index)));
         return finish_ok(writer, resp);
     }
 
@@ -636,7 +636,7 @@ class handler_ReadX final : public handler<ReadXRequest, ReadXResponse> {
             return finish_with_error_no_machine(writer);
         }
         ReadXResponse resp;
-        resp.set_value(hctx.m->read_x(index));
+        resp.set_value(hctx.m->read_x(static_cast<int>(index)));
         return finish_ok(writer, resp);
     }
 
@@ -662,7 +662,7 @@ class handler_WriteX final : public handler<WriteXRequest, Void> {
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        hctx.m->write_x(index, req->value());
+        hctx.m->write_x(static_cast<int>(index), req->value());
         Void resp;
         return finish_ok(writer, resp);
     }
@@ -713,7 +713,7 @@ class handler_GetDhdHAddress final : public handler<GetDhdHAddressRequest, GetDh
             throw std::invalid_argument{"invalid register index"};
         }
         GetDhdHAddressResponse resp;
-        resp.set_address(cartesi::machine::get_dhd_h_address(index));
+        resp.set_address(cartesi::machine::get_dhd_h_address(static_cast<int>(index)));
         return finish_ok(writer, resp);
     }
 
@@ -741,7 +741,7 @@ class handler_ReadDhdH final : public handler<ReadDhdHRequest, ReadDhdHResponse>
             return finish_with_error_no_machine(writer);
         }
         ReadDhdHResponse resp;
-        resp.set_value(hctx.m->read_dhd_h(index));
+        resp.set_value(hctx.m->read_dhd_h(static_cast<int>(index)));
         return finish_ok(writer, resp);
     }
 
@@ -768,7 +768,7 @@ class handler_WriteDhdH final : public handler<WriteDhdHRequest, Void> {
             return finish_with_error_no_machine(writer);
         }
         Void resp;
-        hctx.m->write_dhd_h(index, req->value());
+        hctx.m->write_dhd_h(static_cast<int>(index), req->value());
         return finish_ok(writer, resp);
     }
 
@@ -1099,7 +1099,7 @@ std::unique_ptr<Server> build_server(const char *server_address, const char *ses
 /// \param val If string matches prefix, points to remaninder
 /// \returns True if string matches prefix, false otherwise
 static bool stringval(const char *pre, const char *str, const char **val) {
-    int len = strlen(pre);
+    size_t len = strlen(pre);
     if (strncmp(pre, str, len) == 0) {
         *val = str + len;
         return true;

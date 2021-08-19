@@ -87,7 +87,7 @@ static int grpc_machine_class_get_x_address(lua_State *L) {
         clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     uint64_t reg_address{};
     TRY_EXECUTE(cm_grpc_get_x_address(managed_grpc_stub.get(), luaL_checkinteger(L, 1), &reg_address, err_msg));
-    lua_pushnumber(L, reg_address);
+    lua_pushinteger(L, static_cast<lua_Integer>(reg_address));
     return 1;
 }
 
@@ -98,7 +98,7 @@ static int grpc_machine_class_get_csr_address(lua_State *L) {
     uint64_t csr_address{};
     const CM_PROC_CSR csr = clua_check_cm_proc_csr(L, 1);
     TRY_EXECUTE(cm_grpc_get_csr_address(managed_grpc_stub.get(), csr, &csr_address, err_msg));
-    lua_pushnumber(L, csr_address);
+    lua_pushinteger(L, static_cast<lua_Integer>(csr_address));
     return 1;
 }
 
@@ -108,7 +108,7 @@ static int grpc_machine_class_get_dhd_h_address(lua_State *L) {
         clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     uint64_t dhd_h_address{};
     TRY_EXECUTE(cm_grpc_dhd_h_address(managed_grpc_stub.get(), luaL_checkinteger(L, 1), &dhd_h_address, err_msg));
-    lua_pushnumber(L, dhd_h_address);
+    lua_pushinteger(L, static_cast<lua_Integer>(dhd_h_address));
     return 1;
 }
 

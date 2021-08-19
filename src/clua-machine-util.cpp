@@ -463,7 +463,7 @@ static size_t check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_
     std::array<cm_hash, 64> temp_hashes{};
     assert(sibling_hashes_count <= 64);
     for (; log2_target_size < log2_root_size; ++log2_target_size) {
-        lua_rawgeti(L, idx, log2_root_size - log2_target_size);
+        lua_rawgeti(L, idx, static_cast<lua_Integer>(log2_root_size - log2_target_size));
         auto index = log2_root_size - 1 - log2_target_size;
         clua_check_cm_hash(L, -1, &temp_hashes[index]);
         lua_pop(L, 1);
@@ -479,8 +479,8 @@ static size_t check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_
 /// \returns The proof.
 machine_merkle_tree::proof_type clua_check_proof(lua_State *L, int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
-    int log2_target_size = check_uint_field(L, tabidx, "log2_target_size");
-    int log2_root_size = check_uint_field(L, tabidx, "log2_root_size");
+    int log2_target_size = check_int_field(L, tabidx, "log2_target_size");
+    int log2_root_size = check_int_field(L, tabidx, "log2_root_size");
     machine_merkle_tree::proof_type proof{log2_root_size, log2_target_size};
     proof.set_target_address(check_uint_field(L, tabidx, "target_address"));
     lua_getfield(L, tabidx, "target_hash");
@@ -614,7 +614,7 @@ static access check_access(lua_State *L, int tabidx, bool proofs) {
     }
     a.set_type(check_access_type_field(L, tabidx, "type"));
     a.set_address(check_uint_field(L, tabidx, "address"));
-    a.set_log2_size(check_uint_field(L, tabidx, "log2_size"));
+    a.set_log2_size(check_int_field(L, tabidx, "log2_size"));
     if (a.get_log2_size() < machine_merkle_tree::get_log2_word_size() ||
         a.get_log2_size() > machine_merkle_tree::get_log2_root_size()) {
         luaL_error(L, "invalid log2_size (expected integer in {%d..%d})", machine_merkle_tree::get_log2_word_size(),
@@ -634,7 +634,7 @@ static cm_access check_cm_access(lua_State *L, int tabidx, bool proofs) {
     cm_access a{};
     a.type = check_cm_access_type_field(L, tabidx, "type");
     a.address = check_uint_field(L, tabidx, "address");
-    a.log2_size = check_uint_field(L, tabidx, "log2_size");
+    a.log2_size = check_int_field(L, tabidx, "log2_size");
     if (a.log2_size < CM_TREE_LOG2_WORD_SIZE || a.log2_size > CM_TREE_LOG2_ROOT_SIZE) {
         luaL_error(L, "invalid log2_size (expected integer in {%d..%d})", CM_TREE_LOG2_WORD_SIZE,
             CM_TREE_LOG2_ROOT_SIZE);
@@ -674,7 +674,7 @@ access_log clua_check_access_log(lua_State *L, int tabidx) {
     bool annotations = opt_boolean_field(L, -1, "annotations");
     lua_pop(L, 1);
     check_table_field(L, tabidx, "accesses");
-    int len = luaL_len(L, -1);
+    auto len = luaL_len(L, -1);
     for (int i = 1; i <= len; i++) {
         lua_geti(L, -1, i);
         if (!lua_istable(L, -1)) {
@@ -725,7 +725,7 @@ cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx) {
     acc_log->accesses_count = luaL_len(L, -1);
     acc_log->accesses = new cm_access[acc_log->accesses_count];
     for (size_t i = 1; i <= acc_log->accesses_count; i++) {
-        lua_geti(L, -1, i);
+        lua_geti(L, -1, static_cast<lua_Integer>(i));
         if (!lua_istable(L, -1)) {
             luaL_error(L, "access [%d] not a table", i);
         }
@@ -738,7 +738,7 @@ cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx) {
         acc_log->notes_count = luaL_len(L, -1);
         acc_log->notes = new const char *[acc_log->notes_count];
         for (size_t i = 1; i <= acc_log->notes_count; i++) {
-            lua_geti(L, -1, i);
+            lua_geti(L, -1, static_cast<lua_Integer>(i));
             if (!lua_isstring(L, -1)) {
                 luaL_error(L, "note [%d] not a string", i);
             }
@@ -750,7 +750,7 @@ cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx) {
         acc_log->brackets_count = luaL_len(L, -1);
         acc_log->brackets = new cm_bracket_note[acc_log->brackets_count];
         for (size_t i = 1; i <= acc_log->brackets_count; i++) {
-            lua_geti(L, -1, i);
+            lua_geti(L, -1, static_cast<lua_Integer>(i));
             if (!lua_istable(L, -1)) {
                 luaL_error(L, "bracket [%d] not a table", i);
             }
@@ -1003,7 +1003,7 @@ void clua_push_cm_access_log(lua_State *L, const cm_access_log *log) {
             clua_push_cm_proof(L, a->proof);
             lua_setfield(L, -2, "proof");
         }
-        lua_rawseti(L, -2, i + 1);
+        lua_rawseti(L, -2, static_cast<lua_Integer>(i) + 1);
     }
     lua_setfield(L, -2, "accesses"); // log
     // Add all brackets
@@ -1015,7 +1015,7 @@ void clua_push_cm_access_log(lua_State *L, const cm_access_log *log) {
             clua_setstringfield(L, cm_bracket_type_name(b->type), "type", -1);
             clua_setintegerfield(L, b->where + 1, "where", -1); // convert from 0- to 1-based index
             clua_setstringfield(L, b->text, "text", -1);
-            lua_rawseti(L, -2, i + 1);
+            lua_rawseti(L, -2, static_cast<lua_Integer>(i) + 1);
         }
         lua_setfield(L, -2, "brackets"); // log
 
@@ -1023,7 +1023,7 @@ void clua_push_cm_access_log(lua_State *L, const cm_access_log *log) {
         for (size_t i = 0; i < log->notes_count; ++i) {
             const char *note = log->notes[i];
             lua_pushstring(L, note);
-            lua_rawseti(L, -2, i + 1);
+            lua_rawseti(L, -2, static_cast<lua_Integer>(i) + 1);
         }
         lua_setfield(L, -2, "notes"); // log
     }
@@ -1079,7 +1079,7 @@ void clua_push_cm_proof(lua_State *L, const cm_merkle_tree_proof *proof) {
     lua_newtable(L); // proof siblings
     for (size_t log2_size = proof->log2_target_size; log2_size < proof->log2_root_size; ++log2_size) {
         clua_push_cm_hash(L, &proof->sibling_hashes[proof->log2_root_size - 1 - log2_size]);
-        lua_rawseti(L, -2, proof->log2_root_size - log2_size);
+        lua_rawseti(L, -2, static_cast<lua_Integer>(proof->log2_root_size - log2_size));
     }
     lua_setfield(L, -2, "sibling_hashes");                                    // proof
     clua_setintegerfield(L, proof->target_address, "target_address", -1);     // proof
@@ -1115,7 +1115,7 @@ static void push_processor_config(lua_State *L, const processor_config &p) {
     lua_newtable(L); // p
     lua_newtable(L); // p x
     for (int i = 1; i <= (X_REG_COUNT - 1); i++) {
-        lua_pushinteger(L, p.x[i]);
+        lua_pushinteger(L, static_cast<lua_Integer>(p.x[i]));
         lua_rawseti(L, -2, i);
     }
     lua_setfield(L, -2, "x");
@@ -1161,7 +1161,7 @@ static void push_cm_processor_config(lua_State *L, const cm_processor_config *p)
     lua_newtable(L); // p
     lua_newtable(L); // p x
     for (int i = 1; i <= (X_REG_COUNT - 1); i++) {
-        lua_pushinteger(L, p->x[i - 1]);
+        lua_pushinteger(L, static_cast<lua_Integer>(p->x[i - 1]));
         lua_rawseti(L, -2, i);
     }
     lua_setfield(L, -2, "x");
@@ -1296,7 +1296,7 @@ static void push_dhd_config(lua_State *L, const dhd_config &d) {
     clua_setintegerfield(L, d.hlength, "hlength", -1);
     lua_newtable(L);
     for (int i = 1; i <= DHD_H_REG_COUNT; i++) {
-        lua_pushinteger(L, d.h[i - 1]);
+        lua_pushinteger(L, static_cast<lua_Integer>(d.h[i - 1]));
         lua_rawseti(L, -2, i);
     }
     lua_setfield(L, -2, "h");
@@ -1316,7 +1316,7 @@ static void push_cm_dhd_config(lua_State *L, const cm_dhd_config *d) {
     clua_setintegerfield(L, d->hlength, "hlength", -1);
     lua_newtable(L);
     for (int i = 1; i <= CM_MACHINE_DHD_H_REG_COUNT; i++) {
-        lua_pushinteger(L, d->h[i - 1]);
+        lua_pushinteger(L, static_cast<lua_Integer>(d->h[i - 1]));
         lua_rawseti(L, -2, i);
     }
     lua_setfield(L, -2, "h");
@@ -1356,7 +1356,7 @@ static void push_cm_flash_drive_configs(lua_State *L, const cm_flash_drive_confi
             clua_setstringfield(L, f->image_filename, "image_filename", -1);
         }
         clua_setbooleanfield(L, f->shared, "shared", -1);
-        lua_rawseti(L, -2, j + 1);
+        lua_rawseti(L, -2, static_cast<lua_Integer>(j) + 1);
     }
 }
 
@@ -1528,7 +1528,7 @@ static void check_flash_drive_configs(lua_State *L, int tabidx, flash_drive_conf
     if (!opt_table_field(L, tabidx, "flash_drive")) {
         return;
     }
-    int len = luaL_len(L, -1);
+    auto len = luaL_len(L, -1);
     if (len > static_cast<int>(fs.capacity())) { // NOLINT(readability-static-accessed-through-instance)
         luaL_error(L, "too many flash drives");
     }

@@ -671,11 +671,11 @@ private:
         uint64_t size = UINT64_C(1) << log2_size;
         access a;
         if (m_log->get_log_type().has_proofs()) {
-            a.set_proof(m_m.get_proof(paddr, log2_size));
+            a.set_proof(m_m.get_proof(paddr, static_cast<int>(log2_size)));
         }
         a.set_type(access_type::write);
         a.set_address(paddr);
-        a.set_log2_size(log2_size);
+        a.set_log2_size(static_cast<int>(log2_size));
         // not very efficient way to get read data...
         a.get_read().resize(size);
         m_m.read_memory(paddr, a.get_read().data(), size);

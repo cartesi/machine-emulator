@@ -93,7 +93,7 @@ static int machine_obj_index_get_proof(lua_State *L) {
     lua_settop(L, 3);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
-    const int log2_size = luaL_checkinteger(L, 3);
+    auto log2_size = luaL_checkinteger(L, 3);
     auto &managed_proof = clua_push_to(L, clua_managed_cm_ptr<cm_merkle_tree_proof>(nullptr));
     TRY_EXECUTE(cm_get_proof(m.get(), address, log2_size, &managed_proof.get(), err_msg));
     clua_push_cm_proof(L, managed_proof.get());
@@ -204,7 +204,7 @@ static int machine_obj_index_read_csr(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     uint64_t val{};
     TRY_EXECUTE(cm_read_csr(m.get(), clua_check_cm_proc_csr(L, 2), &val, err_msg));
-    lua_pushinteger(L, val);
+    lua_pushinteger(L, static_cast<lua_Integer>(val));
     return 1;
 }
 
@@ -212,13 +212,13 @@ static int machine_obj_index_read_csr(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_read_x(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int i = luaL_checkinteger(L, 2);
+    auto i = luaL_checkinteger(L, 2);
     if (i < 0 || i >= X_REG_COUNT) {
         luaL_error(L, "register index out of range");
     }
     uint64_t val{};
     TRY_EXECUTE(cm_read_x(m.get(), i, &val, err_msg));
-    lua_pushinteger(L, val);
+    lua_pushinteger(L, static_cast<lua_Integer>(val));
     return 1;
 }
 
@@ -226,13 +226,13 @@ static int machine_obj_index_read_x(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_read_dhd_h(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int i = luaL_checkinteger(L, 2);
+    auto i = luaL_checkinteger(L, 2);
     if (i < 0 || i >= DHD_H_REG_COUNT) {
         luaL_error(L, "register index out of range");
     }
     uint64_t val{};
     TRY_EXECUTE(cm_read_dhd_h(m.get(), i, &val, err_msg));
-    lua_pushinteger(L, val);
+    lua_pushinteger(L, static_cast<lua_Integer>(val));
     return 1;
 }
 
@@ -307,7 +307,7 @@ static int machine_obj_index_read_word(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     uint64_t word_value{0};
     TRY_EXECUTE(cm_read_word(m.get(), luaL_checkinteger(L, 2), &word_value, err_msg));
-    lua_pushinteger(L, word_value);
+    lua_pushinteger(L, static_cast<lua_Integer>(word_value));
     return 1;
 }
 
@@ -380,7 +380,7 @@ static int machine_obj_index_write_csr(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_write_x(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int i = luaL_checkinteger(L, 2);
+    auto i = luaL_checkinteger(L, 2);
     if (i < 1 || i >= X_REG_COUNT) {
         luaL_error(L, "register index out of range");
     }
@@ -392,7 +392,7 @@ static int machine_obj_index_write_x(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_write_dhd_h(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int i = luaL_checkinteger(L, 2);
+    auto i = luaL_checkinteger(L, 2);
     if (i < 0 || i >= DHD_H_REG_COUNT) {
         luaL_error(L, "register index out of range");
     }

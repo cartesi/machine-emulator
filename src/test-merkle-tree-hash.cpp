@@ -42,7 +42,7 @@ using hash_type = hasher_type::hash_type;
 /// \param val If string matches prefix, points to remaninder
 /// \returns True if string matches prefix, false otherwise
 static bool stringval(const char *pre, const char *str, const char **val) {
-    int len = strlen(pre);
+    size_t len = strlen(pre);
     if (strncmp(pre, str, len) == 0) {
         *val = str + len;
         return true;
@@ -58,7 +58,7 @@ static bool stringval(const char *pre, const char *str, const char **val) {
 /// \returns True if string matches prefix and conversion succeeds,
 /// false otherwise
 static bool intval(const char *pre, const char *str, int *val) {
-    int len = strlen(pre);
+    size_t len = strlen(pre);
     if (strncmp(pre, str, len) == 0) {
         str += len;
         int end = 0;

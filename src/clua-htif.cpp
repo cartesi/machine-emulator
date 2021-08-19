@@ -45,7 +45,7 @@ int clua_htif_export(lua_State *L, int ctxidx) {
         named_constant{HTIF_CONSOLE_PUTCHAR, "HTIF_CONSOLE_PUTCHAR"},
     };
     for (const auto &c : constants) {
-        lua_pushinteger(L, c.value);
+        lua_pushinteger(L, static_cast<lua_Integer>(c.value));
         lua_setfield(L, -2, c.name);
     }
     return 0;

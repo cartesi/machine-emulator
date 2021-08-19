@@ -34,7 +34,7 @@ int clua_init(lua_State *L) {
 
 void clua_setintegerfield(lua_State *L, uint64_t val, const char *name, int idx) {
     auto absidx = lua_absindex(L, idx);
-    lua_pushinteger(L, val);
+    lua_pushinteger(L, static_cast<lua_Integer>(val));
     lua_setfield(L, absidx, name);
 }
 

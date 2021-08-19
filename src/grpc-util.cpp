@@ -268,7 +268,7 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
             access a;
             a.set_type(get_proto_access_type(pac->type()));
             a.set_address(pac->address());
-            a.set_log2_size(pac->log2_size());
+            a.set_log2_size(static_cast<int>(pac->log2_size()));
             a.get_read().insert(a.get_read().end(), pac->read().begin(), pac->read().end());
             a.get_written().insert(a.get_written().end(), pac->written().begin(), pac->written().end());
             std::string note;

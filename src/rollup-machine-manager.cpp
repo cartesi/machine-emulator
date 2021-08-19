@@ -1096,7 +1096,8 @@ static void check_payload_and_metadata_config(grpc::ServerContext &request_conte
             name + " metadata flash drive index too large (expected less than " + std::to_string(flash_drive_size) +
                 ", got " + std::to_string(drive_pair.metadata_flash_drive_index) + ")"}));
     }
-    drive_pair.metadata_flash_drive_config = config.flash_drive(drive_pair.metadata_flash_drive_index);
+    drive_pair.metadata_flash_drive_config =
+        config.flash_drive(static_cast<int>(drive_pair.metadata_flash_drive_index));
     drive_pair.metadata_flash_drive_config.set_shared(false);
     drive_pair.metadata_flash_drive_config.clear_image_filename();
     if (drive_pair.payload_flash_drive_index >= flash_drive_size) {
@@ -1104,7 +1105,7 @@ static void check_payload_and_metadata_config(grpc::ServerContext &request_conte
             name + " payload flash drive index too large (expected less than " + std::to_string(flash_drive_size) +
                 ", got " + std::to_string(drive_pair.payload_flash_drive_index) + ")"}));
     }
-    drive_pair.payload_flash_drive_config = config.flash_drive(drive_pair.payload_flash_drive_index);
+    drive_pair.payload_flash_drive_config = config.flash_drive(static_cast<int>(drive_pair.payload_flash_drive_index));
     drive_pair.payload_flash_drive_config.set_shared(false);
     drive_pair.payload_flash_drive_config.clear_image_filename();
 }
@@ -1561,7 +1562,7 @@ static inline bool is_null(IT begin, IT end) {
 /// \param data String with binary data
 /// \param entry_length Length of each entry
 /// \return Number of entries
-static uint64_t count_null_terminated_entries(const std::string &data, uint64_t entry_length) {
+static uint64_t count_null_terminated_entries(const std::string &data, int entry_length) {
     auto begin = data.begin();
     uint64_t count = 0;
     while (begin + entry_length <= data.end()) {
@@ -1772,7 +1773,8 @@ static output_type read_output(async_context &actx, const std::string &output_me
     auto keccak_in_output_metadata_flash_drive =
         get_proof(actx, actx.session.outputs_description.metadata_flash_drive_address + entry_index * KECCAK_SIZE,
             LOG2_KECCAK_SIZE)
-            .slice(hasher_type{}, actx.session.outputs_description.metadata_flash_drive_log2_size, LOG2_KECCAK_SIZE);
+            .slice(hasher_type{}, static_cast<int>(actx.session.outputs_description.metadata_flash_drive_log2_size),
+                LOG2_KECCAK_SIZE);
     uint64_t payload_data_length = 0;
     dout{actx.request_context} << "      Reading output address and length";
     auto address = read_output_address_and_payload_data_length(actx, entry_index, &payload_data_length);
@@ -1798,7 +1800,8 @@ static message_type read_message(async_context &actx, const std::string &message
     auto keccak_in_message_metadata_flash_drive =
         get_proof(actx, actx.session.messages_description.metadata_flash_drive_address + entry_index * KECCAK_SIZE,
             LOG2_KECCAK_SIZE)
-            .slice(hasher_type{}, actx.session.messages_description.metadata_flash_drive_log2_size, LOG2_KECCAK_SIZE);
+            .slice(hasher_type{}, static_cast<int>(actx.session.messages_description.metadata_flash_drive_log2_size),
+                LOG2_KECCAK_SIZE);
     dout{actx.request_context} << "      Reading message length";
     auto payload_data_length = read_message_payload_data_length(actx, entry_index);
     dout{actx.request_context} << "      Reading message payload at " << entry_index << " of length "
@@ -2269,7 +2272,7 @@ where
 /// \param val If string matches prefix, points to remaninder
 /// \returns True if string matches prefix, false otherwise
 static bool stringval(const char *pre, const char *str, const char **val) {
-    int len = strlen(pre);
+    size_t len = strlen(pre);
     if (strncmp(pre, str, len) == 0) {
         *val = str + len;
         return true;

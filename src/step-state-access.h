@@ -719,7 +719,7 @@ private:
     void do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t log2_size) {
         uint64_t len = UINT64_C(1) << log2_size;
         access_data val(data, data + len);
-        check_write(paddr, val, log2_size, "block write");
+        check_write(paddr, val, static_cast<int>(log2_size), "block write");
     }
 
     template <typename T>

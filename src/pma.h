@@ -191,7 +191,7 @@ public:
     }
 
     /// \brief Returns copy of PMA length field (needed for munmap).
-    int get_length(void) const {
+    uint64_t get_length(void) const {
         return m_length;
     }
 };

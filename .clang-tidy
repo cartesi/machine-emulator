@@ -23,10 +23,11 @@ Checks: >-
   portability*,
   readability*,
   -readability-else-after-return,
-  -readability-named-parameter,
+  -readability-function-cognitive-complexity,
+  -readability-implicit-bool-conversion,
   -readability-magic-numbers,
-  -readability-redundant-member-init,
-  -readability-implicit-bool-conversion
+  -readability-named-parameter,
+  -readability-redundant-member-init
 WarningsAsErrors: >-
   boost*,
   bugprone*,

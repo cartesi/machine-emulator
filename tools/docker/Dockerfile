@@ -14,7 +14,7 @@ RUN \
     apt-get install --no-install-recommends -y \
         build-essential vim wget git libreadline-dev libboost-coroutine-dev \
         libboost-context-dev libboost-serialization-dev \
-        libssl-dev openssl libc-ares-dev zlib1g-dev clang-tidy-11 \
+        libssl-dev openssl libc-ares-dev zlib1g-dev clang-tidy-12 clang-format-12 \
         ca-certificates automake libtool patchelf cmake pkg-config && \
     rm -rf /var/lib/apt/lists/*
 

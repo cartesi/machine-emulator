@@ -28,12 +28,12 @@ $ apt-get install build-essential automake libtool patchelf cmake pkg-config wge
 
 ##### MacPorts
 ```
-sudo port install clang-11 automake boost libtool wget cmake pkgconfig c-ares zlib openssl
+sudo port install clang-12 automake boost libtool wget cmake pkgconfig c-ares zlib openssl
 ```
 
 ##### Homebrew
 ```
-brew install llvm@11 automake boost libomp wget cmake pkg-config c-ares zlib openssl
+brew install llvm@12 automake boost libomp wget cmake pkg-config c-ares zlib openssl
 ```
 
 ### Build
@@ -73,17 +73,17 @@ $ make test TEST_PATH=/full/path/to/test/binaries
 
 ## Linter
 
-We use clang-tidy 11 as the linter.
+We use clang-tidy 12 as the linter.
 
 ### Install
 
 #### Ubuntu 20.04
 
-You need to install the package clang-tidy-11 and set it as the default executable with update-alternatives.
+You need to install the package clang-tidy-12 and set it as the default executable with update-alternatives.
 
 ```bash
-$ apt install clang-tidy-11
-$ update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-11 110
+$ apt install clang-tidy-12
+$ update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-12 120
 ```
 
 ### Running Lint

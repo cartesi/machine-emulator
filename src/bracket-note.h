@@ -17,6 +17,8 @@
 #ifndef BRACKET_NOTE_H
 #define BRACKET_NOTE_H
 
+#include <string>
+
 /// \file
 /// \brief Bracket annotation for access log
 

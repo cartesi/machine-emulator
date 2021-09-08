@@ -213,8 +213,8 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_s
     uint64_t htif_iconsole = static_cast<uint64_t>(m_c.htif.console_getchar) << HTIF_CONSOLE_GETCHAR |
         static_cast<uint64_t>(true) << HTIF_CONSOLE_PUTCHAR;
     write_htif_iconsole(htif_iconsole);
-    uint64_t htif_iyield = static_cast<uint64_t>(m_c.htif.yield_progress) << HTIF_YIELD_PROGRESS |
-        static_cast<uint64_t>(m_c.htif.yield_rollup) << HTIF_YIELD_ROLLUP;
+    uint64_t htif_iyield = static_cast<uint64_t>(m_c.htif.yield_manual) << HTIF_YIELD_MANUAL |
+        static_cast<uint64_t>(m_c.htif.yield_automatic) << HTIF_YIELD_AUTOMATIC;
     write_htif_iyield(htif_iyield);
     // Resiter CLINT device
     register_pma_entry(make_clint_pma_entry(PMA_CLINT_START, PMA_CLINT_LENGTH));
@@ -327,8 +327,8 @@ machine_config machine::get_serialization_config(void) const {
     c.htif.fromhost = read_htif_fromhost();
     // c.htif.halt = read_htif_ihalt(); // hard-coded to true
     c.htif.console_getchar = static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
-    c.htif.yield_progress = static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_PROGRESS));
-    c.htif.yield_rollup = static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_ROLLUP));
+    c.htif.yield_manual = static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_MANUAL));
+    c.htif.yield_automatic = static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_AUTOMATIC));
     // Ensure we don't mess with ROM by writing the original bootargs
     // over the potentially modified memory region we serialize
     c.rom.bootargs.clear();
@@ -1068,6 +1068,19 @@ void machine::set_iflags_Y(void) {
     m_s.brk = true;
 }
 
+bool machine::read_iflags_X(void) const {
+    return m_s.iflags.X;
+}
+
+void machine::reset_iflags_X(void) {
+    m_s.iflags.X = false;
+}
+
+void machine::set_iflags_X(void) {
+    m_s.iflags.X = true;
+    m_s.brk = true;
+}
+
 bool machine::read_iflags_H(void) const {
     return m_s.iflags.H;
 }
@@ -1505,6 +1518,9 @@ void machine::run(uint64_t mcycle_end) {
         // Perform interact with htif after every timer interrupt
         if (rtc_is_tick(read_mcycle())) {
             interact();
+        }
+        if (read_iflags_X()) {
+            return;
         }
     }
 }

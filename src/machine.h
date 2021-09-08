@@ -618,6 +618,16 @@ public:
     /// \returns Address of the specified register
     static uint64_t get_dhd_h_address(int i);
 
+    /// \brief Checks the value of the iflags_X flag.
+    /// \returns The flag value.
+    bool read_iflags_X(void) const;
+
+    /// \brief Resets the value of the iflags_X flag.
+    void reset_iflags_X(void);
+
+    /// \brief Sets the iflags_X flag.
+    void set_iflags_X(void);
+
     /// \brief Checks the value of the iflags_Y flag.
     /// \returns The flag value.
     bool read_iflags_Y(void) const;

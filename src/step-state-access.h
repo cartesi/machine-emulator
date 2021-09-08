@@ -57,6 +57,7 @@ public:
         void or_brk_with_mip_mie(void) {}
         void or_brk_with_iflags_H(void) {}
         void or_brk_with_iflags_Y(void) {}
+        void or_brk_with_iflags_X(void) {}
         void set_brk_from_all(void) {}
         void assert_no_brk(void) {}
 
@@ -576,6 +577,25 @@ private:
     bool do_read_iflags_H(void) {
         auto iflags = check_read_word(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), "iflags.H");
         return (iflags & IFLAGS_H_MASK) != 0;
+    }
+
+    void do_set_iflags_X(void) {
+        uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
+        auto old_iflags = check_read_word(iflags_addr, "iflags.X (superfluous)");
+        auto new_iflags = old_iflags | IFLAGS_X_MASK;
+        check_write_word(iflags_addr, new_iflags, "iflags.X");
+    }
+
+    void do_reset_iflags_X(void) {
+        uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
+        auto old_iflags = check_read_word(iflags_addr, "iflags.X (superfluous)");
+        auto new_iflags = old_iflags & (~IFLAGS_X_MASK);
+        check_write_word(iflags_addr, new_iflags, "iflags.X");
+    }
+
+    bool do_read_iflags_X(void) {
+        auto iflags = check_read_word(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), "iflags.X");
+        return (iflags & IFLAGS_X_MASK) != 0;
     }
 
     void do_set_iflags_Y(void) {

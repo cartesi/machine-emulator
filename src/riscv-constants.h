@@ -234,11 +234,12 @@ enum COUNTEREN_rw_masks : uint64_t {
 };
 
 /// \brief Cartesi-specific iflags shifts
-enum IFLAGS_shifts { IFLAGS_H_SHIFT = 0, IFLAGS_Y_SHIFT = 1, IFLAGS_PRV_SHIFT = 3 };
+enum IFLAGS_shifts { IFLAGS_H_SHIFT = 0, IFLAGS_Y_SHIFT = 1, IFLAGS_X_SHIFT = 2, IFLAGS_PRV_SHIFT = 3 };
 
 enum IFLAGS_masks : uint64_t {
     IFLAGS_H_MASK = UINT64_C(1) << IFLAGS_H_SHIFT,
     IFLAGS_Y_MASK = UINT64_C(1) << IFLAGS_Y_SHIFT,
+    IFLAGS_X_MASK = UINT64_C(1) << IFLAGS_X_SHIFT,
     IFLAGS_PRV_MASK = UINT64_C(3) << IFLAGS_PRV_SHIFT
 };
 
@@ -246,7 +247,7 @@ enum IFLAGS_masks : uint64_t {
 enum CARTESI_init : uint64_t {
     PC_INIT = UINT64_C(0x1000),                    ///< Initial value for pc
     MVENDORID_INIT = UINT64_C(0x6361727465736920), ///< Initial value for mvendorid
-    MARCHID_INIT = UINT64_C(0x7),                  ///< Initial value for marchid
+    MARCHID_INIT = UINT64_C(0x8),                  ///< Initial value for marchid
     MIMPID_INIT = UINT64_C(1),                     ///< Initial value for mimpid
     MCYCLE_INIT = UINT64_C(0),                     ///< Initial value for mcycle
     MINSTRET_INIT = UINT64_C(0),                   ///< Initial value for minstret

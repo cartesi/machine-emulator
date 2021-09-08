@@ -403,7 +403,7 @@ bool operator==(const cm_clint_config &lhs, const cm_clint_config &rhs) {
 
 bool operator==(const cm_htif_config &lhs, const cm_htif_config &rhs) {
     return (lhs.fromhost == rhs.fromhost && lhs.tohost == rhs.tohost && lhs.console_getchar == rhs.console_getchar &&
-        lhs.yield_progress == rhs.yield_progress && lhs.yield_rollup == rhs.yield_rollup);
+        lhs.yield_manual == rhs.yield_manual && lhs.yield_automatic == rhs.yield_automatic);
 }
 
 bool operator==(const cm_dhd_config &lhs, const cm_dhd_config &rhs) {

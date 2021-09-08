@@ -93,6 +93,12 @@ private:
         m_a.get_naked_state().set_brk();
     }
 
+    void do_set_iflags_X(void) override {
+        m_a.set_iflags_X();
+        // Tell inner loop X has been set, so it must break out
+        m_a.get_naked_state().set_brk();
+    }
+
     uint64_t do_read_clint_mtimecmp(void) override {
         return m_a.read_clint_mtimecmp();
     }

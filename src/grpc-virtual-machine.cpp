@@ -509,6 +509,10 @@ bool grpc_virtual_machine::do_read_iflags_Y(void) const {
     return (read_csr(csr::iflags) >> IFLAGS_Y_SHIFT) & 1;
 }
 
+bool grpc_virtual_machine::do_read_iflags_X(void) const {
+    return (read_csr(csr::iflags) >> IFLAGS_X_SHIFT) & 1;
+}
+
 void grpc_virtual_machine::do_set_iflags_H(void) {
     return write_csr(csr::iflags, read_csr(csr::iflags) | IFLAGS_H_MASK);
 }
@@ -517,11 +521,19 @@ void grpc_virtual_machine::do_set_iflags_Y(void) {
     return write_csr(csr::iflags, read_csr(csr::iflags) | IFLAGS_Y_MASK);
 }
 
+void grpc_virtual_machine::do_set_iflags_X(void) {
+    return write_csr(csr::iflags, read_csr(csr::iflags) | IFLAGS_X_MASK);
+}
+
 void grpc_virtual_machine::do_reset_iflags_Y(void) {
     Void request;
     Void response;
     ClientContext context;
     check_status(m_stub->get_stub()->ResetIflagsY(&context, request, &response));
+}
+
+void grpc_virtual_machine::do_reset_iflags_X(void) {
+    return write_csr(csr::iflags, read_csr(csr::iflags) & (~IFLAGS_X_MASK));
 }
 
 void grpc_virtual_machine::do_write_iflags(uint64_t val) {

@@ -3398,10 +3398,13 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         return interpreter_status::success;
     }
 
-    // If the cpu is yielded, we are done
+    // If the cpu has yielded manually, we are done
     if (a.read_iflags_Y()) {
         return interpreter_status::success;
     }
+
+    // Just reset the automatic yield flag and continue
+    a.reset_iflags_X();
 
     // Set interrupt flag for RTC
     set_rtc_interrupt(a, mcycle);

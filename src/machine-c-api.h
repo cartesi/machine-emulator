@@ -191,8 +191,8 @@ typedef struct {          // NOLINT(modernize-use-using)
     uint64_t fromhost;    ///< Value of fromhost CSR
     uint64_t tohost;      ///< Value of tohost CSR
     bool console_getchar; ///< Make console getchar available?
-    bool yield_progress;  ///< Make yield progress available?
-    bool yield_rollup;    ///< Make yield rollup available?
+    bool yield_manual;    ///< Make yield manual available?
+    bool yield_automatic; ///< Make yield automatic available?
 } cm_htif_config;
 
 /// \brief DHD device state configuration
@@ -989,7 +989,7 @@ CM_API int cm_read_iflags(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Returns packed iflags from its component fields.
 /// \param val Receives value of the register.
-CM_API uint64_t cm_packed_iflags(int PRV, int Y, int H);
+CM_API uint64_t cm_packed_iflags(int PRV, int X, int Y, int H);
 
 /// \brief Reads the value of the iflags register.
 /// \param m Pointer to valid machine instance
@@ -1242,6 +1242,31 @@ CM_API int cm_write_dhd_h(cm_machine *m, int i, uint64_t val, char **err_msg);
 /// \param i Register index. Between 0 and DHD_H_REG_COUNT-1, inclusive
 /// \returns Address of the specified register
 CM_API uint64_t cm_get_dhd_h_address(int i);
+
+/// \brief Checks the value of the iflags_X flag.
+/// \param m Pointer to valid machine instance
+/// \param val Receives the flag value
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_iflags_X(const cm_machine *m, bool *val, char **err_msg);
+
+/// \brief Resets the value of the iflags_X flag.
+/// \param m Pointer to valid machine instance
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_reset_iflags_X(cm_machine *m, char **err_msg);
+
+/// \brief Sets the iflags_X flag.
+/// \param m Pointer to valid machine instance
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_set_iflags_X(cm_machine *m, char **err_msg);
 
 /// \brief Checks the value of the iflags_Y flag.
 /// \param m Pointer to valid machine instance

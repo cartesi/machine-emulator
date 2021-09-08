@@ -340,7 +340,8 @@ compile_flags.txt:
 
 luacartesi: cartesi.so
 
-grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy rollup-machine-manager tests/test-rollup-machine-manager
+#grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy rollup-machine-manager tests/test-rollup-machine-manager
+grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy
 
 hash: merkle-tree-hash tests/test-merkle-tree-hash
 

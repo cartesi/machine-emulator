@@ -234,7 +234,11 @@ static bool htif_yield(i_device_state_access *a, htif *h, uint64_t cmd, uint64_t
     (void) h;
     // If yield command is enabled, yield and acknowledge
     if ((a->read_htif_iyield() >> cmd) & 1) {
-        a->set_iflags_Y();
+        if (cmd == HTIF_YIELD_MANUAL) {
+            a->set_iflags_Y();
+        } else if (cmd == HTIF_YIELD_AUTOMATIC) {
+            a->set_iflags_X();
+        }
         a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD, cmd, 0));
         return true;
     } else {

@@ -88,8 +88,8 @@ struct htif_config final {
     uint64_t fromhost{FROMHOST_INIT}; ///< Value of fromhost CSR
     uint64_t tohost{TOHOST_INIT};     ///< Value of tohost CSR
     bool console_getchar{false};      ///< Make console getchar available?
-    bool yield_progress{false};       ///< Make yield progress available?
-    bool yield_rollup{false};         ///< Make yield rollup available?
+    bool yield_manual{false};         ///< Make yield manual available?
+    bool yield_automatic{false};      ///< Make yield automatic available?
 };
 
 /// \brief DHD device state configuration

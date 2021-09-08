@@ -37,8 +37,8 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
     proto_ram->set_image_filename(c.ram.image_filename);
     auto *proto_htif = proto_c->mutable_htif();
     proto_htif->set_console_getchar(c.htif.console_getchar);
-    proto_htif->set_yield_progress(c.htif.yield_progress);
-    proto_htif->set_yield_rollup(c.htif.yield_rollup);
+    proto_htif->set_yield_manual(c.htif.yield_manual);
+    proto_htif->set_yield_automatic(c.htif.yield_automatic);
     proto_htif->set_fromhost(c.htif.fromhost);
     proto_htif->set_tohost(c.htif.tohost);
     auto *proto_clint = proto_c->mutable_clint();
@@ -515,9 +515,9 @@ machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &pro
         // zero default when missing is ok
         c.htif.console_getchar = htif.console_getchar();
         // zero default when missing is ok
-        c.htif.yield_progress = htif.yield_progress();
+        c.htif.yield_manual = htif.yield_manual();
         // zero default when missing is ok
-        c.htif.yield_rollup = htif.yield_rollup();
+        c.htif.yield_automatic = htif.yield_automatic();
     }
     if (proto_c.has_dhd()) {
         const auto &dhd = proto_c.dhd();

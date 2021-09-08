@@ -91,7 +91,8 @@ struct machine_statistics {
 
 struct unpacked_iflags {
     uint8_t PRV; ///< Privilege level.
-    bool Y;      ///< CPU has temporarily yielded.
+    bool X;      ///< CPU has yielded with automatic reset.
+    bool Y;      ///< CPU has yielded with manual reset.
     bool H;      ///< CPU has been permanently halted.
 };               ///< Cartesi-specific unpacked CSR iflags.
 
@@ -198,22 +199,10 @@ struct machine_state {
         return brk;
     }
 
-    /// \brief Decide if brk should be set due to yield.
-    bool brk_from_iflags_Y(void) const {
-        if (iflags.Y) {
-            // uint64_t dev = HTIF_DEV_FIELD(htif.tohost);
-            uint64_t dev = htif.tohost >> 56;
-            // uint64_t cmd = HTIF_CMD_FIELD(htif.tohost)
-            uint64_t cmd = htif.tohost << 8 >> 56;
-            // return (dev == HTIF_DEVICE_YIELD && ((htif.iyield >> cmd) & 1));
-            return (dev == 2 && ((htif.iyield >> cmd) & 1));
-        }
-        return false;
-    }
-
     /// \brief Checks that false brk is consistent with rest of state
     void assert_no_brk(void) const {
         assert((mie & mip) == 0);
+        assert(!iflags.X);
         assert(!iflags.Y);
         assert(!iflags.H);
     }
@@ -233,10 +222,16 @@ struct machine_state {
         brk |= iflags.Y;
     }
 
+    /// \brief Updates the brk flag from changes in the iflags_X flag.
+    void or_brk_with_iflags_X(void) {
+        brk |= iflags.X;
+    }
+
     /// \brief Rebuild brk from all.
     void set_brk_from_all(void) {
         brk = false;
         or_brk_with_mip_mie();
+        or_brk_with_iflags_X();
         or_brk_with_iflags_Y();
         or_brk_with_iflags_H();
     }
@@ -244,7 +239,7 @@ struct machine_state {
     /// \brief Reads the value of the iflags register.
     /// \returns The value of the register.
     uint64_t read_iflags(void) const {
-        return packed_iflags(iflags.PRV, iflags.Y, iflags.H);
+        return packed_iflags(iflags.PRV, iflags.X, iflags.Y, iflags.H);
     }
 
     /// \brief Reads the value of the iflags register.
@@ -252,6 +247,7 @@ struct machine_state {
     void write_iflags(uint64_t val) {
         iflags.H = (val >> IFLAGS_H_SHIFT) & 1;
         iflags.Y = (val >> IFLAGS_Y_SHIFT) & 1;
+        iflags.X = (val >> IFLAGS_X_SHIFT) & 1;
         iflags.PRV = (val >> IFLAGS_PRV_SHIFT) & 3;
     }
 
@@ -261,8 +257,8 @@ struct machine_state {
     /// \param Y Yielded flag
     /// \param H Halted flag
     /// \returns Packed iflags
-    static uint64_t packed_iflags(int PRV, int Y, int H) {
-        return (PRV << IFLAGS_PRV_SHIFT) | (Y << IFLAGS_Y_SHIFT) | (H << IFLAGS_H_SHIFT);
+    static uint64_t packed_iflags(int PRV, int X, int Y, int H) {
+        return (PRV << IFLAGS_PRV_SHIFT) | (X << IFLAGS_X_SHIFT) | (Y << IFLAGS_Y_SHIFT) | (H << IFLAGS_H_SHIFT);
     }
 
     /// \brief Initializes all TLBs with invalid entries.

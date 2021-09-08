@@ -256,6 +256,16 @@ static int machine_obj_index_read_iflags_Y(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:read_iflags_X() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_read_iflags_X(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    bool val{};
+    TRY_EXECUTE(cm_read_iflags_X(m.get(), &val, err_msg));
+    lua_pushboolean(L, val);
+    return 1;
+}
+
 /// \brief This is the machine:set_iflags_H() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_set_iflags_H(lua_State *L) {
@@ -272,11 +282,27 @@ static int machine_obj_index_set_iflags_Y(lua_State *L) {
     return 0;
 }
 
+/// \brief This is the machine:set_iflags_X() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_set_iflags_X(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_set_iflags_X(m.get(), err_msg));
+    return 0;
+}
+
 /// \brief This is the machine:reset_iflags_Y() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_reset_iflags_Y(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     TRY_EXECUTE(cm_reset_iflags_Y(m.get(), err_msg));
+    return 0;
+}
+
+/// \brief This is the machine:reset_iflags_X() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_reset_iflags_X(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_reset_iflags_X(m.get(), err_msg));
     return 0;
 }
 
@@ -475,9 +501,12 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_iflags", machine_obj_index_read_iflags},
     {"read_iflags_H", machine_obj_index_read_iflags_H},
     {"read_iflags_Y", machine_obj_index_read_iflags_Y},
+    {"read_iflags_X", machine_obj_index_read_iflags_X},
     {"set_iflags_H", machine_obj_index_set_iflags_H},
     {"set_iflags_Y", machine_obj_index_set_iflags_Y},
+    {"set_iflags_X", machine_obj_index_set_iflags_X},
     {"reset_iflags_Y", machine_obj_index_reset_iflags_Y},
+    {"reset_iflags_X", machine_obj_index_reset_iflags_X},
     {"read_ilrsc", machine_obj_index_read_ilrsc},
     {"read_marchid", machine_obj_index_read_marchid},
     {"read_mcause", machine_obj_index_read_mcause},

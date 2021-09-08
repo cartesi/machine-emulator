@@ -253,8 +253,8 @@ static cartesi::htif_config convert_from_c(const cm_htif_config *c_config) {
     new_cpp_htif_config.fromhost = c_config->fromhost;
     new_cpp_htif_config.tohost = c_config->tohost;
     new_cpp_htif_config.console_getchar = c_config->console_getchar;
-    new_cpp_htif_config.yield_progress = c_config->yield_progress;
-    new_cpp_htif_config.yield_rollup = c_config->yield_rollup;
+    new_cpp_htif_config.yield_manual = c_config->yield_manual;
+    new_cpp_htif_config.yield_automatic = c_config->yield_automatic;
 
     return new_cpp_htif_config;
 }
@@ -265,8 +265,8 @@ static cm_htif_config convert_to_c(const cartesi::htif_config &cpp_config) {
     new_c_htif_config.fromhost = cpp_config.fromhost;
     new_c_htif_config.tohost = cpp_config.tohost;
     new_c_htif_config.console_getchar = cpp_config.console_getchar;
-    new_c_htif_config.yield_progress = cpp_config.yield_progress;
-    new_c_htif_config.yield_rollup = cpp_config.yield_rollup;
+    new_c_htif_config.yield_manual = cpp_config.yield_manual;
+    new_c_htif_config.yield_automatic = cpp_config.yield_automatic;
     return new_c_htif_config;
 }
 
@@ -955,8 +955,8 @@ IMPL_MACHINE_READ_WRITE(dhd_dlength)
 IMPL_MACHINE_READ_WRITE(dhd_hlength)
 // clang-format-on
 
-uint64_t cm_packed_iflags(int PRV, int Y, int H) {
-    return cartesi::machine_state::packed_iflags(PRV, Y, H);
+uint64_t cm_packed_iflags(int PRV, int X, int Y, int H) {
+    return cartesi::machine_state::packed_iflags(PRV, X, Y, H);
 }
 
 int cm_read_dhd_h(const cm_machine *m, int i, uint64_t *val, char **err_msg) try {
@@ -998,6 +998,30 @@ int cm_reset_iflags_Y(cm_machine *m, char **err_msg) try {
 int cm_set_iflags_Y(cm_machine *m, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->set_iflags_Y();
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_read_iflags_X(const cm_machine *m, bool *val, char **err_msg) try {
+    const auto *cpp_machine = convert_from_c(m);
+    *val = cpp_machine->read_iflags_X();
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_reset_iflags_X(cm_machine *m, char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cpp_machine->reset_iflags_X();
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_set_iflags_X(cm_machine *m, char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cpp_machine->set_iflags_X();
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);

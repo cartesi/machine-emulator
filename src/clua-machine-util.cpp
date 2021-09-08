@@ -1276,8 +1276,8 @@ static void push_cm_rom_config(lua_State *L, const cm_rom_config *r) {
 static void push_htif_config(lua_State *L, const htif_config &h) {
     lua_newtable(L);
     clua_setbooleanfield(L, h.console_getchar, "console_getchar", -1);
-    clua_setbooleanfield(L, h.yield_progress, "yield_progress", -1);
-    clua_setbooleanfield(L, h.yield_rollup, "yield_rollup", -1);
+    clua_setbooleanfield(L, h.yield_manual, "yield_manual", -1);
+    clua_setbooleanfield(L, h.yield_automatic, "yield_automatic", -1);
     clua_setintegerfield(L, h.fromhost, "fromhost", -1);
     clua_setintegerfield(L, h.tohost, "tohost", -1);
 }
@@ -1288,8 +1288,8 @@ static void push_htif_config(lua_State *L, const htif_config &h) {
 static void push_cm_htif_config(lua_State *L, const cm_htif_config *h) {
     lua_newtable(L);
     clua_setbooleanfield(L, h->console_getchar, "console_getchar", -1);
-    clua_setbooleanfield(L, h->yield_progress, "yield_progress", -1);
-    clua_setbooleanfield(L, h->yield_rollup, "yield_rollup", -1);
+    clua_setbooleanfield(L, h->yield_manual, "yield_manual", -1);
+    clua_setbooleanfield(L, h->yield_automatic, "yield_automatic", -1);
     clua_setintegerfield(L, h->fromhost, "fromhost", -1);
     clua_setintegerfield(L, h->tohost, "tohost", -1);
 }
@@ -1707,8 +1707,8 @@ static void check_htif_config(lua_State *L, int tabidx, htif_config &h) {
     h.tohost = opt_uint_field(L, -1, "tohost", h.tohost);
     h.fromhost = opt_uint_field(L, -1, "fromhost", h.fromhost);
     h.console_getchar = opt_boolean_field(L, -1, "console_getchar");
-    h.yield_progress = opt_boolean_field(L, -1, "yield_progress");
-    h.yield_rollup = opt_boolean_field(L, -1, "yield_rollup");
+    h.yield_manual = opt_boolean_field(L, -1, "yield_manual");
+    h.yield_automatic = opt_boolean_field(L, -1, "yield_automatic");
     lua_pop(L, 1);
 }
 
@@ -1723,8 +1723,8 @@ static void check_cm_htif_config(lua_State *L, int tabidx, cm_htif_config *h) {
     h->tohost = opt_uint_field(L, -1, "tohost", h->tohost);
     h->fromhost = opt_uint_field(L, -1, "fromhost", h->fromhost);
     h->console_getchar = opt_boolean_field(L, -1, "console_getchar");
-    h->yield_progress = opt_boolean_field(L, -1, "yield_progress");
-    h->yield_rollup = opt_boolean_field(L, -1, "yield_rollup");
+    h->yield_manual = opt_boolean_field(L, -1, "yield_manual");
+    h->yield_automatic = opt_boolean_field(L, -1, "yield_automatic");
     lua_pop(L, 1);
 }
 

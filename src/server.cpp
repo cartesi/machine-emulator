@@ -287,6 +287,7 @@ class handler_Run final : public handler<RunRequest, RunResponse> {
         resp.set_tohost(hctx.m->read_htif_tohost());
         resp.set_iflags_h(hctx.m->read_iflags_H());
         resp.set_iflags_y(hctx.m->read_iflags_Y());
+        resp.set_iflags_x(hctx.m->read_iflags_X());
         return finish_ok(writer, resp);
     }
 

@@ -422,10 +422,22 @@ public:
         return derived().do_set_iflags_Y();
     }
 
+    /// \brief Sets the iflags_X flag.
+    /// \details This is Cartesi-specific.
+    void set_iflags_X(void) {
+        return derived().do_set_iflags_X();
+    }
+
     /// \brief Resets the iflags_Y flag.
     /// \details This is Cartesi-specific.
     void reset_iflags_Y(void) {
         return derived().do_reset_iflags_Y();
+    }
+
+    /// \brief Resets the iflags_X flag.
+    /// \details This is Cartesi-specific.
+    void reset_iflags_X(void) {
+        return derived().do_reset_iflags_X();
     }
 
     /// \brief Reads the iflags_Y flag.
@@ -433,6 +445,13 @@ public:
     /// \details This is Cartesi-specific.
     bool read_iflags_Y(void) {
         return derived().do_read_iflags_Y();
+    }
+
+    /// \brief Reads the iflags_X flag.
+    /// \returns The flag value.
+    /// \details This is Cartesi-specific.
+    bool read_iflags_X(void) {
+        return derived().do_read_iflags_X();
     }
 
     /// \brief Reads the current privilege mode from iflags_PRV.

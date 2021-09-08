@@ -121,11 +121,14 @@ public:
         htif_ihalt,
         htif_iconsole,
         htif_iyield,
+        dhd_reserved,
         dhd_tstart,
         dhd_tlength,
         dhd_dlength,
         dhd_hlength,
     };
+
+    static constexpr auto num_csr = static_cast<int>(csr::dhd_hlength) + 1;
 
     /// \brief Constructor from machine configuration
     explicit machine(const machine_config &c, const machine_runtime_config &r = {});

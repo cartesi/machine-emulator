@@ -198,6 +198,7 @@ void grpc_virtual_machine::do_store(const std::string &dir) {
 
 uint64_t grpc_virtual_machine::do_read_csr(csr r) const {
     ReadCsrRequest request;
+    static_assert(cartesi::machine::num_csr == Csr_ARRAYSIZE);
     request.set_csr(static_cast<Csr>(r));
     ReadCsrResponse response;
     ClientContext context;
@@ -207,6 +208,7 @@ uint64_t grpc_virtual_machine::do_read_csr(csr r) const {
 
 void grpc_virtual_machine::do_write_csr(csr w, uint64_t val) {
     WriteCsrRequest request;
+    static_assert(cartesi::machine::num_csr == Csr_ARRAYSIZE);
     request.set_csr(static_cast<Csr>(w));
     request.set_value(val);
     Void response;
@@ -216,6 +218,7 @@ void grpc_virtual_machine::do_write_csr(csr w, uint64_t val) {
 
 uint64_t grpc_virtual_machine::get_csr_address(const grpc_machine_stub_ptr &stub, csr w) {
     GetCsrAddressRequest request;
+    static_assert(cartesi::machine::num_csr == Csr_ARRAYSIZE);
     request.set_csr(static_cast<Csr>(w));
     GetCsrAddressResponse response;
     ClientContext context;

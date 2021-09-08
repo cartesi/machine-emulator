@@ -792,6 +792,7 @@ class handler_GetCsrAddress final : public handler<GetCsrAddressRequest, GetCsrA
         if (!CartesiMachine::Csr_IsValid(req->csr())) {
             throw std::invalid_argument{"invalid CSR"};
         }
+        static_assert(cartesi::machine::num_csr == Csr_ARRAYSIZE);
         auto csr = static_cast<cartesi::machine::csr>(req->csr());
         GetCsrAddressResponse resp;
         resp.set_address(cartesi::machine::get_csr_address(csr));
@@ -817,6 +818,7 @@ class handler_ReadCsr final : public handler<ReadCsrRequest, ReadCsrResponse> {
         if (!CartesiMachine::Csr_IsValid(req->csr())) {
             throw std::invalid_argument{"invalid CSR"};
         }
+        static_assert(cartesi::machine::num_csr == Csr_ARRAYSIZE);
         auto csr = static_cast<cartesi::machine::csr>(req->csr());
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
@@ -844,6 +846,7 @@ class handler_WriteCsr final : public handler<WriteCsrRequest, Void> {
         if (!CartesiMachine::Csr_IsValid(req->csr())) {
             throw std::invalid_argument{"invalid CSR"};
         }
+        static_assert(cartesi::machine::num_csr == Csr_ARRAYSIZE);
         auto csr = static_cast<cartesi::machine::csr>(req->csr());
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);

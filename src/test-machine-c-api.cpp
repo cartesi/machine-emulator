@@ -1999,7 +1999,7 @@ public:
     grpc_machine_fixture_with_server() {
         system("cartesi-machine-server 127.0.0.1:5001 &"); // NOLINT(cert-env33-c)
         // NOLINTNEXTLINE(cert-env33-c)
-        system(" timeout 20 bash -c 'while ! nc -q0 127.0.0.1 5001 < /dev/null > /dev/null 2>&1; do sleep 1; done'");
+        system("timeout 20 bash -c 'while ! nc -q0 127.0.0.1 5001 < /dev/null > /dev/null 2>&1; do sleep 1; done'");
     }
     ~grpc_machine_fixture_with_server() {
         system("pkill -f cartesi-machine-server || true"); // NOLINT(cert-env33-c)
@@ -2100,7 +2100,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_basic_test, grpc_machine_fixt
     int error_code = cm_create_grpc_machine(m_stub, &_machine_config, &_runtime_config, &machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
-        printf("Error creating  grpc machine: %s\n", err_msg);
+        printf("Error creating grpc machine: %s\n", err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     cm_delete_machine(machine);

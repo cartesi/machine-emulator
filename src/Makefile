@@ -292,6 +292,9 @@ test-grpc: luacartesi grpc
 	./cartesi-machine-server 127.0.0.1:5001 &
 	sleep 2
 	$(LUA_BIN) ./tests/machine-test.lua grpc --server=127.0.0.1:5001 --test-path=./
+	./cartesi-machine-server 127.0.0.1:5001 &
+	sleep 2
+	$(LUA_BIN) ./cartesi-machine.lua --server=127.0.0.1:5001
 
 test-scripts: luacartesi
 	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do $(LUA_BIN) $$x local || exit 1; done

@@ -1780,7 +1780,7 @@ static void check_dhd_config(lua_State *L, int tabidx, dhd_config &d) {
 /// \param L Lua state
 /// \param tabidx Config stack index
 /// \param d C api DHD config structure to receive results
-static void check_cm_dhd_config(lua_State *L, int tabidx, cm_dhd_config *d) {
+static void check_cm_dhd_config(lua_State *L, int tabidx, cm_dhd_config *d, int ctxidx) {
     if (!opt_table_field(L, tabidx, "dhd")) {
         return;
     }
@@ -1789,7 +1789,7 @@ static void check_cm_dhd_config(lua_State *L, int tabidx, cm_dhd_config *d) {
     d->dlength = opt_uint_field(L, -1, "dlength", d->dlength);
     d->hlength = opt_uint_field(L, -1, "hlength", d->hlength);
     auto *image_filename = opt_copy_string_field(L, -1, "image_filename");
-    auto &managed_image_filename = clua_push_to(L, clua_managed_cm_ptr<char>(image_filename));
+    auto &managed_image_filename = clua_push_to(L, clua_managed_cm_ptr<char>(image_filename), ctxidx);
     lua_getfield(L, -2, "h");
     if (lua_istable(L, -1)) {
         for (int i = 1; i <= CM_MACHINE_DHD_H_REG_COUNT; i++) {
@@ -1836,7 +1836,7 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
     check_cm_rom_config(L, tabidx, managed_rom.get());
     check_cm_htif_config(L, tabidx, &htif);
     check_cm_clint_config(L, tabidx, &clint);
-    check_cm_dhd_config(L, tabidx, managed_dhd.get());
+    check_cm_dhd_config(L, tabidx, managed_dhd.get(), ctxidx);
     auto flash_drive_count = check_cm_flash_drive_configs(L, tabidx, &flash_drives, ctxidx);
     // Allocate new machine config, fill it and return from function
     auto *c = new cm_machine_config{};

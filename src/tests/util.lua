@@ -36,9 +36,7 @@ local test_util = {
     hash = {LOG2_WORD_SIZE = 3},
     images_path = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH')),
     tests_path = adjust_images_path(os.getenv("CARTESI_TESTS_PATH"))
-    
 }
-
 
 function test_util.make_do_test(build_machine, type)
     return function(description, f)
@@ -49,8 +47,6 @@ function test_util.make_do_test(build_machine, type)
         print("<<<<<<<<<<<<<<<< passed >>>>>>>>>>>>>>>")
     end
 end
-
-
 
 function test_util.incremental_merkle_tree_of_pages:new(o, page_log2_size,
                                                          tree_log2_size)

@@ -1,8 +1,11 @@
 #define BOOST_TEST_MODULE Machine C API test // NOLINT(cppcoreguidelines-macro-usage)
 
+#include <boost/process.hpp>
+#include <boost/process/search_path.hpp>
 #include <boost/test/execution_monitor.hpp>
 #include <boost/test/included/unit_test.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -1980,9 +1983,11 @@ class grpc_machine_fixture : public machine_rom_flash_simple_fixture {
 public:
     grpc_machine_fixture() : m_stub{} {
         char *err_msg{};
-        cm_create_grpc_machine_stub("127.0.0.1:5001", &m_stub, &err_msg);
+        int result = cm_create_grpc_machine_stub("127.0.0.1:5001", &m_stub, &err_msg);
+        BOOST_CHECK_EQUAL(result, CM_ERROR_OK);
+        BOOST_CHECK_EQUAL(err_msg, nullptr);
     }
-    ~grpc_machine_fixture() {
+    virtual ~grpc_machine_fixture() {
         cm_delete_grpc_machine_stub(m_stub);
     }
     grpc_machine_fixture(const grpc_machine_fixture &) = delete;
@@ -1994,27 +1999,42 @@ protected:
     cm_grpc_machine_stub *m_stub;
 };
 
+static bool wait_for_server(cm_grpc_machine_stub *stub, int retries = 10) {
+    for (int i = 0; i < retries; i++) {
+        const cm_semantic_version *version{};
+        char *err_msg{};
+        int status = cm_grpc_get_semantic_version(stub, &version, &err_msg);
+        if (status == CM_ERROR_OK) {
+            cm_delete_semantic_version(version);
+            return true;
+        } else {
+            cm_delete_error_message(err_msg);
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+    return false;
+}
+
 class grpc_machine_fixture_with_server : public grpc_machine_fixture {
 public:
     grpc_machine_fixture_with_server() {
-        system("cartesi-machine-server 127.0.0.1:5001 &"); // NOLINT(cert-env33-c)
-        // NOLINTNEXTLINE(cert-env33-c)
-        system("timeout 20 bash -c 'while ! nc -q0 127.0.0.1 5001 < /dev/null > /dev/null 2>&1; do sleep 1; done'");
+        boost::process::spawn(boost::process::search_path("cartesi-machine-server"), "127.0.0.1:5001", m_server_group);
+        BOOST_CHECK(wait_for_server(m_stub));
     }
-    ~grpc_machine_fixture_with_server() {
-        system("pkill -f cartesi-machine-server || true"); // NOLINT(cert-env33-c)
-        system("sleep 3");                                 // NOLINT(cert-env33-c)
-    }
+    ~grpc_machine_fixture_with_server() override = default;
     grpc_machine_fixture_with_server(const grpc_machine_fixture_with_server &) = delete;
     grpc_machine_fixture_with_server(grpc_machine_fixture_with_server &&) = delete;
     grpc_machine_fixture_with_server &operator=(const grpc_machine_fixture_with_server &) = delete;
     grpc_machine_fixture_with_server &operator=(grpc_machine_fixture_with_server &&) = delete;
+
+protected:
+    boost::process::group m_server_group;
 };
 
 class grpc_access_log_machine_fixture : public grpc_machine_fixture {
 public:
     grpc_access_log_machine_fixture() : _access_log{}, _log_type{true, true} {}
-    ~grpc_access_log_machine_fixture() = default;
+    ~grpc_access_log_machine_fixture() override = default;
     grpc_access_log_machine_fixture(const grpc_access_log_machine_fixture &) = delete;
     grpc_access_log_machine_fixture(grpc_access_log_machine_fixture &&) = delete;
     grpc_access_log_machine_fixture &operator=(const grpc_access_log_machine_fixture &) = delete;

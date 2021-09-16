@@ -22,7 +22,7 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 #### Ubuntu 20.04
 
 ```
-$ apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-serialization-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates liblua5.3-dev lua-socket
+$ apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-serialization-dev libboost-filesystem-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates liblua5.3-dev lua-socket
 ```
 #### MacOS
 

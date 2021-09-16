@@ -54,6 +54,8 @@ endif
 
 BOOST_SERIAL_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_serialization-mt
 BOOST_CORO_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_coroutine-mt -lboost_context-mt
+BOOST_PROCESS_LIB_Darwin:=-lpthread
+BOOST_FILESYSTEM_LIB_Darwin:=-lboost_system-mt -lboost_filesystem-mt
 GRPC_INC_Darwin=-I$(BUILDDIR)/include
 GRPC_LIB_Darwin=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread
 LIBCARTESI_Darwin=libcartesi.dylib
@@ -72,6 +74,8 @@ INCS_Linux=
 FS_LIB_Linux=-lstdc++fs
 BOOST_SERIAL_LIB_Linux:=-lboost_serialization
 BOOST_CORO_LIB_Linux:=-lboost_coroutine -lboost_context
+BOOST_FILESYSTEM_LIB_Linux:=-lboost_system -lboost_filesystem
+BOOST_PROCESS_LIB_Linux:=-lpthread
 BOOST_INC_Linux=
 GRPC_INC_Linux:=-I$(BUILDDIR)/include
 GRPC_LIB_Linux:=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread
@@ -90,6 +94,8 @@ SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 FS_LIB=$(FS_LIB_$(UNAME))
 BOOST_SERIAL_LIB=$(BOOST_SERIAL_LIB_$(UNAME))
 BOOST_CORO_LIB=$(BOOST_CORO_LIB_$(UNAME))
+BOOST_PROCESS_LIB=$(BOOST_PROCESS_LIB_$(UNAME))
+BOOST_FILESYSTEM_LIB=$(BOOST_FILESYSTEM_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
 GRPC_LIB=$(GRPC_LIB_$(UNAME))
 GRPC_INC=$(GRPC_INC_$(UNAME))
@@ -111,6 +117,7 @@ CARTESI_MACHINE_SERVER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_SERIA
 CARTESI_MACHINE_PROXY_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
 ROLLUP_MACHINE_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
 TEST_ROLLUP_MACHINE_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_SERIAL_LIB)
+TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(LIBCARTESI_GRPC_LIB) $(BOOST_PROCESS_LIB) $(BOOST_FILESYSTEM_LIB)
 HASH_LIBS:=$(CRYPTOPP_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
@@ -506,7 +513,7 @@ tests/test-rollup-machine-manager: $(TEST_ROLLUP_MACHINE_MANAGER_OBJS)
 cartesi-machine-server cartesi-machine-proxy rollup-machine-manager tests/test-rollup-machine-manager: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
 tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_GRPC)
-	$(CXX) $(LIBCARTESI_TESTS_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI_LIB) $(LIBCARTESI_GRPC_LIB)
+	$(CXX) $(LIBCARTESI_TESTS_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(TEST_MACHINE_C_API_LIBS)
 
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 

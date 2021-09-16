@@ -41,6 +41,12 @@ int clua_htif_export(lua_State *L, int ctxidx) {
         named_constant{HTIF_HALT_HALT, "HTIF_HALT_HALT"},
         named_constant{HTIF_YIELD_AUTOMATIC, "HTIF_YIELD_AUTOMATIC"},
         named_constant{HTIF_YIELD_MANUAL, "HTIF_YIELD_MANUAL"},
+        named_constant{HTIF_YIELD_REASON_PROGRESS, "HTIF_YIELD_REASON_PROGRESS"},
+        named_constant{HTIF_YIELD_REASON_RX_ACCEPTED, "HTIF_YIELD_REASON_RX_ACCEPTED"},
+        named_constant{HTIF_YIELD_REASON_RX_REJECTED, "HTIF_YIELD_REASON_RX_REJECTED"},
+        named_constant{HTIF_YIELD_REASON_TX_OUTPUT, "HTIF_YIELD_REASON_TX_OUTPUT"},
+        named_constant{HTIF_YIELD_REASON_TX_MESSAGE, "HTIF_YIELD_REASON_TX_MESSAGE"},
+        named_constant{HTIF_YIELD_REASON_TX_RESULT, "HTIF_YIELD_REASON_TX_RESULT"},
         named_constant{HTIF_CONSOLE_GETCHAR, "HTIF_CONSOLE_GETCHAR"},
         named_constant{HTIF_CONSOLE_PUTCHAR, "HTIF_CONSOLE_PUTCHAR"},
     };

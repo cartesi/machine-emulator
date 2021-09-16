@@ -156,11 +156,14 @@ where options are:
   -i or --htif-console-getchar
     run in interactive mode
 
-  --htif-yield-progress
-    honor yield progress requests by target
+  --htif-yield-manual
+    honor yield requests with manual reset by target
 
-  --htif-yield-rollup
-    honor yield rollup requests by target
+  --htif-yield-automatic
+    honor yield requests with automatic reset by target
+
+  --htif-reset-manual-yields
+    automatically reset manual yields and continue execution
 
   --load=<directory>
     load prebuilt machine from <directory>
@@ -237,8 +240,9 @@ local dhd_source_address = nil
 local concurrency_update_merkle_tree = 0
 local append_rom_bootargs = ""
 local htif_console_getchar = false
-local htif_yield_progress = false
-local htif_yield_rollup = false
+local htif_yield_automatic = false
+local htif_yield_manual = false
+local htif_reset_manual_yields = false
 local initial_hash = false
 local final_hash = false
 local initial_proof = {}
@@ -304,7 +308,7 @@ local options = {
         ram_image_filename = ""
         return true
     end },
-    { "^%-%-htif%-console-getchar$", function(all)
+    { "^%-%-htif%-console%-getchar$", function(all)
         if not all then return false end
         htif_console_getchar = true
         return true
@@ -314,14 +318,19 @@ local options = {
         htif_console_getchar = true
         return true
     end },
-    { "^%-%-htif%-yield%-progress$", function(all)
+    { "^%-%-htif%-yield%-manual$", function(all)
         if not all then return false end
-        htif_yield_progress = true
+        htif_yield_manual = true
         return true
     end },
-    { "^%-%-htif%-yield%-rollup$", function(all)
+    { "^%-%-htif%-reset%-manual%-yields$", function(all)
         if not all then return false end
-        htif_yield_rollup = true
+        htif_reset_manual_yields = true
+        return true
+    end },
+    { "^%-%-htif%-yield%-automatic$", function(all)
+        if not all then return false end
+        htif_yield_automatic = true
         return true
     end },
     { "^(%-%-flash%-drive%=(.+))$", function(all, opts)
@@ -635,11 +644,11 @@ local function store_machine_config(config, output)
     comment_default(htif.fromhost, def.htif.fromhost)
     output("    console_getchar = %s,", tostring(htif.console_getchar or false))
     comment_default(htif.console_getchar or false, def.htif.console_getchar)
-    output("    yield_progress = %s,", tostring(htif.yield_progress or false))
-    comment_default(htif.yield_progress or false, def.htif.yield_progress)
-    output("    yield_rollup = %s,", tostring(htif.yield_rollup or false))
-    comment_default(htif.yield_rollup or false, def.htif.yield_rollup)
-    output("  },\n")
+    stderr("    yield_automatic = %s,", tostring(htif.yield_automatic or false))
+    comment_default(htif.yield_automatic or false, def.htif.yield_automatic)
+    stderr("    yield_manual = %s,", tostring(htif.yield_manual or false))
+    comment_default(htif.yield_manual or false, def.htif.yield_manual)
+    stderr("  },\n")
     local clint = config.clint or {}
     output("  clint = {\n")
     output("    mtimecmp = 0x%x,", clint.mtimecmp or def.clint.mtimecmp)
@@ -806,8 +815,8 @@ else
         },
         htif = {
             console_getchar = htif_console_getchar,
-            yield_progress = htif_yield_progress,
-            yield_rollup = htif_yield_rollup
+            yield_automatic = htif_yield_automatic,
+            yield_manual = htif_yield_manual
         },
         dhd = {
             tstart = dhd_tstart,
@@ -867,6 +876,20 @@ if type(store_config) == "string" then
     store_config:close()
 end
 
+local htif_yield_reason = {
+    [cartesi.machine.HTIF_YIELD_REASON_PROGRESS] = "progress",
+    [cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED] = "rx-accepted",
+    [cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED] = "rx-rejected",
+    [cartesi.machine.HTIF_YIELD_REASON_TX_OUTPUT] = "tx-output",
+    [cartesi.machine.HTIF_YIELD_REASON_TX_MESSAGE] = "tx-message",
+    [cartesi.machine.HTIF_YIELD_REASON_TX_RESULT] = "tx-result",
+}
+
+local htif_yield_mode = {
+    [cartesi.machine.HTIF_YIELD_MANUAL] = "Manual",
+    [cartesi.machine.HTIF_YIELD_AUTOMATIC] = "Automatic",
+}
+
 if not json_steps then
     if htif_console_getchar then
         stderr("Running in interactive mode!\n")
@@ -900,16 +923,25 @@ if not json_steps then
             end
             stderr("Cycles: %u\n", cycles)
             break
-        elseif machine:read_iflags_Y() then
+        elseif machine:read_iflags_Y() or machine:read_iflags_X() then
             local cmd = machine:read_htif_tohost_cmd()
             local data = machine:read_htif_tohost_data()
-            if cmd == cartesi.machine.HTIF_YIELD_PROGRESS then
-                stderr("Progress: %6.2f" .. (htif_console_getchar and "\n" or "\r"), data/10)
+            local reason = data >> 32
+            data = data << 32 >> 32
+            local cmd_str = htif_yield_mode[cmd] or "Unknown"
+            local reason_str = htif_yield_reason[reason] or "unknown"
+            if reason == cartesi.machine.HTIF_YIELD_REASON_PROGRESS then
+                stderr("%s progress: %6.2f" .. (htif_console_getchar and "\n" or "\r"), cmd_str, data/10)
             else
-                stderr("\nYielded cmd: %u, data: %u\n", cmd, data)
+                stderr("\n%s yield %s: %u\n", cmd_str, reason_str, data)
                 stderr("Cycles: %u\n", cycles)
             end
-            machine:reset_iflags_Y()
+            if htif_reset_manual_yields then
+                machine:reset_iflags_Y()
+            end
+        end
+        if machine:read_iflags_Y() then
+            break
         end
         if cycles == next_hash_mcycle then
             print_root_hash(cycles, machine)

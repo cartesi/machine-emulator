@@ -109,7 +109,8 @@ jobs:
           find /opt/cartesi -type f -exec chmod 644 {} +
           find /opt/cartesi/bin -type f \! -iname "*.lua" -exec chmod 755 {} +
           find /opt/cartesi/lib -type f -exec chmod 755 {} +
-          chmod 755 ./tests/test-merkle-tree-hash ./tests/test-machine-c-api ./tests/test-rollup-machine-manager
+          find ./tests/ -type f -name "*.lua" -exec chmod 755 {} +
+          chmod 755 ./tests/test-merkle-tree-hash ./tests/test-machine-c-api ./tests/test-rollup-machine-manager ./tests/test-grpc-server.sh
           patchelf --set-rpath /opt/cartesi/lib ./tests/test-merkle-tree-hash
           patchelf --set-rpath /opt/cartesi/lib ./tests/test-machine-c-api
           patchelf --set-rpath /opt/cartesi/lib ./tests/test-rollup-machine-manager
@@ -160,12 +161,14 @@ jobs:
       - name: Run test suite
         run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
 
-      - name: Run test suite on GRPC server
+      - name: Run grpc lua test scripts
         run: |
-          /opt/cartesi/bin/cartesi-machine-server 127.0.0.1:5001 &
-          timeout 20 bash -c 'while ! nc -q0 127.0.0.1 5001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
-          /opt/cartesi/bin/cartesi-machine-tests --server=127.0.0.1:5001 --test-path=/opt/cartesi/tests run
-          pkill -f cartesi-machine-server || true
+          export PATH=/opt/cartesi/bin:$PATH
+          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
+          export CARTESI_TESTS_PATH=/opt/cartesi/tests
+          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;"
+          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
+          ./tests/test-grpc-server.sh cartesi-machine-server cartesi-machine cartesi-machine-tests $CARTESI_TESTS_PATH
 
       - name: Run rollup-machine-manager tests
         run: |
@@ -184,28 +187,6 @@ jobs:
           export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;"
           export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
           for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do lua5.3 $x local; done
-
-      - name: Run grpc lua test scripts
-        run: |
-          export PATH=/opt/cartesi/bin:$PATH
-          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
-          export CARTESI_TESTS_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
-          /opt/cartesi/bin/cartesi-machine-server 127.0.0.1:5001 &
-          timeout 20 bash -c 'while ! nc -q0 127.0.0.1 5001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
-          lua5.3 ./tests/machine-bind.lua grpc --server=127.0.0.1:5001 --test-path=./
-          pkill -f cartesi-machine-server || true
-          sleep 1
-          /opt/cartesi/bin/cartesi-machine-server 127.0.0.1:5001 &
-          timeout 20 bash -c 'while ! nc -q0 127.0.0.1 5001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
-          lua5.3 ./tests/machine-test.lua grpc --server=127.0.0.1:5001 --test-path=./
-          pkill -f cartesi-machine-server || true
-          sleep 1
-          /opt/cartesi/bin/cartesi-machine-server 127.0.0.1:5001 &
-          timeout 20 bash -c 'while ! nc -q0 127.0.0.1 5001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
-          cartesi-machine --server=127.0.0.1:5001
-          pkill -f cartesi-machine-server || true
 
       - name: Run Merkle tree tests
         run: |

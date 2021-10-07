@@ -43,6 +43,9 @@ where options are:
         <host>:<port>
         unix:<path>
 
+  --server-shutdown
+    shutdown the server after the execution
+
   --ram-image=<filename>
     name of file containing RAM image (default: "linux.bin")
 
@@ -215,6 +218,7 @@ or a left shift (e.g., 2 << 20).
 end
 
 local server = nil
+local server_shutdown = false
 local images_path = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH'))
 local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
@@ -483,6 +487,11 @@ local options = {
     { "^%-%-server%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         server = o
+        return true
+    end },
+    { "^%-%-server%-shutdown$", function(o)
+        if not o then return false end
+        server_shutdown = true
         return true
     end },
     { "^%-%-json%-steps%=(.*)$", function(o)
@@ -933,6 +942,9 @@ if not json_steps then
         machine:store(store_dir)
     end
     machine:destroy()
+    if server and server_shutdown then
+        server.shutdown()
+    end
     os.exit(payload, true)
 else
     assert(not htif_console_getchar, "logs are meaningless in interactive mode")
@@ -959,3 +971,6 @@ else
 end
 
 machine:destroy()
+if server and server_shutdown then
+    server.shutdown()
+end

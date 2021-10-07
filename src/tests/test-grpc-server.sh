@@ -24,25 +24,50 @@ test_path=$4
 server_address=127.0.0.1:5001
 
 tests=(
-     "$cartesi_machine_tests --server=$server_address --test-path=\"$test_path\" --test='.*' run"
-     "./tests/machine-bind.lua grpc --server=$server_address"
-     "./tests/machine-test.lua grpc --server=$server_address"
-     "$cartesi_machine --server=$server_address"
+    "$cartesi_machine_tests --server=$server_address --test-path=\"$test_path\" --test='.*' run"
+    "./tests/machine-bind.lua grpc --server=$server_address"
+    "./tests/machine-test.lua grpc --server=$server_address"
+    "$cartesi_machine --server=$server_address --server-shutdown"
 )
 
-for test_cmd in "${tests[@]}"; do
-    $cartesi_machine_server --server-address=$server_address &
-    for i in $(seq 1 10); do
-        $cartesi_machine --server=$server_address --max-mcycle=0 > /dev/null
-        if [[ $? == 0 ]]; then
-            break
+is_server_running () {
+    $cartesi_machine --server=$server_address --max-mcycle=0 &> /dev/null
+}
+
+wait_for_server () {
+    for i in $(seq 1 10)
+    do
+        if is_server_running
+        then
+            return 0
         fi
         sleep 1
     done
+    echo "server didn't start" >&2
+    exit 1
+}
+
+wait_for_shutdown () {
+    pid=$1
+    sleep 1
+    if ps -p $pid > /dev/null
+    then
+        kill $pid
+        echo "$0 killed $pid (server was still running after shutdown)" >&2
+        exit 1
+    fi
+}
+
+for test_cmd in "${tests[@]}"
+do
+    $cartesi_machine_server --server-address=$server_address &
+    server_pid=$!
+    wait_for_server
     eval $test_cmd
     retcode=$?
-    kill %%
-    if [[ $retcode != 0 ]]; then
+    wait_for_shutdown $server_pid
+    if [[ $retcode != 0 ]]
+    then
         exit $retcode
     fi
 done

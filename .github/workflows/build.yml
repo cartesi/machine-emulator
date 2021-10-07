@@ -293,7 +293,6 @@ jobs:
           export TEST_PATH=/opt/cartesi/tests
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
-          eval $(make env)
           make coverage-toolchain=clang coverage-report
 
       - name: Upload coverage report

@@ -136,6 +136,42 @@ where options are:
         gives the length of target physical memory range for output data
         must be a power of 2 greater than 4Ki, or 0 when device not present
 
+  --rx-buffer=<key>:<value>[,<key>:<value>[,...]...]
+  --tx-buffer=<key>:<value>[,<key>:<value>[,...]...]
+    defines the rx and tx buffers, used to send data into and out of the machine, respectively
+
+    <key>:<value> is one of
+        filename:<filename>
+        start:<number>
+        length:<number>
+        shared
+
+    semantics are the same as for the --flash-drive option
+
+  --rollup-input-metadata=<key>:<value>[,<key>:<value>[,...]...]
+  --rollup-voucher-hashes=<key>:<value>[,<key>:<value>[,...]...]
+  --rollup-notice-hashes=<key>:<value>[,<key>:<value>[,...]...]
+    defines the memory ranges used by rollups to send input metadata to the machine, to store voucher hashes,
+    and to store notice hashes, respectively
+
+    <key>:<value> is one of
+        filename:<filename>
+        start:<number>
+        length:<number>
+        shared
+
+    semantics are the same as for the --flash-drive option
+
+  --rollup
+    defines appropriate values for rx-buffer, tx-buffer, rollup-input-metadata, rollup-voucher-hashes, and
+    rollup-notice hashes for use with rollups, equivalent to the following options:
+
+    --rx-buffer=start:0x60000000,length:2<<20
+    --tx-buffer=start:0x60200000,length:2<<20
+    --rollup-input-metadata=start:0x60400000,length:4096
+    --rollup-voucher-hashes=start:0x60600000,length:2<<20
+    --rollup-notice-hashes=start:0x60800000,length:2<<20
+
   --dhd-source=<address>
     server acting as source for dehashed data
 
@@ -237,6 +273,11 @@ local dhd_tstart = 0
 local dhd_tlength = 0
 local dhd_image_filename = nil
 local dhd_source_address = nil
+local rx_buffer = { start = 0, length = 0 }
+local tx_buffer = { start = 0, length = 0 }
+local rollup_input_metadata = { start = 0, length = 0 }
+local rollup_voucher_hashes = { start = 0, length = 0 }
+local rollup_notice_hashes = { start = 0, length = 0 }
 local concurrency_update_merkle_tree = 0
 local append_rom_bootargs = ""
 local htif_console_getchar = false
@@ -259,6 +300,25 @@ local cmdline_opts_finished = false
 local store_config = false
 local load_config = false
 local exec_arguments = {}
+
+local function parse_memory_range(opts, what, all)
+    local f = util.parse_options(opts, {
+        filename = true,
+        shared = true,
+        length = true,
+        start = true
+    })
+    f.image_filename = f.filename
+    f.filename = nil
+    if f.image_filename == true then f.image_filename = "" end
+    assert(not f.shared or f.shared == true,
+        "invalid " .. what .. " shared value in " .. all)
+    f.start = assert(util.parse_number(f.start),
+        "invalid " .. what .. " start in " .. all)
+    f.length = assert(util.parse_number(f.length),
+        "invalid " .. what .. " length in " .. all)
+    return f
+end
 
 -- List of supported options
 -- Options are processed in order
@@ -333,6 +393,15 @@ local options = {
         htif_yield_automatic = true
         return true
     end },
+    { "^%-%-rollup$", function(all)
+        if not all then return false end
+        rx_buffer = { start = 0x60000000, length = 2 << 20 }
+        tx_buffer = { start = 0x60200000, length = 2 << 20 }
+        rollup_input_metadata = { start = 0x60400000, length = 4096 }
+        rollup_voucher_hashes = { start = 0x60600000, length = 2 << 20 }
+        rollup_notice_hashes = { start = 0x60800000, length = 2 << 20 }
+        return true
+    end },
     { "^(%-%-flash%-drive%=(.+))$", function(all, opts)
         if not opts then return false end
         local f = util.parse_options(opts, {
@@ -370,22 +439,7 @@ local options = {
     end },
     { "^(%-%-replace%-flash%-drive%=(.+))$", function(all, opts)
         if not opts then return false end
-        local f = util.parse_options(opts, {
-            filename = true,
-            shared = true,
-            length = true,
-            start = true
-        })
-        f.image_filename = f.filename
-        f.filename = nil
-        if f.image_filename == true then f.image_filename = "" end
-        assert(not f.shared or f.shared == true,
-            "invalid flash drive shared value in " .. all)
-        f.start = assert(util.parse_number(f.start),
-            "invalid flash drive start in " .. all)
-        f.length = assert(util.parse_number(f.length),
-            "invalid flash drive length in " .. all)
-        flash_drive_replace[#flash_drive_replace+1] = f
+        flash_drive_replace[#flash_drive_replace+1] = parse_memory_range(opts, "flash drive", all)
         return true
     end },
     { "^(%-%-dhd%=(.+))$", function(all, opts)
@@ -550,6 +604,31 @@ local options = {
         load_config = o
         return true
     end },
+    { "^(%-%-rx%-buffer%=(.+))$", function(all, opts)
+        if not opts then return false end
+        rx_buffer = parse_memory_range(opts, "rx buffer", all)
+        return true
+    end },
+    { "^(%-%-tx%-buffer%=(.+))$", function(all, opts)
+        if not opts then return false end
+        tx_buffer = parse_memory_range(opts, "tx buffer", all)
+        return true
+    end },
+    { "^(%-%-rollup%-input%-metadata%=(.+))$", function(all, opts)
+        if not opts then return false end
+        rollup_input_metadata = parse_memory_range(opts, "rollup input metadata", all)
+        return true
+    end },
+    { "^(%-%-rollup%-voucher%-hashes%=(.+))$", function(all, opts)
+        if not opts then return false end
+        rollup_voucher_hashes = parse_memory_range(opts, "rollup voucher hashes", all)
+        return true
+    end },
+    { "^(%-%-rollup%-notice%-hashes%=(.+))$", function(all, opts)
+        if not opts then return false end
+        rollup_notice_hashes = parse_memory_range(opts, "rollup notice hashes", all)
+        return true
+    end },
     { ".*", function(all)
         if not all then return false end
         local not_option = all:sub(1,1) ~= "-"
@@ -586,6 +665,23 @@ end
 local function print_root_hash(cycles, machine)
     machine:update_merkle_tree()
     stderr("%u: %s\n", cycles, util.hexhash(machine:get_root_hash()))
+end
+
+local function store_memory_range(r, indent, output)
+    local function comment_default(u, v)
+        output(u == v and " -- default\n" or "\n")
+    end
+    output("{\n", i)
+    output("%s  start = 0x%x,", indent, r.start)
+    comment_default(0, r.start)
+    output("%s  length = 0x%x,", indent, r.length)
+    comment_default(0, r.length)
+    if r.image_filename and r.image_filename ~= "" then
+        output("%s  image_filename = %q,\n", indent, r.image_filename)
+    end
+    output("%s  shared = %s,", indent, tostring(r.shared or false))
+    comment_default(false, r.shared)
+    output("%s},\n", indent)
 end
 
 local function store_machine_config(config, output)
@@ -677,16 +773,21 @@ local function store_machine_config(config, output)
     output("  },\n")
     output("  flash_drive = {\n")
     for i, f in ipairs(config.flash_drive) do
-        output("    {\n", i)
-        output("      start = 0x%x,\n", f.start)
-        output("      length = 0x%x,\n", f.length)
-        if f.image_filename and f.image_filename ~= "" then
-            output("      image_filename = %q,\n", f.image_filename)
-        end
-        output("      shared = %s,", tostring(f.shared or false))
-        comment_default(false, f.shared)
-        output("    },\n")
+        output("    ")
+        store_memory_range(f, "    ", output)
     end
+    output("  },\n")
+    output("  rx_buffer = ")
+    store_memory_range(config.rx_buffer, "  ", output)
+    output("  tx_buffer = ")
+    store_memory_range(config.tx_buffer, "  ", output)
+    output("  rollup = {\n")
+    output("    input_metadata = ")
+    store_memory_range(config.rollup.input_metadata, "    ", output)
+    output("    voucher_hashes = ")
+    store_memory_range(config.rollup.voucher_hashes, "    ", output)
+    output("    notice_hashes = ")
+    store_memory_range(config.rollup.notice_hashes, "    ", output)
     output("  },\n")
     output("}\n")
 end
@@ -701,7 +802,8 @@ local function resolve_flash_lengths(label_order, image_filename, start, length)
                 "unable to find length of flash drive '%s' image file '%s'",
                 label, filename))
             if len and len ~= filelen then
-                error(string.format("flash drive '%s' length (%u) and image file '%s' length (%u) do not match", label, len, filename, filelen))
+                error(string.format("flash drive '%s' length (%u) and image file '%s' length (%u) do not match", label,
+                    len, filename, filelen))
             else
                 length[label] = filelen
             end
@@ -823,6 +925,13 @@ else
             tlength = dhd_tlength,
             image_filename = dhd_image_filename
         },
+        rx_buffer = rx_buffer,
+        tx_buffer = tx_buffer,
+        rollup = {
+            input_metadata = rollup_input_metadata,
+            voucher_hashes = rollup_voucher_hashes,
+            notice_hashes = rollup_notice_hashes
+        },
         flash_drive = {},
     }
 
@@ -880,9 +989,9 @@ local htif_yield_reason = {
     [cartesi.machine.HTIF_YIELD_REASON_PROGRESS] = "progress",
     [cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED] = "rx-accepted",
     [cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED] = "rx-rejected",
-    [cartesi.machine.HTIF_YIELD_REASON_TX_OUTPUT] = "tx-output",
-    [cartesi.machine.HTIF_YIELD_REASON_TX_MESSAGE] = "tx-message",
-    [cartesi.machine.HTIF_YIELD_REASON_TX_RESULT] = "tx-result",
+    [cartesi.machine.HTIF_YIELD_REASON_TX_VOUCHER] = "tx-voucher",
+    [cartesi.machine.HTIF_YIELD_REASON_TX_NOTICE] = "tx-notice",
+    [cartesi.machine.HTIF_YIELD_REASON_TX_REPORT] = "tx-report",
 }
 
 local htif_yield_mode = {

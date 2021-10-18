@@ -56,4 +56,19 @@ void clua_setbooleanfield(lua_State *L, bool val, const char *name, int idx) {
     lua_setfield(L, absidx, name);
 }
 
+void clua_print(lua_State *L, int idx) {
+    idx = lua_absindex(L, idx);
+    lua_getglobal(L, "tostring");
+    lua_pushvalue(L, idx);
+    lua_call(L, 1, 1);
+    fprintf(stderr, "%02d: %s\n", idx, lua_tostring(L, -1));
+    lua_pop(L, 1);
+}
+
+void clua_dumpstack(lua_State *L) {
+    for (int i = 1; i <= lua_gettop(L); i++) {
+        clua_print(L, i);
+    }
+}
+
 } // namespace cartesi

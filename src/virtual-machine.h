@@ -138,7 +138,7 @@ private:
     void do_write_dhd_hlength(uint64_t val) override;
     uint64_t do_read_dhd_h(int i) const override;
     void do_write_dhd_h(int i, uint64_t val) override;
-    void do_replace_flash_drive(const flash_drive_config &new_flash) override;
+    void do_replace_memory_range(const memory_range_config &new_range) override;
     void do_dump_pmas(void) const override;
     bool do_read_word(uint64_t word_address, uint64_t &word_value) const override;
     bool do_verify_dirty_page_maps(void) const override;

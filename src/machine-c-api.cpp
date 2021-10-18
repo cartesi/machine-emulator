@@ -203,28 +203,28 @@ static cm_rom_config convert_to_c(const cartesi::rom_config &cpp_config) {
 }
 
 // ----------------------------------------------
-// Flash drive configuration conversion functions
+// Memory range configuration conversion functions
 // ----------------------------------------------
-static cartesi::flash_drive_config convert_from_c(const cm_flash_drive_config *c_config) {
+static cartesi::memory_range_config convert_from_c(const cm_memory_range_config *c_config) {
     if (c_config == nullptr) {
-        throw std::invalid_argument("Invalid flash drive configuration");
+        throw std::invalid_argument("Invalid memory range configuration");
     }
-    cartesi::flash_drive_config new_cpp_flash_drive_config{c_config->start, c_config->length, c_config->shared,
-        c_config->image_filename};
-    return new_cpp_flash_drive_config;
+    cartesi::memory_range_config new_cpp_memory_range_config{c_config->start, c_config->length, c_config->shared,
+        null_to_empty(c_config->image_filename)};
+    return new_cpp_memory_range_config;
 }
 
-static cm_flash_drive_config convert_to_c(const cartesi::flash_drive_config &cpp_config) {
-    cm_flash_drive_config new_c_flash_drive_config{};
-    new_c_flash_drive_config.start = cpp_config.start;
-    new_c_flash_drive_config.length = cpp_config.length;
-    new_c_flash_drive_config.shared = cpp_config.shared;
-    new_c_flash_drive_config.image_filename = convert_to_c(cpp_config.image_filename);
-    return new_c_flash_drive_config;
+static cm_memory_range_config convert_to_c(const cartesi::memory_range_config &cpp_config) {
+    cm_memory_range_config new_c_memory_range_config{};
+    new_c_memory_range_config.start = cpp_config.start;
+    new_c_memory_range_config.length = cpp_config.length;
+    new_c_memory_range_config.shared = cpp_config.shared;
+    new_c_memory_range_config.image_filename = convert_to_c(cpp_config.image_filename);
+    return new_c_memory_range_config;
 }
 
 // ----------------------------------------------
-// Clint configuration conversion functions
+// CLINT configuration conversion functions
 // ----------------------------------------------
 static cartesi::clint_config convert_from_c(const cm_clint_config *c_config) {
     if (c_config == nullptr) {
@@ -271,7 +271,7 @@ static cm_htif_config convert_to_c(const cartesi::htif_config &cpp_config) {
 }
 
 // ----------------------------------------------
-// HTIF configuration conversion functions
+// DHD configuration conversion functions
 // ----------------------------------------------
 static cartesi::dhd_config convert_from_c(const cm_dhd_config *c_config) {
     if (c_config == nullptr) {
@@ -303,6 +303,26 @@ static cm_dhd_config convert_to_c(const cartesi::dhd_config &cpp_config) {
     return new_c_dhd_config;
 }
 
+// --------------------------------------------
+// Rollup configuration conversion functions
+// --------------------------------------------
+static cartesi::rollup_config convert_from_c(const cm_rollup_config *c_config) {
+    if (c_config == nullptr) {
+        throw std::invalid_argument("Invalid rollup configuration");
+    }
+    cartesi::rollup_config new_cpp_rollup_config{convert_from_c(&c_config->input_metadata),
+        convert_from_c(&c_config->voucher_hashes), convert_from_c(&c_config->notice_hashes)};
+    return new_cpp_rollup_config;
+}
+
+static cm_rollup_config convert_to_c(const cartesi::rollup_config &cpp_config) {
+    cm_rollup_config new_c_rollup_config{};
+    new_c_rollup_config.input_metadata = convert_to_c(cpp_config.input_metadata);
+    new_c_rollup_config.voucher_hashes = convert_to_c(cpp_config.voucher_hashes);
+    new_c_rollup_config.notice_hashes = convert_to_c(cpp_config.notice_hashes);
+    return new_c_rollup_config;
+}
+
 // ----------------------------------------------
 // Runtime configuration conversion functions
 // ----------------------------------------------
@@ -332,6 +352,9 @@ cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
     new_cpp_machine_config.clint = convert_from_c(&c_config->clint);
     new_cpp_machine_config.htif = convert_from_c(&c_config->htif);
     new_cpp_machine_config.dhd = convert_from_c(&c_config->dhd);
+    new_cpp_machine_config.rx_buffer = convert_from_c(&c_config->rx_buffer);
+    new_cpp_machine_config.tx_buffer = convert_from_c(&c_config->tx_buffer);
+    new_cpp_machine_config.rollup = convert_from_c(&c_config->rollup);
 
     for (size_t i = 0; i < c_config->flash_drive_count; ++i) {
         new_cpp_machine_config.flash_drive.push_back(convert_from_c(&(c_config->flash_drive[i])));
@@ -347,14 +370,17 @@ const cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config)
     new_machine_config->ram = convert_to_c(cpp_config.ram);
     new_machine_config->rom = convert_to_c(cpp_config.rom);
     new_machine_config->flash_drive_count = cpp_config.flash_drive.size();
-    new_machine_config->flash_drive = new cm_flash_drive_config[cpp_config.flash_drive.size()];
-    memset(new_machine_config->flash_drive, 0, sizeof(cm_flash_drive_config) * new_machine_config->flash_drive_count);
+    new_machine_config->flash_drive = new cm_memory_range_config[cpp_config.flash_drive.size()];
+    memset(new_machine_config->flash_drive, 0, sizeof(cm_memory_range_config) * new_machine_config->flash_drive_count);
     for (size_t i = 0; i < new_machine_config->flash_drive_count; ++i) {
         new_machine_config->flash_drive[i] = convert_to_c(cpp_config.flash_drive[i]);
     }
     new_machine_config->clint = convert_to_c(cpp_config.clint);
     new_machine_config->htif = convert_to_c(cpp_config.htif);
     new_machine_config->dhd = convert_to_c(cpp_config.dhd);
+    new_machine_config->rx_buffer = convert_to_c(cpp_config.rx_buffer);
+    new_machine_config->tx_buffer = convert_to_c(cpp_config.tx_buffer);
+    new_machine_config->rollup = convert_to_c(cpp_config.rollup);
 
     return new_machine_config;
 }
@@ -639,6 +665,11 @@ void cm_delete_machine_config(const cm_machine_config *config) {
     delete[] config->rom.image_filename;
     delete[] config->rom.bootargs;
     delete[] config->ram.image_filename;
+    delete[] config->rx_buffer.image_filename;
+    delete[] config->tx_buffer.image_filename;
+    delete[] config->rollup.input_metadata.image_filename;
+    delete[] config->rollup.voucher_hashes.image_filename;
+    delete[] config->rollup.notice_hashes.image_filename;
 
     delete config;
 }
@@ -1076,20 +1107,30 @@ int cm_get_default_config(const cm_machine_config **config, char **err_msg) try 
     return cm_result_failure(err_msg);
 }
 
-int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash, char **err_msg) try {
+int cm_replace_memory_range(cm_machine *m, const cm_memory_range_config *new_range, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
-    cartesi::flash_drive_config cpp_flash_config = convert_from_c(new_flash);
-    cpp_machine->replace_flash_drive(cpp_flash_config);
+    cartesi::memory_range_config cpp_range = convert_from_c(new_range);
+    cpp_machine->replace_memory_range(cpp_range);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
 }
 
-void cm_delete_flash_drive_config(const cm_flash_drive_config *config) {
+void cm_delete_memory_range_config(const cm_memory_range_config *config) {
     if (config == nullptr) {
         return;
     }
     delete[] config->image_filename;
+    delete config;
+}
+
+void cm_delete_rollup_config(const cm_rollup_config *config) {
+    if (config == nullptr) {
+        return;
+    }
+    delete[] config->input_metadata.image_filename;
+    delete[] config->voucher_hashes.image_filename;
+    delete[] config->notice_hashes.image_filename;
     delete config;
 }
 

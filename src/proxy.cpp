@@ -376,16 +376,16 @@ static auto new_GetProof_handler(handler_context &hctx) {
         });
 }
 
-static auto new_ReplaceFlashDrive_handler(handler_context &hctx) {
-    return new_handler<ReplaceFlashDriveRequest, Void>(
-        "ReplaceFlashDrive",
+static auto new_ReplaceMemoryRange_handler(handler_context &hctx) {
+    return new_handler<ReplaceMemoryRangeRequest, Void>(
+        "ReplaceMemoryRange",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
-            hctx.async_service.RequestReplaceFlashDrive(&server_context, &request, &writer, cq, cq, self);
+            hctx.async_service.RequestReplaceMemoryRange(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
-            return hctx.stub->AsyncReplaceFlashDrive(&client_context, request, cq);
+            return hctx.stub->AsyncReplaceMemoryRange(&client_context, request, cq);
         });
 }
 
@@ -648,7 +648,7 @@ static void enable_server_handlers(handler_context &hctx) {
     new_ReadWord_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
     new_GetRootHash_handler(hctx);           // NOLINT: cannot leak (pointer is in completion queue)
     new_GetProof_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
-    new_ReplaceFlashDrive_handler(hctx);     // NOLINT: cannot leak (pointer is in completion queue)
+    new_ReplaceMemoryRange_handler(hctx);    // NOLINT: cannot leak (pointer is in completion queue)
     new_GetXAddress_handler(hctx);           // NOLINT: cannot leak (pointer is in completion queue)
     new_ReadX_handler(hctx);                 // NOLINT: cannot leak (pointer is in completion queue)
     new_WriteX_handler(hctx);                // NOLINT: cannot leak (pointer is in completion queue)

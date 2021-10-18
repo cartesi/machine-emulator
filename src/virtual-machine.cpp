@@ -421,8 +421,8 @@ void virtual_machine::do_write_dhd_h(int i, uint64_t val) {
     return m_machine->write_dhd_h(i, val);
 }
 
-void virtual_machine::do_replace_flash_drive(const flash_drive_config &new_flash) {
-    m_machine->replace_flash_drive(new_flash);
+void virtual_machine::do_replace_memory_range(const memory_range_config &new_range) {
+    m_machine->replace_memory_range(new_range);
 }
 
 void virtual_machine::do_dump_pmas(void) const {

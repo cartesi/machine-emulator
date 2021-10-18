@@ -654,16 +654,16 @@ machine_merkle_tree::proof_type grpc_virtual_machine::do_get_proof(uint64_t addr
     return get_proto_proof(response.proof());
 }
 
-void grpc_virtual_machine::do_replace_flash_drive(const flash_drive_config &new_flash) {
-    ReplaceFlashDriveRequest request;
-    FlashDriveConfig *flash = request.mutable_config();
-    flash->set_start(new_flash.start);
-    flash->set_length(new_flash.length);
-    flash->set_shared(new_flash.shared);
-    flash->set_image_filename(new_flash.image_filename);
+void grpc_virtual_machine::do_replace_memory_range(const memory_range_config &new_range) {
+    ReplaceMemoryRangeRequest request;
+    MemoryRangeConfig *range = request.mutable_config();
+    range->set_start(new_range.start);
+    range->set_length(new_range.length);
+    range->set_shared(new_range.shared);
+    range->set_image_filename(new_range.image_filename);
     Void response;
     ClientContext context;
-    check_status(m_stub->get_stub()->ReplaceFlashDrive(&context, request, &response));
+    check_status(m_stub->get_stub()->ReplaceMemoryRange(&context, request, &response));
 }
 
 access_log grpc_virtual_machine::do_step(const access_log::type &log_type, bool one_based) {

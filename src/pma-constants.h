@@ -85,12 +85,17 @@ enum PMA_ISTART_masks : uint64_t {
 
 /// \brief PMA device ids
 enum class PMA_ISTART_DID {
-    memory = PMA_MEMORY_DID_DEF, ///< DID for memory
-    shadow = PMA_SHADOW_DID_DEF, ///< DID for shadow device
-    drive = PMA_DRIVE_DID_DEF,   ///< DID for drive device
-    CLINT = PMA_CLINT_DID_DEF,   ///< DID for CLINT device
-    HTIF = PMA_HTIF_DID_DEF,     ///< DID for HTIF device
-    DHD = PMA_DHD_DID_DEF        ///< DID for DHD
+    memory = PMA_MEMORY_DID_DEF,                               ///< DID for memory
+    shadow = PMA_SHADOW_DID_DEF,                               ///< DID for shadow device
+    flash_drive = PMA_FLASH_DRIVE_DID_DEF,                     ///< DID for drive device
+    CLINT = PMA_CLINT_DID_DEF,                                 ///< DID for CLINT device
+    HTIF = PMA_HTIF_DID_DEF,                                   ///< DID for HTIF device
+    DHD = PMA_DHD_DID_DEF,                                     ///< DID for DHD
+    rx_buffer = PMA_RX_BUFFER_DID_DEF,                         ///< DID for receive buffer
+    tx_buffer = PMA_TX_BUFFER_DID_DEF,                         ///< DID for transmit buffer
+    rollup_input_metadata = PMA_ROLLUP_INPUT_METADATA_DID_DEF, ///< DID for rollup input metadata memory range
+    rollup_voucher_hashes = PMA_ROLLUP_VOUCHER_HASHES_DID_DEF, ///< DID for rollup voucher hashes memory range
+    rollup_notice_hashes = PMA_ROLLUP_NOTICE_HASHES_DID_DEF,   ///< DID for rollup notice hashes memory range
 };
 
 } // namespace cartesi

@@ -49,27 +49,54 @@ class machine final {
     machine_config m_c;         ///< Copy of initialization config
     machine_runtime_config m_r; ///< Copy of initialization runtime config
 
-    static const pma_entry::flags m_rom_flags;   ///< PMA flags used for ROM
-    static const pma_entry::flags m_ram_flags;   ///< PMA flags used for RAM
-    static const pma_entry::flags m_flash_flags; ///< PMA flags used for flash drives
+    static const pma_entry::flags m_rom_flags;                   ///< PMA flags used for ROM
+    static const pma_entry::flags m_ram_flags;                   ///< PMA flags used for RAM
+    static const pma_entry::flags m_flash_drive_flags;           ///< PMA flags used for flash drives
+    static const pma_entry::flags m_rx_buffer_flags;             ///< PMA flags used for the rx buffer
+    static const pma_entry::flags m_tx_buffer_flags;             ///< PMA flags used for the tx buffer
+    static const pma_entry::flags m_rollup_input_metadata_flags; ///< PMA flags used for the rollup
+    static const pma_entry::flags m_rollup_voucher_hashes_flags; ///< PMA flags used for the rollup
+    static const pma_entry::flags m_rollup_notice_hashes_flags;  ///< PMA flags used for the rollup
 
     /// \brief Allocates a new PMA entry.
     /// \param pma PMA entry to add to machine.
     /// \returns Reference to corresponding entry in machine state.
     pma_entry &register_pma_entry(pma_entry &&pma);
 
-    /// \brief Replaces an existing PMA entry.
-    /// \param new_entry The new PMA entry
-    /// \returns Reference to the new entry in the machine state.
-    /// \details The first PMA entry matching the size and length
-    /// of new_entry will be replaced. Throws std::invalid_argument
-    /// if a matching PMA entry can't be found
-    pma_entry &replace_pma_entry(pma_entry &&new_entry);
+    /// \brief Creates a new PMA entry reflecting a memory range configuration.
+    /// \param c Memory range configuration.
+    /// \returns New PMA entry (with default flags).
+    static pma_entry make_memory_range_pma_entry(const memory_range_config &c);
 
-    /// \brief Creates a new PMA entry reflecting a flash drive configuration.
-    /// \param flash Flash drive configuration.
-    /// \returns Reference to New PMA entry.
-    static pma_entry make_flash_pma_entry(const flash_drive_config &c);
+    /// \brief Creates a new flash drive PMA entry.
+    /// \param c Memory range configuration.
+    /// \returns New PMA entry with flash drive flags already set.
+    static pma_entry make_flash_drive_pma_entry(const memory_range_config &c);
+
+    /// \brief Creates a new rx buffer PMA entry.
+    /// \param c Memory range configuration.
+    /// \returns New PMA entry with rx buffer flags already set.
+    static pma_entry make_rx_buffer_pma_entry(const memory_range_config &c);
+
+    /// \brief Creates a new tx buffer PMA entry.
+    /// \param c Memory range configuration.
+    /// \returns New PMA entry with tx buffer flags already set.
+    static pma_entry make_tx_buffer_pma_entry(const memory_range_config &c);
+
+    /// \brief Creates a new rollup input metadata PMA entry.
+    /// \param c Memory range configuration.
+    /// \returns New PMA entry with rollup input metadata flags already set.
+    static pma_entry make_rollup_input_metadata_pma_entry(const memory_range_config &c);
+
+    /// \brief Creates a new rollup voucher hashes PMA entry.
+    /// \param c Memory range configuration.
+    /// \returns New PMA entry with rollup voucher hashes flags already set.
+    static pma_entry make_rollup_voucher_hashes_pma_entry(const memory_range_config &c);
+
+    /// \brief Creates a new rollup notice hahes PMA entry.
+    /// \param c Memory range configuration.
+    /// \returns New PMA entry with rollup notice hashes flags already set.
+    static pma_entry make_rollup_notice_hashes_pma_entry(const memory_range_config &c);
 
     /// \brief Runs the machine until mcycle reaches *at most* \p mcycle_end.
     /// \param mcycle_end Maximum value of mcycle before function returns.
@@ -78,9 +105,6 @@ class machine final {
     ///  frequent scenario is when the program executes a WFI
     ///  instruction. Another example is when the machine halts.
     void run_inner_loop(uint64_t mcycle_end);
-
-    /// \brief Decides if machine should yield
-    bool should_yield(void) const;
 
 public:
     /// \brief Type of hash
@@ -712,11 +736,11 @@ public:
     /// \param dir Directory where PMAs will be stored
     void store_pmas(const machine_config &c, const std::string &dir) const;
 
-    /// \brief Replaces a flash drive.
-    /// \param new_flash Configuration of the new flash drive.
-    /// \details The machine must contain an existing flash
-    /// drive matching the start and length specified in new_flash.
-    void replace_flash_drive(const flash_drive_config &new_flash);
+    /// \brief Replaces a memory range.
+    /// \param new_range Configuration of the new memory range.
+    /// \details The machine must contain an existing memory range
+    /// matching the start and length specified in new_range.
+    void replace_memory_range(const memory_range_config &new_range);
 };
 
 } // namespace cartesi

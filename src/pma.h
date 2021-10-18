@@ -302,6 +302,12 @@ public:
         return std::move(*this);
     }
 
+    /// \brief Get flags
+    /// \return Flags
+    flags get_flags(void) const {
+        return m_flags;
+    }
+
     /// \brief Returns the peek callback for the range.
     pma_peek get_peek(void) const {
         return m_peek;

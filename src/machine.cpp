@@ -67,21 +67,89 @@ const pma_entry::flags machine::m_rom_flags{
     PMA_ISTART_DID::memory // DID
 };
 
-const pma_entry::flags machine::m_flash_flags{
-    true,                 // R
-    true,                 // W
-    false,                // X
-    true,                 // IR
-    true,                 // IW
-    PMA_ISTART_DID::drive // DID
+const pma_entry::flags machine::m_flash_drive_flags{
+    true,                       // R
+    true,                       // W
+    false,                      // X
+    true,                       // IR
+    true,                       // IW
+    PMA_ISTART_DID::flash_drive // DID
 };
 
-pma_entry machine::make_flash_pma_entry(const flash_drive_config &c) {
-    if (c.image_filename.empty()) {
-        return make_callocd_memory_pma_entry(c.start, c.length).set_flags(m_flash_flags);
-    }
+const pma_entry::flags machine::m_rx_buffer_flags{
+    true,                     // R
+    true,                     // W //?DD should we make this read-only?
+    false,                    // X
+    true,                     // IR
+    true,                     // IW
+    PMA_ISTART_DID::rx_buffer // DID
+};
 
-    return make_mmapd_memory_pma_entry(c.start, c.length, c.image_filename, c.shared).set_flags(m_flash_flags);
+const pma_entry::flags machine::m_tx_buffer_flags{
+    true,                     // R
+    true,                     // W
+    false,                    // X
+    true,                     // IR
+    true,                     // IW
+    PMA_ISTART_DID::tx_buffer // DID
+};
+
+const pma_entry::flags machine::m_rollup_input_metadata_flags{
+    true,                                 // R
+    true,                                 // W
+    false,                                // X
+    true,                                 // IR
+    true,                                 // IW
+    PMA_ISTART_DID::rollup_input_metadata // DID
+};
+
+const pma_entry::flags machine::m_rollup_voucher_hashes_flags{
+    true,                                 // R
+    true,                                 // W
+    false,                                // X
+    true,                                 // IR
+    true,                                 // IW
+    PMA_ISTART_DID::rollup_voucher_hashes // DID
+};
+
+const pma_entry::flags machine::m_rollup_notice_hashes_flags{
+    true,                                // R
+    true,                                // W
+    false,                               // X
+    true,                                // IR
+    true,                                // IW
+    PMA_ISTART_DID::rollup_notice_hashes // DID
+};
+
+pma_entry machine::make_memory_range_pma_entry(const memory_range_config &c) {
+    if (c.image_filename.empty()) {
+        return make_callocd_memory_pma_entry(c.start, c.length);
+    }
+    return make_mmapd_memory_pma_entry(c.start, c.length, c.image_filename, c.shared);
+}
+
+pma_entry machine::make_flash_drive_pma_entry(const memory_range_config &c) {
+    return make_memory_range_pma_entry(c).set_flags(m_flash_drive_flags);
+}
+
+pma_entry machine::make_rx_buffer_pma_entry(const memory_range_config &c) {
+    return make_memory_range_pma_entry(c).set_flags(m_rx_buffer_flags);
+}
+
+pma_entry machine::make_tx_buffer_pma_entry(const memory_range_config &c) {
+    return make_memory_range_pma_entry(c).set_flags(m_tx_buffer_flags);
+}
+
+pma_entry machine::make_rollup_input_metadata_pma_entry(const memory_range_config &c) {
+    return make_memory_range_pma_entry(c).set_flags(m_rollup_input_metadata_flags);
+}
+
+pma_entry machine::make_rollup_voucher_hashes_pma_entry(const memory_range_config &c) {
+    return make_memory_range_pma_entry(c).set_flags(m_rollup_voucher_hashes_flags);
+}
+
+pma_entry machine::make_rollup_notice_hashes_pma_entry(const memory_range_config &c) {
+    return make_memory_range_pma_entry(c).set_flags(m_rollup_notice_hashes_flags);
 }
 
 pma_entry &machine::register_pma_entry(pma_entry &&pma) {
@@ -106,18 +174,37 @@ pma_entry &machine::register_pma_entry(pma_entry &&pma) {
     return m_s.pmas.back();
 }
 
-pma_entry &machine::replace_pma_entry(pma_entry &&new_entry) {
-    for (auto &pma : m_s.pmas) {
-        if (pma.get_istart() == new_entry.get_istart() && pma.get_ilength() == new_entry.get_ilength()) {
-            pma = std::move(new_entry);
-            return pma;
-        }
+static bool DID_is_protected(PMA_ISTART_DID DID) {
+    switch (DID) {
+        case PMA_ISTART_DID::flash_drive:
+            return false;
+        case PMA_ISTART_DID::rx_buffer:
+            return false;
+        case PMA_ISTART_DID::tx_buffer:
+            return false;
+        case PMA_ISTART_DID::rollup_input_metadata:
+            return false;
+        case PMA_ISTART_DID::rollup_voucher_hashes:
+            return false;
+        case PMA_ISTART_DID::rollup_notice_hashes:
+            return false;
+        default:
+            return true;
     }
-    throw std::invalid_argument{"PMA range does not exist"};
 }
 
-void machine::replace_flash_drive(const flash_drive_config &new_flash) {
-    replace_pma_entry(make_flash_pma_entry(new_flash));
+void machine::replace_memory_range(const memory_range_config &new_range) {
+    for (auto &pma : m_s.pmas) {
+        if (pma.get_start() == new_range.start && pma.get_length() == new_range.length) {
+            const auto curr = pma.get_istart_DID();
+            if (DID_is_protected(curr)) {
+                throw std::invalid_argument{"Attempt to replace a protected memory range"};
+            }
+            // replace range preserving original flags
+            pma = make_memory_range_pma_entry(new_range).set_flags(pma.get_flags());
+        }
+    }
+    throw std::invalid_argument{"Cannot replace inexistent memory range"};
 }
 
 void machine::interact(void) {
@@ -198,7 +285,34 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_s
 
     // Register all flash drives
     for (const auto &f : m_c.flash_drive) {
-        register_pma_entry(make_flash_pma_entry(f));
+        register_pma_entry(make_flash_drive_pma_entry(f));
+    }
+
+    // Register tx/rx buffers
+    if (m_c.tx_buffer.length != 0) {
+        register_pma_entry(make_tx_buffer_pma_entry(m_c.tx_buffer));
+    } else if (m_c.tx_buffer.start != 0) {
+        throw std::invalid_argument{"invalid tx buffer (zero length)"};
+    }
+    if (m_c.rx_buffer.length != 0) {
+        register_pma_entry(make_rx_buffer_pma_entry(m_c.rx_buffer));
+    } else if (m_c.rx_buffer.start != 0) {
+        throw std::invalid_argument{"invalid rx buffer (zero length)"};
+    }
+
+    // Register rollup memory ranges
+    if (m_c.rollup.input_metadata.length != 0 && m_c.rollup.voucher_hashes.length != 0 &&
+        m_c.rollup.notice_hashes.length != 0) {
+        if (m_c.rx_buffer.length == 0 || m_c.tx_buffer.length == 0) {
+            throw std::invalid_argument{"rollup requires rx and tx buffers"};
+        }
+        register_pma_entry(make_rollup_input_metadata_pma_entry(m_c.rollup.input_metadata));
+        register_pma_entry(make_rollup_voucher_hashes_pma_entry(m_c.rollup.voucher_hashes));
+        register_pma_entry(make_rollup_notice_hashes_pma_entry(m_c.rollup.notice_hashes));
+    } else if (m_c.rollup.input_metadata.length != 0 || m_c.rollup.input_metadata.start != 0 ||
+        m_c.rollup.voucher_hashes.length != 0 || m_c.rollup.voucher_hashes.start != 0 ||
+        m_c.rollup.notice_hashes.length != 0 || m_c.rollup.notice_hashes.start != 0) {
+        throw std::invalid_argument{"incomplete rollup configuration"};
     }
 
     // Register HTIF device

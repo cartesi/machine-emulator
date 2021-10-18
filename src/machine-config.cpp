@@ -31,7 +31,7 @@
 #include "machine-config.h"
 #include "pma-constants.h"
 
-static constexpr int archive_version = 1;
+static constexpr int archive_version = 2;
 
 // ARCHIVE_VERSION 0 was the first version
 // ARCHIVE_VERSION 1 added the dhd configuration
@@ -110,7 +110,7 @@ void serialize(ARX &ar, cartesi::rom_config &r, const unsigned int) {
 }
 
 template <typename ARX>
-void serialize(ARX &ar, cartesi::flash_drive_config &d, const unsigned int) {
+void serialize(ARX &ar, cartesi::memory_range_config &d, const unsigned int) {
     ar &d.start;
     ar &d.length;
     ar &d.shared;
@@ -142,6 +142,13 @@ void serialize(ARX &ar, cartesi::dhd_config &d, const unsigned int) {
 }
 
 template <typename ARX>
+void serialize(ARX &ar, cartesi::rollup_config &m, const unsigned int) {
+    ar &m.input_metadata;
+    ar &m.voucher_hashes;
+    ar &m.notice_hashes;
+}
+
+template <typename ARX>
 void serialize(ARX &ar, cartesi::machine_config &m, const unsigned int v) {
     ar &m.processor;
     ar &m.ram;
@@ -151,6 +158,11 @@ void serialize(ARX &ar, cartesi::machine_config &m, const unsigned int v) {
     ar &m.htif;
     if (v > 0) {
         ar &m.dhd;
+    }
+    if (v > 1) {
+        ar &m.rx_buffer;
+        ar &m.tx_buffer;
+        ar &m.rollup;
     }
 }
 

@@ -117,8 +117,8 @@ public:
     }
 
     /// \brief Replaces a flash drive.
-    void replace_flash_drive(const flash_drive_config &new_flash) {
-        do_replace_flash_drive(new_flash);
+    void replace_memory_range(const memory_range_config &new_range) {
+        do_replace_memory_range(new_range);
     }
 
     /// \brief Dump all memory ranges to files in current working directory.
@@ -681,7 +681,7 @@ private:
     virtual void do_write_dhd_hlength(uint64_t val) = 0;
     virtual uint64_t do_read_dhd_h(int i) const = 0;
     virtual void do_write_dhd_h(int i, uint64_t val) = 0;
-    virtual void do_replace_flash_drive(const flash_drive_config &new_flash) = 0;
+    virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;
     virtual void do_dump_pmas(void) const = 0;
     virtual bool do_read_word(uint64_t word_address, uint64_t &word_value) const = 0;
     virtual bool do_verify_dirty_page_maps(void) const = 0;

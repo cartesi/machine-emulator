@@ -70,13 +70,21 @@ struct rom_config final {
     std::string image_filename{}; ///< ROM image file
 };
 
-/// \brief Flash drive state configuration
-struct flash_drive_config final {
-    uint64_t start{0};            ///< Flash drive start position
-    uint64_t length{0};           ///< Flash drive length
-    bool shared{false};           ///< Target changes to drive affect image file?
-    std::string image_filename{}; ///< Flash drive image file name
+/// \brief Memory range configuration
+struct memory_range_config final {
+    uint64_t start{0};            ///< Memory range start position
+    uint64_t length{0};           ///< Memory range length
+    bool shared{false};           ///< Target changes to memory affect image file?
+    std::string image_filename{}; ///< Memory range image file name
 };
+
+/// \brief Flash constants
+enum FLASH_DRIVE_constants {
+    FLASH_DRIVE_MAX = 8 ///< Maximum number of flash drives
+};
+
+/// \brief List of flash drives
+using flash_drive_configs = boost::container::static_vector<memory_range_config, FLASH_DRIVE_MAX>;
 
 /// \brief CLINT device state configuration
 struct clint_config final {
@@ -102,13 +110,12 @@ struct dhd_config final {
     std::array<uint64_t, DHD_H_REG_COUNT> h{}; ///< Input hash words
 };
 
-/// \brief Flash constants
-enum FLASH_DRIVE_constants {
-    FLASH_DRIVE_MAX = 8 ///< Maximum number of flash drives
+/// \brief Rollup configuration
+struct rollup_config {
+    memory_range_config input_metadata; ///< Buffer for input metadata
+    memory_range_config voucher_hashes; ///< Buffer for the voucher hash array
+    memory_range_config notice_hashes;  ///< Buffer for the notice hash array
 };
-
-/// \brief List of flash drives
-using flash_drive_configs = boost::container::static_vector<flash_drive_config, FLASH_DRIVE_MAX>;
 
 /// \brief Machine state configuration
 struct machine_config final {
@@ -120,6 +127,9 @@ struct machine_config final {
     clint_config clint{};              ///< CLINT device state
     htif_config htif{};                ///< HTIF device state
     dhd_config dhd{};                  ///< DHD state
+    memory_range_config rx_buffer{};   ///< RX buffer state
+    memory_range_config tx_buffer{};   ///< TX buffer state
+    rollup_config rollup{};            ///< Rollup state
 
     /// \brief Get the name where config will be stored in a directory
     static std::string get_config_filename(const std::string &dir);

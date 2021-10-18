@@ -20,7 +20,7 @@
 #include <string>
 
 static constexpr uint32_t server_version_major = 0;
-static constexpr uint32_t server_version_minor = 4;
+static constexpr uint32_t server_version_minor = 5;
 static constexpr uint32_t server_version_patch = 0;
 static constexpr const char *server_version_pre_release = "";
 static constexpr const char *server_version_build = "";
@@ -569,26 +569,26 @@ public:
     }
 };
 
-class handler_ReplaceFlashDrive final : public handler<ReplaceFlashDriveRequest, Void> {
+class handler_ReplaceMemoryRange final : public handler<ReplaceMemoryRangeRequest, Void> {
 
-    side_effect prepare(handler_context &hctx, ServerContext *sctx, ReplaceFlashDriveRequest *req,
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, ReplaceMemoryRangeRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s->RequestReplaceFlashDrive(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestReplaceMemoryRange(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
-    side_effect go(handler_context &hctx, ReplaceFlashDriveRequest *req,
+    side_effect go(handler_context &hctx, ReplaceMemoryRangeRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        hctx.m->replace_flash_drive(get_proto_flash_drive_config(req->config()));
+        hctx.m->replace_memory_range(get_proto_memory_range_config(req->config()));
         Void resp;
         return finish_ok(writer, resp);
     }
 
 public:
-    handler_ReplaceFlashDrive(handler_context &hctx) {
+    handler_ReplaceMemoryRange(handler_context &hctx) {
         advance(hctx);
     }
 };
@@ -1121,7 +1121,7 @@ static void server_loop(const char *server_address, const char *session_id, cons
         handler_ReadWord hReadWord(hctx);
         handler_GetRootHash hGetRootHash(hctx);
         handler_GetProof hGetProof(hctx);
-        handler_ReplaceFlashDrive hReplaceFlashDrive(hctx);
+        handler_ReplaceMemoryRange hReplaceMemoryRange(hctx);
         handler_GetXAddress hGetXAddress(hctx);
         handler_ReadX hReadX(hctx);
         handler_WriteX hWriteX(hctx);

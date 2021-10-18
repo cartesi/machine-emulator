@@ -30,6 +30,15 @@ extern "C" {
 
 namespace cartesi {
 
+/// \brief Prints element at given stack index
+/// \param L Lua state.
+/// \param idx Stack index.
+void clua_print(lua_State *L, int idx);
+
+/// \brief Dumps stack contents
+/// \param L Lua state.
+void clua_dumpstack(lua_State *L);
+
 namespace detail {
 template <size_t N, std::size_t... I>
 constexpr auto clua_make_luaL_Reg_array_impl(

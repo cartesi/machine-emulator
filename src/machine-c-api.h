@@ -173,13 +173,13 @@ typedef struct {                // NOLINT(modernize-use-using)
     const char *image_filename; ///< ROM image file
 } cm_rom_config;
 
-/// \brief Flash drive state configuration
+/// \brief Memory range state configuration
 typedef struct {                // NOLINT(modernize-use-using)
-    uint64_t start;             ///< Flash drive start position
-    uint64_t length;            ///< Flash drive length
-    bool shared;                ///< Target changes to drive affect image file?
-    const char *image_filename; ///< Flash drive image file name
-} cm_flash_drive_config;
+    uint64_t start;             ///< Memory range start position
+    uint64_t length;            ///< Memory range length
+    bool shared;                ///< Target changes to range affect image file?
+    const char *image_filename; ///< Memory range image file name
+} cm_memory_range_config;
 
 /// \brief CLINT device state configuration
 typedef struct {       // NOLINT(modernize-use-using)
@@ -205,16 +205,26 @@ typedef struct {                            // NOLINT(modernize-use-using)
     uint64_t h[CM_MACHINE_DHD_H_REG_COUNT]; ///< Input hash words
 } cm_dhd_config;
 
+/// \brief Rollup state configuration
+typedef struct {
+    cm_memory_range_config input_metadata; ///< Input metadata memory range
+    cm_memory_range_config voucher_hashes; ///< Voucher hashes memory range
+    cm_memory_range_config notice_hashes;  ///< Notice hashes memory range
+} cm_rollup_config;
+
 /// \brief Machine state configuration
 typedef struct { // NOLINT(modernize-use-using)
     cm_processor_config processor;
     cm_ram_config ram;
     cm_rom_config rom;
-    cm_flash_drive_config *flash_drive;
+    cm_memory_range_config *flash_drive;
     size_t flash_drive_count;
     cm_clint_config clint;
     cm_htif_config htif;
     cm_dhd_config dhd;
+    cm_memory_range_config rx_buffer;
+    cm_memory_range_config tx_buffer;
+    cm_rollup_config rollup;
 } cm_machine_config;
 
 /// \brief Merkle tree proof structure
@@ -1350,20 +1360,23 @@ CM_API int cm_get_initial_config(const cm_machine *m, const cm_machine_config **
 /// must be deleted with cm_delete_machine_config
 CM_API int cm_get_default_config(const cm_machine_config **config, char **err_msg);
 
-/// \brief Replaces a flash drive
+/// \brief Replaces a memory range
 /// \param m Pointer to valid machine instance
-/// \param new_flash Configuration of the new flash drive
+/// \param new_range Configuration of the new memory range
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
-/// \details The machine must contain an existing flash
-/// drive matching the start and length specified in new_flash
-CM_API int cm_replace_flash_drive(cm_machine *m, const cm_flash_drive_config *new_flash, char **err_msg);
+/// \details The machine must contain an existing memory range matching the start and length specified in new_range
+CM_API int cm_replace_memory_range(cm_machine *m, const cm_memory_range_config *new_range, char **err_msg);
 
-/// \brief Deletes machine flash drive config
+/// \brief Deletes a machine memory range config
 /// \returns void
-CM_API void cm_delete_flash_drive_config(const cm_flash_drive_config *config);
+CM_API void cm_delete_memory_range_config(const cm_memory_range_config *config);
+
+/// \brief Deletes a rollup config
+/// \returns void
+CM_API void cm_delete_rollup_config(const cm_rollup_config *config);
 
 /// \brief Deletes the error message
 /// \param err_msg Pointer to error message received from some other function

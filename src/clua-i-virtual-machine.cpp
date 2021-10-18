@@ -439,16 +439,16 @@ static int machine_obj_index_write_memory(lua_State *L) {
     return 1;
 }
 
-/// \brief Replaces a flash drive.
+/// \brief Replaces a memory range.
 /// \param L Lua state.
-static int machine_obj_index_replace_flash_drive(lua_State *L) {
+static int machine_obj_index_replace_memory_range(lua_State *L) {
     lua_settop(L, 2);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto &managed_flash_drive_config =
-        clua_push_to(L, clua_managed_cm_ptr<cm_flash_drive_config>(new cm_flash_drive_config{}));
-    *(managed_flash_drive_config.get()) = clua_check_cm_flash_drive_config(L, 2);
-    TRY_EXECUTE(cm_replace_flash_drive(m.get(), managed_flash_drive_config.get(), err_msg));
-    managed_flash_drive_config.reset();
+    auto &managed_memory_range_config =
+        clua_push_to(L, clua_managed_cm_ptr<cm_memory_range_config>(new cm_memory_range_config{}));
+    clua_check_cm_memory_range_config(L, 2, "replace", managed_memory_range_config.get());
+    TRY_EXECUTE(cm_replace_memory_range(m.get(), managed_memory_range_config.get(), err_msg));
+    managed_memory_range_config.reset();
     return 0;
 }
 
@@ -578,7 +578,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"write_stval", machine_obj_index_write_stval},
     {"write_stvec", machine_obj_index_write_stvec},
     {"write_x", machine_obj_index_write_x},
-    {"replace_flash_drive", machine_obj_index_replace_flash_drive},
+    {"replace_memory_range", machine_obj_index_replace_memory_range},
     {"destroy", machine_obj_index_destroy},
     {"snapshot", machine_obj_index_snapshot},
     {"rollback", machine_obj_index_rollback},

@@ -91,10 +91,10 @@ void set_proto_access_log(const access_log &al, CartesiMachine::AccessLog *proto
 /// \returns Converted C++ access_log
 access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al);
 
-/// \brief Converts proto FlashDriveConfig to C++ flash_drive_config
-/// \param proto_f Proto FlashDriveConfig to convert
-/// \returns Converted C++ flash_drive_config
-flash_drive_config get_proto_flash_drive_config(const CartesiMachine::FlashDriveConfig &proto_f);
+/// \brief Converts proto MemoryRangeConfig to C++ memory_range_config
+/// \param proto_f Proto MemoryRangeConfig to convert
+/// \returns Converted C++ memory_range_config
+memory_range_config get_proto_memory_range_config(const CartesiMachine::MemoryRangeConfig &proto_f);
 
 /// \brief Converts proto BracketType to C++ bracket_type
 /// \param proto_b Proto BracketType  to convert

@@ -88,7 +88,7 @@ void cm_delete(cm_merkle_tree_proof *p);
 
 /// \brief Deleter for C api flash drive config
 template <>
-void cm_delete(cm_flash_drive_config *p);
+void cm_delete(cm_memory_range_config *p);
 
 /// \brief Deleter for C api ram config
 template <>
@@ -162,50 +162,25 @@ private:
     T *m_ptr;
 };
 
-/// \brief Pushes a proof to the Lua stack
-/// \param L Lua state
-/// \param proof Proof to be pushed
-void clua_push_proof(lua_State *L, const machine_merkle_tree::proof_type &proof);
-
 /// \brief Pushes a C api proof to the Lua stack
 /// \param L Lua state
 /// \param proof Proof to be pushed
 void clua_push_cm_proof(lua_State *L, const cm_merkle_tree_proof *proof);
-
-/// \brief Pushes a semantic_version to the Lua stack
-/// \param L Lua state
-/// \param v Semantic_version to be pushed.
-void clua_push_semantic_version(lua_State *L, const semantic_version &v);
 
 /// \brief Pushes a cm_semantic_version to the Lua stack
 /// \param L Lua state
 /// \param v C api semantic version to be pushed
 void clua_push_cm_semantic_version(lua_State *L, const cm_semantic_version *v);
 
-/// \brief Pushes a hash to the Lua stack
-/// \param L Lua state
-/// \param hash Hash to be pushed.
-void clua_push_hash(lua_State *L, const machine_merkle_tree::hash_type &hash);
-
 /// \brief Pushes a C api hash object to the Lua stack
 /// \param L Lua state
 /// \param hash Hash to be pushed
 void clua_push_cm_hash(lua_State *L, const cm_hash *hash);
 
-/// \brief Pushes a machine_config to the Lua stack
-/// \param L Lua state
-/// \param c Machine_config to be pushed
-void clua_push_machine_config(lua_State *L, const machine_config &c);
-
 /// \brief Pushes a C api cm_machine_config to the Lua stack
 /// \param L Lua state
 /// \param c Machine configuration to be pushed
 void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c);
-
-/// \brief Pushes a machine_runtime_config to the Lua stack
-/// \param L Lua state
-/// \param r Machine_runtime_config to be pushed
-void clua_push_machine_runtime_config(lua_State *L, const machine_runtime_config &r);
 
 /// \brief Pushes a cm_machine_runtime_config to the Lua stack
 /// \param L Lua state
@@ -215,30 +190,13 @@ void clua_push_cm_machine_runtime_config(lua_State *L, const cm_machine_runtime_
 /// \brief Returns a CSR selector from Lua
 /// \param L Lua state
 /// \param idx Index in stack
-/// \returns CSR selector. Throws error if unknown
-machine::csr clua_check_csr(lua_State *L, int idx);
-
-/// \brief Returns a CSR selector from Lua
-/// \param L Lua state
-/// \param idx Index in stack
 /// \returns C API CSR selector. Lua argument error if unknown
 CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx);
-
-/// \brief Pushes an access log to the Lua stack
-/// \param L Lua state
-/// \param log Access log to be pushed
-void clua_push_access_log(lua_State *L, const access_log &log);
 
 /// \brief Pushes an C api access log to the Lua stack
 /// \param L Lua state
 /// \param log Access log to be pushed
 void clua_push_cm_access_log(lua_State *L, const cm_access_log *log);
-
-/// \brief Loads an access_log::type from Lua
-/// \param L Lua state
-/// \param tabidx Access_log::type stack index.
-/// \param log_type Access_log::type to be pushed
-access_log::type clua_check_log_type(lua_State *L, int tabidx);
 
 /// \brief Loads an cm_access_log_type from Lua
 /// \param L Lua state
@@ -246,23 +204,11 @@ access_log::type clua_check_log_type(lua_State *L, int tabidx);
 /// \param log_type C api access log type to be pushed
 cm_access_log_type clua_check_cm_log_type(lua_State *L, int tabidx);
 
-/// \brief Return a hash from Lua
-/// \param L Lua state
-/// \param idx Index in stack
-/// \returns Hash
-machine_merkle_tree::hash_type clua_check_hash(lua_State *L, int idx);
-
 /// \brief Return C hash from Lua
 /// \param L Lua state
 /// \param idx Index in stack
 /// \param c_hash Receives hash
 void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash);
-
-/// \brief Loads a proof from Lua
-/// \param L Lua state
-/// \param tabidx Proof stack index
-/// \returns The proof
-machine_merkle_tree::proof_type clua_check_proof(lua_State *L, int tabidx);
 
 /// \brief Loads a cm_merkle_tree_proof from Lua
 /// \param L Lua state
@@ -270,22 +216,11 @@ machine_merkle_tree::proof_type clua_check_proof(lua_State *L, int tabidx);
 /// \returns The allocated proof object
 cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx);
 
-/// \brief Loads an access_log from Lua
-/// \param L Lua state
-/// \param tabidx Access_log stack index
-/// \returns The access_log
-access_log clua_check_access_log(lua_State *L, int tabidx);
-
 /// \brief Loads an cm_access_log from Lua.
 /// \param L Lua state
 /// \param tabidx Access_log stack index.
 /// \returns The access log. Must be delete by the user with cm_delete_access_log
 cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx);
-
-/// \brief Loads a machine_config object from a Lua table
-/// \param L Lua state
-/// \param tabidx Index of table in Lua stack
-machine_config clua_check_machine_config(lua_State *L, int tabidx);
 
 /// \brief Loads a cm_machine_config object from a Lua table
 /// \param L Lua state
@@ -294,11 +229,6 @@ machine_config clua_check_machine_config(lua_State *L, int tabidx);
 /// \returns Allocated machine config. It must be deleted with cm_delete_machine_config
 cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ctxidx = lua_upvalueindex(1));
 
-/// \brief Loads a machine_runtime_config object from a Lua table
-/// \param L Lua state
-/// \param tabidx Index of table in Lua stack
-machine_runtime_config clua_check_machine_runtime_config(lua_State *L, int tabidx);
-
 /// \brief Loads a cm_machine_runtime_config object from a Lua table
 /// \param L Lua state
 /// \param tabidx Index of table in Lua stack
@@ -306,12 +236,6 @@ machine_runtime_config clua_check_machine_runtime_config(lua_State *L, int tabid
 /// \returns Allocated machine runtime config object. It must be deleted with cm_delete_machine_runtime_config
 cm_machine_runtime_config *clua_check_cm_machine_runtime_config(lua_State *L, int tabidx,
     int ctxidx = lua_upvalueindex(1));
-
-/// \brief Loads an optional machine_runtime_config object from a Lua
-/// \param L Lua state
-/// \param tabidx Index of table in Lua stack
-/// \param r Default value if optional runtime config not present
-machine_runtime_config clua_opt_machine_runtime_config(lua_State *L, int tabidx, const machine_runtime_config &r);
 
 /// \brief Loads an optional cm_machine_runtime_config object from a Lua
 /// \param L Lua state
@@ -322,17 +246,14 @@ machine_runtime_config clua_opt_machine_runtime_config(lua_State *L, int tabidx,
 cm_machine_runtime_config *clua_opt_cm_machine_runtime_config(lua_State *L, int tabidx,
     const cm_machine_runtime_config *r, int ctxidx = lua_upvalueindex(1));
 
-/// \brief Loads flash drive config from a Lua table.
+/// \brief Loads C api memory range config from a Lua table
 /// \param L Lua state
-/// \param tabidx Flash_config stack index.
-/// \returns The flash_config.
-flash_drive_config clua_check_flash_drive_config(lua_State *L, int tabidx);
-
-/// \brief Loads C api flash drive config from a Lua table
-/// \param L Lua state
-/// \param tabidx Flash config stack index
-/// \returns The cm_flash_drive_config
-cm_flash_drive_config clua_check_cm_flash_drive_config(lua_State *L, int tabidx);
+/// \param tabidx Memory range config stack index
+/// \param what Description of memory range for error messages
+/// \param r Pointer to cm_memory_range structure that will receive
+/// \returns r
+cm_memory_range_config *clua_check_cm_memory_range_config(lua_State *L, int tabidx, const char *what,
+    cm_memory_range_config *r);
 
 } // namespace cartesi
 

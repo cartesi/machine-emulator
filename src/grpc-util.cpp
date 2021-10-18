@@ -28,6 +28,19 @@ semantic_version get_proto_semantic_version(const Versioning::SemanticVersion &p
     return v;
 }
 
+void set_proto_memory_range(const memory_range_config &m, CartesiMachine::MemoryRangeConfig *proto_m) {
+    proto_m->set_start(m.start);
+    proto_m->set_length(m.length);
+    proto_m->set_shared(m.shared);
+    proto_m->set_image_filename(m.image_filename);
+}
+
+void set_proto_rollup(const rollup_config &r, CartesiMachine::RollupConfig *proto_r) {
+    set_proto_memory_range(r.input_metadata, proto_r->mutable_input_metadata());
+    set_proto_memory_range(r.voucher_hashes, proto_r->mutable_voucher_hashes());
+    set_proto_memory_range(r.notice_hashes, proto_r->mutable_notice_hashes());
+}
+
 void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineConfig *proto_c) {
     auto *proto_rom = proto_c->mutable_rom();
     proto_rom->set_bootargs(c.rom.bootargs);
@@ -104,11 +117,11 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
     proto_p->set_iflags(c.processor.iflags);
     for (const auto &f : c.flash_drive) {
         auto *proto_f = proto_c->add_flash_drive();
-        proto_f->set_start(f.start);
-        proto_f->set_length(f.length);
-        proto_f->set_shared(f.shared);
-        proto_f->set_image_filename(f.image_filename);
+        set_proto_memory_range(f, proto_f);
     }
+    set_proto_memory_range(c.rx_buffer, proto_c->mutable_rx_buffer());
+    set_proto_memory_range(c.tx_buffer, proto_c->mutable_tx_buffer());
+    set_proto_rollup(c.rollup, proto_c->mutable_rollup());
     auto *proto_dhd = proto_c->mutable_dhd();
     proto_dhd->set_tstart(c.dhd.tstart);
     proto_dhd->set_tlength(c.dhd.tlength);
@@ -466,19 +479,33 @@ processor_config get_proto_processor_config(const CartesiMachine::ProcessorConfi
     return p;
 }
 
-flash_drive_config get_proto_flash_drive_config(const CartesiMachine::FlashDriveConfig &proto_f) {
-    flash_drive_config f;
-    f.start = proto_f.start();
-    f.image_filename = proto_f.image_filename();
-    f.length = proto_f.length();
-    f.shared = proto_f.shared();
-    return f;
+memory_range_config get_proto_memory_range_config(const CartesiMachine::MemoryRangeConfig &proto_m) {
+    memory_range_config m;
+    m.start = proto_m.start();
+    m.image_filename = proto_m.image_filename();
+    m.length = proto_m.length();
+    m.shared = proto_m.shared();
+    return m;
 }
 
 machine_runtime_config get_proto_machine_runtime_config(const CartesiMachine::MachineRuntimeConfig &proto_r) {
     machine_runtime_config r;
     r.dhd.source_address = proto_r.dhd().source_address();
     r.concurrency.update_merkle_tree = proto_r.concurrency().update_merkle_tree();
+    return r;
+}
+
+rollup_config get_proto_rollup_config(const CartesiMachine::RollupConfig &proto_r) {
+    rollup_config r;
+    if (proto_r.has_input_metadata()) {
+        r.input_metadata = get_proto_memory_range_config(proto_r.input_metadata());
+    }
+    if (proto_r.has_voucher_hashes()) {
+        r.voucher_hashes = get_proto_memory_range_config(proto_r.voucher_hashes());
+    }
+    if (proto_r.has_input_metadata()) {
+        r.notice_hashes = get_proto_memory_range_config(proto_r.notice_hashes());
+    }
     return r;
 }
 
@@ -496,7 +523,16 @@ machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &pro
         c.ram.image_filename = proto_c.ram().image_filename();
     }
     for (const auto &fs : proto_c.flash_drive()) {
-        c.flash_drive.emplace_back(get_proto_flash_drive_config(fs));
+        c.flash_drive.emplace_back(get_proto_memory_range_config(fs));
+    }
+    if (proto_c.has_rx_buffer()) {
+        c.rx_buffer = get_proto_memory_range_config(proto_c.rx_buffer());
+    }
+    if (proto_c.has_tx_buffer()) {
+        c.tx_buffer = get_proto_memory_range_config(proto_c.tx_buffer());
+    }
+    if (proto_c.has_rollup()) {
+        c.rollup = get_proto_rollup_config(proto_c.rollup());
     }
     if (proto_c.has_clint()) {
         const auto &clint = proto_c.clint();

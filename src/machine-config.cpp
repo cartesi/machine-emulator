@@ -143,6 +143,8 @@ void serialize(ARX &ar, cartesi::dhd_config &d, const unsigned int) {
 
 template <typename ARX>
 void serialize(ARX &ar, cartesi::rollup_config &m, const unsigned int) {
+    ar &m.rx_buffer;
+    ar &m.tx_buffer;
     ar &m.input_metadata;
     ar &m.voucher_hashes;
     ar &m.notice_hashes;
@@ -160,8 +162,6 @@ void serialize(ARX &ar, cartesi::machine_config &m, const unsigned int v) {
         ar &m.dhd;
     }
     if (v > 1) {
-        ar &m.rx_buffer;
-        ar &m.tx_buffer;
         ar &m.rollup;
     }
 }

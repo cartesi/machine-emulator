@@ -36,6 +36,8 @@ void set_proto_memory_range(const memory_range_config &m, CartesiMachine::Memory
 }
 
 void set_proto_rollup(const rollup_config &r, CartesiMachine::RollupConfig *proto_r) {
+    set_proto_memory_range(r.rx_buffer, proto_r->mutable_rx_buffer());
+    set_proto_memory_range(r.tx_buffer, proto_r->mutable_tx_buffer());
     set_proto_memory_range(r.input_metadata, proto_r->mutable_input_metadata());
     set_proto_memory_range(r.voucher_hashes, proto_r->mutable_voucher_hashes());
     set_proto_memory_range(r.notice_hashes, proto_r->mutable_notice_hashes());
@@ -119,8 +121,6 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
         auto *proto_f = proto_c->add_flash_drive();
         set_proto_memory_range(f, proto_f);
     }
-    set_proto_memory_range(c.rx_buffer, proto_c->mutable_rx_buffer());
-    set_proto_memory_range(c.tx_buffer, proto_c->mutable_tx_buffer());
     set_proto_rollup(c.rollup, proto_c->mutable_rollup());
     auto *proto_dhd = proto_c->mutable_dhd();
     proto_dhd->set_tstart(c.dhd.tstart);
@@ -497,6 +497,12 @@ machine_runtime_config get_proto_machine_runtime_config(const CartesiMachine::Ma
 
 rollup_config get_proto_rollup_config(const CartesiMachine::RollupConfig &proto_r) {
     rollup_config r;
+    if (proto_r.has_rx_buffer()) {
+        r.rx_buffer = get_proto_memory_range_config(proto_r.rx_buffer());
+    }
+    if (proto_r.has_tx_buffer()) {
+        r.tx_buffer = get_proto_memory_range_config(proto_r.tx_buffer());
+    }
     if (proto_r.has_input_metadata()) {
         r.input_metadata = get_proto_memory_range_config(proto_r.input_metadata());
     }
@@ -524,12 +530,6 @@ machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &pro
     }
     for (const auto &fs : proto_c.flash_drive()) {
         c.flash_drive.emplace_back(get_proto_memory_range_config(fs));
-    }
-    if (proto_c.has_rx_buffer()) {
-        c.rx_buffer = get_proto_memory_range_config(proto_c.rx_buffer());
-    }
-    if (proto_c.has_tx_buffer()) {
-        c.tx_buffer = get_proto_memory_range_config(proto_c.tx_buffer());
     }
     if (proto_c.has_rollup()) {
         c.rollup = get_proto_rollup_config(proto_c.rollup());

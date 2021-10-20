@@ -112,6 +112,8 @@ struct dhd_config final {
 
 /// \brief Rollup configuration
 struct rollup_config {
+    memory_range_config rx_buffer{};    ///< RX buffer
+    memory_range_config tx_buffer{};    ///< TX buffer
     memory_range_config input_metadata; ///< Buffer for input metadata
     memory_range_config voucher_hashes; ///< Buffer for the voucher hash array
     memory_range_config notice_hashes;  ///< Buffer for the notice hash array
@@ -127,8 +129,6 @@ struct machine_config final {
     clint_config clint{};              ///< CLINT device state
     htif_config htif{};                ///< HTIF device state
     dhd_config dhd{};                  ///< DHD state
-    memory_range_config rx_buffer{};   ///< RX buffer state
-    memory_range_config tx_buffer{};   ///< TX buffer state
     rollup_config rollup{};            ///< Rollup state
 
     /// \brief Get the name where config will be stored in a directory

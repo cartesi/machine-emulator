@@ -867,6 +867,10 @@ static void push_cm_memory_range_config(lua_State *L, const cm_memory_range_conf
 /// \param r Rollup config to be pushed.
 static void push_cm_rollup_config(lua_State *L, const cm_rollup_config *r) {
     lua_newtable(L);                                    // rollup
+    push_cm_memory_range_config(L, &r->rx_buffer);      // rollup rx_buffer
+    lua_setfield(L, -2, "rx_buffer");                   // rollup
+    push_cm_memory_range_config(L, &r->tx_buffer);      // rollup tx_buffer
+    lua_setfield(L, -2, "tx_buffer");                   // rollup
     push_cm_memory_range_config(L, &r->input_metadata); // rollup input_metadata
     lua_setfield(L, -2, "input_metadata");              // rollup
     push_cm_memory_range_config(L, &r->voucher_hashes); // rollup voucher_hashes
@@ -903,10 +907,6 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
     lua_setfield(L, -2, "rom");                                           // config
     push_cm_dhd_config(L, &c->dhd);                                       // config dhd
     lua_setfield(L, -2, "dhd");                                           // config
-    push_cm_memory_range_config(L, &c->rx_buffer);                        // config rx_buffer
-    lua_setfield(L, -2, "rx_buffer");                                     // config
-    push_cm_memory_range_config(L, &c->tx_buffer);                        // config tx_buffer
-    lua_setfield(L, -2, "tx_buffer");                                     // config
     push_cm_rollup_config(L, &c->rollup);                                 // config rollup
     lua_setfield(L, -2, "rollup");                                        // config
 }
@@ -981,6 +981,12 @@ static void check_cm_rollup_config(lua_State *L, int tabidx, cm_rollup_config *r
     if (!opt_table_field(L, tabidx, "rollup")) {
         return;
     }
+    lua_getfield(L, -1, "rx_buffer");
+    clua_check_cm_memory_range_config(L, -1, "rollup rx buffer", &r->rx_buffer);
+    lua_pop(L, 1);
+    lua_getfield(L, -1, "tx_buffer");
+    clua_check_cm_memory_range_config(L, -1, "rollup rx buffer", &r->tx_buffer);
+    lua_pop(L, 1);
     lua_getfield(L, -1, "input_metadata");
     clua_check_cm_memory_range_config(L, -1, "rollup input metadata", &r->input_metadata);
     lua_pop(L, 1);
@@ -990,30 +996,6 @@ static void check_cm_rollup_config(lua_State *L, int tabidx, cm_rollup_config *r
     lua_getfield(L, -1, "notice_hashes");
     clua_check_cm_memory_range_config(L, -1, "rollup notice hashes", &r->notice_hashes);
     lua_pop(L, 2);
-}
-
-/// \brief Loads rx_buffer config from Lua to cm_memory_range_config
-/// \param L Lua state
-/// \param tabidx Config stack index
-/// \param r C api memory rang econfig structure to receive results
-static void check_cm_rx_buffer_config(lua_State *L, int tabidx, cm_memory_range_config *m) {
-    if (!opt_table_field(L, tabidx, "rx_buffer")) {
-        return;
-    }
-    clua_check_cm_memory_range_config(L, -1, "rx buffer", m);
-    lua_pop(L, 1);
-}
-
-/// \brief Loads tx_buffer config from Lua to cm_memory_range_config
-/// \param L Lua state
-/// \param tabidx Config stack index
-/// \param r C api memory rang econfig structure to receive results
-static void check_cm_tx_buffer_config(lua_State *L, int tabidx, cm_memory_range_config *m) {
-    if (!opt_table_field(L, tabidx, "tx_buffer")) {
-        return;
-    }
-    clua_check_cm_memory_range_config(L, -1, "tx buffer", m);
-    lua_pop(L, 1);
 }
 
 /// \brief Loads a C api flash drive configs from a Lua machine config
@@ -1166,10 +1148,6 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
     auto &managed_ram = clua_push_to(L, clua_managed_cm_ptr<cm_ram_config>(new cm_ram_config{}), ctxidx);
     auto &managed_rom = clua_push_to(L, clua_managed_cm_ptr<cm_rom_config>(new cm_rom_config{}), ctxidx);
     auto &managed_dhd = clua_push_to(L, clua_managed_cm_ptr<cm_dhd_config>(new cm_dhd_config{}), ctxidx);
-    auto &managed_rx_buffer =
-        clua_push_to(L, clua_managed_cm_ptr<cm_memory_range_config>(new cm_memory_range_config{}), ctxidx);
-    auto &managed_tx_buffer =
-        clua_push_to(L, clua_managed_cm_ptr<cm_memory_range_config>(new cm_memory_range_config{}), ctxidx);
     auto &managed_rollup = clua_push_to(L, clua_managed_cm_ptr<cm_rollup_config>(new cm_rollup_config{}), ctxidx);
     cm_memory_range_config *flash_drives{};
     cm_htif_config htif{};
@@ -1183,8 +1161,6 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
     check_cm_htif_config(L, tabidx, &htif);
     check_cm_clint_config(L, tabidx, &clint);
     check_cm_dhd_config(L, tabidx, managed_dhd.get(), ctxidx);
-    check_cm_rx_buffer_config(L, tabidx, managed_rx_buffer.get());
-    check_cm_tx_buffer_config(L, tabidx, managed_tx_buffer.get());
     check_cm_rollup_config(L, tabidx, managed_rollup.get());
     auto flash_drive_count = check_cm_flash_drive_configs(L, tabidx, &flash_drives, ctxidx);
     // Allocate new machine config, fill it and return from function
@@ -1195,12 +1171,10 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
     c->htif = htif;
     c->clint = clint;
     c->dhd = *managed_dhd.release();
-    c->rx_buffer = *managed_rx_buffer.release();
-    c->tx_buffer = *managed_tx_buffer.release();
     c->rollup = *managed_rollup.release();
     c->flash_drive_count = flash_drive_count;
     c->flash_drive = flash_drives;
-    lua_pop(L, 6);
+    lua_pop(L, 4);
     return c;
 }
 

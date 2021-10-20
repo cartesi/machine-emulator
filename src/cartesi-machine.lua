@@ -136,23 +136,12 @@ where options are:
         gives the length of target physical memory range for output data
         must be a power of 2 greater than 4Ki, or 0 when device not present
 
-  --rx-buffer=<key>:<value>[,<key>:<value>[,...]...]
-  --tx-buffer=<key>:<value>[,<key>:<value>[,...]...]
-    defines the rx and tx buffers, used to send data into and out of the machine, respectively
-
-    <key>:<value> is one of
-        filename:<filename>
-        start:<number>
-        length:<number>
-        shared
-
-    semantics are the same as for the --flash-drive option
-
+  --rollup-rx-buffer=<key>:<value>[,<key>:<value>[,...]...]
+  --rollup-tx-buffer=<key>:<value>[,<key>:<value>[,...]...]
   --rollup-input-metadata=<key>:<value>[,<key>:<value>[,...]...]
   --rollup-voucher-hashes=<key>:<value>[,<key>:<value>[,...]...]
   --rollup-notice-hashes=<key>:<value>[,<key>:<value>[,...]...]
-    defines the memory ranges used by rollups to send input metadata to the machine, to store voucher hashes,
-    and to store notice hashes, respectively
+    defines the individual the memory ranges used by rollups
 
     <key>:<value> is one of
         filename:<filename>
@@ -163,7 +152,7 @@ where options are:
     semantics are the same as for the --flash-drive option
 
   --rollup
-    defines appropriate values for rx-buffer, tx-buffer, rollup-input-metadata, rollup-voucher-hashes, and
+    defines appropriate values for rollup-rx-buffer, rollup-tx-buffer, rollup-input-metadata, rollup-voucher-hashes, and
     rollup-notice hashes for use with rollups, equivalent to the following options:
 
     --rx-buffer=start:0x60000000,length:2<<20
@@ -273,8 +262,8 @@ local dhd_tstart = 0
 local dhd_tlength = 0
 local dhd_image_filename = nil
 local dhd_source_address = nil
-local rx_buffer = { start = 0, length = 0 }
-local tx_buffer = { start = 0, length = 0 }
+local rollup_rx_buffer = { start = 0, length = 0 }
+local rollup_tx_buffer = { start = 0, length = 0 }
 local rollup_input_metadata = { start = 0, length = 0 }
 local rollup_voucher_hashes = { start = 0, length = 0 }
 local rollup_notice_hashes = { start = 0, length = 0 }
@@ -395,8 +384,8 @@ local options = {
     end },
     { "^%-%-rollup$", function(all)
         if not all then return false end
-        rx_buffer = { start = 0x60000000, length = 2 << 20 }
-        tx_buffer = { start = 0x60200000, length = 2 << 20 }
+        rollup_rx_buffer = { start = 0x60000000, length = 2 << 20 }
+        rollup_tx_buffer = { start = 0x60200000, length = 2 << 20 }
         rollup_input_metadata = { start = 0x60400000, length = 4096 }
         rollup_voucher_hashes = { start = 0x60600000, length = 2 << 20 }
         rollup_notice_hashes = { start = 0x60800000, length = 2 << 20 }
@@ -604,14 +593,14 @@ local options = {
         load_config = o
         return true
     end },
-    { "^(%-%-rx%-buffer%=(.+))$", function(all, opts)
+    { "^(%-%-rollup%-rx%-buffer%=(.+))$", function(all, opts)
         if not opts then return false end
-        rx_buffer = parse_memory_range(opts, "rx buffer", all)
+        rollup_rx_buffer = parse_memory_range(opts, "rollup rx buffer", all)
         return true
     end },
-    { "^(%-%-tx%-buffer%=(.+))$", function(all, opts)
+    { "^(%-%-rollup%-tx%-buffer%=(.+))$", function(all, opts)
         if not opts then return false end
-        tx_buffer = parse_memory_range(opts, "tx buffer", all)
+        rollup_tx_buffer = parse_memory_range(opts, "tx buffer", all)
         return true
     end },
     { "^(%-%-rollup%-input%-metadata%=(.+))$", function(all, opts)
@@ -777,11 +766,11 @@ local function store_machine_config(config, output)
         store_memory_range(f, "    ", output)
     end
     output("  },\n")
-    output("  rx_buffer = ")
-    store_memory_range(config.rx_buffer, "  ", output)
-    output("  tx_buffer = ")
-    store_memory_range(config.tx_buffer, "  ", output)
     output("  rollup = {\n")
+    output("    rx_buffer = ")
+    store_memory_range(config.rollup.rx_buffer, "    ", output)
+    output("    tx_buffer = ")
+    store_memory_range(config.rollup.tx_buffer, "    ", output)
     output("    input_metadata = ")
     store_memory_range(config.rollup.input_metadata, "    ", output)
     output("    voucher_hashes = ")
@@ -925,9 +914,9 @@ else
             tlength = dhd_tlength,
             image_filename = dhd_image_filename
         },
-        rx_buffer = rx_buffer,
-        tx_buffer = tx_buffer,
         rollup = {
+            rx_buffer = rollup_rx_buffer,
+            tx_buffer = rollup_tx_buffer,
             input_metadata = rollup_input_metadata,
             voucher_hashes = rollup_voucher_hashes,
             notice_hashes = rollup_notice_hashes

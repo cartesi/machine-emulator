@@ -52,11 +52,11 @@ class machine final {
     static const pma_entry::flags m_rom_flags;                   ///< PMA flags used for ROM
     static const pma_entry::flags m_ram_flags;                   ///< PMA flags used for RAM
     static const pma_entry::flags m_flash_drive_flags;           ///< PMA flags used for flash drives
-    static const pma_entry::flags m_rx_buffer_flags;             ///< PMA flags used for the rx buffer
-    static const pma_entry::flags m_tx_buffer_flags;             ///< PMA flags used for the tx buffer
-    static const pma_entry::flags m_rollup_input_metadata_flags; ///< PMA flags used for the rollup
-    static const pma_entry::flags m_rollup_voucher_hashes_flags; ///< PMA flags used for the rollup
-    static const pma_entry::flags m_rollup_notice_hashes_flags;  ///< PMA flags used for the rollup
+    static const pma_entry::flags m_rollup_rx_buffer_flags;      ///< PMA flags used for rollup rx buffer
+    static const pma_entry::flags m_rollup_tx_buffer_flags;      ///< PMA flags used for rollup tx buffer
+    static const pma_entry::flags m_rollup_input_metadata_flags; ///< PMA flags used for rollup input metadata
+    static const pma_entry::flags m_rollup_voucher_hashes_flags; ///< PMA flags used for rollup voucher hashes
+    static const pma_entry::flags m_rollup_notice_hashes_flags;  ///< PMA flags used for rollup notice hashes
 
     /// \brief Allocates a new PMA entry.
     /// \param pma PMA entry to add to machine.
@@ -73,15 +73,15 @@ class machine final {
     /// \returns New PMA entry with flash drive flags already set.
     static pma_entry make_flash_drive_pma_entry(const memory_range_config &c);
 
-    /// \brief Creates a new rx buffer PMA entry.
+    /// \brief Creates a new rollup rx buffer PMA entry.
     /// \param c Memory range configuration.
     /// \returns New PMA entry with rx buffer flags already set.
-    static pma_entry make_rx_buffer_pma_entry(const memory_range_config &c);
+    static pma_entry make_rollup_rx_buffer_pma_entry(const memory_range_config &c);
 
-    /// \brief Creates a new tx buffer PMA entry.
+    /// \brief Creates a new rollup tx buffer PMA entry.
     /// \param c Memory range configuration.
     /// \returns New PMA entry with tx buffer flags already set.
-    static pma_entry make_tx_buffer_pma_entry(const memory_range_config &c);
+    static pma_entry make_rollup_tx_buffer_pma_entry(const memory_range_config &c);
 
     /// \brief Creates a new rollup input metadata PMA entry.
     /// \param c Memory range configuration.

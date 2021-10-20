@@ -777,7 +777,7 @@ private:
 
     pma_entry &build_mock_memory_pma_entry(uint64_t start, uint64_t length, const pma_entry::flags &f) {
         if (f.DID != PMA_ISTART_DID::memory && f.DID != PMA_ISTART_DID::flash_drive &&
-            f.DID != PMA_ISTART_DID::rx_buffer && f.DID != PMA_ISTART_DID::tx_buffer &&
+            f.DID != PMA_ISTART_DID::rollup_rx_buffer && f.DID != PMA_ISTART_DID::rollup_tx_buffer &&
             f.DID != PMA_ISTART_DID::rollup_input_metadata && f.DID != PMA_ISTART_DID::rollup_voucher_hashes &&
             f.DID != PMA_ISTART_DID::rollup_notice_hashes) {
             return error_flags("invalid DID " + std::to_string(static_cast<int>(f.DID)) + " for M");

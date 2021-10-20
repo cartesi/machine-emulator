@@ -76,22 +76,22 @@ const pma_entry::flags machine::m_flash_drive_flags{
     PMA_ISTART_DID::flash_drive // DID
 };
 
-const pma_entry::flags machine::m_rx_buffer_flags{
+const pma_entry::flags machine::m_rollup_rx_buffer_flags{
     true,                     // R
     true,                     // W //?DD should we make this read-only?
     false,                    // X
     true,                     // IR
     true,                     // IW
-    PMA_ISTART_DID::rx_buffer // DID
+    PMA_ISTART_DID::rollup_rx_buffer // DID
 };
 
-const pma_entry::flags machine::m_tx_buffer_flags{
+const pma_entry::flags machine::m_rollup_tx_buffer_flags{
     true,                     // R
     true,                     // W
     false,                    // X
     true,                     // IR
     true,                     // IW
-    PMA_ISTART_DID::tx_buffer // DID
+    PMA_ISTART_DID::rollup_tx_buffer // DID
 };
 
 const pma_entry::flags machine::m_rollup_input_metadata_flags{
@@ -132,12 +132,12 @@ pma_entry machine::make_flash_drive_pma_entry(const memory_range_config &c) {
     return make_memory_range_pma_entry(c).set_flags(m_flash_drive_flags);
 }
 
-pma_entry machine::make_rx_buffer_pma_entry(const memory_range_config &c) {
-    return make_memory_range_pma_entry(c).set_flags(m_rx_buffer_flags);
+pma_entry machine::make_rollup_rx_buffer_pma_entry(const memory_range_config &c) {
+    return make_memory_range_pma_entry(c).set_flags(m_rollup_rx_buffer_flags);
 }
 
-pma_entry machine::make_tx_buffer_pma_entry(const memory_range_config &c) {
-    return make_memory_range_pma_entry(c).set_flags(m_tx_buffer_flags);
+pma_entry machine::make_rollup_tx_buffer_pma_entry(const memory_range_config &c) {
+    return make_memory_range_pma_entry(c).set_flags(m_rollup_tx_buffer_flags);
 }
 
 pma_entry machine::make_rollup_input_metadata_pma_entry(const memory_range_config &c) {
@@ -178,9 +178,9 @@ static bool DID_is_protected(PMA_ISTART_DID DID) {
     switch (DID) {
         case PMA_ISTART_DID::flash_drive:
             return false;
-        case PMA_ISTART_DID::rx_buffer:
+        case PMA_ISTART_DID::rollup_rx_buffer:
             return false;
-        case PMA_ISTART_DID::tx_buffer:
+        case PMA_ISTART_DID::rollup_tx_buffer:
             return false;
         case PMA_ISTART_DID::rollup_input_metadata:
             return false;
@@ -288,28 +288,17 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_s
         register_pma_entry(make_flash_drive_pma_entry(f));
     }
 
-    // Register tx/rx buffers
-    if (m_c.tx_buffer.length != 0) {
-        register_pma_entry(make_tx_buffer_pma_entry(m_c.tx_buffer));
-    } else if (m_c.tx_buffer.start != 0) {
-        throw std::invalid_argument{"invalid tx buffer (zero length)"};
-    }
-    if (m_c.rx_buffer.length != 0) {
-        register_pma_entry(make_rx_buffer_pma_entry(m_c.rx_buffer));
-    } else if (m_c.rx_buffer.start != 0) {
-        throw std::invalid_argument{"invalid rx buffer (zero length)"};
-    }
-
     // Register rollup memory ranges
-    if (m_c.rollup.input_metadata.length != 0 && m_c.rollup.voucher_hashes.length != 0 &&
-        m_c.rollup.notice_hashes.length != 0) {
-        if (m_c.rx_buffer.length == 0 || m_c.tx_buffer.length == 0) {
-            throw std::invalid_argument{"rollup requires rx and tx buffers"};
-        }
+    if (m_c.rollup.rx_buffer.length != 0 && m_c.rollup.tx_buffer.length != 0 && m_c.rollup.input_metadata.length != 0 &&
+        m_c.rollup.voucher_hashes.length != 0 && m_c.rollup.notice_hashes.length != 0) {
+        register_pma_entry(make_rollup_tx_buffer_pma_entry(m_c.rollup.tx_buffer));
+        register_pma_entry(make_rollup_rx_buffer_pma_entry(m_c.rollup.rx_buffer));
         register_pma_entry(make_rollup_input_metadata_pma_entry(m_c.rollup.input_metadata));
         register_pma_entry(make_rollup_voucher_hashes_pma_entry(m_c.rollup.voucher_hashes));
         register_pma_entry(make_rollup_notice_hashes_pma_entry(m_c.rollup.notice_hashes));
-    } else if (m_c.rollup.input_metadata.length != 0 || m_c.rollup.input_metadata.start != 0 ||
+    } else if (m_c.rollup.rx_buffer.length != 0 || m_c.rollup.rx_buffer.start != 0 ||
+        m_c.rollup.tx_buffer.length != 0 || m_c.rollup.tx_buffer.start != 0 ||
+        m_c.rollup.input_metadata.length != 0 || m_c.rollup.input_metadata.start != 0 ||
         m_c.rollup.voucher_hashes.length != 0 || m_c.rollup.voucher_hashes.start != 0 ||
         m_c.rollup.notice_hashes.length != 0 || m_c.rollup.notice_hashes.start != 0) {
         throw std::invalid_argument{"incomplete rollup configuration"};

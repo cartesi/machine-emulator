@@ -1311,15 +1311,15 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
                 // Machine may have started at mcycle != 0, so we save it for
                 // when we need to run an input for at most max_cycles_per_input
                 session.current_mcycle = config.processor().mcycle();
-                check_memory_range_config(request_context, session.memory_range.tx_buffer, "tx buffer",
-                    config.tx_buffer());
-                check_memory_range_config(request_context, session.memory_range.rx_buffer, "rx buffer",
-                    config.rx_buffer());
                 // If rollup config, bail out
                 if (!config.has_rollup()) {
                     THROW((finish_error_yield_none{StatusCode::INVALID_ARGUMENT, "missing server rollup config"}));
                 }
                 const auto &rollup = config.rollup();
+                check_memory_range_config(request_context, session.memory_range.tx_buffer, "tx buffer",
+                    rollup.tx_buffer());
+                check_memory_range_config(request_context, session.memory_range.rx_buffer, "rx buffer",
+                    rollup.rx_buffer());
                 check_memory_range_config(request_context, session.memory_range.input_metadata, "input metadata",
                     rollup.input_metadata());
                 check_memory_range_config(request_context, session.memory_range.voucher_hashes, "voucher hashes",

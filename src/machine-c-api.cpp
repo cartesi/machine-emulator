@@ -310,13 +310,20 @@ static cartesi::rollup_config convert_from_c(const cm_rollup_config *c_config) {
     if (c_config == nullptr) {
         throw std::invalid_argument("Invalid rollup configuration");
     }
-    cartesi::rollup_config new_cpp_rollup_config{convert_from_c(&c_config->input_metadata),
-        convert_from_c(&c_config->voucher_hashes), convert_from_c(&c_config->notice_hashes)};
+    cartesi::rollup_config new_cpp_rollup_config{
+        convert_from_c(&c_config->rx_buffer),
+        convert_from_c(&c_config->tx_buffer),
+        convert_from_c(&c_config->input_metadata),
+        convert_from_c(&c_config->voucher_hashes),
+        convert_from_c(&c_config->notice_hashes)
+    };
     return new_cpp_rollup_config;
 }
 
 static cm_rollup_config convert_to_c(const cartesi::rollup_config &cpp_config) {
     cm_rollup_config new_c_rollup_config{};
+    new_c_rollup_config.rx_buffer = convert_to_c(cpp_config.rx_buffer);
+    new_c_rollup_config.tx_buffer = convert_to_c(cpp_config.tx_buffer);
     new_c_rollup_config.input_metadata = convert_to_c(cpp_config.input_metadata);
     new_c_rollup_config.voucher_hashes = convert_to_c(cpp_config.voucher_hashes);
     new_c_rollup_config.notice_hashes = convert_to_c(cpp_config.notice_hashes);
@@ -352,8 +359,6 @@ cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
     new_cpp_machine_config.clint = convert_from_c(&c_config->clint);
     new_cpp_machine_config.htif = convert_from_c(&c_config->htif);
     new_cpp_machine_config.dhd = convert_from_c(&c_config->dhd);
-    new_cpp_machine_config.rx_buffer = convert_from_c(&c_config->rx_buffer);
-    new_cpp_machine_config.tx_buffer = convert_from_c(&c_config->tx_buffer);
     new_cpp_machine_config.rollup = convert_from_c(&c_config->rollup);
 
     for (size_t i = 0; i < c_config->flash_drive_count; ++i) {
@@ -378,8 +383,6 @@ const cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config)
     new_machine_config->clint = convert_to_c(cpp_config.clint);
     new_machine_config->htif = convert_to_c(cpp_config.htif);
     new_machine_config->dhd = convert_to_c(cpp_config.dhd);
-    new_machine_config->rx_buffer = convert_to_c(cpp_config.rx_buffer);
-    new_machine_config->tx_buffer = convert_to_c(cpp_config.tx_buffer);
     new_machine_config->rollup = convert_to_c(cpp_config.rollup);
 
     return new_machine_config;
@@ -665,8 +668,8 @@ void cm_delete_machine_config(const cm_machine_config *config) {
     delete[] config->rom.image_filename;
     delete[] config->rom.bootargs;
     delete[] config->ram.image_filename;
-    delete[] config->rx_buffer.image_filename;
-    delete[] config->tx_buffer.image_filename;
+    delete[] config->rollup.rx_buffer.image_filename;
+    delete[] config->rollup.tx_buffer.image_filename;
     delete[] config->rollup.input_metadata.image_filename;
     delete[] config->rollup.voucher_hashes.image_filename;
     delete[] config->rollup.notice_hashes.image_filename;

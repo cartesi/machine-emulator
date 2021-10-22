@@ -78,7 +78,7 @@ const pma_entry::flags machine::m_flash_drive_flags{
 
 const pma_entry::flags machine::m_rollup_rx_buffer_flags{
     true,                     // R
-    true,                     // W //?DD should we make this read-only?
+    false,                    // W
     false,                    // X
     true,                     // IR
     true,                     // IW
@@ -96,7 +96,7 @@ const pma_entry::flags machine::m_rollup_tx_buffer_flags{
 
 const pma_entry::flags machine::m_rollup_input_metadata_flags{
     true,                                 // R
-    true,                                 // W
+    false,                                // W
     false,                                // X
     true,                                 // IR
     true,                                 // IW

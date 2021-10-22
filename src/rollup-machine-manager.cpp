@@ -227,6 +227,15 @@ using proof_type = cartesi::merkle_tree_proof<hash_type, address_type>;
 /// \brief Shortcut to time_point type
 using time_point_type = std::chrono::time_point<std::chrono::system_clock>;
 
+/// \brief Desired side effect when a handler yields
+enum class side_effect {
+    none,    ///< do nothing
+    shutdown ///< shutdown server
+};
+
+/// \brief A handler is simply a coroutine that returns a side_effect
+using handler_type = boost::coroutines2::coroutine<side_effect>;
+
 /// \brief Memory range description
 struct memory_range_description_type {
     uint64_t index{};
@@ -241,15 +250,15 @@ constexpr const int LOG2_KECCAK_SIZE = 5;
 constexpr const uint64_t KECCAK_SIZE = UINT64_C(1) << LOG2_KECCAK_SIZE;
 constexpr const uint64_t INPUT_METADATA_LENGTH = 128;
 constexpr const uint64_t VOUCHER_PAYLOAD_ADDRESS_LENGTH = 32;
-constexpr const uint64_t VOUCHER_PAYLOAD_OFFSET_LENGTH = 32;
-constexpr const uint64_t VOUCHER_PAYLOAD_LENGTH_LENGTH = 32;
-constexpr const uint64_t VOUCHER_PAYLOAD_MINIMUM_LENGTH =
-    VOUCHER_PAYLOAD_ADDRESS_LENGTH + VOUCHER_PAYLOAD_OFFSET_LENGTH + VOUCHER_PAYLOAD_LENGTH_LENGTH;
-constexpr const uint64_t NOTICE_PAYLOAD_OFFSET_LENGTH = 32;
-constexpr const uint64_t NOTICE_PAYLOAD_LENGTH_LENGTH = 32;
-constexpr const uint64_t NOTICE_PAYLOAD_MINIMUM_LENGTH = NOTICE_PAYLOAD_OFFSET_LENGTH + NOTICE_PAYLOAD_LENGTH_LENGTH;
+constexpr const uint64_t EVM_ABI_OFFSET_LENGTH = 32;
+constexpr const uint64_t EVM_ABI_LENGTH_LENGTH = 32;
+constexpr const uint64_t VOUCHER_HEADER_LENGTH =
+    VOUCHER_PAYLOAD_ADDRESS_LENGTH + EVM_ABI_OFFSET_LENGTH + EVM_ABI_LENGTH_LENGTH;
 
-/// \brief Type holding an input for processing
+// Notices and reports use the same format
+constexpr const uint64_t NOTICE_REPORT_HEADER_LENGTH = EVM_ABI_OFFSET_LENGTH + EVM_ABI_LENGTH_LENGTH;
+
+/// \brief Type holding an AdvanceState input for processing
 struct input_type {
     input_type(const std::string &input_metadata, const std::string &input_payload) {
         std::copy(input_metadata.begin(), input_metadata.end(), metadata.begin());
@@ -283,8 +292,14 @@ struct report_type {
     std::string payload;
 };
 
-/// \brief Reason why an input might have been skipped
-enum class input_skip_reason { cycle_limit_exceeded, requested_by_machine, machine_halted, time_limit_exceeded };
+/// \brief Reason why an rpc might have been aborted
+enum class completion_status {
+    accepted,
+    cycle_limit_exceeded,
+    rejected_by_machine,
+    machine_halted,
+    time_limit_exceeded
+};
 
 /// \brief Type holding an input that was successfully processed
 struct input_result_type {
@@ -300,8 +315,23 @@ struct processed_input_type {
     hash_type most_recent_machine_hash; ///< Machine hash after processing input
     proof_type voucher_hashes_in_epoch; ///< Proof of the new vouchers entry in the epoch Merkle tree
     proof_type notice_hashes_in_epoch;  ///< Proof of the new notices entry to the epoch Merkle tree
-    std::variant<input_result_type, input_skip_reason> processed; ///< Input results or reason it was skipped
+    std::variant<input_result_type, completion_status> processed; ///< Input results or reason it was skipped
     std::vector<report_type> reports;   ///< List of reports produced while input was processed
+};
+
+/// \brief Type holding an InspectState request/response while it is processed
+struct query_type {
+    query_type(const std::string &query_payload) {
+        payload.insert(payload.end(), query_payload.begin(), query_payload.end());
+        status = completion_status::accepted;
+        current_input_index = 0;
+        coroutine = nullptr;
+    }
+    std::vector<uint8_t> payload;
+    completion_status status;
+    handler_type::pull_type *coroutine;
+    uint64_t current_input_index;
+    std::vector<report_type> reports;
 };
 
 /// \brief State of epoch
@@ -318,6 +348,7 @@ struct epoch_type {
     cartesi::complete_merkle_tree notices_tree{LOG2_ROOT_SIZE, LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE};
     std::vector<processed_input_type> processed_inputs;
     std::deque<input_type> pending_inputs;
+    std::optional<query_type> pending_query;
 };
 
 /// \brief Type holding the deadlines for varios server tasks
@@ -409,15 +440,6 @@ public:
 private:
     bool &m_lock;
 };
-
-/// \brief Desired side effect when a handler yields
-enum class side_effect {
-    none,    ///< do nothing
-    shutdown ///< shutdown server
-};
-
-/// \brief A handler is simply a coroutine that returns a side_effect
-using handler_type = boost::coroutines2::coroutine<side_effect>;
 
 /// \brief Context shared by all handlers
 struct handler_context {
@@ -629,7 +651,7 @@ static handler_type::pull_type *new_FinishEpoch_handler(handler_context &hctx) {
             auto &sessions = hctx.sessions;
             const auto &id = request.session_id();
             auto epoch_index = request.active_epoch_index();
-            dout{request_context} << "Received FinishEpoch for id " << id << " epoch " << epoch_index;
+            dout{request_context} << "Received FinishEpoch for session " << id << " epoch " << epoch_index;
             // If a session is unknown, a bail out
             if (sessions.find(id) == sessions.end()) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "session id not found"}));
@@ -733,7 +755,7 @@ static handler_type::pull_type *new_EndSession_handler(handler_context &hctx) {
             Void response;
             auto &sessions = hctx.sessions;
             const auto &id = request.session_id();
-            dout{request_context} << "Received EndSession for id " << id;
+            dout{request_context} << "Received EndSession for session " << id;
             // If a session is unknown, a bail out
             if (sessions.find(id) == sessions.end()) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "session id not found"}));
@@ -809,7 +831,7 @@ static handler_type::pull_type *new_GetSessionStatus_handler(handler_context &hc
         GetSessionStatusResponse response;
         auto &sessions = hctx.sessions;
         const auto &id = request.session_id();
-        dout{request_context} << "Received GetSessionStatus for id " << id;
+        dout{request_context} << "Received GetSessionStatus for session " << id;
         try {
             // If a session is unknown, a bail out
             if (sessions.find(id) == sessions.end()) {
@@ -902,18 +924,21 @@ static void set_proto_processed_input(const processed_input_type &i, ProcessedIn
             set_proto_notice(m, result_p->add_notices());
         }
     } else {
-        switch (std::get<input_skip_reason>(i.processed)) {
-            case input_skip_reason::cycle_limit_exceeded:
-                proto_i->set_skip_reason(InputSkipReason::CYCLE_LIMIT_EXCEEDED);
+        switch (std::get<completion_status>(i.processed)) {
+            case completion_status::accepted:
+                proto_i->set_skip_reason(CompletionStatus::ACCEPTED);
                 break;
-            case input_skip_reason::requested_by_machine:
-                proto_i->set_skip_reason(InputSkipReason::REQUESTED_BY_MACHINE);
+            case completion_status::cycle_limit_exceeded:
+                proto_i->set_skip_reason(CompletionStatus::CYCLE_LIMIT_EXCEEDED);
                 break;
-            case input_skip_reason::machine_halted:
-                proto_i->set_skip_reason(InputSkipReason::MACHINE_HALTED);
+            case completion_status::rejected_by_machine:
+                proto_i->set_skip_reason(CompletionStatus::REJECTED_BY_MACHINE);
                 break;
-            case input_skip_reason::time_limit_exceeded:
-                proto_i->set_skip_reason(InputSkipReason::TIME_LIMIT_EXCEEDED);
+            case completion_status::machine_halted:
+                proto_i->set_skip_reason(CompletionStatus::MACHINE_HALTED);
+                break;
+            case completion_status::time_limit_exceeded:
+                proto_i->set_skip_reason(CompletionStatus::TIME_LIMIT_EXCEEDED);
                 break;
         }
     }
@@ -941,7 +966,7 @@ static handler_type::pull_type *new_GetEpochStatus_handler(handler_context &hctx
             auto &sessions = hctx.sessions;
             const auto &id = request.session_id();
             auto epoch_index = request.epoch_index();
-            dout{request_context} << "Received GetEpochStatus for id " << id << " epoch " << epoch_index;
+            dout{request_context} << "Received GetEpochStatus for session " << id << " epoch " << epoch_index;
             // If a session is unknown, a bail out
             if (sessions.find(id) == sessions.end()) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "session id not found"}));
@@ -1210,7 +1235,7 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
             // We now received a StartSession RPC, and we are not waiting for additional StartSession rpcs yet.
             auto &sessions = hctx.sessions;
             const auto &id = start_session_request.session_id();
-            dout{request_context} << "Received StartSession request for id " << id;
+            dout{request_context} << "Received StartSession request for session " << id;
             // Empty id is invalid, so a bail out
             if (id.empty()) {
                 new_StartSession_handler(hctx);
@@ -1365,9 +1390,9 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
     return self;
 }
 
-/// \brief Asynchronously clears the input, vouchers, and notices drive pairs
+/// \brief Asynchronously clears the rx buffer, input metadata, voucher hashes, and notice hashes memory ranges
 /// \param actx Context for async operations
-static void clear_buffers(async_context &actx) {
+static void clear_memory_ranges(async_context &actx) {
     std::array<std::pair<MemoryRangeConfig *, const char *>, 4> range_configs = {
         std::make_pair(&actx.session.memory_range.rx_buffer.config, "rx buffer"),
         std::make_pair(&actx.session.memory_range.input_metadata.config, "input metadata"),
@@ -1389,6 +1414,25 @@ static void clear_buffers(async_context &actx) {
         if (!replace_status.ok()) {
             THROW((taint_session{actx.session, std::move(replace_status)}));
         }
+    }
+}
+
+/// \brief Asynchronously clears the rx buffer
+/// \param actx Context for async operations
+static void clear_rx_buffer(async_context &actx) {
+    ReplaceMemoryRangeRequest replace_request;
+    replace_request.set_allocated_config(&actx.session.memory_range.rx_buffer.config);
+    Void replace_response;
+    grpc::ClientContext client_context;
+    set_deadline(client_context, actx.session.server_deadline.fast);
+    auto reader =
+        actx.session.server_stub->AsyncReplaceMemoryRange(&client_context, replace_request, actx.completion_queue);
+    grpc::Status replace_status;
+    reader->Finish(&replace_response, &replace_status, actx.self);
+    actx.yield(side_effect::none);
+    replace_request.release_config();
+    if (!replace_status.ok()) {
+        THROW((taint_session{actx.session, std::move(replace_status)}));
     }
 }
 
@@ -1418,26 +1462,29 @@ static void write_memory_range(async_context &actx, IT begin, IT end, const Memo
 /// \brief Asynchronously runs machine server up to given max cycle
 /// \param actx Context for async operations
 /// \param curr_mcycle current mcycle
+/// \param mcycle_increment increment to mcycle in call to machine run
 /// \param max_mcycle mcycle limit
-/// \param start Time point given start of operation
+/// \param start_time Time point given start of operation
+/// \param deadline_increment maximum time in ms allowed for mcycle increment
+/// \param max_deadline maximum time in ms allowed for entire run
 /// \return RunResponse returned by machine server, or nothing if deadline expired
-static std::optional<RunResponse> run_input(async_context &actx, uint64_t curr_mcycle, uint64_t max_mcycle,
-    time_point_type start) {
-    // We will run in increments of advance_state_increment cycles. The assumption is that
-    // the emulator will finish these increments faster than the advance_state_increment deadline.
+static std::optional<RunResponse> run_machine(async_context &actx, uint64_t curr_mcycle, uint64_t mcycle_increment,
+    uint64_t max_mcycle, time_point_type start_time, uint64_t deadline_increment, uint64_t max_deadline) {
+    // We will run in increments of mcycle_increment cycles. The assumption is that
+    // the emulator will finish these increments faster than the deadline_increment deadline.
     // After each increment, if the machine has not yielded, or halted, or we haven't reached max_mcycle,
-    // we check the total time elapsed against the advance_state deadline.
-    // If the deadline expired, we return nothing but the server is responsive.
-    // If the request for any single increment does not return by the advance_state_increment deadline,
+    // we check the total time elapsed against the max_deadline deadline.
+    // If the max_deadline expired, we return nothing but the server is responsive.
+    // If the request for any single increment does not return by the deadline_increment deadline,
     // we assume the machine is not responsive and therefore we taint the session.
-    auto limit = std::min(curr_mcycle + actx.session.server_cycles.advance_state_increment, max_mcycle);
+    auto limit = std::min(curr_mcycle + mcycle_increment, max_mcycle);
     int i = 0;
     for (;;) {
         dout{actx.request_context} << "  Running advance state increment " << i++;
         RunRequest run_request;
         run_request.set_limit(limit);
         grpc::ClientContext client_context;
-        set_deadline(client_context, std::max(actx.session.server_deadline.advance_state_increment, UINT64_C(0)));
+        set_deadline(client_context, deadline_increment);
         auto reader = actx.session.server_stub->AsyncRun(&client_context, run_request, actx.completion_queue);
         grpc::Status run_status;
         RunResponse run_response;
@@ -1451,14 +1498,14 @@ static std::optional<RunResponse> run_input(async_context &actx, uint64_t curr_m
             run_response.mcycle() >= max_mcycle) {
             return run_response;
         }
-        // Check if advance state deadline has expired.
+        // Check if max_deadline has expired.
         auto elapsed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start).count();
-        if (elapsed > static_cast<decltype(elapsed)>(actx.session.server_deadline.advance_state)) {
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start_time).count();
+        if (elapsed > static_cast<decltype(elapsed)>(max_deadline)) {
             return {};
         }
         // Move on to next chunk
-        limit = std::min(limit + actx.session.server_cycles.advance_state_increment, max_mcycle);
+        limit = std::min(limit + mcycle_increment, max_mcycle);
     }
 }
 
@@ -1556,13 +1603,13 @@ static inline uint64_t get_payload_length(session_type &session, IT begin, IT en
 
 /// \brief Asynchronously reads an voucher address and payload data length from the tx buffer
 /// \param actx Context for async operations
-/// \param payload_data_length Receives payload data length for entry
-/// \return Address for entry at index
+/// \param payload_data_length Receives payload data length
+/// \return Address for voucher
 static hash_type read_voucher_address_and_payload_data_length(async_context &actx, uint64_t *payload_data_length) {
     ReadMemoryRequest read_request;
     const MemoryRangeConfig &range = actx.session.memory_range.tx_buffer.config;
     read_request.set_address(range.start());
-    read_request.set_length(VOUCHER_PAYLOAD_MINIMUM_LENGTH);
+    read_request.set_length(VOUCHER_HEADER_LENGTH);
     grpc::ClientContext client_context;
     set_deadline(client_context, actx.session.server_deadline.fast);
     auto reader = actx.session.server_stub->AsyncReadMemory(&client_context, read_request, actx.completion_queue);
@@ -1577,8 +1624,8 @@ static hash_type read_voucher_address_and_payload_data_length(async_context &act
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
     }
     auto payload_data_length_begin =
-        read_response.data().begin() + VOUCHER_PAYLOAD_ADDRESS_LENGTH + VOUCHER_PAYLOAD_OFFSET_LENGTH;
-    auto payload_data_length_end = payload_data_length_begin + VOUCHER_PAYLOAD_LENGTH_LENGTH;
+        read_response.data().begin() + VOUCHER_PAYLOAD_ADDRESS_LENGTH + EVM_ABI_OFFSET_LENGTH;
+    auto payload_data_length_end = payload_data_length_begin + EVM_ABI_LENGTH_LENGTH;
     *payload_data_length = get_payload_length(actx.session, payload_data_length_begin, payload_data_length_end);
     auto address_begin = read_response.data().begin();
     auto address_end = address_begin + VOUCHER_PAYLOAD_ADDRESS_LENGTH;
@@ -1590,7 +1637,7 @@ static hash_type read_voucher_address_and_payload_data_length(async_context &act
 /// \param payload_data_length Length of payload data in entry
 /// \return Contents of voucher payload data
 static std::string read_voucher_payload_data(async_context &actx, uint64_t payload_data_length) {
-    auto payload_data_offset = VOUCHER_PAYLOAD_MINIMUM_LENGTH;
+    auto payload_data_offset = VOUCHER_HEADER_LENGTH;
     const MemoryRangeConfig &range = actx.session.memory_range.tx_buffer.config;
     if (payload_data_length > actx.session.memory_range.tx_buffer.length - payload_data_offset) {
         THROW((taint_session{actx.session, grpc::StatusCode::OUT_OF_RANGE, "voucher payload length is out of bounds"}));
@@ -1616,14 +1663,14 @@ static std::string read_voucher_payload_data(async_context &actx, uint64_t paylo
     return data ? std::move(*data) : std::string{};
 }
 
-/// \brief Asynchronously reads a tx payload data length from the tx buffer
+/// \brief Asynchronously reads a notice or report data length from the tx buffer
 /// \param actx Context for async operations
-/// \return Payload data length for entry at index
-static uint64_t read_tx_payload_data_length(async_context &actx) {
+/// \return Payload data length for notice or report
+static uint64_t read_notice_report_payload_data_length(async_context &actx) {
     ReadMemoryRequest read_request;
     const MemoryRangeConfig &range = actx.session.memory_range.tx_buffer.config;
     read_request.set_address(range.start());
-    read_request.set_length(NOTICE_PAYLOAD_MINIMUM_LENGTH);
+    read_request.set_length(NOTICE_REPORT_HEADER_LENGTH);
     grpc::ClientContext client_context;
     set_deadline(client_context, actx.session.server_deadline.fast);
     auto reader = actx.session.server_stub->AsyncReadMemory(&client_context, read_request, actx.completion_queue);
@@ -1637,17 +1684,17 @@ static uint64_t read_tx_payload_data_length(async_context &actx) {
     if (read_response.data().size() != read_request.length()) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
     }
-    auto payload_data_length_begin = read_response.data().begin() + NOTICE_PAYLOAD_OFFSET_LENGTH;
-    auto payload_data_length_end = payload_data_length_begin + NOTICE_PAYLOAD_LENGTH_LENGTH;
+    auto payload_data_length_begin = read_response.data().begin() + EVM_ABI_OFFSET_LENGTH;
+    auto payload_data_length_end = payload_data_length_begin + EVM_ABI_LENGTH_LENGTH;
     return get_payload_length(actx.session, payload_data_length_begin, payload_data_length_end);
 }
 
-/// \brief Asynchronously reads a tx payload data from the tx buffer
+/// \brief Asynchronously reads a notice or report payload data from the tx buffer
 /// \param actx Context for async operations
 /// \param payload_data_length Length of payload data in entry
 /// \return Contents of notice payload data
-static std::string read_tx_payload_data(async_context &actx, uint64_t payload_data_length) {
-    auto payload_data_offset = NOTICE_PAYLOAD_MINIMUM_LENGTH;
+static std::string read_notice_report_payload_data(async_context &actx, uint64_t payload_data_length) {
+    auto payload_data_offset = NOTICE_REPORT_HEADER_LENGTH;
     const MemoryRangeConfig &range = actx.session.memory_range.tx_buffer.config;
     if (payload_data_length > actx.session.memory_range.tx_buffer.length - payload_data_offset) {
         THROW((taint_session{actx.session, grpc::StatusCode::OUT_OF_RANGE, "notice payload length is out of bounds"}));
@@ -1712,9 +1759,9 @@ static voucher_type read_voucher(async_context &actx) {
 /// \return Notice
 static notice_type read_notice(async_context &actx) {
     dout{actx.request_context} << "      Reading notice length";
-    auto payload_data_length = read_tx_payload_data_length(actx);
+    auto payload_data_length = read_notice_report_payload_data_length(actx);
     dout{actx.request_context} << "      Reading notice payload of length " << payload_data_length;
-    auto payload_data = read_tx_payload_data(actx, payload_data_length);
+    auto payload_data = read_notice_report_payload_data(actx, payload_data_length);
     return {std::move(payload_data), {}};
 }
 
@@ -1723,9 +1770,9 @@ static notice_type read_notice(async_context &actx) {
 /// \return Report
 static report_type read_report(async_context &actx) {
     dout{actx.request_context} << "      Reading report length";
-    auto payload_data_length = read_tx_payload_data_length(actx);
+    auto payload_data_length = read_notice_report_payload_data_length(actx);
     dout{actx.request_context} << "      Reading report payload of length " << payload_data_length;
-    auto payload_data = read_tx_payload_data(actx, payload_data_length);
+    auto payload_data = read_notice_report_payload_data(actx, payload_data_length);
     return {std::move(payload_data)};
 }
 
@@ -1813,6 +1860,87 @@ static hash_type get_root_hash(async_context &actx) {
     return cartesi::get_proto_hash(response.hash());
 }
 
+/// \brief Processes a pending query
+/// \param actx Context for async operations
+/// \param e Associated epoch
+static void process_pending_query(handler_context &hctx, async_context &actx, epoch_type &e) {
+    if (!e.pending_query.has_value()) { // should never happen
+        return;
+    }
+    auto &q = e.pending_query.value();
+    q.current_input_index = e.pending_inputs.size() + e.processed_inputs.size();
+    dout{actx.request_context} << "  Processing pending query";
+    dout{actx.request_context} << "    Creating Snapshot";
+    // Wait machine server to checkin after spawned
+    trigger_and_wait_checkin(hctx, actx, [](handler_context &hctx, async_context &actx) {
+        (void) hctx;
+        snapshot(actx);
+    });
+    dout{actx.request_context} << "    Clearing rx buffer";
+    clear_rx_buffer(actx);
+    dout{actx.request_context} << "    Writing rx buffer";
+    write_memory_range(actx, q.payload.begin(), q.payload.end(), actx.session.memory_range.rx_buffer.config);
+    auto max_mcycle = actx.session.current_mcycle + actx.session.server_cycles.max_inspect_state;
+    // Loop getting reports until the machine exceeds max_mcycle, rejects the query, accepts the query,
+    // or behaves inaproppriately
+    q.status = completion_status::accepted;
+    auto start_time = std::chrono::system_clock::now();
+    auto current_mcycle = actx.session.current_mcycle;
+    auto mcycle_increment = actx.session.server_cycles.inspect_state_increment;
+    auto deadline_increment = actx.session.server_deadline.inspect_state_increment;
+    auto max_deadline = actx.session.server_deadline.inspect_state;
+    for (;;) {
+        auto run_response = run_machine(actx, current_mcycle, mcycle_increment, max_mcycle, start_time,
+            deadline_increment, max_deadline);
+        if (!run_response.has_value()) {
+            q.status = completion_status::time_limit_exceeded;
+            dout{actx.request_context} << "    Query aborted because time limit was exceeded";
+            break;
+        }
+        if (run_response.value().mcycle() >= max_mcycle) {
+            q.status = completion_status::cycle_limit_exceeded;
+            dout{actx.request_context} << "    Query aborted because cycle limit was exceeded";
+            break;
+        }
+        if (run_response.value().iflags_h()) {
+            q.status = completion_status::machine_halted;
+            dout{actx.request_context} << "    Query aborted because machine is halted";
+            break;
+        }
+        uint64_t yield_reason = run_response.value().tohost() << 16 >> 48;
+        // process manual yields
+        if (run_response.value().iflags_y()) {
+            if (yield_reason == cartesi::HTIF_YIELD_REASON_RX_REJECTED) {
+                q.status = completion_status::rejected_by_machine;
+                dout{actx.request_context} << "    Query aborted because machine rejected it";
+                break;
+            } else if (yield_reason == cartesi::HTIF_YIELD_REASON_RX_ACCEPTED) {
+                q.status = completion_status::accepted;
+                break;
+            }
+            THROW((taint_session{actx.session, grpc::StatusCode::OUT_OF_RANGE, "unknown machine yield reason"}));
+        }
+        if (!run_response.value().iflags_x()) {
+            THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
+                "machine returned without hitting mcycle limit or yielding"}));
+        }
+        // process automatic yields
+        if (yield_reason == cartesi::HTIF_YIELD_REASON_TX_REPORT) {
+            dout{actx.request_context} << "    Reading report " << q.reports.size();
+            q.reports.push_back(read_report(actx));
+        } // else ignore automatic yield
+        // advance current mcycle and continue
+        current_mcycle = run_response.value().mcycle();
+    }
+    dout{actx.request_context} << "  Done processing query";
+    dout{actx.request_context} << "    Rolling back";
+    // Wait machine server to checkin after spawned
+    trigger_and_wait_checkin(hctx, actx, [](handler_context &hctx, async_context &actx) {
+        (void) hctx;
+        rollback(actx);
+    });
+}
+
 /// \brief Loops processing all pending inputs
 /// \param actx Context for async operations
 /// \param e Associated epoch
@@ -1834,7 +1962,7 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
             snapshot(actx);
         });
         dout{actx.request_context} << "    Clearing buffers";
-        clear_buffers(actx);
+        clear_memory_ranges(actx);
         const auto &i = e.pending_inputs.front();
         dout{actx.request_context} << "    Writing rx buffer";
         write_memory_range(actx, i.payload.begin(), i.payload.end(), actx.session.memory_range.rx_buffer.config);
@@ -1845,26 +1973,30 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
         auto max_mcycle = actx.session.current_mcycle + actx.session.server_cycles.max_advance_state;
         // Loop getting vouchers and notices until the machine exceeds
         // max_mcycle, rejects the input, accepts the input, or behaves inaproppriately
-        std::optional<input_skip_reason> skip_reason{};
-        auto start = std::chrono::system_clock::now();
+        completion_status skip_reason = completion_status::accepted;
+        auto start_time = std::chrono::system_clock::now();
         auto current_mcycle = actx.session.current_mcycle;
+        auto mcycle_increment = actx.session.server_cycles.advance_state_increment;
+        auto deadline_increment = actx.session.server_deadline.advance_state_increment;
+        auto max_deadline = actx.session.server_deadline.advance_state;
         std::vector<voucher_type> vouchers;
         std::vector<notice_type> notices;
         std::vector<report_type> reports;
         for (;;) {
-            auto run_response = run_input(actx, current_mcycle, max_mcycle, start);
+            auto run_response = run_machine(actx, current_mcycle, mcycle_increment, max_mcycle, start_time,
+                deadline_increment, max_deadline);
             if (!run_response.has_value()) {
-                skip_reason = input_skip_reason::time_limit_exceeded;
+                skip_reason = completion_status::time_limit_exceeded;
                 dout{actx.request_context} << "    Input skipped because time limit was exceeded";
                 break;
             }
             if (run_response.value().mcycle() >= max_mcycle) {
-                skip_reason = input_skip_reason::cycle_limit_exceeded;
+                skip_reason = completion_status::cycle_limit_exceeded;
                 dout{actx.request_context} << "    Input skipped because cycle limit was exceeded";
                 break;
             }
             if (run_response.value().iflags_h()) {
-                skip_reason = input_skip_reason::machine_halted;
+                skip_reason = completion_status::machine_halted;
                 dout{actx.request_context} << "    Input skipped because machine is halted";
                 break;
             }
@@ -1872,7 +2004,7 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
             // process manual yields
             if (run_response.value().iflags_y()) {
                 if (yield_reason == cartesi::HTIF_YIELD_REASON_RX_REJECTED) {
-                    skip_reason = input_skip_reason::requested_by_machine;
+                    skip_reason = completion_status::rejected_by_machine;
                     dout{actx.request_context} << "    Input skipped because machine requested";
                     break;
                 } else if (yield_reason == cartesi::HTIF_YIELD_REASON_RX_ACCEPTED) {
@@ -1909,7 +2041,7 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
                 "inconsistent number of entries in epoch's session notices Merkle tree"}));
         }
         // If the machine accepted the input
-        if (!skip_reason.has_value()) {
+        if (skip_reason == completion_status::accepted) {
             // Update merkle tree so we can gather our proofs
             dout{actx.request_context} << "    Updating Merkle tree";
             update_merkle_tree(actx);
@@ -2007,8 +2139,13 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
             // Add skipped input to list of processed inputs
             e.processed_inputs.push_back(
                 processed_input_type{input_index, get_root_hash(actx), std::move(voucher_hashes_in_epoch),
-                    std::move(notice_hashes_in_epoch), skip_reason.value(), std::move(reports)});
+                    std::move(notice_hashes_in_epoch), skip_reason, std::move(reports)});
             // Leave session.current_mcycle alone
+        }
+        // Check if there is a pending query
+        if (e.pending_query.has_value()) {
+            // Resume its coroutine so it can process the query and complete the InspectState rpc
+            (*e.pending_query.value().coroutine)();
         }
         // Finally remove pending
         e.pending_inputs.pop_front();
@@ -2022,15 +2159,15 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
     new (self) handler_type::pull_type{[self, &hctx](handler_type::push_type &yield) {
         using namespace grpc;
         ServerContext request_context;
-        AdvanceStateRequest enqueue_input_request;
-        ServerAsyncResponseWriter<Void> enqueue_input_writer(&request_context);
+        AdvanceStateRequest advance_state_request;
+        ServerAsyncResponseWriter<Void> advance_state_writer(&request_context);
         auto *cq = hctx.completion_queue.get();
         // Wait for a AdvanceState RPC
-        hctx.manager_async_service.RequestAdvanceState(&request_context, &enqueue_input_request, &enqueue_input_writer,
+        hctx.manager_async_service.RequestAdvanceState(&request_context, &advance_state_request, &advance_state_writer,
             cq, cq, self);
         yield(side_effect::none);
         // We now received a AdvanceState
-        // We will handle other AdvanceState rpcs if we yield
+        // We will handle other AdvanceState rpcs if we yield, but not in the same session, due to the session lock
         new_AdvanceState_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
         // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
         if (!hctx.ok) {
@@ -2039,9 +2176,9 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
         try {
             // Check if session id exists
             auto &sessions = hctx.sessions; // NOLINT: Unknown. Maybe linter bug?
-            const auto &id = enqueue_input_request.session_id();
-            dout{request_context} << "Received AdvanceState for id " << id << " epoch "
-                                  << enqueue_input_request.active_epoch_index();
+            const auto &id = advance_state_request.session_id();
+            dout{request_context} << "Received AdvanceState for session " << id << " epoch "
+                                  << advance_state_request.active_epoch_index();
             // If a session is unknown, a bail out
             if (sessions.find(id) == sessions.end()) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "session id not found!"}));
@@ -2063,10 +2200,10 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
                 THROW((finish_error_yield_none{grpc::StatusCode::DATA_LOSS, "session is tainted"}));
             }
             // If active epoch does not match expected, bail out
-            if (session.active_epoch_index != enqueue_input_request.active_epoch_index()) {
+            if (session.active_epoch_index != advance_state_request.active_epoch_index()) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
                     "incorrect active epoch index (expected " + std::to_string(session.active_epoch_index) + ", got " +
-                        std::to_string(enqueue_input_request.active_epoch_index()) + ")"}));
+                        std::to_string(advance_state_request.active_epoch_index()) + ")"}));
             }
             // We should be able to find the active epoch, otherwise bail
             auto &epochs = session.epochs;
@@ -2080,20 +2217,20 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
             }
             // If current input does not match expected, bail out
             auto current_input_index = e.pending_inputs.size() + e.processed_inputs.size();
-            if (current_input_index != enqueue_input_request.current_input_index()) {
+            if (current_input_index != advance_state_request.current_input_index()) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
                     "incorrect current input index (expected " + std::to_string(current_input_index) + ", got " +
-                        std::to_string(enqueue_input_request.current_input_index()) + ")"}));
+                        std::to_string(advance_state_request.current_input_index()) + ")"}));
             }
             // Check size of input metadata
-            const auto input_metadata_size = enqueue_input_request.input_metadata().size();
+            const auto input_metadata_size = advance_state_request.input_metadata().size();
             if (input_metadata_size != INPUT_METADATA_LENGTH) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
                     "input metadata wrong size (expected " + std::to_string(INPUT_METADATA_LENGTH) + " bytes, got " +
                         std::to_string(input_metadata_size) + " bytes)"}));
             }
             // Check size of input payload
-            const auto input_payload_size = enqueue_input_request.input_payload().size();
+            const auto input_payload_size = advance_state_request.input_payload().size();
             if (input_payload_size >= session.memory_range.rx_buffer.length) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
                     "input payload too long for rx buffer length (expected " +
@@ -2101,11 +2238,11 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
                         std::to_string(input_payload_size) + " bytes)"}));
             }
             // Enqueue input
-            e.pending_inputs.emplace_back(enqueue_input_request.input_metadata(),
-                enqueue_input_request.input_payload());
+            e.pending_inputs.emplace_back(advance_state_request.input_metadata(),
+                advance_state_request.input_payload());
             // Tell caller RPC succeeded
-            Void enqueue_input_response;
-            enqueue_input_writer.Finish(enqueue_input_response, grpc::Status::OK, self);
+            Void advance_state_response;
+            advance_state_writer.Finish(advance_state_response, grpc::Status::OK, self);
             yield(side_effect::none); // Here the session is still locked, so no concurrent calls are possible
             // Release the lock so other RPCs can enqueue additional inputs to the same session/epoch
             session_lock.release();
@@ -2118,35 +2255,200 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
             // it talks to the machine server asynchronously) and allow
             // other AdvanceState RPCs to grow the pending_inputs queue further.
             // However, those other RPCs will not enter the branch, because
-            // process_pending_inputs only removes items from the queue when
+            // process_pending_inputs only removes an item from the queue when
             // it is completely done with it. Between removing the pending
             // input and checking if there are other pending inputs, the
             // handler does not yield. Therefore, it will process all
             // pending inputs that have been enqueue while it is working.
-            //?? Victor and Diego both think this logic is sound but is too complicated.
-            //?? Any better ideas?
+            //??D Victor and Diego both think this logic is sound but is too complicated.
+            //??D Any better ideas?
             if (e.pending_inputs.size() == 1) {
                 async_context actx{session, request_context, hctx.completion_queue.get(), self, yield};
+                // While inputs are processed, a query might have arrived. If everything works, its coroutine will be
+                // waiting to be resumed between inputs, so the query can be processed. However, if
+                // process_pending_inputs exits via an exception, that coroutine might never be called. It would
+                // eventually timeout. So we resume it in the exception handlers below.
+                //??D Looks Ugly to repeat the code in each handler, but I couldn't find a more elegant solution
                 process_pending_inputs(hctx, actx, e);
             }
         } catch (finish_error_yield_none &e) {
             dout{request_context} << "Caught finish_error_yield_none '" << e.status().error_message() << '\'';
-            enqueue_input_writer.FinishWithError(e.status(), self);
+            advance_state_writer.FinishWithError(e.status(), self);
+            yield(side_effect::none);
+        } catch (taint_session &x) {
+            dout{request_context} << "Caught taint_status " << x.status().error_message();
+            auto &session = x.session();
+            session.tainted = true;
+            session.taint_status = x.status();
+            auto &e = session.epochs[session.active_epoch_index];
+            // Check if there is a pending query
+            if (e.pending_query.has_value()) {
+                // Resume its coroutine so it can error-out gracefully (it checks the tainted flag)
+                (*e.pending_query.value().coroutine)();
+            }
+            // No need to return rpc results because we already have if we reach here
+        } catch (std::exception &x) {
+            dout{request_context} << "Caught unexpected exception " << x.what();
+            const auto &id = advance_state_request.session_id();
+            if (hctx.sessions.find(id) != hctx.sessions.end()) {
+                auto &session = hctx.sessions[id];
+                session.tainted = true;
+                session.taint_status = grpc::Status{grpc::StatusCode::INTERNAL,
+                    std::string{"unexpected exception "} + x.what()};
+                auto &e = session.epochs[session.active_epoch_index];
+                // Check if there is a pending query
+                if (e.pending_query.has_value()) {
+                    // Resume its coroutine so it can error-out gracefully (it checks the tainted flag)
+                    (*e.pending_query.value().coroutine)();
+                }
+            }
+            // No need to return rpc results because we already have if we reach here
+        }
+    }};
+    return self;
+}
+
+/// \brief Creates a new handler for the InspectState RPC and starts accepting requests
+/// \param hctx Handler context shared between all handlers
+static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) {
+    auto *self = static_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
+    new (self) handler_type::pull_type{[self, &hctx](handler_type::push_type &yield) {
+        using namespace grpc;
+        ServerContext request_context;
+        InspectStateRequest inspect_state_request;
+        ServerAsyncResponseWriter<InspectStateResponse> inspect_state_writer(&request_context);
+        auto *cq = hctx.completion_queue.get();
+        // Wait for a InspectState RPC
+        hctx.manager_async_service.RequestInspectState(&request_context, &inspect_state_request, &inspect_state_writer,
+            cq, cq, self);
+        yield(side_effect::none);
+        // We now received a InspectState
+        // We will handle other InspectState rpcs if we yield, but not in the same session, due to the session lock
+        new_InspectState_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+        // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
+        if (!hctx.ok) {
+            return;
+        }
+        try {
+            // Check if session id exists
+            auto &sessions = hctx.sessions; // NOLINT: Unknown. Maybe linter bug?
+            const auto &id = inspect_state_request.session_id();
+            dout{request_context} << "Received InspectState for session " << id << " epoch "
+                                  << inspect_state_request.active_epoch_index();
+            // If a session is unknown, a bail out
+            if (sessions.find(id) == sessions.end()) {
+                THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "session id not found!"}));
+            }
+            // Otherwise, get session and lock until we exit handler
+            auto &session = sessions[id];
+            // If session is already locked, bail out
+            if (session.session_lock) {
+                THROW((finish_error_yield_none{grpc::StatusCode::ABORTED, "concurrent call in session"}));
+            }
+            // Lock session so other rpcs to the same session are rejected
+            auto_lock session_lock(session.session_lock);
+            // If session is tainted, report potential data loss
+            if (session.tainted) {
+                THROW((finish_error_yield_none{grpc::StatusCode::DATA_LOSS, "session is tainted"}));
+            }
+            // If active epoch does not match expected, bail out
+            if (session.active_epoch_index != inspect_state_request.active_epoch_index()) {
+                THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
+                    "incorrect active epoch index (expected " + std::to_string(session.active_epoch_index) + ", got " +
+                        std::to_string(inspect_state_request.active_epoch_index()) + ")"}));
+            }
+            // We should be able to find the active epoch, otherwise bail
+            auto &epochs = session.epochs;
+            if (epochs.find(session.active_epoch_index) == epochs.end()) {
+                THROW((finish_error_yield_none{grpc::StatusCode::INTERNAL, "active epoch not found"}));
+            }
+            auto &e = epochs[session.active_epoch_index];
+            // Check size of query payload
+            const auto query_payload_size = inspect_state_request.query_payload().size();
+            if (query_payload_size >= session.memory_range.rx_buffer.length) {
+                THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
+                    "query payload too long for rx buffer length (expected " +
+                        std::to_string(session.memory_range.rx_buffer.length) + " bytes max, got " +
+                        std::to_string(query_payload_size) + " bytes)"}));
+            }
+            // Make sure there isn't already another pending query
+            if (e.pending_query.has_value()) {
+                THROW((finish_error_yield_none{grpc::StatusCode::INTERNAL, "another query is already pending"}));
+            }
+            // Add pending query
+            e.pending_query.emplace(inspect_state_request.query_payload());
+            auto &q = e.pending_query.value();
+            // Now, either there are pending AdvanceState inputs being processed in this session, or there aren't.
+            // If there aren't, we can immediately process the InspectState query and return results.
+            // The session is locked, and therefore no other rpcs can interfere (including AdvanceState rpcs).
+            // Otherwise, we will have to yield because AdvanceState may be in the middle of an input.
+            // The function that processes inputs checks for a pending query between every input it processes.
+            // If it finds a pending query, it knows we are yielded and waiting. So it processes the query and
+            // resumes our coroutine before going back to processing its input queue.
+            if (!e.pending_inputs.empty()) {
+                q.coroutine = self;
+                yield(side_effect::none);
+            }
+            // There is a chance the session was tainted between our yielding and being resumed
+            if (session.tainted) {
+                THROW((finish_error_yield_none{grpc::StatusCode::DATA_LOSS, "session is tainted"}));
+            }
+            async_context actx{session, request_context, hctx.completion_queue.get(), self, yield};
+            process_pending_query(hctx, actx, e);
+            // Copy response
+            InspectStateResponse inspect_state_response;
+            inspect_state_response.set_session_id(session.id);
+            inspect_state_response.set_active_epoch_index(session.active_epoch_index);
+            inspect_state_response.set_current_input_index(q.current_input_index);
+            for (const auto &r : q.reports) {
+                inspect_state_response.add_reports()->set_payload(r.payload);
+            }
+            switch (q.status) {
+                case completion_status::accepted:
+                    inspect_state_response.set_status(CompletionStatus::ACCEPTED);
+                    break;
+                case completion_status::cycle_limit_exceeded:
+                    inspect_state_response.set_status(CompletionStatus::CYCLE_LIMIT_EXCEEDED);
+                    break;
+                case completion_status::rejected_by_machine:
+                    inspect_state_response.set_status(CompletionStatus::REJECTED_BY_MACHINE);
+                    break;
+                case completion_status::machine_halted:
+                    inspect_state_response.set_status(CompletionStatus::MACHINE_HALTED);
+                    break;
+                case completion_status::time_limit_exceeded:
+                    inspect_state_response.set_status(CompletionStatus::TIME_LIMIT_EXCEEDED);
+                    break;
+            }
+            e.pending_query.reset();
+            // Tell caller RPC succeeded
+            inspect_state_writer.Finish(inspect_state_response, grpc::Status::OK, self);
+            yield(side_effect::none); // Here the session is still locked, so no concurrent calls are possible
+            // Release the lock so other RPCs can be processed
+            session_lock.release();
+        } catch (finish_error_yield_none &e) {
+            dout{request_context} << "Caught finish_error_yield_none '" << e.status().error_message() << '\'';
+            inspect_state_writer.FinishWithError(e.status(), self);
             yield(side_effect::none);
         } catch (taint_session &e) {
             dout{request_context} << "Caught taint_status " << e.status().error_message();
             auto &session = e.session();
             session.tainted = true;
             session.taint_status = e.status();
+            inspect_state_writer.FinishWithError(session.taint_status, self);
+            yield(side_effect::none);
         } catch (std::exception &e) {
             dout{request_context} << "Caught unexpected exception " << e.what();
-            const auto &id = enqueue_input_request.session_id();
+            const auto &id = inspect_state_request.session_id();
+            auto taint_status = grpc::Status{grpc::StatusCode::INTERNAL,
+                std::string{"unexpected exception "} + e.what()};
             if (hctx.sessions.find(id) != hctx.sessions.end()) {
                 auto &session = hctx.sessions[id];
                 session.tainted = true;
-                session.taint_status =
-                    grpc::Status{grpc::StatusCode::INTERNAL, std::string{"unexpected exception "} + e.what()};
+                session.taint_status = taint_status;
             }
+            inspect_state_writer.FinishWithError(taint_status, self);
+            yield(side_effect::none);
         }
     }};
     return self;
@@ -2173,7 +2475,7 @@ static handler_type::pull_type *new_Checkin_handler(handler_context &hctx) {
         }
         try {
             const auto &id = checkin_request.session_id(); // NOLINT: Unknown. Maybe linter bug?
-            dout{checkin_context} << "Received CheckIn for id " << id;
+            dout{checkin_context} << "Received CheckIn for session " << id;
             // If check-in is for the wrong session, bail out
             if (hctx.sessions_waiting_checkin.find(id) == hctx.sessions_waiting_checkin.end()) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,

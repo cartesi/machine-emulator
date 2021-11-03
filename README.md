@@ -45,6 +45,7 @@ link or alias `lua5.3`.
 
 ```bash
 $ make submodules
+$ make downloads
 $ make dep
 $ make
 ```

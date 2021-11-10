@@ -25,6 +25,8 @@
 #include <string>
 #include <unordered_map>
 #include <variant>
+#include <iomanip>
+#include <sstream>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -126,6 +128,11 @@ dout &operator<<(dout &os, const T &x) {
     dout::out() << x;
     return os;
 }
+
+#include <htif-defines.h>
+
+#define ROLLUP_ADVANCE (UINT64_C(0))
+#define ROLLUP_INSPECT (UINT64_C(1))
 
 #include "complete-merkle-tree.h"
 #include "grpc-util.h"
@@ -1824,6 +1831,83 @@ static void reset_iflags_y(async_context &actx) {
     }
 }
 
+/// \brief Extracts the data field in HTIF's fromhost/tohost register value
+/// \param reg Old register value
+/// \param data New data field
+/// \return Register value with replaced data field
+static constexpr uint64_t htif_replace_data_field(uint64_t reg, uint64_t data) {
+    return (reg & (~HTIF_DATA_MASK_DEF)) | ((data << HTIF_DATA_SHIFT_DEF) & HTIF_DATA_MASK_DEF);
+}
+
+/// \brief Obtains the dev field in HTIF's fromhost/tohost register value
+/// \return Dev data field in register
+static constexpr uint64_t htif_dev_field(uint64_t reg) {
+    return (reg & HTIF_DEV_MASK_DEF) >> HTIF_DEV_SHIFT_DEF;
+}
+
+/// \brief Extracts the cmd field in HTIF's fromhost/tohost register value
+/// \return cmd data field in register
+static constexpr uint64_t htif_cmd_field(uint64_t reg) {
+    return (reg & HTIF_CMD_MASK_DEF) >> HTIF_CMD_SHIFT_DEF;
+}
+
+/// \brief Asynchronously gets the value of HTIF's fromhost CSR
+/// \param actx Context for async operations
+/// \return Register value
+static uint64_t get_htif_fromhost(async_context &actx) {
+    ReadCsrRequest request;
+    request.set_csr(Csr::HTIF_FROMHOST);
+    grpc::ClientContext client_context;
+    set_deadline(client_context, actx.session.server_deadline.fast);
+    auto reader = actx.session.server_stub->AsyncReadCsr(&client_context, request, actx.completion_queue);
+    grpc::Status status;
+    ReadCsrResponse response;
+    reader->Finish(&response, &status, actx.self);
+    actx.yield(side_effect::none);
+    if (!status.ok()) {
+        THROW((taint_session{actx.session, std::move(status)}));
+    }
+    return response.value();
+}
+
+/// \brief Asynchronously sets the value of HTIF's fromhost CSR
+/// \param actx Context for async operations
+/// \param value New register value
+static void set_htif_fromhost(async_context &actx, uint64_t value) {
+    WriteCsrRequest request;
+    request.set_csr(Csr::HTIF_FROMHOST);
+    request.set_value(value);
+    grpc::ClientContext client_context;
+    set_deadline(client_context, actx.session.server_deadline.fast);
+    auto reader = actx.session.server_stub->AsyncWriteCsr(&client_context, request, actx.completion_queue);
+    grpc::Status status;
+    Void response;
+    reader->Finish(&response, &status, actx.self);
+    actx.yield(side_effect::none);
+    if (!status.ok()) {
+        THROW((taint_session{actx.session, std::move(status)}));
+    }
+}
+
+/// \brief Asynchronously sets htif fromhost ack to specify a given request
+/// \param actx Context for async operations
+static void set_htif_yield_ack_data(async_context &actx, uint64_t reqid) {
+    auto old_value = get_htif_fromhost(actx);
+	auto dev = htif_dev_field(old_value);
+    if (dev != HTIF_DEVICE_YIELD_DEF) {
+        THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
+			"invalid dev field in htif.tohost (expected " + std::to_string(HTIF_DEVICE_YIELD_DEF) + ", got " +
+			std::to_string(dev) + ")"}));
+    }
+    auto cmd = htif_cmd_field(old_value);
+    if (cmd != HTIF_YIELD_MANUAL_DEF) {
+        THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
+			"invalid cmd field in htif.tohost (expected " + std::to_string(HTIF_YIELD_MANUAL_DEF) + ", got " +
+			std::to_string(cmd) + ")"}));
+    }
+    set_htif_fromhost(actx, htif_replace_data_field(old_value, reqid));
+}
+
 /// \brief Asynchronously updates machine server Merkle tree
 /// \param actx Context for async operations
 static void update_merkle_tree(async_context &actx) {
@@ -1880,6 +1964,8 @@ static void process_pending_query(handler_context &hctx, async_context &actx, ep
     clear_rx_buffer(actx);
     dout{actx.request_context} << "    Writing rx buffer";
     write_memory_range(actx, q.payload.begin(), q.payload.end(), actx.session.memory_range.rx_buffer.config);
+    dout{actx.request_context} << "    Setting inspect request in htif fromhost";
+    set_htif_yield_ack_data(actx, ROLLUP_INSPECT);
     auto max_mcycle = actx.session.current_mcycle + actx.session.server_cycles.max_inspect_state;
     // Loop getting reports until the machine exceeds max_mcycle, rejects the query, accepts the query,
     // or behaves inaproppriately

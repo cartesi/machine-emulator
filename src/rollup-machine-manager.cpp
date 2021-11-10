@@ -36,6 +36,7 @@
 #include <boost/iostreams/device/null.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <boost/process.hpp>
+#include <boost/endian/conversion.hpp>
 #pragma GCC diagnostic pop
 
 #pragma GCC diagnostic push
@@ -262,8 +263,8 @@ constexpr const uint64_t EVM_ABI_LENGTH_LENGTH = 32;
 constexpr const uint64_t VOUCHER_HEADER_LENGTH =
     VOUCHER_PAYLOAD_ADDRESS_LENGTH + EVM_ABI_OFFSET_LENGTH + EVM_ABI_LENGTH_LENGTH;
 
-// Notices and reports use the same format
-constexpr const uint64_t NOTICE_REPORT_HEADER_LENGTH = EVM_ABI_OFFSET_LENGTH + EVM_ABI_LENGTH_LENGTH;
+// Notices, reports, inputs, and queries use the same format
+constexpr const uint64_t EVM_ABI_STRING_HEADER_LENGTH = EVM_ABI_OFFSET_LENGTH + EVM_ABI_LENGTH_LENGTH;
 
 /// \brief Type holding an AdvanceState input for processing
 struct input_type {
@@ -1466,6 +1467,38 @@ static void write_memory_range(async_context &actx, IT begin, IT end, const Memo
     }
 }
 
+/// \brief Asynchronously writes an EVM ABI string to a memory range
+/// \param actx Context for async operations
+/// \param begin First byte to write
+/// \param end One past last byte to write
+/// \param drive MemoryRangeConfig describing drive
+template <typename IT>
+static void write_evm_abi_string(async_context &actx, IT begin, IT end, const MemoryRangeConfig &drive) {
+    using namespace boost::endian;
+    WriteMemoryRequest write_request;
+    write_request.set_address(drive.start());
+    auto *data = write_request.mutable_data();
+    std::array<unsigned char, EVM_ABI_STRING_HEADER_LENGTH> header{};
+    header.fill(0);
+    auto offset_ptr = header.data()+EVM_ABI_OFFSET_LENGTH-sizeof(uint64_t);
+    endian_store<uint64_t, sizeof(uint64_t), order::big>(offset_ptr, EVM_ABI_OFFSET_LENGTH);
+    auto length_ptr = header.data()+EVM_ABI_OFFSET_LENGTH+EVM_ABI_LENGTH_LENGTH-sizeof(uint64_t);
+    endian_store<uint64_t, sizeof(uint64_t), order::big>(length_ptr, end-begin);
+    data->insert(data->end(), header.begin(), header.end());
+    data->insert(data->end(), begin, end);
+    Void write_response;
+    grpc::ClientContext client_context;
+    set_deadline(client_context, actx.session.server_deadline.fast);
+    auto reader = actx.session.server_stub->AsyncWriteMemory(&client_context, write_request, actx.completion_queue);
+    grpc::Status write_status;
+    reader->Finish(&write_response, &write_status, actx.self);
+    actx.yield(side_effect::none);
+    if (!write_status.ok()) {
+        THROW((taint_session{actx.session, std::move(write_status)}));
+    }
+}
+
+
 /// \brief Asynchronously runs machine server up to given max cycle
 /// \param actx Context for async operations
 /// \param curr_mcycle current mcycle
@@ -1576,8 +1609,8 @@ static uint64_t count_null_terminated_entries(const std::string &data, int entry
 }
 
 /// \brief Converts a string to a hash
-/// \param begin Start of large big-endian number
-/// \param end one-past-end of large big-endian number
+/// \param begin Start of hash data
+/// \param end one-past-end of hash data
 /// \return Converted hash
 template <typename IT>
 static inline hash_type get_hash(session_type &session, IT begin, IT end) {
@@ -1594,18 +1627,13 @@ static inline hash_type get_hash(session_type &session, IT begin, IT end) {
 /// \param begin Start of large big-endian number
 /// \param end one-past-end of large big-endian number
 /// \return Converted 64-bit native integer
-template <typename IT>
-static inline uint64_t get_payload_length(session_type &session, IT begin, IT end) {
+static inline uint64_t get_payload_length(session_type &session, const char *begin, const char *end) {
+    using namespace boost::endian;
     if (!is_null(begin, end - sizeof(uint64_t))) {
         THROW((taint_session{session, grpc::StatusCode::OUT_OF_RANGE, "payload length too large"}));
     }
-    uint64_t length = 0;
-    IT byte_iterator = end - 1;
-    for (unsigned i = 0; i < sizeof(uint64_t) && byte_iterator != begin; ++i) {
-        length += static_cast<uint8_t>(*byte_iterator) << 8 * i;
-        --byte_iterator;
-    }
-    return length;
+    return endian_load<uint64_t, sizeof(uint64_t), order::big>(reinterpret_cast<const unsigned char*>(end)
+        - sizeof(uint64_t));
 }
 
 /// \brief Asynchronously reads an voucher address and payload data length from the tx buffer
@@ -1631,7 +1659,7 @@ static hash_type read_voucher_address_and_payload_data_length(async_context &act
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
     }
     auto payload_data_length_begin =
-        read_response.data().begin() + VOUCHER_PAYLOAD_ADDRESS_LENGTH + EVM_ABI_OFFSET_LENGTH;
+        read_response.data().data() + VOUCHER_PAYLOAD_ADDRESS_LENGTH + EVM_ABI_OFFSET_LENGTH;
     auto payload_data_length_end = payload_data_length_begin + EVM_ABI_LENGTH_LENGTH;
     *payload_data_length = get_payload_length(actx.session, payload_data_length_begin, payload_data_length_end);
     auto address_begin = read_response.data().begin();
@@ -1677,7 +1705,7 @@ static uint64_t read_notice_report_payload_data_length(async_context &actx) {
     ReadMemoryRequest read_request;
     const MemoryRangeConfig &range = actx.session.memory_range.tx_buffer.config;
     read_request.set_address(range.start());
-    read_request.set_length(NOTICE_REPORT_HEADER_LENGTH);
+    read_request.set_length(EVM_ABI_STRING_HEADER_LENGTH);
     grpc::ClientContext client_context;
     set_deadline(client_context, actx.session.server_deadline.fast);
     auto reader = actx.session.server_stub->AsyncReadMemory(&client_context, read_request, actx.completion_queue);
@@ -1691,7 +1719,7 @@ static uint64_t read_notice_report_payload_data_length(async_context &actx) {
     if (read_response.data().size() != read_request.length()) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
     }
-    auto payload_data_length_begin = read_response.data().begin() + EVM_ABI_OFFSET_LENGTH;
+    auto payload_data_length_begin = read_response.data().data() + EVM_ABI_OFFSET_LENGTH;
     auto payload_data_length_end = payload_data_length_begin + EVM_ABI_LENGTH_LENGTH;
     return get_payload_length(actx.session, payload_data_length_begin, payload_data_length_end);
 }
@@ -1701,7 +1729,7 @@ static uint64_t read_notice_report_payload_data_length(async_context &actx) {
 /// \param payload_data_length Length of payload data in entry
 /// \return Contents of notice payload data
 static std::string read_notice_report_payload_data(async_context &actx, uint64_t payload_data_length) {
-    auto payload_data_offset = NOTICE_REPORT_HEADER_LENGTH;
+    auto payload_data_offset = EVM_ABI_STRING_HEADER_LENGTH;
     const MemoryRangeConfig &range = actx.session.memory_range.tx_buffer.config;
     if (payload_data_length > actx.session.memory_range.tx_buffer.length - payload_data_offset) {
         THROW((taint_session{actx.session, grpc::StatusCode::OUT_OF_RANGE, "notice payload length is out of bounds"}));
@@ -1963,7 +1991,7 @@ static void process_pending_query(handler_context &hctx, async_context &actx, ep
     dout{actx.request_context} << "    Clearing rx buffer";
     clear_rx_buffer(actx);
     dout{actx.request_context} << "    Writing rx buffer";
-    write_memory_range(actx, q.payload.begin(), q.payload.end(), actx.session.memory_range.rx_buffer.config);
+    write_evm_abi_string(actx, q.payload.begin(), q.payload.end(), actx.session.memory_range.rx_buffer.config);
     dout{actx.request_context} << "    Setting inspect request in htif fromhost";
     set_htif_yield_ack_data(actx, ROLLUP_INSPECT);
     auto max_mcycle = actx.session.current_mcycle + actx.session.server_cycles.max_inspect_state;
@@ -2051,7 +2079,7 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
         clear_memory_ranges(actx);
         const auto &i = e.pending_inputs.front();
         dout{actx.request_context} << "    Writing rx buffer";
-        write_memory_range(actx, i.payload.begin(), i.payload.end(), actx.session.memory_range.rx_buffer.config);
+        write_evm_abi_string(actx, i.payload.begin(), i.payload.end(), actx.session.memory_range.rx_buffer.config);
         dout{actx.request_context} << "    Writing input metadata";
         write_memory_range(actx, i.metadata.begin(), i.metadata.end(), actx.session.memory_range.input_metadata.config);
         dout{actx.request_context} << "    Resetting iflags_Y";
@@ -2317,11 +2345,11 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
             }
             // Check size of input payload
             const auto input_payload_size = advance_state_request.input_payload().size();
-            if (input_payload_size >= session.memory_range.rx_buffer.length) {
+            if (input_payload_size + EVM_ABI_STRING_HEADER_LENGTH >= session.memory_range.rx_buffer.length) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
                     "input payload too long for rx buffer length (expected " +
-                        std::to_string(session.memory_range.rx_buffer.length) + " bytes max, got " +
-                        std::to_string(input_payload_size) + " bytes)"}));
+                        std::to_string(session.memory_range.rx_buffer.length-EVM_ABI_STRING_HEADER_LENGTH) +
+                        " bytes max, got " + std::to_string(input_payload_size) + " bytes)"}));
             }
             // Enqueue input
             e.pending_inputs.emplace_back(advance_state_request.input_metadata(),
@@ -2451,11 +2479,11 @@ static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) 
             auto &e = epochs[session.active_epoch_index];
             // Check size of query payload
             const auto query_payload_size = inspect_state_request.query_payload().size();
-            if (query_payload_size >= session.memory_range.rx_buffer.length) {
+            if (query_payload_size + EVM_ABI_STRING_HEADER_LENGTH >= session.memory_range.rx_buffer.length) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
                     "query payload too long for rx buffer length (expected " +
-                        std::to_string(session.memory_range.rx_buffer.length) + " bytes max, got " +
-                        std::to_string(query_payload_size) + " bytes)"}));
+                        std::to_string(session.memory_range.rx_buffer.length-EVM_ABI_STRING_HEADER_LENGTH) +
+                        " bytes max, got " + std::to_string(query_payload_size) + " bytes)"}));
             }
             // Make sure there isn't already another pending query
             if (e.pending_query.has_value()) {

@@ -19,24 +19,24 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
+#include <iomanip>
 #include <map>
 #include <new>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <variant>
-#include <iomanip>
-#include <sstream>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #include <boost/coroutine2/coroutine.hpp>
+#include <boost/endian/conversion.hpp>
 #include <boost/iostreams/device/null.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <boost/process.hpp>
-#include <boost/endian/conversion.hpp>
 #pragma GCC diagnostic pop
 
 #pragma GCC diagnostic push
@@ -269,14 +269,14 @@ constexpr const uint64_t EVM_ABI_ADDRESS_LENGTH = 32;
 constexpr const uint64_t EVM_ABI_OFFSET_LENGTH = 32;
 constexpr const uint64_t EVM_ABI_LENGTH_LENGTH = 32;
 constexpr const uint64_t VOUCHER_HEADER_LENGTH = EVM_ABI_ADDRESS_LENGTH + EVM_ABI_OFFSET_LENGTH + EVM_ABI_LENGTH_LENGTH;
-constexpr const uint64_t EVM_ABI_INPUT_METADATA_LENGTH = EVM_ABI_ADDRESS_LENGTH + 4*EVM_ABI_UINT64_LENGTH;
+constexpr const uint64_t EVM_ABI_INPUT_METADATA_LENGTH = EVM_ABI_ADDRESS_LENGTH + 4 * EVM_ABI_UINT64_LENGTH;
 constexpr const uint64_t EVM_ABI_STRING_HEADER_LENGTH = EVM_ABI_OFFSET_LENGTH + EVM_ABI_LENGTH_LENGTH;
 
 using evm_abi_input_metadata_type = std::array<uint8_t, EVM_ABI_INPUT_METADATA_LENGTH>;
 
 /// \brief Type holding an AdvanceState input for processing
 struct input_type {
-    input_type(const input_metadata_type &input_metadata, const std::string &input_payload): metadata(input_metadata) {
+    input_type(const input_metadata_type &input_metadata, const std::string &input_payload) : metadata(input_metadata) {
         payload.insert(payload.end(), input_payload.begin(), input_payload.end());
     }
     std::vector<uint8_t> payload;
@@ -331,7 +331,7 @@ struct processed_input_type {
     proof_type voucher_hashes_in_epoch; ///< Proof of the new vouchers entry in the epoch Merkle tree
     proof_type notice_hashes_in_epoch;  ///< Proof of the new notices entry to the epoch Merkle tree
     std::variant<input_result_type, completion_status> processed; ///< Input results or reason it was skipped
-    std::vector<report_type> reports;   ///< List of reports produced while input was processed
+    std::vector<report_type> reports; ///< List of reports produced while input was processed
 };
 
 /// \brief Type holding an InspectState request/response while it is processed
@@ -422,15 +422,15 @@ static evm_abi_input_metadata_type evm_abi_encoded_input_metadata(const input_me
     using namespace boost::endian;
     evm_abi_input_metadata_type encoded;
     encoded.fill(0);
-    std::copy(parsed.msg_sender.begin(), parsed.msg_sender.end(), encoded.begin()+
-        EVM_ABI_ADDRESS_LENGTH-EVM_ADDRESS_LENGTH);
-    auto block_number_ptr = encoded.data()+EVM_ABI_ADDRESS_LENGTH+EVM_ABI_UINT64_LENGTH-sizeof(uint64_t);
+    std::copy(parsed.msg_sender.begin(), parsed.msg_sender.end(),
+        encoded.begin() + EVM_ABI_ADDRESS_LENGTH - EVM_ADDRESS_LENGTH);
+    auto block_number_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
     endian_store<uint64_t, sizeof(uint64_t), order::big>(block_number_ptr, parsed.block_number);
-    auto time_stamp_ptr = encoded.data()+EVM_ABI_ADDRESS_LENGTH+2*EVM_ABI_UINT64_LENGTH-sizeof(uint64_t);
+    auto time_stamp_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + 2 * EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
     endian_store<uint64_t, sizeof(uint64_t), order::big>(time_stamp_ptr, parsed.time_stamp);
-    auto epoch_index_ptr = encoded.data()+EVM_ABI_ADDRESS_LENGTH+3*EVM_ABI_UINT64_LENGTH-sizeof(uint64_t);
+    auto epoch_index_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + 3 * EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
     endian_store<uint64_t, sizeof(uint64_t), order::big>(epoch_index_ptr, parsed.epoch_index);
-    auto input_index_ptr = encoded.data()+EVM_ABI_ADDRESS_LENGTH+4*EVM_ABI_UINT64_LENGTH-sizeof(uint64_t);
+    auto input_index_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + 4 * EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
     endian_store<uint64_t, sizeof(uint64_t), order::big>(input_index_ptr, parsed.input_index);
     return encoded;
 }
@@ -1538,10 +1538,10 @@ static void write_evm_abi_string(async_context &actx, IT begin, IT end, const Me
     auto *data = write_request.mutable_data();
     std::array<unsigned char, EVM_ABI_STRING_HEADER_LENGTH> header{};
     header.fill(0);
-    auto offset_ptr = header.data()+EVM_ABI_OFFSET_LENGTH-sizeof(uint64_t);
+    auto offset_ptr = header.data() + EVM_ABI_OFFSET_LENGTH - sizeof(uint64_t);
     endian_store<uint64_t, sizeof(uint64_t), order::big>(offset_ptr, EVM_ABI_OFFSET_LENGTH);
-    auto length_ptr = header.data()+EVM_ABI_OFFSET_LENGTH+EVM_ABI_LENGTH_LENGTH-sizeof(uint64_t);
-    endian_store<uint64_t, sizeof(uint64_t), order::big>(length_ptr, end-begin);
+    auto length_ptr = header.data() + EVM_ABI_OFFSET_LENGTH + EVM_ABI_LENGTH_LENGTH - sizeof(uint64_t);
+    endian_store<uint64_t, sizeof(uint64_t), order::big>(length_ptr, end - begin);
     data->insert(data->end(), header.begin(), header.end());
     data->insert(data->end(), begin, end);
     Void write_response;
@@ -1555,7 +1555,6 @@ static void write_evm_abi_string(async_context &actx, IT begin, IT end, const Me
         THROW((taint_session{actx.session, std::move(write_status)}));
     }
 }
-
 
 /// \brief Asynchronously runs machine server up to given max cycle
 /// \param actx Context for async operations
@@ -1598,7 +1597,8 @@ static std::optional<RunResponse> run_machine(async_context &actx, uint64_t curr
         }
         // Check if max_deadline has expired.
         auto elapsed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start_time).count();
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start_time)
+                .count();
         if (elapsed > static_cast<decltype(elapsed)>(max_deadline)) {
             return {};
         }
@@ -1704,8 +1704,8 @@ static inline uint64_t get_payload_length(session_type &session, const char *beg
     if (!is_null(begin, end - sizeof(uint64_t))) {
         THROW((taint_session{session, grpc::StatusCode::OUT_OF_RANGE, "payload length too large"}));
     }
-    return endian_load<uint64_t, sizeof(uint64_t), order::big>(reinterpret_cast<const unsigned char*>(end)
-        - sizeof(uint64_t));
+    return endian_load<uint64_t, sizeof(uint64_t), order::big>(
+        reinterpret_cast<const unsigned char *>(end) - sizeof(uint64_t));
 }
 
 /// \brief Asynchronously reads an voucher address and payload data length from the tx buffer
@@ -1734,7 +1734,7 @@ static evm_address_type read_voucher_address_and_payload_data_length(async_conte
     auto payload_data_length_begin = read_response.data().data() + EVM_ABI_ADDRESS_LENGTH + EVM_ABI_OFFSET_LENGTH;
     auto payload_data_length_end = payload_data_length_begin + EVM_ABI_LENGTH_LENGTH;
     *payload_data_length = get_payload_length(actx.session, payload_data_length_begin, payload_data_length_end);
-    auto address_begin = read_response.data().begin()+EVM_ABI_ADDRESS_LENGTH-EVM_ADDRESS_LENGTH;
+    auto address_begin = read_response.data().begin() + EVM_ABI_ADDRESS_LENGTH - EVM_ADDRESS_LENGTH;
     auto address_end = address_begin + EVM_ABI_ADDRESS_LENGTH;
     return get_evm_address(actx.session, address_begin, address_end);
 }
@@ -1997,13 +1997,13 @@ static void set_htif_yield_ack_data(async_context &actx, uint64_t reqid) {
     if (dev != HTIF_DEVICE_YIELD_DEF) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
             "invalid dev field in htif.tohost (expected " + std::to_string(HTIF_DEVICE_YIELD_DEF) + ", got " +
-            std::to_string(dev) + ")"}));
+                std::to_string(dev) + ")"}));
     }
     auto cmd = htif_cmd_field(old_value);
     if (cmd != HTIF_YIELD_MANUAL_DEF) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
             "invalid cmd field in htif.tohost (expected " + std::to_string(HTIF_YIELD_MANUAL_DEF) + ", got " +
-            std::to_string(cmd) + ")"}));
+                std::to_string(cmd) + ")"}));
     }
     set_htif_fromhost(actx, htif_replace_data_field(old_value, reqid));
 }
@@ -2414,7 +2414,7 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
             if (input_payload_size + EVM_ABI_STRING_HEADER_LENGTH >= session.memory_range.rx_buffer.length) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
                     "input payload too long for rx buffer length (expected " +
-                        std::to_string(session.memory_range.rx_buffer.length-EVM_ABI_STRING_HEADER_LENGTH) +
+                        std::to_string(session.memory_range.rx_buffer.length - EVM_ABI_STRING_HEADER_LENGTH) +
                         " bytes max, got " + std::to_string(input_payload_size) + " bytes)"}));
             }
             // Check input metadata
@@ -2422,26 +2422,28 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "missing input metadata"}));
             }
             if (!advance_state_request.input_metadata().has_msg_sender()) {
-                THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
-                    "missing input metadata msg_sender"}));
+                THROW(
+                    (finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "missing input metadata msg_sender"}));
             }
             if (advance_state_request.input_metadata().msg_sender().data().size() != EVM_ADDRESS_LENGTH) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
                     "invalid input metadata msg_sender length (expected " + std::to_string(EVM_ADDRESS_LENGTH) +
-                    " bytes, got " + std::to_string(advance_state_request.input_metadata().msg_sender().data().size()) +
-                    " bytes)"}));
+                        " bytes, got " +
+                        std::to_string(advance_state_request.input_metadata().msg_sender().data().size()) +
+                        " bytes)"}));
             }
             auto input_metadata = get_proto_input_metadata(advance_state_request.input_metadata());
             // Double-check that epoch index and input index are correct
             if (input_metadata.epoch_index != session.active_epoch_index) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
                     "input metadata epoch index (" + std::to_string(input_metadata.epoch_index) +
-                    ") is inconsistent with active epoch index (" + std::to_string(session.active_epoch_index) + ")"}));
+                        ") is inconsistent with active epoch index (" + std::to_string(session.active_epoch_index) +
+                        ")"}));
             }
             if (input_metadata.input_index != current_input_index) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
                     "input metadata input index (" + std::to_string(input_metadata.input_index) +
-                    ") is inconsistent with current input index (" + std::to_string(current_input_index) + ")"}));
+                        ") is inconsistent with current input index (" + std::to_string(current_input_index) + ")"}));
             }
             // Enqueue input
             e.pending_inputs.emplace_back(input_metadata, advance_state_request.input_payload());
@@ -2498,8 +2500,8 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
             if (hctx.sessions.find(id) != hctx.sessions.end()) {
                 auto &session = hctx.sessions[id];
                 session.tainted = true;
-                session.taint_status = grpc::Status{grpc::StatusCode::INTERNAL,
-                    std::string{"unexpected exception "} + x.what()};
+                session.taint_status =
+                    grpc::Status{grpc::StatusCode::INTERNAL, std::string{"unexpected exception "} + x.what()};
                 auto &e = session.epochs[session.active_epoch_index];
                 // Check if there is a pending query
                 if (e.pending_query.has_value()) {
@@ -2573,7 +2575,7 @@ static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) 
             if (query_payload_size + EVM_ABI_STRING_HEADER_LENGTH >= session.memory_range.rx_buffer.length) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
                     "query payload too long for rx buffer length (expected " +
-                        std::to_string(session.memory_range.rx_buffer.length-EVM_ABI_STRING_HEADER_LENGTH) +
+                        std::to_string(session.memory_range.rx_buffer.length - EVM_ABI_STRING_HEADER_LENGTH) +
                         " bytes max, got " + std::to_string(query_payload_size) + " bytes)"}));
             }
             // Make sure there isn't already another pending query
@@ -2645,8 +2647,8 @@ static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) 
         } catch (std::exception &e) {
             dout{request_context} << "Caught unexpected exception " << e.what();
             const auto &id = inspect_state_request.session_id();
-            auto taint_status = grpc::Status{grpc::StatusCode::INTERNAL,
-                std::string{"unexpected exception "} + e.what()};
+            auto taint_status =
+                grpc::Status{grpc::StatusCode::INTERNAL, std::string{"unexpected exception "} + e.what()};
             if (hctx.sessions.find(id) != hctx.sessions.end()) {
                 auto &session = hctx.sessions[id];
                 session.tainted = true;

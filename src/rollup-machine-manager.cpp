@@ -1212,7 +1212,7 @@ static void check_memory_range_config(grpc::ServerContext &request_context, memo
     auto aligned_start = (desc.start >> desc.log2_size) << desc.log2_size;
     if ((desc.start != aligned_start)) {
         THROW((finish_error_yield_none{grpc::StatusCode::OUT_OF_RANGE,
-            name + " flash start not aligned to its power of two size"}));
+            name + " memory range start not aligned to its power of two size"}));
     }
 }
 
@@ -2317,10 +2317,10 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
             // Add null hashes to the epoch Merkle trees
             hash_type zero;
             std::fill_n(zero.begin(), zero.size(), 0);
-            // Get proof of null hash in epoch's vouchers metadata flash drives Merkle tree
+            // Get proof of null hash in epoch's vouchers metadata memory range Merkle tree
             e.vouchers_tree.push_back(zero);
             auto voucher_hashes_in_epoch = e.vouchers_tree.get_proof(input_index << LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE);
-            // Get proof of null hash in epoch's notices metadata flash drives Merkle tree
+            // Get proof of null hash in epoch's notices metadata memory range Merkle tree
             e.notices_tree.push_back(zero);
             auto notice_hashes_in_epoch = e.notices_tree.get_proof(input_index << LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE);
             // Add skipped input to list of processed inputs

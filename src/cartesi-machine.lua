@@ -152,14 +152,75 @@ where options are:
     semantics are the same as for the --flash-drive option
 
   --rollup
-    defines appropriate values for rollup-rx-buffer, rollup-tx-buffer, rollup-input-metadata, rollup-voucher-hashes, and
-    rollup-notice hashes for use with rollups, equivalent to the following options:
+    defines appropriate values for rollup-rx-buffer, rollup-tx-buffer,
+    rollup-input-metadata, rollup-voucher-hashes, and rollup-notice hashes
+    for use with rollups, equivalent to the following options:
 
-    --rx-buffer=start:0x60000000,length:2<<20
-    --tx-buffer=start:0x60200000,length:2<<20
+    --rollup-rx-buffer=start:0x60000000,length:2<<20
+    --rollup-tx-buffer=start:0x60200000,length:2<<20
     --rollup-input-metadata=start:0x60400000,length:4096
     --rollup-voucher-hashes=start:0x60600000,length:2<<20
     --rollup-notice-hashes=start:0x60800000,length:2<<20
+
+  --rollup-advance-epoch=<key>:<value>[,<key>:<value>[,...]...]
+    advances the state of the machine through an entire rollup epoch
+
+    <key>:<value> is one of
+        epoch_index:<number>
+        input:<filename-pattern>
+        input_metadata:<filename-pattern>
+        input_index_start:<number>
+        input_index_end:<number>
+        voucher:<filename-pattern>
+        voucher_hashes: <filename>
+        notice:<filename-pattern>
+        notice_hashes: <filename>
+        report:<filename-pattern>
+        hashes
+
+        epoch_index
+        the index of the epoch
+
+        input (default: "epoch-%%e-input-%%i.bin")
+        the pattern that derives the name of the file read for input %%i
+        of epoch index %%e
+
+        input_index_start (default: 0)
+        index of first input to advance (the first value of %%i)
+
+        input_index_end (default: 0)
+        index of last input to advance (the last value of %%i)
+
+        input_metadata (default: "epoch-%%e-input-metadata-%%i.bin")
+        the pattern that derives the name of the file read for input metadata %%i
+        of epoch index %%e
+
+        voucher (default: "epoch-%%e-input-%%i-voucher-%%o.bin")
+        the pattern that derives the name of the file written for voucher %%o
+        of input %%i of epoch %%e
+
+        voucher_hashes (default: "epoch-%%e-input-%%i-voucher-hashes.bin")
+        the pattern that derives the name of the file written for the voucher
+        hashes of input %%i of epoch %%e
+
+        notice (default: "epoch-%%e-input-%%i-notice-%%o.bin")
+        the pattern that derives the name of the file written for notice %%o
+        of input %%i of epoch %%e
+
+        notice_hashes (default: "epoch-%%e-input-%%i-notice-hashes.bin")
+        the pattern that derives the name of the file written for the notice
+        hashes of input %%i of epoch %%e
+
+        report (default: "epoch-%%e-input-%%i-report-%%o.bin")
+        the pattern that derives the name of the file written for report %%o
+        of input %%i of epoch %%e
+
+        hashes
+        print out hashes before every input
+
+    "%%e" is replaced by the epoch index, "%%i" by the input index and "%%o" by
+    the voucher, notice, or report index
+    the process starts with input
 
   --dhd-source=<address>
     server acting as source for dehashed data
@@ -186,9 +247,6 @@ where options are:
 
   --htif-yield-automatic
     honor yield requests with automatic reset by target
-
-  --htif-reset-manual-yields
-    automatically reset manual yields and continue execution
 
   --load=<directory>
     load prebuilt machine from <directory>
@@ -267,12 +325,12 @@ local rollup_tx_buffer = { start = 0, length = 0 }
 local rollup_input_metadata = { start = 0, length = 0 }
 local rollup_voucher_hashes = { start = 0, length = 0 }
 local rollup_notice_hashes = { start = 0, length = 0 }
+local rollup = nil
 local concurrency_update_merkle_tree = 0
 local append_rom_bootargs = ""
 local htif_console_getchar = false
 local htif_yield_automatic = false
 local htif_yield_manual = false
-local htif_reset_manual_yields = false
 local initial_hash = false
 local final_hash = false
 local initial_proof = {}
@@ -372,11 +430,6 @@ local options = {
         htif_yield_manual = true
         return true
     end },
-    { "^%-%-htif%-reset%-manual%-yields$", function(all)
-        if not all then return false end
-        htif_reset_manual_yields = true
-        return true
-    end },
     { "^%-%-htif%-yield%-automatic$", function(all)
         if not all then return false end
         htif_yield_automatic = true
@@ -428,7 +481,42 @@ local options = {
     end },
     { "^(%-%-replace%-flash%-drive%=(.+))$", function(all, opts)
         if not opts then return false end
-        flash_drive_replace[#flash_drive_replace+1] = parse_memory_range(opts, "flash drive", all)
+        flash_drive_replace[#flash_drive_replace+1] =
+            parse_memory_range(opts, "flash drive", all)
+        return true
+    end },
+    { "^(%-%-rollup%-advance%-epoch%=(.+))$", function(all, opts)
+        if not opts then return false end
+        local r = util.parse_options(opts, {
+            epoch_index = true,
+            input = true,
+            input_metadata = true,
+            input_index_start = true,
+            input_index_end = true,
+            voucher = true,
+            voucher_hashes = true,
+            notice = true,
+            notice_hashes = true,
+            report = true,
+            hashes = true
+        })
+        assert(not r.hashes or r.hashes == true, "invalid hashes value in " .. all)
+        r.epoch_index = assert(util.parse_number(r.epoch_index),
+                "invalid epoch index in " .. all)
+        r.input = r.input or "epoch-%e-input-%i.bin"
+        r.input_metadata = r.input_metadata or "epoch-%e-input-metadata-%i.bin"
+        r.input_index_start = r.input_index_start or 0
+        r.input_index_start = assert(util.parse_number(r.input_index_start),
+                "invalid input index start in " .. all)
+        r.input_index_end = r.input_index_end or 0
+        r.input_index_end = assert(util.parse_number(r.input_index_end),
+                "invalid input index end in " .. all)
+        r.voucher = r.voucher or "epoch-%e-input-%i-voucher-%o.bin"
+        r.voucher_hashes = r.voucher_hashes or "epoch-%e-input-%i-voucher-hashes.bin"
+        r.notice = r.notice or "epoch-%e-input-%i-notice-%o.bin"
+        r.notice_hashes = r.notice_hashes or "epoch-%e-input-%i-notice-hashes.bin"
+        r.report = r.report or "epoch-%e-input-%i-report-%o.bin"
+        rollup = r
         return true
     end },
     { "^(%-%-dhd%=(.+))$", function(all, opts)
@@ -963,14 +1051,16 @@ else
     machine = create_machine(config, runtime)
 end
 
+-- obtain config from instantiated machine
+local config = machine:get_initial_config()
+
 for _,f in ipairs(flash_drive_replace) do
     machine:replace_flash_drive(f)
 end
 
 if type(store_config) == "string" then
     store_config = assert(io.open(store_config, "w"))
-    store_machine_config(machine:get_initial_config(), function (...)
-        store_config:write(string.format(...)) end)
+    store_machine_config(config, function (...) store_config:write(string.format(...)) end)
     store_config:close()
 end
 
@@ -988,96 +1078,145 @@ local htif_yield_mode = {
     [cartesi.machine.HTIF_YIELD_AUTOMATIC] = "Automatic",
 }
 
-if not json_steps then
-    if htif_console_getchar then
-        stderr("Running in interactive mode!\n")
+local function is_power_of_two(value)
+    return value > 0 and ((value & (value - 1)) == 0)
+end
+
+local function ilog2(value)
+    value = assert(math.tointeger(value), "expected integer")
+    assert(value ~= 0, "expected non-zero integer")
+    local log = 0
+    while value ~= 0 do
+        log = log + 1
+        value = value >> 1
     end
-    if store_config == stderr then
-        store_machine_config(machine:get_initial_config(), stderr)
-    end
-    local cycles = machine:read_mcycle()
-    if initial_hash then
-        assert(not htif_console_getchar,
-            "hashes are meaningless in interactive mode")
-        print_root_hash(cycles, machine)
-    end
-    dump_value_proofs(machine, initial_proof, htif_console_getchar)
-    local payload = 0
-    local next_hash_mcycle
-    if periodic_hashes_start ~= 0 then
-        next_hash_mcycle = periodic_hashes_start
+    return value
+end
+
+local function check_rollup_memory_range_config(range, name)
+    assert(range, string.format("rollup range %s must be defined", name))
+    assert(not range.shared, string.format("rollup range %s cannot be shared", name))
+    assert(is_power_of_two(range.length), string.format("rollup range %s length not a power of two (%u)", name,
+        range.length))
+    local log = ilog2(range.length)
+    local aligned_start = (range.start >> log) << log
+    assert(aligned_start == range.start,
+        string.format("rollup range %s start not aligned to its power of two size", name))
+    range.image_filename = nil
+end
+
+local function check_rollup_htif_config(htif)
+    assert(not htif.console_getchar, "console getchar must be disabled for rollup")
+    assert(htif.yield_manual, "yield manual must be enabled for rollup")
+    assert(htif.yield_automatic, "yield automatic must be enabled for rollup")
+end
+
+local function get_and_print_yield(machine, htif)
+    local cmd = machine:read_htif_tohost_cmd()
+    local data = machine:read_htif_tohost_data()
+    local reason = data >> 32
+    if cmd == cartesi.machine.HTIF_YIELD_AUTOMATIC and reason == cartesi.machine.HTIF_YIELD_REASON_PROGRESS then
+        stderr("Progress: %6.2f" .. (htif.console_getchar and "\n" or "\r"), data/10)
     else
-        next_hash_mcycle = periodic_hashes_period
+        local cmd_str = htif_yield_mode[cmd] or "Unknown"
+        local reason_str = htif_yield_reason[reason] or "unknown"
+        stderr("\n%s yield %s: %u\n", cmd_str, reason_str, data)
+        stderr("Cycles: %u\n", machine:read_mcycle())
     end
-    while math.ult(cycles, max_mcycle) do
-        machine:run(math.min(next_hash_mcycle, max_mcycle))
-        cycles = machine:read_mcycle()
-        if machine:read_iflags_H() then
-            payload = machine:read_htif_tohost_data() >> 1
-            if payload ~= 0 then
-                stderr("\nHalted with payload: %u\n", payload)
-            else
-                stderr("\nHalted\n")
-            end
-            stderr("Cycles: %u\n", cycles)
-            break
-        elseif machine:read_iflags_Y() or machine:read_iflags_X() then
-            local cmd = machine:read_htif_tohost_cmd()
-            local data = machine:read_htif_tohost_data()
-            local reason = data >> 32
-            data = data << 32 >> 32
-            local cmd_str = htif_yield_mode[cmd] or "Unknown"
-            local reason_str = htif_yield_reason[reason] or "unknown"
-            if reason == cartesi.machine.HTIF_YIELD_REASON_PROGRESS then
-                stderr("%s progress: %6.2f" .. (htif_console_getchar and "\n" or "\r"), cmd_str, data/10)
-            else
-                stderr("\n%s yield %s: %u\n", cmd_str, reason_str, data)
-                stderr("Cycles: %u\n", cycles)
-            end
-            if htif_reset_manual_yields then
-                machine:reset_iflags_Y()
-            end
-        end
-        if machine:read_iflags_Y() then
+    return cmd, reason, data
+end
+
+local function save_rollup_hashes(machine, range, filename)
+    local hash_len = 32
+    local f = assert(io.open(filename, "wb"))
+    local zeros = string.rep("\0", hash_len)
+    local offset = 0
+    while offset < range.length do
+        local hash = machine:read_memory(range.start+offset, 32)
+        if hash == zeros then
             break
         end
-        if cycles == next_hash_mcycle then
-            print_root_hash(cycles, machine)
-            next_hash_mcycle = next_hash_mcycle + periodic_hashes_period
-        end
+        assert(f:write(hash))
+        offset = offset + hash_len
     end
-    if not math.ult(cycles, max_mcycle) then
-        stderr("\nCycles: %u\n", cycles)
+    f:close()
+end
+
+local function instantiate_filename(pattern, values)
+    -- replace escaped % with something safe
+    pattern = string.gsub(pattern, "%\\%%", "\0")
+    pattern = string.gsub(pattern, "%%(%a)", function(s)
+        return values[s] or s
+    end)
+    -- restore escaped %
+    return (string.gsub(pattern, "\0", "%"))
+end
+
+local function save_rollup_voucher_and_notice_hashes(machine, config, rollup)
+    -- save only if we have already run an input
+    if rollup.next_input_index > rollup.input_index_start then
+        local values = { e = rollup.epoch_index, i = rollup.next_input_index - 1 }
+        save_rollup_hashes(machine, config.voucher_hashes, instantiate_filename(rollup.voucher_hashes, values))
+        save_rollup_hashes(machine, config.notice_hashes, instantiate_filename(rollup.notice_hashes, values))
     end
-    if step then
-        assert(not htif_console_getchar,
-            "step proof is meaningless in interactive mode")
-        stderr("Gathering step proof: please wait\n")
-        util.dump_log(machine:step{ proofs = true, annotations = true },
-            io.stderr)
+end
+
+local function load_memory_range(machine, config, filename)
+    local f = assert(io.open(filename, "rb"))
+    local s = assert(f:read("*a"))
+    f:close()
+    machine:write_memory(config.start, s)
+end
+
+local function load_rollup_input_and_metadata(machine, config, rollup)
+    if rollup.next_input_index <= rollup.input_index_end then
+        local values = { e = rollup.epoch_index, i = rollup.next_input_index }
+        machine:replace_memory_range(config.input_metadata) -- clear
+        load_memory_range(machine, config.input_metadata, instantiate_filename(rollup.input_metadata, values))
+        machine:replace_memory_range(config.rx_buffer) -- clear
+        load_memory_range(machine, config.rx_buffer, instantiate_filename(rollup.input, values))
+        machine:replace_memory_range(config.voucher_hashes) -- clear
+        machine:replace_memory_range(config.notice_hashes) -- clear
+        return true
     end
-    if dump_pmas then
-        machine:dump_pmas()
-    end
-    if final_hash then
-        assert(not htif_console_getchar,
-            "hashes are meaningless in interactive mode")
-        print_root_hash(cycles, machine)
-    end
-    dump_value_proofs(machine, final_proof, htif_console_getchar)
-    if store_dir then
-        assert(not htif_console_getchar,
-            "hashes are meaningless in interactive mode")
-        stderr("Storing machine: please wait\n")
-        machine:store(store_dir)
-    end
-    machine:destroy()
-    if server and server_shutdown then
-        server.shutdown()
-    end
-    os.exit(payload, true)
-else
-    assert(not htif_console_getchar, "logs are meaningless in interactive mode")
+end
+
+local function save_rollup_voucher(machine, config, rollup)
+    local values = { e = rollup.epoch_index, i = rollup.next_input_index-1, o =  rollup.voucher_index }
+    local f = assert(io.open(instantiate_filename(rollup.voucher, values), "wb"))
+    -- skip address and offset to reach payload length
+    local length = string.unpack(">I8", machine:read_memory(config.start+3*32-8, 8))
+    -- add address, offset, and payload length to amount to be read
+    length = length+3*32
+    assert(f:write(machine:read_memory(config.start, length)))
+    f:close()
+end
+
+local function save_rollup_notice(machine, config, rollup)
+    local values = { e = rollup.epoch_index, i = rollup.next_input_index-1, o =  rollup.notice_index }
+    local f = assert(io.open(instantiate_filename(rollup.notice, values), "wb"))
+    -- skip offset to reach payload length
+    local length = string.unpack(">I8", machine:read_memory(config.start+2*32-8, 8))
+    -- add offset and payload length to amount to be read
+    length = length+2*32
+    assert(f:write(machine:read_memory(config.start, length)))
+    f:close()
+end
+
+local function save_rollup_report(machine, config, rollup)
+    local values = { e = rollup.epoch_index, i = rollup.next_input_index-1, o =  rollup.report_index }
+    local f = assert(io.open(instantiate_filename(rollup.report, values), "wb"))
+    -- skip offset to reach payload length
+    local length = string.unpack(">I8", machine:read_memory(config.start+2*32-8, 8))
+    -- add offset and payload length to amount to be read
+    length = length+2*32
+    assert(f:write(machine:read_memory(config.start, length)))
+    f:close()
+end
+
+if json_steps then
+    assert(not rollup, "json-steps and rollup-advance-epoch are incompatible")
+    assert(not config.htif.console_getchar, "logs are meaningless in interactive mode")
     json_steps = assert(io.open(json_steps, "w"))
     json_steps:write("[\n")
     local log_type = {} -- no proofs or annotations
@@ -1098,6 +1237,125 @@ else
         stderr("Storing machine: please wait\n")
         machine:store(store_dir)
     end
+else
+    if config.htif.console_getchar then
+        stderr("Running in interactive mode!\n")
+    end
+    if store_config == stderr then
+        store_machine_config(config, stderr)
+    end
+    if rollup then
+        check_rollup_htif_config(config.htif)
+        assert(config.rollup, "rollup device must be present")
+        --??D removed pending checkin implementation
+        --assert(server, "rollup requires --server for snapshot/rollback")
+        check_rollup_memory_range_config(config.rollup.tx_buffer, "tx-buffer")
+        check_rollup_memory_range_config(config.rollup.rx_buffer, "rx-buffer")
+        check_rollup_memory_range_config(config.rollup.input_metadata, "input-metadata")
+        check_rollup_memory_range_config(config.rollup.voucher_hashes, "voucher-hashes")
+        check_rollup_memory_range_config(config.rollup.notice_hashes, "notice-hashes")
+        rollup.next_input_index = rollup.input_index_start
+    end
+    local cycles = machine:read_mcycle()
+    if initial_hash then
+        assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
+        print_root_hash(cycles, machine)
+    end
+    dump_value_proofs(machine, initial_proof, config.htif.console_getchar)
+    local payload = 0
+    local next_hash_mcycle
+    if periodic_hashes_start ~= 0 then
+        next_hash_mcycle = periodic_hashes_start
+    else
+        next_hash_mcycle = periodic_hashes_period
+    end
+    while math.ult(cycles, max_mcycle) do
+        machine:run(math.min(next_hash_mcycle, max_mcycle))
+        cycles = machine:read_mcycle()
+        -- deal with halt
+        if machine:read_iflags_H() then
+            payload = machine:read_htif_tohost_data() >> 1
+            if payload ~= 0 then
+                stderr("\nHalted with payload: %u\n", payload)
+            else
+                stderr("\nHalted\n")
+            end
+            stderr("Cycles: %u\n", cycles)
+            break
+        -- deal with yield manual
+        elseif machine:read_iflags_Y() then
+            local cmd, reason = get_and_print_yield(machine, config.htif)
+            if rollup then
+                if reason == cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED then
+                    machine:rollback()
+                    cycles = machine:read_mcycle()
+                end
+                stderr("Epoch %d before input %d\n", rollup.epoch_index, rollup.next_input_index)
+                if rollup.hashes then
+                    print_root_hash(cycles, machine)
+                end
+                save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup)
+                --??D removed pending checkin implementation
+                --machine:snapshot()
+                if load_rollup_input_and_metadata(machine, config.rollup, rollup) then
+                    machine:reset_iflags_Y()
+                    rollup.voucher_index = 0
+                    rollup.notice_index = 0
+                    rollup.report_index = 0
+                    rollup.next_input_index = rollup.next_input_index + 1
+                end
+            end
+        -- deal with yield automatic
+        elseif machine:read_iflags_X() then
+            local cmd, reason = get_and_print_yield(machine, config.htif)
+            if rollup then
+                if reason == cartesi.machine.HTIF_YIELD_REASON_TX_VOUCHER then
+                    save_rollup_voucher(machine, config.rollup.tx_buffer, rollup)
+                    rollup.voucher_index = rollup.voucher_index + 1
+                elseif reason == cartesi.machine.HTIF_YIELD_REASON_TX_NOTICE then
+                    save_rollup_notice(machine, config.rollup.tx_buffer, rollup)
+                    rollup.notice_index = rollup.notice_index + 1
+                elseif reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
+                    save_rollup_report(machine, config.rollup.tx_buffer, rollup)
+                    rollup.report_index = rollup.report_index + 1
+                end
+                -- ignore other reasons
+            end
+        end
+        if machine:read_iflags_Y() then
+            break
+        end
+        if cycles == next_hash_mcycle then
+            print_root_hash(cycles, machine)
+            next_hash_mcycle = next_hash_mcycle + periodic_hashes_period
+        end
+    end
+    if not math.ult(cycles, max_mcycle) then
+        stderr("\nCycles: %u\n", cycles)
+    end
+    if step then
+        assert(not config.htif.console_getchar, "step proof is meaningless in interactive mode")
+        stderr("Gathering step proof: please wait\n")
+        util.dump_log(machine:step{ proofs = true, annotations = true }, io.stderr)
+    end
+    if dump_pmas then
+        machine:dump_pmas()
+    end
+    if final_hash then
+        assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
+        print_root_hash(cycles, machine)
+    end
+    dump_value_proofs(machine, final_proof, config.htif.console_getchar)
+    if store_dir then
+        assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
+        stderr("Storing machine: please wait\n")
+        machine:store(store_dir)
+    end
+    machine:destroy()
+    if server and server_shutdown then
+        server.shutdown()
+    end
+    os.exit(payload, true)
 end
 
 machine:destroy()

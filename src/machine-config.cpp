@@ -31,7 +31,7 @@
 #include "machine-config.h"
 #include "pma-constants.h"
 
-static constexpr int archive_version = 2;
+static constexpr int archive_version = 3;
 
 // ARCHIVE_VERSION 0 was the first version
 // ARCHIVE_VERSION 1 added the dhd configuration
@@ -152,18 +152,18 @@ void serialize(ARX &ar, cartesi::rollup_config &m, const unsigned int) {
 
 template <typename ARX>
 void serialize(ARX &ar, cartesi::machine_config &m, const unsigned int v) {
+    if (v != archive_version) {
+        throw std::runtime_error{
+            "expected config archive version " + std::to_string(archive_version) + " (got " + std::to_string(v) + ")"};
+    }
     ar &m.processor;
     ar &m.ram;
     ar &m.rom;
     ar &m.flash_drive;
     ar &m.clint;
     ar &m.htif;
-    if (v > 0) {
-        ar &m.dhd;
-    }
-    if (v > 1) {
-        ar &m.rollup;
-    }
+    ar &m.dhd;
+    ar &m.rollup;
 }
 
 } // namespace boost::serialization

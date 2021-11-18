@@ -188,6 +188,10 @@ jobs:
           export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
           for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do lua5.3 $x local; done
 
+      - name: Sanity checks
+        run: |
+          ./../tools/tests/machine-config-check.sh
+
       - name: Run Merkle tree tests
         run: |
          ./tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash

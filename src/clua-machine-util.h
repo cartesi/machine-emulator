@@ -250,10 +250,10 @@ cm_machine_runtime_config *clua_opt_cm_machine_runtime_config(lua_State *L, int 
 /// \param L Lua state
 /// \param tabidx Memory range config stack index
 /// \param what Description of memory range for error messages
-/// \param r Pointer to cm_memory_range structure that will receive
-/// \returns r
+/// \param m Pointer to cm_memory_range structure that will receive
+/// \returns m
 cm_memory_range_config *clua_check_cm_memory_range_config(lua_State *L, int tabidx, const char *what,
-    cm_memory_range_config *r);
+    cm_memory_range_config *m);
 
 } // namespace cartesi
 

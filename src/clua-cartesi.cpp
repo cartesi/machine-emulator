@@ -71,8 +71,8 @@ static int cartesi_mod_keccak(lua_State *L) {
         const char *hash2 = luaL_optlstring(L, 2, "", &len2);
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         h.add_data(reinterpret_cast<const unsigned char *>(hash2), len2);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         h.end(hash);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()), hash.size());
         return 1;
     }

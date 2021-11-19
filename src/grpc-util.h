@@ -92,9 +92,9 @@ void set_proto_access_log(const access_log &al, CartesiMachine::AccessLog *proto
 access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al);
 
 /// \brief Converts proto MemoryRangeConfig to C++ memory_range_config
-/// \param proto_f Proto MemoryRangeConfig to convert
+/// \param proto_m Proto MemoryRangeConfig to convert
 /// \returns Converted C++ memory_range_config
-memory_range_config get_proto_memory_range_config(const CartesiMachine::MemoryRangeConfig &proto_f);
+memory_range_config get_proto_memory_range_config(const CartesiMachine::MemoryRangeConfig &proto_m);
 
 /// \brief Converts proto BracketType to C++ bracket_type
 /// \param proto_b Proto BracketType  to convert

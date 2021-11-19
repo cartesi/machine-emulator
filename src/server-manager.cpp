@@ -133,8 +133,8 @@ dout &operator<<(dout &os, const T &x) {
 
 #include <htif-defines.h>
 
-#define ROLLUP_ADVANCE_STATE (UINT64_C(0))
-#define ROLLUP_INSPECT_STATE (UINT64_C(1))
+constexpr const uint64_t ROLLUP_ADVANCE_STATE = 0;
+constexpr const uint64_t ROLLUP_INSPECT_STATE = 1;
 
 #include "complete-merkle-tree.h"
 #include "grpc-util.h"
@@ -426,13 +426,13 @@ static evm_abi_input_metadata_type evm_abi_encoded_input_metadata(const input_me
     encoded.fill(0);
     std::copy(parsed.msg_sender.begin(), parsed.msg_sender.end(),
         encoded.begin() + EVM_ABI_ADDRESS_LENGTH - EVM_ADDRESS_LENGTH);
-    auto block_number_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
+    auto *block_number_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
     endian_store<uint64_t, sizeof(uint64_t), order::big>(block_number_ptr, parsed.block_number);
-    auto time_stamp_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + 2 * EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
+    auto *time_stamp_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + 2 * EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
     endian_store<uint64_t, sizeof(uint64_t), order::big>(time_stamp_ptr, parsed.time_stamp);
-    auto epoch_index_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + 3 * EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
+    auto *epoch_index_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + 3 * EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
     endian_store<uint64_t, sizeof(uint64_t), order::big>(epoch_index_ptr, parsed.epoch_index);
-    auto input_index_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + 4 * EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
+    auto *input_index_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + 4 * EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
     endian_store<uint64_t, sizeof(uint64_t), order::big>(input_index_ptr, parsed.input_index);
     return encoded;
 }
@@ -442,7 +442,7 @@ class auto_lock final {
 public:
     /// \brief Constructor acquires locks
     /// \param lock Reference to lock to be acquired
-    auto_lock(bool &lock, const std::string &name) : m_lock{lock}, m_name{name} {
+    auto_lock(bool &lock, std::string name) : m_lock{lock}, m_name{std::move(name)} {
         acquire();
     }
 
@@ -1241,6 +1241,31 @@ static void check_htif_config(const HTIFConfig &htif) {
     }
 }
 
+/// \brief Checks if rollup configuration is valid for rollups
+/// \param config MachineConfig returned by server
+static void check_rollup_config(grpc::ServerContext &request_context, session_type &session, const MachineConfig &config) {
+    // If rollup config, bail out
+    if (!config.has_rollup()) {
+        THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "missing server rollup config"}));
+    }
+    const auto &rollup = config.rollup();
+    if (rollup.rx_buffer().length() == 0 && rollup.tx_buffer().length() == 0
+            && rollup.input_metadata().length() == 0 && rollup.voucher_hashes().length() == 0
+            && rollup.notice_hashes().length() == 0) {
+        THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "server rollup config was not initialized"}));
+    }
+    check_memory_range_config(request_context, session.memory_range.tx_buffer, "tx buffer",
+        rollup.tx_buffer());
+    check_memory_range_config(request_context, session.memory_range.rx_buffer, "rx buffer",
+        rollup.rx_buffer());
+    check_memory_range_config(request_context, session.memory_range.input_metadata, "input metadata",
+        rollup.input_metadata());
+    check_memory_range_config(request_context, session.memory_range.voucher_hashes, "voucher hashes",
+        rollup.voucher_hashes());
+    check_memory_range_config(request_context, session.memory_range.notice_hashes, "notice hashes",
+        rollup.notice_hashes());
+}
+
 /// \brief Start and checks the server stub
 /// \param session Associated session
 static void check_server_stub(session_type &session) {
@@ -1308,12 +1333,17 @@ static constexpr uint64_t htif_cmd_field(uint64_t reg) {
     return (reg & HTIF_CMD_MASK_DEF) >> HTIF_CMD_SHIFT_DEF;
 }
 
+/// \brief Extracts the data field in HTIF's fromhost/tohost register value
+/// \return cmd data field in register
+static constexpr uint64_t htif_data_field(uint64_t reg) {
+    return (reg & HTIF_DATA_MASK_DEF) >> HTIF_DATA_SHIFT_DEF;
+}
 
 /// \brief Checks if HTIF's tohost/fromhost matches an yield device manual command
 /// \param actx Context for async operations
 /// \param regname "htif.tohost" or "htif.fromhost"
 /// \param value Register value
-static void check_htif_yield_manual(async_context &actx, const std::string regname, uint64_t value) {
+static void check_htif_yield_manual(async_context &actx, const std::string &regname, uint64_t value) {
     auto dev = htif_dev_field(value);
     if (dev != HTIF_DEVICE_YIELD_DEF) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
@@ -1330,7 +1360,7 @@ static void check_htif_yield_manual(async_context &actx, const std::string regna
 
 /// \brief Asynchronously runs the machine until it is in an yielded state
 /// \param actx Context for async operations
-static void run_until_first_yield(async_context &actx) {
+static uint64_t run_until_first_yield(async_context &actx) {
     // if already yielded manual, this won't change anything
     dout{actx.request_context} << "  Running until first yield";
     RunRequest run_request;
@@ -1342,12 +1372,13 @@ static void run_until_first_yield(async_context &actx) {
     reader->Finish(&run_response, &run_status, actx.self);
     actx.yield(side_effect::none);
     if (!run_status.ok()) {
-        THROW((taint_session{actx.session, std::move(run_status)}));
+        THROW((finish_error_yield_none{std::move(run_status)}));
     }
     if (!run_response.iflags_y()) {
-        THROW((taint_session{actx.session, grpc::StatusCode::INVALID_ARGUMENT, "expected manual yield"}));
+        THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "expected manual yield"}));
     }
     check_htif_yield_manual(actx, "htif.tohost", run_response.tohost());
+    return run_response.mcycle();
 }
 
 /// \brief Asynchronously get current root hash from machine server. (Assumes Merkle tree has been updated)
@@ -1424,7 +1455,7 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
             auto &session = (sessions[id] = get_proto_session(start_session_request));
             // Lock session so other rpcs to the same session are rejected
             auto_lock lock(session.session_lock, "StartSession session lock");
-            // If no machine config, bail out
+            // If no machine config or directory is set on machine request, bail out
             if (start_session_request.machine().machine_oneof_case() == MachineRequest::MACHINE_ONEOF_NOT_SET) {
                 THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
                     "missing initial machine config"}));
@@ -1501,26 +1532,11 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
                 check_server_machine(actx, start_session_request.machine());
                 auto config = get_initial_config(actx);
                 check_htif_config(config.htif());
+                check_rollup_config(request_context, session, config);
                 // Machine may have started at mcycle != 0, so we save it for
                 // when we need to run an input for at most max_cycles_per_input
-                session.current_mcycle = config.processor().mcycle();
-                // If rollup config, bail out
-                if (!config.has_rollup()) {
-                    THROW((finish_error_yield_none{StatusCode::INVALID_ARGUMENT, "missing server rollup config"}));
-                }
-                const auto &rollup = config.rollup();
-                check_memory_range_config(request_context, session.memory_range.tx_buffer, "tx buffer",
-                    rollup.tx_buffer());
-                check_memory_range_config(request_context, session.memory_range.rx_buffer, "rx buffer",
-                    rollup.rx_buffer());
-                check_memory_range_config(request_context, session.memory_range.input_metadata, "input metadata",
-                    rollup.input_metadata());
-                check_memory_range_config(request_context, session.memory_range.voucher_hashes, "voucher hashes",
-                    rollup.voucher_hashes());
-                check_memory_range_config(request_context, session.memory_range.notice_hashes, "notice hashes",
-                    rollup.notice_hashes());
+                session.current_mcycle = run_until_first_yield(actx);
                 start_first_epoch(actx, session);
-                run_until_first_yield(actx);
                 // StartSession Passed!
                 StartSessionResponse start_session_response;
                 start_session_response.set_allocated_config(&config);
@@ -1643,9 +1659,9 @@ static void write_evm_abi_string(async_context &actx, IT begin, IT end, const Me
     auto *data = write_request.mutable_data();
     std::array<unsigned char, EVM_ABI_STRING_HEADER_LENGTH> header{};
     header.fill(0);
-    auto offset_ptr = header.data() + EVM_ABI_OFFSET_LENGTH - sizeof(uint64_t);
+    auto *offset_ptr = header.data() + EVM_ABI_OFFSET_LENGTH - sizeof(uint64_t);
     endian_store<uint64_t, sizeof(uint64_t), order::big>(offset_ptr, EVM_ABI_OFFSET_LENGTH);
-    auto length_ptr = header.data() + EVM_ABI_OFFSET_LENGTH + EVM_ABI_LENGTH_LENGTH - sizeof(uint64_t);
+    auto *length_ptr = header.data() + EVM_ABI_OFFSET_LENGTH + EVM_ABI_LENGTH_LENGTH - sizeof(uint64_t);
     endian_store<uint64_t, sizeof(uint64_t), order::big>(length_ptr, end - begin);
     data->insert(data->end(), header.begin(), header.end());
     data->insert(data->end(), begin, end);
@@ -1682,7 +1698,7 @@ static std::optional<RunResponse> run_machine(async_context &actx, uint64_t curr
     auto limit = std::min(curr_mcycle + mcycle_increment, max_mcycle);
     int i = 0;
     for (;;) {
-        dout{actx.request_context} << "  Running advance state increment " << i++;
+        dout{actx.request_context} << "  Running advance/inspect state increment " << i++;
         RunRequest run_request;
         run_request.set_limit(limit);
         grpc::ClientContext client_context;
@@ -1810,6 +1826,7 @@ static inline uint64_t get_payload_length(session_type &session, const char *beg
         THROW((taint_session{session, grpc::StatusCode::OUT_OF_RANGE, "payload length too large"}));
     }
     return endian_load<uint64_t, sizeof(uint64_t), order::big>(
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         reinterpret_cast<const unsigned char *>(end) - sizeof(uint64_t));
 }
 
@@ -1836,11 +1853,11 @@ static evm_address_type read_voucher_address_and_payload_data_length(async_conte
     if (read_response.data().size() != read_request.length()) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
     }
-    auto payload_data_length_begin = read_response.data().data() + EVM_ABI_ADDRESS_LENGTH + EVM_ABI_OFFSET_LENGTH;
-    auto payload_data_length_end = payload_data_length_begin + EVM_ABI_LENGTH_LENGTH;
+    const auto *payload_data_length_begin = read_response.data().data() + EVM_ABI_ADDRESS_LENGTH + EVM_ABI_OFFSET_LENGTH;
+    const auto *payload_data_length_end = payload_data_length_begin + EVM_ABI_LENGTH_LENGTH;
     *payload_data_length = get_payload_length(actx.session, payload_data_length_begin, payload_data_length_end);
     auto address_begin = read_response.data().begin() + EVM_ABI_ADDRESS_LENGTH - EVM_ADDRESS_LENGTH;
-    auto address_end = address_begin + EVM_ABI_ADDRESS_LENGTH;
+    auto address_end = address_begin + EVM_ADDRESS_LENGTH;
     return get_evm_address(actx.session, address_begin, address_end);
 }
 
@@ -1896,8 +1913,8 @@ static uint64_t read_notice_report_payload_data_length(async_context &actx) {
     if (read_response.data().size() != read_request.length()) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
     }
-    auto payload_data_length_begin = read_response.data().data() + EVM_ABI_OFFSET_LENGTH;
-    auto payload_data_length_end = payload_data_length_begin + EVM_ABI_LENGTH_LENGTH;
+    const auto *payload_data_length_begin = read_response.data().data() + EVM_ABI_OFFSET_LENGTH;
+    const auto *payload_data_length_end = payload_data_length_begin + EVM_ABI_LENGTH_LENGTH;
     return get_payload_length(actx.session, payload_data_length_begin, payload_data_length_end);
 }
 
@@ -2082,6 +2099,19 @@ static void set_htif_yield_ack_data(async_context &actx, uint64_t reqid) {
     set_htif_fromhost(actx, htif_replace_data_field(old_value, reqid));
 }
 
+/// \brief Asynchronously check htif fromhost ack
+/// \param actx Context for async operations
+static void check_htif_yield_ack_data(async_context &actx, uint64_t reqid) {
+    auto value = get_htif_fromhost(actx);
+	check_htif_yield_manual(actx, "htif.fromhost", value);
+    auto data = htif_data_field(value);
+    if (data != reqid) {
+        THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
+            "invalid data field in htif.fromhost (expected " + std::to_string(reqid) + ", got " +
+                std::to_string(data) + ")"}));
+    }
+}
+
 /// \brief Asynchronously updates machine server Merkle tree
 /// \param actx Context for async operations
 static void update_merkle_tree(async_context &actx) {
@@ -2121,6 +2151,8 @@ static void process_pending_query(handler_context &hctx, async_context &actx, ep
     clear_rx_buffer(actx);
     dout{actx.request_context} << "    Writing rx buffer";
     write_evm_abi_string(actx, q.payload.begin(), q.payload.end(), actx.session.memory_range.rx_buffer.config);
+    dout{actx.request_context} << "    Resetting iflags_Y";
+    reset_iflags_y(actx);
     dout{actx.request_context} << "    Setting inspect request in htif fromhost";
     set_htif_yield_ack_data(actx, ROLLUP_INSPECT_STATE);
     auto max_mcycle = actx.session.current_mcycle + actx.session.server_cycles.max_inspect_state;
@@ -2159,6 +2191,7 @@ static void process_pending_query(handler_context &hctx, async_context &actx, ep
                 break;
             } else if (yield_reason == cartesi::HTIF_YIELD_REASON_RX_ACCEPTED) {
                 q.status = completion_status::accepted;
+                dout{actx.request_context} << "    Query accepted";
                 break;
             }
             THROW((taint_session{actx.session, grpc::StatusCode::OUT_OF_RANGE, "unknown machine yield reason"}));
@@ -2214,6 +2247,7 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
         write_memory_range(actx, metadata.begin(), metadata.end(), actx.session.memory_range.input_metadata.config);
         dout{actx.request_context} << "    Resetting iflags_Y";
         reset_iflags_y(actx);
+        check_htif_yield_ack_data(actx, ROLLUP_ADVANCE_STATE);
         auto max_mcycle = actx.session.current_mcycle + actx.session.server_cycles.max_advance_state;
         // Loop getting vouchers and notices until the machine exceeds
         // max_mcycle, rejects the input, accepts the input, or behaves inaproppriately
@@ -2253,6 +2287,8 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
                     break;
                 } else if (yield_reason == cartesi::HTIF_YIELD_REASON_RX_ACCEPTED) {
                     // no skip reason because it was not skipped
+                    dout{actx.request_context} << "    Input accepted";
+                    current_mcycle = run_response.value().mcycle();
                     break;
                 }
                 THROW((taint_session{actx.session, grpc::StatusCode::OUT_OF_RANGE, "unknown machine yield reason"}));
@@ -2479,6 +2515,7 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
             }
             // Check size of input payload
             const auto input_payload_size = advance_state_request.input_payload().size();
+            dout{request_context} << "  Input payload size " << input_payload_size;
             if (input_payload_size + EVM_ABI_STRING_HEADER_LENGTH >= session.memory_range.rx_buffer.length) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
                     "input payload too long for rx buffer length (expected " +
@@ -2967,6 +3004,7 @@ int main(int argc, char *argv[]) try {
     new_GetStatus_handler(hctx);        // NOLINT: cannot leak (pointer is in completion queue)
     new_GetSessionStatus_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
     new_GetEpochStatus_handler(hctx);   // NOLINT: cannot leak (pointer is in completion queue)
+    new_InspectState_handler(hctx);     // NOLINT: cannot leak (pointer is in completion queue)
     new_FinishEpoch_handler(hctx);      // NOLINT: cannot leak (pointer is in completion queue)
     new_EndSession_handler(hctx);       // NOLINT: cannot leak (pointer is in completion queue)
     new_Checkin_handler(hctx);          // NOLINT: cannot leak (pointer is in completion queue)

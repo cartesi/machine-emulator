@@ -24,7 +24,7 @@ STRIP_EXEC= strip -x
 
 DEP_TO_BIN=
 DEP_TO_LIB=
-EMU_TO_BIN= remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash rollup-machine-manager
+EMU_TO_BIN= remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash server-manager
 EMU_TO_LIB= $(LIBCARTESI_$(UNAME)) $(LIBCARTESI_GRPC_$(UNAME))
 EMU_LUA_TO_BIN= cartesi-machine-tests.lua cartesi-machine.lua cartesi-machine-stored-hash.lua
 EMU_TO_LUA_PATH= cartesi/util.lua cartesi/proof.lua
@@ -207,4 +207,4 @@ install: install-dep install-emulator install-strip $(INSTALL_PLAT)
 .SECONDARY: $(DOWNLOADDIR) $(DEPDIRS) $(COREPROTO)
 
 .PHONY: all submodules doc clean distclean downloads src test luacartesi grpc hash\
-	$(SUBDIRS) $(SUBCLEAN) $(DEPCLEAN) $(DEPDIR)/lua.clean
+	$(SUBDIRS) $(SUBCLEAN) $(DEPCLEAN)

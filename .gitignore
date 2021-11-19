@@ -9,13 +9,13 @@ third-party/downloads
 third-party/grpc
 third-party/lua-5.3.5
 third-party/luasocket
-src/cartesi-machine-proxy
-src/cartesi-machine-server
-src/rollup-machine-manager
+src/remote-cartesi-machine-proxy
+src/remote-cartesi-machine
+src/server-manager
 src/merkle-tree-hash
 src/tests/test-machine-c-api
 src/tests/test-merkle-tree-hash
-src/tests/test-rollup-machine-manager
+src/tests/test-server-manager
 
 doc/html
 doc/api.md

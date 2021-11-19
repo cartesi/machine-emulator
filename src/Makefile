@@ -55,7 +55,7 @@ endif
 BOOST_SERIAL_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_serialization-mt
 BOOST_CORO_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_coroutine-mt -lboost_context-mt
 BOOST_PROCESS_LIB_Darwin:=-lpthread
-BOOST_FILESYSTEM_LIB_Darwin:=-lboost_system-mt -lboost_filesystem-mt
+BOOST_FILESYSTEM_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_system-mt -lboost_filesystem-mt
 GRPC_INC_Darwin=-I$(BUILDDIR)/include
 GRPC_LIB_Darwin=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread
 LIBCARTESI_Darwin=libcartesi.dylib
@@ -115,8 +115,8 @@ LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB) $(LIBCARTESI_LIB)
 LUACARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB) $(LIBCARTESI_GRPC_LIB) $(GRPC_LIB)  $(LIBCARTESI_LIB)
 REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_SERIAL_LIB)
 REMOTE_CARTESI_MACHINE_PROXY_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
-ROLLUP_MACHINE_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
-TEST_ROLLUP_MACHINE_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_SERIAL_LIB)
+SERVER_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
+TEST_SERVER_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_SERIAL_LIB)
 TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(LIBCARTESI_GRPC_LIB) $(BOOST_PROCESS_LIB) $(BOOST_FILESYSTEM_LIB)
 HASH_LIBS:=$(CRYPTOPP_LIB)
 
@@ -179,8 +179,8 @@ CXXFLAGS += -g -O0 --coverage
 SOLDFLAGS += --coverage
 REMOTE_CARTESI_MACHINE_LIBS += --coverage
 REMOTE_CARTESI_MACHINE_PROXY_LIBS += --coverage
-ROLLUP_MACHINE_MANAGER_LIBS += --coverage
-TEST_ROLLUP_MACHINE_MANAGER_LIBS += --coverage
+SERVER_MANAGER_LIBS += --coverage
+TEST_SERVER_MANAGER_LIBS += --coverage
 HASH_LIBS += --coverage
 LIBCARTESI_LDFLAGS += --coverage
 LIBCARTESI_GRPC_LDFLAGS += --coverage
@@ -192,8 +192,8 @@ CXXFLAGS += -g -O0 -fprofile-instr-generate -fcoverage-mapping
 SOLDFLAGS += -fprofile-instr-generate -fcoverage-mapping
 REMOTE_CARTESI_MACHINE_LIBS += -fprofile-instr-generate -fcoverage-mapping
 REMOTE_CARTESI_MACHINE_PROXY_LIBS += -fprofile-instr-generate -fcoverage-mapping
-ROLLUP_MACHINE_MANAGER_LIBS += -fprofile-instr-generate -fcoverage-mapping
-TEST_ROLLUP_MACHINE_MANAGER_LIBS += -fprofile-instr-generate -fcoverage-mapping
+SERVER_MANAGER_LIBS += -fprofile-instr-generate -fcoverage-mapping
+TEST_SERVER_MANAGER_LIBS += -fprofile-instr-generate -fcoverage-mapping
 HASH_LIBS += -fprofile-instr-generate -fcoverage-mapping
 LIBCARTESI_LDFLAGS += -fprofile-instr-generate -fcoverage-mapping
 LIBCARTESI_GRPC_LDFLAGS += -fprofile-instr-generate -fcoverage-mapping
@@ -342,8 +342,7 @@ compile_flags.txt:
 
 luacartesi: cartesi.so
 
-#grpc: cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager
-grpc: cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy server-manager
+grpc: cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager
 
 hash: merkle-tree-hash tests/test-merkle-tree-hash
 
@@ -371,13 +370,13 @@ CARTESI_MACHINE_PROTO_OBJS:= \
 	cartesi-machine-checkin.grpc.pb.o \
 	cartesi-machine.grpc.pb.o
 
-ROLLUP_MACHINE_MANAGER_PROTO_OBJS:= \
+SERVER_MANAGER_PROTO_OBJS:= \
 	server-manager.pb.o \
 	server-manager.grpc.pb.o
 
 PROTO_OBJS:= \
 	$(CARTESI_MACHINE_PROTO_OBJS) \
-	$(ROLLUP_MACHINE_MANAGER_PROTO_OBJS)
+	$(SERVER_MANAGER_PROTO_OBJS)
 
 
 $(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-deprecated-declarations -Wno-deprecated-copy -Wno-type-limits
@@ -388,17 +387,17 @@ REMOTE_CARTESI_MACHINE_PROXY_OBJS:= \
 	$(CARTESI_MACHINE_PROTO_OBJS) \
 	remote-machine-proxy.o
 
-ROLLUP_MACHINE_MANAGER_OBJS:= \
+SERVER_MANAGER_OBJS:= \
 	$(CARTESI_MACHINE_PROTO_OBJS) \
-	$(ROLLUP_MACHINE_MANAGER_PROTO_OBJS) \
+	$(SERVER_MANAGER_PROTO_OBJS) \
 	complete-merkle-tree.o \
 	pristine-merkle-tree.o \
 	grpc-util.o \
 	server-manager.o
 
-TEST_ROLLUP_MACHINE_MANAGER_OBJS:= \
+TEST_SERVER_MANAGER_OBJS:= \
 	$(CARTESI_MACHINE_PROTO_OBJS) \
-	$(ROLLUP_MACHINE_MANAGER_PROTO_OBJS) \
+	$(SERVER_MANAGER_PROTO_OBJS) \
 	machine-config.o \
 	grpc-util.o \
 	pristine-merkle-tree.o \
@@ -497,11 +496,11 @@ remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS)
 remote-cartesi-machine-proxy: $(REMOTE_CARTESI_MACHINE_PROXY_OBJS)
 	$(CXX) -o $@ $^ $(REMOTE_CARTESI_MACHINE_PROXY_LIBS)
 
-server-manager: $(ROLLUP_MACHINE_MANAGER_OBJS)
-	$(CXX) -o $@ $^ $(ROLLUP_MACHINE_MANAGER_LIBS)
+server-manager: $(SERVER_MANAGER_OBJS)
+	$(CXX) -o $@ $^ $(SERVER_MANAGER_LIBS)
 
-tests/test-server-manager: $(TEST_ROLLUP_MACHINE_MANAGER_OBJS)
-	$(CXX) -o $@ $^ $(TEST_ROLLUP_MACHINE_MANAGER_LIBS)
+tests/test-server-manager: $(TEST_SERVER_MANAGER_OBJS)
+	$(CXX) -o $@ $^ $(TEST_SERVER_MANAGER_LIBS)
 
 remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 

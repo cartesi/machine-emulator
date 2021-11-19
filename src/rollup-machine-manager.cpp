@@ -440,7 +440,7 @@ class auto_lock final {
 public:
     /// \brief Constructor acquires locks
     /// \param lock Reference to lock to be acquired
-    auto_lock(bool &lock) : m_lock{lock} {
+    auto_lock(bool &lock, const std::string &name) : m_lock{lock}, m_name{name} {
         acquire();
     }
 
@@ -452,7 +452,7 @@ public:
     /// \brief Acquire lock if it is not already locked
     void acquire(void) {
         if (m_lock) {
-            THROW((std::runtime_error{"already locked"}));
+            THROW((std::runtime_error{m_name + " already locked"}));
         } else {
             m_lock = true;
         }
@@ -461,7 +461,7 @@ public:
     /// \brief Release lock if it is acquired
     void release(void) {
         if (!m_lock) {
-            THROW((std::runtime_error{"not locked"}));
+            THROW((std::runtime_error{m_name + " not locked"}));
         } else {
             m_lock = false;
         }
@@ -474,6 +474,7 @@ public:
 
 private:
     bool &m_lock;
+    std::string m_name;
 };
 
 /// \brief Context shared by all handlers
@@ -702,7 +703,7 @@ static handler_type::pull_type *new_FinishEpoch_handler(handler_context &hctx) {
                 THROW((finish_error_yield_none{grpc::StatusCode::ABORTED, "concurrent call in session"}));
             }
             // Lock session so other rpcs to the same session are rejected
-            auto_lock session_lock(session.session_lock);
+            auto_lock session_lock(session.session_lock, "FinishEpoch session lock");
             // If session is tainted, report potential data loss
             if (session.tainted) {
                 THROW((finish_error_yield_none{grpc::StatusCode::DATA_LOSS, "session is tainted"}));
@@ -802,7 +803,7 @@ static handler_type::pull_type *new_EndSession_handler(handler_context &hctx) {
                 THROW((finish_error_yield_none{grpc::StatusCode::ABORTED, "concurrent call in session"}));
             }
             // Lock session so other rpcs to the same session are rejected
-            auto_lock session_lock(session.session_lock);
+            auto_lock session_lock(session.session_lock, "EndSession session lock");
             async_context actx{session, request_context, cq, self, yield};
             // If the session is tainted, nothing is going on with it, so we can erase it
             if (!session.tainted) {
@@ -879,7 +880,7 @@ static handler_type::pull_type *new_GetSessionStatus_handler(handler_context &hc
                 THROW((finish_error_yield_none{grpc::StatusCode::ABORTED, "concurrent call in session"}));
             }
             // Lock session so other rpcs to the same session are rejected
-            auto_lock session_lock(session.session_lock);
+            auto_lock session_lock(session.session_lock, "GetSessionStatus session lock");
             response.set_session_id(id);
             response.set_active_epoch_index(session.active_epoch_index);
             for (const auto &[index, epoch] : session.epochs) {
@@ -1032,7 +1033,7 @@ static handler_type::pull_type *new_GetEpochStatus_handler(handler_context &hctx
                 THROW((finish_error_yield_none{grpc::StatusCode::ABORTED, "concurrent call in session"}));
             }
             // Lock session so other rpcs to the same session are rejected
-            auto_lock session_lock(session.session_lock);
+            auto_lock session_lock(session.session_lock, "GetEpochStatus session lock");
             auto &epochs = session.epochs;
             // If a session is unknown, a bail out
             if (epochs.find(epoch_index) == epochs.end()) {
@@ -1277,6 +1278,68 @@ void trigger_and_wait_checkin(handler_context &hctx, async_context &actx, T trig
     check_server_stub(actx.session);
 }
 
+/// \brief Extracts the data field in HTIF's fromhost/tohost register value
+/// \param reg Old register value
+/// \param data New data field
+/// \return Register value with replaced data field
+static constexpr uint64_t htif_replace_data_field(uint64_t reg, uint64_t data) {
+    return (reg & (~HTIF_DATA_MASK_DEF)) | ((data << HTIF_DATA_SHIFT_DEF) & HTIF_DATA_MASK_DEF);
+}
+
+/// \brief Obtains the dev field in HTIF's fromhost/tohost register value
+/// \return Dev data field in register
+static constexpr uint64_t htif_dev_field(uint64_t reg) {
+    return (reg & HTIF_DEV_MASK_DEF) >> HTIF_DEV_SHIFT_DEF;
+}
+
+/// \brief Extracts the cmd field in HTIF's fromhost/tohost register value
+/// \return cmd data field in register
+static constexpr uint64_t htif_cmd_field(uint64_t reg) {
+    return (reg & HTIF_CMD_MASK_DEF) >> HTIF_CMD_SHIFT_DEF;
+}
+
+
+/// \brief Checks if HTIF's tohost/fromhost matches an yield device manual command
+/// \param actx Context for async operations
+/// \param regname "htif.tohost" or "htif.fromhost"
+/// \param value Register value
+static void check_htif_yield_manual(async_context &actx, const std::string regname, uint64_t value) {
+    auto dev = htif_dev_field(value);
+    if (dev != HTIF_DEVICE_YIELD_DEF) {
+        THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
+            "invalid dev field in " + regname + " (expected " + std::to_string(HTIF_DEVICE_YIELD_DEF) + ", got " +
+                std::to_string(dev) + ")"}));
+    }
+    auto cmd = htif_cmd_field(value);
+    if (cmd != HTIF_YIELD_MANUAL_DEF) {
+        THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
+            "invalid cmd field in " + regname + " (expected " + std::to_string(HTIF_YIELD_MANUAL_DEF) + ", got " +
+                std::to_string(cmd) + ")"}));
+    }
+}
+
+/// \brief Asynchronously runs the machine until it is in an yielded state
+/// \param actx Context for async operations
+static void run_until_first_yield(async_context &actx) {
+    // if already yielded manual, this won't change anything
+    dout{actx.request_context} << "  Running until first yield";
+    RunRequest run_request;
+    run_request.set_limit(UINT64_MAX);
+    grpc::ClientContext client_context;
+    auto reader = actx.session.server_stub->AsyncRun(&client_context, run_request, actx.completion_queue);
+    grpc::Status run_status;
+    RunResponse run_response;
+    reader->Finish(&run_response, &run_status, actx.self);
+    actx.yield(side_effect::none);
+    if (!run_status.ok()) {
+        THROW((taint_session{actx.session, std::move(run_status)}));
+    }
+    if (!run_response.iflags_y()) {
+        THROW((taint_session{actx.session, grpc::StatusCode::INVALID_ARGUMENT, "expected manual yield"}));
+    }
+    check_htif_yield_manual(actx, "htif.tohost", run_response.tohost());
+}
+
 /// \brief Creates a new handler for the StartSession RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
 static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) {
@@ -1321,7 +1384,7 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
             // Allocate a new session with data from request
             auto &session = (sessions[id] = get_proto_session(start_session_request));
             // Lock session so other rpcs to the same session are rejected
-            auto_lock lock(session.session_lock);
+            auto_lock lock(session.session_lock, "StartSession session lock");
             // If no machine config, bail out
             if (start_session_request.machine().machine_oneof_case() == MachineRequest::MACHINE_ONEOF_NOT_SET) {
                 THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
@@ -1417,6 +1480,7 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
                     rollup.voucher_hashes());
                 check_memory_range_config(request_context, session.memory_range.notice_hashes, "notice hashes",
                     rollup.notice_hashes());
+                run_until_first_yield(actx);
                 initial_update_merkle_tree(actx);
             } catch (...) {
                 // If there is any error here, we try to shutdown the machine server
@@ -1931,26 +1995,6 @@ static void reset_iflags_y(async_context &actx) {
     }
 }
 
-/// \brief Extracts the data field in HTIF's fromhost/tohost register value
-/// \param reg Old register value
-/// \param data New data field
-/// \return Register value with replaced data field
-static constexpr uint64_t htif_replace_data_field(uint64_t reg, uint64_t data) {
-    return (reg & (~HTIF_DATA_MASK_DEF)) | ((data << HTIF_DATA_SHIFT_DEF) & HTIF_DATA_MASK_DEF);
-}
-
-/// \brief Obtains the dev field in HTIF's fromhost/tohost register value
-/// \return Dev data field in register
-static constexpr uint64_t htif_dev_field(uint64_t reg) {
-    return (reg & HTIF_DEV_MASK_DEF) >> HTIF_DEV_SHIFT_DEF;
-}
-
-/// \brief Extracts the cmd field in HTIF's fromhost/tohost register value
-/// \return cmd data field in register
-static constexpr uint64_t htif_cmd_field(uint64_t reg) {
-    return (reg & HTIF_CMD_MASK_DEF) >> HTIF_CMD_SHIFT_DEF;
-}
-
 /// \brief Asynchronously gets the value of HTIF's fromhost CSR
 /// \param actx Context for async operations
 /// \return Register value
@@ -1993,18 +2037,7 @@ static void set_htif_fromhost(async_context &actx, uint64_t value) {
 /// \param actx Context for async operations
 static void set_htif_yield_ack_data(async_context &actx, uint64_t reqid) {
     auto old_value = get_htif_fromhost(actx);
-    auto dev = htif_dev_field(old_value);
-    if (dev != HTIF_DEVICE_YIELD_DEF) {
-        THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
-            "invalid dev field in htif.tohost (expected " + std::to_string(HTIF_DEVICE_YIELD_DEF) + ", got " +
-                std::to_string(dev) + ")"}));
-    }
-    auto cmd = htif_cmd_field(old_value);
-    if (cmd != HTIF_YIELD_MANUAL_DEF) {
-        THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
-            "invalid cmd field in htif.tohost (expected " + std::to_string(HTIF_YIELD_MANUAL_DEF) + ", got " +
-                std::to_string(cmd) + ")"}));
-    }
+	check_htif_yield_manual(actx, "htif.fromhost", old_value);
     set_htif_fromhost(actx, htif_replace_data_field(old_value, reqid));
 }
 
@@ -2137,7 +2170,7 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
             "concurrent input processing detected in session"}));
     }
-    auto_lock processing_lock(actx.session.processing_lock);
+    auto_lock processing_lock(actx.session.processing_lock, "process_pending_inputs processing lock");
     while (!e.pending_inputs.empty()) {
         auto input_index = e.processed_inputs.size();
         dout{actx.request_context} << "  Processing input " << input_index;
@@ -2381,7 +2414,7 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
                 THROW((finish_error_yield_none{grpc::StatusCode::ABORTED, "concurrent call in session"}));
             }
             // Lock session so other rpcs to the same session are rejected
-            auto_lock session_lock(session.session_lock);
+            auto_lock session_lock(session.session_lock, "AdvanceState session lock");
             // If session is tainted, report potential data loss
             if (session.tainted) {
                 THROW((finish_error_yield_none{grpc::StatusCode::DATA_LOSS, "session is tainted"}));
@@ -2451,7 +2484,7 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
             Void advance_state_response;
             advance_state_writer.Finish(advance_state_response, grpc::Status::OK, self);
             yield(side_effect::none); // Here the session is still locked, so no concurrent calls are possible
-            // Release the lock so other RPCs can enqueue additional inputs to the same session/epoch
+            // Release the lock so other RPCs can enqueue additional inputs to the same session/epoch or call inspect state
             session_lock.release();
             // Between unlocking the session and the check here, there is no
             // yield, and so no other AdvanceState RPC can be in flight for
@@ -2515,6 +2548,7 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
     return self;
 }
 
+
 /// \brief Creates a new handler for the InspectState RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
 static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) {
@@ -2553,7 +2587,7 @@ static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) 
                 THROW((finish_error_yield_none{grpc::StatusCode::ABORTED, "concurrent call in session"}));
             }
             // Lock session so other rpcs to the same session are rejected
-            auto_lock session_lock(session.session_lock);
+            auto_lock session_lock(session.session_lock, "InspectState session lock");
             // If session is tainted, report potential data loss
             if (session.tainted) {
                 THROW((finish_error_yield_none{grpc::StatusCode::DATA_LOSS, "session is tainted"}));
@@ -2631,8 +2665,6 @@ static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) 
             // Tell caller RPC succeeded
             inspect_state_writer.Finish(inspect_state_response, grpc::Status::OK, self);
             yield(side_effect::none); // Here the session is still locked, so no concurrent calls are possible
-            // Release the lock so other RPCs can be processed
-            session_lock.release();
         } catch (finish_error_yield_none &e) {
             dout{request_context} << "Caught finish_error_yield_none '" << e.status().error_message() << '\'';
             inspect_state_writer.FinishWithError(e.status(), self);

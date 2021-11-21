@@ -46,6 +46,7 @@
 #pragma GCC diagnostic ignored "-Wtype-limits"
 #include <grpc++/grpc++.h>
 #include <grpc++/resource_quota.h>
+#include <grpc++/alarm.h>
 
 #include "cartesi-machine-checkin.grpc.pb.h"
 #include "cartesi-machine.grpc.pb.h"
@@ -498,6 +499,12 @@ struct async_context {
     handler_type::pull_type *self;
     handler_type::push_type &yield;
 };
+
+/// \brief Schedule a coroutine to be returned immediately by the completion queue
+static void enqueue_completion_queue(grpc::ServerCompletionQueue *cq, handler_type::pull_type *self) {
+    grpc::Alarm alarm;
+    alarm.Set(cq, gpr_now(gpr_clock_type::GPR_CLOCK_REALTIME), self);
+}
 
 /// \brief Checks if integer is a power of 2
 /// \param value Integer to test
@@ -2367,7 +2374,11 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
         // Check if there is a pending query
         if (e.pending_query.has_value()) {
             // Resume its coroutine so it can process the query and complete the InspectState rpc
-            (*e.pending_query.value().coroutine)();
+            // To do so, we use an alarm to add the coroutine to the completion queue, then we yield
+            // Once the coroutine is done, it will use the same process to add us back to the completion queue
+            enqueue_completion_queue(hctx.completion_queue.get(), e.pending_query.value().coroutine);
+            e.pending_query.value().coroutine = actx.self;
+            actx.yield(side_effect::none);
         }
         // Finally remove pending
         e.pending_inputs.pop_front();
@@ -2525,8 +2536,12 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
             auto &e = session.epochs[session.active_epoch_index];
             // Check if there is a pending query
             if (e.pending_query.has_value()) {
-                // Resume its coroutine so it can error-out gracefully (it checks the tainted flag)
-                (*e.pending_query.value().coroutine)();
+                // Resume its coroutine so it can process the query and complete the InspectState rpc
+                // To do so, we use an alarm to add the coroutine to the completion queue, then we yield
+                // Once the coroutine is done, it will use the same process to add us back to the completion queue
+                enqueue_completion_queue(hctx.completion_queue.get(), e.pending_query.value().coroutine);
+                e.pending_query.value().coroutine = self;
+                yield(side_effect::none);
             }
             // No need to return rpc results because we already have if we reach here
         } catch (std::exception &x) {
@@ -2540,8 +2555,12 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
                 auto &e = session.epochs[session.active_epoch_index];
                 // Check if there is a pending query
                 if (e.pending_query.has_value()) {
-                    // Resume its coroutine so it can error-out gracefully (it checks the tainted flag)
-                    (*e.pending_query.value().coroutine)();
+                    // Resume its coroutine so it can process the query and complete the InspectState rpc
+                    // To do so, we use an alarm to add the coroutine to the completion queue, then we yield
+                    // Once the coroutine is done, it will use the same process to add us back to the completion queue
+                    enqueue_completion_queue(hctx.completion_queue.get(), e.pending_query.value().coroutine);
+                    e.pending_query.value().coroutine = self;
+                    yield(side_effect::none);
                 }
             }
             // No need to return rpc results because we already have if we reach here
@@ -2550,6 +2569,21 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
     return self;
 }
 
+class auto_resume final {
+public:
+    explicit auto_resume(grpc::ServerCompletionQueue *cq): m_cq(cq), m_coroutine(nullptr) { }
+    void reset(handler_type::pull_type *coroutine = nullptr) {
+        m_coroutine = coroutine;
+    }
+    ~auto_resume() {
+        if (m_coroutine) {
+            enqueue_completion_queue(m_cq, m_coroutine);
+        }
+    }
+private:
+    grpc::ServerCompletionQueue *m_cq;
+    handler_type::pull_type *m_coroutine;
+};
 
 /// \brief Creates a new handler for the InspectState RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
@@ -2625,12 +2659,18 @@ static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) 
             // If there aren't, we can immediately process the InspectState query and return results.
             // The session is locked, and therefore no other rpcs can interfere (including AdvanceState rpcs).
             // Otherwise, we will have to yield because AdvanceState may be in the middle of an input.
-            // The function that processes inputs checks for a pending query between every input it processes.
-            // If it finds a pending query, it knows we are yielded and waiting. So it processes the query and
-            // resumes our coroutine before going back to processing its input queue.
+            // The function process_pending_inputs checks for a pending query between every input it processes.
+            // If it finds a pending query, it knows we are yielded and waiting. So it schedules us in the completion
+            // queue and yield.
+            // We process the query, then, when we are about to leave, we schedule process_pending_input's coroutine
+            // back in the completion queue, so it can go on processing its input queue.
+            auto_resume resume_on_exit(hctx.completion_queue.get());
             if (!e.pending_inputs.empty()) {
+                // Set our coroutine in the pending_query so process_pending_inputs can find us
                 q.coroutine = self;
                 yield(side_effect::none);
+                // Here we have been resumed and process_pending_input has set its coroutine for us to find it
+                resume_on_exit.reset(q.coroutine);
             }
             // There is a chance the session was tainted between our yielding and being resumed
             if (session.tainted) {
@@ -2666,7 +2706,7 @@ static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) 
             e.pending_query.reset();
             // Tell caller RPC succeeded
             inspect_state_writer.Finish(inspect_state_response, grpc::Status::OK, self);
-            yield(side_effect::none); // Here the session is still locked, so no concurrent calls are possible
+            yield(side_effect::none);
         } catch (finish_error_yield_none &e) {
             dout{request_context} << "Caught finish_error_yield_none '" << e.status().error_message() << '\'';
             inspect_state_writer.FinishWithError(e.status(), self);

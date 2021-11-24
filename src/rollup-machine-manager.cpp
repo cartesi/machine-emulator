@@ -1348,7 +1348,7 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
         using namespace grpc;
         ServerContext request_context;
         StartSessionRequest start_session_request;
-        ServerAsyncResponseWriter<Void> start_session_writer(&request_context);
+        ServerAsyncResponseWriter<StartSessionResponse> start_session_writer(&request_context);
         auto *cq = hctx.completion_queue.get();
         // Wait for a StartSession RPC
         hctx.manager_async_service.RequestStartSession(&request_context, &start_session_request, &start_session_writer,
@@ -1482,6 +1482,12 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
                     rollup.notice_hashes());
                 run_until_first_yield(actx);
                 initial_update_merkle_tree(actx);
+                // StartSession Passed!
+                StartSessionResponse start_session_response;
+                start_session_response.set_allocated_config(&config);
+                start_session_writer.Finish(start_session_response, grpc::Status::OK, self);
+                yield(side_effect::none);
+                start_session_response.release_config();
             } catch (...) {
                 // If there is any error here, we try to shutdown the machine server
                 grpc::ClientContext client_context;
@@ -1491,10 +1497,6 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
                 auto status = session.server_stub->Shutdown(&client_context, request, &response);
                 throw; // rethrow so it is caught outside and we report the error
             }
-            // StartSession Passed!
-            Void start_session_response;
-            start_session_writer.Finish(start_session_response, grpc::Status::OK, self);
-            yield(side_effect::none);
         } catch (finish_error_yield_none &e) {
             dout{request_context} << "Caught finish_error_yield_none " << e.status().error_message();
             hctx.sessions.erase(start_session_request.session_id());

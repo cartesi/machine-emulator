@@ -29,30 +29,15 @@ using namespace Versioning;
 
 using hash_type = cartesi::machine_merkle_tree::hash_type;
 
+// Doesn't matter because we are not connected to multiple servers and don't have to distinguish between them
+#define CHECKIN_SESSION_ID "grpc_virtual_machine"
+
 namespace cartesi {
 
-grpc_machine_stub::grpc_machine_stub(const std::string &address) :
-    m_address(address),
-    m_stub(Machine::NewStub(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()))) {
-    ;
-}
 
-Machine::Stub *grpc_machine_stub::get_stub(void) {
-    return m_stub.get();
-}
-
-const Machine::Stub *grpc_machine_stub::get_stub(void) const {
-    return m_stub.get();
-}
-
-const std::string &grpc_machine_stub::get_address(void) const {
-    return m_address;
-}
-
-void grpc_machine_stub::reconnect(void) {
-    m_stub = Machine::NewStub(grpc::CreateChannel(m_address, grpc::InsecureChannelCredentials()));
-}
-
+/// \brief Converts a gRPC status code to string
+/// \param code gRPC status code
+/// \return String describing code
 static std::string status_code_to_string(StatusCode code) {
     switch (code) {
         case StatusCode::OK:
@@ -94,6 +79,8 @@ static std::string status_code_to_string(StatusCode code) {
     }
 }
 
+/// \brief Checks if gRPC status is ok and throw otherwise
+/// \param status gRPC status
 static void check_status(const Status &status) {
     if (!status.ok()) {
         if (status.error_message().empty()) {
@@ -101,6 +88,136 @@ static void check_status(const Status &status) {
         } else {
             throw std::runtime_error(status.error_message());
         }
+    }
+}
+
+/// \brief Replaces the port specification (i.e., after ':') in an address with a new port
+/// \param address Original address
+/// \param port New port
+/// \return New address with replaced port
+static std::string replace_port(const std::string &address, int port) {
+    // Unix address?
+    if (address.find("unix:") == 0) {
+        return address;
+    }
+    auto pos = address.find_last_of(':');
+    // If already has a port, replace
+    if (pos != std::string::npos) {
+        return address.substr(0, pos) + ":" + std::to_string(port);
+        // Otherwise, concatenate
+    } else {
+        return address + ":" + std::to_string(port);
+    }
+}
+
+grpc_machine_stub::grpc_machine_stub(const std::string &remote_address, const std::string &checkin_address) :
+    m_remote_address(remote_address),
+    m_checkin_address(checkin_address),
+    m_stub(Machine::NewStub(grpc::CreateChannel(m_remote_address, grpc::InsecureChannelCredentials()))) {
+    if (!m_stub) {
+        throw std::runtime_error("unable to create stub");
+    }
+    grpc::ServerBuilder builder;
+    int port = 0;
+    builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
+    builder.AddListeningPort(m_checkin_address, grpc::InsecureServerCredentials(), &port);
+    builder.RegisterService(&m_checkin_async_service);
+    m_completion_queue = builder.AddCompletionQueue();
+    if (!m_completion_queue) {
+        throw std::runtime_error("unable to create completion queue");
+    }
+    m_checkin_server = builder.BuildAndStart();
+    if (!m_checkin_server) {
+        throw std::runtime_error("unable to create checkin server");
+    }
+    m_checkin_address = replace_port(m_checkin_address, port);
+}
+
+Machine::Stub *grpc_machine_stub::get_stub(void) {
+    return m_stub.get();
+}
+
+const Machine::Stub *grpc_machine_stub::get_stub(void) const {
+    return m_stub.get();
+}
+
+const std::string &grpc_machine_stub::get_remote_address(void) const {
+    return m_remote_address;
+}
+
+const std::string &grpc_machine_stub::get_checkin_address(void) const {
+    return m_checkin_address;
+}
+
+/// \brief Returns a time in the future
+/// \param sec Amount of seconds in the future
+/// \return Time
+static auto time_in_future(int sec) {
+    return gpr_time_add(gpr_now(gpr_clock_type::GPR_CLOCK_REALTIME),
+        gpr_time_from_seconds(sec, gpr_clock_type::GPR_TIMESPAN));
+}
+
+void grpc_machine_stub::prepare_checkin(void) {
+    // Inform remote server of checkin target
+    // ??D no need to do this every time, but no harm either
+    SetCheckInTargetRequest request;
+    Void response;
+    ClientContext context;
+    request.set_session_id(CHECKIN_SESSION_ID);
+    request.set_address(m_checkin_address);
+    check_status(m_stub->SetCheckInTarget(&context, request, &response));
+    // Destroy old and create new server context and writer for the async checkin handler
+    m_checkin_context.reset();
+    m_checkin_context.emplace();
+    auto &ctx = m_checkin_context.value();
+    // Install the checkin handler
+    auto *cq = m_completion_queue.get();
+    m_checkin_async_service.RequestCheckIn(&ctx.server_context, &ctx.request, &ctx.writer, cq, cq, this);
+}
+
+void grpc_machine_stub::wait_checkin_and_reconnect(void) {
+    if (!m_checkin_context.has_value()) {
+        throw std::runtime_error("missing call to prepare checkin");
+    }
+    auto &ctx = m_checkin_context.value();
+    // Wait for checkin rpc
+    bool ok = false;
+    void *tag = nullptr;
+    if (m_completion_queue->AsyncNext(&tag, &ok, time_in_future(5)) != grpc::CompletionQueue::NextStatus::GOT_EVENT) {
+        throw std::runtime_error("gave up waiting for checkin request");
+    }
+    if (ctx.request.session_id() != CHECKIN_SESSION_ID) {
+        throw std::runtime_error("expected '" CHECKIN_SESSION_ID "' checkin session id (got '" +
+            ctx.request.session_id() + "')");
+    }
+    if (tag != this) {
+        throw std::runtime_error("unexpected checkin tag");
+    }
+    m_remote_address = ctx.request.address();
+    // Acknowledge rpc
+    ok = false;
+    tag = nullptr;
+    Void response;
+    ctx.writer.Finish(response, grpc::Status::OK, this);
+    if (m_completion_queue->AsyncNext(&tag, &ok, time_in_future(5)) != grpc::CompletionQueue::NextStatus::GOT_EVENT) {
+        throw std::runtime_error("gave up waiting for checkin response");
+    }
+    // Reconnect
+    m_stub = Machine::NewStub(grpc::CreateChannel(m_remote_address, grpc::InsecureChannelCredentials()));
+    if (!m_stub) {
+        throw std::runtime_error("unable to create stub");
+    }
+}
+
+grpc_machine_stub::~grpc_machine_stub() {
+    m_checkin_server->Shutdown();
+    // drain completion queue
+    auto *cq = m_completion_queue.get();
+    cq->Shutdown();
+    bool ok = false;
+    void *tag = nullptr;
+    while (cq->Next(&tag, &ok)) {
+        ;
     }
 }
 
@@ -688,16 +805,18 @@ void grpc_virtual_machine::do_snapshot() {
     Void request;
     Void response;
     ClientContext context;
+    m_stub->prepare_checkin();
     check_status(m_stub->get_stub()->Snapshot(&context, request, &response));
-    m_stub->reconnect();
+    m_stub->wait_checkin_and_reconnect();
 }
 
 void grpc_virtual_machine::do_rollback() {
     Void request;
     Void response;
     ClientContext context;
+    m_stub->prepare_checkin();
     check_status(m_stub->get_stub()->Rollback(&context, request, &response));
-    m_stub->reconnect();
+    m_stub->wait_checkin_and_reconnect();
 }
 
 bool grpc_virtual_machine::do_verify_dirty_page_maps(void) const {

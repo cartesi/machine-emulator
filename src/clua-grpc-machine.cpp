@@ -194,10 +194,11 @@ static const auto grpc_server_static_methods = cartesi::clua_make_luaL_Reg_array
 
 /// \brief This is the grpc.stub() method implementation.
 static int mod_stub(lua_State *L) {
-    const char *address = luaL_checkstring(L, 1);
+    const char *remote_address = luaL_checkstring(L, 1);
+    const char *checkin_address = luaL_checkstring(L, 2);
     // Create stub
     auto &managed_grpc_stub = clua_push_to(L, clua_managed_cm_ptr<cm_grpc_machine_stub>(nullptr));
-    TRY_EXECUTE(cm_create_grpc_machine_stub(address, &managed_grpc_stub.get(), err_msg));
+    TRY_EXECUTE(cm_create_grpc_machine_stub(remote_address, checkin_address, &managed_grpc_stub.get(), err_msg));
     lua_newtable(L);                                         // stub server
     lua_newtable(L);                                         // stub server grpc_machine_class
     lua_pushvalue(L, -3);                                    // stub server grpc_machine_class stub

@@ -233,11 +233,13 @@ where options are:
     mcycle. Only take effect with hash and step commands.
     (default: none)
 
-  --server=<server-address>
-    run tests on a remote cartesi machine server. <server-address>
-    should be in one of the following formats:
-        <host>:<port>
-        unix:<path>
+  --server-address=<address>
+    run tests on a remote cartesi machine server instead of
+    on a local cartesi machine
+    (requires --checkin-address)
+
+  --checkin-address=<address>
+    address of the local checkin server to run
 
   --output=<filename>
     write the output of hash and step commands to the file at
@@ -272,6 +274,12 @@ and command can be:
 with a suffix multiplier (i.e., Ki, Mi, Gi for 2^10, 2^20, 2^30, respectively),
 or a left shift (e.g., 2 << 20).
 
+<address> is one of the following formats:
+  <host>:<port>
+   unix:<path>
+
+<host> can be a host name, IPv4 or IPv6 address.
+
 ]=], arg[0]))
     os.exit()
 end
@@ -279,6 +287,7 @@ end
 local test_path = "./"
 local test_pattern = ".*"
 local server_address = nil
+local checkin_address = nil
 local server = nil
 local output = nil
 local json_list = false
@@ -304,9 +313,14 @@ local options = {
         if not all then return false end
         help()
     end },
-    { "^%-%-server%=(.*)$", function(o)
+    { "^%-%-server%-address%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         server_address = o
+        return true
+    end },
+    { "^%-%-checkin%-address%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        checkin_address = o
         return true
     end },
     { "^%-%-output%=(.*)$", function(o)
@@ -377,7 +391,10 @@ end
 local command = assert(values[1], "missing command")
 assert(test_path, "missing test path")
 
-if server_address then cartesi.grpc = require("cartesi.grpc") end
+if server_address then
+    assert(checkin_address, "checkin address missing")
+	cartesi.grpc = require("cartesi.grpc")
+end
 
 local function nothing()
 end
@@ -411,7 +428,7 @@ local function run_machine(machine, max_mcycle, callback)
 end
 
 local function connect()
-    local server = cartesi.grpc.stub(server_address)
+    local server = cartesi.grpc.stub(server_address, checkin_address)
     local version = assert(server.get_version(),
         "could not connect to cartesi machine GRPC server at " .. server_address)
     local shutdown = function() server:shutdown() end

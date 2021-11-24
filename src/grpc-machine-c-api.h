@@ -46,13 +46,15 @@ typedef struct { // NOLINT(modernize-use-using)
 typedef struct cm_grpc_machine_stub_tag cm_grpc_machine_stub; // NOLINT(modernize-use-using)
 
 /// \brief Create server stub for remote Cartesi machine server
-/// \param address Address of the remove Cartesi server
+/// \param remote_address Address of the remote Cartesi server
+/// \param checkin_address Address of the local checkin server
 /// \param stub Receives new server stub instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_create_grpc_machine_stub(const char *address, cm_grpc_machine_stub **stub, char **err_msg);
+CM_API int cm_create_grpc_machine_stub(const char *remote_address, const char *checkin_address,
+    cm_grpc_machine_stub **stub, char **err_msg);
 
 /// \brief Deletes grpc machine stub instance
 /// \param m Valid pointer to the existing grpc stub instance

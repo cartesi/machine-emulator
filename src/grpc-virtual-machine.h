@@ -28,6 +28,7 @@
 #pragma GCC diagnostic ignored "-Wtype-limits"
 #include <grpc++/grpc++.h>
 
+#include "cartesi-machine-checkin.grpc.pb.h"
 #include "cartesi-machine.grpc.pb.h"
 #include "versioning.pb.h"
 #pragma GCC diagnostic pop
@@ -39,16 +40,32 @@ namespace cartesi {
 
 /// \class grpc_machine_stub
 /// \brief GRPC connection to Cartesi Machine Server
-class grpc_machine_stub {
-    std::string m_address;
+class grpc_machine_stub final {
+
+    struct async_checkin_context {
+        async_checkin_context(void) : writer(&server_context) { }
+        grpc::ServerContext server_context;
+        grpc::ServerAsyncResponseWriter<CartesiMachine::Void> writer;
+        CartesiMachine::CheckInRequest request;
+    };
+
+    std::string m_remote_address;
+    std::string m_checkin_address;
     std::unique_ptr<CartesiMachine::Machine::Stub> m_stub;
+    CartesiMachine::MachineCheckIn::AsyncService m_checkin_async_service;
+    std::unique_ptr<grpc::ServerCompletionQueue> m_completion_queue;
+    std::unique_ptr<grpc::Server> m_checkin_server;
+    std::optional<async_checkin_context> m_checkin_context;
 
 public:
-    grpc_machine_stub(const std::string &address);
-    void reconnect(void);
+    grpc_machine_stub(const std::string &remote_address, const std::string &checkin_address);
+    ~grpc_machine_stub();
+    void prepare_checkin(void);
+    void wait_checkin_and_reconnect(void);
     CartesiMachine::Machine::Stub *get_stub(void);
     const CartesiMachine::Machine::Stub *get_stub(void) const;
-    const std::string &get_address(void) const;
+    const std::string &get_remote_address(void) const;
+    const std::string &get_checkin_address(void) const;
 };
 
 using grpc_machine_stub_ptr = std::shared_ptr<grpc_machine_stub>;

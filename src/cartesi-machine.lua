@@ -37,11 +37,13 @@ Usage:
 
 where options are:
 
-  --server=<server-address>
-    address of the remote cartesi machine server in one of the following
-    formats:
-        <host>:<port>
-        unix:<path>
+  --server-address=<address>
+    use a remote cartesi machine server listenning to <address> instead of
+    running a local cartesi machine.
+    (requires --checkin-address)
+
+  --checkin-address=<address>
+    address of the local checkin server to run
 
   --server-shutdown
     shutdown the server after the execution
@@ -192,8 +194,8 @@ where options are:
         index of last input to advance (the last value of %%i)
 
         input_metadata (default: "epoch-%%e-input-metadata-%%i.bin")
-        the pattern that derives the name of the file read for input metadata %%i
-        of epoch index %%e
+        the pattern that derives the name of the file read for
+        input metadata %%i of epoch index %%e
 
         voucher (default: "epoch-%%e-input-%%i-voucher-%%o.bin")
         the pattern that derives the name of the file written for voucher %%o
@@ -297,13 +299,18 @@ and command and arguments:
 with a suffix multiplier (i.e., Ki, Mi, Gi for 2^10, 2^20, 2^30, respectively),
 or a left shift (e.g., 2 << 20).
 
+<address> is one of the following formats:
+  <host>:<port>
+   unix:<path>
+
 <host> can be a host name, IPv4 or IPv6 address.
 
 ]=], arg[0])
     os.exit()
 end
 
-local server = nil
+local server_address = nil
+local checkin_address = nil
 local server_shutdown = false
 local images_path = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH'))
 local flash_image_filename = { root = images_path .. "rootfs.ext2" }
@@ -624,9 +631,14 @@ local options = {
         store_dir = o
         return true
     end },
-    { "^%-%-server%=(.*)$", function(o)
+    { "^%-%-server%-address%=(.*)$", function(o)
         if not o or #o < 1 then return false end
-        server = o
+        server_address = o
+        return true
+    end },
+    { "^%-%-checkin%-address%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        checkin_address = o
         return true
     end },
     { "^%-%-server%-shutdown$", function(o)
@@ -949,10 +961,12 @@ end
 
 local machine
 
-if server then
-    stderr("Connecting to server '%s'\n", server)
+if server_address then
+    assert(checkin_address, "checkin address missing")
+    stderr("Starting checkin server at '%s'\n", checkin_address)
+    stderr("Connecting to remote server at '%s'\n", server_address)
     cartesi.grpc = require"cartesi.grpc"
-    server = assert(cartesi.grpc.stub(server))
+    server = assert(cartesi.grpc.stub(server_address, checkin_address))
     local v = assert(server.get_version())
     stderr("Connected: server version is %d.%d.%d\n", v.major, v.minor, v.patch)
 end
@@ -1247,8 +1261,7 @@ else
     if rollup then
         check_rollup_htif_config(config.htif)
         assert(config.rollup, "rollup device must be present")
-        --??D removed pending checkin implementation
-        --assert(server, "rollup requires --server for snapshot/rollback")
+        assert(server_address, "rollup requires --server-address for snapshot/rollback")
         check_rollup_memory_range_config(config.rollup.tx_buffer, "tx-buffer")
         check_rollup_memory_range_config(config.rollup.rx_buffer, "rx-buffer")
         check_rollup_memory_range_config(config.rollup.input_metadata, "input-metadata")
@@ -1295,8 +1308,7 @@ else
                     print_root_hash(cycles, machine)
                 end
                 save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup)
-                --??D removed pending checkin implementation
-                --machine:snapshot()
+                machine:snapshot()
                 if load_rollup_input_and_metadata(machine, config.rollup, rollup) then
                     machine:reset_iflags_Y()
                     rollup.voucher_index = 0

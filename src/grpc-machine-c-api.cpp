@@ -36,9 +36,11 @@ static inline cartesi::i_virtual_machine *load_grpc_virtual_machine(const cartes
     return new cartesi::grpc_virtual_machine(stub, null_to_empty(dir), r);
 }
 
-int cm_create_grpc_machine_stub(const char *address, cm_grpc_machine_stub **stub, char **err_msg) try {
-    auto *cpp_stub =
-        new std::shared_ptr<cartesi::grpc_machine_stub>(new cartesi::grpc_machine_stub{null_to_empty(address)});
+int cm_create_grpc_machine_stub(const char *remote_address, const char *checkin_address,
+    cm_grpc_machine_stub **stub, char **err_msg) try {
+    auto *cpp_stub = new std::shared_ptr<cartesi::grpc_machine_stub>(
+        new cartesi::grpc_machine_stub{null_to_empty(remote_address), null_to_empty(checkin_address)}
+    );
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *stub = reinterpret_cast<cm_grpc_machine_stub *>(cpp_stub);
     return cm_result_success(err_msg);

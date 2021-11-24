@@ -22,12 +22,13 @@ cartesi_machine_tests=$3
 test_path=$4
 
 server_address=127.0.0.1:5001
+checkin_address=127.0.0.1:5002
 
 tests=(
-    "$cartesi_machine_tests --server=$server_address --test-path=\"$test_path\" --test='.*' run"
-    "./tests/machine-bind.lua grpc --server=$server_address"
-    "./tests/machine-test.lua grpc --server=$server_address"
-    "$cartesi_machine --server=$server_address --server-shutdown"
+    "$cartesi_machine_tests --server-address=$server_address --checkin-address=$checkin_address --test-path=\"$test_path\" --test='.*' run"
+    "./tests/machine-bind.lua grpc --server-address=$server_address --checkin-address=$checkin_address"
+    "./tests/machine-test.lua grpc --server-address=$server_address --checkin-address=$checkin_address"
+    "$cartesi_machine --server-address=$server_address --server-shutdown"
 )
 
 is_server_running () {

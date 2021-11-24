@@ -94,13 +94,13 @@ and [action] [what] can be:
 
         default is to read payload from stdin
 
-	decode input-metadata
+    decode input-metadata
       writes decoded input-metadata to stdout
 
-		--json
+        --json
         writes output in json format
 
-	decode input
+    decode input
       writes input payload to stdout
 
     decode voucher
@@ -177,181 +177,181 @@ end
 
 if not what_table[arg[2]] then
     stderr("unexpected what '%s'\n", arg[2])
-	help()
+    help()
 end
 
 local what = arg[2]
 
 local function write_be256(value)
-	io.stdout:write(string.rep("\0", 32-8))
-	io.stdout:write(string.pack(">I8", value))
+    io.stdout:write(string.rep("\0", 32-8))
+    io.stdout:write(string.pack(">I8", value))
 end
 
 local function encode_input_metadata(arg)
-	local msg_sender
-	local block_number
-	local time_stamp
-	local epoch_index
-	local input_index
-	local encode_input_metadata_options = {
-		{ "^%-%-msg%-sender%=(.+)$", function(o)
-			if not o or #o < 1 then return false end
-			msg_sender, err = unhex(o)
-			if not msg_sender then
-				error("invalid msg-sender " .. o .. " " .. err)
-			end
-            if #msg_sender ~= 20 then
-				error(string.format("msg-sender must be 20 bytes long (%s is %u bytes long)", o,  #msg_sender))
+    local msg_sender
+    local block_number
+    local time_stamp
+    local epoch_index
+    local input_index
+    local encode_input_metadata_options = {
+        { "^%-%-msg%-sender%=(.+)$", function(o)
+            if not o or #o < 1 then return false end
+            msg_sender, err = unhex(o)
+            if not msg_sender then
+                error("invalid msg-sender " .. o .. " " .. err)
             end
-			return true
-		end },
-		{ "^%-%-block%-number%=(.+)$", function(n)
-			if not n then return false end
-			block_number = assert(util.parse_number(n), "block number" .. n)
-			return true
-		end },
-		{ "^%-%-time%-stamp%=(.+)$", function(n)
-			if not n then return false end
-			time_stamp = assert(util.parse_number(n), "time stamp" .. n)
-			return true
-		end },
-		{ "^%-%-epoch%-index%=(.+)$", function(n)
-			if not n then return false end
-			epoch_index = assert(util.parse_number(n), "epoch index" .. n)
-			return true
-		end },
-		{ "^%-%-input%-index%=(.+)$", function(n)
-			if not n then return false end
-			input_index = assert(util.parse_number(n), "input index" .. n)
-			return true
-		end },
-		{ ".*", function(all)
-			error("unrecognized option " .. all)
-		end }
-	}
+            if #msg_sender ~= 20 then
+                error(string.format("msg-sender must be 20 bytes long (%s is %u bytes long)", o,  #msg_sender))
+            end
+            return true
+        end },
+        { "^%-%-block%-number%=(.+)$", function(n)
+            if not n then return false end
+            block_number = assert(util.parse_number(n), "block number" .. n)
+            return true
+        end },
+        { "^%-%-time%-stamp%=(.+)$", function(n)
+            if not n then return false end
+            time_stamp = assert(util.parse_number(n), "time stamp" .. n)
+            return true
+        end },
+        { "^%-%-epoch%-index%=(.+)$", function(n)
+            if not n then return false end
+            epoch_index = assert(util.parse_number(n), "epoch index" .. n)
+            return true
+        end },
+        { "^%-%-input%-index%=(.+)$", function(n)
+            if not n then return false end
+            input_index = assert(util.parse_number(n), "input index" .. n)
+            return true
+        end },
+        { ".*", function(all)
+            error("unrecognized option " .. all)
+        end }
+    }
 
-	for i = 3, #arg do
-		local a = arg[i]
-		for j, option in ipairs(encode_input_metadata_options) do
-			if option[2](a:match(option[1])) then
-				break
-			end
-		end
-	end
+    for i = 3, #arg do
+        local a = arg[i]
+        for j, option in ipairs(encode_input_metadata_options) do
+            if option[2](a:match(option[1])) then
+                break
+            end
+        end
+    end
 
-	assert(msg_sender, "missing msg-sender")
-	assert(block_number, "missing block-number")
-	assert(time_stamp, "missing time-stamp")
-	assert(epoch_index, "missing epoch-index")
-	assert(input_index, "missing input-index")
+    assert(msg_sender, "missing msg-sender")
+    assert(block_number, "missing block-number")
+    assert(time_stamp, "missing time-stamp")
+    assert(epoch_index, "missing epoch-index")
+    assert(input_index, "missing input-index")
 
-	io.stdout:write(string.rep("\0", 12))
-	io.stdout:write(msg_sender)
-	write_be256(block_number)
-	write_be256(time_stamp)
-	write_be256(epoch_index)
-	write_be256(input_index)
+    io.stdout:write(string.rep("\0", 12))
+    io.stdout:write(msg_sender)
+    write_be256(block_number)
+    write_be256(time_stamp)
+    write_be256(epoch_index)
+    write_be256(input_index)
 end
 
 local function encode_input(arg)
-	local payload
-	local payload_filename
-	local encode_input_options = {
-		{ "^%-%-payload%-filename%=(.+)$", function(o)
-			if not o or #o < 1 then return false end
-			assert(not payload, "payload already specified")
-			payload_filename = o
-			return true
-		end },
-		{ "^%-%-payload%=(.+)$", function(n)
-			if not n then return false end
-			assert(not payload_filename, "payload filename already specified")
+    local payload
+    local payload_filename
+    local encode_input_options = {
+        { "^%-%-payload%-filename%=(.+)$", function(o)
+            if not o or #o < 1 then return false end
+            assert(not payload, "payload already specified")
+            payload_filename = o
+            return true
+        end },
+        { "^%-%-payload%=(.+)$", function(n)
+            if not n then return false end
+            assert(not payload_filename, "payload filename already specified")
             payload = n
-			return true
-		end },
-		{ ".*", function(all)
-			error("unrecognized option " .. all)
-		end }
-	}
+            return true
+        end },
+        { ".*", function(all)
+            error("unrecognized option " .. all)
+        end }
+    }
 
-	for i = 3, #arg do
-		local a = arg[i]
-		for j, option in ipairs(encode_input_options) do
-			if option[2](a:match(option[1])) then
-				break
-			end
-		end
-	end
+    for i = 3, #arg do
+        local a = arg[i]
+        for j, option in ipairs(encode_input_options) do
+            if option[2](a:match(option[1])) then
+                break
+            end
+        end
+    end
 
-	if payload_filename then
-		local f = assert(io.open(payload_filename, "rb"))
-		payload = assert(f:read("*a"))
-		f:close()
-	elseif not payload then
-		payload = assert(io.stdin:read("*a"))
-	end
+    if payload_filename then
+        local f = assert(io.open(payload_filename, "rb"))
+        payload = assert(f:read("*a"))
+        f:close()
+    elseif not payload then
+        payload = assert(io.stdin:read("*a"))
+    end
 
-	write_be256(32) -- offset
-	write_be256(#payload)
-	io.stdout:write(payload)
+    write_be256(32) -- offset
+    write_be256(#payload)
+    io.stdout:write(payload)
 end
 
 local function encode_voucher(arg)
-	local payload
-	local payload_filename
-	local address
-	local encode_voucher_options = {
-		{ "^%-%-payload%-filename%=(.+)$", function(o)
-			if not o or #o < 1 then return false end
-			assert(not payload, "payload already specified")
-			payload_filename = o
-			return true
-		end },
-		{ "^%-%-payload%=(.+)$", function(n)
-			if not n then return false end
-			assert(not payload_filename, "payload filename already specified")
+    local payload
+    local payload_filename
+    local address
+    local encode_voucher_options = {
+        { "^%-%-payload%-filename%=(.+)$", function(o)
+            if not o or #o < 1 then return false end
+            assert(not payload, "payload already specified")
+            payload_filename = o
+            return true
+        end },
+        { "^%-%-payload%=(.+)$", function(n)
+            if not n then return false end
+            assert(not payload_filename, "payload filename already specified")
             payload = n
-			return true
-		end },
-		{ "^%-%-address%=(.+)$", function(o)
-			if not o or #o < 1 then return false end
-			address, err = unhex(o)
-			if not address then
-				error("invalid address " .. o .. " " .. err)
-			end
-            if #address ~= 20 then
-				error(string.format("address must be 20 bytes long (%s is %u bytes long)", o,  #address))
+            return true
+        end },
+        { "^%-%-address%=(.+)$", function(o)
+            if not o or #o < 1 then return false end
+            address, err = unhex(o)
+            if not address then
+                error("invalid address " .. o .. " " .. err)
             end
-			return true
-		end },
-		{ ".*", function(all)
-			error("unrecognized option " .. all)
-		end }
-	}
+            if #address ~= 20 then
+                error(string.format("address must be 20 bytes long (%s is %u bytes long)", o,  #address))
+            end
+            return true
+        end },
+        { ".*", function(all)
+            error("unrecognized option " .. all)
+        end }
+    }
 
-	for i = 3, #arg do
-		local a = arg[i]
-		for j, option in ipairs(encode_voucher_options) do
-			if option[2](a:match(option[1])) then
-				break
-			end
-		end
-	end
+    for i = 3, #arg do
+        local a = arg[i]
+        for j, option in ipairs(encode_voucher_options) do
+            if option[2](a:match(option[1])) then
+                break
+            end
+        end
+    end
 
-	assert(address, "missing address")
+    assert(address, "missing address")
 
-	if payload_filename then
-		local f = assert(io.open(payload_filename, "rb"))
-		payload = assert(f:read("*a"))
-		f:close()
-	elseif not payload then
-		payload = assert(io.stdin:read("*a"))
-	end
+    if payload_filename then
+        local f = assert(io.open(payload_filename, "rb"))
+        payload = assert(f:read("*a"))
+        f:close()
+    elseif not payload then
+        payload = assert(io.stdin:read("*a"))
+    end
 
-	io.stdout:write(string.rep("\0", 12))
+    io.stdout:write(string.rep("\0", 12))
     io.stdout:write(address)
-	write_be256(64)
-	write_be256(#payload)
+    write_be256(64)
+    write_be256(#payload)
     io.stdout:write(payload)
 
 end
@@ -359,119 +359,119 @@ end
 
 
 local function read_address()
-	return string.sub(io.stdin:read(32), 13)
+    return string.sub(io.stdin:read(32), 13)
 end
 
 local function read_hash()
-	local s = io.stdin:read(32)
+    local s = io.stdin:read(32)
     if s and #s == 32 then return s end
 end
 
 local function read_be256()
-	return string.unpack(">I8", string.sub(io.stdin:read(32), 25))
+    return string.unpack(">I8", string.sub(io.stdin:read(32), 25))
 end
 
 local function decode_input_metadata(arg)
-	local json
-	if arg[3] then
-		assert(arg[3] == "--json", "unexpected option " .. arg[3])
-		json = true
-	end
-	if arg[4] then
-		error("unexpected option " .. arg[4])
+    local json
+    if arg[3] then
+        assert(arg[3] == "--json", "unexpected option " .. arg[3])
+        json = true
     end
-	local msg_sender = read_address()
-	local block_number = read_be256()
-	local time_stamp = read_be256()
-	local epoch_index = read_be256()
-	local input_index = read_be256()
-	if json then
-	else
-		io.stdout:write("msg-sender: ", hex(msg_sender), "\n")
-		io.stdout:write("block-number: ", block_number, "\n")
-		io.stdout:write("time-stamp: ", time_stamp, "\n")
-		io.stdout:write("epoch-index: ", epoch_index, "\n")
-		io.stdout:write("input-index: ", input_index, "\n")
-	end
+    if arg[4] then
+        error("unexpected option " .. arg[4])
+    end
+    local msg_sender = read_address()
+    local block_number = read_be256()
+    local time_stamp = read_be256()
+    local epoch_index = read_be256()
+    local input_index = read_be256()
+    if json then
+    else
+        io.stdout:write("msg-sender: ", hex(msg_sender), "\n")
+        io.stdout:write("block-number: ", block_number, "\n")
+        io.stdout:write("time-stamp: ", time_stamp, "\n")
+        io.stdout:write("epoch-index: ", epoch_index, "\n")
+        io.stdout:write("input-index: ", input_index, "\n")
+    end
 end
 
 local function decode_input(arg)
-	if arg[3] then
-		error("unexpected option " .. arg[4])
+    if arg[3] then
+        error("unexpected option " .. arg[4])
     end
-	read_be256() -- skip offset
-	local length = read_be256()
+    read_be256() -- skip offset
+    local length = read_be256()
     io.stdout:write(io.stdin:read(length))
 end
 
 local function decode_string(arg)
-	if arg[3] then
-		error("unexpected option " .. arg[4])
+    if arg[3] then
+        error("unexpected option " .. arg[4])
     end
-	assert(read_be256() == 32) -- skip offset
-	local length = read_be256()
+    assert(read_be256() == 32) -- skip offset
+    local length = read_be256()
     io.stdout:write(assert(io.stdin:read(length)))
 end
 
 local function encode_string(arg)
-	local payload
-	local payload_filename
-	local encode_voucher_options = {
-		{ "^%-%-payload%-filename%=(.+)$", function(o)
-			if not o or #o < 1 then return false end
-			assert(not payload, "payload already specified")
-			payload_filename = o
-			return true
-		end },
-		{ "^%-%-payload%=(.+)$", function(n)
-			if not n then return false end
-			assert(not payload_filename, "payload filename already specified")
+    local payload
+    local payload_filename
+    local encode_voucher_options = {
+        { "^%-%-payload%-filename%=(.+)$", function(o)
+            if not o or #o < 1 then return false end
+            assert(not payload, "payload already specified")
+            payload_filename = o
+            return true
+        end },
+        { "^%-%-payload%=(.+)$", function(n)
+            if not n then return false end
+            assert(not payload_filename, "payload filename already specified")
             payload = n
-			return true
-		end },
-		{ ".*", function(all)
-			error("unrecognized option " .. all)
-		end }
-	}
+            return true
+        end },
+        { ".*", function(all)
+            error("unrecognized option " .. all)
+        end }
+    }
 
-	for i = 3, #arg do
-		local a = arg[i]
-		for j, option in ipairs(encode_voucher_options) do
-			if option[2](a:match(option[1])) then
-				break
-			end
-		end
-	end
+    for i = 3, #arg do
+        local a = arg[i]
+        for j, option in ipairs(encode_voucher_options) do
+            if option[2](a:match(option[1])) then
+                break
+            end
+        end
+    end
 
-	if payload_filename then
-		local f = assert(io.open(payload_filename, "rb"))
-		payload = assert(f:read("*a"))
-		f:close()
-	elseif not payload then
-		payload = assert(io.stdin:read("*a"))
-	end
+    if payload_filename then
+        local f = assert(io.open(payload_filename, "rb"))
+        payload = assert(f:read("*a"))
+        f:close()
+    elseif not payload then
+        payload = assert(io.stdin:read("*a"))
+    end
 
-	write_be256(32)
-	write_be256(#payload)
+    write_be256(32)
+    write_be256(#payload)
     io.stdout:write(payload)
 
 end
 
 local function decode_voucher(arg)
-	if arg[3] then
-		error("unexpected option " .. arg[4])
+    if arg[3] then
+        error("unexpected option " .. arg[4])
     end
     local address = read_address()
     io.stderr:write(hex(address), "\n")
     local offset = read_be256()
-	assert(offset == 64, "expected offset 64, got " .. offset) -- skip offset
-	local length = read_be256()
+    assert(offset == 64, "expected offset 64, got " .. offset) -- skip offset
+    local length = read_be256()
     io.stdout:write(assert(io.stdin:read(length)))
 end
 
 local function decode_hashes(arg)
-	if arg[3] then
-		error("unexpected option " .. arg[4])
+    if arg[3] then
+        error("unexpected option " .. arg[4])
     end
     while 1 do
         local hash = read_hash()
@@ -486,8 +486,8 @@ local action_what_table = {
     encode_voucher = encode_voucher,
     encode_notice = encode_string,
     encode_report = encode_string,
-	decode_input_metadata = decode_input_metadata,
-	decode_input = decode_string,
+    decode_input_metadata = decode_input_metadata,
+    decode_input = decode_string,
     decode_voucher = decode_voucher,
     decode_notice = decode_string,
     decode_report = decode_string,

@@ -235,7 +235,9 @@ LUACARTESI_OBJS:= \
 CARTESI_GRPC_GEN_OBJS:= \
 	versioning.pb.o \
 	cartesi-machine.pb.o \
-	cartesi-machine.grpc.pb.o
+	cartesi-machine.grpc.pb.o \
+	cartesi-machine-checkin.pb.o \
+	cartesi-machine-checkin.grpc.pb.o
 
 CARTESI_GRPC_OBJS:= \
 	machine-merkle-tree.o \

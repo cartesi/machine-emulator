@@ -2103,7 +2103,7 @@ class grpc_machine_fixture : public machine_rom_flash_simple_fixture {
 public:
     grpc_machine_fixture() : m_stub{} {
         char *err_msg{};
-        int result = cm_create_grpc_machine_stub("127.0.0.1:5001", &m_stub, &err_msg);
+        int result = cm_create_grpc_machine_stub("127.0.0.1:5001", "127.0.0.1:5002", &m_stub, &err_msg);
         BOOST_CHECK_EQUAL(result, CM_ERROR_OK);
         BOOST_CHECK_EQUAL(err_msg, nullptr);
     }
@@ -2168,7 +2168,7 @@ protected:
 BOOST_AUTO_TEST_CASE_NOLINT(create_grpc_machine_stub_wrong_address_test) {
     char *err_msg{};
     cm_grpc_machine_stub *stub{};
-    int error_code = cm_create_grpc_machine_stub("addr", &stub, &err_msg);
+    int error_code = cm_create_grpc_machine_stub("addr", "rdda", &stub, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 }
@@ -2176,7 +2176,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(create_grpc_machine_stub_wrong_address_test) {
 BOOST_AUTO_TEST_CASE_NOLINT(create_grpc_machine_stub_no_server_test) {
     char *err_msg{};
     cm_grpc_machine_stub *stub{};
-    int error_code = cm_create_grpc_machine_stub("127.0.0.2:5001", &stub, &err_msg);
+    int error_code = cm_create_grpc_machine_stub("127.0.0.2:5001", "127.0.0.1:5002", &stub, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 }
@@ -2206,7 +2206,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_rt_config_test, grpc_mac
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_wrong_address_test, grpc_machine_fixture) {
     char *err_msg{};
     cm_grpc_machine_stub *stub{};
-    cm_create_grpc_machine_stub("addr", &stub, &err_msg);
+    cm_create_grpc_machine_stub("addr", "rdda", &stub, &err_msg);
     int error_code = cm_create_grpc_machine(stub, &_machine_config, &_runtime_config, nullptr, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     std::string result = err_msg;

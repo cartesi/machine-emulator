@@ -26,6 +26,7 @@ local test_data = require "tests.data"
 
 
 local server_address = nil
+local checkin_address = nil
 local test_path = "./"
 local cleanup = {}
 
@@ -36,18 +37,27 @@ local function help()
     io.stderr:write(string.format([=[
 Usage:
 
-  %s <machine_type> [options] 
+  %s <machine_type> [options]
 
 where options are:
-  --server=<server-address>
-    run tests on a remote cartesi machine server (when machine type is grpc). 
-    <server-address> should be in one of the following formats:
-        <host>:<port>
-        unix:<path>
-    --test-path=<dir>
-        path to test execution folder. In case of grpc tests it is path to folder
-        where cartesi-machine-server is executed
-        (default: "./")
+
+  --server-address=<address>
+    run tests on a remote cartesi machine server (when machine type is grpc).
+    (requires --checkin-address)
+
+  --checkin-address=<address>
+    address of the local checkin server to run
+
+  --test-path=<dir>
+    path to test execution folder. In case of grpc tests it is path to
+    folder where cartesi-machine-server is executed
+    (default: "./")
+
+<address> is one of the following formats:
+  <host>:<port>
+   unix:<path>
+
+<host> can be a host name, IPv4 or IPv6 address.
 ]=], arg[0]))
     os.exit()
 end
@@ -62,9 +72,14 @@ local options = {
         if not all then return false end
         help()
     end },
-    { "^%-%-server%=(.*)$", function(o)
+    { "^%-%-server%-address%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         server_address = o
+        return true
+    end },
+    { "^%-%-checkin%-address%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        checkin_address = o
         return true
     end },
     { "^%-%-test%-path%=(.*)$", function(o)
@@ -97,10 +112,13 @@ if (machine_type == "grpc") then
     assert(server_address ~= nil, "cartesi machine server address is missing")
     assert(test_path ~= nil, "cartesi machine server excution folder path must be provided, server must run on same computer")
 end 
-if server_address then cartesi.grpc = require("cartesi.grpc") end
+if server_address then
+    assert(checkin_address, "missing checkin address")
+    cartesi.grpc = require("cartesi.grpc")
+end
 
 local function connect()
-    local server = cartesi.grpc.stub(server_address)
+    local server = cartesi.grpc.stub(server_address, checkin_address)
     local version = assert(server.get_version(),
         "could not connect to cartesi machine GRPC server at " .. server_address)
     local shutdown = function() server:shutdown() end

@@ -55,10 +55,20 @@ using grpc::ServerContext;
 using grpc::Status;
 using grpc::StatusCode;
 
+struct checkin_context {
+    checkin_context(const char *session_id, const char *checkin_address) : session_id(session_id),
+        checkin_address(checkin_address) { }
+    checkin_context(const std::string &session_id, const std::string &checkin_address) : session_id(session_id),
+        checkin_address(checkin_address) { }
+    std::string session_id;
+    std::string checkin_address;
+};
+
 struct handler_context {
     std::unique_ptr<machine> m;
     std::unique_ptr<Machine::AsyncService> s;
     std::unique_ptr<ServerCompletionQueue> cq;
+    std::optional<checkin_context> checkin;
     bool ok;
     bool forked;
 };
@@ -228,6 +238,30 @@ class handler_GetVersion final : public handler<Void, GetVersionResponse> {
 
 public:
     handler_GetVersion(handler_context &hctx) {
+        advance(hctx);
+    }
+};
+
+class handler_SetCheckInTarget final : public handler<SetCheckInTargetRequest, Void> {
+
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, SetCheckInTargetRequest *req,
+        ServerAsyncResponseWriter<Void> *writer) override {
+        hctx.s->RequestSetCheckInTarget(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        return side_effect::none;
+    }
+
+    side_effect go(handler_context &hctx, SetCheckInTargetRequest *req,
+        ServerAsyncResponseWriter<Void> *writer) override {
+        if (req->session_id().empty() || req->address().empty()) {
+            return finish_with_error(writer, StatusCode::INVALID_ARGUMENT, "need non-empty session id and address");
+        }
+        Void resp;
+        hctx.checkin = checkin_context{req->session_id(), req->address()};
+        return finish_ok(writer, resp);
+    }
+
+public:
+    handler_SetCheckInTarget(handler_context &hctx) {
         advance(hctx);
     }
 };
@@ -1071,8 +1105,7 @@ static std::string replace_port(const std::string &address, int port) {
     }
 }
 
-std::unique_ptr<Server> build_server(const char *server_address, const char *session_id, const char *checkin_address,
-    handler_context &hctx) {
+std::unique_ptr<Server> build_server(const char *server_address, handler_context &hctx) {
     hctx.s = std::make_unique<Machine::AsyncService>();
     ServerBuilder builder;
     builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
@@ -1081,12 +1114,13 @@ std::unique_ptr<Server> build_server(const char *server_address, const char *ses
     builder.RegisterService(hctx.s.get());
     hctx.cq = builder.AddCompletionQueue();
     auto server = builder.BuildAndStart();
-    if (session_id && checkin_address) {
-        auto stub = MachineCheckIn::NewStub(grpc::CreateChannel(checkin_address, grpc::InsecureChannelCredentials()));
+    if (hctx.checkin.has_value()) {
+        auto stub = MachineCheckIn::NewStub(grpc::CreateChannel(hctx.checkin.value().checkin_address,
+                grpc::InsecureChannelCredentials()));
         grpc::ClientContext context;
         CheckInRequest request;
         Void response;
-        request.set_session_id(session_id);
+        request.set_session_id(hctx.checkin.value().session_id);
         request.set_address(replace_port(server_address, server_port));
         auto status = stub->CheckIn(&context, request, &response);
         if (!status.ok()) {
@@ -1100,14 +1134,18 @@ std::unique_ptr<Server> build_server(const char *server_address, const char *ses
 
 static void server_loop(const char *server_address, const char *session_id, const char *checkin_address) {
     handler_context hctx{};
+    if (session_id && checkin_address) {
+        hctx.checkin.emplace(session_id, checkin_address);
+    }
     for (;;) {
-        auto server = build_server(server_address, session_id, checkin_address, hctx);
+        auto server = build_server(server_address, hctx);
         if (!server) {
             std::cerr << "server creation failed\n";
             exit(1);
         }
 
         handler_GetVersion hGetVersion(hctx);
+        handler_SetCheckInTarget hSetCheckInTarget(hctx);
         handler_Machine hMachine(hctx);
         handler_Run hRun(hctx);
         handler_Store hStore(hctx);

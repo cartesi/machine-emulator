@@ -202,6 +202,7 @@ void machine::replace_memory_range(const memory_range_config &new_range) {
             }
             // replace range preserving original flags
             pma = make_memory_range_pma_entry(new_range).set_flags(pma.get_flags());
+            return;
         }
     }
     throw std::invalid_argument{"Cannot replace inexistent memory range"};

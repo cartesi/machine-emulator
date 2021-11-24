@@ -155,14 +155,17 @@ where options are:
 
   --rollup
     defines appropriate values for rollup-rx-buffer, rollup-tx-buffer,
-    rollup-input-metadata, rollup-voucher-hashes, and rollup-notice hashes
-    for use with rollups, equivalent to the following options:
+    rollup-input-metadata, rollup-voucher-hashes, rollup-notice hashes,
+    and htif yield for use with rollups.
+    equivalent to the following options:
 
     --rollup-rx-buffer=start:0x60000000,length:2<<20
     --rollup-tx-buffer=start:0x60200000,length:2<<20
     --rollup-input-metadata=start:0x60400000,length:4096
     --rollup-voucher-hashes=start:0x60600000,length:2<<20
     --rollup-notice-hashes=start:0x60800000,length:2<<20
+    --htif-yield-manual
+    --htif-yield-automatic
 
   --rollup-advance-epoch=<key>:<value>[,<key>:<value>[,...]...]
     advances the state of the machine through an entire rollup epoch
@@ -449,6 +452,8 @@ local options = {
         rollup_input_metadata = { start = 0x60400000, length = 4096 }
         rollup_voucher_hashes = { start = 0x60600000, length = 2 << 20 }
         rollup_notice_hashes = { start = 0x60800000, length = 2 << 20 }
+        htif_yield_automatic = true
+        htif_yield_manual = true
         return true
     end },
     { "^(%-%-flash%-drive%=(.+))$", function(all, opts)

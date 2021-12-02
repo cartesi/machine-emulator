@@ -43,35 +43,35 @@ where options are:
     (requires --checkin-address)
 
   --checkin-address=<address>
-    address of the local checkin server to run
+    address of the local checkin server to run.
 
   --server-shutdown
-    shutdown the server after the execution
+    shutdown the server after the execution.
 
   --ram-image=<filename>
-    name of file containing RAM image (default: "linux.bin")
+    name of file containing RAM image (default: "linux.bin").
 
   --no-ram-image
-    forget settings for RAM image
+    forget settings for RAM image.
 
   --ram-length=<number>
-    set RAM length
+    set RAM length.
 
   --rom-image=<filename>
-    name of file containing ROM image (default: "rom.bin")
+    name of file containing ROM image (default: "rom.bin").
 
   --no-rom-bootargs
-    clear default bootargs
+    clear default bootargs.
 
   --append-rom-bootargs=<string>
-    append <string> to bootargs
+    append <string> to bootargs.
 
   --no-root-flash-drive
-    clear default root flash drive and associated bootargs parameters
+    clear default root flash drive and associated bootargs parameters.
 
   --flash-drive=<key>:<value>[,<key>:<value>[,...]...]
     defines a new flash drive, or modify an existing flash drive definition
-    flash drives appear as /dev/mtdblock[1-7]
+    flash drives appear as /dev/mtdblock[1-7].
 
     <key>:<value> is one of
         label:<label>
@@ -81,30 +81,32 @@ where options are:
         shared
 
         label (mandatory)
-        identifies the flash drive and init attempts to mount it as /mnt/<label>
+        identifies the flash drive. init attempts to mount it as /mnt/<label>.
 
         filename (optional)
-        gives the name of the file containing the image for the flash drive
-        when omitted or set to the empty string, the drive starts filled with 0
+        gives the name of the file containing the image for the flash drive.
+        when omitted or set to the empty, the drive starts filled with 0.
 
         start (optional)
-        sets the starting physical memory offset for flash drive in bytes
-        when omitted, drives start at 2 << 63 and are spaced by 2 << 60
-        if any start offset is set, all of them must be set
+        sets the starting physical memory offset for flash drive in bytes.
+        when omitted, drives start at 2 << 63 and are spaced by 2 << 60.
+        if any start offset is set, all of them must be set.
 
         length (optional)
-        gives the length of the flash drive in bytes (must be a multiple of 4Ki)
-        if omitted, the length is computed from the image in filename
-        if length and filename are set, the image file size must match length
+        gives the length of the flash drive in bytes (must be multiple of 4Ki).
+        if omitted, the length is computed from the image in filename.
+        if length and filename are set, the image file size must match length.
 
         shared (optional)
-        target modifications to flash drive modify image file as well
-        by default, image files are not modified and changes are lost
+        target modifications to flash drive modify image file as well.
+        by default, image files are not modified and changes are lost.
 
     (an option "--flash-drive=label:root,filename:rootfs.ext2" is implicit)
 
   --replace-flash-drive=<key>:<value>[,<key>:<value>[,...]...]
-    replaces an existing flash drive right after machine instantiation.
+  --replace-memory-range=<key>:<value>[,<key>:<value>[,...]...]
+    replaces an existing flash drive or rollup memory range right after
+    machine instantiation.
     (typically used in conjunction with the --load=<directory> option.)
 
     <key>:<value> is one of
@@ -115,11 +117,11 @@ where options are:
 
     semantics are the same as for the --flash-drive option with the following
     difference: start and length are mandatory, and must match those of a
-    previously existing flash drive.
+    previously existing flash drive or rollup memory memory range.
 
   --dhd=<key>:<value>[,<key>:<value>[,...]...]
-    configures the dehashing device
-    by default, the device is not present
+    configures the dehashing device.
+    by default, the device is not present.
 
     <key>:<value> is one of
         filename:<filename>
@@ -128,22 +130,25 @@ where options are:
 
         filename (optional)
         gives the name of the file containing the initial dehashed data.
-        when omitted or set to the empty string, the data starts filled with 0
+        when omitted or set to the empty, the data starts filled with 0.
 
         tstart (mandatory when device present)
-        sets the start of target physical memory range for output data
-        must be aligned to tlength
+        sets the start of target physical memory range for output data.
+        must be aligned to tlength.
 
         tlength (mandatory when device present)
-        gives the length of target physical memory range for output data
-        must be a power of 2 greater than 4Ki, or 0 when device not present
+        gives the length of target physical memory range for output data.
+        must be a power of 2 greater than 4Ki, or 0 when device not present.
+
+  --dhd-source=<address>
+    server acting as source for dehashed data.
 
   --rollup-rx-buffer=<key>:<value>[,<key>:<value>[,...]...]
   --rollup-tx-buffer=<key>:<value>[,<key>:<value>[,...]...]
   --rollup-input-metadata=<key>:<value>[,<key>:<value>[,...]...]
   --rollup-voucher-hashes=<key>:<value>[,<key>:<value>[,...]...]
   --rollup-notice-hashes=<key>:<value>[,<key>:<value>[,...]...]
-    defines the individual the memory ranges used by rollups
+    defines the individual the memory ranges used by rollups.
 
     <key>:<value> is one of
         filename:<filename>
@@ -151,7 +156,8 @@ where options are:
         length:<number>
         shared
 
-    semantics are the same as for the --flash-drive option
+    semantics are the same as for the --flash-drive option with the following
+    difference: start and length are mandatory.
 
   --rollup
     defines appropriate values for rollup-rx-buffer, rollup-tx-buffer,
@@ -168,7 +174,7 @@ where options are:
     --htif-yield-automatic
 
   --rollup-advance-epoch=<key>:<value>[,<key>:<value>[,...]...]
-    advances the state of the machine through an entire rollup epoch
+    advances the state of the machine through an entire rollup epoch.
 
     <key>:<value> is one of
         epoch_index:<number>
@@ -184,51 +190,49 @@ where options are:
         hashes
 
         epoch_index
-        the index of the epoch
+        the index of the epoch.
 
         input (default: "epoch-%%e-input-%%i.bin")
         the pattern that derives the name of the file read for input %%i
-        of epoch index %%e
+        of epoch index %%e.
 
         input_index_start (default: 0)
-        index of first input to advance (the first value of %%i)
+        index of first input to advance (the first value of %%i).
 
         input_index_end (default: 0)
-        index of last input to advance (the last value of %%i)
+        index of last input to advance (the last value of %%i).
 
         input_metadata (default: "epoch-%%e-input-metadata-%%i.bin")
         the pattern that derives the name of the file read for
-        input metadata %%i of epoch index %%e
+        input metadata %%i of epoch index %%e.
 
         voucher (default: "epoch-%%e-input-%%i-voucher-%%o.bin")
         the pattern that derives the name of the file written for voucher %%o
-        of input %%i of epoch %%e
+        of input %%i of epoch %%e.
 
         voucher_hashes (default: "epoch-%%e-input-%%i-voucher-hashes.bin")
         the pattern that derives the name of the file written for the voucher
-        hashes of input %%i of epoch %%e
+        hashes of input %%i of epoch %%e.
 
         notice (default: "epoch-%%e-input-%%i-notice-%%o.bin")
         the pattern that derives the name of the file written for notice %%o
-        of input %%i of epoch %%e
+        of input %%i of epoch %%e.
 
         notice_hashes (default: "epoch-%%e-input-%%i-notice-hashes.bin")
         the pattern that derives the name of the file written for the notice
-        hashes of input %%i of epoch %%e
+        hashes of input %%i of epoch %%e.
 
         report (default: "epoch-%%e-input-%%i-report-%%o.bin")
         the pattern that derives the name of the file written for report %%o
-        of input %%i of epoch %%e
+        of input %%i of epoch %%e.
 
         hashes
-        print out hashes before every input
+        print out hashes before every input.
 
-    "%%e" is replaced by the epoch index, "%%i" by the input index and "%%o" by
-    the voucher, notice, or report index
-    the process starts with input
-
-  --dhd-source=<address>
-    server acting as source for dehashed data
+    the replay starts with %%i set to input_index_start and ends with %%i
+    set to input_index_end.
+    for each input, "%%e" is replaced by the epoch index, "%%i" by the
+    input index, and "%%o" by the voucher, notice, or report index.
 
   --concurrency=<key>:<value>[,<key>:<value>[,...]...]
     configures the number of threads used in some implementation parts.
@@ -242,28 +246,28 @@ where options are:
         it can be identified or else a single thread is used.
 
   --max-mcycle=<number>
-    stop at a given mcycle (default: 2305843009213693952)
+    stop at a given mcycle (default: 2305843009213693952).
 
   -i or --htif-console-getchar
-    run in interactive mode
+    run in interactive mode.
 
   --htif-yield-manual
-    honor yield requests with manual reset by target
+    honor yield requests with manual reset by target.
 
   --htif-yield-automatic
-    honor yield requests with automatic reset by target
-
-  --load=<directory>
-    load prebuilt machine from <directory>
+    honor yield requests with automatic reset by target.
 
   --store=<directory>
-    store machine to <directory>
+    store machine to <directory>.
+
+  --load=<directory>
+    load machine previously stored in <directory>.
 
   --initial-hash
-    print initial state hash before running machine
+    print initial state hash before running machine.
 
   --final-hash
-    print final state hash when done
+    print final state hash when done.
 
   --periodic-hashes=<number-period>[,<number-start>]
     prints root hash every <number-period> cycles. If <number-start> is given,
@@ -272,10 +276,10 @@ where options are:
     (default: none)
 
   --step
-    print step log for 1 additional cycle when done
+    print step log for 1 additional cycle when done.
 
   --json-steps=<filename>
-    output json with step logs for all cycles to <filename>
+    output json with step logs for all cycles to <filename>.
 
   --store-config[=<filename>]
     store initial machine config to <filename>. If <filename> is omitted,
@@ -287,16 +291,16 @@ where options are:
     argument or into the default value.
 
   --dump-pmas
-    dump all PMA ranges to disk when done
+    dump all PMA ranges to disk when done.
 
 and command and arguments:
 
   command
-    the full path to the program inside the target system
+    the full path to the program inside the target system.
     (default: /bin/sh)
 
   arguments
-    the given command arguments
+    the given command arguments.
 
 <number> can be specified in decimal (e.g., 16) or hexadeximal (e.g., 0x10),
 with a suffix multiplier (i.e., Ki, Mi, Gi for 2^10, 2^20, 2^30, respectively),
@@ -321,7 +325,7 @@ local flash_label_order = { "root" }
 local flash_shared = { }
 local flash_start = { }
 local flash_length = { }
-local flash_drive_replace = { }
+local memory_range_replace = { }
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
 local rom_image_filename = images_path .. "rom.bin"
@@ -493,7 +497,13 @@ local options = {
     end },
     { "^(%-%-replace%-flash%-drive%=(.+))$", function(all, opts)
         if not opts then return false end
-        flash_drive_replace[#flash_drive_replace+1] =
+        memory_range_replace[#memory_range_replace+1] =
+            parse_memory_range(opts, "flash drive", all)
+        return true
+    end },
+    { "^(%-%-replace%-memory%-range%=(.+))$", function(all, opts)
+        if not opts then return false end
+        memory_range_replace[#memory_range_replace+1] =
             parse_memory_range(opts, "flash drive", all)
         return true
     end },
@@ -1073,8 +1083,8 @@ end
 -- obtain config from instantiated machine
 local config = machine:get_initial_config()
 
-for _,f in ipairs(flash_drive_replace) do
-    machine:replace_flash_drive(f)
+for _,r in ipairs(memory_range_replace) do
+    machine:replace_memory_range(r)
 end
 
 if type(store_config) == "string" then

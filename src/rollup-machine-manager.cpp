@@ -360,6 +360,7 @@ using id_type = std::string;
 struct epoch_type {
     uint64_t epoch_index{};
     epoch_state state{epoch_state::active};
+    hash_type most_recent_machine_hash;
     cartesi::complete_merkle_tree vouchers_tree{LOG2_ROOT_SIZE, LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE};
     cartesi::complete_merkle_tree notices_tree{LOG2_ROOT_SIZE, LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE};
     std::vector<processed_input_type> processed_inputs;
@@ -663,11 +664,12 @@ static void finish_epoch(epoch_type &e) {
 
 /// \brief Start a new epoch in session
 /// \param session Associated session
-static void start_new_epoch(session_type &session) {
+static void start_new_epoch(epoch_type &prev_epoch, session_type &session) {
     session.active_epoch_index++;
     epoch_type e;
     e.epoch_index = session.active_epoch_index;
     e.state = epoch_state::active;
+    e.most_recent_machine_hash = prev_epoch.most_recent_machine_hash;
     session.epochs[e.epoch_index] = std::move(e);
 }
 
@@ -742,7 +744,7 @@ static handler_type::pull_type *new_FinishEpoch_handler(handler_context &hctx) {
                 store(actx, request.storage_directory());
             }
             finish_epoch(e);
-            start_new_epoch(session);
+            start_new_epoch(e, session);
             writer.Finish(response, grpc::Status::OK, self);
             yield(side_effect::none);
         } catch (finish_error_yield_none &e) {
@@ -1065,6 +1067,11 @@ static handler_type::pull_type *new_GetEpochStatus_handler(handler_context &hctx
                 response.mutable_taint_status()->set_error_code(session.taint_status.error_code());
                 response.mutable_taint_status()->set_error_message(session.taint_status.error_message());
             }
+            cartesi::set_proto_hash(e.most_recent_machine_hash, response.mutable_most_recent_machine_hash());
+            cartesi::set_proto_hash(e.vouchers_tree.get_root_hash(),
+                response.mutable_most_recent_vouchers_epoch_root_hash());
+            cartesi::set_proto_hash(e.notices_tree.get_root_hash(),
+                response.mutable_most_recent_notices_epoch_root_hash());
             writer.Finish(response, grpc::Status::OK, self);
             yield(side_effect::none);
         } catch (finish_error_yield_none &e) {
@@ -1129,10 +1136,6 @@ static auto get_proto_session(const StartSessionRequest &request) {
     session.tainted = false;
     session.processing_lock = false;
     session.active_epoch_index = request.active_epoch_index();
-    epoch_type e;
-    e.epoch_index = session.active_epoch_index;
-    e.state = epoch_state::active;
-    session.epochs[e.epoch_index] = std::move(e);
     session.server_deadline = get_proto_deadline_config(request.server_deadline());
     session.server_cycles = get_proto_cycles_config(request.server_cycles());
     return session;
@@ -1347,6 +1350,35 @@ static void run_until_first_yield(async_context &actx) {
     check_htif_yield_manual(actx, "htif.tohost", run_response.tohost());
 }
 
+/// \brief Asynchronously get current root hash from machine server. (Assumes Merkle tree has been updated)
+/// \param actx Context for async operations
+static hash_type get_root_hash(async_context &actx) {
+    Void request;
+    grpc::ClientContext client_context;
+    set_deadline(client_context, actx.session.server_deadline.fast);
+    auto reader = actx.session.server_stub->AsyncGetRootHash(&client_context, request, actx.completion_queue);
+    grpc::Status status;
+    GetRootHashResponse response;
+    reader->Finish(&response, &status, actx.self);
+    actx.yield(side_effect::none);
+    if (!status.ok()) {
+        THROW((taint_session{actx.session, std::move(status)}));
+    }
+    return cartesi::get_proto_hash(response.hash());
+}
+
+/// \brief Starts the first epoch in a session
+/// \param actx Context for async operations
+/// \param session Session where first epoch should be started
+static void start_first_epoch(async_context &actx, session_type &session) {
+    initial_update_merkle_tree(actx);
+    epoch_type e;
+    e.epoch_index = session.active_epoch_index;
+    e.state = epoch_state::active;
+    e.most_recent_machine_hash = get_root_hash(actx);
+    session.epochs[e.epoch_index] = std::move(e);
+}
+
 /// \brief Creates a new handler for the StartSession RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
 static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) {
@@ -1487,8 +1519,8 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
                     rollup.voucher_hashes());
                 check_memory_range_config(request_context, session.memory_range.notice_hashes, "notice hashes",
                     rollup.notice_hashes());
+                start_first_epoch(actx, session);
                 run_until_first_yield(actx);
-                initial_update_merkle_tree(actx);
                 // StartSession Passed!
                 StartSessionResponse start_session_response;
                 start_session_response.set_allocated_config(&config);
@@ -2069,23 +2101,6 @@ static void update_merkle_tree(async_context &actx) {
     }
 }
 
-/// \brief Asynchronously get current root hash from machine server. (Assumes Merkle tree has been updated)
-/// \param actx Context for async operations
-static hash_type get_root_hash(async_context &actx) {
-    Void request;
-    grpc::ClientContext client_context;
-    set_deadline(client_context, actx.session.server_deadline.fast);
-    auto reader = actx.session.server_stub->AsyncGetRootHash(&client_context, request, actx.completion_queue);
-    grpc::Status status;
-    GetRootHashResponse response;
-    reader->Finish(&response, &status, actx.self);
-    actx.yield(side_effect::none);
-    if (!status.ok()) {
-        THROW((taint_session{actx.session, std::move(status)}));
-    }
-    return cartesi::get_proto_hash(response.hash());
-}
-
 /// \brief Processes a pending query
 /// \param actx Context for async operations
 /// \param e Associated epoch
@@ -2332,8 +2347,10 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
                             LOG2_KECCAK_SIZE);
                 notices[entry_index].hash = keccak_type{std::move(keccak), std::move(keccak_in_notice_hashes)};
             }
+            // Update most recent machine hash in epoch
+            e.most_recent_machine_hash = get_root_hash(actx);
             // Add input results to list of processed inputs
-            e.processed_inputs.push_back(processed_input_type{input_index, get_root_hash(actx),
+            e.processed_inputs.push_back(processed_input_type{input_index, e.most_recent_machine_hash,
                 std::move(voucher_hashes_in_epoch), std::move(notice_hashes_in_epoch),
                 input_result_type{
                     std::move(voucher_hashes_in_machine),
@@ -2365,9 +2382,14 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
             // Get proof of null hash in epoch's notices metadata memory range Merkle tree
             e.notices_tree.push_back(zero);
             auto notice_hashes_in_epoch = e.notices_tree.get_proof(input_index << LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE);
+            // Check the machine hash has not changed
+            if (e.most_recent_machine_hash != get_root_hash(actx)) {
+                THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
+                    "machine hash is changed after rollback"}));
+            }
             // Add skipped input to list of processed inputs
             e.processed_inputs.push_back(
-                processed_input_type{input_index, get_root_hash(actx), std::move(voucher_hashes_in_epoch),
+                processed_input_type{input_index, e.most_recent_machine_hash, std::move(voucher_hashes_in_epoch),
                     std::move(notice_hashes_in_epoch), skip_reason, std::move(reports)});
             // Leave session.current_mcycle alone
         }

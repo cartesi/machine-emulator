@@ -173,14 +173,14 @@ where options are:
     --htif-yield-manual
     --htif-yield-automatic
 
-  --rollup-advance-epoch=<key>:<value>[,<key>:<value>[,...]...]
-    advances the state of the machine through an entire rollup epoch.
+  --rollup-advance-state=<key>:<value>[,<key>:<value>[,...]...]
+    advances the state of the machine through a number of inputs in an epoch
 
     <key>:<value> is one of
         epoch_index:<number>
         input:<filename-pattern>
         input_metadata:<filename-pattern>
-        input_index_start:<number>
+        input_index_begin:<number>
         input_index_end:<number>
         voucher:<filename-pattern>
         voucher_hashes: <filename>
@@ -190,17 +190,17 @@ where options are:
         hashes
 
         epoch_index
-        the index of the epoch.
+        the index of the epoch (the value of %%e).
 
         input (default: "epoch-%%e-input-%%i.bin")
         the pattern that derives the name of the file read for input %%i
         of epoch index %%e.
 
-        input_index_start (default: 0)
+        input_index_begin (default: 0)
         index of first input to advance (the first value of %%i).
 
         input_index_end (default: 0)
-        index of last input to advance (the last value of %%i).
+        one past index of last input to advance (one past last value of %%i).
 
         input_metadata (default: "epoch-%%e-input-metadata-%%i.bin")
         the pattern that derives the name of the file read for
@@ -229,14 +229,13 @@ where options are:
         hashes
         print out hashes before every input.
 
-    the replay starts with %%i set to input_index_start and ends with %%i
-    set to input_index_end.
+    the input index ranges in {input_index_begin, ..., input_index_end-1}.
     for each input, "%%e" is replaced by the epoch index, "%%i" by the
     input index, and "%%o" by the voucher, notice, or report index.
 
   --rollup-inspect-state=<key>:<value>[,<key>:<value>[,...]...]
     inspect the state of the machine with a query.
-    the queries happen after the end of --rollup-advance-state.
+    the query happens after the end of --rollup-advance-state.
 
     <key>:<value> is one of
         query:<filename>
@@ -249,7 +248,7 @@ where options are:
         the pattern that derives the name of the file written for report %%o
         of the query.
 
-    while each query is processed, "%%o" is replaced by the report index.
+    while the query is processed, "%%o" is replaced by the current report index.
 
   --concurrency=<key>:<value>[,<key>:<value>[,...]...]
     configures the number of threads used in some implementation parts.
@@ -356,7 +355,8 @@ local rollup_tx_buffer = { start = 0, length = 0 }
 local rollup_input_metadata = { start = 0, length = 0 }
 local rollup_voucher_hashes = { start = 0, length = 0 }
 local rollup_notice_hashes = { start = 0, length = 0 }
-local rollup = nil
+local rollup_advance = nil
+local rollup_inspect = nil
 local concurrency_update_merkle_tree = 0
 local append_rom_bootargs = ""
 local htif_console_getchar = false
@@ -524,38 +524,55 @@ local options = {
             parse_memory_range(opts, "flash drive", all)
         return true
     end },
-    { "^(%-%-rollup%-advance%-epoch%=(.+))$", function(all, opts)
+    { "^(%-%-rollup%-advance%-state%=(.+))$", function(all, opts)
         if not opts then return false end
         local r = util.parse_options(opts, {
             epoch_index = true,
             input = true,
             input_metadata = true,
-            input_index_start = true,
+            input_index_begin = true,
             input_index_end = true,
             voucher = true,
             voucher_hashes = true,
             notice = true,
             notice_hashes = true,
             report = true,
-            hashes = true
+            hashes = true,
         })
         assert(not r.hashes or r.hashes == true, "invalid hashes value in " .. all)
-        r.epoch_index = assert(util.parse_number(r.epoch_index),
-                "invalid epoch index in " .. all)
+        r.epoch_index = assert(util.parse_number(r.epoch_index), "invalid epoch index in " .. all)
         r.input = r.input or "epoch-%e-input-%i.bin"
         r.input_metadata = r.input_metadata or "epoch-%e-input-metadata-%i.bin"
-        r.input_index_start = r.input_index_start or 0
-        r.input_index_start = assert(util.parse_number(r.input_index_start),
-                "invalid input index start in " .. all)
+        r.input_index_begin = r.input_index_begin or 0
+        r.input_index_begin = assert(util.parse_number(r.input_index_begin), "invalid input index begin in " .. all)
         r.input_index_end = r.input_index_end or 0
-        r.input_index_end = assert(util.parse_number(r.input_index_end),
-                "invalid input index end in " .. all)
+        r.input_index_end = assert(util.parse_number(r.input_index_end), "invalid input index end in " .. all)
         r.voucher = r.voucher or "epoch-%e-input-%i-voucher-%o.bin"
         r.voucher_hashes = r.voucher_hashes or "epoch-%e-input-%i-voucher-hashes.bin"
         r.notice = r.notice or "epoch-%e-input-%i-notice-%o.bin"
         r.notice_hashes = r.notice_hashes or "epoch-%e-input-%i-notice-hashes.bin"
         r.report = r.report or "epoch-%e-input-%i-report-%o.bin"
-        rollup = r
+        r.next_input_index = r.input_index_begin
+        rollup_advance = r
+        return true
+    end },
+    { "^(%-%-rollup%-inspect%-state%=(.+))$", function(all, opts)
+        if not opts then return false end
+        local r = util.parse_options(opts, {
+            query = true,
+            report = true,
+        })
+        r.query = r.query or "query.bin"
+        r.report = r.report or "query-report-%o.bin"
+        rollup_inspect = r
+        return true
+    end },
+    { "^%-%-rollup%-inspect%-state$", function(all)
+        if not all then return false end
+        rollup_inspect = {
+            query = "query.bin",
+            report = "query-report-%o.bin"
+        }
         return true
     end },
     { "^(%-%-dhd%=(.+))$", function(all, opts)
@@ -1001,6 +1018,12 @@ if server_address then
     server = assert(cartesi.grpc.stub(server_address, checkin_address))
     local v = assert(server.get_version())
     stderr("Connected: server version is %d.%d.%d\n", v.major, v.minor, v.patch)
+    if server_shutdown then
+        server_shutdown = setmetatable({}, { __gc = function()
+            stderr("Shutting down server\n")
+            server.shutdown()
+        end })
+    end
 end
 
 local runtime = {
@@ -1198,13 +1221,10 @@ local function instantiate_filename(pattern, values)
     return (string.gsub(pattern, "\0", "%"))
 end
 
-local function save_rollup_voucher_and_notice_hashes(machine, config, rollup)
-    -- save only if we have already run an input
-    if rollup.next_input_index > rollup.input_index_start then
-        local values = { e = rollup.epoch_index, i = rollup.next_input_index - 1 }
-        save_rollup_hashes(machine, config.voucher_hashes, instantiate_filename(rollup.voucher_hashes, values))
-        save_rollup_hashes(machine, config.notice_hashes, instantiate_filename(rollup.notice_hashes, values))
-    end
+local function save_rollup_voucher_and_notice_hashes(machine, config, advance)
+    local values = { e = advance.epoch_index, i = advance.next_input_index - 1 }
+    save_rollup_hashes(machine, config.voucher_hashes, instantiate_filename(advance.voucher_hashes, values))
+    save_rollup_hashes(machine, config.notice_hashes, instantiate_filename(advance.notice_hashes, values))
 end
 
 local function load_memory_range(machine, config, filename)
@@ -1214,22 +1234,24 @@ local function load_memory_range(machine, config, filename)
     machine:write_memory(config.start, s)
 end
 
-local function load_rollup_input_and_metadata(machine, config, rollup)
-    if rollup.next_input_index <= rollup.input_index_end then
-        local values = { e = rollup.epoch_index, i = rollup.next_input_index }
-        machine:replace_memory_range(config.input_metadata) -- clear
-        load_memory_range(machine, config.input_metadata, instantiate_filename(rollup.input_metadata, values))
-        machine:replace_memory_range(config.rx_buffer) -- clear
-        load_memory_range(machine, config.rx_buffer, instantiate_filename(rollup.input, values))
-        machine:replace_memory_range(config.voucher_hashes) -- clear
-        machine:replace_memory_range(config.notice_hashes) -- clear
-        return true
-    end
+local function load_rollup_input_and_metadata(machine, config, advance)
+    local values = { e = advance.epoch_index, i = advance.next_input_index }
+    machine:replace_memory_range(config.input_metadata) -- clear
+    load_memory_range(machine, config.input_metadata, instantiate_filename(advance.input_metadata, values))
+    machine:replace_memory_range(config.rx_buffer) -- clear
+    load_memory_range(machine, config.rx_buffer, instantiate_filename(advance.input, values))
+    machine:replace_memory_range(config.voucher_hashes) -- clear
+    machine:replace_memory_range(config.notice_hashes) -- clear
 end
 
-local function save_rollup_voucher(machine, config, rollup)
-    local values = { e = rollup.epoch_index, i = rollup.next_input_index-1, o =  rollup.voucher_index }
-    local f = assert(io.open(instantiate_filename(rollup.voucher, values), "wb"))
+local function load_rollup_query(machine, config, inspect)
+    machine:replace_memory_range(config.rx_buffer) -- clear
+    load_memory_range(machine, config.rx_buffer, inspect.query) -- load query payload
+end
+
+local function save_rollup_advance_state_voucher(machine, config, advance)
+    local values = { e = advance.epoch_index, i = advance.next_input_index-1, o =  advance.voucher_index }
+    local f = assert(io.open(instantiate_filename(advance.voucher, values), "wb"))
     -- skip address and offset to reach payload length
     local length = string.unpack(">I8", machine:read_memory(config.start+3*32-8, 8))
     -- add address, offset, and payload length to amount to be read
@@ -1238,9 +1260,9 @@ local function save_rollup_voucher(machine, config, rollup)
     f:close()
 end
 
-local function save_rollup_notice(machine, config, rollup)
-    local values = { e = rollup.epoch_index, i = rollup.next_input_index-1, o =  rollup.notice_index }
-    local f = assert(io.open(instantiate_filename(rollup.notice, values), "wb"))
+local function save_rollup_advance_state_notice(machine, config, advance)
+    local values = { e = advance.epoch_index, i = advance.next_input_index-1, o =  advance.notice_index }
+    local f = assert(io.open(instantiate_filename(advance.notice, values), "wb"))
     -- skip offset to reach payload length
     local length = string.unpack(">I8", machine:read_memory(config.start+2*32-8, 8))
     -- add offset and payload length to amount to be read
@@ -1249,9 +1271,20 @@ local function save_rollup_notice(machine, config, rollup)
     f:close()
 end
 
-local function save_rollup_report(machine, config, rollup)
-    local values = { e = rollup.epoch_index, i = rollup.next_input_index-1, o =  rollup.report_index }
-    local f = assert(io.open(instantiate_filename(rollup.report, values), "wb"))
+local function save_rollup_advance_state_report(machine, config, advance)
+    local values = { e = advance.epoch_index, i = advance.next_input_index-1, o =  advance.report_index }
+    local f = assert(io.open(instantiate_filename(advance.report, values), "wb"))
+    -- skip offset to reach payload length
+    local length = string.unpack(">I8", machine:read_memory(config.start+2*32-8, 8))
+    -- add offset and payload length to amount to be read
+    length = length+2*32
+    assert(f:write(machine:read_memory(config.start, length)))
+    f:close()
+end
+
+local function save_rollup_inspect_state_report(machine, config, inspect)
+    local values = { o =  inspect.report_index }
+    local f = assert(io.open(instantiate_filename(inspect.report, values), "wb"))
     -- skip offset to reach payload length
     local length = string.unpack(">I8", machine:read_memory(config.start+2*32-8, 8))
     -- add offset and payload length to amount to be read
@@ -1261,7 +1294,8 @@ local function save_rollup_report(machine, config, rollup)
 end
 
 if json_steps then
-    assert(not rollup, "json-steps and rollup-advance-epoch are incompatible")
+    assert(not rollup_advance, "json-steps and rollup advance state are incompatible")
+    assert(not rollup_inspect, "json-steps and rollup inspect state are incompatible")
     assert(not config.htif.console_getchar, "logs are meaningless in interactive mode")
     json_steps = assert(io.open(json_steps, "w"))
     json_steps:write("[\n")
@@ -1290,7 +1324,7 @@ else
     if store_config == stderr then
         store_machine_config(config, stderr)
     end
-    if rollup then
+    if rollup_advance or rollup_inspect then
         check_rollup_htif_config(config.htif)
         assert(config.rollup, "rollup device must be present")
         assert(server_address, "rollup requires --server-address for snapshot/rollback")
@@ -1299,7 +1333,6 @@ else
         check_rollup_memory_range_config(config.rollup.input_metadata, "input-metadata")
         check_rollup_memory_range_config(config.rollup.voucher_hashes, "voucher-hashes")
         check_rollup_memory_range_config(config.rollup.notice_hashes, "notice-hashes")
-        rollup.next_input_index = rollup.input_index_start
     end
     local cycles = machine:read_mcycle()
     if initial_hash then
@@ -1314,6 +1347,18 @@ else
     else
         next_hash_mcycle = periodic_hashes_period
     end
+    -- the loop runs at most until max_mcycle. iterations happen because
+    --   1) we stopped to print a hash
+    --   2) the machine halted, so iflags_H is set
+    --   3) the machine yielded manual, so iflags_Y is set
+    --   4) the machine yielded automatic, so iflags_X is set
+    -- if the user selected the rollup advance state, then at every yield manual we check the reason
+    -- if the reason is rx-rejected, we rollback, otherwise it must be rx-accepted.
+    -- we then feed the next input, reset iflags_Y, snapshot, and resume the machine
+    -- the machine can now continue processing and may yield automatic to produce vouchers, notices, and reports we save
+    -- once all inputs for advance state have been consumed, we check if the user selected rollup inspect state
+    -- if so, we feed the query, reset iflags_Y, and resume the machine
+    -- the machine can now continue processing and may yield automatic to produce reports we save
     while math.ult(cycles, max_mcycle) do
         machine:run(math.min(next_hash_mcycle, max_mcycle))
         cycles = machine:read_mcycle()
@@ -1330,41 +1375,71 @@ else
         -- deal with yield manual
         elseif machine:read_iflags_Y() then
             local cmd, reason = get_and_print_yield(machine, config.htif)
-            if rollup then
+            -- there are advance state inputs to feed
+            if rollup_advance and rollup_advance.next_input_index < rollup_advance.input_index_end then
                 if reason == cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED then
                     machine:rollback()
                     cycles = machine:read_mcycle()
+                else
+                    assert(reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED, "invalid manual yield reason")
                 end
-                stderr("Epoch %d before input %d\n", rollup.epoch_index, rollup.next_input_index)
-                if rollup.hashes then
+                stderr("\nEpoch %d before input %d\n", rollup_advance.epoch_index, rollup_advance.next_input_index)
+                if rollup_advance.hashes then
                     print_root_hash(cycles, machine)
                 end
-                save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup)
+                -- save only if we have already run an input
+                if rollup_advance.next_input_index > rollup_advance.input_index_begin then
+                    save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
+                end
                 machine:snapshot()
-                if load_rollup_input_and_metadata(machine, config.rollup, rollup) then
+                load_rollup_input_and_metadata(machine, config.rollup, rollup_advance)
+                machine:reset_iflags_Y()
+                machine:write_htif_fromhost_data(0) -- tell machine it is an rollup_advance state, but this is default
+                rollup_advance.voucher_index = 0
+                rollup_advance.notice_index = 0
+                rollup_advance.report_index = 0
+                rollup_advance.next_input_index = rollup_advance.next_input_index + 1
+            else
+                -- there are outputs of a prevous advance state to save
+                if rollup_advance and rollup_advance.next_input_index > rollup_advance.input_index_begin then
+                    save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
+                end
+                -- there is an inspect state query to feed
+                if rollup_inspect and rollup_inspect.query then
+                    stderr("\nBefore query\n")
+                    load_rollup_query(machine, config.rollup, rollup_inspect)
                     machine:reset_iflags_Y()
-                    rollup.voucher_index = 0
-                    rollup.notice_index = 0
-                    rollup.report_index = 0
-                    rollup.next_input_index = rollup.next_input_index + 1
+                    machine:write_htif_fromhost_data(1) -- tell machine it is an inspect state
+                    rollup_inspect.report_index = 0
+                    rollup_inspect.query = nil
+                    rollup_advance = nil
                 end
             end
         -- deal with yield automatic
         elseif machine:read_iflags_X() then
             local cmd, reason = get_and_print_yield(machine, config.htif)
-            if rollup then
+            -- we have fed an advance state input
+            if rollup_advance and rollup_advance.next_input_index > rollup_advance.input_index_begin then
                 if reason == cartesi.machine.HTIF_YIELD_REASON_TX_VOUCHER then
-                    save_rollup_voucher(machine, config.rollup.tx_buffer, rollup)
-                    rollup.voucher_index = rollup.voucher_index + 1
+                    save_rollup_advance_state_voucher(machine, config.rollup.tx_buffer, rollup_advance)
+                    rollup_advance.voucher_index = rollup_advance.voucher_index + 1
                 elseif reason == cartesi.machine.HTIF_YIELD_REASON_TX_NOTICE then
-                    save_rollup_notice(machine, config.rollup.tx_buffer, rollup)
-                    rollup.notice_index = rollup.notice_index + 1
+                    save_rollup_advance_state_notice(machine, config.rollup.tx_buffer, rollup_advance)
+                    rollup_advance.notice_index = rollup_advance.notice_index + 1
                 elseif reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
-                    save_rollup_report(machine, config.rollup.tx_buffer, rollup)
-                    rollup.report_index = rollup.report_index + 1
+                    save_rollup_advance_state_report(machine, config.rollup.tx_buffer, rollup_advance)
+                    rollup_advance.report_index = rollup_advance.report_index + 1
+                end
+                -- ignore other reasons
+            -- we have feed the inspect state query
+            elseif rollup_inspect and not rollup_inspect.query then
+                if reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
+                    save_rollup_inspect_state_report(machine, config.rollup.tx_buffer, rollup_inspect)
+                    rollup_inspect.report_index = rollup_inspect.report_index + 1
                 end
                 -- ignore other reasons
             end
+            -- otherwise ignore
         end
         if machine:read_iflags_Y() then
             break
@@ -1396,13 +1471,5 @@ else
         machine:store(store_dir)
     end
     machine:destroy()
-    if server and server_shutdown then
-        server.shutdown()
-    end
     os.exit(payload, true)
-end
-
-machine:destroy()
-if server and server_shutdown then
-    server.shutdown()
 end

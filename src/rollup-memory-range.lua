@@ -55,6 +55,18 @@ and [action] [what] can be:
 
         default is to read payload from stdin
 
+    encode query
+      writes encoded query to stdout
+      options:
+
+        --payload-filename=<filename>
+        read payload from <filename>
+
+        --payload=<payload>
+        read payload from command-line
+
+        default is to read payload from stdin
+
     encode voucher
       writes an encoded voucher to stdout
       options:
@@ -97,11 +109,11 @@ and [action] [what] can be:
     decode input-metadata
       writes decoded input-metadata to stdout
 
-        --json
-        writes output in json format
-
     decode input
       writes input payload to stdout
+
+    decode query
+      writes query payload to stdout
 
     decode voucher
         writes voucher address to stderr in hex
@@ -163,6 +175,7 @@ local action = arg[1]
 local what_table = {
     ["input-metadata"] = true,
     ["input"] = true,
+    ["query"] = true,
     ["voucher"] = true,
     ["voucher-hashes"] = true,
     ["notice"] = true,
@@ -253,10 +266,10 @@ local function encode_input_metadata(arg)
     write_be256(input_index)
 end
 
-local function encode_input(arg)
+local function encode_string(arg)
     local payload
     local payload_filename
-    local encode_input_options = {
+    local encode_string_options = {
         { "^%-%-payload%-filename%=(.+)$", function(o)
             if not o or #o < 1 then return false end
             assert(not payload, "payload already specified")
@@ -276,7 +289,7 @@ local function encode_input(arg)
 
     for i = 3, #arg do
         local a = arg[i]
-        for j, option in ipairs(encode_input_options) do
+        for j, option in ipairs(encode_string_options) do
             if option[2](a:match(option[1])) then
                 break
             end
@@ -372,41 +385,24 @@ local function read_be256()
 end
 
 local function decode_input_metadata(arg)
-    local json
     if arg[3] then
-        assert(arg[3] == "--json", "unexpected option " .. arg[3])
-        json = true
-    end
-    if arg[4] then
-        error("unexpected option " .. arg[4])
+        error("unexpected option " .. arg[3])
     end
     local msg_sender = read_address()
     local block_number = read_be256()
     local time_stamp = read_be256()
     local epoch_index = read_be256()
     local input_index = read_be256()
-    if json then
-    else
-        io.stdout:write("msg-sender: ", hex(msg_sender), "\n")
-        io.stdout:write("block-number: ", block_number, "\n")
-        io.stdout:write("time-stamp: ", time_stamp, "\n")
-        io.stdout:write("epoch-index: ", epoch_index, "\n")
-        io.stdout:write("input-index: ", input_index, "\n")
-    end
-end
-
-local function decode_input(arg)
-    if arg[3] then
-        error("unexpected option " .. arg[4])
-    end
-    read_be256() -- skip offset
-    local length = read_be256()
-    io.stdout:write(io.stdin:read(length))
+    io.stdout:write("msg-sender: ", hex(msg_sender), "\n")
+    io.stdout:write("block-number: ", block_number, "\n")
+    io.stdout:write("time-stamp: ", time_stamp, "\n")
+    io.stdout:write("epoch-index: ", epoch_index, "\n")
+    io.stdout:write("input-index: ", input_index, "\n")
 end
 
 local function decode_string(arg)
     if arg[3] then
-        error("unexpected option " .. arg[4])
+        error("unexpected option " .. arg[3])
     end
     assert(read_be256() == 32) -- skip offset
     local length = read_be256()
@@ -482,12 +478,14 @@ end
 
 local action_what_table = {
     encode_input_metadata = encode_input_metadata,
-    encode_input = encode_input,
+    encode_input = encode_string,
+    encode_query = encode_string,
     encode_voucher = encode_voucher,
     encode_notice = encode_string,
     encode_report = encode_string,
     decode_input_metadata = decode_input_metadata,
     decode_input = decode_string,
+    decode_query = decode_string,
     decode_voucher = decode_voucher,
     decode_notice = decode_string,
     decode_report = decode_string,

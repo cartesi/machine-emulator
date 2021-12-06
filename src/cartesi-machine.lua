@@ -234,6 +234,23 @@ where options are:
     for each input, "%%e" is replaced by the epoch index, "%%i" by the
     input index, and "%%o" by the voucher, notice, or report index.
 
+  --rollup-inspect-state=<key>:<value>[,<key>:<value>[,...]...]
+    inspect the state of the machine with a query.
+    the queries happen after the end of --rollup-advance-state.
+
+    <key>:<value> is one of
+        query:<filename>
+        report:<filename-pattern>
+
+        query (default: "query.bin")
+        the name of the file from which to read the query.
+
+        report (default: "query-report-%%o.bin")
+        the pattern that derives the name of the file written for report %%o
+        of the query.
+
+    while each query is processed, "%%o" is replaced by the report index.
+
   --concurrency=<key>:<value>[,<key>:<value>[,...]...]
     configures the number of threads used in some implementation parts.
 

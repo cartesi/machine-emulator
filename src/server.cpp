@@ -1132,6 +1132,27 @@ std::unique_ptr<Server> build_server(const char *server_address, handler_context
     return server;
 }
 
+static void tc_handler(int signo)
+{
+    (void)signo;
+    // force an error on tc write operations (e.g., tcsetattr(2))
+}
+
+static void tc_disable(void)
+{
+    // prevent this process from suspending after issuing a SIGTTOU when trying
+    // to configure terminal (on htif::init_console())
+    //
+    // https://pubs.opengroup.org/onlinepubs/009604599/basedefs/xbd_chap11.html#tag_11_01_04
+    // https://pubs.opengroup.org/onlinepubs/009604499/functions/tcsetattr.html
+    // http://curiousthing.org/sigttin-sigttou-deep-dive-linux
+    struct sigaction tc;
+    tc.sa_handler = tc_handler;
+    tc.sa_flags = 0;
+    sigemptyset(&tc.sa_mask);
+    sigaction(SIGTTOU, &tc, NULL);
+}
+
 static void server_loop(const char *server_address, const char *session_id, const char *checkin_address) {
     handler_context hctx{};
     if (session_id && checkin_address) {
@@ -1311,6 +1332,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
+    tc_disable();
     server_loop(server_address, session_id, checkin_address);
 
     return 0;

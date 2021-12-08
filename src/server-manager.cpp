@@ -360,7 +360,7 @@ using id_type = std::string;
 struct epoch_type {
     uint64_t epoch_index{};
     epoch_state state{epoch_state::active};
-    hash_type most_recent_machine_hash;
+    hash_type most_recent_machine_hash{};
     cartesi::complete_merkle_tree vouchers_tree{LOG2_ROOT_SIZE, LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE};
     cartesi::complete_merkle_tree notices_tree{LOG2_ROOT_SIZE, LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE};
     std::vector<processed_input_type> processed_inputs;
@@ -2634,6 +2634,12 @@ public:
     void reset(handler_type::pull_type *coroutine = nullptr) {
         m_coroutine = coroutine;
     }
+
+    auto_resume(const auto_resume &other) = delete;
+    auto_resume(auto_resume &&other) = delete;
+    auto_resume &operator=(const auto_resume &other) = delete;
+    auto_resume &operator=(auto_resume &&other) = delete;
+
     ~auto_resume() {
         if (m_coroutine) {
             enqueue_completion_queue(m_cq, m_coroutine);

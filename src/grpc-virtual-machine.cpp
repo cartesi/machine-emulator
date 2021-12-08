@@ -30,7 +30,7 @@ using namespace Versioning;
 using hash_type = cartesi::machine_merkle_tree::hash_type;
 
 // Doesn't matter because we are not connected to multiple servers and don't have to distinguish between them
-#define CHECKIN_SESSION_ID "grpc_virtual_machine"
+constexpr const char* CHECKIN_SESSION_ID = "grpc_virtual_machine";
 
 namespace cartesi {
 
@@ -110,9 +110,9 @@ static std::string replace_port(const std::string &address, int port) {
     }
 }
 
-grpc_machine_stub::grpc_machine_stub(const std::string &remote_address, const std::string &checkin_address) :
-    m_remote_address(remote_address),
-    m_checkin_address(checkin_address),
+grpc_machine_stub::grpc_machine_stub(std::string remote_address, std::string checkin_address) :
+    m_remote_address(std::move(remote_address)),
+    m_checkin_address(std::move(checkin_address)),
     m_stub(Machine::NewStub(grpc::CreateChannel(m_remote_address, grpc::InsecureChannelCredentials()))) {
     if (!m_stub) {
         throw std::runtime_error("unable to create stub");
@@ -176,7 +176,7 @@ void grpc_machine_stub::prepare_checkin(void) {
 }
 
 void grpc_machine_stub::wait_checkin_and_reconnect(void) {
-    if (!m_checkin_context.has_value()) {
+    if (!m_checkin_context.has_value()) { // NOLINT: grpc warnings
         throw std::runtime_error("missing call to prepare checkin");
     }
     auto &ctx = m_checkin_context.value();
@@ -187,7 +187,7 @@ void grpc_machine_stub::wait_checkin_and_reconnect(void) {
         throw std::runtime_error("gave up waiting for checkin request");
     }
     if (ctx.request.session_id() != CHECKIN_SESSION_ID) {
-        throw std::runtime_error("expected '" CHECKIN_SESSION_ID "' checkin session id (got '" +
+        throw std::runtime_error("expected '" + std::string(CHECKIN_SESSION_ID) + "' checkin session id (got '" +
             ctx.request.session_id() + "')");
     }
     if (tag != this) {
@@ -198,7 +198,7 @@ void grpc_machine_stub::wait_checkin_and_reconnect(void) {
     ok = false;
     tag = nullptr;
     Void response;
-    ctx.writer.Finish(response, grpc::Status::OK, this);
+    ctx.writer.Finish(response, grpc::Status::OK, this); // NOLINT: grpc warnings
     if (m_completion_queue->AsyncNext(&tag, &ok, time_in_future(5)) != grpc::CompletionQueue::NextStatus::GOT_EVENT) {
         throw std::runtime_error("gave up waiting for checkin response");
     }

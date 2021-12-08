@@ -56,10 +56,12 @@ using grpc::Status;
 using grpc::StatusCode;
 
 struct checkin_context {
-    checkin_context(const char *session_id, const char *checkin_address) : session_id(session_id),
-        checkin_address(checkin_address) { }
-    checkin_context(const std::string &session_id, const std::string &checkin_address) : session_id(session_id),
-        checkin_address(checkin_address) { }
+    checkin_context(const char *session_id, const char *checkin_address) :
+        session_id(session_id),
+        checkin_address(checkin_address) {}
+    checkin_context(std::string session_id, std::string checkin_address) :
+        session_id(std::move(session_id)),
+        checkin_address(std::move(checkin_address)) {}
     std::string session_id;
     std::string checkin_address;
 };
@@ -1146,11 +1148,12 @@ static void tc_disable(void)
     // https://pubs.opengroup.org/onlinepubs/009604599/basedefs/xbd_chap11.html#tag_11_01_04
     // https://pubs.opengroup.org/onlinepubs/009604499/functions/tcsetattr.html
     // http://curiousthing.org/sigttin-sigttou-deep-dive-linux
-    struct sigaction tc;
+    struct sigaction tc{};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
     tc.sa_handler = tc_handler;
     tc.sa_flags = 0;
     sigemptyset(&tc.sa_mask);
-    sigaction(SIGTTOU, &tc, NULL);
+    sigaction(SIGTTOU, &tc, nullptr);
 }
 
 static void server_loop(const char *server_address, const char *session_id, const char *checkin_address) {

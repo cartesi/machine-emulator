@@ -58,8 +58,13 @@ class grpc_machine_stub final {
     std::optional<async_checkin_context> m_checkin_context;
 
 public:
-    grpc_machine_stub(const std::string &remote_address, const std::string &checkin_address);
+    grpc_machine_stub(std::string remote_address, std::string checkin_address);
+    grpc_machine_stub(const grpc_machine_stub &other) = delete;
+    grpc_machine_stub(grpc_machine_stub &&other) noexcept = delete;
+    grpc_machine_stub &operator=(const grpc_machine_stub &other) = delete;
+    grpc_machine_stub &operator=(grpc_machine_stub &&other) noexcept = delete;
     ~grpc_machine_stub();
+
     void prepare_checkin(void);
     void wait_checkin_and_reconnect(void);
     CartesiMachine::Machine::Stub *get_stub(void);

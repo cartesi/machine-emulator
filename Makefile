@@ -165,6 +165,9 @@ build-ubuntu-image:
 build-alpine-image:
 	docker build -t cartesi/machine-emulator:$(TAG)-alpine -f .github/workflows/Dockerfile.alpine .
 
+build-server-manager-image:
+	docker build -t cartesi/server-manager:$(TAG) -f tools/server-manager/Dockerfile --build-arg EMULATOR_VERSION=$(TAG) tools/server-manager
+
 install-Darwin:
 	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi.so
 	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi/grpc.so

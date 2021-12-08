@@ -7,6 +7,7 @@ env:
   TEST_VERSION: v0.13.0
   GROUND_TRUTH_VERSION: v0.13.0-0001
   BUILD_CACHE_VERSION: v0.8.0-0001
+  SERVER_MANAGER_VERSION: 0.1.0
 jobs:
   build:
     name: Build
@@ -531,6 +532,37 @@ jobs:
       - name: Run test suite inside the docker image (Ubuntu)
         run: docker run --rm -v /opt/cartesi/tests:/opt/cartesi/tests -t ${{ steps.docker_image_default_tag.outputs.name }} /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
 
+# This setup is not working. We have to investigate.
+#      - name: Setup server-manager docker image tags
+#        id: server_manager_docker_image_tags
+#        uses: docker/metadata-action@v3
+#        with:
+#          images: ${{ secrets.DOCKER_ORGANIZATION }}/server-manager
+#          tags: |
+#            type=ref,event=branch
+#            type=semver,pattern={{version}}
+#
+#      - name: Build Ubuntu based server-manager docker image
+#        id: server_manager_docker_build
+#        uses: docker/build-push-action@v2
+#        with:
+#          file: tools/server-manager/Dockerfile
+#          context: tools/server-manager
+#          builder: ${{ steps.buildx.outputs.name }}
+#          platforms: linux/amd64
+#          tags: ${{ steps.server_manager_docker_image_tags.outputs.tags }}
+#          push: false
+#          load: true
+#          cache-from: type=local,src=/tmp/.ubuntu-buildx-cache
+#          cache-to: type=local,dest=/tmp/.ubuntu-buildx-cache
+#          build-args: |
+#            EMULATOR_REPOSITORY=${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator
+#            EMULATOR_VERSION=${{ fromJSON(steps.docker_image_tags.outputs.json).labels['org.opencontainers.image.version'] }}
+
+      - name: Build Ubuntu based server-manager docker image
+        run: |
+          docker build -t ${{ secrets.DOCKER_ORGANIZATION }}/server-manager:build_check -f tools/server-manager/Dockerfile --build-arg EMULATOR_REPOSITORY=${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator --build-arg EMULATOR_VERSION=${{ fromJSON(steps.docker_image_tags.outputs.json).labels['org.opencontainers.image.version'] }} tools/server-manager
+
   alpine-image-build:
     name: Build and Test Alpine based Docker image
     runs-on: ubuntu-20.04
@@ -716,6 +748,23 @@ jobs:
           load: false
           cache-from: type=local,src=/tmp/.alpine-buildx-cache
           cache-to: type=local,dest=/tmp/.alpine-buildx-cache
+
+      - name: Build and push Ubuntu based server-manager docker image
+        shell: bash
+        env:
+          IS_DEVELOP_BRANCH: ${{ github.ref == 'refs/heads/develop' }}
+        run: |
+          SERVER_MANAGER_IMAGE_TAG=${SERVER_MANAGER_VERSION}
+          if [ "${IS_DEVELOP_BRANCH}" = true ] ; then
+            SERVER_MANAGER_IMAGE_TAG=develop
+          else
+            if docker manifest inspect ${{ secrets.DOCKER_ORGANIZATION }}/server-manager:${SERVER_MANAGER_IMAGE_TAG} > /dev/null 2>&1 ; then
+              echo 'Error: ${{ secrets.DOCKER_ORGANIZATION }}/server-manager:${SERVER_MANAGER_IMAGE_TAG} already exists!';
+              exit 1;
+            fi
+          fi
+          docker build -t ${{ secrets.DOCKER_ORGANIZATION }}/server-manager:${SERVER_MANAGER_IMAGE_TAG} -f tools/server-manager/Dockerfile --build-arg EMULATOR_REPOSITORY=${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator --build-arg EMULATOR_VERSION=${{ fromJSON(steps.ubuntu_docker_image_tags.outputs.json).labels['org.opencontainers.image.version'] }} tools/server-manager
+          docker push ${{ secrets.DOCKER_ORGANIZATION }}/server-manager:${SERVER_MANAGER_IMAGE_TAG}
 
   release:
     name: Release machine emulator tarball

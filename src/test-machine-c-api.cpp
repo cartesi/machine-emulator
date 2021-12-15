@@ -2138,7 +2138,7 @@ static bool wait_for_server(cm_grpc_machine_stub *stub, int retries = 10) {
 class grpc_machine_fixture_with_server : public grpc_machine_fixture {
 public:
     grpc_machine_fixture_with_server() {
-        boost::process::spawn(boost::process::search_path("cartesi-machine-server"), "127.0.0.1:5001", m_server_group);
+        boost::process::spawn(boost::process::search_path("remote-cartesi-machine"), "127.0.0.1:5001", m_server_group);
         BOOST_CHECK(wait_for_server(m_stub));
     }
     ~grpc_machine_fixture_with_server() override = default;

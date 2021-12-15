@@ -15,9 +15,9 @@
 -- You should have received a copy of the GNU Lesser General Public License
 -- along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 --
-
--- Note: for grpc machine test to work, cartesi-machine-server must run on same computer and 
--- cartesi machine server execution path must be provided
+--
+-- Note: for grpc machine test to work, remote-cartesi-machine must run on
+-- same computer and remote-cartesi-machine execution path must be provided
 
 local cartesi = require "cartesi"
 local cartesi_util = require "cartesi.util"
@@ -25,7 +25,7 @@ local test_util = require "tests.util"
 local test_data = require "tests.data"
 
 
-local server_address = nil
+local remote_address = nil
 local checkin_address = nil
 local test_path = "./"
 local cleanup = {}
@@ -41,16 +41,16 @@ Usage:
 
 where options are:
 
-  --server-address=<address>
-    run tests on a remote cartesi machine server (when machine type is grpc).
+  --remote-address=<address>
+    run tests on a remote cartesi machine (when machine type is grpc).
     (requires --checkin-address)
 
   --checkin-address=<address>
     address of the local checkin server to run
 
   --test-path=<dir>
-    path to test execution folder. In case of grpc tests it is path to
-    folder where cartesi-machine-server is executed
+    path to test execution folder. In case of grpc tests, path must be
+    working directory of remote-cartesi-machine and must be locally readable
     (default: "./")
 
 <address> is one of the following formats:
@@ -72,9 +72,9 @@ local options = {
         if not all then return false end
         help()
     end },
-    { "^%-%-server%-address%=(.*)$", function(o)
+    { "^%-%-remote%-address%=(.*)$", function(o)
         if not o or #o < 1 then return false end
-        server_address = o
+        remote_address = o
         return true
     end },
     { "^%-%-checkin%-address%=(.*)$", function(o)
@@ -109,22 +109,22 @@ end
 local machine_type = assert(arguments[1], "missing machine type")
 assert(machine_type == "local" or machine_type == "grpc", "unknown machine type, should be 'local' or 'grpc'")
 if (machine_type == "grpc") then
-    assert(server_address ~= nil, "cartesi machine server address is missing")
-    assert(test_path ~= nil, "cartesi machine server excution folder path must be provided, server must run on same computer")
-end 
-if server_address then
+    assert(remote_address ~= nil, "remote cartesi machine address is missing")
+    assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
+end
+if remote_address then
     assert(checkin_address, "missing checkin address")
     cartesi.grpc = require("cartesi.grpc")
 end
 
 local function connect()
-    local server = cartesi.grpc.stub(server_address, checkin_address)
-    local version = assert(server.get_version(),
-        "could not connect to cartesi machine GRPC server at " .. server_address)
-    local shutdown = function() server:shutdown() end
+    local remote = cartesi.grpc.stub(remote_address, checkin_address)
+    local version = assert(remote.get_version(),
+        "could not connect to remote cartesi machine at " .. remote_address)
+    local shutdown = function() remote.shutdown() end
     local mt = { __gc = function() pcall(shutdown) end}
     setmetatable(cleanup, mt)
-    return server, version
+    return remote, version
 end
 
 local pmas_file_names = {}
@@ -151,14 +151,14 @@ local function build_machine(type)
             update_merkle_tree = concurrency_update_merkle_tree
         }
     }
-    
+
     local new_machine = nil
     if (type == "grpc") then
-        if not server then server = connect() end
-        new_machine = assert(server.machine(config, runtime))
-    else 
+        if not remote then remote = connect() end
+        new_machine = assert(remote.machine(config, runtime))
+    else
         new_machine = assert(cartesi.machine(config, runtime))
-    end 
+    end
 
     initial_csr_values.x = nil
     initial_csr_values.mvendorid = nil
@@ -257,7 +257,7 @@ do_test("verify_merkle_tree should return true",
 )
 
 print("\n\n test calculation of initial root hash")
-do_test("should return expected value", 
+do_test("should return expected value",
     function(machine)
         -- Update merkle tree
         machine:update_merkle_tree()
@@ -265,13 +265,13 @@ do_test("should return expected value",
         local root_hash = machine:get_root_hash()
         print("Root hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "700C27E3A6635806EAD30476B12EF17366CC025076F805E8F4EE05631865EED3",
+                "38CCB889CD4148A4A154755DE8EDBD7C0B2219F880A7B5687AD957F96BD51DDB",
             "initial root hash does not match")
     end
 )
 
 print("\n\n test get_initial_config")
-do_test("should have expected values", 
+do_test("should have expected values",
     function(machine)
         -- Check initial config
         local initial_config = machine:get_initial_config()
@@ -287,19 +287,21 @@ do_test("should have expected values",
             "wrong htif fromhost initial config value")
         assert(initial_config.htif.tohost == 0,
             "wrong htif tohost initial config value")
-        assert(initial_config.htif.yield_progress == false,
-            "wrong htif yield progress initial config value")
+        assert(initial_config.htif.yield_automatic == false,
+            "wrong htif yield automatic initial config value")
+        assert(initial_config.htif.yield_manual == false,
+            "wrong htif yield manual initial config value")
         assert(initial_config.rom.image_filename == test_util.images_path .. "rom.bin",
             "wrong initial config image path name")
     end
 )
 
 print("\n\n test read_csr")
-do_test("should return expected values", 
+do_test("should return expected values",
     function(machine)
         local initial_csr_values = test_data.get_cpu_csr_test_values()
         initial_csr_values.mvendorid = 0x6361727465736920
-        initial_csr_values.marchid = 0x7
+        initial_csr_values.marchid = 0x9
         initial_csr_values.mimpid = 0x1
         initial_csr_values.htif_tohost = 0x0
         initial_csr_values.htif_fromhost = 0x0
@@ -477,7 +479,7 @@ do_test("dumped register values should match",
         print("--------------------------")
         assert((output:find "mcycle = 0"),
             "Cound not find mcycle register value in output")
-        assert((output:find "marchid = 7"),
+        assert((output:find "marchid = 9"),
             "Cound not find marchid register value in output")
         assert((output:find "clint_mtimecmp = 0"),
             "Cound not find clint_mtimecmp register value in output")
@@ -513,9 +515,9 @@ do_test("dumped log content should match",
         print(output)
         print("--------------------------")
         assert((output:find "1: read @0x120%(288%)"), "Cound not find step 1 ")
-        assert((output:find "12: read @0x810%(2064%): 0x1069%(4201%)"),
-            "Cound not find step 12")
-        assert((output:find "20: write @0x120%(288%): 0x0%(0%) %-> 0x1%(1%)"),
+        assert((output:find "14: read @0x810%(2064%): 0x1069%(4201%)"),
+            "Cound not find step 14")
+        assert((output:find "22: write @0x120%(288%): 0x0%(0%) %-> 0x1%(1%)"),
             "Cound not find step 20")
     end
 )

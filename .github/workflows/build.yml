@@ -168,7 +168,7 @@ jobs:
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
           export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;"
           export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
-          ./tests/test-grpc-server.sh cartesi-machine-server cartesi-machine cartesi-machine-tests $CARTESI_TESTS_PATH
+          ./tests/test-grpc-server.sh remote-cartesi-machine cartesi-machine cartesi-machine-tests $CARTESI_TESTS_PATH
 
       - name: Run rollup-machine-manager tests
         run: |

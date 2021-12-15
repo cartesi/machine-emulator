@@ -37,16 +37,16 @@ Usage:
 
 where options are:
 
-  --server-address=<address>
-    use a remote cartesi machine server listenning to <address> instead of
+  --remote-address=<address>
+    use a remote cartesi machine listenning to <address> instead of
     running a local cartesi machine.
     (requires --checkin-address)
 
   --checkin-address=<address>
     address of the local checkin server to run.
 
-  --server-shutdown
-    shutdown the server after the execution.
+  --remote-shutdown
+    shutdown the remote cartesi machine after the execution.
 
   --ram-image=<filename>
     name of file containing RAM image (default: "linux.bin").
@@ -141,7 +141,7 @@ where options are:
         must be a power of 2 greater than 4Ki, or 0 when device not present.
 
   --dhd-source=<address>
-    server acting as source for dehashed data.
+    address of server acting as source for dehashed data.
 
   --rollup-rx-buffer=<key>:<value>[,<key>:<value>[,...]...]
   --rollup-tx-buffer=<key>:<value>[,<key>:<value>[,...]...]
@@ -332,9 +332,9 @@ or a left shift (e.g., 2 << 20).
     os.exit()
 end
 
-local server_address = nil
+local remote_address = nil
 local checkin_address = nil
-local server_shutdown = false
+local remote_shutdown = false
 local images_path = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH'))
 local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
@@ -680,9 +680,9 @@ local options = {
         store_dir = o
         return true
     end },
-    { "^%-%-server%-address%=(.*)$", function(o)
+    { "^%-%-remote%-address%=(.*)$", function(o)
         if not o or #o < 1 then return false end
-        server_address = o
+        remote_address = o
         return true
     end },
     { "^%-%-checkin%-address%=(.*)$", function(o)
@@ -690,9 +690,9 @@ local options = {
         checkin_address = o
         return true
     end },
-    { "^%-%-server%-shutdown$", function(o)
+    { "^%-%-remote%-shutdown$", function(o)
         if not o then return false end
-        server_shutdown = true
+        remote_shutdown = true
         return true
     end },
     { "^%-%-json%-steps%=(.*)$", function(o)
@@ -828,8 +828,8 @@ local function store_machine_config(config, output)
     end
 
     local def
-    if server then
-        def = server.machine.get_default_config()
+    if remote then
+        def = remote.machine.get_default_config()
     else
         def = cartesi.machine.get_default_config()
     end
@@ -1002,26 +1002,27 @@ local function append(a, b)
 end
 
 local function create_machine(config_or_dir, runtime)
-    if server then
-        return server.machine(config_or_dir, runtime)
+    if remote then
+        return remote.machine(config_or_dir, runtime)
     end
     return cartesi.machine(config_or_dir, runtime)
 end
 
 local machine
 
-if server_address then
+if remote_address then
     assert(checkin_address, "checkin address missing")
-    stderr("Starting checkin server at '%s'\n", checkin_address)
-    stderr("Connecting to remote server at '%s'\n", server_address)
+    stderr("Listening for checkin at '%s'\n", checkin_address)
+    stderr("Connecting to remote cartesi machine at '%s'\n", remote_address)
     cartesi.grpc = require"cartesi.grpc"
-    server = assert(cartesi.grpc.stub(server_address, checkin_address))
-    local v = assert(server.get_version())
-    stderr("Connected: server version is %d.%d.%d\n", v.major, v.minor, v.patch)
-    if server_shutdown then
-        server_shutdown = setmetatable({}, { __gc = function()
-            stderr("Shutting down server\n")
-            server.shutdown()
+    remote = assert(cartesi.grpc.stub(remote_address, checkin_address))
+    local v = assert(remote.get_version())
+    stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
+    local shutdown = function() remote.shutdown() end
+    if remote_shutdown then
+        remote_shutdown = setmetatable({}, { __gc = function()
+            stderr("Shutting down remote cartesi machine\n")
+            pcall(shutdown)
         end })
     end
 end
@@ -1327,7 +1328,7 @@ else
     if rollup_advance or rollup_inspect then
         check_rollup_htif_config(config.htif)
         assert(config.rollup, "rollup device must be present")
-        assert(server_address, "rollup requires --server-address for snapshot/rollback")
+        assert(remote_address, "rollup requires --remote-address for snapshot/rollback")
         check_rollup_memory_range_config(config.rollup.tx_buffer, "tx-buffer")
         check_rollup_memory_range_config(config.rollup.rx_buffer, "rx-buffer")
         check_rollup_memory_range_config(config.rollup.input_metadata, "input-metadata")

@@ -233,8 +233,8 @@ where options are:
     mcycle. Only take effect with hash and step commands.
     (default: none)
 
-  --server-address=<address>
-    run tests on a remote cartesi machine server instead of
+  --remote-address=<address>
+    run tests on a remote cartesi machine instead of
     on a local cartesi machine
     (requires --checkin-address)
 
@@ -286,9 +286,9 @@ end
 
 local test_path = "./"
 local test_pattern = ".*"
-local server_address = nil
+local remote_address = nil
 local checkin_address = nil
-local server = nil
+local remote = nil
 local output = nil
 local json_list = false
 local periodic_action = false
@@ -313,9 +313,9 @@ local options = {
         if not all then return false end
         help()
     end },
-    { "^%-%-server%-address%=(.*)$", function(o)
+    { "^%-%-remote%-address%=(.*)$", function(o)
         if not o or #o < 1 then return false end
-        server_address = o
+        remote_address = o
         return true
     end },
     { "^%-%-checkin%-address%=(.*)$", function(o)
@@ -391,7 +391,7 @@ end
 local command = assert(values[1], "missing command")
 assert(test_path, "missing test path")
 
-if server_address then
+if remote_address then
     assert(checkin_address, "checkin address missing")
 	cartesi.grpc = require("cartesi.grpc")
 end
@@ -428,13 +428,13 @@ local function run_machine(machine, max_mcycle, callback)
 end
 
 local function connect()
-    local server = cartesi.grpc.stub(server_address, checkin_address)
-    local version = assert(server.get_version(),
-        "could not connect to cartesi machine GRPC server at " .. server_address)
-    local shutdown = function() server:shutdown() end
+    local remote = cartesi.grpc.stub(remote_address, checkin_address)
+    local version = assert(remote.get_version(),
+        "could not connect to remote cartesi machine at " .. remote_address)
+    local shutdown = function() remote.shutdown() end
     local mt = { __gc = function() pcall(shutdown) end}
     setmetatable(cleanup, mt)
-    return server, version
+    return remote, version
 end
 
 local function build_machine(test_name)
@@ -463,9 +463,9 @@ local function build_machine(test_name)
             update_merkle_tree = concurrency_update_merkle_tree
         }
     }
-    if server_address then
-      if not server then server = connect() end
-      return assert(server.machine(config, runtime))
+    if remote_address then
+      if not remote then remote = connect() end
+      return assert(remote.machine(config, runtime))
     end
     return assert(cartesi.machine(config, runtime))
 end
@@ -621,7 +621,7 @@ local function step(tests)
 end
 
 local function dump(tests)
-    if server_address then error("dump cannot be used with grpc server") end
+    if remote_address then error("dump cannot be used with a remote machine") end
     local ram_image = tests[1][1]
     local machine = build_machine(ram_image)
     machine:dump_pmas()

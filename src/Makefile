@@ -113,8 +113,8 @@ CARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB)
 CARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB) $(GRPC_LIB)
 LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB) $(LIBCARTESI_LIB)
 LUACARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB) $(LIBCARTESI_GRPC_LIB) $(GRPC_LIB)  $(LIBCARTESI_LIB)
-CARTESI_MACHINE_SERVER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_SERIAL_LIB)
-CARTESI_MACHINE_PROXY_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
+REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_SERIAL_LIB)
+REMOTE_CARTESI_MACHINE_PROXY_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
 ROLLUP_MACHINE_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
 TEST_ROLLUP_MACHINE_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_SERIAL_LIB)
 TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(LIBCARTESI_GRPC_LIB) $(BOOST_PROCESS_LIB) $(BOOST_FILESYSTEM_LIB)
@@ -177,8 +177,8 @@ CC=gcc
 CXX=g++
 CXXFLAGS += -g -O0 --coverage
 SOLDFLAGS += --coverage
-CARTESI_MACHINE_SERVER_LIBS += --coverage
-CARTESI_MACHINE_PROXY_LIBS += --coverage
+REMOTE_CARTESI_MACHINE_LIBS += --coverage
+REMOTE_CARTESI_MACHINE_PROXY_LIBS += --coverage
 ROLLUP_MACHINE_MANAGER_LIBS += --coverage
 TEST_ROLLUP_MACHINE_MANAGER_LIBS += --coverage
 HASH_LIBS += --coverage
@@ -190,8 +190,8 @@ CC=clang
 CXX=clang++
 CXXFLAGS += -g -O0 -fprofile-instr-generate -fcoverage-mapping
 SOLDFLAGS += -fprofile-instr-generate -fcoverage-mapping
-CARTESI_MACHINE_SERVER_LIBS += -fprofile-instr-generate -fcoverage-mapping
-CARTESI_MACHINE_PROXY_LIBS += -fprofile-instr-generate -fcoverage-mapping
+REMOTE_CARTESI_MACHINE_LIBS += -fprofile-instr-generate -fcoverage-mapping
+REMOTE_CARTESI_MACHINE_PROXY_LIBS += -fprofile-instr-generate -fcoverage-mapping
 ROLLUP_MACHINE_MANAGER_LIBS += -fprofile-instr-generate -fcoverage-mapping
 TEST_ROLLUP_MACHINE_MANAGER_LIBS += -fprofile-instr-generate -fcoverage-mapping
 HASH_LIBS += -fprofile-instr-generate -fcoverage-mapping
@@ -283,7 +283,7 @@ test-hash: hash
 # In order to run tests environment variable TEST_PATH with directory path
 # to asset files for cartesi machine tests must be set
 test-grpc: luacartesi grpc
-	./tests/test-grpc-server.sh ./cartesi-machine-server ./cartesi-machine.lua ./cartesi-machine-tests.lua "$(TEST_PATH)"
+	./tests/test-grpc-server.sh ./remote-cartesi-machine ./cartesi-machine.lua ./cartesi-machine-tests.lua "$(TEST_PATH)"
 
 test-scripts: luacartesi
 	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do $(LUA_BIN) $$x local || exit 1; done
@@ -321,7 +321,7 @@ coverage-report: test test-hash test-grpc test-scripts test-c-api
 		-object ./libcartesi_grpc.so \
 		-object ./tests/test-merkle-tree-hash \
 		-object ./tests/test-machine-c-api \
-		-object ./cartesi-machine-server \
+		-object ./remote-cartesi-machine \
 		$(COVERAGE_SOURCES)
 endif
 
@@ -342,8 +342,8 @@ compile_flags.txt:
 
 luacartesi: cartesi.so
 
-#grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy rollup-machine-manager tests/test-rollup-machine-manager
-grpc: cartesi/grpc.so cartesi-machine-server cartesi-machine-proxy rollup-machine-manager
+#grpc: cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager
+grpc: cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy server-manager
 
 hash: merkle-tree-hash tests/test-merkle-tree-hash
 
@@ -372,8 +372,8 @@ CARTESI_MACHINE_PROTO_OBJS:= \
 	cartesi-machine.grpc.pb.o
 
 ROLLUP_MACHINE_MANAGER_PROTO_OBJS:= \
-	rollup-machine-manager.pb.o \
-	rollup-machine-manager.grpc.pb.o
+	server-manager.pb.o \
+	server-manager.grpc.pb.o
 
 PROTO_OBJS:= \
 	$(CARTESI_MACHINE_PROTO_OBJS) \
@@ -384,9 +384,9 @@ $(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-de
 
 PROTO_SOURCES:=$(PROTO_OBJS:.o=.cc)
 
-CARTESI_MACHINE_PROXY_OBJS:= \
+REMOTE_CARTESI_MACHINE_PROXY_OBJS:= \
 	$(CARTESI_MACHINE_PROTO_OBJS) \
-	proxy.o
+	remote-machine-proxy.o
 
 ROLLUP_MACHINE_MANAGER_OBJS:= \
 	$(CARTESI_MACHINE_PROTO_OBJS) \
@@ -394,7 +394,7 @@ ROLLUP_MACHINE_MANAGER_OBJS:= \
 	complete-merkle-tree.o \
 	pristine-merkle-tree.o \
 	grpc-util.o \
-	rollup-machine-manager.o
+	server-manager.o
 
 TEST_ROLLUP_MACHINE_MANAGER_OBJS:= \
 	$(CARTESI_MACHINE_PROTO_OBJS) \
@@ -403,11 +403,11 @@ TEST_ROLLUP_MACHINE_MANAGER_OBJS:= \
 	grpc-util.o \
 	pristine-merkle-tree.o \
 	complete-merkle-tree.o \
-	test-rollup-machine-manager.o
+	test-server-manager.o
 
-CARTESI_MACHINE_SERVER_OBJS:= \
+REMOTE_CARTESI_MACHINE_OBJS:= \
 	$(CARTESI_MACHINE_PROTO_OBJS) \
-	server.o \
+	remote-machine.o \
 	grpc-util.o \
 	clint.o \
 	rom.o \
@@ -491,19 +491,19 @@ tests/test-merkle-tree-hash: $(TEST_MERKLE_TREE_HASH_OBJS)
 
 grpc-interfaces: $(PROTO_SOURCES)
 
-cartesi-machine-server: $(CARTESI_MACHINE_SERVER_OBJS)
-	$(CXX) -o $@ $^ $(CARTESI_MACHINE_SERVER_LIBS)
+remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS)
+	$(CXX) -o $@ $^ $(REMOTE_CARTESI_MACHINE_LIBS)
 
-cartesi-machine-proxy: $(CARTESI_MACHINE_PROXY_OBJS)
-	$(CXX) -o $@ $^ $(CARTESI_MACHINE_PROXY_LIBS)
+remote-cartesi-machine-proxy: $(REMOTE_CARTESI_MACHINE_PROXY_OBJS)
+	$(CXX) -o $@ $^ $(REMOTE_CARTESI_MACHINE_PROXY_LIBS)
 
-rollup-machine-manager: $(ROLLUP_MACHINE_MANAGER_OBJS)
+server-manager: $(ROLLUP_MACHINE_MANAGER_OBJS)
 	$(CXX) -o $@ $^ $(ROLLUP_MACHINE_MANAGER_LIBS)
 
-tests/test-rollup-machine-manager: $(TEST_ROLLUP_MACHINE_MANAGER_OBJS)
+tests/test-server-manager: $(TEST_ROLLUP_MACHINE_MANAGER_OBJS)
 	$(CXX) -o $@ $^ $(TEST_ROLLUP_MACHINE_MANAGER_LIBS)
 
-cartesi-machine-server cartesi-machine-proxy rollup-machine-manager tests/test-rollup-machine-manager: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
+remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
 tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_GRPC)
 	$(CXX) $(LIBCARTESI_TESTS_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(TEST_MACHINE_C_API_LIBS)
@@ -516,7 +516,7 @@ tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_
 %.pb.cc: $(GRPC_DIR)/%.proto
 	$(PROTOC) -I$(GRPC_DIR) --cpp_out=. $<
 
-grpc-util.o grpc-virtual-machine.o grpc-machine-c-api.o server.o proxy.o: $(CARTESI_GRPC_GEN_OBJS)
+grpc-util.o grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o proxy.o: $(CARTESI_GRPC_GEN_OBJS)
 
 %.clang-tidy: %.cpp $(PROTO_SOURCES)
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) 2>/dev/null
@@ -540,11 +540,11 @@ grpc-util.o grpc-virtual-machine.o grpc-machine-c-api.o server.o proxy.o: $(CART
 clean: profile-clean
 	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d *.clang-tidy \
 		$(LIBCARTESI) $(LIBCARTESI_GRPC) cartesi.so cartesi/grpc.so \
-		cartesi-machine-server cartesi-machine-proxy \
-		merkle-tree-hash rollup-machine-manager \
+		remote-cartesi-machine remote-cartesi-machine-proxy \
+		merkle-tree-hash server-manager \
 		tests/test-merkle-tree-hash \
 		tests/test-machine-c-api \
-		tests/test-rollup-machine-manager
+		tests/test-server-manager
 
 profile-clean:
 	rm -f *.profdata *.profraw tests/*.profraw *.gcda

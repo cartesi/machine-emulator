@@ -765,7 +765,7 @@ where
         unix:<path>
 
     --server-address=<server-address> or [<server-address>]
-      passed to the spawned Cartesi Machine Server
+      passed to the spawned remote cartesi machine
       default: localhost:0
 
     --help
@@ -826,7 +826,7 @@ int main(int argc, char *argv[]) try {
 
     // spawn server
     boost::process::group server_group;
-    auto cmdline = "./cartesi-machine-server --session-id=proxy --checkin-address=" +
+    auto cmdline = "./remote-cartesi-machine --session-id=proxy --checkin-address=" +
         replace_port(proxy_address, hctx.proxy_port) + " --server-address=" + server_address;
     boost::process::spawn(cmdline, server_group); // NOLINT: suppress warning caused by boost
 

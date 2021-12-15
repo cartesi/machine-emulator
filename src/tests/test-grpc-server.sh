@@ -16,7 +16,7 @@
 # along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 #
 
-cartesi_machine_server=$1
+remote_cartesi_machine=$1
 cartesi_machine=$2
 cartesi_machine_tests=$3
 test_path=$4
@@ -25,14 +25,15 @@ server_address=127.0.0.1:5001
 checkin_address=127.0.0.1:5002
 
 tests=(
-    "$cartesi_machine_tests --server-address=$server_address --checkin-address=$checkin_address --test-path=\"$test_path\" --test='.*' run"
-    "./tests/machine-bind.lua grpc --server-address=$server_address --checkin-address=$checkin_address"
-    "./tests/machine-test.lua grpc --server-address=$server_address --checkin-address=$checkin_address"
-    "$cartesi_machine --server-address=$server_address --server-shutdown"
+    "$cartesi_machine_tests --remote-address=$server_address --checkin-address=$checkin_address --test-path=\"$test_path\" --test='.*' run"
+    "./tests/machine-bind.lua grpc --remote-address=$server_address --checkin-address=$checkin_address"
+    "./tests/machine-test.lua grpc --remote-address=$server_address --checkin-address=$checkin_address"
+    "$cartesi_machine --remote-address=$server_address --checkin-address=$checkin_address --remote-shutdown"
 )
 
 is_server_running () {
-    $cartesi_machine --server=$server_address --max-mcycle=0 &> /dev/null
+    $cartesi_machine --remote-address=$server_address --checkin-address=$checkin_address --max-mcycle=0 &> /dev/null
+    echo $cartesi_machine --remote-address=$server_address --checkin-address=$checkin_address --max-mcycle=0
 }
 
 wait_for_server () {
@@ -61,7 +62,8 @@ wait_for_shutdown () {
 
 for test_cmd in "${tests[@]}"
 do
-    $cartesi_machine_server --server-address=$server_address &
+    echo $remote_cartesi_machine --server-address=$server_address
+    $remote_cartesi_machine --server-address=$server_address &
     server_pid=$!
     wait_for_server
     eval $test_cmd

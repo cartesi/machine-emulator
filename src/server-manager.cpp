@@ -50,7 +50,7 @@
 
 #include "cartesi-machine-checkin.grpc.pb.h"
 #include "cartesi-machine.grpc.pb.h"
-#include "rollup-machine-manager.grpc.pb.h"
+#include "server-manager.grpc.pb.h"
 #pragma GCC diagnostic pop
 
 static constexpr uint32_t manager_version_major = 0;
@@ -62,7 +62,7 @@ static constexpr const char *manager_version_build = "";
 static constexpr uint32_t machine_version_major = 0;
 static constexpr uint32_t machine_version_minor = 5;
 
-using namespace CartesiRollupMachineManager;
+using namespace CartesiServerManager;
 using namespace CartesiMachine;
 using namespace Versioning;
 
@@ -413,8 +413,8 @@ struct session_type {
     std::map<uint64_t, epoch_type> epochs{};      ///< Map of cached epochs
     deadline_config_type server_deadline{};       ///< Deadlines for various server tasks
     cycles_config_type server_cycles;             ///< Cycle count limits for various server tasks
-    boost::process::group server_process_group{}; ///< cartesi-machine-server process group
-    std::string server_address{};                 ///< cartesi-machine-server address
+    boost::process::group server_process_group{}; ///< remote-cartesi-machine process group
+    std::string server_address{};                 ///< remote-cartesi-machine address
 };
 
 /// \brief Encodes an input metadata structure according to the EVM ABI
@@ -486,7 +486,7 @@ struct handler_context {
     std::unordered_map<id_type, session_type> sessions; ///< Known sessions
     /// Sessions waiting for server checkin
     std::unordered_map<id_type, handler_type::pull_type *> sessions_waiting_checkin;
-    RollupMachineManager::AsyncService manager_async_service;      ///< Assynchronous manager service
+    ServerManager::AsyncService manager_async_service;      ///< Assynchronous manager service
     MachineCheckIn::AsyncService checkin_async_service;            ///< Assynchronous checkin service
     std::unique_ptr<grpc::ServerCompletionQueue> completion_queue; ///< Completion queue where all handlers arrive
     bool ok;                                                       ///< gRPC status of requests arriving in queue
@@ -835,7 +835,7 @@ static handler_type::pull_type *new_EndSession_handler(handler_context &hctx) {
             shutdown_server(actx);
             if (session.tainted) {
                 dout{request_context} << "Session " << id
-                                      << " is tainted. Terminating cartesi-machine-server process group";
+                                      << " is tainted. Terminating remote-cartesi-machine process group";
                 session.server_process_group.terminate();
             }
             sessions.erase(id);
@@ -1478,7 +1478,7 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
             async_context actx{session, request_context, cq, self, yield};
             trigger_and_wait_checkin(hctx, actx, [](handler_context &hctx, async_context &actx) {
                 // Spawn a new server and ask it to check-in
-                auto cmdline = "./cartesi-machine-server --session-id=" + actx.session.id +
+                auto cmdline = "./remote-cartesi-machine --session-id=" + actx.session.id +
                     " --checkin-address=" + hctx.manager_address + " --server-address=" + hctx.server_address;
                 dout{actx.request_context} << "  Spawning " << cmdline;
                 try {
@@ -1487,7 +1487,7 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
                     server_process.detach();
                 } catch (boost::process::process_error &e) {
                     THROW((restart_handler_finish_error_yield_none{StatusCode::INTERNAL,
-                        "failed spawning cartesi-machine-server with command-line '" + cmdline + "' (" + e.what() +
+                        "failed spawning remote-cartesi-machine with command-line '" + cmdline + "' (" + e.what() +
                             ")"}));
                 }
             });
@@ -2886,7 +2886,7 @@ where
         unix:<path>
 
     --server-address=<server-address> or [<server-address>]
-      passed to spawned Cartesi Machine Servers
+      passed to the spawned remote cartesi machine
       default: localhost:0
 
     --help

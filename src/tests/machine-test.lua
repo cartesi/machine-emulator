@@ -20,13 +20,13 @@
 local cartesi = require "cartesi"
 local test_util = require "tests.util"
 
--- Note: for grpc machine test to work, cartesi-machine-server must run on same computer and 
--- cartesi machine server execution path must be provided
+-- Note: for grpc machine test to work, remote-cartesi-machine must run on
+-- same computer and remote-cartesi-machine execution path must be provided
 
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
 local MAX_MCYCLE = -1
 
-local server_address = nil
+local remote_address = nil
 local checkin_address = nil
 local test_path = "./"
 local cleanup = {}
@@ -40,16 +40,16 @@ Usage:
 
 where options are:
 
-  --server-address=<address>
-    run tests on a remote cartesi machine server (when machine type is grpc).
+  --remote-address=<address>
+    run tests on a remote cartesi machine (when machine type is grpc).
     (requires option --checkin to be defined as well)
 
   --checkin-address=<address>
     address of the local checkin server to run
 
   --test-path=<dir>
-    path to test execution folder. In case of grpc it is path to folder
-    where cartesi-machine-server is executed
+    path to test execution folder. In case of grpc tests, path must be
+    working directory of remote-cartesi-machine and must be locally readable
     (default: "./")
 
 <address> is one of the following formats:
@@ -71,9 +71,9 @@ local options = {
         if not all then return false end
         help()
     end },
-    { "^%-%-server%-address%=(.*)$", function(o)
+    { "^%-%-remote%-address%=(.*)$", function(o)
         if not o or #o < 1 then return false end
-        server_address = o
+        remote_address = o
         return true
     end },
     { "^%-%-checkin%-address%=(.*)$", function(o)
@@ -108,22 +108,22 @@ end
 local machine_type = assert(arguments[1], "missing machine type")
 assert(machine_type == "local" or machine_type == "grpc", "unknown machine type, should be 'local' or 'grpc'")
 if (machine_type == "grpc") then
-    assert(server_address ~= nil, "cartesi machine server address is missing")
-    assert(test_path ~= nil, "cartesi machine server execution folder path must be provided, server must run on same computer")
+    assert(remote_address ~= nil, "remote cartesi machine address is missing")
+    assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
 end 
-if server_address then
+if remote_address then
     assert(checkin_address, "missing checkin address")
     cartesi.grpc = require("cartesi.grpc")
 end
 
 local function connect()
-    local server = cartesi.grpc.stub(server_address, checkin_address)
-    local version = assert(server.get_version(),
-        "could not connect to cartesi machine GRPC server at " .. server_address)
-    local shutdown = function() server:shutdown() end
+    local remote = cartesi.grpc.stub(remote_address, checkin_address)
+    local version = assert(remote.get_version(),
+        "could not connect to remote cartesi machine at " .. remote_address)
+    local shutdown = function() remote.shutdown() end
     local mt = { __gc = function() pcall(shutdown) end}
     setmetatable(cleanup, mt)
-    return server, version
+    return remote, version
 end
 
 
@@ -167,8 +167,8 @@ local function build_machine(type)
     }
     local new_machine = nil
     if (type == "grpc") then
-        if not server then server = connect() end
-        new_machine = assert(server.machine(config, runtime))
+        if not remote then remote = connect() end
+        new_machine = assert(remote.machine(config, runtime))
     else 
         new_machine = assert(cartesi.machine(config, runtime))
     end 
@@ -202,8 +202,8 @@ local function build_machine_with_flash(type)
     -- Use default config to be max reproducible
     local new_machine = nil
     if (type == "grpc") then
-        if not server then server = connect() end
-        new_machine = assert(server.machine(config, runtime))
+        if not remote then remote = connect() end
+        new_machine = assert(remote.machine(config, runtime))
     else 
         new_machine = assert(cartesi.machine(config, runtime))
     end 
@@ -277,7 +277,7 @@ do_test("machine halt and yield flags and config matches",
         -- Get machine default config  and test for known fields
         local initial_config = machine:get_initial_config()
         -- test_util.print_table(initial_config)
-        assert(initial_config["processor"]["marchid"] == 7,
+        assert(initial_config["processor"]["marchid"] == 9,
             "marchid value does not match")
         assert(initial_config["processor"]["pc"] == 0x1000,
             "pc value does not match")
@@ -320,9 +320,9 @@ do_test("dumped file merkle tree hashes should match",
                 test_util.tohex(root_file_hashes[file_name]))
         end
         assert(test_util.tohex(root_file_hashes[pmas_file_names[1]]) ==
-                "E0387504AF856C8FDD164CA2EB44FEA5BC4094232D86C86021450687C9180863")
+                "CFDEE89C9CED407548FC484A8F824B7F4ACB16448DD2FBB1F41DCAFFA624EE90")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[2]]) ==
-                "D38CC01FE209FFC301809BAFCC540CE9C493B1C44F88138CC14A90BA828F9ED8")
+                "1BC2C9EFC6C10B8C494E4BE9AB52536B55006E9443B538654FD56BAAD8BCF514")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[3]]) ==
                 "995C871A78EFEC6CA5AFD44B9994B1C88BBBFCDFEA68FD5566C13D4F45BBDE6B")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[4]]) ==
@@ -359,7 +359,7 @@ do_test("machine initial hash shold match",
 )
 
 print("\n\ntesting root hash after step one")
-do_test("machine root hash after step one shold match", 
+do_test("machine root hash after step one should match", 
     function(machine)
 
         -- Update merkle tree
@@ -368,7 +368,7 @@ do_test("machine root hash after step one shold match",
         -- Get starting root hash
         local root_hash = machine:get_root_hash()
         assert(test_util.tohex(root_hash) ==
-                "CD41F6BD6FC5FE831908D9F379DC0B9102646831B3DEBC97D5B77A142960BCEE",
+                "AB39773E4B512710ECC44A3F63131C0BB4CFD7B4E43E704C054D07A769CD7A4F",
             "hash after initial step does not match")
 
         -- Perform step, dump address space to file, calculate emulator root hash
@@ -447,7 +447,7 @@ do_test("mcycle and root hash should match",
         local root_hash = machine:get_root_hash()
         print("1000 cycle hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "D09C85685500233E9778A5024ECDFF207F956DDB4C2CDE4C76E6F9F1F8188A1F",
+                "4CFF8C3233837E031870612EB11CA10E17947BA669AEAA9AF29C068CA144F268",
             "machine hash does not match after 1000 cycles")
     end
 )
@@ -466,7 +466,7 @@ do_test("mcycle and root hash should match",
         local root_hash = machine:get_root_hash()
         print("End hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "B4253ACD88BD55DBB0F0F7F7CA6EC670713AE705C4B626A6B434E242708068CD",
+                "2B6873D1486E6F53C34AD9F11A8D25C1CD259639976F62E238143A03D9B63242",
             "machine hash does not match after on end cycle")
     end
 )
@@ -551,7 +551,7 @@ do_test_with_flash("should replace flash drive and read something",
 
         local flash_data = machine:read_memory(flash_address_start, 20)
 
-        machine:replace_flash_drive(flash_drive_config)
+        machine:replace_memory_range(flash_drive_config)
 
         local flash_data = machine:read_memory(flash_address_start, 20)
         assert(flash_data == "test data 1234567890", "data read from replaced flash failed")

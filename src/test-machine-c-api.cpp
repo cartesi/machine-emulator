@@ -31,30 +31,38 @@ static void monitor_system_throw(std::function<void()> const &f) {
 }
 
 // root hash at the beginning
-constexpr cm_hash origin_hash = {0x9b, 0xf4, 0x44, 0xad, 0xf8, 0x40, 0xb3, 0xa2, 0xae, 0x8f, 0x19, 0x55, 0x0b, 0xee,
-    0x7c, 0x22, 0x41, 0xb5, 0xe1, 0x10, 0x34, 0x95, 0x6b, 0x8e, 0x4f, 0x0a, 0x88, 0xd8, 0x25, 0x63, 0x04, 0x59};
+// NOLINTNEXTLINE(modernize-avoid-c-arrays)
+constexpr cm_hash origin_hash = {0xbe, 0x7a, 0xb8, 0x4e, 0xae, 0x25, 0x1d, 0x51, 0xa4, 0x58, 0x7b, 0x1c, 0xd1, 0x75,
+    0xb8, 0x92, 0x9c, 0xd5, 0xc4, 0xcf, 0x90, 0x3f, 0x3b, 0x4d, 0x8b, 0x4e, 0xa9, 0x54, 0x4d, 0x87, 0x85, 0xd7};
 
 // target hash after get_proof()
-constexpr cm_hash origin_target_hash = {0xea, 0xb2, 0x74, 0x4f, 0x59, 0xd5, 0xe3, 0x03, 0xe0, 0x7f, 0x32, 0x59, 0xc9,
-    0x3b, 0x68, 0x36, 0x9e, 0xd9, 0x62, 0xaf, 0x9d, 0x4f, 0x70, 0x01, 0xa9, 0xe0, 0xe1, 0x9e, 0x81, 0x0e, 0x94, 0xd7};
+// NOLINTNEXTLINE(modernize-avoid-c-arrays)
+constexpr cm_hash origin_target_hash = {0x42, 0x5b, 0xa7, 0xf9, 0x7a, 0x07, 0xf7, 0xd9, 0x1c, 0xc1, 0x84, 0x46, 0x2b,
+    0x10, 0xdb, 0x22, 0xa6, 0x08, 0xdd, 0x66, 0xf2, 0xb4, 0x6a, 0x2c, 0x5e, 0x0f, 0x06, 0x7d, 0x32, 0xe6, 0x3c, 0xc9};
 
 // root hash after get_proof()
-constexpr cm_hash origin_root_hash = {0x9b, 0xf4, 0x44, 0xad, 0xf8, 0x40, 0xb3, 0xa2, 0xae, 0x8f, 0x19, 0x55, 0x0b,
-    0xee, 0x7c, 0x22, 0x41, 0xb5, 0xe1, 0x10, 0x34, 0x95, 0x6b, 0x8e, 0x4f, 0x0a, 0x88, 0xd8, 0x25, 0x63, 0x04, 0x59};
+// NOLINTNEXTLINE(modernize-avoid-c-arrays)
+constexpr cm_hash origin_root_hash = {0xbe, 0x7a, 0xb8, 0x4e, 0xae, 0x25, 0x1d, 0x51, 0xa4, 0x58, 0x7b, 0x1c, 0xd1,
+    0x75, 0xb8, 0x92, 0x9c, 0xd5, 0xc4, 0xcf, 0x90, 0x3f, 0x3b, 0x4d, 0x8b, 0x4e, 0xa9, 0x54, 0x4d, 0x87, 0x85, 0xd7};
+
 // machine hash after performing 1 step
-constexpr cm_hash origin_hash1 = {0x3f, 0x2a, 0xbf, 0x06, 0x05, 0x0c, 0x58, 0xdc, 0xec, 0x15, 0x13, 0x99, 0x3c, 0x60,
-    0xc1, 0x65, 0x1d, 0xf8, 0xda, 0x1f, 0xac, 0x89, 0x67, 0xef, 0xa1, 0xd7, 0x46, 0x46, 0x64, 0x37, 0xf4, 0xe6};
+// NOLINTNEXTLINE(modernize-avoid-c-arrays)
+constexpr cm_hash origin_hash1 = {0x63, 0x77, 0x20, 0x87, 0xcb, 0x66, 0xe1, 0x15, 0xc3, 0x0a, 0x9e, 0x94, 0x04, 0xc3,
+    0xe2, 0x77, 0x02, 0xfb, 0xd6, 0x23, 0x7f, 0x8d, 0x8c, 0x7f, 0x74, 0xd1, 0xba, 0x46, 0x43, 0x89, 0x28, 0xc5};
 
 // machine hash after running 1000 cycles
-constexpr cm_hash origin_hash_1000 = {0x72, 0x69, 0xcb, 0x5f, 0x73, 0xc1, 0x9e, 0xc5, 0x60, 0xa6, 0x37, 0xf7, 0xf3,
-    0x4b, 0x2f, 0xc3, 0x96, 0xe2, 0xc6, 0xfe, 0xb4, 0xec, 0xee, 0x90, 0x18, 0x4d, 0xc6, 0xfa, 0xa7, 0x85, 0x98, 0xde};
+// NOLINTNEXTLINE(modernize-avoid-c-arrays)
+constexpr cm_hash origin_hash_1000 = {0xa3, 0xe7, 0xf2, 0x3f, 0xb6, 0x70, 0xf8, 0xdd, 0xf2, 0x50, 0x91, 0x1d, 0x7f,
+    0x33, 0x3f, 0x29, 0xe7, 0x1b, 0x10, 0xfa, 0x3d, 0x5b, 0x93, 0xf4, 0x95, 0xda, 0x82, 0xd1, 0x1f, 0xee, 0xf4, 0x87};
 
 // machine hash after running 600000 cycles
-constexpr cm_hash origin_hash_600000 = {0xd8, 0x82, 0x55, 0x1a, 0xcd, 0x10, 0xce, 0x6d, 0xe5, 0x9d, 0x40, 0xb5, 0x6c,
-    0x87, 0x37, 0xed, 0xcc, 0x9d, 0x5d, 0xef, 0x52, 0xac, 0x4b, 0x60, 0xf3, 0x9a, 0x8f, 0x18, 0x85, 0xbd, 0x9d, 0x7e};
+// NOLINTNEXTLINE(modernize-avoid-c-arrays)
+constexpr cm_hash origin_hash_600000 = {0x6e, 0xfc, 0x33, 0x03, 0xc3, 0x74, 0xf3, 0x13, 0xe0, 0xd9, 0x3e, 0x4c, 0x8b,
+    0xa1, 0xc6, 0x45, 0xbf, 0x90, 0xe1, 0x17, 0x7c, 0x5b, 0x0a, 0xa0, 0xf7, 0x4f, 0x53, 0x01, 0x72, 0xd3, 0xac, 0x3e};
 
 constexpr uint8_t config_version_byte = 41;
-constexpr uint8_t serialized_config_template_version = 2;
+constexpr uint8_t serialized_config_template_version = 3;
+// NOLINTNEXTLINE(modernize-avoid-c-arrays,cppcoreguidelines-avoid-c-arrays)
 constexpr uint8_t serialized_config_template[] = {0x16, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x65, 0x72,
     0x69, 0x61, 0x6C, 0x69, 0x7A, 0x61, 0x74, 0x69, 0x6F, 0x6E, 0x3A, 0x3A, 0x61, 0x72, 0x63, 0x68, 0x69, 0x76, 0x65,
     0x13, 0x00, 0x04, 0x08, 0x04, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -126,9 +134,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_default_machine_config_basic_test) {
 
 class default_machine_fixture {
 public:
-    default_machine_fixture() : _machine(nullptr) {
-        _default_machine_config = cm_new_default_machine_config();
-    }
+    default_machine_fixture() : _machine(nullptr), _default_machine_config(cm_new_default_machine_config()) {}
 
     ~default_machine_fixture() {
         cm_delete_machine_config(_default_machine_config);
@@ -141,8 +147,8 @@ public:
 
 protected:
     cm_machine_runtime_config _runtime_config{};
-    const cm_machine_config *_default_machine_config;
     cm_machine *_machine;
+    const cm_machine_config *_default_machine_config;
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_unknown_dir_test, default_machine_fixture) {
@@ -217,8 +223,10 @@ static char *new_cstr(const char *str) {
     return copy;
 }
 
+// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class serialized_machine_fixture : public default_machine_fixture {
 public:
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
     serialized_machine_fixture() {
         std::stringstream ss;
         ss << std::this_thread::get_id();
@@ -1261,7 +1269,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(ids_read_test, ordinary_machine_fixture) {
     error_code = cm_read_marchid(_machine, &archid, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(archid, 0x7);
+    BOOST_CHECK_EQUAL(archid, 0x9);
 
     error_code = cm_read_mimpid(_machine, &impid, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -1524,7 +1532,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_flash_config_test, ordi
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin("Invalid flash drive configuration");
+    std::string origin("Invalid memory range configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1580,7 +1588,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_pma_test, flash_driv
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin = "PMA range does not exist";
+    std::string origin = "Cannot replace inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1595,7 +1603,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_length_test, flash_d
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin = "PMA length must be multiple of page size";
+    std::string origin = "Cannot replace inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1609,7 +1617,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_file_length_mismatch_test, f
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin = "backing file size does not match range length";
+    std::string origin = "Cannot replace inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1623,7 +1631,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_zero_length_test, flash_driv
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin = "PMA length cannot be zero";
+    std::string origin = "Cannot replace inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -2169,8 +2177,11 @@ BOOST_AUTO_TEST_CASE_NOLINT(create_grpc_machine_stub_wrong_address_test) {
     char *err_msg{};
     cm_grpc_machine_stub *stub{};
     int error_code = cm_create_grpc_machine_stub("addr", "rdda", &stub, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
+    std::string result = err_msg;
+    std::string origin("unable to create checkin server");
+    BOOST_CHECK_EQUAL(origin, result);
+    cm_delete_error_message(err_msg);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(create_grpc_machine_stub_no_server_test) {
@@ -2179,6 +2190,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(create_grpc_machine_stub_no_server_test) {
     int error_code = cm_create_grpc_machine_stub("127.0.0.2:5001", "127.0.0.1:5002", &stub, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    cm_delete_grpc_machine_stub(stub);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_config_test, grpc_machine_fixture) {
@@ -2190,6 +2202,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_config_test, grpc_machin
     std::string origin("Invalid machine configuration");
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
+    cm_delete_machine(new_machine);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_rt_config_test, grpc_machine_fixture) {
@@ -2201,37 +2214,32 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_rt_config_test, grpc_mac
     std::string origin("Invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
+    cm_delete_machine(new_machine);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_wrong_address_test, grpc_machine_fixture) {
     char *err_msg{};
     cm_grpc_machine_stub *stub{};
-    cm_create_grpc_machine_stub("addr", "rdda", &stub, &err_msg);
-    int error_code = cm_create_grpc_machine(stub, &_machine_config, &_runtime_config, nullptr, &err_msg);
+    int error_code = cm_create_grpc_machine_stub("addr", "rdda", &stub, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
+    BOOST_CHECK_EQUAL(stub, nullptr);
     std::string result = err_msg;
-    std::string origin("DNS resolution failed for service: addr");
+    std::string origin("unable to create checkin server");
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_no_server_test, grpc_machine_fixture) {
     char *err_msg{};
-    int error_code = cm_create_grpc_machine(m_stub, &_machine_config, &_runtime_config, nullptr, &err_msg);
+    cm_machine *new_machine{};
+    int error_code = cm_create_grpc_machine(m_stub, &_machine_config, &_runtime_config, &new_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
     std::string result = err_msg;
     std::string origin("failed to connect to all addresses");
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_machine_test, grpc_machine_fixture_with_server) {
-    auto f = [this]() {
-        char *err_msg{};
-        cm_create_grpc_machine(m_stub, &_machine_config, &_runtime_config, nullptr, &err_msg);
-    };
-    monitor_system_throw(f);
+    cm_delete_machine(new_machine);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_basic_test, grpc_machine_fixture_with_server) {
@@ -2239,10 +2247,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_basic_test, grpc_machine_fixt
     cm_machine *machine{};
     int error_code = cm_create_grpc_machine(m_stub, &_machine_config, &_runtime_config, &machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
     if (err_msg != nullptr) {
         printf("Error creating grpc machine: %s\n", err_msg);
+        cm_delete_error_message(err_msg);
     }
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     cm_delete_machine(machine);
 }
 
@@ -2272,16 +2281,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_rt_config_test, grpc_machi
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
     std::string origin("Invalid machine runtime configuration");
-    BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_error_message(err_msg);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_output_test, grpc_machine_fixture_with_server) {
-    char *err_msg{};
-    int error_code = cm_load_grpc_machine(m_stub, "some_dir", &_runtime_config, nullptr, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
-    std::string result = err_msg;
-    std::string origin("unable to open 'some_dir/config' for reading");
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
 }

@@ -36,7 +36,7 @@ and [action] [what] can be:
       options:
 
         --msg-sender=<address>
-        20-byte address in hex
+        20-byte address in hex, starting with 0x
 
         --block-number=<number>
         --time-stamp=<number>
@@ -72,7 +72,7 @@ and [action] [what] can be:
       options:
 
         --address=<address>
-        20-byte address in hex
+        20-byte address in hex, starting with 0x
 
         --payload-filename=<filename>
         read payload from <filename>
@@ -209,7 +209,10 @@ local function encode_input_metadata(arg)
     local encode_input_metadata_options = {
         { "^%-%-msg%-sender%=(.+)$", function(o)
             if not o or #o < 1 then return false end
-            msg_sender, err = unhex(o)
+            if string.sub(o, 1, 2) ~= "0x" then
+                error("invalid msg-sender " .. o .. " (missing 0x prefix)")
+            end
+            msg_sender, err = unhex(string.sub(o, 3))
             if not msg_sender then
                 error("invalid msg-sender " .. o .. " " .. err)
             end
@@ -328,7 +331,10 @@ local function encode_voucher(arg)
         end },
         { "^%-%-address%=(.+)$", function(o)
             if not o or #o < 1 then return false end
-            address, err = unhex(o)
+            if string.sub(o, 1, 2) ~= "0x" then
+                error("invalid address " .. o .. " (missing 0x prefix)")
+            end
+            address, err = unhex(string.sub(o, 3))
             if not address then
                 error("invalid address " .. o .. " " .. err)
             end
@@ -366,10 +372,7 @@ local function encode_voucher(arg)
     write_be256(64)
     write_be256(#payload)
     io.stdout:write(payload)
-
 end
-
-
 
 local function read_address()
     return string.sub(io.stdin:read(32), 13)

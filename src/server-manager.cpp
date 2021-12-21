@@ -44,9 +44,9 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #pragma GCC diagnostic ignored "-Wtype-limits"
+#include <grpc++/alarm.h>
 #include <grpc++/grpc++.h>
 #include <grpc++/resource_quota.h>
-#include <grpc++/alarm.h>
 
 #include "cartesi-machine-checkin.grpc.pb.h"
 #include "cartesi-machine.grpc.pb.h"
@@ -486,7 +486,7 @@ struct handler_context {
     std::unordered_map<id_type, session_type> sessions; ///< Known sessions
     /// Sessions waiting for server checkin
     std::unordered_map<id_type, handler_type::pull_type *> sessions_waiting_checkin;
-    ServerManager::AsyncService manager_async_service;      ///< Assynchronous manager service
+    ServerManager::AsyncService manager_async_service;             ///< Assynchronous manager service
     MachineCheckIn::AsyncService checkin_async_service;            ///< Assynchronous checkin service
     std::unique_ptr<grpc::ServerCompletionQueue> completion_queue; ///< Completion queue where all handlers arrive
     bool ok;                                                       ///< gRPC status of requests arriving in queue
@@ -1243,21 +1243,20 @@ static void check_htif_config(const HTIFConfig &htif) {
 
 /// \brief Checks if rollup configuration is valid for rollups
 /// \param config MachineConfig returned by server
-static void check_rollup_config(grpc::ServerContext &request_context, session_type &session, const MachineConfig &config) {
+static void check_rollup_config(grpc::ServerContext &request_context, session_type &session,
+    const MachineConfig &config) {
     // If rollup config, bail out
     if (!config.has_rollup()) {
         THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "missing server rollup config"}));
     }
     const auto &rollup = config.rollup();
-    if (rollup.rx_buffer().length() == 0 && rollup.tx_buffer().length() == 0
-            && rollup.input_metadata().length() == 0 && rollup.voucher_hashes().length() == 0
-            && rollup.notice_hashes().length() == 0) {
-        THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "server rollup config was not initialized"}));
+    if (rollup.rx_buffer().length() == 0 && rollup.tx_buffer().length() == 0 && rollup.input_metadata().length() == 0 &&
+        rollup.voucher_hashes().length() == 0 && rollup.notice_hashes().length() == 0) {
+        THROW(
+            (finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "server rollup config was not initialized"}));
     }
-    check_memory_range_config(request_context, session.memory_range.tx_buffer, "tx buffer",
-        rollup.tx_buffer());
-    check_memory_range_config(request_context, session.memory_range.rx_buffer, "rx buffer",
-        rollup.rx_buffer());
+    check_memory_range_config(request_context, session.memory_range.tx_buffer, "tx buffer", rollup.tx_buffer());
+    check_memory_range_config(request_context, session.memory_range.rx_buffer, "rx buffer", rollup.rx_buffer());
     check_memory_range_config(request_context, session.memory_range.input_metadata, "input metadata",
         rollup.input_metadata());
     check_memory_range_config(request_context, session.memory_range.voucher_hashes, "voucher hashes",
@@ -1826,7 +1825,7 @@ static inline uint64_t get_payload_length(session_type &session, const char *beg
         THROW((taint_session{session, grpc::StatusCode::OUT_OF_RANGE, "payload length too large"}));
     }
     return endian_load<uint64_t, sizeof(uint64_t), order::big>(
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         reinterpret_cast<const unsigned char *>(end) - sizeof(uint64_t));
 }
 
@@ -1853,7 +1852,8 @@ static evm_address_type read_voucher_address_and_payload_data_length(async_conte
     if (read_response.data().size() != read_request.length()) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "read returned wrong number of bytes!"}));
     }
-    const auto *payload_data_length_begin = read_response.data().data() + EVM_ABI_ADDRESS_LENGTH + EVM_ABI_OFFSET_LENGTH;
+    const auto *payload_data_length_begin =
+        read_response.data().data() + EVM_ABI_ADDRESS_LENGTH + EVM_ABI_OFFSET_LENGTH;
     const auto *payload_data_length_end = payload_data_length_begin + EVM_ABI_LENGTH_LENGTH;
     *payload_data_length = get_payload_length(actx.session, payload_data_length_begin, payload_data_length_end);
     auto address_begin = read_response.data().begin() + EVM_ABI_ADDRESS_LENGTH - EVM_ADDRESS_LENGTH;
@@ -2095,7 +2095,7 @@ static void set_htif_fromhost(async_context &actx, uint64_t value) {
 /// \param actx Context for async operations
 static void set_htif_yield_ack_data(async_context &actx, uint64_t reqid) {
     auto old_value = get_htif_fromhost(actx);
-	check_htif_yield_manual(actx, "htif.fromhost", old_value);
+    check_htif_yield_manual(actx, "htif.fromhost", old_value);
     set_htif_fromhost(actx, htif_replace_data_field(old_value, reqid));
 }
 
@@ -2103,12 +2103,12 @@ static void set_htif_yield_ack_data(async_context &actx, uint64_t reqid) {
 /// \param actx Context for async operations
 static void check_htif_yield_ack_data(async_context &actx, uint64_t reqid) {
     auto value = get_htif_fromhost(actx);
-	check_htif_yield_manual(actx, "htif.fromhost", value);
+    check_htif_yield_manual(actx, "htif.fromhost", value);
     auto data = htif_data_field(value);
     if (data != reqid) {
         THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
-            "invalid data field in htif.fromhost (expected " + std::to_string(reqid) + ", got " +
-                std::to_string(data) + ")"}));
+            "invalid data field in htif.fromhost (expected " + std::to_string(reqid) + ", got " + std::to_string(data) +
+                ")"}));
     }
 }
 
@@ -2420,8 +2420,8 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
             auto notice_hashes_in_epoch = e.notices_tree.get_proof(input_index << LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE);
             // Check the machine hash has not changed
             if (e.most_recent_machine_hash != get_root_hash(actx)) {
-                THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
-                    "machine hash is changed after rollback"}));
+                THROW((
+                    taint_session{actx.session, grpc::StatusCode::INTERNAL, "machine hash is changed after rollback"}));
             }
             // Add skipped input to list of processed inputs
             e.processed_inputs.push_back(
@@ -2556,7 +2556,8 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
             Void advance_state_response;
             advance_state_writer.Finish(advance_state_response, grpc::Status::OK, self);
             yield(side_effect::none); // Here the session is still locked, so no concurrent calls are possible
-            // Release the lock so other RPCs can enqueue additional inputs to the same session/epoch or call inspect state
+            // Release the lock so other RPCs can enqueue additional inputs to the same session/epoch or call inspect
+            // state
             session_lock.release();
             // Between unlocking the session and the check here, there is no
             // yield, and so no other AdvanceState RPC can be in flight for
@@ -2630,7 +2631,7 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
 
 class auto_resume final {
 public:
-    explicit auto_resume(grpc::ServerCompletionQueue *cq): m_cq(cq), m_coroutine(nullptr) { }
+    explicit auto_resume(grpc::ServerCompletionQueue *cq) : m_cq(cq), m_coroutine(nullptr) {}
     void reset(handler_type::pull_type *coroutine = nullptr) {
         m_coroutine = coroutine;
     }
@@ -2645,6 +2646,7 @@ public:
             enqueue_completion_queue(m_cq, m_coroutine);
         }
     }
+
 private:
     grpc::ServerCompletionQueue *m_cq;
     handler_type::pull_type *m_coroutine;

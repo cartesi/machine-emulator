@@ -1117,8 +1117,8 @@ std::unique_ptr<Server> build_server(const char *server_address, handler_context
     hctx.cq = builder.AddCompletionQueue();
     auto server = builder.BuildAndStart();
     if (hctx.checkin.has_value()) {
-        auto stub = MachineCheckIn::NewStub(grpc::CreateChannel(hctx.checkin.value().checkin_address,
-                grpc::InsecureChannelCredentials()));
+        auto stub = MachineCheckIn::NewStub(
+            grpc::CreateChannel(hctx.checkin.value().checkin_address, grpc::InsecureChannelCredentials()));
         grpc::ClientContext context;
         CheckInRequest request;
         Void response;
@@ -1134,21 +1134,19 @@ std::unique_ptr<Server> build_server(const char *server_address, handler_context
     return server;
 }
 
-static void tc_handler(int signo)
-{
-    (void)signo;
+static void tc_handler(int signo) {
+    (void) signo;
     // force an error on tc write operations (e.g., tcsetattr(2))
 }
 
-static void tc_disable(void)
-{
+static void tc_disable(void) {
     // prevent this process from suspending after issuing a SIGTTOU when trying
     // to configure terminal (on htif::init_console())
     //
     // https://pubs.opengroup.org/onlinepubs/009604599/basedefs/xbd_chap11.html#tag_11_01_04
     // https://pubs.opengroup.org/onlinepubs/009604499/functions/tcsetattr.html
     // http://curiousthing.org/sigttin-sigttou-deep-dive-linux
-    struct sigaction tc{};
+    struct sigaction tc {};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
     tc.sa_handler = tc_handler;
     tc.sa_flags = 0;

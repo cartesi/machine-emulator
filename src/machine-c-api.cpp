@@ -310,13 +310,9 @@ static cartesi::rollup_config convert_from_c(const cm_rollup_config *c_config) {
     if (c_config == nullptr) {
         throw std::invalid_argument("Invalid rollup configuration");
     }
-    cartesi::rollup_config new_cpp_rollup_config{
-        convert_from_c(&c_config->rx_buffer),
-        convert_from_c(&c_config->tx_buffer),
-        convert_from_c(&c_config->input_metadata),
-        convert_from_c(&c_config->voucher_hashes),
-        convert_from_c(&c_config->notice_hashes)
-    };
+    cartesi::rollup_config new_cpp_rollup_config{convert_from_c(&c_config->rx_buffer),
+        convert_from_c(&c_config->tx_buffer), convert_from_c(&c_config->input_metadata),
+        convert_from_c(&c_config->voucher_hashes), convert_from_c(&c_config->notice_hashes)};
     return new_cpp_rollup_config;
 }
 

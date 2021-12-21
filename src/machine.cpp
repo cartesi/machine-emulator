@@ -77,20 +77,20 @@ const pma_entry::flags machine::m_flash_drive_flags{
 };
 
 const pma_entry::flags machine::m_rollup_rx_buffer_flags{
-    true,                     // R
-    false,                    // W
-    false,                    // X
-    true,                     // IR
-    true,                     // IW
+    true,                            // R
+    false,                           // W
+    false,                           // X
+    true,                            // IR
+    true,                            // IW
     PMA_ISTART_DID::rollup_rx_buffer // DID
 };
 
 const pma_entry::flags machine::m_rollup_tx_buffer_flags{
-    true,                     // R
-    true,                     // W
-    false,                    // X
-    true,                     // IR
-    true,                     // IW
+    true,                            // R
+    true,                            // W
+    false,                           // X
+    true,                            // IR
+    true,                            // IW
     PMA_ISTART_DID::rollup_tx_buffer // DID
 };
 
@@ -298,10 +298,10 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_s
         register_pma_entry(make_rollup_voucher_hashes_pma_entry(m_c.rollup.voucher_hashes));
         register_pma_entry(make_rollup_notice_hashes_pma_entry(m_c.rollup.notice_hashes));
     } else if (m_c.rollup.rx_buffer.length != 0 || m_c.rollup.rx_buffer.start != 0 ||
-        m_c.rollup.tx_buffer.length != 0 || m_c.rollup.tx_buffer.start != 0 ||
-        m_c.rollup.input_metadata.length != 0 || m_c.rollup.input_metadata.start != 0 ||
-        m_c.rollup.voucher_hashes.length != 0 || m_c.rollup.voucher_hashes.start != 0 ||
-        m_c.rollup.notice_hashes.length != 0 || m_c.rollup.notice_hashes.start != 0) {
+        m_c.rollup.tx_buffer.length != 0 || m_c.rollup.tx_buffer.start != 0 || m_c.rollup.input_metadata.length != 0 ||
+        m_c.rollup.input_metadata.start != 0 || m_c.rollup.voucher_hashes.length != 0 ||
+        m_c.rollup.voucher_hashes.start != 0 || m_c.rollup.notice_hashes.length != 0 ||
+        m_c.rollup.notice_hashes.start != 0) {
         throw std::invalid_argument{"incomplete rollup configuration"};
     }
 

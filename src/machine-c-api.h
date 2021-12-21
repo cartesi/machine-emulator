@@ -206,9 +206,9 @@ typedef struct {                            // NOLINT(modernize-use-using)
 } cm_dhd_config;
 
 /// \brief Rollup state configuration
-typedef struct { // NOLINT(modernize-use-using)
-    cm_memory_range_config rx_buffer; // RX buffer memory range
-    cm_memory_range_config tx_buffer; // TX buffer memory range
+typedef struct {                           // NOLINT(modernize-use-using)
+    cm_memory_range_config rx_buffer;      // RX buffer memory range
+    cm_memory_range_config tx_buffer;      // TX buffer memory range
     cm_memory_range_config input_metadata; ///< Input metadata memory range
     cm_memory_range_config voucher_hashes; ///< Voucher hashes memory range
     cm_memory_range_config notice_hashes;  ///< Notice hashes memory range

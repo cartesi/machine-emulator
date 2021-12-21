@@ -30,10 +30,9 @@ using namespace Versioning;
 using hash_type = cartesi::machine_merkle_tree::hash_type;
 
 // Doesn't matter because we are not connected to multiple servers and don't have to distinguish between them
-constexpr const char* CHECKIN_SESSION_ID = "grpc_virtual_machine";
+constexpr const char *CHECKIN_SESSION_ID = "grpc_virtual_machine";
 
 namespace cartesi {
-
 
 /// \brief Converts a gRPC status code to string
 /// \param code gRPC status code

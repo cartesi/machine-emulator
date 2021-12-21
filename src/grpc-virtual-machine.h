@@ -43,7 +43,7 @@ namespace cartesi {
 class grpc_machine_stub final {
 
     struct async_checkin_context {
-        async_checkin_context(void) : writer(&server_context) { }
+        async_checkin_context(void) : writer(&server_context) {}
         grpc::ServerContext server_context;
         grpc::ServerAsyncResponseWriter<CartesiMachine::Void> writer;
         CartesiMachine::CheckInRequest request;

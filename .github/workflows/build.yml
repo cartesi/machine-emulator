@@ -60,10 +60,6 @@ jobs:
       - name: Lint
         run: make lint -j$(nproc)
 
-      - name: Sanity checks
-        run: |
-          ./tools/tests/machine-config-check.sh
-
       - name: Build
         run: make -j$(nproc)
 

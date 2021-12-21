@@ -268,12 +268,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_invalid_config_version_test, seriali
     char *err_msg{};
     int error_code = cm_load_machine(_machine_config_path.c_str(), &_runtime_config, &_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
-
-    std::string result = err_msg;
-    std::string origin("expected config archive version " + std::to_string(serialized_config_template_version) +
-        " (got " + std::to_string(config_version) + ")");
-    BOOST_CHECK_EQUAL(origin, result);
-
     cm_delete_error_message(err_msg);
 }
 

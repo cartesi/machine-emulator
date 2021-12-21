@@ -195,9 +195,13 @@ machine_config machine_config::load(const std::string &dir) {
     if (!ifs) {
         throw std::runtime_error{"unable to open '" + name + "' for reading"};
     }
-    boost::archive::binary_iarchive ia(ifs);
-    ia >> c;
-    adjust_image_filenames(c, dir);
+    try {
+        boost::archive::binary_iarchive ia(ifs);
+        ia >> c;
+        adjust_image_filenames(c, dir);
+    } catch (std::exception &e) {
+        throw std::runtime_error{e.what()};
+    }
     return c;
 }
 

@@ -178,7 +178,7 @@ jobs:
           timeout 20 bash -c 'while ! nc -q0 127.0.0.1 50001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
           cd ~/work/machine-emulator/machine-emulator && ./tests/test-server-manager 127.0.0.1:50001
           pkill -f server-manager || true
-          pkill -f cartesi-machine-server || true
+          pkill -f remote-cartesi-machine || true
 
       - name: Run test scripts
         run: |

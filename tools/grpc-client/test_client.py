@@ -34,7 +34,7 @@ LENGTH = "length"
 SHARED = "shared"
 LABEL = "label"
 BOOTARGS = "bootargs"
-DIR_PATH = os.path.dirname(os.path.realpath("../../src/cartesi-machine-server"))
+DIR_PATH = os.path.dirname(os.path.realpath("../../src/remote-cartesi-machine"))
 
 TEST_ROM = {
     BOOTARGS: "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw {} -- /bin/echo nice && ls /mnt",
@@ -99,7 +99,7 @@ def get_server_address():
 
 def run():
     server_address = get_server_address()
-    print("Connecting to cartesi-machine-server at " + server_address)
+    print("Connecting to remote-cartesi-machine at " + server_address)
     with grpc.insecure_channel(server_address) as channel:
         stub = cartesi_machine_pb2_grpc.MachineStub(channel)
         content = bytes("Hello World!", "iso8859-1")

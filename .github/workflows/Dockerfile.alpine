@@ -45,4 +45,4 @@ ENV PATH="/opt/cartesi/bin:${PATH}"
 WORKDIR /opt/cartesi
 COPY --from=builder /opt/cartesi .
 
-CMD [ "/opt/cartesi/bin/cartesi-machine-server" ]
+CMD [ "/opt/cartesi/bin/remote-cartesi-machine" ]

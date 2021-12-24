@@ -32,6 +32,7 @@ RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
     libgomp1 \
     lua5.3 \
     lua-socket \
+    genext2fs \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/opt/cartesi/bin:${PATH}"

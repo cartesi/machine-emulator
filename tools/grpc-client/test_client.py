@@ -70,7 +70,7 @@ def make_new_machine_request():
     ram_msg = cartesi_machine_pb2.RAMConfig(length=TEST_RAM[LENGTH], image_filename=os.path.join(DIR_PATH, TEST_RAM[BACKING]))
     drives_msg = []
     for drive in TEST_DRIVES:
-        drive_msg = cartesi_machine_pb2.FlashDriveConfig(start=drive[START], length=drive[LENGTH], image_filename=os.path.join(DIR_PATH, drive[BACKING]),
+        drive_msg = cartesi_machine_pb2.MemoryRangeConfig(start=drive[START], length=drive[LENGTH], image_filename=os.path.join(DIR_PATH, drive[BACKING]),
                                                  shared=drive[SHARED])
         drives_msg.append(drive_msg)
     bootargs_str = TEST_ROM[BOOTARGS].format(build_mtdparts_str(TEST_DRIVES))

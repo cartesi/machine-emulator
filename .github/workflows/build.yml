@@ -326,7 +326,7 @@ jobs:
           find /opt/cartesi/lib -type f -exec chmod 755 {} +
 
       - name: Install Ubuntu dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.71.0 libboost-coroutine1.71.0 libboost-serialization1.71.0
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-coroutine1.71.0 libboost-context1.71.0 libboost-serialization1.71.0 libboost-filesystem1.71.0 libreadline8 openssl libc-ares2 zlib1g ca-certificates libgomp1 lua5.3 liblua5.3-dev lua-socket
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0
@@ -379,7 +379,12 @@ jobs:
         id: gen_logs
         if: ${{ steps.download_ground_truth_logs.outcome == 'failure' }}
         run: |
-          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/usr/bin/lua5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
+          export PATH=/opt/cartesi/bin:$PATH
+          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
+          export TEST_PATH=/opt/cartesi/tests
+          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;"
+          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
+          cd ./src
           make -j$(nproc) CYCLE_PERIOD=1 truth-logs
 
       - name: Upload ground truth logs
@@ -392,7 +397,12 @@ jobs:
 
       - name: Verify logs against ground truth
         run: |
-          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/usr/bin/lua5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
+          export PATH=/opt/cartesi/bin:$PATH
+          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
+          export TEST_PATH=/opt/cartesi/tests
+          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;"
+          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
+          cd ./src
           make -j$(nproc) CYCLE_PERIOD=1 test-logs
 
       - name: Download ground truth hashes cache
@@ -410,7 +420,12 @@ jobs:
         id: gen_hashes
         if: ${{ steps.download_ground_truth_hashes.outcome == 'failure' }}
         run: |
-          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/usr/bin/lua5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
+          export PATH=/opt/cartesi/bin:$PATH
+          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
+          export TEST_PATH=/opt/cartesi/tests
+          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;"
+          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
+          cd ./src
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=1 truth-hashes
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=2 truth-hashes
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=3 truth-hashes
@@ -426,7 +441,12 @@ jobs:
 
       - name: Verify hashes against ground truth
         run: |
-          export PATH=/opt/cartesi/bin:$PATH LUA_BIN=/usr/bin/lua5.3 TEST_PATH=/opt/cartesi/tests && cd ./src
+          export PATH=/opt/cartesi/bin:$PATH
+          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
+          export TEST_PATH=/opt/cartesi/tests
+          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;"
+          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
+          cd ./src
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=1 test-hashes
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=2 compare-hashes
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=3 compare-hashes

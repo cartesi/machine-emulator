@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.0] - 2021-12-17
+## [0.8.0] - 2021-12-28
 
 ### Added
 
@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Changed marchid to 9
-- Changed machine::run to only return on yield, halt, or when max_mcycle is reached
+- Changed machine::run to only return on yield, halt, or when max\_mcycle is reached
 - Changed WFI to noop to simplify code, thus eliminating flag I from iflags CSR
 - Changed cartesi-machine-server to remote-cartesi-machine
 - Changed Merkle tree proof structures to be more general
@@ -41,11 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed code with clang-format
 - Changed Lua bind to use C API, cartesi.so links to libcartesi.so
 - Changed from luapp to stock Lua interpreter
-- Chaned remote-cartesi-machine to check-in with client when starting/rollback/snapshot
-- Changed machine::replace_flash_drive to machine::replace_memory_range
+- Changed remote-cartesi-machine to check-in with client when starting/rollback/snapshot
+- Changed machine::replace\_flash\_drive to machine::replace\_memory\_range
+- Changed dependency from system provided gRPC libraries to a specific version added to third-party dependencies
 
 ## [Previous Versions]
 
+[0.8.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.8.0
 [0.7.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.7.0
 [0.6.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.6.0
 [0.5.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.5.1

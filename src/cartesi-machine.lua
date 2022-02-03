@@ -1190,13 +1190,14 @@ local function get_and_print_yield(machine, htif)
     else
         local cmd_str = htif_yield_mode[cmd] or "Unknown"
         local reason_str = htif_yield_reason[reason] or "unknown"
-        stderr("\n%s yield %s: %u\n", cmd_str, reason_str, data)
+        stderr("\n%s yield %s (0x%06x data)\n", cmd_str, reason_str, data)
         stderr("Cycles: %u\n", machine:read_mcycle())
     end
     return cmd, reason, data
 end
 
 local function save_rollup_hashes(machine, range, filename)
+    stderr("Storing %s\n", filename)
     local hash_len = 32
     local f = assert(io.open(filename, "wb"))
     local zeros = string.rep("\0", hash_len)
@@ -1229,6 +1230,7 @@ local function save_rollup_voucher_and_notice_hashes(machine, config, advance)
 end
 
 local function load_memory_range(machine, config, filename)
+    stderr("Loading %s\n", filename)
     local f = assert(io.open(filename, "rb"))
     local s = assert(f:read("*a"))
     f:close()
@@ -1252,7 +1254,9 @@ end
 
 local function save_rollup_advance_state_voucher(machine, config, advance)
     local values = { e = advance.epoch_index, i = advance.next_input_index-1, o =  advance.voucher_index }
-    local f = assert(io.open(instantiate_filename(advance.voucher, values), "wb"))
+    local name = instantiate_filename(advance.voucher, values)
+    stderr("Storing %s\n", name)
+    local f = assert(io.open(name, "wb"))
     -- skip address and offset to reach payload length
     local length = string.unpack(">I8", machine:read_memory(config.start+3*32-8, 8))
     -- add address, offset, and payload length to amount to be read
@@ -1263,7 +1267,9 @@ end
 
 local function save_rollup_advance_state_notice(machine, config, advance)
     local values = { e = advance.epoch_index, i = advance.next_input_index-1, o =  advance.notice_index }
-    local f = assert(io.open(instantiate_filename(advance.notice, values), "wb"))
+    local name = instantiate_filename(advance.notice, values)
+    stderr("Storing %s\n", name)
+    local f = assert(io.open(name, "wb"))
     -- skip offset to reach payload length
     local length = string.unpack(">I8", machine:read_memory(config.start+2*32-8, 8))
     -- add offset and payload length to amount to be read
@@ -1274,7 +1280,9 @@ end
 
 local function save_rollup_advance_state_report(machine, config, advance)
     local values = { e = advance.epoch_index, i = advance.next_input_index-1, o =  advance.report_index }
-    local f = assert(io.open(instantiate_filename(advance.report, values), "wb"))
+    local name = instantiate_filename(advance.report, values)
+    stderr("Storing %s\n", name)
+    local f = assert(io.open(name, "wb"))
     -- skip offset to reach payload length
     local length = string.unpack(">I8", machine:read_memory(config.start+2*32-8, 8))
     -- add offset and payload length to amount to be read
@@ -1285,7 +1293,9 @@ end
 
 local function save_rollup_inspect_state_report(machine, config, inspect)
     local values = { o =  inspect.report_index }
-    local f = assert(io.open(instantiate_filename(inspect.report, values), "wb"))
+    local name = instantiate_filename(inspect.report, values)
+    stderr("Storing %s\n", name)
+    local f = assert(io.open(name, "wb"))
     -- skip offset to reach payload length
     local length = string.unpack(">I8", machine:read_memory(config.start+2*32-8, 8))
     -- add offset and payload length to amount to be read
@@ -1384,16 +1394,19 @@ else
                 else
                     assert(reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED, "invalid manual yield reason")
                 end
-                stderr("\nEpoch %d before input %d\n", rollup_advance.epoch_index, rollup_advance.next_input_index)
-                if rollup_advance.hashes then
-                    print_root_hash(cycles, machine)
-                end
                 -- save only if we have already run an input
                 if rollup_advance.next_input_index > rollup_advance.input_index_begin then
                     save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
                 end
+                stderr("\nEpoch %d before input %d\n", rollup_advance.epoch_index, rollup_advance.next_input_index)
+                if rollup_advance.hashes then
+                    print_root_hash(cycles, machine)
+                end
                 machine:snapshot()
                 load_rollup_input_and_metadata(machine, config.rollup, rollup_advance)
+                if rollup_advance.hashes then
+                    print_root_hash(cycles, machine)
+                end
                 machine:reset_iflags_Y()
                 machine:write_htif_fromhost_data(0) -- tell machine it is an rollup_advance state, but this is default
                 rollup_advance.voucher_index = 0

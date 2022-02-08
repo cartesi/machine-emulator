@@ -2927,7 +2927,7 @@ static void help(const char *name) {
 
 where
 
-      --manager-address=<address>
+    --manager-address=<address>
       gives the address manager will bind to, where <address> can be
         <ipv4-hostname/address>:<port>
         <ipv6-hostname/address>:<port>

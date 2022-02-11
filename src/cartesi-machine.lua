@@ -1136,6 +1136,7 @@ local htif_yield_reason = {
     [cartesi.machine.HTIF_YIELD_REASON_TX_VOUCHER] = "tx-voucher",
     [cartesi.machine.HTIF_YIELD_REASON_TX_NOTICE] = "tx-notice",
     [cartesi.machine.HTIF_YIELD_REASON_TX_REPORT] = "tx-report",
+    [cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION] = "tx-exception",
 }
 
 local htif_yield_mode = {
@@ -1273,6 +1274,14 @@ local function save_rollup_advance_state_notice(machine, config, advance)
     f:close()
 end
 
+local function dump_exception(machine, config)
+    -- skip offset to reach payload length
+    local length = string.unpack(">I8", machine:read_memory(config.start+2*32-8, 8))
+    -- add offset and payload length to amount to be read
+    local payload = machine:read_memory(config.start+2*32, length)
+    stderr("Rollup exception with payload: %q\n", payload);
+end
+
 local function save_rollup_advance_state_report(machine, config, advance)
     local values = { e = advance.epoch_index, i = advance.next_input_index-1, o =  advance.report_index }
     local name = instantiate_filename(advance.report, values)
@@ -1390,7 +1399,9 @@ else
         elseif machine:read_iflags_Y() then
             local cmd, reason = get_and_print_yield(machine, config.htif)
             -- there are advance state inputs to feed
-            if rollup_advance and rollup_advance.next_input_index < rollup_advance.input_index_end then
+            if reason == cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION then
+                dump_exception(machine, config.rollup.tx_buffer)
+            elseif rollup_advance and rollup_advance.next_input_index < rollup_advance.input_index_end then
                 -- save only if we have already run an input
                 if rollup_advance.next_input_index > rollup_advance.input_index_begin then
                     save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)

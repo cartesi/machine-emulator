@@ -1,0 +1,1304 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="2134" onload="init(evt)" viewBox="0 0 1200 2134" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom();
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				clearzoom();
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		// Fit in full text width
+		if (/^ *$/.test(txt) || t.getSubStringLength(0, txt.length) < w)
+			return;
+
+		for (var x = txt.length - 2; x > 0; x--) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom() {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="2134.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="2117" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="2117" > </text>
+<g id="frames">
+<g >
+<title>cartesi::execute_privileged&lt;cartesi::state_access&gt; (1 samples, 0.02%)</title><rect x="144.8" y="2037" width="0.2" height="15.0" fill="rgb(223,63,28)" rx="2" ry="2" />
+<text  x="147.75" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="357" width="0.4" height="15.0" fill="rgb(222,81,8)" rx="2" ry="2" />
+<text  x="14.80" y="367.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="533" width="0.4" height="15.0" fill="rgb(249,173,27)" rx="2" ry="2" />
+<text  x="14.80" y="543.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1365" width="0.4" height="15.0" fill="rgb(252,135,50)" rx="2" ry="2" />
+<text  x="14.80" y="1375.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1141" width="0.4" height="15.0" fill="rgb(224,114,30)" rx="2" ry="2" />
+<text  x="14.80" y="1151.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="613" width="0.4" height="15.0" fill="rgb(218,161,16)" rx="2" ry="2" />
+<text  x="14.80" y="623.5" ></text>
+</g>
+<g >
+<title>google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::AddFile&lt;google::protobuf::FileDescriptorProto&gt; (1 samples, 0.02%)</title><rect x="557.6" y="1957" width="0.2" height="15.0" fill="rgb(230,89,24)" rx="2" ry="2" />
+<text  x="560.55" y="1967.5" ></text>
+</g>
+<g >
+<title>cartesi::execute_privileged&lt;cartesi::state_access&gt; (2 samples, 0.04%)</title><rect x="15.6" y="2021" width="0.5" height="15.0" fill="rgb(220,20,40)" rx="2" ry="2" />
+<text  x="18.61" y="2031.5" ></text>
+</g>
+<g >
+<title>google::protobuf::Arena::CreateMaybeMessage&lt;google::protobuf::FieldMask&gt; (1 samples, 0.02%)</title><rect x="557.1" y="2021" width="0.2" height="15.0" fill="rgb(247,97,27)" rx="2" ry="2" />
+<text  x="560.10" y="2031.5" ></text>
+</g>
+<g >
+<title>cartesi::tlb_flush_all (52 samples, 0.99%)</title><rect x="1128.9" y="2053" width="11.7" height="15.0" fill="rgb(230,201,31)" rx="2" ry="2" />
+<text  x="1131.91" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="197" width="0.4" height="15.0" fill="rgb(213,225,36)" rx="2" ry="2" />
+<text  x="14.80" y="207.5" ></text>
+</g>
+<g >
+<title>google::protobuf::EncodedDescriptorDatabase::Add (1 samples, 0.02%)</title><rect x="557.3" y="1941" width="0.3" height="15.0" fill="rgb(243,68,8)" rx="2" ry="2" />
+<text  x="560.33" y="1951.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1397" width="0.4" height="15.0" fill="rgb(213,81,44)" rx="2" ry="2" />
+<text  x="14.80" y="1407.5" ></text>
+</g>
+<g >
+<title>_int_malloc (1 samples, 0.02%)</title><rect x="29.5" y="2037" width="0.3" height="15.0" fill="rgb(220,16,46)" rx="2" ry="2" />
+<text  x="32.54" y="2047.5" ></text>
+</g>
+<g >
+<title>cartesi::execute_insn&lt;cartesi::state_access&gt; (511 samples, 9.73%)</title><rect x="30.0" y="2037" width="114.8" height="15.0" fill="rgb(217,156,38)" rx="2" ry="2" />
+<text  x="32.99" y="2047.5" >cartesi::execu..</text>
+</g>
+<g >
+<title>cartesi::execute_AMO_D&lt;cartesi::state_access&gt; (4 samples, 0.08%)</title><rect x="557.8" y="2053" width="0.9" height="15.0" fill="rgb(235,106,52)" rx="2" ry="2" />
+<text  x="560.78" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1285" width="0.4" height="15.0" fill="rgb(222,17,48)" rx="2" ry="2" />
+<text  x="14.80" y="1295.5" ></text>
+</g>
+<g >
+<title>cartesi::execute_insn&lt;cartesi::state_access&gt; (2,365 samples, 45.01%)</title><rect x="558.9" y="2053" width="531.2" height="15.0" fill="rgb(235,72,15)" rx="2" ry="2" />
+<text  x="561.90" y="2063.5" >cartesi::execute_insn&lt;cartesi::state_access&gt;</text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="261" width="0.4" height="15.0" fill="rgb(230,37,53)" rx="2" ry="2" />
+<text  x="14.80" y="271.5" ></text>
+</g>
+<g >
+<title>luaL_newstate (1 samples, 0.02%)</title><rect x="556.2" y="2037" width="0.2" height="15.0" fill="rgb(216,184,29)" rx="2" ry="2" />
+<text  x="559.20" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="341" width="0.4" height="15.0" fill="rgb(219,221,23)" rx="2" ry="2" />
+<text  x="14.80" y="351.5" ></text>
+</g>
+<g >
+<title>do_lookup_x (1 samples, 0.02%)</title><rect x="29.3" y="2021" width="0.2" height="15.0" fill="rgb(215,154,9)" rx="2" ry="2" />
+<text  x="32.31" y="2031.5" ></text>
+</g>
+<g >
+<title>_dl_start_user (1 samples, 0.02%)</title><rect x="10.4" y="2053" width="0.3" height="15.0" fill="rgb(224,128,53)" rx="2" ry="2" />
+<text  x="13.45" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1669" width="0.4" height="15.0" fill="rgb(226,94,23)" rx="2" ry="2" />
+<text  x="14.80" y="1679.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1269" width="0.4" height="15.0" fill="rgb(210,76,35)" rx="2" ry="2" />
+<text  x="14.80" y="1279.5" ></text>
+</g>
+<g >
+<title>_dl_lookup_symbol_x (15 samples, 0.29%)</title><rect x="12.2" y="2021" width="3.4" height="15.0" fill="rgb(241,43,52)" rx="2" ry="2" />
+<text  x="15.25" y="2031.5" ></text>
+</g>
+<g >
+<title>google::protobuf::MergedDescriptorDatabase::FindAllExtensionNumbers (1 samples, 0.02%)</title><rect x="557.6" y="1925" width="0.2" height="15.0" fill="rgb(250,224,25)" rx="2" ry="2" />
+<text  x="560.55" y="1935.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="421" width="0.4" height="15.0" fill="rgb(240,218,44)" rx="2" ry="2" />
+<text  x="14.80" y="431.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1989" width="0.4" height="15.0" fill="rgb(230,154,23)" rx="2" ry="2" />
+<text  x="14.80" y="1999.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="741" width="0.4" height="15.0" fill="rgb(248,127,16)" rx="2" ry="2" />
+<text  x="14.80" y="751.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1829" width="0.4" height="15.0" fill="rgb(238,159,18)" rx="2" ry="2" />
+<text  x="14.80" y="1839.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="181" width="0.4" height="15.0" fill="rgb(218,222,37)" rx="2" ry="2" />
+<text  x="14.80" y="191.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1493" width="0.4" height="15.0" fill="rgb(245,130,39)" rx="2" ry="2" />
+<text  x="14.80" y="1503.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1781" width="0.4" height="15.0" fill="rgb(245,101,1)" rx="2" ry="2" />
+<text  x="14.80" y="1791.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1573" width="0.4" height="15.0" fill="rgb(244,138,11)" rx="2" ry="2" />
+<text  x="14.80" y="1583.5" ></text>
+</g>
+<g >
+<title>_dl_start (1 samples, 0.02%)</title><rect x="10.4" y="2037" width="0.3" height="15.0" fill="rgb(213,151,49)" rx="2" ry="2" />
+<text  x="13.45" y="2047.5" ></text>
+</g>
+<g >
+<title>cartesi::translate_virtual_address&lt;cartesi::state_access&gt; (39 samples, 0.74%)</title><rect x="546.8" y="2037" width="8.7" height="15.0" fill="rgb(220,4,5)" rx="2" ry="2" />
+<text  x="549.77" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="437" width="0.4" height="15.0" fill="rgb(238,177,36)" rx="2" ry="2" />
+<text  x="14.80" y="447.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1621" width="0.4" height="15.0" fill="rgb(207,170,41)" rx="2" ry="2" />
+<text  x="14.80" y="1631.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="2021" width="0.4" height="15.0" fill="rgb(211,56,29)" rx="2" ry="2" />
+<text  x="14.80" y="2031.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="277" width="0.4" height="15.0" fill="rgb(219,155,53)" rx="2" ry="2" />
+<text  x="14.80" y="287.5" ></text>
+</g>
+<g >
+<title>std::allocator_traits&lt;std::allocator&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::EncodedEntry&gt; &gt;::construct&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::EncodedEntry, google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::EncodedEntry&gt; (1 samples, 0.02%)</title><rect x="557.1" y="1877" width="0.2" height="15.0" fill="rgb(214,19,15)" rx="2" ry="2" />
+<text  x="560.10" y="1887.5" ></text>
+</g>
+<g >
+<title>dl_open_worker_begin (9 samples, 0.17%)</title><rect x="1184.6" y="2053" width="2.0" height="15.0" fill="rgb(212,208,13)" rx="2" ry="2" />
+<text  x="1187.61" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="853" width="0.4" height="15.0" fill="rgb(218,103,53)" rx="2" ry="2" />
+<text  x="14.80" y="863.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="933" width="0.4" height="15.0" fill="rgb(252,90,13)" rx="2" ry="2" />
+<text  x="14.80" y="943.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1045" width="0.4" height="15.0" fill="rgb(221,127,7)" rx="2" ry="2" />
+<text  x="14.80" y="1055.5" ></text>
+</g>
+<g >
+<title>google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::SymbolCompare::operator (1 samples, 0.02%)</title><rect x="557.6" y="1861" width="0.2" height="15.0" fill="rgb(224,2,3)" rx="2" ry="2" />
+<text  x="560.55" y="1871.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1765" width="0.4" height="15.0" fill="rgb(235,42,26)" rx="2" ry="2" />
+<text  x="14.80" y="1775.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="677" width="0.4" height="15.0" fill="rgb(245,155,17)" rx="2" ry="2" />
+<text  x="14.80" y="687.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1925" width="0.4" height="15.0" fill="rgb(240,26,46)" rx="2" ry="2" />
+<text  x="14.80" y="1935.5" ></text>
+</g>
+<g >
+<title>cartesi::read_virtual_memory&lt;signed char, cartesi::state_access&gt; (2 samples, 0.04%)</title><rect x="1128.5" y="2053" width="0.4" height="15.0" fill="rgb(227,22,29)" rx="2" ry="2" />
+<text  x="1131.46" y="2063.5" ></text>
+</g>
+<g >
+<title>google::protobuf::EncodedDescriptorDatabase::Add (1 samples, 0.02%)</title><rect x="557.6" y="1973" width="0.2" height="15.0" fill="rgb(236,181,12)" rx="2" ry="2" />
+<text  x="560.55" y="1983.5" ></text>
+</g>
+<g >
+<title>google::protobuf::FileDescriptorProto::_InternalParse (1 samples, 0.02%)</title><rect x="557.3" y="1877" width="0.3" height="15.0" fill="rgb(245,176,54)" rx="2" ry="2" />
+<text  x="560.33" y="1887.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="53" width="0.4" height="15.0" fill="rgb(223,183,6)" rx="2" ry="2" />
+<text  x="14.80" y="63.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1189" width="0.4" height="15.0" fill="rgb(210,117,7)" rx="2" ry="2" />
+<text  x="14.80" y="1199.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1749" width="0.4" height="15.0" fill="rgb(243,196,28)" rx="2" ry="2" />
+<text  x="14.80" y="1759.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1077" width="0.4" height="15.0" fill="rgb(207,98,44)" rx="2" ry="2" />
+<text  x="14.80" y="1087.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::SymbolEntry, google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::SymbolEntry, std::_Identity&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::SymbolEntry&gt;, google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::SymbolCompare, std::allocator&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::SymbolEntry&gt; &gt;::_M_upper_bound (1 samples, 0.02%)</title><rect x="557.6" y="1877" width="0.2" height="15.0" fill="rgb(220,100,11)" rx="2" ry="2" />
+<text  x="560.55" y="1887.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1909" width="0.4" height="15.0" fill="rgb(222,20,3)" rx="2" ry="2" />
+<text  x="14.80" y="1919.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="133" width="0.4" height="15.0" fill="rgb(226,173,53)" rx="2" ry="2" />
+<text  x="14.80" y="143.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1253" width="0.4" height="15.0" fill="rgb(237,219,31)" rx="2" ry="2" />
+<text  x="14.80" y="1263.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1173" width="0.4" height="15.0" fill="rgb(237,114,12)" rx="2" ry="2" />
+<text  x="14.80" y="1183.5" ></text>
+</g>
+<g >
+<title>lua_close (1 samples, 0.02%)</title><rect x="556.4" y="2037" width="0.3" height="15.0" fill="rgb(213,20,33)" rx="2" ry="2" />
+<text  x="559.43" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="501" width="0.4" height="15.0" fill="rgb(227,93,7)" rx="2" ry="2" />
+<text  x="14.80" y="511.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="725" width="0.4" height="15.0" fill="rgb(240,190,43)" rx="2" ry="2" />
+<text  x="14.80" y="735.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="997" width="0.4" height="15.0" fill="rgb(250,136,27)" rx="2" ry="2" />
+<text  x="14.80" y="1007.5" ></text>
+</g>
+<g >
+<title>google::protobuf::Reflection::GetMapData (1 samples, 0.02%)</title><rect x="557.1" y="1973" width="0.2" height="15.0" fill="rgb(236,51,1)" rx="2" ry="2" />
+<text  x="560.10" y="1983.5" ></text>
+</g>
+<g >
+<title>google::protobuf::EncodedDescriptorDatabase::Add (1 samples, 0.02%)</title><rect x="557.1" y="1941" width="0.2" height="15.0" fill="rgb(205,131,53)" rx="2" ry="2" />
+<text  x="560.10" y="1951.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="101" width="0.4" height="15.0" fill="rgb(232,96,26)" rx="2" ry="2" />
+<text  x="14.80" y="111.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="757" width="0.4" height="15.0" fill="rgb(207,130,34)" rx="2" ry="2" />
+<text  x="14.80" y="767.5" ></text>
+</g>
+<g >
+<title>google::protobuf::internal::AddDescriptorsRunner::AddDescriptorsRunner (1 samples, 0.02%)</title><rect x="557.6" y="2037" width="0.2" height="15.0" fill="rgb(222,66,31)" rx="2" ry="2" />
+<text  x="560.55" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="645" width="0.4" height="15.0" fill="rgb(247,30,36)" rx="2" ry="2" />
+<text  x="14.80" y="655.5" ></text>
+</g>
+<g >
+<title>google::protobuf::Arena::CreateMaybeMessage&lt;google::protobuf::Mixin&gt; (1 samples, 0.02%)</title><rect x="557.3" y="2037" width="0.3" height="15.0" fill="rgb(225,225,44)" rx="2" ry="2" />
+<text  x="560.33" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="869" width="0.4" height="15.0" fill="rgb(223,206,23)" rx="2" ry="2" />
+<text  x="14.80" y="879.5" ></text>
+</g>
+<g >
+<title>call_init (3 samples, 0.06%)</title><rect x="557.1" y="2053" width="0.7" height="15.0" fill="rgb(241,189,5)" rx="2" ry="2" />
+<text  x="560.10" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1509" width="0.4" height="15.0" fill="rgb(215,186,15)" rx="2" ry="2" />
+<text  x="14.80" y="1519.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="629" width="0.4" height="15.0" fill="rgb(214,78,32)" rx="2" ry="2" />
+<text  x="14.80" y="639.5" ></text>
+</g>
+<g >
+<title>cartesi::tlb_flush_all (1 samples, 0.02%)</title><rect x="546.5" y="2037" width="0.3" height="15.0" fill="rgb(212,69,28)" rx="2" ry="2" />
+<text  x="549.55" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1381" width="0.4" height="15.0" fill="rgb(221,149,27)" rx="2" ry="2" />
+<text  x="14.80" y="1391.5" ></text>
+</g>
+<g >
+<title>google::protobuf::DescriptorProto::_InternalParse (1 samples, 0.02%)</title><rect x="557.3" y="1845" width="0.3" height="15.0" fill="rgb(251,209,30)" rx="2" ry="2" />
+<text  x="560.33" y="1855.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="213" width="0.4" height="15.0" fill="rgb(211,7,43)" rx="2" ry="2" />
+<text  x="14.80" y="223.5" ></text>
+</g>
+<g >
+<title>google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::AddSymbol (1 samples, 0.02%)</title><rect x="557.6" y="1941" width="0.2" height="15.0" fill="rgb(223,172,34)" rx="2" ry="2" />
+<text  x="560.55" y="1951.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1733" width="0.4" height="15.0" fill="rgb(240,74,22)" rx="2" ry="2" />
+<text  x="14.80" y="1743.5" ></text>
+</g>
+<g >
+<title>_start (5 samples, 0.10%)</title><rect x="10.7" y="2053" width="1.1" height="15.0" fill="rgb(241,150,17)" rx="2" ry="2" />
+<text  x="13.67" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1653" width="0.4" height="15.0" fill="rgb(212,139,3)" rx="2" ry="2" />
+<text  x="14.80" y="1663.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1813" width="0.4" height="15.0" fill="rgb(233,191,6)" rx="2" ry="2" />
+<text  x="14.80" y="1823.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1893" width="0.4" height="15.0" fill="rgb(242,207,48)" rx="2" ry="2" />
+<text  x="14.80" y="1903.5" ></text>
+</g>
+<g >
+<title>luaopen_package (1 samples, 0.02%)</title><rect x="1189.8" y="2053" width="0.2" height="15.0" fill="rgb(215,125,34)" rx="2" ry="2" />
+<text  x="1192.78" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1461" width="0.4" height="15.0" fill="rgb(208,185,44)" rx="2" ry="2" />
+<text  x="14.80" y="1471.5" ></text>
+</g>
+<g >
+<title>[env] (1 samples, 0.02%)</title><rect x="10.0" y="2053" width="0.2" height="15.0" fill="rgb(234,210,2)" rx="2" ry="2" />
+<text  x="13.00" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="293" width="0.4" height="15.0" fill="rgb(244,154,1)" rx="2" ry="2" />
+<text  x="14.80" y="303.5" ></text>
+</g>
+<g >
+<title>google::protobuf::internal::AddDescriptorsRunner::AddDescriptorsRunner (1 samples, 0.02%)</title><rect x="557.1" y="2005" width="0.2" height="15.0" fill="rgb(215,119,28)" rx="2" ry="2" />
+<text  x="560.10" y="2015.5" ></text>
+</g>
+<g >
+<title>cartesi::read_virtual_memory&lt;long, cartesi::state_access&gt; (204 samples, 3.88%)</title><rect x="500.3" y="2037" width="45.8" height="15.0" fill="rgb(218,178,13)" rx="2" ry="2" />
+<text  x="503.28" y="2047.5" >cart..</text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1957" width="0.4" height="15.0" fill="rgb(209,200,43)" rx="2" ry="2" />
+<text  x="14.80" y="1967.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="373" width="0.4" height="15.0" fill="rgb(209,156,15)" rx="2" ry="2" />
+<text  x="14.80" y="383.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="821" width="0.4" height="15.0" fill="rgb(253,206,32)" rx="2" ry="2" />
+<text  x="14.80" y="831.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1061" width="0.4" height="15.0" fill="rgb(254,28,50)" rx="2" ry="2" />
+<text  x="14.80" y="1071.5" ></text>
+</g>
+<g >
+<title>google::protobuf::DescriptorPool::InternalAddGeneratedFile (1 samples, 0.02%)</title><rect x="557.3" y="1957" width="0.3" height="15.0" fill="rgb(208,2,31)" rx="2" ry="2" />
+<text  x="560.33" y="1967.5" ></text>
+</g>
+<g >
+<title>google::protobuf::StringPiece::substr (1 samples, 0.02%)</title><rect x="557.6" y="1845" width="0.2" height="15.0" fill="rgb(220,167,9)" rx="2" ry="2" />
+<text  x="560.55" y="1855.5" ></text>
+</g>
+<g >
+<title>google::protobuf::Arena::CreateMaybeMessage&lt;google::protobuf::Mixin&gt; (1 samples, 0.02%)</title><rect x="557.3" y="2021" width="0.3" height="15.0" fill="rgb(238,187,12)" rx="2" ry="2" />
+<text  x="560.33" y="2031.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="453" width="0.4" height="15.0" fill="rgb(246,28,26)" rx="2" ry="2" />
+<text  x="14.80" y="463.5" ></text>
+</g>
+<g >
+<title>google::protobuf::Reflection::GetMapData (1 samples, 0.02%)</title><rect x="557.6" y="2005" width="0.2" height="15.0" fill="rgb(240,68,16)" rx="2" ry="2" />
+<text  x="560.55" y="2015.5" ></text>
+</g>
+<g >
+<title>check_match (2 samples, 0.04%)</title><rect x="1184.2" y="2053" width="0.4" height="15.0" fill="rgb(250,222,54)" rx="2" ry="2" />
+<text  x="1187.16" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1605" width="0.4" height="15.0" fill="rgb(222,151,24)" rx="2" ry="2" />
+<text  x="14.80" y="1615.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1317" width="0.4" height="15.0" fill="rgb(234,107,38)" rx="2" ry="2" />
+<text  x="14.80" y="1327.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="117" width="0.4" height="15.0" fill="rgb(254,115,9)" rx="2" ry="2" />
+<text  x="14.80" y="127.5" ></text>
+</g>
+<g >
+<title>google::protobuf::MessageLite::ParseFromArray (1 samples, 0.02%)</title><rect x="557.3" y="1925" width="0.3" height="15.0" fill="rgb(232,88,45)" rx="2" ry="2" />
+<text  x="560.33" y="1935.5" ></text>
+</g>
+<g >
+<title>cartesi::read_virtual_memory&lt;int, cartesi::state_access&gt; (12 samples, 0.23%)</title><rect x="1113.9" y="2053" width="2.7" height="15.0" fill="rgb(254,222,14)" rx="2" ry="2" />
+<text  x="1116.86" y="2063.5" ></text>
+</g>
+<g >
+<title>cartesi::write_csr_mstatus&lt;cartesi::state_access&gt; (1 samples, 0.02%)</title><rect x="1140.8" y="2053" width="0.2" height="15.0" fill="rgb(226,218,4)" rx="2" ry="2" />
+<text  x="1143.81" y="2063.5" ></text>
+</g>
+<g >
+<title>all (5,254 samples, 100%)</title><rect x="10.0" y="2085" width="1180.0" height="15.0" fill="rgb(234,84,21)" rx="2" ry="2" />
+<text  x="13.00" y="2095.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="949" width="0.4" height="15.0" fill="rgb(245,135,12)" rx="2" ry="2" />
+<text  x="14.80" y="959.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1589" width="0.4" height="15.0" fill="rgb(250,161,52)" rx="2" ry="2" />
+<text  x="14.80" y="1599.5" ></text>
+</g>
+<g >
+<title>google::protobuf::Reflection::GetMapData (1 samples, 0.02%)</title><rect x="557.3" y="1989" width="0.3" height="15.0" fill="rgb(227,204,0)" rx="2" ry="2" />
+<text  x="560.33" y="1999.5" ></text>
+</g>
+<g >
+<title>google::protobuf::internal::MergeFromImpl&lt;false&gt; (1 samples, 0.02%)</title><rect x="557.3" y="1893" width="0.3" height="15.0" fill="rgb(240,48,14)" rx="2" ry="2" />
+<text  x="560.33" y="1903.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="965" width="0.4" height="15.0" fill="rgb(252,23,53)" rx="2" ry="2" />
+<text  x="14.80" y="975.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="549" width="0.4" height="15.0" fill="rgb(236,24,17)" rx="2" ry="2" />
+<text  x="14.80" y="559.5" ></text>
+</g>
+<g >
+<title>google::protobuf::DescriptorPool::InternalAddGeneratedFile (1 samples, 0.02%)</title><rect x="557.6" y="1989" width="0.2" height="15.0" fill="rgb(250,157,9)" rx="2" ry="2" />
+<text  x="560.55" y="1999.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1221" width="0.4" height="15.0" fill="rgb(254,144,45)" rx="2" ry="2" />
+<text  x="14.80" y="1231.5" ></text>
+</g>
+<g >
+<title>cartesi::read_virtual_memory&lt;long, cartesi::state_access&gt; (53 samples, 1.01%)</title><rect x="1116.6" y="2053" width="11.9" height="15.0" fill="rgb(225,145,18)" rx="2" ry="2" />
+<text  x="1119.56" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (79 samples, 1.50%)</title><rect x="11.8" y="2037" width="17.7" height="15.0" fill="rgb(215,144,0)" rx="2" ry="2" />
+<text  x="14.80" y="2047.5" ></text>
+</g>
+<g >
+<title>google::protobuf::FieldDescriptorProto::_internal_set_label (1 samples, 0.02%)</title><rect x="557.3" y="1813" width="0.3" height="15.0" fill="rgb(227,70,23)" rx="2" ry="2" />
+<text  x="560.33" y="1823.5" ></text>
+</g>
+<g >
+<title>google::protobuf::Reflection::GetMapData (1 samples, 0.02%)</title><rect x="557.1" y="1989" width="0.2" height="15.0" fill="rgb(219,149,32)" rx="2" ry="2" />
+<text  x="560.10" y="1999.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="229" width="0.4" height="15.0" fill="rgb(243,75,32)" rx="2" ry="2" />
+<text  x="14.80" y="239.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="789" width="0.4" height="15.0" fill="rgb(222,223,46)" rx="2" ry="2" />
+<text  x="14.80" y="799.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1797" width="0.4" height="15.0" fill="rgb(249,216,30)" rx="2" ry="2" />
+<text  x="14.80" y="1807.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="85" width="0.4" height="15.0" fill="rgb(214,43,39)" rx="2" ry="2" />
+<text  x="14.80" y="95.5" ></text>
+</g>
+<g >
+<title>cartesi-machine (8 samples, 0.15%)</title><rect x="10.0" y="2069" width="1.8" height="15.0" fill="rgb(209,162,45)" rx="2" ry="2" />
+<text  x="13.00" y="2079.5" ></text>
+</g>
+<g >
+<title>lua5.3 (5,246 samples, 99.85%)</title><rect x="11.8" y="2069" width="1178.2" height="15.0" fill="rgb(220,176,42)" rx="2" ry="2" />
+<text  x="14.80" y="2079.5" >lua5.3</text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1637" width="0.4" height="15.0" fill="rgb(249,215,12)" rx="2" ry="2" />
+<text  x="14.80" y="1647.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="389" width="0.4" height="15.0" fill="rgb(217,68,0)" rx="2" ry="2" />
+<text  x="14.80" y="399.5" ></text>
+</g>
+<g >
+<title>__strncmp_avx2 (1 samples, 0.02%)</title><rect x="556.7" y="2037" width="0.2" height="15.0" fill="rgb(209,107,24)" rx="2" ry="2" />
+<text  x="559.65" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="805" width="0.4" height="15.0" fill="rgb(223,74,39)" rx="2" ry="2" />
+<text  x="14.80" y="815.5" ></text>
+</g>
+<g >
+<title>cartesi::interpret&lt;cartesi::state_access&gt; (1,525 samples, 29.03%)</title><rect x="145.0" y="2037" width="342.5" height="15.0" fill="rgb(217,83,7)" rx="2" ry="2" />
+<text  x="147.98" y="2047.5" >cartesi::interpret&lt;cartesi::state_access&gt;</text>
+</g>
+<g >
+<title>cartesi::execute_AMO_D&lt;cartesi::state_access&gt; (1 samples, 0.02%)</title><rect x="29.8" y="2037" width="0.2" height="15.0" fill="rgb(206,95,16)" rx="2" ry="2" />
+<text  x="32.76" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="325" width="0.4" height="15.0" fill="rgb(215,101,5)" rx="2" ry="2" />
+<text  x="14.80" y="335.5" ></text>
+</g>
+<g >
+<title>cartesi::read_virtual_memory&lt;unsigned long, cartesi::state_access&gt; (2 samples, 0.04%)</title><rect x="546.1" y="2037" width="0.4" height="15.0" fill="rgb(253,95,53)" rx="2" ry="2" />
+<text  x="549.10" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="597" width="0.4" height="15.0" fill="rgb(253,77,25)" rx="2" ry="2" />
+<text  x="14.80" y="607.5" ></text>
+</g>
+<g >
+<title>lua_close (2 samples, 0.04%)</title><rect x="11.8" y="37" width="0.4" height="15.0" fill="rgb(235,102,21)" rx="2" ry="2" />
+<text  x="14.80" y="47.5" ></text>
+</g>
+<g >
+<title>cartesi::tlb_flush_all (52 samples, 0.99%)</title><rect x="16.3" y="2021" width="11.7" height="15.0" fill="rgb(225,111,18)" rx="2" ry="2" />
+<text  x="19.29" y="2031.5" ></text>
+</g>
+<g >
+<title>_dl_relocate_object (8 samples, 0.15%)</title><rect x="1184.8" y="2037" width="1.8" height="15.0" fill="rgb(210,29,38)" rx="2" ry="2" />
+<text  x="1187.83" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="661" width="0.4" height="15.0" fill="rgb(205,44,47)" rx="2" ry="2" />
+<text  x="14.80" y="671.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="485" width="0.4" height="15.0" fill="rgb(207,180,5)" rx="2" ry="2" />
+<text  x="14.80" y="495.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1973" width="0.4" height="15.0" fill="rgb(251,124,9)" rx="2" ry="2" />
+<text  x="14.80" y="1983.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1413" width="0.4" height="15.0" fill="rgb(252,71,20)" rx="2" ry="2" />
+<text  x="14.80" y="1423.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="565" width="0.4" height="15.0" fill="rgb(206,130,1)" rx="2" ry="2" />
+<text  x="14.80" y="575.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1333" width="0.4" height="15.0" fill="rgb(226,55,20)" rx="2" ry="2" />
+<text  x="14.80" y="1343.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1701" width="0.4" height="15.0" fill="rgb(237,121,44)" rx="2" ry="2" />
+<text  x="14.80" y="1711.5" ></text>
+</g>
+<g >
+<title>std::set&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::SymbolEntry, google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::SymbolCompare, std::allocator&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::SymbolEntry&gt; &gt;::upper_bound (1 samples, 0.02%)</title><rect x="557.6" y="1909" width="0.2" height="15.0" fill="rgb(233,59,46)" rx="2" ry="2" />
+<text  x="560.55" y="1919.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1861" width="0.4" height="15.0" fill="rgb(216,169,51)" rx="2" ry="2" />
+<text  x="14.80" y="1871.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="709" width="0.4" height="15.0" fill="rgb(220,103,14)" rx="2" ry="2" />
+<text  x="14.80" y="719.5" ></text>
+</g>
+<g >
+<title>google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::AddFile&lt;google::protobuf::FileDescriptorProto&gt; (1 samples, 0.02%)</title><rect x="557.1" y="1925" width="0.2" height="15.0" fill="rgb(231,78,32)" rx="2" ry="2" />
+<text  x="560.10" y="1935.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1013" width="0.4" height="15.0" fill="rgb(217,145,1)" rx="2" ry="2" />
+<text  x="14.80" y="1023.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1093" width="0.4" height="15.0" fill="rgb(231,36,27)" rx="2" ry="2" />
+<text  x="14.80" y="1103.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1157" width="0.4" height="15.0" fill="rgb(236,71,6)" rx="2" ry="2" />
+<text  x="14.80" y="1167.5" ></text>
+</g>
+<g >
+<title>google::protobuf::Reflection::GetMapData (1 samples, 0.02%)</title><rect x="557.3" y="1973" width="0.3" height="15.0" fill="rgb(212,82,28)" rx="2" ry="2" />
+<text  x="560.33" y="1983.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1557" width="0.4" height="15.0" fill="rgb(208,210,2)" rx="2" ry="2" />
+<text  x="14.80" y="1567.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="149" width="0.4" height="15.0" fill="rgb(253,38,30)" rx="2" ry="2" />
+<text  x="14.80" y="159.5" ></text>
+</g>
+<g >
+<title>cartesi::write_csr&lt;cartesi::state_access&gt; (1 samples, 0.02%)</title><rect x="1140.6" y="2053" width="0.2" height="15.0" fill="rgb(210,168,20)" rx="2" ry="2" />
+<text  x="1143.59" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1941" width="0.4" height="15.0" fill="rgb(240,85,2)" rx="2" ry="2" />
+<text  x="14.80" y="1951.5" ></text>
+</g>
+<g >
+<title>cartesi::machine::run (19 samples, 0.36%)</title><rect x="1108.9" y="2053" width="4.3" height="15.0" fill="rgb(227,155,50)" rx="2" ry="2" />
+<text  x="1111.92" y="2063.5" ></text>
+</g>
+<g >
+<title>check_match (1 samples, 0.02%)</title><rect x="10.2" y="2037" width="0.2" height="15.0" fill="rgb(248,4,2)" rx="2" ry="2" />
+<text  x="13.22" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="885" width="0.4" height="15.0" fill="rgb(208,105,10)" rx="2" ry="2" />
+<text  x="14.80" y="895.5" ></text>
+</g>
+<g >
+<title>_dl_lookup_symbol_x (1 samples, 0.02%)</title><rect x="1184.6" y="2037" width="0.2" height="15.0" fill="rgb(230,76,54)" rx="2" ry="2" />
+<text  x="1187.61" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1525" width="0.4" height="15.0" fill="rgb(239,84,40)" rx="2" ry="2" />
+<text  x="14.80" y="1535.5" ></text>
+</g>
+<g >
+<title>google::protobuf::DescriptorPool::InternalAddGeneratedFile (1 samples, 0.02%)</title><rect x="557.1" y="1957" width="0.2" height="15.0" fill="rgb(213,8,34)" rx="2" ry="2" />
+<text  x="560.10" y="1967.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="917" width="0.4" height="15.0" fill="rgb(208,186,11)" rx="2" ry="2" />
+<text  x="14.80" y="927.5" ></text>
+</g>
+<g >
+<title>__run_exit_handlers (1 samples, 0.02%)</title><rect x="556.9" y="2053" width="0.2" height="15.0" fill="rgb(250,40,43)" rx="2" ry="2" />
+<text  x="559.88" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="837" width="0.4" height="15.0" fill="rgb(247,62,36)" rx="2" ry="2" />
+<text  x="14.80" y="847.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="581" width="0.4" height="15.0" fill="rgb(248,0,0)" rx="2" ry="2" />
+<text  x="14.80" y="591.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1429" width="0.4" height="15.0" fill="rgb(223,199,15)" rx="2" ry="2" />
+<text  x="14.80" y="1439.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,426 samples, 46.17%)</title><rect x="11.8" y="2053" width="544.9" height="15.0" fill="rgb(241,100,44)" rx="2" ry="2" />
+<text  x="14.80" y="2063.5" >[unknown]</text>
+</g>
+<g >
+<title>luaL_newstate (1 samples, 0.02%)</title><rect x="1189.6" y="2053" width="0.2" height="15.0" fill="rgb(208,142,52)" rx="2" ry="2" />
+<text  x="1192.55" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="165" width="0.4" height="15.0" fill="rgb(252,122,15)" rx="2" ry="2" />
+<text  x="14.80" y="175.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1477" width="0.4" height="15.0" fill="rgb(250,181,9)" rx="2" ry="2" />
+<text  x="14.80" y="1487.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1445" width="0.4" height="15.0" fill="rgb(218,45,25)" rx="2" ry="2" />
+<text  x="14.80" y="1455.5" ></text>
+</g>
+<g >
+<title>google::protobuf::internal::AddDescriptorsRunner::AddDescriptorsRunner (1 samples, 0.02%)</title><rect x="557.3" y="2005" width="0.3" height="15.0" fill="rgb(232,172,36)" rx="2" ry="2" />
+<text  x="560.33" y="2015.5" ></text>
+</g>
+<g >
+<title>google::protobuf::MessageLite::ParseFrom&lt; (1 samples, 0.02%)</title><rect x="557.3" y="1909" width="0.3" height="15.0" fill="rgb(214,192,40)" rx="2" ry="2" />
+<text  x="560.33" y="1919.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::EncodedEntry, std::allocator&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::EncodedEntry&gt; &gt;::emplace_back&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::EncodedEntry&gt; (1 samples, 0.02%)</title><rect x="557.1" y="1893" width="0.2" height="15.0" fill="rgb(221,142,52)" rx="2" ry="2" />
+<text  x="560.10" y="1903.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1237" width="0.4" height="15.0" fill="rgb(216,99,8)" rx="2" ry="2" />
+<text  x="14.80" y="1247.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1029" width="0.4" height="15.0" fill="rgb(206,162,26)" rx="2" ry="2" />
+<text  x="14.80" y="1039.5" ></text>
+</g>
+<g >
+<title>google::protobuf::Reflection::GetMapData (1 samples, 0.02%)</title><rect x="557.6" y="2021" width="0.2" height="15.0" fill="rgb(214,157,31)" rx="2" ry="2" />
+<text  x="560.55" y="2031.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="245" width="0.4" height="15.0" fill="rgb(251,125,2)" rx="2" ry="2" />
+<text  x="14.80" y="255.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.02%)</title><rect x="10.2" y="2053" width="0.2" height="15.0" fill="rgb(207,12,43)" rx="2" ry="2" />
+<text  x="13.22" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1205" width="0.4" height="15.0" fill="rgb(210,152,52)" rx="2" ry="2" />
+<text  x="14.80" y="1215.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1301" width="0.4" height="15.0" fill="rgb(218,23,10)" rx="2" ry="2" />
+<text  x="14.80" y="1311.5" ></text>
+</g>
+<g >
+<title>cartesi::read_virtual_memory&lt;int, cartesi::state_access&gt; (57 samples, 1.08%)</title><rect x="487.5" y="2037" width="12.8" height="15.0" fill="rgb(205,90,0)" rx="2" ry="2" />
+<text  x="490.48" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="405" width="0.4" height="15.0" fill="rgb(238,221,33)" rx="2" ry="2" />
+<text  x="14.80" y="415.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="69" width="0.4" height="15.0" fill="rgb(237,20,4)" rx="2" ry="2" />
+<text  x="14.80" y="79.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="693" width="0.4" height="15.0" fill="rgb(229,13,18)" rx="2" ry="2" />
+<text  x="14.80" y="703.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="773" width="0.4" height="15.0" fill="rgb(207,175,37)" rx="2" ry="2" />
+<text  x="14.80" y="783.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1541" width="0.4" height="15.0" fill="rgb(235,19,38)" rx="2" ry="2" />
+<text  x="14.80" y="1551.5" ></text>
+</g>
+<g >
+<title>cartesi::raise_exception&lt;cartesi::state_access&gt; (1 samples, 0.02%)</title><rect x="16.1" y="2021" width="0.2" height="15.0" fill="rgb(237,223,43)" rx="2" ry="2" />
+<text  x="19.06" y="2031.5" ></text>
+</g>
+<g >
+<title>do_lookup_x (3 samples, 0.06%)</title><rect x="555.5" y="2037" width="0.7" height="15.0" fill="rgb(226,50,6)" rx="2" ry="2" />
+<text  x="558.53" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="469" width="0.4" height="15.0" fill="rgb(220,179,37)" rx="2" ry="2" />
+<text  x="14.80" y="479.5" ></text>
+</g>
+<g >
+<title>cartesi::insn_B_get_imm (48 samples, 0.91%)</title><rect x="1090.1" y="2053" width="10.7" height="15.0" fill="rgb(254,16,46)" rx="2" ry="2" />
+<text  x="1093.06" y="2063.5" ></text>
+</g>
+<g >
+<title>google::protobuf::internal::ParseContext::ParseMessage&lt;google::protobuf::DescriptorProto&gt; (1 samples, 0.02%)</title><rect x="557.3" y="1861" width="0.3" height="15.0" fill="rgb(246,68,27)" rx="2" ry="2" />
+<text  x="560.33" y="1871.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1349" width="0.4" height="15.0" fill="rgb(250,11,39)" rx="2" ry="2" />
+<text  x="14.80" y="1359.5" ></text>
+</g>
+<g >
+<title>cartesi::read_csr&lt;cartesi::state_access&gt; (3 samples, 0.06%)</title><rect x="1113.2" y="2053" width="0.7" height="15.0" fill="rgb(225,15,38)" rx="2" ry="2" />
+<text  x="1116.19" y="2063.5" ></text>
+</g>
+<g >
+<title>__cxa_demangle (1 samples, 0.02%)</title><rect x="556.7" y="2053" width="0.2" height="15.0" fill="rgb(206,127,30)" rx="2" ry="2" />
+<text  x="559.65" y="2063.5" ></text>
+</g>
+<g >
+<title>cartesi::execute_AMO_W&lt;cartesi::state_access&gt; (1 samples, 0.02%)</title><rect x="558.7" y="2053" width="0.2" height="15.0" fill="rgb(221,119,9)" rx="2" ry="2" />
+<text  x="561.68" y="2063.5" ></text>
+</g>
+<g >
+<title>google::protobuf::internal::ParseContext::ParseMessage&lt;google::protobuf::FieldDescriptorProto&gt; (1 samples, 0.02%)</title><rect x="557.3" y="1829" width="0.3" height="15.0" fill="rgb(239,22,15)" rx="2" ry="2" />
+<text  x="560.33" y="1839.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="517" width="0.4" height="15.0" fill="rgb(249,214,29)" rx="2" ry="2" />
+<text  x="14.80" y="527.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="309" width="0.4" height="15.0" fill="rgb(216,36,51)" rx="2" ry="2" />
+<text  x="14.80" y="319.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="901" width="0.4" height="15.0" fill="rgb(225,126,23)" rx="2" ry="2" />
+<text  x="14.80" y="911.5" ></text>
+</g>
+<g >
+<title>cartesi::write_virtual_memory&lt;unsigned long, cartesi::state_access&gt; (192 samples, 3.65%)</title><rect x="1141.0" y="2053" width="43.2" height="15.0" fill="rgb(217,113,8)" rx="2" ry="2" />
+<text  x="1144.04" y="2063.5" >cart..</text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="981" width="0.4" height="15.0" fill="rgb(212,99,37)" rx="2" ry="2" />
+<text  x="14.80" y="991.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::SymbolEntry, google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::SymbolEntry, std::_Identity&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::SymbolEntry&gt;, google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::SymbolCompare, std::allocator&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::SymbolEntry&gt; &gt;::upper_bound (1 samples, 0.02%)</title><rect x="557.6" y="1893" width="0.2" height="15.0" fill="rgb(206,85,23)" rx="2" ry="2" />
+<text  x="560.55" y="1903.5" ></text>
+</g>
+<g >
+<title>cartesi::write_virtual_memory&lt;unsigned long, cartesi::state_access&gt; (6 samples, 0.11%)</title><rect x="28.0" y="2021" width="1.3" height="15.0" fill="rgb(246,186,26)" rx="2" ry="2" />
+<text  x="30.97" y="2031.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1717" width="0.4" height="15.0" fill="rgb(241,136,0)" rx="2" ry="2" />
+<text  x="14.80" y="1727.5" ></text>
+</g>
+<g >
+<title>google::protobuf::StringPiece::StringPiece (1 samples, 0.02%)</title><rect x="557.6" y="1829" width="0.2" height="15.0" fill="rgb(206,3,9)" rx="2" ry="2" />
+<text  x="560.55" y="1839.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1109" width="0.4" height="15.0" fill="rgb(245,9,4)" rx="2" ry="2" />
+<text  x="14.80" y="1119.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1877" width="0.4" height="15.0" fill="rgb(237,69,7)" rx="2" ry="2" />
+<text  x="14.80" y="1887.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="2005" width="0.4" height="15.0" fill="rgb(236,103,30)" rx="2" ry="2" />
+<text  x="14.80" y="2015.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1685" width="0.4" height="15.0" fill="rgb(234,106,46)" rx="2" ry="2" />
+<text  x="14.80" y="1695.5" ></text>
+</g>
+<g >
+<title>do_lookup_x (13 samples, 0.25%)</title><rect x="1186.6" y="2053" width="3.0" height="15.0" fill="rgb(231,138,8)" rx="2" ry="2" />
+<text  x="1189.63" y="2063.5" ></text>
+</g>
+<g >
+<title>google::protobuf::Arena::CreateMaybeMessage&lt;google::protobuf::FieldMask&gt; (1 samples, 0.02%)</title><rect x="557.1" y="2037" width="0.2" height="15.0" fill="rgb(249,194,48)" rx="2" ry="2" />
+<text  x="560.10" y="2047.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1125" width="0.4" height="15.0" fill="rgb(229,31,9)" rx="2" ry="2" />
+<text  x="14.80" y="1135.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::EncodedEntry, std::allocator&lt;google::protobuf::EncodedDescriptorDatabase::DescriptorIndex::EncodedEntry&gt; &gt;::push_back (1 samples, 0.02%)</title><rect x="557.1" y="1909" width="0.2" height="15.0" fill="rgb(218,80,9)" rx="2" ry="2" />
+<text  x="560.10" y="1919.5" ></text>
+</g>
+<g >
+<title>cartesi::interpret&lt;cartesi::state_access&gt; (36 samples, 0.69%)</title><rect x="1100.8" y="2053" width="8.1" height="15.0" fill="rgb(250,54,3)" rx="2" ry="2" />
+<text  x="1103.84" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.04%)</title><rect x="11.8" y="1845" width="0.4" height="15.0" fill="rgb(205,11,11)" rx="2" ry="2" />
+<text  x="14.80" y="1855.5" ></text>
+</g>
+</g>
+</svg>

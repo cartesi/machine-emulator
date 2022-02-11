@@ -1,0 +1,36 @@
+{
+    "arch": "riscv64",
+    "code-model": "medium",
+    "cpu": "generic-rv64",
+    "crt-static-respected": true,
+    "data-layout": "e-m:e-p:64:64-i64:64-i128:128-n64-S128",
+    "dynamic-linking": true,
+    "env": "gnu",
+    "executables": true,
+    "features": "+m,+a",
+    "has-rpath": true,
+    "is-builtin": false,
+    "llvm-abiname": "lp64",
+    "llvm-target": "riscv64",
+    "max-atomic-width": 64,
+    "os": "linux",
+    "position-independent-executables": true,
+    "relro-level": "full",
+    "target-family": [
+      "unix"
+    ],
+    "linker-flavor": "gcc",
+    "linker": "riscv64-cartesi-linux-gnu-gcc",
+    "pre-link-args": {
+        "gcc": []
+    },
+    "post-link-args": {
+        "gcc": [
+            "-Wl,--allow-multiple-definition",
+            "-Wl,--start-group,-lc,-lm,-lgcc,-lstdc++,-lsupc++,--end-group"
+        ]
+    },
+    "target-pointer-width": "64",
+    "panic-strategy": "abort"
+}
+  

@@ -1,0 +1,78 @@
+fasta:
+  emulators:
+    cartesi: &ctsi_emul
+      kernel: /opt/cartesi/share/images/kernel_bbl.bin
+      rom: &rom /opt/cartesi/share/images/rom.bin
+      drive: &rootfs /opt/cartesi/share/images/rootfs.ext2
+      path: &ctsi /opt/cartesi
+
+    temu:
+      bios: &bios /opt/cartesi/share/images/bbl64.bin
+      kernel: &kernel /opt/cartesi/share/images/kernel.bin
+      drive: *rootfs
+
+    qemu:
+      kernel: *kernel
+      drive: *rootfs
+
+  benchmarks:
+    - name: "Boot time"
+      command: ""
+    - name: "Java w JIT"
+      command: "java -classpath fasta/java/ fasta 100000"
+    - name: "Java w/o JIT"
+      command: "java -Xint -classpath fasta/java/ fasta 100000"
+    - name: "C"
+      command: "./fasta/c/fasta 100000"
+    - name: "Python"
+      command: "python3 fasta/python/fasta.py 100000"
+    - name: "Rust"
+      command: "./fasta/rust/fasta 100000"
+    - name: "Lua"
+      command: "lua fasta/lua/fasta.lua-2.lua 100000"
+    - name: "Ruby"
+      command: "ruby fasta/ruby/fasta.ruby-2.ruby 100000"
+
+fasta-go:
+  emulators:
+    cartesi:
+      kernel: &kernel_bbl_fp /opt/cartesi/share/images/kernel_bbl_fp.bin
+      rom: *rom
+      drive: *rootfs
+      path: *ctsi
+  benchmarks:
+    - name: "Boot time"
+      command: ""
+    - name: "Go"
+      command: "./fasta/go/fasta 100000"
+
+fasta-node:
+  emulators:
+    cartesi:
+      kernel: *kernel_bbl_fp
+      rom: *rom
+      drive: &node_rootfs /opt/cartesi/share/images/nodejs-rootfs.ext2
+      path: *ctsi
+
+    temu:
+      bios: *bios
+      kernel: *kernel
+      drive: *node_rootfs
+
+    qemu:
+      kernel: *kernel
+      drive: *node_rootfs
+
+  benchmarks:
+    - name: "Boot time"
+      command: ""
+    - name: "NodeJS"
+      command: "node fasta/node/fasta.js 100"
+
+blake2b:
+  emulators:
+    cartesi: *ctsi_emul
+
+  benchmarks:
+    - name: "C"
+      command: "./blake/c/blake"

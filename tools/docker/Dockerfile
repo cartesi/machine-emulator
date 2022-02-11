@@ -13,7 +13,7 @@ RUN \
     apt-get update && \
     apt-get install --no-install-recommends -y \
         build-essential vim wget git libreadline-dev libboost-coroutine-dev \
-        libboost-context-dev libboost-serialization-dev libboost-filesystem-dev \
+        libboost-context-dev libboost-filesystem-dev \
         libssl-dev openssl libc-ares-dev zlib1g-dev clang-tidy-12 clang-format-12 \
         ca-certificates automake libtool patchelf cmake pkg-config liblua5.3-dev lua-socket && \
     rm -rf /var/lib/apt/lists/*

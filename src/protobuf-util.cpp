@@ -14,7 +14,7 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#include "grpc-util.h"
+#include "protobuf-util.h"
 
 namespace cartesi {
 

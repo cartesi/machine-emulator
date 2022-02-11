@@ -137,10 +137,10 @@ constexpr const uint64_t ROLLUP_ADVANCE_STATE = 0;
 constexpr const uint64_t ROLLUP_INSPECT_STATE = 1;
 
 #include "complete-merkle-tree.h"
-#include "grpc-util.h"
 #include "htif.h"
 #include "keccak-256-hasher.h"
 #include "merkle-tree-proof.h"
+#include "protobuf-util.h"
 #include "strict-aliasing.h"
 
 // gRPC async server calls involve a variety of objects:

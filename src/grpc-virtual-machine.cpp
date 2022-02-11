@@ -18,8 +18,8 @@
 #include <cstdint>
 #include <string>
 
-#include "grpc-util.h"
 #include "grpc-virtual-machine.h"
+#include "protobuf-util.h"
 
 using grpc::ClientContext;
 using grpc::Status;

@@ -52,12 +52,12 @@ BOOST_INC_Darwin=-I/opt/local/include
 endif
 endif
 
-BOOST_SERIAL_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_serialization-mt
 BOOST_CORO_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_coroutine-mt -lboost_context-mt
 BOOST_PROCESS_LIB_Darwin:=-lpthread
 BOOST_FILESYSTEM_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_system-mt -lboost_filesystem-mt
 GRPC_INC_Darwin=-I$(BUILDDIR)/include
 GRPC_LIB_Darwin=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread
+PROTOBUF_LIB_Darwin:=-L$(BUILDDIR)/lib -lprotobuf -lpthread
 LIBCARTESI_Darwin=libcartesi.dylib
 LIBCARTESI_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_Darwin)'
 LIBCARTESI_TESTS_LDFLAGS_Darwin=-Wl,-rpath,'@executable_path/..'
@@ -72,13 +72,13 @@ CC_Linux=gcc
 CXX_Linux=g++
 INCS_Linux=
 FS_LIB_Linux=-lstdc++fs
-BOOST_SERIAL_LIB_Linux:=-lboost_serialization
 BOOST_CORO_LIB_Linux:=-lboost_coroutine -lboost_context
 BOOST_FILESYSTEM_LIB_Linux:=-lboost_system -lboost_filesystem
 BOOST_PROCESS_LIB_Linux:=-lpthread
 BOOST_INC_Linux=
 GRPC_INC_Linux:=-I$(BUILDDIR)/include
 GRPC_LIB_Linux:=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread
+PROTOBUF_LIB_Linux:=-L$(BUILDDIR)/lib -lprotobuf -lpthread
 LIBCARTESI_Linux=libcartesi.so
 LIBCARTESI_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
 LIBCARTESI_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
@@ -92,13 +92,13 @@ CXX=$(CXX_$(UNAME))
 CC_MARCH=
 SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 FS_LIB=$(FS_LIB_$(UNAME))
-BOOST_SERIAL_LIB=$(BOOST_SERIAL_LIB_$(UNAME))
 BOOST_CORO_LIB=$(BOOST_CORO_LIB_$(UNAME))
 BOOST_PROCESS_LIB=$(BOOST_PROCESS_LIB_$(UNAME))
 BOOST_FILESYSTEM_LIB=$(BOOST_FILESYSTEM_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
 GRPC_LIB=$(GRPC_LIB_$(UNAME))
 GRPC_INC=$(GRPC_INC_$(UNAME))
+PROTOBUF_LIB=$(PROTOBUF_LIB_$(UNAME))
 LIBCARTESI=$(LIBCARTESI_$(UNAME))
 LIBCARTESI_LDFLAGS=$(LIBCARTESI_LDFLAGS_$(UNAME))
 LIBCARTESI_TESTS_LDFLAGS=$(LIBCARTESI_TESTS_LDFLAGS_$(UNAME))
@@ -109,15 +109,15 @@ LIBCARTESI_GRPC_LDFLAGS=$(LIBCARTESI_GRPC_LDFLAGS_$(UNAME))
 LIBCARTESI_GRPC_TESTS_LDFLAGS=$(LIBCARTESI_GRPC_TESTS_LDFLAGS_$(UNAME))
 LIBCARTESI_GRPC_LIB=-L. -lcartesi_grpc
 
-CARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB)
-CARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB) $(GRPC_LIB)
-LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB) $(LIBCARTESI_LIB)
-LUACARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(BOOST_SERIAL_LIB) $(LIBCARTESI_GRPC_LIB) $(GRPC_LIB)  $(LIBCARTESI_LIB)
-REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB) $(BOOST_SERIAL_LIB)
+CARTESI_LIBS:=$(CRYPTOPP_LIB) $(PROTOBUF_LIB)
+CARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB)
+LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(LIBCARTESI_LIB)
+LUACARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(LIBCARTESI_GRPC_LIB) $(GRPC_LIB)  $(LIBCARTESI_LIB)
+REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(FS_LIB)
 REMOTE_CARTESI_MACHINE_PROXY_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
 SERVER_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB)
-TEST_SERVER_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_SERIAL_LIB)
-TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(LIBCARTESI_GRPC_LIB) $(BOOST_PROCESS_LIB) $(BOOST_FILESYSTEM_LIB)
+TEST_SERVER_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB)
+TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(LIBCARTESI_GRPC_LIB) $(BOOST_PROCESS_LIB) $(BOOST_FILESYSTEM_LIB) $(PROTOBUF_LIB)
 HASH_LIBS:=$(CRYPTOPP_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
@@ -232,18 +232,23 @@ LUACARTESI_OBJS:= \
 	clua-machine-util.o \
 	clua.o
 
-CARTESI_GRPC_GEN_OBJS:= \
+CARTESI_PROTOBUF_GEN_OBJS:= \
 	versioning.pb.o \
 	cartesi-machine.pb.o \
+	cartesi-machine-checkin.pb.o
+
+CARTESI_PROTOBUF_OBJS:= \
+	$(CARTESI_PROTOBUF_GEN_OBJS) \
+	protobuf-util.o
+
+CARTESI_GRPC_GEN_OBJS:= \
 	cartesi-machine.grpc.pb.o \
-	cartesi-machine-checkin.pb.o \
 	cartesi-machine-checkin.grpc.pb.o
 
 CARTESI_GRPC_OBJS:= \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
 	$(CARTESI_GRPC_GEN_OBJS) \
-	grpc-util.o \
 	grpc-virtual-machine.o \
 	grpc-machine-c-api.o
 
@@ -262,7 +267,7 @@ CARTESI_GRPC_LIBS+=-lprofiler
 LUACARTESI_LIBS+=-lprofiler
 endif
 
-$(LIBCARTESI): $(CARTESI_OBJS)
+$(LIBCARTESI): $(CARTESI_OBJS) $(CARTESI_PROTOBUF_OBJS)
 	$(CXX) $(LIBCARTESI_LDFLAGS) -o $@ $^ $(CARTESI_LIBS)
 
 $(LIBCARTESI_GRPC): $(CARTESI_GRPC_OBJS) $(LIBCARTESI)
@@ -392,14 +397,14 @@ SERVER_MANAGER_OBJS:= \
 	$(SERVER_MANAGER_PROTO_OBJS) \
 	complete-merkle-tree.o \
 	pristine-merkle-tree.o \
-	grpc-util.o \
+	protobuf-util.o \
 	server-manager.o
 
 TEST_SERVER_MANAGER_OBJS:= \
 	$(CARTESI_MACHINE_PROTO_OBJS) \
 	$(SERVER_MANAGER_PROTO_OBJS) \
 	machine-config.o \
-	grpc-util.o \
+	protobuf-util.o \
 	pristine-merkle-tree.o \
 	complete-merkle-tree.o \
 	test-server-manager.o
@@ -407,7 +412,7 @@ TEST_SERVER_MANAGER_OBJS:= \
 REMOTE_CARTESI_MACHINE_OBJS:= \
 	$(CARTESI_MACHINE_PROTO_OBJS) \
 	remote-machine.o \
-	grpc-util.o \
+	protobuf-util.o \
 	clint.o \
 	rom.o \
 	htif.o \
@@ -515,7 +520,9 @@ tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_
 %.pb.cc: $(GRPC_DIR)/%.proto
 	$(PROTOC) -I$(GRPC_DIR) --cpp_out=. $<
 
-grpc-util.o grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o proxy.o: $(CARTESI_GRPC_GEN_OBJS)
+machine-config.o protobuf-util.o: $(CARTESI_PROTOBUF_GEN_OBJS)
+
+grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o proxy.o: $(CARTESI_GRPC_GEN_OBJS) $(CARTESI_PROTOBUF_GEN_OBJS)
 
 %.clang-tidy: %.cpp $(PROTO_SOURCES)
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) 2>/dev/null
@@ -531,7 +538,7 @@ grpc-util.o grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o proxy.o
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 %.o: %.cc
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) $(CXXFLAGS) -fvisibility=default -c -o $@ $<
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<

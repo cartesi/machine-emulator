@@ -21,7 +21,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-serialization-dev libboost-filesystem-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-12 clang-format-12 liblua5.3-dev lua-socket
+          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-12 clang-format-12 liblua5.3-dev lua-socket
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Install Ubuntu dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.71.0 libboost-coroutine1.71.0 libboost-serialization1.71.0 libssl1.1 libc-ares2 zlib1g netcat patchelf lua5.3 lua-socket
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.71.0 libboost-coroutine1.71.0 libssl1.1 libc-ares2 zlib1g netcat patchelf lua5.3 lua-socket
 
       - name: Download emulator
         uses: actions/download-artifact@master
@@ -210,7 +210,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-serialization-dev libboost-filesystem-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-12 clang-format-12 lua5.3 liblua5.3-dev lua-socket clang llvm
+          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-12 clang-format-12 lua5.3 liblua5.3-dev lua-socket clang llvm
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
@@ -326,7 +326,7 @@ jobs:
           find /opt/cartesi/lib -type f -exec chmod 755 {} +
 
       - name: Install Ubuntu dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y libboost-coroutine1.71.0 libboost-context1.71.0 libboost-serialization1.71.0 libboost-filesystem1.71.0 libreadline8 openssl libc-ares2 zlib1g ca-certificates libgomp1 lua5.3 liblua5.3-dev lua-socket
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-coroutine1.71.0 libboost-context1.71.0 libboost-filesystem1.71.0 libreadline8 openssl libc-ares2 zlib1g ca-certificates libgomp1 lua5.3 liblua5.3-dev lua-socket
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0

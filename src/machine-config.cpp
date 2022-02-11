@@ -18,155 +18,15 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 
-#include <boost/archive/binary_iarchive.hpp>
-#include <boost/archive/binary_oarchive.hpp>
-
-#include <boost/serialization/array.hpp>
-#include <boost/serialization/collections_load_imp.hpp>
-#include <boost/serialization/collections_save_imp.hpp>
-#include <boost/serialization/nvp.hpp>
-#include <boost/serialization/version.hpp>
+#include <boost/endian/conversion.hpp>
 
 #include "machine-config.h"
 #include "pma-constants.h"
+#include "protobuf-util.h"
 
-static constexpr int archive_version = 3;
-
-// ARCHIVE_VERSION 0 was the first version
-// ARCHIVE_VERSION 1 added the dhd configuration
-BOOST_CLASS_VERSION(cartesi::machine_config, archive_version)
-
-namespace boost::serialization {
-
-template <typename ARX>
-inline void save(ARX &ar, const cartesi::flash_drive_configs &t, const unsigned int) {
-    boost::serialization::stl::save_collection<ARX, cartesi::flash_drive_configs>(ar, t);
-}
-
-template <typename ARX>
-inline void load(ARX &ar, cartesi::flash_drive_configs &t, const unsigned int) {
-    boost::serialization::collection_size_type count;
-    ar >> BOOST_SERIALIZATION_NVP(count);
-    if (count > t.capacity()) { // NOLINT(readability-static-accessed-through-instance)
-        boost::serialization::throw_exception(
-            boost::archive::archive_exception(boost::archive::archive_exception::array_size_too_short));
-    }
-    boost::serialization::item_version_type item_version(0);
-    auto library_version = ar.get_library_version();
-    if (library_version > boost::archive::library_version_type(3)) {
-        ar >> BOOST_SERIALIZATION_NVP(item_version);
-    }
-    boost::serialization::stl::collection_load_impl(ar, t, count, item_version);
-}
-
-template <typename ARX>
-inline void serialize(ARX &ar, cartesi::flash_drive_configs &t, const unsigned int file_version) {
-    boost::serialization::split_free(ar, t, file_version);
-}
-
-template <typename ARX>
-void serialize(ARX &ar, cartesi::processor_config &p, const unsigned int) {
-    ar &p.x;
-    ar &p.pc;
-    ar &p.mvendorid;
-    ar &p.marchid;
-    ar &p.mimpid;
-    ar &p.mcycle;
-    ar &p.minstret;
-    ar &p.mstatus;
-    ar &p.mtvec;
-    ar &p.mscratch;
-    ar &p.mepc;
-    ar &p.mcause;
-    ar &p.mtval;
-    ar &p.misa;
-    ar &p.mie;
-    ar &p.mip;
-    ar &p.medeleg;
-    ar &p.mideleg;
-    ar &p.mcounteren;
-    ar &p.stvec;
-    ar &p.sscratch;
-    ar &p.sepc;
-    ar &p.scause;
-    ar &p.stval;
-    ar &p.satp;
-    ar &p.scounteren;
-    ar &p.ilrsc;
-    ar &p.iflags;
-}
-
-template <typename ARX>
-void serialize(ARX &ar, cartesi::ram_config &r, const unsigned int) {
-    ar &r.length;
-    ar &r.image_filename;
-}
-
-template <typename ARX>
-void serialize(ARX &ar, cartesi::rom_config &r, const unsigned int) {
-    ar &r.bootargs;
-    ar &r.image_filename;
-}
-
-template <typename ARX>
-void serialize(ARX &ar, cartesi::memory_range_config &d, const unsigned int) {
-    ar &d.start;
-    ar &d.length;
-    ar &d.shared;
-    ar &d.image_filename;
-}
-
-template <typename ARX>
-void serialize(ARX &ar, cartesi::clint_config &c, const unsigned int) {
-    ar &c.mtimecmp;
-}
-
-template <typename ARX>
-void serialize(ARX &ar, cartesi::htif_config &h, const unsigned int) {
-    ar &h.fromhost;
-    ar &h.tohost;
-    ar &h.console_getchar;
-    ar &h.yield_manual;
-    ar &h.yield_automatic;
-}
-
-template <typename ARX>
-void serialize(ARX &ar, cartesi::dhd_config &d, const unsigned int) {
-    ar &d.tstart;
-    ar &d.tlength;
-    ar &d.image_filename;
-    ar &d.dlength;
-    ar &d.hlength;
-    ar &d.h;
-}
-
-template <typename ARX>
-void serialize(ARX &ar, cartesi::rollup_config &m, const unsigned int) {
-    ar &m.rx_buffer;
-    ar &m.tx_buffer;
-    ar &m.input_metadata;
-    ar &m.voucher_hashes;
-    ar &m.notice_hashes;
-}
-
-template <typename ARX>
-void serialize(ARX &ar, cartesi::machine_config &m, const unsigned int v) {
-    if (v != archive_version) {
-        throw std::runtime_error{
-            "expected config archive version " + std::to_string(archive_version) + " (got " + std::to_string(v) + ")"};
-    }
-    ar &m.processor;
-    ar &m.ram;
-    ar &m.rom;
-    ar &m.flash_drive;
-    ar &m.clint;
-    ar &m.htif;
-    ar &m.dhd;
-    ar &m.rollup;
-}
-
-} // namespace boost::serialization
+static constexpr uint32_t archive_version = 4;
 
 namespace cartesi {
 
@@ -177,7 +37,7 @@ std::string machine_config::get_image_filename(const std::string &dir, uint64_t 
 }
 
 std::string machine_config::get_config_filename(const std::string &dir) {
-    return dir + "/config";
+    return dir + "/config.protobuf";
 }
 
 static void adjust_image_filenames(machine_config &c, const std::string &dir) {
@@ -196,8 +56,16 @@ machine_config machine_config::load(const std::string &dir) {
         throw std::runtime_error{"unable to open '" + name + "' for reading"};
     }
     try {
-        boost::archive::binary_iarchive ia(ifs);
-        ia >> c;
+        uint32_t version = 0;
+        ifs >> version;
+        version = boost::endian::little_to_native(version);
+        if (version != archive_version) {
+            throw std::runtime_error("expected config archive_version " + std::to_string(archive_version) + " (got " +
+                std::to_string(version) + ")");
+        }
+        CartesiMachine::MachineConfig proto;
+        proto.ParseFromIstream(&ifs);
+        c = get_proto_machine_config(proto);
         adjust_image_filenames(c, dir);
     } catch (std::exception &e) {
         throw std::runtime_error{e.what()};
@@ -207,12 +75,14 @@ machine_config machine_config::load(const std::string &dir) {
 
 void machine_config::store(const std::string &dir) const {
     auto name = get_config_filename(dir);
+    CartesiMachine::MachineConfig proto;
+    set_proto_machine_config(*this, &proto);
     std::ofstream ofs(name, std::ios::binary);
     if (!ofs) {
         throw std::runtime_error{"unable to open '" + name + "' for writing"};
     }
-    boost::archive::binary_oarchive oa(ofs);
-    oa << *this;
+    ofs << boost::endian::native_to_little(archive_version);
+    proto.SerializeToOstream(&ofs);
 }
 
 } // namespace cartesi

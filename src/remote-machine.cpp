@@ -39,8 +39,8 @@ static constexpr const char *server_version_build = "";
 #include "cartesi-machine.grpc.pb.h"
 #pragma GCC diagnostic pop
 
-#include "grpc-util.h"
 #include "machine.h"
+#include "protobuf-util.h"
 #include "unique-c-ptr.h"
 
 using namespace cartesi;

@@ -31,7 +31,7 @@
 #include <google/protobuf/util/json_util.h>
 #include <grpc++/grpc++.h>
 
-#include "grpc-util.h"
+#include "protobuf-util.h"
 #include "server-manager.grpc.pb.h"
 #pragma GCC diagnostic pop
 
@@ -2831,7 +2831,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
 
 static bool check_session_store(const std::string &machine_dir) {
     static const std::vector<std::string> files = {"0000000000001000-f000.bin", "0000000080000000-4000000.bin",
-        "8000000000000000-3c00000.bin", "config", "hash"};
+        "8000000000000000-3c00000.bin", "config.protobuf", "hash"};
     if (machine_dir.empty()) {
         return false;
     }

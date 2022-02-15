@@ -302,178 +302,178 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
 processor_config get_proto_processor_config(const CartesiMachine::ProcessorConfig &proto_p) {
     using CartesiMachine::ProcessorConfig;
     processor_config p;
-    if (proto_p.x1_oneof_case() == ProcessorConfig::kX1) {
+    if (proto_p.has_x1()) {
         p.x[1] = proto_p.x1();
     }
-    if (proto_p.x2_oneof_case() == ProcessorConfig::kX2) {
+    if (proto_p.has_x2()) {
         p.x[2] = proto_p.x2();
     }
-    if (proto_p.x3_oneof_case() == ProcessorConfig::kX3) {
+    if (proto_p.has_x3()) {
         p.x[3] = proto_p.x3();
     }
-    if (proto_p.x4_oneof_case() == ProcessorConfig::kX4) {
+    if (proto_p.has_x4()) {
         p.x[4] = proto_p.x4();
     }
-    if (proto_p.x5_oneof_case() == ProcessorConfig::kX5) {
+    if (proto_p.has_x5()) {
         p.x[5] = proto_p.x5();
     }
-    if (proto_p.x6_oneof_case() == ProcessorConfig::kX6) {
+    if (proto_p.has_x6()) {
         p.x[6] = proto_p.x6();
     }
-    if (proto_p.x7_oneof_case() == ProcessorConfig::kX7) {
+    if (proto_p.has_x7()) {
         p.x[7] = proto_p.x7();
     }
-    if (proto_p.x8_oneof_case() == ProcessorConfig::kX8) {
+    if (proto_p.has_x8()) {
         p.x[8] = proto_p.x8();
     }
-    if (proto_p.x9_oneof_case() == ProcessorConfig::kX9) {
+    if (proto_p.has_x9()) {
         p.x[9] = proto_p.x9();
     }
-    if (proto_p.x10_oneof_case() == ProcessorConfig::kX10) {
+    if (proto_p.has_x10()) {
         p.x[10] = proto_p.x10();
     }
-    if (proto_p.x11_oneof_case() == ProcessorConfig::kX11) {
+    if (proto_p.has_x11()) {
         p.x[11] = proto_p.x11();
     }
-    if (proto_p.x12_oneof_case() == ProcessorConfig::kX12) {
+    if (proto_p.has_x12()) {
         p.x[12] = proto_p.x12();
     }
-    if (proto_p.x13_oneof_case() == ProcessorConfig::kX13) {
+    if (proto_p.has_x13()) {
         p.x[13] = proto_p.x13();
     }
-    if (proto_p.x14_oneof_case() == ProcessorConfig::kX14) {
+    if (proto_p.has_x14()) {
         p.x[14] = proto_p.x14();
     }
-    if (proto_p.x15_oneof_case() == ProcessorConfig::kX15) {
+    if (proto_p.has_x15()) {
         p.x[15] = proto_p.x15();
     }
-    if (proto_p.x16_oneof_case() == ProcessorConfig::kX16) {
+    if (proto_p.has_x16()) {
         p.x[16] = proto_p.x16();
     }
-    if (proto_p.x17_oneof_case() == ProcessorConfig::kX17) {
+    if (proto_p.has_x17()) {
         p.x[17] = proto_p.x17();
     }
-    if (proto_p.x18_oneof_case() == ProcessorConfig::kX18) {
+    if (proto_p.has_x18()) {
         p.x[18] = proto_p.x18();
     }
-    if (proto_p.x19_oneof_case() == ProcessorConfig::kX19) {
+    if (proto_p.has_x19()) {
         p.x[19] = proto_p.x19();
     }
-    if (proto_p.x20_oneof_case() == ProcessorConfig::kX20) {
+    if (proto_p.has_x20()) {
         p.x[20] = proto_p.x20();
     }
-    if (proto_p.x21_oneof_case() == ProcessorConfig::kX21) {
+    if (proto_p.has_x21()) {
         p.x[21] = proto_p.x21();
     }
-    if (proto_p.x22_oneof_case() == ProcessorConfig::kX22) {
+    if (proto_p.has_x22()) {
         p.x[22] = proto_p.x22();
     }
-    if (proto_p.x23_oneof_case() == ProcessorConfig::kX23) {
+    if (proto_p.has_x23()) {
         p.x[23] = proto_p.x23();
     }
-    if (proto_p.x24_oneof_case() == ProcessorConfig::kX24) {
+    if (proto_p.has_x24()) {
         p.x[24] = proto_p.x24();
     }
-    if (proto_p.x25_oneof_case() == ProcessorConfig::kX25) {
+    if (proto_p.has_x25()) {
         p.x[25] = proto_p.x25();
     }
-    if (proto_p.x26_oneof_case() == ProcessorConfig::kX26) {
+    if (proto_p.has_x26()) {
         p.x[26] = proto_p.x26();
     }
-    if (proto_p.x27_oneof_case() == ProcessorConfig::kX27) {
+    if (proto_p.has_x27()) {
         p.x[27] = proto_p.x27();
     }
-    if (proto_p.x28_oneof_case() == ProcessorConfig::kX28) {
+    if (proto_p.has_x28()) {
         p.x[28] = proto_p.x28();
     }
-    if (proto_p.x29_oneof_case() == ProcessorConfig::kX29) {
+    if (proto_p.has_x29()) {
         p.x[29] = proto_p.x29();
     }
-    if (proto_p.x30_oneof_case() == ProcessorConfig::kX30) {
+    if (proto_p.has_x30()) {
         p.x[30] = proto_p.x30();
     }
-    if (proto_p.x31_oneof_case() == ProcessorConfig::kX31) {
+    if (proto_p.has_x31()) {
         p.x[31] = proto_p.x31();
     }
-    if (proto_p.pc_oneof_case() == ProcessorConfig::kPc) {
+    if (proto_p.has_pc()) {
         p.pc = proto_p.pc();
     }
-    if (proto_p.mvendorid_oneof_case() == ProcessorConfig::kMvendorid) {
+    if (proto_p.has_mvendorid()) {
         p.mvendorid = proto_p.mvendorid();
     }
-    if (proto_p.marchid_oneof_case() == ProcessorConfig::kMarchid) {
+    if (proto_p.has_marchid()) {
         p.marchid = proto_p.marchid();
     }
-    if (proto_p.mimpid_oneof_case() == ProcessorConfig::kMimpid) {
+    if (proto_p.has_mimpid()) {
         p.mimpid = proto_p.mimpid();
     }
-    if (proto_p.mcycle_oneof_case() == ProcessorConfig::kMcycle) {
+    if (proto_p.has_mcycle()) {
         p.mcycle = proto_p.mcycle();
     }
-    if (proto_p.minstret_oneof_case() == ProcessorConfig::kMinstret) {
+    if (proto_p.has_minstret()) {
         p.minstret = proto_p.minstret();
     }
-    if (proto_p.mstatus_oneof_case() == ProcessorConfig::kMstatus) {
+    if (proto_p.has_mstatus()) {
         p.mstatus = proto_p.mstatus();
     }
-    if (proto_p.mtvec_oneof_case() == ProcessorConfig::kMtvec) {
+    if (proto_p.has_mtvec()) {
         p.mtvec = proto_p.mtvec();
     }
-    if (proto_p.mscratch_oneof_case() == ProcessorConfig::kMscratch) {
+    if (proto_p.has_mscratch()) {
         p.mscratch = proto_p.mscratch();
     }
-    if (proto_p.mepc_oneof_case() == ProcessorConfig::kMepc) {
+    if (proto_p.has_mepc()) {
         p.mepc = proto_p.mepc();
     }
-    if (proto_p.mcause_oneof_case() == ProcessorConfig::kMcause) {
+    if (proto_p.has_mcause()) {
         p.mcause = proto_p.mcause();
     }
-    if (proto_p.mtval_oneof_case() == ProcessorConfig::kMtval) {
+    if (proto_p.has_mtval()) {
         p.mtval = proto_p.mtval();
     }
-    if (proto_p.misa_oneof_case() == ProcessorConfig::kMisa) {
+    if (proto_p.has_misa()) {
         p.misa = proto_p.misa();
     }
-    if (proto_p.mie_oneof_case() == ProcessorConfig::kMie) {
+    if (proto_p.has_mie()) {
         p.mie = proto_p.mie();
     }
-    if (proto_p.mip_oneof_case() == ProcessorConfig::kMip) {
+    if (proto_p.has_mip()) {
         p.mip = proto_p.mip();
     }
-    if (proto_p.medeleg_oneof_case() == ProcessorConfig::kMedeleg) {
+    if (proto_p.has_medeleg()) {
         p.medeleg = proto_p.medeleg();
     }
-    if (proto_p.mideleg_oneof_case() == ProcessorConfig::kMideleg) {
+    if (proto_p.has_mideleg()) {
         p.mideleg = proto_p.mideleg();
     }
-    if (proto_p.mcounteren_oneof_case() == ProcessorConfig::kMcounteren) {
+    if (proto_p.has_mcounteren()) {
         p.mcounteren = proto_p.mcounteren();
     }
-    if (proto_p.stvec_oneof_case() == ProcessorConfig::kStvec) {
+    if (proto_p.has_stvec()) {
         p.stvec = proto_p.stvec();
     }
-    if (proto_p.sscratch_oneof_case() == ProcessorConfig::kSscratch) {
+    if (proto_p.has_sscratch()) {
         p.sscratch = proto_p.sscratch();
     }
-    if (proto_p.sepc_oneof_case() == ProcessorConfig::kSepc) {
+    if (proto_p.has_sepc()) {
         p.sepc = proto_p.sepc();
     }
-    if (proto_p.scause_oneof_case() == ProcessorConfig::kScause) {
+    if (proto_p.has_scause()) {
         p.scause = proto_p.scause();
     }
-    if (proto_p.stval_oneof_case() == ProcessorConfig::kStval) {
+    if (proto_p.has_stval()) {
         p.stval = proto_p.stval();
     }
-    if (proto_p.satp_oneof_case() == ProcessorConfig::kSatp) {
+    if (proto_p.has_satp()) {
         p.satp = proto_p.satp();
     }
-    if (proto_p.scounteren_oneof_case() == ProcessorConfig::kScounteren) {
+    if (proto_p.has_scounteren()) {
         p.scounteren = proto_p.scounteren();
     }
-    if (proto_p.ilrsc_oneof_case() == ProcessorConfig::kIlrsc) {
+    if (proto_p.has_ilrsc()) {
         p.ilrsc = proto_p.ilrsc();
     }
-    if (proto_p.iflags_oneof_case() == ProcessorConfig::kIflags) {
+    if (proto_p.has_iflags()) {
         p.iflags = proto_p.iflags();
     }
     return p;
@@ -536,16 +536,16 @@ machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &pro
     }
     if (proto_c.has_clint()) {
         const auto &clint = proto_c.clint();
-        if (clint.mtimecmp_oneof_case() == CartesiMachine::CLINTConfig::kMtimecmp) {
+        if (clint.has_mtimecmp()) {
             c.clint.mtimecmp = clint.mtimecmp();
         }
     }
     if (proto_c.has_htif()) {
         const auto &htif = proto_c.htif();
-        if (htif.fromhost() == CartesiMachine::HTIFConfig::kFromhost) {
+        if (htif.has_fromhost()) {
             c.htif.fromhost = htif.fromhost();
         }
-        if (htif.tohost() == CartesiMachine::HTIFConfig::kTohost) {
+        if (htif.has_tohost()) {
             c.htif.tohost = htif.tohost();
         }
         // zero default when missing is ok

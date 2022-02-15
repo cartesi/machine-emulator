@@ -290,19 +290,19 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_s
     }
 
     // Register rollup memory ranges
-    if (m_c.rollup.rx_buffer.length != 0 && m_c.rollup.tx_buffer.length != 0 && m_c.rollup.input_metadata.length != 0 &&
-        m_c.rollup.voucher_hashes.length != 0 && m_c.rollup.notice_hashes.length != 0) {
-        register_pma_entry(make_rollup_tx_buffer_pma_entry(m_c.rollup.tx_buffer));
-        register_pma_entry(make_rollup_rx_buffer_pma_entry(m_c.rollup.rx_buffer));
-        register_pma_entry(make_rollup_input_metadata_pma_entry(m_c.rollup.input_metadata));
-        register_pma_entry(make_rollup_voucher_hashes_pma_entry(m_c.rollup.voucher_hashes));
-        register_pma_entry(make_rollup_notice_hashes_pma_entry(m_c.rollup.notice_hashes));
-    } else if (m_c.rollup.rx_buffer.length != 0 || m_c.rollup.rx_buffer.start != 0 ||
-        m_c.rollup.tx_buffer.length != 0 || m_c.rollup.tx_buffer.start != 0 || m_c.rollup.input_metadata.length != 0 ||
-        m_c.rollup.input_metadata.start != 0 || m_c.rollup.voucher_hashes.length != 0 ||
-        m_c.rollup.voucher_hashes.start != 0 || m_c.rollup.notice_hashes.length != 0 ||
-        m_c.rollup.notice_hashes.start != 0) {
-        throw std::invalid_argument{"incomplete rollup configuration"};
+    if (m_c.rollup.has_value()) {
+        if (m_c.rollup->rx_buffer.length == 0 || m_c.rollup->rx_buffer.start == 0 ||
+            m_c.rollup->tx_buffer.length == 0 || m_c.rollup->tx_buffer.start == 0 ||
+            m_c.rollup->input_metadata.length == 0 || m_c.rollup->input_metadata.start == 0 ||
+            m_c.rollup->voucher_hashes.length == 0 || m_c.rollup->voucher_hashes.start == 0 ||
+            m_c.rollup->notice_hashes.length == 0 || m_c.rollup->notice_hashes.start == 0) {
+            throw std::invalid_argument{"incomplete rollup configuration"};
+        }
+        register_pma_entry(make_rollup_tx_buffer_pma_entry(m_c.rollup->tx_buffer));
+        register_pma_entry(make_rollup_rx_buffer_pma_entry(m_c.rollup->rx_buffer));
+        register_pma_entry(make_rollup_input_metadata_pma_entry(m_c.rollup->input_metadata));
+        register_pma_entry(make_rollup_voucher_hashes_pma_entry(m_c.rollup->voucher_hashes));
+        register_pma_entry(make_rollup_notice_hashes_pma_entry(m_c.rollup->notice_hashes));
     }
 
     // Register HTIF device
@@ -328,35 +328,39 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_s
     // Register shadow device
     register_pma_entry(make_shadow_pma_entry(PMA_SHADOW_START, PMA_SHADOW_LENGTH));
 
-    // Add DHD device only if tlength is non-zero...
-    if (m_c.dhd.tlength != 0) {
-        // ... and also a power of 2...
-        if ((m_c.dhd.tlength & (m_c.dhd.tlength - 1)) != 0) {
-            throw std::invalid_argument{"DHD tlength not a power of 2"};
+    if (m_c.dhd.has_value()) {
+        // Add DHD device only if tlength is non-zero...
+        if (m_c.dhd->tlength != 0) {
+            // ... and also a power of 2...
+            if ((m_c.dhd->tlength & (m_c.dhd->tlength - 1)) != 0) {
+                throw std::invalid_argument{"DHD tlength not a power of 2"};
+            }
+            // ... and tstart is aligned to that power of 2
+            if ((m_c.dhd->tstart & (m_c.dhd->tlength - 1)) != 0) {
+                throw std::invalid_argument{"DHD tstart not aligned to tlength"};
+            }
+            // Register associated target range
+            if (m_c.dhd->image_filename.empty()) {
+                register_pma_entry(
+                    make_callocd_memory_pma_entry(m_c.dhd->tstart, m_c.dhd->tlength).set_flags(m_rom_flags));
+            } else {
+                register_pma_entry(
+                    make_callocd_memory_pma_entry(m_c.dhd->tstart, m_c.dhd->tlength, m_c.dhd->image_filename)
+                        .set_flags(m_rom_flags));
+            }
+            // Register DHD range itself
+            register_pma_entry(make_dhd_pma_entry(PMA_DHD_START, PMA_DHD_LENGTH));
+            // Set the DHD source in the state
+            m_s.dhd.source = make_dhd_source(r.dhd.source_address);
         }
-        // ... and tstart is aligned to that power of 2
-        if ((m_c.dhd.tstart & (m_c.dhd.tlength - 1)) != 0) {
-            throw std::invalid_argument{"DHD tstart not aligned to tlength"};
+        // Copy DHD state from config to machine
+        write_dhd_tstart(m_c.dhd->tstart);
+        write_dhd_tlength(m_c.dhd->tlength);
+        write_dhd_dlength(m_c.dhd->dlength);
+        write_dhd_hlength(m_c.dhd->hlength);
+        for (int i = 0; i < DHD_H_REG_COUNT; i++) {
+            write_dhd_h(i, m_c.dhd->h[i]);
         }
-        // Register associated target range
-        if (m_c.dhd.image_filename.empty()) {
-            register_pma_entry(make_callocd_memory_pma_entry(m_c.dhd.tstart, m_c.dhd.tlength).set_flags(m_rom_flags));
-        } else {
-            register_pma_entry(make_callocd_memory_pma_entry(m_c.dhd.tstart, m_c.dhd.tlength, m_c.dhd.image_filename)
-                                   .set_flags(m_rom_flags));
-        }
-        // Register DHD range itself
-        register_pma_entry(make_dhd_pma_entry(PMA_DHD_START, PMA_DHD_LENGTH));
-        // Set the DHD source in the state
-        m_s.dhd.source = make_dhd_source(r.dhd.source_address);
-    }
-    // Copy DHD state from config to machine
-    write_dhd_tstart(m_c.dhd.tstart);
-    write_dhd_tlength(m_c.dhd.tlength);
-    write_dhd_dlength(m_c.dhd.dlength);
-    write_dhd_hlength(m_c.dhd.hlength);
-    for (int i = 0; i < DHD_H_REG_COUNT; i++) {
-        write_dhd_h(i, m_c.dhd.h[i]);
     }
 
     // Initialize PMA extension metadata on ROM

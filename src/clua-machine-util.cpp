@@ -905,10 +905,14 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
     lua_setfield(L, -2, "ram");                                           // config
     push_cm_rom_config(L, &c->rom);                                       // config rom
     lua_setfield(L, -2, "rom");                                           // config
-    push_cm_dhd_config(L, &c->dhd);                                       // config dhd
-    lua_setfield(L, -2, "dhd");                                           // config
-    push_cm_rollup_config(L, &c->rollup);                                 // config rollup
-    lua_setfield(L, -2, "rollup");                                        // config
+    if (c->dhd.has_value) {
+        push_cm_dhd_config(L, &c->dhd); // config dhd
+        lua_setfield(L, -2, "dhd");     // config
+    }
+    if (c->rollup.has_value) {
+        push_cm_rollup_config(L, &c->rollup); // config rollup
+        lua_setfield(L, -2, "rollup");        // config
+    }
 }
 
 /// \brief Pushes an cm_dhd_runtime_config to the Lua stack
@@ -979,8 +983,10 @@ cm_memory_range_config *clua_check_cm_memory_range_config(lua_State *L, int tabi
 /// \param r C api rollup config structure to receive results
 static void check_cm_rollup_config(lua_State *L, int tabidx, cm_rollup_config *r) {
     if (!opt_table_field(L, tabidx, "rollup")) {
+        r->has_value = false;
         return;
     }
+    r->has_value = true;
     lua_getfield(L, -1, "rx_buffer");
     clua_check_cm_memory_range_config(L, -1, "rollup rx buffer", &r->rx_buffer);
     lua_pop(L, 1);
@@ -1116,8 +1122,10 @@ static void check_cm_clint_config(lua_State *L, int tabidx, cm_clint_config *c) 
 /// \param d C api DHD config structure to receive results
 static void check_cm_dhd_config(lua_State *L, int tabidx, cm_dhd_config *d, int ctxidx) {
     if (!opt_table_field(L, tabidx, "dhd")) {
+        d->has_value = false;
         return;
     }
+    d->has_value = true;
     d->tstart = check_uint_field(L, -1, "tstart");
     d->tlength = check_uint_field(L, -1, "tlength");
     d->dlength = opt_uint_field(L, -1, "dlength", d->dlength);

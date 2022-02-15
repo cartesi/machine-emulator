@@ -20,6 +20,7 @@
 #include <array>
 #include <boost/container/static_vector.hpp>
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include "riscv-constants.h"
@@ -122,14 +123,14 @@ struct rollup_config {
 /// \brief Machine state configuration
 struct machine_config final {
 
-    processor_config processor{};      ///< Processor state
-    ram_config ram{};                  ///< RAM state
-    rom_config rom{};                  ///< ROM state
-    flash_drive_configs flash_drive{}; ///< Flash drives state
-    clint_config clint{};              ///< CLINT device state
-    htif_config htif{};                ///< HTIF device state
-    dhd_config dhd{};                  ///< DHD state
-    rollup_config rollup{};            ///< Rollup state
+    processor_config processor{};          ///< Processor state
+    ram_config ram{};                      ///< RAM state
+    rom_config rom{};                      ///< ROM state
+    flash_drive_configs flash_drive{};     ///< Flash drives state
+    clint_config clint{};                  ///< CLINT device state
+    htif_config htif{};                    ///< HTIF device state
+    std::optional<dhd_config> dhd{};       ///< DHD state
+    std::optional<rollup_config> rollup{}; ///< Rollup state
 
     /// \brief Get the name where config will be stored in a directory
     static std::string get_config_filename(const std::string &dir);

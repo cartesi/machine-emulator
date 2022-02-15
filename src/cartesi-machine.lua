@@ -347,15 +347,9 @@ local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
 local rom_image_filename = images_path .. "rom.bin"
 local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet"
-local dhd_tstart = 0
-local dhd_tlength = 0
-local dhd_image_filename = nil
+local dhd = nil
 local dhd_source_address = nil
-local rollup_rx_buffer = { start = 0, length = 0 }
-local rollup_tx_buffer = { start = 0, length = 0 }
-local rollup_input_metadata = { start = 0, length = 0 }
-local rollup_voucher_hashes = { start = 0, length = 0 }
-local rollup_notice_hashes = { start = 0, length = 0 }
+local rollup = nil
 local rollup_advance = nil
 local rollup_inspect = nil
 local concurrency_update_merkle_tree = 0
@@ -469,11 +463,12 @@ local options = {
     end },
     { "^%-%-rollup$", function(all)
         if not all then return false end
-        rollup_rx_buffer = { start = 0x60000000, length = 2 << 20 }
-        rollup_tx_buffer = { start = 0x60200000, length = 2 << 20 }
-        rollup_input_metadata = { start = 0x60400000, length = 4096 }
-        rollup_voucher_hashes = { start = 0x60600000, length = 2 << 20 }
-        rollup_notice_hashes = { start = 0x60800000, length = 2 << 20 }
+        rollup = rollup or {}
+        rollup.rx_buffer = { start = 0x60000000, length = 2 << 20 }
+        rollup.tx_buffer = { start = 0x60200000, length = 2 << 20 }
+        rollup.input_metadata = { start = 0x60400000, length = 4096 }
+        rollup.voucher_hashes = { start = 0x60600000, length = 2 << 20 }
+        rollup.notice_hashes = { start = 0x60800000, length = 2 << 20 }
         htif_yield_automatic = true
         htif_yield_manual = true
         return true
@@ -590,9 +585,11 @@ local options = {
                 "invalid start of target in " .. all)
         d.tlength = assert(util.parse_number(d.tlength),
                 "invalid length of target in " .. all)
-        dhd_tstart = d.tstart
-        dhd_tlength = d.tlength
-        dhd_image_filename = d.image_filename
+        dhd = {
+            tstart = d.tstart,
+            tlength = d.tlength,
+            image_filename = d.image_filename,
+        }
         return true
     end },
     { "^%-%-dhd%-source%=(.*)$", function(o)
@@ -745,27 +742,32 @@ local options = {
     end },
     { "^(%-%-rollup%-rx%-buffer%=(.+))$", function(all, opts)
         if not opts then return false end
-        rollup_rx_buffer = parse_memory_range(opts, "rollup rx buffer", all)
+        rollup = rollup or {}
+        rollup.rx_buffer = parse_memory_range(opts, "rollup rx buffer", all)
         return true
     end },
     { "^(%-%-rollup%-tx%-buffer%=(.+))$", function(all, opts)
         if not opts then return false end
-        rollup_tx_buffer = parse_memory_range(opts, "tx buffer", all)
+        rollup = rollup or {}
+        rollup.tx_buffer = parse_memory_range(opts, "tx buffer", all)
         return true
     end },
     { "^(%-%-rollup%-input%-metadata%=(.+))$", function(all, opts)
         if not opts then return false end
-        rollup_input_metadata = parse_memory_range(opts, "rollup input metadata", all)
+        rollup = rollup or {}
+        rollup.input_metadata = parse_memory_range(opts, "rollup input metadata", all)
         return true
     end },
     { "^(%-%-rollup%-voucher%-hashes%=(.+))$", function(all, opts)
         if not opts then return false end
-        rollup_voucher_hashes = parse_memory_range(opts, "rollup voucher hashes", all)
+        rollup = rollup or {}
+        rollup.voucher_hashes = parse_memory_range(opts, "rollup voucher hashes", all)
         return true
     end },
     { "^(%-%-rollup%-notice%-hashes%=(.+))$", function(all, opts)
         if not opts then return false end
-        rollup_notice_hashes = parse_memory_range(opts, "rollup notice hashes", all)
+        rollup = rollup or {}
+        rollup.notice_hashes = parse_memory_range(opts, "rollup notice hashes", all)
         return true
     end },
     { ".*", function(all)
@@ -916,18 +918,20 @@ local function store_machine_config(config, output)
         store_memory_range(f, "    ", output)
     end
     output("  },\n")
-    output("  rollup = {\n")
-    output("    rx_buffer = ")
-    store_memory_range(config.rollup.rx_buffer, "    ", output)
-    output("    tx_buffer = ")
-    store_memory_range(config.rollup.tx_buffer, "    ", output)
-    output("    input_metadata = ")
-    store_memory_range(config.rollup.input_metadata, "    ", output)
-    output("    voucher_hashes = ")
-    store_memory_range(config.rollup.voucher_hashes, "    ", output)
-    output("    notice_hashes = ")
-    store_memory_range(config.rollup.notice_hashes, "    ", output)
-    output("  },\n")
+    if config.rollup then
+        output("  rollup = {\n")
+        output("    rx_buffer = ")
+        store_memory_range(config.rollup.rx_buffer, "    ", output)
+        output("    tx_buffer = ")
+        store_memory_range(config.rollup.tx_buffer, "    ", output)
+        output("    input_metadata = ")
+        store_memory_range(config.rollup.input_metadata, "    ", output)
+        output("    voucher_hashes = ")
+        store_memory_range(config.rollup.voucher_hashes, "    ", output)
+        output("    notice_hashes = ")
+        store_memory_range(config.rollup.notice_hashes, "    ", output)
+        output("  },\n")
+    end
     output("}\n")
 end
 
@@ -1068,18 +1072,8 @@ else
             yield_automatic = htif_yield_automatic,
             yield_manual = htif_yield_manual
         },
-        dhd = {
-            tstart = dhd_tstart,
-            tlength = dhd_tlength,
-            image_filename = dhd_image_filename
-        },
-        rollup = {
-            rx_buffer = rollup_rx_buffer,
-            tx_buffer = rollup_tx_buffer,
-            input_metadata = rollup_input_metadata,
-            voucher_hashes = rollup_voucher_hashes,
-            notice_hashes = rollup_notice_hashes
-        },
+        dhd = dhd,
+        rollup = rollup,
         flash_drive = {},
     }
 

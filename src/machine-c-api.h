@@ -197,6 +197,7 @@ typedef struct {          // NOLINT(modernize-use-using)
 
 /// \brief DHD device state configuration
 typedef struct {                            // NOLINT(modernize-use-using)
+    bool has_value;                         ///< Represents whether the rest of the struct have been filled
     uint64_t tstart;                        ///< Start of target physical memory range for output data
     uint64_t tlength;                       ///< Length of target physical memory range for output data
     const char *image_filename;             ///< Data image file name
@@ -207,6 +208,7 @@ typedef struct {                            // NOLINT(modernize-use-using)
 
 /// \brief Rollup state configuration
 typedef struct {                           // NOLINT(modernize-use-using)
+    bool has_value;                        ///< Represents whether the rest of the struct have been filled
     cm_memory_range_config rx_buffer;      // RX buffer memory range
     cm_memory_range_config tx_buffer;      // TX buffer memory range
     cm_memory_range_config input_metadata; ///< Input metadata memory range

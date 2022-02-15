@@ -283,16 +283,18 @@ static StartSessionRequest create_valid_start_session_request(const std::string 
     config.htif.yield_automatic = true;
 
     // Setup rollup device
-    config.rollup.rx_buffer.start = 0x60000000;
-    config.rollup.rx_buffer.length = 2 << 20;
-    config.rollup.tx_buffer.start = 0x60200000;
-    config.rollup.tx_buffer.length = 2 << 20;
-    config.rollup.input_metadata.start = 0x60400000;
-    config.rollup.input_metadata.length = 4096;
-    config.rollup.voucher_hashes.start = 0x60600000;
-    config.rollup.voucher_hashes.length = 2 << 20;
-    config.rollup.notice_hashes.start = 0x60800000;
-    config.rollup.notice_hashes.length = 2 << 20;
+    rollup_config rollup;
+    rollup.rx_buffer.start = 0x60000000;
+    rollup.rx_buffer.length = 2 << 20;
+    rollup.tx_buffer.start = 0x60200000;
+    rollup.tx_buffer.length = 2 << 20;
+    rollup.input_metadata.start = 0x60400000;
+    rollup.input_metadata.length = 4096;
+    rollup.voucher_hashes.start = 0x60600000;
+    rollup.voucher_hashes.length = 2 << 20;
+    rollup.notice_hashes.start = 0x60800000;
+    rollup.notice_hashes.length = 2 << 20;
+    config.rollup = rollup;
 
     // Flash Drives
     path rootfs = images_path / "rootfs.ext2";

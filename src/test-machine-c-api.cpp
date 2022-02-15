@@ -231,11 +231,16 @@ protected:
         target->clint = source->clint;
         target->htif = source->htif;
         target->dhd = source->dhd;
-        target->dhd.image_filename = new_cstr(source->dhd.image_filename);
+        if (target->dhd.has_value) {
+            target->dhd.image_filename = new_cstr(source->dhd.image_filename);
+        }
+        target->rollup = source->rollup;
     }
 
     static void _cleanup_machine_config(cm_machine_config *config) {
-        delete[] config->dhd.image_filename;
+        if (config->dhd.has_value) {
+            delete[] config->dhd.image_filename;
+        }
         for (size_t i = 0; i < config->flash_drive_count; ++i) {
             delete[] config->flash_drive[i].image_filename;
         }
@@ -427,6 +432,12 @@ bool operator==(const cm_htif_config &lhs, const cm_htif_config &rhs) {
 }
 
 bool operator==(const cm_dhd_config &lhs, const cm_dhd_config &rhs) {
+    if (lhs.has_value != rhs.has_value) {
+        return false;
+    }
+    if (!lhs.has_value) {
+        return true;
+    }
     for (size_t i = 0; i < CM_MACHINE_DHD_H_REG_COUNT; ++i) {
         if (lhs.h[i] != rhs.h[i]) {
             return false;

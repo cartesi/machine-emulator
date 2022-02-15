@@ -273,9 +273,12 @@ static cm_htif_config convert_to_c(const cartesi::htif_config &cpp_config) {
 // ----------------------------------------------
 // DHD configuration conversion functions
 // ----------------------------------------------
-static cartesi::dhd_config convert_from_c(const cm_dhd_config *c_config) {
+static std::optional<cartesi::dhd_config> convert_from_c(const cm_dhd_config *c_config) {
     if (c_config == nullptr) {
         throw std::invalid_argument("Invalid dhd configuration");
+    }
+    if (!c_config->has_value) {
+        return {};
     }
     cartesi::dhd_config new_cpp_dhd_config{};
     new_cpp_dhd_config.tstart = c_config->tstart;
@@ -290,25 +293,31 @@ static cartesi::dhd_config convert_from_c(const cm_dhd_config *c_config) {
     return new_cpp_dhd_config;
 }
 
-static cm_dhd_config convert_to_c(const cartesi::dhd_config &cpp_config) {
+static cm_dhd_config convert_to_c(const std::optional<cartesi::dhd_config> &cpp_config) {
     cm_dhd_config new_c_dhd_config{};
-    new_c_dhd_config.tstart = cpp_config.tstart;
-    new_c_dhd_config.tlength = cpp_config.tlength;
-    new_c_dhd_config.image_filename = convert_to_c(cpp_config.image_filename);
-    new_c_dhd_config.dlength = cpp_config.dlength;
-    new_c_dhd_config.hlength = cpp_config.hlength;
-
-    static_assert(sizeof(new_c_dhd_config.h) == sizeof(cpp_config.h));
-    memcpy(&new_c_dhd_config.h, &cpp_config.h, sizeof(uint64_t) * CM_MACHINE_DHD_H_REG_COUNT);
+    new_c_dhd_config.has_value = cpp_config.has_value();
+    if (!cpp_config.has_value()) {
+        return new_c_dhd_config;
+    }
+    new_c_dhd_config.tstart = cpp_config->tstart;
+    new_c_dhd_config.tlength = cpp_config->tlength;
+    new_c_dhd_config.image_filename = convert_to_c(cpp_config->image_filename);
+    new_c_dhd_config.dlength = cpp_config->dlength;
+    new_c_dhd_config.hlength = cpp_config->hlength;
+    static_assert(sizeof(new_c_dhd_config.h) == sizeof(cpp_config->h));
+    memcpy(&new_c_dhd_config.h, &cpp_config->h, sizeof(uint64_t) * CM_MACHINE_DHD_H_REG_COUNT);
     return new_c_dhd_config;
 }
 
 // --------------------------------------------
 // Rollup configuration conversion functions
 // --------------------------------------------
-static cartesi::rollup_config convert_from_c(const cm_rollup_config *c_config) {
+static std::optional<cartesi::rollup_config> convert_from_c(const cm_rollup_config *c_config) {
     if (c_config == nullptr) {
         throw std::invalid_argument("Invalid rollup configuration");
+    }
+    if (!c_config->has_value) {
+        return {};
     }
     cartesi::rollup_config new_cpp_rollup_config{convert_from_c(&c_config->rx_buffer),
         convert_from_c(&c_config->tx_buffer), convert_from_c(&c_config->input_metadata),
@@ -316,13 +325,17 @@ static cartesi::rollup_config convert_from_c(const cm_rollup_config *c_config) {
     return new_cpp_rollup_config;
 }
 
-static cm_rollup_config convert_to_c(const cartesi::rollup_config &cpp_config) {
+static cm_rollup_config convert_to_c(const std::optional<cartesi::rollup_config> &cpp_config) {
     cm_rollup_config new_c_rollup_config{};
-    new_c_rollup_config.rx_buffer = convert_to_c(cpp_config.rx_buffer);
-    new_c_rollup_config.tx_buffer = convert_to_c(cpp_config.tx_buffer);
-    new_c_rollup_config.input_metadata = convert_to_c(cpp_config.input_metadata);
-    new_c_rollup_config.voucher_hashes = convert_to_c(cpp_config.voucher_hashes);
-    new_c_rollup_config.notice_hashes = convert_to_c(cpp_config.notice_hashes);
+    new_c_rollup_config.has_value = cpp_config.has_value();
+    if (!cpp_config.has_value()) {
+        return new_c_rollup_config;
+    }
+    new_c_rollup_config.rx_buffer = convert_to_c(cpp_config->rx_buffer);
+    new_c_rollup_config.tx_buffer = convert_to_c(cpp_config->tx_buffer);
+    new_c_rollup_config.input_metadata = convert_to_c(cpp_config->input_metadata);
+    new_c_rollup_config.voucher_hashes = convert_to_c(cpp_config->voucher_hashes);
+    new_c_rollup_config.notice_hashes = convert_to_c(cpp_config->notice_hashes);
     return new_c_rollup_config;
 }
 

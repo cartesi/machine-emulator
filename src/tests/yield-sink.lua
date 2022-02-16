@@ -28,6 +28,7 @@ local REASON_RX_REJECTED = cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED
 local REASON_TX_VOUCHER   = cartesi.machine.HTIF_YIELD_REASON_TX_VOUCHER
 local REASON_TX_NOTICE  = cartesi.machine.HTIF_YIELD_REASON_TX_NOTICE
 local REASON_TX_REPORT   = cartesi.machine.HTIF_YIELD_REASON_TX_REPORT
+local REASON_TX_EXCEPTION   = cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION
 
 local yields = {
     { mcycle =  13, data = 10, cmd = YIELD_MANUAL, reason = REASON_PROGRESS},
@@ -38,22 +39,23 @@ local yields = {
     { mcycle =  81, data = 15, cmd = YIELD_MANUAL, reason = REASON_TX_VOUCHER},
     { mcycle =  95, data = 16, cmd = YIELD_MANUAL, reason = REASON_TX_NOTICE},
     { mcycle = 109, data = 17, cmd = YIELD_MANUAL, reason = REASON_TX_REPORT},
+    { mcycle = 123, data = 18, cmd = YIELD_MANUAL, reason = REASON_TX_EXCEPTION},
 
-    { mcycle = 122, data = 20, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS},
-    { mcycle = 135, data = 21, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS},
-    { mcycle = 148, data = 22, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS},
-    { mcycle = 162, data = 23, cmd = YIELD_AUTOMATIC, reason = REASON_RX_ACCEPTED},
-    { mcycle = 176, data = 24, cmd = YIELD_AUTOMATIC, reason = REASON_RX_REJECTED},
-    { mcycle = 190, data = 25, cmd = YIELD_AUTOMATIC, reason = REASON_TX_VOUCHER},
-    { mcycle = 204, data = 26, cmd = YIELD_AUTOMATIC, reason = REASON_TX_NOTICE},
-    { mcycle = 218, data = 27, cmd = YIELD_AUTOMATIC, reason = REASON_TX_REPORT},
+    { mcycle = 136, data = 20, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS},
+    { mcycle = 149, data = 21, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS},
+    { mcycle = 162, data = 22, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS},
+    { mcycle = 176, data = 23, cmd = YIELD_AUTOMATIC, reason = REASON_RX_ACCEPTED},
+    { mcycle = 190, data = 24, cmd = YIELD_AUTOMATIC, reason = REASON_RX_REJECTED},
+    { mcycle = 204, data = 25, cmd = YIELD_AUTOMATIC, reason = REASON_TX_VOUCHER},
+    { mcycle = 218, data = 26, cmd = YIELD_AUTOMATIC, reason = REASON_TX_NOTICE},
+    { mcycle = 232, data = 27, cmd = YIELD_AUTOMATIC, reason = REASON_TX_REPORT},
 }
 
 local function stderr(...)
     io.stderr:write(string.format(...))
 end
 
-local final_mcycle = 404
+local final_mcycle = 418
 local exit_payload = 42
 
 function test(config, automatic_yield_enable, manual_yield_enable, reset_manual_yields_enable)
@@ -91,12 +93,14 @@ function test(config, automatic_yield_enable, manual_yield_enable, reset_manual_
 
             -- mcycle should be as expected
             local mcycle = machine:read_mcycle()
-            assert(mcycle == v.mcycle)
+            assert(mcycle == v.mcycle,
+                string.format("mcycle: expected %d, got %d", v.mcycle, mcycle))
             -- data should be as expected
             local data = machine:read_htif_tohost_data()
             local reason = data >> 32
             data = data << 32 >> 32
-            assert(data == v.data)
+            assert(data == v.data,
+                string.format("data: expected %d, got %d", v.data, data))
             assert(reason == v.reason)
             -- cmd should be as expected
             assert(machine:read_htif_tohost_cmd() == v.cmd)

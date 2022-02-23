@@ -1388,15 +1388,15 @@ else
             local cmd, reason = get_and_print_yield(machine, config.htif)
             -- there are advance state inputs to feed
             if rollup_advance and rollup_advance.next_input_index < rollup_advance.input_index_end then
+                -- save only if we have already run an input
+                if rollup_advance.next_input_index > rollup_advance.input_index_begin then
+                    save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
+                end
                 if reason == cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED then
                     machine:rollback()
                     cycles = machine:read_mcycle()
                 else
                     assert(reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED, "invalid manual yield reason")
-                end
-                -- save only if we have already run an input
-                if rollup_advance.next_input_index > rollup_advance.input_index_begin then
-                    save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
                 end
                 stderr("\nEpoch %d before input %d\n", rollup_advance.epoch_index, rollup_advance.next_input_index)
                 if rollup_advance.hashes then

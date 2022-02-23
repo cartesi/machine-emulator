@@ -5,8 +5,13 @@ RUN apt-get update && \
         build-essential wget git \
         libreadline-dev libboost-coroutine-dev libboost-context-dev \
         libboost-filesystem-dev libssl-dev libc-ares-dev zlib1g-dev \
-        ca-certificates automake libtool patchelf cmake pkg-config liblua5.3-dev lua-socket && \
+        ca-certificates automake libtool patchelf cmake pkg-config lua5.3 liblua5.3-dev luarocks && \
     rm -rf /var/lib/apt/lists/*
+
+RUN luarocks install luasocket && \
+    luarocks install luasec && \
+    luarocks install lpeg && \
+    luarocks install dkjson
 
 WORKDIR /usr/src/emulator
 COPY . .
@@ -30,12 +35,14 @@ RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
     ca-certificates \
     libgomp1 \
     lua5.3 \
-    lua-socket \
     genext2fs \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/opt/cartesi/bin:${PATH}"
 WORKDIR /opt/cartesi
 COPY --from=builder /opt/cartesi .
+
+COPY --from=builder /usr/local/lib/lua /usr/local/lib/lua
+COPY --from=builder /usr/local/share/lua /usr/local/share/lua
 
 CMD [ "/opt/cartesi/bin/remote-cartesi-machine" ]

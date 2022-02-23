@@ -16,10 +16,15 @@ RUN apk add --no-cache \
     zlib-dev \
     readline-dev \
     lua5.3-dev \
+    luarocks \
     patchelf \
     unzip \
-    wget \
-    lua-socket
+    wget
+
+RUN luarocks-5.3 install luasocket && \
+    luarocks-5.3 install luasec && \
+    luarocks-5.3 install lpeg && \
+    luarocks-5.3 install dkjson
 
 # alpine shasum is called sha1sum
 RUN echo -e "#!/bin/sh\nsha1sum \"\$@\"" > /usr/bin/shasum && chmod +x /usr/bin/shasum
@@ -39,10 +44,13 @@ RUN \
 
 FROM alpine:3.12
 
-RUN apk add --no-cache boost libstdc++ libgomp openssl c-ares zlib readline lua5.3 lua-socket
+RUN apk add --no-cache boost libstdc++ libgomp openssl c-ares zlib readline lua5.3
 
 ENV PATH="/opt/cartesi/bin:${PATH}"
 WORKDIR /opt/cartesi
 COPY --from=builder /opt/cartesi .
+
+COPY --from=builder /usr/local/lib/lua /usr/local/lib/lua
+COPY --from=builder /usr/local/share/lua /usr/local/share/lua
 
 CMD [ "/opt/cartesi/bin/remote-cartesi-machine" ]

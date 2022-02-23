@@ -22,24 +22,35 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 #### Ubuntu 20.04
 
 ```
-$ apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-filesystem-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates liblua5.3-dev lua-socket
+sudo apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-filesystem-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates liblua5.3-dev luarocks
+
+sudo luarock install lpeg
+sudo luarock install dkjson
+sudo luarock install luasocket
+sudo luarock install luasec
 ```
 #### MacOS
 
 ##### MacPorts
 ```
-sudo port install clang-12 automake boost libtool wget cmake pkgconfig c-ares zlib openssl lua lua-luasocket
+sudo port install clang-12 automake boost libtool wget cmake pkgconfig c-ares zlib openssl lua lua-luarocks
+
+sudo luarock install lpeg
+sudo luarock install dkjson
+sudo luarock install luasocket
+sudo luarock install luasec
 ```
 
 ##### Homebrew
 ```
 brew install llvm@12 automake boost libomp wget cmake pkg-config c-ares zlib openssl lua@5.3 luarocks
+luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install lpeg
+luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install dkjson
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install luasocket
+luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install luasec
 ```
 
-For emulator scripts to work it is expected that `lua5.3` binary is available in the system PATH. If operating system/package manager
-that you are using provides only `lua` or lua binary named in a different way (e.g. on `Homebrew`), please create symbolic 
-link or alias `lua5.3`.
+For emulator scripts to work it is expected that `lua5.3` binary is available in the system PATH. If operating system/package manager that you are using provides only `lua` or lua binary named in a different way (e.g. on `Homebrew`), please create symbolic link or alias `lua5.3`.
 
 ### Build
 
@@ -96,12 +107,6 @@ $ update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-ti
 
 ```bash
 $ make lint -j$(nproc)
-```
-
-## Usage
-
-```bash
-$ lua5.3 run.lua
 ```
 
 ## Code format
@@ -188,10 +193,6 @@ Thank you for your interest in Cartesi! Head over to our [Contributing Guideline
 Cartesi!
 
 Please note we have a [Code of Conduct](CODE_OF_CONDUCT.md), please follow it in all your interactions with the project.
-
-## Authors
-
-* *Diego Nehab*
 
 ## License
 

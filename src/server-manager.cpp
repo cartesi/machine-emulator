@@ -56,7 +56,7 @@
 #pragma GCC diagnostic pop
 
 static constexpr uint32_t manager_version_major = 0;
-static constexpr uint32_t manager_version_minor = 1;
+static constexpr uint32_t manager_version_minor = 2;
 static constexpr uint32_t manager_version_patch = 0;
 static constexpr const char *manager_version_pre_release = "";
 static constexpr const char *manager_version_build = "";
@@ -259,7 +259,7 @@ using evm_address_type = std::array<uint8_t, EVM_ADDRESS_LENGTH>;
 struct input_metadata_type {
     evm_address_type msg_sender;
     uint64_t block_number;
-    uint64_t time_stamp;
+    uint64_t timestamp;
     uint64_t epoch_index;
     uint64_t input_index;
 };
@@ -341,14 +341,11 @@ struct processed_input_type {
 struct query_type {
     query_type(const std::string &query_payload) {
         payload.insert(payload.end(), query_payload.begin(), query_payload.end());
-        status = completion_status::accepted;
-        current_input_index = 0;
-        coroutine = nullptr;
     }
     std::vector<uint8_t> payload;
-    completion_status status;
-    handler_type::pull_type *coroutine;
-    uint64_t current_input_index;
+    completion_status status{completion_status::accepted};
+    handler_type::pull_type *coroutine{nullptr};
+    uint64_t current_input_index{0};
     std::vector<report_type> reports;
 };
 
@@ -430,8 +427,8 @@ static evm_abi_input_metadata_type evm_abi_encoded_input_metadata(const input_me
         encoded.begin() + EVM_ABI_ADDRESS_LENGTH - EVM_ADDRESS_LENGTH);
     auto *block_number_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
     endian_store<uint64_t, sizeof(uint64_t), order::big>(block_number_ptr, parsed.block_number);
-    auto *time_stamp_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + 2 * EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
-    endian_store<uint64_t, sizeof(uint64_t), order::big>(time_stamp_ptr, parsed.time_stamp);
+    auto *timestamp_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + 2 * EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
+    endian_store<uint64_t, sizeof(uint64_t), order::big>(timestamp_ptr, parsed.timestamp);
     auto *epoch_index_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + 3 * EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
     endian_store<uint64_t, sizeof(uint64_t), order::big>(epoch_index_ptr, parsed.epoch_index);
     auto *input_index_ptr = encoded.data() + EVM_ABI_ADDRESS_LENGTH + 4 * EVM_ABI_UINT64_LENGTH - sizeof(uint64_t);
@@ -1113,7 +1110,7 @@ static auto get_proto_input_metadata(const InputMetadata &proto_p) {
     input_metadata_type i{};
     i.msg_sender = get_proto_evm_address(proto_p.msg_sender());
     i.block_number = proto_p.block_number();
-    i.time_stamp = proto_p.time_stamp();
+    i.timestamp = proto_p.timestamp();
     i.epoch_index = proto_p.epoch_index();
     i.input_index = proto_p.input_index();
     return i;
@@ -1170,8 +1167,10 @@ static void check_server_version(async_context &actx) {
 /// \brief Asynchronously starts a machine in the server
 /// \param actx Context for async operations
 /// \param request Machine request received from StartSession RPC
-static void check_server_machine(async_context &actx, const MachineRequest &request) {
-    dout{actx.request_context} << "  Instantiating machine";
+static void check_server_machine(async_context &actx, const std::string &directory) {
+    dout{actx.request_context} << "  Instantiating machine " << directory;
+    MachineRequest request;
+    request.set_directory(directory);
     Void response;
     grpc::ClientContext client_context;
     set_deadline(client_context, actx.session.server_deadline.machine);
@@ -1360,13 +1359,45 @@ static void check_htif_yield_manual(async_context &actx, const std::string &regn
     }
 }
 
+/// \brief Checks if HTIF's tohost matches an yield reason equal to accepted
+/// \param value Register value
+static void check_yield_reason_accepted(uint64_t value) {
+    auto data = htif_data_field(value) << 16 >> 48;
+    if (data != HTIF_YIELD_REASON_RX_ACCEPTED_DEF) {
+        THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
+            "invalid data field in htif.tohost (expected " + std::to_string(HTIF_YIELD_REASON_RX_ACCEPTED_DEF) +
+                ", got " + std::to_string(data) + ")"}));
+    }
+}
+
+/// \brief Asynchronously gets the value of MCYCLE CSR
+/// \param actx Context for async operations
+/// \return Register value
+static uint64_t get_current_mcycle(async_context &actx) {
+    dout{actx.request_context} << "  Reading machine current mcycle";
+    ReadCsrRequest request;
+    request.set_csr(Csr::MCYCLE);
+    grpc::ClientContext client_context;
+    set_deadline(client_context, actx.session.server_deadline.fast);
+    auto reader = actx.session.server_stub->AsyncReadCsr(&client_context, request, actx.completion_queue);
+    grpc::Status status;
+    ReadCsrResponse response;
+    reader->Finish(&response, &status, actx.self);
+    actx.yield(side_effect::none);
+    if (!status.ok()) {
+        THROW((finish_error_yield_none{std::move(status)}));
+    }
+    return response.value();
+}
+
 /// \brief Asynchronously runs the machine until it is in an yielded state
 /// \param actx Context for async operations
-static uint64_t run_until_first_yield(async_context &actx) {
+static uint64_t check_is_yielded(async_context &actx) {
     // if already yielded manual, this won't change anything
-    dout{actx.request_context} << "  Running until first yield";
+    auto current_mcycle = get_current_mcycle(actx);
+    dout{actx.request_context} << "  Checking machine is yielded";
     RunRequest run_request;
-    run_request.set_limit(UINT64_MAX);
+    run_request.set_limit(current_mcycle); // This will not change the machine
     grpc::ClientContext client_context;
     auto reader = actx.session.server_stub->AsyncRun(&client_context, run_request, actx.completion_queue);
     grpc::Status run_status;
@@ -1379,7 +1410,11 @@ static uint64_t run_until_first_yield(async_context &actx) {
     if (!run_response.iflags_y()) {
         THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "expected manual yield"}));
     }
+    if (current_mcycle != run_response.mcycle()) {
+        THROW((finish_error_yield_none{grpc::StatusCode::INTERNAL, "mcycle shouldn't have changed"}));
+    }
     check_htif_yield_manual(actx, "htif.tohost", run_response.tohost());
+    check_yield_reason_accepted(run_response.tohost());
     return run_response.mcycle();
 }
 
@@ -1458,9 +1493,9 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
             // Lock session so other rpcs to the same session are rejected
             auto_lock lock(session.session_lock, "StartSession session lock");
             // If no machine config or directory is set on machine request, bail out
-            if (start_session_request.machine().machine_oneof_case() == MachineRequest::MACHINE_ONEOF_NOT_SET) {
+            if (start_session_request.machine_directory().empty()) {
                 THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
-                    "missing initial machine config"}));
+                    "missing machine directory"}));
             }
             // If active_epoch_index is too large, bail
             if (session.active_epoch_index == UINT64_MAX) {
@@ -1531,20 +1566,20 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
             restarted = new_StartSession_handler(hctx);
             try {
                 check_server_version(actx);
-                check_server_machine(actx, start_session_request.machine());
+                check_server_machine(actx, start_session_request.machine_directory());
                 auto config = get_initial_config(actx);
                 check_htif_config(config.htif());
                 check_rollup_config(request_context, session, config);
                 // Machine may have started at mcycle != 0, so we save it for
                 // when we need to run an input for at most max_cycles_per_input
-                session.current_mcycle = run_until_first_yield(actx);
+                session.current_mcycle = check_is_yielded(actx);
                 start_first_epoch(actx, session);
                 // StartSession Passed!
                 StartSessionResponse start_session_response;
                 start_session_response.set_allocated_config(&config);
                 start_session_writer.Finish(start_session_response, grpc::Status::OK, self);
                 yield(side_effect::none);
-                start_session_response.release_config();
+                (void) start_session_response.release_config();
             } catch (...) {
                 // If there is any error here, we try to shutdown the machine server
                 grpc::ClientContext client_context;
@@ -1599,7 +1634,7 @@ static void clear_memory_ranges(async_context &actx) {
         grpc::Status replace_status;
         reader->Finish(&replace_response, &replace_status, actx.self);
         actx.yield(side_effect::none);
-        replace_request.release_config();
+        (void) replace_request.release_config();
         if (!replace_status.ok()) {
             THROW((taint_session{actx.session, std::move(replace_status)}));
         }
@@ -1619,7 +1654,7 @@ static void clear_rx_buffer(async_context &actx) {
     grpc::Status replace_status;
     reader->Finish(&replace_response, &replace_status, actx.self);
     actx.yield(side_effect::none);
-    replace_request.release_config();
+    (void) replace_request.release_config();
     if (!replace_status.ok()) {
         THROW((taint_session{actx.session, std::move(replace_status)}));
     }
@@ -1898,7 +1933,7 @@ static std::string read_voucher_payload_data(async_context &actx, uint64_t paylo
 /// \brief Asynchronously reads a notice or report data length from the tx buffer
 /// \param actx Context for async operations
 /// \return Payload data length for notice or report
-static uint64_t read_notice_report_payload_data_length(async_context &actx) {
+static uint64_t read_tx_payload_data_length(async_context &actx) {
     ReadMemoryRequest read_request;
     const MemoryRangeConfig &range = actx.session.memory_range.tx_buffer.config;
     read_request.set_address(range.start());
@@ -1925,7 +1960,7 @@ static uint64_t read_notice_report_payload_data_length(async_context &actx) {
 /// \param actx Context for async operations
 /// \param payload_data_length Length of payload data in entry
 /// \return Contents of notice payload data
-static std::string read_notice_report_payload_data(async_context &actx, uint64_t payload_data_length) {
+static std::string read_tx_payload_data(async_context &actx, uint64_t payload_data_length) {
     auto payload_data_offset = EVM_ABI_STRING_HEADER_LENGTH;
     const MemoryRangeConfig &range = actx.session.memory_range.tx_buffer.config;
     if (payload_data_length > actx.session.memory_range.tx_buffer.length - payload_data_offset) {
@@ -1991,9 +2026,9 @@ static voucher_type read_voucher(async_context &actx) {
 /// \return Notice
 static notice_type read_notice(async_context &actx) {
     dout{actx.request_context} << "      Reading notice length";
-    auto payload_data_length = read_notice_report_payload_data_length(actx);
+    auto payload_data_length = read_tx_payload_data_length(actx);
     dout{actx.request_context} << "      Reading notice payload of length " << payload_data_length;
-    auto payload_data = read_notice_report_payload_data(actx, payload_data_length);
+    auto payload_data = read_tx_payload_data(actx, payload_data_length);
     return {std::move(payload_data), {}};
 }
 
@@ -2002,10 +2037,20 @@ static notice_type read_notice(async_context &actx) {
 /// \return Report
 static report_type read_report(async_context &actx) {
     dout{actx.request_context} << "      Reading report length";
-    auto payload_data_length = read_notice_report_payload_data_length(actx);
+    auto payload_data_length = read_tx_payload_data_length(actx);
     dout{actx.request_context} << "      Reading report payload of length " << payload_data_length;
-    auto payload_data = read_notice_report_payload_data(actx, payload_data_length);
+    auto payload_data = read_tx_payload_data(actx, payload_data_length);
     return {std::move(payload_data)};
+}
+
+/// \brief Asynchronously reads an exception from the tx buffer
+/// \param actx Context for async operations
+/// \return Exception
+static std::string read_exception(async_context &actx) {
+    dout{actx.request_context} << "      Reading exception length";
+    auto payload_data_length = read_tx_payload_data_length(actx);
+    dout{actx.request_context} << "      Reading exception payload of length " << payload_data_length;
+    return read_tx_payload_data(actx, payload_data_length);
 }
 
 /// \brief Asynchronously creates a new machine server snapshot. Used before processing an input.
@@ -2196,6 +2241,9 @@ static void process_pending_query(handler_context &hctx, async_context &actx, ep
                 q.status = completion_status::accepted;
                 dout{actx.request_context} << "    Query accepted";
                 break;
+            } else if (yield_reason == cartesi::HTIF_YIELD_REASON_TX_EXCEPTION) {
+                dout{actx.request_context} << "    Received an exception while executing query";
+                THROW((finish_error_yield_none{grpc::StatusCode::INTERNAL, read_exception(actx)}));
             }
             THROW((taint_session{actx.session, grpc::StatusCode::OUT_OF_RANGE, "unknown machine yield reason"}));
         }
@@ -2293,6 +2341,9 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
                     dout{actx.request_context} << "    Input accepted";
                     current_mcycle = run_response.value().mcycle();
                     break;
+                } else if (yield_reason == cartesi::HTIF_YIELD_REASON_TX_EXCEPTION) {
+                    dout{actx.request_context} << "    Received an exception while processing input";
+                    THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, read_exception(actx)}));
                 }
                 THROW((taint_session{actx.session, grpc::StatusCode::OUT_OF_RANGE, "unknown machine yield reason"}));
             }
@@ -2920,14 +2971,14 @@ static bool finished(handler_type::pull_type *c) {
 /// \brief Prints help
 /// \param name Program name vrom argv[0]
 static void help(const char *name) {
-    fprintf(stderr,
+    (void) fprintf(stderr,
         R"(Usage:
 
     %s --manager-address=<address> --server-address=<address> [--help]
 
 where
 
-    --manager-address=<address>
+      --manager-address=<address>
       gives the address manager will bind to, where <address> can be
         <ipv4-hostname/address>:<port>
         <ipv6-hostname/address>:<port>

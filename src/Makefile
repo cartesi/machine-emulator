@@ -349,7 +349,7 @@ compile_flags.txt:
 
 luacartesi: cartesi.so
 
-grpc: cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager
+grpc: cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy server-manager
 
 hash: merkle-tree-hash tests/test-merkle-tree-hash
 

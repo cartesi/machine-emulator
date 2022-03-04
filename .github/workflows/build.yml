@@ -1,8 +1,8 @@
 name: Build/Test/Verify/Release
 on: [push]
 env:
-  ROM_VERSION: v0.8.0
-  KERNEL_VERSION: v0.9.0
+  ROM_VERSION: v0.10.0
+  KERNEL_VERSION: v0.11.0
   ROOTFS_VERSION: v0.8.0
   TEST_VERSION: v0.13.0
   GROUND_TRUTH_VERSION: v0.13.0-0001
@@ -129,7 +129,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/image-kernel
           tag: ${{ env.KERNEL_VERSION }}
-          file: linux-5.5.19-ctsi-3.bin
+          file: linux-5.5.19-ctsi-5.bin
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Download [rom.bin]
@@ -142,8 +142,8 @@ jobs:
 
       - name: Move images to cartesi images folder
         run: |
-          mv rom.bin linux-5.5.19-ctsi-3.bin rootfs.ext2 /opt/cartesi/share/images/
-          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-3.bin linux.bin
+          mv rom.bin linux-5.5.19-ctsi-5.bin rootfs.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-5.bin linux.bin
 
       - name: Simple Boot
         run: /opt/cartesi/bin/cartesi-machine /bin/true
@@ -250,7 +250,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/image-kernel
           tag: ${{ env.KERNEL_VERSION }}
-          file: linux-5.5.19-ctsi-3.bin
+          file: linux-5.5.19-ctsi-5.bin
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Download [rom.bin]
@@ -266,8 +266,8 @@ jobs:
 
       - name: Move images to cartesi images folder
         run: |
-          mv rom.bin linux-5.5.19-ctsi-3.bin rootfs.ext2 /opt/cartesi/share/images/
-          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-3.bin linux.bin
+          mv rom.bin linux-5.5.19-ctsi-5.bin rootfs.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-5.bin linux.bin
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0
@@ -510,7 +510,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/image-kernel
           tag: ${{ env.KERNEL_VERSION }}
-          file: linux-5.5.19-ctsi-3.bin
+          file: linux-5.5.19-ctsi-5.bin
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Download [rom.bin]
@@ -524,8 +524,8 @@ jobs:
       - name: Move images to cartesi images folder
         run: |
           mkdir -m 755 -p /opt/cartesi/share/images
-          mv rom.bin linux-5.5.19-ctsi-3.bin rootfs.ext2 /opt/cartesi/share/images/
-          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-3.bin linux.bin
+          mv rom.bin linux-5.5.19-ctsi-5.bin rootfs.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-5.bin linux.bin
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0
@@ -640,7 +640,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/image-kernel
           tag: ${{ env.KERNEL_VERSION }}
-          file: linux-5.5.19-ctsi-3.bin
+          file: linux-5.5.19-ctsi-5.bin
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Download [rom.bin]
@@ -654,8 +654,8 @@ jobs:
       - name: Move images to cartesi images folder
         run: |
           mkdir -m 755 -p /opt/cartesi/share/images
-          mv rom.bin linux-5.5.19-ctsi-3.bin rootfs.ext2 /opt/cartesi/share/images/
-          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-3.bin linux.bin
+          mv rom.bin linux-5.5.19-ctsi-5.bin rootfs.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-5.bin linux.bin
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0

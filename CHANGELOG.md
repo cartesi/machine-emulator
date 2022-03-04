@@ -4,11 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unrelased]
+## [Unreleased]
 
 ### Added
 
-- Added rollup-exception handling on cartesi-machine.lua and tests
+- Added rollup-exception handling to cartesi-machine.lua and tests
+- Added rollup-exception handling to server-manager
 
 ### Fixed
 
@@ -24,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed to LuaRocks for Lua dependencies
 - Changed grpc lib version to v1.45
 - Changed dhd and rollup fields in config to optional
+- Changed server-manager not to advance until first yield
+- Changed server-manager so NewSession accepts only stored machine directories (rather than machine configs)
 
 ## [0.8.0] - 2021-12-28
 

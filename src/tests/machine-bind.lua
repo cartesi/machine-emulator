@@ -203,7 +203,7 @@ do_test("machine should have default config shadow register values",
 )
 
 print("\n\ntesting merkle tree get_proof for values for registers")
-do_test("should provide proof for values in registers", 
+do_test("should provide proof for values in registers",
     function(machine)
         -- Update merkle tree
         machine:update_merkle_tree()
@@ -236,7 +236,7 @@ do_test("should provide proof for values in registers",
 )
 
 print("\n\ntesting get_csr_address function binding")
-do_test("should return address value for csr register", 
+do_test("should return address value for csr register",
     function(machine)
         -- Check CSR address
         for _, v in pairs(test_data.get_cpu_csr_names()) do
@@ -247,7 +247,7 @@ do_test("should return address value for csr register",
 )
 
 print("\n\n test verifying integrity of the merkle tree")
-do_test("verify_merkle_tree should return true", 
+do_test("verify_merkle_tree should return true",
     function(machine)
         -- Update merkle tree
         machine:update_merkle_tree()
@@ -265,7 +265,7 @@ do_test("should return expected value",
         local root_hash = machine:get_root_hash()
         print("Root hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "38CCB889CD4148A4A154755DE8EDBD7C0B2219F880A7B5687AD957F96BD51DDB",
+                "532815288A7FF4078515AA70920BF6E08E6A3D8A00BA2D7296EFA38F44C7F6DC",
             "initial root hash does not match")
     end
 )
@@ -333,7 +333,7 @@ do_test("should return expected values",
 )
 
 print("\n\n dump pmas to files")
-do_test("there should exist dumped files of expected size", 
+do_test("there should exist dumped files of expected size",
     function(machine)
         -- Dump pmas to files
         machine:dump_pmas()
@@ -357,7 +357,7 @@ do_test("there should exist dumped files of expected size",
 
 
 print("\n\n read and write x registers")
-do_test("writen and expected register values should match", 
+do_test("writen and expected register values should match",
     function(machine)
         local initial_xreg_values = test_data.get_cpu_xreg_test_values()
         -- Write/Read X registers
@@ -374,7 +374,7 @@ do_test("writen and expected register values should match",
 )
 
 print("\n\n read and write csr registers")
-do_test("writen and expected register values should match", 
+do_test("writen and expected register values should match",
     function(machine)
         -- Check csr register write
         local sscratch_initial_value = machine:read_csr('sscratch')
@@ -391,7 +391,7 @@ do_test("writen and expected register values should match",
 )
 
 print("\n\n perform step and check mcycle register")
-do_test("mcycle value should match", 
+do_test("mcycle value should match",
     function(machine)
         local log_type = {}
         local mcycle_initial_value = machine:read_csr('mcycle')
@@ -406,7 +406,7 @@ do_test("mcycle value should match",
 )
 
 print("\n\n run machine to 1000 mcycle")
-do_test("mcycle value should be 1000 after execution", 
+do_test("mcycle value should be 1000 after execution",
     function(machine)
         -- Run machine
         machine:write_csr('mcycle', 0)
@@ -422,7 +422,7 @@ do_test("mcycle value should be 1000 after execution",
 )
 
 print("\n\n check reading and writing htif registers")
-do_test("htif register values should match", 
+do_test("htif register values should match",
     function(machine)
         -- Check HTIF interface bindings
         assert(machine:read_htif_tohost(), "error reading htif tohost")
@@ -442,7 +442,7 @@ do_test("htif register values should match",
 )
 
 print("\n\n check memory reading/writing")
-do_test("written and read values should match", 
+do_test("written and read values should match",
     function(machine)
         -- Check mem write and mem read
         local memory_read = machine:read_memory(0x80000000, 0x8)
@@ -454,7 +454,7 @@ do_test("written and read values should match",
 )
 
 print("\n\n dump register values to console")
-do_test("dumped register values should match", 
+do_test("dumped register values should match",
     function(machine)
         -- Dump regs and check values
         local lua_code = [[ "local cartesi = require 'cartesi'
@@ -487,7 +487,7 @@ do_test("dumped register values should match",
 )
 
 print("\n\n dump log  to console")
-do_test("dumped log content should match", 
+do_test("dumped log content should match",
     function(machine)
         -- Dump log and check values
         local lua_code = [[ "

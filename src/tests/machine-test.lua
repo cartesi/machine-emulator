@@ -110,7 +110,7 @@ assert(machine_type == "local" or machine_type == "grpc", "unknown machine type,
 if (machine_type == "grpc") then
     assert(remote_address ~= nil, "remote cartesi machine address is missing")
     assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
-end 
+end
 if remote_address then
     assert(checkin_address, "missing checkin address")
     cartesi.grpc = require("cartesi.grpc")
@@ -169,9 +169,9 @@ local function build_machine(type)
     if (type == "grpc") then
         if not remote then remote = connect() end
         new_machine = assert(remote.machine(config, runtime))
-    else 
+    else
         new_machine = assert(cartesi.machine(config, runtime))
-    end 
+    end
     return new_machine
 end
 
@@ -204,9 +204,9 @@ local function build_machine_with_flash(type)
     if (type == "grpc") then
         if not remote then remote = connect() end
         new_machine = assert(remote.machine(config, runtime))
-    else 
+    else
         new_machine = assert(cartesi.machine(config, runtime))
-    end 
+    end
     return new_machine
 end
 
@@ -228,7 +228,7 @@ local function calculate_emulator_hash(pmas_files)
     local cli = parse_pma_file(test_path .. pmas_files[3])
     local hti = parse_pma_file(test_path .. pmas_files[4])
     local ram = parse_pma_file(test_path .. pmas_files[5])
-    
+
     local cpu_and_rom_data = procesor_board_shadow.data .. rom.data
     local cpu_and_rom_data_pages = (procesor_board_shadow.data_size +
                                        rom.data_size) / (2 ^ 12)
@@ -272,7 +272,7 @@ end
 print("Testing machine for type " .. machine_type)
 
 print("\n\ntesting getting machine intial config and iflags")
-do_test("machine halt and yield flags and config matches", 
+do_test("machine halt and yield flags and config matches",
     function(machine)
         -- Get machine default config  and test for known fields
         local initial_config = machine:get_initial_config()
@@ -293,7 +293,7 @@ do_test("machine halt and yield flags and config matches",
 )
 
 print("\n\ntesting memory dump to files")
-do_test("dumped file merkle tree hashes should match", 
+do_test("dumped file merkle tree hashes should match",
     function(machine)
         -- Dump memory regions to files
         -- Calculate merkle tree hash for all existing memory regions
@@ -322,7 +322,7 @@ do_test("dumped file merkle tree hashes should match",
         assert(test_util.tohex(root_file_hashes[pmas_file_names[1]]) ==
                 "CFDEE89C9CED407548FC484A8F824B7F4ACB16448DD2FBB1F41DCAFFA624EE90")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[2]]) ==
-                "1BC2C9EFC6C10B8C494E4BE9AB52536B55006E9443B538654FD56BAAD8BCF514")
+                "FF693CFA810B1B72C7708939A48CEDB2EAEDB7EEDCF168CA959891AE135C2DC0")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[3]]) ==
                 "995C871A78EFEC6CA5AFD44B9994B1C88BBBFCDFEA68FD5566C13D4F45BBDE6B")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[4]]) ==
@@ -335,7 +335,7 @@ do_test("dumped file merkle tree hashes should match",
 )
 
 print("\n\ntesting if machine initial hash is correct")
-do_test("machine initial hash shold match", 
+do_test("machine initial hash shold match",
     function(machine)
         -- Update merkle tree
         machine:update_merkle_tree()
@@ -359,7 +359,7 @@ do_test("machine initial hash shold match",
 )
 
 print("\n\ntesting root hash after step one")
-do_test("machine root hash after step one should match", 
+do_test("machine root hash after step one should match",
     function(machine)
 
         -- Update merkle tree
@@ -367,8 +367,9 @@ do_test("machine root hash after step one should match",
 
         -- Get starting root hash
         local root_hash = machine:get_root_hash()
+        print("Root hash:", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "AB39773E4B512710ECC44A3F63131C0BB4CFD7B4E43E704C054D07A769CD7A4F",
+                "757CABCFDA1F9AEEF9152D8B226BB6E6C6F0CDF43876ADB20C499D2FE137DCAA",
             "hash after initial step does not match")
 
         -- Perform step, dump address space to file, calculate emulator root hash
@@ -392,7 +393,7 @@ do_test("machine root hash after step one should match",
 )
 
 print("\n\ntesting proof after step one")
-do_test("proof check should pass", 
+do_test("proof check should pass",
     function(machine)
 
         machine:update_merkle_tree()
@@ -402,7 +403,7 @@ do_test("proof check should pass",
         machine:update_merkle_tree()
 
         -- Dump RAM memory to file, calculate hash of file
-        -- get proof of ram using get_proof and check if 
+        -- get proof of ram using get_proof and check if
         -- hashes match
         machine:dump_pmas()
         local ram_file_name = pmas_file_names[5]
@@ -432,7 +433,7 @@ do_test("proof check should pass",
 )
 
 print("\n\nrun machine to 1000 mcycle and check for mcycle and root hash")
-do_test("mcycle and root hash should match", 
+do_test("mcycle and root hash should match",
     function(machine)
         -- Run to 1000 cycle tics
         local current_mcycle = machine:read_mcycle()
@@ -447,13 +448,13 @@ do_test("mcycle and root hash should match",
         local root_hash = machine:get_root_hash()
         print("1000 cycle hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "4CFF8C3233837E031870612EB11CA10E17947BA669AEAA9AF29C068CA144F268",
+                "917BD2E492465BCE040F63CBB4D8225F036F72475503ABD18FB84AFB2E0A89CD",
             "machine hash does not match after 1000 cycles")
     end
 )
 
 print("\n\nrun machine to end mcycle and check for mcycle, hash and halt flag")
-do_test("mcycle and root hash should match", 
+do_test("mcycle and root hash should match",
     function(machine)
         machine:run(MAX_MCYCLE)
         -- Check machine is halted
@@ -466,13 +467,13 @@ do_test("mcycle and root hash should match",
         local root_hash = machine:get_root_hash()
         print("End hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "2B6873D1486E6F53C34AD9F11A8D25C1CD259639976F62E238143A03D9B63242",
+                "691664646EBAEC4F405C710F5292A21A6C3E21D12A766ED0D5612A07589AC4DA",
             "machine hash does not match after on end cycle")
     end
 )
 
 print("\n\nwrite something to ram memory and check if hash and proof matches")
-do_test("proof  and root hash should match", 
+do_test("proof  and root hash should match",
     function(machine)
         machine:update_merkle_tree()
         local root_hash = machine:get_root_hash()
@@ -523,7 +524,7 @@ do_test("proof  and root hash should match",
 )
 
 print("\n\n check dirty page maps")
-do_test("dirty page maps should be consistent", 
+do_test("dirty page maps should be consistent",
     function(machine)
         -- Verify dirty page maps
         assert(machine:verify_dirty_page_maps(), "error verifying dirty page maps")
@@ -560,12 +561,12 @@ do_test_with_flash("should replace flash drive and read something",
 )
 
 print("\n\n check for relevant register values after step 1")
-do_test("register values should match", 
+do_test("register values should match",
     function(machine)
         local pc_before = machine:read_pc()
         local minstret_before = machine:read_minstret()
         local mcycle_before = machine:read_mcycle()
-        
+
         local log_type = {}
         machine:step(log_type)
 

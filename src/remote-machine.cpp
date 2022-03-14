@@ -1319,7 +1319,12 @@ int main(int argc, char *argv[]) {
             help(argv[0]);
             exit(0);
         } else {
-            server_address = argv[i];
+            if (!server_address) {
+                server_address = argv[i];
+            } else {
+                std::cerr << "repeated [<server-address>] option";
+                exit(1);
+            }
         }
     }
 

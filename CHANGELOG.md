@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed make env to append to Lua paths rather than replace them
+- Fixed checkin behavior in remote-cartesi-machine-proxy
 
 ### Changed
 

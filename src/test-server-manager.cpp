@@ -2132,7 +2132,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
     test("Should complete with first processed input as CompletionStatus REJECTED_BY_MACHINE",
         [](ServerManagerClient &manager) {
             StartSessionRequest session_request =
-                create_valid_start_session_request("-- /opt/cartesi/bin/ioctl-echo-loop --reject=1 --verbose=1");
+                create_valid_start_session_request("-- /opt/cartesi/bin/ioctl-echo-loop --reject=0 --verbose=1");
             StartSessionResponse session_response;
             Status status = manager.start_session(session_request, session_response);
             ASSERT_STATUS(status, "StartSession", true);
@@ -2729,7 +2729,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
 
     test("Should complete with CompletionStatus REJECTED_BY_MACHINE", [](ServerManagerClient &manager) {
         StartSessionRequest session_request = create_valid_start_session_request(
-            "-- /opt/cartesi/bin/ioctl-echo-loop --reports=0 --reject=1 --verbose=1");
+            "-- /opt/cartesi/bin/ioctl-echo-loop --reports=0 --reject-inspects --verbose=1");
         StartSessionResponse session_response;
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", true);

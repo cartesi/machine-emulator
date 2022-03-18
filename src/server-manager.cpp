@@ -37,6 +37,8 @@
 #include <boost/iostreams/device/null.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <boost/process.hpp>
+#define BOOST_DLL_USE_STD_FS
+#include <boost/dll/runtime_symbol_info.hpp>
 #pragma GCC diagnostic pop
 
 #pragma GCC diagnostic push
@@ -481,6 +483,7 @@ private:
 
 /// \brief Context shared by all handlers
 struct handler_context {
+    std::string remote_cartesi_machine_path;            ///< Path to remote-cartesi-machine executable
     std::string manager_address;                        ///< Address to which manager is bound
     std::string server_address;                         ///< Address to which machine servers are bound
     std::unordered_map<id_type, session_type> sessions; ///< Known sessions
@@ -1508,7 +1511,7 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
             async_context actx{session, request_context, cq, self, yield};
             trigger_and_wait_checkin(hctx, actx, [](handler_context &hctx, async_context &actx) {
                 // Spawn a new server and ask it to check-in
-                auto cmdline = "./remote-cartesi-machine --session-id=" + actx.session.id +
+                auto cmdline = hctx.remote_cartesi_machine_path + " --session-id=" + actx.session.id +
                     " --checkin-address=" + hctx.manager_address + " --server-address=" + hctx.server_address;
                 dout{actx.request_context} << "  Spawning " << cmdline;
                 try {
@@ -2968,6 +2971,11 @@ int main(int argc, char *argv[]) try {
     const char *manager_address = nullptr;
     const char *server_address = "localhost:0";
 
+    if (argc < 1) { // NOLINT: of course it could be < 1...
+        std::cerr << "missing argv[0]\n";
+        exit(1);
+    }
+
     for (int i = 1; i < argc; i++) {
         if (stringval("--manager-address=", argv[i], &manager_address)) {
             ;
@@ -2988,6 +2996,7 @@ int main(int argc, char *argv[]) try {
 
     handler_context hctx{};
 
+    hctx.remote_cartesi_machine_path = boost::dll::program_location().replace_filename("remote-cartesi-machine");
     hctx.manager_address = manager_address;
     hctx.server_address = server_address;
 

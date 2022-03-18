@@ -25,6 +25,8 @@ using namespace std::string_literals;
 #pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #include <boost/coroutine2/coroutine.hpp>
 #include <boost/process.hpp>
+#define BOOST_DLL_USE_STD_FS
+#include <boost/dll/runtime_symbol_info.hpp>
 #pragma GCC diagnostic pop
 
 static constexpr uint32_t proxy_version_major = 0;
@@ -859,12 +861,23 @@ where options are
         name);
 }
 
+static void cleanup_child_handler(int signal) {
+    (void) signal;
+    while (waitpid(static_cast<pid_t>(-1), nullptr, WNOHANG) > 0) {
+    }
+}
+
 int main(int argc, char *argv[]) try {
 
     const char *proxy_address = nullptr;
     const char *server_address = "localhost:0";
     const char *checkin_address = nullptr;
     const char *session_id = nullptr;
+
+    if (argc < 1) { // NOLINT: of course it could be < 1...
+        std::cerr << "missing argv[0]\n";
+        exit(1);
+    }
 
     for (int i = 1; i < argc; i++) { // NOLINT: Unknown. Maybe linter bug?
         if (stringval("--proxy-address=", argv[i], &proxy_address)) {
@@ -909,18 +922,32 @@ int main(int argc, char *argv[]) try {
         exit(1);
     }
 
+    struct sigaction sa {};
+    sa.sa_handler = cleanup_child_handler; // NOLINT(cppcoreguidelines-pro-type-union-access)
+    sa.sa_flags = 0;
+    sigaction(SIGCHLD, &sa, nullptr);
+
     // spawn server
+    std::string remote_cartesi_machine_path = boost::dll::program_location().replace_filename("remote-cartesi-machine");
     boost::process::group server_group;
 
-    auto cmdline =
-        "./remote-cartesi-machine --server-address="s + server_address + " --checkin-address="s + hctx.proxy_address;
+    auto cmdline = remote_cartesi_machine_path + " --server-address=" + server_address +
+        " --checkin-address=" + hctx.proxy_address;
     if (session_id && checkin_address) {
         hctx.checkin = checkin_context{session_id, checkin_address};
         cmdline += " --session-id="s + session_id;
     } else {
         cmdline += " --session-id=proxy"s;
     }
-    boost::process::spawn(cmdline, server_group); // NOLINT: suppress warning caused by boost
+
+    try {
+        // NOLINTNEXTLINE: boost generated warnings
+        auto server_process = boost::process::child(cmdline, server_group); // NOLINT: suppress warning caused by boost
+        server_process.detach();
+    } catch (boost::process::process_error &e) {
+        std::cerr << "failed spawning remote-cartesi-machine with command-line '" + cmdline + "' (" + e.what() + ")\n";
+        goto shutdown; // NOLINT(cppcoreguidelines-avoid-goto)
+    }
 
     enable_server_handlers(hctx);
 

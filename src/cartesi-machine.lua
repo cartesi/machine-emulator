@@ -274,7 +274,8 @@ where options are:
     honor yield requests with automatic reset by target.
 
   --store=<directory>
-    store machine to <directory>.
+    store machine to <directory>, where "%%h" is substituted by the
+    state hash in the directory name.
 
   --load=<directory>
     load machine previously stored in <directory>.
@@ -1304,6 +1305,15 @@ local function save_rollup_inspect_state_report(machine, config, inspect)
     f:close()
 end
 
+local function store_machine(machine, config, store_dir)
+    assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
+    stderr("Storing machine: please wait\n")
+    machine:update_merkle_tree()
+    local h = util.hexhash(machine:get_root_hash())
+    local name = instantiate_filename(store_dir, { h = h })
+    machine:store(name)
+end
+
 if json_steps then
     assert(not rollup_advance, "json-steps and rollup advance state are incompatible")
     assert(not rollup_inspect, "json-steps and rollup inspect state are incompatible")
@@ -1325,8 +1335,7 @@ if json_steps then
     json_steps:write('\n]\n')
     json_steps:close()
     if store_dir then
-        stderr("Storing machine: please wait\n")
-        machine:store(store_dir)
+        store_machine(machine, config, store_dir)
     end
 else
     if config.htif.console_getchar then
@@ -1480,9 +1489,7 @@ else
     end
     dump_value_proofs(machine, final_proof, config.htif.console_getchar)
     if store_dir then
-        assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
-        stderr("Storing machine: please wait\n")
-        machine:store(store_dir)
+        store_machine(machine, config, store_dir)
     end
     machine:destroy()
     os.exit(payload, true)

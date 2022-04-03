@@ -41,6 +41,9 @@ CXX_Darwin=clang++
 INCS_Darwin=
 
 ifeq ($(UNAME),Darwin)
+ifeq ($(MACOSX_DEPLOYMENT_TARGET),)
+export MACOSX_DEPLOYMENT_TARGET := $(shell sw_vers -productVersion | sed -r  "s/([[:digit:]]+)\.([[:digit:]]+)\..+/\1.\2.0/")
+endif
 SOLDFLAGS_Darwin+=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
 # Homebrew installation
 ifneq (,$(wildcard /usr/local/opt/boost/lib))

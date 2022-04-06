@@ -349,7 +349,7 @@ compile_flags.txt:
 
 luacartesi: cartesi.so
 
-grpc: cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy server-manager
+grpc: cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager
 
 hash: merkle-tree-hash tests/test-merkle-tree-hash
 
@@ -405,7 +405,6 @@ SERVER_MANAGER_OBJS:= \
 TEST_SERVER_MANAGER_OBJS:= \
 	$(CARTESI_MACHINE_PROTO_OBJS) \
 	$(SERVER_MANAGER_PROTO_OBJS) \
-	machine-config.o \
 	protobuf-util.o \
 	pristine-merkle-tree.o \
 	complete-merkle-tree.o \
@@ -506,7 +505,7 @@ remote-cartesi-machine-proxy: $(REMOTE_CARTESI_MACHINE_PROXY_OBJS)
 server-manager: $(SERVER_MANAGER_OBJS)
 	$(CXX) -o $@ $^ $(SERVER_MANAGER_LIBS)
 
-tests/test-server-manager: $(TEST_SERVER_MANAGER_OBJS)
+tests/test-server-manager: $(TEST_SERVER_MANAGER_OBJS) $(CARTESI_OBJS)
 	$(CXX) -o $@ $^ $(TEST_SERVER_MANAGER_LIBS)
 
 remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)

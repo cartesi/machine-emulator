@@ -14,6 +14,7 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
+#include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -37,14 +38,14 @@
 
 #include "back-merkle-tree.h"
 #include "complete-merkle-tree.h"
-#include "cryptopp-keccak-256-hasher.h"
-#include "machine-config.h"
+#include "machine.h"
 
 using CartesiMachine::Void;
 using grpc::ClientContext;
 using grpc::Status;
 using grpc::StatusCode;
 
+// NOLINTNEXTLINE(misc-unused-using-decls)
 using std::chrono_literals::operator""s;
 
 using namespace std::filesystem;
@@ -55,7 +56,7 @@ constexpr static const int LOG2_ROOT_SIZE = 37;
 constexpr static const int LOG2_KECCAK_SIZE = 5;
 constexpr static const int LOG2_WORD_SIZE = 3;
 constexpr static const uint64_t MEMORY_REGION_LENGTH = 2 << 20;
-static const path MANAGER_ROOT_DIR = "/tmp/rollup-machine-manager-root"; // NOLINT: ignore static initialization warning
+static const path MANAGER_ROOT_DIR = "/tmp/server-manager-root"; // NOLINT: ignore static initialization warning
 
 class ServerManagerClient {
 
@@ -149,6 +150,7 @@ private:
     }
 };
 
+using config_function = void (*)(machine_config &);
 using test_function = void (*)(ServerManagerClient &);
 using test_setup = void (*)(const std::function<void(const std::string &, test_function)> &);
 
@@ -168,6 +170,7 @@ public:
     int run() {
         int total = 0;
         int total_failed = 0;
+        std::cerr << "\nRunning tests:\n\n";
         for (const auto &[test, cases] : m_suite) {
             int failed = 0;
             std::cerr << test << ": ";
@@ -236,9 +239,9 @@ static void get_hash(const unsigned char *data, size_t size,
 
 static void print_hash(const cryptopp_keccak_256_hasher::hash_type &hash, FILE *f) {
     for (auto b: hash) {
-        fprintf(f, "%02x", (int) b);
+        (void) fprintf(f, "%02x", static_cast<int>(b));
     }
-    fprintf(f, "\n");
+    (void) fprintf(f, "\n");
 }
 
 static void print_json_message(const google::protobuf::Message &msg, bool pretty = false) {
@@ -261,17 +264,53 @@ static uint64_t flash_start_address(uint8_t position) {
     return (1ULL << 63) + (position * (1ULL << 60));
 }
 
-// NOLINTNEXTLINE: ignore static initialization warning
-static const std::string ADVANCE_STATE_SCRIPT =
-    "-- /opt/cartesi/bin/ioctl-echo-loop --vouchers=2 --notices=2 --reports=2 --verbose=1";
+static path get_machine_directory(const std::string &storage_path, const std::string &machine) {
+    return MANAGER_ROOT_DIR / storage_path / machine;
+}
 
-// NOLINTNEXTLINE: ignore static initialization warning
-static const std::string INSPECT_STATE_SCRIPT = "-- /opt/cartesi/bin/ioctl-echo-loop --reports=2 --verbose=1";
+static bool delete_storage_directory(const std::string &storage_path) {
+    if (storage_path.empty()) {
+        return false;
+    }
+    return remove_all(MANAGER_ROOT_DIR / storage_path) > 0;
+}
 
-// NOLINTNEXTLINE: ignore static initialization warning
-static const std::string NO_OUTPUT_SCRIPT = "-- while true; do /opt/cartesi/bin/yield manual rx-accepted 0; done";
+static bool create_storage_directory(const std::string &storage_path, bool rebuild = true) {
+    if (storage_path.empty()) {
+        return false;
+    }
+    path root_path = MANAGER_ROOT_DIR / storage_path;
+    if (exists(root_path)) {
+        if (!rebuild) {
+            return true;
+        }
+        if (!delete_storage_directory(storage_path)) {
+            return false;
+        }
+    }
+    return create_directories(root_path) > 0;
+}
 
-static StartSessionRequest create_valid_start_session_request(const std::string &command = ADVANCE_STATE_SCRIPT) {
+static bool change_storage_directory_permissions(const std::string &storage_path, bool writable) {
+    if (storage_path.empty()) {
+        return false;
+    }
+    auto new_perms = writable ? (perms::owner_all) : (perms::owner_read | perms::owner_exec);
+    std::error_code ec;
+    permissions(MANAGER_ROOT_DIR / storage_path, new_perms, ec);
+    return ec.value() == 0;
+}
+
+static void create_machine(const std::string &name, const std::string &command,
+    const config_function custom_config = nullptr) {
+    std::cerr << "- Creating " << name << ": ";
+    // Check if machine already exists
+    path machine_directory = get_machine_directory("tests", name);
+    if (exists(machine_directory)) {
+        std::cerr << "Already exists." << std::endl;
+        return;
+    }
+
     const char *env_images_path = std::getenv("CARTESI_IMAGES_PATH");
     path images_path = (env_images_path == nullptr) ? current_path() : env_images_path;
 
@@ -313,10 +352,80 @@ static StartSessionRequest create_valid_start_session_request(const std::string 
     config.ram.image_filename = (images_path / "linux.bin").string();
     config.ram.length = 64 << 20;
 
+    if (custom_config != nullptr) {
+        custom_config(config);
+    }
+
+    // Create machine instance, run it until yield and store it
+    machine machine_instance(config);
+    machine_instance.run(UINT64_MAX);
+    machine_instance.store(machine_directory);
+}
+
+static void initialize_machines(bool rebuild, bool http_api) {
+    std::cerr << "Initializing machines:\n";
+    if (!create_storage_directory("tests", rebuild)) {
+        throw std::runtime_error("Could not create storage directory tests " __FILE__ ":" + std::to_string(__LINE__));
+    }
+    if (http_api) {
+        create_machine("advance-state-machine",
+            "-- rollup-init echo-dapp --vouchers=2 --notices=2 --reports=2 --verbose");
+        create_machine("inspect-state-machine", "-- rollup-init echo-dapp --reports=2 --verbose");
+        create_machine("one-notice-machine", "-- rollup-init echo-dapp --vouchers=0 --notices=1 --reports=0 --verbose");
+        create_machine("one-report-machine", "-- rollup-init echo-dapp --vouchers=0 --notices=0 --reports=1 --verbose");
+        create_machine("one-voucher-machine",
+            "-- rollup-init echo-dapp --vouchers=1 --notices=0 --reports=0 --verbose");
+        create_machine("advance-rejecting-machine", "-- rollup-init echo-dapp --reject=0 --verbose");
+        create_machine("inspect-rejecting-machine", "-- rollup-init echo-dapp --reports=0 --reject-inspects --verbose");
+    } else {
+        create_machine("advance-state-machine", "-- ioctl-echo-loop --vouchers=2 --notices=2 --reports=2 --verbose=1");
+        create_machine("inspect-state-machine", "-- ioctl-echo-loop --reports=2 --verbose=1");
+        create_machine("one-notice-machine", "-- ioctl-echo-loop --vouchers=0 --notices=1 --reports=0 --verbose=1");
+        create_machine("one-report-machine", "-- ioctl-echo-loop --vouchers=0 --notices=0 --reports=1 --verbose=1");
+        create_machine("one-voucher-machine", "-- ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --verbose=1");
+        create_machine("advance-rejecting-machine", "-- ioctl-echo-loop --reject=0 --verbose=1");
+        create_machine("inspect-rejecting-machine", "-- ioctl-echo-loop --reports=0 --reject-inspects --verbose=1");
+    }
+
+    create_machine("no-output-machine", "-- while true; do rollup accept; done");
+    create_machine("halting-machine", "-- rollup accept");
+
+    create_machine("init-exception-machine", R"(-- echo {\"payload\": \"test payload\"} | rollup exception)");
+    create_machine("exception-machine", R"(-- rollup accept; echo {\"payload\": \"test payload\"} | rollup exception)");
+    create_machine("fatal-error-machine",
+        R"(-- echo 'import requests; requests.post("http://127.0.0.1:5004/finish", json={"status": ""accept"}); exit(2);' > s.py; rollup-init python3 s.py)");
+    create_machine("voucher-on-inspect-machine",
+        R"(-- rollup accept; echo {\"address\": \"fafafafafafafafafafafafafafafafafafafafa\", \"payload\": \"test payload\"} | rollup voucher; rollup accept)");
+    create_machine("notice-on-inspect-machine",
+        R"(-- rollup accept; echo {\"payload\": \"test payload\"} | rollup notice; rollup accept)");
+
+    create_machine("no-manual-yield-machine", "-- yield automatic rx-accepted 0",
+        [](machine_config &config) { config.htif.yield_manual = false; });
+    create_machine("no-automatic-yield-machine", "-- rollup accept",
+        [](machine_config &config) { config.htif.yield_automatic = false; });
+    create_machine("console-getchar-machine", "-- rollup accept",
+        [](machine_config &config) { config.htif.console_getchar = true; });
+    create_machine("no-rollup-machine", "-- yield manual rx-accepted 0",
+        [](machine_config &config) { config.rollup.reset(); });
+
+    // shared buffers
+    create_machine("shared-rx-buffer-machine", "-- rollup accept",
+        [](machine_config &config) { config.rollup->rx_buffer.shared = true; });
+    create_machine("shared-tx-buffer-machine", "-- rollup accept",
+        [](machine_config &config) { config.rollup->tx_buffer.shared = true; });
+    create_machine("shared-input-metadata-machine", "-- rollup accept",
+        [](machine_config &config) { config.rollup->input_metadata.shared = true; });
+    create_machine("shared-voucher-hashes-machine", "-- rollup accept",
+        [](machine_config &config) { config.rollup->voucher_hashes.shared = true; });
+    create_machine("shared-notice-hashes-machine", "-- rollup accept",
+        [](machine_config &config) { config.rollup->notice_hashes.shared = true; });
+}
+
+static StartSessionRequest create_valid_start_session_request(const std::string &name = "advance-state-machine") {
     // Convert to proto message
     StartSessionRequest session_request;
-    CartesiMachine::MachineRequest *machine_request = session_request.mutable_machine();
-    set_proto_machine_config(config, machine_request->mutable_config());
+    std::string *machine_directory = session_request.mutable_machine_directory();
+    *machine_directory = get_machine_directory("tests", name);
 
     session_request.set_session_id("test_session_request_id:" + std::to_string(new_session_id()));
     session_request.set_active_epoch_index(0);
@@ -329,15 +438,15 @@ static StartSessionRequest create_valid_start_session_request(const std::string 
 
     // Set server_deadline
     auto *server_deadline = session_request.mutable_server_deadline();
-    server_deadline->set_checkin(1000 * 5);
-    server_deadline->set_update_merkle_tree(1000 * 60 * 2);
-    server_deadline->set_advance_state(1000 * 60 * 3);
-    server_deadline->set_advance_state_increment(1000 * 10);
-    server_deadline->set_inspect_state(1000 * 60 * 3);
-    server_deadline->set_inspect_state_increment(1000 * 10);
-    server_deadline->set_machine(1000 * 60);
-    server_deadline->set_store(1000 * 60 * 3);
-    server_deadline->set_fast(1000 * 5);
+    server_deadline->set_checkin(1000ULL * 5);
+    server_deadline->set_update_merkle_tree(1000ULL * 60 * 2);
+    server_deadline->set_advance_state(1000ULL * 60 * 3);
+    server_deadline->set_advance_state_increment(1000ULL * 10);
+    server_deadline->set_inspect_state(1000ULL * 60 * 3);
+    server_deadline->set_inspect_state_increment(1000ULL * 10);
+    server_deadline->set_machine(1000ULL * 60);
+    server_deadline->set_store(1000ULL * 60 * 3);
+    server_deadline->set_fast(1000ULL * 5);
 
     return session_request;
 }
@@ -390,8 +499,10 @@ static const std::string NOTICE_PAYLOAD_2 = VOUCHER_PAYLOAD_2;
 static const std::string NOTICE_KECCAK_2 = "8c35a8e6f7e96bf5b0f9200e6cf35db282e9de960e9e958c5d52b14a66af6c47";
 
 static void hex_string_to_binary(const std::string &input, std::string &dest) {
+#ifndef __clang_analyzer__
     CryptoPP::StringSource ss(input, true,
         new CryptoPP::HexDecoder(new CryptoPP::StringSink(dest))); // NOLINT: suppress cryptopp warnings
+#endif
 }
 
 static std::string get_voucher_keccak(uint64_t index) {
@@ -488,7 +599,7 @@ static void init_valid_advance_state_request(AdvanceStateRequest &request, const
     auto *address = input_metadata->mutable_msg_sender()->mutable_data();
     *address = get_voucher_address(input_index);
     input_metadata->set_block_number(block_number);
-    input_metadata->set_time_stamp(static_cast<uint64_t>(std::time(nullptr)));
+    input_metadata->set_timestamp(static_cast<uint64_t>(std::time(nullptr)));
     input_metadata->set_epoch_index(epoch);
     input_metadata->set_input_index(input_index);
 
@@ -551,12 +662,12 @@ void assert_bool(bool value, const std::string &msg, const std::string &file, in
 #define ASSERT_STATUS_CODE(s, f, v) assert_status_code(s, f, v, __FILE__, __LINE__)
 
 static void test_get_version(const std::function<void(const std::string &title, test_function f)> &test) {
-    test("The rollup-machine-manager server version should be 0.1.x", [](ServerManagerClient &manager) {
+    test("The rollup-machine-manager server version should be 0.2.x", [](ServerManagerClient &manager) {
         Versioning::GetVersionResponse response;
         Status status = manager.get_version(response);
         ASSERT_STATUS(status, "GetVersion", true);
         ASSERT((response.version().major() == 0), "Version Major should be 0");
-        ASSERT((response.version().minor() == 1), "Version Minor should be 0");
+        ASSERT((response.version().minor() == 2), "Version Minor should be 2");
     });
 }
 
@@ -626,170 +737,80 @@ static void test_start_session(const std::function<void(const std::string &title
         StartSessionRequest session_request = create_valid_start_session_request();
         StartSessionResponse session_response;
         // clear machine request
-        session_request.clear_machine();
+        session_request.clear_machine_directory();
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", false);
         ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INVALID_ARGUMENT);
     });
 
+    test("Should fail to complete when first yield reason is not accepted or rejected",
+        [](ServerManagerClient &manager) {
+            StartSessionRequest session_request = create_valid_start_session_request("init-exception-machine");
+            StartSessionResponse session_response;
+            Status status = manager.start_session(session_request, session_response);
+            ASSERT_STATUS(status, "StartSession", false);
+            ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INVALID_ARGUMENT);
+        });
+
     test("Should fail to complete when config.htif.yield_manual = false", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request();
+        StartSessionRequest session_request = create_valid_start_session_request("no-manual-yield-machine");
         StartSessionResponse session_response;
-        // set yield_manual false
-        auto *htif = session_request.mutable_machine()->mutable_config()->mutable_htif();
-        htif->set_yield_manual(false);
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", false);
         ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INVALID_ARGUMENT);
     });
 
     test("Should fail to complete when config.htif.yield_automatic = false", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request();
+        StartSessionRequest session_request = create_valid_start_session_request("no-automatic-yield-machine");
         StartSessionResponse session_response;
-        // set yield_progress false
-        auto *htif = session_request.mutable_machine()->mutable_config()->mutable_htif();
-        htif->set_yield_automatic(false);
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", false);
         ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INVALID_ARGUMENT);
     });
 
     test("Should fail to complete when config.htif.console_getchar = true", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request();
+        StartSessionRequest session_request = create_valid_start_session_request("console-getchar-machine");
         StartSessionResponse session_response;
-        // set console_getchar true
-        auto *htif = session_request.mutable_machine()->mutable_config()->mutable_htif();
-        htif->set_console_getchar(true);
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", false);
         ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INVALID_ARGUMENT);
     });
 
     test("Should fail to complete when machine config rollup is undefined", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request();
+        StartSessionRequest session_request = create_valid_start_session_request("no-rollup-machine");
         StartSessionResponse session_response;
-        auto *config = session_request.mutable_machine()->mutable_config();
-        config->clear_rollup();
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", false);
         ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INVALID_ARGUMENT);
     });
 
     test("Should fail to complete if any of the rollup memory regions are shared", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request();
+        StartSessionRequest session_request = create_valid_start_session_request("shared-rx-buffer-machine");
         StartSessionResponse session_response;
-        auto *rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-        rollup->mutable_rx_buffer()->set_shared(true);
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", false);
         ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INVALID_ARGUMENT);
 
-        session_request = create_valid_start_session_request();
-        rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-        rollup->mutable_tx_buffer()->set_shared(true);
+        session_request = create_valid_start_session_request("shared-tx-buffer-machine");
         status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", false);
         ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INVALID_ARGUMENT);
 
-        session_request = create_valid_start_session_request();
-        rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-        rollup->mutable_input_metadata()->set_shared(true);
+        session_request = create_valid_start_session_request("shared-input-metadata-machine");
         status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", false);
         ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INVALID_ARGUMENT);
 
-        session_request = create_valid_start_session_request();
-        rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-        rollup->mutable_voucher_hashes()->set_shared(true);
+        session_request = create_valid_start_session_request("shared-voucher-hashes-machine");
         status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", false);
         ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INVALID_ARGUMENT);
 
-        session_request = create_valid_start_session_request();
-        rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-        rollup->mutable_notice_hashes()->set_shared(true);
+        session_request = create_valid_start_session_request("shared-notice-hashes-machine");
         status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", false);
         ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INVALID_ARGUMENT);
     });
-
-    test("Should fail to complete if any of the rollup memory regions length are not a power of two",
-        [](ServerManagerClient &manager) {
-            StartSessionRequest session_request = create_valid_start_session_request();
-            StartSessionResponse session_response;
-            auto *rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-            rollup->mutable_rx_buffer()->set_length(rollup->rx_buffer().length() + 1);
-            Status status = manager.start_session(session_request, session_response);
-            ASSERT_STATUS(status, "StartSession", false);
-            ASSERT_STATUS_CODE(status, "StartSession", StatusCode::ABORTED);
-
-            session_request = create_valid_start_session_request();
-            rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-            rollup->mutable_tx_buffer()->set_length(rollup->tx_buffer().length() + 1);
-            status = manager.start_session(session_request, session_response);
-            ASSERT_STATUS(status, "StartSession", false);
-            ASSERT_STATUS_CODE(status, "StartSession", StatusCode::ABORTED);
-
-            session_request = create_valid_start_session_request();
-            rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-            rollup->mutable_input_metadata()->set_length(rollup->input_metadata().length() + 1);
-            status = manager.start_session(session_request, session_response);
-            ASSERT_STATUS(status, "StartSession", false);
-            ASSERT_STATUS_CODE(status, "StartSession", StatusCode::ABORTED);
-
-            session_request = create_valid_start_session_request();
-            rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-            rollup->mutable_voucher_hashes()->set_length(rollup->voucher_hashes().length() + 1);
-            status = manager.start_session(session_request, session_response);
-            ASSERT_STATUS(status, "StartSession", false);
-            ASSERT_STATUS_CODE(status, "StartSession", StatusCode::ABORTED);
-
-            session_request = create_valid_start_session_request();
-            rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-            rollup->mutable_notice_hashes()->set_length(rollup->notice_hashes().length() + 1);
-            status = manager.start_session(session_request, session_response);
-            ASSERT_STATUS(status, "StartSession", false);
-            ASSERT_STATUS_CODE(status, "StartSession", StatusCode::ABORTED);
-        });
-
-    test("Should fail to complete if any of the rollup memory regions address are not aligned",
-        [](ServerManagerClient &manager) {
-            StartSessionRequest session_request = create_valid_start_session_request();
-            StartSessionResponse session_response;
-            auto *rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-            rollup->mutable_rx_buffer()->set_start(rollup->rx_buffer().start() + 1);
-            Status status = manager.start_session(session_request, session_response);
-            ASSERT_STATUS(status, "StartSession", false);
-            ASSERT_STATUS_CODE(status, "StartSession", StatusCode::ABORTED);
-
-            session_request = create_valid_start_session_request();
-            rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-            rollup->mutable_tx_buffer()->set_start(rollup->tx_buffer().start() + 1);
-            status = manager.start_session(session_request, session_response);
-            ASSERT_STATUS(status, "StartSession", false);
-            ASSERT_STATUS_CODE(status, "StartSession", StatusCode::ABORTED);
-
-            session_request = create_valid_start_session_request();
-            rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-            rollup->mutable_input_metadata()->set_start(rollup->input_metadata().start() + 1);
-            status = manager.start_session(session_request, session_response);
-            ASSERT_STATUS(status, "StartSession", false);
-            ASSERT_STATUS_CODE(status, "StartSession", StatusCode::ABORTED);
-
-            session_request = create_valid_start_session_request();
-            rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-            rollup->mutable_voucher_hashes()->set_start(rollup->voucher_hashes().start() + 1);
-            status = manager.start_session(session_request, session_response);
-            ASSERT_STATUS(status, "StartSession", false);
-            ASSERT_STATUS_CODE(status, "StartSession", StatusCode::ABORTED);
-
-            session_request = create_valid_start_session_request();
-            rollup = session_request.mutable_machine()->mutable_config()->mutable_rollup();
-            rollup->mutable_notice_hashes()->set_start(rollup->notice_hashes().start() + 1);
-            status = manager.start_session(session_request, session_response);
-            ASSERT_STATUS(status, "StartSession", false);
-            ASSERT_STATUS_CODE(status, "StartSession", StatusCode::ABORTED);
-        });
 
     test("Should fail to complete if active epoch is on the limit", [](ServerManagerClient &manager) {
         StartSessionRequest session_request = create_valid_start_session_request();
@@ -915,14 +936,6 @@ static void test_start_session(const std::function<void(const std::string &title
             ASSERT_STATUS(status, "StartSession", false);
             ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INVALID_ARGUMENT);
         });
-
-    test("Should fail to complete a request if machine halts before yielding", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request("");
-        StartSessionResponse session_response;
-        Status status = manager.start_session(session_request, session_response);
-        ASSERT_STATUS(status, "StartSession", false);
-        ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INVALID_ARGUMENT);
-    });
 }
 
 static void wait_pending_inputs_to_be_processed(ServerManagerClient &manager, GetEpochStatusRequest &status_request,
@@ -1992,6 +2005,135 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             ASSERT_STATUS(status, "EndSession", true);
         });
 
+    test("Should complete with processed input count equal 1 after processing enqueued input (empty payload)",
+        [](ServerManagerClient &manager) {
+            StartSessionRequest session_request = create_valid_start_session_request("no-output-machine");
+            StartSessionResponse session_response;
+            Status status = manager.start_session(session_request, session_response);
+            ASSERT_STATUS(status, "StartSession", true);
+
+            // enqueue
+            AdvanceStateRequest advance_request;
+            init_valid_advance_state_request(advance_request, session_request.session_id(),
+                session_request.active_epoch_index(), 0);
+            advance_request.clear_input_payload();
+            status = manager.advance_state(advance_request);
+            ASSERT_STATUS(status, "AdvanceState", true);
+
+            // get epoch status after pending input is processed
+            GetEpochStatusRequest status_request;
+            status_request.set_session_id(session_request.session_id());
+            status_request.set_epoch_index(session_request.active_epoch_index());
+            GetEpochStatusResponse status_response;
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+
+            // assert status_resonse content
+            ASSERT(status_response.session_id() == session_request.session_id(),
+                "status response session_id should be the same as the one created");
+            ASSERT(status_response.epoch_index() == session_request.active_epoch_index(),
+                "status response epoch_index should be 0");
+            ASSERT(status_response.state() == EpochState::ACTIVE, "status response state should be ACTIVE");
+            ASSERT(status_response.processed_inputs_size() == 1, "status response processed_inputs size should be 1");
+            ASSERT(status_response.pending_input_count() == 0, "status response pending_input_count should 0");
+            ASSERT(!status_response.has_taint_status(), "status response should not be tainted");
+
+            auto processed_input = (status_response.processed_inputs())[0];
+            check_processed_input(processed_input, 0, 0, 0, 0);
+            check_most_recent_epoch_root_hashes(status_response);
+
+            // Finish epoch
+            FinishEpochRequest epoch_request;
+            init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
+                session_request.active_epoch_index(), status_response.processed_inputs_size());
+            status = manager.finish_epoch(epoch_request);
+            ASSERT_STATUS(status, "FinishEpoch", true);
+
+            // EndSession
+            EndSessionRequest end_session_request;
+            end_session_request.set_session_id(session_request.session_id());
+            status = manager.end_session(end_session_request);
+            ASSERT_STATUS(status, "EndSession", true);
+        });
+
+    test("Should fail to complete an taint the session when manual yield reason is TX-EXCEPTION",
+        [](ServerManagerClient &manager) {
+            StartSessionRequest session_request = create_valid_start_session_request("exception-machine");
+            StartSessionResponse session_response;
+            Status status = manager.start_session(session_request, session_response);
+            ASSERT_STATUS(status, "StartSession", true);
+
+            // enqueue
+            AdvanceStateRequest advance_request;
+            init_valid_advance_state_request(advance_request, session_request.session_id(),
+                session_request.active_epoch_index(), 0);
+            status = manager.advance_state(advance_request);
+            ASSERT_STATUS(status, "AdvanceState", true);
+
+            // get epoch status after pending input is processed
+            GetEpochStatusRequest status_request;
+            status_request.set_session_id(session_request.session_id());
+            status_request.set_epoch_index(session_request.active_epoch_index());
+            GetEpochStatusResponse status_response;
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, true, 10);
+
+            // assert status_resonse content
+            ASSERT(status_response.session_id() == session_request.session_id(),
+                "status response session_id should be the same as the one created");
+            ASSERT(status_response.epoch_index() == session_request.active_epoch_index(),
+                "status response epoch_index should be 0");
+            ASSERT(status_response.state() == EpochState::ACTIVE, "status response state should be ACTIVE");
+            ASSERT(status_response.processed_inputs_size() == 0, "status response processed_inputs size should be 0");
+            ASSERT(status_response.pending_input_count() == 1, "status response pending_input_count should 1");
+            ASSERT(status_response.has_taint_status(), "status response should be tainted");
+            ASSERT(status_response.taint_status().error_code() == StatusCode::INTERNAL,
+                "taint_status code should be INTERNAL");
+            ASSERT(status_response.taint_status().error_message() == "test payload",
+                "taint_status error message should contain exception payload");
+
+            end_session_after_processing_pending_inputs(manager, session_request.session_id(),
+                session_request.active_epoch_index(), true);
+        });
+
+    test("Should complete with CompletionStatus MACHINE_HALTED after fatal error", [](ServerManagerClient &manager) {
+        StartSessionRequest session_request = create_valid_start_session_request("fatal-error-machine");
+        StartSessionResponse session_response;
+        Status status = manager.start_session(session_request, session_response);
+        ASSERT_STATUS(status, "StartSession", true);
+
+        // enqueue
+        AdvanceStateRequest advance_request;
+        init_valid_advance_state_request(advance_request, session_request.session_id(),
+            session_request.active_epoch_index(), 0);
+        status = manager.advance_state(advance_request);
+        ASSERT_STATUS(status, "AdvanceState", true);
+
+        // get epoch status
+        GetEpochStatusRequest status_request;
+        status_request.set_session_id(session_request.session_id());
+        status_request.set_epoch_index(session_request.active_epoch_index());
+        GetEpochStatusResponse status_response;
+        wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+
+        // assert status_resonse content
+        ASSERT(status_response.session_id() == session_request.session_id(),
+            "status response session_id should be the same as the one created");
+        ASSERT(status_response.epoch_index() == session_request.active_epoch_index(),
+            "status response epoch_index should be 0");
+        ASSERT(status_response.state() == EpochState::ACTIVE, "status response state should be ACTIVE");
+        ASSERT(status_response.processed_inputs_size() == 1, "status response processed_inputs size should be 1");
+        ASSERT(status_response.pending_input_count() == 0, "status response pending_input_count should 0");
+        ASSERT(!status_response.has_taint_status(), "status response should not be tainted");
+
+        auto processed_input = (status_response.processed_inputs())[0];
+        ASSERT(processed_input.input_index() == 0, "processed_input input index should be 0");
+        ASSERT(processed_input.has_skip_reason(), "processed_input should have skip reason");
+        ASSERT(processed_input.skip_reason() == CompletionStatus::MACHINE_HALTED,
+            "skip reason should be MACHINE_HALTED");
+
+        end_session_after_processing_pending_inputs(manager, session_request.session_id(),
+            session_request.active_epoch_index());
+    });
+
     test("Should complete with first processed input as CompletionStatus CYCLE_LIMIT_EXCEEDED",
         [](ServerManagerClient &manager) {
             StartSessionRequest session_request = create_valid_start_session_request();
@@ -2131,8 +2273,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
     test("Should complete with first processed input as CompletionStatus REJECTED_BY_MACHINE",
         [](ServerManagerClient &manager) {
-            StartSessionRequest session_request =
-                create_valid_start_session_request("-- /opt/cartesi/bin/ioctl-echo-loop --reject=0 --verbose=1");
+            StartSessionRequest session_request = create_valid_start_session_request("advance-rejecting-machine");
             StartSessionResponse session_response;
             Status status = manager.start_session(session_request, session_response);
             ASSERT_STATUS(status, "StartSession", true);
@@ -2176,8 +2317,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
     test("Should complete with first processed input as CompletionStatus MACHINE_HALTED",
         [](ServerManagerClient &manager) {
-            StartSessionRequest session_request =
-                create_valid_start_session_request("-- /opt/cartesi/bin/yield manual rx-accepted 0");
+            StartSessionRequest session_request = create_valid_start_session_request("halting-machine");
             StartSessionResponse session_response;
             Status status = manager.start_session(session_request, session_response);
             ASSERT_STATUS(status, "StartSession", true);
@@ -2260,7 +2400,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
     test("Should return valid InputResults even when there is no outputs or messages",
         [](ServerManagerClient &manager) {
-            StartSessionRequest session_request = create_valid_start_session_request(NO_OUTPUT_SCRIPT);
+            StartSessionRequest session_request = create_valid_start_session_request("no-output-machine");
             StartSessionResponse session_response;
             Status status = manager.start_session(session_request, session_response);
             ASSERT_STATUS(status, "StartSession", true);
@@ -2300,8 +2440,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
     test("Should complete with success returning one voucher and no notices or reports",
         [](ServerManagerClient &manager) {
-            StartSessionRequest session_request = create_valid_start_session_request(
-                "-- /opt/cartesi/bin/ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --verbose=1");
+            StartSessionRequest session_request = create_valid_start_session_request("one-voucher-machine");
             StartSessionResponse session_response;
             Status status = manager.start_session(session_request, session_response);
             ASSERT_STATUS(status, "StartSession", true);
@@ -2341,8 +2480,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
     test("Should complete with success returning one notice and no vouchers or reports",
         [](ServerManagerClient &manager) {
-            StartSessionRequest session_request = create_valid_start_session_request(
-                "-- /opt/cartesi/bin/ioctl-echo-loop --vouchers=0 --notices=1 --reports=0 --verbose=1");
+            StartSessionRequest session_request = create_valid_start_session_request("one-notice-machine");
             StartSessionResponse session_response;
             Status status = manager.start_session(session_request, session_response);
             ASSERT_STATUS(status, "StartSession", true);
@@ -2382,8 +2520,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
     test("Should complete with success returning one report and no notices or vouchers",
         [](ServerManagerClient &manager) {
-            StartSessionRequest session_request = create_valid_start_session_request(
-                "-- /opt/cartesi/bin/ioctl-echo-loop --vouchers=0 --notices=0 --reports=1 --verbose=1");
+            StartSessionRequest session_request = create_valid_start_session_request("one-report-machine");
             StartSessionResponse session_response;
             Status status = manager.start_session(session_request, session_response);
             ASSERT_STATUS(status, "StartSession", true);
@@ -2436,7 +2573,7 @@ static void check_inspect_state_response(InspectStateResponse &response, const s
 
 static void test_inspect_state(const std::function<void(const std::string &title, test_function f)> &test) {
     test("Should complete a valid request with success", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request(INSPECT_STATE_SCRIPT);
+        StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
         StartSessionResponse session_response;
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", true);
@@ -2459,7 +2596,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
     });
 
     test("Should complete two valid requests with success", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request(INSPECT_STATE_SCRIPT);
+        StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
         StartSessionResponse session_response;
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", true);
@@ -2489,9 +2626,126 @@ static void test_inspect_state(const std::function<void(const std::string &title
         ASSERT_STATUS(status, "EndSession", true);
     });
 
+    test("Should complete a valid request with success (empty payload)", [](ServerManagerClient &manager) {
+        StartSessionRequest session_request = create_valid_start_session_request("no-output-machine");
+        StartSessionResponse session_response;
+        Status status = manager.start_session(session_request, session_response);
+        ASSERT_STATUS(status, "StartSession", true);
+
+        InspectStateRequest inspect_request;
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
+            session_request.active_epoch_index(), 0);
+        inspect_request.clear_query_payload();
+        InspectStateResponse inspect_response;
+        status = manager.inspect_state(inspect_request, inspect_response);
+        ASSERT_STATUS(status, "InspectState", true);
+
+        check_inspect_state_response(inspect_response, inspect_request.session_id(),
+            inspect_request.active_epoch_index(), 0, 0);
+
+        // end session
+        EndSessionRequest end_session_request;
+        end_session_request.set_session_id(session_request.session_id());
+        status = manager.end_session(end_session_request);
+        ASSERT_STATUS(status, "EndSession", true);
+    });
+
+    test("Should complete with error when receiving a manual yield with reason TX-EXCEPTION",
+        [](ServerManagerClient &manager) {
+            StartSessionRequest session_request = create_valid_start_session_request("exception-machine");
+            StartSessionResponse session_response;
+            Status status = manager.start_session(session_request, session_response);
+            ASSERT_STATUS(status, "StartSession", true);
+
+            InspectStateRequest inspect_request;
+            init_valid_inspect_state_request(inspect_request, session_request.session_id(),
+                session_request.active_epoch_index(), 0);
+            InspectStateResponse inspect_response;
+            status = manager.inspect_state(inspect_request, inspect_response);
+            ASSERT_STATUS(status, "InspectState", false);
+            ASSERT_STATUS_CODE(status, "InspectState", StatusCode::INTERNAL);
+            ASSERT(status.error_message() == "test payload", "status error message should contain exception payload");
+
+            // end session
+            EndSessionRequest end_session_request;
+            end_session_request.set_session_id(session_request.session_id());
+            status = manager.end_session(end_session_request);
+            ASSERT_STATUS(status, "EndSession", true);
+        });
+
+    test("Should complete with CompletionStatus MACHINE_HALTED after fatal error", [](ServerManagerClient &manager) {
+        StartSessionRequest session_request = create_valid_start_session_request("fatal-error-machine");
+        StartSessionResponse session_response;
+        Status status = manager.start_session(session_request, session_response);
+        ASSERT_STATUS(status, "StartSession", true);
+
+        // enqueue first
+        InspectStateRequest inspect_request;
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
+            session_request.active_epoch_index(), 0);
+        InspectStateResponse inspect_response;
+        status = manager.inspect_state(inspect_request, inspect_response);
+        ASSERT_STATUS(status, "InspectState", true);
+
+        check_inspect_state_response(inspect_response, inspect_request.session_id(),
+            inspect_request.active_epoch_index(), 0, 0, CompletionStatus::MACHINE_HALTED);
+
+        // end session
+        EndSessionRequest end_session_request;
+        end_session_request.set_session_id(session_request.session_id());
+        status = manager.end_session(end_session_request);
+        ASSERT_STATUS(status, "EndSession", true);
+    });
+
+    test("Should complete a valid request with accept (voucher on inspect)", [](ServerManagerClient &manager) {
+        StartSessionRequest session_request = create_valid_start_session_request("voucher-on-inspect-machine");
+        StartSessionResponse session_response;
+        Status status = manager.start_session(session_request, session_response);
+        ASSERT_STATUS(status, "StartSession", true);
+
+        InspectStateRequest inspect_request;
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
+            session_request.active_epoch_index(), 0);
+        InspectStateResponse inspect_response;
+        status = manager.inspect_state(inspect_request, inspect_response);
+        ASSERT_STATUS(status, "InspectState", true);
+
+        check_inspect_state_response(inspect_response, inspect_request.session_id(),
+            inspect_request.active_epoch_index(), 0, 0);
+
+        // end session
+        EndSessionRequest end_session_request;
+        end_session_request.set_session_id(session_request.session_id());
+        status = manager.end_session(end_session_request);
+        ASSERT_STATUS(status, "EndSession", true);
+    });
+
+    test("Should complete a valid request with accept (notice on inspect)", [](ServerManagerClient &manager) {
+        StartSessionRequest session_request = create_valid_start_session_request("notice-on-inspect-machine");
+        StartSessionResponse session_response;
+        Status status = manager.start_session(session_request, session_response);
+        ASSERT_STATUS(status, "StartSession", true);
+
+        InspectStateRequest inspect_request;
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
+            session_request.active_epoch_index(), 0);
+        InspectStateResponse inspect_response;
+        status = manager.inspect_state(inspect_request, inspect_response);
+        ASSERT_STATUS(status, "InspectState", true);
+
+        check_inspect_state_response(inspect_response, inspect_request.session_id(),
+            inspect_request.active_epoch_index(), 0, 0);
+
+        // end session
+        EndSessionRequest end_session_request;
+        end_session_request.set_session_id(session_request.session_id());
+        status = manager.end_session(end_session_request);
+        ASSERT_STATUS(status, "EndSession", true);
+    });
+
     test("Should complete a inspect state request enqueued after a advance state with success",
         [](ServerManagerClient &manager) {
-            StartSessionRequest session_request = create_valid_start_session_request(INSPECT_STATE_SCRIPT);
+            StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
             StartSessionResponse session_response;
             Status status = manager.start_session(session_request, session_response);
             ASSERT_STATUS(status, "StartSession", true);
@@ -2526,7 +2780,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
 
     test("Should complete a inspect state request enqueued during a advance state with success",
         [](ServerManagerClient &manager) {
-            StartSessionRequest session_request = create_valid_start_session_request(INSPECT_STATE_SCRIPT);
+            StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
             StartSessionResponse session_response;
             Status status = manager.start_session(session_request, session_response);
             ASSERT_STATUS(status, "StartSession", true);
@@ -2553,7 +2807,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
         });
 
     test("Should fail to complete if session id is not valid", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request(INSPECT_STATE_SCRIPT);
+        StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
         StartSessionResponse session_response;
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", true);
@@ -2575,7 +2829,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
     });
 
     test("Should fail to complete if session was ended", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request(INSPECT_STATE_SCRIPT);
+        StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
         StartSessionResponse session_response;
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", true);
@@ -2597,7 +2851,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
     });
 
     test("Should fail to complete if epoch is not the same", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request(INSPECT_STATE_SCRIPT);
+        StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
         StartSessionResponse session_response;
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", true);
@@ -2618,7 +2872,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
     });
 
     test("Should fail to complete if epoch is finished", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request(INSPECT_STATE_SCRIPT);
+        StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
         StartSessionResponse session_response;
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", true);
@@ -2647,7 +2901,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
     });
 
     test("Should complete with success enqueing on a new epoch", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request(INSPECT_STATE_SCRIPT);
+        StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
         StartSessionResponse session_response;
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", true);
@@ -2677,7 +2931,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
     });
 
     test("Should fail to complete if query_payload is greater then rx buffer", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request(INSPECT_STATE_SCRIPT);
+        StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
         StartSessionResponse session_response;
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", true);
@@ -2687,7 +2941,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
         init_valid_inspect_state_request(inspect_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
         auto *query_payload = inspect_request.mutable_query_payload();
-        query_payload->resize(session_request.machine().config().rollup().rx_buffer().length(), 'f');
+        query_payload->resize(session_response.config().rollup().rx_buffer().length(), 'f');
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", false);
@@ -2701,7 +2955,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
     });
 
     test("Should complete with CompletionStatus CYCLE_LIMIT_EXCEEDED", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request(INSPECT_STATE_SCRIPT);
+        StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
         StartSessionResponse session_response;
         CyclesConfig *server_cycles = session_request.mutable_server_cycles();
         server_cycles->set_max_inspect_state(2);
@@ -2728,8 +2982,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
     });
 
     test("Should complete with CompletionStatus REJECTED_BY_MACHINE", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request(
-            "-- /opt/cartesi/bin/ioctl-echo-loop --reports=0 --reject-inspects --verbose=1");
+        StartSessionRequest session_request = create_valid_start_session_request("inspect-rejecting-machine");
         StartSessionResponse session_response;
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", true);
@@ -2753,8 +3006,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
     });
 
     test("Should complete with CompletionStatus MACHINE_HALTED", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request =
-            create_valid_start_session_request("-- /opt/cartesi/bin/yield manual rx-accepted 0");
+        StartSessionRequest session_request = create_valid_start_session_request("halting-machine");
         StartSessionResponse session_response;
         Status status = manager.start_session(session_request, session_response);
         ASSERT_STATUS(status, "StartSession", true);
@@ -2778,7 +3030,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
     });
 
     test("Should complete with CompletionStatus TIME_LIMIT_EXCEEDED", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request(INSPECT_STATE_SCRIPT);
+        StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
         StartSessionResponse session_response;
         CyclesConfig *server_cycles = session_request.mutable_server_cycles();
         server_cycles->set_inspect_state_increment(10);
@@ -2807,7 +3059,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
     });
 
     test("Should complete with Status DEADLINE_EXCEEDED", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request(INSPECT_STATE_SCRIPT);
+        StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
         StartSessionResponse session_response;
         auto *server_deadline = session_request.mutable_server_deadline();
         server_deadline->set_inspect_state_increment(1);
@@ -2840,38 +3092,6 @@ static bool check_session_store(const std::string &machine_dir) {
     path full_path{machine_dir};
     return std::all_of(files.begin(), files.end(),
         [&full_path](const std::string &f) { return exists(full_path / f); });
-}
-
-static std::string get_machine_dir(const std::string &storage_path, const std::string &session_path) {
-    return MANAGER_ROOT_DIR / storage_path / session_path;
-}
-
-static bool delete_storage_directory(const std::string &storage_path) {
-    if (storage_path.empty()) {
-        return false;
-    }
-    return remove_all(MANAGER_ROOT_DIR / storage_path) > 0;
-}
-
-static bool create_storage_directory(const std::string &storage_path) {
-    if (storage_path.empty()) {
-        return false;
-    }
-    path root_path = MANAGER_ROOT_DIR / storage_path;
-    if (exists(root_path) && !delete_storage_directory(storage_path)) {
-        return false;
-    }
-    return create_directories(root_path) > 0;
-}
-
-static bool change_storage_directory_permissions(const std::string &storage_path, bool writable) {
-    if (storage_path.empty()) {
-        return false;
-    }
-    auto new_perms = writable ? (perms::owner_all) : (perms::owner_read | perms::owner_exec);
-    std::error_code ec;
-    permissions(MANAGER_ROOT_DIR / storage_path, new_perms, ec);
-    return ec.value() == 0;
 }
 
 static void test_finish_epoch(const std::function<void(const std::string &title, test_function f)> &test) {
@@ -3074,7 +3294,7 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
         ASSERT(create_storage_directory(storage_dir), "test should be able to create directory");
 
         FinishEpochRequest epoch_request;
-        std::string machine_dir = get_machine_dir(storage_dir, "test_" + manager.test_id());
+        std::string machine_dir = get_machine_directory(storage_dir, "test_" + manager.test_id());
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0, machine_dir);
         status = manager.finish_epoch(epoch_request);
@@ -3103,7 +3323,7 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
             "test should be able to change directory permissions");
 
         FinishEpochRequest epoch_request;
-        std::string machine_dir = get_machine_dir(storage_dir, "test_" + manager.test_id());
+        std::string machine_dir = get_machine_directory(storage_dir, "test_" + manager.test_id());
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0, machine_dir);
         status = manager.finish_epoch(epoch_request);
@@ -3131,7 +3351,7 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
         ASSERT(create_storage_directory(storage_dir), "test should be able to create directory");
 
         FinishEpochRequest epoch_request;
-        std::string machine_dir = get_machine_dir(storage_dir, "test_" + manager.test_id());
+        std::string machine_dir = get_machine_directory(storage_dir, "test_" + manager.test_id());
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0, machine_dir);
         status = manager.finish_epoch(epoch_request);
@@ -3166,7 +3386,7 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
             ASSERT(create_storage_directory(storage_dir), "test should be able to create directory");
 
             FinishEpochRequest epoch_request;
-            std::string machine_dir = get_machine_dir(storage_dir, "test_" + manager.test_id());
+            std::string machine_dir = get_machine_directory(storage_dir, "test_" + manager.test_id());
             init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
                 session_request.active_epoch_index(), 0, machine_dir);
             status = manager.finish_epoch(epoch_request);
@@ -3181,9 +3401,7 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
             status = manager.end_session(end_session_request);
             ASSERT_STATUS(status, "EndSession", true);
 
-            auto *machine_request = session_request.mutable_machine();
-            machine_request->clear_config();
-            auto *stored_machine_dir = machine_request->mutable_directory();
+            auto *stored_machine_dir = session_request.mutable_machine_directory();
             (*stored_machine_dir) = machine_dir;
             status = manager.start_session(session_request, session_response);
             ASSERT_STATUS(status, "StartSession", true);
@@ -3497,11 +3715,65 @@ static int run_tests(const char *address) {
     return suite.run();
 }
 
-int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        std::cerr << argv[0] << " <ip>:<port>" << std::endl;
-        std::cerr << argv[0] << " unix:<path>" << std::endl;
-        return 1;
+/// \brief Prints help
+/// \param name Program name vrom argv[0]
+static void help(const char *name) {
+    (void) fprintf(stderr,
+        R"(Usage:
+
+    %s [-r] [--help] [--http] <manager-address>
+
+where
+
+    <manager-address>
+      server manager address, where <manager-address> can be
+        <ipv4-hostname/address>:<port>
+        <ipv6-hostname/address>:<port>
+        unix:<path>
+
+    -r
+      recreate test machines if they already exist
+
+    --help
+      prints this message and exits
+
+    --http
+      uses rollup http-echo-dapp instead of ioctl-echo-loop
+      to perform the tests.
+
+
+)",
+        name);
+}
+
+int main(int argc, char *argv[]) try {
+    const char *manager_address = nullptr;
+    bool rebuild = false;
+    bool http_api = false;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-r") == 0) {
+            rebuild = true;
+        } else if (strcmp(argv[i], "--http") == 0) {
+            http_api = true;
+        } else if (strcmp(argv[i], "--help") == 0) {
+            help(argv[0]);
+            exit(0);
+        } else {
+            manager_address = argv[i];
+        }
     }
-    return run_tests(argv[1]);
+
+    if (!manager_address) {
+        std::cerr << "missing manager-address\n";
+        exit(1);
+    }
+    initialize_machines(rebuild, http_api);
+    return run_tests(manager_address);
+} catch (std::exception &e) {
+    std::cerr << "Caught exception: " << e.what() << '\n';
+    return 1;
+} catch (...) {
+    std::cerr << "Caught unknown exception\n";
+    return 1;
 }

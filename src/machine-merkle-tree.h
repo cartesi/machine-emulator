@@ -76,13 +76,13 @@ private:
     /// \brief DEPTH Depth of Merkle tree.
     static constexpr int DEPTH = LOG2_ROOT_SIZE - LOG2_WORD_SIZE;
 
-    static constexpr size_t m_word_size = size_t(1) << LOG2_WORD_SIZE;
+    static constexpr size_t m_word_size = static_cast<size_t>(1) << LOG2_WORD_SIZE;
 
     static constexpr address_type m_page_index_mask = ((~UINT64_C(0)) >> (64 - LOG2_ROOT_SIZE)) << LOG2_PAGE_SIZE;
 
     static constexpr address_type m_page_offset_mask = ~m_page_index_mask;
 
-    static constexpr size_t m_page_size = size_t(1) << LOG2_PAGE_SIZE;
+    static constexpr size_t m_page_size = static_cast<size_t>(1) << LOG2_PAGE_SIZE;
 
 public:
     /// \brief Returns the LOG2_ROOT_SIZE parameter.

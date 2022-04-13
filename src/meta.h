@@ -56,7 +56,7 @@ struct remove_cvref {
 /// \tparam DERIVED Derived class.
 template <template <typename...> class BASE, typename DERIVED>
 using is_template_base_of = std::integral_constant<bool,
-    std::is_same<typename std::result_of<detail::is_template_base_of_helper<BASE, DERIVED>(const DERIVED &)>::type,
+    std::is_same<typename std::invoke_result<detail::is_template_base_of_helper<BASE, DERIVED>, const DERIVED &>::type,
         typename detail::is_template_base_of_helper<BASE, DERIVED>::yes>::value>;
 
 /// \class log2_size

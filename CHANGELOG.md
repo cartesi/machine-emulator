@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2022-04-20
+
 ### Added
 
 - Added rollup-exception handling to cartesi-machine.lua and tests
@@ -19,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Change cartesi-machine.lua to fail with exit code 1 when rollup exception is detected
+- Changed cartesi-machine.lua to fail with exit code 1 when rollup exception is detected
 - Changed machine serialization to use protobuf instead of boost
 - Changed cartesi-machine.lua to save voucher and notice hashes on revert
 - Changed rollup-memory-range.lua to input/output JSON objects
@@ -28,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed dhd and rollup fields in config to optional
 - Changed server-manager not to advance until first yield
 - Changed server-manager so NewSession accepts only stored machine directories (rather than machine configs)
+- Changed server-manager version from v0.1.0 to v0.2.0
 
 ## [0.8.0] - 2021-12-28
 
@@ -71,7 +74,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed dependency from system provided gRPC libraries to a specific version added to third-party dependencies
 
 ## [Previous Versions]
+- [0.7.0]
+- [0.6.0]
+- [0.5.1]
+- [0.5.0]
+- [0.4.0]
+- [0.3.0]
+- [0.2.0]
+- [0.1.0]
 
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.9.0
 [0.8.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.8.0
 [0.7.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.7.0
 [0.6.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.6.0

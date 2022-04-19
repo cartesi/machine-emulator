@@ -137,6 +137,7 @@ struct machine_config final {
 
     /// \brief Get the name where memory range will be stored in a directory
     static std::string get_image_filename(const std::string &dir, uint64_t start, uint64_t length);
+    static std::string get_image_filename(const std::string &dir, const memory_range_config &c);
 
     /// \brief Loads a machine config from a directory
     /// \param dir Directory from whence "config" will be loaded

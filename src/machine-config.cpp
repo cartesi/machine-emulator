@@ -36,6 +36,10 @@ std::string machine_config::get_image_filename(const std::string &dir, uint64_t 
     return sout.str();
 }
 
+std::string machine_config::get_image_filename(const std::string &dir, const memory_range_config &c) {
+    return get_image_filename(dir, c.start, c.length);
+}
+
 std::string machine_config::get_config_filename(const std::string &dir) {
     return dir + "/config.protobuf";
 }
@@ -44,7 +48,15 @@ static void adjust_image_filenames(machine_config &c, const std::string &dir) {
     c.rom.image_filename = c.get_image_filename(dir, PMA_ROM_START, PMA_ROM_LENGTH);
     c.ram.image_filename = c.get_image_filename(dir, PMA_RAM_START, c.ram.length);
     for (auto &f : c.flash_drive) {
-        f.image_filename = c.get_image_filename(dir, f.start, f.length);
+        f.image_filename = c.get_image_filename(dir, f);
+    }
+    if (c.rollup.has_value()) {
+        auto &r = c.rollup.value();
+        r.rx_buffer.image_filename = c.get_image_filename(dir, r.rx_buffer);
+        r.tx_buffer.image_filename = c.get_image_filename(dir, r.tx_buffer);
+        r.input_metadata.image_filename = c.get_image_filename(dir, r.input_metadata);
+        r.voucher_hashes.image_filename = c.get_image_filename(dir, r.voucher_hashes);
+        r.notice_hashes.image_filename = c.get_image_filename(dir, r.notice_hashes);
     }
 }
 

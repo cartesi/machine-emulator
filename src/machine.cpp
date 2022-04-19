@@ -447,6 +447,14 @@ machine_config machine::get_serialization_config(void) const {
     for (auto &f : c.flash_drive) {
         f.image_filename.clear();
     }
+    if (c.rollup.has_value()) {
+        auto &r = c.rollup.value();
+        r.rx_buffer.image_filename.clear();
+        r.tx_buffer.image_filename.clear();
+        r.input_metadata.image_filename.clear();
+        r.voucher_hashes.image_filename.clear();
+        r.notice_hashes.image_filename.clear();
+    }
     return c;
 }
 
@@ -490,6 +498,14 @@ void machine::store_pmas(const machine_config &c, const std::string &dir) const 
     // but this is easier
     for (const auto &f : c.flash_drive) {
         store_memory_pma(find_pma_entry<uint64_t>(f.start), dir);
+    }
+    if (c.rollup.has_value()) {
+        const auto &r = c.rollup.value();
+        store_memory_pma(find_pma_entry<uint64_t>(r.rx_buffer.start), dir);
+        store_memory_pma(find_pma_entry<uint64_t>(r.tx_buffer.start), dir);
+        store_memory_pma(find_pma_entry<uint64_t>(r.input_metadata.start), dir);
+        store_memory_pma(find_pma_entry<uint64_t>(r.voucher_hashes.start), dir);
+        store_memory_pma(find_pma_entry<uint64_t>(r.notice_hashes.start), dir);
     }
 }
 

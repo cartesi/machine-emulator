@@ -1363,7 +1363,7 @@ else
         print_root_hash(cycles, machine)
     end
     dump_value_proofs(machine, initial_proof, config.htif.console_getchar)
-    local payload = 0
+    local exit_code = 0
     local next_hash_mcycle
     if periodic_hashes_start ~= 0 then
         next_hash_mcycle = periodic_hashes_start
@@ -1387,9 +1387,9 @@ else
         cycles = machine:read_mcycle()
         -- deal with halt
         if machine:read_iflags_H() then
-            payload = machine:read_htif_tohost_data() >> 1
-            if payload ~= 0 then
-                stderr("\nHalted with payload: %u\n", payload)
+            exit_code = machine:read_htif_tohost_data() >> 1
+            if exit_code ~= 0 then
+                stderr("\nHalted with payload: %u\n", exit_code)
             else
                 stderr("\nHalted\n")
             end
@@ -1401,6 +1401,7 @@ else
             -- there are advance state inputs to feed
             if reason == cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION then
                 dump_exception(machine, config.rollup.tx_buffer)
+                exit_code = 1
             elseif rollup_advance and rollup_advance.next_input_index < rollup_advance.input_index_end then
                 -- save only if we have already run an input
                 if rollup_advance.next_input_index > rollup_advance.input_index_begin then
@@ -1497,5 +1498,5 @@ else
         store_machine(machine, config, store_dir)
     end
     machine:destroy()
-    os.exit(payload, true)
+    os.exit(exit_code, true)
 end

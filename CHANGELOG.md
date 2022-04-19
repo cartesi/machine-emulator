@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Change cartesi-machine.lua to fail with exit code 1 when rollup exception is detected
 - Changed machine serialization to use protobuf instead of boost
 - Changed cartesi-machine.lua to save voucher and notice hashes on revert
 - Changed rollup-memory-range.lua to input/output JSON objects

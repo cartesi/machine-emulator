@@ -17,8 +17,11 @@
 #include <cinttypes>
 #include <cstdint>
 #include <cstdio>
+#include <ctime>
 #include <iomanip>
 #include <iostream>
+
+#include <sys/time.h>
 
 /// \file
 /// \brief Interpreter implementation.
@@ -2197,6 +2200,29 @@ static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t 
     if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TW_MASK))) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
+
+    std::function<void(uint64_t)> poll_console = a.get_naked_state().get_console_poller();
+    if (poll_console) {
+        uint64_t mcycle = a.read_mcycle();
+        uint64_t warp_cycle = rtc_time_to_cycle(a.read_clint_mtimecmp());
+        if (warp_cycle > mcycle) {
+            uint64_t wait = rtc_cycle_to_time(warp_cycle - mcycle);
+            timeval start{};
+            timeval end{};
+
+            gettimeofday(&start, nullptr);
+            poll_console(wait);
+            gettimeofday(&end, nullptr);
+
+            uint64_t elapsed = end.tv_usec - start.tv_usec;
+            uint64_t real_cycle = rtc_time_to_cycle(elapsed * RTC_FREQ_DIV_DEF + rtc_cycle_to_time(mcycle));
+            warp_cycle = elapsed >= wait ? warp_cycle : real_cycle;
+
+            a.write_mcycle(warp_cycle);
+            a.get_naked_state().set_brk();
+        }
+    }
+
     return advance_to_next_insn(a, pc);
 }
 

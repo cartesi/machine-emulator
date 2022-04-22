@@ -208,10 +208,6 @@ void machine::replace_memory_range(const memory_range_config &new_range) {
     throw std::invalid_argument{"Cannot replace inexistent memory range"};
 }
 
-void machine::interact(void) {
-    m_h.interact();
-}
-
 machine::machine(const machine_config &c, const machine_runtime_config &r) : m_s{}, m_t{}, m_h{c.htif}, m_c{c}, m_r{r} {
 
     if (m_c.processor.marchid == UINT64_C(-1)) {
@@ -368,6 +364,8 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_s
 
     // Clear all TLB entries
     m_s.init_tlb();
+
+    m_s.poll_console = m_c.htif.console_getchar ? m_h.console_poller() : nullptr;
 
     // Add sentinel to PMA vector
     register_pma_entry(make_empty_pma_entry(0, 0));
@@ -1639,10 +1637,6 @@ void machine::run(uint64_t mcycle_end) {
     // some bindings such as gRPC.
     while (read_mcycle() < mcycle_end && !read_iflags_H() && !read_iflags_Y()) {
         run_inner_loop(mcycle_end);
-        // Perform interact with htif after every timer interrupt
-        if (rtc_is_tick(read_mcycle())) {
-            interact();
-        }
         if (read_iflags_X()) {
             return;
         }

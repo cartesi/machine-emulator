@@ -22,6 +22,7 @@
 
 #include <boost/container/static_vector.hpp>
 #include <cassert>
+#include <functional>
 #include <iomanip>
 #include <memory>
 #include <sstream>
@@ -60,6 +61,10 @@ public:
         void or_brk_with_iflags_X(void) {}
         void set_brk_from_all(void) {}
         void assert_no_brk(void) {}
+
+        std::function<void(uint64_t)> get_console_poller(void) {
+            return nullptr;
+        }
 
 #ifdef DUMP_COUNTERS
         machine_statistics stats;

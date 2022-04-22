@@ -19,6 +19,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <termios.h>
 
 #include <htif-defines.h>
@@ -74,7 +75,6 @@ static constexpr uint64_t HTIF_REPLACE_DATA(uint64_t reg, uint64_t data) {
 
 /// \brief HTIF constants
 enum HTIF_constants {
-    HTIF_INTERACT_DIVISOR = 10,  ///< Proportion of interacts to ignore
     HTIF_CONSOLE_BUF_SIZE = 1024 ///< Number of characters in console input buffer
 };
 
@@ -112,7 +112,6 @@ class htif final {
     std::array<char, HTIF_CONSOLE_BUF_SIZE> m_buf; ///< Console buffer.
     ssize_t m_buf_pos;                             ///< Next character in buffer.
     ssize_t m_buf_len;                             ///< Last character in buffer.
-    int m_divisor_counter;                         ///< Ignored calls to interact.
     int m_ttyfd;                                   ///< The tty file descriptor.
     struct termios m_oldtty;                       ///< Saved termios values.
 
@@ -132,14 +131,10 @@ public:
     /// \param h HTIF device configuration.
     htif(const htif_config &h);
 
-    /// \brief Interact with the hosts's terminal.
-    void interact(void);
-
     /// \brief Destructor
     ~htif();
 
-    /// \brief Checks if there is input available from console.
-    void poll_console(void);
+    std::function<void(uint64_t)> console_poller();
 
     /// \brief Mapping between CSRs and their relative addresses in HTIF memory
     enum class csr {
@@ -165,6 +160,11 @@ private:
 
     /// \brief Closes console.
     void end_console(void);
+
+    /// \brief Checks if there is input available from console.
+    void poll_console(uint64_t wait);
+
+    bool console_char_pending(void) const;
 };
 
 /// \brief Creates a PMA entry for the HTIF device

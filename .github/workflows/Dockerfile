@@ -1,4 +1,4 @@
-FROM ubuntu:20.04 as builder
+FROM ubuntu:22.04 as builder
 
 RUN apt-get update && \
     DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends -y \
@@ -22,12 +22,12 @@ RUN make -j$(nproc) dep && \
     make clean && \
     rm -rf *
 
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
-    libboost-coroutine1.71.0 \
-    libboost-context1.71.0 \
-    libboost-filesystem1.71.0 \
+    libboost-coroutine1.74.0 \
+    libboost-context1.74.0 \
+    libboost-filesystem1.74.0 \
     libreadline8 \
     openssl \
     libc-ares2 \

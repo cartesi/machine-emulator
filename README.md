@@ -19,7 +19,7 @@ The emulator implements RISC-V's RV64IMASU ISA. The letters after RV specify the
 
 Obs: Please note that Apple Clang Version number does not follow upstream LLVM/Clang.
 
-#### Ubuntu 20.04
+#### Ubuntu 22.04
 
 ```
 sudo apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-filesystem-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates liblua5.3-dev luarocks
@@ -33,7 +33,7 @@ sudo luarock install luasec
 
 ##### MacPorts
 ```
-sudo port install clang-12 automake boost libtool wget cmake pkgconfig c-ares zlib openssl lua lua-luarocks
+sudo port install clang-14 automake boost libtool wget cmake pkgconfig c-ares zlib openssl lua lua-luarocks
 
 sudo luarock install lpeg
 sudo luarock install dkjson
@@ -90,17 +90,17 @@ $ make test TEST_PATH=/full/path/to/test/binaries
 
 ## Linter
 
-We use clang-tidy 12 as the linter.
+We use clang-tidy 14 as the linter.
 
 ### Install
 
-#### Ubuntu 20.04
+#### Ubuntu 22.04
 
-You need to install the package clang-tidy-12 and set it as the default executable with update-alternatives.
+You need to install the package clang-tidy-14 and set it as the default executable with update-alternatives.
 
 ```bash
-$ apt install clang-tidy-12
-$ update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-12 120
+$ apt install clang-tidy-14
+$ update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-14 120
 ```
 
 ### Running Lint
@@ -117,11 +117,11 @@ We use clang-format to format the code base.
 
 #### Ubuntu
 
-You need to install the package clang-format-12 and set is as the default executable with update-alternatives.
+You need to install the package clang-format-14 and set is as the default executable with update-alternatives.
 
 ```bash
-$ apt install clang-format-12
-$ update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-12 120
+$ apt install clang-format-14
+$ update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-14 120
 ```
 
 ### Formatting code

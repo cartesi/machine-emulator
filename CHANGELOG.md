@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make HTIF console getchar react faster to input when enabled
 - Remove busy wait in interactive mode
 - Updated server-manager GRPC interface due to improvements on input exception handling
+- Updated docker images based on Ubuntu to version 22.04
+- Updated clang-format version to 14
+- Updated clang-tidy version to 14
+- Updated libboost version to 1.74
 
 ## [0.9.0] - 2022-04-20
 

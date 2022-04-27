@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 MAINTAINER Diego Nehab <diego@cartesi.io>
 
@@ -14,7 +14,7 @@ RUN \
     apt-get install --no-install-recommends -y \
         build-essential vim wget git libreadline-dev libboost-coroutine-dev \
         libboost-context-dev libboost-filesystem-dev \
-        libssl-dev openssl libc-ares-dev zlib1g-dev clang-tidy-12 clang-format-12 \
+        libssl-dev openssl libc-ares-dev zlib1g-dev clang-tidy-14 clang-format-14 \
         ca-certificates automake libtool patchelf cmake pkg-config lua5.3 liblua5.3-dev luarocks && \
     rm -rf /var/lib/apt/lists/*
 

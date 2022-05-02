@@ -891,27 +891,24 @@ local function store_machine_config(config, output)
     output("    mtimecmp = 0x%x,", clint.mtimecmp or def.clint.mtimecmp)
     comment_default(clint.mtimecmp, def.clint.mtimecmp)
     output("  },\n")
-    local dhd = config.dhd or { h = {} }
-    output("  dhd = {\n")
-    output("    tstart = 0x%x,", dhd.tstart or def.dhd.tstart)
-    comment_default(dhd.tstart, def.dhd.tstart)
-    output("    tlength = 0x%x,", dhd.tlength or def.dhd.tlength)
-    comment_default(dhd.tlength, def.dhd.tlength)
-    if dhd.image_filename and dhd.image_filename ~= "" then
-        output("      image_filename = %q,\n", dhd.image_filename)
+    if config.dhd then
+        local dhd = config.dhd
+        output("  dhd = {\n")
+        output("    tstart = 0x%x,\n", dhd.tstart)
+        output("    tlength = 0x%x,\n", dhd.tlength)
+        if dhd.image_filename and dhd.image_filename ~= "" then
+            output("      image_filename = %q,\n", dhd.image_filename)
+        end
+        output("    dlength = 0x%x,\n", dhd.dlength)
+        output("    hlength = 0x%x,\n", dhd.hlength)
+        output("    h = {\n")
+        for i = 1, 4 do
+            local hi = dhd.h[i] or def.dhd.h[i]
+            output("      0x%x,\n",  hi)
+        end
+        output("    },\n")
+        output("  },\n")
     end
-    output("    dlength = 0x%x,", dhd.dlength or def.dhd.dlength)
-    comment_default(dhd.dlength, def.dhd.dlength)
-    output("    hlength = 0x%x,", dhd.hlength or def.dhd.hlength)
-    comment_default(dhd.hlength, def.dhd.hlength)
-    output("    h = {\n")
-    for i = 1, 4 do
-        local hi = dhd.h[i] or def.dhd.h[i]
-        output("      0x%x,",  hi)
-        comment_default(hi, def.dhd.h[i])
-    end
-    output("    },\n")
-    output("  },\n")
     output("  flash_drive = {\n")
     for i, f in ipairs(config.flash_drive) do
         output("    ")

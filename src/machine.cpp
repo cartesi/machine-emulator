@@ -441,7 +441,7 @@ machine_config machine::get_serialization_config(void) const {
     // over the potentially modified memory region we serialize
     c.rom.bootargs.clear();
     // Remove image filenames from serialization
-    // (they will will be ignored by save and load for security reasons)
+    // (they will be ignored by save and load for security reasons)
     c.ram.image_filename.clear();
     c.rom.image_filename.clear();
     for (auto &f : c.flash_drive) {

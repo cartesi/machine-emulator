@@ -53,6 +53,14 @@ public:
     /// \brief Default destructor
     ~state_access() = default;
 
+    const machine &get_naked_machine(void) const {
+        return m_m;
+    }
+
+    machine &get_naked_machine(void) {
+        return m_m;
+    }
+
 private:
     // Declare interface as friend to it can forward calls to the "overriden" methods.
     friend i_state_access<state_access>;

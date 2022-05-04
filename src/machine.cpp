@@ -365,8 +365,6 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_s
     // Clear all TLB entries
     m_s.init_tlb();
 
-    m_s.poll_console = m_c.htif.console_getchar ? m_h.console_poller() : nullptr;
-
     // Add sentinel to PMA vector
     register_pma_entry(make_empty_pma_entry(0, 0));
 }
@@ -1534,6 +1532,10 @@ bool machine::read_word(uint64_t word_address, uint64_t &word_value) const {
         word_value = 0;
         return true;
     }
+}
+
+void machine::poll_htif_console(uint64_t wait) {
+    m_h.poll_console(wait);
 }
 
 void machine::run_inner_loop(uint64_t mcycle_end) {

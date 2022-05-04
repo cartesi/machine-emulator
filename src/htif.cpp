@@ -36,17 +36,10 @@ static constexpr auto htif_ihalt_rel_addr = static_cast<uint64_t>(htif::csr::iha
 static constexpr auto htif_iconsole_rel_addr = static_cast<uint64_t>(htif::csr::iconsole);
 static constexpr auto htif_iyield_rel_addr = static_cast<uint64_t>(htif::csr::iyield);
 
-bool htif::console_char_pending(void) const {
-    return m_buf_pos < m_buf_len;
-}
-
 int htif::console_getchar(void) {
-    // To be extra safe, we check m_console_getchar as well, even though this function should
-    // never be called when m_console_getchar is false and therefore htif.iconsole does not have the
-    // the getchar bit set.
-    if (m_console_getchar) {
+    if (m_console_getchar) { // to be extra safe
         poll_console(0);
-        if (console_char_pending()) {
+        if (m_buf_pos < m_buf_len) {
             return m_buf[m_buf_pos++] + 1;
         }
     }
@@ -118,10 +111,11 @@ void htif::poll_console(uint64_t wait) {
     // Check for input from console, if requested by HTIF
     // Obviously, somethind different must be done in blockchain
     // If we don't have any characters left in buffer, try to obtain more
-    if (!console_char_pending()) {
+    if (m_buf_pos >= m_buf_len) {
         int fd_max{0};
         fd_set rfds{};
-        timeval tv{.tv_usec = static_cast<suseconds_t>(wait)};
+        timeval tv{};
+        tv.tv_usec = static_cast<suseconds_t>(wait);
         FD_ZERO(&rfds); // NOLINT: suppress cause on MacOSX it resolves to __builtin_bzero
         FD_SET(STDIN_FILENO, &rfds);
         if (select(fd_max + 1, &rfds, nullptr, nullptr, &tv) > 0 && FD_ISSET(0, &rfds)) {
@@ -134,10 +128,6 @@ void htif::poll_console(uint64_t wait) {
             }
         }
     }
-}
-
-std::function<void(uint64_t)> htif::console_poller() {
-    return [this](uint64_t wait) { this->poll_console(wait); };
 }
 
 void htif::end_console(void) {

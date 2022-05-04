@@ -19,7 +19,6 @@
 
 #include <array>
 #include <cstdint>
-#include <functional>
 #include <termios.h>
 
 #include <htif-defines.h>
@@ -134,7 +133,8 @@ public:
     /// \brief Destructor
     ~htif();
 
-    std::function<void(uint64_t)> console_poller();
+    /// \brief Checks if there is input available from console.
+    void poll_console(uint64_t wait);
 
     /// \brief Mapping between CSRs and their relative addresses in HTIF memory
     enum class csr {
@@ -160,11 +160,6 @@ private:
 
     /// \brief Closes console.
     void end_console(void);
-
-    /// \brief Checks if there is input available from console.
-    void poll_console(uint64_t wait);
-
-    bool console_char_pending(void) const;
 };
 
 /// \brief Creates a PMA entry for the HTIF device

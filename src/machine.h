@@ -738,6 +738,9 @@ public:
     /// \details The machine must contain an existing memory range
     /// matching the start and length specified in new_range.
     void replace_memory_range(const memory_range_config &new_range);
+
+    /// \brief Poll console for pending input
+    void poll_htif_console(uint64_t wait);
 };
 
 } // namespace cartesi

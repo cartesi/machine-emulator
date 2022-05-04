@@ -22,7 +22,6 @@
 
 #include <cassert>
 #include <cstdint>
-#include <functional>
 #include <iostream>
 
 #ifdef DUMP_HIST
@@ -178,8 +177,6 @@ struct machine_state {
 
     bool brk; ///< Flag set when the tight loop must be broken.
 
-    std::function<void(uint64_t)> poll_console;
-
     std::array<tlb_entry, TLB_SIZE> tlb_read;  ///< Read TLB
     std::array<tlb_entry, TLB_SIZE> tlb_write; ///< Write TLB
     std::array<tlb_entry, TLB_SIZE> tlb_code;  ///< Code TLB
@@ -237,10 +234,6 @@ struct machine_state {
         or_brk_with_iflags_X();
         or_brk_with_iflags_Y();
         or_brk_with_iflags_H();
-    }
-
-    std::function<void(uint64_t)> get_console_poller(void) {
-        return poll_console;
     }
 
     /// \brief Reads the value of the iflags register.

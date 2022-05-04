@@ -2201,25 +2201,27 @@ static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t 
         return raise_illegal_insn_exception(a, pc, insn);
     }
 
-    std::function<void(uint64_t)> poll_console = a.get_naked_state().get_console_poller();
-    if (poll_console) {
-        uint64_t mcycle = a.read_mcycle();
-        uint64_t warp_cycle = rtc_time_to_cycle(a.read_clint_mtimecmp());
-        if (warp_cycle > mcycle) {
-            uint64_t wait = rtc_cycle_to_time(warp_cycle - mcycle);
-            timeval start{};
-            timeval end{};
-
-            gettimeofday(&start, nullptr);
-            poll_console(wait);
-            gettimeofday(&end, nullptr);
-
-            uint64_t elapsed = end.tv_usec - start.tv_usec;
-            uint64_t real_cycle = rtc_time_to_cycle(elapsed * RTC_FREQ_DIV_DEF + rtc_cycle_to_time(mcycle));
-            warp_cycle = elapsed >= wait ? warp_cycle : real_cycle;
-
-            a.write_mcycle(warp_cycle);
-            a.get_naked_state().set_brk();
+    // Compile this code only if STATE_ACCESS = state_access
+    // None of this should enter step logs
+    if constexpr (std::is_same<STATE_ACCESS, state_access>::value) {
+        auto &naked_m = a.get_naked_machine();
+        bool htif_console_getchar = static_cast<bool>(naked_m.read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
+        if (htif_console_getchar) {
+            uint64_t mcycle = naked_m.read_mcycle();
+            uint64_t warp_cycle = rtc_time_to_cycle(naked_m.read_clint_mtimecmp());
+            if (warp_cycle > mcycle) {
+                uint64_t wait = rtc_cycle_to_time(warp_cycle - mcycle);
+                timeval start{};
+                timeval end{};
+                gettimeofday(&start, nullptr);
+                naked_m.poll_htif_console(wait);
+                gettimeofday(&end, nullptr);
+                uint64_t elapsed = end.tv_usec - start.tv_usec;
+                uint64_t real_cycle = rtc_time_to_cycle(elapsed * RTC_FREQ_DIV_DEF + rtc_cycle_to_time(mcycle));
+                warp_cycle = elapsed >= wait ? warp_cycle : real_cycle;
+                naked_m.write_mcycle(warp_cycle);
+                naked_m.get_state().set_brk();
+            }
         }
     }
 

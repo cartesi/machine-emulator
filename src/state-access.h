@@ -346,11 +346,11 @@ private:
         m_m.get_state().htif.tohost = val;
     }
 
-    bool do_read_htif_ihalt(void) const {
+    uint64_t do_read_htif_ihalt(void) const {
         return m_m.get_state().htif.ihalt;
     }
 
-    bool do_read_htif_iconsole(void) const {
+    uint64_t do_read_htif_iconsole(void) const {
         return m_m.get_state().htif.iconsole;
     }
 

@@ -141,10 +141,6 @@ public:
     /// \brief Checks if there is input available from console.
     void poll_console(void);
 
-    bool console_char_pending(void) const;
-
-    int console_get_char(void);
-
     /// \brief Mapping between CSRs and their relative addresses in HTIF memory
     enum class csr {
         tohost = UINT64_C(0x0),
@@ -161,7 +157,7 @@ public:
 
     /// \brief Gets the next available console character
     /// \returns The character, or 0 if none are available.
-    char console_next_char(void);
+    int console_getchar(void);
 
 private:
     /// \brief Initializes console.

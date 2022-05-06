@@ -36,12 +36,11 @@ static constexpr auto htif_ihalt_rel_addr = static_cast<uint64_t>(htif::csr::iha
 static constexpr auto htif_iconsole_rel_addr = static_cast<uint64_t>(htif::csr::iconsole);
 static constexpr auto htif_iyield_rel_addr = static_cast<uint64_t>(htif::csr::iyield);
 
-bool htif::console_char_pending(void) const {
-    return m_buf_pos < m_buf_len;
-}
-
-int htif::console_get_char(void) {
-    if (m_buf_pos < m_buf_len) {
+int htif::console_getchar(void) {
+    // To be extra safe, we check m_console_getchar as well, even though this function should
+    // never be called when m_console_getchar is false and therefore htif.iconsole does not have the
+    // the getchar bit set.
+    if (m_console_getchar && m_buf_pos < m_buf_len) {
         return m_buf[m_buf_pos++] + 1;
     } else {
         return 0;
@@ -198,26 +197,6 @@ static bool htif_read(const pma_entry &pma, i_device_state_access *a, uint64_t o
     }
 }
 
-static bool htif_getchar(i_device_state_access *a, htif *h, uint64_t data) {
-    (void) data;
-    int c = h ? h->console_get_char() : 0;
-    // Write acknowledgement to fromhost
-    a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, HTIF_CONSOLE_GETCHAR, c));
-    return true;
-}
-
-static bool htif_putchar(i_device_state_access *a, htif *h, uint64_t data) {
-    (void) h;
-    uint8_t ch = data & 0xff;
-    // Obviously, something different must be done in blockchain
-    if (write(STDOUT_FILENO, &ch, 1) < 1) {
-        ;
-    }
-    // Write acknowledgement to fromhost
-    a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, HTIF_CONSOLE_PUTCHAR, 0));
-    return true;
-}
-
 static bool htif_halt(i_device_state_access *a, htif *h, uint64_t cmd, uint64_t data) {
     (void) h;
     if (cmd == HTIF_HALT_HALT && (data & 1)) {
@@ -240,22 +219,32 @@ static bool htif_yield(i_device_state_access *a, htif *h, uint64_t cmd, uint64_t
             a->set_iflags_X();
         }
         a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD, cmd, 0));
-        return true;
-    } else {
-        // Otherwise, silently ignore it
-        return true;
     }
+    // Otherwise, silently ignore it
+    return true;
 }
 
 static bool htif_console(i_device_state_access *a, htif *h, uint64_t cmd, uint64_t data) {
-    if (cmd == HTIF_CONSOLE_PUTCHAR) {
-        return htif_putchar(a, h, data);
-    } else if (cmd == HTIF_CONSOLE_GETCHAR) {
-        return htif_getchar(a, h, data);
-    } else {
-        //??D Unknown HTIF console commands are silently ignored
-        return true;
+    // If console command is enabled, perform it and acknowledge
+    if ((a->read_htif_iconsole() >> cmd) & 1) {
+        if (cmd == HTIF_CONSOLE_PUTCHAR) {
+            uint8_t ch = data & 0xff;
+            // In blockchain, there is no place to output a character, so either ignore it or log it somewhere
+            if (write(STDOUT_FILENO, &ch, 1) < 1) {
+                ;
+            }
+            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, cmd, 0));
+        } else if (cmd == HTIF_CONSOLE_GETCHAR) {
+            // In blockchain, this command will never be enabled as there is no way to input the same character
+            // to every participant in a dispute: where would c come from? So if the code reached here in the
+            // blockchain, there must be some serious bug
+            // In interactive mode, we just get the next character from the console and send it back in the ack
+            int c = h ? h->console_getchar() : 0;
+            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, cmd, c));
+        }
     }
+    // Otherwise, silently ignore it
+    return true;
 }
 
 static bool htif_write_tohost(i_device_state_access *a, htif *h, uint64_t tohost) {

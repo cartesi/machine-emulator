@@ -32,48 +32,48 @@ local REASON_TX_EXCEPTION   = cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION
 
 local yields = {
     { mcycle =  13, data = 10, cmd = YIELD_MANUAL, reason = REASON_PROGRESS},
-    { mcycle =  26, data = 11, cmd = YIELD_MANUAL, reason = REASON_PROGRESS},
-    { mcycle =  39, data = 12, cmd = YIELD_MANUAL, reason = REASON_PROGRESS},
-    { mcycle =  53, data = 13, cmd = YIELD_MANUAL, reason = REASON_RX_ACCEPTED},
-    { mcycle =  67, data = 14, cmd = YIELD_MANUAL, reason = REASON_RX_REJECTED},
-    { mcycle =  81, data = 15, cmd = YIELD_MANUAL, reason = REASON_TX_VOUCHER},
-    { mcycle =  95, data = 16, cmd = YIELD_MANUAL, reason = REASON_TX_NOTICE},
-    { mcycle = 109, data = 17, cmd = YIELD_MANUAL, reason = REASON_TX_REPORT},
-    { mcycle = 123, data = 18, cmd = YIELD_MANUAL, reason = REASON_TX_EXCEPTION},
+    { mcycle =  44, data = 11, cmd = YIELD_MANUAL, reason = REASON_PROGRESS},
+    { mcycle =  75, data = 12, cmd = YIELD_MANUAL, reason = REASON_PROGRESS},
+    { mcycle =  107, data = 13, cmd = YIELD_MANUAL, reason = REASON_RX_ACCEPTED},
+    { mcycle =  139, data = 14, cmd = YIELD_MANUAL, reason = REASON_RX_REJECTED},
+    { mcycle =  171, data = 15, cmd = YIELD_MANUAL, reason = REASON_TX_VOUCHER},
+    { mcycle =  203, data = 16, cmd = YIELD_MANUAL, reason = REASON_TX_NOTICE},
+    { mcycle = 235, data = 17, cmd = YIELD_MANUAL, reason = REASON_TX_REPORT},
+    { mcycle = 267, data = 18, cmd = YIELD_MANUAL, reason = REASON_TX_EXCEPTION},
 
-    { mcycle = 136, data = 20, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS},
-    { mcycle = 149, data = 21, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS},
-    { mcycle = 162, data = 22, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS},
-    { mcycle = 176, data = 23, cmd = YIELD_AUTOMATIC, reason = REASON_RX_ACCEPTED},
-    { mcycle = 190, data = 24, cmd = YIELD_AUTOMATIC, reason = REASON_RX_REJECTED},
-    { mcycle = 204, data = 25, cmd = YIELD_AUTOMATIC, reason = REASON_TX_VOUCHER},
-    { mcycle = 218, data = 26, cmd = YIELD_AUTOMATIC, reason = REASON_TX_NOTICE},
-    { mcycle = 232, data = 27, cmd = YIELD_AUTOMATIC, reason = REASON_TX_REPORT},
+    { mcycle = 298, data = 20, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS},
+    { mcycle = 329, data = 21, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS},
+    { mcycle = 360, data = 22, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS},
+    { mcycle = 392, data = 23, cmd = YIELD_AUTOMATIC, reason = REASON_RX_ACCEPTED},
+    { mcycle = 424, data = 24, cmd = YIELD_AUTOMATIC, reason = REASON_RX_REJECTED},
+    { mcycle = 456, data = 25, cmd = YIELD_AUTOMATIC, reason = REASON_TX_VOUCHER},
+    { mcycle = 488, data = 26, cmd = YIELD_AUTOMATIC, reason = REASON_TX_NOTICE},
+    { mcycle = 520, data = 27, cmd = YIELD_AUTOMATIC, reason = REASON_TX_REPORT},
 }
 
 local function stderr(...)
     io.stderr:write(string.format(...))
 end
 
-local final_mcycle = 418
+local final_mcycle = 649
 local exit_payload = 42
 
-function test(config, automatic_yield_enable, manual_yield_enable, reset_manual_yields_enable)
-    stderr("  testing automatic_yield:%s manual_yield:%s reset_manual_yield:%s\n",
-        automatic_yield_enable and "on" or "off",
-        manual_yield_enable and "on" or "off",
-        reset_manual_yields_enable and "on" or "off"
+function test(config, yield_automatic_enable, yield_manual_enable, console_getchar_enable)
+    stderr("  testing yield_automatic:%s yield_manual:%s console_getchar:%s\n",
+        yield_automatic_enable and "on" or "off",
+        yield_manual_enable and "on" or "off",
+        console_getchar_enable and "on" or "off"
     )
     config.htif = {
-        yield_automatic = automatic_yield_enable,
-        yield_manual = manual_yield_enable,
-        reset_manual_yields = reset_manual_yields_enable,
+        yield_automatic = yield_automatic_enable,
+        yield_manual = yield_manual_enable,
+        console_getchar = console_getchar_enable
     }
     local machine = cartesi.machine(config)
     for i, v in ipairs(yields) do
         if (v.reason == REASON_PROGRESS and progress_enable) or
-           (v.cmd    == YIELD_MANUAL and manual_yield_enable) or
-           (v.cmd    == YIELD_AUTOMATIC and automatic_yield_enable)
+           (v.cmd    == YIELD_MANUAL and yield_manual_enable) or
+           (v.cmd    == YIELD_AUTOMATIC and yield_automatic_enable)
         then
             while not machine:read_iflags_Y() and
                   not machine:read_iflags_X() and
@@ -81,20 +81,21 @@ function test(config, automatic_yield_enable, manual_yield_enable, reset_manual_
                 machine:run(math.maxinteger)
             end
 
-            if automatic_yield_enable and v.cmd == YIELD_AUTOMATIC then
-                assert(machine:read_iflags_X())
-                assert(not machine:read_iflags_Y())
-            elseif manual_yield_enable and v.cmd == YIELD_MANUAL then
-                assert(machine:read_iflags_Y())
-                assert(not machine:read_iflags_X())
-            else
-                assert(false)
-            end
-
             -- mcycle should be as expected
             local mcycle = machine:read_mcycle()
             assert(mcycle == v.mcycle,
                 string.format("mcycle: expected %d, got %d", v.mcycle, mcycle))
+
+            if yield_automatic_enable and v.cmd == YIELD_AUTOMATIC then
+                assert(machine:read_iflags_X(), "expected iflags_X set")
+                assert(not machine:read_iflags_Y(), "expected iflags_Y not set")
+            elseif yield_manual_enable and v.cmd == YIELD_MANUAL then
+                assert(machine:read_iflags_Y(), "expected iflags_Y set")
+                assert(not machine:read_iflags_X(), "expected iflags_X not set")
+            else
+                assert(false)
+            end
+
             -- data should be as expected
             local data = machine:read_htif_tohost_data()
             local reason = data >> 32
@@ -120,11 +121,14 @@ function test(config, automatic_yield_enable, manual_yield_enable, reset_manual_
         machine:run(math.maxinteger)
     end
     -- should be halted
-    assert(machine:read_iflags_H())
+    assert(machine:read_iflags_H(), "expected iflags_H set")
     -- at the expected mcycle
-    assert(machine:read_mcycle() == final_mcycle, machine:read_mcycle())
+    assert(machine:read_mcycle() == final_mcycle, string.format("mcycle: expected, %u got %u",
+        final_mcycle, machine:read_mcycle()))
     -- with the expected payload
-    assert((machine:read_htif_tohost_data() >> 1) == exit_payload)
+    assert((machine:read_htif_tohost_data() >> 1) == exit_payload,
+        string.format("exit payload: expected %u, got %u\n", exit_payload,
+            machine:read_htif_tohost_data() >> 1))
     stderr("    passed\n")
 end
 
@@ -132,8 +136,8 @@ stderr("testing yield sink\n")
 
 for _, auto in ipairs{true, false} do
     for _, manual in ipairs{true, false} do
-        for _, reset in ipairs{true, false} do
-            test(config, auto, manual, reset)
+        for _, getchar in ipairs{true, false} do
+            test(config, auto, manual, getchar)
         end
     end
 end

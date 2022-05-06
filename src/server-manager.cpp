@@ -541,12 +541,6 @@ public:
     using handler_exception::handler_exception;
 };
 
-/// \brief Exception thrown when RPC reached an error before it was restarted
-class restart_handler_finish_error_yield_none : public handler_exception {
-public:
-    using handler_exception::handler_exception;
-};
-
 /// \brief Exception thrown when an error condition prevents further interactions with the session
 class taint_session : public std::exception {
 public:
@@ -1461,20 +1455,18 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
         hctx.manager_async_service.RequestStartSession(&request_context, &start_session_request, &start_session_writer,
             cq, cq, self);
         yield(side_effect::none);
+        new_StartSession_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
         // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
         if (!hctx.ok) {
-            new_StartSession_handler(hctx);
             return;
         }
-        handler_type::pull_type *restarted = nullptr;
         try {
-            // We now received a StartSession RPC, and we are not waiting for additional StartSession rpcs yet.
-            auto &sessions = hctx.sessions;
+            // We now received a StartSession RPC
+            auto &sessions = hctx.sessions; // NOLINT: Unknown. Maybe linter bug?
             const auto &id = start_session_request.session_id();
             dout{request_context} << "Received StartSession request for session " << id;
             // Empty id is invalid, so a bail out
             if (id.empty()) {
-                new_StartSession_handler(hctx);
                 start_session_writer.FinishWithError(grpc::Status{StatusCode::INVALID_ARGUMENT, "session id is empty"},
                     self);
                 yield(side_effect::none);
@@ -1482,7 +1474,6 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
             }
             // If a session with this id already exists, a bail out
             if (sessions.find(id) != sessions.end()) {
-                new_StartSession_handler(hctx);
                 start_session_writer.FinishWithError(grpc::Status{StatusCode::ALREADY_EXISTS, "session id is taken"},
                     self);
                 yield(side_effect::none);
@@ -1494,52 +1485,48 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
             auto_lock lock(session.session_lock, "StartSession session lock");
             // If no machine config or directory is set on machine request, bail out
             if (start_session_request.machine_directory().empty()) {
-                THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
-                    "missing machine directory"}));
+                THROW((finish_error_yield_none{StatusCode::INVALID_ARGUMENT, "missing machine directory"}));
             }
             // If active_epoch_index is too large, bail
             if (session.active_epoch_index == UINT64_MAX) {
-                THROW((restart_handler_finish_error_yield_none{grpc::StatusCode::OUT_OF_RANGE,
-                    "active epoch index will overflow"}));
+                THROW((finish_error_yield_none{grpc::StatusCode::OUT_OF_RANGE, "active epoch index will overflow"}));
             }
             // If no deadline config, bail out
             if (!start_session_request.has_server_deadline()) {
-                THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
-                    "missing server deadline config"}));
+                THROW((finish_error_yield_none{StatusCode::INVALID_ARGUMENT, "missing server deadline config"}));
             }
             // If advance_state deadline is less than advance_state_increment deadline, bail out
             if (session.server_deadline.advance_state < session.server_deadline.advance_state_increment) {
-                THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
+                THROW((finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
                     "advance state deadline is less than advance state increment deadline"}));
             }
             // If inspect_state deadline is less than inspect_state_increment deadline, bail out
             if (session.server_deadline.inspect_state < session.server_deadline.inspect_state_increment) {
-                THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
+                THROW((finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
                     "inspect state deadline is less than inspect state increment deadline"}));
             }
             // If no cycles config, bail out
             if (!start_session_request.has_server_cycles()) {
-                THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
-                    "missing server cycles config"}));
+                THROW((finish_error_yield_none{StatusCode::INVALID_ARGUMENT, "missing server cycles config"}));
             }
             // If advance state have no cycles to complete, bail out
             if (session.server_cycles.max_advance_state == 0 || session.server_cycles.advance_state_increment == 0) {
-                THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
+                THROW((finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
                     "max cycles per advance state or cycles per advance state increment is zero"}));
             }
             // If max cycles per advance state is less than cycles per advance state increment, bail out
             if (session.server_cycles.max_advance_state < session.server_cycles.advance_state_increment) {
-                THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
+                THROW((finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
                     "max cycles per advance state is less than cycles per advance state increment"}));
             }
             // If inspect state have no cycles to complete, bail out
             if (session.server_cycles.max_inspect_state == 0 || session.server_cycles.inspect_state_increment == 0) {
-                THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
+                THROW((finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
                     "max cycles per inspect state or cycles per inspect state increment is zero"}));
             }
             // If max cycles per inspect state is less than cycles per inspect state increment, bail out
             if (session.server_cycles.max_inspect_state < session.server_cycles.inspect_state_increment) {
-                THROW((restart_handler_finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
+                THROW((finish_error_yield_none{StatusCode::INVALID_ARGUMENT,
                     "max cycles per inspect state is less than cycles per inspect state increment"}));
             }
             // Wait for machine server to checkin after spawned
@@ -1554,16 +1541,11 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
                     auto server_process = boost::process::child(cmdline, actx.session.server_process_group);
                     server_process.detach();
                 } catch (boost::process::process_error &e) {
-                    THROW((restart_handler_finish_error_yield_none{StatusCode::INTERNAL,
+                    THROW((finish_error_yield_none{StatusCode::INTERNAL,
                         "failed spawning remote-cartesi-machine with command-line '" + cmdline + "' (" + e.what() +
                             ")"}));
                 }
             });
-            // At this point, we can safely start processing additional StartSession rpcs
-            // and we are not accepting CheckIn rpcs
-            // ??D With the new checkin mechanism using a hash map, couldn't we accept multiple checkins right away?
-            // This would simplify the logic by removing the need for the "restart_handler_finish_yield_none" exception.
-            restarted = new_StartSession_handler(hctx);
             try {
                 check_server_version(actx);
                 check_server_machine(actx, start_session_request.machine_directory());
@@ -1594,18 +1576,9 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
             hctx.sessions.erase(start_session_request.session_id());
             start_session_writer.FinishWithError(e.status(), self);
             yield(side_effect::none);
-        } catch (restart_handler_finish_error_yield_none &e) {
-            dout{request_context} << "Caught restart_handler_finish_error_yield_none " << e.status().error_message();
-            hctx.sessions.erase(start_session_request.session_id());
-            new_StartSession_handler(hctx);
-            start_session_writer.FinishWithError(e.status(), self);
-            yield(side_effect::none);
         } catch (std::exception &e) {
             dout{request_context} << "Caught unexpected exception " << e.what();
             hctx.sessions.erase(start_session_request.session_id());
-            if (!restarted) {
-                new_StartSession_handler(hctx);
-            }
             start_session_writer.FinishWithError(
                 grpc::Status{grpc::StatusCode::INTERNAL, std::string{"unexpected exception "} + e.what()}, self);
             yield(side_effect::none);

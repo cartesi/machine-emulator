@@ -293,7 +293,9 @@ test-grpc: luacartesi grpc
 	./tests/test-grpc-server.sh ./remote-cartesi-machine ./cartesi-machine.lua ./cartesi-machine-tests.lua "$(TEST_PATH)"
 
 test-scripts: luacartesi
-	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do $(LUA_BIN) $$x local || exit 1; done
+	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do \
+		echo -n 'CTSICTSI' | $(LUA_BIN) $$x local || exit 1; \
+	done
 
 test-c-api: c-api
 	tests/test-machine-c-api

@@ -11,7 +11,7 @@ local config =  {
     marchid = -1,
   },
   ram = {
-    image_filename = test_util.tests_path .. "htif_devices.bin",
+    image_filename = test_util.tests_path .. "htif_yield.bin",
     length = 0x4000000,
   },
   rom = {
@@ -55,19 +55,17 @@ local function stderr(...)
     io.stderr:write(string.format(...))
 end
 
-local final_mcycle = 649
+local final_mcycle = 553
 local exit_payload = 42
 
-function test(config, yield_automatic_enable, yield_manual_enable, console_getchar_enable)
-    stderr("  testing yield_automatic:%s yield_manual:%s console_getchar:%s\n",
+function test(config, yield_automatic_enable, yield_manual_enable)
+    stderr("  testing yield_automatic:%s yield_manual:%s\n",
         yield_automatic_enable and "on" or "off",
-        yield_manual_enable and "on" or "off",
-        console_getchar_enable and "on" or "off"
+        yield_manual_enable and "on" or "off"
     )
     config.htif = {
         yield_automatic = yield_automatic_enable,
         yield_manual = yield_manual_enable,
-        console_getchar = console_getchar_enable
     }
     local machine = cartesi.machine(config)
     for i, v in ipairs(yields) do
@@ -136,8 +134,6 @@ stderr("testing yield sink\n")
 
 for _, auto in ipairs{true, false} do
     for _, manual in ipairs{true, false} do
-        for _, getchar in ipairs{true, false} do
-            test(config, auto, manual, getchar)
-        end
+        test(config, auto, manual)
     end
 end

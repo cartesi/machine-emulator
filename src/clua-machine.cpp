@@ -126,15 +126,10 @@ int clua_machine_init(lua_State *L, int ctxidx) {
     clua_createnewtype<clua_managed_cm_ptr<cm_machine_config>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<cm_access_log>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<cm_machine_runtime_config>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<cm_merkle_tree_proof>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<unsigned char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<cm_memory_range_config>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_ram_config>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_rom_config>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_dhd_config>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_dhd_runtime_config>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_rollup_config>>(L, ctxidx);
     if (!clua_typeexists<machine_class>(L, ctxidx)) {
         clua_createtype<machine_class>(L, "cartesi machine class", ctxidx);
         clua_setmethods<machine_class>(L, machine_class_index.data(), 0, ctxidx);

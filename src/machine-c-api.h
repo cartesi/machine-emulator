@@ -44,6 +44,12 @@ extern "C" {
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays,modernize-use-using)
 typedef uint8_t cm_hash[CM_MACHINE_HASH_BYTE_SIZE];
 
+/// \brief Array of hashes
+typedef struct { // NOLINT(modernize-use-using)
+    cm_hash *entry;
+    size_t count;
+} cm_hash_array;
+
 /// brief Error codes returned from machine emulator C API
 enum CM_ERROR {
     CM_ERROR_OK = 0,
@@ -173,13 +179,19 @@ typedef struct {                // NOLINT(modernize-use-using)
     const char *image_filename; ///< ROM image file
 } cm_rom_config;
 
-/// \brief Memory range state configuration
+/// \brief Memory range configuration
 typedef struct {                // NOLINT(modernize-use-using)
     uint64_t start;             ///< Memory range start position
     uint64_t length;            ///< Memory range length
     bool shared;                ///< Target changes to range affect image file?
     const char *image_filename; ///< Memory range image file name
 } cm_memory_range_config;
+
+/// \brief Memory range configuration array
+typedef struct { // NOLINT(modernize-use-using)
+    cm_memory_range_config *entry;
+    size_t count;
+} cm_memory_range_config_array;
 
 /// \brief CLINT device state configuration
 typedef struct {       // NOLINT(modernize-use-using)
@@ -209,8 +221,8 @@ typedef struct {                            // NOLINT(modernize-use-using)
 /// \brief Rollup state configuration
 typedef struct {                           // NOLINT(modernize-use-using)
     bool has_value;                        ///< Represents whether the rest of the struct have been filled
-    cm_memory_range_config rx_buffer;      // RX buffer memory range
-    cm_memory_range_config tx_buffer;      // TX buffer memory range
+    cm_memory_range_config rx_buffer;      ///< RX buffer memory range
+    cm_memory_range_config tx_buffer;      ///< TX buffer memory range
     cm_memory_range_config input_metadata; ///< Input metadata memory range
     cm_memory_range_config voucher_hashes; ///< Voucher hashes memory range
     cm_memory_range_config notice_hashes;  ///< Notice hashes memory range
@@ -221,8 +233,7 @@ typedef struct { // NOLINT(modernize-use-using)
     cm_processor_config processor;
     cm_ram_config ram;
     cm_rom_config rom;
-    cm_memory_range_config *flash_drive;
-    size_t flash_drive_count;
+    cm_memory_range_config_array flash_drive;
     cm_clint_config clint;
     cm_htif_config htif;
     cm_dhd_config dhd;
@@ -239,8 +250,7 @@ typedef struct { // NOLINT(modernize-use-using)
     cm_hash target_hash;
     size_t log2_root_size;
     cm_hash root_hash;
-    cm_hash *sibling_hashes;
-    size_t sibling_hashes_count;
+    cm_hash_array sibling_hashes;
 } cm_merkle_tree_proof;
 
 /// \brief Type of state access
@@ -280,15 +290,30 @@ typedef struct {                 // NOLINT(modernize-use-using)
     cm_merkle_tree_proof *proof; ///< Proof of data before access
 } cm_access;
 
+/// \brief Array of accesses
+typedef struct { // NOLINT(modernize-use-using)
+    cm_access *entry;
+    size_t count;
+} cm_access_array;
+
+/// \brief Array of bracket notes
+typedef struct { // NOLINT(modernize-use-using)
+    cm_bracket_note *entry;
+    size_t count;
+} cm_bracket_note_array;
+
+/// \brief Array of notes
+typedef struct { // NOLINT(modernize-use-using)
+    const char **entry;
+    size_t count;
+} cm_note_array;
+
 /// \brief Log of state accesses
-typedef struct {                 // NOLINT(modernize-use-using)
-    cm_access *accesses;         ///< List of all accesses
-    size_t accesses_count;       ///< Size of list of all accesses
-    cm_bracket_note *brackets;   ///< Begin/End annotations
-    size_t brackets_count;       ///< Size of begin/end annotations
-    const char **notes;          ///< Per-access annotations
-    size_t notes_count;          ///< Number of per-access annotations
-    cm_access_log_type log_type; ///< Log type
+typedef struct {                    // NOLINT(modernize-use-using)
+    cm_access_array accesses;       ///< List of accesses
+    cm_bracket_note_array brackets; ///< Begin/End annotations
+    cm_note_array notes;            ///< Per-access annotations
+    cm_access_log_type log_type;    ///< Log type
 } cm_access_log;
 
 /// \brief DHD runtime configuration
@@ -1376,10 +1401,6 @@ CM_API int cm_replace_memory_range(cm_machine *m, const cm_memory_range_config *
 /// \returns void
 CM_API void cm_delete_memory_range_config(const cm_memory_range_config *config);
 
-/// \brief Deletes a rollup config
-/// \returns void
-CM_API void cm_delete_rollup_config(const cm_rollup_config *config);
-
 /// \brief Deletes the error message
 /// \param err_msg Pointer to error message received from some other function
 /// \details This C API is meant to be used for various language bindings.
@@ -1411,22 +1432,6 @@ CM_API int cm_snapshot(cm_machine *m, char **err_msg);
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_rollback(cm_machine *m, char **err_msg);
-
-/// \brief Deletes allocated ram config
-/// \returns void
-CM_API void cm_delete_ram_config(const cm_ram_config *config);
-
-/// \brief Deletes allocated rom config
-/// \returns void
-CM_API void cm_delete_rom_config(const cm_rom_config *config);
-
-/// \brief Deletes allocated dhd config
-/// \returns void
-CM_API void cm_delete_dhd_config(const cm_dhd_config *config);
-
-/// \brief Deletes allocated dhd runtime config
-/// \returns void
-CM_API void cm_delete_dhd_runtime_config(const cm_dhd_runtime_config *config);
 
 #ifdef __cplusplus
 }

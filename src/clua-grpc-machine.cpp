@@ -231,10 +231,6 @@ int clua_grpc_machine_init(lua_State *L, int ctxidx) {
     clua_createnewtype<clua_managed_cm_ptr<cm_merkle_tree_proof>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<const cm_semantic_version>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_ram_config>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_rom_config>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_dhd_config>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_dhd_runtime_config>>(L, ctxidx);
     return 1;
 }
 

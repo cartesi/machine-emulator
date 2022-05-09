@@ -502,6 +502,9 @@ static void hex_string_to_binary(const std::string &input, std::string &dest) {
 #ifndef __clang_analyzer__
     CryptoPP::StringSource ss(input, true,
         new CryptoPP::HexDecoder(new CryptoPP::StringSink(dest))); // NOLINT: suppress cryptopp warnings
+#else
+    (void) input;
+    (void) dest;
 #endif
 }
 

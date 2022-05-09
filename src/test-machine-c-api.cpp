@@ -221,11 +221,11 @@ protected:
         target->rom.bootargs = new_cstr(source->rom.bootargs);
         target->rom.image_filename = new_cstr(source->rom.image_filename);
 
-        target->flash_drive_count = source->flash_drive_count;
-        target->flash_drive = new cm_memory_range_config[source->flash_drive_count]{};
-        for (size_t i = 0; i < target->flash_drive_count; ++i) {
-            target->flash_drive[i] = source->flash_drive[i];
-            target->flash_drive[i].image_filename = new_cstr(source->flash_drive[i].image_filename);
+        target->flash_drive.count = source->flash_drive.count;
+        target->flash_drive.entry = new cm_memory_range_config[source->flash_drive.count]{};
+        for (size_t i = 0; i < target->flash_drive.count; ++i) {
+            target->flash_drive.entry[i] = source->flash_drive.entry[i];
+            target->flash_drive.entry[i].image_filename = new_cstr(source->flash_drive.entry[i].image_filename);
         }
 
         target->clint = source->clint;
@@ -241,10 +241,10 @@ protected:
         if (config->dhd.has_value) {
             delete[] config->dhd.image_filename;
         }
-        for (size_t i = 0; i < config->flash_drive_count; ++i) {
-            delete[] config->flash_drive[i].image_filename;
+        for (size_t i = 0; i < config->flash_drive.count; ++i) {
+            delete[] config->flash_drive.entry[i].image_filename;
         }
-        delete[] config->flash_drive;
+        delete[] config->flash_drive.entry;
         delete[] config->rom.image_filename;
         delete[] config->rom.bootargs;
         delete[] config->ram.image_filename;
@@ -256,9 +256,9 @@ protected:
     }
 
     void _setup_flash(std::list<cm_memory_range_config> &&configs) {
-        _machine_config.flash_drive_count = configs.size();
-        delete[] _machine_config.flash_drive;
-        _machine_config.flash_drive = new cm_memory_range_config[configs.size()];
+        _machine_config.flash_drive.count = configs.size();
+        delete[] _machine_config.flash_drive.entry;
+        _machine_config.flash_drive.entry = new cm_memory_range_config[configs.size()];
 
         for (auto [cfg_it, i] = std::tuple{configs.begin(), 0}; cfg_it != configs.end(); ++cfg_it, ++i) {
             std::ofstream flash_stream(cfg_it->image_filename);
@@ -266,10 +266,10 @@ protected:
             flash_stream.close();
             std::filesystem::resize_file(cfg_it->image_filename, cfg_it->length);
 
-            _machine_config.flash_drive[i].start = cfg_it->start;
-            _machine_config.flash_drive[i].length = cfg_it->length;
-            _machine_config.flash_drive[i].shared = cfg_it->shared;
-            _machine_config.flash_drive[i].image_filename = new_cstr(cfg_it->image_filename);
+            _machine_config.flash_drive.entry[i].start = cfg_it->start;
+            _machine_config.flash_drive.entry[i].length = cfg_it->length;
+            _machine_config.flash_drive.entry[i].shared = cfg_it->shared;
+            _machine_config.flash_drive.entry[i].image_filename = new_cstr(cfg_it->image_filename);
         }
     }
 
@@ -375,7 +375,7 @@ protected:
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, machine_rom_flash_simple_fixture) {
-    _machine_config.flash_drive[0].start -= 1;
+    _machine_config.flash_drive.entry[0].start -= 1;
 
     char *err_msg{};
     int error_code = cm_create_machine(&_machine_config, &_runtime_config, &_machine, &err_msg);
@@ -795,7 +795,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_machine_hash_test, ordinary_machine_fix
     BOOST_CHECK_EQUAL_COLLECTIONS(origin_root_hash, origin_root_hash + sizeof(cm_hash), p->root_hash,
         p->root_hash + sizeof(cm_hash));
     BOOST_CHECK_EQUAL(p->log2_root_size, 64);
-    BOOST_CHECK_EQUAL(p->sibling_hashes_count, 52);
+    BOOST_CHECK_EQUAL(p->sibling_hashes.count, 52);
 
     cm_delete_merkle_tree_proof(p);
 }

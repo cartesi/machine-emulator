@@ -39,6 +39,7 @@ template <>
 void cm_delete<const cm_machine_config>(const cm_machine_config *ptr) {
     cm_delete_machine_config(ptr);
 }
+
 template <>
 void cm_delete<cm_machine_config>(cm_machine_config *ptr) {
     cm_delete_machine_config(ptr);
@@ -72,36 +73,6 @@ void cm_delete(cm_merkle_tree_proof *ptr) {
 template <>
 void cm_delete(cm_memory_range_config *ptr) {
     cm_delete_memory_range_config(ptr);
-}
-
-/// \brief Deleter for C api flash drive config
-template <>
-void cm_delete(cm_rollup_config *ptr) {
-    cm_delete_rollup_config(ptr);
-}
-
-/// \brief Deleter for C api ram config
-template <>
-void cm_delete(cm_ram_config *ptr) {
-    cm_delete_ram_config(ptr);
-}
-
-/// \brief Deleter for C api rom config
-template <>
-void cm_delete(cm_rom_config *ptr) {
-    cm_delete_rom_config(ptr);
-}
-
-/// \brief Deleter for C api dhd config
-template <>
-void cm_delete(cm_dhd_config *ptr) {
-    cm_delete_dhd_config(ptr);
-}
-
-/// \brief Deleter for C api dhd runtime config
-template <>
-void cm_delete(cm_dhd_runtime_config *ptr) {
-    cm_delete_dhd_runtime_config(ptr);
 }
 
 static char *copy_lua_str(lua_State *L, int idx) {
@@ -353,50 +324,40 @@ static cm_bracket_note check_cm_bracket_note(lua_State *L, int tabidx) {
 /// \param log2_target_size Size of node from which to obtain siblings
 /// \param log2_root_size Root log2 size of tree
 /// \param p Receives array of sibling hashes
-/// \returns Count of sibling hashes
-static size_t check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_size, const size_t log2_root_size,
-    cm_hash **sibling_hashes) {
+static void check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_size, const size_t log2_root_size,
+    cm_hash_array *sibling_hashes) {
     luaL_checktype(L, idx, LUA_TTABLE);
-    auto sibling_hashes_count = log2_root_size - log2_target_size;
-    std::array<cm_hash, 64> temp_hashes{};
-    assert(sibling_hashes_count <= 64);
+    memset(sibling_hashes, 0, sizeof(cm_hash_array));
+    sibling_hashes->count = log2_root_size - log2_target_size;
+    if (sibling_hashes->count > 64) {
+        luaL_error(L, "too many sibling hashes (expected max %u, got %u)", 64, sibling_hashes->count);
+    }
+    sibling_hashes->entry = new cm_hash[sibling_hashes->count]{};
     for (; log2_target_size < log2_root_size; ++log2_target_size) {
         lua_rawgeti(L, idx, static_cast<lua_Integer>(log2_root_size - log2_target_size));
         auto index = log2_root_size - 1 - log2_target_size;
-        clua_check_cm_hash(L, -1, &temp_hashes[index]);
+        clua_check_cm_hash(L, -1, &sibling_hashes->entry[index]);
         lua_pop(L, 1);
     }
-    *sibling_hashes = new cm_hash[sibling_hashes_count]{};
-    memcpy(*sibling_hashes, temp_hashes.data(), sizeof(cm_hash) * sibling_hashes_count);
-    return sibling_hashes_count;
 }
 
 cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
-    // Retrieve field values from lua
-    auto log2_target_size = check_uint_field(L, tabidx, "log2_target_size");
-    auto log2_root_size = check_uint_field(L, tabidx, "log2_root_size");
-    auto target_address = check_uint_field(L, tabidx, "target_address");
-    cm_hash target_hash{};
+    auto &managed = clua_push_to(L, clua_managed_cm_ptr<cm_merkle_tree_proof>(new cm_merkle_tree_proof{}));
+    cm_merkle_tree_proof *proof = managed.get();
+    proof->log2_target_size = check_uint_field(L, tabidx, "log2_target_size");
+    proof->log2_root_size = check_uint_field(L, tabidx, "log2_root_size");
+    proof->target_address = check_uint_field(L, tabidx, "target_address");
     lua_getfield(L, tabidx, "target_hash");
-    clua_check_cm_hash(L, -1, &target_hash);
+    clua_check_cm_hash(L, -1, &proof->target_hash);
     lua_pop(L, 1);
-    cm_hash root_hash{};
     lua_getfield(L, tabidx, "root_hash");
-    clua_check_cm_hash(L, -1, &root_hash);
+    clua_check_cm_hash(L, -1, &proof->root_hash);
     lua_pop(L, 1);
     lua_getfield(L, tabidx, "sibling_hashes");
-    cm_hash *sibling_hashes{};
-    auto sibling_hashes_count = check_sibling_cm_hashes(L, -1, log2_target_size, log2_root_size, &sibling_hashes);
+    check_sibling_cm_hashes(L, -1, proof->log2_target_size, proof->log2_root_size, &proof->sibling_hashes);
+    managed.release();
     lua_pop(L, 1);
-    auto *proof = new cm_merkle_tree_proof{};
-    proof->log2_target_size = log2_target_size;
-    proof->log2_root_size = log2_root_size;
-    proof->target_address = target_address;
-    memcpy(proof->target_hash, &target_hash, CM_MACHINE_HASH_BYTE_SIZE);
-    memcpy(proof->root_hash, &root_hash, CM_MACHINE_HASH_BYTE_SIZE);
-    proof->sibling_hashes = sibling_hashes;
-    proof->sibling_hashes_count = sibling_hashes_count;
     return proof;
 }
 
@@ -491,39 +452,39 @@ cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx) {
     auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(new cm_access_log{}));
     auto &acc_log = managed_log.get();
     check_table_field(L, tabidx, "accesses");
-    acc_log->accesses_count = luaL_len(L, -1);
-    acc_log->accesses = new cm_access[acc_log->accesses_count];
-    for (size_t i = 1; i <= acc_log->accesses_count; i++) {
+    acc_log->accesses.count = luaL_len(L, -1);
+    acc_log->accesses.entry = new cm_access[acc_log->accesses.count];
+    for (size_t i = 1; i <= acc_log->accesses.count; i++) {
         lua_geti(L, -1, static_cast<lua_Integer>(i));
         if (!lua_istable(L, -1)) {
             luaL_error(L, "access [%d] not a table", i);
         }
-        acc_log->accesses[i - 1] = check_cm_access(L, -1, proofs);
+        acc_log->accesses.entry[i - 1] = check_cm_access(L, -1, proofs);
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
     if (annotations) {
         check_table_field(L, tabidx, "notes");
-        acc_log->notes_count = luaL_len(L, -1);
-        acc_log->notes = new const char *[acc_log->notes_count];
-        for (size_t i = 1; i <= acc_log->notes_count; i++) {
+        acc_log->notes.count = luaL_len(L, -1);
+        acc_log->notes.entry = new const char *[acc_log->notes.count];
+        for (size_t i = 1; i <= acc_log->notes.count; i++) {
             lua_geti(L, -1, static_cast<lua_Integer>(i));
             if (!lua_isstring(L, -1)) {
                 luaL_error(L, "note [%d] not a string", i);
             }
-            acc_log->notes[i - 1] = copy_lua_str(L, -1);
+            acc_log->notes.entry[i - 1] = copy_lua_str(L, -1);
             lua_pop(L, 1);
         }
         lua_pop(L, 1);
         check_table_field(L, tabidx, "brackets");
-        acc_log->brackets_count = luaL_len(L, -1);
-        acc_log->brackets = new cm_bracket_note[acc_log->brackets_count];
-        for (size_t i = 1; i <= acc_log->brackets_count; i++) {
+        acc_log->brackets.count = luaL_len(L, -1);
+        acc_log->brackets.entry = new cm_bracket_note[acc_log->brackets.count];
+        for (size_t i = 1; i <= acc_log->brackets.count; i++) {
             lua_geti(L, -1, static_cast<lua_Integer>(i));
             if (!lua_istable(L, -1)) {
                 luaL_error(L, "bracket [%d] not a table", i);
             }
-            acc_log->brackets[i - 1] = check_cm_bracket_note(L, -1);
+            acc_log->brackets.entry[i - 1] = check_cm_bracket_note(L, -1);
             lua_pop(L, 1);
         }
         lua_pop(L, 1);
@@ -655,8 +616,8 @@ void clua_push_cm_access_log(lua_State *L, const cm_access_log *log) {
 
     // Add all accesses
     lua_newtable(L); // log accesses
-    for (size_t i = 0; i < log->accesses_count; ++i) {
-        const cm_access *a = &log->accesses[i];
+    for (size_t i = 0; i < log->accesses.count; ++i) {
+        const cm_access *a = &log->accesses.entry[i];
         lua_newtable(L); // log accesses wordaccess
         clua_setstringfield(L, cm_access_type_name(a->type), "type", -1);
         clua_setintegerfield(L, a->address, "address", -1);
@@ -677,8 +638,8 @@ void clua_push_cm_access_log(lua_State *L, const cm_access_log *log) {
     // Add all brackets
     if (log->log_type.annotations) {
         lua_newtable(L); // log brackets
-        for (size_t i = 0; i < log->brackets_count; ++i) {
-            const cm_bracket_note *b = &log->brackets[i];
+        for (size_t i = 0; i < log->brackets.count; ++i) {
+            const cm_bracket_note *b = &log->brackets.entry[i];
             lua_newtable(L); // log brackets bracket
             clua_setstringfield(L, cm_bracket_type_name(b->type), "type", -1);
             clua_setintegerfield(L, b->where + 1, "where", -1); // convert from 0- to 1-based index
@@ -688,8 +649,8 @@ void clua_push_cm_access_log(lua_State *L, const cm_access_log *log) {
         lua_setfield(L, -2, "brackets"); // log
 
         lua_newtable(L); // log notes
-        for (size_t i = 0; i < log->notes_count; ++i) {
-            const char *note = log->notes[i];
+        for (size_t i = 0; i < log->notes.count; ++i) {
+            const char *note = log->notes.entry[i];
             lua_pushstring(L, note);
             lua_rawseti(L, -2, static_cast<lua_Integer>(i) + 1);
         }
@@ -715,7 +676,7 @@ void clua_push_cm_proof(lua_State *L, const cm_merkle_tree_proof *proof) {
     lua_newtable(L); // proof
     lua_newtable(L); // proof siblings
     for (size_t log2_size = proof->log2_target_size; log2_size < proof->log2_root_size; ++log2_size) {
-        clua_push_cm_hash(L, &proof->sibling_hashes[proof->log2_root_size - 1 - log2_size]);
+        clua_push_cm_hash(L, &proof->sibling_hashes.entry[proof->log2_root_size - 1 - log2_size]);
         lua_rawseti(L, -2, static_cast<lua_Integer>(proof->log2_root_size - log2_size));
     }
     lua_setfield(L, -2, "sibling_hashes");                                    // proof
@@ -881,30 +842,29 @@ static void push_cm_rollup_config(lua_State *L, const cm_rollup_config *r) {
 
 /// \brief Pushes cm_flash_drive_configs to the Lua stack
 /// \param L Lua state.
-/// \param flash_drive Flash drive configurations to be pushed.
-static void push_cm_flash_drive_configs(lua_State *L, const cm_memory_range_config *flash_drive,
-    size_t flash_drive_count) {
+/// \param flash_drives Flash drive configuration array to be pushed.
+static void push_cm_flash_drive_configs(lua_State *L, const cm_memory_range_config_array *flash_drives) {
     lua_newtable(L);
-    for (size_t j = 0; j < flash_drive_count; ++j) {
-        push_cm_memory_range_config(L, &flash_drive[j]);
+    for (size_t j = 0; j < flash_drives->count; ++j) {
+        push_cm_memory_range_config(L, &flash_drives->entry[j]);
         lua_rawseti(L, -2, static_cast<lua_Integer>(j) + 1);
     }
 }
 
 void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
-    lua_newtable(L);                                                      // config
-    push_cm_processor_config(L, &c->processor);                           // config processor
-    lua_setfield(L, -2, "processor");                                     // config
-    push_cm_htif_config(L, &c->htif);                                     // config htif
-    lua_setfield(L, -2, "htif");                                          // config
-    push_cm_clint_config(L, &c->clint);                                   // config clint
-    lua_setfield(L, -2, "clint");                                         // config
-    push_cm_flash_drive_configs(L, c->flash_drive, c->flash_drive_count); // config flash_drive
-    lua_setfield(L, -2, "flash_drive");                                   // config
-    push_cm_ram_config(L, &c->ram);                                       // config ram
-    lua_setfield(L, -2, "ram");                                           // config
-    push_cm_rom_config(L, &c->rom);                                       // config rom
-    lua_setfield(L, -2, "rom");                                           // config
+    lua_newtable(L);                                 // config
+    push_cm_processor_config(L, &c->processor);      // config processor
+    lua_setfield(L, -2, "processor");                // config
+    push_cm_htif_config(L, &c->htif);                // config htif
+    lua_setfield(L, -2, "htif");                     // config
+    push_cm_clint_config(L, &c->clint);              // config clint
+    lua_setfield(L, -2, "clint");                    // config
+    push_cm_flash_drive_configs(L, &c->flash_drive); // config flash_drive
+    lua_setfield(L, -2, "flash_drive");              // config
+    push_cm_ram_config(L, &c->ram);                  // config ram
+    lua_setfield(L, -2, "ram");                      // config
+    push_cm_rom_config(L, &c->rom);                  // config rom
+    lua_setfield(L, -2, "rom");                      // config
     if (c->dhd.has_value) {
         push_cm_dhd_config(L, &c->dhd); // config dhd
         lua_setfield(L, -2, "dhd");     // config
@@ -1007,35 +967,25 @@ static void check_cm_rollup_config(lua_State *L, int tabidx, cm_rollup_config *r
 /// \brief Loads a C api flash drive configs from a Lua machine config
 /// \param L Lua state
 /// \param tabidx Machine config stack index
-/// \param fs Receives allocate array of flash drive configs
+/// \param fs Receives allocated array of flash drive configs
 /// \param ctxidx Index of clua context
-/// \returns Number of flash drives acquired
-static size_t check_cm_flash_drive_configs(lua_State *L, int tabidx, cm_memory_range_config **fs,
-    int ctxidx = lua_upvalueindex(1)) {
-    //??D This function is way too complicated. We should create a new cm_flash_drive_array type
-    // to help simplify it.
+static void check_cm_flash_drive_configs(lua_State *L, int tabidx, cm_memory_range_config_array *fs) {
+    memset(fs, 0, sizeof(cm_memory_range_config_array));
     if (!opt_table_field(L, tabidx, "flash_drive")) {
-        return 0;
+        return;
     }
     auto flash_drive_table_idx = lua_gettop(L);
-    auto count = luaL_len(L, flash_drive_table_idx);
-    std::array<clua_managed_cm_ptr<cm_memory_range_config> *, CM_FLASH_DRIVE_CONFIGS_MAX_SIZE> managed_configs{};
-    for (int i = 0; i < count; ++i) {
-        managed_configs[i] = &clua_push_to(L, clua_managed_cm_ptr<cm_memory_range_config>(nullptr), ctxidx);
+    fs->count = luaL_len(L, flash_drive_table_idx);
+    if (fs->count > CM_FLASH_DRIVE_CONFIGS_MAX_SIZE) {
+        luaL_error(L, "too many flash drives (expected max %u, got %u)", CM_FLASH_DRIVE_CONFIGS_MAX_SIZE, fs->count);
     }
-    assert(count <= CM_FLASH_DRIVE_CONFIGS_MAX_SIZE);
-    for (int i = 1; i <= count; i++) {
+    fs->entry = new cm_memory_range_config[fs->count]{};
+    for (unsigned i = 1; i <= fs->count; ++i) {
         lua_geti(L, flash_drive_table_idx, i);
-        (*managed_configs[i - 1])
-            .reset(clua_check_cm_memory_range_config(L, -1, "flash drive", new cm_memory_range_config{}));
+        clua_check_cm_memory_range_config(L, -1, "flash drive", &fs->entry[i - 1]);
         lua_pop(L, 1);
     }
-    *fs = new cm_memory_range_config[count]{};
-    for (int i = 0; i < count; ++i) {
-        (*fs)[i] = *((*managed_configs[i]).release());
-    }
-    lua_pop(L, count + 1); // managed pointers and flash drive table
-    return count;
+    lua_pop(L, 1);
 }
 
 /// \brief Loads processor config from a Lua to C api machine config
@@ -1120,7 +1070,7 @@ static void check_cm_clint_config(lua_State *L, int tabidx, cm_clint_config *c) 
 /// \param L Lua state
 /// \param tabidx Config stack index
 /// \param d C api DHD config structure to receive results
-static void check_cm_dhd_config(lua_State *L, int tabidx, cm_dhd_config *d, int ctxidx) {
+static void check_cm_dhd_config(lua_State *L, int tabidx, cm_dhd_config *d) {
     if (!opt_table_field(L, tabidx, "dhd")) {
         d->has_value = false;
         return;
@@ -1130,9 +1080,6 @@ static void check_cm_dhd_config(lua_State *L, int tabidx, cm_dhd_config *d, int 
     d->tlength = check_uint_field(L, -1, "tlength");
     d->dlength = opt_uint_field(L, -1, "dlength", d->dlength);
     d->hlength = opt_uint_field(L, -1, "hlength", d->hlength);
-    //??D if we move this last, we don't need the managed pointer, right?
-    auto *image_filename = opt_copy_string_field(L, -1, "image_filename");
-    auto &managed_image_filename = clua_push_to(L, clua_managed_cm_ptr<char>(image_filename), ctxidx);
     lua_getfield(L, -2, "h");
     if (lua_istable(L, -1)) {
         for (int i = 1; i <= CM_MACHINE_DHD_H_REG_COUNT; i++) {
@@ -1141,49 +1088,38 @@ static void check_cm_dhd_config(lua_State *L, int tabidx, cm_dhd_config *d, int 
     } else if (!lua_isnil(L, -1)) {
         luaL_error(L, "invalid dhd.h (expected table)");
     }
-    d->image_filename = managed_image_filename.release();
-    lua_pop(L, 3);
+    lua_pop(L, 1);
+    d->image_filename = opt_copy_string_field(L, -1, "image_filename");
+    lua_pop(L, 1);
+}
+
+cm_processor_config get_default_processor_config(lua_State *L) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to adjust config
+    const auto *config = cm_new_default_machine_config();
+    if (!config) {
+        luaL_error(L, "unable to obtain default config (out of memory?)");
+        return cm_processor_config{}; // Just to make clang-tidy happy. It doesn't know luaL_error is [[noreturn]]
+    }
+    cm_processor_config processor = config->processor;
+    cm_delete_machine_config(config);
+    return processor;
 }
 
 cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ctxidx) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to adjust config
-    auto *def_config = const_cast<cm_machine_config *>(cm_new_default_machine_config());
-    // Use default processor configuration if one is not available
-    cm_processor_config processor = def_config->processor;
-    cm_delete_machine_config(def_config);
-    //??D Still too complicated. We should allocate only the managed_machine_config and make sure it can be
-    //??D released even if only partially initialized.
-    auto &managed_ram = clua_push_to(L, clua_managed_cm_ptr<cm_ram_config>(new cm_ram_config{}), ctxidx);
-    auto &managed_rom = clua_push_to(L, clua_managed_cm_ptr<cm_rom_config>(new cm_rom_config{}), ctxidx);
-    auto &managed_dhd = clua_push_to(L, clua_managed_cm_ptr<cm_dhd_config>(new cm_dhd_config{}), ctxidx);
-    auto &managed_rollup = clua_push_to(L, clua_managed_cm_ptr<cm_rollup_config>(new cm_rollup_config{}), ctxidx);
-    cm_memory_range_config *flash_drives{};
-    cm_htif_config htif{};
-    cm_clint_config clint{};
-    // Check all parameters from Lua initialization table
-    // and copy them to the cm_machine_config object
-    // If no lua values do not exist use reasonable default
-    check_cm_processor_config(L, tabidx, &processor, &processor);
-    check_cm_ram_config(L, tabidx, managed_ram.get());
-    check_cm_rom_config(L, tabidx, managed_rom.get());
-    check_cm_htif_config(L, tabidx, &htif);
-    check_cm_clint_config(L, tabidx, &clint);
-    check_cm_dhd_config(L, tabidx, managed_dhd.get(), ctxidx);
-    check_cm_rollup_config(L, tabidx, managed_rollup.get());
-    auto flash_drive_count = check_cm_flash_drive_configs(L, tabidx, &flash_drives, ctxidx);
-    // Allocate new machine config, fill it and return from function
-    auto *c = new cm_machine_config{};
-    c->processor = processor;
-    c->ram = *managed_ram.release();
-    c->rom = *managed_rom.release();
-    c->htif = htif;
-    c->clint = clint;
-    c->dhd = *managed_dhd.release();
-    c->rollup = *managed_rollup.release();
-    c->flash_drive_count = flash_drive_count;
-    c->flash_drive = flash_drives;
-    lua_pop(L, 4);
-    return c;
+    auto &managed = clua_push_to(L, clua_managed_cm_ptr<cm_machine_config>(new cm_machine_config{}), ctxidx);
+    cm_machine_config *config = managed.get();
+    config->processor = get_default_processor_config(L);
+    check_cm_processor_config(L, tabidx, &config->processor, &config->processor);
+    check_cm_ram_config(L, tabidx, &config->ram);
+    check_cm_rom_config(L, tabidx, &config->rom);
+    check_cm_htif_config(L, tabidx, &config->htif);
+    check_cm_clint_config(L, tabidx, &config->clint);
+    check_cm_dhd_config(L, tabidx, &config->dhd);
+    check_cm_rollup_config(L, tabidx, &config->rollup);
+    check_cm_flash_drive_configs(L, tabidx, &config->flash_drive);
+    managed.release();
+    lua_pop(L, 1); //??DD I don't think lua_pop can throw, but we should check
+    return config;
 }
 
 /// \brief Loads C api DHD runtime config from Lua
@@ -1212,16 +1148,14 @@ static void check_cm_concurrency_runtime_config(lua_State *L, int tabidx, cm_con
 
 cm_machine_runtime_config *clua_check_cm_machine_runtime_config(lua_State *L, int tabidx, int ctxidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
-    auto &managed_runtime_dhd =
-        clua_push_to(L, clua_managed_cm_ptr<cm_dhd_runtime_config>(new cm_dhd_runtime_config{}), ctxidx);
-    check_cm_dhd_runtime_config(L, tabidx, managed_runtime_dhd.get());
-    cm_concurrency_config concurrency{};
-    check_cm_concurrency_runtime_config(L, tabidx, &concurrency);
-    auto *r = new cm_machine_runtime_config{};
-    r->dhd = *managed_runtime_dhd.release();
-    r->concurrency = concurrency;
+    auto &managed =
+        clua_push_to(L, clua_managed_cm_ptr<cm_machine_runtime_config>(new cm_machine_runtime_config{}), ctxidx);
+    cm_machine_runtime_config *config = managed.get();
+    check_cm_dhd_runtime_config(L, tabidx, &config->dhd);
+    check_cm_concurrency_runtime_config(L, tabidx, &config->concurrency);
+    managed.release();
     lua_pop(L, 1);
-    return r;
+    return config;
 }
 
 cm_machine_runtime_config *clua_opt_cm_machine_runtime_config(lua_State *L, int tabidx,

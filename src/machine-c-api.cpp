@@ -370,30 +370,34 @@ cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
     new_cpp_machine_config.dhd = convert_from_c(&c_config->dhd);
     new_cpp_machine_config.rollup = convert_from_c(&c_config->rollup);
 
-    for (size_t i = 0; i < c_config->flash_drive_count; ++i) {
-        new_cpp_machine_config.flash_drive.push_back(convert_from_c(&(c_config->flash_drive[i])));
+    for (size_t i = 0; i < c_config->flash_drive.count; ++i) {
+        new_cpp_machine_config.flash_drive.push_back(convert_from_c(&(c_config->flash_drive.entry[i])));
     }
 
     return new_cpp_machine_config;
 }
 
+cm_memory_range_config_array convert_to_c(const cartesi::flash_drive_configs &flash_drive) {
+    cm_memory_range_config_array new_flash_drive;
+    new_flash_drive.count = flash_drive.size();
+    new_flash_drive.entry = new cm_memory_range_config[flash_drive.size()];
+    memset(new_flash_drive.entry, 0, sizeof(cm_memory_range_config) * new_flash_drive.count);
+    for (size_t i = 0; i < new_flash_drive.count; ++i) {
+        new_flash_drive.entry[i] = convert_to_c(flash_drive[i]);
+    }
+    return new_flash_drive;
+}
+
 const cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config) {
     auto *new_machine_config = new cm_machine_config{};
-
     new_machine_config->processor = convert_to_c(cpp_config.processor);
     new_machine_config->ram = convert_to_c(cpp_config.ram);
     new_machine_config->rom = convert_to_c(cpp_config.rom);
-    new_machine_config->flash_drive_count = cpp_config.flash_drive.size();
-    new_machine_config->flash_drive = new cm_memory_range_config[cpp_config.flash_drive.size()];
-    memset(new_machine_config->flash_drive, 0, sizeof(cm_memory_range_config) * new_machine_config->flash_drive_count);
-    for (size_t i = 0; i < new_machine_config->flash_drive_count; ++i) {
-        new_machine_config->flash_drive[i] = convert_to_c(cpp_config.flash_drive[i]);
-    }
+    new_machine_config->flash_drive = convert_to_c(cpp_config.flash_drive);
     new_machine_config->clint = convert_to_c(cpp_config.clint);
     new_machine_config->htif = convert_to_c(cpp_config.htif);
     new_machine_config->dhd = convert_to_c(cpp_config.dhd);
     new_machine_config->rollup = convert_to_c(cpp_config.rollup);
-
     return new_machine_config;
 }
 
@@ -433,10 +437,11 @@ static cm_merkle_tree_proof *convert_to_c(const cartesi::machine_merkle_tree::pr
     memcpy(&new_merkle_tree_proof->target_hash, static_cast<const uint8_t *>(proof.get_target_hash().data()),
         sizeof(cm_hash));
 
-    new_merkle_tree_proof->sibling_hashes_count =
+    new_merkle_tree_proof->sibling_hashes.count =
         new_merkle_tree_proof->log2_root_size - new_merkle_tree_proof->log2_target_size;
-    new_merkle_tree_proof->sibling_hashes = new cm_hash[new_merkle_tree_proof->sibling_hashes_count];
-    memset(new_merkle_tree_proof->sibling_hashes, 0, sizeof(cm_hash) * new_merkle_tree_proof->sibling_hashes_count);
+    new_merkle_tree_proof->sibling_hashes.entry = new cm_hash[new_merkle_tree_proof->sibling_hashes.count];
+    memset(new_merkle_tree_proof->sibling_hashes.entry, 0,
+        sizeof(cm_hash) * new_merkle_tree_proof->sibling_hashes.count);
 
     for (size_t log2_size = new_merkle_tree_proof->log2_target_size; log2_size < new_merkle_tree_proof->log2_root_size;
          ++log2_size) {
@@ -444,7 +449,7 @@ static cm_merkle_tree_proof *convert_to_c(const cartesi::machine_merkle_tree::pr
             cm_log2_size_to_index(static_cast<int>(log2_size), static_cast<int>(new_merkle_tree_proof->log2_root_size));
         const cartesi::machine_merkle_tree::hash_type sibling_hash =
             proof.get_sibling_hash(static_cast<int>(log2_size));
-        memcpy(&(new_merkle_tree_proof->sibling_hashes[current_index]),
+        memcpy(&(new_merkle_tree_proof->sibling_hashes.entry[current_index]),
             static_cast<const uint8_t *>(sibling_hash.data()), sizeof(cm_hash));
     }
 
@@ -465,7 +470,7 @@ static cartesi::machine_merkle_tree::proof_type convert_from_c(const cm_merkle_t
     for (int log2_size = cpp_proof.get_log2_target_size(); log2_size < cpp_proof.get_log2_root_size(); ++log2_size) {
         const int current_index = cm_log2_size_to_index(log2_size, cpp_proof.get_log2_root_size());
         cartesi::machine_merkle_tree::hash_type cpp_sibling_hash =
-            convert_from_c(&c_proof->sibling_hashes[current_index]);
+            convert_from_c(&c_proof->sibling_hashes.entry[current_index]);
         cpp_proof.set_sibling_hash(cpp_sibling_hash, log2_size);
     }
 
@@ -608,22 +613,22 @@ static void cm_cleanup_bracket_note(cm_bracket_note *bracket_note) {
 cm_access_log *convert_to_c(const cartesi::access_log &cpp_access_log) {
     auto *new_access_log = new cm_access_log{};
 
-    new_access_log->accesses_count = cpp_access_log.get_accesses().size();
-    new_access_log->accesses = new cm_access[new_access_log->accesses_count];
-    for (size_t i = 0; i < new_access_log->accesses_count; ++i) {
-        new_access_log->accesses[i] = convert_to_c(cpp_access_log.get_accesses()[i]);
+    new_access_log->accesses.count = cpp_access_log.get_accesses().size();
+    new_access_log->accesses.entry = new cm_access[new_access_log->accesses.count];
+    for (size_t i = 0; i < new_access_log->accesses.count; ++i) {
+        new_access_log->accesses.entry[i] = convert_to_c(cpp_access_log.get_accesses()[i]);
     }
 
-    new_access_log->brackets_count = cpp_access_log.get_brackets().size();
-    new_access_log->brackets = new cm_bracket_note[new_access_log->brackets_count];
-    for (size_t i = 0; i < new_access_log->brackets_count; ++i) {
-        new_access_log->brackets[i] = convert_to_c(cpp_access_log.get_brackets()[i]);
+    new_access_log->brackets.count = cpp_access_log.get_brackets().size();
+    new_access_log->brackets.entry = new cm_bracket_note[new_access_log->brackets.count];
+    for (size_t i = 0; i < new_access_log->brackets.count; ++i) {
+        new_access_log->brackets.entry[i] = convert_to_c(cpp_access_log.get_brackets()[i]);
     }
 
-    new_access_log->notes_count = cpp_access_log.get_notes().size();
-    new_access_log->notes = new const char *[new_access_log->notes_count];
-    for (size_t i = 0; i < new_access_log->notes_count; ++i) {
-        new_access_log->notes[i] = convert_to_c(cpp_access_log.get_notes()[i]);
+    new_access_log->notes.count = cpp_access_log.get_notes().size();
+    new_access_log->notes.entry = new const char *[new_access_log->notes.count];
+    for (size_t i = 0; i < new_access_log->notes.count; ++i) {
+        new_access_log->notes.entry[i] = convert_to_c(cpp_access_log.get_notes()[i]);
     }
 
     new_access_log->log_type.annotations = cpp_access_log.get_log_type().has_annotations();
@@ -638,17 +643,17 @@ cartesi::access_log convert_from_c(const cm_access_log *c_acc_log) {
     }
 
     std::vector<cartesi::access> accesses;
-    for (size_t i = 0; i < c_acc_log->accesses_count; ++i) {
-        accesses.push_back(convert_from_c(&c_acc_log->accesses[i]));
+    for (size_t i = 0; i < c_acc_log->accesses.count; ++i) {
+        accesses.push_back(convert_from_c(&c_acc_log->accesses.entry[i]));
     }
     std::vector<cartesi::bracket_note> brackets;
-    for (size_t i = 0; i < c_acc_log->brackets_count; ++i) {
-        brackets.push_back(convert_from_c(&c_acc_log->brackets[i]));
+    for (size_t i = 0; i < c_acc_log->brackets.count; ++i) {
+        brackets.push_back(convert_from_c(&c_acc_log->brackets.entry[i]));
     }
 
     std::vector<std::string> notes;
-    for (size_t i = 0; i < c_acc_log->notes_count; ++i) {
-        notes.push_back(null_to_empty(c_acc_log->notes[i]));
+    for (size_t i = 0; i < c_acc_log->notes.count; ++i) {
+        notes.push_back(null_to_empty(c_acc_log->notes.entry[i]));
     }
     cartesi::access_log new_cpp_acc_log(accesses, brackets, notes, convert_from_c(&c_acc_log->log_type));
     return new_cpp_acc_log;
@@ -670,10 +675,10 @@ void cm_delete_machine_config(const cm_machine_config *config) {
     }
 
     delete[] config->dhd.image_filename;
-    for (size_t i = 0; i < config->flash_drive_count; ++i) {
-        delete[] config->flash_drive[i].image_filename;
+    for (size_t i = 0; i < config->flash_drive.count; ++i) {
+        delete[] config->flash_drive.entry[i].image_filename;
     }
-    delete[] config->flash_drive;
+    delete[] config->flash_drive.entry;
     delete[] config->rom.image_filename;
     delete[] config->rom.bootargs;
     delete[] config->ram.image_filename;
@@ -757,18 +762,18 @@ void cm_delete_access_log(cm_access_log *acc_log) {
         return;
     }
 
-    for (size_t i = 0; i < acc_log->notes_count; ++i) {
-        delete[] acc_log->notes[i];
+    for (size_t i = 0; i < acc_log->notes.count; ++i) {
+        delete[] acc_log->notes.entry[i];
     }
-    delete[] acc_log->notes;
-    for (size_t i = 0; i < acc_log->brackets_count; ++i) {
-        cm_cleanup_bracket_note(&acc_log->brackets[i]);
+    delete[] acc_log->notes.entry;
+    for (size_t i = 0; i < acc_log->brackets.count; ++i) {
+        cm_cleanup_bracket_note(&acc_log->brackets.entry[i]);
     }
-    delete[] acc_log->brackets;
-    for (size_t i = 0; i < acc_log->accesses_count; ++i) {
-        cm_cleanup_access(&acc_log->accesses[i]);
+    delete[] acc_log->brackets.entry;
+    for (size_t i = 0; i < acc_log->accesses.count; ++i) {
+        cm_cleanup_access(&acc_log->accesses.entry[i]);
     }
-    delete[] acc_log->accesses;
+    delete[] acc_log->accesses.entry;
     delete acc_log;
 }
 
@@ -823,7 +828,7 @@ void cm_delete_merkle_tree_proof(cm_merkle_tree_proof *proof) {
     if (proof == nullptr) {
         return;
     }
-    delete[] proof->sibling_hashes;
+    delete[] proof->sibling_hashes.entry;
     delete proof;
 }
 
@@ -1180,31 +1185,6 @@ int cm_rollback(cm_machine *m, char **err_msg) try {
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
-}
-
-void cm_delete_ram_config(const cm_ram_config *config) {
-    if (config == nullptr) {
-        return;
-    }
-    delete[] config->image_filename;
-    delete config;
-}
-
-void cm_delete_rom_config(const cm_rom_config *config) {
-    if (config == nullptr) {
-        return;
-    }
-    delete[] config->image_filename;
-    delete[] config->bootargs;
-    delete config;
-}
-
-void cm_delete_dhd_config(const cm_dhd_config *config) {
-    if (config == nullptr) {
-        return;
-    }
-    delete[] config->image_filename;
-    delete config;
 }
 
 void cm_delete_dhd_runtime_config(const cm_dhd_runtime_config *config) {

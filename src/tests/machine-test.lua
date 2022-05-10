@@ -277,7 +277,7 @@ do_test("machine halt and yield flags and config matches",
         -- Get machine default config  and test for known fields
         local initial_config = machine:get_initial_config()
         -- test_util.print_table(initial_config)
-        assert(initial_config["processor"]["marchid"] == 9,
+        assert(initial_config["processor"]["marchid"] == 0xa,
             "marchid value does not match")
         assert(initial_config["processor"]["pc"] == 0x1000,
             "pc value does not match")
@@ -320,7 +320,7 @@ do_test("dumped file merkle tree hashes should match",
                 test_util.tohex(root_file_hashes[file_name]))
         end
         assert(test_util.tohex(root_file_hashes[pmas_file_names[1]]) ==
-                "CFDEE89C9CED407548FC484A8F824B7F4ACB16448DD2FBB1F41DCAFFA624EE90")
+                "3D2F0CFEE0FE923A1034032AFB4EC7117F332729F75C69DBFB1BE69880A09A50")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[2]]) ==
                 "FF693CFA810B1B72C7708939A48CEDB2EAEDB7EEDCF168CA959891AE135C2DC0")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[3]]) ==
@@ -369,7 +369,7 @@ do_test("machine root hash after step one should match",
         local root_hash = machine:get_root_hash()
         print("Root hash:", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "757CABCFDA1F9AEEF9152D8B226BB6E6C6F0CDF43876ADB20C499D2FE137DCAA",
+                "774C3ED7868EC716A2A4197C23879630B27BFFF472478114DEF09271A9D044A6",
             "hash after initial step does not match")
 
         -- Perform step, dump address space to file, calculate emulator root hash
@@ -448,7 +448,7 @@ do_test("mcycle and root hash should match",
         local root_hash = machine:get_root_hash()
         print("1000 cycle hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "917BD2E492465BCE040F63CBB4D8225F036F72475503ABD18FB84AFB2E0A89CD",
+                "7378AD969A5A88BBA0DA8E9008CEB04A1D6A9305D75FCAE201BA7D4D905DC104",
             "machine hash does not match after 1000 cycles")
     end
 )
@@ -467,7 +467,7 @@ do_test("mcycle and root hash should match",
         local root_hash = machine:get_root_hash()
         print("End hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "691664646EBAEC4F405C710F5292A21A6C3E21D12A766ED0D5612A07589AC4DA",
+                "D1546784ACF1027006602461BB4645FD1ED3C7B170724B60B3242552D98703C9",
             "machine hash does not match after on end cycle")
     end
 )

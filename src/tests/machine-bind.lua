@@ -265,7 +265,7 @@ do_test("should return expected value",
         local root_hash = machine:get_root_hash()
         print("Root hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "532815288A7FF4078515AA70920BF6E08E6A3D8A00BA2D7296EFA38F44C7F6DC",
+                "030DC2D0328EE0530DEBCAE590AE43630A33EAA324D289EE660994E99A1A277E",
             "initial root hash does not match")
     end
 )
@@ -301,7 +301,7 @@ do_test("should return expected values",
     function(machine)
         local initial_csr_values = test_data.get_cpu_csr_test_values()
         initial_csr_values.mvendorid = 0x6361727465736920
-        initial_csr_values.marchid = 0x9
+        initial_csr_values.marchid = 0xa
         initial_csr_values.mimpid = 0x1
         initial_csr_values.htif_tohost = 0x0
         initial_csr_values.htif_fromhost = 0x0
@@ -479,7 +479,7 @@ do_test("dumped register values should match",
         print("--------------------------")
         assert((output:find "mcycle = 0"),
             "Cound not find mcycle register value in output")
-        assert((output:find "marchid = 9"),
+        assert((output:find "marchid = a"),
             "Cound not find marchid register value in output")
         assert((output:find "clint_mtimecmp = 0"),
             "Cound not find clint_mtimecmp register value in output")

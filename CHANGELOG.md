@@ -10,8 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed HTIF iconsole read from machine state
+
 ### Changed
 
+- Make sure HTIF calls to console getchar is only honored when it is enabled in iconsole
 - Simplified Lua bind
 
 ## [0.9.0] - 2022-04-20

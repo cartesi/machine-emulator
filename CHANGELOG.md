@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make sure HTIF calls to console getchar is only honored when it is enabled in iconsole
 - Simplified Lua bind
 - Simplified StartSession logic in server manager
+- Make HTIF console getchar react faster to input when enabled
+- Remove busy wait in interactive mode
 
 ## [0.9.0] - 2022-04-20
 

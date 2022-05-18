@@ -2210,15 +2210,17 @@ static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t 
             uint64_t mcycle = naked_m.read_mcycle();
             uint64_t warp_cycle = rtc_time_to_cycle(naked_m.read_clint_mtimecmp());
             if (warp_cycle > mcycle) {
-                uint64_t wait = rtc_cycle_to_time(warp_cycle - mcycle);
+                const uint64_t cycles_per_us = 100; // CLOCK_FREQ / 10^6; see rom-defines.h
+                uint64_t wait = (warp_cycle - mcycle) / cycles_per_us;
                 timeval start{};
                 timeval end{};
                 gettimeofday(&start, nullptr);
                 naked_m.poll_htif_console(wait);
                 gettimeofday(&end, nullptr);
-                uint64_t elapsed = end.tv_usec - start.tv_usec;
-                uint64_t real_cycle = rtc_time_to_cycle(elapsed * RTC_FREQ_DIV_DEF + rtc_cycle_to_time(mcycle));
-                warp_cycle = elapsed >= wait ? warp_cycle : real_cycle;
+                uint64_t elapsed_us = end.tv_usec - start.tv_usec;
+                uint64_t elapsed_cycles = elapsed_us * cycles_per_us;
+                uint64_t real_cycle = rtc_time_to_cycle(elapsed_cycles + rtc_cycle_to_time(mcycle));
+                warp_cycle = elapsed_us >= wait ? warp_cycle : real_cycle;
                 naked_m.write_mcycle(warp_cycle);
                 naked_m.get_state().set_brk();
             }

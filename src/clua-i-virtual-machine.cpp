@@ -365,15 +365,6 @@ static int machine_obj_index_store(lua_State *L) {
     return 0;
 }
 
-/// \brief This is the machine:update_merkle_tree() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_update_merkle_tree(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_update_merkle_tree(m.get(), err_msg));
-    lua_pushboolean(L, true);
-    return 1;
-}
-
 /// \brief This is the machine:verify_dirty_page_maps() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_verify_dirty_page_maps(lua_State *L) {
@@ -539,7 +530,6 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"run", machine_obj_index_run},
     {"step", machine_obj_index_step},
     {"store", machine_obj_index_store},
-    {"update_merkle_tree", machine_obj_index_update_merkle_tree},
     {"verify_dirty_page_maps", machine_obj_index_verify_dirty_page_maps},
     {"verify_merkle_tree", machine_obj_index_verify_merkle_tree},
     {"write_clint_mtimecmp", machine_obj_index_write_clint_mtimecmp},

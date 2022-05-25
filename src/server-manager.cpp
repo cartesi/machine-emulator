@@ -370,7 +370,6 @@ struct epoch_type {
 /// \brief Type holding the deadlines for varios server tasks
 struct deadline_config_type {
     uint64_t checkin{};                 ///< Deadline for receiving checkin from spawned machine
-    uint64_t update_merkle_tree{};      ///< Deadline for updating the Merkle tree
     uint64_t advance_state{};           ///< Deadline for completing the AdvanceState RPC
     uint64_t advance_state_increment{}; ///< Deadline for completing an increment of the AdvanceState RPC
     uint64_t inspect_state{};           ///< Deadline for completing the InspectState RPC
@@ -1087,7 +1086,6 @@ static handler_type::pull_type *new_GetEpochStatus_handler(handler_context &hctx
 static auto get_proto_deadline_config(const DeadlineConfig &proto_p) {
     deadline_config_type d{};
     d.checkin = proto_p.checkin();
-    d.update_merkle_tree = proto_p.update_merkle_tree();
     d.advance_state = proto_p.advance_state();
     d.advance_state_increment = proto_p.advance_state_increment();
     d.inspect_state = proto_p.inspect_state();
@@ -1274,25 +1272,6 @@ static void check_server_stub(session_type &session) {
     }
 }
 
-/// \brief Asynchronously update Merkle tree when starting a new session
-/// \param actx Context for async operations
-static void initial_update_merkle_tree(async_context &actx) {
-    Void request;
-    grpc::ClientContext client_context;
-    set_deadline(client_context, actx.session.server_deadline.update_merkle_tree);
-    auto reader = actx.session.server_stub->AsyncUpdateMerkleTree(&client_context, request, actx.completion_queue);
-    grpc::Status status;
-    UpdateMerkleTreeResponse response;
-    reader->Finish(&response, &status, actx.self);
-    actx.yield(side_effect::none);
-    if (!status.ok()) {
-        THROW((finish_error_yield_none{std::move(status)}));
-    }
-    if (!response.success()) {
-        THROW((finish_error_yield_none{grpc::StatusCode::INTERNAL, "failed updating merkle tree"}));
-    }
-}
-
 template <class T>
 void trigger_and_wait_checkin(handler_context &hctx, async_context &actx, T trigger_checkin) {
     // trigger remote check-in
@@ -1433,7 +1412,6 @@ static hash_type get_root_hash(async_context &actx) {
 /// \param actx Context for async operations
 /// \param session Session where first epoch should be started
 static void start_first_epoch(async_context &actx, session_type &session) {
-    initial_update_merkle_tree(actx);
     epoch_type e;
     e.epoch_index = session.active_epoch_index;
     e.state = epoch_state::active;
@@ -2133,25 +2111,6 @@ static void check_htif_yield_ack_data(async_context &actx, uint64_t reqid) {
     }
 }
 
-/// \brief Asynchronously updates machine server Merkle tree
-/// \param actx Context for async operations
-static void update_merkle_tree(async_context &actx) {
-    Void request;
-    grpc::ClientContext client_context;
-    set_deadline(client_context, actx.session.server_deadline.update_merkle_tree);
-    auto reader = actx.session.server_stub->AsyncUpdateMerkleTree(&client_context, request, actx.completion_queue);
-    grpc::Status status;
-    UpdateMerkleTreeResponse response;
-    reader->Finish(&response, &status, actx.self);
-    actx.yield(side_effect::none);
-    if (!status.ok()) {
-        THROW((taint_session{actx.session, std::move(status)}));
-    }
-    if (!response.success()) {
-        THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, "failed updating merkle tree"}));
-    }
-}
-
 /// \brief Processes a pending query
 /// \param actx Context for async operations
 /// \param e Associated epoch
@@ -2349,9 +2308,6 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
         }
         // If the machine accepted the input
         if (skip_reason == completion_status::accepted) {
-            // Update merkle tree so we can gather our proofs
-            dout{actx.request_context} << "    Updating Merkle tree";
-            update_merkle_tree(actx);
             // Read proof of voucher hashes memory range in machine
             dout{actx.request_context} << "    Getting voucher hashes memory range proof";
             auto voucher_hashes_in_machine = get_proof(actx, actx.session.memory_range.voucher_hashes.start,
@@ -2433,9 +2389,6 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
                 (void) hctx;
                 rollback(actx);
             });
-            // Update merkle tree so we can gather our proofs
-            dout{actx.request_context} << "    Updating Merkle tree";
-            update_merkle_tree(actx);
             // Add null hashes to the epoch Merkle trees
             hash_type zero;
             std::fill_n(zero.begin(), zero.size(), 0);

@@ -382,7 +382,7 @@ machine::machine(const std::string &dir, const machine_runtime_config &r) : mach
     hash_type hrestored;
     load_hash(dir, hstored);
     if (!update_merkle_tree()) {
-        throw std::runtime_error{"error updating root hash"};
+        throw std::runtime_error{"error updating Merkle tree"};
     }
     m_t.get_root_hash(hrestored);
     if (hstored != hrestored) {
@@ -518,7 +518,7 @@ void machine::store(const std::string &dir) {
         throw std::runtime_error{"error creating directory '" + dir + "'"};
     }
     if (!update_merkle_tree()) {
-        throw std::runtime_error{"error updating root hash"};
+        throw std::runtime_error{"error updating Merkle tree"};
     }
     hash_type h;
     m_t.get_root_hash(h);
@@ -1281,7 +1281,7 @@ static uint64_t get_task_concurrency(uint64_t value) {
     return std::min(concurrency, static_cast<uint64_t>(THREADS_MAX));
 }
 
-bool machine::update_merkle_tree(void) {
+bool machine::update_merkle_tree(void) const {
     machine_merkle_tree::hasher_type gh;
     // double begin = now();
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
@@ -1428,6 +1428,9 @@ void machine::dump_pmas(void) const {
 }
 
 void machine::get_root_hash(hash_type &hash) const {
+    if (!update_merkle_tree()) {
+        throw std::runtime_error{"error updating Merkle tree"};
+    }
     m_t.get_root_hash(hash);
 }
 
@@ -1438,6 +1441,9 @@ bool machine::verify_merkle_tree(void) const {
 machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_size) const {
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
+    if (!update_merkle_tree()) {
+        throw std::runtime_error{"error updating Merkle tree"};
+    }
     // Check for valid target node size
     if (log2_size > machine_merkle_tree::get_log2_root_size() ||
         log2_size < machine_merkle_tree::get_log2_word_size()) {

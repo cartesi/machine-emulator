@@ -564,19 +564,6 @@ static auto new_VerifyMerkleTree_handler(handler_context &hctx) {
         });
 }
 
-static auto new_UpdateMerkleTree_handler(handler_context &hctx) {
-    return new_handler<Void, UpdateMerkleTreeResponse>(
-        "UpdateMerkleTree",
-        [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto *cq = hctx.completion_queue.get();
-            hctx.async_service.RequestUpdateMerkleTree(&server_context, &request, &writer, cq, cq, self);
-        },
-        [&hctx](auto &client_context, auto &request) {
-            auto *cq = hctx.completion_queue.get();
-            return hctx.stub->AsyncUpdateMerkleTree(&client_context, request, cq);
-        });
-}
-
 static auto new_VerifyDirtyPageMaps_handler(handler_context &hctx) {
     return new_handler<Void, VerifyDirtyPageMapsResponse>(
         "VerifyDirtyPageMaps",
@@ -792,7 +779,6 @@ static void enable_server_handlers(handler_context &hctx) {
     new_WriteCsr_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
     new_GetInitialConfig_handler(hctx);      // NOLINT: cannot leak (pointer is in completion queue)
     new_VerifyMerkleTree_handler(hctx);      // NOLINT: cannot leak (pointer is in completion queue)
-    new_UpdateMerkleTree_handler(hctx);      // NOLINT: cannot leak (pointer is in completion queue)
     new_VerifyDirtyPageMaps_handler(hctx);   // NOLINT: cannot leak (pointer is in completion queue)
     new_DumpPmas_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
     new_GetDefaultConfig_handler(hctx);      // NOLINT: cannot leak (pointer is in completion queue)

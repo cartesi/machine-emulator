@@ -544,7 +544,6 @@ local function run(tests)
 end
 
 local function print_machine_hash(machine, out)
-    machine:update_merkle_tree()
     out:write(machine:read_mcycle(), " ", util.hexhash(machine:get_root_hash()), "\n")
 end
 

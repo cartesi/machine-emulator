@@ -56,6 +56,16 @@ constexpr cm_hash origin_target_hash = {0x98, 0xb4, 0x80, 0x9a, 0xf5, 0x62, 0x92
 constexpr cm_hash origin_root_hash = {0x41, 0x69, 0x75, 0x34, 0x2b, 0xd8, 0x02, 0xf7, 0xa9, 0xde, 0x78, 0xd9, 0xdf,
     0x8c, 0xae, 0xcc, 0x13, 0xbe, 0x08, 0x51, 0x71, 0xd3, 0x37, 0x81, 0xa1, 0xec, 0x5b, 0xe0, 0xd6, 0x12, 0x0a, 0xbc};
 
+// target hash after 1000 cycles (after get_proof())
+// NOLINTNEXTLINE(modernize-avoid-c-arrays)
+constexpr cm_hash target_hash_1000 = {0x06, 0x8a, 0xf8, 0x95, 0x55, 0x3b, 0xe1, 0xa7, 0xbc, 0xb2, 0x15, 0x4b, 0x65,
+    0xf4, 0xd4, 0x96, 0x4e, 0x76, 0xa8, 0x1a, 0xff, 0x09, 0x76, 0x52, 0x4e, 0x52, 0x7f, 0x57, 0x70, 0x68, 0x14, 0x35};
+
+// root hash after 1000 cycles (after get_proof())
+// NOLINTNEXTLINE(modernize-avoid-c-arrays)
+constexpr cm_hash root_hash_1000 = {0x5c, 0x58, 0xc8, 0xce, 0xd8, 0x5e, 0x2f, 0x86, 0x27, 0x3e, 0x67, 0x81, 0xd0, 0x8b,
+    0xf8, 0x9e, 0xc5, 0x9d, 0xa8, 0xf1, 0x2c, 0x17, 0xaa, 0xe9, 0xd7, 0x76, 0x0f, 0x81, 0xb7, 0x28, 0xc8, 0xd5};
+
 // machine hash after performing 1 step
 // NOLINTNEXTLINE(modernize-avoid-c-arrays)
 constexpr cm_hash origin_hash1 = {0xe8, 0xea, 0xd0, 0xd4, 0x0d, 0x52, 0xe9, 0x85, 0x9a, 0x4f, 0x6f, 0xd0, 0xdf, 0xd6,
@@ -633,10 +643,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(serde_complex_test, ordinary_machine_fixture) {
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
-    error_code = cm_update_merkle_tree(_machine, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-
     cm_hash origin_hash{};
     error_code = cm_get_root_hash(_machine, &origin_hash, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
@@ -675,27 +681,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_null_error_placeholder_test, ordina
     monitor_system_throw(f);
 }
 
-BOOST_AUTO_TEST_CASE_NOLINT(update_merkle_tree_null_machine_test) {
-    auto f = []() {
-        char *err_msg{};
-        cm_update_merkle_tree(nullptr, &err_msg);
-    };
-    monitor_system_throw(f);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(update_merkle_tree_null_error_placeholder_test, ordinary_machine_fixture) {
-    auto f = [m = _machine]() { cm_update_merkle_tree(m, nullptr); };
-    monitor_system_throw(f);
-}
-
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_machine_hash_test, ordinary_machine_fixture) {
     char *err_msg{};
-    int error_code = cm_update_merkle_tree(_machine, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
     cm_hash result_hash;
-    error_code = cm_get_root_hash(_machine, &result_hash, &err_msg);
+    int error_code = cm_get_root_hash(_machine, &result_hash, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
@@ -752,14 +742,12 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_inconsistent_tree_test, ordinary_machin
     cm_merkle_tree_proof *proof{};
     int error_code = cm_get_proof(_machine, 0, 64, &proof, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    cm_delete_merkle_tree_proof(proof);
+
+    // merkle tree is always consistent now as it updates on access
 
     error_code = cm_get_proof(_machine, 0, 3, &proof, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
-    std::string result = err_msg;
-    std::string origin("inconsistent merkle tree");
-    BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_error_message(err_msg);
-
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     cm_delete_merkle_tree_proof(proof);
 }
 
@@ -781,12 +769,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_null_error_placeholder_test, ordinary_m
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_machine_hash_test, ordinary_machine_fixture) {
     char *err_msg{};
-    int error_code = cm_update_merkle_tree(_machine, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
     cm_merkle_tree_proof *p{};
-    error_code = cm_get_proof(_machine, 0, 12, &p, &err_msg);
+    int error_code = cm_get_proof(_machine, 0, 12, &p, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
@@ -1971,13 +1956,10 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_error_placeholder_te
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
     char *err_msg{};
-    int error_code = cm_update_merkle_tree(_machine, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-
     cm_hash hash0;
     cm_hash hash1;
-    error_code = cm_get_root_hash(_machine, &hash0, &err_msg);
+
+    int error_code = cm_get_root_hash(_machine, &hash0, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
@@ -2002,11 +1984,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, access_log_machine_fixture) {
     char *err_msg{};
-    int error_code = cm_update_merkle_tree(_machine, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
-    error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);
+    int error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
@@ -2044,10 +2023,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_1000_cycle_test, ordinary_machine_fix
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(read_mcycle, 1000);
-
-    error_code = cm_update_merkle_tree(_machine, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
     cm_hash hash_1000;
     error_code = cm_get_root_hash(_machine, &hash_1000, &err_msg);
@@ -2093,10 +2068,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_long_cycle_test, ordinary_machine_fix
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(read_mcycle, 600000);
 
-    error_code = cm_update_merkle_tree(_machine, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-
     cm_hash hash_end;
     error_code = cm_get_root_hash(_machine, &hash_end, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
@@ -2104,6 +2075,55 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_long_cycle_test, ordinary_machine_fix
 
     BOOST_CHECK_EQUAL_COLLECTIONS(origin_hash_600000, origin_hash_600000 + sizeof(cm_hash), hash_end,
         hash_end + sizeof(cm_hash));
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_root_updates_test, ordinary_machine_fixture) {
+    char *err_msg{};
+
+    cm_hash start_hash;
+    int error_code = cm_get_root_hash(_machine, &start_hash, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_CHECK_EQUAL_COLLECTIONS(origin_hash, origin_hash + sizeof(cm_hash), start_hash, start_hash + sizeof(cm_hash));
+
+    error_code = cm_machine_run(_machine, 1000, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+
+    cm_hash end_hash;
+    error_code = cm_get_root_hash(_machine, &end_hash, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_CHECK_EQUAL_COLLECTIONS(origin_hash_1000, origin_hash_1000 + sizeof(cm_hash), end_hash,
+        end_hash + sizeof(cm_hash));
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, ordinary_machine_fixture) {
+    char *err_msg{};
+
+    cm_merkle_tree_proof *start_proof{};
+    int error_code = cm_get_proof(_machine, 0, 12, &start_proof, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+    BOOST_CHECK_EQUAL_COLLECTIONS(origin_target_hash, origin_target_hash + sizeof(cm_hash), start_proof->target_hash,
+        start_proof->target_hash + sizeof(cm_hash));
+    BOOST_CHECK_EQUAL_COLLECTIONS(origin_root_hash, origin_root_hash + sizeof(cm_hash), start_proof->root_hash,
+        start_proof->root_hash + sizeof(cm_hash));
+    cm_delete_merkle_tree_proof(start_proof);
+
+    error_code = cm_machine_run(_machine, 1000, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+
+    cm_merkle_tree_proof *end_proof{};
+    error_code = cm_get_proof(_machine, 0, 12, &end_proof, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+    BOOST_CHECK_EQUAL_COLLECTIONS(target_hash_1000, target_hash_1000 + sizeof(cm_hash), end_proof->target_hash,
+        end_proof->target_hash + sizeof(cm_hash));
+    BOOST_CHECK_EQUAL_COLLECTIONS(root_hash_1000, root_hash_1000 + sizeof(cm_hash), end_proof->root_hash,
+        end_proof->root_hash + sizeof(cm_hash));
+    cm_delete_merkle_tree_proof(end_proof);
 }
 
 // GRPC machine tests

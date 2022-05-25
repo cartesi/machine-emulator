@@ -66,11 +66,6 @@ public:
         return do_step(log_type, one_based);
     }
 
-    /// \brief Update the Merkle tree so it matches the contents of the machine state.
-    bool update_merkle_tree(void) {
-        return do_update_merkle_tree();
-    }
-
     /// \brief Obtains the proof for a node in the Merkle tree.
     machine_merkle_tree::proof_type get_proof(uint64_t address, int log2_size) const {
         return do_get_proof(address, log2_size);
@@ -437,19 +432,19 @@ public:
         return do_set_iflags_X();
     }
 
-    /// \brief Reads the Y iflag
+    /// \brief Resets the Y iflag
     void reset_iflags_Y(void) {
         return do_reset_iflags_Y();
     }
 
-    /// \brief Reads the X iflag
+    /// \brief Resets the X iflag
     void reset_iflags_X(void) {
         return do_reset_iflags_X();
     }
 
     /// \brief Writes the iflags register
     void write_iflags(uint64_t val) {
-        do_write_iflags(val);
+        return do_write_iflags(val);
     }
 
     /// \brief Reads htif's tohost
@@ -586,7 +581,6 @@ private:
     virtual void do_run(uint64_t mcycle_end) = 0;
     virtual void do_store(const std::string &dir) = 0;
     virtual access_log do_step(const access_log::type &log_type, bool one_based = false) = 0;
-    virtual bool do_update_merkle_tree(void) = 0;
     virtual machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const = 0;
     virtual void do_get_root_hash(hash_type &hash) const = 0;
     virtual bool do_verify_merkle_tree(void) const = 0;

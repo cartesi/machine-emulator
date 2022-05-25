@@ -337,9 +337,6 @@ do_test("dumped file merkle tree hashes should match",
 print("\n\ntesting if machine initial hash is correct")
 do_test("machine initial hash shold match",
     function(machine)
-        -- Update merkle tree
-        machine:update_merkle_tree()
-
         -- Get starting root hash
         local root_hash = machine:get_root_hash()
 
@@ -361,10 +358,6 @@ do_test("machine initial hash shold match",
 print("\n\ntesting root hash after step one")
 do_test("machine root hash after step one should match",
     function(machine)
-
-        -- Update merkle tree
-        machine:update_merkle_tree()
-
         -- Get starting root hash
         local root_hash = machine:get_root_hash()
         print("Root hash:", test_util.tohex(root_hash))
@@ -376,7 +369,6 @@ do_test("machine root hash after step one should match",
         -- and check if maches
         local log_type = {}
         machine:step(log_type)
-        machine:update_merkle_tree()
         local root_hash_step1 = machine:get_root_hash()
 
         machine:dump_pmas()
@@ -395,12 +387,8 @@ do_test("machine root hash after step one should match",
 print("\n\ntesting proof after step one")
 do_test("proof check should pass",
     function(machine)
-
-        machine:update_merkle_tree()
-
         local log_type = {}
         machine:step(log_type)
-        machine:update_merkle_tree()
 
         -- Dump RAM memory to file, calculate hash of file
         -- get proof of ram using get_proof and check if
@@ -444,7 +432,6 @@ do_test("mcycle and root hash should match",
 
         assert(machine:read_mcycle() == 1000, "machine mcycle should be 1000")
 
-        machine:update_merkle_tree()
         local root_hash = machine:get_root_hash()
         print("1000 cycle hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
@@ -463,7 +450,6 @@ do_test("mcycle and root hash should match",
         local end_mcycle = machine:read_mcycle()
         assert(end_mcycle > 400000, "machine mcycle should be above 400000")
 
-        machine:update_merkle_tree()
         local root_hash = machine:get_root_hash()
         print("End hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
@@ -475,7 +461,6 @@ do_test("mcycle and root hash should match",
 print("\n\nwrite something to ram memory and check if hash and proof matches")
 do_test("proof  and root hash should match",
     function(machine)
-        machine:update_merkle_tree()
         local root_hash = machine:get_root_hash()
         local ram_address_start = 0x80000000
 
@@ -496,7 +481,6 @@ do_test("proof  and root hash should match",
 
         machine:write_memory(0x8000000F, "mydataol12345678", 0x10)
 
-        machine:update_merkle_tree()
         local root_hash_step1 = machine:get_root_hash()
         local verify = machine:verify_merkle_tree()
 

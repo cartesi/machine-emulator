@@ -212,7 +212,6 @@ private:
     void do_dump_pmas(void) const override;
     bool do_read_word(uint64_t word_address, uint64_t &word_value) const override;
     bool do_verify_merkle_tree(void) const override;
-    bool do_update_merkle_tree(void) override;
 
     grpc_machine_stub_ptr m_stub;
 };

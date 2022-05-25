@@ -441,14 +441,6 @@ CM_API int cm_verify_access_log(const cm_access_log *log, const cm_machine_runti
 CM_API int cm_verify_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
     const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
 
-/// \brief Update the Merkle tree so it matches the contents of the machine state.
-/// \param m Pointer to valid machine instance
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
-/// \returns 0 for success, non zero code for error
-CM_API int cm_update_merkle_tree(cm_machine *m, char **err_msg);
-
 /// \brief Obtains the proof for a node in the Merkle tree
 /// \param m Pointer to valid machine instance
 /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary

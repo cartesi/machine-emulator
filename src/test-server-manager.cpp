@@ -439,7 +439,6 @@ static StartSessionRequest create_valid_start_session_request(const std::string 
     // Set server_deadline
     auto *server_deadline = session_request.mutable_server_deadline();
     server_deadline->set_checkin(1000ULL * 5);
-    server_deadline->set_update_merkle_tree(1000ULL * 60 * 2);
     server_deadline->set_advance_state(1000ULL * 60 * 3);
     server_deadline->set_advance_state_increment(1000ULL * 10);
     server_deadline->set_inspect_state(1000ULL * 60 * 3);

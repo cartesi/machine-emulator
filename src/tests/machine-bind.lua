@@ -205,9 +205,6 @@ do_test("machine should have default config shadow register values",
 print("\n\ntesting merkle tree get_proof for values for registers")
 do_test("should provide proof for values in registers",
     function(machine)
-        -- Update merkle tree
-        machine:update_merkle_tree()
-
         local initial_csr_values = test_data.get_cpu_csr_test_values()
         local initial_xreg_values = test_data.get_cpu_xreg_test_values()
         initial_csr_values.x = nil
@@ -249,8 +246,6 @@ do_test("should return address value for csr register",
 print("\n\n test verifying integrity of the merkle tree")
 do_test("verify_merkle_tree should return true",
     function(machine)
-        -- Update merkle tree
-        machine:update_merkle_tree()
         -- Verify starting merkle tree
         assert(machine:verify_merkle_tree(), "error, non consistent merkle tree")
     end
@@ -259,8 +254,6 @@ do_test("verify_merkle_tree should return true",
 print("\n\n test calculation of initial root hash")
 do_test("should return expected value",
     function(machine)
-        -- Update merkle tree
-        machine:update_merkle_tree()
         -- Get starting root hash
         local root_hash = machine:get_root_hash()
         print("Root hash: ", test_util.tohex(root_hash))

@@ -804,7 +804,6 @@ local function get_file_length(filename)
 end
 
 local function print_root_hash(cycles, machine)
-    machine:update_merkle_tree()
     stderr("%u: %s\n", cycles, util.hexhash(machine:get_root_hash()))
 end
 
@@ -983,7 +982,6 @@ local function dump_value_proofs(machine, desired_proofs, htif_console_getchar)
     if #desired_proofs > 0 then
         assert(not htif_console_getchar,
             "proofs are meaningless in interactive mode")
-        machine:update_merkle_tree()
     end
     for i, desired in ipairs(desired_proofs) do
         local proof = machine:get_proof(desired.address, desired.log2_size)
@@ -1308,7 +1306,6 @@ end
 local function store_machine(machine, config, store_dir)
     assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
     stderr("Storing machine: please wait\n")
-    machine:update_merkle_tree()
     local h = util.hexhash(machine:get_root_hash())
     local name = instantiate_filename(store_dir, { h = h })
     machine:store(name)

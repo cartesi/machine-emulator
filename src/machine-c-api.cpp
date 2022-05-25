@@ -801,19 +801,6 @@ int cm_verify_state_transition(const cm_hash *root_hash_before, const cm_access_
     return cm_result_failure(err_msg);
 }
 
-int cm_update_merkle_tree(cm_machine *m, char **err_msg) try {
-    auto *cpp_machine = convert_from_c(m);
-    bool result = cpp_machine->update_merkle_tree();
-    if (result) {
-        return cm_result_success(err_msg);
-    } else {
-        *err_msg = get_error_message_unknown();
-        return CM_ERROR_UNKNOWN;
-    }
-} catch (...) {
-    return cm_result_failure(err_msg);
-}
-
 int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm_merkle_tree_proof **proof,
     char **err_msg) try {
     const auto *cpp_machine = convert_from_c(m);

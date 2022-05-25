@@ -559,7 +559,6 @@ class handler_GetRootHash final : public handler<Void, GetRootHashResponse> {
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        hctx.m->update_merkle_tree();
         machine_merkle_tree::hash_type rh;
         hctx.m->get_root_hash(rh);
         GetRootHashResponse resp;
@@ -588,9 +587,6 @@ class handler_GetProof final : public handler<GetProofRequest, GetProofResponse>
         }
         uint64_t address = req->address();
         int log2_size = static_cast<int>(req->log2_size());
-        if (!hctx.m->update_merkle_tree()) {
-            throw std::runtime_error{"Merkle tree update failed"};
-        }
         GetProofResponse resp;
         set_proto_proof(hctx.m->get_proof(address, log2_size), resp.mutable_proof());
         return finish_ok(writer, resp);
@@ -946,31 +942,6 @@ public:
     }
 };
 
-class handler_UpdateMerkleTree final : public handler<Void, UpdateMerkleTreeResponse> {
-
-    side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
-        ServerAsyncResponseWriter<UpdateMerkleTreeResponse> *writer) override {
-        hctx.s->RequestUpdateMerkleTree(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
-        return side_effect::none;
-    }
-
-    side_effect go(handler_context &hctx, Void *req,
-        ServerAsyncResponseWriter<UpdateMerkleTreeResponse> *writer) override {
-        (void) req;
-        if (!hctx.m) {
-            return finish_with_error_no_machine(writer);
-        }
-        UpdateMerkleTreeResponse resp;
-        resp.set_success(hctx.m->update_merkle_tree());
-        return finish_ok(writer, resp);
-    }
-
-public:
-    handler_UpdateMerkleTree(handler_context &hctx) {
-        advance(hctx);
-    }
-};
-
 class handler_VerifyDirtyPageMaps final : public handler<Void, VerifyDirtyPageMapsResponse> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
@@ -1191,7 +1162,6 @@ static void server_loop(const char *server_address, const char *session_id, cons
         handler_WriteCsr hWriteCsr(hctx);
         handler_GetInitialConfig hGetInitialConfig(hctx);
         handler_VerifyMerkleTree hVerifyMerkleTree(hctx);
-        handler_UpdateMerkleTree hUpdateMerkleTree(hctx);
         handler_VerifyDirtyPageMaps hVerifyDirtyPageMaps(hctx);
         handler_DumpPmas hDumpPmas(hctx);
         handler_GetDefaultConfig hGetDefaultConfig(hctx);

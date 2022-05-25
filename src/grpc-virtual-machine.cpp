@@ -851,12 +851,4 @@ bool grpc_virtual_machine::do_verify_merkle_tree(void) const {
     return response.success();
 }
 
-bool grpc_virtual_machine::do_update_merkle_tree(void) {
-    Void request;
-    ClientContext context;
-    UpdateMerkleTreeResponse response;
-    check_status(m_stub->get_stub()->UpdateMerkleTree(&context, request, &response));
-    return response.success();
-}
-
 } // namespace cartesi

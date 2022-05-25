@@ -42,9 +42,9 @@ class machine final {
     //    machine.h. Maybe the compiler can do a good job we we are
     //    not constantly going through the extra indirection. We
     //    should test this.
-    machine_state m_s;       ///< Opaque machine state
-    machine_merkle_tree m_t; ///< Merkle tree of state
-    htif m_h;                ///< HTIF device
+    mutable machine_state m_s;       ///< Opaque machine state
+    mutable machine_merkle_tree m_t; ///< Merkle tree of state
+    htif m_h;                        ///< HTIF device
 
     machine_config m_c;         ///< Copy of initialization config
     machine_runtime_config m_r; ///< Copy of initialization runtime config
@@ -231,7 +231,7 @@ public:
 
     /// \brief Update the Merkle tree so it matches the contents of the machine state.
     /// \returns true if succeeded, false otherwise.
-    bool update_merkle_tree(void);
+    bool update_merkle_tree(void) const;
 
     /// \brief Update the Merkle tree after a page has been modified in the machine state.
     /// \param address Any address inside modified page.

@@ -314,9 +314,6 @@ class handler_Run final : public handler<RunRequest, RunResponse> {
             return finish_with_error_no_machine(writer);
         }
         auto limit = static_cast<uint64_t>(req->limit());
-        if (limit < hctx.m->read_mcycle()) {
-            return finish_with_error(writer, StatusCode::INVALID_ARGUMENT, "mcycle is past");
-        }
         RunResponse resp;
         hctx.m->run(limit);
         resp.set_mcycle(hctx.m->read_mcycle());

@@ -2058,6 +2058,29 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_1000_cycle_test, ordinary_machine_fix
         hash_1000 + sizeof(cm_hash));
 }
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_to_past_test, ordinary_machine_fixture) {
+    int cycle_num = 1000;
+    int cycle_num_to_past = 100;
+
+    char *err_msg{};
+    int error_code = cm_machine_run(_machine, cycle_num, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+
+    uint64_t read_mcycle{};
+    error_code = cm_read_mcycle(_machine, &read_mcycle, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_CHECK_EQUAL(read_mcycle, cycle_num);
+
+    error_code = cm_machine_run(_machine, cycle_num_to_past, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+
+    std::string result = err_msg;
+    std::string origin("mcycle is past");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_long_cycle_test, ordinary_machine_fixture) {
     char *err_msg{};
     int error_code = cm_machine_run(_machine, 600000, &err_msg);

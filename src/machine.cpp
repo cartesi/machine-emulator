@@ -1633,6 +1633,9 @@ access_log machine::step(const access_log::type &log_type, bool one_based) {
 }
 
 void machine::run(uint64_t mcycle_end) {
+    if (mcycle_end < read_mcycle()) {
+        throw std::invalid_argument{"mcycle is past"};
+    }
     // The interpreter loop inside this function is not required by
     // specification.  However, this loop is an optimization to reduce
     // the number of calls to machine::run, which can be expensive in

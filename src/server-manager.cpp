@@ -313,19 +313,23 @@ struct report_type {
 /// \brief Reason why an rpc might have been aborted
 enum class completion_status {
     accepted,
-    cycle_limit_exceeded,
-    rejected_by_machine,
+    rejected,
+    exception,
     machine_halted,
+    cycle_limit_exceeded,
     time_limit_exceeded
 };
 
 /// \brief Type holding an input that was successfully processed
-struct input_result_type {
+struct accepted_data_type {
     proof_type voucher_hashes_in_machine;
     std::vector<voucher_type> vouchers;
     proof_type notice_hashes_in_machine;
     std::vector<notice_type> notices;
 };
+
+/// \brief Type of exception data (payload)
+using exception_data_type = std::string;
 
 /// \brief Type holding a processed input
 struct processed_input_type {
@@ -333,7 +337,8 @@ struct processed_input_type {
     hash_type most_recent_machine_hash; ///< Machine hash after processing input
     proof_type voucher_hashes_in_epoch; ///< Proof of the new vouchers entry in the epoch Merkle tree
     proof_type notice_hashes_in_epoch;  ///< Proof of the new notices entry to the epoch Merkle tree
-    std::variant<input_result_type, completion_status> processed; ///< Input results or reason it was skipped
+    completion_status status;           ///< Completion status of the processed input
+    std::variant<accepted_data_type, exception_data_type> processed; // Accepted data or exception data
     std::vector<report_type> reports; ///< List of reports produced while input was processed
 };
 
@@ -346,6 +351,7 @@ struct query_type {
     completion_status status{completion_status::accepted};
     handler_type::pull_type *coroutine{nullptr};
     uint64_t current_input_index{0};
+    std::optional<exception_data_type> exception_data;
     std::vector<report_type> reports;
 };
 
@@ -958,6 +964,34 @@ static void set_proto_report(const report_type &m, Report *proto_m) {
     proto_m->set_payload(m.payload);
 }
 
+/// \brief Fills out ProcessedInput accepted data message from structure
+/// \param i Structure
+/// \param proto_i Pointer to message receiving structure contents
+static void set_proto_accepted_data(const processed_input_type &i, ProcessedInput *proto_i) {
+    if (std::holds_alternative<accepted_data_type>(i.processed)) {
+        const auto &data = std::get<accepted_data_type>(i.processed);
+        auto *accepted_data_p = proto_i->mutable_accepted_data();
+        cartesi::set_proto_proof(data.voucher_hashes_in_machine, accepted_data_p->mutable_voucher_hashes_in_machine());
+        for (const auto &o : data.vouchers) {
+            set_proto_voucher(o, accepted_data_p->add_vouchers());
+        }
+        cartesi::set_proto_proof(data.notice_hashes_in_machine, accepted_data_p->mutable_notice_hashes_in_machine());
+        for (const auto &m : data.notices) {
+            set_proto_notice(m, accepted_data_p->add_notices());
+        }
+    }
+}
+
+/// \brief Fills out ProcessedInput exception data message from structure
+/// \param i Structure
+/// \param proto_i Pointer to message receiving structure contents
+static void set_proto_exception_data(const processed_input_type &i, ProcessedInput *proto_i) {
+    if (std::holds_alternative<std::string>(i.processed)) {
+        const auto &data = std::get<std::string>(i.processed);
+        proto_i->set_exception_data(data);
+    }
+}
+
 /// \brief Fills out ProcessedInput message from structure
 /// \param i Structure
 /// \param proto_i Pointer to message receiving structure contents
@@ -969,35 +1003,27 @@ static void set_proto_processed_input(const processed_input_type &i, ProcessedIn
     for (const auto &r : i.reports) {
         set_proto_report(r, proto_i->add_reports());
     }
-    if (std::holds_alternative<input_result_type>(i.processed)) {
-        const auto &r = std::get<input_result_type>(i.processed);
-        auto *result_p = proto_i->mutable_result();
-        cartesi::set_proto_proof(r.voucher_hashes_in_machine, result_p->mutable_voucher_hashes_in_machine());
-        for (const auto &o : r.vouchers) {
-            set_proto_voucher(o, result_p->add_vouchers());
-        }
-        cartesi::set_proto_proof(r.notice_hashes_in_machine, result_p->mutable_notice_hashes_in_machine());
-        for (const auto &m : r.notices) {
-            set_proto_notice(m, result_p->add_notices());
-        }
-    } else {
-        switch (std::get<completion_status>(i.processed)) {
-            case completion_status::accepted:
-                proto_i->set_skip_reason(CompletionStatus::ACCEPTED);
-                break;
-            case completion_status::cycle_limit_exceeded:
-                proto_i->set_skip_reason(CompletionStatus::CYCLE_LIMIT_EXCEEDED);
-                break;
-            case completion_status::rejected_by_machine:
-                proto_i->set_skip_reason(CompletionStatus::REJECTED_BY_MACHINE);
-                break;
-            case completion_status::machine_halted:
-                proto_i->set_skip_reason(CompletionStatus::MACHINE_HALTED);
-                break;
-            case completion_status::time_limit_exceeded:
-                proto_i->set_skip_reason(CompletionStatus::TIME_LIMIT_EXCEEDED);
-                break;
-        }
+    switch (i.status) {
+        case completion_status::accepted:
+            proto_i->set_status(CompletionStatus::ACCEPTED);
+            set_proto_accepted_data(i, proto_i);
+            break;
+        case completion_status::rejected:
+            proto_i->set_status(CompletionStatus::REJECTED);
+            break;
+        case completion_status::exception:
+            proto_i->set_status(CompletionStatus::EXCEPTION);
+            set_proto_exception_data(i, proto_i);
+            break;
+        case completion_status::machine_halted:
+            proto_i->set_status(CompletionStatus::MACHINE_HALTED);
+            break;
+        case completion_status::cycle_limit_exceeded:
+            proto_i->set_status(CompletionStatus::CYCLE_LIMIT_EXCEEDED);
+            break;
+        case completion_status::time_limit_exceeded:
+            proto_i->set_status(CompletionStatus::TIME_LIMIT_EXCEEDED);
+            break;
     }
 }
 
@@ -2166,7 +2192,7 @@ static void process_pending_query(handler_context &hctx, async_context &actx, ep
         // process manual yields
         if (run_response.value().iflags_y()) {
             if (yield_reason == cartesi::HTIF_YIELD_REASON_RX_REJECTED) {
-                q.status = completion_status::rejected_by_machine;
+                q.status = completion_status::rejected;
                 dout{actx.request_context} << "    Query aborted because machine rejected it";
                 break;
             } else if (yield_reason == cartesi::HTIF_YIELD_REASON_RX_ACCEPTED) {
@@ -2174,8 +2200,10 @@ static void process_pending_query(handler_context &hctx, async_context &actx, ep
                 dout{actx.request_context} << "    Query accepted";
                 break;
             } else if (yield_reason == cartesi::HTIF_YIELD_REASON_TX_EXCEPTION) {
+                q.status = completion_status::exception;
                 dout{actx.request_context} << "    Received an exception while executing query";
-                THROW((finish_error_yield_none{grpc::StatusCode::INTERNAL, read_exception(actx)}));
+                q.exception_data = read_exception(actx);
+                break;
             }
             THROW((taint_session{actx.session, grpc::StatusCode::OUT_OF_RANGE, "unknown machine yield reason"}));
         }
@@ -2243,6 +2271,7 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
         std::vector<voucher_type> vouchers;
         std::vector<notice_type> notices;
         std::vector<report_type> reports;
+        exception_data_type exception_data;
         for (;;) {
             auto run_response = run_machine(actx, current_mcycle, mcycle_increment, max_mcycle, start_time,
                 deadline_increment, max_deadline);
@@ -2265,7 +2294,7 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
             // process manual yields
             if (run_response.value().iflags_y()) {
                 if (yield_reason == cartesi::HTIF_YIELD_REASON_RX_REJECTED) {
-                    skip_reason = completion_status::rejected_by_machine;
+                    skip_reason = completion_status::rejected;
                     dout{actx.request_context} << "    Input skipped because machine requested";
                     break;
                 } else if (yield_reason == cartesi::HTIF_YIELD_REASON_RX_ACCEPTED) {
@@ -2274,8 +2303,10 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
                     current_mcycle = run_response.value().mcycle();
                     break;
                 } else if (yield_reason == cartesi::HTIF_YIELD_REASON_TX_EXCEPTION) {
+                    skip_reason = completion_status::exception;
                     dout{actx.request_context} << "    Received an exception while processing input";
-                    THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL, read_exception(actx)}));
+                    exception_data = read_exception(actx);
+                    break;
                 }
                 THROW((taint_session{actx.session, grpc::StatusCode::OUT_OF_RANGE, "unknown machine yield reason"}));
             }
@@ -2370,8 +2401,8 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
             e.most_recent_machine_hash = get_root_hash(actx);
             // Add input results to list of processed inputs
             e.processed_inputs.push_back(processed_input_type{input_index, e.most_recent_machine_hash,
-                std::move(voucher_hashes_in_epoch), std::move(notice_hashes_in_epoch),
-                input_result_type{
+                std::move(voucher_hashes_in_epoch), std::move(notice_hashes_in_epoch), skip_reason,
+                accepted_data_type{
                     std::move(voucher_hashes_in_machine),
                     std::move(vouchers),
                     std::move(notice_hashes_in_machine),
@@ -2406,7 +2437,7 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
             // Add skipped input to list of processed inputs
             e.processed_inputs.push_back(
                 processed_input_type{input_index, e.most_recent_machine_hash, std::move(voucher_hashes_in_epoch),
-                    std::move(notice_hashes_in_epoch), skip_reason, std::move(reports)});
+                    std::move(notice_hashes_in_epoch), skip_reason, std::move(exception_data), std::move(reports)});
             // Leave session.current_mcycle alone
         }
         // Check if there is a pending query
@@ -2737,14 +2768,20 @@ static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) 
                 case completion_status::accepted:
                     inspect_state_response.set_status(CompletionStatus::ACCEPTED);
                     break;
-                case completion_status::cycle_limit_exceeded:
-                    inspect_state_response.set_status(CompletionStatus::CYCLE_LIMIT_EXCEEDED);
+                case completion_status::rejected:
+                    inspect_state_response.set_status(CompletionStatus::REJECTED);
                     break;
-                case completion_status::rejected_by_machine:
-                    inspect_state_response.set_status(CompletionStatus::REJECTED_BY_MACHINE);
+                case completion_status::exception:
+                    inspect_state_response.set_status(CompletionStatus::EXCEPTION);
+                    if (q.exception_data.has_value()) {
+                        inspect_state_response.set_exception_data(q.exception_data.value());
+                    }
                     break;
                 case completion_status::machine_halted:
                     inspect_state_response.set_status(CompletionStatus::MACHINE_HALTED);
+                    break;
+                case completion_status::cycle_limit_exceeded:
+                    inspect_state_response.set_status(CompletionStatus::CYCLE_LIMIT_EXCEEDED);
                     break;
                 case completion_status::time_limit_exceeded:
                     inspect_state_response.set_status(CompletionStatus::TIME_LIMIT_EXCEEDED);

@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simplified StartSession logic in server manager
 - Make HTIF console getchar react faster to input when enabled
 - Remove busy wait in interactive mode
+- Updated server-manager GRPC interface due to improvements on input exception handling
 
 ## [0.9.0] - 2022-04-20
 

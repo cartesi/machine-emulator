@@ -138,7 +138,7 @@ private:
 
     void init_client_context(ClientContext &context) {
         context.set_wait_for_ready(true);
-        context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(20));
+        context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(30));
         context.AddMetadata("test-id", test_id());
         context.AddMetadata("request-id", request_id());
     }
@@ -1603,9 +1603,10 @@ static void check_processed_input(ProcessedInput &processed_input, uint64_t inde
     ASSERT(processed_input.has_notice_hashes_in_epoch(), "result should have notice_hashes_in_epoch");
     ASSERT(processed_input.reports_size() == report_count,
         "processed input reports size should be equal to report_count");
-    ASSERT(processed_input.has_result(), "processed input should contain a result");
+    ASSERT(processed_input.status() == CompletionStatus::ACCEPTED, "processed input status should be ACCEPTED");
+    ASSERT(processed_input.has_accepted_data(), "processed input should contain accepted data");
 
-    const auto &result = processed_input.result();
+    const auto &result = processed_input.accepted_data();
     ASSERT(result.has_voucher_hashes_in_machine(), "result should have voucher_hashes_in_machine");
     ASSERT(result.vouchers_size() == voucher_count, "result outputs size should be equal to output_count");
     ASSERT(result.has_notice_hashes_in_machine(), "result should have notice_hashes_in_machine");
@@ -2084,16 +2085,27 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             ASSERT(status_response.epoch_index() == session_request.active_epoch_index(),
                 "status response epoch_index should be 0");
             ASSERT(status_response.state() == EpochState::ACTIVE, "status response state should be ACTIVE");
-            ASSERT(status_response.processed_inputs_size() == 0, "status response processed_inputs size should be 0");
-            ASSERT(status_response.pending_input_count() == 1, "status response pending_input_count should 1");
-            ASSERT(status_response.has_taint_status(), "status response should be tainted");
-            ASSERT(status_response.taint_status().error_code() == StatusCode::INTERNAL,
-                "taint_status code should be INTERNAL");
-            ASSERT(status_response.taint_status().error_message() == "test payload",
-                "taint_status error message should contain exception payload");
+            ASSERT(status_response.processed_inputs_size() == 1, "status response processed_inputs size should be 1");
+            ASSERT(status_response.pending_input_count() == 0, "status response pending_input_count should 0");
+            ASSERT(!status_response.has_taint_status(), "status response should not be tainted");
+
+            auto processed_input = (status_response.processed_inputs())[0];
+            ASSERT(processed_input.input_index() == 0, "processed input index should sequential");
+            ASSERT(processed_input.has_most_recent_machine_hash(),
+                "processed input should contain a most_recent_machine_hash");
+            ASSERT(!processed_input.most_recent_machine_hash().data().empty(),
+                "processed input should contain a most_recent_machine_hash and it should not be empty");
+            ASSERT(processed_input.has_voucher_hashes_in_epoch(), "result should have voucher_hashes_in_epoch");
+            ASSERT(processed_input.has_notice_hashes_in_epoch(), "result should have notice_hashes_in_epoch");
+            ASSERT(processed_input.reports_size() == 0, "processed input reports size should be equal to report_count");
+            ASSERT(processed_input.status() == CompletionStatus::EXCEPTION,
+                "processed input status should be EXCEPTION");
+            ASSERT(processed_input.has_exception_data(), "processed input should contain exception data");
+            ASSERT(processed_input.exception_data() == "test payload",
+                "exception data should contain the expected payload");
 
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
-                session_request.active_epoch_index(), true);
+                session_request.active_epoch_index(), false);
         });
 
     test("Should complete with CompletionStatus MACHINE_HALTED after fatal error", [](ServerManagerClient &manager) {
@@ -2128,9 +2140,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
         auto processed_input = (status_response.processed_inputs())[0];
         ASSERT(processed_input.input_index() == 0, "processed_input input index should be 0");
-        ASSERT(processed_input.has_skip_reason(), "processed_input should have skip reason");
-        ASSERT(processed_input.skip_reason() == CompletionStatus::MACHINE_HALTED,
-            "skip reason should be MACHINE_HALTED");
+        ASSERT(processed_input.status() == CompletionStatus::MACHINE_HALTED,
+            "Completion status should be MACHINE_HALTED");
 
         end_session_after_processing_pending_inputs(manager, session_request.session_id(),
             session_request.active_epoch_index());
@@ -2175,9 +2186,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
             auto processed_input = (status_response.processed_inputs())[0];
             ASSERT(processed_input.input_index() == 0, "processed_input input index should be 0");
-            ASSERT(processed_input.has_skip_reason(), "processed_input should have skip reason");
-            ASSERT(processed_input.skip_reason() == CompletionStatus::CYCLE_LIMIT_EXCEEDED,
-                "skip reason should be CYCLE_LIMIT_EXCEEDED");
+            ASSERT(processed_input.status() == CompletionStatus::CYCLE_LIMIT_EXCEEDED,
+                "CompletionStatus should be CYCLE_LIMIT_EXCEEDED");
 
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
                 session_request.active_epoch_index());
@@ -2224,9 +2234,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
             auto processed_input = (status_response.processed_inputs())[0];
             ASSERT(processed_input.input_index() == 0, "processed_input input index should be 0");
-            ASSERT(processed_input.has_skip_reason(), "processed_input should have skip reason");
-            ASSERT(processed_input.skip_reason() == CompletionStatus::TIME_LIMIT_EXCEEDED,
-                "skip reason should be TIME_LIMIT_EXCEEDED");
+            ASSERT(processed_input.status() == CompletionStatus::TIME_LIMIT_EXCEEDED,
+                "CompletionStatus should be TIME_LIMIT_EXCEEDED");
 
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
                 session_request.active_epoch_index());
@@ -2309,9 +2318,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
             auto processed_input = (status_response.processed_inputs())[0];
             ASSERT(processed_input.input_index() == 0, "processed_input input index should be 0");
-            ASSERT(processed_input.has_skip_reason(), "processed_input should have skip reason");
-            ASSERT(processed_input.skip_reason() == CompletionStatus::REJECTED_BY_MACHINE,
-                "skip reason should be REJECTED_BY_MACHINE");
+            ASSERT(processed_input.status() == CompletionStatus::REJECTED, "CompletionStatus should be REJECTED");
 
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
                 session_request.active_epoch_index());
@@ -2353,9 +2360,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
             auto processed_input = (status_response.processed_inputs())[0];
             ASSERT(processed_input.input_index() == 0, "processed_input input index should be 0");
-            ASSERT(processed_input.has_skip_reason(), "processed_input should have skip reason");
-            ASSERT(processed_input.skip_reason() == CompletionStatus::MACHINE_HALTED,
-                "skip reason should be MACHINE_HALTED");
+            ASSERT(processed_input.status() == CompletionStatus::MACHINE_HALTED,
+                "CompletionStatus should be MACHINE_HALTED");
 
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
                 session_request.active_epoch_index());
@@ -2652,7 +2658,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
         ASSERT_STATUS(status, "EndSession", true);
     });
 
-    test("Should complete with error when receiving a manual yield with reason TX-EXCEPTION",
+    test("Should complete with CompletionStatus EXCEPTION when receiving a manual yield with reason TX-EXCEPTION",
         [](ServerManagerClient &manager) {
             StartSessionRequest session_request = create_valid_start_session_request("exception-machine");
             StartSessionResponse session_response;
@@ -2664,10 +2670,14 @@ static void test_inspect_state(const std::function<void(const std::string &title
                 session_request.active_epoch_index(), 0);
             InspectStateResponse inspect_response;
             status = manager.inspect_state(inspect_request, inspect_response);
-            ASSERT_STATUS(status, "InspectState", false);
-            ASSERT_STATUS_CODE(status, "InspectState", StatusCode::INTERNAL);
-            ASSERT(status.error_message() == "test payload", "status error message should contain exception payload");
+            ASSERT_STATUS(status, "InspectState", true);
 
+            check_inspect_state_response(inspect_response, inspect_request.session_id(),
+                inspect_request.active_epoch_index(), 0, 0, CompletionStatus::EXCEPTION);
+
+            ASSERT(inspect_response.has_exception_data(), "InspectResponse should containd exception data");
+            ASSERT(inspect_response.exception_data() == "test payload",
+                "exception_data should contain expected exception payload");
             // end session
             EndSessionRequest end_session_request;
             end_session_request.set_session_id(session_request.session_id());
@@ -2998,7 +3008,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
         ASSERT_STATUS(status, "InspectState", true);
 
         check_inspect_state_response(inspect_response, inspect_request.session_id(),
-            inspect_request.active_epoch_index(), 0, 0, CompletionStatus::REJECTED_BY_MACHINE);
+            inspect_request.active_epoch_index(), 0, 0, CompletionStatus::REJECTED);
 
         // end session
         EndSessionRequest end_session_request;

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed HTIF iconsole read from machine state
+- Fixed cartesi/grpc.so so it can be loaded without cartesi.so
 
 ### Changed
 

@@ -835,7 +835,7 @@ local function store_machine_config(config, output)
     else
         def = cartesi.machine.get_default_config()
     end
-    output("machine_config = {\n")
+    output("return {\n")
     output("  processor = {\n")
     output("    x = {\n")
     local processor = config.processor or { x = {} }
@@ -1096,16 +1096,16 @@ else
 
     if load_config then
         local env = {}
-        local ok, err = loadfile(load_config, 't', env)
+        local ok, ret = loadfile(load_config, 't', env)
         if ok then
             local chunk = ok
-            ok, err = pcall(chunk)
+            ok, ret = pcall(chunk)
         end
         if not ok then
             stderr("Failed to load machine config (%s):\n", load_config)
-            error(err)
+            error(ret)
         end
-        config = setmetatable(env.machine_config, {__index = config})
+        config = setmetatable(ret, {__index = config})
     end
 
     machine = create_machine(config, runtime)

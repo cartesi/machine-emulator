@@ -71,6 +71,10 @@ JSON object to stdout.
       the JSON representation is
         {"payload": <string> }
 
+    exception
+      the JSON representation is
+        {"payload": <string> }
+
     voucher-hashes
       the JSON representation is
         [ <hash>, <hash>, ... <hash ]
@@ -132,6 +136,7 @@ end
 local action = arg[1]
 
 local what_table = {
+    ["exception"] = true,
     ["input-metadata"] = true,
     ["input"] = true,
     ["query"] = true,
@@ -321,12 +326,14 @@ local action_what_table = {
     encode_query = encode_string,
     encode_voucher = encode_voucher,
     encode_notice = encode_string,
+    encode_exception = encode_string,
     encode_report = encode_string,
     decode_input_metadata = decode_input_metadata,
     decode_input = decode_string,
     decode_query = decode_string,
     decode_voucher = decode_voucher,
     decode_notice = decode_string,
+    decode_exception = decode_string,
     decode_report = decode_string,
     decode_voucher_hashes = decode_hashes,
     decode_notice_hashes = decode_hashes,

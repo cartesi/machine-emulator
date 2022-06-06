@@ -138,7 +138,7 @@ private:
 
     void init_client_context(ClientContext &context) {
         context.set_wait_for_ready(true);
-        context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(30));
+        context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(90));
         context.AddMetadata("test-id", test_id());
         context.AddMetadata("request-id", request_id());
     }
@@ -394,6 +394,8 @@ static void initialize_machines(bool rebuild, bool http_api) {
     create_machine("exception-machine", R"(-- rollup accept; echo {\"payload\": \"test payload\"} | rollup exception)");
     create_machine("fatal-error-machine",
         R"(-- echo 'import requests; requests.post("http://127.0.0.1:5004/finish", json={"status": ""accept"}); exit(2);' > s.py; rollup-init python3 s.py)");
+    create_machine("http-server-error-machine",
+        R"(-- echo 'import requests; import os; requests.post("http://127.0.0.1:5004/finish", json={"status": ""accept"}); os.system("killall rollup-http-server");' > s.py; rollup-init python3 s.py)");
     create_machine("voucher-on-inspect-machine",
         R"(-- rollup accept; echo {\"address\": \"fafafafafafafafafafafafafafafafafafafafa\", \"payload\": \"test payload\"} | rollup voucher; rollup accept)");
     create_machine("notice-on-inspect-machine",
@@ -2107,7 +2109,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
                 session_request.active_epoch_index(), false);
         });
 
-    test("Should complete with CompletionStatus MACHINE_HALTED after fatal error", [](ServerManagerClient &manager) {
+    test("Should complete with CompletionStatus EXCEPTION after fatal error", [](ServerManagerClient &manager) {
         StartSessionRequest session_request = create_valid_start_session_request("fatal-error-machine");
         StartSessionResponse session_response;
         Status status = manager.start_session(session_request, session_response);
@@ -2139,12 +2141,71 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
         auto processed_input = (status_response.processed_inputs())[0];
         ASSERT(processed_input.input_index() == 0, "processed_input input index should be 0");
-        ASSERT(processed_input.status() == CompletionStatus::MACHINE_HALTED,
-            "Completion status should be MACHINE_HALTED");
+        ASSERT(processed_input.has_most_recent_machine_hash(),
+            "processed input should contain a most_recent_machine_hash");
+        ASSERT(!processed_input.most_recent_machine_hash().data().empty(),
+            "processed input should contain a most_recent_machine_hash and it should not be empty");
+        ASSERT(processed_input.has_voucher_hashes_in_epoch(), "result should have voucher_hashes_in_epoch");
+        ASSERT(processed_input.has_notice_hashes_in_epoch(), "result should have notice_hashes_in_epoch");
+        ASSERT(processed_input.reports_size() == 0, "processed input reports size should be equal to report_count");
+        ASSERT(processed_input.status() == CompletionStatus::EXCEPTION, "processed input status should be EXCEPTION");
+        ASSERT(processed_input.has_exception_data(), "processed input should contain exception data");
+        ASSERT(processed_input.exception_data() == "dapp exited with exit status: 2",
+            "exception data should contain the expected payload");
 
         end_session_after_processing_pending_inputs(manager, session_request.session_id(),
             session_request.active_epoch_index());
     });
+
+    test("Should complete with CompletionStatus EXCEPTION after rollup-http-server error",
+        [](ServerManagerClient &manager) {
+            StartSessionRequest session_request = create_valid_start_session_request("http-server-error-machine");
+            StartSessionResponse session_response;
+            Status status = manager.start_session(session_request, session_response);
+            ASSERT_STATUS(status, "StartSession", true);
+
+            // enqueue
+            AdvanceStateRequest advance_request;
+            init_valid_advance_state_request(advance_request, session_request.session_id(),
+                session_request.active_epoch_index(), 0);
+            status = manager.advance_state(advance_request);
+            ASSERT_STATUS(status, "AdvanceState", true);
+
+            // get epoch status
+            GetEpochStatusRequest status_request;
+            status_request.set_session_id(session_request.session_id());
+            status_request.set_epoch_index(session_request.active_epoch_index());
+            GetEpochStatusResponse status_response;
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+
+            // assert status_resonse content
+            ASSERT(status_response.session_id() == session_request.session_id(),
+                "status response session_id should be the same as the one created");
+            ASSERT(status_response.epoch_index() == session_request.active_epoch_index(),
+                "status response epoch_index should be 0");
+            ASSERT(status_response.state() == EpochState::ACTIVE, "status response state should be ACTIVE");
+            ASSERT(status_response.processed_inputs_size() == 1, "status response processed_inputs size should be 1");
+            ASSERT(status_response.pending_input_count() == 0, "status response pending_input_count should 0");
+            ASSERT(!status_response.has_taint_status(), "status response should not be tainted");
+
+            auto processed_input = (status_response.processed_inputs())[0];
+            ASSERT(processed_input.input_index() == 0, "processed_input input index should be 0");
+            ASSERT(processed_input.has_most_recent_machine_hash(),
+                "processed input should contain a most_recent_machine_hash");
+            ASSERT(!processed_input.most_recent_machine_hash().data().empty(),
+                "processed input should contain a most_recent_machine_hash and it should not be empty");
+            ASSERT(processed_input.has_voucher_hashes_in_epoch(), "result should have voucher_hashes_in_epoch");
+            ASSERT(processed_input.has_notice_hashes_in_epoch(), "result should have notice_hashes_in_epoch");
+            ASSERT(processed_input.reports_size() == 0, "processed input reports size should be equal to report_count");
+            ASSERT(processed_input.status() == CompletionStatus::EXCEPTION,
+                "processed input status should be EXCEPTION");
+            ASSERT(processed_input.has_exception_data(), "processed input should contain exception data");
+            ASSERT(processed_input.exception_data() == "rollup-http-server exited with 0 status",
+                "exception data should contain the expected payload");
+
+            end_session_after_processing_pending_inputs(manager, session_request.session_id(),
+                session_request.active_epoch_index());
+        });
 
     test("Should complete with first processed input as CompletionStatus CYCLE_LIMIT_EXCEEDED",
         [](ServerManagerClient &manager) {
@@ -2680,7 +2741,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
             ASSERT_STATUS(status, "EndSession", true);
         });
 
-    test("Should complete with CompletionStatus MACHINE_HALTED after fatal error", [](ServerManagerClient &manager) {
+    test("Should complete with CompletionStatus EXCEPTION after fatal error", [](ServerManagerClient &manager) {
         StartSessionRequest session_request = create_valid_start_session_request("fatal-error-machine");
         StartSessionResponse session_response;
         Status status = manager.start_session(session_request, session_response);
@@ -2694,7 +2755,11 @@ static void test_inspect_state(const std::function<void(const std::string &title
         ASSERT_STATUS(status, "InspectState", true);
 
         check_inspect_state_response(inspect_response, inspect_request.session_id(),
-            session_request.active_epoch_index(), 0, 0, CompletionStatus::MACHINE_HALTED);
+            session_request.active_epoch_index(), 0, 0, CompletionStatus::EXCEPTION);
+
+        ASSERT(inspect_response.has_exception_data(), "InspectResponse should containd exception data");
+        ASSERT(inspect_response.exception_data() == "dapp exited with exit status: 2",
+            "exception_data should contain expected exception payload");
 
         // end session
         EndSessionRequest end_session_request;
@@ -2702,6 +2767,34 @@ static void test_inspect_state(const std::function<void(const std::string &title
         status = manager.end_session(end_session_request);
         ASSERT_STATUS(status, "EndSession", true);
     });
+
+    test("Should complete with CompletionStatus EXCEPTION after rollup-http-server error",
+        [](ServerManagerClient &manager) {
+            StartSessionRequest session_request = create_valid_start_session_request("http-server-error-machine");
+            StartSessionResponse session_response;
+            Status status = manager.start_session(session_request, session_response);
+            ASSERT_STATUS(status, "StartSession", true);
+
+            // enqueue first
+            InspectStateRequest inspect_request;
+            init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
+            InspectStateResponse inspect_response;
+            status = manager.inspect_state(inspect_request, inspect_response);
+            ASSERT_STATUS(status, "InspectState", true);
+
+            check_inspect_state_response(inspect_response, inspect_request.session_id(),
+                session_request.active_epoch_index(), 0, 0, CompletionStatus::EXCEPTION);
+
+            ASSERT(inspect_response.has_exception_data(), "InspectResponse should containd exception data");
+            ASSERT(inspect_response.exception_data() == "rollup-http-server exited with 0 status",
+                "exception_data should contain expected exception payload");
+
+            // end session
+            EndSessionRequest end_session_request;
+            end_session_request.set_session_id(session_request.session_id());
+            status = manager.end_session(end_session_request);
+            ASSERT_STATUS(status, "EndSession", true);
+        });
 
     test("Should complete a valid request with accept (voucher on inspect)", [](ServerManagerClient &manager) {
         StartSessionRequest session_request = create_valid_start_session_request("voucher-on-inspect-machine");
@@ -3027,8 +3120,10 @@ static void test_inspect_state(const std::function<void(const std::string &title
 }
 
 static bool check_session_store(const std::string &machine_dir) {
-    static const std::vector<std::string> files = {"0000000000001000-f000.bin", "0000000080000000-4000000.bin",
-        "8000000000000000-3c00000.bin", "config.protobuf", "hash"};
+    static const std::vector<std::string> files = {"0000000000001000-f000.bin", "0000000060000000-200000.bin",
+        "0000000060200000-200000.bin", "0000000060400000-1000.bin", "0000000060600000-200000.bin",
+        "0000000060800000-200000.bin", "0000000080000000-4000000.bin", "8000000000000000-5000000.bin",
+        "config.protobuf", "hash"};
     if (machine_dir.empty()) {
         return false;
     }

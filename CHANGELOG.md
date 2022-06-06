@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved clua_dumpstack to limit size of diplayed string data and to escape unprintable chars
 - Improved machine_merkle_tree::dump_merkle_tree() to indent and print base address of each node
 - Removed active epoch index parameter from server-manager InspectRequest GRPC interface
+- Test rollup-init error handling in server-manager tests
 
 ## [0.9.0] - 2022-04-20
 

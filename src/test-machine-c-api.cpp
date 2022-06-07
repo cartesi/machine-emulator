@@ -1,5 +1,7 @@
 #define BOOST_TEST_MODULE Machine C API test // NOLINT(cppcoreguidelines-macro-usage)
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <boost/endian/conversion.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/operations.hpp>
@@ -7,6 +9,7 @@
 #include <boost/process/search_path.hpp>
 #include <boost/test/execution_monitor.hpp>
 #include <boost/test/included/unit_test.hpp>
+#pragma GCC diagnostic pop
 
 #include <array>
 #include <chrono>
@@ -568,7 +571,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_machine_config_version_test, store_file_fix
     uint32_t version = 0;
     ifs >> version;
     version = boost::endian::little_to_native(version);
-    BOOST_CHECK_EQUAL(version, 4);
+    BOOST_CHECK_EQUAL(version, static_cast<uint32_t>(4));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_machine_test, ordinary_machine_fixture) {
@@ -779,8 +782,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_machine_hash_test, ordinary_machine_fix
         p->target_hash + sizeof(cm_hash));
     BOOST_CHECK_EQUAL_COLLECTIONS(origin_root_hash, origin_root_hash + sizeof(cm_hash), p->root_hash,
         p->root_hash + sizeof(cm_hash));
-    BOOST_CHECK_EQUAL(p->log2_root_size, 64);
-    BOOST_CHECK_EQUAL(p->sibling_hashes.count, 52);
+    BOOST_CHECK_EQUAL(p->log2_root_size, static_cast<size_t>(64));
+    BOOST_CHECK_EQUAL(p->sibling_hashes.count, static_cast<size_t>(52));
 
     cm_delete_merkle_tree_proof(p);
 }
@@ -829,7 +832,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_basic_test, ordinary_machine_fixture) {
     int error_code = cm_read_word(_machine, 0x100, &word_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(word_value, 0x1000);
+    BOOST_CHECK_EQUAL(word_value, static_cast<uint64_t>(0x1000));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_memory_null_machine_test) {
@@ -1177,7 +1180,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_
     int error_code = cm_read_iflags(_machine, &read_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(read_value, 0x18);
+    BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x18));
 
     bool yflag{};
     bool hflag{};
@@ -1196,7 +1199,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_
     error_code = cm_read_iflags(_machine, &read_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(read_value, 0x1a);
+    BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x1a));
 
     error_code = cm_reset_iflags_Y(_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -1207,7 +1210,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_
     error_code = cm_read_iflags(_machine, &read_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(read_value, 0x19);
+    BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x19));
 
     error_code = cm_write_iflags(_machine, write_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -1227,17 +1230,17 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(ids_read_test, ordinary_machine_fixture) {
     int error_code = cm_read_mvendorid(_machine, &vendorid, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(vendorid, 0x6361727465736920);
+    BOOST_CHECK_EQUAL(vendorid, static_cast<uint64_t>(0x6361727465736920));
 
     error_code = cm_read_marchid(_machine, &archid, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(archid, 0xa);
+    BOOST_CHECK_EQUAL(archid, static_cast<uint64_t>(0xa));
 
     error_code = cm_read_mimpid(_machine, &impid, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(impid, 0x1);
+    BOOST_CHECK_EQUAL(impid, static_cast<uint64_t>(0x1));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_tohost_read_complex_test, ordinary_machine_fixture) {
@@ -1252,17 +1255,17 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_tohost_read_complex_test, ordinary_mach
     error_code = cm_read_htif_tohost_dev(_machine, &htif_dev, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(htif_dev, 0x11);
+    BOOST_CHECK_EQUAL(htif_dev, static_cast<uint64_t>(0x11));
 
     error_code = cm_read_htif_tohost_cmd(_machine, &htif_cmd, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(htif_cmd, 0x11);
+    BOOST_CHECK_EQUAL(htif_cmd, static_cast<uint64_t>(0x11));
 
     error_code = cm_read_htif_tohost_data(_machine, &htif_data, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(htif_data, 0x0000111111111111);
+    BOOST_CHECK_EQUAL(htif_data, static_cast<uint64_t>(0x0000111111111111));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_fromhost_read_complex_test, ordinary_machine_fixture) {
@@ -1281,7 +1284,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_fromhost_read_complex_test, ordinary_ma
     error_code = cm_read_htif_fromhost(_machine, &htif_data, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(htif_data, 0x0000111111111111);
+    BOOST_CHECK_EQUAL(htif_data, static_cast<uint64_t>(0x0000111111111111));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(dump_pmas_null_machine_test) {
@@ -1319,7 +1322,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(dhd_h_address_invalid_address_test) {
 
 BOOST_AUTO_TEST_CASE_NOLINT(dhd_h_address_basic_test) {
     uint64_t reg_addr = cm_get_dhd_h_address(5);
-    BOOST_CHECK_EQUAL(reg_addr, 0x40030050);
+    BOOST_CHECK_EQUAL(reg_addr, static_cast<uint64_t>(0x40030050));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_dhd_h_null_machine_test) {
@@ -1387,7 +1390,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(dhd_h_read_write_test, ordinary_machine_fixture) 
     int error_code = cm_read_dhd_h(_machine, 1, &read_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(read_value, 0x0);
+    BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x0));
 
     error_code = cm_write_dhd_h(_machine, 1, write_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -1716,7 +1719,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_x_basic_test, ordinary_machine_fixture
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(x_origin, x_read);
 
-    BOOST_CHECK_EQUAL(0x10, cm_get_x_address(2));
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x10), cm_get_x_address(2));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_csr_null_machine_test) {
@@ -1773,7 +1776,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_csr_basic_test, ordinary_machine_fixtu
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(csr_origin, csr_read);
 
-    BOOST_CHECK_EQUAL(0x100, cm_get_csr_address(CM_PROC_PC));
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x100), cm_get_csr_address(CM_PROC_PC));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(verify_merkle_tree_null_machine_test) {
@@ -2022,7 +2025,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_1000_cycle_test, ordinary_machine_fix
     error_code = cm_read_mcycle(_machine, &read_mcycle, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(read_mcycle, 1000);
+    BOOST_CHECK_EQUAL(read_mcycle, static_cast<uint64_t>(1000));
 
     cm_hash hash_1000;
     error_code = cm_get_root_hash(_machine, &hash_1000, &err_msg);
@@ -2034,8 +2037,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_1000_cycle_test, ordinary_machine_fix
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_to_past_test, ordinary_machine_fixture) {
-    int cycle_num = 1000;
-    int cycle_num_to_past = 100;
+    uint64_t cycle_num = 1000;
+    uint64_t cycle_num_to_past = 100;
 
     char *err_msg{};
     int error_code = cm_machine_run(_machine, cycle_num, &err_msg);
@@ -2066,7 +2069,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_long_cycle_test, ordinary_machine_fix
     error_code = cm_read_mcycle(_machine, &read_mcycle, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(read_mcycle, 600000);
+    BOOST_CHECK_EQUAL(read_mcycle, static_cast<uint64_t>(600000));
 
     cm_hash hash_end;
     error_code = cm_get_root_hash(_machine, &hash_end, &err_msg);
@@ -2335,7 +2338,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_x_address_basic_test, grpc_machine_fixtu
         printf("Error getting x address: %s\n", err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_REQUIRE_EQUAL(val, 40);
+    BOOST_REQUIRE_EQUAL(val, static_cast<uint64_t>(40));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_csr_address_basic_test, grpc_machine_fixture_with_server) {
@@ -2347,7 +2350,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_csr_address_basic_test, grpc_machine_fix
         printf("Error getting csr address: %s\n", err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_REQUIRE_EQUAL(val, 280);
+    BOOST_REQUIRE_EQUAL(val, static_cast<uint64_t>(280));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_dhd_h_address_basic_test, grpc_machine_fixture_with_server) {
@@ -2359,7 +2362,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_dhd_h_address_basic_test, grpc_machine_fixtu
         printf("Error getting dhd h address: %s\n", err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_REQUIRE_EQUAL(val, 1073938480);
+    BOOST_REQUIRE_EQUAL(val, static_cast<uint64_t>(1073938480));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_version_wrong_addr_test, grpc_machine_fixture_with_server) {

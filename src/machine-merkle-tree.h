@@ -196,8 +196,9 @@ private:
 
     /// \brief Dumps tree rooted at node to std::cerr.
     /// \param node Root of subtree.
-    /// \param  log2_size log<sub>2</sub> of size subintended by \p node.
-    void dump_merkle_tree(tree_node *node, int log2_size) const;
+    /// \param address start of range subintended by \p node.
+    /// \param log2_size log<sub>2</sub> of size of range subintended by \p node.
+    void dump_merkle_tree(tree_node *node, uint64_t address, int log2_size) const;
 
     /// \brief Dumps the entire tree rooted to std::cerr.
     void dump_merkle_tree(void) const;

@@ -240,9 +240,9 @@ local function calculate_emulator_hash(pmas_files)
 
     local cli_space_hash = test_util.calculate_region_hash(cli.data,
                                                             cli.data_size /
-                                                                (2 ^ 12), 12, 14)
+                                                                (2 ^ 12), 12, 20)
     cli_space_hash = test_util.extend_region_hash(cli_space_hash, 0x02000000,
-                                                   14, 25)
+                                                   20, 25)
 
     local cpu_rom_cli_hash = cartesi.keccak(cpu_and_rom_space_hash,
                                             cli_space_hash) -- 26
@@ -277,7 +277,7 @@ do_test("machine halt and yield flags and config matches",
         -- Get machine default config  and test for known fields
         local initial_config = machine:get_initial_config()
         -- test_util.print_table(initial_config)
-        assert(initial_config["processor"]["marchid"] == 0xa,
+        assert(initial_config["processor"]["marchid"] == 0xb,
             "marchid value does not match")
         assert(initial_config["processor"]["pc"] == 0x1000,
             "pc value does not match")
@@ -320,11 +320,11 @@ do_test("dumped file merkle tree hashes should match",
                 test_util.tohex(root_file_hashes[file_name]))
         end
         assert(test_util.tohex(root_file_hashes[pmas_file_names[1]]) ==
-                "3D2F0CFEE0FE923A1034032AFB4EC7117F332729F75C69DBFB1BE69880A09A50")
+                "F3127751D956229A7A916097DDC34C34839B227E1B3FEBCCB25E1C07BCA83EA2")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[2]]) ==
                 "FF693CFA810B1B72C7708939A48CEDB2EAEDB7EEDCF168CA959891AE135C2DC0")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[3]]) ==
-                "995C871A78EFEC6CA5AFD44B9994B1C88BBBFCDFEA68FD5566C13D4F45BBDE6B")
+                "99AF665835AABFDC6740C7E2C3791A31C3CDC9F5AB962F681B12FC092816A62F")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[4]]) ==
                 "3279ED2C35ADE5BCFFC6680AA2E08153D2EDD5A9949ECA9E731B3F5DCE2721A0")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[5]]) ==
@@ -349,7 +349,7 @@ do_test("machine initial hash shold match",
 
         assert(
             test_util.tohex(root_hash) == test_util.tohex(calculated_root_hash),
-            "Initial root hash does not matches")
+            "Initial root hash does not match")
 
         remove_files(pmas_file_names)
     end
@@ -362,7 +362,7 @@ do_test("machine root hash after step one should match",
         local root_hash = machine:get_root_hash()
         print("Root hash:", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "774C3ED7868EC716A2A4197C23879630B27BFFF472478114DEF09271A9D044A6",
+                "6EE7419537973D0B9A3F17568FC5919DF2C6724E01743D21BD0E65D039D8EAE0",
             "hash after initial step does not match")
 
         -- Perform step, dump address space to file, calculate emulator root hash
@@ -435,7 +435,7 @@ do_test("mcycle and root hash should match",
         local root_hash = machine:get_root_hash()
         print("1000 cycle hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "7378AD969A5A88BBA0DA8E9008CEB04A1D6A9305D75FCAE201BA7D4D905DC104",
+                "72464973DF13452713D8A744A2FCABE360DBAB765D1D33A8F1D7AA74347BAA76",
             "machine hash does not match after 1000 cycles")
     end
 )
@@ -453,7 +453,7 @@ do_test("mcycle and root hash should match",
         local root_hash = machine:get_root_hash()
         print("End hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "D1546784ACF1027006602461BB4645FD1ED3C7B170724B60B3242552D98703C9",
+                "BD85D9DEBE5646566B6A832A54549F1D48DB521E26112B13ABB8E77AE6860DF6",
             "machine hash does not match after on end cycle")
     end
 )

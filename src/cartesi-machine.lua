@@ -803,8 +803,8 @@ local function get_file_length(filename)
     return size
 end
 
-local function print_root_hash(cycles, machine)
-    stderr("%u: %s\n", cycles, util.hexhash(machine:get_root_hash()))
+local function print_root_hash(machine)
+    stderr("%u: %s\n", machine:read_mcycle(), util.hexhash(machine:get_root_hash()))
 end
 
 local function store_memory_range(r, indent, output)
@@ -1354,7 +1354,7 @@ else
     local cycles = machine:read_mcycle()
     if initial_hash then
         assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
-        print_root_hash(cycles, machine)
+        print_root_hash(machine)
     end
     dump_value_proofs(machine, initial_proof, config.htif.console_getchar)
     local exit_code = 0
@@ -1409,12 +1409,12 @@ else
                 end
                 stderr("\nEpoch %d before input %d\n", rollup_advance.epoch_index, rollup_advance.next_input_index)
                 if rollup_advance.hashes then
-                    print_root_hash(cycles, machine)
+                    print_root_hash(machine)
                 end
                 machine:snapshot()
                 load_rollup_input_and_metadata(machine, config.rollup, rollup_advance)
                 if rollup_advance.hashes then
-                    print_root_hash(cycles, machine)
+                    print_root_hash(machine)
                 end
                 machine:reset_iflags_Y()
                 machine:write_htif_fromhost_data(0) -- tell machine it is an rollup_advance state, but this is default
@@ -1468,7 +1468,7 @@ else
             break
         end
         if cycles == next_hash_mcycle then
-            print_root_hash(cycles, machine)
+            print_root_hash(machine)
             next_hash_mcycle = next_hash_mcycle + periodic_hashes_period
         end
     end
@@ -1485,7 +1485,7 @@ else
     end
     if final_hash then
         assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
-        print_root_hash(cycles, machine)
+        print_root_hash(machine)
     end
     dump_value_proofs(machine, final_proof, config.htif.console_getchar)
     if store_dir then

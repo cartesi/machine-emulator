@@ -38,8 +38,8 @@ function _M.splice_assert(root_hash, proof, new_target_hash, new_root_hash)
         "new root hash mismatch")
 end
 
-function _M.word_splice_assert(root_hash, proof, new_word, new_root_hash)
-    _M.word_slice_assert(root_hash, proof)
+function _M.word_splice_assert(root_hash, proof, old_word, new_word, new_root_hash)
+    _M.word_slice_assert(root_hash, proof, old_word)
     assert(_M.roll_hash_up_tree(proof, cartesi.keccak(new_word)) == new_root_hash,
         "new root hash mismatch")
 end

@@ -14,6 +14,8 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
+#include <cctype>
+
 #include "clua.h"
 
 namespace cartesi {
@@ -56,12 +58,31 @@ void clua_setbooleanfield(lua_State *L, bool val, const char *name, int idx) {
     lua_setfield(L, absidx, name);
 }
 
+static void fprint_str(FILE *out, const char *str, int max) {
+    int i = 0;
+    int m = max;
+    for (i = 0; m > 0 && str[i]; ++i) {
+        if (isprint(str[i])) {
+            (void) fputc(str[i], out);
+            m -= 1;
+        } else {
+            (void) fprintf(out, "\\0x%02x", static_cast<unsigned char>(str[i]));
+            m -= 5;
+        }
+    }
+    if (str[i]) {
+        (void) fprintf(out, "...");
+    }
+}
+
 void clua_print(lua_State *L, int idx) {
     idx = lua_absindex(L, idx);
     lua_getglobal(L, "tostring");
     lua_pushvalue(L, idx);
     lua_call(L, 1, 1);
-    (void) fprintf(stderr, "%02d: %s\n", idx, lua_tostring(L, -1));
+    (void) fprintf(stderr, "%02d: ", idx);
+    fprint_str(stderr, lua_tostring(L, -1), 68);
+    (void) fputc('\n', stderr);
     lua_pop(L, 1);
 }
 

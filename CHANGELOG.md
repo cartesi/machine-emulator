@@ -9,11 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added option to encode/decode exceptions to rollup-memory-range.lua
+- Added new tests/log-with-mtime-transition.lua
 
 ### Fixed
 
 - Fixed HTIF iconsole read from machine state
 - Fixed cartesi/grpc.so so it can be loaded without cartesi.so
+- Fix mcycle display when printing final hash after step in cartesi-machine.lua
+- Fix cartesi.proof.word_splice_assert to check for old word value
+- Remove derived mtime and msip from CLINT peek returns so they are not reflected in Merkle tree
+- Fix clua_check_cm_merkle_tree_proof garbage in Lua stack after return
+- Fix clua_check_cm_access_log to save log_type
+- Fix dump_pmas() to write pristine pages to PMA files
 
 ### Changed
 
@@ -27,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated clang-format version to 14
 - Updated clang-tidy version to 14
 - Updated libboost version to 1.74
+- Improved clua_dumpstack to limit size of diplayed string data and to escape unprintable chars
+- Improved machine_merkle_tree::dump_merkle_tree() to indent and print base address of each node
 
 ## [0.9.0] - 2022-04-20
 

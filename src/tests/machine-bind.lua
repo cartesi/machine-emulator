@@ -130,7 +130,7 @@ end
 local pmas_file_names = {}
 pmas_file_names["0000000000000000--0000000000001000.bin"] = 4096
 pmas_file_names["0000000000001000--000000000000f000.bin"] = 61440
-pmas_file_names["0000000002000000--00000000000c0000.bin"] = 12288
+pmas_file_names["0000000002000000--00000000000c0000.bin"] = 786432
 pmas_file_names["0000000040008000--0000000000001000.bin"] = 4096
 pmas_file_names["0000000080000000--0000000000100000.bin"] = 1048576
 
@@ -258,7 +258,7 @@ do_test("should return expected value",
         local root_hash = machine:get_root_hash()
         print("Root hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "030DC2D0328EE0530DEBCAE590AE43630A33EAA324D289EE660994E99A1A277E",
+                "A49B6782712CC6498B75A6A7441C76AA0C2C55A0F59612826B4B893BC3A64516",
             "initial root hash does not match")
     end
 )
@@ -294,7 +294,7 @@ do_test("should return expected values",
     function(machine)
         local initial_csr_values = test_data.get_cpu_csr_test_values()
         initial_csr_values.mvendorid = 0x6361727465736920
-        initial_csr_values.marchid = 0xa
+        initial_csr_values.marchid = 0xb
         initial_csr_values.mimpid = 0x1
         initial_csr_values.htif_tohost = 0x0
         initial_csr_values.htif_fromhost = 0x0
@@ -333,12 +333,12 @@ do_test("there should exist dumped files of expected size",
 
         for file_name, file_size in pairs(pmas_file_names) do
             local dumped_file = test_path .. file_name
-            local fd = io.open(dumped_file, "rb")
+            local fd = assert(io.open(dumped_file, "rb"))
             local real_file_size = fd:seek("end")
             fd:close(dumped_file)
 
             assert(real_file_size == file_size,
-                "unexpected pmas file size" .. dumped_file)
+                "unexpected pmas file size " .. dumped_file)
 
             assert(test_util.file_exists(dumped_file),
                 "dumping pmas to file failed " .. dumped_file)
@@ -472,7 +472,7 @@ do_test("dumped register values should match",
         print("--------------------------")
         assert((output:find "mcycle = 0"),
             "Cound not find mcycle register value in output")
-        assert((output:find "marchid = a"),
+        assert((output:find "marchid = b"),
             "Cound not find marchid register value in output")
         assert((output:find "clint_mtimecmp = 0"),
             "Cound not find clint_mtimecmp register value in output")

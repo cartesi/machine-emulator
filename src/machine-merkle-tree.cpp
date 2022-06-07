@@ -154,9 +154,8 @@ void machine_merkle_tree::update_inner_node_hash(hasher_type &h, int log2_size, 
 
 void machine_merkle_tree::dump_hash(const hash_type &hash) {
     auto f = std::cerr.flags();
-    std::cerr << std::hex << std::setfill('0') << std::setw(2);
     for (const auto &b : hash) {
-        std::cerr << b;
+        std::cerr << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(b);
     }
     std::cerr << '\n';
     std::cerr.flags(f);
@@ -166,13 +165,17 @@ const machine_merkle_tree::hash_type &machine_merkle_tree::get_pristine_hash(int
     return pristine_hashes().get_hash(log2_size);
 }
 
-void machine_merkle_tree::dump_merkle_tree(tree_node *node, int log2_size) const {
-    std::cerr << log2_size << ": ";
+void machine_merkle_tree::dump_merkle_tree(tree_node *node, uint64_t address, int log2_size) const {
+    for (int i = 0; i < get_log2_root_size() - log2_size; i++) {
+        std::cerr << ' ';
+    }
+    std::cerr << "0x" << std::setfill('0') << std::setw(16) << std::hex << address << ":" << std::setfill('0')
+              << std::setw(2) << std::dec << log2_size << ' ';
     if (node) {
         dump_hash(node->hash);
         if (log2_size > get_log2_page_size()) {
-            dump_merkle_tree(node->child[0], log2_size - 1);
-            dump_merkle_tree(node->child[1], log2_size - 1);
+            dump_merkle_tree(node->child[0], address, log2_size - 1);
+            dump_merkle_tree(node->child[1], address + (UINT64_C(1) << (log2_size - 1)), log2_size - 1);
         }
     } else {
         std::cerr << "nullptr\n";
@@ -241,7 +244,7 @@ void machine_merkle_tree::get_inside_page_sibling_hashes(address_type address, i
 }
 
 void machine_merkle_tree::dump_merkle_tree(void) const {
-    dump_merkle_tree(m_root, get_log2_root_size());
+    dump_merkle_tree(m_root, 0, get_log2_root_size());
 }
 
 bool machine_merkle_tree::begin_update(void) {

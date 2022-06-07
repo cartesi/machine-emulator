@@ -342,6 +342,7 @@ static void check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_si
 }
 
 cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx) {
+    tabidx = lua_absindex(L, tabidx);
     luaL_checktype(L, tabidx, LUA_TTABLE);
     auto &managed = clua_push_to(L, clua_managed_cm_ptr<cm_merkle_tree_proof>(new cm_merkle_tree_proof{}));
     cm_merkle_tree_proof *proof = managed.get();
@@ -357,7 +358,7 @@ cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx) 
     lua_getfield(L, tabidx, "sibling_hashes");
     check_sibling_cm_hashes(L, -1, proof->log2_target_size, proof->log2_root_size, &proof->sibling_hashes);
     managed.release();
-    lua_pop(L, 1);
+    lua_pop(L, 2);
     return proof;
 }
 
@@ -405,94 +406,77 @@ static unsigned char *opt_cm_access_data_field(lua_State *L, int tabidx, const c
 
 /// \brief Loads an cm_access from Lua
 /// \param L Lua state
-/// \param tabidx Word_access stack index
-/// \returns The word access
-static cm_access check_cm_access(lua_State *L, int tabidx, bool proofs) {
+/// \param tabidx access stack index
+/// \param a Pointer to receive access
+static void check_cm_access(lua_State *L, int tabidx, bool proofs, cm_access *a) {
+    tabidx = lua_absindex(L, tabidx);
     luaL_checktype(L, tabidx, LUA_TTABLE);
-    cm_access a{};
-    a.type = check_cm_access_type_field(L, tabidx, "type");
-    a.address = check_uint_field(L, tabidx, "address");
-    a.log2_size = check_int_field(L, tabidx, "log2_size");
-    if (a.log2_size < CM_TREE_LOG2_WORD_SIZE || a.log2_size > CM_TREE_LOG2_ROOT_SIZE) {
+    a->type = check_cm_access_type_field(L, tabidx, "type");
+    a->address = check_uint_field(L, tabidx, "address");
+    a->log2_size = check_int_field(L, tabidx, "log2_size");
+    if (a->log2_size < CM_TREE_LOG2_WORD_SIZE || a->log2_size > CM_TREE_LOG2_ROOT_SIZE) {
         luaL_error(L, "invalid log2_size (expected integer in {%d..%d})", CM_TREE_LOG2_WORD_SIZE,
             CM_TREE_LOG2_ROOT_SIZE);
     }
-    // Get fields with managed pointers so that they are cleaned in case of error
-    auto &managed_proof = clua_push_to(L, clua_managed_cm_ptr<cm_merkle_tree_proof>(nullptr));
     if (proofs) {
         lua_getfield(L, tabidx, "proof");
-        managed_proof.reset(clua_check_cm_merkle_tree_proof(L, -1));
+        a->proof = clua_check_cm_merkle_tree_proof(L, -1);
         lua_pop(L, 1);
-    } else {
-        managed_proof.reset(); // redundant with cm_access initialization but intentionally explicit for clarity
     }
-    size_t managed_read_data_size{};
-    auto &managed_read_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(nullptr));
-    managed_read_data.reset(check_cm_access_data_field(L, tabidx, "read", a.log2_size, &managed_read_data_size));
-    size_t managed_written_data_size{};
-    auto &managed_written_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(nullptr));
-    managed_written_data.reset(opt_cm_access_data_field(L, tabidx, "written", a.log2_size, &managed_written_data_size));
-    // Assign an allocated object to proof and make managed pointers null
-    a.proof = managed_proof.release();
-    a.read_data = managed_read_data.release();
-    a.read_data_size = managed_read_data_size;
-    a.written_data = managed_written_data.release();
-    a.written_data_size = managed_written_data_size;
-    lua_pop(L, 3); // cleanup managed pointers
-    return a;
+    a->read_data = check_cm_access_data_field(L, tabidx, "read", a->log2_size, &a->read_data_size);
+    a->written_data = opt_cm_access_data_field(L, tabidx, "written", a->log2_size, &a->written_data_size);
 }
 
 cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx) {
+    tabidx = lua_absindex(L, tabidx);
     luaL_checktype(L, tabidx, LUA_TTABLE);
+    auto &managed = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(new cm_access_log{}));
+    cm_access_log *log = managed.get();
     check_table_field(L, tabidx, "log_type");
-    bool proofs = opt_boolean_field(L, -1, "proofs");
-    bool annotations = opt_boolean_field(L, -1, "annotations");
+    log->log_type.proofs = opt_boolean_field(L, -1, "proofs");
+    log->log_type.annotations = opt_boolean_field(L, -1, "annotations");
     lua_pop(L, 1);
-    // Use lua managed log to cleanup cm_access_log in case of error
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(new cm_access_log{}));
-    auto &acc_log = managed_log.get();
     check_table_field(L, tabidx, "accesses");
-    acc_log->accesses.count = luaL_len(L, -1);
-    acc_log->accesses.entry = new cm_access[acc_log->accesses.count];
-    for (size_t i = 1; i <= acc_log->accesses.count; i++) {
+    log->accesses.count = luaL_len(L, -1);
+    log->accesses.entry = new cm_access[log->accesses.count]{};
+    for (size_t i = 1; i <= log->accesses.count; i++) {
         lua_geti(L, -1, static_cast<lua_Integer>(i));
         if (!lua_istable(L, -1)) {
             luaL_error(L, "access [%d] not a table", i);
         }
-        acc_log->accesses.entry[i - 1] = check_cm_access(L, -1, proofs);
+        check_cm_access(L, -1, log->log_type.proofs, &log->accesses.entry[i - 1]);
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
-    if (annotations) {
+    if (log->log_type.annotations) {
         check_table_field(L, tabidx, "notes");
-        acc_log->notes.count = luaL_len(L, -1);
-        acc_log->notes.entry = new const char *[acc_log->notes.count];
-        for (size_t i = 1; i <= acc_log->notes.count; i++) {
+        log->notes.count = luaL_len(L, -1);
+        log->notes.entry = new const char *[log->notes.count] {};
+        for (size_t i = 1; i <= log->notes.count; i++) {
             lua_geti(L, -1, static_cast<lua_Integer>(i));
             if (!lua_isstring(L, -1)) {
                 luaL_error(L, "note [%d] not a string", i);
             }
-            acc_log->notes.entry[i - 1] = copy_lua_str(L, -1);
+            log->notes.entry[i - 1] = copy_lua_str(L, -1);
             lua_pop(L, 1);
         }
         lua_pop(L, 1);
         check_table_field(L, tabidx, "brackets");
-        acc_log->brackets.count = luaL_len(L, -1);
-        acc_log->brackets.entry = new cm_bracket_note[acc_log->brackets.count];
-        for (size_t i = 1; i <= acc_log->brackets.count; i++) {
+        log->brackets.count = luaL_len(L, -1);
+        log->brackets.entry = new cm_bracket_note[log->brackets.count]{};
+        for (size_t i = 1; i <= log->brackets.count; i++) {
             lua_geti(L, -1, static_cast<lua_Integer>(i));
             if (!lua_istable(L, -1)) {
                 luaL_error(L, "bracket [%d] not a table", i);
             }
-            acc_log->brackets.entry[i - 1] = check_cm_bracket_note(L, -1);
+            log->brackets.entry[i - 1] = check_cm_bracket_note(L, -1);
             lua_pop(L, 1);
         }
         lua_pop(L, 1);
     }
-    // Make pointer to new access log not managed anymore
-    cm_access_log *result = managed_log.release();
+    managed.release();
     lua_pop(L, 1); // cleanup managed log from stack
-    return result;
+    return log;
 }
 
 void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash) {

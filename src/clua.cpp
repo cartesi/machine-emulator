@@ -61,7 +61,7 @@ void clua_print(lua_State *L, int idx) {
     lua_getglobal(L, "tostring");
     lua_pushvalue(L, idx);
     lua_call(L, 1, 1);
-    fprintf(stderr, "%02d: %s\n", idx, lua_tostring(L, -1));
+    (void) fprintf(stderr, "%02d: %s\n", idx, lua_tostring(L, -1));
     lua_pop(L, 1);
 }
 

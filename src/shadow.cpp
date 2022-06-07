@@ -36,7 +36,7 @@ uint64_t shadow_get_x_rel_addr(int reg) {
 
 uint64_t shadow_get_pma_rel_addr(int p) {
     assert(p >= 0 && p < (int) PMA_MAX);
-    return PMA_BOARD_SHADOW_START + 2 * p * sizeof(uint64_t);
+    return PMA_BOARD_SHADOW_START + 2UL * p * sizeof(uint64_t);
 }
 
 /// \brief Shadow device peek callback. See ::pma_peek.

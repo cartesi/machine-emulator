@@ -816,7 +816,7 @@ static bool stringval(const char *pre, const char *str, const char **val) {
 }
 
 static void help(const char *name) {
-    fprintf(stderr, R"(Usage:
+    (void) fprintf(stderr, R"(Usage:
 
     %s --proxy-address=<address> [options] [<server-address>]
 
@@ -893,7 +893,7 @@ int main(int argc, char *argv[]) try {
     }
 
     if ((session_id == nullptr) != (checkin_address == nullptr)) {
-        fprintf(stderr, "session-id and checkin-address must be used together\n");
+        (void) fprintf(stderr, "session-id and checkin-address must be used together\n");
         exit(1);
     }
 

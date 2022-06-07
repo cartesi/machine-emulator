@@ -21,7 +21,6 @@
 #ifndef CM_C_API_INTERNAL_H
 #define CM_C_API_INTERNAL_H
 
-#include "machine-c-defines.h"
 #include <string>
 
 #include "machine-c-api.h"

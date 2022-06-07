@@ -73,9 +73,9 @@ static bool intval(const char *pre, const char *str, int *val) {
 /// \param f File to print to
 static void print_hash(const hash_type &hash, FILE *f) {
     for (auto b : hash) {
-        fprintf(f, "%02x", static_cast<int>(b));
+        (void) fprintf(f, "%02x", static_cast<int>(b));
     }
-    fprintf(f, "\n");
+    (void) fprintf(f, "\n");
 }
 
 /// \brief Reads a hash in hex from file
@@ -87,7 +87,7 @@ static std::optional<hash_type> read_hash(FILE *f) {
         return {};
     }
     hash_type h;
-    for (unsigned i = 0; i < hasher_type::hash_size; ++i) {
+    for (size_t i = 0; i < hasher_type::hash_size; ++i) {
         std::array<char, 3> hex_c = {hex_hash[2 * i], hex_hash[2 * i + 1], '\0'};
         unsigned c = 0;
         // NOLINTNEXTLINE(cert-err34-c): we just generated the string so we don't need to verify it
@@ -106,7 +106,7 @@ static std::optional<hash_type> read_hash(FILE *f) {
 __attribute__((format(printf, 1, 2))) static void error(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
+    (void) vfprintf(stderr, fmt, ap);
     va_end(ap);
     exit(1);
 }
@@ -156,7 +156,7 @@ static hash_type get_leaf_hash(int log2_word_size, const unsigned char *leaf_dat
 
 /// \brief Prints help message
 static void help(const char *name) {
-    fprintf(stderr,
+    (void) fprintf(stderr,
         "Usage:\n  %s [--input=<filename>] "
         "[--log2-word-size=<w>] [--log2-leaf-size=<p>] "
         "[--log2-root-size=<t>]\n",
@@ -301,7 +301,7 @@ int main(int argc, char *argv[]) try {
         }
         ++leaf_count;
     }
-    fprintf(stderr, "passed test\n");
+    (void) fprintf(stderr, "passed test\n");
     print_hash(back_tree.get_root_hash(), stdout);
     return 0;
 } catch (std::exception &x) {

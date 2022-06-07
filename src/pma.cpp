@@ -65,7 +65,8 @@ pma_memory::pma_memory(uint64_t length, const callocd &c) :
     m_host_memory{nullptr},
     m_backing_file{-1} {
     (void) c;
-    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc): use calloc to improve performance
+    // use calloc to improve performance
+    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-prefer-member-initializer)
     m_host_memory = static_cast<unsigned char *>(std::calloc(1, length));
     if (!m_host_memory) {
         throw std::bad_alloc{};
@@ -84,9 +85,15 @@ pma_memory::pma_memory(uint64_t length, const std::string &path, const callocd &
             throw std::system_error{errno, std::generic_category(), "error opening backing file '"s + path + "'"s};
         }
         // Get file size
-        fseek(fp.get(), 0, SEEK_END);
+        if (fseek(fp.get(), 0, SEEK_END)) {
+            throw std::system_error{errno, std::generic_category(),
+                "error set position on the end of the file '"s + path + "'"s};
+        }
         auto file_length = ftell(fp.get());
-        fseek(fp.get(), 0, SEEK_SET);
+        if (fseek(fp.get(), 0, SEEK_SET)) {
+            throw std::system_error{errno, std::generic_category(),
+                "error set position on the beginning of the file '"s + path + "'"s};
+        }
         // Check against PMA range size
         if (static_cast<uint64_t>(file_length) > length) {
             throw std::runtime_error{"backing file '" + path + "' too large for range"};

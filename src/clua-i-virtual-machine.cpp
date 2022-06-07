@@ -30,7 +30,7 @@ namespace cartesi {
     do {                                                                                                               \
         uint64_t val{0};                                                                                               \
         TRY_EXECUTE(cm_read_##regname(machine, &val, err_msg));                                                        \
-        fprintf(stderr, #regname " = %" PRIx64 "\n", val);                                                             \
+        (void) fprintf(stderr, #regname " = %" PRIx64 "\n", val);                                                      \
     } while (0)
 
 /// \brief This is the machine:dump_pmas() method implementation.
@@ -49,7 +49,7 @@ static int machine_obj_index_dump_regs(lua_State *L) {
     for (int i = 0; i < 32; ++i) {
         uint64_t val{0};
         TRY_EXECUTE(cm_read_x(m, i, &val, err_msg));
-        fprintf(stderr, "x%d = %" PRIx64 "\n", i, val);
+        (void) fprintf(stderr, "x%d = %" PRIx64 "\n", i, val);
     }
     PRINT_PROCESSOR_CSR(m, minstret);
     PRINT_PROCESSOR_CSR(m, mcycle);
@@ -83,7 +83,7 @@ static int machine_obj_index_dump_regs(lua_State *L) {
     PRINT_PROCESSOR_CSR(m, htif_ihalt);
     PRINT_PROCESSOR_CSR(m, htif_iconsole);
     PRINT_PROCESSOR_CSR(m, htif_iyield);
-    fprintf(stderr, "\n");
+    (void) fprintf(stderr, "\n");
     return 0;
 }
 

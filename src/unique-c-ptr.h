@@ -36,7 +36,7 @@ struct free_deleter {
 
 struct fclose_deleter {
     void operator()(FILE *p) const {
-        std::fclose(p);
+        (void) std::fclose(p);
     }
 };
 } // namespace detail

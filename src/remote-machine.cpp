@@ -176,7 +176,7 @@ static void squash_parent(bool &forked) {
     // Wake parent up by signaling ourselves to stop.
     // Parent will wake us back up and then exit.
     if (forked) {
-        raise(SIGSTOP);
+        (void) raise(SIGSTOP);
         // When we wake up, we took the parent's place, so we are not "forked" anymore
         forked = false;
     }
@@ -1237,7 +1237,7 @@ static bool stringval(const char *pre, const char *str, const char **val) {
 }
 
 static void help(const char *name) {
-    fprintf(stderr,
+    (void) fprintf(stderr,
         R"(Usage:
 
 	%s [options] [<server-address>]
@@ -1269,7 +1269,7 @@ and options are
         name);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) try {
 
     const char *server_address = nullptr;
     const char *session_id = nullptr;
@@ -1296,12 +1296,12 @@ int main(int argc, char *argv[]) {
     }
 
     if (!server_address) {
-        fprintf(stderr, "missing server-address\n");
+        (void) fprintf(stderr, "missing server-address\n");
         exit(1);
     }
 
     if ((session_id == nullptr) != (checkin_address == nullptr)) {
-        fprintf(stderr, "session-id and checkin-address must be used together\n");
+        (void) fprintf(stderr, "session-id and checkin-address must be used together\n");
         exit(1);
     }
 
@@ -1309,4 +1309,10 @@ int main(int argc, char *argv[]) {
     server_loop(server_address, session_id, checkin_address);
 
     return 0;
+} catch (std::exception &e) {
+    std::cerr << "Caught exception: " << e.what() << '\n';
+    return 1;
+} catch (...) {
+    std::cerr << "Caught unknown exception\n";
+    return 1;
 }

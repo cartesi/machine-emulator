@@ -145,7 +145,7 @@ int64_t mul64h(int64_t a, int64_t b) {
 namespace cartesi {
 
 static void print_uint64_t(uint64_t a) {
-    fprintf(stderr, "%016" PRIx64, a);
+    (void) fprintf(stderr, "%016" PRIx64, a);
 }
 
 static const std::array<const char *, X_REG_COUNT> reg_name{"zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0",
@@ -188,94 +188,94 @@ static void dump_exception_or_interrupt(uint64_t cause, machine_state &s) {
     if ((cause & MCAUSE_INTERRUPT_FLAG) != 0) {
         switch (cause & ~MCAUSE_INTERRUPT_FLAG) {
             case 0:
-                fprintf(stderr, "user software interrupt");
+                (void) fprintf(stderr, "user software interrupt");
                 break;
             case 1:
-                fprintf(stderr, "supervisor software interrupt");
+                (void) fprintf(stderr, "supervisor software interrupt");
                 break;
             case 2:
-                fprintf(stderr, "reserved software interrupt");
+                (void) fprintf(stderr, "reserved software interrupt");
                 break;
             case 3:
-                fprintf(stderr, "machine software interrupt");
+                (void) fprintf(stderr, "machine software interrupt");
                 break;
             case 4:
-                fprintf(stderr, "user timer interrupt");
+                (void) fprintf(stderr, "user timer interrupt");
                 break;
             case 5:
-                fprintf(stderr, "supervisor timer interrupt");
+                (void) fprintf(stderr, "supervisor timer interrupt");
                 break;
             case 6:
-                fprintf(stderr, "reserved timer interrupt");
+                (void) fprintf(stderr, "reserved timer interrupt");
                 break;
             case 7:
-                fprintf(stderr, "machine timer interrupt");
+                (void) fprintf(stderr, "machine timer interrupt");
                 break;
             case 8:
-                fprintf(stderr, "user external interrupt");
+                (void) fprintf(stderr, "user external interrupt");
                 break;
             case 9:
-                fprintf(stderr, "supervisor external interrupt");
+                (void) fprintf(stderr, "supervisor external interrupt");
                 break;
             case 10:
-                fprintf(stderr, "reserved external interrupt");
+                (void) fprintf(stderr, "reserved external interrupt");
                 break;
             case 11:
-                fprintf(stderr, "machine external interrupt");
+                (void) fprintf(stderr, "machine external interrupt");
                 break;
             default:
-                fprintf(stderr, "unknown interrupt");
+                (void) fprintf(stderr, "unknown interrupt");
                 break;
         }
     } else {
         switch (cause) {
             case 0:
-                fprintf(stderr, "instruction address misaligned");
+                (void) fprintf(stderr, "instruction address misaligned");
                 break;
             case 1:
-                fprintf(stderr, "instruction access fault");
+                (void) fprintf(stderr, "instruction access fault");
                 break;
             case 2:
-                fprintf(stderr, "illegal instruction");
+                (void) fprintf(stderr, "illegal instruction");
                 break;
             case 3:
-                fprintf(stderr, "breakpoint");
+                (void) fprintf(stderr, "breakpoint");
                 break;
             case 4:
-                fprintf(stderr, "load address misaligned");
+                (void) fprintf(stderr, "load address misaligned");
                 break;
             case 5:
-                fprintf(stderr, "load access fault");
+                (void) fprintf(stderr, "load access fault");
                 break;
             case 6:
-                fprintf(stderr, "store/amo address misaligned");
+                (void) fprintf(stderr, "store/amo address misaligned");
                 break;
             case 7:
-                fprintf(stderr, "store/amo access fault");
+                (void) fprintf(stderr, "store/amo access fault");
                 break;
             case 8:
-                fprintf(stderr, "ecall %d from u-mode", int(a7));
+                (void) fprintf(stderr, "ecall %d from u-mode", static_cast<int>(a7));
                 break;
             case 9:
-                fprintf(stderr, "ecall %s(%d) from s-mode", sbi_ecall_name(a7), int(a7));
+                (void) fprintf(stderr, "ecall %s(%d) from s-mode", sbi_ecall_name(a7), static_cast<int>(a7));
                 break;
             case 10:
-                fprintf(stderr, "ecall %d reserved", int(a7));
+                (void) fprintf(stderr, "ecall %d reserved", static_cast<int>(a7));
                 break;
             case 11:
-                fprintf(stderr, "ecall %s(%d) from m-mode", sbi_ecall_name(a7), int(a7));
+                (void) fprintf(stderr, "ecall %s(%d) from m-mode", sbi_ecall_name(a7), static_cast<int>(a7));
                 break;
             case 12:
-                fprintf(stderr, "instruction page fault");
+                (void) fprintf(stderr, "instruction page fault");
                 break;
             case 13:
-                fprintf(stderr, "load page fault");
+                (void) fprintf(stderr, "load page fault");
                 break;
             case 15:
-                fprintf(stderr, "store/amo page fault");
+                (void) fprintf(stderr, "store/amo page fault");
                 break;
             default:
-                fprintf(stderr, "reserved");
+                (void) fprintf(stderr, "reserved");
                 break;
         }
     }
@@ -289,32 +289,32 @@ static void dump_regs(const STATE &s) {
 static void dump_regs(const machine_state &s) {
     const std::string priv_str{"USHM"};
     int cols = 256 / XLEN;
-    fprintf(stderr, "pc = ");
+    (void) fprintf(stderr, "pc = ");
     print_uint64_t(s.pc);
-    fprintf(stderr, " ");
+    (void) fprintf(stderr, " ");
     for (int i = 1; i < X_REG_COUNT; i++) {
-        fprintf(stderr, "%-3s= ", reg_name[i]);
+        (void) fprintf(stderr, "%-3s= ", reg_name[i]);
         print_uint64_t(s.x[i]);
         if ((i & (cols - 1)) == (cols - 1)) {
-            fprintf(stderr, "\n");
+            (void) fprintf(stderr, "\n");
         } else {
-            fprintf(stderr, " ");
+            (void) fprintf(stderr, " ");
         }
     }
-    fprintf(stderr, "priv=%c", priv_str[s.iflags.PRV]);
-    fprintf(stderr, " mstatus=");
+    (void) fprintf(stderr, "priv=%c", priv_str[s.iflags.PRV]);
+    (void) fprintf(stderr, " mstatus=");
     print_uint64_t(s.mstatus);
-    fprintf(stderr, " cycles=%" PRId64, s.mcycle);
-    fprintf(stderr, " insns=%" PRId64, s.minstret);
-    fprintf(stderr, "\n");
+    (void) fprintf(stderr, " cycles=%" PRId64, s.mcycle);
+    (void) fprintf(stderr, " insns=%" PRId64, s.minstret);
+    (void) fprintf(stderr, "\n");
 #if 1
-    fprintf(stderr, "mideleg=");
+    (void) fprintf(stderr, "mideleg=");
     print_uint64_t(s.mideleg);
-    fprintf(stderr, " mie=");
+    (void) fprintf(stderr, " mie=");
     print_uint64_t(s.mie);
-    fprintf(stderr, " mip=");
+    (void) fprintf(stderr, " mip=");
     print_uint64_t(s.mip);
-    fprintf(stderr, "\n");
+    (void) fprintf(stderr, "\n");
 #endif
 }
 
@@ -450,13 +450,13 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
         flag |= (cause & MCAUSE_INTERRUPT_FLAG) == 0;
 #endif
         if (flag) {
-            fprintf(stderr, "raise_exception: cause=0x");
+            (void) fprintf(stderr, "raise_exception: cause=0x");
             print_uint64_t(cause);
-            fprintf(stderr, " tval=0x");
+            (void) fprintf(stderr, " tval=0x");
             print_uint64_t(tval);
-            fprintf(stderr, " (");
+            (void) fprintf(stderr, " (");
             dump_exception_or_interrupt(cause, a.get_naked_state());
-            fprintf(stderr, ")\n");
+            (void) fprintf(stderr, ")\n");
             dump_regs(a.get_naked_state());
         }
     }

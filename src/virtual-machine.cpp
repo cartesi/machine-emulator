@@ -17,13 +17,11 @@
 
 namespace cartesi {
 
-virtual_machine::virtual_machine(const machine_config &c, const machine_runtime_config &r) {
-    m_machine = new machine(c, r);
-}
+virtual_machine::virtual_machine(const machine_config &c, const machine_runtime_config &r) :
+    m_machine(new machine(c, r)) {}
 
-virtual_machine::virtual_machine(const std::string &dir, const machine_runtime_config &r) {
-    m_machine = new machine(dir, r);
-}
+virtual_machine::virtual_machine(const std::string &dir, const machine_runtime_config &r) :
+    m_machine(new machine(dir, r)) {}
 
 virtual_machine::~virtual_machine(void) {
     delete m_machine;

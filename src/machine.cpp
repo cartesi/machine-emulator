@@ -531,32 +531,32 @@ void machine::store(const std::string &dir) {
 // NOLINTNEXTLINE(modernize-use-equals-default)
 machine::~machine() {
 #ifdef DUMP_HIST
-    fprintf(stderr, "\nInstruction Histogram:\n");
+    (void) fprintf(stderr, "\nInstruction Histogram:\n");
     for (auto v : m_s.insn_hist) {
-        fprintf(stderr, "%s: %" PRIu64 "\n", v.first.c_str(), v.second);
+        (void) fprintf(stderr, "%s: %" PRIu64 "\n", v.first.c_str(), v.second);
     }
 #endif
 #if DUMP_COUNTERS
 #define TLB_HIT_RATIO(s, a, b) (((double) s.stats.b) / (s.stats.a + s.stats.b))
-    fprintf(stderr, "\nMachine Counters:\n");
-    fprintf(stderr, "inner loops: %" PRIu64 "\n", m_s.stats.inner_loop);
-    fprintf(stderr, "outers loops: %" PRIu64 "\n", m_s.stats.outer_loop);
-    fprintf(stderr, "supervisor ints: %" PRIu64 "\n", m_s.stats.sv_int);
-    fprintf(stderr, "supervisor ex: %" PRIu64 "\n", m_s.stats.sv_ex);
-    fprintf(stderr, "machine ints: %" PRIu64 "\n", m_s.stats.m_int);
-    fprintf(stderr, "machine ex: %" PRIu64 "\n", m_s.stats.m_ex);
-    fprintf(stderr, "atomic mem ops: %" PRIu64 "\n", m_s.stats.atomic_mop);
-    fprintf(stderr, "tlb read hit ratio: %.2f\n", TLB_HIT_RATIO(m_s, tlb_rmiss, tlb_rhit));
-    fprintf(stderr, "tlb write hit ratio: %.2f\n", TLB_HIT_RATIO(m_s, tlb_wmiss, tlb_whit));
-    fprintf(stderr, "tlb code hit ratio: %.2f\n", TLB_HIT_RATIO(m_s, tlb_cmiss, tlb_chit));
-    fprintf(stderr, "flush_all: %" PRIu64 "\n", m_s.stats.flush_all);
-    fprintf(stderr, "flush_vaddr: %" PRIu64 "\n", m_s.stats.flush_va);
-    fprintf(stderr, "fence: %" PRIu64 "\n", m_s.stats.fence);
-    fprintf(stderr, "fence.i: %" PRIu64 "\n", m_s.stats.fence_i);
-    fprintf(stderr, "fence.vma: %" PRIu64 "\n", m_s.stats.fence_vma);
-    fprintf(stderr, "User mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_U]);
-    fprintf(stderr, "Supervisor mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_S]);
-    fprintf(stderr, "Machine mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_M]);
+    (void) fprintf(stderr, "\nMachine Counters:\n");
+    (void) fprintf(stderr, "inner loops: %" PRIu64 "\n", m_s.stats.inner_loop);
+    (void) fprintf(stderr, "outers loops: %" PRIu64 "\n", m_s.stats.outer_loop);
+    (void) fprintf(stderr, "supervisor ints: %" PRIu64 "\n", m_s.stats.sv_int);
+    (void) fprintf(stderr, "supervisor ex: %" PRIu64 "\n", m_s.stats.sv_ex);
+    (void) fprintf(stderr, "machine ints: %" PRIu64 "\n", m_s.stats.m_int);
+    (void) fprintf(stderr, "machine ex: %" PRIu64 "\n", m_s.stats.m_ex);
+    (void) fprintf(stderr, "atomic mem ops: %" PRIu64 "\n", m_s.stats.atomic_mop);
+    (void) fprintf(stderr, "tlb read hit ratio: %.2f\n", TLB_HIT_RATIO(m_s, tlb_rmiss, tlb_rhit));
+    (void) fprintf(stderr, "tlb write hit ratio: %.2f\n", TLB_HIT_RATIO(m_s, tlb_wmiss, tlb_whit));
+    (void) fprintf(stderr, "tlb code hit ratio: %.2f\n", TLB_HIT_RATIO(m_s, tlb_cmiss, tlb_chit));
+    (void) fprintf(stderr, "flush_all: %" PRIu64 "\n", m_s.stats.flush_all);
+    (void) fprintf(stderr, "flush_vaddr: %" PRIu64 "\n", m_s.stats.flush_va);
+    (void) fprintf(stderr, "fence: %" PRIu64 "\n", m_s.stats.fence);
+    (void) fprintf(stderr, "fence.i: %" PRIu64 "\n", m_s.stats.fence_i);
+    (void) fprintf(stderr, "fence.vma: %" PRIu64 "\n", m_s.stats.fence_vma);
+    (void) fprintf(stderr, "User mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_U]);
+    (void) fprintf(stderr, "Supervisor mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_S]);
+    (void) fprintf(stderr, "Machine mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_M]);
 #endif
 }
 
@@ -1412,7 +1412,7 @@ void machine::dump_pmas(void) const {
             break;
         }
         std::array<char, 256> filename{};
-        sprintf(filename.data(), "%016" PRIx64 "--%016" PRIx64 ".bin", pma.get_start(), pma.get_length());
+        (void) sprintf(filename.data(), "%016" PRIx64 "--%016" PRIx64 ".bin", pma.get_start(), pma.get_length());
         auto fp = unique_fopen(filename.data(), "wb");
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length();
              page_start_in_range += PMA_PAGE_SIZE) {

@@ -54,6 +54,7 @@ static inline uint64_t get_word_access_data(const access_data &ad) {
 }
 
 /// \brief Records an access to the machine state
+/// NOLINTNEXTLINE(bugprone-exception-escape)
 class access {
 
     using proof_type = machine_merkle_tree::proof_type;

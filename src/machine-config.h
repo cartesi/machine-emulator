@@ -121,6 +121,7 @@ struct rollup_config {
 };
 
 /// \brief Machine state configuration
+/// NOLINTNEXTLINE(bugprone-exception-escape)
 struct machine_config final {
 
     processor_config processor{};          ///< Processor state

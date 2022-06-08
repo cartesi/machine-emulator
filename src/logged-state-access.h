@@ -109,6 +109,7 @@ public:
 
         /// \brief Destructor adds the "end" bracketting note
         /// if the log shared_ptr is not empty
+        /// NOLINTNEXTLINE(bugprone-exception-escape)
         ~scoped_note() {
             if (m_log) {
                 m_log->push_bracket(bracket_type::end, m_text.c_str());

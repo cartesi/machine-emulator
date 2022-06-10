@@ -14,6 +14,8 @@ INC_INSTALL_PATH= $(PREFIX)/include/machine-emulator
 INSTALL_PLAT = install-$(UNAME)
 LIBCARTESI_Darwin=libcartesi.dylib
 LIBCARTESI_Linux=libcartesi.so
+LIBCARTESI_PROTOBUF_Darwin=libcartesi_protobuf.dylib
+LIBCARTESI_PROTOBUF_Linux=libcartesi_protobuf.so
 LIBCARTESI_GRPC_Darwin=libcartesi_grpc.dylib
 LIBCARTESI_GRPC_Linux=libcartesi_grpc.so
 
@@ -25,7 +27,7 @@ STRIP_EXEC= strip -x
 DEP_TO_BIN=
 DEP_TO_LIB=
 EMU_TO_BIN= remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash server-manager
-EMU_TO_LIB= $(LIBCARTESI_$(UNAME)) $(LIBCARTESI_GRPC_$(UNAME))
+EMU_TO_LIB= $(LIBCARTESI_$(UNAME)) $(LIBCARTESI_PROTOBUF_$(UNAME)) $(LIBCARTESI_GRPC_$(UNAME))
 EMU_LUA_TO_BIN= cartesi-machine-tests.lua cartesi-machine.lua cartesi-machine-stored-hash.lua rollup-memory-range.lua
 EMU_TO_LUA_PATH= cartesi/util.lua cartesi/proof.lua
 EMU_TO_LUA_CPATH= cartesi.so

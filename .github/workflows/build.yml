@@ -478,7 +478,8 @@ jobs:
           images: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator
           tags: |
             type=ref,event=branch
-            type=semver,pattern={{version}}
+            type=ref,event=tag
+            type=semver,pattern={{version}},enable=${{startsWith(github.ref, 'refs/tags/v')}}
 
       - name: Set up Docker Buildx
         id: buildx
@@ -608,7 +609,8 @@ jobs:
             suffix=-alpine
           tags: |
             type=ref,event=branch
-            type=semver,pattern={{version}}
+            type=ref,event=tag
+            type=semver,pattern={{version}},enable=${{startsWith(github.ref, 'refs/tags/v')}}
 
       - name: Set up Docker Buildx
         id: buildx

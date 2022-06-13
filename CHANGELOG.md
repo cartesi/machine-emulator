@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix clua_check_cm_merkle_tree_proof garbage in Lua stack after return
 - Fix clua_check_cm_access_log to save log_type
 - Fix dump_pmas() to write pristine pages to PMA files
+- Fix verify workflow on CI
 
 ### Changed
 

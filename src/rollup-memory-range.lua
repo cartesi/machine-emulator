@@ -185,12 +185,12 @@ local function unhexhash(addr, name)
     if string.sub(addr, 1, 2) ~= "0x" then
         errorf("invalid %s %s (missing 0x prefix)", name, addr)
     end
+    if #addr ~= 42 then
+        errorf("%s must contain 40 hex digits (%s has %g digits)", name, addr, #addr-2)
+    end
     local bin, err = unhex(string.sub(addr, 3))
     if not bin then
         errorf("invalid %s %s (%s)", name, addr, err)
-    end
-    if #bin ~= 20 then
-        errorf("%s must be 20 bytes long (%s is %u bytes long)", name, addr,  #bin)
     end
     return bin
 end

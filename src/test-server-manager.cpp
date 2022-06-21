@@ -610,9 +610,8 @@ static void init_valid_advance_state_request(AdvanceStateRequest &request, const
 }
 
 static void init_valid_inspect_state_request(InspectStateRequest &request, const std::string &session_id,
-    uint64_t epoch, uint64_t input) {
+    uint64_t input) {
     request.set_session_id(session_id);
-    request.set_active_epoch_index(epoch);
 
     auto *query_payload = request.mutable_query_payload();
     *query_payload = get_report_payload(input); // NOLINT: suppres crytopp warnings
@@ -2587,14 +2586,13 @@ static void test_inspect_state(const std::function<void(const std::string &title
         ASSERT_STATUS(status, "StartSession", true);
 
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", true);
 
         check_inspect_state_response(inspect_response, inspect_request.session_id(),
-            inspect_request.active_epoch_index(), 0, 2);
+            session_request.active_epoch_index(), 0, 2);
 
         // end session
         EndSessionRequest end_session_request;
@@ -2611,21 +2609,20 @@ static void test_inspect_state(const std::function<void(const std::string &title
 
         // enqueue first
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", true);
 
         check_inspect_state_response(inspect_response, inspect_request.session_id(),
-            inspect_request.active_epoch_index(), 0, 2);
+            session_request.active_epoch_index(), 0, 2);
 
         // enqueue second
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", true);
 
         check_inspect_state_response(inspect_response, inspect_request.session_id(),
-            inspect_request.active_epoch_index(), 0, 2);
+            session_request.active_epoch_index(), 0, 2);
 
         // end session
         EndSessionRequest end_session_request;
@@ -2641,15 +2638,14 @@ static void test_inspect_state(const std::function<void(const std::string &title
         ASSERT_STATUS(status, "StartSession", true);
 
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
         inspect_request.clear_query_payload();
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", true);
 
         check_inspect_state_response(inspect_response, inspect_request.session_id(),
-            inspect_request.active_epoch_index(), 0, 0);
+            session_request.active_epoch_index(), 0, 0);
 
         // end session
         EndSessionRequest end_session_request;
@@ -2666,14 +2662,13 @@ static void test_inspect_state(const std::function<void(const std::string &title
             ASSERT_STATUS(status, "StartSession", true);
 
             InspectStateRequest inspect_request;
-            init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-                session_request.active_epoch_index(), 0);
+            init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
             InspectStateResponse inspect_response;
             status = manager.inspect_state(inspect_request, inspect_response);
             ASSERT_STATUS(status, "InspectState", true);
 
             check_inspect_state_response(inspect_response, inspect_request.session_id(),
-                inspect_request.active_epoch_index(), 0, 0, CompletionStatus::EXCEPTION);
+                session_request.active_epoch_index(), 0, 0, CompletionStatus::EXCEPTION);
 
             ASSERT(inspect_response.has_exception_data(), "InspectResponse should containd exception data");
             ASSERT(inspect_response.exception_data() == "test payload",
@@ -2693,14 +2688,13 @@ static void test_inspect_state(const std::function<void(const std::string &title
 
         // enqueue first
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", true);
 
         check_inspect_state_response(inspect_response, inspect_request.session_id(),
-            inspect_request.active_epoch_index(), 0, 0, CompletionStatus::MACHINE_HALTED);
+            session_request.active_epoch_index(), 0, 0, CompletionStatus::MACHINE_HALTED);
 
         // end session
         EndSessionRequest end_session_request;
@@ -2716,14 +2710,13 @@ static void test_inspect_state(const std::function<void(const std::string &title
         ASSERT_STATUS(status, "StartSession", true);
 
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", true);
 
         check_inspect_state_response(inspect_response, inspect_request.session_id(),
-            inspect_request.active_epoch_index(), 0, 0);
+            session_request.active_epoch_index(), 0, 0);
 
         // end session
         EndSessionRequest end_session_request;
@@ -2739,14 +2732,13 @@ static void test_inspect_state(const std::function<void(const std::string &title
         ASSERT_STATUS(status, "StartSession", true);
 
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", true);
 
         check_inspect_state_response(inspect_response, inspect_request.session_id(),
-            inspect_request.active_epoch_index(), 0, 0);
+            session_request.active_epoch_index(), 0, 0);
 
         // end session
         EndSessionRequest end_session_request;
@@ -2776,14 +2768,13 @@ static void test_inspect_state(const std::function<void(const std::string &title
             wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
 
             InspectStateRequest inspect_request;
-            init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-                session_request.active_epoch_index(), 1);
+            init_valid_inspect_state_request(inspect_request, session_request.session_id(), 1);
             InspectStateResponse inspect_response;
             status = manager.inspect_state(inspect_request, inspect_response);
             ASSERT_STATUS(status, "InspectState", true);
 
             check_inspect_state_response(inspect_response, inspect_request.session_id(),
-                inspect_request.active_epoch_index(), 1, 2);
+                session_request.active_epoch_index(), 1, 2);
 
             // enqueue second
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
@@ -2804,14 +2795,13 @@ static void test_inspect_state(const std::function<void(const std::string &title
             ASSERT_STATUS(status, "AdvanceState", true);
 
             InspectStateRequest inspect_request;
-            init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-                session_request.active_epoch_index(), 1);
+            init_valid_inspect_state_request(inspect_request, session_request.session_id(), 1);
             InspectStateResponse inspect_response;
             status = manager.inspect_state(inspect_request, inspect_response);
             ASSERT_STATUS(status, "InspectState", true);
 
             check_inspect_state_response(inspect_response, inspect_request.session_id(),
-                inspect_request.active_epoch_index(), 1, 2);
+                session_request.active_epoch_index(), 1, 2);
 
             // enqueue second
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
@@ -2825,8 +2815,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
         ASSERT_STATUS(status, "StartSession", true);
 
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
         inspect_request.set_session_id("NON-EXISTENT");
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
@@ -2854,62 +2843,11 @@ static void test_inspect_state(const std::function<void(const std::string &title
 
         // try to enqueue input on ended session
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", false);
         ASSERT_STATUS_CODE(status, "InspectState", StatusCode::INVALID_ARGUMENT);
-    });
-
-    test("Should fail to complete if epoch is not the same", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
-        StartSessionResponse session_response;
-        Status status = manager.start_session(session_request, session_response);
-        ASSERT_STATUS(status, "StartSession", true);
-
-        InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index() + 1, 0);
-        InspectStateResponse inspect_response;
-        status = manager.inspect_state(inspect_request, inspect_response);
-        ASSERT_STATUS(status, "InspectState", false);
-        ASSERT_STATUS_CODE(status, "InspectState", StatusCode::INVALID_ARGUMENT);
-
-        // end session
-        EndSessionRequest end_session_request;
-        end_session_request.set_session_id(session_request.session_id());
-        status = manager.end_session(end_session_request);
-        ASSERT_STATUS(status, "EndSession", true);
-    });
-
-    test("Should fail to complete if epoch is finished", [](ServerManagerClient &manager) {
-        StartSessionRequest session_request = create_valid_start_session_request("inspect-state-machine");
-        StartSessionResponse session_response;
-        Status status = manager.start_session(session_request, session_response);
-        ASSERT_STATUS(status, "StartSession", true);
-
-        // finish epoch
-        FinishEpochRequest epoch_request;
-        init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
-        status = manager.finish_epoch(epoch_request);
-        ASSERT_STATUS(status, "FinishEpoch", true);
-
-        // try to enqueue input on fnished epoch
-        InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
-        InspectStateResponse inspect_response;
-        status = manager.inspect_state(inspect_request, inspect_response);
-        ASSERT_STATUS(status, "InspectState", false);
-        ASSERT_STATUS_CODE(status, "InspectState", StatusCode::INVALID_ARGUMENT);
-
-        // end session
-        EndSessionRequest end_session_request;
-        end_session_request.set_session_id(session_request.session_id());
-        status = manager.end_session(end_session_request);
-        ASSERT_STATUS(status, "EndSession", true);
     });
 
     test("Should complete with success enqueing on a new epoch", [](ServerManagerClient &manager) {
@@ -2926,14 +2864,13 @@ static void test_inspect_state(const std::function<void(const std::string &title
         ASSERT_STATUS(status, "FinishEpoch", true);
 
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index() + 1, 1);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 1);
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", true);
 
         check_inspect_state_response(inspect_response, inspect_request.session_id(),
-            inspect_request.active_epoch_index(), 1, 2);
+            session_request.active_epoch_index() + 1, 1, 2);
 
         // end session
         EndSessionRequest end_session_request;
@@ -2950,8 +2887,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
 
         // try to enqueue input on fnished epoch
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
         auto *query_payload = inspect_request.mutable_query_payload();
         query_payload->resize(session_response.config().rollup().rx_buffer().length(), 'f');
         InspectStateResponse inspect_response;
@@ -2977,14 +2913,13 @@ static void test_inspect_state(const std::function<void(const std::string &title
 
         // enqueue first
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", true);
 
         check_inspect_state_response(inspect_response, inspect_request.session_id(),
-            inspect_request.active_epoch_index(), 0, 0, CompletionStatus::CYCLE_LIMIT_EXCEEDED);
+            session_request.active_epoch_index(), 0, 0, CompletionStatus::CYCLE_LIMIT_EXCEEDED);
 
         // end session
         EndSessionRequest end_session_request;
@@ -3001,14 +2936,13 @@ static void test_inspect_state(const std::function<void(const std::string &title
 
         // enqueue first
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", true);
 
         check_inspect_state_response(inspect_response, inspect_request.session_id(),
-            inspect_request.active_epoch_index(), 0, 0, CompletionStatus::REJECTED);
+            session_request.active_epoch_index(), 0, 0, CompletionStatus::REJECTED);
 
         // end session
         EndSessionRequest end_session_request;
@@ -3025,14 +2959,13 @@ static void test_inspect_state(const std::function<void(const std::string &title
 
         // enqueue first
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", true);
 
         check_inspect_state_response(inspect_response, inspect_request.session_id(),
-            inspect_request.active_epoch_index(), 0, 0, CompletionStatus::MACHINE_HALTED);
+            session_request.active_epoch_index(), 0, 0, CompletionStatus::MACHINE_HALTED);
 
         // end session
         EndSessionRequest end_session_request;
@@ -3054,14 +2987,13 @@ static void test_inspect_state(const std::function<void(const std::string &title
 
         // enqueue first
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", true);
 
         check_inspect_state_response(inspect_response, inspect_request.session_id(),
-            inspect_request.active_epoch_index(), 0, 0, CompletionStatus::TIME_LIMIT_EXCEEDED);
+            session_request.active_epoch_index(), 0, 0, CompletionStatus::TIME_LIMIT_EXCEEDED);
 
         // end session
         EndSessionRequest end_session_request;
@@ -3080,8 +3012,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
 
         // enqueue first
         InspectStateRequest inspect_request;
-        init_valid_inspect_state_request(inspect_request, session_request.session_id(),
-            session_request.active_epoch_index(), 0);
+        init_valid_inspect_state_request(inspect_request, session_request.session_id(), 0);
         InspectStateResponse inspect_response;
         status = manager.inspect_state(inspect_request, inspect_response);
         ASSERT_STATUS(status, "InspectState", false);

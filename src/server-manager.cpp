@@ -2688,8 +2688,7 @@ static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) 
             // Check if session id exists
             auto &sessions = hctx.sessions; // NOLINT: Unknown. Maybe linter bug?
             const auto &id = inspect_state_request.session_id();
-            dout{request_context} << "Received InspectState for session " << id << " epoch "
-                                  << inspect_state_request.active_epoch_index();
+            dout{request_context} << "Received InspectState for session " << id;
             // If a session is unknown, a bail out
             if (sessions.find(id) == sessions.end()) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "session id not found!"}));
@@ -2705,12 +2704,6 @@ static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) 
             // If session is tainted, report potential data loss
             if (session.tainted) {
                 THROW((finish_error_yield_none{grpc::StatusCode::DATA_LOSS, "session is tainted"}));
-            }
-            // If active epoch does not match expected, bail out
-            if (session.active_epoch_index != inspect_state_request.active_epoch_index()) {
-                THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
-                    "incorrect active epoch index (expected " + std::to_string(session.active_epoch_index) + ", got " +
-                        std::to_string(inspect_state_request.active_epoch_index()) + ")"}));
             }
             // We should be able to find the active epoch, otherwise bail
             auto &epochs = session.epochs;

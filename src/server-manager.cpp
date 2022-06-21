@@ -406,6 +406,7 @@ struct cycles_config_type {
 struct session_type {
     id_type id{};                                 ///< Session id
     bool session_lock{};                          ///< Session lock
+    std::string session_lock_reason{};            ///< Who/why session was locked
     bool processing_lock{};                       ///< Lock for handler processing inputs
     bool tainted{};                               ///< Taint flag
     grpc::Status taint_status{};                  ///< Status explaining why taint flag is set
@@ -672,6 +673,11 @@ static void start_new_epoch(epoch_type &prev_epoch, session_type &session) {
     session.epochs[e.epoch_index] = std::move(e);
 }
 
+/// \brief Gives a description for why the session was locked
+static std::string get_session_lock_reason(const std::string &rpc, const std::string &peer) {
+    return "RPC " + rpc + " from " + peer;
+}
+
 /// \brief Creates a new handler for the FinishEpoch RPC and starts accepting requests
 /// \param hctx Handler context shared between all handlers
 static handler_type::pull_type *new_FinishEpoch_handler(handler_context &hctx) {
@@ -707,11 +713,15 @@ static handler_type::pull_type *new_FinishEpoch_handler(handler_context &hctx) {
                 THROW((finish_error_yield_none{grpc::StatusCode::OUT_OF_RANGE, "active epoch index will overflow"}));
             }
             // If session is already locked, bail out
+            auto new_lock_reason = get_session_lock_reason("FinishEpoch", request_context.peer());
             if (session.session_lock) {
-                THROW((finish_error_yield_none{grpc::StatusCode::ABORTED, "concurrent call in session"}));
+                THROW((finish_error_yield_none{grpc::StatusCode::ABORTED,
+                    "concurrent call in session (already locked by " + session.session_lock_reason +
+                        " when attempted lock by " + new_lock_reason + ")"}));
             }
             // Lock session so other rpcs to the same session are rejected
             auto_lock session_lock(session.session_lock, "FinishEpoch session lock");
+            session.session_lock_reason = new_lock_reason;
             // If session is tainted, report potential data loss
             if (session.tainted) {
                 THROW((finish_error_yield_none{grpc::StatusCode::DATA_LOSS, "session is tainted"}));
@@ -807,11 +817,15 @@ static handler_type::pull_type *new_EndSession_handler(handler_context &hctx) {
             // Otherwise, get session and lock until we exit handler
             auto &session = sessions[id];
             // If session is already locked, bail out
+            auto new_lock_reason = get_session_lock_reason("EndSession", request_context.peer());
             if (session.session_lock) {
-                THROW((finish_error_yield_none{grpc::StatusCode::ABORTED, "concurrent call in session"}));
+                THROW((finish_error_yield_none{grpc::StatusCode::ABORTED,
+                    "concurrent call in session (already locked by " + session.session_lock_reason +
+                        " when attempted lock by " + new_lock_reason + ")"}));
             }
             // Lock session so other rpcs to the same session are rejected
             auto_lock session_lock(session.session_lock, "EndSession session lock");
+            session.session_lock_reason = new_lock_reason;
             async_context actx{session, request_context, cq, self, yield};
             // If the session is tainted, nothing is going on with it, so we can erase it
             if (!session.tainted) {
@@ -884,11 +898,15 @@ static handler_type::pull_type *new_GetSessionStatus_handler(handler_context &hc
             // Otherwise, get session and lock until we exit handler
             auto &session = sessions[id];
             // If session is already locked, bail out
+            auto new_lock_reason = get_session_lock_reason("GetSessionStatus", request_context.peer());
             if (session.session_lock) {
-                THROW((finish_error_yield_none{grpc::StatusCode::ABORTED, "concurrent call in session"}));
+                THROW((finish_error_yield_none{grpc::StatusCode::ABORTED,
+                    "concurrent call in session (already locked by " + session.session_lock_reason +
+                        " when attempted lock by " + new_lock_reason + ")"}));
             }
             // Lock session so other rpcs to the same session are rejected
             auto_lock session_lock(session.session_lock, "GetSessionStatus session lock");
+            session.session_lock_reason = new_lock_reason;
             response.set_session_id(id);
             response.set_active_epoch_index(session.active_epoch_index);
             for (const auto &[index, epoch] : session.epochs) {
@@ -1057,11 +1075,15 @@ static handler_type::pull_type *new_GetEpochStatus_handler(handler_context &hctx
             // Otherwise, get session and lock until we exit handler
             auto &session = sessions[id];
             // If session is already locked, bail out
+            auto new_lock_reason = get_session_lock_reason("GetEpochStatus", request_context.peer());
             if (session.session_lock) {
-                THROW((finish_error_yield_none{grpc::StatusCode::ABORTED, "concurrent call in session"}));
+                THROW((finish_error_yield_none{grpc::StatusCode::ABORTED,
+                    "concurrent call in session (already locked by " + session.session_lock_reason +
+                        " when attempted lock by " + new_lock_reason + ")"}));
             }
             // Lock session so other rpcs to the same session are rejected
             auto_lock session_lock(session.session_lock, "GetEpochStatus session lock");
+            session.session_lock_reason = new_lock_reason;
             auto &epochs = session.epochs;
             // If a session is unknown, a bail out
             if (epochs.find(epoch_index) == epochs.end()) {
@@ -1486,7 +1508,9 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
             // Allocate a new session with data from request
             auto &session = (sessions[id] = get_proto_session(start_session_request));
             // Lock session so other rpcs to the same session are rejected
+            auto new_lock_reason = get_session_lock_reason("StartSession", request_context.peer());
             auto_lock lock(session.session_lock, "StartSession session lock");
+            session.session_lock_reason = new_lock_reason;
             // If no machine config or directory is set on machine request, bail out
             if (start_session_request.machine_directory().empty()) {
                 THROW((finish_error_yield_none{StatusCode::INVALID_ARGUMENT, "missing machine directory"}));
@@ -2492,11 +2516,15 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
                 THROW((finish_error_yield_none{grpc::StatusCode::OUT_OF_RANGE, "active epoch index will overflow"}));
             }
             // If session is already locked, bail out
+            auto new_lock_reason = get_session_lock_reason("AdvanceState", request_context.peer());
             if (session.session_lock) {
-                THROW((finish_error_yield_none{grpc::StatusCode::ABORTED, "concurrent call in session"}));
+                THROW((finish_error_yield_none{grpc::StatusCode::ABORTED,
+                    "concurrent call in session (already locked by " + session.session_lock_reason +
+                        " when attempted lock by " + new_lock_reason + ")"}));
             }
             // Lock session so other rpcs to the same session are rejected
             auto_lock session_lock(session.session_lock, "AdvanceState session lock");
+            session.session_lock_reason = new_lock_reason;
             // If session is tainted, report potential data loss
             if (session.tainted) {
                 THROW((finish_error_yield_none{grpc::StatusCode::DATA_LOSS, "session is tainted"}));
@@ -2696,11 +2724,15 @@ static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) 
             // Otherwise, get session and lock until we exit handler
             auto &session = sessions[id];
             // If session is already locked, bail out
+            auto new_lock_reason = get_session_lock_reason("InspectState", request_context.peer());
             if (session.session_lock) {
-                THROW((finish_error_yield_none{grpc::StatusCode::ABORTED, "concurrent call in session"}));
+                THROW((finish_error_yield_none{grpc::StatusCode::ABORTED,
+                    "concurrent call in session (already locked by " + session.session_lock_reason +
+                        " when attempted lock by " + new_lock_reason + ")"}));
             }
             // Lock session so other rpcs to the same session are rejected
             auto_lock session_lock(session.session_lock, "InspectState session lock");
+            session.session_lock_reason = new_lock_reason;
             // If session is tainted, report potential data loss
             if (session.tainted) {
                 THROW((finish_error_yield_none{grpc::StatusCode::DATA_LOSS, "session is tainted"}));

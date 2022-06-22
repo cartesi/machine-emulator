@@ -109,6 +109,19 @@ env:
 doc:
 	cd doc && doxygen Doxyfile
 
+help:
+	@echo 'Cleaning targets:'
+	@echo '  clean                      - clean the src/ artifacts'
+	@echo '  depclean                   - clean + dependencies'
+	@echo '  distclean                  - depclean + profile information and downloads'
+	@echo 'Docker targets:'
+	@echo '  build-alpine-image         - Build an alpine based docker image'
+	@echo '  build-ubuntu-image         - Build an ubuntu based docker image'
+	@echo '  build-server-manager-image - Build a docker image based on cartesi/machine-emulator with the server manager'
+	@echo 'Generic targets:'
+	@echo '* all                        - build the src/ code. To build from a clean clone, run: make submodules downloads dep all'
+	@echo '  doc                        - build the doxygen documentation (requires doxygen to be installed)'
+
 $(DOWNLOADDIR):
 	@mkdir -p $(DOWNLOADDIR)
 	@wget -nc -i $(DEPDIR)/dependencies -P $(DOWNLOADDIR)
@@ -212,5 +225,5 @@ install: install-dep install-emulator install-strip $(INSTALL_PLAT)
 
 .SECONDARY: $(DOWNLOADDIR) $(DEPDIRS) $(COREPROTO)
 
-.PHONY: all submodules doc clean distclean downloads src test luacartesi grpc hash\
+.PHONY: help all submodules doc clean distclean downloads src test luacartesi grpc hash\
 	$(SUBDIRS) $(SUBCLEAN) $(DEPCLEAN)

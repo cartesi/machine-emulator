@@ -8,6 +8,19 @@ The emulator implements RISC-V's RV64IMASU ISA. The letters after RV specify the
 
 ## Getting Started
 
+Run `make help` for a list of target options. Here are some of them:
+
+```
+Cleaning targets:
+  clean                      - clean the src/ artifacts
+  depclean                   - clean + dependencies
+  distclean                  - depclean + profile information and downloads
+Docker targets:
+  build-alpine-image         - Build an alpine based docker image
+  build-ubuntu-image         - Build an ubuntu based docker image
+  build-server-manager-image - Build a docker image based on cartesi/machine-emulator with the server manager
+```
+
 ### Requirements
 
 - C++ Compiler with support for C++17 (tested with GCC >= 8+ and Clang >= 8.x).

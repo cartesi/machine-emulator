@@ -181,7 +181,7 @@ local function build_machine_with_flash(type)
     flash_drive_config = {
 
         start = 0x8000000000000000,
-        length = 0x3c00000,
+        length = 0x5000000,
         shared = false,
         image_filename = test_util.images_path .. "rootfs.ext2"
     }
@@ -322,7 +322,7 @@ do_test("dumped file merkle tree hashes should match",
         assert(test_util.tohex(root_file_hashes[pmas_file_names[1]]) ==
                 "F3127751D956229A7A916097DDC34C34839B227E1B3FEBCCB25E1C07BCA83EA2")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[2]]) ==
-                "FF693CFA810B1B72C7708939A48CEDB2EAEDB7EEDCF168CA959891AE135C2DC0")
+                "2ED1F854F181242E15F00281C41FFDE14EE666C9287B21B807F1F6BC9655168A")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[3]]) ==
                 "99AF665835AABFDC6740C7E2C3791A31C3CDC9F5AB962F681B12FC092816A62F")
         assert(test_util.tohex(root_file_hashes[pmas_file_names[4]]) ==
@@ -362,7 +362,7 @@ do_test("machine root hash after step one should match",
         local root_hash = machine:get_root_hash()
         print("Root hash:", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "6EE7419537973D0B9A3F17568FC5919DF2C6724E01743D21BD0E65D039D8EAE0",
+                "640CE0D2E1EB22CF07A3D9702E3DD26552328B79A39333B62EBC635C43A7CAAB",
             "hash after initial step does not match")
 
         -- Perform step, dump address space to file, calculate emulator root hash
@@ -435,7 +435,7 @@ do_test("mcycle and root hash should match",
         local root_hash = machine:get_root_hash()
         print("1000 cycle hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "72464973DF13452713D8A744A2FCABE360DBAB765D1D33A8F1D7AA74347BAA76",
+                "3EA81F8782D82D4E14D2C52CF0AAD13E8EE725C39A6C157227CF0A637E4CB7C7",
             "machine hash does not match after 1000 cycles")
     end
 )
@@ -453,7 +453,7 @@ do_test("mcycle and root hash should match",
         local root_hash = machine:get_root_hash()
         print("End hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "BD85D9DEBE5646566B6A832A54549F1D48DB521E26112B13ABB8E77AE6860DF6",
+                "1832216B0EACB6E75E8D0E7123881909F1E02EDC346E2C54A9D68ED99D5588AE",
             "machine hash does not match after on end cycle")
     end
 )
@@ -520,7 +520,7 @@ do_test_with_flash("should replace flash drive and read something",
     function(machine)
         -- Create temp flash file
         local input_path =  test_path .. "input.raw"
-        local command  = "echo 'test data 1234567890' > " .. input_path .. " && truncate -s 62914560 " .. input_path
+        local command  = "echo 'test data 1234567890' > " .. input_path .. " && truncate -s 83886080 " .. input_path
         local p = io.popen(command)
         p:close()
 
@@ -529,7 +529,7 @@ do_test_with_flash("should replace flash drive and read something",
         local flash_address_start = 0x8000000000000000
         flash_drive_config = {
             start = flash_address_start,
-            length = 0x3c00000,
+            length = 0x5000000,
             image_filename = input_path,
             shared = true
         }
@@ -565,4 +565,3 @@ do_test("register values should match",
 )
 
 print("\n\nAll tests of machine lua API for type " .. machine_type .. "  passed")
-

@@ -258,7 +258,7 @@ do_test("should return expected value",
         local root_hash = machine:get_root_hash()
         print("Root hash: ", test_util.tohex(root_hash))
         assert(test_util.tohex(root_hash) ==
-                "A49B6782712CC6498B75A6A7441C76AA0C2C55A0F59612826B4B893BC3A64516",
+                "36DA5DDA129A469465C79C4E82CB2E0C43E78B1310C0F8DE29CE5EBE05BAFB2F",
             "initial root hash does not match")
     end
 )
@@ -516,4 +516,3 @@ do_test("dumped log content should match",
 )
 
 print("\n\nAll machine binding tests for type " .. machine_type .. " passed")
-

@@ -48,18 +48,6 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Setup update-alternatives for clang-format
-        run: sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-14 120
-
-      - name: Check format
-        run: make check-format
-
-      - name: Setup update-alternatives for clang-tidy
-        run: sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-14 120
-
-      - name: Lint
-        run: make lint -j$(nproc)
-
       - name: Build
         run: make -j$(nproc)
 
@@ -211,6 +199,45 @@ jobs:
         run: |
           export PATH=/opt/cartesi/bin:$PATH
           ./tests/test-machine-c-api
+
+  static-analysis:
+    name: Static Analysis
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Install Ubuntu dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev lua-socket
+
+      - name: Download cache of third-party build
+        run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
+        id: download_cache
+        continue-on-error: true
+        env:
+          AWS_REGION: 'us-east-1'
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Fix build dependencies permissions
+        run: chmod +x ./build/`uname`_`uname -m`/bin/protoc ./build/`uname`_`uname -m`/bin/grpc_cpp_plugin
+
+      - name: Setup update-alternatives for clang-format
+        run: sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-14 120
+
+      - name: Check format
+        run: make check-format
+
+      - name: Setup update-alternatives for clang-tidy
+        run: sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-14 120
+
+      - name: Lint
+        run: make lint -j$(nproc)
 
   coverage:
     name: Coverage
@@ -680,7 +707,7 @@ jobs:
 
   publish_images:
     name: Publish Docker images
-    needs: [test, ubuntu-image-build, alpine-image-build]
+    needs: [static-analysis, test, ubuntu-image-build, alpine-image-build]
     runs-on: ubuntu-22.04
     if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/develop') }}
     steps:
@@ -768,7 +795,7 @@ jobs:
 
   release:
     name: Release machine emulator tarball
-    needs: [test, ubuntu-image-build, alpine-image-build]
+    needs: [static-analysis, test, ubuntu-image-build, alpine-image-build]
     runs-on: ubuntu-22.04
     if: startsWith(github.ref, 'refs/tags/v')
     steps:

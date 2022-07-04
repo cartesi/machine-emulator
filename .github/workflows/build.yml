@@ -148,6 +148,11 @@ jobs:
       - name: Simple Boot
         run: /opt/cartesi/bin/cartesi-machine /bin/true
 
+      - name: Save and Load
+        run: |
+          /opt/cartesi/bin/cartesi-machine --max-mcycle=0 --rollup --store=/tmp/save_and_load_test
+          /opt/cartesi/bin/cartesi-machine --load=/tmp/save_and_load_test
+
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0
         with:

@@ -281,7 +281,8 @@ end
 local function decode_string(arg)
     assert(read_be256() == 32) -- skip offset
     local length = read_be256()
-    io.stdout:write(json.encode({ payload = io.stdin:read(length) }, { indent = true }), "\n")
+    local payload = length == 0 and '' or assert(io.stdin:read(length))
+    io.stdout:write(json.encode({ payload = payload }, { indent = true }), "\n")
 end
 
 local function encode_string(arg)
@@ -297,7 +298,7 @@ local function decode_voucher(arg)
     local offset = read_be256()
     assert(offset == 64, "expected offset 64, got " .. offset) -- skip offset
     local length = read_be256()
-    local payload = assert(io.stdin:read(length))
+    local payload = length == 0 and '' or assert(io.stdin:read(length))
     io.stdout:write(json.encode({
         address = address,
         payload = payload

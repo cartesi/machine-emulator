@@ -22,8 +22,6 @@
 local cartesi = require "cartesi"
 local cartesi_util = require "cartesi.util"
 local test_util = require "tests.util"
-local test_data = require "tests.data"
-
 
 local remote_address = nil
 local checkin_address = nil
@@ -106,6 +104,129 @@ for i, argument in ipairs({...}) do
     end
 end
 
+local function get_cpu_xreg_test_values()
+
+    local cpu_addr_x = {}
+    cpu_addr_x[0] = 0x000
+    cpu_addr_x[1] = 0x008
+    cpu_addr_x[2] = 0x010
+    cpu_addr_x[3] = 0x018
+    cpu_addr_x[4] = 0x020
+    cpu_addr_x[5] = 0x028
+    cpu_addr_x[6] = 0x030
+    cpu_addr_x[7] = 0x038
+    cpu_addr_x[8] = 0x040
+    cpu_addr_x[9] = 0x048
+    cpu_addr_x[10] = 0x050
+    cpu_addr_x[11] = 0x058
+    cpu_addr_x[12] = 0x060
+    cpu_addr_x[13] = 0x068
+    cpu_addr_x[14] = 0x070
+    cpu_addr_x[15] = 0x078
+    cpu_addr_x[16] = 0x080
+    cpu_addr_x[17] = 0x088
+    cpu_addr_x[18] = 0x090
+    cpu_addr_x[19] = 0x098
+    cpu_addr_x[20] = 0x0a0
+    cpu_addr_x[21] = 0x0a8
+    cpu_addr_x[22] = 0x0b0
+    cpu_addr_x[23] = 0x0b8
+    cpu_addr_x[24] = 0x0c0
+    cpu_addr_x[25] = 0x0c8
+    cpu_addr_x[26] = 0x0d0
+    cpu_addr_x[27] = 0x0d8
+    cpu_addr_x[28] = 0x0e0
+    cpu_addr_x[29] = 0x0e8
+    cpu_addr_x[30] = 0x0f0
+    cpu_addr_x[31] = 0x0f8
+
+    return cpu_addr_x
+end
+
+local function get_cpu_csr_test_values()
+
+    local cpu_addr = {}
+    cpu_addr.pc = 0x100
+    cpu_addr.mvendorid = -1
+    cpu_addr.marchid = -1
+    cpu_addr.mimpid = -1
+    cpu_addr.mcycle = 0x120
+    cpu_addr.minstret = 0x128
+    cpu_addr.mstatus = 0x130
+    cpu_addr.mtvec = 0x138
+    cpu_addr.mscratch = 0x140
+    cpu_addr.mepc = 0x148
+    cpu_addr.mcause = 0x150
+    cpu_addr.mtval = 0x158
+    cpu_addr.misa = 0x160
+    cpu_addr.mie = 0x168
+    cpu_addr.mip = 0x170
+    cpu_addr.medeleg = 0x178
+    cpu_addr.mideleg = 0x180
+    cpu_addr.mcounteren = 0x188
+    cpu_addr.stvec = 0x190
+    cpu_addr.sscratch = 0x198
+    cpu_addr.sepc = 0x1a0
+    cpu_addr.scause = 0x1a8
+    cpu_addr.stval = 0x1b0
+    cpu_addr.satp = 0x1b8
+    cpu_addr.scounteren = 0x1c0
+    cpu_addr.ilrsc = 0x1c8
+
+    return cpu_addr
+end
+
+local SHADOW_BASE = 0x0
+local CLINT_BASE = 0x2000000
+local HTIF_BASE = 0x40008000
+local DHD_BASE = 0x40030000
+
+local function get_cpu_csr_names_addresses()
+
+    local cpu_csr_names = {
+        {"pc", 0x100},
+        {"mvendorid", 0x108},
+        {"marchid", 0x110},
+        {"mimpid", 0x118},
+        {"mcycle", 0x120},
+        {"minstret", 0x128},
+        {"mstatus", 0x130},
+        {"mtvec", 0x138},
+        {"mscratch", 0x140},
+        {"mepc", 0x148},
+        {"mcause", 0x150},
+        {"mtval", 0x158},
+        {"misa", 0x160},
+        {"mie", 0x168},
+        {"mip", 0x170},
+        {"medeleg", 0x178},
+        {"mideleg", 0x180},
+        {"mcounteren", 0x188},
+        {"stvec", 0x190},
+        {"sscratch", 0x198},
+        {"sepc", 0x1a0},
+        {"scause", 0x1a8},
+        {"stval", 0x1b0},
+        {"satp", 0x1b8},
+        {"scounteren", 0x1c0},
+        {"ilrsc", 0x1c8},
+        {"iflags", 0x1d0},
+        {"clint_mtimecmp", CLINT_BASE+0x4000},
+        {"htif_tohost", HTIF_BASE+0x0},
+        {"htif_fromhost", HTIF_BASE+0x8},
+        {"htif_ihalt", HTIF_BASE+0x10},
+        {"htif_iconsole", HTIF_BASE+0x18},
+        {"htif_iyield", HTIF_BASE+0x20},
+        {"dhd_tstart", DHD_BASE+0x8},
+        {"dhd_tlength", DHD_BASE+0x10},
+        {"dhd_dlength", DHD_BASE+0x18},
+        {"dhd_hlength", DHD_BASE+0x20},
+    }
+
+    return cpu_csr_names
+
+end
+
 local machine_type = assert(arguments[1], "missing machine type")
 assert(machine_type == "local" or machine_type == "grpc", "unknown machine type, should be 'local' or 'grpc'")
 if (machine_type == "grpc") then
@@ -137,8 +258,8 @@ pmas_file_names["0000000080000000--0000000000100000.bin"] = 1048576
 local function build_machine(type)
     -- Create new machine
     local concurrency_update_merkle_tree = 0
-    local initial_csr_values = test_data.get_cpu_csr_test_values()
-    local initial_xreg_values = test_data.get_cpu_xreg_test_values()
+    local initial_csr_values = get_cpu_csr_test_values()
+    local initial_xreg_values = get_cpu_xreg_test_values()
     initial_csr_values.x = initial_xreg_values
 
     local config = {
@@ -184,8 +305,8 @@ do_test("machine should not have halt and yield initial flags set",
 print("\n\ntesting machine register initial flag values ")
 do_test("machine should have default config shadow register values",
     function(machine)
-        local initial_csr_values = test_data.get_cpu_csr_test_values()
-        local initial_xreg_values = test_data.get_cpu_xreg_test_values()
+        local initial_csr_values = get_cpu_csr_test_values()
+        local initial_xreg_values = get_cpu_xreg_test_values()
         initial_csr_values.x = nil
         initial_csr_values.mvendorid = nil
         initial_csr_values.marchid = nil
@@ -205,8 +326,8 @@ do_test("machine should have default config shadow register values",
 print("\n\ntesting merkle tree get_proof for values for registers")
 do_test("should provide proof for values in registers",
     function(machine)
-        local initial_csr_values = test_data.get_cpu_csr_test_values()
-        local initial_xreg_values = test_data.get_cpu_xreg_test_values()
+        local initial_csr_values = get_cpu_csr_test_values()
+        local initial_xreg_values = get_cpu_xreg_test_values()
         initial_csr_values.x = nil
         initial_csr_values.mvendorid = nil
         initial_csr_values.marchid = nil
@@ -235,11 +356,101 @@ do_test("should provide proof for values in registers",
 print("\n\ntesting get_csr_address function binding")
 do_test("should return address value for csr register",
     function(machine)
-        -- Check CSR address
-        for _, v in pairs(test_data.get_cpu_csr_names()) do
-            print(v)
-            assert(cartesi.machine.get_csr_address(v), "missing " .. v)
+        local module = cartesi
+        if (type == "grpc") then
+            if not remote then remote = connect() end
+            module = remote
         end
+        -- Check CSR address
+        for _, v in pairs(get_cpu_csr_names_addresses()) do
+            local u = module.machine.get_csr_address(v[1])
+            assert(u == v[2], "invalid return for " .. v[2])
+        end
+    end
+)
+
+print("\n\ntesting get_x_address function binding")
+do_test("should return address value for x registers",
+    function(machine)
+        local module = cartesi
+        if (type == "grpc") then
+            if not remote then remote = connect() end
+            module = remote
+        end
+        -- Check x address
+        for i = 0,31 do
+            assert(module.machine.get_x_address(i) == SHADOW_BASE+i*8, "invalid return for x"..i)
+        end
+    end
+)
+
+print("\n\ntesting get_dhd_h_address function binding")
+do_test("should return address value for dhd h registers",
+    function(machine)
+        local module = cartesi
+        if (type == "grpc") then
+            if not remote then remote = connect() end
+            module = remote
+        end
+        -- Check dhd h_i address
+        for i = 0,3 do
+            assert(module.machine.get_dhd_h_address(i) == DHD_BASE+0x28+i*8, "invalid return for dhd.h"..i)
+        end
+    end
+)
+
+local function test_config_memory_range(range, name)
+    assert(type(range.length) == "number", "invalid "..name..".length")
+    assert(type(range.start) == "number", "invalid "..name..".start")
+    assert(range.shared == nil or type(range.shared) == "boolean", "invalid "..name..".shared")
+    assert(range.image_filename == nil or type(range.image_filename) == "string", "invalid "..name..".image_filename")
+end
+
+local function test_config(config)
+    assert(type(config) == "table", "config not a table")
+    for _, field in ipairs{"processor", "htif", "clint", "flash_drive", "ram", "rom"} do
+        assert(config[field] and type(config[field]) == 'table', "invalid field " .. field)
+    end
+    local processor = config.processor
+    for i = 1, 31 do
+        assert(type(config.processor.x[i]) == "number", "x"..i.." is not a number")
+    end
+    local htif = config.htif
+    for _, field in ipairs{"console_getchar", "yield_manual", "yield_automatic"} do
+        assert(htif[field] == nil or type(htif[field]) == "boolean", "invalid htif."..field)
+    end
+    assert(type(htif.tohost) == "number", "invalid htif.tohost")
+    assert(type(htif.fromhost) == "number", "invalid htif.fromhost")
+    local clint = config.clint
+    assert(type(clint.mtimecmp) == "number", "invalid clint.mtimecmp")
+    local ram = config.ram
+    assert(type(ram.length) == "number", "invalid ram.length")
+    assert(ram.image_filename == nil or type(ram.image_filename) == "string", "invalid ram.image_filename")
+    local rom = config.rom
+    assert(rom.image_filename == nil or type(rom.image_filename) == "string", "invalid rom.image_filename")
+    assert(rom.bootargs == nil or type(rom.bootargs) == "string", "invalid rom.bootargs")
+    for i, f in ipairs(config.flash_drive) do
+        test_config_memory_range(f)
+    end
+    local rollup = config.rollup
+    if config.rollup then
+        test_config_memory_range(rollup.rx_buffer)
+        test_config_memory_range(rollup.tx_buffer)
+        test_config_memory_range(rollup.input_metadata)
+        test_config_memory_range(rollup.voucher_hashes)
+        test_config_memory_range(rollup.notice_hashes)
+    end
+end
+
+print("\n\ntesting get_default_config function binding")
+do_test("should return default machine config",
+    function(machine)
+        local module = cartesi
+        if (type == "grpc") then
+            if not remote then remote = connect() end
+            module = remote
+        end
+        test_config(module.machine.get_default_config())
     end
 )
 
@@ -268,6 +479,7 @@ do_test("should have expected values",
     function(machine)
         -- Check initial config
         local initial_config = machine:get_initial_config()
+        test_config(initial_config)
         assert(initial_config.processor.pc == 0x100,
             "wrong pc reg initial config value")
         assert(initial_config.processor.ilrsc == 0x1c8,
@@ -292,7 +504,7 @@ do_test("should have expected values",
 print("\n\n test read_csr")
 do_test("should return expected values",
     function(machine)
-        local initial_csr_values = test_data.get_cpu_csr_test_values()
+        local initial_csr_values = get_cpu_csr_test_values()
         initial_csr_values.mvendorid = 0x6361727465736920
         initial_csr_values.marchid = 0xb
         initial_csr_values.mimpid = 0x1
@@ -313,13 +525,12 @@ do_test("should return expected values",
             htif_ihalt = true,
             htif_iconsole = true
         }
-        for k, v in pairs(test_data.get_cpu_csr_names()) do
-            if not to_ignore[v] then
-                local method_name = "read_" .. v
+        for k, v in pairs(get_cpu_csr_names_addresses()) do
+            if not to_ignore[v[1]] then
+                local method_name = "read_" .. v[1]
                 local value = machine[method_name](machine)
-                -- print("Reading k=",k, " value=", value, " v=",v, " expected value:",initial_csr_values[v])
-                assert(machine[method_name](machine) == initial_csr_values[v],
-                    "wrong " .. v .. " value")
+                assert(machine[method_name](machine) == initial_csr_values[v[1]],
+                    "wrong " .. v[1] .. " value")
             end
         end
     end
@@ -352,7 +563,7 @@ do_test("there should exist dumped files of expected size",
 print("\n\n read and write x registers")
 do_test("writen and expected register values should match",
     function(machine)
-        local initial_xreg_values = test_data.get_cpu_xreg_test_values()
+        local initial_xreg_values = get_cpu_xreg_test_values()
         -- Write/Read X registers
         local x1_initial_value = machine:read_x(1)
         assert(x1_initial_value == initial_xreg_values[1], "error reading x1 register")
@@ -512,6 +723,22 @@ do_test("dumped log content should match",
             "Cound not find step 14")
         assert((output:find "22: write @0x120%(288%): 0x0%(0%) %-> 0x1%(1%)"),
             "Cound not find step 20")
+    end
+)
+
+print("\n\ntesting step and verification")
+do_test("machine step should pass verifications",
+    function(machine)
+        local module = cartesi
+        if (type == "grpc") then
+            if not remote then remote = connect() end
+            module = remote
+        end
+        local initial_hash = machine:get_root_hash()
+        local log = machine:step({proofs = true, annotations = true})
+        local final_hash = machine:get_root_hash()
+        module.machine.verify_state_transition(initial_hash, log, final_hash, {})
+        module.machine.verify_access_log(log, {})
     end
 )
 

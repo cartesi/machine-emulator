@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fix Lua bind of static methods for remote machines
 - Fix rollup-memory-range decoding of empty payloads at end of file
+- Fix server-manager version string
 
 ### Changed
 

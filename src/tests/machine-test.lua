@@ -335,7 +335,7 @@ do_test("dumped file merkle tree hashes should match",
 )
 
 print("\n\ntesting if machine initial hash is correct")
-do_test("machine initial hash shold match",
+do_test("machine initial hash should match",
     function(machine)
         -- Get starting root hash
         local root_hash = machine:get_root_hash()

@@ -84,6 +84,15 @@ CM_API int cm_create_grpc_machine(const cm_grpc_machine_stub *stub, const cm_mac
 CM_API int cm_load_grpc_machine(const cm_grpc_machine_stub *stub, const char *dir,
     const cm_machine_runtime_config *runtime_config, cm_machine **new_machine, char **err_msg);
 
+/// \brief Get remote machine instance that was previously created in the server
+/// \param stub Cartesi grpc machine stub. Must be pointer to valid object
+/// \param new_machine Receives the pointer to new remote machine instance
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_get_grpc_machine(const cm_grpc_machine_stub *stub, cm_machine **new_machine, char **err_msg);
+
 /// \brief Ged default machine config from server
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object
 /// \param config Receives the default configuration

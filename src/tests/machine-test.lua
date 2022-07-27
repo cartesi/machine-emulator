@@ -564,4 +564,18 @@ do_test("register values should match",
     end
 )
 
+if machine_type == "grpc" then
+    print("\n\n check remote get_machine")
+    do_test("get_machine should get reference to working machine",
+        function(machine)
+            local machine_2 = remote.get_machine()
+            assert(machine:get_root_hash() == machine_2:get_root_hash())
+            machine_2:destroy()
+            local ret, err = pcall(function() machine:get_root_hash() end)
+            assert(ret == false)
+            assert(err:match("no machine"))
+        end
+    )
+end
+
 print("\n\nAll tests of machine lua API for type " .. machine_type .. "  passed")

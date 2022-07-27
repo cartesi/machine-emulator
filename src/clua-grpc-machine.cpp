@@ -173,6 +173,17 @@ static const auto grpc_machine_class_meta = cartesi::clua_make_luaL_Reg_array({
     {"__tostring", grpc_machine_tostring},
 });
 
+/// \brief This is the machine.get_machine() static method implementation.
+static int grpc_server_class_get_machine(lua_State *L) {
+    lua_settop(L, 1);
+    auto &managed_grpc_stub =
+        clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
+    const int ctxidx = lua_upvalueindex(2);
+    auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr), ctxidx);
+    TRY_EXECUTE_CTXIDX(cm_get_grpc_machine(managed_grpc_stub.get(), &managed_machine.get(), err_msg), ctxidx);
+    return 1;
+}
+
 /// \brief This is the machine.get_version() static method implementation.
 static int grpc_server_class_get_version(lua_State *L) {
     auto &managed_grpc_stub =
@@ -197,6 +208,7 @@ static int grpc_server_class_shutdown(lua_State *L) {
 
 /// \brief GRPC server static methods
 static const auto grpc_server_static_methods = cartesi::clua_make_luaL_Reg_array({
+    {"get_machine", grpc_server_class_get_machine},
     {"get_version", grpc_server_class_get_version},
     {"shutdown", grpc_server_class_shutdown},
 });

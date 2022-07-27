@@ -220,6 +220,8 @@ grpc_machine_stub::~grpc_machine_stub() {
     }
 }
 
+grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub) : m_stub(std::move(stub)) {}
+
 grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub, const std::string &dir,
     const machine_runtime_config &r) :
     m_stub(std::move(stub)) {

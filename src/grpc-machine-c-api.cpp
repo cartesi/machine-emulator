@@ -36,6 +36,10 @@ static inline cartesi::i_virtual_machine *load_grpc_virtual_machine(const cartes
     return new cartesi::grpc_virtual_machine(stub, null_to_empty(dir), r);
 }
 
+static inline cartesi::i_virtual_machine *get_grpc_virtual_machine(const cartesi::grpc_machine_stub_ptr &stub) {
+    return new cartesi::grpc_virtual_machine(stub);
+}
+
 int cm_create_grpc_machine_stub(const char *remote_address, const char *checkin_address, cm_grpc_machine_stub **stub,
     char **err_msg) try {
     auto *cpp_stub = new std::shared_ptr<cartesi::grpc_machine_stub>(
@@ -76,6 +80,16 @@ int cm_load_grpc_machine(const cm_grpc_machine_stub *stub, const char *dir,
     const auto *cpp_stub = reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine = reinterpret_cast<cm_machine *>(load_grpc_virtual_machine(*cpp_stub, dir, r));
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_get_grpc_machine(const cm_grpc_machine_stub *stub, cm_machine **new_machine, char **err_msg) try {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *cpp_stub = reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    *new_machine = reinterpret_cast<cm_machine *>(get_grpc_virtual_machine(*cpp_stub));
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);

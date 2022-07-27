@@ -2287,6 +2287,28 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_error_placeholder_test, 
     monitor_system_throw(f);
 }
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(get_grpc_machine_basic_test, grpc_machine_fixture_with_server) {
+    char *err_msg{};
+    cm_machine *machine{};
+    int error_code = cm_create_grpc_machine(m_stub, &_machine_config, &_runtime_config, &machine, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+    cm_machine *machine_2{};
+    error_code = cm_get_grpc_machine(m_stub, &machine_2, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+    // Destroy the machine with the second handler and check whether the
+    // original machine was actually deleted as well
+    error_code = cm_destroy(machine_2, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+    error_code = cm_destroy(machine, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+    cm_delete_machine(machine_2);
+    cm_delete_machine(machine);
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_dir, grpc_machine_fixture_with_server) {
     char *err_msg{};
     cm_machine *new_machine{};

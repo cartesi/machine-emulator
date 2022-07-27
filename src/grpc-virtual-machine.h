@@ -79,6 +79,7 @@ using grpc_machine_stub_ptr = std::shared_ptr<grpc_machine_stub>;
 /// \brief GRPC implementation of the i_virtual_machine interface
 class grpc_virtual_machine : public i_virtual_machine {
 public:
+    grpc_virtual_machine(grpc_machine_stub_ptr stub);
     grpc_virtual_machine(grpc_machine_stub_ptr stub, const std::string &dir, const machine_runtime_config &r = {});
     grpc_virtual_machine(grpc_machine_stub_ptr stub, const machine_config &c, const machine_runtime_config &r = {});
 

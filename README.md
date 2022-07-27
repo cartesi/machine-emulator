@@ -41,6 +41,7 @@ sudo luarock install lpeg
 sudo luarock install dkjson
 sudo luarock install luasocket
 sudo luarock install luasec
+sudo luarock install md5
 ```
 #### MacOS
 
@@ -52,6 +53,7 @@ sudo luarock install lpeg
 sudo luarock install dkjson
 sudo luarock install luasocket
 sudo luarock install luasec
+sudo luarock install md5
 ```
 
 ##### Homebrew
@@ -61,6 +63,7 @@ luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install lpeg
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install dkjson
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install luasocket
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install luasec
+luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install md5
 ```
 
 For emulator scripts to work it is expected that `lua5.3` binary is available in the system PATH. If operating system/package manager that you are using provides only `lua` or lua binary named in a different way (e.g. on `Homebrew`), please create symbolic link or alias `lua5.3`.

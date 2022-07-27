@@ -281,8 +281,7 @@ public:
     /// \param data Receives chunk of memory.
     /// \param length Size of chunk.
     /// \details The entire chunk, from \p address to \p address + \p length must
-    /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
-    /// and not a device PMA.
+    /// be inside the same PMA region.
     void read_memory(uint64_t address, unsigned char *data, uint64_t length) const;
 
     /// \brief Writes a chunk of data to the machine memory.

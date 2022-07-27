@@ -11,6 +11,7 @@ RUN apt-get update && \
 RUN luarocks install luasocket && \
     luarocks install luasec && \
     luarocks install lpeg && \
+    luarocks install md5 && \
     luarocks install dkjson
 
 WORKDIR /usr/src/emulator

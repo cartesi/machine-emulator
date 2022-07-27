@@ -22,6 +22,7 @@ RUN \
     luarocks install luasocket && \
     luarocks install luasec && \
     luarocks install lpeg && \
+    luarocks install md5 && \
     luarocks install dkjson
 
 ENV PATH="${PATH}:${BASE}/build/Linux_x86_64/bin"

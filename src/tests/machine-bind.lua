@@ -248,12 +248,14 @@ local function connect()
     return remote, version
 end
 
-local pmas_file_names = {}
-pmas_file_names["0000000000000000--0000000000001000.bin"] = 4096
-pmas_file_names["0000000000001000--000000000000f000.bin"] = 61440
-pmas_file_names["0000000002000000--00000000000c0000.bin"] = 786432
-pmas_file_names["0000000040008000--0000000000001000.bin"] = 4096
-pmas_file_names["0000000080000000--0000000000100000.bin"] = 1048576
+local pmas_file_names = {
+    "0000000000000000--0000000000001000.bin",
+    "0000000000001000--000000000000f000.bin",
+    "0000000002000000--00000000000c0000.bin",
+    "0000000040008000--0000000000001000.bin",
+    "0000000080000000--0000000000100000.bin"
+}
+local pmas_sizes = { 4096, 61440, 786432, 4096, 1048576 }
 
 local function build_machine(type)
     -- Create new machine
@@ -468,8 +470,15 @@ do_test("should return expected value",
         -- Get starting root hash
         local root_hash = machine:get_root_hash()
         print("Root hash: ", test_util.tohex(root_hash))
-        assert(test_util.tohex(root_hash) ==
-                "36DA5DDA129A469465C79C4E82CB2E0C43E78B1310C0F8DE29CE5EBE05BAFB2F",
+
+        machine:dump_pmas()
+        local calculated_root_hash = test_util.calculate_emulator_hash(test_path,
+                                                pmas_file_names, machine)
+        for _, file_name in pairs(pmas_file_names) do
+            os.remove(test_path .. file_name)
+        end
+
+        assert(test_util.tohex(root_hash) == test_util.tohex(calculated_root_hash),
             "initial root hash does not match")
     end
 )
@@ -542,13 +551,13 @@ do_test("there should exist dumped files of expected size",
         -- Dump pmas to files
         machine:dump_pmas()
 
-        for file_name, file_size in pairs(pmas_file_names) do
-            local dumped_file = test_path .. file_name
+        for i = 1, #pmas_file_names do
+            local dumped_file = test_path .. pmas_file_names[i]
             local fd = assert(io.open(dumped_file, "rb"))
             local real_file_size = fd:seek("end")
             fd:close(dumped_file)
 
-            assert(real_file_size == file_size,
+            assert(real_file_size == pmas_sizes[i],
                 "unexpected pmas file size " .. dumped_file)
 
             assert(test_util.file_exists(dumped_file),

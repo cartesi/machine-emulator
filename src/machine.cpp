@@ -1495,10 +1495,49 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
 
 void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length) const {
     const pma_entry &pma = find_pma_entry(address, length);
-    if (!pma.get_istart_M() || pma.get_istart_E()) {
-        throw std::invalid_argument{"address range not entirely in memory PMA"};
+    if (pma.get_istart_E()) {
+        throw std::invalid_argument{"address range is not entirely in single PMA"};
+    } else if (pma.get_istart_M()) {
+        memcpy(data, pma.get_memory().get_host_memory() + (address - pma.get_start()), length);
+        return;
     }
-    memcpy(data, pma.get_memory().get_host_memory() + (address - pma.get_start()), length);
+
+    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
+    // relative request address inside pma
+    uint64_t shift = address - pma.get_start();
+    // relative page address inside pma
+    constexpr const auto log2_page_size = PMA_constants::PMA_PAGE_SIZE_LOG2;
+    uint64_t page_address = (shift >> log2_page_size) << log2_page_size;
+    // relative request address inside page
+    shift -= page_address;
+
+    const unsigned char *page_data = nullptr;
+    auto peek = pma.get_peek();
+
+    while (length != 0) {
+        uint64_t bytes_to_write = std::min(length, PMA_PAGE_SIZE - shift);
+        // avoid copying to the intermediate buffer when getting the whole page
+        if (bytes_to_write == PMA_PAGE_SIZE) {
+            if (!peek(pma, *this, page_address, &page_data, data)) {
+                throw std::runtime_error{"peek failed"};
+            } else if (!page_data) {
+                memset(data, 0, bytes_to_write);
+            }
+        } else {
+            if (!peek(pma, *this, page_address, &page_data, scratch.get())) {
+                throw std::runtime_error{"peek failed"};
+            } else if (!page_data) {
+                memset(data, 0, bytes_to_write);
+            } else {
+                memcpy(data, page_data + shift, bytes_to_write);
+            }
+        }
+
+        page_address += PMA_PAGE_SIZE;
+        length -= bytes_to_write;
+        data += bytes_to_write;
+        shift = 0;
+    }
 }
 
 void machine::write_memory(uint64_t address, const unsigned char *data, size_t length) {

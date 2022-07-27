@@ -523,8 +523,7 @@ CM_API int cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *wo
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 /// \details The entire chunk, from \p address to \p address + \p length must
-/// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
-/// and not a device PMA.
+/// be inside the same PMA region.
 CM_API int cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *data, uint64_t length, char **err_msg);
 
 /// \brief Writes a chunk of data to the machine memory.

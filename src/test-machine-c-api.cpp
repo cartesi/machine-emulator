@@ -845,16 +845,14 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_memory_null_machine_test) {
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_memory_zero_data_size_test, ordinary_machine_fixture) {
-    std::array<uint8_t, sizeof(uint64_t)> rd{};
+    std::array<uint8_t, sizeof(uint64_t)> rd_origin{0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef};
+    std::array<uint8_t, sizeof(uint64_t)> rd{0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef};
     char *err_msg{};
     int error_code = cm_read_memory(_machine, 0x100, rd.data(), 0, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
-    std::string result = err_msg;
-    std::string origin("address range not entirely in memory PMA");
-    BOOST_CHECK_EQUAL(origin, result);
-
-    cm_delete_error_message(err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+    BOOST_CHECK_EQUAL_COLLECTIONS(rd.begin(), rd.end(), rd_origin.begin(), rd_origin.end());
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_memory_null_data_test, ordinary_machine_fixture) {
@@ -959,9 +957,36 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_memory_basic_test, ordinary_machine_fi
     BOOST_CHECK_EQUAL(read_value, write_value);
 }
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_memory_scattered_data, ordinary_machine_fixture) {
+    uint16_t read_value = 0;
+    uint16_t write_value = 0xdead;
+
+    // we are going to write data on a page junction:
+    // one byte at the end of the third page and one byte
+    // at the beginning of the fourth
+    uint64_t address = 0x80004000 - sizeof(write_value) / 2;
+
+    std::array<uint8_t, sizeof(uint16_t)> write_data{};
+    std::array<uint8_t, sizeof(uint16_t)> read_data{};
+    char *err_msg{};
+    memcpy(write_data.data(), &write_value, write_data.size());
+
+    int error_code = cm_write_memory(_machine, address, write_data.data(), write_data.size(), &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+
+    error_code = cm_read_memory(_machine, address, read_data.data(), read_data.size(), &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    memcpy(&read_value, read_data.data(), read_data.size());
+    BOOST_CHECK_EQUAL(read_value, write_value);
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_memory_massive_test, ordinary_machine_fixture) {
-    constexpr size_t data_size = 12288;
-    uint64_t address = 0x80000000;
+    // writing somewhere in the middle of a page
+    uint64_t address = 0x8000000F;
+    // data occupies several pages and ends somewhere in the middle of a page
+    constexpr size_t data_size = 12404;
 
     std::array<uint8_t, data_size> write_data{};
     std::array<uint8_t, data_size> read_data{};

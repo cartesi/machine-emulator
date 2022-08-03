@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added method to get existing remote machine
 - Added no-remote-create and no-remote-destroy options to cartesi-machine.lua
+- Prevent linux from reserving 64Mi of memory when ram-length >= 128Mi
 
 ## [0.10.1] - 2022-07-14
 ### Fixed

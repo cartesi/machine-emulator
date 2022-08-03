@@ -354,7 +354,7 @@ local memory_range_replace = { }
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
 local rom_image_filename = images_path .. "rom.bin"
-local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet"
+local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce"
 local dhd = nil
 local dhd_source_address = nil
 local rollup = nil

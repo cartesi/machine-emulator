@@ -48,6 +48,12 @@ where options are:
   --remote-shutdown
     shutdown the remote cartesi machine after the execution.
 
+  --no-remote-create
+    use existing cartesi machine in the remote server instead of creating a new one.
+
+  --no-remote-destroy
+    do not destroy the cartesi machine in the remote server after the execution.
+
   --ram-image=<filename>
     name of file containing RAM image (default: "linux.bin").
 
@@ -336,6 +342,8 @@ end
 local remote_address = nil
 local checkin_address = nil
 local remote_shutdown = false
+local remote_create = true
+local remote_destroy = true
 local images_path = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH'))
 local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
@@ -693,6 +701,16 @@ local options = {
         remote_shutdown = true
         return true
     end },
+    { "^%-%-no%-remote%-create$", function(o)
+        if not o then return false end
+        remote_create = false
+        return true
+    end },
+    { "^%-%-no%-remote%-destroy$", function(o)
+        if not o then return false end
+        remote_destroy = false
+        return true
+    end },
     { "^%-%-json%-steps%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         json_steps = o
@@ -1036,7 +1054,9 @@ local runtime = {
     }
 }
 
-if load_dir then
+if remote and not remote_create then
+    machine = remote.get_machine()
+elseif load_dir then
     stderr("Loading machine: please wait\n")
     machine = create_machine(load_dir, runtime)
 else
@@ -1491,6 +1511,8 @@ else
     if store_dir then
         store_machine(machine, config, store_dir)
     end
-    machine:destroy()
+    if not remote or remote_destroy then
+        machine:destroy()
+    end
     os.exit(exit_code, true)
 end

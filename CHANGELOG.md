@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added method to get existing remote machine
+- Added no-remote-create and no-remote-destroy options to cartesi-machine.lua
 
 ## [0.10.1] - 2022-07-14
 ### Fixed

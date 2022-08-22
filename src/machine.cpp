@@ -1498,12 +1498,24 @@ bool machine::update_merkle_tree(void) const {
                             return false;
                         }
                         if (page_data) {
-                            hash_type hash;
-                            m_t.get_page_node_hash(h, page_data, hash);
-                            {
+                            bool is_pristine = std::all_of(page_data, page_data + PMA_PAGE_SIZE,
+                                [](unsigned char pp) -> bool { return pp == '\0'; });
+
+                            if (is_pristine) {
                                 std::lock_guard<std::mutex> lock(updatex);
-                                if (!m_t.update_page_node_hash(page_address, hash)) {
+                                if (!m_t.update_page_node_hash(page_address,
+                                        machine_merkle_tree::get_pristine_hash(
+                                            machine_merkle_tree::get_log2_page_size()))) {
                                     return false;
+                                }
+                            } else {
+                                hash_type hash;
+                                m_t.get_page_node_hash(h, page_data, hash);
+                                {
+                                    std::lock_guard<std::mutex> lock(updatex);
+                                    if (!m_t.update_page_node_hash(page_address, hash)) {
+                                        return false;
+                                    }
                                 }
                             }
                         }

@@ -73,6 +73,7 @@ static bool shadow_peek(const pma_entry &pma, const machine &m, uint64_t page_of
     aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::medeleg), m.read_medeleg());
     aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::mideleg), m.read_mideleg());
     aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::mcounteren), m.read_mcounteren());
+    aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::menvcfg), m.read_menvcfg());
     aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::stvec), m.read_stvec());
     aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::sscratch), m.read_sscratch());
     aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::sepc), m.read_sepc());
@@ -80,6 +81,7 @@ static bool shadow_peek(const pma_entry &pma, const machine &m, uint64_t page_of
     aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::stval), m.read_stval());
     aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::satp), m.read_satp());
     aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::scounteren), m.read_scounteren());
+    aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::senvcfg), m.read_senvcfg());
     aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::ilrsc), m.read_ilrsc());
     aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::iflags), m.read_iflags());
     // Copy PMAs

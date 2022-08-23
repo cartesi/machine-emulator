@@ -139,13 +139,13 @@ enum MISA_constants : uint64_t { MISA_MXL_VALUE = UINT64_C(2) };
 
 /// \brief mstatus shifts
 enum MSTATUS_shifts {
-    MSTATUS_UIE_SHIFT = 0,
     MSTATUS_SIE_SHIFT = 1,
     MSTATUS_MIE_SHIFT = 3,
-    MSTATUS_UPIE_SHIFT = 4,
     MSTATUS_SPIE_SHIFT = 5,
+    MSTATUS_UBE_SHIFT = 6,
     MSTATUS_MPIE_SHIFT = 7,
     MSTATUS_SPP_SHIFT = 8,
+    MSTATUS_VS_SHIFT = 9,
     MSTATUS_MPP_SHIFT = 11,
     MSTATUS_FS_SHIFT = 13,
     MSTATUS_XS_SHIFT = 15,
@@ -158,18 +158,20 @@ enum MSTATUS_shifts {
 
     MSTATUS_UXL_SHIFT = 32,
     MSTATUS_SXL_SHIFT = 34,
+    MSTATUS_SBE_SHIFT = 36,
+    MSTATUS_MBE_SHIFT = 37,
     MSTATUS_SD_SHIFT = XLEN - 1
 };
 
 /// \brief mstatus masks
 enum MSTATUS_masks : uint64_t {
-    MSTATUS_UIE_MASK = UINT64_C(1) << MSTATUS_UIE_SHIFT,
     MSTATUS_SIE_MASK = UINT64_C(1) << MSTATUS_SIE_SHIFT,
     MSTATUS_MIE_MASK = UINT64_C(1) << MSTATUS_MIE_SHIFT,
-    MSTATUS_UPIE_MASK = UINT64_C(1) << MSTATUS_UPIE_SHIFT,
     MSTATUS_SPIE_MASK = UINT64_C(1) << MSTATUS_SPIE_SHIFT,
+    MSTATUS_UBE_MASK = UINT64_C(1) << MSTATUS_UBE_SHIFT,
     MSTATUS_MPIE_MASK = UINT64_C(1) << MSTATUS_MPIE_SHIFT,
     MSTATUS_SPP_MASK = UINT64_C(1) << MSTATUS_SPP_SHIFT,
+    MSTATUS_VS_MASK = UINT64_C(3) << MSTATUS_VS_SHIFT,
     MSTATUS_MPP_MASK = UINT64_C(3) << MSTATUS_MPP_SHIFT,
     MSTATUS_FS_MASK = UINT64_C(3) << MSTATUS_FS_SHIFT,
     MSTATUS_XS_MASK = UINT64_C(3) << MSTATUS_XS_SHIFT,
@@ -182,27 +184,28 @@ enum MSTATUS_masks : uint64_t {
 
     MSTATUS_UXL_MASK = UINT64_C(3) << MSTATUS_UXL_SHIFT,
     MSTATUS_SXL_MASK = UINT64_C(3) << MSTATUS_SXL_SHIFT,
+    MSTATUS_SBE_MASK = UINT64_C(1) << MSTATUS_SBE_SHIFT,
+    MSTATUS_MBE_MASK = UINT64_C(1) << MSTATUS_MBE_SHIFT,
     MSTATUS_SD_MASK = UINT64_C(1) << MSTATUS_SD_SHIFT
 };
 
 /// \brief mstatus read-write masks
 enum MSTATUS_RW_masks : uint64_t {
-    MSTATUS_W_MASK = (MSTATUS_UIE_MASK | MSTATUS_SIE_MASK | MSTATUS_MIE_MASK | MSTATUS_UPIE_MASK | MSTATUS_SPIE_MASK |
-        MSTATUS_MPIE_MASK | MSTATUS_SPP_MASK | MSTATUS_MPP_MASK | MSTATUS_FS_MASK | MSTATUS_MPRV_MASK |
-        MSTATUS_SUM_MASK | MSTATUS_MXR_MASK | MSTATUS_TVM_MASK | MSTATUS_TW_MASK |
-        MSTATUS_TSR_MASK), ///< Write mask for mstatus
-    MSTATUS_R_MASK = (MSTATUS_UIE_MASK | MSTATUS_SIE_MASK | MSTATUS_MIE_MASK | MSTATUS_UPIE_MASK | MSTATUS_SPIE_MASK |
-        MSTATUS_MPIE_MASK | MSTATUS_SPP_MASK | MSTATUS_MPP_MASK | MSTATUS_FS_MASK | MSTATUS_MPRV_MASK |
-        MSTATUS_SUM_MASK | MSTATUS_MXR_MASK | MSTATUS_TVM_MASK | MSTATUS_TW_MASK | MSTATUS_TSR_MASK | MSTATUS_UXL_MASK |
-        MSTATUS_SXL_MASK | MSTATUS_SD_MASK) ///< Read mask for mstatus
+    MSTATUS_W_MASK = (MSTATUS_SIE_MASK | MSTATUS_MIE_MASK | MSTATUS_SPIE_MASK | MSTATUS_MPIE_MASK | MSTATUS_SPP_MASK |
+        MSTATUS_MPP_MASK | MSTATUS_FS_MASK | MSTATUS_MPRV_MASK | MSTATUS_SUM_MASK | MSTATUS_MXR_MASK |
+        MSTATUS_TVM_MASK | MSTATUS_TW_MASK | MSTATUS_TSR_MASK), ///< Write mask for mstatus
+    MSTATUS_R_MASK = (MSTATUS_SIE_MASK | MSTATUS_MIE_MASK | MSTATUS_SPIE_MASK | MSTATUS_UBE_MASK | MSTATUS_MPIE_MASK |
+        MSTATUS_SPP_MASK | MSTATUS_MPP_MASK | MSTATUS_FS_MASK | MSTATUS_VS_MASK | MSTATUS_MPRV_MASK | MSTATUS_SUM_MASK |
+        MSTATUS_MXR_MASK | MSTATUS_TVM_MASK | MSTATUS_TW_MASK | MSTATUS_TSR_MASK | MSTATUS_UXL_MASK | MSTATUS_SXL_MASK |
+        MSTATUS_SBE_MASK | MSTATUS_MBE_MASK | MSTATUS_SD_MASK) ///< Read mask for mstatus
 };
 
 /// \brief sstatus read/write masks
 enum SSTATUS_rw_masks : uint64_t {
-    SSTATUS_W_MASK = (MSTATUS_UIE_MASK | MSTATUS_SIE_MASK | MSTATUS_UPIE_MASK | MSTATUS_SPIE_MASK | MSTATUS_SPP_MASK |
-        MSTATUS_FS_MASK | MSTATUS_SUM_MASK | MSTATUS_MXR_MASK), ///< Write mask for sstatus
-    SSTATUS_R_MASK = (MSTATUS_UIE_MASK | MSTATUS_SIE_MASK | MSTATUS_UPIE_MASK | MSTATUS_SPIE_MASK | MSTATUS_SPP_MASK |
-        MSTATUS_FS_MASK | MSTATUS_SUM_MASK | MSTATUS_MXR_MASK | MSTATUS_UXL_MASK |
+    SSTATUS_W_MASK = (MSTATUS_SIE_MASK | MSTATUS_SPIE_MASK | MSTATUS_SPP_MASK | MSTATUS_FS_MASK | MSTATUS_SUM_MASK |
+        MSTATUS_MXR_MASK), ///< Write mask for sstatus
+    SSTATUS_R_MASK = (MSTATUS_SIE_MASK | MSTATUS_SPIE_MASK | MSTATUS_UBE_MASK | MSTATUS_SPP_MASK | MSTATUS_VS_MASK |
+        MSTATUS_FS_MASK | MSTATUS_XS_MASK | MSTATUS_SUM_MASK | MSTATUS_MXR_MASK | MSTATUS_UXL_MASK |
         MSTATUS_SD_MASK) ///< Read mask for sstatus
 };
 
@@ -218,19 +221,74 @@ enum PTE_shifts {
     PTE_U_SHIFT = 4,
     PTE_G_SHIFT = 5,
     PTE_A_SHIFT = 6,
-    PTE_D_SHIFT = 7
+    PTE_D_SHIFT = 7,
+    PTE_PBMT_SHIFT = 61,
+    PTE_N_SHIFT = 63
 };
 
 /// \brief Page-table entry masks
 enum PTE_masks : uint64_t {
-    PTE_V_MASK = UINT64_C(1) << PTE_V_SHIFT, ///< Valid
-    PTE_R_MASK = UINT64_C(1) << PTE_R_SHIFT, ///< Readable
-    PTE_W_MASK = UINT64_C(1) << PTE_W_SHIFT, ///< Writable
-    PTE_X_MASK = UINT64_C(1) << PTE_X_SHIFT, ///< Executable
-    PTE_U_MASK = UINT64_C(1) << PTE_U_SHIFT, ///< Accessible to user mode
-    PTE_G_MASK = UINT64_C(1) << PTE_G_SHIFT, ///< Global mapping
-    PTE_A_MASK = UINT64_C(1) << PTE_A_SHIFT, ///< Accessed
-    PTE_D_MASK = UINT64_C(1) << PTE_D_SHIFT  ///< Dirty
+    PTE_V_MASK = UINT64_C(1) << PTE_V_SHIFT,       ///< Valid
+    PTE_R_MASK = UINT64_C(1) << PTE_R_SHIFT,       ///< Readable
+    PTE_W_MASK = UINT64_C(1) << PTE_W_SHIFT,       ///< Writable
+    PTE_X_MASK = UINT64_C(1) << PTE_X_SHIFT,       ///< Executable
+    PTE_U_MASK = UINT64_C(1) << PTE_U_SHIFT,       ///< Accessible to user mode
+    PTE_G_MASK = UINT64_C(1) << PTE_G_SHIFT,       ///< Global mapping
+    PTE_A_MASK = UINT64_C(1) << PTE_A_SHIFT,       ///< Accessed
+    PTE_D_MASK = UINT64_C(1) << PTE_D_SHIFT,       ///< Dirty
+    PTE_60_54_MASK = UINT64_C(127) << 54,          ///< Reserved for future use
+    PTE_PBMT_MASK = UINT64_C(3) << PTE_PBMT_SHIFT, ///< Svpbmt: Page-based memory types
+    PTE_N_MASK = UINT64_C(1) << PTE_N_SHIFT        ///< Svnapot: NAPOT translation contiguity
+};
+
+/// \brief menvcfg shifts
+enum MENVCFG_shifts {
+    MENVCFG_FIOM_SHIFT = 0,
+    MENVCFG_CBIE_SHIFT = 4,
+    MENVCFG_CBCFE_SHIFT = 6,
+    MENVCFG_CBZE_SHIFT = 7,
+    MENVCFG_PBMTE_SHIFT = 62,
+    MENVCFG_STCE_SHIFT = 63
+};
+
+/// \brief menvcfg masks
+enum MENVCFG_masks : uint64_t {
+    MENVCFG_FIOM_MASK = UINT64_C(1) << MENVCFG_FIOM_SHIFT,   // Fence of I/O implies Memory
+    MENVCFG_CBIE_MASK = UINT64_C(3) << MENVCFG_CBIE_SHIFT,   // forthcoming Zicbom extension
+    MENVCFG_CBCFE_MASK = UINT64_C(1) << MENVCFG_CBCFE_SHIFT, // forthcoming Zicbom extension
+    MENVCFG_CBZE_MASK = UINT64_C(1) << MENVCFG_CBZE_SHIFT,   // forthcoming Zicboz extension
+    MENVCFG_PBMTE_MASK = UINT64_C(1) << MENVCFG_PBMTE_SHIFT, // Svpbmt extension
+    MENVCFG_STCE_MASK = UINT64_C(1) << MENVCFG_STCE_SHIFT    // forthcoming Sstc extension
+};
+
+/// \brief senvcfg shifts
+enum SENVCFG_shifts {
+    SENVCFG_FIOM_SHIFT = 0,
+    SENVCFG_CBIE_SHIFT = 4,
+    SENVCFG_CBCFE_SHIFT = 6,
+    SENVCFG_CBZE_SHIFT = 7,
+};
+
+/// \brief senvcfg masks
+enum SENVCFG_masks : uint64_t {
+    SENVCFG_FIOM_MASK = UINT64_C(1) << SENVCFG_FIOM_SHIFT,   // Fence of I/O implies Memory
+    SENVCFG_CBIE_MASK = UINT64_C(3) << SENVCFG_CBIE_SHIFT,   // forthcoming Zicbom extension
+    SENVCFG_CBCFE_MASK = UINT64_C(1) << SENVCFG_CBCFE_SHIFT, // forthcoming Zicbom extension
+    SENVCFG_CBZE_MASK = UINT64_C(1) << SENVCFG_CBZE_SHIFT,   // forthcoming Zicboz extension
+};
+
+///< menvcfg read/write masks. Svpbmt is not implemented, thus ignoring PBMT bit
+///  as it is always read-only zero. The rest extensions are not specified yet.
+enum MENVCFG_RW_masks : uint64_t {
+    MENVCFG_W_MASK = MENVCFG_FIOM_MASK, ///< write mask for menvcfg
+    MENVCFG_R_MASK = MENVCFG_FIOM_MASK, ///< read mask for menvcfg
+};
+
+///< senvcfg read/write masks. Zicbom/Zicboz extensions are not specified yet, thus ignoring
+///  the correspoding bits.
+enum SENVCFG_RW_masks : uint64_t {
+    SENVCFG_W_MASK = SENVCFG_FIOM_MASK, ///< write mask for senvcfg
+    SENVCFG_R_MASK = SENVCFG_FIOM_MASK, ///< read mask for senvcfg
 };
 
 /// \brief Paging shifts
@@ -302,6 +360,8 @@ enum CARTESI_init : uint64_t {
     MTIMECMP_INIT = UINT64_C(0),                                    ///< Initial value for mtimecmp
     FROMHOST_INIT = UINT64_C(0),                                    ///< Initial value for fromhost
     TOHOST_INIT = UINT64_C(0),                                      ///< Initial value for tohost
+    MENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for menvcfg
+    SENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for senvcfg
 };
 
 /// \brief Mapping between CSR names and addresses
@@ -317,6 +377,8 @@ enum class CSR_address : uint32_t {
     stvec = 0x105,
     scounteren = 0x106,
 
+    senvcfg = 0x10A,
+
     sscratch = 0x140,
     sepc = 0x141,
     scause = 0x142,
@@ -329,6 +391,7 @@ enum class CSR_address : uint32_t {
     marchid = 0xf12,
     mimpid = 0xf13,
     mhartid = 0xf14,
+    mconfigptr = 0xf15,
 
     mstatus = 0x300,
     misa = 0x301,
@@ -337,6 +400,8 @@ enum class CSR_address : uint32_t {
     mie = 0x304,
     mtvec = 0x305,
     mcounteren = 0x306,
+
+    menvcfg = 0x30a,
 
     mscratch = 0x340,
     mepc = 0x341,

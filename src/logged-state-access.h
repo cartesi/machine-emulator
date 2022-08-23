@@ -365,6 +365,16 @@ private:
             m_m.get_state().mcounteren, val, "mcounteren");
     }
 
+    uint64_t do_read_menvcfg(void) const {
+        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::menvcfg), m_m.get_state().menvcfg,
+            "menvcfg");
+    }
+
+    void do_write_menvcfg(uint64_t val) {
+        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::menvcfg),
+            m_m.get_state().menvcfg, val, "menvcfg");
+    }
+
     uint64_t do_read_stvec(void) const {
         return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stvec), m_m.get_state().stvec, "stvec");
     }
@@ -429,6 +439,16 @@ private:
     void do_write_scounteren(uint64_t val) {
         log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scounteren),
             m_m.get_state().scounteren, val, "scounteren");
+    }
+
+    uint64_t do_read_senvcfg(void) const {
+        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::senvcfg), m_m.get_state().senvcfg,
+            "senvcfg");
+    }
+
+    void do_write_senvcfg(uint64_t val) {
+        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::senvcfg),
+            m_m.get_state().senvcfg, val, "senvcfg");
     }
 
     uint64_t do_read_ilrsc(void) const {

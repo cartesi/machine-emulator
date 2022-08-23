@@ -48,6 +48,7 @@ struct processor_config final {
     uint64_t medeleg{MEDELEG_INIT};        ///< Value of medeleg CSR
     uint64_t mideleg{MIDELEG_INIT};        ///< Value of mideleg CSR
     uint64_t mcounteren{MCOUNTEREN_INIT};  ///< Value of mcounteren CSR
+    uint64_t menvcfg{MENVCFG_INIT};        ///< Value of menvcfg CSR
     uint64_t stvec{STVEC_INIT};            ///< Value of stvec CSR
     uint64_t sscratch{SSCRATCH_INIT};      ///< Value of sscratch CSR
     uint64_t sepc{SEPC_INIT};              ///< Value of sepc CSR
@@ -55,6 +56,7 @@ struct processor_config final {
     uint64_t stval{STVAL_INIT};            ///< Value of stval CSR
     uint64_t satp{SATP_INIT};              ///< Value of satp CSR
     uint64_t scounteren{SCOUNTEREN_INIT};  ///< Value of scounteren CSR
+    uint64_t senvcfg{SENVCFG_INIT};        ///< Value of senvcfg CSR
     uint64_t ilrsc{ILRSC_INIT};            ///< Value of ilrsc CSR
     uint64_t iflags{IFLAGS_INIT};          ///< Value of iflags CSR
 };

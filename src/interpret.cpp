@@ -522,6 +522,7 @@ static inline uint32_t get_pending_irq_mask(STATE_ACCESS &a) {
     uint64_t mip = a.read_mip();
     uint64_t mie = a.read_mie();
 
+    // interrupt trap condition 2: bit i is set in both mip and mie
     uint32_t pending_ints = mip & mie;
     if (pending_ints == 0) {
         return 0;
@@ -530,18 +531,26 @@ static inline uint32_t get_pending_irq_mask(STATE_ACCESS &a) {
     uint32_t enabled_ints = 0;
     auto priv = a.read_iflags_PRV();
     switch (priv) {
+        // interrupt trap condition 1a: the current privilege mode is M
         case PRV_M: {
             uint64_t mstatus = a.read_mstatus();
+            // interrupt trap condition 1a: ... and the MIE bit in the mstatus
+            // register is set
             if (mstatus & MSTATUS_MIE_MASK) {
+                // interrupt trap condition 3: bit i is not set in mideleg
                 enabled_ints = ~a.read_mideleg();
             }
             break;
         }
+        // interrupt trap condition 1b: the current privilege mode has less
+        // privilege than M-mode
         case PRV_S: {
             uint64_t mstatus = a.read_mstatus();
             uint64_t mideleg = a.read_mideleg();
             // Interrupts not set in mideleg are machine-mode
             // and cannot be masked by supervisor mode
+
+            // interrupt trap condition 3: bit i is not set in mideleg
             enabled_ints = ~mideleg;
             if (mstatus & MSTATUS_SIE_MASK) {
                 enabled_ints |= mideleg;
@@ -1429,6 +1438,11 @@ static inline uint64_t read_csr_sstatus(STATE_ACCESS &a, bool *status) {
 }
 
 template <typename STATE_ACCESS>
+static inline uint64_t read_csr_senvcfg(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_senvcfg() & SENVCFG_R_MASK, status);
+}
+
+template <typename STATE_ACCESS>
 static inline uint64_t read_csr_sie(STATE_ACCESS &a, bool *status) {
     uint64_t mie = a.read_mie();
     uint64_t mideleg = a.read_mideleg();
@@ -1487,6 +1501,11 @@ static inline uint64_t read_csr_satp(STATE_ACCESS &a, bool *status) {
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_mstatus(STATE_ACCESS &a, bool *status) {
     return read_csr_success(a.read_mstatus() & MSTATUS_R_MASK, status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_menvcfg(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_menvcfg() & MENVCFG_R_MASK, status);
 }
 
 template <typename STATE_ACCESS>
@@ -1591,6 +1610,8 @@ static uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
 
         case CSR_address::sstatus:
             return read_csr_sstatus(a, status);
+        case CSR_address::senvcfg:
+            return read_csr_senvcfg(a, status);
         case CSR_address::sie:
             return read_csr_sie(a, status);
         case CSR_address::stvec:
@@ -1612,6 +1633,8 @@ static uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
 
         case CSR_address::mstatus:
             return read_csr_mstatus(a, status);
+        case CSR_address::menvcfg:
+            return read_csr_menvcfg(a, status);
         case CSR_address::misa:
             return read_csr_misa(a, status);
         case CSR_address::medeleg:
@@ -1655,6 +1678,7 @@ static uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
         case CSR_address::tdata3:
         case CSR_address::mhartid:
         case CSR_address::mcountinhibit:
+        case CSR_address::mconfigptr:
             return read_csr_success(0, status);
 
         default:
@@ -1682,6 +1706,13 @@ template <typename STATE_ACCESS>
 static bool write_csr_sstatus(STATE_ACCESS &a, uint64_t val) {
     uint64_t mstatus = a.read_mstatus();
     return write_csr_mstatus(a, (mstatus & ~SSTATUS_W_MASK) | (val & SSTATUS_W_MASK));
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_senvcfg(STATE_ACCESS &a, uint64_t val) {
+    uint64_t senvcfg = a.read_senvcfg();
+    a.write_senvcfg((senvcfg & ~SENVCFG_W_MASK) | (val & SENVCFG_W_MASK));
+    return true;
 }
 
 template <typename STATE_ACCESS>
@@ -1744,7 +1775,7 @@ static bool write_csr_satp(STATE_ACCESS &a, uint64_t val) {
     uint64_t satp = a.read_satp();
     auto mode = satp >> 60;
     auto new_mode = (val >> 60) & 0xf;
-    if (new_mode == 0 || (new_mode >= 8 && new_mode <= 9)) {
+    if (new_mode == 0 || (new_mode >= 8 && new_mode <= 10)) {
         mode = new_mode;
     }
     // no ASID implemented
@@ -1786,6 +1817,17 @@ static bool write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
     }
     // Store results
     a.write_mstatus(mstatus);
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static bool write_csr_menvcfg(STATE_ACCESS &a, uint64_t val) {
+    uint64_t menvcfg = a.read_menvcfg() & MENVCFG_R_MASK;
+
+    // Modify only bits that can be written to
+    menvcfg = (menvcfg & ~MENVCFG_W_MASK) | (val & MENVCFG_W_MASK);
+    // Store results
+    a.write_menvcfg(menvcfg);
     return true;
 }
 
@@ -1901,6 +1943,8 @@ static bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t val) {
     switch (csraddr) {
         case CSR_address::sstatus:
             return write_csr_sstatus(a, val);
+        case CSR_address::senvcfg:
+            return write_csr_senvcfg(a, val);
         case CSR_address::sie:
             return write_csr_sie(a, val);
         case CSR_address::stvec:
@@ -1924,6 +1968,8 @@ static bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t val) {
 
         case CSR_address::mstatus:
             return write_csr_mstatus(a, val);
+        case CSR_address::menvcfg:
+            return write_csr_menvcfg(a, val);
         case CSR_address::medeleg:
             return write_csr_medeleg(a, val);
         case CSR_address::mideleg:
@@ -2136,7 +2182,7 @@ static inline execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t pc, uint32
     dump_insn(a, pc, insn, "ebreak");
     auto note = a.make_scoped_note("ebreak");
     (void) note;
-    raise_exception(a, MCAUSE_BREAKPOINT, 0);
+    raise_exception(a, MCAUSE_BREAKPOINT, pc);
     return advance_to_raised_exception(a);
 }
 
@@ -2159,6 +2205,11 @@ static inline execute_status execute_SRET(STATE_ACCESS &a, uint64_t pc, uint32_t
         mstatus |= MSTATUS_SPIE_MASK;
         /* set SPP to U */
         mstatus &= ~MSTATUS_SPP_MASK;
+        /* An SRET instruction that changes the privilege mode to a mode
+         * less privileged than M also sets MPRV = 0 */
+        if (spp < PRV_M) {
+            mstatus &= ~MSTATUS_MPRV_MASK;
+        }
         a.write_mstatus(mstatus);
         set_priv(a, priv, spp);
         a.write_pc(a.read_sepc());
@@ -2186,6 +2237,11 @@ static inline execute_status execute_MRET(STATE_ACCESS &a, uint64_t pc, uint32_t
         mstatus |= MSTATUS_MPIE_MASK;
         /* set MPP to U */
         mstatus &= ~MSTATUS_MPP_MASK;
+        /* An MRET instruction that changes the privilege mode to a mode
+         * less privileged than M also sets MPRV = 0 */
+        if (mpp < PRV_M) {
+            mstatus &= ~MSTATUS_MPRV_MASK;
+        }
         a.write_mstatus(mstatus);
         set_priv(a, priv, mpp);
         a.write_pc(a.read_mepc());

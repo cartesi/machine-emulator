@@ -503,6 +503,14 @@ private:
         check_write_word(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcounteren), val, "mcounteren");
     }
 
+    uint64_t do_read_menvcfg(void) {
+        return check_read_word(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::menvcfg), "menvcfg");
+    }
+
+    void do_write_menvcfg(uint64_t val) {
+        check_write_word(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::menvcfg), val, "menvcfg");
+    }
+
     uint64_t do_read_stvec(void) {
         return check_read_word(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stvec), "stvec");
     }
@@ -557,6 +565,14 @@ private:
 
     void do_write_scounteren(uint64_t val) {
         check_write_word(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scounteren), val, "scounteren");
+    }
+
+    uint64_t do_read_senvcfg(void) {
+        return check_read_word(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::senvcfg), "senvcfg");
+    }
+
+    void do_write_senvcfg(uint64_t val) {
+        check_write_word(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::senvcfg), val, "senvcfg");
     }
 
     uint64_t do_read_ilrsc(void) {

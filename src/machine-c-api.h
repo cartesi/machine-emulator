@@ -112,6 +112,7 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_MEDELEG,
     CM_PROC_MIDELEG,
     CM_PROC_MCOUNTEREN,
+    CM_PROC_MENVCFG,
     CM_PROC_STVEC,
     CM_PROC_SSCRATCH,
     CM_PROC_SEPC,
@@ -119,6 +120,7 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_STVAL,
     CM_PROC_SATP,
     CM_PROC_SCOUNTEREN,
+    CM_PROC_SENVCFG,
     CM_PROC_ILRSC,
     CM_PROC_IFLAGS,
     CM_PROC_CLINT_MTIMECMP,
@@ -156,6 +158,7 @@ typedef struct {                        // NOLINT(modernize-use-using)
     uint64_t medeleg;                   ///< Value of medeleg CSR
     uint64_t mideleg;                   ///< Value of mideleg CSR
     uint64_t mcounteren;                ///< Value of mcounteren CSR
+    uint64_t menvcfg;                   ///< Value of menvcfg CSR
     uint64_t stvec;                     ///< Value of stvec CSR
     uint64_t sscratch;                  ///< Value of sscratch CSR
     uint64_t sepc;                      ///< Value of sepc CSR
@@ -163,6 +166,7 @@ typedef struct {                        // NOLINT(modernize-use-using)
     uint64_t stval;                     ///< Value of stval CSR
     uint64_t satp;                      ///< Value of satp CSR
     uint64_t scounteren;                ///< Value of scounteren CSR
+    uint64_t senvcfg;                   ///< Value of senvcfg CSR
     uint64_t ilrsc;                     ///< Value of ilrsc CSR
     uint64_t iflags;                    ///< Value of iflags CSR
 } cm_processor_config;
@@ -664,6 +668,24 @@ CM_API int cm_read_mstatus(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_mstatus(cm_machine *m, uint64_t val, char **err_msg);
 
+/// \brief Reads the value of the menvcfg register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_menvcfg(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the menvcfg register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_menvcfg(cm_machine *m, uint64_t val, char **err_msg);
+
 /// \brief Reads the value of the mtvec register.
 /// \param m Pointer to valid machine instance
 /// \param val Receives value of the register.
@@ -987,6 +1009,24 @@ CM_API int cm_read_scounteren(const cm_machine *m, uint64_t *val, char **err_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_scounteren(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the senvcfg register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_senvcfg(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the senvcfg register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_senvcfg(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the ilrsc register.
 /// \param m Pointer to valid machine instance

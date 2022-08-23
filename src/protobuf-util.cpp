@@ -108,6 +108,7 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
     proto_p->set_medeleg(c.processor.medeleg);
     proto_p->set_mideleg(c.processor.mideleg);
     proto_p->set_mcounteren(c.processor.mcounteren);
+    proto_p->set_menvcfg(c.processor.menvcfg);
     proto_p->set_stvec(c.processor.stvec);
     proto_p->set_sscratch(c.processor.sscratch);
     proto_p->set_sepc(c.processor.sepc);
@@ -115,6 +116,7 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
     proto_p->set_stval(c.processor.stval);
     proto_p->set_satp(c.processor.satp);
     proto_p->set_scounteren(c.processor.scounteren);
+    proto_p->set_senvcfg(c.processor.senvcfg);
     proto_p->set_ilrsc(c.processor.ilrsc);
     proto_p->set_iflags(c.processor.iflags);
     for (const auto &f : c.flash_drive) {
@@ -453,6 +455,9 @@ processor_config get_proto_processor_config(const CartesiMachine::ProcessorConfi
     if (proto_p.has_mcounteren()) {
         p.mcounteren = proto_p.mcounteren();
     }
+    if (proto_p.has_menvcfg()) {
+        p.menvcfg = proto_p.menvcfg();
+    }
     if (proto_p.has_stvec()) {
         p.stvec = proto_p.stvec();
     }
@@ -473,6 +478,9 @@ processor_config get_proto_processor_config(const CartesiMachine::ProcessorConfi
     }
     if (proto_p.has_scounteren()) {
         p.scounteren = proto_p.scounteren();
+    }
+    if (proto_p.has_senvcfg()) {
+        p.senvcfg = proto_p.senvcfg();
     }
     if (proto_p.has_ilrsc()) {
         p.ilrsc = proto_p.ilrsc();

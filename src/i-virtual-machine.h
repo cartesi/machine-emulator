@@ -206,6 +206,16 @@ public:
         do_write_mstatus(val);
     }
 
+    /// \brief Reads the menvcfg register
+    uint64_t read_menvcfg(void) const {
+        return do_read_menvcfg();
+    }
+
+    /// \brief Writes the menvcfg register
+    void write_menvcfg(uint64_t val) {
+        do_write_menvcfg(val);
+    }
+
     /// \brief Reads the mtvec register
     uint64_t read_mtvec(void) const {
         return do_read_mtvec();
@@ -385,6 +395,16 @@ public:
     /// \brief Writes the scounteren register
     void write_scounteren(uint64_t val) {
         do_write_scounteren(val);
+    }
+
+    /// \brief Reads the senvcfg register
+    uint64_t read_senvcfg(void) const {
+        return do_read_senvcfg();
+    }
+
+    /// \brief Writes the senvcfg register
+    void write_senvcfg(uint64_t val) {
+        do_write_senvcfg(val);
     }
 
     /// \brief Reads the ilrsc register
@@ -601,6 +621,8 @@ private:
     virtual void do_write_minstret(uint64_t val) = 0;
     virtual uint64_t do_read_mstatus(void) const = 0;
     virtual void do_write_mstatus(uint64_t val) = 0;
+    virtual uint64_t do_read_menvcfg(void) const = 0;
+    virtual void do_write_menvcfg(uint64_t val) = 0;
     virtual uint64_t do_read_mtvec(void) const = 0;
     virtual void do_write_mtvec(uint64_t val) = 0;
     virtual uint64_t do_read_mscratch(void) const = 0;
@@ -637,6 +659,8 @@ private:
     virtual void do_write_satp(uint64_t val) = 0;
     virtual uint64_t do_read_scounteren(void) const = 0;
     virtual void do_write_scounteren(uint64_t val) = 0;
+    virtual uint64_t do_read_senvcfg(void) const = 0;
+    virtual void do_write_senvcfg(uint64_t val) = 0;
     virtual uint64_t do_read_ilrsc(void) const = 0;
     virtual void do_write_ilrsc(uint64_t val) = 0;
     virtual uint64_t do_read_iflags(void) const = 0;

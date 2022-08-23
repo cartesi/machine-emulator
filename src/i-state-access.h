@@ -173,6 +173,18 @@ public:
         return derived().do_write_mstatus(val);
     }
 
+    /// \brief Reads CSR menvcfg.
+    /// \returns Register value.
+    uint64_t read_menvcfg(void) {
+        return derived().do_read_menvcfg();
+    }
+
+    /// \brief Writes CSR menvcfg.
+    /// \param val New register value.
+    void write_menvcfg(uint64_t val) {
+        return derived().do_write_menvcfg(val);
+    }
+
     /// \brief Reads CSR mtvec.
     /// \returns Register value.
     uint64_t read_mtvec(void) {
@@ -303,6 +315,18 @@ public:
     /// \param val New register value.
     void write_mcounteren(uint64_t val) {
         return derived().do_write_mcounteren(val);
+    }
+
+    /// \brief Reads CSR senvcfg.
+    /// \returns Register value.
+    uint64_t read_senvcfg(void) {
+        return derived().do_read_senvcfg();
+    }
+
+    /// \brief Writes CSR senvcfg.
+    /// \param val New register value.
+    void write_senvcfg(uint64_t val) {
+        return derived().do_write_senvcfg(val);
     }
 
     /// \brief Reads CSR stvec.

@@ -130,6 +130,7 @@ public:
         medeleg,
         mideleg,
         mcounteren,
+        menvcfg,
         stvec,
         sscratch,
         sepc,
@@ -137,6 +138,7 @@ public:
         stval,
         satp,
         scounteren,
+        senvcfg,
         ilrsc,
         iflags,
         clint_mtimecmp,
@@ -364,6 +366,14 @@ public:
     /// \param val New register value.
     void write_mstatus(uint64_t val);
 
+    /// \brief Reads the value of the menvcfg register.
+    /// \returns The value of the register.
+    uint64_t read_menvcfg(void) const;
+
+    /// \brief Writes the value of the menvcfg register.
+    /// \param val New register value.
+    void write_menvcfg(uint64_t val);
+
     /// \brief Reads the value of the mtvec register.
     /// \returns The value of the register.
     uint64_t read_mtvec(void) const;
@@ -451,6 +461,14 @@ public:
     /// \brief Writes the value of the mcounteren register.
     /// \param val New register value.
     void write_mcounteren(uint64_t val);
+
+    /// \brief Reads the value of the senvcfg register.
+    /// \returns The value of the register.
+    uint64_t read_senvcfg(void) const;
+
+    /// \brief Writes the value of the senvcfg register.
+    /// \param val New register value.
+    void write_senvcfg(uint64_t val);
 
     /// \brief Reads the value of the stvec register.
     /// \returns The value of the register.

@@ -68,6 +68,7 @@ static int machine_obj_index_dump_regs(lua_State *L) {
     PRINT_PROCESSOR_CSR(m, medeleg);
     PRINT_PROCESSOR_CSR(m, mideleg);
     PRINT_PROCESSOR_CSR(m, mcounteren);
+    PRINT_PROCESSOR_CSR(m, menvcfg);
     PRINT_PROCESSOR_CSR(m, stvec);
     PRINT_PROCESSOR_CSR(m, sscratch);
     PRINT_PROCESSOR_CSR(m, sepc);
@@ -75,6 +76,7 @@ static int machine_obj_index_dump_regs(lua_State *L) {
     PRINT_PROCESSOR_CSR(m, stval);
     PRINT_PROCESSOR_CSR(m, satp);
     PRINT_PROCESSOR_CSR(m, scounteren);
+    PRINT_PROCESSOR_CSR(m, senvcfg);
     PRINT_PROCESSOR_CSR(m, ilrsc);
     PRINT_PROCESSOR_CSR(m, iflags);
     PRINT_PROCESSOR_CSR(m, clint_mtimecmp);
@@ -174,6 +176,7 @@ IMPL_MACHINE_OBJ_READ_WRITE(mip)
 IMPL_MACHINE_OBJ_READ_WRITE(medeleg)
 IMPL_MACHINE_OBJ_READ_WRITE(mideleg)
 IMPL_MACHINE_OBJ_READ_WRITE(mcounteren)
+IMPL_MACHINE_OBJ_READ_WRITE(menvcfg)
 IMPL_MACHINE_OBJ_READ_WRITE(stvec)
 IMPL_MACHINE_OBJ_READ_WRITE(sscratch)
 IMPL_MACHINE_OBJ_READ_WRITE(sepc)
@@ -181,6 +184,7 @@ IMPL_MACHINE_OBJ_READ_WRITE(scause)
 IMPL_MACHINE_OBJ_READ_WRITE(stval)
 IMPL_MACHINE_OBJ_READ_WRITE(satp)
 IMPL_MACHINE_OBJ_READ_WRITE(scounteren)
+IMPL_MACHINE_OBJ_READ_WRITE(senvcfg)
 IMPL_MACHINE_OBJ_READ_WRITE(ilrsc)
 IMPL_MACHINE_OBJ_READ_WRITE(iflags)
 IMPL_MACHINE_OBJ_READ_WRITE(htif_tohost)
@@ -502,6 +506,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_marchid", machine_obj_index_read_marchid},
     {"read_mcause", machine_obj_index_read_mcause},
     {"read_mcounteren", machine_obj_index_read_mcounteren},
+    {"read_menvcfg", machine_obj_index_read_menvcfg},
     {"read_mcycle", machine_obj_index_read_mcycle},
     {"read_medeleg", machine_obj_index_read_medeleg},
     {"read_memory", machine_obj_index_read_memory},
@@ -521,6 +526,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_satp", machine_obj_index_read_satp},
     {"read_scause", machine_obj_index_read_scause},
     {"read_scounteren", machine_obj_index_read_scounteren},
+    {"read_senvcfg", machine_obj_index_read_senvcfg},
     {"read_sepc", machine_obj_index_read_sepc},
     {"read_sscratch", machine_obj_index_read_sscratch},
     {"read_stval", machine_obj_index_read_stval},
@@ -546,6 +552,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"write_ilrsc", machine_obj_index_write_ilrsc},
     {"write_mcause", machine_obj_index_write_mcause},
     {"write_mcounteren", machine_obj_index_write_mcounteren},
+    {"write_menvcfg", machine_obj_index_write_menvcfg},
     {"write_mcycle", machine_obj_index_write_mcycle},
     {"write_medeleg", machine_obj_index_write_medeleg},
     {"write_memory", machine_obj_index_write_memory},
@@ -563,6 +570,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"write_satp", machine_obj_index_write_satp},
     {"write_scause", machine_obj_index_write_scause},
     {"write_scounteren", machine_obj_index_write_scounteren},
+    {"write_senvcfg", machine_obj_index_write_senvcfg},
     {"write_sepc", machine_obj_index_write_sepc},
     {"write_sscratch", machine_obj_index_write_sscratch},
     {"write_stval", machine_obj_index_write_stval},

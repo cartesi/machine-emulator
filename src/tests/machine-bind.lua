@@ -164,14 +164,16 @@ local function get_cpu_csr_test_values()
     cpu_addr.medeleg = 0x178
     cpu_addr.mideleg = 0x180
     cpu_addr.mcounteren = 0x188
-    cpu_addr.stvec = 0x190
-    cpu_addr.sscratch = 0x198
-    cpu_addr.sepc = 0x1a0
-    cpu_addr.scause = 0x1a8
-    cpu_addr.stval = 0x1b0
-    cpu_addr.satp = 0x1b8
-    cpu_addr.scounteren = 0x1c0
-    cpu_addr.ilrsc = 0x1c8
+    cpu_addr.menvcfg = 0x190
+    cpu_addr.stvec = 0x198
+    cpu_addr.sscratch = 0x1a0
+    cpu_addr.sepc = 0x1a8
+    cpu_addr.scause = 0x1b0
+    cpu_addr.stval = 0x1b8
+    cpu_addr.satp = 0x1c0
+    cpu_addr.scounteren = 0x1c8
+    cpu_addr.senvcfg = 0x1d0
+    cpu_addr.ilrsc = 0x1d8
 
     return cpu_addr
 end
@@ -202,15 +204,17 @@ local function get_cpu_csr_names_addresses()
         {"medeleg", 0x178},
         {"mideleg", 0x180},
         {"mcounteren", 0x188},
-        {"stvec", 0x190},
-        {"sscratch", 0x198},
-        {"sepc", 0x1a0},
-        {"scause", 0x1a8},
-        {"stval", 0x1b0},
-        {"satp", 0x1b8},
-        {"scounteren", 0x1c0},
-        {"ilrsc", 0x1c8},
-        {"iflags", 0x1d0},
+        {"menvcfg", 0x190},
+        {"stvec", 0x198},
+        {"sscratch", 0x1a0},
+        {"sepc", 0x1a8},
+        {"scause", 0x1b0},
+        {"stval", 0x1b8},
+        {"satp", 0x1c0},
+        {"scounteren", 0x1c8},
+        {"senvcfg", 0x1d0},
+        {"ilrsc", 0x1d8},
+        {"iflags", 0x1e0},
         {"clint_mtimecmp", CLINT_BASE+0x4000},
         {"htif_tohost", HTIF_BASE+0x0},
         {"htif_fromhost", HTIF_BASE+0x8},
@@ -491,7 +495,7 @@ do_test("should have expected values",
         test_config(initial_config)
         assert(initial_config.processor.pc == 0x100,
             "wrong pc reg initial config value")
-        assert(initial_config.processor.ilrsc == 0x1c8,
+        assert(initial_config.processor.ilrsc == 0x1d8,
             "wrong ilrsc reg initial config value")
         assert(initial_config.processor.mstatus == 0x130,
             "wrong mstatus reg initial config value")

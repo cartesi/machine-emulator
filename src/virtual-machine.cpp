@@ -207,6 +207,14 @@ void virtual_machine::do_write_mcounteren(uint64_t val) {
     return m_machine->write_mcounteren(val);
 }
 
+uint64_t virtual_machine::do_read_menvcfg(void) const {
+    return m_machine->read_menvcfg();
+}
+
+void virtual_machine::do_write_menvcfg(uint64_t val) {
+    return m_machine->write_menvcfg(val);
+}
+
 uint64_t virtual_machine::do_read_stvec(void) const {
     return m_machine->read_stvec();
 }
@@ -261,6 +269,14 @@ uint64_t virtual_machine::do_read_scounteren(void) const {
 
 void virtual_machine::do_write_scounteren(uint64_t val) {
     return m_machine->write_scounteren(val);
+}
+
+uint64_t virtual_machine::do_read_senvcfg(void) const {
+    return m_machine->read_senvcfg();
+}
+
+void virtual_machine::do_write_senvcfg(uint64_t val) {
+    return m_machine->write_senvcfg(val);
 }
 
 uint64_t virtual_machine::do_read_ilrsc(void) const {

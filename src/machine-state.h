@@ -130,6 +130,7 @@ struct machine_state {
     uint64_t medeleg;    ///< CSR medeleg.
     uint64_t mideleg;    ///< CSR mideleg.
     uint64_t mcounteren; ///< CSR mcounteren.
+    uint64_t menvcfg;    ///< CSR menvcfg.
 
     uint64_t stvec;      ///< CSR stvec.
     uint64_t sscratch;   ///< CSR sscratch.
@@ -138,6 +139,7 @@ struct machine_state {
     uint64_t stval;      ///< CSR stval.
     uint64_t satp;       ///< CSR satp.
     uint64_t scounteren; ///< CSR scounteren.
+    uint64_t senvcfg;    ///< CSR senvcfg.
 
     // Cartesi-specific state
     uint64_t ilrsc; ///< Cartesi-specific CSR ilrsc (For LR/SC instructions).

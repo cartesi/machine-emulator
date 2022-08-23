@@ -49,15 +49,17 @@ enum class shadow_csr {
     medeleg = 0x178,
     mideleg = 0x180,
     mcounteren = 0x188,
-    stvec = 0x190,
-    sscratch = 0x198,
-    sepc = 0x1a0,
-    scause = 0x1a8,
-    stval = 0x1b0,
-    satp = 0x1b8,
-    scounteren = 0x1c0,
-    ilrsc = 0x1c8,
-    iflags = 0x1d0
+    menvcfg = 0x190,
+    stvec = 0x198,
+    sscratch = 0x1a0,
+    sepc = 0x1a8,
+    scause = 0x1b0,
+    stval = 0x1b8,
+    satp = 0x1c0,
+    scounteren = 0x1c8,
+    senvcfg = 0x1d0,
+    ilrsc = 0x1d8,
+    iflags = 0x1e0
 };
 
 /// \brief Obtains the relative address of a CSR in shadow memory.

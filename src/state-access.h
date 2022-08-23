@@ -138,6 +138,14 @@ private:
         m_m.get_state().mstatus = val;
     }
 
+    uint64_t do_read_menvcfg(void) const {
+        return m_m.get_state().menvcfg;
+    }
+
+    void do_write_menvcfg(uint64_t val) {
+        m_m.get_state().menvcfg = val;
+    }
+
     uint64_t do_read_mtvec(void) const {
         return m_m.get_state().mtvec;
     }
@@ -224,6 +232,14 @@ private:
 
     void do_write_mcounteren(uint64_t val) {
         m_m.get_state().mcounteren = val;
+    }
+
+    uint64_t do_read_senvcfg(void) const {
+        return m_m.get_state().senvcfg;
+    }
+
+    void do_write_senvcfg(uint64_t val) {
+        m_m.get_state().senvcfg = val;
     }
 
     uint64_t do_read_stvec(void) const {

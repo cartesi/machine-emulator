@@ -128,6 +128,8 @@ private:
     void do_write_minstret(uint64_t val) override;
     uint64_t do_read_mstatus(void) const override;
     void do_write_mstatus(uint64_t val) override;
+    uint64_t do_read_menvcfg(void) const override;
+    void do_write_menvcfg(uint64_t val) override;
     uint64_t do_read_mtvec(void) const override;
     void do_write_mtvec(uint64_t val) override;
     uint64_t do_read_mscratch(void) const override;
@@ -164,6 +166,8 @@ private:
     void do_write_satp(uint64_t val) override;
     uint64_t do_read_scounteren(void) const override;
     void do_write_scounteren(uint64_t val) override;
+    uint64_t do_read_senvcfg(void) const override;
+    void do_write_senvcfg(uint64_t val) override;
     uint64_t do_read_ilrsc(void) const override;
     void do_write_ilrsc(uint64_t val) override;
     uint64_t do_read_iflags(void) const override;

@@ -513,6 +513,7 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"medeleg", CM_PROC_MEDELEG},
         {"mideleg", CM_PROC_MIDELEG},
         {"mcounteren", CM_PROC_MCOUNTEREN},
+        {"menvcfg", CM_PROC_MENVCFG},
         {"stvec", CM_PROC_STVEC},
         {"sscratch", CM_PROC_SSCRATCH},
         {"sepc", CM_PROC_SEPC},
@@ -520,6 +521,7 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"stval", CM_PROC_STVAL},
         {"satp", CM_PROC_SATP},
         {"scounteren", CM_PROC_SCOUNTEREN},
+        {"senvcfg", CM_PROC_SENVCFG},
         {"ilrsc", CM_PROC_ILRSC},
         {"iflags", CM_PROC_IFLAGS},
         {"clint_mtimecmp", CM_PROC_CLINT_MTIMECMP},
@@ -719,6 +721,7 @@ static void push_cm_processor_config(lua_State *L, const cm_processor_config *p)
     PUSH_CM_PROCESSOR_CONFIG_CSR(medeleg);
     PUSH_CM_PROCESSOR_CONFIG_CSR(mideleg);
     PUSH_CM_PROCESSOR_CONFIG_CSR(mcounteren);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(menvcfg);
     PUSH_CM_PROCESSOR_CONFIG_CSR(stvec);
     PUSH_CM_PROCESSOR_CONFIG_CSR(sscratch);
     PUSH_CM_PROCESSOR_CONFIG_CSR(sepc);
@@ -726,6 +729,7 @@ static void push_cm_processor_config(lua_State *L, const cm_processor_config *p)
     PUSH_CM_PROCESSOR_CONFIG_CSR(stval);
     PUSH_CM_PROCESSOR_CONFIG_CSR(satp);
     PUSH_CM_PROCESSOR_CONFIG_CSR(scounteren);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(senvcfg);
     PUSH_CM_PROCESSOR_CONFIG_CSR(ilrsc);
     PUSH_CM_PROCESSOR_CONFIG_CSR(iflags);
 }
@@ -1010,6 +1014,7 @@ static void check_cm_processor_config(lua_State *L, int tabidx, cm_processor_con
     p->medeleg = opt_uint_field(L, -1, "medeleg", def->medeleg);
     p->mideleg = opt_uint_field(L, -1, "mideleg", def->mideleg);
     p->mcounteren = opt_uint_field(L, -1, "mcounteren", def->mcounteren);
+    p->menvcfg = opt_uint_field(L, -1, "menvcfg", def->menvcfg);
     p->stvec = opt_uint_field(L, -1, "stvec", def->stvec);
     p->sscratch = opt_uint_field(L, -1, "sscratch", def->sscratch);
     p->sepc = opt_uint_field(L, -1, "sepc", def->sepc);
@@ -1017,6 +1022,7 @@ static void check_cm_processor_config(lua_State *L, int tabidx, cm_processor_con
     p->stval = opt_uint_field(L, -1, "stval", def->stval);
     p->satp = opt_uint_field(L, -1, "satp", def->satp);
     p->scounteren = opt_uint_field(L, -1, "scounteren", def->scounteren);
+    p->senvcfg = opt_uint_field(L, -1, "senvcfg", def->senvcfg);
     p->ilrsc = opt_uint_field(L, -1, "ilrsc", def->ilrsc);
     p->iflags = opt_uint_field(L, -1, "iflags", def->iflags);
     lua_pop(L, 1);

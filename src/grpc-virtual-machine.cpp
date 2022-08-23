@@ -551,6 +551,14 @@ void grpc_virtual_machine::do_write_mcounteren(uint64_t val) {
     write_csr(csr::mcounteren, val);
 }
 
+uint64_t grpc_virtual_machine::do_read_menvcfg(void) const {
+    return read_csr(csr::menvcfg);
+}
+
+void grpc_virtual_machine::do_write_menvcfg(uint64_t val) {
+    write_csr(csr::menvcfg, val);
+}
+
 uint64_t grpc_virtual_machine::do_read_stvec(void) const {
     return read_csr(csr::stvec);
 }
@@ -605,6 +613,14 @@ uint64_t grpc_virtual_machine::do_read_scounteren(void) const {
 
 void grpc_virtual_machine::do_write_scounteren(uint64_t val) {
     write_csr(csr::scounteren, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_senvcfg(void) const {
+    return read_csr(csr::senvcfg);
+}
+
+void grpc_virtual_machine::do_write_senvcfg(uint64_t val) {
+    write_csr(csr::senvcfg, val);
 }
 
 uint64_t grpc_virtual_machine::do_read_ilrsc(void) const {

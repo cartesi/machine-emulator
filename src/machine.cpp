@@ -254,6 +254,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_s
     write_medeleg(m_c.processor.medeleg);
     write_mideleg(m_c.processor.mideleg);
     write_mcounteren(m_c.processor.mcounteren);
+    write_menvcfg(m_c.processor.menvcfg);
     write_stvec(m_c.processor.stvec);
     write_sscratch(m_c.processor.sscratch);
     write_sepc(m_c.processor.sepc);
@@ -261,6 +262,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_s
     write_stval(m_c.processor.stval);
     write_satp(m_c.processor.satp);
     write_scounteren(m_c.processor.scounteren);
+    write_senvcfg(m_c.processor.senvcfg);
     write_ilrsc(m_c.processor.ilrsc);
     write_iflags(m_c.processor.iflags);
 
@@ -415,6 +417,7 @@ machine_config machine::get_serialization_config(void) const {
     c.processor.medeleg = read_medeleg();
     c.processor.mideleg = read_mideleg();
     c.processor.mcounteren = read_mcounteren();
+    c.processor.menvcfg = read_menvcfg();
     c.processor.stvec = read_stvec();
     c.processor.sscratch = read_sscratch();
     c.processor.sepc = read_sepc();
@@ -422,6 +425,7 @@ machine_config machine::get_serialization_config(void) const {
     c.processor.stval = read_stval();
     c.processor.satp = read_satp();
     c.processor.scounteren = read_scounteren();
+    c.processor.senvcfg = read_senvcfg();
     c.processor.ilrsc = read_ilrsc();
     c.processor.iflags = read_iflags();
     // Copy current CLINT state to config
@@ -708,6 +712,14 @@ void machine::write_mcounteren(uint64_t val) {
     m_s.mcounteren = val;
 }
 
+uint64_t machine::read_menvcfg(void) const {
+    return m_s.menvcfg;
+}
+
+void machine::write_menvcfg(uint64_t val) {
+    m_s.menvcfg = val;
+}
+
 uint64_t machine::read_stvec(void) const {
     return m_s.stvec;
 }
@@ -762,6 +774,14 @@ uint64_t machine::read_scounteren(void) const {
 
 void machine::write_scounteren(uint64_t val) {
     m_s.scounteren = val;
+}
+
+uint64_t machine::read_senvcfg(void) const {
+    return m_s.senvcfg;
+}
+
+void machine::write_senvcfg(uint64_t val) {
+    m_s.senvcfg = val;
 }
 
 uint64_t machine::read_ilrsc(void) const {
@@ -927,6 +947,8 @@ uint64_t machine::read_csr(csr r) const {
             return read_mideleg();
         case csr::mcounteren:
             return read_mcounteren();
+        case csr::menvcfg:
+            return read_menvcfg();
         case csr::stvec:
             return read_stvec();
         case csr::sscratch:
@@ -941,6 +963,8 @@ uint64_t machine::read_csr(csr r) const {
             return read_satp();
         case csr::scounteren:
             return read_scounteren();
+        case csr::senvcfg:
+            return read_senvcfg();
         case csr::ilrsc:
             return read_ilrsc();
         case csr::iflags:
@@ -1003,6 +1027,8 @@ void machine::write_csr(csr w, uint64_t val) {
             return write_mideleg(val);
         case csr::mcounteren:
             return write_mcounteren(val);
+        case csr::menvcfg:
+            return write_menvcfg(val);
         case csr::stvec:
             return write_stvec(val);
         case csr::sscratch:
@@ -1017,6 +1043,8 @@ void machine::write_csr(csr w, uint64_t val) {
             return write_satp(val);
         case csr::scounteren:
             return write_scounteren(val);
+        case csr::senvcfg:
+            return write_senvcfg(val);
         case csr::ilrsc:
             return write_ilrsc(val);
         case csr::iflags:
@@ -1118,6 +1146,8 @@ uint64_t machine::get_csr_address(csr w) {
             return get_csr_addr(shadow_csr::mideleg);
         case csr::mcounteren:
             return get_csr_addr(shadow_csr::mcounteren);
+        case csr::menvcfg:
+            return get_csr_addr(shadow_csr::menvcfg);
         case csr::stvec:
             return get_csr_addr(shadow_csr::stvec);
         case csr::sscratch:
@@ -1132,6 +1162,8 @@ uint64_t machine::get_csr_address(csr w) {
             return get_csr_addr(shadow_csr::satp);
         case csr::scounteren:
             return get_csr_addr(shadow_csr::scounteren);
+        case csr::senvcfg:
+            return get_csr_addr(shadow_csr::senvcfg);
         case csr::ilrsc:
             return get_csr_addr(shadow_csr::ilrsc);
         case csr::iflags:

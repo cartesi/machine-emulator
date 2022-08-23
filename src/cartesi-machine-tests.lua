@@ -210,6 +210,9 @@ local tests = {
   {"rv64um-v-remu.bin", 6408},
   {"rv64um-v-remuw.bin", 6403},
   {"rv64um-v-remw.bin", 6409},
+-- spec v1.12 tests
+  {"ebreak.bin", 21},
+  {"pte_reserved_exception.bin", 34},
 -- regression tests
   {"sd_pma_overflow.bin", 16},
   {"xpie_exceptions.bin", 51},

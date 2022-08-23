@@ -122,16 +122,18 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
     //   0: Bare: No translation or protection
     //   8: sv39: Page-based 39-bit virtual addressing
     //   9: sv48: Page-based 48-bit virtual addressing
+    //   10: sv57: Page-based 57-bit virtual addressing
     auto mode = static_cast<int>(satp >> 60) & 0xf;
     if (mode == 0) {
         *ppaddr = vaddr;
         return true;
-    } else if (mode < 8 || mode > 9) {
+    } else if (mode < 8 || mode > 10) {
         return false;
     }
-    // Here we know we are in sv39 or sv48 modes
+    // Here we know we are in sv39, sv48 or sv57 modes
 
-    // Page table hierarchy of sv39 has 3 levels, and sv48 has 4 levels
+    // Page table hierarchy of sv39 has 3 levels, sv48 has 4 levels,
+    // and sv57 has 5 levels
     // ??D It doesn't seem like restricting to one or the other will
     //     simplify the code much. However, we may want to use sv39
     //     to reduce the size of the log sent to the blockchain
@@ -171,6 +173,12 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
         // The OS can mark page table entries as invalid,
         // but these entries shouldn't be reached during page lookups
         if (!(pte & PTE_V_MASK)) {
+            return false;
+        }
+        // Bits 60–54 are reserved for future standard use and must be zeroed
+        // by software for forward compatibility. If any of these bits are set,
+        // a page-fault exception is raised.
+        if (pte & PTE_60_54_MASK) {
             return false;
         }
         // Clear all flags in least significant bits, then shift back to multiple of page size to form physical address
@@ -230,6 +238,12 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
             return true;
             // xwr == 0 means we have a pointer to the start of the next page table
         } else {
+            // For non-leaf PTEs, bits 62–61 are reserved for future standard use.
+            // Until their use is defined by a standard extension, they must be cleared by
+            // software for forward compatibility, or else a page-fault exception is raised.
+            if (pte & PTE_PBMT_MASK) {
+                return false;
+            }
             pte_addr = ppn;
         }
     }

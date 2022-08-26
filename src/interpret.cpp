@@ -838,8 +838,8 @@ static void dump_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const char *n
 
 /// \brief Instruction fetch status code
 enum class execute_status : int {
-    illegal, ///< Illegal instruction: exception raised
-    retired  ///< Instruction was retired: exception may or may not have been raised
+    exception_raised, ///< Instruction raised an exception
+    retired           ///< Instruction was retired
 };
 
 /// \brief Raises an illegal instruction exception.
@@ -847,37 +847,37 @@ enum class execute_status : int {
 /// \param a Machine state accessor object.
 /// \param pc Current pc.
 /// \param insn Instruction.
-/// \return execute_status::illegal
+/// \return execute_status::exception_raised
 /// \details This function is tail-called whenever the caller decoded enough of the instruction to identify it as
 /// illegal.
 template <typename STATE_ACCESS>
 static inline execute_status raise_illegal_insn_exception(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) pc;
     raise_exception(a, MCAUSE_ILLEGAL_INSN, insn);
-    return execute_status::illegal;
+    return execute_status::exception_raised;
 }
 
 /// \brief Raises an misaligned-fetch exception.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param pc Current pc.
-/// \return execute_status::retired
+/// \return execute_status::exception_raised
 /// \details This function is tail-called whenever the caller identified that the next value of pc is misaligned.
 template <typename STATE_ACCESS>
 static inline execute_status raise_misaligned_fetch_exception(STATE_ACCESS &a, uint64_t pc) {
     raise_exception(a, MCAUSE_INSN_ADDRESS_MISALIGNED, pc);
-    return execute_status::retired;
+    return execute_status::exception_raised;
 }
 
 /// \brief Returns from execution due to raised exception.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
-/// \return execute_status::retired
+/// \return execute_status::exception_raised
 /// \details This function is tail-called whenever the caller identified a raised exception.
 template <typename STATE_ACCESS>
 static inline execute_status advance_to_raised_exception(STATE_ACCESS &a) {
     (void) a;
-    return execute_status::retired;
+    return execute_status::exception_raised;
 }
 
 /// \brief Advances pc to the next instruction.
@@ -978,12 +978,12 @@ static inline execute_status execute_AMO(STATE_ACCESS &a, uint64_t pc, uint32_t 
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     T valm = 0;
     if (!read_virtual_memory<T>(a, vaddr, &valm)) {
-        return execute_status::retired;
+        return advance_to_raised_exception(a);
     }
     T valr = static_cast<T>(a.read_x(insn_get_rs2(insn)));
     valr = f(valm, valr);
     if (!write_virtual_memory<T>(a, vaddr, valr)) {
-        return execute_status::retired;
+        return advance_to_raised_exception(a);
     }
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0) {
@@ -1361,21 +1361,21 @@ static inline uint64_t read_csr_success(uint64_t val, bool *status) {
 }
 
 template <typename STATE_ACCESS>
-static inline bool rdcounteren(STATE_ACCESS &a, CSR_address csraddr) {
-    uint64_t counteren = MCOUNTEREN_RW_MASK;
+static inline bool rdcounteren(STATE_ACCESS &a, uint64_t mask) {
+    uint64_t counteren = MCOUNTEREN_R_MASK;
     auto priv = a.read_iflags_PRV();
-    if (priv < PRV_M) {
+    if (priv <= PRV_S) {
         counteren &= a.read_mcounteren();
         if (priv < PRV_S) {
             counteren &= a.read_scounteren();
         }
     }
-    return (((counteren >> (static_cast<int>(csraddr) & 0x1f)) & 1) != 0);
+    return mask > 0 && (counteren & mask) == mask;
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_cycle(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
-    if (rdcounteren(a, csraddr)) {
+static inline uint64_t read_csr_cycle(STATE_ACCESS &a, bool *status) {
+    if (rdcounteren(a, MCOUNTEREN_CY_MASK)) {
         return read_csr_success(a.read_mcycle(), status);
     } else {
         return read_csr_fail(status);
@@ -1383,8 +1383,8 @@ static inline uint64_t read_csr_cycle(STATE_ACCESS &a, CSR_address csraddr, bool
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_instret(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
-    if (rdcounteren(a, csraddr)) {
+static inline uint64_t read_csr_instret(STATE_ACCESS &a, bool *status) {
+    if (rdcounteren(a, MCOUNTEREN_IR_MASK)) {
         return read_csr_success(a.read_minstret(), status);
     } else {
         return read_csr_fail(status);
@@ -1392,10 +1392,20 @@ static inline uint64_t read_csr_instret(STATE_ACCESS &a, CSR_address csraddr, bo
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_time(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
-    if (rdcounteren(a, csraddr)) {
+static inline uint64_t read_csr_time(STATE_ACCESS &a, bool *status) {
+    if (rdcounteren(a, MCOUNTEREN_TM_MASK)) {
         uint64_t mtime = rtc_cycle_to_time(a.read_mcycle());
         return read_csr_success(mtime, status);
+    } else {
+        return read_csr_fail(status);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_hpmcounter(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
+    uint64_t mask = UINT64_C(1) << (static_cast<int>(csraddr) - static_cast<int>(CSR_address::ucycle));
+    if (rdcounteren(a, mask)) {
+        return read_csr_success(0, status);
     } else {
         return read_csr_fail(status);
     }
@@ -1561,11 +1571,11 @@ static uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
 
     switch (csraddr) {
         case CSR_address::ucycle:
-            return read_csr_cycle(a, csraddr, status);
+            return read_csr_cycle(a, status);
         case CSR_address::uinstret:
-            return read_csr_instret(a, csraddr, status);
+            return read_csr_instret(a, status);
         case CSR_address::utime:
-            return read_csr_time(a, csraddr, status);
+            return read_csr_time(a, status);
 
         case CSR_address::sstatus:
             return read_csr_sstatus(a, status);
@@ -1632,15 +1642,23 @@ static uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
         case CSR_address::tdata2:
         case CSR_address::tdata3:
         case CSR_address::mhartid:
+        case CSR_address::mcountinhibit:
             return read_csr_success(0, status);
 
-        // Invalid CSRs
         default:
-            // case CSR_address::ucycleh: // 32-bit only
-            // case CSR_address::utimeh: // 32-bit only
-            // case CSR_address::uinstreth: // 32-bit only
-            // case CSR_address::mcycleh: // 32-bit only
-            // case CSR_address::minstreth: // 32-bit only
+            // Hardware performance counters and event selectors are hardwired to zero
+            if ((to_underlying(csraddr) >= to_underlying(CSR_address::mhpmcounter3) &&
+                    to_underlying(csraddr) <= to_underlying(CSR_address::mhpmcounter31)) ||
+                (to_underlying(csraddr) >= to_underlying(CSR_address::mhpmevent3) &&
+                    to_underlying(csraddr) <= to_underlying(CSR_address::mhpmevent31))) {
+                return read_csr_success(0, status);
+            }
+            // Shadows of hardware performance counters
+            if (to_underlying(csraddr) >= to_underlying(CSR_address::uhpmcounter3) &&
+                to_underlying(csraddr) <= to_underlying(CSR_address::uhpmcounter31)) {
+                return read_csr_hpmcounter(a, csraddr, status);
+            }
+            // Invalid CSRs
 #ifdef DUMP_INVALID_CSR
             fprintf(stderr, "csr_read: invalid CSR=0x%x\n", static_cast<int>(csraddr));
 #endif
@@ -1915,23 +1933,22 @@ static bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t val) {
 
         // Ignore writes
         case CSR_address::misa:
+        case CSR_address::mcountinhibit:
         case CSR_address::tselect:
         case CSR_address::tdata1:
         case CSR_address::tdata2:
         case CSR_address::tdata3:
             return true;
 
-        // Invalid CSRs
         default:
-            // case CSR_address::ucycleh: // 32-bit only
-            // case CSR_address::utimeh: // 32-bit only
-            // case CSR_address::uinstreth: // 32-bit only
-            // case CSR_address::mvendorid: // read-only
-            // case CSR_address::marchid: // read-only
-            // case CSR_address::mimpid: // read-only
-            // case CSR_address::mhartid: // read-only
-            // case CSR_address::mcycleh: // 32-bit only
-            // case CSR_address::minstreth: // 32-bit only
+            // Ignore writes to hardware performance counters and event selectors
+            if ((to_underlying(csraddr) >= to_underlying(CSR_address::mhpmcounter3) &&
+                    to_underlying(csraddr) <= to_underlying(CSR_address::mhpmcounter31)) ||
+                (to_underlying(csraddr) >= to_underlying(CSR_address::mhpmevent3) &&
+                    to_underlying(csraddr) <= to_underlying(CSR_address::mhpmevent31))) {
+                return true; // NOLINT(readability-simplify-boolean-expr)
+            }
+            // Invalid CSRs
 #ifdef DUMP_INVALID_CSR
             fprintf(stderr, "csr_write: invalid CSR=0x%x\n", static_cast<int>(csraddr));
 #endif
@@ -2091,7 +2108,7 @@ static inline execute_status execute_ECALL(STATE_ACCESS &a, uint64_t pc, uint32_
     auto priv = a.read_iflags_PRV();
     uint64_t mtval = a.read_mtval();
     raise_exception(a, MCAUSE_ECALL_BASE + priv, mtval);
-    return execute_status::retired;
+    return advance_to_raised_exception(a);
 }
 
 /// \brief Implementation of the EBREAK instruction.
@@ -2103,7 +2120,7 @@ static inline execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t pc, uint32
     (void) note;
     //??D Need another version of raise_exception that does not modify mtval
     raise_exception(a, MCAUSE_BREAKPOINT, a.read_mtval());
-    return execute_status::retired;
+    return advance_to_raised_exception(a);
 }
 
 /// \brief Implementation of the SRET instruction.
@@ -3156,8 +3173,8 @@ static inline execute_status execute_privileged(STATE_ACCESS &a, uint64_t pc, ui
 /// \param a Machine state accessor object.
 /// \param pc Current pc.
 /// \param insn Instruction.
-/// \return execute_status::illegal if and illegal instruction exception was raised, or
-///  execute_status::retired otherwise (Note that some other exception may or may not have been raised)
+/// \return execute_status::exception_raised if an exception was raised, or
+///  execute_status::retired otherwise.
 /// \details The execute_insn function decodes the instruction in multiple levels. When we know for sure that
 ///  the instruction could only be a &lt;FOO&gt;, a function with the name execute_&lt;FOO&gt; will be called.
 ///  See [RV32/64G Instruction Set

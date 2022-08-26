@@ -223,6 +223,7 @@ enum MCOUNTEREN_masks : uint64_t {
 
 /// \brief counteren write masks
 enum COUNTEREN_rw_masks : uint64_t {
+    MCOUNTEREN_R_MASK = UINT64_C(0xffffffff),
     MCOUNTEREN_RW_MASK = MCOUNTEREN_CY_MASK | MCOUNTEREN_TM_MASK | MCOUNTEREN_IR_MASK,
     SCOUNTEREN_RW_MASK = MCOUNTEREN_RW_MASK
 };
@@ -278,9 +279,8 @@ enum class CSR_address : uint32_t {
     ucycle = 0xc00,
     utime = 0xc01,
     uinstret = 0xc02,
-    ucycleh = 0xc80,
-    utimeh = 0xc81,
-    uinstreth = 0xc82,
+    uhpmcounter3 = 0xc03,
+    uhpmcounter31 = 0xc1f,
 
     sstatus = 0x100,
     sie = 0x104,
@@ -316,8 +316,12 @@ enum class CSR_address : uint32_t {
 
     mcycle = 0xb00,
     minstret = 0xb02,
-    mcycleh = 0xb80,
-    minstreth = 0xb82,
+    mhpmcounter3 = 0xb03,
+    mhpmcounter31 = 0xb1f,
+
+    mcountinhibit = 0x320,
+    mhpmevent3 = 0x323,
+    mhpmevent31 = 0x33f,
 
     tselect = 0x7a0,
     tdata1 = 0x7a1,

@@ -216,6 +216,7 @@ local tests = {
   {"dont_write_x0.bin", 44},
   {"mcycle_write.bin", 18},
   {"lrsc_semantics.bin", 34},
+  {"csr_counters.bin", 127},
   {"version_check.bin", 30},
 }
 

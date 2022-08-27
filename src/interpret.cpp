@@ -481,7 +481,7 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
         a.write_sepc(a.read_pc());
         a.write_stval(tval);
         uint64_t mstatus = a.read_mstatus();
-        mstatus = (mstatus & ~MSTATUS_SPIE_MASK) | (((mstatus >> PRV_S) & 1) << MSTATUS_SPIE_SHIFT);
+        mstatus = (mstatus & ~MSTATUS_SPIE_MASK) | (((mstatus >> MSTATUS_SIE_SHIFT) & 1) << MSTATUS_SPIE_SHIFT);
         mstatus = (mstatus & ~MSTATUS_SPP_MASK) | (priv << MSTATUS_SPP_SHIFT);
         mstatus &= ~MSTATUS_SIE_MASK;
         a.write_mstatus(mstatus);
@@ -498,7 +498,7 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
         a.write_mepc(a.read_pc());
         a.write_mtval(tval);
         uint64_t mstatus = a.read_mstatus();
-        mstatus = (mstatus & ~MSTATUS_MPIE_MASK) | (((mstatus >> PRV_M) & 1) << MSTATUS_MPIE_SHIFT);
+        mstatus = (mstatus & ~MSTATUS_MPIE_MASK) | (((mstatus >> MSTATUS_MIE_SHIFT) & 1) << MSTATUS_MPIE_SHIFT);
         mstatus = (mstatus & ~MSTATUS_MPP_MASK) | (priv << MSTATUS_MPP_SHIFT);
         mstatus &= ~MSTATUS_MIE_MASK;
         a.write_mstatus(mstatus);

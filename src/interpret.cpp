@@ -188,7 +188,7 @@ static void dump_exception_or_interrupt(uint64_t cause, machine_state &s) {
     if ((cause & MCAUSE_INTERRUPT_FLAG) != 0) {
         switch (cause & ~MCAUSE_INTERRUPT_FLAG) {
             case 0:
-                (void) fprintf(stderr, "user software interrupt");
+                (void) fprintf(stderr, "reserved software interrupt");
                 break;
             case 1:
                 (void) fprintf(stderr, "supervisor software interrupt");
@@ -200,7 +200,7 @@ static void dump_exception_or_interrupt(uint64_t cause, machine_state &s) {
                 (void) fprintf(stderr, "machine software interrupt");
                 break;
             case 4:
-                (void) fprintf(stderr, "user timer interrupt");
+                (void) fprintf(stderr, "reserved timer interrupt");
                 break;
             case 5:
                 (void) fprintf(stderr, "supervisor timer interrupt");
@@ -212,7 +212,7 @@ static void dump_exception_or_interrupt(uint64_t cause, machine_state &s) {
                 (void) fprintf(stderr, "machine timer interrupt");
                 break;
             case 8:
-                (void) fprintf(stderr, "user external interrupt");
+                (void) fprintf(stderr, "reserved external interrupt");
                 break;
             case 9:
                 (void) fprintf(stderr, "supervisor external interrupt");
@@ -1636,16 +1636,6 @@ static uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
 
         // Invalid CSRs
         default:
-            // case CSR_address::ustatus: // no U-mode traps
-            // case CSR_address::uie: // no U-mode traps
-            // case CSR_address::utvec: // no U-mode traps
-            // case CSR_address::uscratch: // no U-mode traps
-            // case CSR_address::uepc: // no U-mode traps
-            // case CSR_address::ucause: // no U-mode traps
-            // case CSR_address::utval: // no U-mode traps
-            // case CSR_address::uip: // no U-mode traps
-            // case CSR_address::sedeleg: // no U-mode traps
-            // case CSR_address::sideleg: // no U-mode traps
             // case CSR_address::ucycleh: // 32-bit only
             // case CSR_address::utimeh: // 32-bit only
             // case CSR_address::uinstreth: // 32-bit only
@@ -1933,22 +1923,9 @@ static bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t val) {
 
         // Invalid CSRs
         default:
-            // case CSR_address::ucycle: // read-only
-            // case CSR_address::utime: // read-only
-            // case CSR_address::uinstret: // read-only
-            // case CSR_address::ustatus: // no U-mode traps
-            // case CSR_address::uie: // no U-mode traps
-            // case CSR_address::utvec: // no U-mode traps
-            // case CSR_address::uscratch: // no U-mode traps
-            // case CSR_address::uepc: // no U-mode traps
-            // case CSR_address::ucause: // no U-mode traps
-            // case CSR_address::utval: // no U-mode traps
-            // case CSR_address::uip: // no U-mode traps
             // case CSR_address::ucycleh: // 32-bit only
             // case CSR_address::utimeh: // 32-bit only
             // case CSR_address::uinstreth: // 32-bit only
-            // case CSR_address::sedeleg: // no U-mode traps
-            // case CSR_address::sideleg: // no U-mode traps
             // case CSR_address::mvendorid: // read-only
             // case CSR_address::marchid: // read-only
             // case CSR_address::mimpid: // read-only
@@ -2124,15 +2101,6 @@ static inline execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t pc, uint32
     //??D Need another version of raise_exception that does not modify mtval
     raise_exception(a, MCAUSE_BREAKPOINT, a.read_mtval());
     return execute_status::retired;
-}
-
-/// \brief Implementation of the URET instruction. // no U-mode traps
-template <typename STATE_ACCESS>
-static inline execute_status execute_URET(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    dump_insn(a, pc, insn, "uret");
-    auto note = a.make_scoped_note("uret");
-    (void) note;
-    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 /// \brief Implementation of the SRET instruction.
@@ -3169,8 +3137,6 @@ static inline execute_status execute_privileged(STATE_ACCESS &a, uint64_t pc, ui
             return execute_ECALL(a, pc, insn);
         case insn_privileged::EBREAK:
             return execute_EBREAK(a, pc, insn);
-        case insn_privileged::URET:
-            return execute_URET(a, pc, insn);
         case insn_privileged::SRET:
             return execute_SRET(a, pc, insn);
         case insn_privileged::MRET:

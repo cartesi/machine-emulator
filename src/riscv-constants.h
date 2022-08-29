@@ -34,26 +34,20 @@ enum REG_COUNT { X_REG_COUNT = 32, DHD_H_REG_COUNT = 4 };
 
 /// \brief MIP shifts
 enum MIP_shifts {
-    MIP_USIP_SHIFT = 0,
     MIP_SSIP_SHIFT = 1,
     MIP_MSIP_SHIFT = 3,
-    MIP_UTIP_SHIFT = 4,
     MIP_STIP_SHIFT = 5,
     MIP_MTIP_SHIFT = 7,
-    MIP_UEIP_SHIFT = 8,
     MIP_SEIP_SHIFT = 9,
     MIP_MEIP_SHIFT = 11
 };
 
 /// \brief MIP masks
 enum MIP_masks : uint64_t {
-    MIP_USIP_MASK = UINT64_C(1) << MIP_USIP_SHIFT, ///< User software interrupt
     MIP_SSIP_MASK = UINT64_C(1) << MIP_SSIP_SHIFT, ///< Supervisor software interrupt
     MIP_MSIP_MASK = UINT64_C(1) << MIP_MSIP_SHIFT, ///< Machine software interrupt
-    MIP_UTIP_MASK = UINT64_C(1) << MIP_UTIP_SHIFT, ///< User timer interrupt
     MIP_STIP_MASK = UINT64_C(1) << MIP_STIP_SHIFT, ///< Supervisor timer interrupt
     MIP_MTIP_MASK = UINT64_C(1) << MIP_MTIP_SHIFT, ///< Machine timer interrupt
-    MIP_UEIP_MASK = UINT64_C(1) << MIP_UEIP_SHIFT, ///< User external interrupt
     MIP_SEIP_MASK = UINT64_C(1) << MIP_SEIP_SHIFT, ///< Supervisor external interrupt
     MIP_MEIP_MASK = UINT64_C(1) << MIP_MEIP_SHIFT  ///< Machine external interrupt
 };
@@ -281,16 +275,6 @@ enum CARTESI_init : uint64_t {
 
 /// \brief Mapping between CSR names and addresses
 enum class CSR_address : uint32_t {
-    ustatus = 0x000,
-    uie = 0x004,
-    utvec = 0x005,
-
-    uscratch = 0x040,
-    uepc = 0x041,
-    ucause = 0x042,
-    utval = 0x043,
-    uip = 0x044,
-
     ucycle = 0xc00,
     utime = 0xc01,
     uinstret = 0xc02,
@@ -299,8 +283,6 @@ enum class CSR_address : uint32_t {
     uinstreth = 0xc82,
 
     sstatus = 0x100,
-    sedeleg = 0x102,
-    sideleg = 0x103,
     sie = 0x104,
     stvec = 0x105,
     scounteren = 0x106,
@@ -491,7 +473,6 @@ enum insn_SRLW_DIVUW_SRAW_funct7 : uint32_t { SRLW = 0b0000000, DIVUW = 0b000000
 enum class insn_privileged : uint32_t {
     ECALL = 0b00000000000000000000000001110011,
     EBREAK = 0b00000000000100000000000001110011,
-    URET = 0b00000000001000000000000001110011,
     SRET = 0b00010000001000000000000001110011,
     MRET = 0b00110000001000000000000001110011,
     WFI = 0b00010000010100000000000001110011

@@ -1793,7 +1793,7 @@ static bool write_csr_mideleg(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static bool write_csr_mie(STATE_ACCESS &a, uint64_t val) {
-    const uint64_t mask = MIP_MSIP_MASK | MIP_MTIP_MASK | MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
+    const uint64_t mask = MIP_MSIP_MASK | MIP_MTIP_MASK | MIP_MEIP_MASK | MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
     a.write_mie((a.read_mie() & ~mask) | (val & mask));
     a.get_naked_state().set_brk_from_all();
     return true;
@@ -1858,7 +1858,7 @@ static bool write_csr_mtval(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static bool write_csr_mip(STATE_ACCESS &a, uint64_t val) {
-    const uint64_t mask = MIP_SSIP_MASK | MIP_STIP_MASK;
+    const uint64_t mask = MIP_SEIP_MASK | MIP_SSIP_MASK | MIP_STIP_MASK;
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);

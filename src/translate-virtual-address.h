@@ -182,9 +182,15 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
             }
             // (We know we are not PRV_M if we reached here)
             if (priv == PRV_S) {
-                // If SUM is set, forbid S-mode code from accessing U-mode memory
-                if ((pte & PTE_U_MASK) && !(mstatus & MSTATUS_SUM_MASK)) {
-                    return false;
+                if ((pte & PTE_U_MASK)) {
+                    // S-mode can never execute instructions from user pages, regardless of the state of SUM
+                    if (xwr_shift == PTE_XWR_C_SHIFT) {
+                        return false;
+                    }
+                    // If SUM is not set, forbid S-mode code from accessing U-mode memory
+                    if (!(mstatus & MSTATUS_SUM_MASK)) {
+                        return false;
+                    }
                 }
             } else {
                 // Forbid U-mode code from accessing S-mode memory

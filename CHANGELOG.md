@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added no-remote-create and no-remote-destroy options to cartesi-machine.lua
 - Prevent linux from reserving 64Mi of memory when ram-length >= 128Mi
 
+### Changed
+
+- Changed marchid to 0xc
+
 ## [0.10.1] - 2022-07-14
 ### Fixed
 

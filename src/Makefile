@@ -300,7 +300,7 @@ test: luacartesi
 	$(LUA_BIN) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
 
 test-hash: hash
-	tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
+	./tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
 
 # In order to run tests environment variable TEST_PATH with directory path
 # to asset files for cartesi machine tests must be set
@@ -313,7 +313,7 @@ test-scripts: luacartesi
 	done
 
 test-c-api: c-api
-	tests/test-machine-c-api
+	./tests/test-machine-c-api
 
 lint: $(CLANG_TIDY_TARGETS)
 

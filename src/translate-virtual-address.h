@@ -107,8 +107,11 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
         priv = (mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
     }
 
-    // M-mode code does not use virtual memory
-    if (priv == PRV_M) {
+    // The satp register is considered active when the effective privilege mode is S-mode or U-mode.
+    // Executions of the address-translation algorithm may only begin using a given value of satp when
+    // satp is active.
+    if (priv > PRV_S) {
+        // We are in M-mode (or in HS-mode if Hypervisor extension is active)
         *ppaddr = vaddr;
         return true;
     }

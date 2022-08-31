@@ -32,6 +32,7 @@
 
 #include "grpc-machine-c-api.h"
 #include "machine-c-api.h"
+#include "test-utils.h"
 
 // NOLINTNEXTLINE
 #define BOOST_AUTO_TEST_CASE_NOLINT(...) BOOST_AUTO_TEST_CASE(__VA_ARGS__)
@@ -44,45 +45,24 @@ static void monitor_system_throw(std::function<void()> const &f) {
     BOOST_CHECK_THROW(ex_mon.vexecute(f), boost::execution_exception);
 }
 
-// root hash at the beginning
-// NOLINTNEXTLINE(modernize-avoid-c-arrays)
-constexpr cm_hash origin_hash = {0xb5, 0xed, 0x9d, 0x64, 0x0a, 0x11, 0x75, 0xf2, 0x39, 0xec, 0x8d, 0x3d, 0x43, 0xb3,
-    0xb1, 0x9e, 0xdf, 0x6a, 0xbb, 0xd2, 0x7e, 0x85, 0xb1, 0x5a, 0x93, 0xe1, 0x1d, 0x7e, 0x01, 0x82, 0x3b, 0x86};
+static hash_type get_verification_root_hash(cm_machine *machine) {
+    std::array dump_list{"0000000000000000--0000000000001000.bin", "0000000000001000--000000000000f000.bin",
+        "0000000002000000--00000000000c0000.bin", "0000000040008000--0000000000001000.bin",
+        "0000000080000000--0000000000100000.bin"};
 
-// target hash after get_proof()
-// NOLINTNEXTLINE(modernize-avoid-c-arrays)
-constexpr cm_hash origin_target_hash = {0xb2, 0x74, 0x1c, 0x64, 0x57, 0xaf, 0xdd, 0xd3, 0x02, 0x67, 0x2c, 0xd7, 0x4b,
-    0xfb, 0x7f, 0xe0, 0x13, 0x3b, 0x7e, 0xd1, 0xd9, 0xd0, 0x2a, 0x0c, 0xb0, 0xb4, 0xd6, 0x47, 0x56, 0x4a, 0x53, 0xab};
+    char *err_msg{};
+    int error_code = cm_dump_pmas(machine, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
 
-// root hash after get_proof()
-// NOLINTNEXTLINE(modernize-avoid-c-arrays)
-constexpr cm_hash origin_root_hash = {0xb5, 0xed, 0x9d, 0x64, 0x0a, 0x11, 0x75, 0xf2, 0x39, 0xec, 0x8d, 0x3d, 0x43,
-    0xb3, 0xb1, 0x9e, 0xdf, 0x6a, 0xbb, 0xd2, 0x7e, 0x85, 0xb1, 0x5a, 0x93, 0xe1, 0x1d, 0x7e, 0x01, 0x82, 0x3b, 0x86};
+    auto hash = calculate_emulator_hash(dump_list);
 
-// target hash after 1000 cycles (after get_proof())
-// NOLINTNEXTLINE(modernize-avoid-c-arrays)
-constexpr cm_hash target_hash_1000 = {0xe2, 0x8c, 0x20, 0x2f, 0xc7, 0x4b, 0x53, 0x08, 0x78, 0x74, 0x8b, 0x8b, 0x73,
-    0x7c, 0x32, 0x25, 0xd2, 0xd5, 0x19, 0xb5, 0xcc, 0xcc, 0xf1, 0x3b, 0x6a, 0xea, 0x52, 0xdd, 0x2c, 0x6c, 0xc7, 0x89};
+    for (const auto &file : dump_list) {
+        std::filesystem::remove(file);
+    }
 
-// root hash after 1000 cycles (after get_proof())
-// NOLINTNEXTLINE(modernize-avoid-c-arrays)
-constexpr cm_hash root_hash_1000 = {0x17, 0xaa, 0xa4, 0xf5, 0x0e, 0x60, 0xbf, 0xc7, 0x9d, 0x9e, 0x91, 0x32, 0x5d, 0x47,
-    0xbf, 0xd5, 0x03, 0x59, 0x97, 0xf0, 0x91, 0xa7, 0xb5, 0x7e, 0x9d, 0x74, 0x3b, 0x14, 0x66, 0x3c, 0xea, 0x4c};
-
-// machine hash after performing 1 step
-// NOLINTNEXTLINE(modernize-avoid-c-arrays)
-constexpr cm_hash origin_hash1 = {0x83, 0xc4, 0xa5, 0x44, 0x99, 0x0a, 0x87, 0x04, 0x7c, 0x73, 0xf0, 0x9c, 0x27, 0x7b,
-    0x6a, 0x34, 0xa9, 0x86, 0x69, 0xc6, 0xb9, 0x30, 0xf8, 0xb5, 0xcc, 0x51, 0x28, 0xdf, 0xe9, 0x96, 0x56, 0xa5};
-
-// machine hash after running 1000 cycles
-// NOLINTNEXTLINE(modernize-avoid-c-arrays)
-constexpr cm_hash origin_hash_1000 = {0x17, 0xaa, 0xa4, 0xf5, 0x0e, 0x60, 0xbf, 0xc7, 0x9d, 0x9e, 0x91, 0x32, 0x5d,
-    0x47, 0xbf, 0xd5, 0x03, 0x59, 0x97, 0xf0, 0x91, 0xa7, 0xb5, 0x7e, 0x9d, 0x74, 0x3b, 0x14, 0x66, 0x3c, 0xea, 0x4c};
-
-// machine hash after running 600000 cycles
-// NOLINTNEXTLINE(modernize-avoid-c-arrays)
-constexpr cm_hash origin_hash_600000 = {0xb1, 0x6b, 0x2c, 0xda, 0xa4, 0xfd, 0x26, 0x2f, 0x16, 0x83, 0xf8, 0xcf, 0x16,
-    0x55, 0x79, 0xdc, 0xa2, 0xa1, 0x3b, 0x50, 0xcd, 0x85, 0x37, 0xc8, 0xcc, 0x6c, 0x5d, 0x16, 0x0a, 0x25, 0x6c, 0x1b};
+    return hash;
+}
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_config_null_test) {
     BOOST_CHECK_NO_THROW(cm_delete_machine_config(nullptr));
@@ -401,7 +381,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, mach
     cm_delete_error_message(err_msg);
 }
 
-class ordinary_machine_fixture : public machine_rom_flash_simple_fixture {
+class ordinary_machine_fixture : public machine_rom_fixture {
 public:
     ordinary_machine_fixture() {
         _runtime_config.dhd.source_address = "";
@@ -692,8 +672,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_machine_hash_test, ordinary_machine
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
-    BOOST_CHECK_EQUAL_COLLECTIONS(origin_hash, origin_hash + sizeof(cm_hash), result_hash,
-        result_hash + sizeof(cm_hash));
+    auto verification = get_verification_root_hash(_machine);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), result_hash, result_hash + sizeof(cm_hash));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(get_proof_null_machine_test) {
@@ -778,9 +758,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_machine_hash_test, ordinary_machine_fix
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
-    BOOST_CHECK_EQUAL_COLLECTIONS(origin_target_hash, origin_target_hash + sizeof(cm_hash), p->target_hash,
-        p->target_hash + sizeof(cm_hash));
-    BOOST_CHECK_EQUAL_COLLECTIONS(origin_root_hash, origin_root_hash + sizeof(cm_hash), p->root_hash,
+    auto verification = calculate_proof_root_hash(p);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), p->root_hash,
+        p->root_hash + sizeof(cm_hash));
+    verification = get_verification_root_hash(_machine);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), p->root_hash,
         p->root_hash + sizeof(cm_hash));
     BOOST_CHECK_EQUAL(p->log2_root_size, static_cast<size_t>(64));
     BOOST_CHECK_EQUAL(p->sibling_hashes.count, static_cast<size_t>(52));
@@ -1325,22 +1307,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_null_placeholder_test, ordinary_machine
     monitor_system_throw(f);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_basic_test, ordinary_machine_fixture) {
-    std::array dump_list{"0000000000000000--0000000000001000.bin", "0000000000001000--000000000000f000.bin",
-        "0000000002000000--00000000000c0000.bin", "0000000040008000--0000000000001000.bin",
-        "0000000080000000--0000000000100000.bin", "8000000000000000--0000000003c00000.bin"};
-
-    char *err_msg{};
-    int error_code = cm_dump_pmas(_machine, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-
-    for (const auto &file : dump_list) {
-        BOOST_CHECK(std::filesystem::exists(file));
-        std::filesystem::remove(file);
-    }
-}
-
 BOOST_AUTO_TEST_CASE_NOLINT(dhd_h_address_invalid_address_test) {
     BOOST_CHECK_NO_THROW(cm_get_dhd_h_address(CM_MACHINE_DHD_H_REG_COUNT));
 }
@@ -1529,9 +1495,13 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_flash_config_test, ordi
     cm_delete_error_message(err_msg);
 }
 
-class flash_drive_machine_fixture : public ordinary_machine_fixture {
+class flash_drive_machine_fixture : public machine_rom_flash_simple_fixture {
 public:
     flash_drive_machine_fixture() : _flash_config{}, _flash_data{"test data 1234567890"} {
+        _runtime_config.dhd.source_address = "";
+        _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
+        char *err_msg{};
+        cm_create_machine(&_machine_config, &_runtime_config, &_machine, &err_msg);
 
         size_t flash_size = 0x3c00000;
         std::string flash_file = "data.bin";
@@ -1544,6 +1514,8 @@ public:
     }
 
     ~flash_drive_machine_fixture() {
+        std::filesystem::remove_all(_machine_dir_path);
+        cm_delete_machine(_machine);
         std::filesystem::remove(std::string{_flash_config.image_filename});
         delete[] _flash_config.image_filename;
     }
@@ -1556,7 +1528,24 @@ public:
 protected:
     cm_memory_range_config _flash_config;
     std::string _flash_data;
+    std::string _machine_dir_path;
 };
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_basic_test, flash_drive_machine_fixture) {
+    std::array dump_list{"0000000000000000--0000000000001000.bin", "0000000000001000--000000000000f000.bin",
+        "0000000002000000--00000000000c0000.bin", "0000000040008000--0000000000001000.bin",
+        "0000000080000000--0000000000100000.bin", "8000000000000000--0000000003c00000.bin"};
+
+    char *err_msg{};
+    int error_code = cm_dump_pmas(_machine, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+
+    for (const auto &file : dump_list) {
+        BOOST_CHECK(std::filesystem::exists(file));
+        std::filesystem::remove(file);
+    }
+}
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_machine_test, flash_drive_machine_fixture) {
     auto f = [fd = &_flash_config]() {
@@ -2022,7 +2011,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, access_log_machine_fixture) {
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
-    BOOST_CHECK_EQUAL_COLLECTIONS(origin_hash1, origin_hash1 + sizeof(cm_hash), hash1, hash1 + sizeof(cm_hash));
+    auto verification = get_verification_root_hash(_machine);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), hash1, hash1 + sizeof(cm_hash));
 
     cm_delete_access_log(_access_log);
 }
@@ -2057,8 +2047,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_1000_cycle_test, ordinary_machine_fix
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
-    BOOST_CHECK_EQUAL_COLLECTIONS(origin_hash_1000, origin_hash_1000 + sizeof(cm_hash), hash_1000,
-        hash_1000 + sizeof(cm_hash));
+    auto verification = get_verification_root_hash(_machine);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), hash_1000, hash_1000 + sizeof(cm_hash));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_to_past_test, ordinary_machine_fixture) {
@@ -2101,8 +2091,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_long_cycle_test, ordinary_machine_fix
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
-    BOOST_CHECK_EQUAL_COLLECTIONS(origin_hash_600000, origin_hash_600000 + sizeof(cm_hash), hash_end,
-        hash_end + sizeof(cm_hash));
+    auto verification = get_verification_root_hash(_machine);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), hash_end, hash_end + sizeof(cm_hash));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_root_updates_test, ordinary_machine_fixture) {
@@ -2112,7 +2102,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_root_updates_test, ord
     int error_code = cm_get_root_hash(_machine, &start_hash, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL_COLLECTIONS(origin_hash, origin_hash + sizeof(cm_hash), start_hash, start_hash + sizeof(cm_hash));
+    auto verification = get_verification_root_hash(_machine);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), start_hash, start_hash + sizeof(cm_hash));
 
     error_code = cm_machine_run(_machine, 1000, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -2122,8 +2113,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_root_updates_test, ord
     error_code = cm_get_root_hash(_machine, &end_hash, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL_COLLECTIONS(origin_hash_1000, origin_hash_1000 + sizeof(cm_hash), end_hash,
-        end_hash + sizeof(cm_hash));
+    verification = get_verification_root_hash(_machine);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), end_hash, end_hash + sizeof(cm_hash));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, ordinary_machine_fixture) {
@@ -2133,9 +2124,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, or
     int error_code = cm_get_proof(_machine, 0, 12, &start_proof, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL_COLLECTIONS(origin_target_hash, origin_target_hash + sizeof(cm_hash), start_proof->target_hash,
-        start_proof->target_hash + sizeof(cm_hash));
-    BOOST_CHECK_EQUAL_COLLECTIONS(origin_root_hash, origin_root_hash + sizeof(cm_hash), start_proof->root_hash,
+    auto verification = calculate_proof_root_hash(start_proof);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), start_proof->root_hash,
+        start_proof->root_hash + sizeof(cm_hash));
+    verification = get_verification_root_hash(_machine);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), start_proof->root_hash,
         start_proof->root_hash + sizeof(cm_hash));
     cm_delete_merkle_tree_proof(start_proof);
 
@@ -2147,9 +2140,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, or
     error_code = cm_get_proof(_machine, 0, 12, &end_proof, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL_COLLECTIONS(target_hash_1000, target_hash_1000 + sizeof(cm_hash), end_proof->target_hash,
-        end_proof->target_hash + sizeof(cm_hash));
-    BOOST_CHECK_EQUAL_COLLECTIONS(root_hash_1000, root_hash_1000 + sizeof(cm_hash), end_proof->root_hash,
+    verification = calculate_proof_root_hash(start_proof);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), end_proof->root_hash,
+        end_proof->root_hash + sizeof(cm_hash));
+    verification = get_verification_root_hash(_machine);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), end_proof->root_hash,
         end_proof->root_hash + sizeof(cm_hash));
     cm_delete_merkle_tree_proof(end_proof);
 }

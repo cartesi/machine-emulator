@@ -32,6 +32,8 @@
 #include <google/protobuf/util/json_util.h>
 #include <grpc++/grpc++.h>
 
+#include "cartesi-machine-checkin.grpc.pb.h"
+#include "health.grpc.pb.h"
 #include "protobuf-util.h"
 #include "server-manager.grpc.pb.h"
 #pragma GCC diagnostic pop
@@ -51,6 +53,7 @@ using std::chrono_literals::operator""s;
 using namespace std::filesystem;
 using namespace CartesiServerManager;
 using namespace cartesi;
+using namespace grpc::health::v1;
 
 constexpr static const int LOG2_ROOT_SIZE = 37;
 constexpr static const int LOG2_KECCAK_SIZE = 5;
@@ -63,6 +66,7 @@ class ServerManagerClient {
 public:
     ServerManagerClient(const std::string &address) : m_test_id("not-defined") {
         m_stub = ServerManager::NewStub(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()));
+        m_health_stub = Health::NewStub(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()));
     }
 
     Status get_version(Versioning::GetVersionResponse &response) {
@@ -124,6 +128,12 @@ public:
         return m_stub->EndSession(&context, request, &response);
     }
 
+    Status health_check(const HealthCheckRequest &request, HealthCheckResponse &response) {
+        ClientContext context;
+        init_client_context(context);
+        return m_health_stub->Check(&context, request, &response);
+    }
+
     void set_test_id(std::string test_id) {
         m_test_id = std::move(test_id);
     }
@@ -134,6 +144,7 @@ public:
 
 private:
     std::unique_ptr<ServerManager::Stub> m_stub;
+    std::unique_ptr<Health::Stub> m_health_stub;
     std::string m_test_id;
 
     void init_client_context(ClientContext &context) {
@@ -665,12 +676,12 @@ void assert_bool(bool value, const std::string &msg, const std::string &file, in
 #define ASSERT_STATUS_CODE(s, f, v) assert_status_code(s, f, v, __FILE__, __LINE__)
 
 static void test_get_version(const std::function<void(const std::string &title, test_function f)> &test) {
-    test("The rollup-machine-manager server version should be 0.3.x", [](ServerManagerClient &manager) {
+    test("The server-manager server version should be 0.4.x", [](ServerManagerClient &manager) {
         Versioning::GetVersionResponse response;
         Status status = manager.get_version(response);
         ASSERT_STATUS(status, "GetVersion", true);
         ASSERT((response.version().major() == 0), "Version Major should be 0");
-        ASSERT((response.version().minor() == 3), "Version Minor should be 3");
+        ASSERT((response.version().minor() == 4), "Version Minor should be 4");
     });
 }
 
@@ -3737,10 +3748,63 @@ static void test_session_simulations(const std::function<void(const std::string 
         });
 }
 
+static void test_health_check(const std::function<void(const std::string &title, test_function f)> &test) {
+    test("The server-manager server health status should be SERVING", [](ServerManagerClient &manager) {
+        HealthCheckRequest request;
+        HealthCheckResponse response;
+        auto *service = request.mutable_service();
+        *service = "";
+        Status status = manager.health_check(request, response);
+        ASSERT_STATUS(status, "HealthCheck", true);
+        ASSERT((response.status() == HealthCheckResponse_ServingStatus_SERVING), "Version Major should be 0");
+    });
+
+    test("The server-manager ServerManager service health status should be SERVING", [](ServerManagerClient &manager) {
+        HealthCheckRequest request;
+        HealthCheckResponse response;
+        auto *service = request.mutable_service();
+        *service = ServerManager::service_full_name();
+        Status status = manager.health_check(request, response);
+        ASSERT_STATUS(status, "HealthCheck", true);
+        ASSERT((response.status() == HealthCheckResponse_ServingStatus_SERVING), "Version Major should be 0");
+    });
+
+    test("The server-manager ManagerCheckIn service health status should be SERVING", [](ServerManagerClient &manager) {
+        HealthCheckRequest request;
+        HealthCheckResponse response;
+        auto *service = request.mutable_service();
+        *service = CartesiMachine::MachineCheckIn::service_full_name();
+        Status status = manager.health_check(request, response);
+        ASSERT_STATUS(status, "HealthCheck", true);
+        ASSERT((response.status() == HealthCheckResponse_ServingStatus_SERVING), "Version Major should be 0");
+    });
+
+    test("The server-manager Health service health status should be SERVING", [](ServerManagerClient &manager) {
+        HealthCheckRequest request;
+        HealthCheckResponse response;
+        auto *service = request.mutable_service();
+        *service = Health::service_full_name();
+        Status status = manager.health_check(request, response);
+        ASSERT_STATUS(status, "HealthCheck", true);
+        ASSERT((response.status() == HealthCheckResponse_ServingStatus_SERVING), "Version Major should be 0");
+    });
+
+    test("The server-manager Unknown service status should be NOT FOUND", [](ServerManagerClient &manager) {
+        HealthCheckRequest request;
+        HealthCheckResponse response;
+        auto *service = request.mutable_service();
+        *service = "UnknownService";
+        Status status = manager.health_check(request, response);
+        ASSERT_STATUS(status, "HealthCheck", false);
+        ASSERT_STATUS_CODE(status, "HealthCheck", StatusCode::NOT_FOUND);
+    });
+}
+
 static int run_tests(const char *address) {
     ServerManagerClient manager(address);
     test_suite suite(manager);
     suite.add_test_set("GetVersion", test_get_version);
+    suite.add_test_set("HealthCheck", test_health_check);
     suite.add_test_set("StartSession", test_start_session);
     suite.add_test_set("AdvanceState", test_advance_state);
     suite.add_test_set("GetStatus", test_get_status);

@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added method to get existing remote machine
 - Added no-remote-create and no-remote-destroy options to cartesi-machine.lua
 - Prevent linux from reserving 64Mi of memory when ram-length >= 128Mi
+- Added GRPC Health Check service on the server-manager
+
+### Changed
+- Bumped server-manager server version
+- Bumped remote-machine server version
 
 ### Changed
 

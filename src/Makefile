@@ -24,6 +24,7 @@ LUA_BIN?=lua5.3
 CRYPTOPP_LIB:=-L$(BUILDDIR)/lib -lcryptopp
 CRYPTOPP_INC:=-I$(BUILDDIR)/include
 GRPC_DIR:=../lib/grpc-interfaces
+HEALTHCHECK_DIR:=$(BUILDDIR)/share/grpc/health/v1
 
 PROTOC:=$(BUILDDIR)/bin/protoc
 GRPC_CPP_PLUGIN=$(BUILDDIR)/bin/grpc_cpp_plugin
@@ -63,13 +64,13 @@ GRPC_LIB_Darwin=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -la
 PROTOBUF_LIB_Darwin:=-L$(BUILDDIR)/lib -lprotobuf -lpthread
 LIBCARTESI_Darwin=libcartesi.dylib
 LIBCARTESI_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_Darwin)'
-LIBCARTESI_TESTS_LDFLAGS_Darwin=-Wl,-rpath,'@executable_path/..'
+LIBCARTESI_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
 LIBCARTESI_PROTOBUF_Darwin=libcartesi_protobuf.dylib
 LIBCARTESI_PROTOBUF_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_PROTOBUF_Darwin)'
 LIBCARTESI_GRPC_Darwin=libcartesi_grpc.dylib
 LIBCARTESI_GRPC_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_GRPC_Darwin)'
-LIBCARTESI_GRPC_TESTS_LDFLAGS_Darwin=-Wl,-rpath,'@executable_path/..'
-CARTESI_EXECUTABLE_LDFLAGS_Darwin=-Wl,-rpath,'@executable_path/'
+LIBCARTESI_GRPC_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
+CARTESI_EXECUTABLE_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
 PROFILE_DATA_Darwin=default.profdata
 
 # Linux specific setup
@@ -391,10 +392,15 @@ SERVER_MANAGER_PROTO_OBJS:= \
 	server-manager.pb.o \
 	server-manager.grpc.pb.o
 
+HEALTHCHECK_PROTO_OBJS:= \
+	health.pb.o \
+	health.grpc.pb.o
+
 PROTO_OBJS:= \
 	$(CARTESI_PROTOBUF_GEN_OBJS) \
 	$(CARTESI_GRPC_GEN_OBJS) \
-	$(SERVER_MANAGER_PROTO_OBJS)
+	$(SERVER_MANAGER_PROTO_OBJS) \
+	$(HEALTHCHECK_PROTO_OBJS)
 
 
 $(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-deprecated-declarations -Wno-deprecated-copy -Wno-type-limits
@@ -408,6 +414,7 @@ REMOTE_CARTESI_MACHINE_PROXY_OBJS:= \
 SERVER_MANAGER_OBJS:= \
 	$(CARTESI_GRPC_GEN_OBJS) \
 	$(SERVER_MANAGER_PROTO_OBJS) \
+	$(HEALTHCHECK_PROTO_OBJS) \
 	complete-merkle-tree.o \
 	pristine-merkle-tree.o \
 	protobuf-util.o \
@@ -417,6 +424,7 @@ TEST_SERVER_MANAGER_OBJS:= \
 	$(CARTESI_OBJS) \
 	$(CARTESI_GRPC_GEN_OBJS) \
 	$(SERVER_MANAGER_PROTO_OBJS) \
+	$(HEALTHCHECK_PROTO_OBJS) \
 	complete-merkle-tree.o \
 	test-server-manager.o
 
@@ -526,10 +534,16 @@ tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 
 %.grpc.pb.cc: $(GRPC_DIR)/%.proto
-	$(PROTOC) -I$(GRPC_DIR) --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN) $<
+	$(PROTOC) -I$(<D) --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN) $<
 
 %.pb.cc: $(GRPC_DIR)/%.proto
 	$(PROTOC) -I$(GRPC_DIR) --cpp_out=. $<
+
+%.grpc.pb.cc: $(HEALTHCHECK_DIR)/%.proto
+	$(PROTOC) -I$(HEALTHCHECK_DIR) --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN) $<
+
+%.pb.cc: $(HEALTHCHECK_DIR)/%.proto
+	$(PROTOC) -I$(HEALTHCHECK_DIR) --cpp_out=. $<
 
 machine-config.o protobuf-util.o: $(CARTESI_PROTOBUF_GEN_OBJS)
 

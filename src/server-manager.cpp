@@ -52,17 +52,18 @@
 
 #include "cartesi-machine-checkin.grpc.pb.h"
 #include "cartesi-machine.grpc.pb.h"
+#include "health.grpc.pb.h"
 #include "server-manager.grpc.pb.h"
 #pragma GCC diagnostic pop
 
 static constexpr uint32_t manager_version_major = 0;
-static constexpr uint32_t manager_version_minor = 3;
-static constexpr uint32_t manager_version_patch = 1;
+static constexpr uint32_t manager_version_minor = 4;
+static constexpr uint32_t manager_version_patch = 0;
 static constexpr const char *manager_version_pre_release = "";
 static constexpr const char *manager_version_build = "";
 
 static constexpr uint32_t machine_version_major = 0;
-static constexpr uint32_t machine_version_minor = 5;
+static constexpr uint32_t machine_version_minor = 6;
 
 using namespace CartesiServerManager;
 using namespace CartesiMachine;
@@ -484,6 +485,12 @@ private:
     std::string m_name;
 };
 
+/// \brief Type of grpc service name
+using service_name_type = std::string;
+
+/// \brief Type of grpc service serving status
+using health_status_type = grpc::health::v1::HealthCheckResponse::ServingStatus;
+
 /// \brief Context shared by all handlers
 struct handler_context {
     std::string remote_cartesi_machine_path;            ///< Path to remote-cartesi-machine executable
@@ -492,8 +499,11 @@ struct handler_context {
     std::unordered_map<id_type, session_type> sessions; ///< Known sessions
     /// Sessions waiting for server checkin
     std::unordered_map<id_type, handler_type::pull_type *> sessions_waiting_checkin;
+    /// Health status of each service
+    std::unordered_map<service_name_type, health_status_type> service_health;
     ServerManager::AsyncService manager_async_service;             ///< Assynchronous manager service
     MachineCheckIn::AsyncService checkin_async_service;            ///< Assynchronous checkin service
+    grpc::health::v1::Health::AsyncService health_async_service;   ///< Assynchronous health check service
     std::unique_ptr<grpc::ServerCompletionQueue> completion_queue; ///< Completion queue where all handlers arrive
     bool ok;                                                       ///< gRPC status of requests arriving in queue
 };
@@ -2902,6 +2912,68 @@ static handler_type::pull_type *new_Checkin_handler(handler_context &hctx) {
     return self;
 }
 
+/// \brief Creates a new handler for the Health RPC and starts accepting requests
+/// \param hctx Handler context shared between all handlers
+static handler_type::pull_type *new_Health_Check_handler(handler_context &hctx) {
+    auto *self = static_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
+    new (self) handler_type::pull_type{[self, &hctx](handler_type::push_type &yield) {
+        using namespace grpc;
+        using namespace grpc::health::v1;
+        // Start accepting Health rpcs.
+        ServerContext request_context;
+        HealthCheckRequest health_request;
+        ServerAsyncResponseWriter<HealthCheckResponse> health_writer(&request_context);
+        auto *cq = hctx.completion_queue.get();
+        // Start expecting check-in rpcs
+        hctx.health_async_service.RequestCheck(&request_context, &health_request, &health_writer, cq, cq, self);
+        yield(side_effect::none);
+        new_Health_Check_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+        // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
+        if (!hctx.ok) {
+            return;
+        }
+        const auto &service = health_request.service();
+        dout{request_context} << "Received Health Check for service " << service;
+        auto iter = hctx.service_health.find(service);
+        if (iter == hctx.service_health.end()) {
+            health_writer.FinishWithError(grpc::Status(StatusCode::NOT_FOUND, "Service not found"), self);
+        } else {
+            HealthCheckResponse health_response;
+            health_response.set_status(iter->second);
+            health_writer.Finish(health_response, grpc::Status::OK, self);
+        }
+        yield(side_effect::none);
+    }};
+    return self;
+}
+
+/// \brief Creates a new handler for the Health RPC and starts accepting requests
+/// \param hctx Handler context shared between all handlers
+static handler_type::pull_type *new_Health_Watch_handler(handler_context &hctx) {
+    auto *self = static_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
+    new (self) handler_type::pull_type{[self, &hctx](handler_type::push_type &yield) {
+        using namespace grpc;
+        using namespace grpc::health::v1;
+        // Start accepting Health rpcs.
+        ServerContext request_context;
+        HealthCheckRequest health_request;
+        ServerAsyncWriter<HealthCheckResponse> health_writer(&request_context);
+        auto *cq = hctx.completion_queue.get();
+        // Start expecting check-in rpcs
+        hctx.health_async_service.RequestWatch(&request_context, &health_request, &health_writer, cq, cq, self);
+        yield(side_effect::none);
+        new_Health_Watch_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
+        // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
+        if (!hctx.ok) {
+            return;
+        }
+        dout{request_context} << "Received Health Watch (Unimplemented)"; // NOLINT
+        health_writer.Finish(grpc::Status(StatusCode::UNIMPLEMENTED, "Not implemented"), self);
+        yield(side_effect::none);
+    }};
+    return self;
+}
+
 /// \brief Replaces the port specification (i.e., after ':') in an address
 /// with a new port
 /// \param address Original address
@@ -2932,7 +3004,14 @@ static auto build_manager(const char *manager_address, handler_context &hctx) {
     builder.AddListeningPort(manager_address, grpc::InsecureServerCredentials(), &manager_port);
     builder.RegisterService(&hctx.manager_async_service);
     builder.RegisterService(&hctx.checkin_async_service);
+    builder.RegisterService(&hctx.health_async_service);
     hctx.completion_queue = builder.AddCompletionQueue();
+    hctx.service_health.insert({
+        {"", health_status_type::HealthCheckResponse_ServingStatus_SERVING},
+        {ServerManager::service_full_name(), health_status_type::HealthCheckResponse_ServingStatus_SERVING},
+        {MachineCheckIn::service_full_name(), health_status_type::HealthCheckResponse_ServingStatus_SERVING},
+        {grpc::health::v1::Health::service_full_name(), health_status_type::HealthCheckResponse_ServingStatus_SERVING},
+    });
     auto manager = builder.BuildAndStart();
     hctx.manager_address = replace_port(manager_address, manager_port);
     return manager;
@@ -3064,6 +3143,8 @@ int main(int argc, char *argv[]) try {
     new_FinishEpoch_handler(hctx);      // NOLINT: cannot leak (pointer is in completion queue)
     new_EndSession_handler(hctx);       // NOLINT: cannot leak (pointer is in completion queue)
     new_Checkin_handler(hctx);          // NOLINT: cannot leak (pointer is in completion queue)
+    new_Health_Check_handler(hctx);     // NOLINT: cannot leak (pointer is in completion queue)
+    new_Health_Watch_handler(hctx);     // NOLINT: cannot leak (pointer is in completion queue)
 
     // Dispatch loop
     for (;;) {

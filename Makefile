@@ -163,6 +163,7 @@ $(DEPDIR)/grpc $(BUILDDIR)/lib/libgrpc.$(LIB_EXTENSION): | $(BUILDDIR)
 	cd $(DEPDIR)/grpc && git submodule update --init --recursive --depth 1
 	mkdir -p $(DEPDIR)/grpc/cmake/build && cd $(DEPDIR)/grpc/cmake/build && cmake -C $(abspath $(DEPDIR))/grpc.cmake -DCMAKE_INSTALL_PREFIX=$(BUILDDIR) ../..
 	$(MAKE) -C $(DEPDIR)/grpc/cmake/build all install
+	mkdir -p $(BUILDDIR)/share/grpc/health/v1/ && cp -a $(DEPDIR)/grpc/src/proto/grpc/health/v1/health.proto $(BUILDDIR)/share/grpc/health/v1/
 	if [ "$(UNAME)" = "Darwin" ]; then install_name_tool -add_rpath @loader_path/../lib $(BUILDDIR)/bin/grpc_cpp_plugin; fi
 
 $(SUBCLEAN) $(DEPCLEAN): %.clean:
@@ -188,7 +189,7 @@ install-Darwin:
 	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi/grpc.so
 	cd $(BIN_INSTALL_PATH) && \
 		for x in $(DEP_TO_BIN) $(EMU_TO_BIN); do \
-			install_name_tool -add_rpath $(LIB_INSTALL_PATH) $$x ;\
+			install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_INSTALL_PATH) $$x ;\
 		done
 
 install-Linux:

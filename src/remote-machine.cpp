@@ -20,7 +20,7 @@
 #include <string>
 
 static constexpr uint32_t server_version_major = 0;
-static constexpr uint32_t server_version_minor = 5;
+static constexpr uint32_t server_version_minor = 6;
 static constexpr uint32_t server_version_patch = 0;
 static constexpr const char *server_version_pre_release = "";
 static constexpr const char *server_version_build = "";

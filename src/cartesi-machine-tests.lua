@@ -217,6 +217,7 @@ local tests = {
   {"mcycle_write.bin", 18},
   {"lrsc_semantics.bin", 34},
   {"csr_counters.bin", 127},
+  {"csr_semantics.bin", 40},
   {"version_check.bin", 30},
 }
 

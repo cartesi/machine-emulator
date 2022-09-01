@@ -1749,6 +1749,13 @@ template <typename STATE_ACCESS>
 static bool write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
     uint64_t mstatus = a.read_mstatus() & MSTATUS_R_MASK;
 
+    // M-mode software can determine whether a privilege mode is implemented
+    // by writing that mode to MPP then reading it back.
+    if (PRV_HS == ((val & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT)) {
+        // HS-mode is not supported yet, set val MPP to U-mode
+        val = val & ~MSTATUS_MPP_MASK;
+    }
+
     if constexpr (!avoid_tlb<STATE_ACCESS>::value) {
         // If MMU configuration was changed, flush the TLBs
         // This does not need to be done within the blockchain

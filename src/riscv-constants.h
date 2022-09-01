@@ -72,10 +72,10 @@ enum MCAUSE_constants : uint64_t {
 
 /// \brief Privilege modes
 enum PRV_constants : uint8_t {
-    PRV_U = 0, ///< User mode
-    PRV_S = 1, ///< Supervisor mode
-    PRV_H = 2, ///< Reserved
-    PRV_M = 3  ///< Machine mode
+    PRV_U = 0,  ///< User mode
+    PRV_S = 1,  ///< Supervisor mode
+    PRV_HS = 2, ///< Hypervisor-extended supervisor mode
+    PRV_M = 3   ///< Machine mode
 };
 
 /// \brief misa shifts

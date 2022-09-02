@@ -1,9 +1,9 @@
 name: Build/Test/Verify/Release
 on: [push]
 env:
-  ROM_VERSION: v0.11.0
-  KERNEL_VERSION: v0.12.0
-  ROOTFS_VERSION: v0.12.0
+  ROM_VERSION: v0.12.0
+  KERNEL_VERSION: v0.13.0
+  ROOTFS_VERSION: v0.14.0
   TEST_VERSION: v0.19.0
   GROUND_TRUTH_VERSION: v0.19.0-0001
   BUILD_CACHE_VERSION: v0.9.0-0002
@@ -120,7 +120,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/image-kernel
           tag: ${{ env.KERNEL_VERSION }}
-          file: linux-5.5.19-ctsi-5.bin
+          file: linux-5.5.19-ctsi-6.bin
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Download [rom.bin]
@@ -133,8 +133,8 @@ jobs:
 
       - name: Move images to cartesi images folder
         run: |
-          mv rom.bin linux-5.5.19-ctsi-5.bin rootfs.ext2 /opt/cartesi/share/images/
-          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-5.bin linux.bin
+          mv rom.bin linux-5.5.19-ctsi-6.bin rootfs.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-6.bin linux.bin
 
       - name: Simple Boot
         run: /opt/cartesi/bin/cartesi-machine /bin/true
@@ -297,7 +297,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/image-kernel
           tag: ${{ env.KERNEL_VERSION }}
-          file: linux-5.5.19-ctsi-5.bin
+          file: linux-5.5.19-ctsi-6.bin
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Download [rom.bin]
@@ -313,8 +313,8 @@ jobs:
 
       - name: Move images to cartesi images folder
         run: |
-          mv rom.bin linux-5.5.19-ctsi-5.bin rootfs.ext2 /opt/cartesi/share/images/
-          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-5.bin linux.bin
+          mv rom.bin linux-5.5.19-ctsi-6.bin rootfs.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-6.bin linux.bin
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0
@@ -552,7 +552,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/image-kernel
           tag: ${{ env.KERNEL_VERSION }}
-          file: linux-5.5.19-ctsi-5.bin
+          file: linux-5.5.19-ctsi-6.bin
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Download [rom.bin]
@@ -566,8 +566,8 @@ jobs:
       - name: Move images to cartesi images folder
         run: |
           mkdir -m 755 -p /opt/cartesi/share/images
-          mv rom.bin linux-5.5.19-ctsi-5.bin rootfs.ext2 /opt/cartesi/share/images/
-          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-5.bin linux.bin
+          mv rom.bin linux-5.5.19-ctsi-6.bin rootfs.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-6.bin linux.bin
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0
@@ -589,33 +589,6 @@ jobs:
 
       - name: Run test suite inside the docker image (Ubuntu)
         run: docker run --rm -v /opt/cartesi/tests:/opt/cartesi/tests -t ${{ steps.docker_image_default_tag.outputs.name }} /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
-
-# This setup is not working. We have to investigate.
-#      - name: Setup server-manager docker image tags
-#        id: server_manager_docker_image_tags
-#        uses: docker/metadata-action@v3
-#        with:
-#          images: ${{ secrets.DOCKER_ORGANIZATION }}/server-manager
-#          tags: |
-#            type=ref,event=branch
-#            type=semver,pattern={{version}}
-#
-#      - name: Build Ubuntu based server-manager docker image
-#        id: server_manager_docker_build
-#        uses: docker/build-push-action@v2
-#        with:
-#          file: tools/server-manager/Dockerfile
-#          context: tools/server-manager
-#          builder: ${{ steps.buildx.outputs.name }}
-#          platforms: linux/amd64
-#          tags: ${{ steps.server_manager_docker_image_tags.outputs.tags }}
-#          push: false
-#          load: true
-#          cache-from: type=local,src=/tmp/.ubuntu-buildx-cache
-#          cache-to: type=local,dest=/tmp/.ubuntu-buildx-cache
-#          build-args: |
-#            EMULATOR_REPOSITORY=${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator
-#            EMULATOR_VERSION=${{ fromJSON(steps.docker_image_tags.outputs.json).labels['org.opencontainers.image.version'] }}
 
       - name: Build Ubuntu based server-manager docker image
         run: |
@@ -675,7 +648,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/image-kernel
           tag: ${{ env.KERNEL_VERSION }}
-          file: linux-5.5.19-ctsi-5.bin
+          file: linux-5.5.19-ctsi-6.bin
           token: ${{ secrets.CI_TOKEN }}
 
       - name: Download [rom.bin]
@@ -689,8 +662,8 @@ jobs:
       - name: Move images to cartesi images folder
         run: |
           mkdir -m 755 -p /opt/cartesi/share/images
-          mv rom.bin linux-5.5.19-ctsi-5.bin rootfs.ext2 /opt/cartesi/share/images/
-          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-5.bin linux.bin
+          mv rom.bin linux-5.5.19-ctsi-6.bin rootfs.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-5.5.19-ctsi-6.bin linux.bin
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0

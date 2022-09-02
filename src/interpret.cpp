@@ -1961,6 +1961,7 @@ static inline execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t pc, uint32
     if (!write_csr(a, csraddr, rs1val(a, insn))) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
+    // Write to rd only after potential read/write exceptions
     if (rd != 0) {
         a.write_x(rd, csrval);
     }
@@ -2000,10 +2001,6 @@ static inline execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, uint32
     // with the value of the csr when rd=rs1
     uint32_t rs1 = insn_get_rs1(insn);
     uint64_t rs1val = a.read_x(rs1);
-    uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        a.write_x(rd, csrval);
-    }
     if (rs1 != 0) {
         //??D When we optimize the inner interpreter loop, we
         //    will have to check if there was a change to the
@@ -2012,6 +2009,11 @@ static inline execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, uint32
         if (!write_csr(a, csraddr, f(csrval, rs1val))) {
             return raise_illegal_insn_exception(a, pc, insn);
         }
+    }
+    // Write to rd only after potential read/write exceptions
+    uint32_t rd = insn_get_rd(insn);
+    if (rd != 0) {
+        a.write_x(rd, csrval);
     }
     return advance_to_next_insn(a, pc);
 }
@@ -2043,10 +2045,6 @@ static inline execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc, uint3
     if (!status) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        a.write_x(rd, csrval);
-    }
     uint32_t rs1 = insn_get_rs1(insn);
     if (rs1 != 0) {
         //??D When we optimize the inner interpreter loop, we
@@ -2056,6 +2054,11 @@ static inline execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc, uint3
         if (!write_csr(a, csraddr, f(csrval, rs1))) {
             return raise_illegal_insn_exception(a, pc, insn);
         }
+    }
+    // Write to rd only after potential read/write exceptions
+    uint32_t rd = insn_get_rd(insn);
+    if (rd != 0) {
+        a.write_x(rd, csrval);
     }
     return advance_to_next_insn(a, pc);
 }

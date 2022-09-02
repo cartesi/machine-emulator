@@ -214,6 +214,7 @@ local tests = {
   {"sd_pma_overflow.bin", 16},
   {"xpie_exceptions.bin", 51},
   {"dont_write_x0.bin", 44},
+  {"mcycle_write.bin", 18},
   {"version_check.bin", 30},
 }
 

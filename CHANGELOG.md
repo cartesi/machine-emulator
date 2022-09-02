@@ -5,20 +5,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.11.0] - 2022-09-02
 ### Added
 
 - Added method to get existing remote machine
 - Added no-remote-create and no-remote-destroy options to cartesi-machine.lua
 - Prevent linux from reserving 64Mi of memory when ram-length >= 128Mi
 - Added GRPC Health Check service on the server-manager
+- Added grpc-health-probe to the server-manager docker image
+
+### Fixed
+
+- Fixed MacOSX build
 
 ### Changed
+
+- Enabled emulator TLB
+- Improved read\_memory method to read all PMA types
+- Changed marchid to 0xc
 - Bumped server-manager server version
 - Bumped remote-machine server version
-
-### Changed
-
-- Changed marchid to 0xc
 
 ## [0.10.1] - 2022-07-14
 ### Fixed

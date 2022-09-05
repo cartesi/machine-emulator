@@ -937,10 +937,10 @@ static inline execute_status execute_SC(STATE_ACCESS &a, uint64_t pc, uint32_t i
         if (!write_virtual_memory<T>(a, vaddr, static_cast<T>(a.read_x(insn_get_rs2(insn))))) {
             return advance_to_raised_exception(a);
         }
-        a.write_ilrsc(-1);
     } else {
         val = 1;
     }
+    a.write_ilrsc(-1); // Must clear reservation, regardless of failure
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0) {
         a.write_x(rd, val);

@@ -215,6 +215,7 @@ local tests = {
   {"xpie_exceptions.bin", 51},
   {"dont_write_x0.bin", 44},
   {"mcycle_write.bin", 18},
+  {"lrsc_semantics.bin", 34},
   {"version_check.bin", 30},
 }
 

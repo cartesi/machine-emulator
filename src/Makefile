@@ -182,9 +182,14 @@ EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
 CLANG_TIDY_HEADER_FILTER=$(PWD)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
 
+# Flags to minimize undefined behavior
+UBFLAGS+=-fno-strict-aliasing
+UBFLAGS+=-fno-strict-overflow
+UBFLAGS+=-fno-delete-null-pointer-checks
+
 # -fsanitize=undefined
-CXXFLAGS=-O2 -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
-CFLAGS=-O2 -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(DEFS) $(WARNS)
+CXXFLAGS=-O2 -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
+CFLAGS=-O2 -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
 
 ifeq ($(coverage-toolchain),gcc)
 CC=gcc

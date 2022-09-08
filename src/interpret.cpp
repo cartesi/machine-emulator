@@ -1779,8 +1779,9 @@ static bool write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static bool write_csr_medeleg(STATE_ACCESS &a, uint64_t val) {
-    const uint64_t mask = (1 << (MCAUSE_STORE_AMO_PAGE_FAULT + 1)) - 1;
-    a.write_medeleg((a.read_medeleg() & ~mask) | (val & mask));
+    // For exceptions that cannot occur in less privileged modes,
+    // the corresponding medeleg bits should be read-only zero
+    a.write_medeleg((a.read_medeleg() & ~MEDELEG_W_MASK) | (val & MEDELEG_W_MASK));
     return true;
 }
 

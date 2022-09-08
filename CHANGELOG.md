@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated emulator implementation with respect to latest RISC-V specification.
+
+### Fixed
+
+- Fixed many instruction inconsistencies with respect to the RISC-V specification.
+
 ## [0.11.0] - 2022-09-02
 ### Added
 

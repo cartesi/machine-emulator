@@ -2111,10 +2111,8 @@ static inline execute_status execute_ECALL(STATE_ACCESS &a, uint64_t pc, uint32_
     dump_insn(a, pc, insn, "ecall");
     auto note = a.make_scoped_note("ecall");
     (void) note;
-    //??D Need another version of raise_exception that does not modify mtval
     auto priv = a.read_iflags_PRV();
-    uint64_t mtval = a.read_mtval();
-    raise_exception(a, MCAUSE_ECALL_BASE + priv, mtval);
+    raise_exception(a, MCAUSE_ECALL_BASE + priv, pc);
     return advance_to_raised_exception(a);
 }
 
@@ -2125,8 +2123,7 @@ static inline execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t pc, uint32
     dump_insn(a, pc, insn, "ebreak");
     auto note = a.make_scoped_note("ebreak");
     (void) note;
-    //??D Need another version of raise_exception that does not modify mtval
-    raise_exception(a, MCAUSE_BREAKPOINT, a.read_mtval());
+    raise_exception(a, MCAUSE_BREAKPOINT, 0);
     return advance_to_raised_exception(a);
 }
 

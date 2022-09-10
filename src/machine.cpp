@@ -374,9 +374,6 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_s
     // Initialize PMA extension metadata on ROM
     rom_init(m_c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
 
-    // Clear all TLB entries
-    m_s.init_tlb();
-
     // Add sentinel to PMA vector
     register_pma_entry(make_empty_pma_entry(0, 0));
 }
@@ -1268,15 +1265,6 @@ bool machine::verify_dirty_page_maps(void) const {
         return false;
     }
     bool broken = false;
-    if constexpr (!avoid_tlb<machine_state>::value) {
-        // Go over the write TLB and mark as dirty all pages currently there
-        for (int i = 0; i < TLB_SIZE; ++i) {
-            const auto &write = m_s.tlb_write[i];
-            if (write.vaddr_page != UINT64_C(-1)) {
-                write.pma->mark_dirty_page(write.paddr_page - write.pma->get_start());
-            }
-        }
-    }
     // Now go over all memory PMAs verifying that all dirty pages are marked
     for (const auto &pma : m_s.pmas) {
         auto peek = pma.get_peek();
@@ -1328,15 +1316,7 @@ bool machine::update_merkle_tree(void) const {
     // double begin = now();
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
-    if constexpr (!avoid_tlb<machine_state>::value) {
-        // Go over the write TLB and mark as dirty all pages currently there
-        for (int i = 0; i < TLB_SIZE; ++i) {
-            auto &write = m_s.tlb_write[i];
-            if (write.vaddr_page != UINT64_C(-1)) {
-                write.pma->mark_dirty_page(write.paddr_page - write.pma->get_start());
-            }
-        }
-    }
+
     // Now go over all PMAs and updating the Merkle tree
     m_t.begin_update();
     for (auto &pma : m_s.pmas) {

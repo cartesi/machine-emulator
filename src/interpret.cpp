@@ -318,78 +318,6 @@ static void dump_regs(const machine_state &s) {
 #endif
 }
 
-/// \brief Mark TLB entry as dirty in dirty page map.
-/// \param tlb TLB entry to mark.
-static void tlb_mark_dirty_page(tlb_entry &tlb) {
-    if (tlb.vaddr_page != UINT64_C(-1)) {
-        tlb.pma->mark_dirty_page(tlb.paddr_page - tlb.pma->get_start());
-    }
-}
-
-/// \brief Replaces an entry in the TLB with a new one when reading.
-/// \param pma PMA entry for range.
-/// \param vaddr Target virtual address.
-/// \param paddr Target physical address.
-/// \param tlb TLB entry to replace.
-/// \returns Pointer to page start in host memory.
-static inline unsigned char *tlb_replace_read(pma_entry &pma, uint64_t vaddr, uint64_t paddr, tlb_entry &tlb) {
-    tlb.pma = &pma;
-    tlb.vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
-    tlb.paddr_page = paddr & ~PAGE_OFFSET_MASK;
-    tlb.hpage = pma.get_memory().get_host_memory() + (tlb.paddr_page - pma.get_start());
-    return tlb.hpage;
-}
-
-/// \brief Replaces an entry in the TLB with a new one when writing.
-/// \param pma PMA entry for range.
-/// \param vaddr Target virtual address.
-/// \param paddr Target physical address.
-/// \param tlb TLB entry to replace.
-/// \returns Pointer to page start in host memory.
-static inline unsigned char *tlb_replace_write(pma_entry &pma, uint64_t vaddr, uint64_t paddr, tlb_entry &tlb) {
-    // Mark page that was on TLB as dirty so we know to update the Merkle tree
-    tlb_mark_dirty_page(tlb);
-    // The rest is the same as reading
-    return tlb_replace_read(pma, vaddr, paddr, tlb);
-}
-
-/// \brief Checks for a TLB hit.
-/// \tparam T Type of access needed (uint8_t, uint16_t, uint32_t, uint64_t).
-/// \param tlb TLB entry to check.
-/// \param vaddr Target virtual address.
-/// \returns True on hit, false otherwise.
-template <typename T>
-static inline bool tlb_hit(const tlb_entry &tlb, uint64_t vaddr) {
-    // Make sure misaligned accesses are always considered a miss
-    // Otherwise, we could report a hit for a word that goes past the end of the PMA range.
-    // Aligned accesses cannot do so because the PMA ranges
-    // are always page-aligned.
-    return (tlb.vaddr_page == (vaddr & ~(PAGE_OFFSET_MASK & ~(sizeof(T) - 1))));
-}
-
-/// \brief Invalidates all TLB entries.
-/// \param s Pointer to machine state.
-static void tlb_flush_all(machine_state &s) {
-    INC_COUNTER(s, flush_all);
-    // Clear all TLB entries
-    for (int i = 0; i < TLB_SIZE; ++i) {
-        tlb_mark_dirty_page(s.tlb_write[i]);
-        s.tlb_write[i].vaddr_page = UINT64_C(-1);
-        s.tlb_read[i].vaddr_page = UINT64_C(-1);
-        s.tlb_code[i].vaddr_page = UINT64_C(-1);
-    }
-}
-
-/// \brief Invalidates a specific mapping.
-/// \param s Pointer to machine state.
-/// \param vaddr Target virtual address.
-static void tlb_flush_vaddr(machine_state &s, uint64_t vaddr) {
-    (void) vaddr;
-    INC_COUNTER(s, flush_va);
-    //??D Optimize depending on how often it is used
-    tlb_flush_all(s);
-}
-
 /// \brief Checks if CSR is read-only.
 /// \param csraddr Address of CSR in file.
 /// \returns true if read-only, false otherwise.
@@ -414,9 +342,6 @@ template <typename STATE_ACCESS>
 static void set_priv(STATE_ACCESS &a, int previous_prv, int new_prv) {
     if (previous_prv != new_prv) {
         INC_COUNTER(a.get_naked_state(), priv_level[new_prv]);
-        if constexpr (!avoid_tlb<STATE_ACCESS>::value) {
-            tlb_flush_all(a.get_naked_state());
-        }
         a.write_iflags_PRV(new_prv);
         //??D new priv 1.11 draft says invalidation should
         // happen within a trap handler, although it could
@@ -697,16 +622,6 @@ static inline uint32_t insn_get_funct7(uint32_t insn) {
 template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>
 static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval) {
     using U = std::make_unsigned_t<T>;
-    // If we have a TLB, try hitting it
-    if constexpr (!avoid_tlb<STATE_ACCESS>::value) {
-        auto tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
-        const tlb_entry &tlb = a.get_naked_state().tlb_read[tlb_idx];
-        if (tlb_hit<T>(tlb, vaddr)) {
-            *pval = aliased_aligned_read<T>(tlb.hpage + (vaddr & PAGE_OFFSET_MASK));
-            INC_COUNTER(a.get_naked_state(), tlb_rhit);
-            return true;
-        }
-    }
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (vaddr & (sizeof(T) - 1)) {
         raise_exception(a,
@@ -715,7 +630,6 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
         // Deal with aligned accesses
     } else {
         uint64_t paddr{};
-        INC_COUNTER(a.get_naked_state(), tlb_rmiss);
         if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) {
             raise_exception(a, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_PAGE_FAULT : MCAUSE_LOAD_PAGE_FAULT, vaddr);
             return false;
@@ -726,15 +640,9 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
                 vaddr);
             return false;
         } else if (pma.get_istart_M()) {
-            unsigned char *hpage = nullptr;
-            if constexpr (!avoid_tlb<STATE_ACCESS>::value) {
-                auto tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
-                tlb_entry &tlb = a.get_naked_state().tlb_read[tlb_idx];
-                hpage = tlb_replace_read(pma, vaddr, paddr, tlb);
-            } else {
-                uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-                hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
-            }
+            uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+            unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
+            
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             a.read_memory_word(paddr, hpage, hoffset, pval);
             return true;
@@ -766,16 +674,6 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
 template <typename T, typename STATE_ACCESS>
 static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_t val64) {
     using U = std::make_unsigned_t<T>;
-    // If we have a TLB, try hitting it
-    if constexpr (!avoid_tlb<STATE_ACCESS>::value) {
-        auto tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
-        tlb_entry &tlb = a.get_naked_state().tlb_write[tlb_idx];
-        if (tlb_hit<T>(tlb, vaddr)) {
-            aliased_aligned_write<T>(tlb.hpage + (vaddr & PAGE_OFFSET_MASK), static_cast<T>(val64));
-            INC_COUNTER(a.get_naked_state(), tlb_whit);
-            return true;
-        }
-    }
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (vaddr & (sizeof(T) - 1)) {
         raise_exception(a, MCAUSE_STORE_AMO_ADDRESS_MISALIGNED, vaddr);
@@ -783,7 +681,6 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
         // Deal with aligned accesses
     } else {
         uint64_t paddr{};
-        INC_COUNTER(a.get_naked_state(), tlb_wmiss);
         if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_W_SHIFT)) {
             raise_exception(a, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
             return false;
@@ -793,16 +690,10 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             raise_exception(a, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
             return false;
         } else if (pma.get_istart_M()) {
-            unsigned char *hpage = nullptr;
-            if constexpr (!avoid_tlb<STATE_ACCESS>::value) {
-                auto tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
-                tlb_entry &tlb = a.get_naked_state().tlb_write[tlb_idx];
-                hpage = tlb_replace_write(pma, vaddr, paddr, tlb);
-            } else {
-                uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-                hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
-                pma.mark_dirty_page(paddr_page - pma.get_start());
-            }
+            uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+            unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
+            pma.mark_dirty_page(paddr_page - pma.get_start());
+            
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             // write to memory
             a.write_memory_word(paddr, hpage, hoffset, static_cast<T>(val64));
@@ -1780,11 +1671,6 @@ static bool write_csr_satp(STATE_ACCESS &a, uint64_t val) {
     }
     // no ASID implemented
     a.write_satp((val & ((UINT64_C(1) << 44) - 1)) | (static_cast<uint64_t>(mode) << 60));
-    // Since MMU configuration was changted, flush the TLBs
-    // This does not need to be done within the blockchain
-    if constexpr (!avoid_tlb<STATE_ACCESS>::value) {
-        tlb_flush_all(a.get_naked_state());
-    }
     return true;
 }
 
@@ -1797,16 +1683,6 @@ static bool write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
     if (PRV_HS == ((val & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT)) {
         // HS-mode is not supported yet, set val MPP to U-mode
         val = val & ~MSTATUS_MPP_MASK;
-    }
-
-    if constexpr (!avoid_tlb<STATE_ACCESS>::value) {
-        // If MMU configuration was changed, flush the TLBs
-        // This does not need to be done within the blockchain
-        uint64_t mod = mstatus ^ val;
-        if ((mod & (MSTATUS_MPRV_MASK | MSTATUS_SUM_MASK | MSTATUS_MXR_MASK)) != 0 ||
-            ((mstatus & MSTATUS_MPRV_MASK) && (mod & MSTATUS_MPP_MASK) != 0)) {
-            tlb_flush_all(a.get_naked_state());
-        }
     }
 
     // Modify only bits that can be written to
@@ -2996,15 +2872,6 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
             return raise_illegal_insn_exception(a, pc, insn);
         }
         uint32_t rs1 = insn_get_rs1(insn);
-        if constexpr (!avoid_tlb<STATE_ACCESS>::value) {
-            if (rs1 == 0) {
-                tlb_flush_all(a.get_naked_state());
-            } else {
-                tlb_flush_vaddr(a.get_naked_state(), a.get_naked_state().x[rs1]);
-            }
-        }
-        //??D The current code TLB may have been flushed
-        // a.get_naked_state().set_brk();
         return advance_to_next_insn(a, pc);
     } else {
         return raise_illegal_insn_exception(a, pc, insn);
@@ -3418,18 +3285,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
     (void) note;
     // Get current pc from state
     uint64_t vaddr = *pc = a.read_pc();
-    // If we have a TLB, try hitting it
-    if constexpr (!avoid_tlb<STATE_ACCESS>::value) {
-        auto tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
-        const tlb_entry &tlb = a.get_naked_state().tlb_code[tlb_idx];
-        if (tlb_hit<uint32_t>(tlb, vaddr)) {
-            *pinsn = aliased_aligned_read<uint32_t>(tlb.hpage + (vaddr & PAGE_OFFSET_MASK));
-            INC_COUNTER(a.get_naked_state(), tlb_chit);
-            return fetch_status::success;
-        }
-    }
     uint64_t paddr{};
-    INC_COUNTER(a.get_naked_state(), tlb_cmiss);
     // Walk page table and obtain the physical address
     if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_C_SHIFT)) {
         raise_exception(a, MCAUSE_FETCH_PAGE_FAULT, vaddr);
@@ -3443,15 +3299,9 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
         raise_exception(a, MCAUSE_INSN_ACCESS_FAULT, vaddr);
         return fetch_status::exception;
     }
-    unsigned char *hpage = nullptr;
-    if constexpr (!avoid_tlb<STATE_ACCESS>::value) {
-        auto tlb_idx = (vaddr >> PAGE_NUMBER_SHIFT) & (TLB_SIZE - 1);
-        tlb_entry &tlb = a.get_naked_state().tlb_code[tlb_idx];
-        hpage = tlb_replace_read(pma, vaddr, paddr, tlb);
-    } else {
-        uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
-    }
+    uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+    unsigned char *hpage  = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
+
     uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
     a.read_memory_word(paddr, hpage, hoffset, pinsn);
     return fetch_status::success;

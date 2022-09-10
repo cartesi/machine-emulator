@@ -49,21 +49,6 @@
 
 namespace cartesi {
 
-/// \brief Translation Lookaside Buffer entry.
-/// \details The TLB is a small cache used to speed up translation between
-/// virtual target addresses and the corresponding memory address in the host.
-struct tlb_entry {
-    pma_entry *pma;       ///< PMA entry for corresponding range
-    uint64_t paddr_page;  ///< Target physical address of page start
-    uint64_t vaddr_page;  ///< Target virtual address of page start
-    unsigned char *hpage; ///< Pointer to page start in host memory
-};
-
-/// \brief TLB constants
-enum TLB_constants {
-    TLB_SIZE = 256 ///< Number of entries in TLB
-};
-
 #ifdef DUMP_COUNTERS
 /// \brief Machine statistics
 struct machine_statistics {
@@ -179,10 +164,6 @@ struct machine_state {
 
     bool brk; ///< Flag set when the tight loop must be broken.
 
-    std::array<tlb_entry, TLB_SIZE> tlb_read;  ///< Read TLB
-    std::array<tlb_entry, TLB_SIZE> tlb_write; ///< Write TLB
-    std::array<tlb_entry, TLB_SIZE> tlb_code;  ///< Code TLB
-
 #ifdef DUMP_COUNTERS
     machine_statistics stats;
 #endif
@@ -263,25 +244,7 @@ struct machine_state {
         return (PRV << IFLAGS_PRV_SHIFT) | (X << IFLAGS_X_SHIFT) | (Y << IFLAGS_Y_SHIFT) | (H << IFLAGS_H_SHIFT);
     }
 
-    /// \brief Initializes all TLBs with invalid entries.
-    void init_tlb(void) {
-        for (int i = 0; i < TLB_SIZE; ++i) {
-            tlb_read[i].pma = nullptr;
-            tlb_read[i].vaddr_page = UINT64_C(-1);
-            tlb_read[i].paddr_page = UINT64_C(-1);
-            tlb_read[i].hpage = nullptr;
-            tlb_write[i].pma = nullptr;
-            tlb_write[i].vaddr_page = UINT64_C(-1);
-            tlb_write[i].paddr_page = UINT64_C(-1);
-            tlb_write[i].hpage = nullptr;
-            tlb_code[i].pma = nullptr;
-            tlb_code[i].vaddr_page = UINT64_C(-1);
-            tlb_code[i].paddr_page = UINT64_C(-1);
-            tlb_code[i].hpage = nullptr;
-        }
-    }
-
-    /// \brief Obtains the block of data that has a given hash
+        /// \brief Obtains the block of data that has a given hash
     /// \param hash Pointer to buffer containing hash
     /// \param hlength Length  of hash in bytes
     /// \param dlength Maximum length of desired block of data with that hash.

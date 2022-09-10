@@ -234,8 +234,6 @@ CARTESI_OBJS:= \
 	clint.o \
 	rom.o \
 	htif.o \
-	dhd.o \
-	dhd-source.o \
 	shadow.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
@@ -443,8 +441,6 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	clint.o \
 	rom.o \
 	htif.o \
-	dhd.o \
-	dhd-source.o \
 	shadow.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \

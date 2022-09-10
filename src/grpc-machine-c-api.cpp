@@ -144,14 +144,6 @@ int cm_grpc_get_csr_address(const cm_grpc_machine_stub *stub, CM_PROC_CSR w, uin
     return cm_result_failure(err_msg);
 }
 
-int cm_grpc_dhd_h_address(const cm_grpc_machine_stub *stub, int i, uint64_t *val, char **err_msg) try {
-    const auto *cpp_stub = convert_from_c(stub);
-    *val = cartesi::grpc_virtual_machine::get_dhd_h_address(*cpp_stub, i);
-    return cm_result_success(err_msg);
-} catch (...) {
-    return cm_result_failure(err_msg);
-}
-
 int cm_grpc_get_semantic_version(const cm_grpc_machine_stub *stub, const cm_semantic_version **version,
     char **err_msg) try {
     const auto *cpp_stub = convert_from_c(stub);

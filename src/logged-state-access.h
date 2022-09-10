@@ -26,7 +26,6 @@
 
 #include "access-log.h"
 #include "clint.h"
-#include "dhd.h"
 #include "htif.h"
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
@@ -570,61 +569,6 @@ private:
     void do_write_clint_mtimecmp(uint64_t val) {
         log_before_write_write_and_update(PMA_CLINT_START + clint_get_csr_rel_addr(clint_csr::mtimecmp),
             m_m.get_state().clint.mtimecmp, val, "clint.mtimecmp");
-    }
-
-    uint64_t do_read_dhd_tstart(void) const {
-        return log_read(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::tstart), m_m.get_state().dhd.tstart,
-            "dhd.tstart");
-    }
-
-    void do_write_dhd_tstart(uint64_t val) {
-        log_before_write_write_and_update(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::tstart),
-            m_m.get_state().dhd.tstart, val, "dhd.tstart");
-    }
-
-    uint64_t do_read_dhd_tlength(void) const {
-        return log_read(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::tlength), m_m.get_state().dhd.tlength,
-            "dhd.tlength");
-    }
-
-    void do_write_dhd_tlength(uint64_t val) {
-        log_before_write_write_and_update(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::tlength),
-            m_m.get_state().dhd.tlength, val, "dhd.tlength");
-    }
-
-    uint64_t do_read_dhd_dlength(void) const {
-        return log_read(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::dlength), m_m.get_state().dhd.dlength,
-            "dhd.dlength");
-    }
-
-    void do_write_dhd_dlength(uint64_t val) {
-        log_before_write_write_and_update(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::dlength),
-            m_m.get_state().dhd.dlength, val, "dhd.dlength");
-    }
-
-    uint64_t do_read_dhd_hlength(void) const {
-        return log_read(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::hlength), m_m.get_state().dhd.hlength,
-            "dhd.hlength");
-    }
-
-    void do_write_dhd_hlength(uint64_t val) {
-        log_before_write_write_and_update(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::hlength),
-            m_m.get_state().dhd.hlength, val, "dhd.hlength");
-    }
-
-    uint64_t do_read_dhd_h(int i) const {
-        return log_read(PMA_DHD_START + dhd_get_h_rel_addr(i), m_m.get_state().dhd.h[i], "dhd.h");
-    }
-
-    void do_write_dhd_h(int i, uint64_t val) {
-        assert(i != 0);
-        return log_before_write_write_and_update(PMA_DHD_START + dhd_get_h_rel_addr(i), m_m.get_state().dhd.h[i], val,
-            "dhd.h");
-    }
-
-    dhd_data do_dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength) {
-        // no need to log this
-        return m_m.get_state().dehash(hash, hlength, dlength);
     }
 
     uint64_t do_read_htif_fromhost(void) const {

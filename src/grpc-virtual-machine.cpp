@@ -362,39 +362,12 @@ void grpc_virtual_machine::do_write_x(int i, uint64_t val) {
     check_status(m_stub->get_stub()->WriteX(&context, request, &response));
 }
 
-uint64_t grpc_virtual_machine::do_read_dhd_h(int i) const {
-    ReadDhdHRequest request;
-    request.set_index(i);
-    ReadDhdHResponse response;
-    ClientContext context;
-    check_status(m_stub->get_stub()->ReadDhdH(&context, request, &response));
-    return response.value();
-}
-
-void grpc_virtual_machine::do_write_dhd_h(int i, uint64_t val) {
-    WriteDhdHRequest request;
-    request.set_index(i);
-    request.set_value(val);
-    Void response;
-    ClientContext context;
-    check_status(m_stub->get_stub()->WriteDhdH(&context, request, &response));
-}
-
 uint64_t grpc_virtual_machine::get_x_address(const grpc_machine_stub_ptr &stub, int i) {
     GetXAddressRequest request;
     request.set_index(i);
     GetXAddressResponse response;
     ClientContext context;
     check_status(stub->get_stub()->GetXAddress(&context, request, &response));
-    return response.address();
-}
-
-uint64_t grpc_virtual_machine::get_dhd_h_address(const grpc_machine_stub_ptr &stub, int i) {
-    GetDhdHAddressRequest request;
-    request.set_index(i);
-    GetDhdHAddressResponse response;
-    ClientContext context;
-    check_status(stub->get_stub()->GetDhdHAddress(&context, request, &response));
     return response.address();
 }
 
@@ -736,38 +709,6 @@ uint64_t grpc_virtual_machine::do_read_clint_mtimecmp(void) const {
 
 void grpc_virtual_machine::do_write_clint_mtimecmp(uint64_t val) {
     write_csr(csr::clint_mtimecmp, val);
-}
-
-uint64_t grpc_virtual_machine::do_read_dhd_tstart(void) const {
-    return read_csr(csr::dhd_tstart);
-}
-
-void grpc_virtual_machine::do_write_dhd_tstart(uint64_t val) {
-    write_csr(csr::dhd_tstart, val);
-}
-
-uint64_t grpc_virtual_machine::do_read_dhd_tlength(void) const {
-    return read_csr(csr::dhd_tlength);
-}
-
-void grpc_virtual_machine::do_write_dhd_tlength(uint64_t val) {
-    write_csr(csr::dhd_tlength, val);
-}
-
-uint64_t grpc_virtual_machine::do_read_dhd_dlength(void) const {
-    return read_csr(csr::dhd_dlength);
-}
-
-void grpc_virtual_machine::do_write_dhd_dlength(uint64_t val) {
-    write_csr(csr::dhd_dlength, val);
-}
-
-uint64_t grpc_virtual_machine::do_read_dhd_hlength(void) const {
-    return read_csr(csr::dhd_hlength);
-}
-
-void grpc_virtual_machine::do_write_dhd_hlength(uint64_t val) {
-    write_csr(csr::dhd_hlength, val);
 }
 
 void grpc_virtual_machine::do_get_root_hash(hash_type &hash) const {

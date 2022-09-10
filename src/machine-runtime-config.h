@@ -24,11 +24,6 @@
 
 namespace cartesi {
 
-/// \brief DHD runtime configuration
-struct dhd_runtime_config {
-    std::string source_address; ///< Address of dehash source
-};
-
 /// \brief Concurrency runtime configuration
 struct concurrency_config {
     uint64_t update_merkle_tree{};
@@ -36,7 +31,6 @@ struct concurrency_config {
 
 /// \brief Machine runtime configuration
 struct machine_runtime_config {
-    dhd_runtime_config dhd{};
     concurrency_config concurrency{};
 };
 

@@ -78,12 +78,6 @@ static int machine_class_index_get_csr_address(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine.get_dhd_h_address() method implementation.
-static int machine_class_index_get_dhd_h_address(lua_State *L) {
-    lua_pushinteger(L, static_cast<lua_Integer>(cm_get_dhd_h_address(static_cast<int>(luaL_checkinteger(L, 1)))));
-    return 1;
-}
-
 /// \brief Contents of the machine class metatable __index table.
 static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
     {"get_default_config", machine_class_index_get_default_config},
@@ -91,7 +85,6 @@ static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
     {"verify_state_transition", machine_class_index_verify_state_transition},
     {"get_x_address", machine_class_index_get_x_address},
     {"get_csr_address", machine_class_index_get_csr_address},
-    {"get_dhd_h_address", machine_class_index_get_dhd_h_address},
 });
 
 /// \brief This is the cartesi.machine() constructor implementation.

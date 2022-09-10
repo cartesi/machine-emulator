@@ -39,8 +39,6 @@ enum PMA_ranges : uint64_t {
     //    PMA_FIRST_VIRTIO_START  = EXPAND_UINT64_C(PMA_FIRST_VIRTIO_START_DEF),   ///< Start of first VIRTIO range
     //    PMA_VIRTIO_LENGTH  = EXPAND_UINT64_C(PMA_VIRTIO_LENGTH_DEF),   ///< Length of each VIRTIO range
     //    PMA_LAST_VIRTIO_END  = EXPAND_UINT64_C(PMA_LAST_VIRTIO_END_DEF),   ///< End of last VIRTIO range
-    PMA_DHD_START = EXPAND_UINT64_C(PMA_DHD_START_DEF),   ///< Start of DHD range
-    PMA_DHD_LENGTH = EXPAND_UINT64_C(PMA_DHD_LENGTH_DEF), ///< Length of DHD range
     //    PMA_PLIC_START    = EXPAND_UINT64_C(PMA_PLIC_START_DEF),    ///< Start of PLIC range
     //    PMA_PLIC_LENGTH   = EXPAND_UINT64_C(PMA_PLIC_LENGTH_DEF),   ///< Length of PLIC range
     PMA_RAM_START = EXPAND_UINT64_C(PMA_RAM_START_DEF), ///< Start of RAM range
@@ -95,7 +93,6 @@ enum class PMA_ISTART_DID {
     flash_drive = PMA_FLASH_DRIVE_DID_DEF,                     ///< DID for drive device
     CLINT = PMA_CLINT_DID_DEF,                                 ///< DID for CLINT device
     HTIF = PMA_HTIF_DID_DEF,                                   ///< DID for HTIF device
-    DHD = PMA_DHD_DID_DEF,                                     ///< DID for DHD
     rollup_rx_buffer = PMA_ROLLUP_RX_BUFFER_DID_DEF,           ///< DID for rollup receive buffer
     rollup_tx_buffer = PMA_ROLLUP_TX_BUFFER_DID_DEF,           ///< DID for rollup transmit buffer
     rollup_input_metadata = PMA_ROLLUP_INPUT_METADATA_DID_DEF, ///< DID for rollup input metadata memory range

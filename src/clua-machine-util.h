@@ -92,14 +92,6 @@ void cm_delete(cm_ram_config *p);
 template <>
 void cm_delete(cm_rom_config *p);
 
-/// \brief Deleter for C api dhd config
-template <>
-void cm_delete(cm_dhd_config *p);
-
-/// \brief Deleter for C api dhd runtime config
-template <>
-void cm_delete(cm_dhd_runtime_config *p);
-
 template <typename T>
 class clua_managed_cm_ptr final {
 public:

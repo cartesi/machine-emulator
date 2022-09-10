@@ -547,56 +547,6 @@ public:
         do_write_clint_mtimecmp(val);
     }
 
-    /// \brief Reads dhd's tstart
-    uint64_t read_dhd_tstart(void) const {
-        return do_read_dhd_tstart();
-    }
-
-    /// \brief Writes dhd's tstart
-    void write_dhd_tstart(uint64_t val) {
-        do_write_dhd_tstart(val);
-    }
-
-    /// \brief Reads dhd's tlength
-    uint64_t read_dhd_tlength(void) const {
-        return do_read_dhd_tlength();
-    }
-
-    /// \brief Writes dhd's tlength
-    void write_dhd_tlength(uint64_t val) {
-        do_write_dhd_tlength(val);
-    }
-
-    /// \brief Reads dhd's dlength
-    uint64_t read_dhd_dlength(void) const {
-        return do_read_dhd_dlength();
-    }
-
-    /// \brief Writes dhd's dlength
-    void write_dhd_dlength(uint64_t val) {
-        do_write_dhd_dlength(val);
-    }
-
-    /// \brief Reads dhd's hlength
-    uint64_t read_dhd_hlength(void) const {
-        return do_read_dhd_hlength();
-    }
-
-    /// \brief Writes dhd's hlength
-    void write_dhd_hlength(uint64_t val) {
-        do_write_dhd_hlength(val);
-    }
-
-    /// \brief Reads the value of a dhd h register.
-    uint64_t read_dhd_h(int i) const {
-        return do_read_dhd_h(i);
-    }
-
-    /// \brief Writes the value of a dhd h register.
-    void write_dhd_h(int i, uint64_t val) {
-        do_write_dhd_h(i, val);
-    }
-
 private:
     virtual void do_run(uint64_t mcycle_end) = 0;
     virtual void do_store(const std::string &dir) = 0;
@@ -689,16 +639,6 @@ private:
     virtual void do_write_htif_iyield(uint64_t val) = 0;
     virtual uint64_t do_read_clint_mtimecmp(void) const = 0;
     virtual void do_write_clint_mtimecmp(uint64_t val) = 0;
-    virtual uint64_t do_read_dhd_tstart(void) const = 0;
-    virtual void do_write_dhd_tstart(uint64_t val) = 0;
-    virtual uint64_t do_read_dhd_tlength(void) const = 0;
-    virtual void do_write_dhd_tlength(uint64_t val) = 0;
-    virtual uint64_t do_read_dhd_dlength(void) const = 0;
-    virtual void do_write_dhd_dlength(uint64_t val) = 0;
-    virtual uint64_t do_read_dhd_hlength(void) const = 0;
-    virtual void do_write_dhd_hlength(uint64_t val) = 0;
-    virtual uint64_t do_read_dhd_h(int i) const = 0;
-    virtual void do_write_dhd_h(int i, uint64_t val) = 0;
     virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;
     virtual void do_dump_pmas(void) const = 0;
     virtual bool do_read_word(uint64_t word_address, uint64_t &word_value) const = 0;

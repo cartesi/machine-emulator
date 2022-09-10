@@ -102,8 +102,6 @@ public:
 
     static uint64_t get_x_address(const grpc_machine_stub_ptr &stub, int i);
 
-    static uint64_t get_dhd_h_address(const grpc_machine_stub_ptr &stub, int i);
-
     static uint64_t get_csr_address(const grpc_machine_stub_ptr &stub, csr w);
 
 private:
@@ -196,16 +194,6 @@ private:
     void do_write_htif_iyield(uint64_t val) override;
     uint64_t do_read_clint_mtimecmp(void) const override;
     void do_write_clint_mtimecmp(uint64_t val) override;
-    uint64_t do_read_dhd_tstart(void) const override;
-    void do_write_dhd_tstart(uint64_t val) override;
-    uint64_t do_read_dhd_tlength(void) const override;
-    void do_write_dhd_tlength(uint64_t val) override;
-    uint64_t do_read_dhd_dlength(void) const override;
-    void do_write_dhd_dlength(uint64_t val) override;
-    uint64_t do_read_dhd_hlength(void) const override;
-    void do_write_dhd_hlength(uint64_t val) override;
-    uint64_t do_read_dhd_h(int i) const override;
-    void do_write_dhd_h(int i, uint64_t val) override;
     void do_get_root_hash(hash_type &hash) const override;
     machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const override;
     void do_replace_memory_range(const memory_range_config &new_range) override;

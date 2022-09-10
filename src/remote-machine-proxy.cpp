@@ -460,45 +460,6 @@ static auto new_ResetIflagsY_handler(handler_context &hctx) {
         });
 }
 
-static auto new_GetDhdHAddress_handler(handler_context &hctx) {
-    return new_handler<GetDhdHAddressRequest, GetDhdHAddressResponse>(
-        "GetDhdHAddress",
-        [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto *cq = hctx.completion_queue.get();
-            hctx.async_service.RequestGetDhdHAddress(&server_context, &request, &writer, cq, cq, self);
-        },
-        [&hctx](auto &client_context, auto &request) {
-            auto *cq = hctx.completion_queue.get();
-            return hctx.stub->AsyncGetDhdHAddress(&client_context, request, cq);
-        });
-}
-
-static auto new_ReadDhdH_handler(handler_context &hctx) {
-    return new_handler<ReadDhdHRequest, ReadDhdHResponse>(
-        "ReadDhdH",
-        [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto *cq = hctx.completion_queue.get();
-            hctx.async_service.RequestReadDhdH(&server_context, &request, &writer, cq, cq, self);
-        },
-        [&hctx](auto &client_context, auto &request) {
-            auto *cq = hctx.completion_queue.get();
-            return hctx.stub->AsyncReadDhdH(&client_context, request, cq);
-        });
-}
-
-static auto new_WriteDhdH_handler(handler_context &hctx) {
-    return new_handler<WriteDhdHRequest, Void>(
-        "WriteDhdH",
-        [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
-            auto *cq = hctx.completion_queue.get();
-            hctx.async_service.RequestWriteDhdH(&server_context, &request, &writer, cq, cq, self);
-        },
-        [&hctx](auto &client_context, auto &request) {
-            auto *cq = hctx.completion_queue.get();
-            return hctx.stub->AsyncWriteDhdH(&client_context, request, cq);
-        });
-}
-
 static auto new_GetCsrAddress_handler(handler_context &hctx) {
     return new_handler<GetCsrAddressRequest, GetCsrAddressResponse>(
         "GetCsrAddress",
@@ -771,9 +732,6 @@ static void enable_server_handlers(handler_context &hctx) {
     new_ReadX_handler(hctx);                 // NOLINT: cannot leak (pointer is in completion queue)
     new_WriteX_handler(hctx);                // NOLINT: cannot leak (pointer is in completion queue)
     new_ResetIflagsY_handler(hctx);          // NOLINT: cannot leak (pointer is in completion queue)
-    new_GetDhdHAddress_handler(hctx);        // NOLINT: cannot leak (pointer is in completion queue)
-    new_ReadDhdH_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
-    new_WriteDhdH_handler(hctx);             // NOLINT: cannot leak (pointer is in completion queue)
     new_GetCsrAddress_handler(hctx);         // NOLINT: cannot leak (pointer is in completion queue)
     new_ReadCsr_handler(hctx);               // NOLINT: cannot leak (pointer is in completion queue)
     new_WriteCsr_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)

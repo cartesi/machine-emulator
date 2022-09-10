@@ -124,31 +124,7 @@ where options are:
     semantics are the same as for the --flash-drive option with the following
     difference: start and length are mandatory, and must match those of a
     previously existing flash drive or rollup memory memory range.
-
-  --dhd=<key>:<value>[,<key>:<value>[,...]...]
-    configures the dehashing device.
-    by default, the device is not present.
-
-    <key>:<value> is one of
-        filename:<filename>
-        tstart:<number>
-        tlength:<number>
-
-        filename (optional)
-        gives the name of the file containing the initial dehashed data.
-        when omitted or set to the empty, the data starts filled with 0.
-
-        tstart (mandatory when device present)
-        sets the start of target physical memory range for output data.
-        must be aligned to tlength.
-
-        tlength (mandatory when device present)
-        gives the length of target physical memory range for output data.
-        must be a power of 2 greater than 4Ki, or 0 when device not present.
-
-  --dhd-source=<address>
-    address of server acting as source for dehashed data.
-
+  
   --rollup-rx-buffer=<key>:<value>[,<key>:<value>[,...]...]
   --rollup-tx-buffer=<key>:<value>[,<key>:<value>[,...]...]
   --rollup-input-metadata=<key>:<value>[,<key>:<value>[,...]...]
@@ -358,8 +334,6 @@ local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
 local rom_image_filename = images_path .. "rom.bin"
 local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce"
-local dhd = nil
-local dhd_source_address = nil
 local rollup = nil
 local rollup_advance = nil
 local rollup_inspect = nil
@@ -580,32 +554,6 @@ local options = {
             query = "query.bin",
             report = "query-report-%o.bin"
         }
-        return true
-    end },
-    { "^(%-%-dhd%=(.+))$", function(all, opts)
-        if not opts then return false end
-        local d = util.parse_options(opts, {
-            filename = true,
-            tlength = true,
-            tstart = true
-        })
-        d.image_filename = d.filename
-        d.filename = nil
-        if d.image_filename == true then d.image_filename = "" end
-        d.tstart = assert(util.parse_number(d.tstart),
-                "invalid start of target in " .. all)
-        d.tlength = assert(util.parse_number(d.tlength),
-                "invalid length of target in " .. all)
-        dhd = {
-            tstart = d.tstart,
-            tlength = d.tlength,
-            image_filename = d.image_filename,
-        }
-        return true
-    end },
-    { "^%-%-dhd%-source%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        dhd_source_address = o
         return true
     end },
     { "^(%-%-concurrency%=(.+))$", function(all, opts)
@@ -916,24 +864,6 @@ local function store_machine_config(config, output)
     output("    mtimecmp = 0x%x,", clint.mtimecmp or def.clint.mtimecmp)
     comment_default(clint.mtimecmp, def.clint.mtimecmp)
     output("  },\n")
-    if config.dhd then
-        local dhd = config.dhd
-        output("  dhd = {\n")
-        output("    tstart = 0x%x,\n", dhd.tstart)
-        output("    tlength = 0x%x,\n", dhd.tlength)
-        if dhd.image_filename and dhd.image_filename ~= "" then
-            output("      image_filename = %q,\n", dhd.image_filename)
-        end
-        output("    dlength = 0x%x,\n", dhd.dlength)
-        output("    hlength = 0x%x,\n", dhd.hlength)
-        output("    h = {\n")
-        for i = 1, 4 do
-            local hi = dhd.h[i] or def.dhd.h[i]
-            output("      0x%x,\n",  hi)
-        end
-        output("    },\n")
-        output("  },\n")
-    end
     output("  flash_drive = {\n")
     for i, f in ipairs(config.flash_drive) do
         output("    ")
@@ -1054,9 +984,6 @@ if remote_address then
 end
 
 local runtime = {
-    dhd = {
-        source_address = dhd_source_address
-    },
     concurrency = {
         update_merkle_tree = concurrency_update_merkle_tree
     }
@@ -1095,7 +1022,6 @@ else
             yield_automatic = htif_yield_automatic,
             yield_manual = htif_yield_manual
         },
-        dhd = dhd,
         rollup = rollup,
         flash_drive = {},
     }

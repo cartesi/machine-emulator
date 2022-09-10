@@ -181,7 +181,6 @@ end
 local SHADOW_BASE = 0x0
 local CLINT_BASE = 0x2000000
 local HTIF_BASE = 0x40008000
-local DHD_BASE = 0x40030000
 
 local function get_cpu_csr_names_addresses()
 
@@ -221,10 +220,6 @@ local function get_cpu_csr_names_addresses()
         {"htif_ihalt", HTIF_BASE+0x10},
         {"htif_iconsole", HTIF_BASE+0x18},
         {"htif_iyield", HTIF_BASE+0x20},
-        {"dhd_tstart", DHD_BASE+0x8},
-        {"dhd_tlength", DHD_BASE+0x10},
-        {"dhd_dlength", DHD_BASE+0x18},
-        {"dhd_hlength", DHD_BASE+0x20},
     }
 
     return cpu_csr_names
@@ -390,21 +385,6 @@ do_test("should return address value for x registers",
     end
 )
 
-print("\n\ntesting get_dhd_h_address function binding")
-do_test("should return address value for dhd h registers",
-    function(machine)
-        local module = cartesi
-        if (type == "grpc") then
-            if not remote then remote = connect() end
-            module = remote
-        end
-        -- Check dhd h_i address
-        for i = 0,3 do
-            assert(module.machine.get_dhd_h_address(i) == DHD_BASE+0x28+i*8, "invalid return for dhd.h"..i)
-        end
-    end
-)
-
 local function test_config_memory_range(range, name)
     assert(type(range.length) == "number", "invalid "..name..".length")
     assert(type(range.start) == "number", "invalid "..name..".start")
@@ -526,10 +506,6 @@ do_test("should return expected values",
         initial_csr_values.htif_ihalt = 0x0
         initial_csr_values.htif_iconsole = 0x0
         initial_csr_values.htif_iyield = 0x0
-        initial_csr_values.dhd_tstart = 0x0
-        initial_csr_values.dhd_tlength = 0x0
-        initial_csr_values.dhd_dlength = 0x0
-        initial_csr_values.dhd_hlength = 0x0
 
         -- Check csr register read
         local to_ignore = {

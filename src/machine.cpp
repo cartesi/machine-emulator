@@ -28,7 +28,6 @@
 #include <sys/stat.h>
 
 #include "clint.h"
-#include "dhd.h"
 #include "htif.h"
 #include "interpret.h"
 #include "logged-state-access.h"
@@ -335,41 +334,6 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_s
 
     // Register shadow device
     register_pma_entry(make_shadow_pma_entry(PMA_SHADOW_START, PMA_SHADOW_LENGTH));
-
-    if (m_c.dhd.has_value()) {
-        // Add DHD device only if tlength is non-zero...
-        if (m_c.dhd->tlength != 0) {
-            // ... and also a power of 2...
-            if ((m_c.dhd->tlength & (m_c.dhd->tlength - 1)) != 0) {
-                throw std::invalid_argument{"DHD tlength not a power of 2"};
-            }
-            // ... and tstart is aligned to that power of 2
-            if ((m_c.dhd->tstart & (m_c.dhd->tlength - 1)) != 0) {
-                throw std::invalid_argument{"DHD tstart not aligned to tlength"};
-            }
-            // Register associated target range
-            if (m_c.dhd->image_filename.empty()) {
-                register_pma_entry(
-                    make_callocd_memory_pma_entry(m_c.dhd->tstart, m_c.dhd->tlength).set_flags(m_rom_flags));
-            } else {
-                register_pma_entry(
-                    make_callocd_memory_pma_entry(m_c.dhd->tstart, m_c.dhd->tlength, m_c.dhd->image_filename)
-                        .set_flags(m_rom_flags));
-            }
-            // Register DHD range itself
-            register_pma_entry(make_dhd_pma_entry(PMA_DHD_START, PMA_DHD_LENGTH));
-            // Set the DHD source in the state
-            m_s.dhd.source = make_dhd_source(r.dhd.source_address);
-        }
-        // Copy DHD state from config to machine
-        write_dhd_tstart(m_c.dhd->tstart);
-        write_dhd_tlength(m_c.dhd->tlength);
-        write_dhd_dlength(m_c.dhd->dlength);
-        write_dhd_hlength(m_c.dhd->hlength);
-        for (int i = 0; i < DHD_H_REG_COUNT; i++) {
-            write_dhd_h(i, m_c.dhd->h[i]);
-        }
-    }
 
     // Initialize PMA extension metadata on ROM
     rom_init(m_c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
@@ -872,50 +836,6 @@ void machine::write_clint_mtimecmp(uint64_t val) {
     m_s.clint.mtimecmp = val;
 }
 
-uint64_t machine::read_dhd_tstart(void) const {
-    return m_s.dhd.tstart;
-}
-
-void machine::write_dhd_tstart(uint64_t val) {
-    m_s.dhd.tstart = val;
-}
-
-uint64_t machine::read_dhd_tlength(void) const {
-    return m_s.dhd.tlength;
-}
-
-void machine::write_dhd_tlength(uint64_t val) {
-    m_s.dhd.tlength = val;
-}
-
-uint64_t machine::read_dhd_dlength(void) const {
-    return m_s.dhd.dlength;
-}
-
-void machine::write_dhd_dlength(uint64_t val) {
-    m_s.dhd.dlength = val;
-}
-
-uint64_t machine::read_dhd_hlength(void) const {
-    return m_s.dhd.hlength;
-}
-
-void machine::write_dhd_hlength(uint64_t val) {
-    m_s.dhd.hlength = val;
-}
-
-uint64_t machine::read_dhd_h(int i) const {
-    return m_s.dhd.h[i];
-}
-
-void machine::write_dhd_h(int i, uint64_t val) {
-    m_s.dhd.h[i] = val;
-}
-
-uint64_t machine::get_dhd_h_address(int i) {
-    return PMA_DHD_START + dhd_get_h_rel_addr(i);
-}
-
 uint64_t machine::read_csr(csr r) const {
     switch (r) {
         case csr::pc:
@@ -988,14 +908,6 @@ uint64_t machine::read_csr(csr r) const {
             return read_htif_iconsole();
         case csr::htif_iyield:
             return read_htif_iyield();
-        case csr::dhd_tstart:
-            return read_dhd_tstart();
-        case csr::dhd_tlength:
-            return read_dhd_tlength();
-        case csr::dhd_dlength:
-            return read_dhd_dlength();
-        case csr::dhd_hlength:
-            return read_dhd_hlength();
         default:
             throw std::invalid_argument{"unknown CSR"};
             return 0; // never reached
@@ -1062,14 +974,6 @@ void machine::write_csr(csr w, uint64_t val) {
             return write_htif_tohost(val);
         case csr::htif_fromhost:
             return write_htif_fromhost(val);
-        case csr::dhd_tstart:
-            return write_dhd_tstart(val);
-        case csr::dhd_tlength:
-            return write_dhd_tlength(val);
-        case csr::dhd_dlength:
-            return write_dhd_dlength(val);
-        case csr::dhd_hlength:
-            return write_dhd_hlength(val);
         case csr::htif_ihalt:
             return write_htif_ihalt(val);
         case csr::htif_iconsole:
@@ -1099,13 +1003,6 @@ static inline uint64_t get_csr_addr(shadow_csr w) {
 /// \return Address of the specified CSR in HTIF
 static inline uint64_t htif_get_csr_addr(htif::csr r) {
     return PMA_HTIF_START + htif::get_csr_rel_addr(r);
-}
-
-/// \brief Returns the address of a CSR in DHD
-/// \param w The desired CSR
-/// \return Address of the specified CSR in DHD
-static inline uint64_t dhd_get_csr_addr(dhd_csr r) {
-    return PMA_DHD_START + dhd_get_csr_rel_addr(r);
 }
 
 /// \brief Returns the address of a CSR in CLINT
@@ -1187,14 +1084,6 @@ uint64_t machine::get_csr_address(csr w) {
             return htif_get_csr_addr(htif::csr::iyield);
         case csr::clint_mtimecmp:
             return clint_get_csr_addr(clint_csr::mtimecmp);
-        case csr::dhd_tstart:
-            return dhd_get_csr_addr(dhd_csr::tstart);
-        case csr::dhd_tlength:
-            return dhd_get_csr_addr(dhd_csr::tlength);
-        case csr::dhd_dlength:
-            return dhd_get_csr_addr(dhd_csr::dlength);
-        case csr::dhd_hlength:
-            return dhd_get_csr_addr(dhd_csr::hlength);
         default:
             throw std::invalid_argument{"unknown CSR"};
     }
@@ -1300,10 +1189,6 @@ bool machine::verify_dirty_page_maps(void) const {
         }
     }
     return !broken;
-}
-
-dhd_data machine::dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength) {
-    return m_s.dehash(hash, hlength, dlength);
 }
 
 static uint64_t get_task_concurrency(uint64_t value) {
@@ -1637,11 +1522,12 @@ static uint64_t get_next_mcycle_from_log(const access_log &log) {
 }
 
 void machine::verify_access_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
+    (void) r;
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
-    step_state_access a(log, log.get_log_type().has_proofs(), make_dhd_source(r.dhd.source_address), one_based);
+    step_state_access a(log, log.get_log_type().has_proofs(), one_based);
     uint64_t next_mcycle = get_next_mcycle_from_log(log);
     interpret(a, next_mcycle);
     a.finish();
@@ -1653,7 +1539,7 @@ machine_config machine::get_default_config(void) {
 
 void machine::verify_state_transition(const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after, const machine_runtime_config &r, bool one_based) {
-
+    (void) r;
     // We need proofs in order to verify the state transition
     if (!log.get_log_type().has_proofs()) {
         throw std::invalid_argument{"log has no proofs"};
@@ -1671,7 +1557,7 @@ void machine::verify_state_transition(const hash_type &root_hash_before, const a
         throw std::invalid_argument{"mismatch in root hash before step"};
     }
     // Verify all intermediate state transitions
-    step_state_access a(log, true /* verify proofs! */, make_dhd_source(r.dhd.source_address), one_based);
+    step_state_access a(log, true /* verify proofs! */, one_based);
     uint64_t next_mcycle = get_next_mcycle_from_log(log);
     interpret(a, next_mcycle);
     a.finish();

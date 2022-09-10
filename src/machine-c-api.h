@@ -129,11 +129,6 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_HTIF_IHALT,
     CM_PROC_HTIF_ICONSOLE,
     CM_PROC_HTIF_IYIELD,
-    CM_PROC_DHD_RESERVED,
-    CM_PROC_DHD_TSTART,
-    CM_PROC_DHD_TLENGTH,
-    CM_PROC_DHD_DLENGTH,
-    CM_PROC_DHD_HLENGTH,
     CM_PROC_UNKNOWN
 } CM_PROC_CSR;
 
@@ -211,17 +206,6 @@ typedef struct {          // NOLINT(modernize-use-using)
     bool yield_automatic; ///< Make yield automatic available?
 } cm_htif_config;
 
-/// \brief DHD device state configuration
-typedef struct {                            // NOLINT(modernize-use-using)
-    bool has_value;                         ///< Represents whether the rest of the struct have been filled
-    uint64_t tstart;                        ///< Start of target physical memory range for output data
-    uint64_t tlength;                       ///< Length of target physical memory range for output data
-    const char *image_filename;             ///< Data image file name
-    uint64_t dlength;                       ///< Output data length CSR
-    uint64_t hlength;                       ///< Input hash length CSR
-    uint64_t h[CM_MACHINE_DHD_H_REG_COUNT]; ///< Input hash words
-} cm_dhd_config;
-
 /// \brief Rollup state configuration
 typedef struct {                           // NOLINT(modernize-use-using)
     bool has_value;                        ///< Represents whether the rest of the struct have been filled
@@ -240,7 +224,6 @@ typedef struct { // NOLINT(modernize-use-using)
     cm_memory_range_config_array flash_drive;
     cm_clint_config clint;
     cm_htif_config htif;
-    cm_dhd_config dhd;
     cm_rollup_config rollup;
 } cm_machine_config;
 
@@ -320,11 +303,6 @@ typedef struct {                    // NOLINT(modernize-use-using)
     cm_access_log_type log_type;    ///< Log type
 } cm_access_log;
 
-/// \brief DHD runtime configuration
-typedef struct {                // NOLINT(modernize-use-using)
-    const char *source_address; ///< Address of dehash source
-} cm_dhd_runtime_config;
-
 /// \brief Concurrency runtime configuration
 typedef struct { // NOLINT(modernize-use-using)
     uint64_t update_merkle_tree;
@@ -332,7 +310,6 @@ typedef struct { // NOLINT(modernize-use-using)
 
 /// \brief Machine runtime configuration
 typedef struct { // NOLINT(modernize-use-using)
-    cm_dhd_runtime_config dhd;
     cm_concurrency_config concurrency;
 } cm_machine_runtime_config;
 
@@ -1211,105 +1188,6 @@ CM_API int cm_read_clint_mtimecmp(const cm_machine *m, uint64_t *val, char **err
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_clint_mtimecmp(cm_machine *m, uint64_t val, char **err_msg);
-
-/// \brief Reads the value of DHD's tstart register.
-/// \param m Pointer to valid machine instance
-/// \param val Receives value of the register.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_dhd_tstart(const cm_machine *m, uint64_t *val, char **err_msg);
-
-/// \brief Writes the value of DHD's tstart register.
-/// \param m Pointer to valid machine instance
-/// \param val New register value.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
-/// \returns 0 for success, non zero code for error
-CM_API int cm_write_dhd_tstart(cm_machine *m, uint64_t val, char **err_msg);
-
-/// \brief Reads the value of DHD's tlength register.
-/// \param m Pointer to valid machine instance
-/// \param val Receives value of the register.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_dhd_tlength(const cm_machine *m, uint64_t *val, char **err_msg);
-
-/// \brief Writes the value of DHD's tlength register.
-/// \param m Pointer to valid machine instance
-/// \param val New register value.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
-/// \returns 0 for success, non zero code for error
-CM_API int cm_write_dhd_tlength(cm_machine *m, uint64_t val, char **err_msg);
-
-/// \brief Reads the value of DHD's dlength register.
-/// \param m Pointer to valid machine instance
-/// \param val Receives value of the register.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_dhd_dlength(const cm_machine *m, uint64_t *val, char **err_msg);
-
-/// \brief Writes the value of DHD's dlength register.
-/// \param m Pointer to valid machine instance
-/// \param val New register value.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
-/// \returns 0 for success, non zero code for error
-CM_API int cm_write_dhd_dlength(cm_machine *m, uint64_t val, char **err_msg);
-
-/// \brief Reads the value of DHD's hlength register.
-/// \param m Pointer to valid machine instance
-/// \param val Receives value of the register.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_dhd_hlength(const cm_machine *m, uint64_t *val, char **err_msg);
-
-/// \brief Writes the value of DHD's hlength register.
-/// \param m Pointer to valid machine instance
-/// \param val New register value.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
-/// \returns 0 for success, non zero code for error
-CM_API int cm_write_dhd_hlength(cm_machine *m, uint64_t val, char **err_msg);
-
-/// \brief Reads the value of DHD's input hash word
-/// \param m Pointer to valid machine instance
-/// \param i Index of input hash word.
-/// Between 0 and DHD_H_REG_COUNT-1, inclusive
-/// \param val Receives value of the hash word
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_dhd_h(const cm_machine *m, int i, uint64_t *val, char **err_msg);
-
-/// \brief Writes the value of DHD's input hash word.
-/// \param m Pointer to valid machine instance
-/// \param i Index of input hash word.
-/// Between 0 and DHD_H_REG_COUNT-1, inclusive.
-/// \param val New value for word
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
-/// \returns 0 for success, non zero code for error
-CM_API int cm_write_dhd_h(cm_machine *m, int i, uint64_t val, char **err_msg);
-
-/// \brief Gets the address of a DHD h register
-/// \param i Register index. Between 0 and DHD_H_REG_COUNT-1, inclusive
-/// \returns Address of the specified register
-CM_API uint64_t cm_get_dhd_h_address(int i);
 
 /// \brief Checks the value of the iflags_X flag.
 /// \param m Pointer to valid machine instance

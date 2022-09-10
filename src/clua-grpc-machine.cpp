@@ -104,16 +104,6 @@ static int grpc_machine_class_get_csr_address(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine.get_x_address() method implementation.
-static int grpc_machine_class_get_dhd_h_address(lua_State *L) {
-    auto &managed_grpc_stub =
-        clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
-    uint64_t dhd_h_address{};
-    TRY_EXECUTE(cm_grpc_dhd_h_address(managed_grpc_stub.get(), luaL_checkinteger(L, 1), &dhd_h_address, err_msg));
-    lua_pushinteger(L, static_cast<lua_Integer>(dhd_h_address));
-    return 1;
-}
-
 /// \brief Contents of the machine class metatable __index table.
 static const auto grpc_machine_static_methods = cartesi::clua_make_luaL_Reg_array({
     {"get_default_config", grpc_machine_class_get_default_config},
@@ -121,7 +111,6 @@ static const auto grpc_machine_static_methods = cartesi::clua_make_luaL_Reg_arra
     {"verify_state_transition", grpc_machine_class_verify_state_transition},
     {"get_x_address", grpc_machine_class_get_x_address},
     {"get_csr_address", grpc_machine_class_get_csr_address},
-    {"get_dhd_h_address", grpc_machine_class_get_dhd_h_address},
 });
 
 /// \brief Prints a GRPC machine class

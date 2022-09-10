@@ -131,16 +131,6 @@ private:
     void do_write_htif_iyield(uint64_t val) override;
     uint64_t do_read_clint_mtimecmp(void) const override;
     void do_write_clint_mtimecmp(uint64_t val) override;
-    uint64_t do_read_dhd_tstart(void) const override;
-    void do_write_dhd_tstart(uint64_t val) override;
-    uint64_t do_read_dhd_tlength(void) const override;
-    void do_write_dhd_tlength(uint64_t val) override;
-    uint64_t do_read_dhd_dlength(void) const override;
-    void do_write_dhd_dlength(uint64_t val) override;
-    uint64_t do_read_dhd_hlength(void) const override;
-    void do_write_dhd_hlength(uint64_t val) override;
-    uint64_t do_read_dhd_h(int i) const override;
-    void do_write_dhd_h(int i, uint64_t val) override;
     void do_replace_memory_range(const memory_range_config &new_range) override;
     void do_dump_pmas(void) const override;
     bool do_read_word(uint64_t word_address, uint64_t &word_value) const override;

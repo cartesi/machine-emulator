@@ -531,11 +531,6 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"htif_ihalt", CM_PROC_HTIF_IHALT},
         {"htif_iconsole", CM_PROC_HTIF_ICONSOLE},
         {"htif_iyield", CM_PROC_HTIF_IYIELD},
-        {"dhd_reserved", CM_PROC_DHD_RESERVED},
-        {"dhd_tstart", CM_PROC_DHD_TSTART},
-        {"dhd_tlength", CM_PROC_DHD_TLENGTH},
-        {"dhd_dlength", CM_PROC_DHD_DLENGTH},
-        {"dhd_hlength", CM_PROC_DHD_HLENGTH},
     };
     const char *name = luaL_checkstring(L, idx);
     auto got = g_cm_proc_csr_name.find(name);
@@ -779,26 +774,6 @@ static void push_cm_clint_config(lua_State *L, const cm_clint_config *c) {
     clua_setintegerfield(L, c->mtimecmp, "mtimecmp", -1);
 }
 
-/// \brief Pushes an cm_dhd_config to the Lua stack
-/// \param L Lua state.
-/// \param c Dhd configuration to be pushed.
-static void push_cm_dhd_config(lua_State *L, const cm_dhd_config *d) {
-    lua_newtable(L);
-    clua_setintegerfield(L, d->tstart, "tstart", -1);
-    clua_setintegerfield(L, d->tlength, "tlength", -1);
-    if (d->image_filename != nullptr) {
-        clua_setstringfield(L, d->image_filename, "image_filename", -1);
-    }
-    clua_setintegerfield(L, d->dlength, "dlength", -1);
-    clua_setintegerfield(L, d->hlength, "hlength", -1);
-    lua_newtable(L);
-    for (int i = 1; i <= CM_MACHINE_DHD_H_REG_COUNT; i++) {
-        lua_pushinteger(L, static_cast<lua_Integer>(d->h[i - 1]));
-        lua_rawseti(L, -2, i);
-    }
-    lua_setfield(L, -2, "h");
-}
-
 /// \brief Pushes cm_memory_range_config to the Lua stack
 /// \param L Lua state.
 /// \param m Memory range config to be pushed.
@@ -854,23 +829,9 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
     lua_setfield(L, -2, "ram");                      // config
     push_cm_rom_config(L, &c->rom);                  // config rom
     lua_setfield(L, -2, "rom");                      // config
-    if (c->dhd.has_value) {
-        push_cm_dhd_config(L, &c->dhd); // config dhd
-        lua_setfield(L, -2, "dhd");     // config
-    }
     if (c->rollup.has_value) {
         push_cm_rollup_config(L, &c->rollup); // config rollup
         lua_setfield(L, -2, "rollup");        // config
-    }
-}
-
-/// \brief Pushes an cm_dhd_runtime_config to the Lua stack
-/// \param L Lua state.
-/// \param c C api dhd runtime config to be pushed.
-static void push_cm_dhd_runtime_config(lua_State *L, const cm_dhd_runtime_config *d) {
-    lua_newtable(L);
-    if (d->source_address != nullptr) {
-        clua_setstringfield(L, d->source_address, "source_address", -1);
     }
 }
 
@@ -884,8 +845,6 @@ static void push_cm_concurrency_runtime_config(lua_State *L, const cm_concurrenc
 
 void clua_push_cm_machine_runtime_config(lua_State *L, const cm_machine_runtime_config *r) {
     lua_newtable(L);                                        // config
-    push_cm_dhd_runtime_config(L, &r->dhd);                 // config dhd
-    lua_setfield(L, -2, "dhd");                             // config
     push_cm_concurrency_runtime_config(L, &r->concurrency); // config concurrency
     lua_setfield(L, -2, "concurrency");                     // config
 }
@@ -1059,33 +1018,6 @@ static void check_cm_clint_config(lua_State *L, int tabidx, cm_clint_config *c) 
     lua_pop(L, 1);
 }
 
-/// \brief Loads C api DHD config from Lua
-/// \param L Lua state
-/// \param tabidx Config stack index
-/// \param d C api DHD config structure to receive results
-static void check_cm_dhd_config(lua_State *L, int tabidx, cm_dhd_config *d) {
-    if (!opt_table_field(L, tabidx, "dhd")) {
-        d->has_value = false;
-        return;
-    }
-    d->has_value = true;
-    d->tstart = check_uint_field(L, -1, "tstart");
-    d->tlength = check_uint_field(L, -1, "tlength");
-    d->dlength = opt_uint_field(L, -1, "dlength", d->dlength);
-    d->hlength = opt_uint_field(L, -1, "hlength", d->hlength);
-    lua_getfield(L, -2, "h");
-    if (lua_istable(L, -1)) {
-        for (int i = 1; i <= CM_MACHINE_DHD_H_REG_COUNT; i++) {
-            d->h[i - 1] = opt_uint_field(L, -1, i, d->h[i - 1]);
-        }
-    } else if (!lua_isnil(L, -1)) {
-        luaL_error(L, "invalid dhd.h (expected table)");
-    }
-    lua_pop(L, 1);
-    d->image_filename = opt_copy_string_field(L, -1, "image_filename");
-    lua_pop(L, 1);
-}
-
 cm_processor_config get_default_processor_config(lua_State *L) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to adjust config
     const auto *config = cm_new_default_machine_config();
@@ -1107,24 +1039,11 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
     check_cm_rom_config(L, tabidx, &config->rom);
     check_cm_htif_config(L, tabidx, &config->htif);
     check_cm_clint_config(L, tabidx, &config->clint);
-    check_cm_dhd_config(L, tabidx, &config->dhd);
     check_cm_rollup_config(L, tabidx, &config->rollup);
     check_cm_flash_drive_configs(L, tabidx, &config->flash_drive);
     managed.release();
     lua_pop(L, 1); //??DD I don't think lua_pop can throw, but we should check
     return config;
-}
-
-/// \brief Loads C api DHD runtime config from Lua
-/// \param L Lua state
-/// \param tabidx Runtime config stack index
-/// \param d C api DHD runtime config structure to receive results
-static void check_cm_dhd_runtime_config(lua_State *L, int tabidx, cm_dhd_runtime_config *d) {
-    if (!opt_table_field(L, tabidx, "dhd")) {
-        return;
-    }
-    d->source_address = opt_copy_string_field(L, -1, "source_address");
-    lua_pop(L, 1);
 }
 
 /// \brief Loads C api concurrency runtime config from Lua
@@ -1144,7 +1063,6 @@ cm_machine_runtime_config *clua_check_cm_machine_runtime_config(lua_State *L, in
     auto &managed =
         clua_push_to(L, clua_managed_cm_ptr<cm_machine_runtime_config>(new cm_machine_runtime_config{}), ctxidx);
     cm_machine_runtime_config *config = managed.get();
-    check_cm_dhd_runtime_config(L, tabidx, &config->dhd);
     check_cm_concurrency_runtime_config(L, tabidx, &config->concurrency);
     managed.release();
     lua_pop(L, 1);
@@ -1159,10 +1077,6 @@ cm_machine_runtime_config *clua_opt_cm_machine_runtime_config(lua_State *L, int 
         auto *def = new cm_machine_runtime_config{};
         if (r != nullptr) {
             def->concurrency = r->concurrency;
-            auto source_address_size = strlen(r->dhd.source_address) + 1;
-            def->dhd.source_address = new char[source_address_size];
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-            strncpy(const_cast<char *>(def->dhd.source_address), r->dhd.source_address, source_address_size);
         }
         return def;
     }

@@ -126,22 +126,9 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
     if (c.rollup.has_value()) {
         set_proto_rollup(*c.rollup, proto_c->mutable_rollup());
     }
-    if (c.dhd.has_value()) {
-        auto *proto_dhd = proto_c->mutable_dhd();
-        proto_dhd->set_tstart(c.dhd->tstart);
-        proto_dhd->set_tlength(c.dhd->tlength);
-        proto_dhd->set_image_filename(c.dhd->image_filename);
-        proto_dhd->set_dlength(c.dhd->dlength);
-        proto_dhd->set_hlength(c.dhd->hlength);
-        for (int i = 0; i < DHD_H_REG_COUNT; i++) {
-            proto_dhd->add_h(c.dhd->h[i]);
-        }
-    }
 }
 
 void set_proto_machine_runtime_config(const machine_runtime_config &r, CartesiMachine::MachineRuntimeConfig *proto_r) {
-    auto *proto_dhd = proto_r->mutable_dhd();
-    proto_dhd->set_source_address(r.dhd.source_address);
     auto *proto_concurrency = proto_r->mutable_concurrency();
     proto_concurrency->set_update_merkle_tree(r.concurrency.update_merkle_tree);
 }
@@ -502,7 +489,6 @@ memory_range_config get_proto_memory_range_config(const CartesiMachine::MemoryRa
 
 machine_runtime_config get_proto_machine_runtime_config(const CartesiMachine::MachineRuntimeConfig &proto_r) {
     machine_runtime_config r;
-    r.dhd.source_address = proto_r.dhd().source_address();
     r.concurrency.update_merkle_tree = proto_r.concurrency().update_merkle_tree();
     return r;
 }
@@ -525,22 +511,6 @@ rollup_config get_proto_rollup_config(const CartesiMachine::RollupConfig &proto_
         r.notice_hashes = get_proto_memory_range_config(proto_r.notice_hashes());
     }
     return r;
-}
-
-static dhd_config get_proto_dhd_config(const CartesiMachine::DHDConfig &proto_dhd) {
-    dhd_config dhd;
-    dhd.tstart = proto_dhd.tstart();
-    dhd.tlength = proto_dhd.tlength();
-    dhd.image_filename = proto_dhd.image_filename();
-    dhd.dlength = proto_dhd.dlength();
-    dhd.hlength = proto_dhd.hlength();
-    if (proto_dhd.h_size() > DHD_H_REG_COUNT) {
-        throw std::invalid_argument{"too many DHD h registers"};
-    }
-    for (int i = 0; i < proto_dhd.h_size(); i++) {
-        dhd.h[i] = proto_dhd.h(i);
-    }
-    return dhd;
 }
 
 machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &proto_c) {
@@ -582,9 +552,6 @@ machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &pro
         c.htif.yield_manual = htif.yield_manual();
         // zero default when missing is ok
         c.htif.yield_automatic = htif.yield_automatic();
-    }
-    if (proto_c.has_dhd()) {
-        c.dhd = get_proto_dhd_config(proto_c.dhd());
     }
     return c;
 }

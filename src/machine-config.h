@@ -103,16 +103,6 @@ struct htif_config final {
     bool yield_automatic{false};      ///< Make yield automatic available?
 };
 
-/// \brief DHD device state configuration
-struct dhd_config final {
-    uint64_t tstart{0};                        ///< Start of target physical memory range for output data
-    uint64_t tlength{0};                       ///< Length of target physical memory range for output data
-    std::string image_filename{};              ///< Data image file name
-    uint64_t dlength{0};                       ///< Output data length CSR
-    uint64_t hlength{0};                       ///< Input hash length CSR
-    std::array<uint64_t, DHD_H_REG_COUNT> h{}; ///< Input hash words
-};
-
 /// \brief Rollup configuration
 struct rollup_config {
     memory_range_config rx_buffer{};      ///< RX buffer
@@ -132,7 +122,6 @@ struct machine_config final {
     flash_drive_configs flash_drive{};     ///< Flash drives state
     clint_config clint{};                  ///< CLINT device state
     htif_config htif{};                    ///< HTIF device state
-    std::optional<dhd_config> dhd{};       ///< DHD state
     std::optional<rollup_config> rollup{}; ///< Rollup state
 
     /// \brief Get the name where config will be stored in a directory

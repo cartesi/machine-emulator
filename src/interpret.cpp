@@ -642,7 +642,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
         } else if (pma.get_istart_M()) {
             uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
             unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
-            
+
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             a.read_memory_word(paddr, hpage, hoffset, pval);
             return true;
@@ -693,7 +693,7 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
             unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
             pma.mark_dirty_page(paddr_page - pma.get_start());
-            
+
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             // write to memory
             a.write_memory_word(paddr, hpage, hoffset, static_cast<T>(val64));
@@ -2871,7 +2871,6 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
         if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK))) {
             return raise_illegal_insn_exception(a, pc, insn);
         }
-        uint32_t rs1 = insn_get_rs1(insn);
         return advance_to_next_insn(a, pc);
     } else {
         return raise_illegal_insn_exception(a, pc, insn);
@@ -3300,7 +3299,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
         return fetch_status::exception;
     }
     uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-    unsigned char *hpage  = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
+    unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
 
     uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
     a.read_memory_word(paddr, hpage, hoffset, pinsn);

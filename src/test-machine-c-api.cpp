@@ -223,17 +223,10 @@ protected:
 
         target->clint = source->clint;
         target->htif = source->htif;
-        target->dhd = source->dhd;
-        if (target->dhd.has_value) {
-            target->dhd.image_filename = new_cstr(source->dhd.image_filename);
-        }
         target->rollup = source->rollup;
     }
 
     static void _cleanup_machine_config(cm_machine_config *config) {
-        if (config->dhd.has_value) {
-            delete[] config->dhd.image_filename;
-        }
         for (size_t i = 0; i < config->flash_drive.count; ++i) {
             delete[] config->flash_drive.entry[i].image_filename;
         }
@@ -399,7 +392,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machin
 class ordinary_machine_fixture : public machine_rom_fixture {
 public:
     ordinary_machine_fixture() {
-        _runtime_config.dhd.source_address = "";
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
         char *err_msg{};
         cm_create_machine(&_machine_config, &_runtime_config, &_machine, &err_msg);
@@ -439,25 +431,9 @@ bool operator==(const cm_htif_config &lhs, const cm_htif_config &rhs) {
         lhs.yield_manual == rhs.yield_manual && lhs.yield_automatic == rhs.yield_automatic);
 }
 
-bool operator==(const cm_dhd_config &lhs, const cm_dhd_config &rhs) {
-    if (lhs.has_value != rhs.has_value) {
-        return false;
-    }
-    if (!lhs.has_value) {
-        return true;
-    }
-    for (size_t i = 0; i < CM_MACHINE_DHD_H_REG_COUNT; ++i) {
-        if (lhs.h[i] != rhs.h[i]) {
-            return false;
-        }
-    }
-    return ((lhs.tstart == rhs.tstart) && (lhs.tlength == rhs.tlength) && (lhs.dlength == rhs.dlength) &&
-        (lhs.hlength == rhs.hlength) && (strcmp(lhs.image_filename, rhs.image_filename) == 0));
-}
-
 bool operator==(const cm_machine_config &lhs, const cm_machine_config &rhs) {
     return ((lhs.processor == rhs.processor) && (lhs.rom == rhs.rom) && (lhs.ram == rhs.ram) &&
-        (lhs.clint == rhs.clint) && (lhs.htif == rhs.htif) && (lhs.dhd == rhs.dhd));
+        (lhs.clint == rhs.clint) && (lhs.htif == rhs.htif));
 }
 
 std::ostream &boost_test_print_type(std::ostream &ostr, const cm_machine_config &rhs) {
@@ -1047,10 +1023,6 @@ CHECK_READER_FAILS_ON_nullptr_MACHINE(htif_ihalt)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(htif_iconsole)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(htif_iyield)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(clint_mtimecmp)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(dhd_tstart)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(dhd_tlength)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(dhd_dlength)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(dhd_hlength)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(mvendorid)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(marchid)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(mimpid)
@@ -1118,10 +1090,6 @@ CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_ihalt)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_iconsole)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_iyield)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(clint_mtimecmp)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(dhd_tstart)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(dhd_tlength)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(dhd_dlength)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(dhd_hlength)
 // clang-format on
 
 // NOLINTNEXTLINE
@@ -1170,10 +1138,6 @@ CHECK_REGISTER_READ_WRITE(htif_ihalt)
 CHECK_REGISTER_READ_WRITE(htif_iconsole)
 CHECK_REGISTER_READ_WRITE(htif_iyield)
 CHECK_REGISTER_READ_WRITE(clint_mtimecmp)
-CHECK_REGISTER_READ_WRITE(dhd_tstart)
-CHECK_REGISTER_READ_WRITE(dhd_tlength)
-CHECK_REGISTER_READ_WRITE(dhd_dlength)
-CHECK_REGISTER_READ_WRITE(dhd_hlength)
     // clang-format on
 
     BOOST_AUTO_TEST_CASE_NOLINT(set_iflags_y_null_machine_test) {
@@ -1328,92 +1292,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_null_placeholder_test, ordinary_machine
     monitor_system_throw(f);
 }
 
-BOOST_AUTO_TEST_CASE_NOLINT(dhd_h_address_invalid_address_test) {
-    BOOST_CHECK_NO_THROW(cm_get_dhd_h_address(CM_MACHINE_DHD_H_REG_COUNT));
-}
-
-BOOST_AUTO_TEST_CASE_NOLINT(dhd_h_address_basic_test) {
-    uint64_t reg_addr = cm_get_dhd_h_address(5);
-    BOOST_CHECK_EQUAL(reg_addr, static_cast<uint64_t>(0x40030050));
-}
-
-BOOST_AUTO_TEST_CASE_NOLINT(read_dhd_h_null_machine_test) {
-    auto f = []() {
-        uint64_t read_value{};
-        char *err_msg{};
-        cm_read_dhd_h(nullptr, 1, &read_value, &err_msg);
-    };
-    monitor_system_throw(f);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(read_dhd_h_invalid_index_test, ordinary_machine_fixture) {
-    char *err_msg{};
-    int error_code{};
-    uint64_t read_value{};
-    BOOST_CHECK_NO_THROW(error_code = cm_read_dhd_h(_machine, CM_MACHINE_DHD_H_REG_COUNT, &read_value, &err_msg));
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(read_dhd_h_null_output_test, ordinary_machine_fixture) {
-    auto f = [m = _machine]() {
-        char *err_msg{};
-        cm_read_dhd_h(m, 1, nullptr, &err_msg);
-    };
-    monitor_system_throw(f);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(read_dhd_h_null_error_placeholder_test, ordinary_machine_fixture) {
-    auto f = [m = _machine]() {
-        uint64_t read_value{};
-        cm_read_dhd_h(m, 1, &read_value, nullptr);
-    };
-    monitor_system_throw(f);
-}
-
-BOOST_AUTO_TEST_CASE_NOLINT(write_dhd_h_null_machine_test) {
-    auto f = []() {
-        char *err_msg{};
-        cm_write_dhd_h(nullptr, 1, 0x5, &err_msg);
-    };
-    monitor_system_throw(f);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(write_dhd_h_invalid_index_test, ordinary_machine_fixture) {
-    char *err_msg{};
-    int error_code{};
-    BOOST_CHECK_NO_THROW(error_code = cm_write_dhd_h(_machine, CM_MACHINE_DHD_H_REG_COUNT, 0x5, &err_msg));
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(write_dhd_h_null_error_placeholder_test, ordinary_machine_fixture) {
-    auto f = [m = _machine]() {
-        uint64_t write_value{};
-        cm_read_dhd_h(m, 1, &write_value, nullptr);
-    };
-    monitor_system_throw(f);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(dhd_h_read_write_test, ordinary_machine_fixture) {
-    uint64_t read_value{};
-    uint64_t write_value = 0xffffffffffffffff;
-    char *err_msg{};
-    int error_code = cm_read_dhd_h(_machine, 1, &read_value, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x0));
-
-    error_code = cm_write_dhd_h(_machine, 1, write_value, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-
-    error_code = cm_read_dhd_h(_machine, 1, &read_value, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(read_value, write_value);
-}
-
 BOOST_AUTO_TEST_CASE_NOLINT(get_initial_config_null_machine_test) {
     auto f = []() {
         char *err_msg{};
@@ -1519,7 +1397,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_flash_config_test, ordi
 class flash_drive_machine_fixture : public machine_rom_flash_simple_fixture {
 public:
     flash_drive_machine_fixture() : _flash_config{}, _flash_data{"test data 1234567890"} {
-        _runtime_config.dhd.source_address = "";
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
         char *err_msg{};
         cm_create_machine(&_machine_config, &_runtime_config, &_machine, &err_msg);
@@ -2414,18 +2291,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_csr_address_basic_test, grpc_machine_fix
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     BOOST_REQUIRE_EQUAL(val, static_cast<uint64_t>(280));
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_dhd_h_address_basic_test, grpc_machine_fixture_with_server) {
-    char *err_msg{};
-    uint64_t val{};
-    int error_code = cm_grpc_dhd_h_address(m_stub, 1, &val, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    if (err_msg != nullptr) {
-        printf("Error getting dhd h address: %s\n", err_msg);
-    }
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_REQUIRE_EQUAL(val, static_cast<uint64_t>(1073938480));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_version_wrong_addr_test, grpc_machine_fixture_with_server) {

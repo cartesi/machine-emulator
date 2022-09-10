@@ -23,7 +23,6 @@
 #include <memory>
 
 #include "access-log.h"
-#include "dhd-source.h"
 #include "htif.h"
 #include "machine-config.h"
 #include "machine-merkle-tree.h"
@@ -146,15 +145,10 @@ public:
         htif_fromhost,
         htif_ihalt,
         htif_iconsole,
-        htif_iyield,
-        dhd_reserved,
-        dhd_tstart,
-        dhd_tlength,
-        dhd_dlength,
-        dhd_hlength,
+        htif_iyield
     };
 
-    static constexpr auto num_csr = static_cast<int>(csr::dhd_hlength) + 1;
+    static constexpr auto num_csr = static_cast<int>(csr::htif_iyield) + 1;
 
     /// \brief Constructor from machine configuration
     explicit machine(const machine_config &c, const machine_runtime_config &r = {});
@@ -220,16 +214,6 @@ public:
 
     /// \brief Destructor.
     ~machine();
-
-    /// \brief Obtains the block of data that has a given hash
-    /// \param hash Pointer to buffer containing hash
-    /// \param hlength Length  of hash in bytes
-    /// \param dlength Maximum length of desired block of data with that hash.
-    /// On return, contains the actual length of the block found. Or
-    /// DHD_NOT_FOUND if no matching block was found.
-    /// \returns The block of data with the given hash, or an empty block
-    /// if not found
-    dhd_data dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength);
 
     /// \brief Update the Merkle tree so it matches the contents of the machine state.
     /// \returns true if succeeded, false otherwise.
@@ -609,55 +593,6 @@ public:
     /// \brief Writes the value of CLINT's mtimecmp register.
     /// \param val New register value.
     void write_clint_mtimecmp(uint64_t val);
-
-    /// \brief Reads the value of DHD's tstart register.
-    /// \returns The value of the register.
-    uint64_t read_dhd_tstart(void) const;
-
-    /// \brief Writes the value of DHD's tstart register.
-    /// \param val New register value.
-    void write_dhd_tstart(uint64_t val);
-
-    /// \brief Reads the value of DHD's tlength register.
-    /// \returns The value of the register.
-    uint64_t read_dhd_tlength(void) const;
-
-    /// \brief Writes the value of DHD's tlength register.
-    /// \param val New register value.
-    void write_dhd_tlength(uint64_t val);
-
-    /// \brief Reads the value of DHD's dlength register.
-    /// \returns The value of the register.
-    uint64_t read_dhd_dlength(void) const;
-
-    /// \brief Writes the value of DHD's dlength register.
-    /// \param val New register value.
-    void write_dhd_dlength(uint64_t val);
-
-    /// \brief Reads the value of DHD's hlength register.
-    /// \returns The value of the register.
-    uint64_t read_dhd_hlength(void) const;
-
-    /// \brief Writes the value of DHD's hlength register.
-    /// \param val New register value.
-    void write_dhd_hlength(uint64_t val);
-
-    /// \brief Reads the value of DHD's input hash word.
-    /// \param i Index of input hash word.
-    /// Between 0 and DHD_H_REG_COUNT-1, inclusive.
-    /// \returns The value of the register.
-    uint64_t read_dhd_h(int i) const;
-
-    /// \brief Writes the value of DHD's input hash word.
-    /// \param i Index of input hash word.
-    /// Between 0 and DHD_H_REG_COUNT-1, inclusive.
-    /// \param val New value for word.
-    void write_dhd_h(int i, uint64_t val);
-
-    /// \brief Gets the address of a DHD h register.
-    /// \param i Register index. Between 0 and DHD_H_REG_COUNT-1, inclusive.
-    /// \returns Address of the specified register
-    static uint64_t get_dhd_h_address(int i);
 
     /// \brief Checks the value of the iflags_X flag.
     /// \returns The flag value.

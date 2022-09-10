@@ -270,45 +270,6 @@ static cm_htif_config convert_to_c(const cartesi::htif_config &cpp_config) {
     return new_c_htif_config;
 }
 
-// ----------------------------------------------
-// DHD configuration conversion functions
-// ----------------------------------------------
-static std::optional<cartesi::dhd_config> convert_from_c(const cm_dhd_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("Invalid dhd configuration");
-    }
-    if (!c_config->has_value) {
-        return {};
-    }
-    cartesi::dhd_config new_cpp_dhd_config{};
-    new_cpp_dhd_config.tstart = c_config->tstart;
-    new_cpp_dhd_config.tlength = c_config->tlength;
-    new_cpp_dhd_config.image_filename = null_to_empty(c_config->image_filename);
-    new_cpp_dhd_config.dlength = c_config->dlength;
-    new_cpp_dhd_config.hlength = c_config->hlength;
-
-    static_assert(sizeof(new_cpp_dhd_config.h) == sizeof(c_config->h));
-    memcpy(&new_cpp_dhd_config.h, &c_config->h, sizeof(uint64_t) * CM_MACHINE_DHD_H_REG_COUNT);
-
-    return new_cpp_dhd_config;
-}
-
-static cm_dhd_config convert_to_c(const std::optional<cartesi::dhd_config> &cpp_config) {
-    cm_dhd_config new_c_dhd_config{};
-    new_c_dhd_config.has_value = cpp_config.has_value();
-    if (!cpp_config.has_value()) {
-        return new_c_dhd_config;
-    }
-    new_c_dhd_config.tstart = cpp_config->tstart;
-    new_c_dhd_config.tlength = cpp_config->tlength;
-    new_c_dhd_config.image_filename = convert_to_c(cpp_config->image_filename);
-    new_c_dhd_config.dlength = cpp_config->dlength;
-    new_c_dhd_config.hlength = cpp_config->hlength;
-    static_assert(sizeof(new_c_dhd_config.h) == sizeof(cpp_config->h));
-    memcpy(&new_c_dhd_config.h, &cpp_config->h, sizeof(uint64_t) * CM_MACHINE_DHD_H_REG_COUNT);
-    return new_c_dhd_config;
-}
-
 // --------------------------------------------
 // Rollup configuration conversion functions
 // --------------------------------------------
@@ -347,7 +308,6 @@ cartesi::machine_runtime_config convert_from_c(const cm_machine_runtime_config *
         throw std::invalid_argument("Invalid machine runtime configuration");
     }
     cartesi::machine_runtime_config new_cpp_machine_runtime_config{
-        cartesi::dhd_runtime_config{null_to_empty(c_config->dhd.source_address)},
         cartesi::concurrency_config{c_config->concurrency.update_merkle_tree}};
 
     return new_cpp_machine_runtime_config;
@@ -367,7 +327,6 @@ cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
     new_cpp_machine_config.rom = convert_from_c(&c_config->rom);
     new_cpp_machine_config.clint = convert_from_c(&c_config->clint);
     new_cpp_machine_config.htif = convert_from_c(&c_config->htif);
-    new_cpp_machine_config.dhd = convert_from_c(&c_config->dhd);
     new_cpp_machine_config.rollup = convert_from_c(&c_config->rollup);
 
     for (size_t i = 0; i < c_config->flash_drive.count; ++i) {
@@ -396,7 +355,6 @@ const cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config)
     new_machine_config->flash_drive = convert_to_c(cpp_config.flash_drive);
     new_machine_config->clint = convert_to_c(cpp_config.clint);
     new_machine_config->htif = convert_to_c(cpp_config.htif);
-    new_machine_config->dhd = convert_to_c(cpp_config.dhd);
     new_machine_config->rollup = convert_to_c(cpp_config.rollup);
     return new_machine_config;
 }
@@ -674,7 +632,6 @@ void cm_delete_machine_config(const cm_machine_config *config) {
         return;
     }
 
-    delete[] config->dhd.image_filename;
     for (size_t i = 0; i < config->flash_drive.count; ++i) {
         delete[] config->flash_drive.entry[i].image_filename;
     }
@@ -986,34 +943,10 @@ IMPL_MACHINE_READ_WRITE(htif_ihalt)
 IMPL_MACHINE_READ_WRITE(htif_iconsole)
 IMPL_MACHINE_READ_WRITE(htif_iyield)
 IMPL_MACHINE_READ_WRITE(clint_mtimecmp)
-IMPL_MACHINE_READ_WRITE(dhd_tstart)
-IMPL_MACHINE_READ_WRITE(dhd_tlength)
-IMPL_MACHINE_READ_WRITE(dhd_dlength)
-IMPL_MACHINE_READ_WRITE(dhd_hlength)
 // clang-format-on
 
 uint64_t cm_packed_iflags(int PRV, int X, int Y, int H) {
     return cartesi::machine_state::packed_iflags(PRV, X, Y, H);
-}
-
-int cm_read_dhd_h(const cm_machine *m, int i, uint64_t *val, char **err_msg) try {
-    const auto *cpp_machine = convert_from_c(m);
-    *val = cpp_machine->read_dhd_h(i);
-    return cm_result_success(err_msg);
-} catch (...) {
-    return cm_result_failure(err_msg);
-}
-
-int cm_write_dhd_h(cm_machine *m, int i, uint64_t val, char **err_msg) try {
-    auto *cpp_machine = convert_from_c(m);
-    cpp_machine->write_dhd_h(i, val);
-    return cm_result_success(err_msg);
-} catch (...) {
-    return cm_result_failure(err_msg);
-}
-
-uint64_t cm_get_dhd_h_address(int i) {
-    return cartesi::machine::get_dhd_h_address(i);
 }
 
 int cm_read_iflags_Y(const cm_machine *m, bool *val, char **err_msg) try {
@@ -1148,7 +1081,6 @@ void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config) {
     if (config == nullptr) {
         return;
     }
-    delete[] config->dhd.source_address;
     delete config;
 }
 
@@ -1174,12 +1106,4 @@ int cm_rollback(cm_machine *m, char **err_msg) try {
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
-}
-
-void cm_delete_dhd_runtime_config(const cm_dhd_runtime_config *config) {
-    if (config == nullptr) {
-        return;
-    }
-    delete[] config->source_address;
-    delete config;
 }

@@ -788,87 +788,6 @@ public:
     }
 };
 
-class handler_GetDhdHAddress final : public handler<GetDhdHAddressRequest, GetDhdHAddressResponse> {
-
-    side_effect prepare(handler_context &hctx, ServerContext *sctx, GetDhdHAddressRequest *req,
-        ServerAsyncResponseWriter<GetDhdHAddressResponse> *writer) override {
-        hctx.s->RequestGetDhdHAddress(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
-        return side_effect::none;
-    }
-
-    side_effect go(handler_context &hctx, GetDhdHAddressRequest *req,
-        ServerAsyncResponseWriter<GetDhdHAddressResponse> *writer) override {
-        (void) hctx;
-        auto index = req->index();
-        if (index >= DHD_H_REG_COUNT) {
-            throw std::invalid_argument{"invalid register index"};
-        }
-        GetDhdHAddressResponse resp;
-        resp.set_address(cartesi::machine::get_dhd_h_address(static_cast<int>(index)));
-        return finish_ok(writer, resp);
-    }
-
-public:
-    handler_GetDhdHAddress(handler_context &hctx) {
-        advance(hctx);
-    }
-};
-
-class handler_ReadDhdH final : public handler<ReadDhdHRequest, ReadDhdHResponse> {
-
-    side_effect prepare(handler_context &hctx, ServerContext *sctx, ReadDhdHRequest *req,
-        ServerAsyncResponseWriter<ReadDhdHResponse> *writer) override {
-        hctx.s->RequestReadDhdH(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
-        return side_effect::none;
-    }
-
-    side_effect go(handler_context &hctx, ReadDhdHRequest *req,
-        ServerAsyncResponseWriter<ReadDhdHResponse> *writer) override {
-        auto index = req->index();
-        if (index >= DHD_H_REG_COUNT) {
-            throw std::invalid_argument{"invalid register index"};
-        }
-        if (!hctx.m) {
-            return finish_with_error_no_machine(writer);
-        }
-        ReadDhdHResponse resp;
-        resp.set_value(hctx.m->read_dhd_h(static_cast<int>(index)));
-        return finish_ok(writer, resp);
-    }
-
-public:
-    handler_ReadDhdH(handler_context &hctx) {
-        advance(hctx);
-    }
-};
-
-class handler_WriteDhdH final : public handler<WriteDhdHRequest, Void> {
-
-    side_effect prepare(handler_context &hctx, ServerContext *sctx, WriteDhdHRequest *req,
-        ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s->RequestWriteDhdH(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
-        return side_effect::none;
-    }
-
-    side_effect go(handler_context &hctx, WriteDhdHRequest *req, ServerAsyncResponseWriter<Void> *writer) override {
-        auto index = req->index();
-        if (index >= DHD_H_REG_COUNT) {
-            throw std::invalid_argument{"invalid register index"};
-        }
-        if (!hctx.m) {
-            return finish_with_error_no_machine(writer);
-        }
-        Void resp;
-        hctx.m->write_dhd_h(static_cast<int>(index), req->value());
-        return finish_ok(writer, resp);
-    }
-
-public:
-    handler_WriteDhdH(handler_context &hctx) {
-        advance(hctx);
-    }
-};
-
 class handler_GetCsrAddress final : public handler<GetCsrAddressRequest, GetCsrAddressResponse> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, GetCsrAddressRequest *req,
@@ -1230,9 +1149,6 @@ static void server_loop(const char *server_address, const char *session_id, cons
         handler_ReadX hReadX(hctx);
         handler_WriteX hWriteX(hctx);
         handler_ResetIflagsY hResetIflagsY(hctx);
-        handler_GetDhdHAddress hGetDhdHAddress(hctx);
-        handler_ReadDhdH hReadDhdH(hctx);
-        handler_WriteDhdH hWriteDhdH(hctx);
         handler_GetCsrAddress hGetCsrAddress(hctx);
         handler_ReadCsr hReadCsr(hctx);
         handler_WriteCsr hWriteCsr(hctx);

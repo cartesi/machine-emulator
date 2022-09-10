@@ -391,46 +391,6 @@ void virtual_machine::do_write_clint_mtimecmp(uint64_t val) {
     return m_machine->write_clint_mtimecmp(val);
 }
 
-uint64_t virtual_machine::do_read_dhd_tstart(void) const {
-    return m_machine->read_dhd_tstart();
-}
-
-void virtual_machine::do_write_dhd_tstart(uint64_t val) {
-    return m_machine->write_dhd_tstart(val);
-}
-
-uint64_t virtual_machine::do_read_dhd_tlength(void) const {
-    return m_machine->read_dhd_tlength();
-}
-
-void virtual_machine::do_write_dhd_tlength(uint64_t val) {
-    return m_machine->write_dhd_tlength(val);
-}
-
-uint64_t virtual_machine::do_read_dhd_dlength(void) const {
-    return m_machine->read_dhd_dlength();
-}
-
-void virtual_machine::do_write_dhd_dlength(uint64_t val) {
-    return m_machine->write_dhd_dlength(val);
-}
-
-uint64_t virtual_machine::do_read_dhd_hlength(void) const {
-    return m_machine->read_dhd_hlength();
-}
-
-void virtual_machine::do_write_dhd_hlength(uint64_t val) {
-    return m_machine->write_dhd_hlength(val);
-}
-
-uint64_t virtual_machine::do_read_dhd_h(int i) const {
-    return m_machine->read_dhd_h(i);
-}
-
-void virtual_machine::do_write_dhd_h(int i, uint64_t val) {
-    return m_machine->write_dhd_h(i, val);
-}
-
 void virtual_machine::do_replace_memory_range(const memory_range_config &new_range) {
     m_machine->replace_memory_range(new_range);
 }

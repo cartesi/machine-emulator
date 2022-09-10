@@ -197,10 +197,6 @@ IMPL_MACHINE_OBJ_READ_WRITE(htif_ihalt)
 IMPL_MACHINE_OBJ_READ_WRITE(htif_iconsole)
 IMPL_MACHINE_OBJ_READ_WRITE(htif_iyield)
 IMPL_MACHINE_OBJ_READ_WRITE(clint_mtimecmp)
-IMPL_MACHINE_OBJ_READ_WRITE(dhd_tstart)
-IMPL_MACHINE_OBJ_READ_WRITE(dhd_tlength)
-IMPL_MACHINE_OBJ_READ_WRITE(dhd_dlength)
-IMPL_MACHINE_OBJ_READ_WRITE(dhd_hlength)
 
 /// \brief This is the machine:read_csr() method implementation.
 /// \param L Lua state.
@@ -222,20 +218,6 @@ static int machine_obj_index_read_x(lua_State *L) {
     }
     uint64_t val{};
     TRY_EXECUTE(cm_read_x(m.get(), i, &val, err_msg));
-    lua_pushinteger(L, static_cast<lua_Integer>(val));
-    return 1;
-}
-
-/// \brief This is the machine:read_dhd_h() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_dhd_h(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto i = luaL_checkinteger(L, 2);
-    if (i < 0 || i >= DHD_H_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
-    uint64_t val{};
-    TRY_EXECUTE(cm_read_dhd_h(m.get(), i, &val, err_msg));
     lua_pushinteger(L, static_cast<lua_Integer>(val));
     return 1;
 }
@@ -409,18 +391,6 @@ static int machine_obj_index_write_x(lua_State *L) {
     return 0;
 }
 
-/// \brief This is the machine:write_dhd_h() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_dhd_h(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto i = luaL_checkinteger(L, 2);
-    if (i < 0 || i >= DHD_H_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
-    TRY_EXECUTE(cm_write_dhd_h(m.get(), i, luaL_checkinteger(L, 3), err_msg));
-    return 0;
-}
-
 /// \brief This is the machine:write_memory() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_write_memory(lua_State *L) {
@@ -480,11 +450,6 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"get_root_hash", machine_obj_index_get_root_hash},
     {"read_clint_mtimecmp", machine_obj_index_read_clint_mtimecmp},
     {"read_csr", machine_obj_index_read_csr},
-    {"read_dhd_dlength", machine_obj_index_read_dhd_dlength},
-    {"read_dhd_h", machine_obj_index_read_dhd_h},
-    {"read_dhd_hlength", machine_obj_index_read_dhd_hlength},
-    {"read_dhd_tlength", machine_obj_index_read_dhd_tlength},
-    {"read_dhd_tstart", machine_obj_index_read_dhd_tstart},
     {"read_htif_fromhost", machine_obj_index_read_htif_fromhost},
     {"read_htif_tohost", machine_obj_index_read_htif_tohost},
     {"read_htif_tohost_dev", machine_obj_index_read_htif_tohost_dev},
@@ -540,11 +505,6 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"verify_merkle_tree", machine_obj_index_verify_merkle_tree},
     {"write_clint_mtimecmp", machine_obj_index_write_clint_mtimecmp},
     {"write_csr", machine_obj_index_write_csr},
-    {"write_dhd_dlength", machine_obj_index_write_dhd_dlength},
-    {"write_dhd_h", machine_obj_index_write_dhd_h},
-    {"write_dhd_hlength", machine_obj_index_write_dhd_hlength},
-    {"write_dhd_tlength", machine_obj_index_write_dhd_tlength},
-    {"write_dhd_tstart", machine_obj_index_write_dhd_tstart},
     {"write_htif_fromhost", machine_obj_index_write_htif_fromhost},
     {"write_htif_fromhost_data", machine_obj_index_write_htif_fromhost_data},
     {"write_htif_tohost", machine_obj_index_write_htif_tohost},

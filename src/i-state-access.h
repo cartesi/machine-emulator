@@ -23,8 +23,8 @@
 #include <cstdint>
 #include <type_traits>
 
-#include "i-dhd-source.h"
 #include "meta.h"
+#include "pma.h"
 
 namespace cartesi {
 
@@ -501,82 +501,6 @@ public:
     /// \param val New register value.
     void write_clint_mtimecmp(uint64_t val) {
         return derived().do_write_clint_mtimecmp(val);
-    }
-
-    /// \brief Reads DHD's tstart.
-    /// \returns Register value.
-    uint64_t read_dhd_tstart(void) {
-        return derived().do_read_dhd_tstart();
-    }
-
-    /// \brief Writes DHD's tstart.
-    /// \param val New register value.
-    void write_dhd_tstart(uint64_t val) {
-        return derived().do_write_dhd_tstart(val);
-    }
-
-    /// \brief Reads DHD's tlength.
-    /// \returns Register value.
-    uint64_t read_dhd_tlength(void) {
-        return derived().do_read_dhd_tlength();
-    }
-
-    /// \brief Writes DHD's tlength.
-    /// \param val New register value.
-    void write_dhd_tlength(uint64_t val) {
-        return derived().do_write_dhd_tlength(val);
-    }
-
-    /// \brief Reads DHD's dlength.
-    /// \returns Register value.
-    uint64_t read_dhd_dlength(void) {
-        return derived().do_read_dhd_dlength();
-    }
-
-    /// \brief Writes DHD's dlength.
-    /// \param val New register value.
-    void write_dhd_dlength(uint64_t val) {
-        return derived().do_write_dhd_dlength(val);
-    }
-
-    /// \brief Reads DHD's hlength.
-    /// \returns Register value.
-    uint64_t read_dhd_hlength(void) {
-        return derived().do_read_dhd_hlength();
-    }
-
-    /// \brief Writes DHD's hlength.
-    /// \param val New register value.
-    void write_dhd_hlength(uint64_t val) {
-        return derived().do_write_dhd_hlength(val);
-    }
-
-    /// \brief Reads the value of DHD's input hash word.
-    /// \param i Index of input hash word.
-    /// Between 0 and DHD_H_REG_COUNT-1, inclusive.
-    /// \returns The value of the register.
-    uint64_t read_dhd_h(int i) {
-        return derived().do_read_dhd_h(i);
-    }
-
-    /// \brief Writes the value of DHD's input hash word.
-    /// \param i Index of input hash word.
-    /// Between 0 and DHD_H_REG_COUNT-1, inclusive.
-    /// \param val New value for word.
-    void write_dhd_h(int i, uint64_t val) {
-        return derived().do_write_dhd_h(i, val);
-    }
-
-    /// \brief Obtains the block of data that has a given hash
-    /// \param hash Pointer to buffer containing hash
-    /// \param hlength Length  of hash in bytes
-    /// \param dlength Maximum length of desired block of data with that hash.
-    /// On return, contains the actual length of the block found. Or
-    /// DHD_NOT_FOUND if no matching block was found.
-    /// \returns The block of data with the given hash, or an empty block
-    /// if not found
-    dhd_data dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength) {
-        return derived().do_dehash(hash, hlength, dlength);
     }
 
     /// \brief Reads HTIF's fromhost.

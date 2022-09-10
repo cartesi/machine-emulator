@@ -30,7 +30,6 @@
 
 #include <boost/container/static_vector.hpp>
 
-#include "i-dhd-source.h"
 #include "pma.h"
 #include "riscv-constants.h"
 
@@ -145,16 +144,6 @@ struct machine_state {
         uint64_t iyield;   ///< CSR iyield.
     } htif;
 
-    /// \brief DHD state
-    struct {
-        i_dhd_source_ptr source;                 ///< Dehash source to use
-        uint64_t tstart;                         ///< Start of target physical memory range for output data.
-        uint64_t tlength;                        ///< Length of target physical memory range for output data.
-        uint64_t dlength;                        ///< Output data length CSR.
-        uint64_t hlength;                        ///< Input hash length CSR.
-        std::array<uint64_t, DHD_H_REG_COUNT> h; ///< Words of input hash.
-    } dhd;
-
     /// Map of physical memory ranges
     boost::container::static_vector<pma_entry, PMA_MAX> pmas;
 
@@ -242,21 +231,6 @@ struct machine_state {
     /// \returns Packed iflags
     static uint64_t packed_iflags(int PRV, int X, int Y, int H) {
         return (PRV << IFLAGS_PRV_SHIFT) | (X << IFLAGS_X_SHIFT) | (Y << IFLAGS_Y_SHIFT) | (H << IFLAGS_H_SHIFT);
-    }
-
-        /// \brief Obtains the block of data that has a given hash
-    /// \param hash Pointer to buffer containing hash
-    /// \param hlength Length  of hash in bytes
-    /// \param dlength Maximum length of desired block of data with that hash.
-    /// On return, contains the actual length of the block found. Or
-    /// DHD_NOT_FOUND if no matching block was found.
-    /// \returns The block of data with the given hash, or an empty block
-    /// if not found
-    dhd_data dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength) const {
-        if (!dhd.source) {
-            throw std::runtime_error{"no dehash source"};
-        }
-        return dhd.source->dehash(hash, hlength, dlength);
     }
 };
 

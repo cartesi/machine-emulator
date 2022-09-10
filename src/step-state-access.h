@@ -77,8 +77,6 @@ private:
     bool m_verify_proofs;
     ///< Next access
     unsigned m_next_access;
-    ///< Dehash source to use
-    i_dhd_source_ptr m_source;
     ///< Add to indices reported in errors
     int m_one_based;
     ///< Root hash before next access
@@ -94,11 +92,10 @@ private:
 public:
     /// \brief Constructor from log of word accesses.
     /// \param accesses Reference to word access vector.
-    step_state_access(const access_log &log, bool verify_proofs, i_dhd_source_ptr source, bool one_based) :
+    step_state_access(const access_log &log, bool verify_proofs, bool one_based) :
         m_accesses(log.get_accesses()),
         m_verify_proofs(verify_proofs),
         m_next_access{0},
-        m_source{std::move(source)},
         m_one_based{one_based},
         m_root_hash{},
         m_hasher{},
@@ -654,53 +651,6 @@ private:
         check_write_word(PMA_CLINT_START + clint_get_csr_rel_addr(clint_csr::mtimecmp), val, "clint.mtimecmp");
     }
 
-    uint64_t do_read_dhd_tstart(void) {
-        return check_read_word(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::tstart), "dhd.tstart");
-    }
-
-    void do_write_dhd_tstart(uint64_t val) {
-        check_write_word(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::tstart), val, "dhd.tstart");
-    }
-
-    uint64_t do_read_dhd_tlength(void) {
-        return check_read_word(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::tlength), "dhd.tlength");
-    }
-
-    void do_write_dhd_tlength(uint64_t val) {
-        check_write_word(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::tlength), val, "dhd.tlength");
-    }
-
-    uint64_t do_read_dhd_dlength(void) {
-        return check_read_word(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::dlength), "dhd.dlength");
-    }
-
-    void do_write_dhd_dlength(uint64_t val) {
-        check_write_word(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::dlength), val, "dhd.dlength");
-    }
-
-    uint64_t do_read_dhd_hlength(void) {
-        return check_read_word(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::hlength), "dhd.hlength");
-    }
-
-    void do_write_dhd_hlength(uint64_t val) {
-        check_write_word(PMA_DHD_START + dhd_get_csr_rel_addr(dhd_csr::hlength), val, "dhd.hlength");
-    }
-
-    uint64_t do_read_dhd_h(int i) {
-        return check_read_word(PMA_DHD_START + dhd_get_h_rel_addr(i), "dhd.h");
-    }
-
-    void do_write_dhd_h(int i, uint64_t val) {
-        check_write_word(PMA_DHD_START + dhd_get_h_rel_addr(i), val, "dhd.h");
-    }
-
-    dhd_data do_dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength) {
-        if (!m_source) {
-            throw std::runtime_error("no dhd source");
-        }
-        return m_source->dehash(hash, hlength, dlength);
-    }
-
     uint64_t do_read_htif_fromhost(void) {
         return check_read_word(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::fromhost), "htif.fromhost");
     }
@@ -809,8 +759,6 @@ private:
                 return allocate_mock_pma_entry(make_clint_pma_entry(start, length).set_flags(f));
             case PMA_ISTART_DID::HTIF:
                 return allocate_mock_pma_entry(make_htif_pma_entry(start, length).set_flags(f));
-            case PMA_ISTART_DID::DHD:
-                return allocate_mock_pma_entry(make_dhd_pma_entry(start, length).set_flags(f));
             default:
                 return error_flags("invalid DID " + std::to_string(static_cast<int>(f.DID)) + " for IO");
         }

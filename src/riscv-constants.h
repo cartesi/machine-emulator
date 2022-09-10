@@ -30,7 +30,7 @@ enum RISCV_constants {
 };
 
 /// \brief Register counts
-enum REG_COUNT { X_REG_COUNT = 32, DHD_H_REG_COUNT = 4 };
+enum REG_COUNT { X_REG_COUNT = 32 };
 
 /// \brief MIP shifts
 enum MIP_shifts {

@@ -135,50 +135,6 @@ private:
         return m_a.read_htif_iyield();
     }
 
-    uint64_t do_read_dhd_tstart(void) override {
-        return m_a.read_dhd_tstart();
-    }
-
-    void do_write_dhd_tstart(uint64_t val) override {
-        return m_a.write_dhd_tstart(val);
-    }
-
-    uint64_t do_read_dhd_tlength(void) override {
-        return m_a.read_dhd_tlength();
-    }
-
-    void do_write_dhd_tlength(uint64_t val) override {
-        return m_a.write_dhd_tlength(val);
-    }
-
-    uint64_t do_read_dhd_dlength(void) override {
-        return m_a.read_dhd_dlength();
-    }
-
-    void do_write_dhd_dlength(uint64_t val) override {
-        return m_a.write_dhd_dlength(val);
-    }
-
-    uint64_t do_read_dhd_hlength(void) override {
-        return m_a.read_dhd_hlength();
-    }
-
-    void do_write_dhd_hlength(uint64_t val) override {
-        return m_a.write_dhd_hlength(val);
-    }
-
-    uint64_t do_read_dhd_h(int i) override {
-        return m_a.read_dhd_h(i);
-    }
-
-    void do_write_dhd_h(int i, uint64_t val) override {
-        return m_a.write_dhd_h(i, val);
-    }
-
-    dhd_data do_dehash(const unsigned char *hash, uint64_t hlength, uint64_t &dlength) override {
-        return m_a.dehash(hash, hlength, dlength);
-    }
-
     void do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t log2_length) override {
         return m_a.write_memory(paddr, data, log2_length);
     }

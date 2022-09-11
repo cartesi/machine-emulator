@@ -32,13 +32,13 @@
 #endif
 
 #include "access-log.h"
-#include "clint.h"
-#include "htif.h"
+#include "clint-factory.h"
+#include "htif-factory.h"
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
 #include "machine.h"
 #include "pma.h"
-#include "shadow.h"
+#include "shadow-factory.h"
 #include "strict-aliasing.h"
 
 namespace cartesi {

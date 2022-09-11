@@ -17,17 +17,16 @@
 #ifndef SHADOW_H
 #define SHADOW_H
 
+#include "device-driver.h"
 #include <cstdint>
 
 /// \file
 /// \brief Shadow device.
 
-#include "pma.h"
-
 namespace cartesi {
 
-// Forward declarations
-class machine;
+/// \brief Global shadow device driver instance
+extern const device_driver shadow_driver;
 
 /// \brief Mapping between CSRs and their relative addresses in shadow memory
 enum class shadow_csr {
@@ -77,12 +76,6 @@ uint64_t shadow_get_x_rel_addr(int reg);
 /// \param p Index of desired shadow PMA entry, in 0..31.
 /// \returns The address.
 uint64_t shadow_get_pma_rel_addr(int p);
-
-/// \brief Creates a PMA entry for the shadow device
-/// \param start Start address for memory range.
-/// \param length Length of memory range.
-/// \returns Corresponding PMA entry
-pma_entry make_shadow_pma_entry(uint64_t start, uint64_t length);
 
 } // namespace cartesi
 

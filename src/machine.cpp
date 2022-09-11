@@ -27,15 +27,15 @@
 
 #include <sys/stat.h>
 
-#include "clint.h"
-#include "htif.h"
+#include "clint-factory.h"
+#include "htif-factory.h"
 #include "interpret.h"
 #include "logged-state-access.h"
 #include "machine.h"
 #include "riscv-constants.h"
 #include "rom.h"
 #include "rtc.h"
-#include "shadow.h"
+#include "shadow-factory.h"
 #include "state-access.h"
 #include "step-state-access.h"
 #include "strict-aliasing.h"
@@ -217,7 +217,12 @@ void machine::replace_memory_range(const memory_range_config &new_range) {
     throw std::invalid_argument{"Cannot replace inexistent memory range"};
 }
 
-machine::machine(const machine_config &c, const machine_runtime_config &r) : m_s{}, m_t{}, m_h{c.htif}, m_c{c}, m_r{r} {
+machine::machine(const machine_config &c, const machine_runtime_config &r) :
+    m_s{},
+    m_t{},
+    m_h{c.htif.console_getchar},
+    m_c{c},
+    m_r{r} {
 
     if (m_c.processor.marchid == UINT64_C(-1)) {
         m_c.processor.marchid = MARCHID_INIT;

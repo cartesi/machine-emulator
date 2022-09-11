@@ -19,12 +19,9 @@
 
 #include <array>
 #include <cstdint>
-#include <termios.h>
-
 #include <htif-defines.h>
 
-#include "machine-config.h"
-#include "pma.h"
+#include "device-driver.h"
 #include "tty.h"
 
 /// \file
@@ -36,6 +33,9 @@
 #endif
 
 namespace cartesi {
+
+/// \brief Global HTIF device driver instance
+extern const device_driver htif_driver;
 
 // Forward declarations
 /// \brief HTIF shifts
@@ -127,7 +127,7 @@ public:
 
     /// \brief Constructor
     /// \param h HTIF device configuration.
-    htif(const htif_config &h);
+    htif(bool console_getchar);
 
     /// \brief Destructor
     ~htif();
@@ -164,19 +164,6 @@ private:
     /// \brief Closes console.
     static void end_console(void);
 };
-
-/// \brief Creates a PMA entry for the HTIF device
-/// \param h HTIF device.
-/// \param start Start address for memory range.
-/// \param length Length of memory range.
-/// \returns Corresponding PMA entry
-pma_entry make_htif_pma_entry(htif &h, uint64_t start, uint64_t length);
-
-/// \brief Creates a mock PMA entry for the HTIF device
-/// \param start Start address for memory range.
-/// \param length Length of memory range.
-/// \returns Corresponding PMA entry
-pma_entry make_htif_pma_entry(uint64_t start, uint64_t length);
 
 } // namespace cartesi
 

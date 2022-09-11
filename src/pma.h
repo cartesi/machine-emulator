@@ -23,13 +23,13 @@
 #include <variant>
 #include <vector>
 
+#include "device-driver.h"
 #include "pma-constants.h"
 
 namespace cartesi {
 
 // Forward declarations
 class pma_entry;
-class i_device_state_access;
 class machine;
 
 /// \file
@@ -47,48 +47,17 @@ using pma_peek = bool (*)(const pma_entry &, const machine &, uint64_t, const un
 /// \brief Default peek callback issues error on peeks.
 bool pma_peek_error(const pma_entry &, const machine &, uint64_t, const unsigned char **, unsigned char *);
 
-/// \brief Prototype for callback invoked when machine wants to read from a range.
-/// \param pma Pointer to corresponding PMA entry.
-/// \param da Object through which the machine state can be accessed.
-/// \param offset Offset of requested value from range base address.
-/// \param val Pointer to word where value will be stored.
-/// \param log2_size log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
-/// \returns True if operation succeeded, false otherwise.
-using pma_read = bool (*)(const pma_entry &, i_device_state_access *, uint64_t, uint64_t *, int);
-
-/// \brief Default read callback issues error on reads.
-bool pma_read_error(const pma_entry &, i_device_state_access *, uint64_t, uint64_t *, int);
-
-/// \brief Prototype for callback invoked when machine wants to write to a range.
-/// \param pma Pointer to corresponding PMA entry.
-/// \param da Object through which the machine state can be accessed.
-/// \param offset Offset of requested value from range base address.
-/// \param val Word to be written at \p offset.
-/// \param log2_size log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
-/// \returns True if operation succeeded, false otherwise.
-using pma_write = bool (*)(const pma_entry &, i_device_state_access *, uint64_t, uint64_t, int);
-
-/// \brief Default write callback issues error on write.
-bool pma_write_error(const pma_entry &, i_device_state_access *, uint64_t, uint64_t, int);
-
-/// \brief Driver for device ranges.
-struct pma_driver final {
-    const char *name{""};             ///< Driver name.
-    pma_read read{pma_read_error};    ///< Callback for read operations.
-    pma_write write{pma_write_error}; ///< Callback for write operations.
-};
-
 /// \brief Data for IO ranges.
 class pma_device final {
 
-    const pma_driver *m_driver; ///< Driver with callbacks.
-    void *m_context;            ///< Context to pass to callbacks.
+    const device_driver *m_driver; ///< Driver with callbacks.
+    void *m_context;               ///< Context to pass to callbacks.
 
 public:
     /// \brief Constructor from entries.
     /// \param context Context to pass to callbacks.
     /// \param driver Pointer to driver with callbacks.
-    explicit pma_device(const pma_driver *driver, void *context) : m_driver{driver}, m_context{context} {
+    explicit pma_device(const device_driver *driver, void *context) : m_driver{driver}, m_context{context} {
         ;
     }
 
@@ -106,7 +75,7 @@ public:
     }
 
     /// \brief Returns pointer to driver with callbacks
-    const pma_driver *get_driver(void) const {
+    const device_driver *get_driver(void) const {
         return m_driver;
     }
 };
@@ -486,7 +455,7 @@ pma_entry make_mockd_memory_pma_entry(uint64_t start, uint64_t length);
 /// \param driver Pointer to driver with callbacks.
 /// \param context Pointer to context to be passed to callbacks.
 /// \returns Corresponding PMA entry
-pma_entry make_device_pma_entry(uint64_t start, uint64_t length, pma_peek peek, const pma_driver *driver,
+pma_entry make_device_pma_entry(uint64_t start, uint64_t length, pma_peek peek, const device_driver *driver,
     void *context = nullptr);
 
 /// \brief Creates an empty PMA entry.

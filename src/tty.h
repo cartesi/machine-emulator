@@ -18,6 +18,8 @@
 #define TTY_H
 
 #include <cstdint>
+#include <iostream>
+#include <termios.h>
 
 /// \file
 /// \brief System-specific TTY handling operations

@@ -244,7 +244,7 @@ pma_entry make_mockd_memory_pma_entry(uint64_t start, uint64_t length) {
     return pma_entry{start, length, pma_memory{length, pma_memory::mockd{}}, pma_peek_error};
 }
 
-pma_entry make_device_pma_entry(uint64_t start, uint64_t length, pma_peek peek, const pma_driver *driver,
+pma_entry make_device_pma_entry(uint64_t start, uint64_t length, pma_peek peek, const device_driver *driver,
     void *context) {
     return pma_entry{start, length, pma_device{driver, context}, peek};
 }

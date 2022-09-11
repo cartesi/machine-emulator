@@ -652,7 +652,8 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             uint64_t val{};
             device_state_access<STATE_ACCESS> da(a);
             // If we do not know how to read, we treat this as a PMA violation
-            if (!pma.get_device().get_driver()->read(pma, &da, offset, &val, log2_size<U>::value)) {
+            if (!pma.get_device().get_driver()->read(pma.get_device().get_context(), &da, offset, &val,
+                    log2_size<U>::value)) {
                 raise_exception(a, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT,
                     vaddr);
                 return false;
@@ -703,7 +704,8 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             uint64_t offset = paddr - pma.get_start();
             device_state_access<STATE_ACCESS> da(a);
             // If we do not know how to write, we treat this as a PMA violation
-            if (!pma.get_device().get_driver()->write(pma, &da, offset, val64, log2_size<U>::value)) {
+            if (!pma.get_device().get_driver()->write(pma.get_device().get_context(), &da, offset, val64,
+                    log2_size<U>::value)) {
                 raise_exception(a, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
                 return false;
             }

@@ -17,16 +17,16 @@
 #ifndef CLINT_H
 #define CLINT_H
 
+#include "device-driver.h"
 #include <cstdint>
-
-#include "pma.h"
 
 /// \file
 /// \brief Clock interruptor device.
 
 namespace cartesi {
 
-class machine;
+/// \brief Global CLINT device driver instance
+extern const device_driver clint_driver;
 
 /// \brief Mapping between CSRs and their relative addresses in CLINT memory
 enum class clint_csr {
@@ -40,11 +40,14 @@ enum class clint_csr {
 /// \returns The address.
 uint64_t clint_get_csr_rel_addr(clint_csr reg);
 
-/// \brief Creates a PMA entry for the CLINT device
-/// \param start Start address for memory range.
-/// \param length Length of memory range.
-/// \returns Corresponding PMA entry
-pma_entry make_clint_pma_entry(uint64_t start, uint64_t length);
+/// \brief Obtains the relative address of the msip0 CSR in HTIF memory.
+static constexpr auto clint_msip0_rel_addr = static_cast<uint64_t>(clint_csr::msip0);
+
+/// \brief Obtains the relative address of the mtime CSR in HTIF memory.
+static constexpr auto clint_mtime_rel_addr = static_cast<uint64_t>(clint_csr::mtime);
+
+/// \brief Obtains the relative address of the mtimecmp CSR in HTIF memory.
+constexpr auto clint_mtimecmp_rel_addr = static_cast<uint64_t>(clint_csr::mtimecmp);
 
 } // namespace cartesi
 

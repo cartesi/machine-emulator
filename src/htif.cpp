@@ -18,6 +18,7 @@
 #include "i-device-state-access.h"
 #include "pma-constants.h"
 #include "strict-aliasing.h"
+#include "tty.h"
 
 namespace cartesi {
 
@@ -79,8 +80,8 @@ htif::~htif() {
 }
 
 /// \brief HTIF device read callback. See ::pma_read.
-static bool htif_read(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t *pval, int log2_size) {
-    (void) pma;
+static bool htif_read(void *context, i_device_state_access *a, uint64_t offset, uint64_t *pval, int log2_size) {
+    (void) context;
 
     // Our HTIF only supports aligned 64-bit reads
     if (log2_size != 3 || offset & 7) {
@@ -178,8 +179,8 @@ static bool htif_write_tohost(i_device_state_access *a, htif *h, uint64_t tohost
 }
 
 /// \brief HTIF device write callback. See ::pma_write.
-static bool htif_write(const pma_entry &pma, i_device_state_access *a, uint64_t offset, uint64_t val, int log2_size) {
-    auto *h = static_cast<htif *>(pma.get_device().get_context());
+static bool htif_write(void *context, i_device_state_access *a, uint64_t offset, uint64_t val, int log2_size) {
+    auto *h = static_cast<htif *>(context);
 
     // Our HTIF only supports aligned 64-bit writes
     if (log2_size != 3 || offset & 7) {
@@ -198,55 +199,6 @@ static bool htif_write(const pma_entry &pma, i_device_state_access *a, uint64_t 
     }
 }
 
-/// \brief HTIF device peek callback. See ::pma_peek.
-static bool htif_peek(const pma_entry &pma, const machine &m, uint64_t page_offset, const unsigned char **page_data,
-    unsigned char *scratch) {
-    // Check for alignment and range
-    if (page_offset % PMA_PAGE_SIZE != 0 || page_offset >= pma.get_length()) {
-        *page_data = nullptr;
-        return false;
-    }
-    // Page 0 is the only non-pristine page
-    if (page_offset != 0) {
-        *page_data = nullptr;
-        return true;
-    }
-    // Clear entire page.
-    memset(scratch, 0, PMA_PAGE_SIZE);
-    // Copy tohost and fromhost to their places within page.
-    aliased_aligned_write<uint64_t>(scratch + htif::get_csr_rel_addr(htif::csr::tohost), m.read_htif_tohost());
-    aliased_aligned_write<uint64_t>(scratch + htif::get_csr_rel_addr(htif::csr::fromhost), m.read_htif_fromhost());
-    aliased_aligned_write<uint64_t>(scratch + htif::get_csr_rel_addr(htif::csr::ihalt), m.read_htif_ihalt());
-    aliased_aligned_write<uint64_t>(scratch + htif::get_csr_rel_addr(htif::csr::iconsole), m.read_htif_iconsole());
-    aliased_aligned_write<uint64_t>(scratch + htif::get_csr_rel_addr(htif::csr::iyield), m.read_htif_iyield());
-    *page_data = scratch;
-    return true;
-}
-
-static const pma_driver htif_driver{"HTIF", htif_read, htif_write};
-
-pma_entry make_htif_pma_entry(uint64_t start, uint64_t length) {
-    pma_entry::flags f{
-        true,                // R
-        true,                // W
-        false,               // X
-        false,               // IR
-        false,               // IW
-        PMA_ISTART_DID::HTIF // DID
-    };
-    return make_device_pma_entry(start, length, htif_peek, &htif_driver).set_flags(f);
-}
-
-pma_entry make_htif_pma_entry(htif &h, uint64_t start, uint64_t length) {
-    pma_entry::flags f{
-        true,                // R
-        true,                // W
-        false,               // X
-        false,               // IR
-        false,               // IW
-        PMA_ISTART_DID::HTIF // DID
-    };
-    return make_device_pma_entry(start, length, htif_peek, &htif_driver, &h).set_flags(f);
-}
+const device_driver htif_driver{"HTIF", htif_read, htif_write};
 
 } // namespace cartesi

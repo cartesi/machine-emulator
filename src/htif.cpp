@@ -16,17 +16,8 @@
 
 #include "htif.h"
 #include "i-device-state-access.h"
-#include "machine.h"
+#include "pma-constants.h"
 #include "strict-aliasing.h"
-
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <sys/select.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
-#include <csignal>
-#include <iostream>
 
 namespace cartesi {
 
@@ -46,65 +37,16 @@ int htif::console_getchar(void) {
     return 0;
 }
 
+void htif::console_putchar(int ch) {
+    tty_putchar(ch);
+}
+
 uint64_t htif::get_csr_rel_addr(csr reg) {
     return static_cast<uint64_t>(reg);
 }
 
-static int new_ttyfd(const char *path) {
-    int fd{};
-    do {
-        fd = open(path, O_RDWR | O_NOCTTY | O_NONBLOCK);
-    } while (fd == -1 && errno == EINTR);
-    return fd;
-}
-
-static int get_ttyfd(void) {
-    char *path{};
-    if ((path = ttyname(STDERR_FILENO)) != nullptr) {
-        return new_ttyfd(path);
-    } else if ((path = ttyname(STDOUT_FILENO)) != nullptr) {
-        return new_ttyfd(path);
-    } else if ((path = ttyname(STDIN_FILENO)) != nullptr) {
-        return new_ttyfd(path);
-    } else if ((path = ctermid(nullptr)) != nullptr) {
-        return new_ttyfd(path);
-    } else {
-        errno = ENOTTY; /* No terminal */
-    }
-    return -1;
-}
-
 void htif::init_console(void) {
-    if ((m_ttyfd = get_ttyfd()) >= 0) {
-        struct termios tty {};
-        tcgetattr(m_ttyfd, &tty);
-        m_oldtty = tty;
-        // Set terminal to "raw" mode
-        tty.c_lflag &= ~(ECHO | // Echo off
-            ICANON |            // Canonical mode off
-            ECHONL |            // Do not echo NL (redundant with ECHO and ICANON)
-            ISIG |              // Signal chars off
-            IEXTEN              // Extended input processing off
-        );
-        tty.c_iflag &= ~(IGNBRK | // Generate \377 \0 \0 on BREAK
-            BRKINT |              //
-            PARMRK |              //
-            ICRNL |               // No CR-to-NL
-            ISTRIP |              // Do not strip off 8th bit
-            INLCR |               // No NL-to-CR
-            IGNCR |               // Do not ignore CR
-            IXON                  // Disable XON/XOFF flow control on output
-        );
-        tty.c_oflag |= OPOST; // Enable output processing
-        // Enable parity generation on output and checking for input
-        tty.c_cflag &= ~(CSIZE | PARENB);
-        tty.c_cflag |= CS8;
-        // Read returns with 1 char and no delay
-        tty.c_cc[VMIN] = 1;
-        tty.c_cc[VTIME] = 0;
-        tcsetattr(m_ttyfd, TCSANOW, &tty);
-        //??D Should we check to see if changes stuck?
-    }
+    tty_setup(tty_command::initialize);
 }
 
 void htif::poll_console(uint64_t wait) {
@@ -112,40 +54,19 @@ void htif::poll_console(uint64_t wait) {
     // Obviously, somethind different must be done in blockchain
     // If we don't have any characters left in buffer, try to obtain more
     if (m_buf_pos >= m_buf_len) {
-        int fd_max{0};
-        fd_set rfds{};
-        timeval tv{};
-        tv.tv_usec = static_cast<suseconds_t>(wait);
-        FD_ZERO(&rfds); // NOLINT: suppress cause on MacOSX it resolves to __builtin_bzero
-        FD_SET(STDIN_FILENO, &rfds);
-        if (select(fd_max + 1, &rfds, nullptr, nullptr, &tv) > 0 && FD_ISSET(0, &rfds)) {
+        if (tty_poll(wait, m_buf.data(), m_buf.size(), &m_buf_len)) {
             m_buf_pos = 0;
-            m_buf_len = read(STDIN_FILENO, m_buf.data(), m_buf.size());
-            // If stdin is closed, pass EOF to client
-            if (m_buf_len <= 0) {
-                m_buf_len = 1;
-                m_buf[0] = 4; // CTRL+D
-            }
         }
     }
 }
 
 void htif::end_console(void) {
-    if (m_ttyfd >= 0) {
-        tcsetattr(m_ttyfd, TCSANOW, &m_oldtty);
-        close(m_ttyfd);
-    }
+    tty_setup(tty_command::cleanup);
 }
 
 // The constructor for the associated machine is typically *not* done
 // yet when the constructor for the HTIF device is invoked.
-htif::htif(const htif_config &h) :
-    m_console_getchar{h.console_getchar},
-    m_buf{},
-    m_buf_pos{},
-    m_buf_len{},
-    m_ttyfd{-1},
-    m_oldtty{} {
+htif::htif(bool console_getchar) : m_console_getchar{console_getchar}, m_buf{}, m_buf_pos{}, m_buf_len{} {
     if (m_console_getchar) {
         init_console();
     }
@@ -220,10 +141,7 @@ static bool htif_console(i_device_state_access *a, htif *h, uint64_t cmd, uint64
     if ((a->read_htif_iconsole() >> cmd) & 1) {
         if (cmd == HTIF_CONSOLE_PUTCHAR) {
             uint8_t ch = data & 0xff;
-            // In blockchain, there is no place to output a character, so either ignore it or log it somewhere
-            if (write(STDOUT_FILENO, &ch, 1) < 1) {
-                ;
-            }
+            htif::console_putchar(ch);
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, cmd, 0));
         } else if (cmd == HTIF_CONSOLE_GETCHAR) {
             // In blockchain, this command will never be enabled as there is no way to input the same character

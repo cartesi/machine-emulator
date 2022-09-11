@@ -25,6 +25,7 @@
 
 #include "machine-config.h"
 #include "pma.h"
+#include "tty.h"
 
 /// \file
 /// \brief Host-Target interface device.
@@ -111,8 +112,6 @@ class htif final {
     std::array<char, HTIF_CONSOLE_BUF_SIZE> m_buf; ///< Console buffer.
     ssize_t m_buf_pos;                             ///< Next character in buffer.
     ssize_t m_buf_len;                             ///< Last character in buffer.
-    int m_ttyfd;                                   ///< The tty file descriptor.
-    struct termios m_oldtty;                       ///< Saved termios values.
 
 public:
     /// \brief No default constructor
@@ -154,12 +153,16 @@ public:
     /// \returns The character, or 0 if none are available.
     int console_getchar(void);
 
+    /// \brief Writes a character to the console
+    /// \param ch The character
+    static void console_putchar(int ch);
+
 private:
     /// \brief Initializes console.
-    void init_console(void);
+    static void init_console(void);
 
     /// \brief Closes console.
-    void end_console(void);
+    static void end_console(void);
 };
 
 /// \brief Creates a PMA entry for the HTIF device

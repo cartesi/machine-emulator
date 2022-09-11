@@ -233,6 +233,7 @@ all: luacartesi grpc hash c-api
 CARTESI_OBJS:= \
 	clint.o \
 	rom.o \
+	tty.o \
 	htif.o \
 	shadow.o \
 	machine-merkle-tree.o \
@@ -440,6 +441,7 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	protobuf-util.o \
 	clint.o \
 	rom.o \
+	tty.o \
 	htif.o \
 	shadow.o \
 	machine-merkle-tree.o \

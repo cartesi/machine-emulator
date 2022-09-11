@@ -1019,6 +1019,9 @@ static inline execute_status execute_AMOADD_W(STATE_ACCESS &a, uint64_t pc, uint
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOXOR_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "amoxor.w");
+    auto note = a.make_scoped_note("amoxor.w");
+    (void) note;
     return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm ^ valr; });
 }
 
@@ -1131,6 +1134,9 @@ static inline execute_status execute_AMOADD_D(STATE_ACCESS &a, uint64_t pc, uint
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_AMOXOR_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "amoxor.d");
+    auto note = a.make_scoped_note("amoxor.d");
+    (void) note;
     return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm ^ valr; });
 }
 

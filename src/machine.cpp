@@ -517,7 +517,7 @@ machine::~machine() {
     }
 #endif
 #if DUMP_COUNTERS
-#define TLB_HIT_RATIO(s, a, b) (((double) s.stats.b) / (s.stats.a + s.stats.b))
+#define TLB_HIT_RATIO(s, a, b) (((double) (s).stats.b) / ((s).stats.a + (s).stats.b))
     (void) fprintf(stderr, "\nMachine Counters:\n");
     (void) fprintf(stderr, "inner loops: %" PRIu64 "\n", m_s.stats.inner_loop);
     (void) fprintf(stderr, "outers loops: %" PRIu64 "\n", m_s.stats.outer_loop);

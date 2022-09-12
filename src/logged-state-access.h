@@ -26,6 +26,7 @@
 
 #include "access-log.h"
 #include "clint.h"
+#include "device-state-access.h"
 #include "htif.h"
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
@@ -38,7 +39,7 @@
 namespace cartesi {
 
 /// \details The logged_state_access logs all access to the machine state.
-class logged_state_access : public i_state_access<logged_state_access> {
+class logged_state_access : public i_state_access<logged_state_access, pma_entry> {
 
     machine &m_m;                      ///< Machine state
     std::shared_ptr<access_log> m_log; ///< Pointer to access log
@@ -181,15 +182,7 @@ private:
     }
 
     // Declare interface as friend to it can forward calls to the "overriden" methods.
-    friend i_state_access<logged_state_access>;
-
-    const machine_state &do_get_naked_state(void) const {
-        return m_m.get_state();
-    }
-
-    machine_state &do_get_naked_state(void) {
-        return m_m.get_state();
-    }
+    friend i_state_access<logged_state_access, pma_entry>;
 
     void do_push_bracket(bracket_type &type, const char *text) {
         m_log->push_bracket(type, text);
@@ -606,6 +599,10 @@ private:
             "htif.iyield");
     }
 
+    void do_poll_htif_console(uint64_t wait) {
+        (void) wait;
+    }
+
     uint64_t do_read_pma_istart(int i) const {
         const auto &pmas = m_m.get_pmas();
         uint64_t istart = 0;
@@ -696,7 +693,7 @@ private:
         (void) note;
         int i = 0;
         while (true) {
-            auto &pma = this->get_naked_state().pmas[i];
+            auto &pma = m_m.get_state().pmas[i];
             auto istart = this->read_pma_istart(i);
             auto ilength = this->read_pma_ilength(i);
             (void) istart;
@@ -719,6 +716,60 @@ private:
             i++;
         }
     }
+
+    uint64_t do_read_iflags(void) {
+        uint64_t iflags = m_m.get_state().read_iflags();
+        log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), iflags, "iflags");
+        return iflags;
+    }
+
+    void do_write_iflags(uint64_t new_iflags) {
+        auto old_iflags = m_m.get_state().read_iflags();
+        m_m.get_state().write_iflags(new_iflags);
+        uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
+        log_read(iflags_addr, old_iflags, "iflags (superfluous)");
+        log_before_write(iflags_addr, old_iflags, new_iflags, "iflags");
+    }
+
+    unsigned char *do_get_host_memory(pma_entry &pma) {
+        return pma.get_memory().get_host_memory();
+    }
+
+    bool do_read_device(pma_entry &pma, uint64_t offset, uint64_t *pval, int log2_size) {
+        device_state_access da(*this);
+        return pma.get_device().get_driver()->read(pma.get_device().get_context(), &da, offset, pval, log2_size);
+    }
+
+    bool do_write_device(pma_entry &pma, uint64_t offset, uint64_t val, int log2_size) {
+        device_state_access da(*this);
+        return pma.get_device().get_driver()->write(pma.get_device().get_context(), &da, offset, val, log2_size);
+    }
+
+    void do_set_brk(void) {
+        m_m.get_state().set_brk();
+    }
+
+    bool do_get_brk(void) const {
+        return m_m.get_state().get_brk();
+    }
+
+    void do_or_brk_with_mip_mie(void) {
+        m_m.get_state().or_brk_with_mip_mie();
+    }
+
+    void do_assert_no_brk(void) const {
+        m_m.get_state().assert_no_brk();
+    }
+
+    void do_set_brk_from_all(void) {
+        return m_m.get_state().set_brk_from_all();
+    }
+
+#ifdef DUMP_COUNTERS
+    machine_statistics &do_get_statistics() {
+        return m_m.get_state().stats;
+    }
+#endif
 };
 
 /// \brief Type-trait preventing the use of TLB while

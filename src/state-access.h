@@ -22,8 +22,10 @@
 
 #include <cassert>
 
+#include "device-state-access.h"
 #include "i-state-access.h"
 #include "machine.h"
+#include "pma.h"
 #include "strict-aliasing.h"
 
 namespace cartesi {
@@ -31,7 +33,7 @@ namespace cartesi {
 /// \class state_access
 /// \details The state_access class implements fast, direct
 /// access to the machine state. No logs are kept.
-class state_access : public i_state_access<state_access> {
+class state_access : public i_state_access<state_access, pma_entry> {
 
     machine &m_m; ///< Associated machine
 
@@ -63,15 +65,7 @@ public:
 
 private:
     // Declare interface as friend to it can forward calls to the "overriden" methods.
-    friend i_state_access<state_access>;
-
-    const machine_state &do_get_naked_state(void) const {
-        return m_m.get_state();
-    }
-
-    machine_state &do_get_naked_state(void) {
-        return m_m.get_state();
-    }
+    friend i_state_access<state_access, pma_entry>;
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     void do_push_bracket(bracket_type type, const char *text) {
@@ -382,6 +376,10 @@ private:
         return m_m.get_state().htif.iyield;
     }
 
+    void do_poll_htif_console(uint64_t wait) {
+        return m_m.poll_htif_console(wait);
+    }
+
     uint64_t do_read_pma_istart(int i) const {
         assert(i >= 0 && i < (int) PMA_MAX);
         const auto &pmas = m_m.get_pmas();
@@ -441,6 +439,54 @@ private:
             i++;
         }
     }
+
+    unsigned char *do_get_host_memory(pma_entry &pma) {
+        return pma.get_memory().get_host_memory();
+    }
+
+    uint64_t do_read_iflags(void) {
+        return m_m.get_state().read_iflags();
+    }
+
+    void do_write_iflags(uint64_t val) {
+        m_m.get_state().write_iflags(val);
+    }
+
+    bool do_read_device(pma_entry &pma, uint64_t offset, uint64_t *pval, int log2_size) {
+        device_state_access da(*this);
+        return pma.get_device().get_driver()->read(pma.get_device().get_context(), &da, offset, pval, log2_size);
+    }
+
+    bool do_write_device(pma_entry &pma, uint64_t offset, uint64_t val, int log2_size) {
+        device_state_access da(*this);
+        return pma.get_device().get_driver()->write(pma.get_device().get_context(), &da, offset, val, log2_size);
+    }
+
+    void do_set_brk(void) {
+        m_m.get_state().set_brk();
+    }
+
+    bool do_get_brk(void) const {
+        return m_m.get_state().get_brk();
+    }
+
+    void do_or_brk_with_mip_mie(void) {
+        m_m.get_state().or_brk_with_mip_mie();
+    }
+
+    void do_assert_no_brk(void) const {
+        m_m.get_state().assert_no_brk();
+    }
+
+    void do_set_brk_from_all(void) {
+        return m_m.get_state().set_brk_from_all();
+    }
+
+#ifdef DUMP_COUNTERS
+    machine_statistics &do_get_statistics() {
+        return m_m.get_state().stats;
+    }
+#endif
 };
 
 } // namespace cartesi

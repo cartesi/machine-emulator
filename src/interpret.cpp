@@ -78,11 +78,8 @@
 ///   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Integer-Overflow-Builtins.html#Integer-Overflow-Builtins
 /// \}
 
-#include "device-state-access.h"
 #include "interpret.h"
 #include "logged-state-access.h"
-#include "machine-state.h"
-#include "machine.h"
 #include "meta.h"
 #include "riscv-constants.h"
 #include "rom.h"
@@ -101,7 +98,7 @@ using uint128_t = unsigned __int128;
 #pragma GCC diagnostic pop
 #endif
 
-uint64_t mul64hu(uint64_t a, uint64_t b) {
+static uint64_t mul64hu(uint64_t a, uint64_t b) {
 #ifdef __SIZEOF_INT128__
     return static_cast<uint64_t>((static_cast<uint128_t>(a) * static_cast<uint128_t>(b)) >> 64);
 #else
@@ -118,7 +115,7 @@ uint64_t mul64hu(uint64_t a, uint64_t b) {
 #endif
 }
 
-int64_t mul64hsu(int64_t a, uint64_t b) {
+static int64_t mul64hsu(int64_t a, uint64_t b) {
 #ifdef __SIZEOF_INT128__
     return static_cast<int64_t>((static_cast<int128_t>(a) * static_cast<int128_t>(b)) >> 64);
 #else
@@ -341,7 +338,7 @@ static inline uint32_t csr_priv(CSR_address csr) {
 template <typename STATE_ACCESS>
 static void set_priv(STATE_ACCESS &a, int previous_prv, int new_prv) {
     if (previous_prv != new_prv) {
-        INC_COUNTER(a.get_naked_state(), priv_level[new_prv]);
+        INC_COUNTER(a.get_statistics(), priv_level[new_prv]);
         a.write_iflags_PRV(new_prv);
         //??D new priv 1.11 draft says invalidation should
         // happen within a trap handler, although it could
@@ -413,10 +410,11 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
         set_priv(a, priv, PRV_S);
         a.write_pc(a.read_stvec());
 #ifdef DUMP_COUNTERS
-        if (cause & MCAUSE_INTERRUPT_FLAG)
-            INC_COUNTER(a.get_naked_state(), sv_int);
-        else if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M) // Do not count environment calls
-            INC_COUNTER(a.get_naked_state(), sv_ex);
+        if (cause & MCAUSE_INTERRUPT_FLAG) {
+            INC_COUNTER(a.get_statistics(), sv_int);
+        } else if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M) { // Do not count environment calls
+            INC_COUNTER(a.get_statistics(), sv_ex);
+        }
 #endif
     } else {
         a.write_mcause(cause);
@@ -430,10 +428,11 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
         set_priv(a, priv, PRV_M);
         a.write_pc(a.read_mtvec());
 #ifdef DUMP_COUNTERS
-        if (cause & MCAUSE_INTERRUPT_FLAG)
-            INC_COUNTER(a.get_naked_state(), m_int);
-        else if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M) // Do not count environment calls
-            INC_COUNTER(a.get_naked_state(), m_ex);
+        if (cause & MCAUSE_INTERRUPT_FLAG) {
+            INC_COUNTER(a.get_statistics(), m_int);
+        } else if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M) { // Do not count environment calls
+            INC_COUNTER(a.get_statistics(), m_ex);
+        }
 #endif
     }
 }
@@ -634,15 +633,14 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             raise_exception(a, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_PAGE_FAULT : MCAUSE_LOAD_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry &pma = a.template find_pma_entry<T>(paddr);
+        auto &pma = a.template find_pma_entry<T>(paddr);
         if (pma.get_istart_E() || !pma.get_istart_R()) {
             raise_exception(a, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT,
                 vaddr);
             return false;
         } else if (pma.get_istart_M()) {
             uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-            unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
-
+            unsigned char *hpage = a.get_host_memory(pma) + (paddr_page - pma.get_start());
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             a.read_memory_word(paddr, hpage, hoffset, pval);
             return true;
@@ -650,10 +648,9 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             assert(pma.get_istart_IO());
             uint64_t offset = paddr - pma.get_start();
             uint64_t val{};
-            device_state_access<STATE_ACCESS> da(a);
+
             // If we do not know how to read, we treat this as a PMA violation
-            if (!pma.get_device().get_driver()->read(pma.get_device().get_context(), &da, offset, &val,
-                    log2_size<U>::value)) {
+            if (!a.read_device(pma, offset, &val, log2_size<U>::value)) {
                 raise_exception(a, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT,
                     vaddr);
                 return false;
@@ -686,15 +683,14 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             raise_exception(a, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
             return false;
         }
-        pma_entry &pma = a.template find_pma_entry<T>(paddr);
+        auto &pma = a.template find_pma_entry<T>(paddr);
         if (pma.get_istart_E() || !pma.get_istart_W()) {
             raise_exception(a, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
             return false;
         } else if (pma.get_istart_M()) {
             uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-            unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
+            unsigned char *hpage = a.get_host_memory(pma) + (paddr_page - pma.get_start());
             pma.mark_dirty_page(paddr_page - pma.get_start());
-
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             // write to memory
             a.write_memory_word(paddr, hpage, hoffset, static_cast<T>(val64));
@@ -702,10 +698,8 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
         } else {
             assert(pma.get_istart_IO());
             uint64_t offset = paddr - pma.get_start();
-            device_state_access<STATE_ACCESS> da(a);
             // If we do not know how to write, we treat this as a PMA violation
-            if (!pma.get_device().get_driver()->write(pma.get_device().get_context(), &da, offset, val64,
-                    log2_size<U>::value)) {
+            if (!a.write_device(pma, offset, val64, log2_size<U>::value)) {
                 raise_exception(a, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
                 return false;
             }
@@ -1613,7 +1607,7 @@ static bool write_csr_sie(STATE_ACCESS &a, uint64_t val) {
     uint64_t mask = a.read_mideleg();
     uint64_t mie = a.read_mie();
     a.write_mie((mie & ~mask) | (val & mask));
-    a.get_naked_state().set_brk_from_all();
+    a.set_brk_from_all();
     return true;
 }
 
@@ -1659,7 +1653,7 @@ static bool write_csr_sip(STATE_ACCESS &a, uint64_t val) {
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
-    a.get_naked_state().set_brk_from_all();
+    a.set_brk_from_all();
     return true;
 }
 
@@ -1728,7 +1722,7 @@ template <typename STATE_ACCESS>
 static bool write_csr_mie(STATE_ACCESS &a, uint64_t val) {
     const uint64_t mask = MIP_MSIP_MASK | MIP_MTIP_MASK | MIP_MEIP_MASK | MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
     a.write_mie((a.read_mie() & ~mask) | (val & mask));
-    a.get_naked_state().set_brk_from_all();
+    a.set_brk_from_all();
     return true;
 }
 
@@ -1795,7 +1789,7 @@ static bool write_csr_mip(STATE_ACCESS &a, uint64_t val) {
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
-    a.get_naked_state().set_brk_from_all();
+    a.set_brk_from_all();
     return true;
 }
 
@@ -2143,25 +2137,24 @@ static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t 
     // Compile this code only if STATE_ACCESS = state_access
     // None of this should enter step logs
     if constexpr (std::is_same<STATE_ACCESS, state_access>::value) {
-        auto &naked_m = a.get_naked_machine();
-        bool htif_console_getchar = static_cast<bool>(naked_m.read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
+        bool htif_console_getchar = static_cast<bool>(a.read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
         if (htif_console_getchar) {
-            uint64_t mcycle = naked_m.read_mcycle();
-            uint64_t warp_cycle = rtc_time_to_cycle(naked_m.read_clint_mtimecmp());
+            uint64_t mcycle = a.read_mcycle();
+            uint64_t warp_cycle = rtc_time_to_cycle(a.read_clint_mtimecmp());
             if (warp_cycle > mcycle) {
                 const uint64_t cycles_per_us = 100; // CLOCK_FREQ / 10^6; see rom-defines.h
                 uint64_t wait = (warp_cycle - mcycle) / cycles_per_us;
                 timeval start{};
                 timeval end{};
                 gettimeofday(&start, nullptr);
-                naked_m.poll_htif_console(wait);
+                a.poll_htif_console(wait);
                 gettimeofday(&end, nullptr);
                 uint64_t elapsed_us = end.tv_usec - start.tv_usec;
                 uint64_t elapsed_cycles = elapsed_us * cycles_per_us;
                 uint64_t real_cycle = rtc_time_to_cycle(elapsed_cycles + rtc_cycle_to_time(mcycle));
                 warp_cycle = elapsed_us >= wait ? warp_cycle : real_cycle;
-                naked_m.write_mcycle(warp_cycle);
-                naked_m.get_state().set_brk();
+                a.write_mcycle(warp_cycle);
+                a.set_brk();
             }
         }
     }
@@ -2173,7 +2166,7 @@ static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t 
 template <typename STATE_ACCESS>
 static inline execute_status execute_FENCE(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) insn;
-    INC_COUNTER(a.get_naked_state(), fence);
+    INC_COUNTER(a.get_statistics(), fence);
     dump_insn(a, pc, insn, "fence");
     auto note = a.make_scoped_note("fence");
     (void) note;
@@ -2185,7 +2178,7 @@ static inline execute_status execute_FENCE(STATE_ACCESS &a, uint64_t pc, uint32_
 template <typename STATE_ACCESS>
 static inline execute_status execute_FENCE_I(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) insn;
-    INC_COUNTER(a.get_naked_state(), fence_i);
+    INC_COUNTER(a.get_statistics(), fence_i);
     dump_insn(a, pc, insn, "fence.i");
     auto note = a.make_scoped_note("fence.i");
     (void) note;
@@ -2864,7 +2857,7 @@ template <typename STATE_ACCESS>
 static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     // rs1 and rs2 are arbitrary, rest is set
     if ((insn & 0b11111110000000000111111111111111) == 0b00010010000000000000000001110011) {
-        INC_COUNTER(a.get_naked_state(), fence_vma);
+        INC_COUNTER(a.get_statistics(), fence_vma);
         dump_insn(a, pc, insn, "sfence.vma");
         auto note = a.make_scoped_note("sfence.vma");
         (void) note;
@@ -3293,7 +3286,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
         return fetch_status::exception;
     }
     // Walk memory map to find the range that contains the physical address
-    pma_entry &pma = a.template find_pma_entry<uint32_t>(paddr);
+    auto &pma = a.template find_pma_entry<uint32_t>(paddr);
     // We only execute directly from RAM (as in "random access memory", which includes ROM)
     // If the range is not memory or not executable, this as a PMA violation
     if (!pma.get_istart_M() || !pma.get_istart_X()) {
@@ -3301,8 +3294,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
         return fetch_status::exception;
     }
     uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-    unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
-
+    unsigned char *hpage = a.get_host_memory(pma) + (paddr_page - pma.get_start());
     uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
     a.read_memory_word(paddr, hpage, hoffset, pinsn);
     return fetch_status::success;
@@ -3350,7 +3342,7 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     set_rtc_interrupt(a, mcycle);
 
     // Rebuild brk flag from all conditions.
-    a.get_naked_state().set_brk_from_all();
+    a.set_brk_from_all();
 
     // Raise the highest priority pending interrupt, if any
     raise_interrupt_if_any(a);
@@ -3358,7 +3350,7 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     uint64_t pc = 0;
     uint32_t insn = 0;
 
-    INC_COUNTER(a.get_naked_state(), outer_loop);
+    INC_COUNTER(a.get_statistics(), outer_loop);
 
     // The inner loops continues until there is an interrupt condition
     // or mcycle reaches mcycle_end
@@ -3383,7 +3375,7 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         a.write_mcycle(mcycle);
 
         // If the break flag is active, break from the inner loop
-        if (a.get_naked_state().get_brk()) {
+        if (a.get_brk()) {
             return interpreter_status::brk;
         }
         // Otherwise, there can be no pending interrupts
@@ -3395,13 +3387,13 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         // get_pending_irq_mask for details.
         // assert(get_pending_irq_mask(a.get_naked_state()) == 0);
         // For simplicity, we brk whenever mie & mip != 0
-        a.get_naked_state().assert_no_brk();
+        a.assert_no_brk();
 
         // If we reached the target mcycle, we are done
         if (mcycle >= mcycle_end) {
             return interpreter_status::success;
         }
-        INC_COUNTER(a.get_naked_state(), inner_loop);
+        INC_COUNTER(a.get_statistics(), inner_loop);
     }
 }
 

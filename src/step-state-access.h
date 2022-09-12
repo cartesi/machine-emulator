@@ -33,6 +33,7 @@
 
 #include "access-log.h"
 #include "clint-factory.h"
+#include "device-state-access.h"
 #include "htif-factory.h"
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
@@ -44,7 +45,7 @@
 namespace cartesi {
 
 /// \details The step_state_access logs all access to the machine state.
-class step_state_access : public i_state_access<step_state_access> {
+class step_state_access : public i_state_access<step_state_access, pma_entry> {
 public:
     class mock_machine_state {
     public:
@@ -88,6 +89,7 @@ private:
 
     ///< Mock machine state
     mock_machine_state m_naked_state;
+    machine_statistics m_stats;
 
 public:
     /// \brief Constructor from log of word accesses.
@@ -136,14 +138,6 @@ public:
 private:
     auto access_to_report(void) const {
         return m_next_access + m_one_based;
-    }
-
-    const auto &do_get_naked_state(void) const {
-        return m_naked_state;
-    }
-
-    auto &do_get_naked_state(void) {
-        return m_naked_state;
     }
 
     static void roll_hash_up_tree(machine_merkle_tree::hasher_type &hasher,
@@ -346,7 +340,7 @@ private:
 
     // Declare interface as friend to it can forward calls to the
     // "overriden" methods.
-    friend i_state_access<step_state_access>;
+    friend i_state_access<step_state_access, pma_entry>;
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     void do_push_bracket(bracket_type type, const char *text) {
@@ -679,6 +673,10 @@ private:
         return check_read_word(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::iyield), "htif.iyield");
     }
 
+    void do_poll_htif_console(uint64_t wait) {
+        (void) wait;
+    }
+
     uint64_t do_read_pma_istart(int i) {
         auto rel_addr = shadow_get_pma_rel_addr(i);
         return check_read_word(PMA_SHADOW_START + rel_addr, "pma.istart");
@@ -817,6 +815,54 @@ private:
             i++;
         }
     }
+
+    uint64_t do_read_iflags(void) {
+        auto iflags = check_read_word(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), "iflags");
+        return iflags;
+    }
+
+    void do_write_iflags(uint64_t new_iflags) {
+        uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
+        check_write_word(iflags_addr, new_iflags, "iflags");
+    }
+
+    unsigned char *do_get_host_memory(pma_entry &pma) {
+        return pma.get_memory().get_host_memory();
+    }
+
+    bool do_read_device(pma_entry &pma, uint64_t offset, uint64_t *pval, int log2_size) {
+        device_state_access da(*this);
+        return pma.get_device().get_driver()->read(pma.get_device().get_context(), &da, offset, pval, log2_size);
+    }
+
+    bool do_write_device(pma_entry &pma, uint64_t offset, uint64_t val, int log2_size) {
+        device_state_access da(*this);
+        return pma.get_device().get_driver()->write(pma.get_device().get_context(), &da, offset, val, log2_size);
+    }
+
+    void do_set_brk(void) {
+        m_naked_state.set_brk();
+    }
+
+    bool do_get_brk(void) const {
+        return m_naked_state.get_brk();
+    }
+
+    void do_or_brk_with_mip_mie(void) {
+        m_naked_state.or_brk_with_mip_mie();
+    }
+
+    void do_assert_no_brk(void) const {}
+
+    void do_set_brk_from_all(void) {
+        m_naked_state.set_brk_from_all();
+    }
+
+#ifdef DUMP_COUNTERS
+    machine_statistics &do_get_statistics() {
+        return m_stats;
+    }
+#endif
 };
 
 /// \brief Type-trait preventing the use of TLB while

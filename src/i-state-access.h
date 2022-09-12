@@ -23,13 +23,12 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "machine-statistics.h"
 #include "meta.h"
-#include "pma.h"
 
 namespace cartesi {
 
 // Forward declarations
-class machine;
 enum class bracket_type;
 
 /// \class i_state_access
@@ -53,7 +52,7 @@ enum class bracket_type;
 /// Methods are provided to read and write each state component.
 /// \}
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
-template <typename DERIVED>
+template <typename DERIVED, typename PMA_ENTRY_TYPE>
 class i_state_access { // CRTP
 
     /// \brief Returns object cast as the derived class
@@ -67,16 +66,6 @@ class i_state_access { // CRTP
     }
 
 public:
-    /// \brief Returns machine state for direct access.
-    auto &get_naked_state(void) {
-        return derived().do_get_naked_state();
-    }
-
-    /// \brief Returns machine state for direct read-only access.
-    const auto &get_naked_state(void) const {
-        return derived().do_get_naked_state();
-    }
-
     /// \brief Adds an annotation bracket to the log
     /// \param type Type of bracket
     /// \param text String with the text for the annotation
@@ -303,6 +292,18 @@ public:
     /// \param val New register value.
     void write_mideleg(uint64_t val) {
         return derived().do_write_mideleg(val);
+    }
+
+    /// \brief Reads CSR iflags.
+    /// \returns CSR value.
+    auto read_iflags(void) {
+        return derived().do_read_iflags();
+    }
+
+    /// \brief Writes CSR iflags.
+    /// \param val New register value.
+    auto write_iflags(uint64_t val) {
+        return derived().do_write_iflags(val);
     }
 
     /// \brief Reads CSR mcounteren.
@@ -545,10 +546,16 @@ public:
         return derived().do_read_htif_iyield();
     }
 
+    /// \brief Polls console for pending input.
+    /// \param wait Wait timeout in microsecond.
+    void poll_htif_console(uint64_t wait) {
+        return derived().do_poll_htif_console(wait);
+    }
+
     /// \brief Reads PMA at a given index.
     /// \param pma PMA entry.
     /// \param i Index of PMA index.
-    void read_pma(const pma_entry &pma, int i) {
+    void read_pma(const PMA_ENTRY_TYPE &pma, int i) {
         return derived().do_read_pma(pma, i);
     }
 
@@ -604,9 +611,47 @@ public:
     /// for an empty range.
     /// \tparam T Type of word.
     template <typename T>
-    pma_entry &find_pma_entry(uint64_t paddr) {
+    PMA_ENTRY_TYPE &find_pma_entry(uint64_t paddr) {
         return derived().template do_find_pma_entry<T>(paddr);
     }
+
+    auto get_host_memory(PMA_ENTRY_TYPE &pma) {
+        return derived().do_get_host_memory(pma);
+    }
+
+    auto read_device(PMA_ENTRY_TYPE &pma, uint64_t offset, uint64_t *pval, int log2_size) {
+        return derived().do_read_device(pma, offset, pval, log2_size);
+    }
+
+    auto write_device(PMA_ENTRY_TYPE &pma, uint64_t offset, uint64_t pval, int log2_size) {
+        return derived().do_write_device(pma, offset, pval, log2_size);
+    }
+
+    auto set_brk(void) {
+        return derived().do_set_brk();
+    }
+
+    auto get_brk(void) const {
+        return derived().do_get_brk();
+    }
+
+    auto or_brk_with_mip_mie(void) {
+        return derived().do_or_brk_with_mip_mie();
+    }
+
+    auto assert_no_brk(void) const {
+        return derived().do_assert_no_brk();
+    }
+
+    auto set_brk_from_all(void) {
+        return derived().do_set_brk_from_all();
+    }
+
+#ifdef DUMP_COUNTERS
+    auto &get_statistics() {
+        return derived().do_get_statistics();
+    }
+#endif
 };
 
 /// \brief SFINAE test implementation of the i_state_access interface

@@ -680,11 +680,12 @@ static inline uint32_t insn_get_funct7(uint32_t insn) {
 /// \brief Read an aligned word from virtual memory.
 /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \tparam RAISE_STORE_EXCEPTIONS Boolean, when true load exceptions are converted into store exceptions.
 /// \param a Machine state accessor object.
 /// \param vaddr Virtual address for word.
 /// \param pval Pointer to word receiving value.
 /// \returns True if succeeded, false otherwise.
-template <typename T, typename STATE_ACCESS>
+template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>
 static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval) {
     using U = std::make_unsigned_t<T>;
     // If we have a TLB, try hitting it
@@ -699,19 +700,21 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
     }
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (vaddr & (sizeof(T) - 1)) {
-        raise_exception(a, MCAUSE_LOAD_ADDRESS_MISALIGNED, vaddr);
+        raise_exception(a,
+            RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ADDRESS_MISALIGNED : MCAUSE_LOAD_ADDRESS_MISALIGNED, vaddr);
         return false;
         // Deal with aligned accesses
     } else {
         uint64_t paddr{};
         INC_COUNTER(a.get_naked_state(), tlb_rmiss);
         if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) {
-            raise_exception(a, MCAUSE_LOAD_PAGE_FAULT, vaddr);
+            raise_exception(a, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_PAGE_FAULT : MCAUSE_LOAD_PAGE_FAULT, vaddr);
             return false;
         }
         pma_entry &pma = a.template find_pma_entry<T>(paddr);
         if (pma.get_istart_E() || !pma.get_istart_R()) {
-            raise_exception(a, MCAUSE_LOAD_ACCESS_FAULT, vaddr);
+            raise_exception(a, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT,
+                vaddr);
             return false;
         } else if (pma.get_istart_M()) {
             unsigned char *hpage = nullptr;
@@ -733,7 +736,8 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             device_state_access<STATE_ACCESS> da(a);
             // If we do not know how to read, we treat this as a PMA violation
             if (!pma.get_device().get_driver()->read(pma, &da, offset, &val, log2_size<U>::value)) {
-                raise_exception(a, MCAUSE_LOAD_ACCESS_FAULT, vaddr);
+                raise_exception(a, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT,
+                    vaddr);
                 return false;
             }
             *pval = static_cast<T>(val);
@@ -977,7 +981,9 @@ template <typename T, typename STATE_ACCESS, typename F>
 static inline execute_status execute_AMO(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     T valm = 0;
-    if (!read_virtual_memory<T>(a, vaddr, &valm)) {
+    // AMOs never raise load exceptions. Since any unreadable page is also unwritable,
+    // attempting to perform an AMO on an unreadable page always raises a store page-fault exception.
+    if (!read_virtual_memory<T, STATE_ACCESS, true>(a, vaddr, &valm)) {
         return advance_to_raised_exception(a);
     }
     T valr = static_cast<T>(a.read_x(insn_get_rs2(insn)));

@@ -81,7 +81,7 @@ local tests = {
   {"rv64ua-v-amoswap_w.bin", 10605},
   {"rv64ua-v-amoxor_d.bin", 10589},
   {"rv64ua-v-amoxor_w.bin", 10591},
-  {"rv64ua-v-lrsc.bin", 16761},
+  {"rv64ua-v-lrsc.bin", 16763},
   {"rv64ui-p-add.bin", 509},
   {"rv64ui-p-addi.bin", 284},
   {"rv64ui-p-addiw.bin", 281},

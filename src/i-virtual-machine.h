@@ -547,6 +547,50 @@ public:
         do_write_clint_mtimecmp(val);
     }
 
+    /// \brief Reads the value of a microarchitecture register.
+    /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
+    /// \returns The value of the register.
+    uint64_t read_uarch_x(int i) const {
+        return do_read_uarch_x(i);
+    }
+
+    /// \brief Writes the value of a of a microarchitecture register.
+    /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
+    /// \param val New register value.
+    void write_uarch_x(int i, uint64_t val) {
+        return do_write_uarch_x(i, val);
+    }
+
+    /// \brief Reads the value of the microarchitecture pc register.
+    /// \returns The current microarchitecture pc value.
+    uint64_t read_uarch_pc(void) const {
+        return do_read_uarch_pc();
+    }
+
+    /// \brief Writes the value ofthe microarchitecture pc register.
+    /// \param val New register value.
+    void write_uarch_pc(uint64_t val) {
+        return do_write_uarch_pc(val);
+    }
+
+    /// \brief Reads the value of the microarchitecture cycle counter register.
+    /// \returns The current microarchitecture cycle.
+    uint64_t read_uarch_cycle(void) const {
+        return do_read_uarch_cycle();
+    }
+
+    /// \brief Writes the value ofthe microarchitecture pc register.
+    /// \param val New register value.
+    void write_uarch_cycle(uint64_t val) {
+        return do_write_uarch_cycle(val);
+    }
+
+    /// \brief Runs the microarchitecture until the machine advances to the next mcycle or the current  micro cycle
+    /// (uarch_cycle) reaches uarch_cycle_end \param uarch_cycle_end uarch_cycle limit
+    void uarch_run(uint64_t uarch_cycle_end) {
+        return do_uarch_run(uarch_cycle_end);
+    }
+
 private:
     virtual void do_run(uint64_t mcycle_end) = 0;
     virtual void do_store(const std::string &dir) = 0;
@@ -647,6 +691,13 @@ private:
     virtual void do_snapshot() = 0;
     virtual void do_destroy() = 0;
     virtual void do_rollback() = 0;
+    virtual uint64_t do_read_uarch_x(int i) const = 0;
+    virtual void do_write_uarch_x(int i, uint64_t val) = 0;
+    virtual uint64_t do_read_uarch_pc(void) const = 0;
+    virtual void do_write_uarch_pc(uint64_t val) = 0;
+    virtual uint64_t do_read_uarch_cycle(void) const = 0;
+    virtual void do_write_uarch_cycle(uint64_t val) = 0;
+    virtual void do_uarch_run(uint64_t uarch_cycle_end) = 0;
 };
 
 } // namespace cartesi

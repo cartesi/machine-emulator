@@ -423,4 +423,32 @@ void virtual_machine::do_rollback(void) {
     throw std::runtime_error("do_rollback is not supported");
 }
 
+uint64_t virtual_machine::do_read_uarch_x(int i) const {
+    return m_machine->read_uarch_x(i);
+}
+
+void virtual_machine::do_write_uarch_x(int i, uint64_t val) {
+    m_machine->write_uarch_x(i, val);
+}
+
+uint64_t virtual_machine::do_read_uarch_pc(void) const {
+    return m_machine->read_uarch_pc();
+}
+
+void virtual_machine::do_write_uarch_pc(uint64_t val) {
+    m_machine->write_uarch_pc(val);
+}
+
+uint64_t virtual_machine::do_read_uarch_cycle(void) const {
+    return m_machine->read_uarch_cycle();
+}
+
+void virtual_machine::do_write_uarch_cycle(uint64_t val) {
+    m_machine->write_uarch_cycle(val);
+}
+
+void virtual_machine::do_uarch_run(uint64_t uarch_cycle_end) {
+    m_machine->uarch_run(uarch_cycle_end);
+}
+
 } // namespace cartesi

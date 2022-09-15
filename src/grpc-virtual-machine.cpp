@@ -810,4 +810,46 @@ bool grpc_virtual_machine::do_verify_merkle_tree(void) const {
     return response.success();
 }
 
+uint64_t grpc_virtual_machine::do_read_uarch_x(int i) const {
+    ReadUarchXRequest request;
+    request.set_index(i);
+    ReadUarchXResponse response;
+    ClientContext context;
+    check_status(m_stub->get_stub()->ReadUarchX(&context, request, &response));
+    return response.value();
+}
+
+void grpc_virtual_machine::do_write_uarch_x(int i, uint64_t val) {
+    WriteUarchXRequest request;
+    request.set_index(i);
+    request.set_value(val);
+    Void response;
+    ClientContext context;
+    check_status(m_stub->get_stub()->WriteUarchX(&context, request, &response));
+}
+
+uint64_t grpc_virtual_machine::do_read_uarch_pc(void) const {
+    return read_csr(csr::uarch_pc);
+}
+
+void grpc_virtual_machine::do_write_uarch_pc(uint64_t val) {
+    write_csr(csr::uarch_pc, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_uarch_cycle(void) const {
+    return read_csr(csr::uarch_cycle);
+}
+
+void grpc_virtual_machine::do_write_uarch_cycle(uint64_t val) {
+    write_csr(csr::uarch_cycle, val);
+}
+
+void grpc_virtual_machine::do_uarch_run(uint64_t uarch_cycle_end) {
+    UarchRunRequest request;
+    request.set_limit(uarch_cycle_end);
+    UarchRunResponse response;
+    ClientContext context;
+    check_status(m_stub->get_stub()->UarchRun(&context, request, &response));
+}
+
 } // namespace cartesi

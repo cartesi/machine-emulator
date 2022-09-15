@@ -85,6 +85,13 @@ static int machine_obj_index_dump_regs(lua_State *L) {
     PRINT_PROCESSOR_CSR(m, htif_ihalt);
     PRINT_PROCESSOR_CSR(m, htif_iconsole);
     PRINT_PROCESSOR_CSR(m, htif_iyield);
+    PRINT_PROCESSOR_CSR(m, uarch_cycle);
+    PRINT_PROCESSOR_CSR(m, uarch_pc);
+    for (int i = 0; i < UARCH_X_REG_COUNT; ++i) {
+        uint64_t val{0};
+        TRY_EXECUTE(cm_read_uarch_x(m, i, &val, err_msg));
+        (void) fprintf(stderr, "uarch_x%d = %" PRIx64 "\n", i, val);
+    }
     (void) fprintf(stderr, "\n");
     return 0;
 }
@@ -197,6 +204,8 @@ IMPL_MACHINE_OBJ_READ_WRITE(htif_ihalt)
 IMPL_MACHINE_OBJ_READ_WRITE(htif_iconsole)
 IMPL_MACHINE_OBJ_READ_WRITE(htif_iyield)
 IMPL_MACHINE_OBJ_READ_WRITE(clint_mtimecmp)
+IMPL_MACHINE_OBJ_READ_WRITE(uarch_cycle)
+IMPL_MACHINE_OBJ_READ_WRITE(uarch_pc)
 
 /// \brief This is the machine:read_csr() method implementation.
 /// \param L Lua state.
@@ -218,6 +227,20 @@ static int machine_obj_index_read_x(lua_State *L) {
     }
     uint64_t val{};
     TRY_EXECUTE(cm_read_x(m.get(), i, &val, err_msg));
+    lua_pushinteger(L, static_cast<lua_Integer>(val));
+    return 1;
+}
+
+/// \brief This is the machine:read_uarch_x() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_read_uarch_x(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    auto i = luaL_checkinteger(L, 2);
+    if (i < 0 || i >= UARCH_X_REG_COUNT) {
+        luaL_error(L, " register index out of range");
+    }
+    uint64_t val{};
+    TRY_EXECUTE(cm_read_uarch_x(m.get(), i, &val, err_msg));
     lua_pushinteger(L, static_cast<lua_Integer>(val));
     return 1;
 }
@@ -332,6 +355,15 @@ static int machine_obj_index_run(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:uarch_run() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_uarch_run(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_machine_uarch_run(m.get(), luaL_checkinteger(L, 2), err_msg));
+    lua_pushboolean(L, true);
+    return 1;
+}
+
 /// \brief This is the machine:step() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_step(lua_State *L) {
@@ -388,6 +420,18 @@ static int machine_obj_index_write_x(lua_State *L) {
         luaL_error(L, "register index out of range");
     }
     TRY_EXECUTE(cm_write_x(m.get(), i, luaL_checkinteger(L, 3), err_msg));
+    return 0;
+}
+
+/// \brief This is the machine:write_uarch_x() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_write_uarch_x(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    auto i = luaL_checkinteger(L, 2);
+    if (i < 1 || i >= UARCH_X_REG_COUNT) {
+        luaL_error(L, "register index out of range");
+    }
+    TRY_EXECUTE(cm_write_uarch_x(m.get(), i, luaL_checkinteger(L, 3), err_msg));
     return 0;
 }
 
@@ -458,6 +502,9 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_htif_ihalt", machine_obj_index_read_htif_ihalt},
     {"read_htif_iconsole", machine_obj_index_read_htif_iconsole},
     {"read_htif_iyield", machine_obj_index_read_htif_iyield},
+    {"read_uarch_cycle", machine_obj_index_read_uarch_cycle},
+    {"read_uarch_pc", machine_obj_index_read_uarch_pc},
+    {"read_uarch_x", machine_obj_index_read_uarch_x},
     {"read_iflags", machine_obj_index_read_iflags},
     {"read_iflags_H", machine_obj_index_read_iflags_H},
     {"read_iflags_Y", machine_obj_index_read_iflags_Y},
@@ -499,6 +546,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_word", machine_obj_index_read_word},
     {"read_x", machine_obj_index_read_x},
     {"run", machine_obj_index_run},
+    {"uarch_run", machine_obj_index_uarch_run},
     {"step", machine_obj_index_step},
     {"store", machine_obj_index_store},
     {"verify_dirty_page_maps", machine_obj_index_verify_dirty_page_maps},
@@ -508,6 +556,9 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"write_htif_fromhost", machine_obj_index_write_htif_fromhost},
     {"write_htif_fromhost_data", machine_obj_index_write_htif_fromhost_data},
     {"write_htif_tohost", machine_obj_index_write_htif_tohost},
+    {"write_uarch_cycle", machine_obj_index_write_uarch_cycle},
+    {"write_uarch_pc", machine_obj_index_write_uarch_pc},
+    {"write_uarch_x", machine_obj_index_write_uarch_x},
     {"write_iflags", machine_obj_index_write_iflags},
     {"write_ilrsc", machine_obj_index_write_ilrsc},
     {"write_mcause", machine_obj_index_write_mcause},

@@ -139,6 +139,13 @@ private:
     void do_snapshot() override;
     void do_destroy() override;
     void do_rollback() override;
+    uint64_t do_read_uarch_x(int i) const override;
+    void do_write_uarch_x(int i, uint64_t val) override;
+    uint64_t do_read_uarch_pc(void) const override;
+    void do_write_uarch_pc(uint64_t val) override;
+    uint64_t do_read_uarch_cycle(void) const override;
+    void do_write_uarch_cycle(uint64_t val) override;
+    void do_uarch_run(uint64_t uarch_cycle_end) override;
 };
 
 } // namespace cartesi

@@ -205,6 +205,13 @@ private:
     void do_dump_pmas(void) const override;
     bool do_read_word(uint64_t word_address, uint64_t &word_value) const override;
     bool do_verify_merkle_tree(void) const override;
+    uint64_t do_read_uarch_x(int i) const override;
+    void do_write_uarch_x(int i, uint64_t val) override;
+    uint64_t do_read_uarch_pc(void) const override;
+    void do_write_uarch_pc(uint64_t val) override;
+    uint64_t do_read_uarch_cycle(void) const override;
+    void do_write_uarch_cycle(uint64_t val) override;
+    void do_uarch_run(uint64_t uarch_cycle_end) override;
 
     grpc_machine_stub_ptr m_stub;
 };

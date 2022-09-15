@@ -126,6 +126,47 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
     if (c.rollup.has_value()) {
         set_proto_rollup(*c.rollup, proto_c->mutable_rollup());
     }
+    auto *proto_u = proto_c->mutable_uarch();
+    auto *proto_up = proto_u->mutable_processor();
+    proto_up->set_x1(c.uarch.processor.x[1]);
+    proto_up->set_x2(c.uarch.processor.x[2]);
+    proto_up->set_x3(c.uarch.processor.x[3]);
+    proto_up->set_x4(c.uarch.processor.x[4]);
+    proto_up->set_x5(c.uarch.processor.x[5]);
+    proto_up->set_x6(c.uarch.processor.x[6]);
+    proto_up->set_x7(c.uarch.processor.x[7]);
+    proto_up->set_x8(c.uarch.processor.x[8]);
+    proto_up->set_x9(c.uarch.processor.x[9]);
+    proto_up->set_x10(c.uarch.processor.x[10]);
+    proto_up->set_x11(c.uarch.processor.x[11]);
+    proto_up->set_x12(c.uarch.processor.x[12]);
+    proto_up->set_x13(c.uarch.processor.x[13]);
+    proto_up->set_x14(c.uarch.processor.x[14]);
+    proto_up->set_x15(c.uarch.processor.x[15]);
+    proto_up->set_x16(c.uarch.processor.x[16]);
+    proto_up->set_x17(c.uarch.processor.x[17]);
+    proto_up->set_x18(c.uarch.processor.x[18]);
+    proto_up->set_x19(c.uarch.processor.x[19]);
+    proto_up->set_x20(c.uarch.processor.x[20]);
+    proto_up->set_x21(c.uarch.processor.x[21]);
+    proto_up->set_x22(c.uarch.processor.x[22]);
+    proto_up->set_x23(c.uarch.processor.x[23]);
+    proto_up->set_x24(c.uarch.processor.x[24]);
+    proto_up->set_x25(c.uarch.processor.x[25]);
+    proto_up->set_x26(c.uarch.processor.x[26]);
+    proto_up->set_x27(c.uarch.processor.x[27]);
+    proto_up->set_x28(c.uarch.processor.x[28]);
+    proto_up->set_x29(c.uarch.processor.x[29]);
+    proto_up->set_x30(c.uarch.processor.x[30]);
+    proto_up->set_x31(c.uarch.processor.x[31]);
+    proto_up->set_pc(c.uarch.processor.pc);
+    proto_up->set_cycle(c.uarch.processor.cycle);
+    auto *proto_uarch_ram = proto_u->mutable_ram();
+    proto_uarch_ram->set_length(c.uarch.ram.length);
+    proto_uarch_ram->set_image_filename(c.uarch.ram.image_filename);
+    auto *proto_uarch_rom = proto_u->mutable_rom();
+    proto_uarch_rom->set_length(c.uarch.rom.length);
+    proto_uarch_rom->set_image_filename(c.uarch.rom.image_filename);
 }
 
 void set_proto_machine_runtime_config(const machine_runtime_config &r, CartesiMachine::MachineRuntimeConfig *proto_r) {
@@ -493,6 +534,123 @@ machine_runtime_config get_proto_machine_runtime_config(const CartesiMachine::Ma
     return r;
 }
 
+static uarch_config get_proto_uarch_config(const CartesiMachine::UarchConfig &proto_c) {
+    using CartesiMachine::UarchConfig;
+    uarch_config c;
+    if (proto_c.has_rom()) {
+        c.rom.length = proto_c.rom().length();
+        c.rom.image_filename = proto_c.rom().image_filename();
+    }
+    if (proto_c.has_ram()) {
+        c.ram.length = proto_c.ram().length();
+        c.ram.image_filename = proto_c.ram().image_filename();
+    }
+    if (proto_c.has_processor()) {
+        const auto &proto_p = proto_c.processor();
+        auto &p = c.processor;
+        if (proto_p.has_x1()) {
+            p.x[1] = proto_p.x1();
+        }
+        if (proto_p.has_x2()) {
+            p.x[2] = proto_p.x2();
+        }
+        if (proto_p.has_x3()) {
+            p.x[3] = proto_p.x3();
+        }
+        if (proto_p.has_x4()) {
+            p.x[4] = proto_p.x4();
+        }
+        if (proto_p.has_x5()) {
+            p.x[5] = proto_p.x5();
+        }
+        if (proto_p.has_x6()) {
+            p.x[6] = proto_p.x6();
+        }
+        if (proto_p.has_x7()) {
+            p.x[7] = proto_p.x7();
+        }
+        if (proto_p.has_x8()) {
+            p.x[8] = proto_p.x8();
+        }
+        if (proto_p.has_x9()) {
+            p.x[9] = proto_p.x9();
+        }
+        if (proto_p.has_x10()) {
+            p.x[10] = proto_p.x10();
+        }
+        if (proto_p.has_x11()) {
+            p.x[11] = proto_p.x11();
+        }
+        if (proto_p.has_x12()) {
+            p.x[12] = proto_p.x12();
+        }
+        if (proto_p.has_x13()) {
+            p.x[13] = proto_p.x13();
+        }
+        if (proto_p.has_x14()) {
+            p.x[14] = proto_p.x14();
+        }
+        if (proto_p.has_x15()) {
+            p.x[15] = proto_p.x15();
+        }
+        if (proto_p.has_x16()) {
+            p.x[16] = proto_p.x16();
+        }
+        if (proto_p.has_x17()) {
+            p.x[17] = proto_p.x17();
+        }
+        if (proto_p.has_x18()) {
+            p.x[18] = proto_p.x18();
+        }
+        if (proto_p.has_x19()) {
+            p.x[19] = proto_p.x19();
+        }
+        if (proto_p.has_x20()) {
+            p.x[20] = proto_p.x20();
+        }
+        if (proto_p.has_x21()) {
+            p.x[21] = proto_p.x21();
+        }
+        if (proto_p.has_x22()) {
+            p.x[22] = proto_p.x22();
+        }
+        if (proto_p.has_x23()) {
+            p.x[23] = proto_p.x23();
+        }
+        if (proto_p.has_x24()) {
+            p.x[24] = proto_p.x24();
+        }
+        if (proto_p.has_x25()) {
+            p.x[25] = proto_p.x25();
+        }
+        if (proto_p.has_x26()) {
+            p.x[26] = proto_p.x26();
+        }
+        if (proto_p.has_x27()) {
+            p.x[27] = proto_p.x27();
+        }
+        if (proto_p.has_x28()) {
+            p.x[28] = proto_p.x28();
+        }
+        if (proto_p.has_x29()) {
+            p.x[29] = proto_p.x29();
+        }
+        if (proto_p.has_x30()) {
+            p.x[30] = proto_p.x30();
+        }
+        if (proto_p.has_x31()) {
+            p.x[31] = proto_p.x31();
+        }
+        if (proto_p.has_pc()) {
+            p.pc = proto_p.pc();
+        }
+        if (proto_p.has_cycle()) {
+            p.cycle = proto_p.cycle();
+        }
+    }
+    return c;
+}
+
 rollup_config get_proto_rollup_config(const CartesiMachine::RollupConfig &proto_r) {
     rollup_config r;
     if (proto_r.has_rx_buffer()) {
@@ -546,6 +704,10 @@ machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &pro
         if (htif.has_tohost()) {
             c.htif.tohost = htif.tohost();
         }
+        if (proto_c.has_uarch()) {
+            c.uarch = get_proto_uarch_config(proto_c.uarch());
+        }
+
         // zero default when missing is ok
         c.htif.console_getchar = htif.console_getchar();
         // zero default when missing is ok

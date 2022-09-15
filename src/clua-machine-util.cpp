@@ -815,6 +815,56 @@ static void push_cm_flash_drive_configs(lua_State *L, const cm_memory_range_conf
     }
 }
 
+/// \brief Pushes a cm_uarch_ram_config to the Lua stack
+/// \param L Lua state.
+/// \param r microarchitecture RAM configuration to be pushed.
+static void push_cm_uarch_ram_config(lua_State *L, const cm_uarch_ram_config *r) {
+    lua_newtable(L);
+    clua_setintegerfield(L, r->length, "length", -1);
+    if (r->image_filename != nullptr) {
+        clua_setstringfield(L, r->image_filename, "image_filename", -1);
+    }
+}
+
+/// \brief Pushes a cm_uarch_rom_config to the Lua stack
+/// \param L Lua state.
+/// \param r microarchitecture ROM configuration to be pushed.
+static void push_cm_uarch_rom_config(lua_State *L, const cm_uarch_rom_config *r) {
+    lua_newtable(L);
+    clua_setintegerfield(L, r->length, "length", -1);
+    if (r->image_filename != nullptr) {
+        clua_setstringfield(L, r->image_filename, "image_filename", -1);
+    }
+}
+
+/// \brief Pushes an cm_uarch_processor_config to the Lua stack
+/// \param L Lua state.
+/// \param c microarchitecture processor configuration to be pushed.
+static void push_cm_uarch_processor_config(lua_State *L, const cm_uarch_processor_config *u) {
+    lua_newtable(L);
+    clua_setintegerfield(L, u->pc, "pc", -1);
+    clua_setintegerfield(L, u->cycle, "cycle", -1);
+    lua_newtable(L);
+    for (int i = 1; i <= (CM_MACHINE_X_REG_COUNT - 1); i++) {
+        lua_pushinteger(L, static_cast<lua_Integer>(u->x[i - 1]));
+        lua_rawseti(L, -2, i);
+    }
+    lua_setfield(L, -2, "x");
+}
+
+/// \brief Pushes an cm_uarch_config to the Lua stack
+/// \param L Lua state.
+/// \param c microarchitecture configuration to be pushed.
+static void push_cm_uarch_config(lua_State *L, const cm_uarch_config *u) {
+    lua_newtable(L);
+    push_cm_uarch_ram_config(L, &u->ram);             // config ram
+    lua_setfield(L, -2, "ram");                       // config
+    push_cm_uarch_rom_config(L, &u->rom);             // config ram
+    lua_setfield(L, -2, "rom");                       // config
+    push_cm_uarch_processor_config(L, &u->processor); // config processor
+    lua_setfield(L, -2, "processor");                 // config
+}
+
 void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
     lua_newtable(L);                                 // config
     push_cm_processor_config(L, &c->processor);      // config processor
@@ -829,6 +879,8 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
     lua_setfield(L, -2, "ram");                      // config
     push_cm_rom_config(L, &c->rom);                  // config rom
     lua_setfield(L, -2, "rom");                      // config
+    push_cm_uarch_config(L, &c->uarch);              // uarch
+    lua_setfield(L, -2, "uarch");                    // config
     if (c->rollup.has_value) {
         push_cm_rollup_config(L, &c->rollup); // config rollup
         lua_setfield(L, -2, "rollup");        // config
@@ -1030,6 +1082,79 @@ cm_processor_config get_default_processor_config(lua_State *L) {
     return processor;
 }
 
+cm_uarch_processor_config get_default_uarch_processor_config(lua_State *L) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to adjust config
+    const auto *config = cm_new_default_machine_config();
+    if (!config) {
+        luaL_error(L, "unable to obtain default config (out of memory?)");
+        return cm_uarch_processor_config{}; // Just to make clang-tidy happy. It doesn't know luaL_error is [[noreturn]]
+    }
+    cm_uarch_processor_config uarch_processor_config = config->uarch.processor;
+    cm_delete_machine_config(config);
+    return uarch_processor_config;
+}
+
+/// \brief Loads microarchitecture RAM config from Lua to cm_uarch_ram_config.
+/// \param L Lua state.
+/// \param tabidx Config stack index.
+/// \param r C api microarchitecture RAM config structure to receive results.
+static void check_cm_uarch_ram_config(lua_State *L, int tabidx, cm_uarch_ram_config *r) {
+    check_table_field(L, tabidx, "ram");
+    r->length = check_uint_field(L, -1, "length");
+    r->image_filename = opt_copy_string_field(L, -1, "image_filename");
+    lua_pop(L, 1);
+}
+
+/// \brief Loads microarchitecture ROM config from Lua to cm_uarch_rom_config.
+/// \param L Lua state.
+/// \param tabidx Config stack index.
+/// \param r C api microarchitecture ROM config structure to receive results.
+static void check_cm_uarch_rom_config(lua_State *L, int tabidx, cm_uarch_rom_config *r) {
+    check_table_field(L, tabidx, "rom");
+    r->image_filename = opt_copy_string_field(L, -1, "image_filename");
+    r->length = check_uint_field(L, -1, "length");
+    lua_pop(L, 1);
+}
+
+/// \brief Loads C api microarchitecture processor config from Lua to cm_uarch_processor_config
+/// \param L Lua state
+/// \param tabidx Config stack index
+/// \param u C api microarchitecture processor config structure to receive results
+static void check_cm_uarch_processor_config(lua_State *L, int tabidx, cm_uarch_processor_config *p,
+    const cm_uarch_processor_config *def) {
+    if (!opt_table_field(L, tabidx, "processor")) {
+        *p = *def;
+        return;
+    }
+    p->pc = opt_uint_field(L, -1, "pc", def->pc);
+    p->cycle = opt_uint_field(L, -1, "pc", def->cycle);
+    lua_getfield(L, -1, "x");
+    if (lua_istable(L, -1)) {
+        for (int i = 1; i < X_REG_COUNT; i++) {
+            p->x[i - 1] = opt_uint_field(L, -1, i, def->x[i - 1]);
+        }
+    } else if (!lua_isnil(L, -1)) {
+        luaL_error(L, "invalid uarch.processor.x (expected table)");
+    }
+    lua_pop(L, 1); // x
+    lua_pop(L, 1); // processor
+}
+
+/// \brief Loads C api microarchitecture config from Lua to cm_uarch_config
+/// \param L Lua state
+/// \param tabidx Config stack index
+/// \param u C api microarchitecture config structure to receive results
+static void check_cm_uarch_config(lua_State *L, int tabidx, cm_uarch_config *u) {
+    u->processor = get_default_uarch_processor_config(L);
+    if (!opt_table_field(L, tabidx, "uarch")) {
+        return;
+    }
+    check_cm_uarch_ram_config(L, -1, &u->ram);
+    check_cm_uarch_rom_config(L, -1, &u->rom);
+    check_cm_uarch_processor_config(L, -1, &u->processor, &u->processor);
+    lua_pop(L, 1); // uarch
+}
+
 cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ctxidx) {
     auto &managed = clua_push_to(L, clua_managed_cm_ptr<cm_machine_config>(new cm_machine_config{}), ctxidx);
     cm_machine_config *config = managed.get();
@@ -1039,6 +1164,7 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
     check_cm_rom_config(L, tabidx, &config->rom);
     check_cm_htif_config(L, tabidx, &config->htif);
     check_cm_clint_config(L, tabidx, &config->clint);
+    check_cm_uarch_config(L, tabidx, &config->uarch);
     check_cm_rollup_config(L, tabidx, &config->rollup);
     check_cm_flash_drive_configs(L, tabidx, &config->flash_drive);
     managed.release();

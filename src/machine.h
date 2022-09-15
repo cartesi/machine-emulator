@@ -145,10 +145,13 @@ public:
         htif_fromhost,
         htif_ihalt,
         htif_iconsole,
-        htif_iyield
+        htif_iyield,
+        uarch_cycle,
+        uarch_pc,
+        last
     };
 
-    static constexpr auto num_csr = static_cast<int>(csr::htif_iyield) + 1;
+    static constexpr auto num_csr = static_cast<int>(csr::last);
 
     /// \brief Constructor from machine configuration
     explicit machine(const machine_config &c, const machine_runtime_config &r = {});
@@ -173,6 +176,11 @@ public:
 
     /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
     void run(uint64_t mcycle_end);
+
+    /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle
+    /// counter (uarch_cycle) reaches uarch_cycle_end
+    /// \param uarch_cycle_end uarch_cycle limit
+    void uarch_run(uint64_t uarch_cycle_end);
 
     /// \brief Runs the machine for one cycle logging all accesses to the state.
     /// \param log_type Type of access log to generate.
@@ -693,6 +701,32 @@ public:
 
     /// \brief Poll console for pending input
     void poll_htif_console(uint64_t wait);
+
+    /// \brief Reads the value of a microarchitecture register.
+    /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
+    /// \returns The value of the register.
+    uint64_t read_uarch_x(int i) const;
+
+    /// \brief Writes the value of a of a microarchitecture register.
+    /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
+    /// \param val New register value.
+    void write_uarch_x(int i, uint64_t val);
+
+    /// \brief Reads the value of the microarchitecture pc register.
+    /// \returns The current microarchitecture pc value.
+    uint64_t read_uarch_pc(void) const;
+
+    /// \brief Writes the value ofthe microarchitecture pc register.
+    /// \param val New register value.
+    void write_uarch_pc(uint64_t val);
+
+    /// \brief Reads the value of the microarchitecture cycle counter register.
+    /// \returns The current microarchitecture cycle.
+    uint64_t read_uarch_cycle(void) const;
+
+    /// \brief Writes the value ofthe microarchitecture cycle counter register.
+    /// \param val New register value.
+    void write_uarch_cycle(uint64_t val);
 };
 
 } // namespace cartesi

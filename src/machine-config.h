@@ -24,6 +24,7 @@
 #include <string>
 
 #include "riscv-constants.h"
+#include "uarch-config.h"
 
 namespace cartesi {
 
@@ -122,6 +123,7 @@ struct machine_config final {
     flash_drive_configs flash_drive{};     ///< Flash drives state
     clint_config clint{};                  ///< CLINT device state
     htif_config htif{};                    ///< HTIF device state
+    uarch_config uarch{};                  ///< microarchitecture configuration
     std::optional<rollup_config> rollup{}; ///< Rollup state
 
     /// \brief Get the name where config will be stored in a directory

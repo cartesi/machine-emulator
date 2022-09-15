@@ -72,6 +72,14 @@ void cm_delete<cm_machine>(cm_machine *ptr);
 template <>
 void cm_delete(cm_machine_runtime_config *ptr);
 
+/// \brief Deleter for C api ram config
+template <>
+void cm_delete(cm_ram_config *p);
+
+/// \brief Deleter for C api rom config
+template <>
+void cm_delete(cm_rom_config *p);
+
 /// \brief Deleter for C api access log
 template <>
 void cm_delete(cm_access_log *ptr);
@@ -83,14 +91,6 @@ void cm_delete(cm_merkle_tree_proof *p);
 /// \brief Deleter for C api flash drive config
 template <>
 void cm_delete(cm_memory_range_config *p);
-
-/// \brief Deleter for C api ram config
-template <>
-void cm_delete(cm_ram_config *p);
-
-/// \brief Deleter for C api rom config
-template <>
-void cm_delete(cm_rom_config *p);
 
 template <typename T>
 class clua_managed_cm_ptr final {

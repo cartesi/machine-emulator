@@ -288,7 +288,19 @@ where options are:
     load initial machine config from <filename>. If a field is omitted on
     machine_config table, it will fall back into the respective command-line
     argument or into the default value.
-
+  
+  --uarch-rom-image=<filename>
+    name of file containing microarchitecture ROM image.
+  
+  --uarch-rom-length=<number>
+    set microarchitecture ROM length.
+  
+  --uarch-ram-image=<filename>
+    name of file containing microarchitecture RAM image.
+  
+  --uarch-ram-length=<number>
+    set microarchitecture RAM length.
+    
   --dump-pmas
     dump all PMA ranges to disk when done.
 
@@ -335,6 +347,7 @@ local ram_length = 64 << 20
 local rom_image_filename = images_path .. "rom.bin"
 local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce"
 local rollup = nil
+local uarch = nil
 local rollup_advance = nil
 local rollup_inspect = nil
 local concurrency_update_merkle_tree = 0
@@ -424,6 +437,34 @@ local options = {
     { "^%-%-no%-ram%-image$", function(all)
         if not all then return false end
         ram_image_filename = ""
+        return true
+    end },
+    { "^%-%-uarch-%-ram%-length%=(.+)$", function(n)
+        if not n then return false end
+        uarch = uarch or {}
+        uarch.ram = uarch.ram or {}
+        uarch.ram_length = assert(util.parse_number(n), "invalid microarchitecture RAM length " .. n)
+        return true
+    end },
+    { "^%-%-uarch%-ram%-image%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        uarch = uarch or {}
+        uarch.ram = uarch.ram or {}
+        uarch.ram.image_filename = o
+        return true
+    end },
+    { "^%-%-uarch-%-rom%-length%=(.+)$", function(n)
+        if not n then return false end
+        uarch = uarch or {}
+        uarch.rom = uarch.rom or {}
+        uarch.rom.length = assert(util.parse_number(n), "invalid microarchitecture ROM length " .. n)
+        return true
+    end },
+    { "^%-%-uarch%-rom%-image%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        uarch = uarch or {}
+        uarch.rom = uarch.rom or {}
+        uarch.rom.image_filename = o
         return true
     end },
     { "^%-%-htif%-console%-getchar$", function(all)
@@ -884,6 +925,34 @@ local function store_machine_config(config, output)
         store_memory_range(config.rollup.notice_hashes, "    ", output)
         output("  },\n")
     end
+    local uarch = config.uarch or def.uarch
+    output("  uarch = {\n")
+    output("    rom = {\n")
+    output("      length = 0x%x,", uarch.rom.length or def.uarch.rom.length)
+    comment_default(uarch.rom.length, def.uarch.rom.length)
+    output("      image_filename = %q,", uarch.rom.image_filename or def.uarch.rom.image_filename)
+    comment_default(uarch.rom.image_filename, def.uarch.rom.image_filename)
+    output("    },\n")
+    output("    ram = {\n")
+    output("      length = 0x%x,", uarch.ram.length or def.uarch.ram.length)
+    comment_default(uarch.ram.length, def.uarch.ram.length)
+    output("      image_filename = %q,", uarch.ram.image_filename or def.uarch.ram.image_filename)
+    comment_default(uarch.ram.image_filename, def.uarch.ram.image_filename)
+    output("    },\n")
+    output("    processor = {\n")
+    output("      x = {\n")    
+    for i = 1, 31 do
+        local xi = uarch.processor.x[i] or def.uarch.processor.x[i]
+        output("        0x%x,",  xi)
+        comment_default(xi, def.uarch.processor.x[i])
+    end
+    output("      },\n")
+    output("      pc = 0x%x,", uarch.processor.pc or def.uarch.processor.pc)
+    comment_default(uarch.processor.pc, def.uarch.processor.pc)
+    output("      cycle = 0x%x", uarch.processor.cycle or def.uarch.processor.cycle)
+    comment_default(uarch.processor.cycle, def.uarch.processor.cycle)
+    output("    },\n")
+    output("  }\n")
     output("}\n")
 end
 
@@ -1023,6 +1092,7 @@ else
             yield_manual = htif_yield_manual
         },
         rollup = rollup,
+        uarch = uarch,
         flash_drive = {},
     }
 

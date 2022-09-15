@@ -300,6 +300,86 @@ static cm_rollup_config convert_to_c(const std::optional<cartesi::rollup_config>
     return new_c_rollup_config;
 }
 
+// --------------------------------------------
+// Microarchitecture configuration conversion functions
+// --------------------------------------------
+
+static cartesi::uarch_ram_config convert_from_c(const cm_uarch_ram_config *c_config) {
+    if (c_config == nullptr) {
+        throw std::invalid_argument("Invalid uarch ram configuration");
+    }
+    cartesi::uarch_ram_config new_cpp_uarch_ram_config{};
+    new_cpp_uarch_ram_config.length = c_config->length;
+    new_cpp_uarch_ram_config.image_filename = null_to_empty(c_config->image_filename);
+    return new_cpp_uarch_ram_config;
+}
+
+static cm_uarch_ram_config convert_to_c(const cartesi::uarch_ram_config &cpp_config) {
+    cm_uarch_ram_config new_c_uarch_ram_config{};
+    new_c_uarch_ram_config.length = cpp_config.length;
+    new_c_uarch_ram_config.image_filename = convert_to_c(cpp_config.image_filename);
+    return new_c_uarch_ram_config;
+}
+
+static cartesi::uarch_rom_config convert_from_c(const cm_uarch_rom_config *c_config) {
+    if (c_config == nullptr) {
+        throw std::invalid_argument("Invalid uarch ram configuration");
+    }
+    cartesi::uarch_rom_config new_cpp_uarch_rom_config{};
+    new_cpp_uarch_rom_config.length = c_config->length;
+    new_cpp_uarch_rom_config.image_filename = null_to_empty(c_config->image_filename);
+    return new_cpp_uarch_rom_config;
+}
+
+static cm_uarch_rom_config convert_to_c(const cartesi::uarch_rom_config &cpp_config) {
+    cm_uarch_rom_config new_c_uarch_rom_config{};
+    new_c_uarch_rom_config.length = cpp_config.length;
+    new_c_uarch_rom_config.image_filename = convert_to_c(cpp_config.image_filename);
+    return new_c_uarch_rom_config;
+}
+
+static cartesi::uarch_processor_config convert_from_c(const cm_uarch_processor_config *c_config) {
+    if (c_config == nullptr) {
+        throw std::invalid_argument("Invalid uarch processor configuration");
+    }
+    cartesi::uarch_processor_config new_cpp_config{};
+    new_cpp_config.pc = c_config->pc;
+    new_cpp_config.cycle = c_config->cycle;
+    for (size_t i = 0; i < CM_MACHINE_UARCH_X_REG_COUNT; i++) {
+        new_cpp_config.x[i] = c_config->x[i];
+    }
+    return new_cpp_config;
+}
+
+static cm_uarch_processor_config convert_to_c(const cartesi::uarch_processor_config &cpp_config) {
+    cm_uarch_processor_config new_c_config{};
+    new_c_config.pc = cpp_config.pc;
+    new_c_config.cycle = cpp_config.cycle;
+    for (size_t i = 0; i < CM_MACHINE_UARCH_X_REG_COUNT; i++) {
+        new_c_config.x[i] = cpp_config.x[i];
+    }
+    return new_c_config;
+}
+
+static cartesi::uarch_config convert_from_c(const cm_uarch_config *c_config) {
+    if (c_config == nullptr) {
+        throw std::invalid_argument("Invalid uarch configuration");
+    }
+    cartesi::uarch_config new_cpp_uarch_config{};
+    new_cpp_uarch_config.processor = convert_from_c(&c_config->processor);
+    new_cpp_uarch_config.ram = convert_from_c(&c_config->ram);
+    new_cpp_uarch_config.rom = convert_from_c(&c_config->rom);
+    return new_cpp_uarch_config;
+}
+
+static cm_uarch_config convert_to_c(const cartesi::uarch_config &cpp_config) {
+    cm_uarch_config new_c_uarch_config{};
+    new_c_uarch_config.processor = convert_to_c(cpp_config.processor);
+    new_c_uarch_config.ram = convert_to_c(cpp_config.ram);
+    new_c_uarch_config.rom = convert_to_c(cpp_config.rom);
+    return new_c_uarch_config;
+}
+
 // ----------------------------------------------
 // Runtime configuration conversion functions
 // ----------------------------------------------
@@ -644,6 +724,8 @@ void cm_delete_machine_config(const cm_machine_config *config) {
     delete[] config->rollup.input_metadata.image_filename;
     delete[] config->rollup.voucher_hashes.image_filename;
     delete[] config->rollup.notice_hashes.image_filename;
+    delete[] config->uarch.rom.image_filename;
+    delete[] config->uarch.ram.image_filename;
 
     delete config;
 }
@@ -698,6 +780,30 @@ int cm_store(cm_machine *m, const char *dir, char **err_msg) try {
 int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->run(mcycle_end);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_read_uarch_x(const cm_machine *m, int i, uint64_t *val, char **err_msg) try {
+    const auto *cpp_machine = convert_from_c(m);
+    *val = cpp_machine->read_uarch_x(i);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_write_uarch_x(cm_machine *m, int i, uint64_t val, char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cpp_machine->write_uarch_x(i, val);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_machine_uarch_run(cm_machine *m, uint64_t uarch_cycle_end, char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cpp_machine->uarch_run(uarch_cycle_end);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
@@ -943,6 +1049,8 @@ IMPL_MACHINE_READ_WRITE(htif_ihalt)
 IMPL_MACHINE_READ_WRITE(htif_iconsole)
 IMPL_MACHINE_READ_WRITE(htif_iyield)
 IMPL_MACHINE_READ_WRITE(clint_mtimecmp)
+IMPL_MACHINE_READ_WRITE(uarch_cycle)
+IMPL_MACHINE_READ_WRITE(uarch_pc)
 // clang-format-on
 
 uint64_t cm_packed_iflags(int PRV, int X, int Y, int H) {
@@ -1078,6 +1186,29 @@ void cm_delete_error_message(const char *err_msg) {
 }
 
 void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config) {
+    if (config == nullptr) {
+        return;
+    }
+    delete config;
+}
+
+void cm_delete_uarch_ram_config(const cm_uarch_ram_config *config) {
+    if (config == nullptr) {
+        return;
+    }
+    delete[] config->image_filename;
+    delete config;
+}
+
+void cm_delete_uarch_rom_config(const cm_uarch_rom_config *config) {
+    if (config == nullptr) {
+        return;
+    }
+    delete[] config->image_filename;
+    delete config;
+}
+
+void cm_delete_uarch_config(const cm_uarch_config *config) {
     if (config == nullptr) {
         return;
     }

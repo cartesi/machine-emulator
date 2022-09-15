@@ -216,6 +216,32 @@ typedef struct {                           // NOLINT(modernize-use-using)
     cm_memory_range_config notice_hashes;  ///< Notice hashes memory range
 } cm_rollup_config;
 
+/// \brief microarchitecture RAM configuration
+typedef struct {                // NOLINT(modernize-use-using)
+    uint64_t length;            ///< RAM length
+    const char *image_filename; ///< RAM image file name
+} cm_uarch_ram_config;
+
+/// \brief microarchitecture ROM configuration
+typedef struct {                // NOLINT(modernize-use-using)
+    uint64_t length;            ///< RAM length
+    const char *image_filename; ///< RAM image file name
+} cm_uarch_rom_config;
+
+/// \brief Microarchitecture processor configuration
+typedef struct { // NOLINT(modernize-use-using)
+    uint64_t x[CM_MACHINE_UARCH_X_REG_COUNT];
+    uint64_t pc;
+    uint64_t cycle;
+} cm_uarch_processor_config;
+
+/// \brief Microarchitecture state configuration
+typedef struct { // NOLINT(modernize-use-using)
+    cm_uarch_processor_config processor;
+    cm_uarch_rom_config rom;
+    cm_uarch_ram_config ram;
+} cm_uarch_config;
+
 /// \brief Machine state configuration
 typedef struct { // NOLINT(modernize-use-using)
     cm_processor_config processor;
@@ -225,6 +251,7 @@ typedef struct { // NOLINT(modernize-use-using)
     cm_clint_config clint;
     cm_htif_config htif;
     cm_rollup_config rollup;
+    cm_uarch_config uarch;
 } cm_machine_config;
 
 /// \brief Merkle tree proof structure
@@ -1321,6 +1348,18 @@ CM_API void cm_delete_error_message(const char *err_msg);
 /// \returns void
 CM_API void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config);
 
+/// \brief Deletes allocated microarchitecture ram config
+/// \returns void
+CM_API void cm_delete_uarch_ram_config(const cm_uarch_ram_config *config);
+
+/// \brief Deletes allocated microarchitecture rom config
+/// \returns void
+CM_API void cm_delete_uarch_rom_config(const cm_uarch_rom_config *config);
+
+/// \brief Deletes allocated dhd microarchitecture config
+/// \returns void
+CM_API void cm_delete_uarch_config(const cm_uarch_config *config);
+
 /// \brief Destroys machine
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
@@ -1341,6 +1380,70 @@ CM_API int cm_snapshot(cm_machine *m, char **err_msg);
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_rollback(cm_machine *m, char **err_msg);
+
+/// \brief Reads the value of a microarchitecture general-purpose register.
+/// \param m Pointer to valid machine instance
+/// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_uarch_x(const cm_machine *m, int i, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of a microarchitecture general-purpose register.
+/// \param m Pointer to valid machine instance
+/// \param i Register index. Between 1 and UARCH_X_REG_COUNT-1, inclusive.
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_uarch_x(cm_machine *m, int i, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the microarchitecture pc register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives the value of the register
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_uarch_pc(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the microarchitecture pc register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_uarch_pc(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the microarchitecture cycle register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_uarch_cycle(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the microarchitecture cycle register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_uarch_cycle(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Runs the machine in the microarchitecture until the mcycle advances by one unit or the micro cycles counter
+/// (uarch_cycle) reaches uarch_cycle_end \param m Pointer to valid machine instance \param mcycle_end End cycle value
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_machine_uarch_run(cm_machine *m, uint64_t uarch_cycle_end, char **err_msg);
 
 #ifdef __cplusplus
 }

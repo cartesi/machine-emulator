@@ -431,6 +431,11 @@ machine_config machine::get_serialization_config(void) const {
         r.voucher_hashes.image_filename.clear();
         r.notice_hashes.image_filename.clear();
     }
+    c.uarch.processor.cycle = read_uarch_cycle();
+    c.uarch.processor.pc = read_uarch_pc();
+    for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
+        c.uarch.processor.x[i] = read_uarch_x(i);
+    }
     return c;
 }
 
@@ -1499,6 +1504,39 @@ bool machine::read_word(uint64_t word_address, uint64_t &word_value) const {
     }
 }
 
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+uint64_t machine::read_uarch_x(int i) const {
+    (void) i;
+    return 0; // stub untill uarch is added
+}
+
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+void machine::write_uarch_x(int i, uint64_t val) {
+    (void) i;
+    (void) val;
+}
+
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+uint64_t machine::read_uarch_pc(void) const {
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    return 0; // stub untill uarch is added
+}
+
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+void machine::write_uarch_pc(uint64_t val) {
+    (void) val;
+}
+
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+uint64_t machine::read_uarch_cycle(void) const {
+    return 0; // stub untill uarch is added
+}
+
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+void machine::write_uarch_cycle(uint64_t val) {
+    (void) val;
+}
+
 void machine::poll_htif_console(uint64_t wait) {
     m_h.poll_console(wait);
 }
@@ -1596,6 +1634,11 @@ access_log machine::step(const access_log::type &log_type, bool one_based) {
         verify_access_log(*a.get_log(), m_r, one_based);
     }
     return std::move(*a.get_log());
+}
+
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+void machine::uarch_run(uint64_t uarch_cycle_end) {
+    (void) uarch_cycle_end;
 }
 
 void machine::run(uint64_t mcycle_end) {

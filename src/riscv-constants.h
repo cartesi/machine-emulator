@@ -30,7 +30,7 @@ enum RISCV_constants {
 };
 
 /// \brief Register counts
-enum REG_COUNT { X_REG_COUNT = 32 };
+enum REG_COUNT { X_REG_COUNT = 32, UARCH_X_REG_COUNT = 32 };
 
 /// \brief MIP shifts
 enum MIP_shifts {
@@ -364,6 +364,8 @@ enum CARTESI_init : uint64_t {
     TOHOST_INIT = UINT64_C(0),                                      ///< Initial value for tohost
     MENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for menvcfg
     SENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for senvcfg
+    UARCH_PC_INIT = UINT64_C(0x60000000),                           ///< Initial value for microarchitecture pc
+    UARCH_CYCLE_INIT = UINT64_C(0),                                 ///< Initial value for microarchitecture cycle
 };
 
 /// \brief Mapping between CSR names and addresses

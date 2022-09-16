@@ -28,6 +28,7 @@
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "machine-state.h"
+#include "uarch-machine.h"
 
 namespace cartesi {
 
@@ -44,9 +45,9 @@ class machine final {
     mutable machine_state m_s;       ///< Opaque machine state
     mutable machine_merkle_tree m_t; ///< Merkle tree of state
     htif m_h;                        ///< HTIF device
-
-    machine_config m_c;         ///< Copy of initialization config
-    machine_runtime_config m_r; ///< Copy of initialization runtime config
+    machine_config m_c;              ///< Copy of initialization config
+    uarch_machine m_uarch;           ///< Microarchitecture machine
+    machine_runtime_config m_r;      ///< Copy of initialization runtime config
 
     static const pma_entry::flags m_rom_flags;                   ///< PMA flags used for ROM
     static const pma_entry::flags m_ram_flags;                   ///< PMA flags used for RAM

@@ -57,6 +57,12 @@ jobs:
       - name: Fix install permissions [/opt/cartesi]
         run: find /opt/cartesi -type d -exec chmod 755 {} +
 
+      # temporarily testing microarchitecture interpreter here
+      - name: Test microarchitecture interpreter
+        run: |
+          eval $(make env)
+          make -C riscv-arch-tests
+
       - name: Upload emulator
         uses: actions/upload-artifact@master
         with:

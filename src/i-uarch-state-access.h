@@ -1,0 +1,82 @@
+// Copyright 2019 Cartesi Pte. Ltd.
+//
+// This file is part of the machine-emulator. The machine-emulator is free
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// Lesser General Public License as published by the Free Software Foundation,
+// either version 3 of the License, or (at your option) any later version.
+//
+// The machine-emulator is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
+// for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
+//
+
+#ifndef I_UARCH_STATE_ACCESS_H
+#define I_UARCH_STATE_ACCESS_H
+
+#include "pma.h"
+#include <cinttypes>
+
+namespace cartesi {
+
+// Interface for microarchitecture state access
+template <typename DERIVED>
+class i_uarch_state_access { // CRTP
+
+    DERIVED &derived(void) {
+        return *static_cast<DERIVED *>(this);
+    }
+
+    const DERIVED &derived(void) const {
+        return *static_cast<const DERIVED *>(this);
+    }
+
+public:
+    auto read_x(int r) const {
+        return derived().do_read_x(r);
+    }
+
+    auto write_x(int r, uint64_t v) {
+        return derived().do_write_x(r, v);
+    }
+
+    auto read_pc() const {
+        return derived().do_read_pc();
+    }
+
+    auto write_pc(uint64_t v) {
+        return derived().do_write_pc(v);
+    }
+
+    auto read_cycle() const {
+        return derived().do_read_cycle();
+    }
+
+    auto write_cycle(uint64_t v) {
+        return derived().do_write_cycle(v);
+    }
+
+    template <typename T>
+    void read_word(uint64_t paddr, T *data) {
+        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        return derived().template do_read_word<T>(paddr, data);
+    }
+
+    template <typename T>
+    void write_word(uint64_t paddr, T data) {
+        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        return derived().template do_write_word<T>(paddr, data);
+    }
+
+    template <typename T>
+    pma_entry &find_pma_entry(uint64_t paddr) {
+        return derived().template do_find_pma_entry<T>(paddr);
+    }
+};
+
+} // namespace cartesi
+
+#endif

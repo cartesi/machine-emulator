@@ -39,6 +39,8 @@
 #include "state-access.h"
 #include "step-state-access.h"
 #include "strict-aliasing.h"
+#include "uarch-interpret.h"
+#include "uarch-state-access.h"
 #include "unique-c-ptr.h"
 
 /// \file
@@ -222,6 +224,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     m_t{},
     m_h{c.htif.console_getchar},
     m_c{c},
+    m_uarch{c.uarch},
     m_r{r} {
 
     if (m_c.processor.marchid == UINT64_C(-1)) {
@@ -1413,7 +1416,7 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
 void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length) const {
     const pma_entry &pma = find_pma_entry(address, length);
     if (pma.get_istart_E()) {
-        throw std::invalid_argument{"address range is not entirely in single PMA"};
+        return m_uarch.read_memory(address, data, length);
     } else if (pma.get_istart_M()) {
         memcpy(data, pma.get_memory().get_host_memory() + (address - pma.get_start()), length);
         return;
@@ -1510,31 +1513,25 @@ uint64_t machine::read_uarch_x(int i) const {
     return 0; // stub untill uarch is added
 }
 
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 void machine::write_uarch_x(int i, uint64_t val) {
-    (void) i;
-    (void) val;
+    m_uarch.write_x(i, val);
 }
 
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 uint64_t machine::read_uarch_pc(void) const {
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    return 0; // stub untill uarch is added
+    return m_uarch.read_pc();
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 void machine::write_uarch_pc(uint64_t val) {
-    (void) val;
+    m_uarch.write_pc(val);
 }
 
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 uint64_t machine::read_uarch_cycle(void) const {
-    return 0; // stub untill uarch is added
+    return m_uarch.read_cycle();
 }
 
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 void machine::write_uarch_cycle(uint64_t val) {
-    (void) val;
+    return m_uarch.write_cycle(val);
 }
 
 void machine::poll_htif_console(uint64_t wait) {
@@ -1638,7 +1635,9 @@ access_log machine::step(const access_log::type &log_type, bool one_based) {
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 void machine::uarch_run(uint64_t uarch_cycle_end) {
-    (void) uarch_cycle_end;
+    state_access a(*this);
+    uarch_state_access<state_access> ua(m_uarch, a);
+    uarch_interpret(ua, uarch_cycle_end);
 }
 
 void machine::run(uint64_t mcycle_end) {

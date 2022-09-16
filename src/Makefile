@@ -248,7 +248,9 @@ CARTESI_OBJS:= \
 	interpret.o \
 	virtual-machine.o \
 	protobuf-util.o \
-	machine-c-api.o
+	machine-c-api.o \
+	uarch-machine.o \
+	uarch-interpret.o
 
 LUACARTESI_OBJS:= \
 	clua-cartesi.o \
@@ -457,7 +459,9 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	pma.o \
 	machine.o \
 	machine-config.o \
-	interpret.o
+	interpret.o \
+	uarch-machine.o \
+	uarch-interpret.o
 
 CYCLE_PERIOD ?= 13
 HASH_DIR = hashes/$(CYCLE_PERIOD)

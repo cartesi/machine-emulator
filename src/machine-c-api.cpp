@@ -407,6 +407,7 @@ cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
     new_cpp_machine_config.rom = convert_from_c(&c_config->rom);
     new_cpp_machine_config.clint = convert_from_c(&c_config->clint);
     new_cpp_machine_config.htif = convert_from_c(&c_config->htif);
+    new_cpp_machine_config.uarch = convert_from_c(&c_config->uarch);
     new_cpp_machine_config.rollup = convert_from_c(&c_config->rollup);
 
     for (size_t i = 0; i < c_config->flash_drive.count; ++i) {
@@ -435,6 +436,7 @@ const cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config)
     new_machine_config->flash_drive = convert_to_c(cpp_config.flash_drive);
     new_machine_config->clint = convert_to_c(cpp_config.clint);
     new_machine_config->htif = convert_to_c(cpp_config.htif);
+    new_machine_config->uarch = convert_to_c(cpp_config.uarch);
     new_machine_config->rollup = convert_to_c(cpp_config.rollup);
     return new_machine_config;
 }

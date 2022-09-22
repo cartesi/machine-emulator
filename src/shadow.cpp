@@ -30,14 +30,31 @@ uint64_t shadow_get_csr_rel_addr(shadow_csr reg) {
     return static_cast<uint64_t>(reg);
 }
 
+uint64_t shadow_get_csr_abs_addr(shadow_csr reg) {
+    return PMA_SHADOW_START + shadow_get_csr_rel_addr(reg);
+}
+
 uint64_t shadow_get_x_rel_addr(int reg) {
     assert(reg >= 0 && reg < X_REG_COUNT);
     return reg * sizeof(uint64_t);
 }
 
+uint64_t shadow_get_x_abs_addr(int reg) {
+    return PMA_SHADOW_START + shadow_get_x_rel_addr(reg);
+}
+
+uint64_t shadow_get_uarch_x_rel_addr(int reg) {
+    assert(reg >= 0 && reg < UARCH_X_REG_COUNT);
+    return shadow_get_csr_rel_addr(shadow_csr::uarch_x0) + (reg * sizeof(uint64_t));
+}
+
 uint64_t shadow_get_pma_rel_addr(int p) {
     assert(p >= 0 && p < (int) PMA_MAX);
     return PMA_BOARD_SHADOW_START + 2UL * p * sizeof(uint64_t);
+}
+
+uint64_t shadow_get_pma_abs_addr(int p) {
+    return PMA_SHADOW_START + shadow_get_pma_rel_addr(p);
 }
 
 /// \brief Shadow device read callback. See ::pma_read.

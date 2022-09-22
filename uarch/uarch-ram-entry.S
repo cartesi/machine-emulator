@@ -14,18 +14,16 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#ifndef HTIF_FACTORY_H
-#define HTIF_FACTORY_H
 
-#include "htif.h"
-#include "machine-config.h"
-#include "pma.h"
+#include <pma-defines.h>
 
-namespace cartesi {
+// entry point of the code executed on the microarchitecture's RAM
 
-/// \brief Creates a PMA entry for the HTIF device
-pma_entry make_htif_pma_entry(uint64_t start, uint64_t length);
+.section .text.init;
+.align 2;
+.global _start;
+_start:    
+    j uarch_run;
+  
 
-} // namespace cartesi
-
-#endif
+ 

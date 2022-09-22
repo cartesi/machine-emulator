@@ -16,8 +16,7 @@
 
 #include "clint.h"
 #include "i-device-state-access.h"
-#include "machine.h"
-#include "pma.h"
+#include "pma-constants.h"
 #include "riscv-constants.h"
 #include "rtc.h"
 #include "strict-aliasing.h"
@@ -26,6 +25,10 @@ namespace cartesi {
 
 uint64_t clint_get_csr_rel_addr(clint_csr reg) {
     return static_cast<uint64_t>(reg);
+}
+
+uint64_t clint_get_csr_abs_addr(clint_csr reg) {
+    return PMA_CLINT_START + clint_get_csr_rel_addr(reg);
 }
 
 static bool clint_read_msip(i_device_state_access *a, uint64_t *val, int log2_size) {

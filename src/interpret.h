@@ -24,12 +24,6 @@
 
 namespace cartesi {
 
-// Forward declarations
-class state_access;
-class logged_state_access;
-class step_state_access;
-class machine;
-
 /// \brief Interpreter status code
 enum class interpreter_status : int {
     brk,    ///< brk is set, indicating the tight loop was broken
@@ -46,6 +40,16 @@ enum class interpreter_status : int {
 template <typename STATE_ACCESS>
 interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end);
 
+#ifdef MICROARCHITECTURE
+class uarch_machine_state_access;
+extern template interpreter_status interpret(uarch_machine_state_access &a, uint64_t mcycle_end);
+#else
+// Forward declarations
+class state_access;
+class logged_state_access;
+class step_state_access;
+class machine;
+
 // Declaration of explicit instantiation in module interpret.cpp
 extern template interpreter_status interpret(state_access &a, uint64_t mcycle_end);
 
@@ -54,7 +58,7 @@ extern template interpreter_status interpret(logged_state_access &a, uint64_t mc
 
 // Declaration of explicit instantiation in module interpret.cpp
 extern template interpreter_status interpret(step_state_access &a, uint64_t mcycle_end);
-
+#endif // MICROARCHITECTURE
 } // namespace cartesi
 
 #endif

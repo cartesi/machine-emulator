@@ -44,7 +44,7 @@ class machine final {
     //    should test this.
     mutable machine_state m_s;       ///< Opaque machine state
     mutable machine_merkle_tree m_t; ///< Merkle tree of state
-    htif m_h;                        ///< HTIF device
+    std::vector<pma_entry *> m_pmas; ///< Combines uarch PMAs and machine state PMAs.
     machine_config m_c;              ///< Copy of initialization config
     uarch_machine m_uarch;           ///< Microarchitecture machine
     machine_runtime_config m_r;      ///< Copy of initialization runtime config
@@ -105,6 +105,19 @@ class machine final {
     ///  frequent scenario is when the program executes a WFI
     ///  instruction. Another example is when the machine halts.
     void run_inner_loop(uint64_t mcycle_end);
+
+    /// \brief Obtain PMA entry that covers a given physical memory region
+    /// \param pmas Container of pmas to be searched.
+    /// \param s Pointer to machine state.
+    /// \param paddr Start of physical memory region.
+    /// \param length Length of physical memory region.
+    /// \returns Corresponding entry if found, or a sentinel entry
+    /// for an empty range.
+    template <typename CONTAINER>
+    pma_entry &find_pma_entry(const CONTAINER &pmas, uint64_t paddr, size_t length);
+
+    template <typename CONTAINER>
+    const pma_entry &find_pma_entry(const CONTAINER &pmas, uint64_t paddr, size_t length) const;
 
 public:
     /// \brief Type of hash
@@ -650,7 +663,8 @@ public:
     /// \returns The container.
     const boost::container::static_vector<pma_entry, PMA_MAX> &get_pmas(void) const;
 
-    /// \brief Obtain PMA entry that covers a given physical memory region
+    /// \brief Obtain PMA entry from the machine state that covers a given physical memory region
+    /// \brief Microarchitecture PMAs are not considered.
     /// \param s Pointer to machine state.
     /// \param paddr Start of physical memory region.
     /// \param length Length of physical memory region.
@@ -699,9 +713,6 @@ public:
     /// \details The machine must contain an existing memory range
     /// matching the start and length specified in new_range.
     void replace_memory_range(const memory_range_config &new_range);
-
-    /// \brief Poll console for pending input
-    void poll_htif_console(uint64_t wait);
 
     /// \brief Reads the value of a microarchitecture register.
     /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.

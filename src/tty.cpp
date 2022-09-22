@@ -14,6 +14,7 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
+#include <array>
 #include <csignal>
 #include <cstdint>
 #include <fcntl.h>
@@ -27,6 +28,18 @@
 #include "tty.h"
 
 namespace cartesi {
+
+static const int CONSOLE_BUF_SIZE = 1024; ///< Number of characters in console input buffer
+
+/// \brief TTY global state
+struct tty_state {
+    bool initialized{false};
+    int ttyfd{-1};
+    termios oldtty{};
+    std::array<char, CONSOLE_BUF_SIZE> buf{};
+    ssize_t buf_pos{};
+    ssize_t buf_len{};
+};
 
 static int new_ttyfd(const char *path) {
     int fd{};
@@ -52,54 +65,7 @@ static int get_ttyfd(void) {
     return -1;
 }
 
-void tty_setup(tty_command cmd) {
-    static int ttyfd{-1};
-    static termios oldtty{};
-    switch (cmd) {
-        case tty_command::initialize:
-            if ((ttyfd = get_ttyfd()) >= 0) {
-                struct termios tty {};
-                tcgetattr(ttyfd, &tty);
-                oldtty = tty;
-                // Set terminal to "raw" mode
-                tty.c_lflag &= ~(ECHO | // Echo off
-                    ICANON |            // Canonical mode off
-                    ECHONL |            // Do not echo NL (redundant with ECHO and ICANON)
-                    ISIG |              // Signal chars off
-                    IEXTEN              // Extended input processing off
-                );
-                tty.c_iflag &= ~(IGNBRK | // Generate \377 \0 \0 on BREAK
-                    BRKINT |              //
-                    PARMRK |              //
-                    ICRNL |               // No CR-to-NL
-                    ISTRIP |              // Do not strip off 8th bit
-                    INLCR |               // No NL-to-CR
-                    IGNCR |               // Do not ignore CR
-                    IXON                  // Disable XON/XOFF flow control on output
-                );
-                tty.c_oflag |= OPOST; // Enable output processing
-                // Enable parity generation on output and checking for input
-                tty.c_cflag &= ~(CSIZE | PARENB);
-                tty.c_cflag |= CS8;
-                // Read returns with 1 char and no delay
-                tty.c_cc[VMIN] = 1;
-                tty.c_cc[VTIME] = 0;
-                tcsetattr(ttyfd, TCSANOW, &tty);
-                //??D Should we check to see if changes stuck?
-            }
-            break;
-        case tty_command::cleanup:
-            if (ttyfd >= 0) {
-                tcsetattr(ttyfd, TCSANOW, &oldtty);
-                close(ttyfd);
-                ttyfd = -1;
-            }
-            break;
-            ;
-    }
-}
-
-bool tty_poll(uint64_t wait, char *data, size_t max_len, long *actual_len) {
+static bool try_read_chars_from_stdin(uint64_t wait, char *data, size_t max_len, long *actual_len) {
     int fd_max{0};
     fd_set rfds{};
     timeval tv{};
@@ -116,6 +82,90 @@ bool tty_poll(uint64_t wait, char *data, size_t max_len, long *actual_len) {
         return true;
     }
     return false;
+}
+
+/// Returns pointer to the global TTY state
+static tty_state *get_state() {
+    static tty_state data;
+    return &data;
+}
+
+void tty_initialize(void) {
+    auto *s = get_state();
+    if (s->initialized) {
+        throw std::runtime_error("TTY already initialized.");
+    }
+    s->initialized = true;
+    if ((s->ttyfd = get_ttyfd()) >= 0) {
+        struct termios tty {};
+        tcgetattr(s->ttyfd, &tty);
+        s->oldtty = tty;
+        // Set terminal to "raw" mode
+        tty.c_lflag &= ~(ECHO | // Echo off
+            ICANON |            // Canonical mode off
+            ECHONL |            // Do not echo NL (redundant with ECHO and ICANON)
+            ISIG |              // Signal chars off
+            IEXTEN              // Extended input processing off
+        );
+        tty.c_iflag &= ~(IGNBRK | // Generate \377 \0 \0 on BREAK
+            BRKINT |              //
+            PARMRK |              //
+            ICRNL |               // No CR-to-NL
+            ISTRIP |              // Do not strip off 8th bit
+            INLCR |               // No NL-to-CR
+            IGNCR |               // Do not ignore CR
+            IXON                  // Disable XON/XOFF flow control on output
+        );
+        tty.c_oflag |= OPOST; // Enable output processing
+        // Enable parity generation on output and checking for input
+        tty.c_cflag &= ~(CSIZE | PARENB);
+        tty.c_cflag |= CS8;
+        // Read returns with 1 char and no delay
+        tty.c_cc[VMIN] = 1;
+        tty.c_cc[VTIME] = 0;
+        tcsetattr(s->ttyfd, TCSANOW, &tty);
+        //??D Should we check to see if changes stuck?
+    }
+}
+
+void tty_finalize(void) {
+    auto *s = get_state();
+    if (!s->initialized) {
+        throw std::runtime_error("TTY not initialized.");
+    }
+    s->initialized = false;
+    if (s->ttyfd >= 0) {
+        tcsetattr(s->ttyfd, TCSANOW, &s->oldtty);
+        close(s->ttyfd);
+        s->ttyfd = -1;
+    }
+}
+
+void tty_poll_console(uint64_t wait) {
+    auto *s = get_state();
+    if (!s->initialized) {
+        throw std::runtime_error("Can't poll TTY. It is not initialized.");
+    }
+    // Check for input from console, if requested by HTIF
+    // Obviously, somethind different must be done in blockchain
+    // If we don't have any characters left in buffer, try to obtain more
+    if (s->buf_pos >= s->buf_len) {
+        if (try_read_chars_from_stdin(wait, s->buf.data(), s->buf.size(), &s->buf_len)) {
+            s->buf_pos = 0;
+        }
+    }
+}
+
+int tty_getchar(void) {
+    auto *s = get_state();
+    if (!s->initialized) {
+        throw std::runtime_error("Can't get char. TTY is not initialized.");
+    }
+    tty_poll_console(0);
+    if (s->buf_pos < s->buf_len) {
+        return s->buf[s->buf_pos++] + 1;
+    }
+    return 0;
 }
 
 void tty_putchar(uint8_t ch) {

@@ -17,32 +17,27 @@
 #ifndef TTY_H
 #define TTY_H
 
+#include <cstddef>
 #include <cstdint>
-#include <iostream>
-#include <termios.h>
 
 /// \file
 /// \brief System-specific TTY handling operations
 
 namespace cartesi {
 
-/// \brief TTY commands
-enum class tty_command {
-    initialize, ///< Prepare TTY for use in cartesi machine
-    cleanup     ///< Restore TTY to original state
-};
+/// \brief Initialize TTY for console input
+void tty_initialize(void);
 
-/// \brief Configure TTY
-/// \param cmd Indicates if the TTY is to be initialized or restored to initial state
-void tty_setup(tty_command cmd);
+/// \brief Cleanup TTY console input initialization
+void tty_finalize(void);
 
 /// \brief Polls TTY for input characters
 /// \param wait Timeout to wait for characters in microseconds
-/// \param data buffer to store characters
-/// \param max_len max number of characters to read
-/// \param actual_len on return, receives the actual number of characters read
-/// \returns true, if characters were read
-bool tty_poll(uint64_t wait, char *data, size_t max_len, long *actual_len);
+void tty_poll_console(uint64_t wait);
+
+/// \brief  Reads a character from the console
+/// \return Charater read from console
+int tty_getchar(void);
 
 /// \brief Writes a character to TTY
 /// \param ch Character to write

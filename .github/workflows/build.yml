@@ -57,6 +57,11 @@ jobs:
       - name: Fix install permissions [/opt/cartesi]
         run: find /opt/cartesi -type d -exec chmod 755 {} +
 
+      - name: Build uarch-based interpreter
+        run: |
+          eval $(make env)
+          make -C uarch
+
       # temporarily testing microarchitecture interpreter here
       - name: Test microarchitecture interpreter
         run: |
@@ -74,6 +79,12 @@ jobs:
         with:
           name: emulator-tests
           path: src/tests
+
+      - name: Upload Microarchitecture ROM
+        uses: actions/upload-artifact@master
+        with:
+          name: uarch-rom.bin
+          path: uarch/uarch-rom.bin
 
   test:
     name: Test
@@ -100,6 +111,12 @@ jobs:
 
       - name: Create images folder
         run: mkdir -m 755 -p /opt/cartesi/share/images
+
+      - name: Download Microarchitecture ROM
+        uses: actions/download-artifact@master
+        with:
+          name: uarch-rom.bin
+          path: tests
 
       - name: Fix install directories and permissions [/opt/cartesi, ./tests]
         run: |
@@ -163,6 +180,9 @@ jobs:
 
       - name: Run test suite
         run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
+
+      - name: Run test suite with Microarchitecture
+        run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests --uarch-ram-length=0x10000 --uarch-rom-length=0x10000 --uarch-rom-image=./tests/uarch-rom.bin uarch_run
 
       - name: Run grpc lua test scripts
         run: |

@@ -51,8 +51,8 @@ public:
     public:
         mock_machine_state(void) = default;
 
-        void set_brk(void) {}
-        bool get_brk(void) const { // NOLINT(readability-convert-member-functions-to-static)
+        void set_brkflag(void) {}
+        bool get_brkflag(void) const { // NOLINT(readability-convert-member-functions-to-static)
             return true;
         }
         void or_brk_with_mip_mie(void) {}
@@ -646,36 +646,34 @@ private:
     }
 
     uint64_t do_read_htif_fromhost(void) {
-        return check_read_word(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::fromhost), "htif.fromhost");
+        return check_read_word(PMA_HTIF_START + htif_get_csr_rel_addr(htif_csr::fromhost), "htif.fromhost");
     }
 
     void do_write_htif_fromhost(uint64_t val) {
-        check_write_word(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::fromhost), val, "htif.fromhost");
+        check_write_word(PMA_HTIF_START + htif_get_csr_rel_addr(htif_csr::fromhost), val, "htif.fromhost");
     }
 
     uint64_t do_read_htif_tohost(void) {
-        return check_read_word(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::tohost), "htif.tohost");
+        return check_read_word(PMA_HTIF_START + htif_get_csr_rel_addr(htif_csr::tohost), "htif.tohost");
     }
 
     void do_write_htif_tohost(uint64_t val) {
-        check_write_word(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::tohost), val, "htif.tohost");
+        check_write_word(PMA_HTIF_START + htif_get_csr_rel_addr(htif_csr::tohost), val, "htif.tohost");
     }
 
     uint64_t do_read_htif_ihalt(void) {
-        return check_read_word(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::ihalt), "htif.ihalt");
+        return check_read_word(PMA_HTIF_START + htif_get_csr_rel_addr(htif_csr::ihalt), "htif.ihalt");
     }
 
     uint64_t do_read_htif_iconsole(void) {
-        return check_read_word(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::iconsole), "htif.iconsole");
+        return check_read_word(PMA_HTIF_START + htif_get_csr_rel_addr(htif_csr::iconsole), "htif.iconsole");
     }
 
     uint64_t do_read_htif_iyield(void) {
-        return check_read_word(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::iyield), "htif.iyield");
+        return check_read_word(PMA_HTIF_START + htif_get_csr_rel_addr(htif_csr::iyield), "htif.iyield");
     }
 
-    void do_poll_htif_console(uint64_t wait) {
-        (void) wait;
-    }
+    void do_poll_console(void) {}
 
     uint64_t do_read_pma_istart(int i) {
         auto rel_addr = shadow_get_pma_rel_addr(i);
@@ -840,12 +838,12 @@ private:
         return pma.get_device().get_driver()->write(pma.get_device().get_context(), &da, offset, val, log2_size);
     }
 
-    void do_set_brk(void) {
-        m_naked_state.set_brk();
+    void do_set_brkflag(void) {
+        m_naked_state.set_brkflag();
     }
 
-    bool do_get_brk(void) const {
-        return m_naked_state.get_brk();
+    bool do_get_brkflag(void) const {
+        return m_naked_state.get_brkflag();
     }
 
     void do_or_brk_with_mip_mie(void) {

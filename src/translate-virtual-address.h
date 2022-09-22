@@ -53,12 +53,12 @@ namespace cartesi {
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t val) {
-    pma_entry &pma = a.template find_pma_entry<uint64_t>(paddr);
+    auto &pma = a.template find_pma_entry<uint64_t>(paddr);
     if (!pma.get_istart_M() || !pma.get_istart_W()) {
         return false;
     }
     uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-    unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
+    unsigned char *hpage = a.get_host_memory(pma) + (paddr_page - pma.get_start());
     uint64_t hoffset = paddr - paddr_page;
     // log writes to memory
     a.write_memory_word(paddr, hpage, hoffset, val);
@@ -75,12 +75,12 @@ static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t va
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pval) {
-    pma_entry &pma = a.template find_pma_entry<uint64_t>(paddr);
+    auto &pma = a.template find_pma_entry<uint64_t>(paddr);
     if (!pma.get_istart_M() || !pma.get_istart_R()) {
         return false;
     }
     uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-    unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
+    unsigned char *hpage = a.get_host_memory(pma) + (paddr_page - pma.get_start());
     uint64_t hoffset = paddr - paddr_page;
     a.read_memory_word(paddr, hpage, hoffset, pval);
     return true;

@@ -21,12 +21,15 @@
 /// \brief Fast state access implementation
 
 #include <cassert>
+#include <sys/time.h>
 
 #include "device-state-access.h"
 #include "i-state-access.h"
 #include "machine.h"
 #include "pma.h"
+#include "rtc.h"
 #include "strict-aliasing.h"
+#include "tty.h"
 
 namespace cartesi {
 
@@ -376,8 +379,27 @@ private:
         return m_m.get_state().htif.iyield;
     }
 
-    void do_poll_htif_console(uint64_t wait) {
-        return m_m.poll_htif_console(wait);
+    void do_poll_console() {
+        bool htif_console_getchar = static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
+        if (htif_console_getchar) {
+            uint64_t mcycle = read_mcycle();
+            uint64_t warp_cycle = rtc_time_to_cycle(read_clint_mtimecmp());
+            if (warp_cycle > mcycle) {
+                const uint64_t cycles_per_us = 100; // CLOCK_FREQ / 10^6; see rom-defines.h
+                uint64_t wait = (warp_cycle - mcycle) / cycles_per_us;
+                timeval start{};
+                timeval end{};
+                gettimeofday(&start, nullptr);
+                tty_poll_console(wait);
+                gettimeofday(&end, nullptr);
+                uint64_t elapsed_us = end.tv_usec - start.tv_usec;
+                uint64_t elapsed_cycles = elapsed_us * cycles_per_us;
+                uint64_t real_cycle = rtc_time_to_cycle(elapsed_cycles + rtc_cycle_to_time(mcycle));
+                warp_cycle = elapsed_us >= wait ? warp_cycle : real_cycle;
+                write_mcycle(warp_cycle);
+                set_brkflag();
+            }
+        }
     }
 
     uint64_t do_read_pma_istart(int i) const {
@@ -444,6 +466,14 @@ private:
         return pma.get_memory().get_host_memory();
     }
 
+    pma_entry &do_get_pma_entry(int index) {
+        auto &pmas = m_m.get_state().pmas;
+        if (index >= static_cast<int>(pmas.size())) {
+            return pmas[pmas.size() - 1];
+        }
+        return pmas[index];
+    }
+
     uint64_t do_read_iflags(void) {
         return m_m.get_state().read_iflags();
     }
@@ -462,12 +492,20 @@ private:
         return pma.get_device().get_driver()->write(pma.get_device().get_context(), &da, offset, val, log2_size);
     }
 
-    void do_set_brk(void) {
-        m_m.get_state().set_brk();
+    uint64_t do_read_uarch_rom_length() {
+        return m_m.get_initial_config().uarch.rom.length;
     }
 
-    bool do_get_brk(void) const {
-        return m_m.get_state().get_brk();
+    uint64_t do_read_uarch_ram_length() {
+        return m_m.get_initial_config().uarch.ram.length;
+    }
+
+    void do_set_brkflag(void) {
+        m_m.get_state().set_brkflag();
+    }
+
+    bool do_get_brkflag(void) const {
+        return m_m.get_state().get_brkflag();
     }
 
     void do_or_brk_with_mip_mie(void) {

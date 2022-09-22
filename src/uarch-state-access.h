@@ -21,6 +21,7 @@
 #include "uarch-bridge.h"
 #include "uarch-constants.h"
 #include "uarch-machine.h"
+#include "uarch-memory-bridge.h"
 
 namespace cartesi {
 
@@ -79,20 +80,16 @@ private:
         if (pma.get_istart_E()) {
             return uarch_bridge<MACRO_STATE_ACCESS>::read_word(m_a, paddr, data);
         }
-
         if (!pma.get_istart_R()) {
             throw std::runtime_error("pma is not readable");
         }
-
         if (!pma.get_istart_M()) {
             throw std::runtime_error("Attempt to read non-memory pma");
         }
 
-        uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        unsigned char *hmem = pma.get_memory().get_host_memory();
-        unsigned char *hpage = hmem + (paddr_page - pma.get_start());
-        uint64_t hoffset = paddr & PAGE_OFFSET_MASK;
-        *data = aliased_aligned_read<T>(hpage + hoffset);
+        uint64_t hoffset = paddr - pma.get_start();
+        unsigned char *hmem = pma.get_memory().get_host_memory() + hoffset;
+        *data = aliased_aligned_read<T>(hmem);
     }
 
     template <typename T>
@@ -101,20 +98,17 @@ private:
         if (pma.get_istart_E()) {
             return uarch_bridge<MACRO_STATE_ACCESS>::write_word(m_a, paddr, data);
         }
-
         if (!pma.get_istart_W()) {
             throw std::runtime_error("pma is not writable");
         }
-
         if (!pma.get_istart_M()) {
             throw std::runtime_error("Attempt to write non-memory pma");
         }
 
+        uint64_t hoffset = paddr - pma.get_start();
+        unsigned char *hmem = pma.get_memory().get_host_memory() + hoffset;
+        aliased_aligned_write(hmem, data);
         uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        unsigned char *hmem = pma.get_memory().get_host_memory();
-        unsigned char *hpage = hmem + (paddr_page - pma.get_start());
-        uint64_t hoffset = paddr & PAGE_OFFSET_MASK;
-        aliased_aligned_write(hpage + hoffset, data);
         pma.mark_dirty_page(paddr_page - pma.get_start());
     }
 

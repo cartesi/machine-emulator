@@ -29,3 +29,5 @@ doc/xml/
 *.so
 *.dylib
 *.dtb
+.DS_Store
+

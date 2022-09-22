@@ -14,14 +14,19 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
+#ifdef MICROARCHITECTURE
+/// This will go away when we start using a different toolchain to compile interpret.cpp to run in the microarch.
+#undef __SIZEOF_INT128__
+
+#include "uarch-machine-state-access.h"
+#include "uarch-runtime.h"
+#else
+#include "logged-state-access.h"
+#include "state-access.h"
+#include "step-state-access.h"
+#endif
 #include <cinttypes>
 #include <cstdint>
-#include <cstdio>
-#include <ctime>
-#include <iomanip>
-#include <iostream>
-
-#include <sys/time.h>
 
 /// \file
 /// \brief Interpreter implementation.
@@ -79,16 +84,12 @@
 /// \}
 
 #include "interpret.h"
-#include "logged-state-access.h"
 #include "meta.h"
 #include "riscv-constants.h"
 #include "rom.h"
 #include "rtc.h"
-#include "state-access.h"
-#include "step-state-access.h"
 #include "strict-aliasing.h"
 #include "translate-virtual-address.h"
-#include "unique-c-ptr.h"
 
 #ifdef __SIZEOF_INT128__
 #pragma GCC diagnostic push
@@ -176,11 +177,6 @@ static const char *sbi_ecall_name(uint64_t a7) {
 
 template <typename STATE>
 static void dump_exception_or_interrupt(uint64_t cause, STATE &s) {
-    (void) cause;
-    (void) s;
-}
-
-static void dump_exception_or_interrupt(uint64_t cause, machine_state &s) {
     uint64_t a7 = s.x[17];
     if ((cause & MCAUSE_INTERRUPT_FLAG) != 0) {
         switch (cause & ~MCAUSE_INTERRUPT_FLAG) {
@@ -280,11 +276,7 @@ static void dump_exception_or_interrupt(uint64_t cause, machine_state &s) {
 
 template <typename STATE>
 static void dump_regs(const STATE &s) {
-    (void) s;
-}
-
-static void dump_regs(const machine_state &s) {
-    const std::string priv_str{"USHM"};
+    const std::array<char, 5> priv_str{"USHM"};
     int cols = 256 / XLEN;
     (void) fprintf(stderr, "pc = ");
     print_uint64_t(s.pc);
@@ -2133,31 +2125,7 @@ static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t 
     if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TW_MASK))) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-
-    // Compile this code only if STATE_ACCESS = state_access
-    // None of this should enter step logs
-    if constexpr (std::is_same<STATE_ACCESS, state_access>::value) {
-        bool htif_console_getchar = static_cast<bool>(a.read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
-        if (htif_console_getchar) {
-            uint64_t mcycle = a.read_mcycle();
-            uint64_t warp_cycle = rtc_time_to_cycle(a.read_clint_mtimecmp());
-            if (warp_cycle > mcycle) {
-                const uint64_t cycles_per_us = 100; // CLOCK_FREQ / 10^6; see rom-defines.h
-                uint64_t wait = (warp_cycle - mcycle) / cycles_per_us;
-                timeval start{};
-                timeval end{};
-                gettimeofday(&start, nullptr);
-                a.poll_htif_console(wait);
-                gettimeofday(&end, nullptr);
-                uint64_t elapsed_us = end.tv_usec - start.tv_usec;
-                uint64_t elapsed_cycles = elapsed_us * cycles_per_us;
-                uint64_t real_cycle = rtc_time_to_cycle(elapsed_cycles + rtc_cycle_to_time(mcycle));
-                warp_cycle = elapsed_us >= wait ? warp_cycle : real_cycle;
-                a.write_mcycle(warp_cycle);
-                a.set_brk();
-            }
-        }
-    }
+    a.poll_console();
 
     return advance_to_next_insn(a, pc);
 }
@@ -3375,7 +3343,7 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         a.write_mcycle(mcycle);
 
         // If the break flag is active, break from the inner loop
-        if (a.get_brk()) {
+        if (a.get_brkflag()) {
             return interpreter_status::brk;
         }
         // Otherwise, there can be no pending interrupts
@@ -3397,6 +3365,9 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     }
 }
 
+#ifdef MICROARCHITECTURE
+template interpreter_status interpret(uarch_machine_state_access &a, uint64_t mcycle_end);
+#else
 // Explicit instantiation for state_access
 template interpreter_status interpret(state_access &a, uint64_t mcycle_end);
 
@@ -3405,5 +3376,6 @@ template interpreter_status interpret(logged_state_access &a, uint64_t mcycle_en
 
 // Explicit instantiation for logged_state_access
 template interpreter_status interpret(step_state_access &a, uint64_t mcycle_end);
+#endif // MICROARCHITECTURE
 
 } // namespace cartesi

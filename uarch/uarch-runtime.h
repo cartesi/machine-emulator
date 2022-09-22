@@ -14,18 +14,23 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#ifndef HTIF_FACTORY_H
-#define HTIF_FACTORY_H
 
-#include "htif.h"
-#include "machine-config.h"
-#include "pma.h"
+#ifndef UARCH_RUNTIME_H
+#define UARCH_RUNTIME_H
 
-namespace cartesi {
+#include "uarch-printf.h"
+#include <inttypes.h>
 
-/// \brief Creates a PMA entry for the HTIF device
-pma_entry make_htif_pma_entry(uint64_t start, uint64_t length);
+#include <stddef.h>
 
-} // namespace cartesi
+#define fprintf(a, ...) printf(__VA_ARGS__)
+
+#define assert(a)                                                                                                      \
+    if (!(a)) {                                                                                                        \
+        printf("Assertion failed\n");                                                                                  \
+        abort();                                                                                                       \
+    }
+
+extern "C" [[noreturn]] void abort(void);
 
 #endif

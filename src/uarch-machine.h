@@ -72,15 +72,6 @@ public:
         return m_s;
     }
 
-    /// \brief Reads a chunk of data from the machine memory.
-    /// \param address Physical address to start reading.
-    /// \param data Receives chunk of memory.
-    /// \param length Size of chunk.
-    /// \details The entire chunk, from \p address to \p address + \p length must
-    /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
-    /// and not a device PMA.
-    void read_memory(uint64_t address, unsigned char *data, uint64_t length) const;
-
     /// \brief Reads the value of a general-purpose register.
     /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
     /// \returns The value of the register.

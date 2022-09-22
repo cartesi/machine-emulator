@@ -22,61 +22,14 @@
 
 namespace cartesi {
 
-static constexpr auto htif_tohost_rel_addr = static_cast<uint64_t>(htif::csr::tohost);
-static constexpr auto htif_fromhost_rel_addr = static_cast<uint64_t>(htif::csr::fromhost);
-static constexpr auto htif_ihalt_rel_addr = static_cast<uint64_t>(htif::csr::ihalt);
-static constexpr auto htif_iconsole_rel_addr = static_cast<uint64_t>(htif::csr::iconsole);
-static constexpr auto htif_iyield_rel_addr = static_cast<uint64_t>(htif::csr::iyield);
+static constexpr auto htif_tohost_rel_addr = static_cast<uint64_t>(htif_csr::tohost);
+static constexpr auto htif_fromhost_rel_addr = static_cast<uint64_t>(htif_csr::fromhost);
+static constexpr auto htif_ihalt_rel_addr = static_cast<uint64_t>(htif_csr::ihalt);
+static constexpr auto htif_iconsole_rel_addr = static_cast<uint64_t>(htif_csr::iconsole);
+static constexpr auto htif_iyield_rel_addr = static_cast<uint64_t>(htif_csr::iyield);
 
-int htif::console_getchar(void) {
-    if (m_console_getchar) { // to be extra safe
-        poll_console(0);
-        if (m_buf_pos < m_buf_len) {
-            return m_buf[m_buf_pos++] + 1;
-        }
-    }
-    return 0;
-}
-
-void htif::console_putchar(int ch) {
-    tty_putchar(ch);
-}
-
-uint64_t htif::get_csr_rel_addr(csr reg) {
+uint64_t htif_get_csr_rel_addr(htif_csr reg) {
     return static_cast<uint64_t>(reg);
-}
-
-void htif::init_console(void) {
-    tty_setup(tty_command::initialize);
-}
-
-void htif::poll_console(uint64_t wait) {
-    // Check for input from console, if requested by HTIF
-    // Obviously, somethind different must be done in blockchain
-    // If we don't have any characters left in buffer, try to obtain more
-    if (m_buf_pos >= m_buf_len) {
-        if (tty_poll(wait, m_buf.data(), m_buf.size(), &m_buf_len)) {
-            m_buf_pos = 0;
-        }
-    }
-}
-
-void htif::end_console(void) {
-    tty_setup(tty_command::cleanup);
-}
-
-// The constructor for the associated machine is typically *not* done
-// yet when the constructor for the HTIF device is invoked.
-htif::htif(bool console_getchar) : m_console_getchar{console_getchar}, m_buf{}, m_buf_pos{}, m_buf_len{} {
-    if (m_console_getchar) {
-        init_console();
-    }
-}
-
-htif::~htif() {
-    if (m_console_getchar) {
-        end_console();
-    }
 }
 
 /// \brief HTIF device read callback. See ::pma_read.
@@ -110,8 +63,7 @@ static bool htif_read(void *context, i_device_state_access *a, uint64_t offset, 
     }
 }
 
-static bool htif_halt(i_device_state_access *a, htif *h, uint64_t cmd, uint64_t data) {
-    (void) h;
+static bool htif_halt(i_device_state_access *a, uint64_t cmd, uint64_t data) {
     if (cmd == HTIF_HALT_HALT && (data & 1)) {
         a->set_iflags_H();
     }
@@ -121,9 +73,8 @@ static bool htif_halt(i_device_state_access *a, htif *h, uint64_t cmd, uint64_t 
     return true;
 }
 
-static bool htif_yield(i_device_state_access *a, htif *h, uint64_t cmd, uint64_t data) {
+static bool htif_yield(i_device_state_access *a, uint64_t cmd, uint64_t data) {
     (void) data;
-    (void) h;
     // If yield command is enabled, yield and acknowledge
     if ((a->read_htif_iyield() >> cmd) & 1) {
         if (cmd == HTIF_YIELD_MANUAL) {
@@ -137,19 +88,19 @@ static bool htif_yield(i_device_state_access *a, htif *h, uint64_t cmd, uint64_t
     return true;
 }
 
-static bool htif_console(i_device_state_access *a, htif *h, uint64_t cmd, uint64_t data) {
+static bool htif_console(i_device_state_access *a, uint64_t cmd, uint64_t data) {
     // If console command is enabled, perform it and acknowledge
     if ((a->read_htif_iconsole() >> cmd) & 1) {
         if (cmd == HTIF_CONSOLE_PUTCHAR) {
             uint8_t ch = data & 0xff;
-            htif::console_putchar(ch);
+            tty_putchar(ch);
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, cmd, 0));
         } else if (cmd == HTIF_CONSOLE_GETCHAR) {
             // In blockchain, this command will never be enabled as there is no way to input the same character
             // to every participant in a dispute: where would c come from? So if the code reached here in the
             // blockchain, there must be some serious bug
             // In interactive mode, we just get the next character from the console and send it back in the ack
-            int c = h ? h->console_getchar() : 0;
+            int c = tty_getchar();
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, cmd, c));
         }
     }
@@ -157,7 +108,7 @@ static bool htif_console(i_device_state_access *a, htif *h, uint64_t cmd, uint64
     return true;
 }
 
-static bool htif_write_tohost(i_device_state_access *a, htif *h, uint64_t tohost) {
+static bool htif_write_tohost(i_device_state_access *a, uint64_t tohost) {
     // Decode tohost
     uint32_t device = HTIF_DEV_FIELD(tohost);
     uint32_t cmd = HTIF_CMD_FIELD(tohost);
@@ -167,11 +118,11 @@ static bool htif_write_tohost(i_device_state_access *a, htif *h, uint64_t tohost
     // Handle devices
     switch (device) {
         case HTIF_DEVICE_HALT:
-            return htif_halt(a, h, cmd, data);
+            return htif_halt(a, cmd, data);
         case HTIF_DEVICE_CONSOLE:
-            return htif_console(a, h, cmd, data);
+            return htif_console(a, cmd, data);
         case HTIF_DEVICE_YIELD:
-            return htif_yield(a, h, cmd, data);
+            return htif_yield(a, cmd, data);
         //??D Unknown HTIF devices are silently ignored
         default:
             return true;
@@ -180,8 +131,7 @@ static bool htif_write_tohost(i_device_state_access *a, htif *h, uint64_t tohost
 
 /// \brief HTIF device write callback. See ::pma_write.
 static bool htif_write(void *context, i_device_state_access *a, uint64_t offset, uint64_t val, int log2_size) {
-    auto *h = static_cast<htif *>(context);
-
+    (void) context;
     // Our HTIF only supports aligned 64-bit writes
     if (log2_size != 3 || offset & 7) {
         return false;
@@ -189,7 +139,7 @@ static bool htif_write(void *context, i_device_state_access *a, uint64_t offset,
 
     switch (offset) {
         case htif_tohost_rel_addr:
-            return htif_write_tohost(a, h, val);
+            return htif_write_tohost(a, val);
         case htif_fromhost_rel_addr:
             a->write_htif_fromhost(val);
             return true;

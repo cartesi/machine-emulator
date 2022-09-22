@@ -224,6 +224,9 @@ local tests = {
   {"version_check.bin", 30},
 }
 
+-- Microarchitecture configuration
+local uarch = nil
+
 -- Print help and exit
 local function help()
     io.stderr:write(string.format([=[
@@ -264,10 +267,22 @@ where options are:
   --json-test-list
     write the output of the list command as json
 
+  --uarch-rom-image=<filename>
+    name of file containing microarchitecture ROM image.
+
+  --uarch-rom-length=<number>
+    set microarchitecture ROM length.
+
+  --uarch-ram-length=<number>
+    set microarchitecture RAM length.
+
 and command can be:
 
   run
     run test and report if payload and cycles match expected
+
+  uarch_run
+    run test in the microarchitecture and report if payload and cycles match expected
 
   hash
     output root hash at every <number> of cycles
@@ -382,6 +397,27 @@ local options = {
         concurrency_update_merkle_tree = c.update_merkle_tree
         return true
     end },
+    { "^%-%-uarch%-rom%-length%=(.+)$", function(n)
+        if not n then return false end
+        uarch = uarch or {}
+        uarch.rom = uarch.rom or {}
+        uarch.rom.length = assert(util.parse_number(n), "invalid microarchitecture ROM length " .. n)
+        return true
+    end },
+    { "^%-%-uarch%-rom%-image%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        uarch = uarch or {}
+        uarch.rom = uarch.rom or {}
+        uarch.rom.image_filename = o
+        return true
+    end },
+    { "^%-%-uarch%-ram%-length%=(.+)$", function(n)
+        if not n then return false end
+        uarch = uarch or {}
+        uarch.ram = uarch.ram or {}
+        uarch.ram.length = assert(util.parse_number(n), "invalid microarchitecture RAM length " .. n)
+        return true
+    end },
     { ".*", function(all)
         error("unrecognized option " .. all)
     end }
@@ -425,12 +461,22 @@ local function get_next_action_mcycle(cycles)
     return math.maxinteger
 end
 
-local function run_machine(machine, max_mcycle, callback)
+local function call_machine_run(machine, max_mcycle)
+    return machine:run(max_mcycle)
+end
+
+local function advance_one_mcycle_with_uarch(machine, max_mcycle_ignored)
+    return machine:uarch_run(-1)
+end
+
+local function run_machine(machine, max_mcycle, callback, run_machine_fn)
     callback = callback or nothing
+    run_machine_fn = run_machine_fn or call_machine_run
+    run_method = run_method or "run"
     local cycles = machine:read_mcycle()
     local next_action_mcycle = get_next_action_mcycle(cycles)
     while math.ult(cycles, max_mcycle) do
-        machine:run(math.min(next_action_mcycle, max_mcycle))
+        run_machine_fn(machine, math.min(next_action_mcycle, max_mcycle))
         cycles = machine:read_mcycle()
         if periodic_action and cycles == next_action_mcycle then
             next_action_mcycle = next_action_mcycle + periodic_action_period
@@ -439,6 +485,10 @@ local function run_machine(machine, max_mcycle, callback)
         if machine:read_iflags_H() then break end
     end
     return machine:read_mcycle()
+end
+
+local function uarch_run_machine(machine, max_mcycle, callback)
+    return run_machine(machine, max_mcycle, callback, advance_one_mcycle_with_uarch)
 end
 
 local function connect()
@@ -472,6 +522,9 @@ local function build_machine(test_name)
             yield_rollup = false
         },
     }
+    if uarch then
+        config.uarch = uarch
+    end
     local runtime = {
         concurrency = {
             update_merkle_tree = concurrency_update_merkle_tree
@@ -517,7 +570,8 @@ local function check_test_result(machine, ctx, errors)
     end
 end
 
-local function run(tests)
+local function run(tests, run_machine_fn)
+    run_machine_fn = run_machine_fn or run_machine
     local errors, error_count = {}, 0
     for _, test in ipairs(tests) do
         local ctx = {
@@ -532,7 +586,7 @@ local function run(tests)
         local machine = build_machine(ctx.ram_image)
 
         io.write(ctx.ram_image, ": ")
-        ctx.cycles = run_machine(machine, 2 * ctx.expected_cycles)
+        ctx.cycles = run_machine_fn(machine, 2 * ctx.expected_cycles)
         check_test_result(machine, ctx, errors)
 
         if ctx.failed then
@@ -555,6 +609,10 @@ local function run(tests)
         io.write(string.format("\nPASSED all %d tests\n\n", #tests))
         os.exit(0, true)
     end
+end
+
+local function uarch_run(tests)
+    return run(tests, uarch_run_machine)
 end
 
 local function print_machine_hash(machine, out)
@@ -677,6 +735,7 @@ end
 
 if #selected_tests < 1 then error("no test selected")
 elseif command == "run" then run(selected_tests)
+elseif command == "uarch_run" then uarch_run(selected_tests)
 elseif command == "hash" then hash(selected_tests)
 elseif command == "step" then step(selected_tests)
 elseif command == "dump" then dump(selected_tests)

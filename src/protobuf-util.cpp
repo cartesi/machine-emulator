@@ -676,6 +676,9 @@ machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &pro
     if (proto_c.has_processor()) {
         c.processor = get_proto_processor_config(proto_c.processor());
     }
+    if (proto_c.has_uarch()) {
+        c.uarch = get_proto_uarch_config(proto_c.uarch());
+    }
     if (proto_c.has_rom()) {
         c.rom.bootargs = proto_c.rom().bootargs();
         c.rom.image_filename = proto_c.rom().image_filename();
@@ -703,9 +706,6 @@ machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &pro
         }
         if (htif.has_tohost()) {
             c.htif.tohost = htif.tohost();
-        }
-        if (proto_c.has_uarch()) {
-            c.uarch = get_proto_uarch_config(proto_c.uarch());
         }
 
         // zero default when missing is ok

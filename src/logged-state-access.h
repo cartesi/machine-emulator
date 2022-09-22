@@ -565,43 +565,41 @@ private:
     }
 
     uint64_t do_read_htif_fromhost(void) const {
-        return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::fromhost), m_m.get_state().htif.fromhost,
+        return log_read(PMA_HTIF_START + htif_get_csr_rel_addr(htif_csr::fromhost), m_m.get_state().htif.fromhost,
             "htif.fromhost");
     }
 
     void do_write_htif_fromhost(uint64_t val) {
-        log_before_write_write_and_update(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::fromhost),
+        log_before_write_write_and_update(PMA_HTIF_START + htif_get_csr_rel_addr(htif_csr::fromhost),
             m_m.get_state().htif.fromhost, val, "htif.fromhost");
     }
 
     uint64_t do_read_htif_tohost(void) const {
-        return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::tohost), m_m.get_state().htif.tohost,
+        return log_read(PMA_HTIF_START + htif_get_csr_rel_addr(htif_csr::tohost), m_m.get_state().htif.tohost,
             "htif.tohost");
     }
 
     void do_write_htif_tohost(uint64_t val) {
-        log_before_write_write_and_update(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::tohost),
+        log_before_write_write_and_update(PMA_HTIF_START + htif_get_csr_rel_addr(htif_csr::tohost),
             m_m.get_state().htif.tohost, val, "htif.tohost");
     }
 
     uint64_t do_read_htif_ihalt(void) const {
-        return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::ihalt), m_m.get_state().htif.ihalt,
+        return log_read(PMA_HTIF_START + htif_get_csr_rel_addr(htif_csr::ihalt), m_m.get_state().htif.ihalt,
             "htif.ihalt");
     }
 
     uint64_t do_read_htif_iconsole(void) const {
-        return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::iconsole), m_m.get_state().htif.iconsole,
+        return log_read(PMA_HTIF_START + htif_get_csr_rel_addr(htif_csr::iconsole), m_m.get_state().htif.iconsole,
             "htif.iconsole");
     }
 
     uint64_t do_read_htif_iyield(void) const {
-        return log_read(PMA_HTIF_START + htif::get_csr_rel_addr(htif::csr::iyield), m_m.get_state().htif.iyield,
+        return log_read(PMA_HTIF_START + htif_get_csr_rel_addr(htif_csr::iyield), m_m.get_state().htif.iyield,
             "htif.iyield");
     }
 
-    void do_poll_htif_console(uint64_t wait) {
-        (void) wait;
-    }
+    void do_poll_console(void) {}
 
     uint64_t do_read_pma_istart(int i) const {
         const auto &pmas = m_m.get_pmas();
@@ -745,12 +743,12 @@ private:
         return pma.get_device().get_driver()->write(pma.get_device().get_context(), &da, offset, val, log2_size);
     }
 
-    void do_set_brk(void) {
-        m_m.get_state().set_brk();
+    void do_set_brkflag(void) {
+        m_m.get_state().set_brkflag();
     }
 
-    bool do_get_brk(void) const {
-        return m_m.get_state().get_brk();
+    bool do_get_brkflag(void) const {
+        return m_m.get_state().get_brkflag();
     }
 
     void do_or_brk_with_mip_mie(void) {

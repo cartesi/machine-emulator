@@ -18,19 +18,19 @@
 #define UARCH_CONSTANTS_H
 
 #include <cstdint>
-
 #include <uarch-defines.h>
 
 namespace cartesi {
 
-// Memory addresses with special meaning to the microarchitecture
+/// \brief Memory addresses with special meaning to the microarchitecture
 enum class uarch_ctl_addr : uint64_t {
-    putchar = UARCH_PUTCHAR_ADDR_DEF,
-    abort = UARCH_ABORT_ADDR_DEF,
-    pma_mark_page_dirty = UARCH_PMA_MARK_PAGE_DIRTY
+    putchar = UARCH_PUTCHAR_ADDR_DEF,               ///< Write to this address for printing characters to the console
+    abort = UARCH_ABORT_ADDR_DEF,                   ///< Write to this address to abort execution
+    pma_mark_page_dirty = UARCH_PMA_MARK_PAGE_DIRTY //< Write to this address to mark a memory page dirty
 };
 
-// Values written to shadow_csr::brkflag from the microarchitecture to control the state of the interpreter's break flag
+/// \brief Values written to shadow_csr::brkflag from the microarchitecture to control the state of the interpreter's
+/// break flag
 enum class uarch_brk_ctl : uint64_t {
     not_set = 1,
     set = 2,

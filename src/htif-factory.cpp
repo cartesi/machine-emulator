@@ -58,16 +58,4 @@ pma_entry make_htif_pma_entry(uint64_t start, uint64_t length) {
     return make_device_pma_entry(start, length, htif_peek, &htif_driver).set_flags(f);
 }
 
-pma_entry make_htif_pma_entry(htif &h, uint64_t start, uint64_t length) {
-    pma_entry::flags f{
-        true,                // R
-        true,                // W
-        false,               // X
-        false,               // IR
-        false,               // IW
-        PMA_ISTART_DID::HTIF // DID
-    };
-    return make_device_pma_entry(start, length, htif_peek, &htif_driver, &h).set_flags(f);
-}
-
 } // namespace cartesi

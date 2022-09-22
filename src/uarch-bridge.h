@@ -52,7 +52,7 @@ public:
 
         if (pma.get_istart_E()) {
             throw std::runtime_error(
-                "Write memory attempt from microarchitecture does not reference any registered PMA range");
+                "write memory attempt from microarchitecture does not reference any registered PMA range");
         }
 
         if (!pma.get_istart_W()) {
@@ -219,7 +219,7 @@ private:
             case shadow_state_csr::brkflag:
                 switch (static_cast<uarch_brk_flag_cmd>(data)) {
                     case uarch_brk_flag_cmd::set:
-                        a.set_brk();
+                        a.set_brkflag();
                         return true;
                     case uarch_brk_flag_cmd::or_with_mip_mie:
                         a.or_brk_with_mip_mie();
@@ -352,7 +352,7 @@ private:
                 *data = a.read_iflags();
                 return true;
             case shadow_state_csr::brkflag:
-                *data = static_cast<uint64_t>(a.get_brk() ? uarch_brk_flag_cmd::set : uarch_brk_flag_cmd::not_set);
+                *data = static_cast<uint64_t>(a.get_brkflag() ? uarch_brk_flag_cmd::set : uarch_brk_flag_cmd::not_set);
                 return true;
             case shadow_state_csr::clint_mtimecmp:
                 *data = a.read_clint_mtimecmp();

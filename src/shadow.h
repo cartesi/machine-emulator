@@ -58,7 +58,12 @@ enum class shadow_csr {
     scounteren = 0x1c8,
     senvcfg = 0x1d0,
     ilrsc = 0x1d8,
-    iflags = 0x1e0
+    iflags = 0x1e0,
+    brkflag = 0x1e8,
+    uarch_cycle = 0x1f0,
+    uarch_pc = 0x1f8,
+    uarch_x0 = 0x2e0,
+    uarch_x31 = 0x2e8
 };
 
 /// \brief Obtains the relative address of a CSR in shadow memory.
@@ -66,16 +71,28 @@ enum class shadow_csr {
 /// \returns The address.
 uint64_t shadow_get_csr_rel_addr(shadow_csr reg);
 
+/// \brief Obtains the absolute address of a CSR in shadow memory.
+uint64_t shadow_get_csr_abs_addr(shadow_csr reg);
+
 /// \brief Obtains the relative address of a general purpose register
 /// in shadow memory.
 /// \param reg Register index in 0...31, for x0...x31, respectively.
 /// \returns The address.
 uint64_t shadow_get_x_rel_addr(int reg);
 
+/// \brief Obtains the absolute address of a general purpose register
+uint64_t shadow_get_x_abs_addr(int reg);
+
+/// \brief Obtains the relative address of a microarchitecture general purpose register
+uint64_t shadow_get_uarch_x_rel_addr(int reg);
+
 /// \brief Obtains the relative address of a PMA entry in shadow memory.
 /// \param p Index of desired shadow PMA entry, in 0..31.
 /// \returns The address.
 uint64_t shadow_get_pma_rel_addr(int p);
+
+/// \brief Obtains the absolute address of a PMA entry in shadow memory.
+uint64_t shadow_get_pma_abs_addr(int p);
 
 } // namespace cartesi
 

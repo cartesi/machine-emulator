@@ -496,6 +496,7 @@ void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash) {
 CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
     /// \brief Mapping between CSR names and C API constants
     const static std::unordered_map<std::string, CM_PROC_CSR> g_cm_proc_csr_name = {
+        // clang-format off
         {"pc", CM_PROC_PC},
         {"mvendorid", CM_PROC_MVENDORID},
         {"marchid", CM_PROC_MARCHID},
@@ -531,6 +532,9 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"htif_ihalt", CM_PROC_HTIF_IHALT},
         {"htif_iconsole", CM_PROC_HTIF_ICONSOLE},
         {"htif_iyield", CM_PROC_HTIF_IYIELD},
+        {"uarch_pc", CM_PROC_UARCH_PC},
+        {"uarch_cycle", CM_PROC_UARCH_CYCLE}
+        // clang-format on
     };
     const char *name = luaL_checkstring(L, idx);
     auto got = g_cm_proc_csr_name.find(name);

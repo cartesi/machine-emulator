@@ -246,6 +246,9 @@ where options are:
   --max-mcycle=<number>
     stop at a given mcycle (default: 2305843009213693952).
 
+  --max-uarch-cycle=<number>
+    stop at a given micro cycle.
+
   -i or --htif-console-getchar
     run in interactive mode.
 
@@ -364,6 +367,7 @@ local periodic_hashes_start = 0
 local dump_pmas = false
 local max_mcycle = math.maxinteger
 local json_steps
+local max_uarch_cycle = 0
 local step = false
 local store_dir = nil
 local load_dir = nil
@@ -439,11 +443,11 @@ local options = {
         ram_image_filename = ""
         return true
     end },
-    { "^%-%-uarch-%-ram%-length%=(.+)$", function(n)
+    { "^%-%-uarch%-ram%-length%=(.+)$", function(n)
         if not n then return false end
         uarch = uarch or {}
         uarch.ram = uarch.ram or {}
-        uarch.ram_length = assert(util.parse_number(n), "invalid microarchitecture RAM length " .. n)
+        uarch.ram.length = assert(util.parse_number(n), "invalid microarchitecture RAM length " .. n)
         return true
     end },
     { "^%-%-uarch%-ram%-image%=(.*)$", function(o)
@@ -453,7 +457,7 @@ local options = {
         uarch.ram.image_filename = o
         return true
     end },
-    { "^%-%-uarch-%-rom%-length%=(.+)$", function(n)
+    { "^%-%-uarch%-rom%-length%=(.+)$", function(n)
         if not n then return false end
         uarch = uarch or {}
         uarch.rom = uarch.rom or {}
@@ -671,6 +675,11 @@ local options = {
     { "^(%-%-max%-mcycle%=(.*))$", function(all, n)
         if not n then return false end
         max_mcycle = assert(util.parse_number(n), "invalid option " .. all)
+        return true
+    end },
+    { "^(%-%-max%-uarch%-cycle%=(.*))$", function(all, n)
+        if not n then return false end
+        max_uarch_cycle = assert(util.parse_number(n), "invalid option " .. all)
         return true
     end },
     { "^%-%-load%=(.*)$", function(o)
@@ -1095,7 +1104,6 @@ else
         uarch = uarch,
         flash_drive = {},
     }
-
     local mtdparts = {}
     for i, label in ipairs(flash_label_order) do
         config.flash_drive[#config.flash_drive+1] = {
@@ -1501,8 +1509,13 @@ else
             next_hash_mcycle = next_hash_mcycle + periodic_hashes_period
         end
     end
-    if not math.ult(cycles, max_mcycle) then
-        stderr("\nCycles: %u\n", cycles)
+    if max_uarch_cycle > 0 then
+        machine:uarch_run(max_uarch_cycle)
+        stderr("\nCycles: %u uCycles: %u\n", machine:read_mcycle(), machine:read_uarch_cycle())
+    else
+        if not math.ult(cycles, max_mcycle) then
+            stderr("\nCycles: %u\n", cycles)
+        end
     end
     if step then
         assert(not config.htif.console_getchar, "step proof is meaningless in interactive mode")

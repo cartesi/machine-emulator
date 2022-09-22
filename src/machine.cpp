@@ -14,6 +14,7 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
+#include <boost/range/adaptor/sliced.hpp>
 #include <chrono>
 #include <cinttypes>
 #include <cstdio>
@@ -23,9 +24,8 @@
 #include <iostream>
 #include <mutex>
 #include <sstream>
-#include <thread>
-
 #include <sys/stat.h>
+#include <thread>
 
 #include "clint-factory.h"
 #include "htif-factory.h"
@@ -49,6 +49,7 @@
 namespace cartesi {
 
 using namespace std::string_literals;
+using namespace boost::adaptors;
 
 const pma_entry::flags machine::m_ram_flags{
     true,                  // R
@@ -222,7 +223,6 @@ void machine::replace_memory_range(const memory_range_config &new_range) {
 machine::machine(const machine_config &c, const machine_runtime_config &r) :
     m_s{},
     m_t{},
-    m_h{c.htif.console_getchar},
     m_c{c},
     m_uarch{c.uarch},
     m_r{r} {
@@ -321,7 +321,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     }
 
     // Register HTIF device
-    register_pma_entry(make_htif_pma_entry(m_h, PMA_HTIF_START, PMA_HTIF_LENGTH));
+    register_pma_entry(make_htif_pma_entry(PMA_HTIF_START, PMA_HTIF_LENGTH));
 
     // Copy HTIF state to from config to machine
     write_htif_tohost(m_c.htif.tohost);
@@ -348,6 +348,21 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
 
     // Add sentinel to PMA vector
     register_pma_entry(make_empty_pma_entry(0, 0));
+
+    // Initialize the vector of the pmas used by the merkle tree to compute hashes.
+    // First, add all pmas from the machine state, except the sentinel
+    for (auto &pma : m_s.pmas | sliced(0, m_s.pmas.size() - 1)) {
+        m_pmas.push_back(&pma);
+    }
+    // Second, add the pmas visible only to the microarchitecture interpreter, whichincludes a sentinel
+    for (auto &pma : m_uarch.get_state().pmas) {
+        m_pmas.push_back(&pma);
+    }
+
+    // Initialize TTY if console input is enabled
+    if (m_c.htif.console_getchar) {
+        tty_initialize();
+    }
 }
 
 static void load_hash(const std::string &dir, machine::hash_type &h) {
@@ -421,8 +436,10 @@ machine_config machine::get_serialization_config(void) const {
     c.rom.bootargs.clear();
     // Remove image filenames from serialization
     // (they will be ignored by save and load for security reasons)
-    c.ram.image_filename.clear();
     c.rom.image_filename.clear();
+    c.ram.image_filename.clear();
+    c.uarch.rom.image_filename.clear();
+    c.uarch.ram.image_filename.clear();
     for (auto &f : c.flash_drive) {
         f.image_filename.clear();
     }
@@ -460,7 +477,19 @@ pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) {
 }
 
 const pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) const {
-    for (const auto &pma : m_s.pmas) {
+    return find_pma_entry(m_s.pmas, paddr, length);
+}
+
+template <typename CONTAINER>
+pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, size_t length) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
+    return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(pmas, paddr, length));
+}
+
+template <typename CONTAINER>
+const pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, size_t length) const {
+    for (const auto &p : pmas) {
+        const auto &pma = deref(p);
         // Stop at first empty PMA
         if (pma.get_length() == 0) {
             return pma;
@@ -471,8 +500,19 @@ const pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) const {
             return pma;
         }
     }
+
     // Last PMA is always the empty range
-    return m_s.pmas.back();
+    return deref(pmas.back());
+}
+
+template <typename T>
+static inline T &deref(T &t) {
+    return t;
+}
+
+template <typename T>
+static inline T &deref(T *t) {
+    return *t;
 }
 
 void machine::store_pmas(const machine_config &c, const std::string &dir) const {
@@ -490,6 +530,11 @@ void machine::store_pmas(const machine_config &c, const std::string &dir) const 
         store_memory_pma(find_pma_entry<uint64_t>(r.input_metadata.start), dir);
         store_memory_pma(find_pma_entry<uint64_t>(r.voucher_hashes.start), dir);
         store_memory_pma(find_pma_entry<uint64_t>(r.notice_hashes.start), dir);
+    }
+    for (const auto &pma : m_uarch.get_state().pmas) {
+        if (pma.get_istart_M()) {
+            store_memory_pma(pma, dir);
+        }
     }
 }
 
@@ -518,6 +563,10 @@ void machine::store(const std::string &dir) {
 
 // NOLINTNEXTLINE(modernize-use-equals-default)
 machine::~machine() {
+    // Cleanup TTY if console input was enabled
+    if (m_c.htif.console_getchar) {
+        tty_finalize();
+    }
 #ifdef DUMP_HIST
     (void) fprintf(stderr, "\nInstruction Histogram:\n");
     for (auto v : m_s.insn_hist) {
@@ -921,6 +970,10 @@ uint64_t machine::read_csr(csr r) const {
             return read_htif_iconsole();
         case csr::htif_iyield:
             return read_htif_iyield();
+        case csr::uarch_cycle:
+            return read_uarch_cycle();
+        case csr::uarch_pc:
+            return read_uarch_pc();
         default:
             throw std::invalid_argument{"unknown CSR"};
             return 0; // never reached
@@ -993,6 +1046,10 @@ void machine::write_csr(csr w, uint64_t val) {
             return write_htif_iconsole(val);
         case csr::htif_iyield:
             return write_htif_iyield(val);
+        case csr::uarch_cycle:
+            return write_uarch_cycle(val);
+        case csr::uarch_pc:
+            return write_uarch_pc(val);
         case csr::mvendorid:
             [[fallthrough]];
         case csr::marchid:
@@ -1217,10 +1274,10 @@ bool machine::update_merkle_tree(void) const {
 
     // Now go over all PMAs and updating the Merkle tree
     m_t.begin_update();
-    for (auto &pma : m_s.pmas) {
-        auto peek = pma.get_peek();
+    for (const auto &pma : m_pmas) {
+        auto peek = pma->get_peek();
         // Each PMA has a number of pages
-        auto pages_in_range = (pma.get_length() + PMA_PAGE_SIZE - 1) / PMA_PAGE_SIZE;
+        auto pages_in_range = (pma->get_length() + PMA_PAGE_SIZE - 1) / PMA_PAGE_SIZE;
         // For each PMA, we launch as many threads (n) as defined on concurrency
         // runtime config or as the hardware supports.
         const uint64_t n = get_task_concurrency(m_r.concurrency.update_merkle_tree);
@@ -1243,15 +1300,15 @@ bool machine::update_merkle_tree(void) const {
                     // Thread j is responsible for page i if i % n == j.
                     for (uint64_t i = j; i < pages_in_range; i += n) {
                         uint64_t page_start_in_range = i * PMA_PAGE_SIZE;
-                        uint64_t page_address = pma.get_start() + page_start_in_range;
+                        uint64_t page_address = pma->get_start() + page_start_in_range;
                         const unsigned char *page_data = nullptr;
                         // Skip any clean pages
-                        if (!pma.is_page_marked_dirty(page_start_in_range)) {
+                        if (!pma->is_page_marked_dirty(page_start_in_range)) {
                             continue;
                         }
                         // If the peek failed, or if it returned a page for update but
                         // we failed updating it, the entire process failed
-                        if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
+                        if (!peek(*pma, *this, page_start_in_range, &page_data, scratch.get())) {
                             return false;
                         }
                         if (page_data) {
@@ -1280,7 +1337,7 @@ bool machine::update_merkle_tree(void) const {
             return false;
         }
         // Otherwise, mark all pages in PMA as clean and move on to next
-        pma.mark_pages_clean();
+        pma->mark_pages_clean();
     }
     // std::cerr << "page updates done in " << now()-begin << "s\n";
     // begin = now();
@@ -1294,7 +1351,7 @@ bool machine::update_merkle_tree_page(uint64_t address) {
         "PMA and machine_merkle_tree page sizes must match");
     // Align address to begining of page
     address &= ~(PMA_PAGE_SIZE - 1);
-    pma_entry &pma = find_pma_entry<uint64_t>(address);
+    pma_entry &pma = find_pma_entry(m_pmas, address, sizeof(uint64_t));
     uint64_t page_start_in_range = address - pma.get_start();
     machine_merkle_tree::hasher_type h;
     auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
@@ -1414,10 +1471,8 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
 }
 
 void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length) const {
-    const pma_entry &pma = find_pma_entry(address, length);
-    if (pma.get_istart_E()) {
-        return m_uarch.read_memory(address, data, length);
-    } else if (pma.get_istart_M()) {
+    const pma_entry &pma = find_pma_entry(m_pmas, address, length);
+    if (pma.get_istart_M()) {
         memcpy(data, pma.get_memory().get_host_memory() + (address - pma.get_start()), length);
         return;
     }
@@ -1509,8 +1564,7 @@ bool machine::read_word(uint64_t word_address, uint64_t &word_value) const {
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 uint64_t machine::read_uarch_x(int i) const {
-    (void) i;
-    return 0; // stub untill uarch is added
+    return m_uarch.read_x(i);
 }
 
 void machine::write_uarch_x(int i, uint64_t val) {
@@ -1534,8 +1588,12 @@ void machine::write_uarch_cycle(uint64_t val) {
     return m_uarch.write_cycle(val);
 }
 
-void machine::poll_htif_console(uint64_t wait) {
-    m_h.poll_console(wait);
+uint64_t machine::read_uarch_rom_length(void) const {
+    return m_uarch.read_rom_length();
+}
+
+uint64_t machine::read_uarch_ram_length(void) const {
+    return m_uarch.read_ram_length();
 }
 
 void machine::run_inner_loop(uint64_t mcycle_end) {

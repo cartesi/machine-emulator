@@ -129,6 +129,8 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_HTIF_IHALT,
     CM_PROC_HTIF_ICONSOLE,
     CM_PROC_HTIF_IYIELD,
+    CM_PROC_UARCH_PC,
+    CM_PROC_UARCH_CYCLE,
     CM_PROC_UNKNOWN
 } CM_PROC_CSR;
 

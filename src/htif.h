@@ -17,12 +17,10 @@
 #ifndef HTIF_H
 #define HTIF_H
 
+#include "device-driver.h"
 #include <array>
 #include <cstdint>
 #include <htif-defines.h>
-
-#include "device-driver.h"
-#include "tty.h"
 
 /// \file
 /// \brief Host-Target interface device.
@@ -73,11 +71,6 @@ static constexpr uint64_t HTIF_REPLACE_DATA(uint64_t reg, uint64_t data) {
     return (reg & (~HTIF_DATA_MASK)) | ((data << HTIF_DATA_SHIFT) & HTIF_DATA_MASK);
 }
 
-/// \brief HTIF constants
-enum HTIF_constants {
-    HTIF_CONSOLE_BUF_SIZE = 1024 ///< Number of characters in console input buffer
-};
-
 /// \brief HTIF devices
 enum HTIF_devices : uint64_t {
     HTIF_DEVICE_HALT = HTIF_DEVICE_HALT_DEF,       ///< Used to halt machine
@@ -104,66 +97,19 @@ enum HTIF_yield_reason : uint64_t {
     HTIF_YIELD_REASON_TX_REPORT = HTIF_YIELD_REASON_TX_REPORT_DEF,
     HTIF_YIELD_REASON_TX_EXCEPTION = HTIF_YIELD_REASON_TX_EXCEPTION_DEF,
 };
-
-/// \brief Host-Target interface implementation
-class htif final {
-
-    bool m_console_getchar;                        ///< Provide console getchar.
-    std::array<char, HTIF_CONSOLE_BUF_SIZE> m_buf; ///< Console buffer.
-    ssize_t m_buf_pos;                             ///< Next character in buffer.
-    ssize_t m_buf_len;                             ///< Last character in buffer.
-
-public:
-    /// \brief No default constructor
-    htif(void) = delete;
-    /// \brief No copy constructor
-    htif(const htif &) = delete;
-    /// \brief No move constructor
-    htif(htif &&) = delete;
-    /// \brief No copy assignment
-    htif &operator=(const htif &) = delete;
-    /// \brief No move assignment
-    htif &operator=(htif &&) = delete;
-
-    /// \brief Constructor
-    /// \param h HTIF device configuration.
-    htif(bool console_getchar);
-
-    /// \brief Destructor
-    ~htif();
-
-    /// \brief Checks if there is input available from console.
-    void poll_console(uint64_t wait);
-
-    /// \brief Mapping between CSRs and their relative addresses in HTIF memory
-    enum class csr {
-        tohost = UINT64_C(0x0),
-        fromhost = UINT64_C(0x8),
-        ihalt = UINT64_C(0x10),
-        iconsole = UINT64_C(0x18),
-        iyield = UINT64_C(0x20)
-    };
-
-    /// \brief Obtains the relative address of a CSR in HTIF memory.
-    /// \param reg CSR name.
-    /// \returns The address.
-    static uint64_t get_csr_rel_addr(csr reg);
-
-    /// \brief Gets the next available console character
-    /// \returns The character, or 0 if none are available.
-    int console_getchar(void);
-
-    /// \brief Writes a character to the console
-    /// \param ch The character
-    static void console_putchar(int ch);
-
-private:
-    /// \brief Initializes console.
-    static void init_console(void);
-
-    /// \brief Closes console.
-    static void end_console(void);
+/// \brief Mapping between CSRs and their relative addresses in HTIF memory
+enum class htif_csr {
+    tohost = UINT64_C(0x0),
+    fromhost = UINT64_C(0x8),
+    ihalt = UINT64_C(0x10),
+    iconsole = UINT64_C(0x18),
+    iyield = UINT64_C(0x20)
 };
+
+/// \brief Obtains the relative address of a CSR in HTIF memory.
+/// \param reg CSR name.
+/// \returns The address.
+uint64_t htif_get_csr_rel_addr(htif_csr reg);
 
 } // namespace cartesi
 

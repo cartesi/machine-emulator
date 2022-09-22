@@ -14,18 +14,26 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#ifndef HTIF_FACTORY_H
-#define HTIF_FACTORY_H
+#define MICROARCHITECTURE 1
 
-#include "htif.h"
-#include "machine-config.h"
-#include "pma.h"
+#include "interpret.h"
+#include "uarch-machine-state-access.h"
+#include "uarch-runtime.h"
+#include <cinttypes>
 
-namespace cartesi {
+using namespace cartesi;
 
-/// \brief Creates a PMA entry for the HTIF device
-pma_entry make_htif_pma_entry(uint64_t start, uint64_t length);
-
-} // namespace cartesi
-
-#endif
+extern "C" void uarch_run() {
+    uarch_machine_state_access a;
+    // We want to advance the cartesi machine to the next mcycle
+    uint64_t mcycle_end = a.read_mcycle() + 1;
+    for (;;) {
+        if (a.read_iflags_H() || a.read_iflags_Y()) {
+            break;
+        }
+        interpret(a, mcycle_end);
+        if (a.read_mcycle() >= mcycle_end) {
+            break;
+        }
+    }
+}

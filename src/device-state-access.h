@@ -24,7 +24,6 @@
 
 #include "i-device-state-access.h"
 #include "i-state-access.h"
-#include "machine.h"
 
 namespace cartesi {
 
@@ -84,19 +83,19 @@ private:
     void do_set_iflags_H(void) override {
         m_a.set_iflags_H();
         // Tell inner loop H has been set, so it must break out
-        m_a.set_brk();
+        m_a.set_brkflag();
     }
 
     void do_set_iflags_Y(void) override {
         m_a.set_iflags_Y();
         // Tell inner loop Y has been set, so it must break out
-        m_a.set_brk();
+        m_a.set_brkflag();
     }
 
     void do_set_iflags_X(void) override {
         m_a.set_iflags_X();
         // Tell inner loop X has been set, so it must break out
-        m_a.set_brk();
+        m_a.set_brkflag();
     }
 
     uint64_t do_read_clint_mtimecmp(void) override {

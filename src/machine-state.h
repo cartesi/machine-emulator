@@ -125,12 +125,12 @@ struct machine_state {
 #endif
 
     /// \brief Sets the value of the brk flag.
-    void set_brk(void) {
+    void set_brkflag(void) {
         brk = true;
     }
 
     /// \brief Read the value of the brk flag.
-    bool get_brk(void) const {
+    bool get_brkflag(void) const {
         return brk;
     }
 

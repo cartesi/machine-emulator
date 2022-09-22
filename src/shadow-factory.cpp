@@ -69,6 +69,13 @@ static bool shadow_peek(const pma_entry &pma, const machine &m, uint64_t page_of
     aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::scounteren), m.read_scounteren());
     aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::ilrsc), m.read_ilrsc());
     aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::iflags), m.read_iflags());
+    aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::brkflag), m.get_state().get_brk());
+    aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::uarch_cycle), m.read_uarch_cycle());
+    aliased_aligned_write<uint64_t>(shadow + shadow_get_csr_rel_addr(shadow_csr::uarch_pc), m.read_uarch_pc());
+    // microarchitecture's general-purpose registers
+    for (int i = 0; i < UARCH_X_REG_COUNT; ++i) {
+        aliased_aligned_write<uint64_t>(shadow + shadow_get_uarch_x_rel_addr(i), m.read_uarch_x(i));
+    }
     // Copy PMAs
     int i = 0;
     for (const auto &pma : m.get_pmas()) {

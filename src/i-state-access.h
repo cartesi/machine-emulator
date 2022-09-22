@@ -547,9 +547,8 @@ public:
     }
 
     /// \brief Polls console for pending input.
-    /// \param wait Wait timeout in microsecond.
-    void poll_htif_console(uint64_t wait) {
-        return derived().do_poll_htif_console(wait);
+    void poll_console(void) {
+        return derived().do_poll_console();
     }
 
     /// \brief Reads PMA at a given index.
@@ -619,6 +618,10 @@ public:
         return derived().do_get_host_memory(pma);
     }
 
+    PMA_ENTRY_TYPE &get_pma_entry(int index) {
+        return derived().do_get_pma_entry(index);
+    }
+
     auto read_device(PMA_ENTRY_TYPE &pma, uint64_t offset, uint64_t *pval, int log2_size) {
         return derived().do_read_device(pma, offset, pval, log2_size);
     }
@@ -627,12 +630,20 @@ public:
         return derived().do_write_device(pma, offset, pval, log2_size);
     }
 
-    auto set_brk(void) {
-        return derived().do_set_brk();
+    auto read_uarch_rom_length() {
+        return derived().do_read_uarch_rom_length();
     }
 
-    auto get_brk(void) const {
-        return derived().do_get_brk();
+    auto read_uarch_ram_length() {
+        return derived().do_read_uarch_ram_length();
+    }
+
+    auto set_brkflag(void) {
+        return derived().do_set_brkflag();
+    }
+
+    auto get_brkflag(void) const {
+        return derived().do_get_brkflag();
     }
 
     auto or_brk_with_mip_mie(void) {

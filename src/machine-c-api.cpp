@@ -1144,6 +1144,25 @@ IMPL_MACHINE_READ_WRITE(stval)
 IMPL_MACHINE_READ_WRITE(satp)
 IMPL_MACHINE_READ_WRITE(scounteren)
 IMPL_MACHINE_READ_WRITE(senvcfg)
+IMPL_MACHINE_READ_WRITE(hstatus)
+IMPL_MACHINE_READ_WRITE(hideleg)
+IMPL_MACHINE_READ_WRITE(hedeleg)
+IMPL_MACHINE_READ_WRITE(hip)
+IMPL_MACHINE_READ_WRITE(hvip)
+IMPL_MACHINE_READ_WRITE(hie)
+IMPL_MACHINE_READ_WRITE(hgatp)
+IMPL_MACHINE_READ_WRITE(henvcfg)
+IMPL_MACHINE_READ_WRITE(htimedelta)
+IMPL_MACHINE_READ_WRITE(htval)
+IMPL_MACHINE_READ_WRITE(vsepc)
+IMPL_MACHINE_READ_WRITE(vsstatus)
+IMPL_MACHINE_READ_WRITE(vscause)
+IMPL_MACHINE_READ_WRITE(vstval)
+IMPL_MACHINE_READ_WRITE(vstvec)
+IMPL_MACHINE_READ_WRITE(vsscratch)
+IMPL_MACHINE_READ_WRITE(vsatp)
+IMPL_MACHINE_READ_WRITE(vsie)
+IMPL_MACHINE_READ_WRITE(vsip)
 IMPL_MACHINE_READ_WRITE(ilrsc)
 IMPL_MACHINE_READ_WRITE(iflags)
 IMPL_MACHINE_READ_WRITE(htif_tohost)
@@ -1161,8 +1180,8 @@ IMPL_MACHINE_READ_WRITE(uarch_pc)
 IMPL_MACHINE_READ(uarch_ram_length)
 // clang-format-on
 
-uint64_t cm_packed_iflags(int PRV, int X, int Y, int H) {
-    return cartesi::machine_state::packed_iflags(PRV, X, Y, H);
+uint64_t cm_packed_iflags(int VRT, int PRV, int X, int Y, int H) {
+    return cartesi::machine_state::packed_iflags(VRT, PRV, X, Y, H);
 }
 
 int cm_read_iflags_Y(const cm_machine *m, bool *val, char **err_msg) try {

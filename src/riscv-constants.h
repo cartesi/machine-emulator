@@ -41,21 +41,31 @@ enum REG_COUNT { X_REG_COUNT = 32, F_REG_COUNT = 32, UARCH_X_REG_COUNT = 32 };
 /// \brief MIP shifts
 enum MIP_shifts {
     MIP_SSIP_SHIFT = 1,
+    MIP_VSSIP_SHIFT = 2,
     MIP_MSIP_SHIFT = 3,
     MIP_STIP_SHIFT = 5,
+    MIP_VSTIP_SHIFT = 6,
     MIP_MTIP_SHIFT = 7,
     MIP_SEIP_SHIFT = 9,
-    MIP_MEIP_SHIFT = 11
+    MIP_VSEIP_SHIFT = 10,
+    MIP_MEIP_SHIFT = 11,
+    MIP_SGEIP_SHIFT = 12
 };
 
 /// \brief MIP masks
 enum MIP_masks : uint64_t {
-    MIP_SSIP_MASK = UINT64_C(1) << MIP_SSIP_SHIFT, ///< Supervisor software interrupt
-    MIP_MSIP_MASK = UINT64_C(1) << MIP_MSIP_SHIFT, ///< Machine software interrupt
-    MIP_STIP_MASK = UINT64_C(1) << MIP_STIP_SHIFT, ///< Supervisor timer interrupt
-    MIP_MTIP_MASK = UINT64_C(1) << MIP_MTIP_SHIFT, ///< Machine timer interrupt
-    MIP_SEIP_MASK = UINT64_C(1) << MIP_SEIP_SHIFT, ///< Supervisor external interrupt
-    MIP_MEIP_MASK = UINT64_C(1) << MIP_MEIP_SHIFT  ///< Machine external interrupt
+    MIP_SSIP_MASK = UINT64_C(1) << MIP_SSIP_SHIFT,   ///< Supervisor software interrupt
+    MIP_VSSIP_MASK = UINT64_C(1) << MIP_VSSIP_SHIFT, ///< VS-level software interrupt
+    MIP_MSIP_MASK = UINT64_C(1) << MIP_MSIP_SHIFT,   ///< Machine software interrupt
+    MIP_STIP_MASK = UINT64_C(1) << MIP_STIP_SHIFT,   ///< Supervisor timer interrupt
+    MIP_VSTIP_MASK = UINT64_C(1) << MIP_VSTIP_SHIFT, ///< VS-level timer interrupt
+    MIP_MTIP_MASK = UINT64_C(1) << MIP_MTIP_SHIFT,   ///< Machine timer interrupt
+    MIP_SEIP_MASK = UINT64_C(1) << MIP_SEIP_SHIFT,   ///< Supervisor external interrupt
+    MIP_VSEIP_MASK = UINT64_C(1) << MIP_VSEIP_SHIFT, ///< VS-level external interrupt
+    MIP_MEIP_MASK = UINT64_C(1) << MIP_MEIP_SHIFT,   ///< Machine external interrupt
+    MIP_SGEIP_MASK =
+        UINT64_C(1) << MIP_SGEIP_SHIFT, ///< Interrupt-pending bit for guest external interrupts at HS-level
+    MIP_VS_MASK = MIP_VSEIP_MASK | MIP_VSTIP_MASK | MIP_VSSIP_MASK, ///< VS-mode masks
 };
 
 /// \brief mcause for exceptions
@@ -68,13 +78,18 @@ enum MCAUSE_constants : uint64_t {
     MCAUSE_LOAD_ACCESS_FAULT = 0x5,            ///< Load access fault
     MCAUSE_STORE_AMO_ADDRESS_MISALIGNED = 0x6, ///< Store/AMO address misaligned
     MCAUSE_STORE_AMO_ACCESS_FAULT = 0x7,       ///< Store/AMO access fault
-    MCAUSE_ECALL_BASE = 0x8,                   ///< Environment call (+0: from U-mode, +1: from S-mode, +3: from M-mode)
-    MCAUSE_USER_ECALL = 0x8,                   ///< Environment call from U-mode
-    MCAUSE_SUPERVISOR_ECALL = 0x9,             ///< Environment call from S-mode
-    MCAUSE_MACHINE_ECALL = 0xb,                ///< Environment call from M-mode
-    MCAUSE_FETCH_PAGE_FAULT = 0xc,             ///< Instruction page fault
-    MCAUSE_LOAD_PAGE_FAULT = 0xd,              ///< Load page fault
-    MCAUSE_STORE_AMO_PAGE_FAULT = 0xf,         ///< Store/AMO page fault
+    MCAUSE_ECALL_BASE = 0x8,           ///< Environment call (+0: U/VU-mode, +1: HS-mode, +2: VS-mode, +3: M-mode)
+    MCAUSE_USER_ECALL = 0x8,           ///< Environment call from U-mode
+    MCAUSE_HSUPERVISOR_ECALL = 0x9,    ///< Environment call from HS-mode
+    MCAUSE_VSUPERVISOR_ECALL = 0xa,    ///< Environment call from VS-mode
+    MCAUSE_MACHINE_ECALL = 0xb,        ///< Environment call from M-mode
+    MCAUSE_FETCH_PAGE_FAULT = 0xc,     ///< Instruction page fault
+    MCAUSE_LOAD_PAGE_FAULT = 0xd,      ///< Load page fault
+    MCAUSE_STORE_AMO_PAGE_FAULT = 0xf, ///< Store/AMO page fault
+    MCAUSE_INSTRUCTION_GUEST_PAGE_FAULT = 0x14, ///< Instruction guest-page fault
+    MCAUSE_LOAD_GUEST_PAGE_FAULT = 0x15,        ///< Load guest-page fault
+    MCAUSE_VIRTUAL_INSTRUCTION = 0x16,          ///< Virtual instruction
+    MCAUSE_STORE_AMO_GUEST_PAGE_FAULT = 0x17,   ///< Store/AMO guest-page fault
 
     MCAUSE_INTERRUPT_FLAG = UINT64_C(1) << (XLEN - 1) ///< Interrupt flag
 };
@@ -90,28 +105,43 @@ enum MCAUSE_masks : uint64_t {
     MCAUSE_STORE_AMO_ADDRESS_MISALIGNED_MASK = UINT64_C(1) << MCAUSE_STORE_AMO_ADDRESS_MISALIGNED,
     MCAUSE_STORE_AMO_ACCESS_FAULT_MASK = UINT64_C(1) << MCAUSE_STORE_AMO_ACCESS_FAULT,
     MCAUSE_USER_ECALL_MASK = UINT64_C(1) << MCAUSE_USER_ECALL,
-    MCAUSE_SUPERVISOR_ECALL_MASK = UINT64_C(1) << MCAUSE_SUPERVISOR_ECALL,
+    MCAUSE_HSUPERVISOR_ECALL_MASK = UINT64_C(1) << MCAUSE_HSUPERVISOR_ECALL,
+    MCAUSE_VSUPERVISOR_ECALL_MASK = UINT64_C(1) << MCAUSE_VSUPERVISOR_ECALL,
     MCAUSE_MACHINE_ECALL_MASK = UINT64_C(1) << MCAUSE_MACHINE_ECALL,
     MCAUSE_FETCH_PAGE_FAULT_MASK = UINT64_C(1) << MCAUSE_FETCH_PAGE_FAULT,
     MCAUSE_LOAD_PAGE_FAULT_MASK = UINT64_C(1) << MCAUSE_LOAD_PAGE_FAULT,
-    MCAUSE_STORE_AMO_PAGE_FAULT_MASK = UINT64_C(1) << MCAUSE_STORE_AMO_PAGE_FAULT
+    MCAUSE_STORE_AMO_PAGE_FAULT_MASK = UINT64_C(1) << MCAUSE_STORE_AMO_PAGE_FAULT,
+    MCAUSE_INSTRUCTION_GUEST_PAGE_FAULT_MASK = UINT64_C(1) << MCAUSE_INSTRUCTION_GUEST_PAGE_FAULT,
+    MCAUSE_LOAD_GUEST_PAGE_FAULT_MASK = UINT64_C(1) << MCAUSE_LOAD_GUEST_PAGE_FAULT,
+    MCAUSE_VIRTUAL_INSTRUCTION_MASK = UINT64_C(1) << MCAUSE_VIRTUAL_INSTRUCTION,
+    MCAUSE_STORE_AMO_GUEST_PAGE_FAULT_MASK = UINT64_C(1) << MCAUSE_STORE_AMO_GUEST_PAGE_FAULT,
 };
 
-/// \brief medeleg read/write masks
-enum MEDELEG_RW_masks : uint64_t {
-    MEDELEG_W_MASK = MCAUSE_INSN_ADDRESS_MISALIGNED_MASK | MCAUSE_INSN_ACCESS_FAULT_MASK | MCAUSE_ILLEGAL_INSN_MASK |
-        MCAUSE_BREAKPOINT_MASK | MCAUSE_LOAD_ADDRESS_MISALIGNED_MASK | MCAUSE_LOAD_ACCESS_FAULT_MASK |
-        MCAUSE_STORE_AMO_ADDRESS_MISALIGNED_MASK | MCAUSE_STORE_AMO_ACCESS_FAULT_MASK | MCAUSE_USER_ECALL_MASK |
-        MCAUSE_SUPERVISOR_ECALL_MASK | MCAUSE_FETCH_PAGE_FAULT_MASK | MCAUSE_LOAD_PAGE_FAULT_MASK |
-        MCAUSE_STORE_AMO_PAGE_FAULT_MASK
+/// \ Nominal privilege mode constants
+enum NOM_constants : uint8_t {
+    NOM_U = 0,    ///< User mode
+    NOM_S = 1,    ///< Supervisor mode
+    NOM_RSVD = 2, ///< Reserved
+    NOM_M = 3     ///< Machine mode
 };
 
-/// \brief Privilege modes
-enum PRV_constants : uint8_t {
-    PRV_U = 0,  ///< User mode
-    PRV_S = 1,  ///< Supervisor mode
-    PRV_HS = 2, ///< Hypervisor-extended supervisor mode
-    PRV_M = 3   ///< Machine mode
+/// \brief Access mode shifts
+enum MODE_shifts : uint8_t { ACCESS_MODE_NOM_SHIFT = 0, ACCESS_MODE_V_SHIFT = 2 };
+
+/// \brief Access mode masks
+enum MODE_masks : uint8_t {
+    ACCESS_MODE_NOM_MASK = 3 << ACCESS_MODE_NOM_SHIFT,
+    ACCESS_MODE_V_MASK = 1 << ACCESS_MODE_V_SHIFT
+};
+
+/// \brief Access type constants
+enum ACCESS_TYPE_constants : uint8_t { ACCESS_TYPE_FETCH = 0, ACCESS_TYPE_STORE = 1, ACCESS_TYPE_LOAD = 2 };
+
+/// \brief Translation constants
+enum TRANSLATION_constants : uint8_t {
+    TRANSLATION_HS = 1, ///< one-stage address translation: supervisor virtual -> supervisor physical
+    TRANSLATION_G = 2,  ///< two-stage address translation: guest physical -> supervisor physical
+    TRANSLATION_VS = 3  ///< two-stage address translation: guest virtual -> guest physical
 };
 
 /// \brief misa shifts
@@ -124,6 +154,7 @@ enum MISA_shifts {
     MISA_EXT_F_SHIFT = ('F' - 'A'),
     MISA_EXT_D_SHIFT = ('D' - 'A'),
     MISA_EXT_C_SHIFT = ('C' - 'A'),
+    MISA_EXT_H_SHIFT = ('H' - 'A'),
 
     MISA_MXL_SHIFT = (XLEN - 2)
 };
@@ -138,6 +169,7 @@ enum MISA_masks : uint64_t {
     MISA_EXT_F_MASK = UINT64_C(1) << MISA_EXT_F_SHIFT, ///< Single-precision floating-point extension
     MISA_EXT_D_MASK = UINT64_C(1) << MISA_EXT_D_SHIFT, ///< Double-precision floating-point extension
     MISA_EXT_C_MASK = UINT64_C(1) << MISA_EXT_C_SHIFT, ///< Compressed extension
+    MISA_EXT_H_MASK = UINT64_C(1) << MISA_EXT_H_SHIFT, ///< Hypervisor extension
 };
 
 /// \brief misa constants
@@ -166,6 +198,8 @@ enum MSTATUS_shifts {
     MSTATUS_SXL_SHIFT = 34,
     MSTATUS_SBE_SHIFT = 36,
     MSTATUS_MBE_SHIFT = 37,
+    MSTATUS_GVA_SHIFT = 38,
+    MSTATUS_MPV_SHIFT = 39,
     MSTATUS_SD_SHIFT = XLEN - 1
 };
 
@@ -192,23 +226,28 @@ enum MSTATUS_masks : uint64_t {
     MSTATUS_SXL_MASK = UINT64_C(3) << MSTATUS_SXL_SHIFT,
     MSTATUS_SBE_MASK = UINT64_C(1) << MSTATUS_SBE_SHIFT,
     MSTATUS_MBE_MASK = UINT64_C(1) << MSTATUS_MBE_SHIFT,
-    MSTATUS_SD_MASK = UINT64_C(1) << MSTATUS_SD_SHIFT,
 
     MSTATUS_FS_OFF = UINT64_C(0) << MSTATUS_FS_SHIFT,
     MSTATUS_FS_INITIAL = UINT64_C(1) << MSTATUS_FS_SHIFT,
     MSTATUS_FS_CLEAN = UINT64_C(2) << MSTATUS_FS_SHIFT,
-    MSTATUS_FS_DIRTY = UINT64_C(3) << MSTATUS_FS_SHIFT
+    MSTATUS_FS_DIRTY = UINT64_C(3) << MSTATUS_FS_SHIFT,
+
+    MSTATUS_GVA_MASK = UINT64_C(1) << MSTATUS_GVA_SHIFT,
+    MSTATUS_MPV_MASK = UINT64_C(1) << MSTATUS_MPV_SHIFT,
+    MSTATUS_SD_MASK = UINT64_C(1) << MSTATUS_SD_SHIFT
 };
 
 /// \brief mstatus read-write masks
 enum MSTATUS_RW_masks : uint64_t {
     MSTATUS_W_MASK = (MSTATUS_SIE_MASK | MSTATUS_MIE_MASK | MSTATUS_SPIE_MASK | MSTATUS_MPIE_MASK | MSTATUS_SPP_MASK |
         MSTATUS_MPP_MASK | MSTATUS_FS_MASK | MSTATUS_MPRV_MASK | MSTATUS_SUM_MASK | MSTATUS_MXR_MASK |
-        MSTATUS_TVM_MASK | MSTATUS_TW_MASK | MSTATUS_TSR_MASK), ///< Write mask for mstatus
-    MSTATUS_R_MASK = (MSTATUS_SIE_MASK | MSTATUS_MIE_MASK | MSTATUS_SPIE_MASK | MSTATUS_UBE_MASK | MSTATUS_MPIE_MASK |
-        MSTATUS_SPP_MASK | MSTATUS_MPP_MASK | MSTATUS_FS_MASK | MSTATUS_VS_MASK | MSTATUS_MPRV_MASK | MSTATUS_SUM_MASK |
-        MSTATUS_MXR_MASK | MSTATUS_TVM_MASK | MSTATUS_TW_MASK | MSTATUS_TSR_MASK | MSTATUS_UXL_MASK | MSTATUS_SXL_MASK |
-        MSTATUS_SBE_MASK | MSTATUS_MBE_MASK | MSTATUS_SD_MASK) ///< Read mask for mstatus
+        MSTATUS_TVM_MASK | MSTATUS_TW_MASK | MSTATUS_TSR_MASK | MSTATUS_GVA_MASK |
+        MSTATUS_MPV_MASK), ///< Write mask for mstatus
+    MSTATUS_R_MASK = (MSTATUS_SIE_MASK | MSTATUS_MIE_MASK | MSTATUS_SPIE_MASK | MSTATUS_MPIE_MASK | MSTATUS_SPP_MASK |
+        MSTATUS_MPP_MASK | MSTATUS_FS_MASK | MSTATUS_VS_MASK | MSTATUS_MPRV_MASK | MSTATUS_SUM_MASK | MSTATUS_MXR_MASK |
+        MSTATUS_TVM_MASK | MSTATUS_TW_MASK | MSTATUS_TSR_MASK | MSTATUS_UXL_MASK | MSTATUS_SXL_MASK | MSTATUS_SBE_MASK |
+        MSTATUS_MBE_MASK | MSTATUS_SD_MASK | MSTATUS_GVA_MASK | MSTATUS_MPV_MASK | MSTATUS_UBE_MASK |
+        MSTATUS_XS_MASK) ///< Read mask for mstatus
 };
 
 /// \brief sstatus read/write masks
@@ -238,8 +277,112 @@ enum SATP_modes : uint64_t {
     SATP_MODE_SV57 = 10,
 };
 
+/// \brief masks that allow to check for zero bits in the incoming G-stage translation addresses
+enum SVX_zero_bits_masks : uint64_t {
+    SV39X4_ZERO_MASK = ~((UINT64_C(1) << 41) - 1),
+    SV48X4_ZERO_MASK = ~((UINT64_C(1) << 50) - 1),
+};
+
 /// \brief ASID masks
 enum ASID_masks : uint64_t { ASID_R_MASK = (UINT64_C(1) << ASIDLEN) - 1, ASID_MAX_MASK = (UINT64_C(1) << ASIDMAX) - 1 };
+
+/// \brief vsstatus read/write masks
+enum VSSTATUS_rw_masks : uint64_t {
+    VSSTATUS_W_MASK = (MSTATUS_SIE_MASK | MSTATUS_SPIE_MASK | MSTATUS_SPP_MASK | MSTATUS_FS_MASK | MSTATUS_SUM_MASK |
+        MSTATUS_MXR_MASK), ///< Write mask for vsstatus
+    VSSTATUS_R_MASK = (MSTATUS_SIE_MASK | MSTATUS_SPIE_MASK | MSTATUS_UBE_MASK | MSTATUS_SPP_MASK | MSTATUS_VS_MASK |
+        MSTATUS_FS_MASK | MSTATUS_XS_MASK | MSTATUS_SUM_MASK | MSTATUS_MXR_MASK | MSTATUS_UXL_MASK |
+        MSTATUS_SD_MASK) ///< Read mask for vsstatus
+};
+
+/// \brief hstatus shifts
+enum HSTATUS_shifts {
+    HSTATUS_VSBE_SHIFT = 5,
+    HSTATUS_GVA_SHIFT = 6,
+    HSTATUS_SPV_SHIFT = 7,
+    HSTATUS_SPVP_SHIFT = 8,
+    HSTATUS_HU_SHIFT = 9,
+    HSTATUS_VGEIN_SHIFT = 12,
+    HSTATUS_VTVM_SHIFT = 20,
+    HSTATUS_VTW_SHIFT = 21,
+    HSTATUS_VTSR_SHIFT = 22,
+    HSTATUS_VSXL_SHIFT = 32,
+};
+
+/// \brief hstatus masks
+enum HSTATUS_masks : uint64_t {
+    HSTATUS_VSBE_MASK = UINT64_C(1) << HSTATUS_VSBE_SHIFT,
+    HSTATUS_GVA_MASK = UINT64_C(1) << HSTATUS_GVA_SHIFT,
+    HSTATUS_SPV_MASK = UINT64_C(1) << HSTATUS_SPV_SHIFT,
+    HSTATUS_SPVP_MASK = UINT64_C(1) << HSTATUS_SPVP_SHIFT,
+    HSTATUS_HU_MASK = UINT64_C(1) << HSTATUS_HU_SHIFT,
+    HSTATUS_VGEIN_MASK = UINT64_C(63) << HSTATUS_VGEIN_SHIFT,
+    HSTATUS_VTVM_MASK = UINT64_C(1) << HSTATUS_VTVM_SHIFT,
+    HSTATUS_VTW_MASK = UINT64_C(1) << HSTATUS_VTW_SHIFT,
+    HSTATUS_VTSR_MASK = UINT64_C(1) << HSTATUS_VTSR_SHIFT,
+    HSTATUS_VSXL_MASK = UINT64_C(3) << HSTATUS_VSXL_SHIFT
+};
+
+/// \brief hstatus read/write masks
+enum HSTATUS_RW_masks : uint64_t {
+    HSTATUS_W_MASK = (HSTATUS_GVA_MASK | HSTATUS_SPV_MASK | HSTATUS_SPVP_MASK | HSTATUS_HU_MASK | HSTATUS_VTVM_MASK |
+        HSTATUS_VTW_MASK | HSTATUS_VTSR_MASK),
+    HSTATUS_R_MASK = (HSTATUS_VSBE_MASK | HSTATUS_GVA_MASK | HSTATUS_SPV_MASK | HSTATUS_SPVP_MASK | HSTATUS_HU_MASK |
+        HSTATUS_VGEIN_MASK | HSTATUS_VTVM_MASK | HSTATUS_VTW_MASK | HSTATUS_VTSR_MASK | HSTATUS_VSXL_MASK),
+};
+
+enum XIE_XIP_STANDARD_BITS_MASK : uint64_t { STANDARD_BITS_MASK = (UINT64_C(1) << 16) - 1 };
+
+/// \brief sip & sie read/write masks
+enum SIX_RW_masks : uint64_t {
+    SIE_RW_MASK = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK,
+    SIP_RW_MASK = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK,
+};
+
+/// \brief vsip & vsie read/write masks
+enum VSIX_RW_masks : uint64_t {
+    VSIE_RW_MASK = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK,
+    VSIP_RW_MASK = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK,
+};
+
+/// \brief mie & mip read/write masks
+enum MIX_RW_masks : uint64_t {
+    MIP_VIRTUAL_RW_MASK = VSIP_RW_MASK << 1,
+    MIE_VIRTUAL_RW_MASK = VSIE_RW_MASK << 1,
+    MIE_W_MASK = MIP_MSIP_MASK | MIP_MTIP_MASK | MIP_MEIP_MASK | MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK |
+        MIE_VIRTUAL_RW_MASK,
+    MIP_W_MASK = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK | MIP_VIRTUAL_RW_MASK,
+};
+
+/// \brief hie, hip & hvip read/write masks
+enum HIX_RW_masks : uint64_t {
+    HIX_MASK = MIP_VSEIP_MASK | MIP_VSTIP_MASK | MIP_VSSIP_MASK | MIP_SGEIP_MASK,
+    HIE_W_MASK = MIP_VSEIP_MASK | MIP_VSTIP_MASK | MIP_VSSIP_MASK | MIP_SGEIP_MASK,
+    HIE_R_MASK = MIP_VSEIP_MASK | MIP_VSTIP_MASK | MIP_VSSIP_MASK,
+    HIP_W_MASK = MIP_VSSIP_MASK,
+    HIP_R_MASK = MIP_VSEIP_MASK | MIP_VSTIP_MASK | MIP_VSSIP_MASK | MIP_SGEIP_MASK,
+    HVIP_RW_MASK = MIP_VSEIP_MASK | MIP_VSTIP_MASK | MIP_VSSIP_MASK,
+};
+
+/// \brief hideleg & hedeleg write masks
+enum HXDELEG_RW_masks : uint64_t {
+    HIDELEG_W_MASK = MIP_VSEIP_MASK | MIP_VSTIP_MASK | MIP_VSSIP_MASK,
+    HEDELEG_W_MASK = MCAUSE_INSN_ADDRESS_MISALIGNED_MASK | MCAUSE_INSN_ACCESS_FAULT_MASK | MCAUSE_ILLEGAL_INSN_MASK |
+        MCAUSE_BREAKPOINT_MASK | MCAUSE_LOAD_ADDRESS_MISALIGNED_MASK | MCAUSE_LOAD_ACCESS_FAULT_MASK |
+        MCAUSE_STORE_AMO_ADDRESS_MISALIGNED_MASK | MCAUSE_STORE_AMO_ACCESS_FAULT_MASK | MCAUSE_USER_ECALL_MASK |
+        MCAUSE_FETCH_PAGE_FAULT_MASK | MCAUSE_LOAD_PAGE_FAULT_MASK | MCAUSE_STORE_AMO_PAGE_FAULT_MASK,
+};
+
+/// \brief mideleg & medeleg write masks
+enum MXDELEG_RW_masks : uint64_t {
+    MIDELEG_W_MASK = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK,
+    MEDELEG_W_MASK = MCAUSE_INSN_ADDRESS_MISALIGNED_MASK | MCAUSE_INSN_ACCESS_FAULT_MASK | MCAUSE_ILLEGAL_INSN_MASK |
+        MCAUSE_BREAKPOINT_MASK | MCAUSE_LOAD_ADDRESS_MISALIGNED_MASK | MCAUSE_LOAD_ACCESS_FAULT_MASK |
+        MCAUSE_STORE_AMO_ADDRESS_MISALIGNED_MASK | MCAUSE_STORE_AMO_ACCESS_FAULT_MASK | MCAUSE_USER_ECALL_MASK |
+        MCAUSE_HSUPERVISOR_ECALL_MASK | MCAUSE_VSUPERVISOR_ECALL_MASK | MCAUSE_FETCH_PAGE_FAULT_MASK |
+        MCAUSE_LOAD_PAGE_FAULT_MASK | MCAUSE_STORE_AMO_PAGE_FAULT_MASK | MCAUSE_INSTRUCTION_GUEST_PAGE_FAULT_MASK |
+        MCAUSE_LOAD_GUEST_PAGE_FAULT_MASK | MCAUSE_VIRTUAL_INSTRUCTION_MASK | MCAUSE_STORE_AMO_GUEST_PAGE_FAULT_MASK,
+};
 
 /// \brief Page-table entry shifts
 enum PTE_shifts {
@@ -418,13 +561,20 @@ enum COUNTEREN_rw_masks : uint64_t {
 };
 
 /// \brief Cartesi-specific iflags shifts
-enum IFLAGS_shifts { IFLAGS_H_SHIFT = 0, IFLAGS_Y_SHIFT = 1, IFLAGS_X_SHIFT = 2, IFLAGS_PRV_SHIFT = 3 };
+enum IFLAGS_shifts {
+    IFLAGS_H_SHIFT = 0,
+    IFLAGS_Y_SHIFT = 1,
+    IFLAGS_X_SHIFT = 2,
+    IFLAGS_NOM_SHIFT = 3,
+    IFLAGS_V_SHIFT = 5
+};
 
 enum IFLAGS_masks : uint64_t {
     IFLAGS_H_MASK = UINT64_C(1) << IFLAGS_H_SHIFT,
     IFLAGS_Y_MASK = UINT64_C(1) << IFLAGS_Y_SHIFT,
     IFLAGS_X_MASK = UINT64_C(1) << IFLAGS_X_SHIFT,
-    IFLAGS_PRV_MASK = UINT64_C(3) << IFLAGS_PRV_SHIFT
+    IFLAGS_NOM_MASK = UINT64_C(3) << IFLAGS_NOM_SHIFT,
+    IFLAGS_V_MASK = UINT64_C(1) << IFLAGS_V_SHIFT,
 };
 
 /// \brief Initial values for Cartesi machines
@@ -451,7 +601,7 @@ enum CARTESI_init : uint64_t {
     MIE_INIT = UINT64_C(0),                                         ///< Initial value for mie
     MIP_INIT = UINT64_C(0),                                         ///< Initial value for mip
     MEDELEG_INIT = UINT64_C(0),                                     ///< Initial value for medeleg
-    MIDELEG_INIT = UINT64_C(0),                                     ///< Initial value for mideleg
+    MIDELEG_INIT = UINT64_C(0x444),                                 ///< Initial value for mideleg
     MCOUNTEREN_INIT = UINT64_C(0),                                  ///< Initial value for mcounteren
     STVEC_INIT = UINT64_C(0),                                       ///< Initial value for stvec
     SSCRATCH_INIT = UINT64_C(0),                                    ///< Initial value for sscratch
@@ -461,7 +611,7 @@ enum CARTESI_init : uint64_t {
     SATP_INIT = UINT64_C(0),                                        ///< Initial value for satp
     SCOUNTEREN_INIT = UINT64_C(0),                                  ///< Initial value for scounteren
     ILRSC_INIT = UINT64_C(-1),                                      ///< Initial value for ilrsc
-    IFLAGS_INIT = static_cast<uint64_t>(PRV_M) << IFLAGS_PRV_SHIFT, ///< Initial value for iflags
+    IFLAGS_INIT = static_cast<uint64_t>(NOM_M) << IFLAGS_NOM_SHIFT, ///< Initial value for iflags
     MTIMECMP_INIT = UINT64_C(0),                                    ///< Initial value for mtimecmp
     FROMHOST_INIT = UINT64_C(0),                                    ///< Initial value for fromhost
     TOHOST_INIT = UINT64_C(0),                                      ///< Initial value for tohost
@@ -469,6 +619,25 @@ enum CARTESI_init : uint64_t {
     SENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for senvcfg
     UARCH_PC_INIT = UINT64_C(0x70000000),                           ///< Initial value for microarchitecture pc
     UARCH_CYCLE_INIT = UINT64_C(0),                                 ///< Initial value for microarchitecture cycle
+    HSTATUS_INIT = (MISA_MXL_VALUE << HSTATUS_VSXL_SHIFT),          ///< Initial value for hstatus
+    HIDELEG_INIT = UINT64_C(0),                                     ///< Initial value for hideleg
+    HEDELEG_INIT = UINT64_C(0),                                     ///< Initial value for hedeleg
+    HIP_INIT = UINT64_C(0),                                         ///< Initial value for hip
+    HVIP_INIT = UINT64_C(0),                                        ///< Initial value for hvip
+    HIE_INIT = UINT64_C(0),                                         ///< Initial value for hie
+    HGATP_INIT = UINT64_C(0),                                       ///< Initial value for hgatp
+    HENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for henvcfg
+    HTIMEDELTA_INIT = UINT64_C(0),                                  ///< Initial value for htimedelta
+    HTVAL_INIT = UINT64_C(0),                                       ///< Initial value for htval
+    VSEPC_INIT = UINT64_C(0),                                       ///< Initial value for vsepc
+    VSSTATUS_INIT = (MISA_MXL_VALUE << MSTATUS_UXL_SHIFT),          ///< Initial value for vsstatus
+    VSCAUSE_INIT = UINT64_C(0),                                     ///< Initial value for vscause
+    VSTVAL_INIT = UINT64_C(0),                                      ///< Initial value for vstval
+    VSTVEC_INIT = UINT64_C(0),                                      ///< Initial value for vstvec
+    VSSCRATCH_INIT = UINT64_C(0),                                   ///< Initial value for vsscratch
+    VSATP_INIT = UINT64_C(0),                                       ///< Initial value for vsatp
+    VSIP_INIT = UINT64_C(0),                                        ///< Initial value for vsip
+    VSIE_INIT = UINT64_C(0),                                        ///< Initial value for vsie
     MHARTID_INIT = UINT64_C(0),                                     ///< Initial mhartid
     FDTADDR_INIT = PMA_DTB_START,                                   ///< Initial FDT address
 
@@ -555,6 +724,8 @@ enum class CSR_address : uint32_t {
     mcause = 0x342,
     mtval = 0x343,
     mip = 0x344,
+    mtinst = 0x34a,
+    mtval2 = 0x34b,
 
     mcycle = 0xb00,
     minstret = 0xb02,
@@ -618,6 +789,33 @@ enum class CSR_address : uint32_t {
     mhpmevent29 = 0x33d,
     mhpmevent30 = 0x33e,
     mhpmevent31 = 0x33f,
+
+    hstatus = 0x600,
+    hedeleg = 0x602,
+    hideleg = 0x603,
+    hie = 0x604,
+    hcounteren = 0x606,
+    hgeie = 0x607,
+
+    htval = 0x643,
+    hip = 0x644,
+    hvip = 0x645,
+    htinst = 0x64a,
+    hgeip = 0xe12,
+
+    henvcfg = 0x60a,
+    hgatp = 0x680,
+    htimedelta = 0x605,
+
+    vsstatus = 0x200,
+    vsie = 0x204,
+    vstvec = 0x205,
+    vsscratch = 0x240,
+    vsepc = 0x241,
+    vscause = 0x242,
+    vstval = 0x243,
+    vsip = 0x244,
+    vsatp = 0x280,
 
     tselect = 0x7a0,
     tdata1 = 0x7a1,
@@ -794,6 +992,7 @@ enum class insn_funct3_00000_opcode : uint32_t {
     ADDW_MULW_SUBW = 0b000000000111011,
     SRLW_DIVUW_SRAW = 0b101000000111011,
     privileged = 0b000000001110011,
+    hv_store_load = 0b100000001110011,
 };
 
 /// \brief The result of insn >> 26 (6 most significant bits of funct7) can be
@@ -918,13 +1117,65 @@ enum insn_ADDW_MULW_SUBW_funct7 : uint32_t { ADDW = 0b0000000, MULW = 0b0000001,
 /// \brief funct7 constants for SRLW, DIVUW, SRAW instructions
 enum insn_SRLW_DIVUW_SRAW_funct7 : uint32_t { SRLW = 0b0000000, DIVUW = 0b0000001, SRAW = 0b0100000 };
 
-/// \brief Privileged instructions, except for SFENCE.VMA, have no parameters
-enum class insn_privileged : uint32_t {
-    ECALL = 0b00000000000000000000000001110011,
-    EBREAK = 0b00000000000100000000000001110011,
-    SRET = 0b00010000001000000000000001110011,
-    MRET = 0b00110000001000000000000001110011,
-    WFI = 0b00010000010100000000000001110011
+/// \brief funct7 constants for ECALL, EBREAK, WFI, SRET, MRET, SFENCE, HL instructions
+enum class insn_privileged_funct7 : uint32_t {
+    E = 0b0000000,        // ecall & ebreak
+    WFI_SRET = 0b0001000, // wfi & sret
+    MRET = 0b0011000,
+    SFENCE_VMA = 0b0001001,
+    SINVAL_VMA = 0b0001011,
+    SFENCE_INVAL = 0b0001100, // sfence.w.inval & sfence.inval.ir
+    HFENCE_VVMA = 0b0010001,
+    HFENCE_GVMA = 0b0110001,
+    HINVAL_VVMA = 0b0010011,
+    HINVAL_GVMA = 0b0110011,
+    HLV_B = 0b0110000, // hlv.b & hlv.bu
+    HLV_H = 0b0110010, // hlv.h & hlv.hu & hlvx.hu
+    HLV_W = 0b0110100, // hlv.w & hlvx.wu
+    HSV_B = 0b0110001,
+    HSV_H = 0b0110011,
+    HSV_W = 0b0110101,
+    HLV_WU = 0b0110100,
+    HLV_D = 0b0110110,
+    HSV_D = 0b0110111,
+};
+
+/// \brief rs2 constants for ECALL and EBREAK instructions
+enum class insn_E_rs2 : uint32_t {
+    ECALL = 0b00000,
+    EBREAK = 0b00001,
+};
+
+/// \brief rs2 constants for WFI and SRET instructions
+enum class insn_WFI_SRET_rs2 : uint32_t {
+    WFI = 0b00101,
+    SRET = 0b00010,
+};
+
+/// \brief rs2 constants for SFENCE_INVAL instructions
+enum class insn_SFENCE_INVAL_rs2 : uint32_t {
+    SFENCE_W_INVAL = 0b00000,
+    SFENCE_INVAL_IR = 0b00001,
+};
+
+/// \brief rs2 constants for HLV_B instructions
+enum class insn_HLV_B_rs2 : uint32_t {
+    HLV_B = 0b00000,
+    HLV_BU = 0b00001,
+};
+
+/// \brief rs2 constants for HLV_H instructions
+enum class insn_HLV_H_rs2 : uint32_t {
+    HLV_H = 0b00000,
+    HLV_HU = 0b00001,
+    HLVX_HU = 0b00011,
+};
+
+/// \brief rs2 constants for HLV_W instructions
+enum class insn_HLV_W_rs2 : uint32_t {
+    HLV_W = 0b00000,
+    HLV_WU = 0b00001,
+    HLVX_WU = 0b00011,
 };
 
 /// \brief funct2 constants for FMADD, FMSUB, FNMADD, FMNSUB instructions

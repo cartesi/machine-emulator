@@ -540,6 +540,24 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"satp", CM_PROC_SATP},
         {"scounteren", CM_PROC_SCOUNTEREN},
         {"senvcfg", CM_PROC_SENVCFG},
+        {"hstatus", CM_PROC_HSTATUS},
+        {"hedeleg", CM_PROC_HEDELEG},
+        {"hideleg", CM_PROC_HIDELEG},
+        {"hip", CM_PROC_HIP},
+        {"hie", CM_PROC_HIE},
+        {"hvip", CM_PROC_HVIP},
+        {"hgatp", CM_PROC_HGATP},
+        {"htimedelta", CM_PROC_HTIMEDELTA},
+        {"htval", CM_PROC_HTVAL},
+        {"vsepc", CM_PROC_VSEPC},
+        {"vsstatus", CM_PROC_VSSTATUS},
+        {"vscause", CM_PROC_VSCAUSE},
+        {"vstval", CM_PROC_VSTVAL},
+        {"vstvec", CM_PROC_VSTVEC},
+        {"vsscratch", CM_PROC_VSSCRATCH},
+        {"vsatp", CM_PROC_VSATP},
+        {"vsip", CM_PROC_VSIP},
+        {"vsie", CM_PROC_VSIE},
         {"ilrsc", CM_PROC_ILRSC},
         {"iflags", CM_PROC_IFLAGS},
         {"clint_mtimecmp", CM_PROC_CLINT_MTIMECMP},
@@ -755,6 +773,24 @@ static void push_cm_processor_config(lua_State *L, const cm_processor_config *p)
     PUSH_CM_PROCESSOR_CONFIG_CSR(satp);
     PUSH_CM_PROCESSOR_CONFIG_CSR(scounteren);
     PUSH_CM_PROCESSOR_CONFIG_CSR(senvcfg);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(hstatus);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(hideleg);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(hedeleg);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(hip);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(hvip);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(hie);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(hgatp);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(htimedelta);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(htval);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(vsepc);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(vsstatus);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(vscause);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(vstval);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(vstvec);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(vsscratch);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(vsatp);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(vsie);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(vsip);
     PUSH_CM_PROCESSOR_CONFIG_CSR(ilrsc);
     PUSH_CM_PROCESSOR_CONFIG_CSR(iflags);
 }
@@ -1079,6 +1115,24 @@ static void check_cm_processor_config(lua_State *L, int tabidx, cm_processor_con
     p->satp = opt_uint_field(L, -1, "satp", def->satp);
     p->scounteren = opt_uint_field(L, -1, "scounteren", def->scounteren);
     p->senvcfg = opt_uint_field(L, -1, "senvcfg", def->senvcfg);
+    p->hstatus = opt_uint_field(L, -1, "hstatus", def->hstatus);
+    p->hideleg = opt_uint_field(L, -1, "hideleg", def->hideleg);
+    p->hedeleg = opt_uint_field(L, -1, "hedeleg", def->hedeleg);
+    p->hip = opt_uint_field(L, -1, "hip", def->hip);
+    p->hvip = opt_uint_field(L, -1, "hvip", def->hvip);
+    p->hie = opt_uint_field(L, -1, "hie", def->hie);
+    p->hgatp = opt_uint_field(L, -1, "hgatp", def->hgatp);
+    p->htimedelta = opt_uint_field(L, -1, "htimedelta", def->htimedelta);
+    p->htval = opt_uint_field(L, -1, "htval", def->htval);
+    p->vsepc = opt_uint_field(L, -1, "vsepc", def->vsepc);
+    p->vsstatus = opt_uint_field(L, -1, "vsstatus", def->vsstatus);
+    p->vscause = opt_uint_field(L, -1, "vscause", def->vscause);
+    p->vstval = opt_uint_field(L, -1, "vstval", def->vstval);
+    p->vstvec = opt_uint_field(L, -1, "vstvec", def->vstvec);
+    p->vsscratch = opt_uint_field(L, -1, "vsscratch", def->vsscratch);
+    p->vsatp = opt_uint_field(L, -1, "vsatp", def->vsatp);
+    p->vsie = opt_uint_field(L, -1, "vsie", def->vsie);
+    p->vsip = opt_uint_field(L, -1, "vsip", def->vsip);
     p->ilrsc = opt_uint_field(L, -1, "ilrsc", def->ilrsc);
     p->iflags = opt_uint_field(L, -1, "iflags", def->iflags);
     lua_pop(L, 1);

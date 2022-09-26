@@ -437,6 +437,196 @@ public:
         do_write_senvcfg(val);
     }
 
+    /// \brief Reads the hstatus register
+    uint64_t read_hstatus(void) const {
+        return do_read_hstatus();
+    }
+
+    /// \brief Writes the hstatus register
+    void write_hstatus(uint64_t val) {
+        do_write_hstatus(val);
+    }
+
+    /// \brief Reads the hedeleg register
+    uint64_t read_hedeleg(void) const {
+        return do_read_hedeleg();
+    }
+
+    /// \brief Writes the hedeleg register
+    void write_hedeleg(uint64_t val) {
+        do_write_hedeleg(val);
+    }
+
+    /// \brief Reads the hideleg register
+    uint64_t read_hideleg(void) const {
+        return do_read_hideleg();
+    }
+
+    /// \brief Writes the hideleg register
+    void write_hideleg(uint64_t val) {
+        do_write_hideleg(val);
+    }
+
+    /// \brief Reads the hip register
+    uint64_t read_hip(void) const {
+        return do_read_hip();
+    }
+
+    /// \brief Writes the hip register
+    void write_hip(uint64_t val) {
+        do_write_hip(val);
+    }
+
+    /// \brief Reads the hvip register
+    uint64_t read_hvip(void) const {
+        return do_read_hvip();
+    }
+
+    /// \brief Writes the hvip register
+    void write_hvip(uint64_t val) {
+        do_write_hvip(val);
+    }
+
+    /// \brief Reads the hie register
+    uint64_t read_hie(void) const {
+        return do_read_hie();
+    }
+
+    /// \brief Writes the hie register
+    void write_hie(uint64_t val) {
+        do_write_hie(val);
+    }
+
+    /// \brief Reads the hgatp register
+    uint64_t read_hgatp(void) const {
+        return do_read_hgatp();
+    }
+
+    /// \brief Writes the hgatp register
+    void write_hgatp(uint64_t val) {
+        do_write_hgatp(val);
+    }
+
+    /// \brief Reads the henvcfg register
+    uint64_t read_henvcfg(void) const {
+        return do_read_henvcfg();
+    }
+
+    /// \brief Writes the henvcfg register
+    void write_henvcfg(uint64_t val) {
+        do_write_henvcfg(val);
+    }
+
+    /// \brief Reads the htimedelta register
+    uint64_t read_htimedelta(void) const {
+        return do_read_htimedelta();
+    }
+
+    /// \brief Writes the htimedelta register
+    void write_htimedelta(uint64_t val) {
+        do_write_htimedelta(val);
+    }
+
+    /// \brief Reads the htval register
+    uint64_t read_htval(void) const {
+        return do_read_htval();
+    }
+
+    /// \brief Writes the htval register
+    void write_htval(uint64_t val) {
+        do_write_htval(val);
+    }
+
+    /// \brief Reads the vsepc register
+    uint64_t read_vsepc(void) const {
+        return do_read_vsepc();
+    }
+
+    /// \brief Writes the vsepc register
+    void write_vsepc(uint64_t val) {
+        do_write_vsepc(val);
+    }
+
+    /// \brief Reads the vsstatus register
+    uint64_t read_vsstatus(void) const {
+        return do_read_vsstatus();
+    }
+
+    /// \brief Writes the vsstatus register
+    void write_vsstatus(uint64_t val) {
+        do_write_vsstatus(val);
+    }
+
+    /// \brief Reads the vscause register
+    uint64_t read_vscause(void) const {
+        return do_read_vscause();
+    }
+
+    /// \brief Writes the vscause register
+    void write_vscause(uint64_t val) {
+        do_write_vscause(val);
+    }
+
+    /// \brief Reads the vstval register
+    uint64_t read_vstval(void) const {
+        return do_read_vstval();
+    }
+
+    /// \brief Writes the vstval register
+    void write_vstval(uint64_t val) {
+        do_write_vstval(val);
+    }
+
+    /// \brief Reads the vstvec register
+    uint64_t read_vstvec(void) const {
+        return do_read_vstvec();
+    }
+
+    /// \brief Writes the vstvec register
+    void write_vstvec(uint64_t val) {
+        do_write_vstvec(val);
+    }
+
+    /// \brief Reads the vsscratch register
+    uint64_t read_vsscratch(void) const {
+        return do_read_vsscratch();
+    }
+
+    /// \brief Writes the vsscratch register
+    void write_vsscratch(uint64_t val) {
+        do_write_vsscratch(val);
+    }
+
+    /// \brief Reads the vsatp register
+    uint64_t read_vsatp(void) const {
+        return do_read_vsatp();
+    }
+
+    /// \brief Writes the vsatp register
+    void write_vsatp(uint64_t val) {
+        do_write_vsatp(val);
+    }
+
+    /// \brief Reads the vsie register
+    uint64_t read_vsie(void) const {
+        return do_read_vsie();
+    }
+
+    /// \brief Writes the vsie register
+    void write_vsie(uint64_t val) {
+        do_write_vsie(val);
+    }
+
+    /// \brief Reads the vsip register
+    uint64_t read_vsip(void) const {
+        return do_read_vsip();
+    }
+
+    /// \brief Writes the vsip register
+    void write_vsip(uint64_t val) {
+        do_write_vsip(val);
+    }
+
     /// \brief Reads the ilrsc register
     uint64_t read_ilrsc(void) const {
         return do_read_ilrsc();
@@ -713,6 +903,44 @@ private:
     virtual void do_write_scounteren(uint64_t val) = 0;
     virtual uint64_t do_read_senvcfg(void) const = 0;
     virtual void do_write_senvcfg(uint64_t val) = 0;
+    virtual uint64_t do_read_hstatus(void) const = 0;
+    virtual void do_write_hstatus(uint64_t val) = 0;
+    virtual uint64_t do_read_hedeleg(void) const = 0;
+    virtual void do_write_hedeleg(uint64_t val) = 0;
+    virtual uint64_t do_read_hideleg(void) const = 0;
+    virtual void do_write_hideleg(uint64_t val) = 0;
+    virtual uint64_t do_read_hip(void) const = 0;
+    virtual void do_write_hip(uint64_t val) = 0;
+    virtual uint64_t do_read_hvip(void) const = 0;
+    virtual void do_write_hvip(uint64_t val) = 0;
+    virtual uint64_t do_read_hie(void) const = 0;
+    virtual void do_write_hie(uint64_t val) = 0;
+    virtual uint64_t do_read_hgatp(void) const = 0;
+    virtual void do_write_hgatp(uint64_t val) = 0;
+    virtual uint64_t do_read_henvcfg(void) const = 0;
+    virtual void do_write_henvcfg(uint64_t val) = 0;
+    virtual uint64_t do_read_htimedelta(void) const = 0;
+    virtual void do_write_htimedelta(uint64_t val) = 0;
+    virtual uint64_t do_read_htval(void) const = 0;
+    virtual void do_write_htval(uint64_t val) = 0;
+    virtual uint64_t do_read_vsepc(void) const = 0;
+    virtual void do_write_vsepc(uint64_t val) = 0;
+    virtual uint64_t do_read_vsstatus(void) const = 0;
+    virtual void do_write_vsstatus(uint64_t val) = 0;
+    virtual uint64_t do_read_vscause(void) const = 0;
+    virtual void do_write_vscause(uint64_t val) = 0;
+    virtual uint64_t do_read_vstval(void) const = 0;
+    virtual void do_write_vstval(uint64_t val) = 0;
+    virtual uint64_t do_read_vstvec(void) const = 0;
+    virtual void do_write_vstvec(uint64_t val) = 0;
+    virtual uint64_t do_read_vsscratch(void) const = 0;
+    virtual void do_write_vsscratch(uint64_t val) = 0;
+    virtual uint64_t do_read_vsatp(void) const = 0;
+    virtual void do_write_vsatp(uint64_t val) = 0;
+    virtual uint64_t do_read_vsie(void) const = 0;
+    virtual void do_write_vsie(uint64_t val) = 0;
+    virtual uint64_t do_read_vsip(void) const = 0;
+    virtual void do_write_vsip(uint64_t val) = 0;
     virtual uint64_t do_read_ilrsc(void) const = 0;
     virtual void do_write_ilrsc(uint64_t val) = 0;
     virtual uint64_t do_read_iflags(void) const = 0;

@@ -152,6 +152,25 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
     proto_p->set_satp(c.processor.satp);
     proto_p->set_scounteren(c.processor.scounteren);
     proto_p->set_senvcfg(c.processor.senvcfg);
+    proto_p->set_hstatus(c.processor.hstatus);
+    proto_p->set_hedeleg(c.processor.hedeleg);
+    proto_p->set_hideleg(c.processor.hideleg);
+    proto_p->set_hie(c.processor.hie);
+    proto_p->set_hip(c.processor.hip);
+    proto_p->set_hvip(c.processor.hvip);
+    proto_p->set_hgatp(c.processor.hgatp);
+    proto_p->set_henvcfg(c.processor.henvcfg);
+    proto_p->set_htimedelta(c.processor.htimedelta);
+    proto_p->set_htval(c.processor.htval);
+    proto_p->set_vsepc(c.processor.vsepc);
+    proto_p->set_vsstatus(c.processor.vsstatus);
+    proto_p->set_vscause(c.processor.vscause);
+    proto_p->set_vstval(c.processor.vstval);
+    proto_p->set_vstvec(c.processor.vstvec);
+    proto_p->set_vsscratch(c.processor.vsscratch);
+    proto_p->set_vsatp(c.processor.vsatp);
+    proto_p->set_vsie(c.processor.vsie);
+    proto_p->set_vsip(c.processor.vsip);
     proto_p->set_ilrsc(c.processor.ilrsc);
     proto_p->set_iflags(c.processor.iflags);
     for (const auto &f : c.flash_drive) {
@@ -647,6 +666,63 @@ processor_config get_proto_processor_config(const CartesiMachine::ProcessorConfi
     }
     if (proto_p.has_senvcfg()) {
         p.senvcfg = proto_p.senvcfg();
+    }
+    if (proto_p.has_hstatus()) {
+        p.hstatus = proto_p.hstatus();
+    }
+    if (proto_p.has_hideleg()) {
+        p.hideleg = proto_p.hideleg();
+    }
+    if (proto_p.has_hedeleg()) {
+        p.hedeleg = proto_p.hedeleg();
+    }
+    if (proto_p.has_hie()) {
+        p.hie = proto_p.hie();
+    }
+    if (proto_p.has_hip()) {
+        p.hip = proto_p.hip();
+    }
+    if (proto_p.has_hvip()) {
+        p.hvip = proto_p.hvip();
+    }
+    if (proto_p.has_hgatp()) {
+        p.hgatp = proto_p.hgatp();
+    }
+    if (proto_p.has_henvcfg()) {
+        p.henvcfg = proto_p.henvcfg();
+    }
+    if (proto_p.has_htimedelta()) {
+        p.htimedelta = proto_p.htimedelta();
+    }
+    if (proto_p.has_htval()) {
+        p.htval = proto_p.htval();
+    }
+    if (proto_p.has_vsepc()) {
+        p.vsepc = proto_p.vsepc();
+    }
+    if (proto_p.has_vsstatus()) {
+        p.vsstatus = proto_p.vsstatus();
+    }
+    if (proto_p.has_vscause()) {
+        p.vscause = proto_p.vscause();
+    }
+    if (proto_p.has_vstval()) {
+        p.vstval = proto_p.vstval();
+    }
+    if (proto_p.has_vstvec()) {
+        p.vstvec = proto_p.vstvec();
+    }
+    if (proto_p.has_vsscratch()) {
+        p.vsscratch = proto_p.vsscratch();
+    }
+    if (proto_p.has_vsatp()) {
+        p.vsatp = proto_p.vsatp();
+    }
+    if (proto_p.has_vsie()) {
+        p.vsie = proto_p.vsie();
+    }
+    if (proto_p.has_vsip()) {
+        p.vsip = proto_p.vsip();
     }
     if (proto_p.has_ilrsc()) {
         p.ilrsc = proto_p.ilrsc();

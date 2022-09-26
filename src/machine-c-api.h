@@ -128,6 +128,24 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_SATP,
     CM_PROC_SCOUNTEREN,
     CM_PROC_SENVCFG,
+    CM_PROC_HSTATUS,
+    CM_PROC_HIDELEG,
+    CM_PROC_HEDELEG,
+    CM_PROC_HIE,
+    CM_PROC_HIP,
+    CM_PROC_HVIP,
+    CM_PROC_HGATP,
+    CM_PROC_HTIMEDELTA,
+    CM_PROC_HTVAL,
+    CM_PROC_VSEPC,
+    CM_PROC_VSSTATUS,
+    CM_PROC_VSCAUSE,
+    CM_PROC_VSTVAL,
+    CM_PROC_VSTVEC,
+    CM_PROC_VSSCRATCH,
+    CM_PROC_VSATP,
+    CM_PROC_VSIE,
+    CM_PROC_VSIP,
     CM_PROC_ILRSC,
     CM_PROC_IFLAGS,
     CM_PROC_CLINT_MTIMECMP,
@@ -181,6 +199,25 @@ typedef struct {                        // NOLINT(modernize-use-using)
     uint64_t satp;                      ///< Value of satp CSR
     uint64_t scounteren;                ///< Value of scounteren CSR
     uint64_t senvcfg;                   ///< Value of senvcfg CSR
+    uint64_t hstatus;                   ///< Value of hstatus CSR
+    uint64_t hideleg;                   ///< Value of hideleg CSR
+    uint64_t hedeleg;                   ///< Value of hedeleg CSR
+    uint64_t hie;                       ///< Value of hie CSR
+    uint64_t hip;                       ///< Value of hip CSR
+    uint64_t hvip;                      ///< Value of hvip CSR
+    uint64_t hgatp;                     ///< Value of hgatp CSR
+    uint64_t henvcfg;                   ///< Value of henvcfg CSR
+    uint64_t htimedelta;                ///< Value of htimedelta CSR
+    uint64_t htval;                     ///< Value of htval CSR
+    uint64_t vsepc;                     ///< Value of vsepc CSR
+    uint64_t vsstatus;                  ///< Value of vsstatus CSR
+    uint64_t vscause;                   ///< Value of vscause CSR
+    uint64_t vstval;                    ///< Value of vstval CSR
+    uint64_t vstvec;                    ///< Value of vstvec CSR
+    uint64_t vsscratch;                 ///< Value of vsscratch CSR
+    uint64_t vsatp;                     ///< Value of vsatp CSR
+    uint64_t vsip;                      ///< Value of vsip CSR
+    uint64_t vsie;                      ///< Value of vsie CSR
     uint64_t ilrsc;                     ///< Value of ilrsc CSR
     uint64_t iflags;                    ///< Value of iflags CSR
 } cm_processor_config;
@@ -1215,6 +1252,348 @@ CM_API int cm_read_senvcfg(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_senvcfg(cm_machine *m, uint64_t val, char **err_msg);
 
+/// \brief Reads the value of the hstatus register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_hstatus(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the hstatus register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_hstatus(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the hideleg register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_hideleg(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the hideleg register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_hideleg(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the hedeleg register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_hedeleg(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the hedeleg register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_hedeleg(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the hip register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_hip(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the hip register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_hip(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the hvip register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_hvip(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the hvip register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_hvip(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the hie register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_hie(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the hie register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_hie(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the hgatp register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_hgatp(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the hgatp register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_hgatp(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the henvcfg register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_henvcfg(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the henvcfg register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_henvcfg(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the htimedelta register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_htimedelta(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the htimedelta register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_htimedelta(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the htval register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_htval(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the htval register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_htval(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the vsepc register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_vsepc(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the vsepc register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_vsepc(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the vsstatus register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_vsstatus(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the vsstatus register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_vsstatus(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the vscause register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_vscause(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the vscause register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_vscause(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the vstval register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_vstval(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the vstval register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_vstval(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the vstvec register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_vstvec(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the vstvec register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_vstvec(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the vsscratch register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_vsscratch(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the vsscratch register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_vsscratch(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the vsatp register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_vsatp(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the vsatp register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_vsatp(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the vsie register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_vsie(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the vsie register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_vsie(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the vsip register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_vsip(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the vsip register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_vsip(cm_machine *m, uint64_t val, char **err_msg);
+
 /// \brief Reads the value of the ilrsc register.
 /// \param m Pointer to valid machine instance
 /// \param val Receives value of the register.
@@ -1247,7 +1626,7 @@ CM_API int cm_read_iflags(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Returns packed iflags from its component fields.
 /// \param val Receives value of the register.
-CM_API uint64_t cm_packed_iflags(int PRV, int X, int Y, int H);
+CM_API uint64_t cm_packed_iflags(int VRT, int PRV, int X, int Y, int H);
 
 /// \brief Reads the value of the iflags register.
 /// \param m Pointer to valid machine instance

@@ -624,6 +624,150 @@ void jsonrpc_virtual_machine::do_write_senvcfg(uint64_t val) {
     write_csr(csr::senvcfg, val);
 }
 
+uint64_t jsonrpc_virtual_machine::do_read_hstatus(void) const {
+    return read_csr(csr::hstatus);
+}
+
+void jsonrpc_virtual_machine::do_write_hstatus(uint64_t val) {
+    write_csr(csr::hstatus, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_hideleg(void) const {
+    return read_csr(csr::hideleg);
+}
+
+void jsonrpc_virtual_machine::do_write_hideleg(uint64_t val) {
+    write_csr(csr::hideleg, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_hedeleg(void) const {
+    return read_csr(csr::hedeleg);
+}
+
+void jsonrpc_virtual_machine::do_write_hedeleg(uint64_t val) {
+    write_csr(csr::hedeleg, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_hip(void) const {
+    return read_csr(csr::hip);
+}
+
+void jsonrpc_virtual_machine::do_write_hip(uint64_t val) {
+    write_csr(csr::hip, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_hvip(void) const {
+    return read_csr(csr::hvip);
+}
+
+void jsonrpc_virtual_machine::do_write_hvip(uint64_t val) {
+    write_csr(csr::hvip, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_hie(void) const {
+    return read_csr(csr::hie);
+}
+
+void jsonrpc_virtual_machine::do_write_hie(uint64_t val) {
+    write_csr(csr::hie, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_hgatp(void) const {
+    return read_csr(csr::hgatp);
+}
+
+void jsonrpc_virtual_machine::do_write_hgatp(uint64_t val) {
+    write_csr(csr::hgatp, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_htimedelta(void) const {
+    return read_csr(csr::htimedelta);
+}
+
+void jsonrpc_virtual_machine::do_write_htimedelta(uint64_t val) {
+    write_csr(csr::htimedelta, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_htval(void) const {
+    return read_csr(csr::htval);
+}
+
+void jsonrpc_virtual_machine::do_write_htval(uint64_t val) {
+    write_csr(csr::htval, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_vsepc(void) const {
+    return read_csr(csr::vsepc);
+}
+
+void jsonrpc_virtual_machine::do_write_vsepc(uint64_t val) {
+    write_csr(csr::vsepc, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_vsstatus(void) const {
+    return read_csr(csr::vsstatus);
+}
+
+void jsonrpc_virtual_machine::do_write_vsstatus(uint64_t val) {
+    write_csr(csr::vsstatus, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_vscause(void) const {
+    return read_csr(csr::vscause);
+}
+
+void jsonrpc_virtual_machine::do_write_vscause(uint64_t val) {
+    write_csr(csr::vscause, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_vstval(void) const {
+    return read_csr(csr::vstval);
+}
+
+void jsonrpc_virtual_machine::do_write_vstval(uint64_t val) {
+    write_csr(csr::vstval, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_vstvec(void) const {
+    return read_csr(csr::vstvec);
+}
+
+void jsonrpc_virtual_machine::do_write_vstvec(uint64_t val) {
+    write_csr(csr::vstvec, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_vsscratch(void) const {
+    return read_csr(csr::vsscratch);
+}
+
+void jsonrpc_virtual_machine::do_write_vsscratch(uint64_t val) {
+    write_csr(csr::vsscratch, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_vsatp(void) const {
+    return read_csr(csr::vsatp);
+}
+
+void jsonrpc_virtual_machine::do_write_vsatp(uint64_t val) {
+    write_csr(csr::vsatp, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_vsip(void) const {
+    return read_csr(csr::vsip);
+}
+
+void jsonrpc_virtual_machine::do_write_vsip(uint64_t val) {
+    write_csr(csr::vsip, val);
+}
+
+uint64_t jsonrpc_virtual_machine::do_read_vsie(void) const {
+    return read_csr(csr::vsie);
+}
+
+void jsonrpc_virtual_machine::do_write_vsie(uint64_t val) {
+    write_csr(csr::vsie, val);
+}
+
 uint64_t jsonrpc_virtual_machine::do_read_ilrsc(void) const {
     return read_csr(csr::ilrsc);
 }

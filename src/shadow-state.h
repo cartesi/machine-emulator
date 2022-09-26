@@ -61,6 +61,25 @@ struct shadow_state {
     uint64_t satp;
     uint64_t scounteren;
     uint64_t senvcfg;
+    uint64_t hstatus;
+    uint64_t hideleg;
+    uint64_t hedeleg;
+    uint64_t hie;
+    uint64_t hip;
+    uint64_t hvip;
+    uint64_t hgatp;
+    uint64_t henvcfg;
+    uint64_t htimedelta;
+    uint64_t htval;
+    uint64_t vsepc;
+    uint64_t vsstatus;
+    uint64_t vscause;
+    uint64_t vstval;
+    uint64_t vstvec;
+    uint64_t vsscratch;
+    uint64_t vsatp;
+    uint64_t vsie;
+    uint64_t vsip;
     uint64_t ilrsc;
     uint64_t iflags;
     uint64_t clint_mtimecmp;
@@ -110,6 +129,25 @@ enum class shadow_state_csr {
     satp = offsetof(shadow_state, satp),
     scounteren = offsetof(shadow_state, scounteren),
     senvcfg = offsetof(shadow_state, senvcfg),
+    hstatus = offsetof(shadow_state, hstatus),
+    hideleg = offsetof(shadow_state, hideleg),
+    hedeleg = offsetof(shadow_state, hedeleg),
+    hie = offsetof(shadow_state, hie),
+    hip = offsetof(shadow_state, hip),
+    hvip = offsetof(shadow_state, hvip),
+    hgatp = offsetof(shadow_state, hgatp),
+    henvcfg = offsetof(shadow_state, henvcfg),
+    htimedelta = offsetof(shadow_state, htimedelta),
+    htval = offsetof(shadow_state, htval),
+    vsepc = offsetof(shadow_state, vsepc),
+    vsstatus = offsetof(shadow_state, vsstatus),
+    vscause = offsetof(shadow_state, vscause),
+    vstval = offsetof(shadow_state, vstval),
+    vstvec = offsetof(shadow_state, vstvec),
+    vsscratch = offsetof(shadow_state, vsscratch),
+    vsatp = offsetof(shadow_state, vsatp),
+    vsie = offsetof(shadow_state, vsie),
+    vsip = offsetof(shadow_state, vsip),
     ilrsc = offsetof(shadow_state, ilrsc),
     iflags = offsetof(shadow_state, iflags),
     clint_mtimecmp = offsetof(shadow_state, clint_mtimecmp),

@@ -395,6 +395,158 @@ private:
         raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::scounteren), val);
     }
 
+    uint64_t do_read_hstatus(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::hstatus));
+    }
+
+    void do_write_hstatus(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::hstatus), val);
+    }
+
+    uint64_t do_read_hideleg(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::hideleg));
+    }
+
+    void do_write_hideleg(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::hideleg), val);
+    }
+
+    uint64_t do_read_hedeleg(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::hedeleg));
+    }
+
+    void do_write_hedeleg(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::hedeleg), val);
+    }
+
+    uint64_t do_read_hip(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::hip));
+    }
+
+    void do_write_hip(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::hip), val);
+    }
+
+    uint64_t do_read_hvip(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::hvip));
+    }
+
+    void do_write_hvip(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::hvip), val);
+    }
+
+    uint64_t do_read_hie(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::hie));
+    }
+
+    void do_write_hie(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::hie), val);
+    }
+
+    uint64_t do_read_hgatp(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::hgatp));
+    }
+
+    void do_write_hgatp(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::hgatp), val);
+    }
+
+    uint64_t do_read_henvcfg(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::henvcfg));
+    }
+
+    void do_write_henvcfg(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::henvcfg), val);
+    }
+
+    uint64_t do_read_htimedelta(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::htimedelta));
+    }
+
+    void do_write_htimedelta(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::htimedelta), val);
+    }
+
+    uint64_t do_read_htval(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::htval));
+    }
+
+    void do_write_htval(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::htval), val);
+    }
+
+    uint64_t do_read_vsepc(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::vsepc));
+    }
+
+    void do_write_vsepc(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::vsepc), val);
+    }
+
+    uint64_t do_read_vsstatus(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::vsstatus));
+    }
+
+    void do_write_vsstatus(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::vsstatus), val);
+    }
+
+    uint64_t do_read_vscause(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::vscause));
+    }
+
+    void do_write_vscause(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::vscause), val);
+    }
+
+    uint64_t do_read_vstval(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::vstval));
+    }
+
+    void do_write_vstval(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::vstval), val);
+    }
+
+    uint64_t do_read_vstvec(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::vstvec));
+    }
+
+    void do_write_vstvec(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::vstvec), val);
+    }
+
+    uint64_t do_read_vsscratch(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::vsscratch));
+    }
+
+    void do_write_vsscratch(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::vsscratch), val);
+    }
+
+    uint64_t do_read_vsatp(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::vsatp));
+    }
+
+    void do_write_vsatp(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::vsatp), val);
+    }
+
+    uint64_t do_read_vsie(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::vsie));
+    }
+
+    void do_write_vsie(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::vsie), val);
+    }
+
+    uint64_t do_read_vsip(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::vsip));
+    }
+
+    void do_write_vsip(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::vsip), val);
+    }
+
     uint64_t do_read_ilrsc(void) {
         return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::ilrsc));
     }
@@ -454,6 +606,23 @@ private:
     bool do_read_iflags_Y(void) {
         auto iflags = read_iflags();
         return (iflags & IFLAGS_Y_MASK) != 0;
+    }
+
+    void do_set_iflags_VRT(void) {
+        auto old_iflags = read_iflags();
+        auto new_iflags = old_iflags | IFLAGS_VRT_MASK;
+        write_iflags(new_iflags);
+    }
+
+    void do_reset_iflags_VRT(void) {
+        auto old_iflags = read_iflags();
+        auto new_iflags = old_iflags & (~IFLAGS_VRT_MASK);
+        write_iflags(new_iflags);
+    }
+
+    bool do_read_iflags_VRT(void) {
+        auto iflags = read_iflags();
+        return (iflags & IFLAGS_VRT_MASK) != 0;
     }
 
     uint8_t do_read_iflags_PRV(void) {

@@ -51,7 +51,7 @@ public:
         switch (static_cast<shadow_state_csr>(paddr)) {
             case shadow_state_csr::uarch_halt_flag:
                 if (data != uarch_halt_flag_halt_value) {
-                    throw std::runtime_error("invalid value written  microarchitecture halt flag");
+                    throw std::runtime_error("invalid value written microarchitecture halt flag");
                 }
                 return uarch_halt(us);
             case shadow_state_csr::pc:
@@ -128,6 +128,63 @@ public:
                 return;
             case shadow_state_csr::senvcfg:
                 s.senvcfg = data;
+                return;
+            case shadow_state_csr::hstatus:
+                s.hstatus = data;
+                return;
+            case shadow_state_csr::hideleg:
+                s.hideleg = data;
+                return;
+            case shadow_state_csr::hedeleg:
+                s.hedeleg = data;
+                return;
+            case shadow_state_csr::hie:
+                s.hie = data;
+                return;
+            case shadow_state_csr::hip:
+                s.hip = data;
+                return;
+            case shadow_state_csr::hvip:
+                s.hvip = data;
+                return;
+            case shadow_state_csr::hgatp:
+                s.hgatp = data;
+                return;
+            case shadow_state_csr::henvcfg:
+                s.henvcfg = data;
+                return;
+            case shadow_state_csr::htimedelta:
+                s.htimedelta = data;
+                return;
+            case shadow_state_csr::htval:
+                s.htval = data;
+                return;
+            case shadow_state_csr::vsepc:
+                s.vsepc = data;
+                return;
+            case shadow_state_csr::vsstatus:
+                s.vsstatus = data;
+                return;
+            case shadow_state_csr::vscause:
+                s.vscause = data;
+                return;
+            case shadow_state_csr::vstval:
+                s.vstval = data;
+                return;
+            case shadow_state_csr::vstvec:
+                s.vstvec = data;
+                return;
+            case shadow_state_csr::vsscratch:
+                s.vsscratch = data;
+                return;
+            case shadow_state_csr::vsatp:
+                s.vsatp = data;
+                return;
+            case shadow_state_csr::vsie:
+                s.vsie = data;
+                return;
+            case shadow_state_csr::vsip:
+                s.vsip = data;
                 return;
             case shadow_state_csr::ilrsc:
                 s.ilrsc = data;
@@ -240,6 +297,44 @@ public:
                 return s.scounteren;
             case shadow_state_csr::senvcfg:
                 return s.senvcfg;
+            case shadow_state_csr::hstatus:
+                return s.hstatus;
+            case shadow_state_csr::hideleg:
+                return s.hideleg;
+            case shadow_state_csr::hedeleg:
+                return s.hedeleg;
+            case shadow_state_csr::hie:
+                return s.hie;
+            case shadow_state_csr::hip:
+                return s.hip;
+            case shadow_state_csr::hvip:
+                return s.hvip;
+            case shadow_state_csr::hgatp:
+                return s.hgatp;
+            case shadow_state_csr::henvcfg:
+                return s.henvcfg;
+            case shadow_state_csr::htimedelta:
+                return s.htimedelta;
+            case shadow_state_csr::htval:
+                return s.htval;
+            case shadow_state_csr::vsepc:
+                return s.vsepc;
+            case shadow_state_csr::vsstatus:
+                return s.vsstatus;
+            case shadow_state_csr::vscause:
+                return s.vscause;
+            case shadow_state_csr::vstval:
+                return s.vstval;
+            case shadow_state_csr::vstvec:
+                return s.vstvec;
+            case shadow_state_csr::vsscratch:
+                return s.vsscratch;
+            case shadow_state_csr::vsatp:
+                return s.vsatp;
+            case shadow_state_csr::vsie:
+                return s.vsie;
+            case shadow_state_csr::vsip:
+                return s.vsip;
             case shadow_state_csr::ilrsc:
                 return s.ilrsc;
             case shadow_state_csr::iflags:
@@ -334,6 +429,44 @@ public:
                 return "scounteren";
             case shadow_state_csr::senvcfg:
                 return "senvcfg";
+            case shadow_state_csr::hstatus:
+                return "hstatus";
+            case shadow_state_csr::hideleg:
+                return "hideleg";
+            case shadow_state_csr::hedeleg:
+                return "hedeleg";
+            case shadow_state_csr::hie:
+                return "hie";
+            case shadow_state_csr::hip:
+                return "hip";
+            case shadow_state_csr::hvip:
+                return "hvip";
+            case shadow_state_csr::hgatp:
+                return "hgatp";
+            case shadow_state_csr::henvcfg:
+                return "henvcfg";
+            case shadow_state_csr::htimedelta:
+                return "htimedelta";
+            case shadow_state_csr::htval:
+                return "htval";
+            case shadow_state_csr::vsepc:
+                return "vsepc";
+            case shadow_state_csr::vsstatus:
+                return "vsstatus";
+            case shadow_state_csr::vscause:
+                return "vscause";
+            case shadow_state_csr::vstval:
+                return "vstval";
+            case shadow_state_csr::vstvec:
+                return "vstvec";
+            case shadow_state_csr::vsscratch:
+                return "vsscratch";
+            case shadow_state_csr::vsatp:
+                return "vsatp";
+            case shadow_state_csr::vsie:
+                return "vsie";
+            case shadow_state_csr::vsip:
+                return "vsip";
             case shadow_state_csr::ilrsc:
                 return "ilrsc";
             case shadow_state_csr::iflags:

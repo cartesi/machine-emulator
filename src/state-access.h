@@ -315,6 +315,158 @@ private:
         m_m.get_state().scounteren = val;
     }
 
+    uint64_t do_read_hstatus(void) const {
+        return m_m.get_state().hstatus;
+    }
+
+    void do_write_hstatus(uint64_t val) {
+        m_m.get_state().hstatus = val;
+    }
+
+    uint64_t do_read_hideleg(void) const {
+        return m_m.get_state().hideleg;
+    }
+
+    void do_write_hideleg(uint64_t val) {
+        m_m.get_state().hideleg = val;
+    }
+
+    uint64_t do_read_hedeleg(void) const {
+        return m_m.get_state().hedeleg;
+    }
+
+    void do_write_hedeleg(uint64_t val) {
+        m_m.get_state().hedeleg = val;
+    }
+
+    uint64_t do_read_hie(void) const {
+        return m_m.get_state().hie;
+    }
+
+    void do_write_hie(uint64_t val) {
+        m_m.get_state().hie = val;
+    }
+
+    uint64_t do_read_hip(void) const {
+        return m_m.get_state().hip;
+    }
+
+    void do_write_hip(uint64_t val) {
+        m_m.get_state().hip = val;
+    }
+
+    uint64_t do_read_hvip(void) const {
+        return m_m.get_state().hvip;
+    }
+
+    void do_write_hvip(uint64_t val) {
+        m_m.get_state().hvip = val;
+    }
+
+    uint64_t do_read_hgatp(void) const {
+        return m_m.get_state().hgatp;
+    }
+
+    void do_write_hgatp(uint64_t val) {
+        m_m.get_state().hgatp = val;
+    }
+
+    uint64_t do_read_henvcfg(void) const {
+        return m_m.get_state().henvcfg;
+    }
+
+    void do_write_henvcfg(uint64_t val) {
+        m_m.get_state().henvcfg = val;
+    }
+
+    uint64_t do_read_htimedelta(void) const {
+        return m_m.get_state().htimedelta;
+    }
+
+    void do_write_htimedelta(uint64_t val) {
+        m_m.get_state().htimedelta = val;
+    }
+
+    uint64_t do_read_htval(void) const {
+        return m_m.get_state().htval;
+    }
+
+    void do_write_htval(uint64_t val) {
+        m_m.get_state().htval = val;
+    }
+
+    uint64_t do_read_vsepc(void) const {
+        return m_m.get_state().vsepc;
+    }
+
+    void do_write_vsepc(uint64_t val) {
+        m_m.get_state().vsepc = val;
+    }
+
+    uint64_t do_read_vsstatus(void) const {
+        return m_m.get_state().vsstatus;
+    }
+
+    void do_write_vsstatus(uint64_t val) {
+        m_m.get_state().vsstatus = val;
+    }
+
+    uint64_t do_read_vscause(void) const {
+        return m_m.get_state().vscause;
+    }
+
+    void do_write_vscause(uint64_t val) {
+        m_m.get_state().vscause = val;
+    }
+
+    uint64_t do_read_vstval(void) const {
+        return m_m.get_state().vstval;
+    }
+
+    void do_write_vstval(uint64_t val) {
+        m_m.get_state().vstval = val;
+    }
+
+    uint64_t do_read_vstvec(void) const {
+        return m_m.get_state().vstvec;
+    }
+
+    void do_write_vstvec(uint64_t val) {
+        m_m.get_state().vstvec = val;
+    }
+
+    uint64_t do_read_vsscratch(void) const {
+        return m_m.get_state().vsscratch;
+    }
+
+    void do_write_vsscratch(uint64_t val) {
+        m_m.get_state().vsscratch = val;
+    }
+
+    uint64_t do_read_vsatp(void) const {
+        return m_m.get_state().vsatp;
+    }
+
+    void do_write_vsatp(uint64_t val) {
+        m_m.get_state().vsatp = val;
+    }
+
+    uint64_t do_read_vsie(void) const {
+        return m_m.get_state().vsie;
+    }
+
+    void do_write_vsie(uint64_t val) {
+        m_m.get_state().vsie = val;
+    }
+
+    uint64_t do_read_vsip(void) const {
+        return m_m.get_state().vsip;
+    }
+
+    void do_write_vsip(uint64_t val) {
+        m_m.get_state().vsip = val;
+    }
+
     uint64_t do_read_ilrsc(void) const {
         return m_m.get_state().ilrsc;
     }
@@ -361,6 +513,18 @@ private:
 
     void do_write_iflags_PRV(uint8_t val) {
         m_m.get_state().iflags.PRV = val;
+    }
+
+    void do_set_iflags_VRT(void) {
+        m_m.get_state().iflags.VRT = true;
+    }
+
+    void do_reset_iflags_VRT(void) {
+        m_m.get_state().iflags.VRT = false;
+    }
+
+    bool do_read_iflags_VRT(void) const {
+        return m_m.get_state().iflags.VRT;
     }
 
     uint64_t do_read_clint_mtimecmp(void) const {

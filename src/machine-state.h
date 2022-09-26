@@ -38,6 +38,7 @@
 namespace cartesi {
 
 struct unpacked_iflags {
+    bool VRT;    ///< Virtual mode.
     uint8_t PRV; ///< Privilege level.
     bool X;      ///< CPU has yielded with automatic reset.
     bool Y;      ///< CPU has yielded with manual reset.
@@ -93,6 +94,27 @@ struct machine_state {
     uint64_t scounteren; ///< CSR scounteren.
     uint64_t senvcfg;    ///< CSR senvcfg.
 
+    uint64_t hstatus;    ///< CSR hstatus.
+    uint64_t hideleg;    ///< CSR hideleg.
+    uint64_t hedeleg;    ///< CSR hedeleg.
+    uint64_t hip;        ///< CSR hip.
+    uint64_t hvip;       ///< CSR hvip.
+    uint64_t hie;        ///< CSR hie.
+    uint64_t hgatp;      ///< CSR hgatp.
+    uint64_t henvcfg;    ///< CSR henvcfg.
+    uint64_t htimedelta; ///< CSR htimedelta.
+    uint64_t htval;      ///< CSR htval.
+
+    uint64_t vsepc;     ///< CSR vsepc.
+    uint64_t vsstatus;  ///< CSR vsstatus.
+    uint64_t vscause;   ///< CSR vscause.
+    uint64_t vstval;    ///< CSR vstval.
+    uint64_t vstvec;    ///< CSR vstvec.
+    uint64_t vsscratch; ///< CSR vsscratch.
+    uint64_t vsatp;     ///< CSR vsatp.
+    uint64_t vsie;      ///< CSR vsie.
+    uint64_t vsip;      ///< CSR vsip.
+
     // Cartesi-specific state
     uint64_t ilrsc; ///< Cartesi-specific CSR ilrsc (For LR/SC instructions).
 
@@ -133,16 +155,17 @@ struct machine_state {
     /// \brief Reads the value of the iflags register.
     /// \returns The value of the register.
     uint64_t read_iflags(void) const {
-        return packed_iflags(iflags.PRV, iflags.X, iflags.Y, iflags.H);
+        return packed_iflags(iflags.VRT, iflags.PRV, iflags.X, iflags.Y, iflags.H);
     }
 
     /// \brief Reads the value of the iflags register.
     /// \param val New register value.
     void write_iflags(uint64_t val) {
-        iflags.H = (val >> IFLAGS_H_SHIFT) & 1;
-        iflags.Y = (val >> IFLAGS_Y_SHIFT) & 1;
-        iflags.X = (val >> IFLAGS_X_SHIFT) & 1;
-        iflags.PRV = (val >> IFLAGS_PRV_SHIFT) & 3;
+        iflags.H = (val & IFLAGS_H_MASK) >> IFLAGS_H_SHIFT;
+        iflags.Y = (val & IFLAGS_Y_MASK) >> IFLAGS_Y_SHIFT;
+        iflags.X = (val & IFLAGS_X_MASK) >> IFLAGS_X_SHIFT;
+        iflags.PRV = (val & IFLAGS_PRV_MASK) >> IFLAGS_PRV_SHIFT;
+        iflags.VRT = (val & IFLAGS_VRT_MASK) >> IFLAGS_VRT_SHIFT;
     }
 
     /// \brief Packs iflags into the CSR value
@@ -151,8 +174,9 @@ struct machine_state {
     /// \param Y Yielded flag
     /// \param H Halted flag
     /// \returns Packed iflags
-    static uint64_t packed_iflags(int PRV, int X, int Y, int H) {
-        return (PRV << IFLAGS_PRV_SHIFT) | (X << IFLAGS_X_SHIFT) | (Y << IFLAGS_Y_SHIFT) | (H << IFLAGS_H_SHIFT);
+    static uint64_t packed_iflags(int VRT, int PRV, int X, int Y, int H) {
+        return (VRT << IFLAGS_VRT_SHIFT) | (PRV << IFLAGS_PRV_SHIFT) | (X << IFLAGS_X_SHIFT) | (Y << IFLAGS_Y_SHIFT) |
+            (H << IFLAGS_H_SHIFT);
     }
 };
 

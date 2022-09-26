@@ -454,7 +454,12 @@ bool operator==(const cm_processor_config &lhs, const cm_processor_config &rhs) 
         lhs.mcounteren == rhs.mcounteren && lhs.menvcfg == rhs.menvcfg && lhs.stvec == rhs.stvec &&
         lhs.sscratch == rhs.sscratch && lhs.sepc == rhs.sepc && lhs.scause == rhs.scause && lhs.stval == rhs.stval &&
         lhs.satp == rhs.satp && lhs.scounteren == rhs.scounteren && lhs.senvcfg == rhs.senvcfg &&
-        lhs.ilrsc == rhs.ilrsc && lhs.iflags == rhs.iflags;
+        lhs.hstatus == rhs.hstatus && lhs.hideleg == rhs.hideleg && lhs.hedeleg == rhs.hedeleg && lhs.hie == rhs.hie &&
+        lhs.hip == rhs.hip && lhs.hvip == rhs.hvip && lhs.hgatp == rhs.hgatp && lhs.henvcfg == rhs.henvcfg &&
+        lhs.htimedelta == rhs.htimedelta && lhs.htval == rhs.htval && lhs.vsepc == rhs.vsepc &&
+        lhs.vsstatus == rhs.vsstatus && lhs.vscause == rhs.vscause && lhs.vstval == rhs.vstval &&
+        lhs.vstvec == rhs.vstvec && lhs.vsscratch == rhs.vsscratch && lhs.vsatp == rhs.vsatp && lhs.vsie == rhs.vsie &&
+        lhs.vsip == rhs.vsip && lhs.ilrsc == rhs.ilrsc && lhs.iflags == rhs.iflags;
 }
 
 bool operator==(const cm_ram_config &lhs, const cm_ram_config &rhs) {
@@ -1129,6 +1134,25 @@ CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, stval)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, satp)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, scounteren)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, senvcfg)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, hstatus)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, hideleg)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, hedeleg)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, hie)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, hip)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, hvip)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, hgatp)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, henvcfg)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htimedelta)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htval)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, vsepc)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, vsstatus)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, vscause)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, vstval)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, vstvec)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, vsscratch)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, vsatp)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, vsie)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, vsip)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, ilrsc)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, iflags)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_tohost)
@@ -1184,6 +1208,25 @@ CHECK_WRITER_FAILS_ON_nullptr_MACHINE(stval)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(satp)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(scounteren)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(senvcfg)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(hstatus)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(hideleg)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(hedeleg)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(hie)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(hip)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(hvip)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(hgatp)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(henvcfg)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htimedelta)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htval)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(vsepc)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(vsstatus)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(vscause)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(vstval)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(vstvec)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(vsscratch)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(vsatp)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(vsip)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(vsie)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(ilrsc)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(iflags)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_tohost)
@@ -1237,6 +1280,25 @@ CHECK_REGISTER_READ_WRITE(stval)
 CHECK_REGISTER_READ_WRITE(satp)
 CHECK_REGISTER_READ_WRITE(scounteren)
 CHECK_REGISTER_READ_WRITE(senvcfg)
+CHECK_REGISTER_READ_WRITE(hstatus)
+CHECK_REGISTER_READ_WRITE(hideleg)
+CHECK_REGISTER_READ_WRITE(hedeleg)
+CHECK_REGISTER_READ_WRITE(hie)
+CHECK_REGISTER_READ_WRITE(hip)
+CHECK_REGISTER_READ_WRITE(hvip)
+CHECK_REGISTER_READ_WRITE(hgatp)
+CHECK_REGISTER_READ_WRITE(henvcfg)
+CHECK_REGISTER_READ_WRITE(htimedelta)
+CHECK_REGISTER_READ_WRITE(htval)
+CHECK_REGISTER_READ_WRITE(vsepc)
+CHECK_REGISTER_READ_WRITE(vsstatus)
+CHECK_REGISTER_READ_WRITE(vscause)
+CHECK_REGISTER_READ_WRITE(vstval)
+CHECK_REGISTER_READ_WRITE(vstvec)
+CHECK_REGISTER_READ_WRITE(vsscratch)
+CHECK_REGISTER_READ_WRITE(vsatp)
+CHECK_REGISTER_READ_WRITE(vsip)
+CHECK_REGISTER_READ_WRITE(vsie)
 CHECK_REGISTER_READ_WRITE(ilrsc)
 CHECK_REGISTER_READ_WRITE(htif_tohost)
 CHECK_REGISTER_READ_WRITE(htif_fromhost)
@@ -1274,9 +1336,9 @@ BOOST_AUTO_TEST_CASE_NOLINT(set_iflags_h_null_machine_test) {
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(packed_iflags_test) {
-    uint64_t iflags = cm_packed_iflags(0, 0, 0, 0);
+    uint64_t iflags = cm_packed_iflags(0, 0, 0, 0, 0);
     BOOST_CHECK_EQUAL(0, iflags);
-    iflags = cm_packed_iflags(1, 1, 1, 1);
+    iflags = cm_packed_iflags(1, 1, 1, 1, 1);
     BOOST_CHECK_EQUAL(0xf, iflags);
 }
 

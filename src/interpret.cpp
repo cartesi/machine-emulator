@@ -101,6 +101,14 @@
 #include "translate-virtual-address.h"
 #include "uint128.h"
 
+#define read_csr_or_return_on_failure(func, state_accessor, ret)                                                       \
+    {                                                                                                                  \
+        bool status = false;                                                                                           \
+        ret = func(state_accessor, &status);                                                                           \
+        if (!status)                                                                                                   \
+            return execute_status::failure;                                                                            \
+    }
+
 namespace cartesi {
 
 static const std::array<const char *, X_REG_COUNT> reg_name{"zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0",
@@ -292,11 +300,63 @@ static inline bool csr_is_read_only(CSR_address csraddr) {
     return ((to_underlying(csraddr) & 0xc00) == 0xc00);
 }
 
-/// \brief Extract privilege level from CSR address.
+/// \brief Checks if CSR access is allowed from the current mode.
+/// \param a Machine state accessor object.
 /// \param csr Address of CSR in file.
-/// \returns Privilege level.
-static inline uint32_t csr_priv(CSR_address csr) {
-    return (to_underlying(csr) >> 8) & 3;
+/// \param status cause code in case of failure.
+/// \returns true if CSR access is allowed from the current mode, false otherwise.
+template <typename STATE_ACCESS>
+static inline bool csr_is_allowed_access(STATE_ACCESS &a, CSR_address csr, MCAUSE_constants &status) {
+    auto mode = current_mode(a);
+    auto cur_priv = (mode & ACCESS_MODE_PRV_MASK) >> ACCESS_MODE_PRV_SHIFT;
+    uint8_t access_priv = mode == MODE_HS ? 2 : cur_priv;
+    uint8_t register_priv = (to_underlying(csr) >> 8) & 3;
+
+    if (access_priv < register_priv) {
+        // we should not access Hypervisor and Virtual registers directly from the virtual mode
+        // for Hypervisor and Virtual registers register_priv = 2
+        if (a.read_iflags_VRT() && register_priv <= PRV_S + 1)
+            status = MCAUSE_VIRTUAL_INSTRUCTION;
+        else
+            status = MCAUSE_ILLEGAL_INSN;
+        return false;
+    }
+
+    return true;
+}
+
+static inline MODE_constants encode_access_mode(uint8_t priv, bool virt) {
+    uint8_t access_mode = priv;
+    if (virt) {
+        access_mode |= ACCESS_MODE_VRT_MASK;
+    }
+    return static_cast<MODE_constants>(access_mode);
+}
+
+template <typename STATE_ACCESS>
+static inline MODE_constants current_mode(STATE_ACCESS &a) {
+    uint8_t cur_priv = a.read_iflags_PRV();
+    bool cur_virt = a.read_iflags_VRT();
+    return encode_access_mode(cur_priv, cur_virt);
+}
+
+/// \brief Gets currently machine memory access mode.
+/// \param a Machine state accessor object.
+/// \returns machine memory access mode.
+template <typename STATE_ACCESS>
+static inline MODE_constants get_current_memory_access_mode(STATE_ACCESS &a) {
+    uint8_t priv = a.read_iflags_PRV();
+    bool virt = a.read_iflags_VRT();
+
+    // When MPRV is set, data loads and stores use privilege in MPP
+    // and virtual state in MPV instead of the current privilege level
+    // (virtual-machine load/store instructions, HLV, HLVX, HSV are unaffected)
+    if ((a.read_mstatus() & MSTATUS_MPRV_MASK) && !virt) {
+        priv = (a.read_mstatus() & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
+        virt = (a.read_mstatus() & MSTATUS_MPV_MASK) >> MSTATUS_MPV_SHIFT;
+    }
+
+    return encode_access_mode(priv, virt);
 }
 
 /// \brief Changes privilege level.
@@ -308,6 +368,7 @@ template <typename STATE_ACCESS>
 static NO_INLINE void set_priv(STATE_ACCESS &a, int new_prv) {
     INC_COUNTER(a.get_statistics(), priv_level[new_prv]);
     a.write_iflags_PRV(new_prv);
+
     // Invalidate all TLB entries
     a.flush_all_tlb();
     INC_COUNTER(a.get_statistics(), tlb_flush_all);
@@ -318,6 +379,137 @@ static NO_INLINE void set_priv(STATE_ACCESS &a, int new_prv) {
     a.write_ilrsc(-1); // invalidate reserved address
 }
 
+template <typename STATE_ACCESS>
+static inline uint64_t raise_exception_M(STATE_ACCESS &a, uint64_t pc, uint64_t cause, uint64_t tval) {
+    auto priv = a.read_iflags_PRV();
+    set_priv(a, PRV_M);
+
+    uint64_t mstatus = a.read_mstatus();
+    uint64_t mie = (mstatus & MSTATUS_MIE_MASK) >> MSTATUS_MIE_SHIFT;
+    mstatus = (mstatus & ~MSTATUS_MPIE_MASK) | (mie << MSTATUS_MPIE_SHIFT);
+    mstatus &= ~MSTATUS_MPV_MASK;
+    mstatus &= ~MSTATUS_GVA_MASK;
+    mstatus &= ~MSTATUS_MIE_MASK;
+    if (a.read_iflags_VRT()) {
+        mstatus |= MSTATUS_MPV_MASK;
+        // For any trap (breakpoint, address misaligned, access fault, page fault, or guest-page fault)
+        // that writes a guest virtual address to stval, GVA is set to 1.
+        switch (cause) {
+            case MCAUSE_BREAKPOINT:
+            case MCAUSE_INSN_ADDRESS_MISALIGNED:
+            case MCAUSE_INSN_ACCESS_FAULT:
+            case MCAUSE_LOAD_ADDRESS_MISALIGNED:
+            case MCAUSE_LOAD_ACCESS_FAULT:
+            case MCAUSE_STORE_AMO_ADDRESS_MISALIGNED:
+            case MCAUSE_STORE_AMO_ACCESS_FAULT:
+            case MCAUSE_FETCH_PAGE_FAULT:
+            case MCAUSE_LOAD_PAGE_FAULT:
+            case MCAUSE_STORE_AMO_PAGE_FAULT:
+            case MCAUSE_INSTRUCTION_GUEST_PAGE_FAULT:
+            case MCAUSE_LOAD_GUEST_PAGE_FAULT:
+            case MCAUSE_STORE_AMO_GUEST_PAGE_FAULT:
+                mstatus |= MSTATUS_GVA_MASK;
+            default:
+                break;
+        }
+    }
+
+    mstatus = (mstatus & ~MSTATUS_MPP_MASK) | (priv << MSTATUS_MPP_SHIFT);
+    a.write_mstatus(mstatus);
+    a.write_mcause(cause);
+    a.write_mepc(pc);
+    a.write_mtval(tval);
+    a.reset_iflags_VRT();
+
+#ifdef DUMP_COUNTERS
+    if (cause & MCAUSE_INTERRUPT_FLAG)
+        INC_COUNTER(a.get_naked_state(), m_int);
+    else if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M) // Do not count environment calls
+        INC_COUNTER(a.get_naked_state(), m_ex);
+#endif
+    return a.read_mtvec();
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t raise_exception_HS(STATE_ACCESS &a, uint64_t pc, uint64_t cause, uint64_t tval, uint64_t tval2) {
+    auto priv = a.read_iflags_PRV();
+    set_priv(a, PRV_S);
+    uint64_t mstatus = a.read_mstatus();
+    uint64_t hstatus = a.read_hstatus();
+
+    uint64_t sie = (mstatus & MSTATUS_SIE_MASK) >> MSTATUS_SIE_SHIFT;
+    hstatus &= ~HSTATUS_SPV_MASK;
+    hstatus &= ~HSTATUS_GVA_MASK;
+    mstatus = (mstatus & ~MSTATUS_SPIE_MASK) | (sie << MSTATUS_SPIE_SHIFT);
+    mstatus = (mstatus & ~MSTATUS_SPP_MASK) | (priv << MSTATUS_SPP_SHIFT);
+    mstatus &= ~MSTATUS_SIE_MASK;
+    // if V was 1 before the trap, field hstatus.SPVP is set the same as sstatus.SPP
+    if (a.read_iflags_VRT()) {
+        hstatus = (hstatus & ~HSTATUS_SPVP_MASK) | (priv << HSTATUS_SPVP_SHIFT);
+        hstatus |= HSTATUS_SPV_MASK;
+        // For any trap (breakpoint, address misaligned, access fault, page fault, or guest-page fault)
+        // that writes a guest virtual address to stval, GVA is set to 1.
+        switch (cause) {
+            case MCAUSE_BREAKPOINT:
+            case MCAUSE_INSN_ADDRESS_MISALIGNED:
+            case MCAUSE_INSN_ACCESS_FAULT:
+            case MCAUSE_LOAD_ADDRESS_MISALIGNED:
+            case MCAUSE_LOAD_ACCESS_FAULT:
+            case MCAUSE_STORE_AMO_ADDRESS_MISALIGNED:
+            case MCAUSE_STORE_AMO_ACCESS_FAULT:
+            case MCAUSE_FETCH_PAGE_FAULT:
+            case MCAUSE_LOAD_PAGE_FAULT:
+            case MCAUSE_STORE_AMO_PAGE_FAULT:
+            case MCAUSE_INSTRUCTION_GUEST_PAGE_FAULT:
+            case MCAUSE_LOAD_GUEST_PAGE_FAULT:
+            case MCAUSE_STORE_AMO_GUEST_PAGE_FAULT:
+                hstatus |= HSTATUS_GVA_MASK;
+            default:
+                break;
+        }
+    }
+
+    a.write_hstatus(hstatus);
+    a.write_mstatus(mstatus);
+    a.write_scause(cause);
+    a.write_sepc(pc);
+    a.write_stval(tval);
+    a.write_htval(tval2);
+    a.reset_iflags_VRT();
+
+#ifdef DUMP_COUNTERS
+    if (cause & MCAUSE_INTERRUPT_FLAG)
+        INC_COUNTER(a.get_naked_state(), sv_int);
+    else if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M) // Do not count environment calls
+        INC_COUNTER(a.get_naked_state(), sv_ex);
+#endif
+    return a.read_stvec();
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t raise_exception_VS(STATE_ACCESS &a, uint64_t pc, uint64_t cause, uint64_t tval) {
+    auto priv = a.read_iflags_PRV();
+    set_priv(a, PRV_S);
+
+    uint64_t vsstatus = a.read_vsstatus();
+    uint64_t sie = (vsstatus & MSTATUS_SIE_MASK) >> MSTATUS_SIE_SHIFT;
+    vsstatus = (vsstatus & ~MSTATUS_SPIE_MASK) | (sie << MSTATUS_SPIE_SHIFT);
+    vsstatus = (vsstatus & ~MSTATUS_SPP_MASK) | (priv << MSTATUS_SPP_SHIFT);
+    vsstatus &= ~MSTATUS_SIE_MASK;
+
+    a.write_vsstatus(vsstatus);
+    a.write_vscause(cause);
+    a.write_vsepc(pc);
+    a.write_vstval(tval);
+#ifdef DUMP_COUNTERS
+    if (cause & MCAUSE_INTERRUPT_FLAG)
+        INC_COUNTER(a.get_naked_state(), sv_int);
+    else if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M) // Do not count environment calls
+        INC_COUNTER(a.get_naked_state(), sv_ex);
+#endif
+    return a.read_vstvec();
+}
+
 /// \brief Raise an exception (or interrupt).
 /// \param a Machine state accessor object.
 /// \param pc Machine current program counter.
@@ -326,7 +518,7 @@ static NO_INLINE void set_priv(STATE_ACCESS &a, int new_prv) {
 /// \returns The new program counter, pointing to the raised exception trap handler.
 /// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t cause, uint64_t tval) {
+static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t cause, uint64_t tval, uint64_t tval2) {
 #if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS) ||                            \
     defined(DUMP_ILLEGAL_INSN_EXCEPTIONS)
     {
@@ -361,66 +553,73 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t
     }
 #endif
 
-    // Check if exception should be delegated to supervisor privilege
-    // For each interrupt or exception number, there is a bit at mideleg
-    // or medeleg saying if it should be delegated
-    bool deleg = false;
-    auto priv = a.read_iflags_PRV();
-    if (priv <= PRV_S) {
-        if (cause & MCAUSE_INTERRUPT_FLAG) {
-            // Clear the MCAUSE_INTERRUPT_FLAG bit before shifting
-            deleg = (a.read_mideleg() >> (cause & (XLEN - 1))) & 1;
-        } else {
-            deleg = (a.read_medeleg() >> cause) & 1;
-        }
-    }
-
     // Every raised exception increases the exception counter, so we can compute minstret later
     a.write_icycleinstret(a.read_icycleinstret() + 1);
 
-    uint64_t new_pc = 0;
-    if (deleg) {
-        a.write_scause(cause);
-        a.write_sepc(pc);
-        a.write_stval(tval);
-        uint64_t mstatus = a.read_mstatus();
-        mstatus = (mstatus & ~MSTATUS_SPIE_MASK) | (((mstatus >> MSTATUS_SIE_SHIFT) & 1) << MSTATUS_SPIE_SHIFT);
-        mstatus = (mstatus & ~MSTATUS_SPP_MASK) | (priv << MSTATUS_SPP_SHIFT);
-        mstatus &= ~MSTATUS_SIE_MASK;
-        a.write_mstatus(mstatus);
-        if (priv != PRV_S) {
-            set_priv(a, PRV_S);
+    // check if the exception should be delegated
+    auto mode = current_mode(a);
+    uint64_t vsdeleg = 0, hsdeleg = 0;
+    bool interrupt = cause & MCAUSE_INTERRUPT_FLAG;
+    if (interrupt) {
+        if (mode == MODE_VS || mode == MODE_VU) {
+            read_csr_or_return_on_failure(read_csr_hideleg, a, vsdeleg);
         }
-        new_pc = a.read_stvec();
-#ifdef DUMP_COUNTERS
-        if (cause & MCAUSE_INTERRUPT_FLAG) {
-            INC_COUNTER(a.get_statistics(), sv_int);
-        } else if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M) { // Do not count environment calls
-            INC_COUNTER(a.get_statistics(), sv_ex);
+        if (mode != MODE_M) {
+            read_csr_or_return_on_failure(read_csr_mideleg, a, hsdeleg);
         }
-#endif
     } else {
-        a.write_mcause(cause);
-        a.write_mepc(pc);
-        a.write_mtval(tval);
-        uint64_t mstatus = a.read_mstatus();
-        mstatus = (mstatus & ~MSTATUS_MPIE_MASK) | (((mstatus >> MSTATUS_MIE_SHIFT) & 1) << MSTATUS_MPIE_SHIFT);
-        mstatus = (mstatus & ~MSTATUS_MPP_MASK) | (priv << MSTATUS_MPP_SHIFT);
-        mstatus &= ~MSTATUS_MIE_MASK;
-        a.write_mstatus(mstatus);
-        if (priv != PRV_M) {
-            set_priv(a, PRV_M);
+        if (mode == MODE_VS || mode == MODE_VU) {
+            vsdeleg = a.read_medeleg() & a.read_hedeleg();
         }
-        new_pc = a.read_mtvec();
-#ifdef DUMP_COUNTERS
-        if (cause & MCAUSE_INTERRUPT_FLAG) {
-            INC_COUNTER(a.get_statistics(), m_int);
-        } else if (cause >= MCAUSE_ECALL_BASE && cause <= MCAUSE_ECALL_BASE + PRV_M) { // Do not count environment calls
-            INC_COUNTER(a.get_statistics(), m_ex);
+        if (mode != MODE_M) {
+            hsdeleg = a.read_medeleg();
         }
-#endif
+    }
+
+    // delegate exception to the corresponding mode
+    uint64_t new_pc = 0;
+    auto priv = (mode & ACCESS_MODE_PRV_MASK) >> ACCESS_MODE_PRV_SHIFT;
+    if (priv <= PRV_S && ((vsdeleg >> cause) & 1)) {
+        if (interrupt) {
+            --cause;
+        }
+        new_pc = raise_exception_VS(a, pc, cause, tval);
+    } else if (priv <= PRV_S && ((hsdeleg >> cause) & 1)) {
+        new_pc = raise_exception_HS(a, pc, cause, tval, tval2);
+    } else {
+        new_pc = raise_exception_M(a, pc, cause, tval);
     }
     return new_pc;
+}
+
+template <typename STATE_ACCESS>
+static inline uint32_t get_enabled_irq_mask_M(STATE_ACCESS &a, uint64_t mie, uint8_t priv) {
+    uint32_t deleg = ~a.read_mideleg();
+    if (priv < PRV_M || (priv == PRV_M && mie)) { // enabled M
+        return deleg;
+    } else {
+        return 0;
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline uint32_t get_enabled_irq_mask_HS(STATE_ACCESS &a, uint64_t sie, uint8_t priv) {
+    uint32_t deleg = a.read_mideleg() & ~a.read_hideleg();
+    if (a.read_iflags_VRT() || priv < PRV_S || (priv == PRV_S && sie)) { // enabled S
+        return deleg;
+    } else {
+        return 0;
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline uint32_t get_enabled_irq_mask_VS(STATE_ACCESS &a, uint64_t sie, uint8_t priv) {
+    uint32_t deleg = a.read_hideleg();
+    if (priv < PRV_S || (priv == PRV_S && sie)) { // enabled VS
+        return deleg;
+    } else {
+        return 0;
+    }
 }
 
 /// \brief Obtains a mask of pending and enabled interrupts.
@@ -431,43 +630,25 @@ static inline uint32_t get_pending_irq_mask(STATE_ACCESS &a) {
     uint64_t mip = a.read_mip();
     uint64_t mie = a.read_mie();
 
-    // interrupt trap condition 2: bit i is set in both mip and mie
     uint32_t pending_ints = mip & mie;
     if (pending_ints == 0) {
         return 0;
     }
 
-    uint32_t enabled_ints = 0;
     auto priv = a.read_iflags_PRV();
-    switch (priv) {
-        // interrupt trap condition 1a: the current privilege mode is M
-        case PRV_M: {
-            uint64_t mstatus = a.read_mstatus();
-            // interrupt trap condition 1a: ... and the MIE bit in the mstatus
-            // register is set
-            if (mstatus & MSTATUS_MIE_MASK) {
-                // interrupt trap condition 3: bit i is not set in mideleg
-                enabled_ints = ~a.read_mideleg();
-            }
-            break;
+    auto mstatus = a.read_mstatus();
+    uint64_t status_mie = (mstatus & MSTATUS_MIE_MASK) >> MSTATUS_MIE_SHIFT;
+    uint64_t status_sie = (mstatus & MSTATUS_SIE_MASK) >> MSTATUS_SIE_SHIFT;
+    if (a.read_iflags_VRT()) {
+        status_sie = (a.read_vsstatus() & MSTATUS_SIE_MASK) >> MSTATUS_SIE_SHIFT;
+    }
+
+    uint32_t enabled_ints = get_enabled_irq_mask_M(a, status_mie, priv);
+    if ((enabled_ints & pending_ints) == 0) {
+        enabled_ints = get_enabled_irq_mask_HS(a, status_sie, priv);
+        if (a.read_iflags_VRT() && ((enabled_ints & pending_ints) == 0)) {
+            enabled_ints = get_enabled_irq_mask_VS(a, status_sie, priv);
         }
-        // interrupt trap condition 1b: the current privilege mode has less
-        // privilege than M-mode
-        case PRV_S: {
-            uint64_t mstatus = a.read_mstatus();
-            // Interrupts not set in mideleg are machine-mode
-            // and cannot be masked by supervisor mode
-            if (mstatus & MSTATUS_SIE_MASK) {
-                enabled_ints = -1;
-            } else {
-                // interrupt trap condition 3: bit i is not set in mideleg
-                enabled_ints = ~a.read_mideleg();
-            }
-            break;
-        }
-        default:
-            enabled_ints = -1;
-            break;
     }
 
     return pending_ints & enabled_ints;
@@ -489,8 +670,9 @@ static inline uint32_t get_highest_priority_irq_num(uint32_t v) {
     // Multiple simultaneous interrupts destined for HS-mode are handled in the following decreasing
     // priority order: SEI, SSI, STI, SGEI, VSEI, VSSI, VSTI.
     const std::array interrupts_priority{
-        MIP_MEIP_MASK, MIP_MSIP_MASK, MIP_MTIP_MASK, // Machine interrupts has higher priority
-        MIP_SEIP_MASK, MIP_SSIP_MASK, MIP_STIP_MASK  // Supervisor interrupts
+        MIP_MEIP_MASK, MIP_MSIP_MASK, MIP_MTIP_MASK,    // Machine interrupts has higher priority
+        MIP_SEIP_MASK, MIP_SSIP_MASK, MIP_STIP_MASK,    // Supervisor interrupts
+        MIP_VSEIP_MASK, MIP_VSSIP_MASK, MIP_VSTIP_MASK, // Virtual interrupts
     };
     for (uint32_t mask : interrupts_priority) {
         if (v & mask) {
@@ -511,7 +693,7 @@ static inline uint64_t raise_interrupt_if_any(STATE_ACCESS &a, uint64_t pc) {
     uint32_t mask = get_pending_irq_mask(a);
     if (unlikely(mask != 0)) {
         uint64_t irq_num = get_highest_priority_irq_num(mask);
-        return raise_exception(a, pc, irq_num | MCAUSE_INTERRUPT_FLAG, 0);
+        return raise_exception(a, pc, irq_num | MCAUSE_INTERRUPT_FLAG, 0, 0);
     }
     return pc;
 }
@@ -815,23 +997,43 @@ static FORCE_INLINE int32_t insn_get_C_SWSP_imm(uint32_t insn) {
 /// instead of always storing it in register (this is an optimization).
 template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>
 static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS &a, uint64_t pc, uint64_t mcycle,
-    uint64_t vaddr, T *pval) {
+    uint64_t vaddr, MODE_constants access_mode, uint8_t xwr_shift, T *pval) {
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (unlikely(vaddr & (sizeof(T) - 1))) {
-        pc = raise_exception(a, pc,
-            RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ADDRESS_MISALIGNED : MCAUSE_LOAD_ADDRESS_MISALIGNED, vaddr);
+        MCAUSE_constants c = MCAUSE_LOAD_ADDRESS_MISALIGNED;
+        if constexpr (RAISE_STORE_EXCEPTIONS) {
+            c = MCAUSE_STORE_AMO_ADDRESS_MISALIGNED;
+        }
+        pc = raise_exception(a, pc, c, vaddr, 0);
         return {false, pc};
     }
     // Deal with aligned accesses
     uint64_t paddr{};
-    if (unlikely(!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_R_SHIFT))) {
-        pc = raise_exception(a, pc, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_PAGE_FAULT : MCAUSE_LOAD_PAGE_FAULT,
-            vaddr);
+    uint8_t cause = translate_virtual_address<STATE_ACCESS, ACCESS_TYPE_LOAD>(a, &paddr, vaddr, access_mode, xwr_shift);
+    if (unlikely(cause)) {
+        if constexpr (RAISE_STORE_EXCEPTIONS) {
+            if (cause == MCAUSE_LOAD_PAGE_FAULT) {
+                cause = MCAUSE_STORE_AMO_PAGE_FAULT;
+            } else {
+                cause = MCAUSE_STORE_AMO_GUEST_PAGE_FAULT;
+            }
+        }
+        // When a guest-page-fault trap is taken into HS-mode, htval is written with the guest
+        // physical address that faulted, shifted right by 2 bits.
+        pc = raise_exception(a, pc, cause, vaddr, paddr >> 2);
         return {false, pc};
     }
     auto &pma = a.template find_pma_entry<T>(paddr);
     if (likely(pma.get_istart_R())) {
+        if (unlikely(xwr_shift == PTE_XWR_X_SHIFT && !pma.get_istart_X())) {
+            MCAUSE_constants c = MCAUSE_LOAD_ACCESS_FAULT;
+            if constexpr (RAISE_STORE_EXCEPTIONS) {
+                c = MCAUSE_STORE_AMO_ACCESS_FAULT;
+            }
+            pc = raise_exception(a, pc, c, vaddr, 0);
+            return {false, pc};
+        }
         if (likely(pma.get_istart_M())) {
             unsigned char *hpage = a.template replace_tlb_entry<TLB_READ>(vaddr, paddr, pma);
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
@@ -848,8 +1050,11 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS
             }
         }
     }
-    pc = raise_exception(a, pc, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT,
-        vaddr);
+    MCAUSE_constants c = MCAUSE_LOAD_ACCESS_FAULT;
+    if constexpr (RAISE_STORE_EXCEPTIONS) {
+        c = MCAUSE_STORE_AMO_ACCESS_FAULT;
+    }
+    pc = raise_exception(a, pc, c, vaddr, 0);
     return {false, pc};
 }
 
@@ -865,10 +1070,11 @@ template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false
 static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint64_t vaddr, T *pval) {
     // Try hitting the TLB
     if (unlikely(!(a.template read_memory_word_via_tlb<TLB_READ>(vaddr, pval)))) {
+        MODE_constants access_mode = get_current_memory_access_mode(a);
         // Outline the slow path into a function call to minimize host CPU code cache pressure
         INC_COUNTER(a.get_statistics(), tlb_rmiss);
-        auto [status, new_pc] =
-            read_virtual_memory_slow<T, STATE_ACCESS, RAISE_STORE_EXCEPTIONS>(a, pc, mcycle, vaddr, pval);
+        auto [status, new_pc] = read_virtual_memory_slow<T, STATE_ACCESS, RAISE_STORE_EXCEPTIONS>(a, pc, mcycle, vaddr,
+            access_mode, PTE_XWR_R_SHIFT, pval);
         pc = new_pc;
         return status;
     }
@@ -892,17 +1098,21 @@ static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS &a, uint64_t &pc, uint
 /// instead of always storing it in register (this is an optimization).
 template <typename T, typename STATE_ACCESS>
 static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(STATE_ACCESS &a, uint64_t pc,
-    uint64_t mcycle, uint64_t vaddr, uint64_t val64) {
+    uint64_t mcycle, uint64_t vaddr, MODE_constants access_mode, uint64_t val64) {
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (unlikely(vaddr & (sizeof(T) - 1))) {
-        pc = raise_exception(a, pc, MCAUSE_STORE_AMO_ADDRESS_MISALIGNED, vaddr);
+        pc = raise_exception(a, pc, MCAUSE_STORE_AMO_ADDRESS_MISALIGNED, vaddr, 0);
         return {execute_status::failure, pc};
     }
     // Deal with aligned accesses
     uint64_t paddr{};
-    if (unlikely(!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_W_SHIFT))) {
-        pc = raise_exception(a, pc, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
+    uint8_t cause =
+        translate_virtual_address<STATE_ACCESS, ACCESS_TYPE_STORE>(a, &paddr, vaddr, access_mode, PTE_XWR_W_SHIFT);
+    if (unlikely(cause)) {
+        // When a guest-page-fault trap is taken into HS-mode, htval is written with the guest
+        // physical address that faulted, shifted right by 2 bits.
+        pc = raise_exception(a, pc, cause, vaddr, paddr >> 2);
         return {execute_status::failure, pc};
     }
     auto &pma = a.template find_pma_entry<T>(paddr);
@@ -921,7 +1131,7 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(S
             }
         }
     }
-    pc = raise_exception(a, pc, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
+    pc = raise_exception(a, pc, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr, 0);
     return {execute_status::failure, pc};
 }
 
@@ -939,8 +1149,9 @@ static FORCE_INLINE execute_status write_virtual_memory(STATE_ACCESS &a, uint64_
     // Try hitting the TLB
     if (unlikely((!a.template write_memory_word_via_tlb<TLB_WRITE>(vaddr, static_cast<T>(val64))))) {
         INC_COUNTER(a.get_statistics(), tlb_wmiss);
+        MODE_constants access_mode = get_current_memory_access_mode(a);
         // Outline the slow path into a function call to minimize host CPU code cache pressure
-        auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, mcycle, vaddr, val64);
+        auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, mcycle, vaddr, access_mode, val64);
         pc = new_pc;
         return status;
     }
@@ -958,11 +1169,12 @@ static void dump_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const char *n
 #endif
 #ifdef DUMP_INSN
     uint64_t ppc = 0;
+    MODE_constants access_mode = get_current_memory_access_mode(a);
     // If we are running in the microinterpreter, we may or may not be collecting a step access log.
     // To prevent additional address translation end up in the log,
     // the following check will always be false when MICROARCHITECTURE is defined.
     if (std::is_same<STATE_ACCESS, state_access>::value &&
-        !translate_virtual_address<STATE_ACCESS, false>(a, &ppc, pc, PTE_XWR_X_SHIFT)) {
+        translate_virtual_address<STATE_ACCESS, ACCESS_TYPE_LOAD, false>(a, &ppc, pc, access_mode, PTE_XWR_X_SHIFT)) {
         ppc = pc;
         fprintf(stderr, "v    %08" PRIx64, ppc);
     } else {
@@ -988,7 +1200,13 @@ static void dump_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const char *n
 /// illegal.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status raise_illegal_insn_exception(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    pc = raise_exception(a, pc, MCAUSE_ILLEGAL_INSN, insn);
+    pc = raise_exception(a, pc, MCAUSE_ILLEGAL_INSN, insn, 0);
+    return execute_status::failure;
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status raise_virtual_insn_exception(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    pc = raise_exception(a, pc, MCAUSE_VIRTUAL_INSTRUCTION, insn, 0);
     return execute_status::failure;
 }
 
@@ -1000,7 +1218,7 @@ static FORCE_INLINE execute_status raise_illegal_insn_exception(STATE_ACCESS &a,
 /// \details This function is tail-called whenever the caller identified that the next value of pc is misaligned.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status raise_misaligned_fetch_exception(STATE_ACCESS &a, uint64_t &pc, uint64_t new_pc) {
-    pc = raise_exception(a, pc, MCAUSE_INSN_ADDRESS_MISALIGNED, new_pc);
+    pc = raise_exception(a, pc, MCAUSE_INSN_ADDRESS_MISALIGNED, new_pc, 0);
     return execute_status::failure;
 }
 
@@ -1539,12 +1757,127 @@ static inline uint64_t read_csr_time(STATE_ACCESS &a, uint64_t mcycle, bool *sta
         return read_csr_fail(status);
     }
     uint64_t mtime = rtc_cycle_to_time(mcycle);
+    if (a.read_iflags_VRT()) {
+        mtime += a.read_htimedelta();
+    }
     return read_csr_success(mtime, status);
 }
 
 template <typename STATE_ACCESS>
+static inline uint64_t read_csr_hstatus(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_hstatus() & HSTATUS_R_MASK, status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_hedeleg(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_hedeleg(), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_hideleg(STATE_ACCESS &a, bool *status) {
+    auto mideleg = read_csr_mideleg(a, status);
+    // for bits of mideleg that are zero, the corresponding bits in hideleg are read-only zeros
+    return read_csr_success(a.read_hideleg() & mideleg, status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_hie(STATE_ACCESS &a, bool *status) {
+    auto mideleg = read_csr_mideleg(a, status);
+    // for bits of mideleg that are zero, the corresponding bits in hie are read-only zeros
+    return read_csr_success(a.read_hie() & mideleg, status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_hip(STATE_ACCESS &a, bool *status) {
+    auto mideleg = read_csr_mideleg(a, status);
+    const uint64_t mask = MIP_VSEIP_MASK | MIP_VSTIP_MASK | MIP_VSSIP_MASK;
+    auto val = (a.read_hvip() & mask); // ignoring hip.SGEIP as we do not support guest external interrupts
+    //  for bits of mideleg that are zero, the corresponding bits in hip are read-only zeros
+    return read_csr_success(val & mideleg, status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_hvip(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_hvip(), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_henvcfg(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_henvcfg() & MENVCFG_R_MASK, status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_hgatp(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_hgatp(), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_htimedelta(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_htimedelta(), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_htval(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_htval(), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_vsstatus(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_vsstatus(), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_vsie(STATE_ACCESS &a, bool *status) {
+    uint64_t hideleg = a.read_hideleg();
+    uint64_t hie = read_csr_hie(a, status) & hideleg;
+    return hie >> 1; // bits 2, 6, 10 in hie correspond to 1, 5, 9 in vsie
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_vstvec(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_vstvec(), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_vsscratch(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_vsscratch(), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_vsepc(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_vsepc(), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_vscause(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_vscause(), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_vstval(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_vstval(), status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_vsip(STATE_ACCESS &a, bool *status) {
+    auto hideleg = read_csr_hideleg(a, status);
+    auto hip = read_csr_hip(a, status);
+    hip &= hideleg;
+    return hip >> 1; // bits 2, 6, 10 in hip correspond to 1, 5, 9 in vsip
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_vsatp(STATE_ACCESS &a, bool *status) {
+    return read_csr_success(a.read_vsatp(), status);
+}
+
+template <typename STATE_ACCESS>
 static inline uint64_t read_csr_sstatus(STATE_ACCESS &a, bool *status) {
-    return read_csr_success(a.read_mstatus() & SSTATUS_R_MASK, status);
+    if (a.read_iflags_VRT()) {
+        return read_csr_success(a.read_vsstatus() & VSSTATUS_R_MASK, status);
+    } else {
+        return read_csr_success(a.read_mstatus() & SSTATUS_R_MASK, status);
+    }
 }
 
 template <typename STATE_ACCESS>
@@ -1554,14 +1887,23 @@ static inline uint64_t read_csr_senvcfg(STATE_ACCESS &a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_sie(STATE_ACCESS &a, bool *status) {
-    uint64_t mie = a.read_mie();
-    uint64_t mideleg = a.read_mideleg();
-    return read_csr_success(mie & mideleg, status);
+    if (a.read_iflags_VRT()) {
+        uint64_t sie = read_csr_vsie(a, status);
+        return read_csr_success(sie, status);
+    } else {
+        uint64_t mie = read_csr_mie(a, status) & (MIP_SSIP_MASK | MIP_SEIP_MASK | MIP_STIP_MASK);
+        uint64_t mideleg = read_csr_mideleg(a, status);
+        return read_csr_success(mie & mideleg, status);
+    }
 }
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_stvec(STATE_ACCESS &a, bool *status) {
-    return read_csr_success(a.read_stvec(), status);
+    if (a.read_iflags_VRT()) {
+        return read_csr_success(a.read_vstvec(), status);
+    } else {
+        return read_csr_success(a.read_stvec(), status);
+    }
 }
 
 template <typename STATE_ACCESS>
@@ -1571,42 +1913,75 @@ static inline uint64_t read_csr_scounteren(STATE_ACCESS &a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_sscratch(STATE_ACCESS &a, bool *status) {
-    return read_csr_success(a.read_sscratch(), status);
+    if (a.read_iflags_VRT()) {
+        return read_csr_success(a.read_vsscratch(), status);
+    } else {
+        return read_csr_success(a.read_sscratch(), status);
+    }
 }
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_sepc(STATE_ACCESS &a, bool *status) {
-    return read_csr_success(a.read_sepc(), status);
+    if (a.read_iflags_VRT()) {
+        return read_csr_success(a.read_vsepc(), status);
+    } else {
+        return read_csr_success(a.read_sepc(), status);
+    }
 }
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_scause(STATE_ACCESS &a, bool *status) {
-    return read_csr_success(a.read_scause(), status);
+    if (a.read_iflags_VRT()) {
+        return read_csr_success(a.read_vscause(), status);
+    } else {
+        return read_csr_success(a.read_scause(), status);
+    }
 }
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_stval(STATE_ACCESS &a, bool *status) {
-    return read_csr_success(a.read_stval(), status);
+    if (a.read_iflags_VRT()) {
+        return read_csr_success(a.read_vstval(), status);
+    } else {
+        return read_csr_success(a.read_stval(), status);
+    }
 }
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_sip(STATE_ACCESS &a, bool *status) {
-    // Ensure values are are loaded in order: do not nest with operator
-    uint64_t mip = a.read_mip();
-    uint64_t mideleg = a.read_mideleg();
-    return read_csr_success(mip & mideleg, status);
+    //  Ensure values are are loaded in order: do not nest with operator
+    if (a.read_iflags_VRT()) {
+        uint64_t sip = read_csr_vsip(a, status);
+        return read_csr_success(sip, status);
+    } else {
+        uint64_t mip = read_csr_mip(a, status) & (MIP_SSIP_MASK | MIP_SEIP_MASK | MIP_STIP_MASK);
+        uint64_t mideleg = read_csr_mideleg(a, status);
+        return read_csr_success(mip & mideleg, status);
+    }
 }
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_satp(STATE_ACCESS &a, bool *status) {
-    uint64_t mstatus = a.read_mstatus();
     auto priv = a.read_iflags_PRV();
-    // When TVM=1, attempts to read or write the satp CSR
-    // while executing in S-mode will raise an illegal instruction exception
-    if (unlikely(priv == PRV_S && (mstatus & MSTATUS_TVM_MASK))) {
-        return read_csr_fail(status);
+    if (a.read_iflags_VRT()) {
+        uint64_t hstatus = a.read_hstatus();
+        // When VTVM=1, an attempt in VS-mode to access CSR satp raises a virtual instruction
+        // exception
+        if (unlikely(priv == PRV_S && (hstatus & HSTATUS_VTVM_MASK))) {
+            return read_csr_fail(status);
+        }
+        uint64_t atp = a.read_vsatp();
+        return read_csr_success(atp, status);
+    } else {
+        uint64_t mstatus = a.read_mstatus();
+        // When TVM=1, attempts to read or write the satp CSR
+        // while executing in S-mode will raise an illegal instruction exception
+        if (unlikely(priv == PRV_S && (mstatus & MSTATUS_TVM_MASK))) {
+            return read_csr_fail(status);
+        }
+        uint64_t atp = a.read_satp();
+        return read_csr_success(atp, status);
     }
-    return read_csr_success(a.read_satp(), status);
 }
 
 template <typename STATE_ACCESS>
@@ -1631,12 +2006,15 @@ static inline uint64_t read_csr_medeleg(STATE_ACCESS &a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_mideleg(STATE_ACCESS &a, bool *status) {
-    return read_csr_success(a.read_mideleg(), status);
+    auto mideleg = a.read_mideleg();
+    return read_csr_success(mideleg | HIX_R_MASK, status);
 }
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_mie(STATE_ACCESS &a, bool *status) {
-    return read_csr_success(a.read_mie(), status);
+    auto mie = a.read_mie();
+    auto hie = read_csr_hie(a, status);
+    return read_csr_success(mie | hie, status);
 }
 
 template <typename STATE_ACCESS>
@@ -1671,7 +2049,9 @@ static inline uint64_t read_csr_mtval(STATE_ACCESS &a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_mip(STATE_ACCESS &a, bool *status) {
-    return read_csr_success(a.read_mip(), status);
+    auto mip = a.read_mip();
+    auto hip = read_csr_hip(a, status);
+    return read_csr_success(mip | hip, status);
 }
 
 static inline uint64_t read_csr_mcycle(uint64_t mcycle, bool *status) {
@@ -1732,92 +2112,189 @@ static inline uint64_t read_csr_fcsr(STATE_ACCESS &a, bool *status) {
 /// \brief Reads the value of a CSR given its address
 /// \param a Machine state accessor object.
 /// \param csraddr Address of CSR in file.
-/// \param status Returns the status of the operation (true for success, false otherwise).
-/// \returns Register value.
-/// \details This function is outlined to minimize host CPU code cache pressure.
+/// \param cause cause code in case of operation failure
+/// \param val register value in case of operation success
+/// \returns true if operation succeeded, false otherwise.
 template <typename STATE_ACCESS>
-static NO_INLINE uint64_t read_csr(STATE_ACCESS &a, uint64_t mcycle, CSR_address csraddr, bool *status) {
-    if (unlikely(csr_priv(csraddr) > a.read_iflags_PRV())) {
-        return read_csr_fail(status);
+static NO_INLINE bool read_csr(STATE_ACCESS &a, uint64_t mcycle, CSR_address csraddr, uint64_t &val,
+    MCAUSE_constants &cause) {
+    if (unlikely(!csr_is_allowed_access(a, csraddr, cause))) {
+        return false;
     }
+    bool status = false;
+    MCAUSE_constants _cause = MCAUSE_ILLEGAL_INSN;
 
     switch (csraddr) {
         case CSR_address::fflags:
-            return read_csr_fflags(a, status);
+            val = read_csr_fflags(a, &status);
+            break;
         case CSR_address::frm:
-            return read_csr_frm(a, status);
+            val = read_csr_frm(a, &status);
+            break;
         case CSR_address::fcsr:
-            return read_csr_fcsr(a, status);
-
+            val = read_csr_fcsr(a, &status);
+            break;
         case CSR_address::ucycle:
-            return read_csr_cycle(a, mcycle, status);
+            val = read_csr_cycle(a, mcycle, &status);
+            break;
         case CSR_address::uinstret:
-            return read_csr_instret(a, mcycle, status);
+            val = read_csr_instret(a, mcycle, &status);
+            break;
         case CSR_address::utime:
-            return read_csr_time(a, mcycle, status);
-
+            val = read_csr_time(a, mcycle, &status);
+            break;
         case CSR_address::sstatus:
-            return read_csr_sstatus(a, status);
+            val = read_csr_sstatus(a, &status);
+            break;
         case CSR_address::senvcfg:
-            return read_csr_senvcfg(a, status);
+            val = read_csr_senvcfg(a, &status);
+            break;
         case CSR_address::sie:
-            return read_csr_sie(a, status);
+            val = read_csr_sie(a, &status);
+            break;
         case CSR_address::stvec:
-            return read_csr_stvec(a, status);
+            val = read_csr_stvec(a, &status);
+            break;
         case CSR_address::scounteren:
-            return read_csr_scounteren(a, status);
+            val = read_csr_scounteren(a, &status);
+            break;
         case CSR_address::sscratch:
-            return read_csr_sscratch(a, status);
+            val = read_csr_sscratch(a, &status);
+            break;
         case CSR_address::sepc:
-            return read_csr_sepc(a, status);
+            val = read_csr_sepc(a, &status);
+            break;
         case CSR_address::scause:
-            return read_csr_scause(a, status);
+            val = read_csr_scause(a, &status);
+            break;
         case CSR_address::stval:
-            return read_csr_stval(a, status);
+            val = read_csr_stval(a, &status);
+            break;
         case CSR_address::sip:
-            return read_csr_sip(a, status);
+            val = read_csr_sip(a, &status);
+            break;
         case CSR_address::satp:
-            return read_csr_satp(a, status);
+            val = read_csr_satp(a, &status);
+            if (!status) {
+                _cause = MCAUSE_VIRTUAL_INSTRUCTION;
+            }
+            break;
 
         case CSR_address::mstatus:
-            return read_csr_mstatus(a, status);
+            val = read_csr_mstatus(a, &status);
+            break;
         case CSR_address::menvcfg:
-            return read_csr_menvcfg(a, status);
+            val = read_csr_menvcfg(a, &status);
+            break;
         case CSR_address::misa:
-            return read_csr_misa(a, status);
+            val = read_csr_misa(a, &status);
+            break;
         case CSR_address::medeleg:
-            return read_csr_medeleg(a, status);
+            val = read_csr_medeleg(a, &status);
+            break;
         case CSR_address::mideleg:
-            return read_csr_mideleg(a, status);
+            val = read_csr_mideleg(a, &status);
+            break;
         case CSR_address::mie:
-            return read_csr_mie(a, status);
+            val = read_csr_mie(a, &status);
+            break;
         case CSR_address::mtvec:
-            return read_csr_mtvec(a, status);
+            val = read_csr_mtvec(a, &status);
+            break;
         case CSR_address::mcounteren:
-            return read_csr_mcounteren(a, status);
+            val = read_csr_mcounteren(a, &status);
+            break;
 
         case CSR_address::mscratch:
-            return read_csr_mscratch(a, status);
+            val = read_csr_mscratch(a, &status);
+            break;
         case CSR_address::mepc:
-            return read_csr_mepc(a, status);
+            val = read_csr_mepc(a, &status);
+            break;
         case CSR_address::mcause:
-            return read_csr_mcause(a, status);
+            val = read_csr_mcause(a, &status);
+            break;
         case CSR_address::mtval:
-            return read_csr_mtval(a, status);
+            val = read_csr_mtval(a, &status);
+            break;
         case CSR_address::mip:
-            return read_csr_mip(a, status);
+            val = read_csr_mip(a, &status);
+            break;
 
         case CSR_address::mcycle:
-            return read_csr_mcycle(mcycle, status);
+            val = read_csr_mcycle(mcycle, &status);
+            break;
         case CSR_address::minstret:
-            return read_csr_minstret(a, mcycle, status);
-
+            val = read_csr_minstret(a, mcycle, &status);
+            break;
         case CSR_address::mvendorid:
-            return read_csr_mvendorid(a, status);
+            val = read_csr_mvendorid(a, &status);
+            break;
         case CSR_address::marchid:
-            return read_csr_marchid(a, status);
+            val = read_csr_marchid(a, &status);
+            break;
         case CSR_address::mimpid:
-            return read_csr_mimpid(a, status);
+            val = read_csr_mimpid(a, &status);
+            break;
+
+        case CSR_address::hstatus:
+            val = read_csr_hstatus(a, &status);
+            break;
+        case CSR_address::hedeleg:
+            val = read_csr_hedeleg(a, &status);
+            break;
+        case CSR_address::hideleg:
+            val = read_csr_hideleg(a, &status);
+            break;
+        case CSR_address::hie:
+            val = read_csr_hie(a, &status);
+            break;
+        case CSR_address::hip:
+            val = read_csr_hip(a, &status);
+            break;
+        case CSR_address::hvip:
+            val = read_csr_hvip(a, &status);
+            break;
+        case CSR_address::henvcfg:
+            val = read_csr_henvcfg(a, &status);
+            break;
+        case CSR_address::hgatp:
+            val = read_csr_hgatp(a, &status);
+            break;
+        case CSR_address::htimedelta:
+            val = read_csr_htimedelta(a, &status);
+            break;
+        case CSR_address::htval:
+            val = read_csr_htval(a, &status);
+            break;
+
+        case CSR_address::vsstatus:
+            val = read_csr_vsstatus(a, &status);
+            break;
+        case CSR_address::vsie:
+            val = read_csr_vsie(a, &status);
+            break;
+        case CSR_address::vstvec:
+            val = read_csr_vstvec(a, &status);
+            break;
+        case CSR_address::vsscratch:
+            val = read_csr_vsscratch(a, &status);
+            break;
+        case CSR_address::vsepc:
+            val = read_csr_vsepc(a, &status);
+            break;
+        case CSR_address::vscause:
+            val = read_csr_vscause(a, &status);
+            break;
+        case CSR_address::vstval:
+            val = read_csr_vstval(a, &status);
+            break;
+        case CSR_address::vsip:
+            val = read_csr_vsip(a, &status);
+            break;
+        case CSR_address::vsatp:
+            val = read_csr_vsatp(a, &status);
+            break;
 
         // All hardwired to zero
         case CSR_address::mhartid:
@@ -1881,25 +2358,218 @@ static NO_INLINE uint64_t read_csr(STATE_ACCESS &a, uint64_t mcycle, CSR_address
         case CSR_address::mhpmevent29:
         case CSR_address::mhpmevent30:
         case CSR_address::mhpmevent31:
+        case CSR_address::mtval2:
+        case CSR_address::mtinst:
         case CSR_address::tselect:
         case CSR_address::tdata1:
         case CSR_address::tdata2:
         case CSR_address::tdata3:
-            return read_csr_success(0, status);
+        case CSR_address::htinst:
+        case CSR_address::hgeip:
+        case CSR_address::hgeie:
+        case CSR_address::hcounteren:
+            val = read_csr_success(0, &status);
+            break;
 
         default:
             // Invalid CSRs
 #ifdef DUMP_INVALID_CSR
             fprintf(stderr, "csr_read: invalid CSR=0x%x\n", static_cast<int>(csraddr));
 #endif
-            return read_csr_fail(status);
+            val = read_csr_fail(&status);
     }
+
+    if (!status) {
+        cause = _cause;
+    }
+    return status;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_hstatus(STATE_ACCESS &a, uint64_t val) {
+    a.write_hstatus(val & HSTATUS_W_MASK);
+    return execute_status::success;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_hedeleg(STATE_ACCESS &a, uint64_t val) {
+    a.write_hedeleg(val);
+    return execute_status::success;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_hideleg(STATE_ACCESS &a, uint64_t val) {
+    a.write_hideleg(val & HIX_R_MASK);
+    return execute_status::success_and_serve_interrupts;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_hie(STATE_ACCESS &a, uint64_t val) {
+    a.write_hie((a.read_hie() & ~HIX_W_MASK) | (val & HIX_W_MASK));
+    a.write_mie((a.read_mie() & ~HIX_W_MASK) | (val & HIX_W_MASK));
+    return execute_status::success_and_serve_interrupts;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_hip(STATE_ACCESS &a, uint64_t val) {
+    // only hip.VSSIP is writable and is an alias for hvip
+    a.write_hvip((a.read_hvip() & ~MIP_VSSIP_MASK) | (val & MIP_VSSIP_MASK));
+    a.write_mip((a.read_mip() & ~MIP_VSSIP_MASK) | (val & MIP_VSSIP_MASK));
+    return execute_status::success_and_serve_interrupts;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_hgatp(STATE_ACCESS &a, uint64_t val) {
+    // the TLB shutdown is not happening here as in the write_csr_(v)satp methods:
+    // hgatp can only be changed when virtual mode is off, and when virtual mode is off
+    // the address translation function will not use it. Enabling virtual mode will trigger
+    // a TLB shootdown.
+
+    auto mode = val >> 60;
+    if (mode == 0 || (mode >= 8 && mode <= 10)) {
+        // lowest two bits of the PPN in hgatp always read as zeroes
+        a.write_hgatp((val >> 2) << 2);
+    }
+    return execute_status::success;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_hvip(STATE_ACCESS &a, uint64_t val) {
+    a.write_hvip((a.read_hvip() & ~HIX_R_MASK) | (val & HIX_R_MASK));
+    a.write_mip((a.read_mip() & ~HIX_R_MASK) | (val & HIX_R_MASK));
+    return execute_status::success_and_serve_interrupts;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_henvcfg(STATE_ACCESS &a, uint64_t val) {
+    uint64_t henvcfg = a.read_henvcfg() & MENVCFG_R_MASK;
+    // Modify only bits that can be written to
+    henvcfg = (henvcfg & ~MENVCFG_W_MASK) | (val & MENVCFG_W_MASK);
+    // Store results
+    a.write_henvcfg(henvcfg);
+    return execute_status::success;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_htimedelta(STATE_ACCESS &a, uint64_t val) {
+    a.write_htimedelta(val);
+    return execute_status::success;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_htval(STATE_ACCESS &a, uint64_t val) {
+    a.write_htval(val);
+    return execute_status::success;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_vsstatus(STATE_ACCESS &a, uint64_t val) {
+    uint64_t old_vsstatus = a.read_vsstatus() & VSSTATUS_R_MASK;
+    uint64_t vsstatus = (old_vsstatus & ~VSSTATUS_W_MASK) | (val & VSSTATUS_W_MASK);
+    auto mstatus = a.read_mstatus();
+    if ((vsstatus & MSTATUS_FS_MASK) == MSTATUS_FS_MASK) {
+        mstatus |= MSTATUS_FS_DIRTY;
+        mstatus |= MSTATUS_SD_MASK;
+        vsstatus |= MSTATUS_FS_DIRTY;
+        vsstatus |= MSTATUS_SD_MASK;
+    } else {
+        mstatus &= ~MSTATUS_SD_MASK;
+        vsstatus &= ~MSTATUS_SD_MASK;
+    }
+    a.write_mstatus(mstatus);
+    a.write_vsstatus(vsstatus);
+    uint64_t mod = flush_tlb(a, old_vsstatus, vsstatus);
+
+    // When changing an interrupt enabled bit, we may have to service any pending interrupt
+    if (mod & MSTATUS_SIE_MASK) {
+        return execute_status::success_and_serve_interrupts;
+    }
+    return execute_status::success;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_vsie(STATE_ACCESS &a, uint64_t val) {
+    auto hideleg = a.read_hideleg();
+    auto vsie = val & MIP_W_MASK;
+    auto hie = (vsie << 1) & hideleg; // bits 2, 6, 10 in hie correspond to 1, 5, 9 in vsie
+    return write_csr_hie(a, (a.read_hie() & ~HIX_R_MASK & hideleg) | hie);
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_vstvec(STATE_ACCESS &a, uint64_t val) {
+    a.write_vstvec(val);
+    return execute_status::success;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_vsscratch(STATE_ACCESS &a, uint64_t val) {
+    a.write_vsscratch(val);
+    return execute_status::success;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_vsepc(STATE_ACCESS &a, uint64_t val) {
+    a.write_vsepc(val);
+    return execute_status::success;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_vscause(STATE_ACCESS &a, uint64_t val) {
+    a.write_vscause(val);
+    return execute_status::success;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_vstval(STATE_ACCESS &a, uint64_t val) {
+    a.write_vstval(val);
+    return execute_status::success;
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_vsip(STATE_ACCESS &a, uint64_t val) {
+    auto hideleg = a.read_hideleg();
+    auto vsip = val & MIP_W_MASK;
+    auto hip = (vsip << 1) & hideleg; // bits 2, 6, 10 in hip correspond to 1, 5, 9 in vsip
+    return write_csr_hip(a, (a.read_hip() & ~HIX_R_MASK & hideleg) | hip);
+}
+
+template <typename STATE_ACCESS>
+static execute_status write_csr_vsatp(STATE_ACCESS &a, uint64_t val) {
+    uint64_t old_satp = a.read_vsatp();
+    uint64_t atp = old_satp;
+    auto mode = val >> SATP_MODE_SHIFT;
+    if (mode == SATP_MODE_BARE || (mode >= SATP_MODE_SV39 && mode <= SATP_MODE_SV57)) {
+        a.write_vsatp(val);
+    }
+
+#ifdef DUMP_COUNTERS
+    uint64_t asid = (atp & SATP_ASID_MASK) >> SATP_ASID_SHIFT;
+    if (asid != ASID_MAX_MASK) { // Software is not testing ASID bits
+        a.get_statistics().max_asid = std::max(a.get_statistics().max_asid, asid);
+    }
+#endif
+
+    // Changes to MODE and ASID, flushes the TLBs.
+    // Note that there is no need to flush the TLB when PPN has changed,
+    // because software is required to execute SFENCE.VMA when recycling an ASID.
+    uint64_t mod = old_satp ^ atp;
+    if (mod & (SATP_ASID_MASK | SATP_MODE_MASK)) {
+        a.flush_all_tlb();
+        INC_COUNTER(a.get_statistics(), tlb_flush_all);
+        INC_COUNTER(a.get_statistics(), tlb_flush_satp);
+        return execute_status::success_and_flush_fetch;
+    }
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_sstatus(STATE_ACCESS &a, uint64_t val) {
-    uint64_t mstatus = a.read_mstatus();
-    return write_csr_mstatus(a, (mstatus & ~SSTATUS_W_MASK) | (val & SSTATUS_W_MASK));
+    if (a.read_iflags_VRT()) {
+        return write_csr_vsstatus(a, val);
+    } else {
+        uint64_t mstatus = a.read_mstatus();
+        return write_csr_mstatus(a, (mstatus & ~SSTATUS_W_MASK) | (val & SSTATUS_W_MASK));
+    }
 }
 
 template <typename STATE_ACCESS>
@@ -1911,16 +2581,28 @@ static execute_status write_csr_senvcfg(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_sie(STATE_ACCESS &a, uint64_t val) {
-    uint64_t mie = a.read_mie();
-    uint64_t mask = a.read_mideleg();
-    mie = (mie & ~mask) | (val & mask);
-    a.write_mie(mie);
+    if (a.read_iflags_VRT()) {
+        val <<= 1; // bits 1; 5; 9 in vssie correspond to bits 2; 6; 10 in hie
+
+        uint64_t mask = 0, hie = 0;
+        read_csr_or_return_on_failure(read_csr_hideleg, a, mask);
+        read_csr_or_return_on_failure(read_csr_hie, a, hie);
+        a.write_hie((hie & ~mask) | (val & mask));
+    } else {
+        uint64_t mask = a.read_mideleg();
+        uint64_t mie = a.read_mie();
+        a.write_mie((mie & ~mask) | (val & mask));
+    }
     return execute_status::success_and_serve_interrupts;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_stvec(STATE_ACCESS &a, uint64_t val) {
-    a.write_stvec(val & ~1);
+    if (a.read_iflags_VRT()) {
+        a.write_vstvec(val & ~1);
+    } else {
+        a.write_stvec(val & ~1);
+    }
     return execute_status::success;
 }
 
@@ -1932,34 +2614,64 @@ static execute_status write_csr_scounteren(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_sscratch(STATE_ACCESS &a, uint64_t val) {
-    a.write_sscratch(val);
+    if (a.read_iflags_VRT()) {
+        a.write_vsscratch(val);
+    } else {
+        a.write_sscratch(val);
+    }
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_sepc(STATE_ACCESS &a, uint64_t val) {
-    a.write_sepc(val & ~1);
+    if (a.read_iflags_VRT()) {
+        a.write_vsepc(val & ~1);
+    } else {
+        a.write_sepc(val & ~1);
+    }
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_scause(STATE_ACCESS &a, uint64_t val) {
-    a.write_scause(val);
+    if (a.read_iflags_VRT()) {
+        a.write_vscause(val);
+    } else {
+        a.write_scause(val);
+    }
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_stval(STATE_ACCESS &a, uint64_t val) {
-    a.write_stval(val);
+    if (a.read_iflags_VRT()) {
+        a.write_vstval(val);
+    } else {
+        a.write_stval(val);
+    }
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_sip(STATE_ACCESS &a, uint64_t val) {
-    uint64_t mask = a.read_mideleg();
-    uint64_t mip = a.read_mip();
+    // interrupts directed to HS-level continue to be indicated in the HS-level
+    // sip register, not in vsip, when machine is in a virtual mode
+    uint64_t mask = 0, mip = 0;
+    read_csr_or_return_on_failure(read_csr_mideleg, a, mask);
+    read_csr_or_return_on_failure(read_csr_mip, a, mip);
     mip = (mip & ~mask) | (val & mask);
-    a.write_mip(mip);
+    write_csr_mip(a, mip);
+
+    // an interrupt that has been delegated to HS-mode (using mideleg) is further
+    // delegated to VS-mode if the corresponding hideleg bit is set
+    if (a.read_iflags_VRT()) {
+        uint64_t hmask = 0, hip = 0;
+        read_csr_or_return_on_failure(read_csr_hideleg, a, mask);
+        read_csr_or_return_on_failure(read_csr_hip, a, mip);
+        hip = (hip & ~hmask) | (val & hmask);
+        write_csr_hip(a, hip);
+    }
+
     return execute_status::success_and_serve_interrupts;
 }
 
@@ -1975,7 +2687,10 @@ static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
     }
 
     uint64_t old_satp = a.read_satp();
-    uint64_t stap = old_satp;
+    if (a.read_iflags_VRT()) {
+        old_satp = a.read_vsatp();
+    }
+    uint64_t atp = old_satp;
     uint64_t mode = val >> SATP_MODE_SHIFT;
 
     // Checks for supported MODE
@@ -1984,7 +2699,7 @@ static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
         case SATP_MODE_SV39:
         case SATP_MODE_SV48:
         case SATP_MODE_SV57:
-            stap = (val & SATP_PPN_MASK) | (val & SATP_ASID_MASK) | (val & SATP_MODE_MASK);
+            atp = (val & SATP_PPN_MASK) | (val & SATP_ASID_MASK) | (val & SATP_MODE_MASK);
             break;
         default:
             // Implementations are not required to support all MODE settings,
@@ -1992,10 +2707,14 @@ static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
             // the entire write has no effect; no fields in satp are modified.
             return execute_status::success;
     }
-    a.write_satp(stap);
+    if (a.read_iflags_VRT()) {
+        a.write_vsatp(atp);
+    } else {
+        a.write_satp(atp);
+    }
 
 #ifdef DUMP_COUNTERS
-    uint64_t asid = (stap & SATP_ASID_MASK) >> SATP_ASID_SHIFT;
+    uint64_t asid = (atp & SATP_ASID_MASK) >> SATP_ASID_SHIFT;
     if (asid != ASID_MAX_MASK) { // Software is not testing ASID bits
         a.get_statistics().max_asid = std::max(a.get_statistics().max_asid, asid);
     }
@@ -2004,7 +2723,7 @@ static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
     // Changes to MODE and ASID, flushes the TLBs.
     // Note that there is no need to flush the TLB when PPN has changed,
     // because software is required to execute SFENCE.VMA when recycling an ASID.
-    uint64_t mod = old_satp ^ stap;
+    uint64_t mod = old_satp ^ atp;
     if (mod & (SATP_ASID_MASK | SATP_MODE_MASK)) {
         a.flush_all_tlb();
         INC_COUNTER(a.get_statistics(), tlb_flush_all);
@@ -2014,14 +2733,57 @@ static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
     return execute_status::success;
 }
 
+template <typename STATE_ACCESS, bool control_mprv = false>
+static uint64_t flush_tlb(STATE_ACCESS &a, uint64_t old_status, uint64_t new_status) {
+    uint64_t mod = old_status ^ new_status;
+    // If MMU configuration was changed, we may have to flush the TLBs
+    bool flush_tlb_read = false;
+    bool flush_tlb_write = false;
+    if ((mod & MSTATUS_MXR_MASK) != 0) {
+        // MXR allows read access to execute-only pages,
+        // therefore it only affects read translations
+        flush_tlb_read = true;
+    }
+    if ((mod & MSTATUS_SUM_MASK) != 0) {
+        // SUM allows S-mode for accessing U-mode memory, except to code,
+        // therefore it only affects read/write translations
+        flush_tlb_read = true;
+        flush_tlb_write = true;
+    }
+
+    if constexpr (control_mprv) {
+        if ((mod & MSTATUS_MPRV_MASK) != 0 || ((new_status & MSTATUS_MPRV_MASK) && (mod & MSTATUS_MPP_MASK) != 0)) {
+            // When MPRV is set, data loads and stores use privilege in MPP
+            // instead of the current privilege level, but code access is unaffected,
+            // therefore it only affects read/write translations
+            flush_tlb_read = true;
+            flush_tlb_write = true;
+        }
+    }
+
+    // Flush TLBs when needed
+    if (flush_tlb_read) {
+        a.template flush_tlb_type<TLB_READ>();
+        INC_COUNTER(a.get_statistics(), tlb_flush_read);
+    }
+    if (flush_tlb_write) {
+        a.template flush_tlb_type<TLB_WRITE>();
+        INC_COUNTER(a.get_statistics(), tlb_flush_write);
+    }
+    if (flush_tlb_read || flush_tlb_write) {
+        INC_COUNTER(a.get_statistics(), tlb_flush_mstatus);
+    }
+
+    return mod;
+}
+
 template <typename STATE_ACCESS>
 static execute_status write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
     uint64_t old_mstatus = a.read_mstatus() & MSTATUS_R_MASK;
 
     // M-mode software can determine whether a privilege mode is implemented
     // by writing that mode to MPP then reading it back.
-    if (PRV_HS == ((val & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT)) {
-        // HS-mode is not supported yet, set val MPP to U-mode
+    if (PRV_RSVD == ((val & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT)) {
         val = val & ~MSTATUS_MPP_MASK;
     }
 
@@ -2042,42 +2804,7 @@ static execute_status write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
     }
     // Store results
     a.write_mstatus(mstatus);
-
-    // If MMU configuration was changed, we may have to flush the TLBs
-    bool flush_tlb_read = false;
-    bool flush_tlb_write = false;
-    uint64_t mod = old_mstatus ^ mstatus;
-    if ((mod & MSTATUS_MXR_MASK) != 0) {
-        // MXR allows read access to execute-only pages,
-        // therefore it only affects read translations
-        flush_tlb_read = true;
-    }
-    if ((mod & MSTATUS_SUM_MASK) != 0) {
-        // SUM allows S-mode for accessing U-mode memory, except to code,
-        // therefore it only affects read/write translations
-        flush_tlb_read = true;
-        flush_tlb_write = true;
-    }
-    if ((mod & MSTATUS_MPRV_MASK) != 0 || ((mstatus & MSTATUS_MPRV_MASK) && (mod & MSTATUS_MPP_MASK) != 0)) {
-        // When MPRV is set, data loads and stores use privilege in MPP
-        // instead of the current privilege level, but code access is unaffected,
-        // therefore it only affects read/write translations
-        flush_tlb_read = true;
-        flush_tlb_write = true;
-    }
-
-    // Flush TLBs when needed
-    if (flush_tlb_read) {
-        a.template flush_tlb_type<TLB_READ>();
-        INC_COUNTER(a.get_statistics(), tlb_flush_read);
-    }
-    if (flush_tlb_write) {
-        a.template flush_tlb_type<TLB_WRITE>();
-        INC_COUNTER(a.get_statistics(), tlb_flush_write);
-    }
-    if (flush_tlb_read || flush_tlb_write) {
-        INC_COUNTER(a.get_statistics(), tlb_flush_mstatus);
-    }
+    uint64_t mod = flush_tlb<STATE_ACCESS, true>(a, old_mstatus, mstatus);
 
     // When changing an interrupt enabled bit, we may have to service any pending interrupt
     if ((mod & (MSTATUS_SIE_MASK | MSTATUS_MIE_MASK)) != 0) {
@@ -2090,7 +2817,6 @@ static execute_status write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
 template <typename STATE_ACCESS>
 static execute_status write_csr_menvcfg(STATE_ACCESS &a, uint64_t val) {
     uint64_t menvcfg = a.read_menvcfg() & MENVCFG_R_MASK;
-
     // Modify only bits that can be written to
     menvcfg = (menvcfg & ~MENVCFG_W_MASK) | (val & MENVCFG_W_MASK);
     // Store results
@@ -2100,9 +2826,7 @@ static execute_status write_csr_menvcfg(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_medeleg(STATE_ACCESS &a, uint64_t val) {
-    // For exceptions that cannot occur in less privileged modes,
-    // the corresponding medeleg bits should be read-only zero
-    a.write_medeleg((a.read_medeleg() & ~MEDELEG_W_MASK) | (val & MEDELEG_W_MASK));
+    a.write_medeleg(val);
     return execute_status::success;
 }
 
@@ -2117,10 +2841,12 @@ static execute_status write_csr_mideleg(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mie(STATE_ACCESS &a, uint64_t val) {
-    const uint64_t mask = MIP_MSIP_MASK | MIP_MTIP_MASK | MIP_MEIP_MASK | MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
-    uint64_t mie = a.read_mie();
-    mie = (mie & ~mask) | (val & mask);
+    uint64_t mie = (a.read_mie() & ~MIE_W_MASK) | (val & MIE_W_MASK);
     a.write_mie(mie);
+
+    uint64_t hie = (a.read_hie() & ~HIX_W_MASK) | (val & HIX_W_MASK);
+    write_csr_hie(a, hie);
+
     return execute_status::success_and_serve_interrupts;
 }
 
@@ -2184,10 +2910,10 @@ static execute_status write_csr_mtval(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mip(STATE_ACCESS &a, uint64_t val) {
-    const uint64_t mask = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
-    auto mip = a.read_mip();
-    mip = (mip & ~mask) | (val & mask);
+    uint64_t mip = (a.read_mip() & ~MIP_W_MASK) | (val & MIP_W_MASK);
     a.write_mip(mip);
+    uint64_t hip = (a.read_hip() & ~HIX_W_MASK) | (val & HIX_W_MASK);
+    write_csr_hip(a, hip);
     return execute_status::success_and_serve_interrupts;
 }
 
@@ -2197,6 +2923,12 @@ static inline execute_status write_csr_fflags(STATE_ACCESS &a, uint64_t val) {
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return execute_status::failure;
+    }
+    if (a.read_iflags_VRT()) {
+        auto vsstatus = a.read_vsstatus();
+        if (unlikely((vsstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+            return execute_status::failure;
+        }
     }
     uint64_t fcsr = (a.read_fcsr() & ~FCSR_FFLAGS_RW_MASK) | ((val << FCSR_FFLAGS_SHIFT) & FCSR_FFLAGS_RW_MASK);
     a.write_fcsr(fcsr);
@@ -2210,6 +2942,12 @@ static inline execute_status write_csr_frm(STATE_ACCESS &a, uint64_t val) {
     if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return execute_status::failure;
     }
+    if (a.read_iflags_VRT()) {
+        auto vsstatus = a.read_vsstatus();
+        if (unlikely((vsstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+            return execute_status::failure;
+        }
+    }
     uint64_t fcsr = (a.read_fcsr() & ~FCSR_FRM_RW_MASK) | ((val << FCSR_FRM_SHIFT) & FCSR_FRM_RW_MASK);
     a.write_fcsr(fcsr);
     return execute_status::success;
@@ -2222,6 +2960,12 @@ static inline execute_status write_csr_fcsr(STATE_ACCESS &a, uint64_t val) {
     if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return execute_status::failure;
     }
+    if (a.read_iflags_VRT()) {
+        auto vsstatus = a.read_vsstatus();
+        if (unlikely((vsstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+            return execute_status::failure;
+        }
+    }
     uint64_t fcsr = val & FCSR_RW_MASK;
     a.write_fcsr(fcsr);
     return execute_status::success;
@@ -2231,19 +2975,22 @@ static inline execute_status write_csr_fcsr(STATE_ACCESS &a, uint64_t val) {
 /// \param a Machine state accessor object.
 /// \param csraddr Address of CSR in file.
 /// \param val New register value.
+/// \param status cause code in case of error.
 /// \returns The status of the operation (true for success, false otherwise).
 /// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static NO_INLINE execute_status write_csr(STATE_ACCESS &a, uint64_t mcycle, CSR_address csraddr, uint64_t val) {
+static NO_INLINE execute_status write_csr(STATE_ACCESS &a, uint64_t mcycle, CSR_address csraddr, uint64_t val,
+    MCAUSE_constants &status) {
 #if defined(DUMP_CSR)
     fprintf(stderr, "csr_write: csr=0x%03x val=0x", static_cast<int>(csraddr));
     print_uint64_t(val);
     fprintf(stderr, "\n");
 #endif
     if (unlikely(csr_is_read_only(csraddr))) {
+        status = MCAUSE_ILLEGAL_INSN;
         return execute_status::failure;
     }
-    if (unlikely(csr_priv(csraddr) > a.read_iflags_PRV())) {
+    if (unlikely(!csr_is_allowed_access(a, csraddr, status))) {
         return execute_status::failure;
     }
 
@@ -2311,6 +3058,46 @@ static NO_INLINE execute_status write_csr(STATE_ACCESS &a, uint64_t mcycle, CSR_
         case CSR_address::minstret:
             return write_csr_minstret(a, mcycle, val);
 
+        case CSR_address::hstatus:
+            return write_csr_hstatus(a, val);
+        case CSR_address::hedeleg:
+            return write_csr_hedeleg(a, val);
+        case CSR_address::hideleg:
+            return write_csr_hideleg(a, val);
+        case CSR_address::hie:
+            return write_csr_hie(a, val);
+        case CSR_address::hip:
+            return write_csr_hip(a, val);
+        case CSR_address::hvip:
+            return write_csr_hvip(a, val);
+        case CSR_address::henvcfg:
+            return write_csr_henvcfg(a, val);
+        case CSR_address::hgatp:
+            return write_csr_hgatp(a, val);
+        case CSR_address::htimedelta:
+            return write_csr_htimedelta(a, val);
+        case CSR_address::htval:
+            return write_csr_htval(a, val);
+
+        case CSR_address::vsstatus:
+            return write_csr_vsstatus(a, val);
+        case CSR_address::vsie:
+            return write_csr_vsie(a, val);
+        case CSR_address::vstvec:
+            return write_csr_vstvec(a, val);
+        case CSR_address::vsscratch:
+            return write_csr_vsscratch(a, val);
+        case CSR_address::vsepc:
+            return write_csr_vsepc(a, val);
+        case CSR_address::vscause:
+            return write_csr_vscause(a, val);
+        case CSR_address::vstval:
+            return write_csr_vstval(a, val);
+        case CSR_address::vsip:
+            return write_csr_vsip(a, val);
+        case CSR_address::vsatp:
+            return write_csr_vsatp(a, val);
+
         // Ignore writes
         case CSR_address::misa:
         case CSR_address::mhpmcounter3:
@@ -2372,10 +3159,16 @@ static NO_INLINE execute_status write_csr(STATE_ACCESS &a, uint64_t mcycle, CSR_
         case CSR_address::mhpmevent29:
         case CSR_address::mhpmevent30:
         case CSR_address::mhpmevent31:
+        case CSR_address::mtval2:
+        case CSR_address::mtinst:
         case CSR_address::tselect:
         case CSR_address::tdata1:
         case CSR_address::tdata2:
         case CSR_address::tdata3:
+        case CSR_address::htinst:
+        case CSR_address::hgeip:
+        case CSR_address::hgeie:
+        case CSR_address::hcounteren:
             return execute_status::success;
 
         default:
@@ -2383,6 +3176,7 @@ static NO_INLINE execute_status write_csr(STATE_ACCESS &a, uint64_t mcycle, CSR_
 #ifdef DUMP_INVALID_CSR
             fprintf(stderr, "csr_write: invalid CSR=0x%x\n", static_cast<int>(csraddr));
 #endif
+            status = MCAUSE_ILLEGAL_INSN;
             return execute_status::failure;
     }
 }
@@ -2392,23 +3186,26 @@ static FORCE_INLINE execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t &pc,
     const RS1VAL &rs1val) {
     auto csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
-    bool status = true;
+    MCAUSE_constants status = MCAUSE_INSN_ADDRESS_MISALIGNED;
     uint64_t csrval = 0;
     // If rd=r0, we do not read from the CSR to avoid side-effects
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0) {
-        csrval = read_csr(a, mcycle, csraddr, &status);
-    }
-    if (unlikely(!status)) {
-        return raise_illegal_insn_exception(a, pc, insn);
+        if (unlikely(!read_csr(a, mcycle, csraddr, csrval, status))) {
+            if (status == MCAUSE_VIRTUAL_INSTRUCTION)
+                return raise_virtual_insn_exception(a, pc, insn);
+            return raise_illegal_insn_exception(a, pc, insn);
+        }
     }
     // Try to write new CSR value
     //??D When we optimize the inner interpreter loop, we
     //    will have to check if there was a change to the
     //    memory manager and report back from here so we
     //    break out of the inner loop
-    execute_status wstatus = write_csr(a, mcycle, csraddr, rs1val(a, insn));
+    execute_status wstatus = write_csr(a, mcycle, csraddr, rs1val(a, insn), status);
     if (unlikely(wstatus == execute_status::failure)) {
+        if (status == MCAUSE_VIRTUAL_INSTRUCTION)
+            return raise_virtual_insn_exception(a, pc, insn);
         return raise_illegal_insn_exception(a, pc, insn);
     }
     // Write to rd only after potential read/write exceptions
@@ -2440,11 +3237,14 @@ static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t &pc,
     const F &f) {
     auto csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
-    bool status = false;
-    uint64_t csrval = read_csr(a, mcycle, csraddr, &status);
-    if (unlikely(!status)) {
+    MCAUSE_constants status = MCAUSE_INSN_ADDRESS_MISALIGNED;
+    uint64_t csrval = 0;
+    if (unlikely(!read_csr(a, mcycle, csraddr, csrval, status))) {
+        if (status == MCAUSE_VIRTUAL_INSTRUCTION)
+            return raise_virtual_insn_exception(a, pc, insn);
         return raise_illegal_insn_exception(a, pc, insn);
     }
+
     // Load value of rs1 before potentially overwriting it
     // with the value of the csr when rd=rs1
     uint32_t rs1 = insn_get_rs1(insn);
@@ -2455,8 +3255,10 @@ static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t &pc,
         //    will have to check if there was a change to the
         //    memory manager and report back from here so we
         //    break out of the inner loop
-        wstatus = write_csr(a, mcycle, csraddr, f(csrval, rs1val));
+        wstatus = write_csr(a, mcycle, csraddr, f(csrval, rs1val), status);
         if (unlikely(wstatus == execute_status::failure)) {
+            if (status == MCAUSE_VIRTUAL_INSTRUCTION)
+                return raise_virtual_insn_exception(a, pc, insn);
             return raise_illegal_insn_exception(a, pc, insn);
         }
     }
@@ -2488,9 +3290,11 @@ static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t &pc
     const F &f) {
     auto csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
-    bool status = false;
-    uint64_t csrval = read_csr(a, mcycle, csraddr, &status);
-    if (unlikely(!status)) {
+    MCAUSE_constants status = MCAUSE_INSN_ADDRESS_MISALIGNED;
+    uint64_t csrval = 0;
+    if (unlikely(!read_csr(a, mcycle, csraddr, csrval, status))) {
+        if (status == MCAUSE_VIRTUAL_INSTRUCTION)
+            return raise_virtual_insn_exception(a, pc, insn);
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint32_t rs1 = insn_get_rs1(insn);
@@ -2500,8 +3304,10 @@ static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t &pc
         //    will have to check if there was a change to the
         //    memory manager and report back from here so we
         //    break out of the inner loop
-        wstatus = write_csr(a, mcycle, csraddr, f(csrval, rs1));
+        wstatus = write_csr(a, mcycle, csraddr, f(csrval, rs1), status);
         if (unlikely(wstatus == execute_status::failure)) {
+            if (status == MCAUSE_VIRTUAL_INSTRUCTION)
+                return raise_virtual_insn_exception(a, pc, insn);
             return raise_illegal_insn_exception(a, pc, insn);
         }
     }
@@ -2532,8 +3338,11 @@ static FORCE_INLINE execute_status execute_CSRRCI(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_ECALL(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "ecall");
-    auto priv = a.read_iflags_PRV();
-    pc = raise_exception(a, pc, MCAUSE_ECALL_BASE + priv, 0);
+    auto ecall_base_shift = a.read_iflags_PRV();
+    if (a.read_iflags_VRT() && ecall_base_shift == PRV_S) {
+        ++ecall_base_shift; // differentiate between VS and HS ecalls
+    }
+    pc = raise_exception(a, pc, MCAUSE_ECALL_BASE + ecall_base_shift, 0, 0);
     return execute_status::failure;
 }
 
@@ -2542,7 +3351,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     (void) a;
     dump_insn(a, pc, insn, "ebreak");
-    pc = raise_exception(a, pc, MCAUSE_BREAKPOINT, pc);
+    pc = raise_exception(a, pc, MCAUSE_BREAKPOINT, pc, 0);
     return execute_status::failure;
 }
 
@@ -2550,29 +3359,52 @@ static FORCE_INLINE execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRET(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sret");
-    auto priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
-    if (unlikely(priv < PRV_S || (priv == PRV_S && (mstatus & MSTATUS_TSR_MASK)))) {
+    uint64_t hstatus = a.read_hstatus();
+
+    auto mode = current_mode(a);
+    auto priv = (mode & ACCESS_MODE_PRV_MASK) >> ACCESS_MODE_PRV_SHIFT;
+    if (unlikely(priv < PRV_S || (mode == MODE_HS && (mstatus & MSTATUS_TSR_MASK)))) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    auto spp = (mstatus & MSTATUS_SPP_MASK) >> MSTATUS_SPP_SHIFT;
-    /* set the IE state to previous IE state */
-    auto spie = (mstatus & MSTATUS_SPIE_MASK) >> MSTATUS_SPIE_SHIFT;
-    mstatus = (mstatus & ~MSTATUS_SIE_MASK) | (spie << MSTATUS_SIE_SHIFT);
-    /* set SPIE to 1 */
-    mstatus |= MSTATUS_SPIE_MASK;
-    /* set SPP to U */
-    mstatus &= ~MSTATUS_SPP_MASK;
-    /* An SRET instruction that changes the privilege mode to a mode
-     * less privileged than M also sets MPRV = 0 */
-    if (spp < PRV_M) {
-        mstatus &= ~MSTATUS_MPRV_MASK;
-    }
-    a.write_mstatus(mstatus);
-    if (priv != spp) {
+
+    if (mode == MODE_HS || mode == MODE_M) {
+        auto spp = (mstatus & MSTATUS_SPP_MASK) >> MSTATUS_SPP_SHIFT;
+        auto spv = (hstatus & HSTATUS_SPV_MASK) >> HSTATUS_SPV_SHIFT;
+        auto spie = (mstatus & MSTATUS_SPIE_MASK) >> MSTATUS_SPIE_SHIFT;
+        mstatus = (mstatus & ~MSTATUS_SIE_MASK) | (spie << MSTATUS_SIE_SHIFT);
+        mstatus |= MSTATUS_SPIE_MASK;
+        mstatus &= ~MSTATUS_SPP_MASK;
         set_priv(a, spp);
+        if (spv == 1) {
+            a.set_iflags_VRT();
+        }
+        hstatus &= ~HSTATUS_SPV_MASK;
+        /* An SRET instruction that changes the privilege mode to a mode
+         * less privileged than M also sets MPRV = 0 */
+        if (spp < PRV_M) {
+            mstatus &= ~MSTATUS_MPRV_MASK;
+        }
+        a.write_hstatus(hstatus);
+        a.write_mstatus(mstatus);
+        pc = a.read_sepc();
+    } else if (mode == MODE_VS) { // VS mode
+        if (hstatus & HSTATUS_VTSR_MASK) {
+            pc = raise_exception(a, pc, MCAUSE_VIRTUAL_INSTRUCTION, insn, 0);
+            return advance_to_raised_exception(a, pc);
+        }
+        uint64_t vsstatus = a.read_vsstatus();
+        auto spp = (vsstatus & MSTATUS_SPP_MASK) >> MSTATUS_SPP_SHIFT;
+        auto spie = (vsstatus & MSTATUS_SPIE_MASK) >> MSTATUS_SPIE_SHIFT;
+        vsstatus = (vsstatus & ~MSTATUS_SIE_MASK) | (spie << MSTATUS_SIE_SHIFT);
+        vsstatus |= MSTATUS_SPIE_MASK;
+        vsstatus &= ~MSTATUS_SPP_MASK;
+        set_priv(a, spp);
+        a.write_vsstatus(vsstatus);
+        pc = a.read_vsepc();
+    } else {
+        return raise_illegal_insn_exception(a, pc, insn);
     }
-    pc = a.read_sepc();
     return execute_status::success_and_serve_interrupts;
 }
 
@@ -2586,23 +3418,30 @@ static FORCE_INLINE execute_status execute_MRET(STATE_ACCESS &a, uint64_t &pc, u
     }
     uint64_t mstatus = a.read_mstatus();
     auto mpp = (mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
+    auto mpv = (mstatus & MSTATUS_MPV_MASK) >> MSTATUS_MPV_SHIFT;
+    if (mpp == PRV_M) {
+        a.reset_iflags_VRT();
+    } else {
+        mpv ? a.set_iflags_VRT() : a.reset_iflags_VRT();
+    }
+
     //??D we can save one shift here, but maybe the compiler already does
     /* set the IE state to previous IE state */
     auto mpie = (mstatus & MSTATUS_MPIE_MASK) >> MSTATUS_MPIE_SHIFT;
     mstatus = (mstatus & ~MSTATUS_MIE_MASK) | (mpie << MSTATUS_MIE_SHIFT);
     /* set MPIE to 1 */
     mstatus |= MSTATUS_MPIE_MASK;
-    /* set MPP to U */
+    /* set MPP to 0 */
     mstatus &= ~MSTATUS_MPP_MASK;
+    /* set MPV to 0 */
+    mstatus &= ~MSTATUS_MPV_MASK;
     /* An MRET instruction that changes the privilege mode to a mode
      * less privileged than M also sets MPRV = 0 */
     if (mpp < PRV_M) {
         mstatus &= ~MSTATUS_MPRV_MASK;
     }
     a.write_mstatus(mstatus);
-    if (priv != mpp) {
-        set_priv(a, mpp);
-    }
+    set_priv(a, mpp);
     pc = a.read_mepc();
     return execute_status::success_and_serve_interrupts;
 }
@@ -2613,12 +3452,18 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_WFI(STATE_ACCESS &a, uint64_t &pc, uint64_t &mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "wfi");
     // Check privileges and do nothing else
-    auto priv = a.read_iflags_PRV();
+    auto mode = current_mode(a);
+    auto priv = (mode & ACCESS_MODE_PRV_MASK) >> ACCESS_MODE_PRV_SHIFT;
     uint64_t mstatus = a.read_mstatus();
     // WFI can always causes an illegal instruction exception in less-privileged modes when TW=1
     if (unlikely(priv == PRV_U || (priv < PRV_M && (mstatus & MSTATUS_TW_MASK)))) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
+    uint64_t hstatus = a.read_hstatus();
+    if (unlikely(mode == MODE_VS && (hstatus & HSTATUS_VTW_MASK))) {
+        return raise_virtual_insn_exception(a, pc, insn);
+    }
+
     // Poll console, this may advance mcycle when in interactive mode
     mcycle = a.poll_console(mcycle);
     return advance_to_next_insn(a, pc);
@@ -3205,24 +4050,8 @@ static FORCE_INLINE execute_status execute_JALR(STATE_ACCESS &a, uint64_t &pc, u
     return execute_jump(a, pc, new_pc);
 }
 
-/// \brief Implementation of the SFENCE.VMA instruction.
-/// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    // rs1 and rs2 are arbitrary, rest is set
-    if (unlikely((insn & 0b11111110000000000111111111111111) != 0b00010010000000000000000001110011)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
-    INC_COUNTER(a.get_statistics(), fence_vma);
-    dump_insn(a, pc, insn, "sfence.vma");
-    auto priv = a.read_iflags_PRV();
-    uint64_t mstatus = a.read_mstatus();
-
-    // When TVM=1, attempts to execute an SFENCE.VMA while executing in S-mode
-    // will raise an illegal instruction exception.
-    if (unlikely(priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK)))) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
+static execute_status execute_XFENCE(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     uint32_t rs1 = insn_get_rs1(insn);
     uint32_t rs2 = insn_get_rs2(insn);
     if (rs1 == 0) {
@@ -3254,6 +4083,263 @@ static FORCE_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t 
         }
     }
     return advance_to_next_insn(a, pc, execute_status::success_and_flush_fetch);
+}
+
+/// \brief Implementation of the SFENCE.VMA instruction.
+/// \details This function is outlined to minimize host CPU code cache pressure.
+template <typename STATE_ACCESS>
+static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    INC_COUNTER(a.get_naked_state(), fence_vma);
+    dump_insn(a, pc, insn, "sfence.vma");
+    auto mode = current_mode(a);
+    auto priv = (mode & ACCESS_MODE_PRV_MASK) >> ACCESS_MODE_PRV_SHIFT;
+    uint64_t mstatus = a.read_mstatus();
+    if (unlikely(priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK)))) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint64_t hstatus = a.read_hstatus();
+    if (unlikely(mode == MODE_VS && (hstatus & HSTATUS_VTVM_MASK))) {
+        pc = raise_virtual_insn_exception(a, pc, insn);
+        return advance_to_raised_exception(a, pc);
+    }
+    return execute_XFENCE(a, pc, insn);
+}
+
+/// \brief Implementation of the HFENCE.VVMA instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HFENCE_VVMA(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    auto mode = current_mode(a);
+    // HFENCE.VVMA is valid only in M-mode or HS-mode
+    if (unlikely(!(mode == MODE_M || mode == MODE_HS))) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    return execute_XFENCE(a, pc, insn);
+}
+
+/// \brief Implementation of the HFENCE.GVMA instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HFENCE_GVMA(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    auto mode = current_mode(a);
+    // HFENCE.GVMA is valid only in HS-mode when mstatus.TVM=0, or in M-mode (irrespective of mstatus.TVM)
+    if (unlikely(!(mode == MODE_M || mode == MODE_HS))) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint64_t mstatus = a.read_mstatus();
+    if (unlikely(mode == MODE_HS && (mstatus & MSTATUS_TVM_MASK))) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    return execute_XFENCE(a, pc, insn);
+}
+
+/// \brief Implementation of the SINVAL.VMA instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_SINVAL_VMA(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    // this instruction is a part of the Svinval extension
+    return raise_illegal_insn_exception(a, pc, insn);
+}
+
+/// \brief Implementation of the SFENCE.W.INVAL instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_SFENCE_W_INVAL(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    // this instruction is a part of the Svinval extension
+    return raise_illegal_insn_exception(a, pc, insn);
+}
+
+/// \brief Implementation of the SFENCE.INVAL.IR instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_SFENCE_INVAL_IR(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    // this instruction is a part of the Svinval extension
+    return raise_illegal_insn_exception(a, pc, insn);
+}
+
+/// \brief Implementation of the HINVAL.VVMA instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HINVAL_VVMA(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    // this instruction is a part of the Svinval extension
+    return raise_illegal_insn_exception(a, pc, insn);
+}
+
+/// \brief Implementation of the HINVAL.GVMA instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HINVAL_GVMA(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    // this instruction is a part of the Svinval extension
+    return raise_illegal_insn_exception(a, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline bool check_HV_insn_allowed(STATE_ACCESS &a, MODE_constants &access_mode, uint64_t &pc, uint32_t insn) {
+    auto mode = current_mode(a);
+    auto vrt = (mode & ACCESS_MODE_VRT_MASK) >> ACCESS_MODE_VRT_SHIFT;
+    // HV instructions are not allowed in virtual mode
+    if (unlikely(vrt)) {
+        pc = raise_exception(a, pc, MCAUSE_VIRTUAL_INSTRUCTION, pc, 0);
+        return false;
+    }
+    uint64_t hstatus = 0;
+    read_csr_or_return_on_failure(read_csr_hstatus, a, hstatus);
+    // HV instructions are not allowed in user mode unless hstatus.HU is set
+    if (unlikely(mode == MODE_U && !(hstatus & HSTATUS_HU_MASK))) {
+        pc = raise_exception(a, pc, MCAUSE_ILLEGAL_INSN, insn, 0);
+        return false;
+    }
+
+    // hstatus.SPVP controls the privilege level of access
+    auto priv = PRV_U;
+    if (hstatus & HSTATUS_SPVP_MASK) {
+        priv = PRV_S;
+    }
+    // HV instructions perform a memory access as though we are in a virtual mode
+    access_mode = encode_access_mode(priv, true);
+    return true;
+}
+
+template <typename T, typename STATE_ACCESS>
+static inline execute_status do_execute_HLV(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn,
+    uint8_t xwr_shift) {
+    MODE_constants access_mode = MODE_U;
+    if (unlikely(!check_HV_insn_allowed(a, access_mode, pc, insn))) {
+        return execute_status::failure;
+    }
+
+    uint64_t vaddr = a.read_x(insn_get_rs1(insn));
+    T val;
+    auto [status, new_pc] =
+        read_virtual_memory_slow<T, STATE_ACCESS, false>(a, pc, mcycle, vaddr, access_mode, xwr_shift, &val);
+    pc = new_pc;
+    if (status) {
+        uint32_t rd = insn_get_rd(insn);
+        // don't write x0
+        if (rd != 0) {
+            // This static branch is eliminated by the compiler
+            if (std::is_signed<T>::value) {
+                a.write_x(rd, static_cast<int64_t>(val));
+            } else {
+                a.write_x(rd, static_cast<uint64_t>(val));
+            }
+        }
+        return advance_to_next_insn(a, pc);
+    } else {
+        return advance_to_raised_exception(a, pc);
+    }
+}
+
+template <typename T, typename STATE_ACCESS>
+static inline execute_status execute_HLV(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    return do_execute_HLV<T, STATE_ACCESS>(a, pc, mcycle, insn, PTE_XWR_R_SHIFT);
+}
+
+/// \brief Implementation of the HLV.B instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HLV_B(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    dump_insn(a, pc, insn, "hlv.b");
+    return execute_HLV<int8_t>(a, pc, mcycle, insn);
+}
+
+/// \brief Implementation of the HLV.BU instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HLV_BU(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    dump_insn(a, pc, insn, "hlv.bu");
+    return execute_HLV<uint8_t>(a, pc, mcycle, insn);
+}
+
+/// \brief Implementation of the HLV.H instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HLV_H(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    dump_insn(a, pc, insn, "hlv.h");
+    return execute_HLV<int16_t>(a, pc, mcycle, insn);
+}
+
+/// \brief Implementation of the HLV.HU instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HLV_HU(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    dump_insn(a, pc, insn, "hlv.hu");
+    return execute_HLV<uint16_t>(a, pc, mcycle, insn);
+}
+
+/// \brief Implementation of the HLV.W instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HLV_W(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    dump_insn(a, pc, insn, "hlv.w");
+    return execute_HLV<int32_t>(a, pc, mcycle, insn);
+}
+
+/// \brief Implementation of the HLV.WU instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HLV_WU(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    dump_insn(a, pc, insn, "hlv.wu");
+    return execute_HLV<uint32_t>(a, pc, mcycle, insn);
+}
+
+template <typename T, typename STATE_ACCESS>
+static inline execute_status execute_HLVX(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    return do_execute_HLV<T, STATE_ACCESS>(a, pc, mcycle, insn, PTE_XWR_X_SHIFT);
+}
+
+/// \brief Implementation of the HLVX.HU instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HLVX_HU(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    dump_insn(a, pc, insn, "hlvx.hu");
+    return execute_HLVX<uint16_t>(a, pc, mcycle, insn);
+}
+
+/// \brief Implementation of the HLVX.WU instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HLVX_WU(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    dump_insn(a, pc, insn, "hlvx.wu");
+    return execute_HLVX<uint32_t>(a, pc, mcycle, insn);
+}
+
+/// \brief Implementation of the HLV.D instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HLV_D(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    dump_insn(a, pc, insn, "hlv.d");
+    return execute_HLV<int64_t>(a, pc, mcycle, insn);
+}
+
+template <typename T, typename STATE_ACCESS>
+static inline execute_status execute_HSV(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    MODE_constants access_mode = MODE_U;
+    if (!check_HV_insn_allowed(a, access_mode, pc, insn)) {
+        return execute_status::failure;
+    }
+
+    uint64_t vaddr = a.read_x(insn_get_rs1(insn));
+    uint64_t val = a.read_x(insn_get_rs2(insn));
+    auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, mcycle, vaddr, access_mode, val);
+    pc = new_pc;
+    if (status) {
+        return advance_to_next_insn(a, pc);
+    } else {
+        return advance_to_raised_exception(a, pc);
+    }
+}
+
+/// \brief Implementation of the HSV.B instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HSV_B(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    dump_insn(a, pc, insn, "hsv.b");
+    return execute_HSV<uint8_t>(a, pc, mcycle, insn);
+}
+
+/// \brief Implementation of the HSV.H instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HSV_H(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    dump_insn(a, pc, insn, "hsv.h");
+    return execute_HSV<uint16_t>(a, pc, mcycle, insn);
+}
+
+/// \brief Implementation of the HSV.W instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HSV_W(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    dump_insn(a, pc, insn, "hsv.w");
+    return execute_HSV<uint32_t>(a, pc, mcycle, insn);
+}
+
+/// \brief Implementation of the HSV.D instruction.
+template <typename STATE_ACCESS>
+static execute_status execute_HSV_D(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    dump_insn(a, pc, insn, "hsv.d");
+    return execute_HSV<uint64_t>(a, pc, mcycle, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -3469,20 +4555,133 @@ static FORCE_INLINE execute_status execute_SRLW_DIVUW_SRAW(STATE_ACCESS &a, uint
 }
 
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_privileged(STATE_ACCESS &a, uint64_t &pc, uint64_t &mcycle, uint32_t insn) {
-    switch (static_cast<insn_privileged>(insn)) {
-        case insn_privileged::ECALL:
+static FORCE_INLINE execute_status execute_privileged_E(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    switch (static_cast<insn_E_rs2>(insn_get_rs2(insn))) {
+        case insn_E_rs2::ECALL:
             return execute_ECALL(a, pc, insn);
-        case insn_privileged::EBREAK:
+        case insn_E_rs2::EBREAK:
             return execute_EBREAK(a, pc, insn);
-        case insn_privileged::SRET:
-            return execute_SRET(a, pc, insn);
-        case insn_privileged::MRET:
-            return execute_MRET(a, pc, insn);
-        case insn_privileged::WFI:
-            return execute_WFI(a, pc, mcycle, insn);
         default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_privileged_WFI_SRET(STATE_ACCESS &a, uint64_t &pc, uint64_t &mcycle,
+    uint32_t insn) {
+    switch (static_cast<insn_WFI_SRET_rs2>(insn_get_rs2(insn))) {
+        case insn_WFI_SRET_rs2::WFI:
+            return execute_WFI(a, pc, mcycle, insn);
+        case insn_WFI_SRET_rs2::SRET:
+            return execute_SRET(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_privileged_SFENCE_INVAL(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    switch (static_cast<insn_SFENCE_INVAL_rs2>(insn_get_rs2(insn))) {
+        case insn_SFENCE_INVAL_rs2::SFENCE_W_INVAL:
+            return execute_SFENCE_W_INVAL(a, pc, insn);
+        case insn_SFENCE_INVAL_rs2::SFENCE_INVAL_IR:
+            return execute_SFENCE_INVAL_IR(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_privileged_HLV_B(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    switch (static_cast<insn_HLV_B_rs2>(insn_get_rs2(insn))) {
+        case insn_HLV_B_rs2::HLV_B:
+            return execute_HLV_B(a, pc, mcycle, insn);
+        case insn_HLV_B_rs2::HLV_BU:
+            return execute_HLV_BU(a, pc, mcycle, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_privileged_HLV_H(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    switch (static_cast<insn_HLV_H_rs2>(insn_get_rs2(insn))) {
+        case insn_HLV_H_rs2::HLV_H:
+            return execute_HLV_H(a, pc, mcycle, insn);
+        case insn_HLV_H_rs2::HLV_HU:
+            return execute_HLV_HU(a, pc, mcycle, insn);
+        case insn_HLV_H_rs2::HLVX_HU:
+            return execute_HLVX_HU(a, pc, mcycle, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_privileged_HLV_W(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    switch (static_cast<insn_HLV_W_rs2>(insn_get_rs2(insn))) {
+        case insn_HLV_W_rs2::HLV_W:
+            return execute_HLV_W(a, pc, mcycle, insn);
+        case insn_HLV_W_rs2::HLV_WU:
+            return execute_HLV_WU(a, pc, mcycle, insn);
+        case insn_HLV_W_rs2::HLVX_WU:
+            return execute_HLVX_WU(a, pc, mcycle, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_privileged(STATE_ACCESS &a, uint64_t &pc, uint64_t &mcycle, uint32_t insn) {
+    switch (static_cast<insn_privileged_funct7>(insn_get_funct7(insn))) {
+        case insn_privileged_funct7::E:
+            return execute_privileged_E(a, pc, insn);
+        case insn_privileged_funct7::WFI_SRET:
+            return execute_privileged_WFI_SRET(a, pc, mcycle, insn);
+        case insn_privileged_funct7::SFENCE_INVAL:
+            return execute_privileged_SFENCE_INVAL(a, pc, insn);
+        case insn_privileged_funct7::MRET:
+            return execute_MRET(a, pc, insn);
+        case insn_privileged_funct7::SFENCE_VMA:
             return execute_SFENCE_VMA(a, pc, insn);
+        case insn_privileged_funct7::SINVAL_VMA:
+            return execute_SINVAL_VMA(a, pc, insn);
+        case insn_privileged_funct7::HFENCE_VVMA:
+            return execute_HFENCE_VVMA(a, pc, insn);
+        case insn_privileged_funct7::HFENCE_GVMA:
+            return execute_HFENCE_GVMA(a, pc, insn);
+        case insn_privileged_funct7::HINVAL_VVMA:
+            return execute_HINVAL_VVMA(a, pc, insn);
+        case insn_privileged_funct7::HINVAL_GVMA:
+            return execute_HINVAL_GVMA(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_hv_store_load(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    switch (static_cast<insn_privileged_funct7>(insn_get_funct7(insn))) {
+        case insn_privileged_funct7::HLV_B:
+            return execute_privileged_HLV_B(a, pc, mcycle, insn);
+        case insn_privileged_funct7::HLV_H:
+            return execute_privileged_HLV_H(a, pc, mcycle, insn);
+        case insn_privileged_funct7::HLV_W:
+            return execute_privileged_HLV_W(a, pc, mcycle, insn);
+        case insn_privileged_funct7::HSV_B:
+            return execute_HSV_B(a, pc, mcycle, insn);
+        case insn_privileged_funct7::HSV_H:
+            return execute_HSV_H(a, pc, mcycle, insn);
+        case insn_privileged_funct7::HSV_W:
+            return execute_HSV_W(a, pc, mcycle, insn);
+        // case insn_privileged_funct7::HLV_WU:
+        //     return execute_HLV_WU(a, pc, insn);
+        case insn_privileged_funct7::HLV_D:
+            return execute_HLV_D(a, pc, mcycle, insn);
+        case insn_privileged_funct7::HSV_D:
+            return execute_HSV_D(a, pc, mcycle, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
@@ -5028,7 +6227,7 @@ static FORCE_INLINE execute_status execute_C_MV(STATE_ACCESS &a, uint64_t &pc, u
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_EBREAK(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.ebreak");
-    pc = raise_exception(a, pc, MCAUSE_BREAKPOINT, pc);
+    pc = raise_exception(a, pc, MCAUSE_BREAKPOINT, pc, 0);
     return advance_to_raised_exception(a, pc);
 }
 
@@ -5328,6 +6527,8 @@ static FORCE_INLINE execute_status execute_insn(STATE_ACCESS &a, uint64_t &pc, u
                 return execute_SRLW_DIVUW_SRAW(a, pc, insn);
             case insn_funct3_00000_opcode::privileged:
                 return execute_privileged(a, pc, mcycle, insn);
+            case insn_funct3_00000_opcode::hv_store_load:
+                return execute_hv_store_load(a, pc, mcycle, insn);
             default: {
                 // Here we are sure that the next instruction, at best, can only be a floating point instruction,
                 // or, at worst, an illegal instruction.
@@ -5407,9 +6608,14 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE fetch_status fetch_translate_pc_slow(STATE_ACCESS &a, uint64_t &pc, uint64_t vaddr,
     unsigned char **phptr) {
     uint64_t paddr{};
+    MODE_constants access_mode = get_current_memory_access_mode(a);
     // Walk page table and obtain the physical address
-    if (unlikely(!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_X_SHIFT))) {
-        pc = raise_exception(a, pc, MCAUSE_FETCH_PAGE_FAULT, vaddr);
+    uint8_t cause =
+        translate_virtual_address<STATE_ACCESS, ACCESS_TYPE_FETCH>(a, &paddr, vaddr, access_mode, PTE_XWR_X_SHIFT);
+    if (unlikely(cause)) {
+        // When a guest-page-fault trap is taken into HS-mode, htval is written with the guest
+        // physical address that faulted, shifted right by 2 bits.
+        pc = raise_exception(a, pc, cause, vaddr, paddr >> 2);
         return fetch_status::exception;
     }
     // Walk memory map to find the range that contains the physical address
@@ -5417,7 +6623,7 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(STATE_ACCESS &a, uint64
     // We only execute directly from RAM (as in "random access memory", which includes ROM)
     // If the range is not memory or not executable, this as a PMA violation
     if (unlikely(!pma.get_istart_M() || !pma.get_istart_X())) {
-        pc = raise_exception(a, pc, MCAUSE_INSN_ACCESS_FAULT, vaddr);
+        pc = raise_exception(a, pc, MCAUSE_INSN_ACCESS_FAULT, vaddr, 0);
         return fetch_status::exception;
     }
     unsigned char *hpage = a.template replace_tlb_entry<TLB_CODE>(vaddr, paddr, pma);

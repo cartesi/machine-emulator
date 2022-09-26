@@ -60,6 +60,25 @@ struct processor_config final {
     uint64_t satp{SATP_INIT};                   ///< Value of satp CSR
     uint64_t scounteren{SCOUNTEREN_INIT};       ///< Value of scounteren CSR
     uint64_t senvcfg{SENVCFG_INIT};             ///< Value of senvcfg CSR
+    uint64_t hstatus{HSTATUS_INIT};             ///< Value of hstatus CSR
+    uint64_t hideleg{HIDELEG_INIT};             ///< Value of hideleg CSR
+    uint64_t hedeleg{HEDELEG_INIT};             ///< Value of hedeleg CSR
+    uint64_t hie{HIE_INIT};                     ///< Value of hie CSR
+    uint64_t hip{HIP_INIT};                     ///< Value of hip CSR
+    uint64_t hvip{HVIP_INIT};                   ///< Value of hvip CSR
+    uint64_t hgatp{HGATP_INIT};                 ///< Value of hgatp CSR
+    uint64_t henvcfg{HENVCFG_INIT};             ///< Value of henvcfg CSR
+    uint64_t htimedelta{HTIMEDELTA_INIT};       ///< Value of htimedelta CSR
+    uint64_t htval{HTVAL_INIT};                 ///< Value of htval CSR
+    uint64_t vsepc{VSEPC_INIT};                 ///< Value of vsepc CSR
+    uint64_t vsstatus{VSSTATUS_INIT};           ///< Value of vsstatus CSR
+    uint64_t vscause{VSCAUSE_INIT};             ///< Value of vscause CSR
+    uint64_t vstval{VSTVAL_INIT};               ///< Value of vstval CSR
+    uint64_t vstvec{VSTVEC_INIT};               ///< Value of vstvec CSR
+    uint64_t vsscratch{VSSCRATCH_INIT};         ///< Value of vsscratch CSR
+    uint64_t vsatp{VSATP_INIT};                 ///< Value of vsatp CSR
+    uint64_t vsip{VSIP_INIT};                   ///< Value of vsip CSR
+    uint64_t vsie{VSIE_INIT};                   ///< Value of vsie CSR
     uint64_t ilrsc{ILRSC_INIT};                 ///< Value of ilrsc CSR
     uint64_t iflags{IFLAGS_INIT};               ///< Value of iflags CSR
 };

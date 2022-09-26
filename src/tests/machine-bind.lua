@@ -202,8 +202,27 @@ local function get_cpu_csr_test_values()
         satp = 0x2c0,
         scounteren = 0x2c8,
         senvcfg = 0x2d0,
+        hstatus = 0x2d8,
+        hideleg = 0x2e0,
+        hedeleg = 0x2e8,
+        hie = 0x2f0,
+        hip = 0x2f8,
+        hvip = 0x300,
+        hgatp = 0x308,
+        henvcfg = 0x310,
+        htimedelta = 0x318,
+        htval = 0x320,
+        vsepc = 0x328,
+        vsstatus = 0x330,
+        vscause = 0x338,
+        vstval = 0x340,
+        vstvec = 0x348,
+        vsscratch = 0x350,
+        vsatp = 0x358,
+        vsie = 0x360,
+        vsip = 0x368,
         fcsr = 0x61,
-        ilrsc = 0x2e0,
+        ilrsc = 0x370,
     }
 end
 
@@ -488,7 +507,7 @@ do_test("should have expected values",
         test_config(initial_config)
         assert(initial_config.processor.pc == 0x200,
             "wrong pc reg initial config value")
-        assert(initial_config.processor.ilrsc == 0x2e0,
+        assert(initial_config.processor.ilrsc == 0x368,
             "wrong ilrsc reg initial config value")
         assert(initial_config.processor.mstatus == 0x230,
             "wrong mstatus reg initial config value")

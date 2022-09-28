@@ -58,7 +58,7 @@
 
 static constexpr uint32_t manager_version_major = 0;
 static constexpr uint32_t manager_version_minor = 4;
-static constexpr uint32_t manager_version_patch = 0;
+static constexpr uint32_t manager_version_patch = 1;
 static constexpr const char *manager_version_pre_release = "";
 static constexpr const char *manager_version_build = "";
 
@@ -1454,7 +1454,7 @@ static uint64_t check_is_yielded(async_context &actx) {
 static hash_type get_root_hash(async_context &actx) {
     Void request;
     grpc::ClientContext client_context;
-    set_deadline(client_context, actx.session.server_deadline.fast);
+    set_deadline(client_context, actx.session.server_deadline.machine);
     auto reader = actx.session.server_stub->AsyncGetRootHash(&client_context, request, actx.completion_queue);
     grpc::Status status;
     GetRootHashResponse response;
@@ -2008,7 +2008,7 @@ static proof_type get_proof(async_context &actx, uint64_t address, uint64_t log2
     proof_request.set_address(address);
     proof_request.set_log2_size(log2_size);
     grpc::ClientContext client_context;
-    set_deadline(client_context, actx.session.server_deadline.fast);
+    set_deadline(client_context, actx.session.server_deadline.machine);
     auto reader = actx.session.server_stub->AsyncGetProof(&client_context, proof_request, actx.completion_queue);
     grpc::Status proof_status;
     GetProofResponse proof_response;

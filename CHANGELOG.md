@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed many instruction inconsistencies with respect to the RISC-V specification.
 
+## [0.11.1] - 2022-09-28
+### Fixed
+
+- Fixed merkle-tree-hash linking on MacOSX
+- Changed the deadline used on GetProof and GetRootHash
+
 ## [0.11.0] - 2022-09-02
 ### Added
 

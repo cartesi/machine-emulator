@@ -512,7 +512,7 @@ $(GROUND_TRUTH_DIR)/$(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(GROUND_TRUTH_DIR)
 	brotli -j -f $(basename $@)
 
 merkle-tree-hash: $(MERKLE_TREE_HASH_OBJS)
-	$(CXX) -o $@ $^ $(HASH_LIBS)
+	$(CXX) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $^ $(HASH_LIBS)
 
 tests/test-merkle-tree-hash: $(TEST_MERKLE_TREE_HASH_OBJS)
 	$(CXX) -o $@ $^ $(HASH_LIBS)
@@ -529,12 +529,12 @@ server-manager: $(SERVER_MANAGER_OBJS) $(LIBCARTESI_PROTOBUF)
 	$(CXX) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(SERVER_MANAGER_OBJS) $(SERVER_MANAGER_LIBS)
 
 tests/test-server-manager: $(TEST_SERVER_MANAGER_OBJS) $(LIBCARTESI_PROTOBUF)
-	$(CXX) $(LIBCARTESI_TESTS_LDFLAGS) -o $@ $(TEST_SERVER_MANAGER_OBJS) $(TEST_SERVER_MANAGER_LIBS)
+	$(CXX) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(TEST_SERVER_MANAGER_OBJS) $(TEST_SERVER_MANAGER_LIBS)
 
 remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
 tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_GRPC)
-	$(CXX) $(LIBCARTESI_TESTS_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(TEST_MACHINE_C_API_LIBS)
+	$(CXX) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(TEST_MACHINE_C_API_LIBS)
 
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 

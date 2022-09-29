@@ -2171,7 +2171,7 @@ static inline execute_status execute_ECALL(STATE_ACCESS &a, uint64_t pc, uint32_
     auto note = a.make_scoped_note("ecall");
     (void) note;
     auto priv = a.read_iflags_PRV();
-    raise_exception(a, MCAUSE_ECALL_BASE + priv, pc);
+    raise_exception(a, MCAUSE_ECALL_BASE + priv, 0);
     return advance_to_raised_exception(a);
 }
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Updated emulator implementation with respect to latest RISC-V specification.
+- Optimized Lua API to avoid allocating a uservalue for error messages for every API call.
 
 ### Fixed
 

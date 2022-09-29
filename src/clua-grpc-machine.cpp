@@ -42,8 +42,7 @@ static int grpc_machine_class_get_default_config(lua_State *L) {
         clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     auto &managed_default_config =
         clua_push_to(L, clua_managed_cm_ptr<const cm_machine_config>(nullptr), lua_upvalueindex(2));
-    TRY_EXECUTE_CTXIDX(cm_grpc_get_default_config(managed_grpc_stub.get(), &managed_default_config.get(), err_msg),
-        lua_upvalueindex(2));
+    TRY_EXECUTE(cm_grpc_get_default_config(managed_grpc_stub.get(), &managed_default_config.get(), err_msg));
     clua_push_cm_machine_config(L, managed_default_config.get());
     managed_default_config.reset();
     return 1;
@@ -57,9 +56,7 @@ static int grpc_machine_class_verify_access_log(lua_State *L) {
         clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     auto &managed_log =
         clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 1)), lua_upvalueindex(2));
-    TRY_EXECUTE_CTXIDX(
-        cm_grpc_verify_access_log(managed_grpc_stub.get(), managed_log.get(), lua_toboolean(L, 2), err_msg),
-        lua_upvalueindex(2));
+    TRY_EXECUTE(cm_grpc_verify_access_log(managed_grpc_stub.get(), managed_log.get(), lua_toboolean(L, 2), err_msg));
     managed_log.reset();
     lua_pop(L, 1); // managed pointer
     lua_pushnumber(L, 1);
@@ -78,9 +75,8 @@ static int grpc_machine_class_verify_state_transition(lua_State *L) {
     cm_hash target_hash{};
     clua_check_cm_hash(L, 3, &target_hash);
     const bool one_based = lua_toboolean(L, 4);
-    TRY_EXECUTE_CTXIDX(cm_grpc_verify_state_transition(managed_grpc_stub.get(), &root_hash, managed_log.get(),
-                           &target_hash, one_based, err_msg),
-        lua_upvalueindex(2));
+    TRY_EXECUTE(cm_grpc_verify_state_transition(managed_grpc_stub.get(), &root_hash, managed_log.get(), &target_hash,
+        one_based, err_msg));
     managed_log.reset();
     lua_pop(L, 1);        // managed pointer
     lua_pushnumber(L, 1); // result
@@ -92,8 +88,7 @@ static int grpc_machine_class_get_x_address(lua_State *L) {
     auto &managed_grpc_stub =
         clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     uint64_t reg_address{};
-    TRY_EXECUTE_CTXIDX(cm_grpc_get_x_address(managed_grpc_stub.get(), luaL_checkinteger(L, 1), &reg_address, err_msg),
-        lua_upvalueindex(2));
+    TRY_EXECUTE(cm_grpc_get_x_address(managed_grpc_stub.get(), luaL_checkinteger(L, 1), &reg_address, err_msg));
     lua_pushinteger(L, static_cast<lua_Integer>(reg_address));
     return 1;
 }
@@ -104,8 +99,7 @@ static int grpc_machine_class_get_csr_address(lua_State *L) {
         clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     uint64_t csr_address{};
     const CM_PROC_CSR csr = clua_check_cm_proc_csr(L, 1);
-    TRY_EXECUTE_CTXIDX(cm_grpc_get_csr_address(managed_grpc_stub.get(), csr, &csr_address, err_msg),
-        lua_upvalueindex(2));
+    TRY_EXECUTE(cm_grpc_get_csr_address(managed_grpc_stub.get(), csr, &csr_address, err_msg));
     lua_pushinteger(L, static_cast<lua_Integer>(csr_address));
     return 1;
 }
@@ -115,8 +109,7 @@ static int grpc_machine_class_get_dhd_h_address(lua_State *L) {
     auto &managed_grpc_stub =
         clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     uint64_t dhd_h_address{};
-    TRY_EXECUTE_CTXIDX(cm_grpc_dhd_h_address(managed_grpc_stub.get(), luaL_checkinteger(L, 1), &dhd_h_address, err_msg),
-        lua_upvalueindex(2));
+    TRY_EXECUTE(cm_grpc_dhd_h_address(managed_grpc_stub.get(), luaL_checkinteger(L, 1), &dhd_h_address, err_msg));
     lua_pushinteger(L, static_cast<lua_Integer>(dhd_h_address));
     return 1;
 }
@@ -151,16 +144,14 @@ static int grpc_machine_ctor(lua_State *L) {
     if (lua_type(L, 2) == LUA_TTABLE) {
         auto &managed_config =
             clua_push_to(L, clua_managed_cm_ptr<cm_machine_config>(clua_check_cm_machine_config(L, 2, ctxidx)), ctxidx);
-        TRY_EXECUTE_CTXIDX(cm_create_grpc_machine(managed_grpc_stub.get(), managed_config.get(),
-                               managed_runtime_config.get(), &managed_machine.get(), err_msg),
-            ctxidx);
+        TRY_EXECUTE(cm_create_grpc_machine(managed_grpc_stub.get(), managed_config.get(), managed_runtime_config.get(),
+            &managed_machine.get(), err_msg));
         managed_config.reset();
         managed_runtime_config.reset();
         lua_pop(L, 2);
     } else {
-        TRY_EXECUTE_CTXIDX(cm_load_grpc_machine(managed_grpc_stub.get(), luaL_checkstring(L, 2),
-                               managed_runtime_config.get(), &managed_machine.get(), err_msg),
-            ctxidx);
+        TRY_EXECUTE(cm_load_grpc_machine(managed_grpc_stub.get(), luaL_checkstring(L, 2), managed_runtime_config.get(),
+            &managed_machine.get(), err_msg));
         managed_runtime_config.reset();
         lua_pop(L, 1);
     }
@@ -180,7 +171,7 @@ static int grpc_server_class_get_machine(lua_State *L) {
         clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     const int ctxidx = lua_upvalueindex(2);
     auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr), ctxidx);
-    TRY_EXECUTE_CTXIDX(cm_get_grpc_machine(managed_grpc_stub.get(), &managed_machine.get(), err_msg), ctxidx);
+    TRY_EXECUTE(cm_get_grpc_machine(managed_grpc_stub.get(), &managed_machine.get(), err_msg));
     return 1;
 }
 
@@ -190,8 +181,7 @@ static int grpc_server_class_get_version(lua_State *L) {
         clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     auto &managed_version =
         clua_push_to(L, clua_managed_cm_ptr<const cm_semantic_version>(nullptr), lua_upvalueindex(2));
-    TRY_EXECUTE_CTXIDX(cm_grpc_get_semantic_version(managed_grpc_stub.get(), &managed_version.get(), err_msg),
-        lua_upvalueindex(2));
+    TRY_EXECUTE(cm_grpc_get_semantic_version(managed_grpc_stub.get(), &managed_version.get(), err_msg));
     clua_push_cm_semantic_version(L, managed_version.get());
     managed_version.reset();
     return 1;
@@ -201,7 +191,7 @@ static int grpc_server_class_get_version(lua_State *L) {
 static int grpc_server_class_shutdown(lua_State *L) {
     auto &managed_grpc_stub =
         clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
-    TRY_EXECUTE_CTXIDX(cm_grpc_shutdown(managed_grpc_stub.get(), err_msg), lua_upvalueindex(2));
+    TRY_EXECUTE(cm_grpc_shutdown(managed_grpc_stub.get(), err_msg));
     lua_pushnumber(L, 1);
     return 1;
 }

@@ -30,26 +30,20 @@
 
 namespace cartesi {
 
+constexpr size_t MAX_ERR_MSG_LEN = 1024;
+
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define TRY_EXECUTE(func_call)                                                                                         \
     do {                                                                                                               \
-        auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr));                                   \
-        char **err_msg = &managed_err_msg.get();                                                                       \
+        char *err_msg_heap = nullptr;                                                                                  \
+        char **err_msg = &err_msg_heap;                                                                                \
         if ((func_call) != 0) {                                                                                        \
-            return luaL_error(L, *err_msg);                                                                            \
+            std::array<char, MAX_ERR_MSG_LEN> err_msg_stack{};                                                         \
+            strncpy(err_msg_stack.data(), err_msg_heap, MAX_ERR_MSG_LEN - 1);                                          \
+            err_msg_stack[MAX_ERR_MSG_LEN - 1] = '\0';                                                                 \
+            cm_delete_error_message(err_msg_heap);                                                                     \
+            return luaL_error(L, err_msg_stack.data());                                                                \
         }                                                                                                              \
-        lua_pop(L, 1);                                                                                                 \
-    } while (0)
-
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define TRY_EXECUTE_CTXIDX(func_call, ctxidx)                                                                          \
-    do {                                                                                                               \
-        auto &managed_err_msg = clua_push_to(L, clua_managed_cm_ptr<char>(nullptr), ctxidx);                           \
-        char **err_msg = &managed_err_msg.get();                                                                       \
-        if ((func_call) != 0) {                                                                                        \
-            return luaL_error(L, *err_msg);                                                                            \
-        }                                                                                                              \
-        lua_pop(L, 1);                                                                                                 \
     } while (0)
 
 /// \brief Create overloaded deleters for C API objects

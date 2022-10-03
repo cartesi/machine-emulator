@@ -57,8 +57,8 @@
 #pragma GCC diagnostic pop
 
 static constexpr uint32_t manager_version_major = 0;
-static constexpr uint32_t manager_version_minor = 4;
-static constexpr uint32_t manager_version_patch = 1;
+static constexpr uint32_t manager_version_minor = 5;
+static constexpr uint32_t manager_version_patch = 0;
 static constexpr const char *manager_version_pre_release = "";
 static constexpr const char *manager_version_build = "";
 

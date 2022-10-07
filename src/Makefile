@@ -89,12 +89,12 @@ GRPC_INC_Linux:=-I$(BUILDDIR)/include
 GRPC_LIB_Linux:=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
 PROTOBUF_LIB_Linux:=-L$(BUILDDIR)/lib -lprotobuf -lpthread
 LIBCARTESI_Linux=libcartesi.so
-LIBCARTESI_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
+LIBCARTESI_LDFLAGS_Linux=
 LIBCARTESI_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
 LIBCARTESI_PROTOBUF_Linux=libcartesi_protobuf.so
-LIBCARTESI_PROTOBUF_LDFLAGS_Linux=$(SOLDFLAGS_Linux)
+LIBCARTESI_PROTOBUF_LDFLAGS_Linux=
 LIBCARTESI_GRPC_Linux=libcartesi_grpc.so
-LIBCARTESI_GRPC_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
+LIBCARTESI_GRPC_LDFLAGS_Linux=
 LIBCARTESI_GRPC_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
 CARTESI_EXECUTABLE_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/'
 PROFILE_DATA_Linux=
@@ -156,16 +156,51 @@ DEFS+=-DDUMP_HIST
 #DEFS+=-DDUMP_COUNTERS
 endif
 
-ifeq ($(release),yes)
-DEFS+=-DNDEBUG
+ifeq ($(relwithdebinfo),yes)
+OPTFLAGS+=-O2 -g
+else ifeq ($(release),yes)
+OPTFLAGS+=-O2
+else ifeq ($(debug),yes)
+OPTFLAGS+=-Og -g
 else
-DEFS+=-g
+OPTFLAGS+=-O2 -g
+endif
+
+# Optimization flags
+ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
+DEFS+=-DNDEBUG
+# Disable jump tables, because it degrades the instruction decoding performance in the interpret loop,
+# since it generates a memory indirection that has a high cost in opcode switches.
+OPTFLAGS+=-fno-jump-tables
+ifneq (,$(filter gcc,$(CC)))
+# The following flag helps GCC to eliminate more redundant computations in the interpret loop,
+# saving some host instructions and improving performance.
+# This flag is usually enabled by default at -O3,
+# but we don't use -O3 because it enables some other flags that are not worth for the interpreter.
+OPTFLAGS+=-ftree-partial-pre
+endif
+endif
+
+# Link time optimizations
+ifeq ($(lto),yes)
+OPTFLAGS+=-flto=auto
+endif
+
+# Sanitizer
+ifeq ($(sanitize),yes)
+OPTFLAGS+=-fsanitize=undefined,address
 endif
 
 # Compile for current system processor
 ifeq ($(native),yes)
 CC_MARCH=-march=native
 endif
+
+# Workload to use in PGO
+PGO_WORKLOAD=\
+	tar c -C / bin | gzip > a.tar.gz && gzip -c a.tar.gz | sha256sum; \
+	dhrystone 500000; \
+	whetstone 250
 
 # We ignore xkcp-keccak-256-hasher.cpp because it is missing a header file.
 # The file is not being compiled but we want to keep it for reference.
@@ -192,9 +227,8 @@ UBFLAGS+=-fno-strict-aliasing
 UBFLAGS+=-fno-strict-overflow
 UBFLAGS+=-fno-delete-null-pointer-checks
 
-# -fsanitize=undefined
-CXXFLAGS=-O2 -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
-CFLAGS=-O2 -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
+CXXFLAGS=$(OPTFLAGS) -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
+CFLAGS=$(OPTFLAGS) -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
 
 ifeq ($(coverage-toolchain),gcc)
 CC=gcc
@@ -297,16 +331,16 @@ LUACARTESI_LIBS+=-lprofiler
 endif
 
 $(LIBCARTESI): $(CARTESI_OBJS) $(LIBCARTESI_PROTOBUF)
-	$(CXX) $(LIBCARTESI_LDFLAGS) -o $@ $(CARTESI_OBJS) $(CARTESI_LIBS)
+	$(CXX) $(SOLDFLAGS) $(LIBCARTESI_LDFLAGS) -o $@ $(CARTESI_OBJS) $(CARTESI_LIBS)
 
 # $(LIBCARTESI_PROTOBUF) is a dynamic library that exports all symbols
 $(CARTESI_PROTOBUF_GEN_OBJS): CXXFLAGS += -fvisibility=default
 
 $(LIBCARTESI_PROTOBUF): $(CARTESI_PROTOBUF_GEN_OBJS)
-	$(CXX) $(LIBCARTESI_PROTOBUF_LDFLAGS) -o $@ $^ $(CARTESI_PROTOBUF_LIBS)
+	$(CXX) $(SOLDFLAGS) $(LIBCARTESI_PROTOBUF_LDFLAGS) -o $@ $^ $(CARTESI_PROTOBUF_LIBS)
 
 $(LIBCARTESI_GRPC): $(CARTESI_GRPC_OBJS) $(LIBCARTESI)
-	$(CXX) $(LIBCARTESI_GRPC_LDFLAGS) -o $@ $(CARTESI_GRPC_OBJS) $(CARTESI_GRPC_LIBS) $(LIBCARTESI_LIB)
+	$(CXX) $(SOLDFLAGS) $(LIBCARTESI_GRPC_LDFLAGS) -o $@ $(CARTESI_GRPC_OBJS) $(CARTESI_GRPC_LIBS) $(LIBCARTESI_LIB)
 
 cartesi.so: $(LUACARTESI_OBJS) $(LIBCARTESI)
 	$(CXX) $(SOLDFLAGS) -o $@ $(LUACARTESI_OBJS) $(LUACARTESI_LIBS)
@@ -383,6 +417,14 @@ compile_flags.txt:
 	@echo "$(CXXFLAGS)" "-xc++" | sed -e $$'s/ \{1,\}/\\\n/g' | grep -v "MMD" > $@
 
 luacartesi: cartesi.so
+
+luacartesi-pgo: $(LIBCARTESI_PROTOBUF)
+	rm -f cartesi.so $(CARTESI_OBJS) $(LUACARTESI_OBJS) $(LIBCARTESI) $(PROFILE_DATA_$(UNAME)) *.gcda
+	$(MAKE) --no-print-directory generate
+	./cartesi-machine.lua -- "$(PGO_WORKLOAD)"
+	rm -f cartesi.so $(CARTESI_OBJS) $(LUACARTESI_OBJS) $(LIBCARTESI)
+	$(MAKE) --no-print-directory use
+	rm -f $(PROFILE_DATA_$(UNAME)) *.gcda
 
 grpc: cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager
 
@@ -475,8 +517,8 @@ LOG_DIR = logs/$(CYCLE_PERIOD)
 GROUND_TRUTH_DIR ?= ground-truth
 CONCURRENCY_MERKLE_TREE ?= 0
 
-ifneq ($(strip $(TEST_PATH)),)
-TESTS=$(shell ./cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test=".*" list)
+ifneq ($(wildcard $(TEST_PATH)),)
+TESTS=$(shell find $(TEST_PATH) -name '*.bin' -type f -printf '%f\n')
 endif
 TEST_HASHES=$(addprefix $(HASH_DIR)/,$(TESTS:.bin=.hashes))
 TEST_LOGS=$(addprefix $(LOG_DIR)/,$(TESTS:.bin=.json.br))

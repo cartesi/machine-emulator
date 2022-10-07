@@ -42,7 +42,26 @@ CXX := $(RUN_TOOLCHAIN) $(TOOLCHAIN_PREFIX)g++
 OBJCOPY := $(RUN_TOOLCHAIN) $(TOOLCHAIN_PREFIX)objcopy
 OBJDUMP := $(RUN_TOOLCHAIN) $(TOOLCHAIN_PREFIX)objdump
 
-CFLAGS :=  -march=rv64i -mabi=lp64 -Wl,--gc-sections -g0 -O3  \
+#
+ifeq ($(relwithdebinfo),yes)
+OPTFLAGS+=-O2 -DNDEBUG -g
+else ifeq ($(release),yes)
+OPTFLAGS+=-O2 -DNDEBUG -g0
+else ifeq ($(debug),yes)
+OPTFLAGS+=-Og -g
+else
+OPTFLAGS+=-O2 -g0
+endif
+
+# Link time optimizations
+ifeq ($(lto),yes)
+OPTFLAGS+=-flto=auto
+endif
+
+# Flags to minimize undefined behavior
+UBFLAGS := -fno-strict-aliasing -fno-strict-overflow -fno-delete-null-pointer-checks
+
+CFLAGS :=  -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) \
  	-DMICROARCHITECTURE=1 \
 	-ffreestanding \
 	-nostartfiles \

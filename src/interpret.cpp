@@ -20,6 +20,12 @@
 #include <ctime>
 #include <iomanip>
 #include <iostream>
+#include <unordered_map>
+#include <array>
+#include <algorithm>
+#include <boost/container_hash/hash.hpp>
+#include <boost/range/adaptor/sliced.hpp>
+#include "dis/opcode/riscv-dis.h"
 
 #include <sys/time.h>
 
@@ -3343,6 +3349,14 @@ static inline execute_status execute_insn(STATE_ACCESS &a, uint64_t pc, uint32_t
     }
 }
 
+static inline uint32_t is_branch(uint32_t insn) {
+    return (insn & 0x60) == 0x60;
+}
+
+static inline uint32_t is_op(uint32_t insn) {
+    return (insn & 0x1C) == 0x10 || (insn & 0x1C) == 0x18;
+}
+
 /// \brief Instruction fetch status code
 enum class fetch_status : int {
     exception, ///< Instruction fetch failed: exception raised
@@ -3357,7 +3371,7 @@ enum class fetch_status : int {
 /// \return Returns fetch_status::success if load succeeded, fetch_status::exception if it caused an exception.
 //          In that case, raise the exception.
 template <typename STATE_ACCESS>
-static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
+static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn, uint64_t *ppaddr) {
     auto note = a.make_scoped_note("fetch_insn");
     (void) note;
     // Get current pc from state
@@ -3369,6 +3383,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
         if (tlb_hit<uint32_t>(tlb, vaddr)) {
             *pinsn = aliased_aligned_read<uint32_t>(tlb.hpage + (vaddr & PAGE_OFFSET_MASK));
             INC_COUNTER(a.get_naked_state(), tlb_chit);
+            *ppaddr = tlb.paddr_page + (vaddr & PAGE_OFFSET_MASK);
             return fetch_status::success;
         }
     }
@@ -3379,6 +3394,7 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
         raise_exception(a, MCAUSE_FETCH_PAGE_FAULT, vaddr);
         return fetch_status::exception;
     }
+    *ppaddr = paddr;
     // Walk memory map to find the range that contains the physical address
     pma_entry &pma = a.template find_pma_entry<uint32_t>(paddr);
     // We only execute directly from RAM (as in "random access memory", which includes ROM)
@@ -3400,6 +3416,11 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
     a.read_memory_word(paddr, hpage, hoffset, pinsn);
     return fetch_status::success;
 }
+
+std::vector<uint32_t> current_trace;
+uint64_t current_trace_address = 0;
+using traces_at_address = std::unordered_map<std::vector<uint32_t>, std::vector<uint64_t>, boost::hash<std::vector<uint32_t>>>;
+std::unordered_map<uint64_t, traces_at_address> traces;
 
 template <typename STATE_ACCESS>
 interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
@@ -3452,12 +3473,37 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     uint32_t insn = 0;
 
     INC_COUNTER(a.get_naked_state(), outer_loop);
+    uint64_t ppc = 0;
+    bool previous_was_branch = false;
 
     // The inner loops continues until there is an interrupt condition
     // or mcycle reaches mcycle_end
     for (;;) {
         // Try to fetch the next instruction
-        if (fetch_insn(a, &pc, &insn) == fetch_status::success) {
+        if (fetch_insn(a, &pc, &insn, &ppc) == fetch_status::success) {
+            if (is_branch(insn)) {
+                if (!current_trace.empty()) {
+                    auto traces_found = traces.find(current_trace_address);
+                    if (traces_found == traces.end()) {
+                        traces.insert({current_trace_address, {{std::move(current_trace), std::vector<uint64_t>{a.read_mcycle()}}}});
+                    } else {
+                        auto trace_found = traces_found->second.find(current_trace);
+                        if (trace_found == traces_found->second.end()) {
+                            traces_found->second.insert({{std::move(current_trace), std::vector<uint64_t>{a.read_mcycle()}}});
+                        } else {
+                            trace_found->second.push_back(a.read_mcycle());
+                            current_trace.clear();
+                        }
+                    }
+                }
+                previous_was_branch = true;
+            } else {
+                if (previous_was_branch) {
+                    current_trace_address = ppc;
+                    previous_was_branch = false;
+                }
+                current_trace.push_back(insn);
+            }
             // Try to execute it
             if (execute_insn(a, pc, insn) == execute_status::retired) {
                 // If successful, increment the number of retired instructions minstret
@@ -3477,6 +3523,63 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
 
         // If the break flag is active, break from the inner loop
         if (a.get_naked_state().get_brk()) {
+            if (a.read_iflags_H()) {
+                std::unordered_map<std::pair<uint64_t,uint64_t>, uint64_t, boost::hash<std::pair<uint64_t,uint64_t>>> hist;
+                for (const auto &a: traces) {
+                    for (const auto &b: a.second) {
+                        if (std::find_if(b.first.begin(), b.first.end(), is_op) != b.first.end()) {
+                            std::pair<uint64_t, uint64_t> key{b.first.size(), b.second.size()};
+                            auto found = hist.find(key);
+                            if (found != hist.end()) {
+                                found->second++;
+                            } else {
+                                hist[key] = 1;
+                            }
+                        }
+                    }
+                }
+                //std::cout << "length,repeated,instances\n";
+                //for (auto &a: hist) {
+                    //std::cout << a.first.first << ',' << a.first.second << ',' << a.second << '\n';
+                //}
+
+                for (const auto &a: traces) {
+                    for (const auto &b: a.second) {
+                        if (std::find_if(b.first.begin(), b.first.end(), is_op) != b.first.end()) {
+                            if (b.first.size() == 18 && b.second.size() == 29115245) {
+                                for (const auto &c: b.first) {
+                                    riscv_dump_insn(a.first, c, std::cout, "        ");
+                                    std::cout << '\n';
+                                }
+                            }
+                        }
+                    }
+                }
+
+#if 0
+                    int i = 0;
+                    bool addressed = false;
+                    for (const auto &b: a.second) {
+                        if (b.second.size() > 200 && b.first.size() > 8 &&
+                            std::find_if(b.first.begin(), b.first.end(), is_op) != b.first.end()) {
+                            if (!addressed) {
+                                std::cout << "address " << a.first << '\n';
+                                addressed = true;
+                            }
+                            std::cout << "    trace " << i++ << '\n';
+                            for (const auto &c: b.first) {
+                                riscv_dump_insn(a.first, c, std::cout, "        ");
+                                std::cout << '\n';
+                            }
+                            std::cout << "    " << "length " << b.first.size() << " used " << b.second.size() << " times\n";
+                            std::mismatch(b.second.begin()+1, b.second.end(), b.second.begin(), [](const uint64_t &b, const uint64_t &a) -> bool {
+                                std::cout << "        " << (b - a) << '\n';
+                                return true;
+                            });
+                        }
+                    }
+#endif
+            }
             return interpreter_status::brk;
         }
         // Otherwise, there can be no pending interrupts

@@ -144,11 +144,11 @@ INCS= -I../lib/machine-emulator-defines $(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) 
 ifeq ($(dump),yes)
 #DEFS+=-DUMP_ILLEGAL_INSN
 #DEFS+=-DDUMP_EXCEPTIONS
-DEFS+=-DDUMP_HIST
+#DEFS+=-DDUMP_HIST
 #DEFS+=-DDUMP_MMU_EXCEPTIONS
 #DEFS+=-DDUMP_INVALID_MEM_ACCESS
 #DEFS+=-DDUMP_INVALID_CSR
-#DEFS+=-DDUMP_INSN
+DEFS+=-DDUMP_INSN
 #DEFS+=-DDUMP_REGS
 #DEFS+=-DDUMP_COUNTERS
 endif
@@ -240,6 +240,8 @@ CARTESI_OBJS:= \
 	machine.o \
 	machine-config.o \
 	interpret.o \
+	dis/opcode/riscv-opc.o \
+	dis/opcode/riscv-dis.o \
 	virtual-machine.o \
 	protobuf-util.o \
 	machine-c-api.o
@@ -448,7 +450,9 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	pma.o \
 	machine.o \
 	machine-config.o \
-	interpret.o
+	interpret.o \
+	dis/opcode/riscv-opc.o \
+	dis/opcode/riscv-dis.o
 
 CYCLE_PERIOD ?= 13
 HASH_DIR = hashes/$(CYCLE_PERIOD)

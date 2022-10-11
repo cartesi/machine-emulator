@@ -24,7 +24,8 @@
 #include "i-state-access.h"
 #include "pma-constants.h"
 #include "riscv-constants.h"
-#include "shadow.h"
+#include "shadow-state.h"
+#include "shadow-pmas.h"
 #include "uarch-constants.h"
 #include "uarch-defines.h"
 #include "uarch-runtime.h"
@@ -63,17 +64,17 @@ private:
     uint64_t m_start;
     uint64_t m_length;
     flags m_flags;
-    const device_driver *m_device_driver;
+    const pma_driver *m_device_driver;
     void *m_device_context;
 
 public:
     uarch_pma_entry(int pma_index, uint64_t start, uint64_t length, flags flags,
-        const device_driver *device_driver = nullptr, void *device_context = nullptr) :
+        const pma_driver *pma_driver = nullptr, void *device_context = nullptr) :
         m_pma_index{pma_index},
         m_start{start},
         m_length{length},
         m_flags{flags},
-        m_device_driver{device_driver},
+        m_device_driver{pma_driver},
         m_device_context{device_context} {}
 
     uarch_pma_entry(void) : uarch_pma_entry(-1, 0, 0, {false, false, true /* empty */}) {
@@ -120,7 +121,7 @@ public:
         return m_flags.IR;
     }
 
-    const device_driver *get_device_driver() {
+    const pma_driver *get_device_driver() {
         return m_device_driver;
     }
 
@@ -129,10 +130,9 @@ public:
     }
 
     void mark_dirty_page(uint64_t address_in_range) {
-        uint64_t page_number = address_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
-        uint64_t data = (page_number << PMA_constants::PMA_PAGE_SIZE_LOG2) | m_pma_index;
-        uint64_t paddr = static_cast<uint64_t>(uarch_mmio::mark_page_dirty);
-        raw_write_memory(paddr, data);
+        // Dummy implementation here.
+        // This runs in microarchitecture.
+        // The Host pages affected by writes will be marked dirty by uarch_bridge.
     }
 };
 
@@ -299,6 +299,22 @@ private:
 
     void do_write_mcounteren(uint64_t val) {
         raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::mcounteren), val);
+    }
+
+    uint64_t do_read_senvcfg(void) const {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::senvcfg));
+    }
+
+    void do_write_senvcfg(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::senvcfg), val);
+    }
+
+    uint64_t do_read_menvcfg(void) const {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::menvcfg));
+    }
+
+    void do_write_menvcfg(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::menvcfg), val);
     }
 
     uint64_t do_read_stvec(void) {
@@ -532,45 +548,30 @@ private:
     }
 
     void do_set_brkflag(void) {
-        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::brkflag), static_cast<uint64_t>(uarch_brk_flag_cmd::set));
+        raw_write_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::brkflag), true);
     }
 
-    void do_set_brk_from_all(void) {
-        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::brkflag), static_cast<uint64_t>(uarch_brk_flag_cmd::set_from_all));
+    void do_reset_brkflag(void) {
+        raw_write_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::brkflag), false);
     }
 
-    bool do_get_brkflag(void) const {
-        auto b =
-            static_cast<uarch_brk_flag_cmd>(raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::brkflag)));
-        if (b == uarch_brk_flag_cmd::not_set) {
-            return false;
-        } else {
-            return true;
-        }
-    }
-
-    void do_or_brk_with_mip_mie(void) {
-        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::brkflag), static_cast<uint64_t>(uarch_brk_flag_cmd::or_with_mip_mie));
-    }
-
-    void do_assert_no_brk(void) const {
-        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::brkflag), static_cast<uint64_t>(uarch_brk_flag_cmd::assert_no_brk));
-    }
-
-    void do_set_brk_from_all(void) {
-        write_physical_memory(shadow_get_csr_abs_addr(shadow_csr::brkflag), static_cast<uint64_t>(uarch_brk_ctl::set_from_all));
+    bool do_read_brkflag(void) const {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::brkflag));
     }
 
     uarch_pma_entry build_uarch_pma_entry(int index, uint64_t istart, uint64_t ilength) {
         uint64_t start;
         uarch_pma_entry::flags flags;
         split_istart(istart, start, flags);
-        const device_driver *driver = nullptr;
+        const pma_driver *driver = nullptr;
         void *device_ctx = nullptr;
         if (flags.IO) {
             switch (flags.DID) {
-                case PMA_ISTART_DID::shadow:
-                    driver = &shadow_driver;
+                case PMA_ISTART_DID::shadow_state:
+                    driver = &shadow_state_driver;
+                    break;
+                case PMA_ISTART_DID::shadow_pmas:
+                    driver = &shadow_pmas_driver;
                     break;
                 case PMA_ISTART_DID::CLINT:
                     driver = &clint_driver;

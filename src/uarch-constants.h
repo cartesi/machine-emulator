@@ -23,20 +23,9 @@
 namespace cartesi {
 
 /// \brief Memory addresses with special meaning to the microarchitecture
-enum class uarch_ctl_addr : uint64_t {
-    putchar = UARCH_PUTCHAR_ADDR_DEF,               ///< Write to this address for printing characters to the console
-    abort = UARCH_ABORT_ADDR_DEF,                   ///< Write to this address to abort execution
-    pma_mark_page_dirty = UARCH_PMA_MARK_PAGE_DIRTY //< Write to this address to mark a memory page dirty
-};
-
-/// \brief Values written to shadow_csr::brkflag from the microarchitecture to control the state of the interpreter's
-/// break flag
-enum class uarch_brk_ctl : uint64_t {
-    not_set = 1,
-    set = 2,
-    or_with_mip_mie = 3,
-    set_from_all = 4,
-    assert_no_brk = 5,
+enum class uarch_mmio : uint64_t {
+    putchar = UARCH_MMIO_PUTCHAR_ADDR_DEF, ///< Write to this address for printing characters to the console
+    abort = UARCH_MMIO_ABORT_ADDR_DEF,     ///< Write to this address to abort execution
 };
 
 } // namespace cartesi

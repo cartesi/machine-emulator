@@ -85,7 +85,14 @@ static int machine_obj_index_dump_regs(lua_State *L) {
     PRINT_PROCESSOR_CSR(m, htif_ihalt);
     PRINT_PROCESSOR_CSR(m, htif_iconsole);
     PRINT_PROCESSOR_CSR(m, htif_iyield);
+
+    bool brkflag{false};
+    TRY_EXECUTE(cm_read_brkflag(m, &brkflag, err_msg));
+    (void) fprintf(stderr, "brkflag = %d\n", brkflag);
+
     PRINT_PROCESSOR_CSR(m, uarch_cycle);
+    PRINT_PROCESSOR_CSR(m, uarch_rom_length);
+    PRINT_PROCESSOR_CSR(m, uarch_ram_length);
     PRINT_PROCESSOR_CSR(m, uarch_pc);
     for (int i = 0; i < UARCH_X_REG_COUNT; ++i) {
         uint64_t val{0};
@@ -206,6 +213,8 @@ IMPL_MACHINE_OBJ_READ_WRITE(htif_iyield)
 IMPL_MACHINE_OBJ_READ_WRITE(clint_mtimecmp)
 IMPL_MACHINE_OBJ_READ_WRITE(uarch_cycle)
 IMPL_MACHINE_OBJ_READ_WRITE(uarch_pc)
+IMPL_MACHINE_OBJ_READ(uarch_rom_length)
+IMPL_MACHINE_OBJ_READ(uarch_ram_length)
 
 /// \brief This is the machine:read_csr() method implementation.
 /// \param L Lua state.
@@ -312,6 +321,32 @@ static int machine_obj_index_reset_iflags_Y(lua_State *L) {
 static int machine_obj_index_reset_iflags_X(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     TRY_EXECUTE(cm_reset_iflags_X(m.get(), err_msg));
+    return 0;
+}
+
+/// \brief This is the machine:read_brkflag() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_read_brkflag(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    bool val{};
+    TRY_EXECUTE(cm_read_brkflag(m.get(), &val, err_msg));
+    lua_pushboolean(L, val);
+    return 1;
+}
+
+/// \brief This is the machine:set_brkflag() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_set_brkflag(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_set_brkflag(m.get(), err_msg));
+    return 0;
+}
+
+/// \brief This is the machine:reset_brkflag() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_reset_brkflag(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_reset_brkflag(m.get(), err_msg));
     return 0;
 }
 
@@ -505,6 +540,11 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_uarch_cycle", machine_obj_index_read_uarch_cycle},
     {"read_uarch_pc", machine_obj_index_read_uarch_pc},
     {"read_uarch_x", machine_obj_index_read_uarch_x},
+    {"read_uarch_rom_lengtg", machine_obj_index_read_uarch_rom_length},
+    {"read_uarch_ram_lengtg", machine_obj_index_read_uarch_ram_length},
+    {"read_brkflag", machine_obj_index_read_brkflag},
+    {"set_brkflag", machine_obj_index_set_brkflag},
+    {"reset_brkflag", machine_obj_index_reset_brkflag},
     {"read_iflags", machine_obj_index_read_iflags},
     {"read_iflags_H", machine_obj_index_read_iflags_H},
     {"read_iflags_Y", machine_obj_index_read_iflags_Y},

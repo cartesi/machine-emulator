@@ -60,7 +60,11 @@ private:
         m_a.write_mip(mip);
         // Tell inner loop mip/mie have been modified, so it
         // may break out if need be
-        m_a.or_brk_with_mip_mie();
+        auto mie = m_a.read_mie();
+        auto mip_and_mie = mip & mie;
+        if (mip_and_mie) {
+            m_a.set_brkflag();
+        }
     }
 
     void do_reset_mip(uint32_t mask) override {
@@ -69,7 +73,23 @@ private:
         m_a.write_mip(mip);
         // Tell inner loop mip/mie have been modified, so whatever
         // reason it had to break may not exist anymore
-        m_a.set_brk_from_all();
+        set_brkflag_from_all();
+    }
+
+    /// \brief Rebuild brkflag flag from all.
+    void set_brkflag_from_all(void) {
+        bool brkflag = false;
+        auto mip = m_a.read_mip();
+        auto mie = m_a.read_mie();
+        brkflag |= (mip & mie);
+        brkflag |= m_a.read_iflags_H();
+        brkflag |= m_a.read_iflags_Y();
+        brkflag |= m_a.read_iflags_X();
+        if (brkflag) {
+            m_a.set_brkflag();
+        } else {
+            m_a.reset_brkflag();
+        }
     }
 
     uint32_t do_read_mip(void) override {

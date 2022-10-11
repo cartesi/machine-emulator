@@ -14,24 +14,46 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#ifndef SHADOW_FACTORY_H
-#define SHADOW_FACTORY_H
+#ifndef SHADOW_PMAS_H
+#define SHADOW_PMAS_H
 
+#include <cstddef>
 #include <cstdint>
+
+#include "i-device-state-access.h"
+#include "pma-constants.h"
+#include "pma-driver.h"
 
 /// \file
 /// \brief Shadow device.
 
-#include "pma.h"
-#include "shadow.h"
-
 namespace cartesi {
 
-/// \brief Creates a PMA entry for the shadow device
-/// \param start Start address for memory range.
-/// \param length Length of memory range.
-/// \returns Corresponding PMA entry
-pma_entry make_shadow_pma_entry(uint64_t start, uint64_t length);
+#pragma pack(push, 1)
+
+/// \brief Shadow memory layout
+
+struct shadow_pma_entry {
+    uint64_t start;
+    uint64_t length;
+};
+
+struct shadow_pmas {
+    shadow_pma_entry pmas[PMA_MAX];
+};
+
+#pragma pack(pop)
+
+/// \brief Global instance of the pma board shadow device driver.
+extern const pma_driver shadow_pmas_driver;
+
+/// \brief Obtains the relative address of a PMA entry in shadow memory.
+/// \param p Index of desired shadow PMA entry, in 0..31.
+/// \returns The address.
+uint64_t shadow_pmas_get_pma_rel_addr(int p);
+
+/// \brief Obtains the absolute address of a PMA entry in shadow memory.
+uint64_t shadow_pmas_get_pma_abs_addr(int p);
 
 } // namespace cartesi
 

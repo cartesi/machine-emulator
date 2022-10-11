@@ -23,8 +23,8 @@
 #include <variant>
 #include <vector>
 
-#include "device-driver.h"
 #include "pma-constants.h"
+#include "pma-driver.h"
 
 namespace cartesi {
 
@@ -50,14 +50,14 @@ bool pma_peek_error(const pma_entry &, const machine &, uint64_t, const unsigned
 /// \brief Data for IO ranges.
 class pma_device final {
 
-    const device_driver *m_driver; ///< Driver with callbacks.
-    void *m_context;               ///< Context to pass to callbacks.
+    const pma_driver *m_driver; ///< Driver with callbacks.
+    void *m_context;            ///< Context to pass to callbacks.
 
 public:
     /// \brief Constructor from entries.
     /// \param context Context to pass to callbacks.
     /// \param driver Pointer to driver with callbacks.
-    explicit pma_device(const device_driver *driver, void *context) : m_driver{driver}, m_context{context} {
+    explicit pma_device(const pma_driver *driver, void *context) : m_driver{driver}, m_context{context} {
         ;
     }
 
@@ -75,7 +75,7 @@ public:
     }
 
     /// \brief Returns pointer to driver with callbacks
-    const device_driver *get_driver(void) const {
+    const pma_driver *get_driver(void) const {
         return m_driver;
     }
 };
@@ -455,7 +455,7 @@ pma_entry make_mockd_memory_pma_entry(uint64_t start, uint64_t length);
 /// \param driver Pointer to driver with callbacks.
 /// \param context Pointer to context to be passed to callbacks.
 /// \returns Corresponding PMA entry
-pma_entry make_device_pma_entry(uint64_t start, uint64_t length, pma_peek peek, const device_driver *driver,
+pma_entry make_device_pma_entry(uint64_t start, uint64_t length, pma_peek peek, const pma_driver *driver,
     void *context = nullptr);
 
 /// \brief Creates an empty PMA entry.

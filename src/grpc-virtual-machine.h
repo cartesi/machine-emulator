@@ -178,6 +178,9 @@ private:
     void do_reset_iflags_Y(void) override;
     void do_reset_iflags_X(void) override;
     void do_write_iflags(uint64_t val) override;
+    uint64_t do_read_brkflag(void) const override;
+    void do_set_brkflag(void) override;
+    void do_reset_brkflag(void) override;
     uint64_t do_read_htif_tohost(void) const override;
     uint64_t do_read_htif_tohost_dev(void) const override;
     uint64_t do_read_htif_tohost_cmd(void) const override;
@@ -211,6 +214,8 @@ private:
     void do_write_uarch_pc(uint64_t val) override;
     uint64_t do_read_uarch_cycle(void) const override;
     void do_write_uarch_cycle(uint64_t val) override;
+    uint64_t do_read_uarch_rom_length(void) const override;
+    uint64_t do_read_uarch_ram_length(void) const override;
     void do_uarch_run(uint64_t uarch_cycle_end) override;
 
     grpc_machine_stub_ptr m_stub;

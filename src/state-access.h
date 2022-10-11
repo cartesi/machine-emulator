@@ -501,23 +501,15 @@ private:
     }
 
     void do_set_brkflag(void) {
-        m_m.get_state().set_brkflag();
+        m_m.get_state().brkflag = true;
     }
 
-    bool do_get_brkflag(void) const {
-        return m_m.get_state().get_brkflag();
+    void do_reset_brkflag(void) {
+        m_m.get_state().brkflag = false;
     }
 
-    void do_or_brk_with_mip_mie(void) {
-        m_m.get_state().or_brk_with_mip_mie();
-    }
-
-    void do_assert_no_brk(void) const {
-        m_m.get_state().assert_no_brk();
-    }
-
-    void do_set_brk_from_all(void) {
-        return m_m.get_state().set_brk_from_all();
+    bool do_read_brkflag(void) const {
+        return m_m.get_state().brkflag;
     }
 
 #ifdef DUMP_COUNTERS

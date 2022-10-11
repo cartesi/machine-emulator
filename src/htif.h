@@ -17,7 +17,7 @@
 #ifndef HTIF_H
 #define HTIF_H
 
-#include "device-driver.h"
+#include "pma-driver.h"
 #include <array>
 #include <cstdint>
 #include <htif-defines.h>
@@ -33,7 +33,7 @@
 namespace cartesi {
 
 /// \brief Global HTIF device driver instance
-extern const device_driver htif_driver;
+extern const pma_driver htif_driver;
 
 // Forward declarations
 /// \brief HTIF shifts

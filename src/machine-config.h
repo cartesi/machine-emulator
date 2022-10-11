@@ -60,6 +60,7 @@ struct processor_config final {
     uint64_t senvcfg{SENVCFG_INIT};        ///< Value of senvcfg CSR
     uint64_t ilrsc{ILRSC_INIT};            ///< Value of ilrsc CSR
     uint64_t iflags{IFLAGS_INIT};          ///< Value of iflags CSR
+    bool brkflag{false};                   ///< Break flag
 };
 
 /// \brief RAM state configuration

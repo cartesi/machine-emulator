@@ -14,22 +14,20 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
+#ifndef SHADOW_PMAS_FACTORY_H
+#define SHADOW_PMAS_FACTORY_H
 
-#ifndef UARCH_RUNTIME_H
-#define UARCH_RUNTIME_H
+#include <cstdint>
 
-#include "uarch-printf.h"
-#include <inttypes.h>
-#include <stddef.h>
+/// \file
+/// \brief Shadow device.
 
-#define fprintf(a, ...) printf(__VA_ARGS__)
+#include "pma.h"
 
-#define assert(a)                                                                                                      \
-    if (!(a)) {                                                                                                        \
-        printf("Assertion failed\n");                                                                                  \
-        abort();                                                                                                       \
-    }
+namespace cartesi {
 
-extern "C" [[noreturn]] void abort(void);
+pma_entry make_shadow_pmas_pma_entry(uint64_t start, uint64_t length);
+
+} // namespace cartesi
 
 #endif

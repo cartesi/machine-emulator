@@ -47,8 +47,8 @@ static void monitor_system_throw(std::function<void()> const &f) {
 
 static hash_type get_verification_root_hash(cm_machine *machine) {
     std::array dump_list{"0000000000000000--0000000000001000.bin", "0000000000001000--000000000000f000.bin",
-        "0000000002000000--00000000000c0000.bin", "0000000040008000--0000000000001000.bin",
-        "0000000080000000--0000000000100000.bin"};
+        "0000000000010000--0000000000001000.bin", "0000000002000000--00000000000c0000.bin",
+        "0000000040008000--0000000000001000.bin", "0000000080000000--0000000000100000.bin"};
 
     char *err_msg{};
     int error_code = cm_dump_pmas(machine, &err_msg);
@@ -411,7 +411,20 @@ protected:
 };
 
 bool operator==(const cm_processor_config &lhs, const cm_processor_config &rhs) {
-    return (memcmp(&lhs, &rhs, sizeof(cm_processor_config)) == 0);
+    for (int i = 0; i < CM_MACHINE_X_REG_COUNT; i++) {
+        if (lhs.x[i] != rhs.x[i]) {
+            return false;
+        }
+    }
+    return lhs.pc == rhs.pc && lhs.mvendorid == rhs.mvendorid && lhs.marchid == rhs.marchid &&
+        lhs.mimpid == rhs.mimpid && lhs.mcycle == rhs.mcycle && lhs.minstret == rhs.minstret &&
+        lhs.mstatus == rhs.mstatus && lhs.mtvec == rhs.mtvec && lhs.mscratch == rhs.mscratch && lhs.mepc == rhs.mepc &&
+        lhs.mcause == rhs.mcause && lhs.mtval == rhs.mtval && lhs.misa == rhs.misa && lhs.mie == rhs.mie &&
+        lhs.mip == rhs.mip && lhs.medeleg == rhs.medeleg && lhs.mideleg == rhs.mideleg &&
+        lhs.mcounteren == rhs.mcounteren && lhs.menvcfg == rhs.menvcfg && lhs.stvec == rhs.stvec &&
+        lhs.sscratch == rhs.sscratch && lhs.sepc == rhs.sepc && lhs.scause == rhs.scause && lhs.stval == rhs.stval &&
+        lhs.satp == rhs.satp && lhs.scounteren == rhs.scounteren && lhs.senvcfg == rhs.senvcfg &&
+        lhs.ilrsc == rhs.ilrsc && lhs.iflags == rhs.iflags && lhs.brkflag == rhs.brkflag;
 }
 
 bool operator==(const cm_ram_config &lhs, const cm_ram_config &rhs) {
@@ -1046,6 +1059,15 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_iflags_H_null_machine_test) {
     monitor_system_throw(f);
 }
 
+BOOST_AUTO_TEST_CASE_NOLINT(read_brkflag_null_machine_test) {
+    auto f = []() {
+        char *err_msg{};
+        bool out{};
+        cm_read_brkflag(nullptr, &out, &err_msg);
+    };
+    monitor_system_throw(f);
+}
+
 // NOLINTNEXTLINE
 #define CHECK_WRITER_FAILS_ON_nullptr_MACHINE(writer_f)                                                                \
     BOOST_AUTO_TEST_CASE_NOLINT(write_##writer_f##_null_machine_test) {                                                \
@@ -1211,6 +1233,45 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(read_value, write_value);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(brkflag_read_write_complex_test, ordinary_machine_fixture) {
+    char *err_msg{};
+
+    // set and read brkflag
+    int error_code = cm_set_brkflag(_machine, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+    bool brkflag{false};
+    error_code = cm_read_brkflag(_machine, &brkflag, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+    BOOST_CHECK_EQUAL(brkflag, true);
+
+    // reset and read brkflag
+    error_code = cm_reset_brkflag(_machine, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+    error_code = cm_read_brkflag(_machine, &brkflag, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+    BOOST_CHECK_EQUAL(brkflag, false);
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(set_brkflag_null_machine_test) {
+    auto f = []() {
+        char *err_msg{};
+        cm_set_brkflag(nullptr, &err_msg);
+    };
+    monitor_system_throw(f);
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(reset_null_machine_test) {
+    auto f = []() {
+        char *err_msg{};
+        cm_reset_brkflag(nullptr, &err_msg);
+    };
+    monitor_system_throw(f);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(ids_read_test, ordinary_machine_fixture) {
@@ -1431,8 +1492,9 @@ protected:
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_basic_test, flash_drive_machine_fixture) {
     std::array dump_list{"0000000000000000--0000000000001000.bin", "0000000000001000--000000000000f000.bin",
-        "0000000002000000--00000000000c0000.bin", "0000000040008000--0000000000001000.bin",
-        "0000000080000000--0000000000100000.bin", "0080000000000000--0000000003c00000.bin"};
+        "0000000000010000--0000000000001000.bin", "0000000002000000--00000000000c0000.bin",
+        "0000000040008000--0000000000001000.bin", "0000000080000000--0000000000100000.bin",
+        "0080000000000000--0000000003c00000.bin"};
 
     char *err_msg{};
     int error_code = cm_dump_pmas(_machine, &err_msg);
@@ -2038,7 +2100,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, or
     error_code = cm_get_proof(_machine, 0, 12, &end_proof, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    verification = calculate_proof_root_hash(start_proof);
+    verification = calculate_proof_root_hash(end_proof);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), end_proof->root_hash,
         end_proof->root_hash + sizeof(cm_hash));
     verification = get_verification_root_hash(_machine);

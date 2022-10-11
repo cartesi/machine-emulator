@@ -32,7 +32,8 @@
 #include "machine-merkle-tree.h"
 #include "machine.h"
 #include "pma.h"
-#include "shadow.h"
+#include "shadow-pmas.h"
+#include "shadow-state.h"
 #include "strict-aliasing.h"
 #include "unique-c-ptr.h"
 
@@ -181,6 +182,12 @@ private:
         update_after_write(paligned);
     }
 
+    void log_before_write_write_and_update(uint64_t paligned, bool &dest, bool val, const char *text) {
+        uint64_t dest64 = dest;
+        log_before_write_write_and_update(paligned, dest64, val, text);
+        dest = dest64;
+    }
+
     // Declare interface as friend to it can forward calls to the "overriden" methods.
     friend i_state_access<logged_state_access, pma_entry>;
 
@@ -193,262 +200,299 @@ private:
     }
 
     uint64_t do_read_x(int reg) const {
-        return log_read(PMA_SHADOW_START + shadow_get_x_rel_addr(reg), m_m.get_state().x[reg], "x");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_x_rel_addr(reg), m_m.get_state().x[reg], "x");
     }
 
     void do_write_x(int reg, uint64_t val) {
         assert(reg != 0);
-        return log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_x_rel_addr(reg), m_m.get_state().x[reg],
-            val, "x");
+        return log_before_write_write_and_update(PMA_SHADOW_STATE_START + shadow_state_get_x_rel_addr(reg),
+            m_m.get_state().x[reg], val, "x");
     }
 
     uint64_t do_read_pc(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::pc), m_m.get_state().pc, "pc");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::pc),
+            m_m.get_state().pc, "pc");
     }
 
     void do_write_pc(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::pc),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::pc),
             m_m.get_state().pc, val, "pc");
     }
 
     uint64_t do_read_minstret(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::minstret), m_m.get_state().minstret,
-            "minstret");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::minstret),
+            m_m.get_state().minstret, "minstret");
     }
 
     void do_write_minstret(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::minstret),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::minstret),
             m_m.get_state().minstret, val, "minstret");
     }
 
     uint64_t do_read_mvendorid(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mvendorid), MVENDORID_INIT, "mvendorid");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mvendorid),
+            MVENDORID_INIT, "mvendorid");
     }
 
     uint64_t do_read_marchid(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::marchid), MARCHID_INIT, "marchid");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::marchid), MARCHID_INIT,
+            "marchid");
     }
 
     uint64_t do_read_mimpid(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mimpid), MIMPID_INIT, "mimpid");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mimpid), MIMPID_INIT,
+            "mimpid");
     }
 
     uint64_t do_read_mcycle(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcycle), m_m.get_state().mcycle,
-            "mcycle");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mcycle),
+            m_m.get_state().mcycle, "mcycle");
     }
 
     void do_write_mcycle(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcycle),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::mcycle),
             m_m.get_state().mcycle, val, "mcycle");
     }
 
     uint64_t do_read_mstatus(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mstatus), m_m.get_state().mstatus,
-            "mstatus");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mstatus),
+            m_m.get_state().mstatus, "mstatus");
     }
 
     void do_write_mstatus(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mstatus),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::mstatus),
             m_m.get_state().mstatus, val, "mstatus");
     }
 
     uint64_t do_read_mtvec(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtvec), m_m.get_state().mtvec, "mtvec");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mtvec),
+            m_m.get_state().mtvec, "mtvec");
     }
 
     void do_write_mtvec(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtvec),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::mtvec),
             m_m.get_state().mtvec, val, "mtvec");
     }
 
     uint64_t do_read_mscratch(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mscratch), m_m.get_state().mscratch,
-            "mscratch");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mscratch),
+            m_m.get_state().mscratch, "mscratch");
     }
 
     void do_write_mscratch(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mscratch),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::mscratch),
             m_m.get_state().mscratch, val, "mscratch");
     }
 
     uint64_t do_read_mepc(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mepc), m_m.get_state().mepc, "mepc");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mepc),
+            m_m.get_state().mepc, "mepc");
     }
 
     void do_write_mepc(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mepc),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::mepc),
             m_m.get_state().mepc, val, "mepc");
     }
 
     uint64_t do_read_mcause(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcause), m_m.get_state().mcause,
-            "mcause");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mcause),
+            m_m.get_state().mcause, "mcause");
     }
 
     void do_write_mcause(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcause),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::mcause),
             m_m.get_state().mcause, val, "mcause");
     }
 
     uint64_t do_read_mtval(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtval), m_m.get_state().mtval, "mtval");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mtval),
+            m_m.get_state().mtval, "mtval");
     }
 
     void do_write_mtval(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mtval),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::mtval),
             m_m.get_state().mtval, val, "mtval");
     }
 
     uint64_t do_read_misa(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::misa), m_m.get_state().misa, "misa");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::misa),
+            m_m.get_state().misa, "misa");
     }
 
     void do_write_misa(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::misa),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::misa),
             m_m.get_state().misa, val, "misa");
     }
 
     uint64_t do_read_mie(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mie), m_m.get_state().mie, "mie");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mie),
+            m_m.get_state().mie, "mie");
     }
 
     void do_write_mie(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mie),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mie),
             m_m.get_state().mie, val, "mie");
     }
 
     uint64_t do_read_mip(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mip), m_m.get_state().mip, "mip");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mip),
+            m_m.get_state().mip, "mip");
     }
 
     void do_write_mip(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mip),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mip),
             m_m.get_state().mip, val, "mip");
     }
 
     uint64_t do_read_medeleg(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::medeleg), m_m.get_state().medeleg,
-            "medeleg");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::medeleg),
+            m_m.get_state().medeleg, "medeleg");
     }
 
     void do_write_medeleg(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::medeleg),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::medeleg),
             m_m.get_state().medeleg, val, "medeleg");
     }
 
     uint64_t do_read_mideleg(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mideleg), m_m.get_state().mideleg,
-            "mideleg");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mideleg),
+            m_m.get_state().mideleg, "mideleg");
     }
 
     void do_write_mideleg(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mideleg),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::mideleg),
             m_m.get_state().mideleg, val, "mideleg");
     }
 
     uint64_t do_read_mcounteren(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcounteren), m_m.get_state().mcounteren,
-            "mcounteren");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mcounteren),
+            m_m.get_state().mcounteren, "mcounteren");
     }
 
     void do_write_mcounteren(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcounteren),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::mcounteren),
             m_m.get_state().mcounteren, val, "mcounteren");
     }
 
     uint64_t do_read_menvcfg(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::menvcfg), m_m.get_state().menvcfg,
-            "menvcfg");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::menvcfg),
+            m_m.get_state().menvcfg, "menvcfg");
     }
 
     void do_write_menvcfg(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::menvcfg),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::menvcfg),
             m_m.get_state().menvcfg, val, "menvcfg");
     }
 
     uint64_t do_read_stvec(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stvec), m_m.get_state().stvec, "stvec");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::stvec),
+            m_m.get_state().stvec, "stvec");
     }
 
     void do_write_stvec(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stvec),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::stvec),
             m_m.get_state().stvec, val, "stvec");
     }
 
     uint64_t do_read_sscratch(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sscratch), m_m.get_state().sscratch,
-            "sscratch");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::sscratch),
+            m_m.get_state().sscratch, "sscratch");
     }
 
     void do_write_sscratch(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sscratch),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::sscratch),
             m_m.get_state().sscratch, val, "sscratch");
     }
 
     uint64_t do_read_sepc(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sepc), m_m.get_state().sepc, "sepc");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::sepc),
+            m_m.get_state().sepc, "sepc");
     }
 
     void do_write_sepc(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::sepc),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::sepc),
             m_m.get_state().sepc, val, "sepc");
     }
 
     uint64_t do_read_scause(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scause), m_m.get_state().scause,
-            "scause");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::scause),
+            m_m.get_state().scause, "scause");
     }
 
     void do_write_scause(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scause),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::scause),
             m_m.get_state().scause, val, "scause");
     }
 
     uint64_t do_read_stval(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stval), m_m.get_state().stval, "stval");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::stval),
+            m_m.get_state().stval, "stval");
     }
 
     void do_write_stval(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::stval),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::stval),
             m_m.get_state().stval, val, "stval");
     }
 
     uint64_t do_read_satp(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::satp), m_m.get_state().satp, "satp");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::satp),
+            m_m.get_state().satp, "satp");
     }
 
     void do_write_satp(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::satp),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::satp),
             m_m.get_state().satp, val, "satp");
     }
 
     uint64_t do_read_scounteren(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scounteren), m_m.get_state().scounteren,
-            "scounteren");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::scounteren),
+            m_m.get_state().scounteren, "scounteren");
     }
 
     void do_write_scounteren(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::scounteren),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::scounteren),
             m_m.get_state().scounteren, val, "scounteren");
     }
 
     uint64_t do_read_senvcfg(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::senvcfg), m_m.get_state().senvcfg,
-            "senvcfg");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::senvcfg),
+            m_m.get_state().senvcfg, "senvcfg");
     }
 
     void do_write_senvcfg(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::senvcfg),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::senvcfg),
             m_m.get_state().senvcfg, val, "senvcfg");
     }
 
     uint64_t do_read_ilrsc(void) const {
-        return log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::ilrsc), m_m.get_state().ilrsc, "ilrsc");
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::ilrsc),
+            m_m.get_state().ilrsc, "ilrsc");
     }
 
     void do_write_ilrsc(uint64_t val) {
-        log_before_write_write_and_update(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::ilrsc),
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::ilrsc),
             m_m.get_state().ilrsc, val, "ilrsc");
     }
 
@@ -458,7 +502,7 @@ private:
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.X,
             m_m.get_state().iflags.Y, true);
-        uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
+        uint64_t iflags_addr = PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::iflags);
         log_read(iflags_addr, old_iflags, "iflags.H (superfluous)");
         log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.H");
         m_m.get_state().iflags.H = true;
@@ -466,8 +510,8 @@ private:
     }
 
     bool do_read_iflags_H(void) const {
-        log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(),
-            "iflags.H");
+        log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::iflags),
+            m_m.get_state().read_iflags(), "iflags.H");
         return m_m.get_state().iflags.H;
     }
 
@@ -477,7 +521,7 @@ private:
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, true, m_m.get_state().iflags.Y,
             m_m.get_state().iflags.H);
-        uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
+        uint64_t iflags_addr = PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::iflags);
         log_read(iflags_addr, old_iflags, "iflags.X (superfluous)");
         log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.X");
         m_m.get_state().iflags.X = true;
@@ -490,7 +534,7 @@ private:
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.X, true,
             m_m.get_state().iflags.H);
-        uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
+        uint64_t iflags_addr = PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::iflags);
         log_read(iflags_addr, old_iflags, "iflags.Y (superfluous)");
         log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.Y");
         m_m.get_state().iflags.Y = true;
@@ -503,7 +547,7 @@ private:
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, false, m_m.get_state().iflags.Y,
             m_m.get_state().iflags.H);
-        uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
+        uint64_t iflags_addr = PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::iflags);
         log_read(iflags_addr, old_iflags, "iflags.X (superfluous)");
         log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.X");
         m_m.get_state().iflags.X = false;
@@ -516,7 +560,7 @@ private:
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.X, false,
             m_m.get_state().iflags.H);
-        uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
+        uint64_t iflags_addr = PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::iflags);
         log_read(iflags_addr, old_iflags, "iflags.Y (superfluous)");
         log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.Y");
         m_m.get_state().iflags.Y = false;
@@ -524,20 +568,20 @@ private:
     }
 
     bool do_read_iflags_X(void) const {
-        log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(),
-            "iflags.X");
+        log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::iflags),
+            m_m.get_state().read_iflags(), "iflags.X");
         return m_m.get_state().iflags.X;
     }
 
     bool do_read_iflags_Y(void) const {
-        log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(),
-            "iflags.Y");
+        log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::iflags),
+            m_m.get_state().read_iflags(), "iflags.Y");
         return m_m.get_state().iflags.Y;
     }
 
     uint8_t do_read_iflags_PRV(void) const {
-        log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), m_m.get_state().read_iflags(),
-            "iflags.PRV");
+        log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::iflags),
+            m_m.get_state().read_iflags(), "iflags.PRV");
         return m_m.get_state().iflags.PRV;
     }
 
@@ -547,7 +591,7 @@ private:
         auto old_iflags = m_m.get_state().read_iflags();
         auto new_iflags = machine_state::packed_iflags(val, m_m.get_state().iflags.X, m_m.get_state().iflags.Y,
             m_m.get_state().iflags.H);
-        uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
+        uint64_t iflags_addr = PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::iflags);
         log_read(iflags_addr, old_iflags, "iflags.PRV (superfluous)");
         log_before_write(iflags_addr, old_iflags, new_iflags, "iflags.PRV");
         m_m.get_state().iflags.PRV = val;
@@ -607,8 +651,8 @@ private:
         if (i >= 0 && i < static_cast<int>(pmas.size())) {
             istart = pmas[i].get_istart();
         }
-        auto rel_addr = shadow_get_pma_rel_addr(i);
-        log_read(PMA_SHADOW_START + rel_addr, istart, "pma.istart");
+        auto rel_addr = shadow_pmas_get_pma_rel_addr(i);
+        log_read(PMA_SHADOW_PMAS_START + rel_addr, istart, "pma.istart");
         return istart;
     }
 
@@ -618,8 +662,8 @@ private:
         if (i >= 0 && i < static_cast<int>(pmas.size())) {
             ilength = pmas[i].get_ilength();
         }
-        auto rel_addr = shadow_get_pma_rel_addr(i);
-        log_read(PMA_SHADOW_START + rel_addr + sizeof(uint64_t), ilength, "pma.ilength");
+        auto rel_addr = shadow_pmas_get_pma_rel_addr(i);
+        log_read(PMA_SHADOW_PMAS_START + rel_addr + sizeof(uint64_t), ilength, "pma.ilength");
         return ilength;
     }
 
@@ -717,14 +761,14 @@ private:
 
     uint64_t do_read_iflags(void) {
         uint64_t iflags = m_m.get_state().read_iflags();
-        log_read(PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags), iflags, "iflags");
+        log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::iflags), iflags, "iflags");
         return iflags;
     }
 
     void do_write_iflags(uint64_t new_iflags) {
         auto old_iflags = m_m.get_state().read_iflags();
         m_m.get_state().write_iflags(new_iflags);
-        uint64_t iflags_addr = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::iflags);
+        uint64_t iflags_addr = PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::iflags);
         log_read(iflags_addr, old_iflags, "iflags (superfluous)");
         log_before_write(iflags_addr, old_iflags, new_iflags, "iflags");
     }
@@ -744,23 +788,20 @@ private:
     }
 
     void do_set_brkflag(void) {
-        m_m.get_state().set_brkflag();
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::brkflag),
+            m_m.get_state().brkflag, true, "brkflag");
     }
 
-    bool do_get_brkflag(void) const {
-        return m_m.get_state().get_brkflag();
+    void do_reset_brkflag(void) {
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::brkflag),
+            m_m.get_state().brkflag, false, "brkflag");
     }
 
-    void do_or_brk_with_mip_mie(void) {
-        m_m.get_state().or_brk_with_mip_mie();
-    }
-
-    void do_assert_no_brk(void) const {
-        m_m.get_state().assert_no_brk();
-    }
-
-    void do_set_brk_from_all(void) {
-        return m_m.get_state().set_brk_from_all();
+    bool do_read_brkflag(void) const {
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::brkflag),
+            m_m.get_state().brkflag, "brkflag");
     }
 
 #ifdef DUMP_COUNTERS

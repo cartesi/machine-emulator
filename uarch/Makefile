@@ -63,9 +63,10 @@ UARCH_SOURCES=\
 
 EMULATOR_SOURCES=\
 	interpret.cpp \
-	device-driver.cpp \
+	pma-driver.cpp \
 	htif.cpp \
-	shadow.cpp \
+	shadow-state.cpp \
+	shadow-pmas.cpp \
 	clint.cpp
 UARCH_OBJS = $(patsubst %.c,%.o,$(patsubst %.cpp,%.o,$(UARCH_SOURCES)))
 EMULATOR_OBJS = $(patsubst %.c,%.o,$(patsubst %.cpp,%.o,$(EMULATOR_SOURCES)))
@@ -82,7 +83,7 @@ uarch-rom.bin: uarch-rom.elf
 	$(OBJCOPY) -S -O binary  $^ $@
 
 uarch-rom.elf: $(TARGETS) uarch-rom-entry.o uarch-rom.ld uarch-run.bin.o
-	$(CC) $(CFLAGS) -Wl,uarch-rom.ld -o $@ uarch-run.bin.o uarch-rom-entry.o uarch-runtime.o
+	$(CC) $(CFLAGS) -Wl,uarch-rom.ld -o $@ uarch-run.bin.o uarch-rom-entry.o uarch-runtime.o shadow-state.o
 
 uarch-rom-entry.o: $(UARCH_SRC_DIR)/uarch-rom-entry.S
 	$(CC) $(CFLAGS) -c -o $(CONTAINER_OUTPUT_DIR)/$(@F) $(CONTAINER_UARCH_SRC_DIR)/$(<F)

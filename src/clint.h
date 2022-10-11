@@ -17,7 +17,7 @@
 #ifndef CLINT_H
 #define CLINT_H
 
-#include "device-driver.h"
+#include "pma-driver.h"
 #include <cstdint>
 
 /// \file
@@ -26,7 +26,7 @@
 namespace cartesi {
 
 /// \brief Global CLINT device driver instance
-extern const device_driver clint_driver;
+extern const pma_driver clint_driver;
 
 /// \brief Mapping between CSRs and their relative addresses in CLINT memory
 enum class clint_csr {
@@ -39,11 +39,6 @@ enum class clint_csr {
 /// \param reg CSR name.
 /// \returns The address.
 uint64_t clint_get_csr_rel_addr(clint_csr reg);
-
-/// \brief Obtains the absolute address of a CSR in CLINT memory.
-/// \param reg CSR name.
-/// \returns The address.
-uint64_t clint_get_csr_abs_addr(clint_csr reg);
 
 /// \brief Obtains the relative address of the msip0 CSR in HTIF memory.
 static constexpr auto clint_msip0_rel_addr = static_cast<uint64_t>(clint_csr::msip0);

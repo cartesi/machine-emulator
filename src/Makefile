@@ -233,15 +233,17 @@ all: luacartesi grpc hash c-api
 .PHONY: all generate use clean test lint format check-format luacartesi grpc hash docker c-api compile_flags.txt
 
 CARTESI_OBJS:= \
-	device-driver.o \
+	pma-driver.o \
 	clint.o \
 	clint-factory.o \
 	rom.o \
 	tty.o \
 	htif.o \
 	htif-factory.o \
-	shadow.o \
-	shadow-factory.o \
+	shadow-state.o \
+	shadow-state-factory.o \
+	shadow-pmas.o \
+	shadow-pmas-factory.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
 	pma.o \
@@ -447,15 +449,17 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	$(CARTESI_GRPC_GEN_OBJS) \
 	remote-machine.o \
 	protobuf-util.o \
-	device-driver.o \
+	pma-driver.o \
 	clint.o \
 	clint-factory.o \
 	rom.o \
 	tty.o \
 	htif.o \
 	htif-factory.o \
-	shadow.o \
-	shadow-factory.o \
+	shadow-state.o \
+	shadow-state-factory.o \
+	shadow-pmas.o \
+	shadow-pmas-factory.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
 	pma.o \

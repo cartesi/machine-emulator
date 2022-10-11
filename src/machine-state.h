@@ -114,7 +114,7 @@ struct machine_state {
 
     // Entries below this mark are not needed in the blockchain
 
-    bool brk; ///< Flag set when the tight loop must be broken.
+    bool brkflag; ///< Flag set when the tight loop must be broken.
 
 #ifdef DUMP_COUNTERS
     machine_statistics stats;
@@ -123,53 +123,6 @@ struct machine_state {
 #ifdef DUMP_HIST
     std::unordered_map<std::string, uint64_t> insn_hist;
 #endif
-
-    /// \brief Sets the value of the brk flag.
-    void set_brkflag(void) {
-        brk = true;
-    }
-
-    /// \brief Read the value of the brk flag.
-    bool get_brkflag(void) const {
-        return brk;
-    }
-
-    /// \brief Checks that false brk is consistent with rest of state
-    void assert_no_brk(void) const {
-        assert((mie & mip) == 0);
-        assert(!iflags.X);
-        assert(!iflags.Y);
-        assert(!iflags.H);
-    }
-
-    /// \brief Updates the brk flag from changes in mip and mie registers.
-    void or_brk_with_mip_mie(void) {
-        brk |= (mip & mie);
-    }
-
-    /// \brief Updates the brk flag from changes in the iflags_H flag.
-    void or_brk_with_iflags_H(void) {
-        brk |= iflags.H;
-    }
-
-    /// \brief Updates the brk flag from changes in the iflags_Y flag.
-    void or_brk_with_iflags_Y(void) {
-        brk |= iflags.Y;
-    }
-
-    /// \brief Updates the brk flag from changes in the iflags_X flag.
-    void or_brk_with_iflags_X(void) {
-        brk |= iflags.X;
-    }
-
-    /// \brief Rebuild brk from all.
-    void set_brk_from_all(void) {
-        brk = false;
-        or_brk_with_mip_mie();
-        or_brk_with_iflags_X();
-        or_brk_with_iflags_Y();
-        or_brk_with_iflags_H();
-    }
 
     /// \brief Reads the value of the iflags register.
     /// \returns The value of the register.

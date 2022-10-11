@@ -21,7 +21,6 @@
 #include "uarch-bridge.h"
 #include "uarch-constants.h"
 #include "uarch-machine.h"
-#include "uarch-memory-bridge.h"
 
 namespace cartesi {
 

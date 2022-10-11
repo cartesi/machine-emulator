@@ -14,7 +14,6 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-
 #include <pma-defines.h>
 #include <uarch-defines.h>
 
@@ -30,11 +29,13 @@ _start:
   
   // Stack initialization
   li sp, PMA_UARCH_RAM_START_DEF  
-  li t0, PMA_UARCH_RAM_LENGTH_DEF
-  add sp, sp, t0
+  la t0, shadow_state_uarch_ram_length_abs_addr // t0=pointer to address of uarch_ram_length in state shadow
+  ld t0, 0(t0)   // t0=address of uarch_ram_length in state shadow
+  ld t0, 0(t0)   // t0=value of uarch_ram_length
+  add sp, sp, t0 // stack pointer at the end of RAM
 
   // Copy micro emulator code from uROM to uRAM
-  li a0, PMA_UARCH_RAM_START_DEF                 // a0 = destination address
+  li a0, PMA_UARCH_RAM_START_DEF      // a0 = destination address
   la a1, _binary_uarch_run_bin_start  // a1 = source  address
   la a2, _binary_uarch_run_bin_end    // a2 = size
   sub a2, a2, a1
@@ -45,12 +46,13 @@ _start:
   jalr ra, 0(t0) // call uarch_run()
   // Execution resumes here, when uarch_run() returns
 
-
   // Restore uRAM to pristine state by filling it with zeros.
   // We can't use the "C" memset() because it uses the stack, in RAM, to store arguments and locals.`
-  li a0, PMA_UARCH_RAM_START_DEF   // destination
-  li a1, 0                    // zero memory
-  li a2, PMA_UARCH_RAM_LENGTH_DEF  // size
+  li a0, PMA_UARCH_RAM_START_DEF                // destination address
+  li a1, 0                                      // zero memory
+  la t0, shadow_state_uarch_ram_length_abs_addr // t0=pointer to address of uarch_ram_length in state shadow
+  ld t0, 0(t0)                                  // t0=address of uarch_ram_length in state shadow
+  ld a2, 0(t0)                                  // a2=value of uarch_ram_length
   call zero_memory
 
   // Restore register to pristine state

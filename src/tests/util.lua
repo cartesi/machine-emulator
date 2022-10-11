@@ -150,11 +150,11 @@ function test_util.incremental_merkle_tree_of_pages:get_root_hash()
         local root = test_util.fromhex(
             zero_keccak_hash_table[self.m_page_log2_size])
         for i = 0, depth - 1 do
-            if (self.m_page_count & (0x01 << i)) then
+            if (self.m_page_count & (0x01 << i)) ~= 0 then
                 local left = self.m_context[i]
                 root = cartesi.keccak(left, root)
             else
-                local right = zero_keccak_hash_table[self.m_page_log2_size + i]
+                local right = test_util.fromhex(zero_keccak_hash_table[self.m_page_log2_size + i])
                 root = cartesi.keccak(root, right)
             end
         end
@@ -332,18 +332,20 @@ function test_util.calculate_emulator_hash(test_path, pmas_files)
     print(pmas_files[1])
     local procesor_board_shadow = test_util.parse_pma_file(test_path .. pmas_files[1])
     local rom = test_util.parse_pma_file(test_path .. pmas_files[2])
-    local cli = test_util.parse_pma_file(test_path .. pmas_files[3])
-    local hti = test_util.parse_pma_file(test_path .. pmas_files[4])
-    local ram = test_util.parse_pma_file(test_path .. pmas_files[5])
+    local pmas = test_util.parse_pma_file(test_path .. pmas_files[3])
+    local cli = test_util.parse_pma_file(test_path .. pmas_files[4])
+    local hti = test_util.parse_pma_file(test_path .. pmas_files[5])
+    local ram = test_util.parse_pma_file(test_path .. pmas_files[6])
 
-    local cpu_and_rom_data = procesor_board_shadow.data .. rom.data
+    local cpu_and_rom_data = procesor_board_shadow.data .. rom.data .. pmas.data
     local cpu_and_rom_data_pages = (procesor_board_shadow.data_size +
-                                       rom.data_size) / (2 ^ 12)
+                                       rom.data_size + pmas.data_size) / (2 ^ 12)
     local cpu_and_rom_space_hash = test_util.calculate_region_hash(
                                        cpu_and_rom_data, cpu_and_rom_data_pages,
-                                       12, 16)
+                                       12, 17)
+    
     cpu_and_rom_space_hash = test_util.extend_region_hash(
-                                 cpu_and_rom_space_hash, 0x0, 16, 25)
+                                 cpu_and_rom_space_hash, 0x0, 17, 25)
 
     local cli_space_hash = test_util.calculate_region_hash(cli.data,
                                                             cli.data_size /

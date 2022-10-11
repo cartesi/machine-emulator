@@ -32,9 +32,9 @@ local PMA_URAM_LENGTH_DEF = 0x5001000
 local micro_rom_file = arg[1]
 local rom_file = arg[2]
 local ram_file = arg[3]
-local urom_length = 0x4000000
+local urom_length = 0x4002000
 local uram_length = PMA_URAM_LENGTH_DEF
-local ram_length = 0x4000000
+local ram_length = 0x4003000
 
 -- build cartesi machine configuration
 local runtime = {}

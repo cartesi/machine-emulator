@@ -14,22 +14,16 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
+#include "pma-driver.h"
 
-#ifndef UARCH_RUNTIME_H
-#define UARCH_RUNTIME_H
+namespace cartesi {
 
-#include "uarch-printf.h"
-#include <inttypes.h>
-#include <stddef.h>
+bool device_read_error(void *, i_device_state_access *, uint64_t, uint64_t *, int) {
+    return false;
+}
 
-#define fprintf(a, ...) printf(__VA_ARGS__)
+bool device_write_error(void *, i_device_state_access *, uint64_t, uint64_t, int) {
+    return false;
+}
 
-#define assert(a)                                                                                                      \
-    if (!(a)) {                                                                                                        \
-        printf("Assertion failed\n");                                                                                  \
-        abort();                                                                                                       \
-    }
-
-extern "C" [[noreturn]] void abort(void);
-
-#endif
+} // namespace cartesi

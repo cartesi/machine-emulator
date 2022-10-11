@@ -14,12 +14,14 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#ifndef DEVICE_DRIVER_H
-#define DEVICE_DRIVER_H
+#ifndef PMA_DRIVER_H
+#define PMA_DRIVER_H
 
 #include <cstdint>
-
 namespace cartesi {
+
+/// \file
+/// \brief Declares pma_driver, which provides callback functions for reading and writing to device memory ranges
 
 // Forward declarations
 class i_device_state_access;
@@ -49,7 +51,7 @@ using device_write = bool (*)(void *, i_device_state_access *, uint64_t, uint64_
 bool device_write_error(void *context, i_device_state_access *, uint64_t, uint64_t, int);
 
 /// \brief Driver for device memory ranges.
-struct device_driver final {
+struct pma_driver final {
     const char *name{""};
     device_read read{device_read_error};
     device_write write{device_write_error};

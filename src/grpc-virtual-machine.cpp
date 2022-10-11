@@ -647,6 +647,18 @@ void grpc_virtual_machine::do_write_iflags(uint64_t val) {
     write_csr(csr::iflags, val);
 }
 
+uint64_t grpc_virtual_machine::do_read_brkflag(void) const {
+    return read_csr(csr::brkflag);
+}
+
+void grpc_virtual_machine::do_set_brkflag(void) {
+    return write_csr(csr::brkflag, true);
+}
+
+void grpc_virtual_machine::do_reset_brkflag(void) {
+    return write_csr(csr::brkflag, false);
+}
+
 uint64_t grpc_virtual_machine::do_read_htif_tohost(void) const {
     return read_csr(csr::htif_tohost);
 }
@@ -842,6 +854,14 @@ uint64_t grpc_virtual_machine::do_read_uarch_cycle(void) const {
 
 void grpc_virtual_machine::do_write_uarch_cycle(uint64_t val) {
     write_csr(csr::uarch_cycle, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_uarch_rom_length(void) const {
+    return read_csr(csr::uarch_rom_length);
+}
+
+uint64_t grpc_virtual_machine::do_read_uarch_ram_length(void) const {
+    return read_csr(csr::uarch_ram_length);
 }
 
 void grpc_virtual_machine::do_uarch_run(uint64_t uarch_cycle_end) {

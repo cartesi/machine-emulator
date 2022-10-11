@@ -214,12 +214,13 @@ local function get_cpu_csr_names_addresses()
         {"senvcfg", 0x1d0},
         {"ilrsc", 0x1d8},
         {"iflags", 0x1e0},
-        {"clint_mtimecmp", CLINT_BASE+0x4000},
-        {"htif_tohost", HTIF_BASE+0x0},
-        {"htif_fromhost", HTIF_BASE+0x8},
-        {"htif_ihalt", HTIF_BASE+0x10},
-        {"htif_iconsole", HTIF_BASE+0x18},
-        {"htif_iyield", HTIF_BASE+0x20},
+        {"brkflag", 0x1e8},
+        {"clint_mtimecmp", 0x1f0},
+        {"htif_tohost", 0x1f8},
+        {"htif_fromhost", 0x200},
+        {"htif_ihalt", 0x208},
+        {"htif_iconsole", 0x210},
+        {"htif_iyield", 0x218},
     }
 
     return cpu_csr_names
@@ -250,11 +251,12 @@ end
 local pmas_file_names = {
     "0000000000000000--0000000000001000.bin",
     "0000000000001000--000000000000f000.bin",
+    "0000000000010000--0000000000001000.bin",
     "0000000002000000--00000000000c0000.bin",
     "0000000040008000--0000000000001000.bin",
     "0000000080000000--0000000000100000.bin"
 }
-local pmas_sizes = { 4096, 61440, 786432, 4096, 1048576 }
+local pmas_sizes = { 4096, 61440, 4096, 786432, 4096, 1048576 }
 
 local function build_machine(type)
     -- Create new machine
@@ -508,11 +510,12 @@ do_test("should return expected values",
         initial_csr_values.htif_iyield = 0x0
 
         -- Check csr register read
-        local to_ignore = {
+        local to_ignore = {            
             iflags = true,
             clint_mtimecmp = true,
             htif_ihalt = true,
-            htif_iconsole = true
+            htif_iconsole = true,
+            brkflag = true,
         }
         for k, v in pairs(get_cpu_csr_names_addresses()) do
             if not to_ignore[v[1]] then
@@ -708,10 +711,10 @@ do_test("dumped log content should match",
         print(output)
         print("--------------------------")
         assert((output:find "1: read @0x120%(288%)"), "Cound not find step 1 ")
-        assert((output:find "14: read @0x810%(2064%): 0x1069%(4201%)"),
-            "Cound not find step 14")
-        assert((output:find "22: write @0x120%(288%): 0x0%(0%) %-> 0x1%(1%)"),
+        assert((output:find "20: read @0x10010%(65552%): 0x1069%(4201%)"),
             "Cound not find step 20")
+        assert((output:find "28: write @0x120%(288%): 0x0%(0%) %-> 0x1%(1%)"),
+            "Cound not find step 28")
     end
 )
 

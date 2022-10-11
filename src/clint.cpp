@@ -27,11 +27,17 @@ uint64_t clint_get_csr_rel_addr(clint_csr reg) {
     return static_cast<uint64_t>(reg);
 }
 
-uint64_t clint_get_csr_abs_addr(clint_csr reg) {
-    return PMA_CLINT_START + clint_get_csr_rel_addr(reg);
+static constexpr uint64_t base(uint64_t v) {
+    return v - (v % PMA_PAGE_SIZE);
 }
 
 static bool clint_read_msip(i_device_state_access *a, uint64_t *val, int log2_size) {
+    static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "code assumes little-endian byte ordering");
+    static_assert(base(clint_msip0_rel_addr) != base(clint_mtimecmp_rel_addr) &&
+            base(clint_mtimecmp_rel_addr) != base(clint_mtime_rel_addr) &&
+            base(clint_mtime_rel_addr) != base(clint_msip0_rel_addr),
+        "code expects msip0, mtimcmp, and mtime to be in different pages");
+
     if (log2_size == 2) {
         *val = ((a->read_mip() & MIP_MSIP_MASK) == MIP_MSIP_MASK);
         return true;
@@ -104,6 +110,6 @@ static bool clint_write(void *context, i_device_state_access *a, uint64_t offset
     }
 }
 
-const device_driver clint_driver = {"CLINT", clint_read, clint_write};
+const pma_driver clint_driver = {"CLINT", clint_read, clint_write};
 
 } // namespace cartesi

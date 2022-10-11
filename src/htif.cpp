@@ -149,6 +149,6 @@ static bool htif_write(void *context, i_device_state_access *a, uint64_t offset,
     }
 }
 
-const device_driver htif_driver{"HTIF", htif_read, htif_write};
+const pma_driver htif_driver{"HTIF", htif_read, htif_write};
 
 } // namespace cartesi

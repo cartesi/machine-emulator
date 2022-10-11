@@ -123,14 +123,17 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_SENVCFG,
     CM_PROC_ILRSC,
     CM_PROC_IFLAGS,
+    CM_PROC_BRKFLAG,
     CM_PROC_CLINT_MTIMECMP,
     CM_PROC_HTIF_TOHOST,
     CM_PROC_HTIF_FROMHOST,
     CM_PROC_HTIF_IHALT,
     CM_PROC_HTIF_ICONSOLE,
     CM_PROC_HTIF_IYIELD,
-    CM_PROC_UARCH_PC,
     CM_PROC_UARCH_CYCLE,
+    CM_PROC_UARCH_PC,
+    CM_PROC_UARCH_ROM_LENGTH,
+    CM_PROC_UARCH_RAM_LENGTH,
     CM_PROC_UNKNOWN
 } CM_PROC_CSR;
 
@@ -166,6 +169,7 @@ typedef struct {                        // NOLINT(modernize-use-using)
     uint64_t senvcfg;                   ///< Value of senvcfg CSR
     uint64_t ilrsc;                     ///< Value of ilrsc CSR
     uint64_t iflags;                    ///< Value of iflags CSR
+    bool brkflag;                       ///< Value of the break flag
 } cm_processor_config;
 
 /// \brief RAM state configuration
@@ -1061,6 +1065,31 @@ CM_API int cm_write_ilrsc(cm_machine *m, uint64_t val, char **err_msg);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_iflags(const cm_machine *m, uint64_t *val, char **err_msg);
 
+/// \brief Reads the value of the brkflag register
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_brkflag(const cm_machine *m, bool *val, char **err_msg);
+
+/// \brief Sets the value of the break flag.
+/// \param m Pointer to valid machine instance
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_set_brkflag(cm_machine *m, char **err_msg);
+
+/// \brief Resets the value of the break flag.
+/// \param m Pointer to valid machine instance
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_reset_brkflag(cm_machine *m, char **err_msg);
+
 /// \brief Returns packed iflags from its component fields.
 /// \param val Receives value of the register.
 CM_API uint64_t cm_packed_iflags(int PRV, int X, int Y, int H);
@@ -1429,6 +1458,24 @@ CM_API int cm_write_uarch_pc(cm_machine *m, uint64_t val, char **err_msg);
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_uarch_cycle(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Reads the value of the microarchitecture ROM length
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the microarchitecture ROM length.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_uarch_rom_length(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Reads the value of the microarchitecture RAM length
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the microarchitecture RAM length.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_uarch_ram_length(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Writes the value of the microarchitecture cycle register.
 /// \param m Pointer to valid machine instance

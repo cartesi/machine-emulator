@@ -330,22 +330,24 @@ static std::vector<uint8_t> parse_pma_file(const std::string &path) {
     return data;
 }
 
-static hash_type calculate_emulator_hash(const std::array<const char *, 5> &pmas_files) {
+static hash_type calculate_emulator_hash(const std::array<const char *, 6> &pmas_files) {
     cartesi::keccak_256_hasher h;
     auto procesor_board_shadow = parse_pma_file(pmas_files[0]);
     auto rom = parse_pma_file(pmas_files[1]);
-    auto cli = parse_pma_file(pmas_files[2]);
-    auto hti = parse_pma_file(pmas_files[3]);
-    auto ram = parse_pma_file(pmas_files[4]);
+    auto pmas = parse_pma_file(pmas_files[2]);
+    auto cli = parse_pma_file(pmas_files[3]);
+    auto hti = parse_pma_file(pmas_files[4]);
+    auto ram = parse_pma_file(pmas_files[5]);
 
     std::vector<uint8_t> cpu_and_rom_data;
-    cpu_and_rom_data.reserve(procesor_board_shadow.size() + rom.size());
+    cpu_and_rom_data.reserve(procesor_board_shadow.size() + rom.size() + pmas.size());
     cpu_and_rom_data.insert(cpu_and_rom_data.end(), procesor_board_shadow.begin(), procesor_board_shadow.end());
     cpu_and_rom_data.insert(cpu_and_rom_data.end(), rom.begin(), rom.end());
+    cpu_and_rom_data.insert(cpu_and_rom_data.end(), pmas.begin(), pmas.end());
 
     uint64_t cpu_and_rom_data_pages = cpu_and_rom_data.size() / (1 << 12);
-    auto cpu_and_rom_space_hash = calculate_region_hash(cpu_and_rom_data, cpu_and_rom_data_pages, 12, 16);
-    cpu_and_rom_space_hash = extend_region_hash(cpu_and_rom_space_hash, 0x0, 16, 25);
+    auto cpu_and_rom_space_hash = calculate_region_hash(cpu_and_rom_data, cpu_and_rom_data_pages, 12, 17);
+    cpu_and_rom_space_hash = extend_region_hash(cpu_and_rom_space_hash, 0x0, 17, 25);
 
     auto cli_space_hash = calculate_region_hash(cli, cli.size() / (1 << 12), 12, 20);
     cli_space_hash = extend_region_hash(cli_space_hash, 0x02000000, 20, 25);

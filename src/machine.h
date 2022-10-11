@@ -154,6 +154,7 @@ public:
         senvcfg,
         ilrsc,
         iflags,
+        brkflag,
         clint_mtimecmp,
         htif_tohost,
         htif_fromhost,
@@ -162,6 +163,8 @@ public:
         htif_iyield,
         uarch_cycle,
         uarch_pc,
+        uarch_rom_length,
+        uarch_ram_length,
         last
     };
 
@@ -552,6 +555,14 @@ public:
     /// \param val New register value.
     void write_iflags(uint64_t val);
 
+    /// \brief Writes the value of the break flag
+    /// \param val New value.
+    void write_brkflag(bool val);
+
+    /// \brief Reads the value of the break flag
+    /// \returns The value of the break flag.
+    uint64_t read_brkflag(void) const;
+
     /// \brief Reads the value of HTIF's tohost register.
     /// \returns The value of the register.
     uint64_t read_htif_tohost(void) const;
@@ -739,6 +750,14 @@ public:
     /// \brief Writes the value ofthe microarchitecture cycle counter register.
     /// \param val New register value.
     void write_uarch_cycle(uint64_t val);
+
+    /// \brief Reads the value of the microarchitecture ROM length
+    /// \returns The value of the microarchitecture ROM length
+    uint64_t read_uarch_rom_length(void) const;
+
+    /// \brief Reads the value of the microarchitecture RAM length
+    /// \returns The value of the microarchitecture RAM length
+    uint64_t read_uarch_ram_length(void) const;
 };
 
 } // namespace cartesi

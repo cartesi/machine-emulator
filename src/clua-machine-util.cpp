@@ -87,11 +87,15 @@ static char *copy_lua_str(lua_State *L, int idx) {
 /// \param L Lua state.
 /// \param tabidx Table stack index.
 /// \param field Field index.
+/// \param def Default value for missing field.
 /// \returns Field value, or false if missing.
-static bool opt_boolean_field(lua_State *L, int tabidx, const char *field) {
+static bool opt_boolean_field(lua_State *L, int tabidx, const char *field, bool def = false) {
     tabidx = lua_absindex(L, tabidx);
     lua_getfield(L, tabidx, field);
-    bool val = lua_toboolean(L, -1);
+    bool val = def;
+    if (!lua_isnil(L, -1)) {
+        val = lua_toboolean(L, -1);
+    }
     lua_pop(L, 1);
     return val;
 }
@@ -526,6 +530,7 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"senvcfg", CM_PROC_SENVCFG},
         {"ilrsc", CM_PROC_ILRSC},
         {"iflags", CM_PROC_IFLAGS},
+        {"brkflag", CM_PROC_BRKFLAG},
         {"clint_mtimecmp", CM_PROC_CLINT_MTIMECMP},
         {"htif_tohost", CM_PROC_HTIF_TOHOST},
         {"htif_fromhost", CM_PROC_HTIF_FROMHOST},
@@ -533,7 +538,9 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"htif_iconsole", CM_PROC_HTIF_ICONSOLE},
         {"htif_iyield", CM_PROC_HTIF_IYIELD},
         {"uarch_pc", CM_PROC_UARCH_PC},
-        {"uarch_cycle", CM_PROC_UARCH_CYCLE}
+        {"uarch_cycle", CM_PROC_UARCH_CYCLE},
+        {"uarch_rom_length", CM_PROC_UARCH_ROM_LENGTH},
+        {"uarch_ram_length", CM_PROC_UARCH_RAM_LENGTH}
         // clang-format on
     };
     const char *name = luaL_checkstring(L, idx);
@@ -732,6 +739,7 @@ static void push_cm_processor_config(lua_State *L, const cm_processor_config *p)
     PUSH_CM_PROCESSOR_CONFIG_CSR(senvcfg);
     PUSH_CM_PROCESSOR_CONFIG_CSR(ilrsc);
     PUSH_CM_PROCESSOR_CONFIG_CSR(iflags);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(brkflag);
 }
 
 /// \brief Pushes a cm_ram_config to the Lua stack
@@ -1043,6 +1051,7 @@ static void check_cm_processor_config(lua_State *L, int tabidx, cm_processor_con
     p->senvcfg = opt_uint_field(L, -1, "senvcfg", def->senvcfg);
     p->ilrsc = opt_uint_field(L, -1, "ilrsc", def->ilrsc);
     p->iflags = opt_uint_field(L, -1, "iflags", def->iflags);
+    p->brkflag = opt_boolean_field(L, -1, "brkflag", def->brkflag);
     lua_pop(L, 1);
 }
 

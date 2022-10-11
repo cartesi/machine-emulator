@@ -1053,6 +1053,8 @@ IMPL_MACHINE_READ_WRITE(htif_iyield)
 IMPL_MACHINE_READ_WRITE(clint_mtimecmp)
 IMPL_MACHINE_READ_WRITE(uarch_cycle)
 IMPL_MACHINE_READ_WRITE(uarch_pc)
+IMPL_MACHINE_READ(uarch_rom_length)
+IMPL_MACHINE_READ(uarch_ram_length)
 // clang-format-on
 
 uint64_t cm_packed_iflags(int PRV, int X, int Y, int H) {
@@ -1118,6 +1120,30 @@ int cm_read_iflags_H(const cm_machine *m, bool *val, char **err_msg) try {
 int cm_set_iflags_H(cm_machine *m, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->set_iflags_H();
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_read_brkflag(const cm_machine *m, bool *val, char **err_msg) try {
+    const auto *cpp_machine = convert_from_c(m);
+    *val = cpp_machine->read_brkflag();
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_reset_brkflag(cm_machine *m, char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cpp_machine->reset_brkflag();
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_set_brkflag(cm_machine *m, char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cpp_machine->set_brkflag();
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);

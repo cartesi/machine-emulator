@@ -62,7 +62,7 @@ local function stderr(...)
     io.stderr:write(string.format(...))
 end
 
-local final_mcycle = 8985
+local final_mcycle = 8981
 local exit_payload = 0
 
 function check_buffer(machine, pattern, buffer)

@@ -14,16 +14,25 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#include "device-driver.h"
+#ifndef SHADOW_STATE_FACTORY_H
+#define SHADOW_STATE_FACTORY_H
+
+#include <cstdint>
+
+/// \file
+/// \brief Shadow device.
+
+#include "pma.h"
+#include "shadow-state.h"
 
 namespace cartesi {
 
-bool device_read_error(void *, i_device_state_access *, uint64_t, uint64_t *, int) {
-    return false;
-}
-
-bool device_write_error(void *, i_device_state_access *, uint64_t, uint64_t, int) {
-    return false;
-}
+/// \brief Creates a PMA entry for the shadow device
+/// \param start Start address for memory range.
+/// \param length Length of memory range.
+/// \returns Corresponding PMA entry
+pma_entry make_shadow_state_pma_entry(uint64_t start, uint64_t length);
 
 } // namespace cartesi
+
+#endif

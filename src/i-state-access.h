@@ -642,20 +642,12 @@ public:
         return derived().do_set_brkflag();
     }
 
-    auto get_brkflag(void) const {
-        return derived().do_get_brkflag();
+    auto reset_brkflag(void) {
+        return derived().do_reset_brkflag();
     }
 
-    auto or_brk_with_mip_mie(void) {
-        return derived().do_or_brk_with_mip_mie();
-    }
-
-    auto assert_no_brk(void) const {
-        return derived().do_assert_no_brk();
-    }
-
-    auto set_brk_from_all(void) {
-        return derived().do_set_brk_from_all();
+    auto read_brkflag(void) {
+        return derived().do_read_brkflag();
     }
 
 #ifdef DUMP_COUNTERS

@@ -42,7 +42,9 @@ struct uarch_state {
 
     uint64_t pc;                               ///< Program counter.
     std::array<uint64_t, UARCH_X_REG_COUNT> x; ///< Register file.
-    uint64_t cycle;
+    uint64_t cycle;                            ///< Cycles counter
+    uint64_t ram_length;                       ///< ROM length
+    uint64_t rom_length;                       ///< RAM length
 
     /// Map of physical memory ranges
     boost::container::static_vector<pma_entry, PMA_MAX> pmas;

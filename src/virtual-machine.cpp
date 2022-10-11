@@ -327,6 +327,18 @@ void virtual_machine::do_write_iflags(uint64_t val) {
     return m_machine->write_iflags(val);
 }
 
+uint64_t virtual_machine::do_read_brkflag(void) const {
+    return m_machine->read_brkflag();
+}
+
+void virtual_machine::do_set_brkflag(void) {
+    return m_machine->write_brkflag(true);
+}
+
+void virtual_machine::do_reset_brkflag(void) {
+    return m_machine->write_brkflag(false);
+}
+
 uint64_t virtual_machine::do_read_htif_tohost(void) const {
     return m_machine->read_htif_tohost();
 }
@@ -445,6 +457,14 @@ uint64_t virtual_machine::do_read_uarch_cycle(void) const {
 
 void virtual_machine::do_write_uarch_cycle(uint64_t val) {
     m_machine->write_uarch_cycle(val);
+}
+
+uint64_t virtual_machine::do_read_uarch_rom_length(void) const {
+    return m_machine->read_uarch_rom_length();
+}
+
+uint64_t virtual_machine::do_read_uarch_ram_length(void) const {
+    return m_machine->read_uarch_ram_length();
 }
 
 void virtual_machine::do_uarch_run(uint64_t uarch_cycle_end) {

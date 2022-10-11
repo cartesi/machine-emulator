@@ -180,6 +180,9 @@ private:
             case shadow_state_csr::mcounteren:
                 a.write_mcounteren(data);
                 return true;
+            case shadow_state_csr::menvcfg:
+                a.write_menvcfg(data);
+                return true;
             case shadow_state_csr::stvec:
                 a.write_stvec(data);
                 return true;
@@ -201,6 +204,9 @@ private:
             case shadow_state_csr::scounteren:
                 a.write_scounteren(data);
                 return true;
+            case shadow_state_csr::senvcfg:
+                a.write_senvcfg(data);
+                return true;
             case shadow_state_csr::ilrsc:
                 a.write_ilrsc(data);
                 return true;
@@ -217,22 +223,12 @@ private:
                 a.write_htif_fromhost(data);
                 return true;
             case shadow_state_csr::brkflag:
-                switch (static_cast<uarch_brk_flag_cmd>(data)) {
-                    case uarch_brk_flag_cmd::set:
-                        a.set_brkflag();
-                        return true;
-                    case uarch_brk_flag_cmd::or_with_mip_mie:
-                        a.or_brk_with_mip_mie();
-                        return true;
-                    case uarch_brk_flag_cmd::set_from_all:
-                        a.set_brk_from_all();
-                        return true;
-                    case uarch_brk_flag_cmd::assert_no_brk:
-                        a.assert_no_brk();
-                        return true;
-                    default:
-                        return false;
+                if (data) {
+                    a.set_brkflag();
+                } else {
+                    a.reset_brkflag();
                 }
+                return true;
             default:
                 break;
         }
@@ -241,8 +237,6 @@ private:
                 return uarch_putchar(data);
             case uarch_mmio::abort:
                 return uarch_abort();
-            case uarch_mmio::mark_page_dirty:
-                return uarch_mark_page_dirty(a, data);
         }
         return false;
     }
@@ -324,6 +318,9 @@ private:
             case shadow_state_csr::mcounteren:
                 *data = a.read_mcounteren();
                 return true;
+            case shadow_state_csr::menvcfg:
+                *data = a.read_menvcfg();
+                return true;
             case shadow_state_csr::stvec:
                 *data = a.read_stvec();
                 return true;
@@ -345,6 +342,9 @@ private:
             case shadow_state_csr::scounteren:
                 *data = a.read_scounteren();
                 return true;
+            case shadow_state_csr::senvcfg:
+                *data = a.read_senvcfg();
+                return true;
             case shadow_state_csr::ilrsc:
                 *data = a.read_ilrsc();
                 return true;
@@ -352,7 +352,7 @@ private:
                 *data = a.read_iflags();
                 return true;
             case shadow_state_csr::brkflag:
-                *data = static_cast<uint64_t>(a.get_brkflag() ? uarch_brk_flag_cmd::set : uarch_brk_flag_cmd::not_set);
+                *data = a.read_brkflag();
                 return true;
             case shadow_state_csr::clint_mtimecmp:
                 *data = a.read_clint_mtimecmp();
@@ -445,15 +445,6 @@ private:
 
     static bool uarch_abort() {
         throw std::runtime_error("Microarchitecture execution aborted");
-        return true;
-    }
-
-    static bool uarch_mark_page_dirty(STATE_ACCESS &a, uint64_t data) {
-        int pma_index = (int) (data & ((1 << PMA_constants::PMA_PAGE_SIZE_LOG2) - 1));
-        uint64_t page = data >> PMA_constants::PMA_PAGE_SIZE_LOG2;
-        uint64_t address_in_range = page << PMA_constants::PMA_PAGE_SIZE_LOG2;
-        auto &pma = a.get_pma_entry(pma_index);
-        pma.mark_dirty_page(address_in_range);
         return true;
     }
 };

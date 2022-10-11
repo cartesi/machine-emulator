@@ -64,12 +64,12 @@ extern "C" void *memset(void *ptr, int value, size_t num) {
 }
 
 extern "C" void _putchar(char c) {
-    volatile uint64_t *p = reinterpret_cast<uint64_t *>(cartesi::uarch_ctl_addr::putchar);
+    volatile uint64_t *p = reinterpret_cast<uint64_t *>(cartesi::uarch_mmio::putchar);
     *p = c;
 }
 
 extern "C" [[noreturn]] void abort(void) {
-    volatile char *p = reinterpret_cast<char *>(cartesi::uarch_ctl_addr::abort);
+    volatile char *p = reinterpret_cast<char *>(cartesi::uarch_mmio::abort);
     *p = 1;
     // execution will never reach this point
     // infinite loop added to silent the compiler

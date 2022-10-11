@@ -35,7 +35,8 @@
 #include "riscv-constants.h"
 #include "rom.h"
 #include "rtc.h"
-#include "shadow-factory.h"
+#include "shadow-pmas-factory.h"
+#include "shadow-state-factory.h"
 #include "state-access.h"
 #include "step-state-access.h"
 #include "strict-aliasing.h"
@@ -282,6 +283,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     write_senvcfg(m_c.processor.senvcfg);
     write_ilrsc(m_c.processor.ilrsc);
     write_iflags(m_c.processor.iflags);
+    write_brkflag(m_c.processor.brkflag);
 
     if (m_c.rom.image_filename.empty()) {
         throw std::invalid_argument{"ROM image filename is undefined"};
@@ -340,8 +342,11 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // Copy CLINT state to from config to machine
     write_clint_mtimecmp(m_c.clint.mtimecmp);
 
-    // Register shadow device
-    register_pma_entry(make_shadow_pma_entry(PMA_SHADOW_START, PMA_SHADOW_LENGTH));
+    // Register state shadow device
+    register_pma_entry(make_shadow_state_pma_entry(PMA_SHADOW_STATE_START, PMA_SHADOW_STATE_LENGTH));
+
+    // Register pma board shadow device
+    register_pma_entry(make_shadow_pmas_pma_entry(PMA_SHADOW_PMAS_START, PMA_SHADOW_PMAS_LENGTH));
 
     // Initialize PMA extension metadata on ROM
     rom_init(m_c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
@@ -422,6 +427,7 @@ machine_config machine::get_serialization_config(void) const {
     c.processor.senvcfg = read_senvcfg();
     c.processor.ilrsc = read_ilrsc();
     c.processor.iflags = read_iflags();
+    c.processor.brkflag = read_brkflag();
     // Copy current CLINT state to config
     c.clint.mtimecmp = read_clint_mtimecmp();
     // Copy current HTIF state to config
@@ -602,7 +608,7 @@ uint64_t machine::read_x(int i) const {
 }
 
 uint64_t machine::get_x_address(int i) {
-    return PMA_SHADOW_START + shadow_get_x_rel_addr(i);
+    return PMA_SHADOW_STATE_START + shadow_state_get_x_rel_addr(i);
 }
 
 void machine::write_x(int i, uint64_t val) {
@@ -709,7 +715,6 @@ uint64_t machine::read_mip(void) const {
 
 void machine::write_mip(uint64_t val) {
     m_s.mip = val;
-    m_s.set_brk_from_all();
 }
 
 uint64_t machine::read_mie(void) const {
@@ -718,7 +723,6 @@ uint64_t machine::read_mie(void) const {
 
 void machine::write_mie(uint64_t val) {
     m_s.mie = val;
-    m_s.set_brk_from_all();
 }
 
 uint64_t machine::read_medeleg(void) const {
@@ -831,7 +835,14 @@ uint64_t machine::read_iflags(void) const {
 
 void machine::write_iflags(uint64_t val) {
     m_s.write_iflags(val);
-    m_s.set_brk_from_all();
+}
+
+void machine::write_brkflag(bool val) {
+    m_s.brkflag = val;
+}
+
+uint64_t machine::read_brkflag(void) const {
+    return m_s.brkflag;
 }
 
 uint64_t machine::read_htif_tohost(void) const {
@@ -958,6 +969,8 @@ uint64_t machine::read_csr(csr r) const {
             return read_ilrsc();
         case csr::iflags:
             return read_iflags();
+        case csr::brkflag:
+            return read_brkflag();
         case csr::clint_mtimecmp:
             return read_clint_mtimecmp();
         case csr::htif_tohost:
@@ -974,6 +987,10 @@ uint64_t machine::read_csr(csr r) const {
             return read_uarch_cycle();
         case csr::uarch_pc:
             return read_uarch_pc();
+        case csr::uarch_rom_length:
+            return read_uarch_rom_length();
+        case csr::uarch_ram_length:
+            return read_uarch_ram_length();
         default:
             throw std::invalid_argument{"unknown CSR"};
             return 0; // never reached
@@ -1046,6 +1063,8 @@ void machine::write_csr(csr w, uint64_t val) {
             return write_htif_iconsole(val);
         case csr::htif_iyield:
             return write_htif_iyield(val);
+        case csr::brkflag:
+            return write_brkflag(val);
         case csr::uarch_cycle:
             return write_uarch_cycle(val);
         case csr::uarch_pc:
@@ -1056,104 +1075,97 @@ void machine::write_csr(csr w, uint64_t val) {
             [[fallthrough]];
         case csr::mimpid:
             throw std::invalid_argument{"CSR is read-only"};
+        case csr::uarch_rom_length:
+            [[fallthrough]];
+        case csr::uarch_ram_length:
+            [[fallthrough]];
         default:
             throw std::invalid_argument{"unknown CSR"};
     }
 }
 
-/// \brief Returns the address of a CSR in the shadow
-/// \param w The desired CSR
-/// \return Address of the specified CSR in the shadow
-static inline uint64_t get_csr_addr(shadow_csr w) {
-    return cartesi::PMA_SHADOW_START + shadow_get_csr_rel_addr(w);
-}
-
-/// \brief Returns the address of a CSR in HTIF
-/// \param w The desired CSR
-/// \return Address of the specified CSR in HTIF
-static inline uint64_t htif_get_csr_addr(htif::csr r) {
-    return PMA_HTIF_START + htif::get_csr_rel_addr(r);
-}
-
-/// \brief Returns the address of a CSR in CLINT
-/// \param w The desired CSR
-/// \return Address of the specified CSR in CLINT
-static inline uint64_t clint_get_csr_addr(clint_csr r) {
-    return PMA_CLINT_START + clint_get_csr_rel_addr(r);
-}
-
 uint64_t machine::get_csr_address(csr w) {
     switch (w) {
         case csr::pc:
-            return get_csr_addr(shadow_csr::pc);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::pc);
         case csr::mvendorid:
-            return get_csr_addr(shadow_csr::mvendorid);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::mvendorid);
         case csr::marchid:
-            return get_csr_addr(shadow_csr::marchid);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::marchid);
         case csr::mimpid:
-            return get_csr_addr(shadow_csr::mimpid);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::mimpid);
         case csr::mcycle:
-            return get_csr_addr(shadow_csr::mcycle);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::mcycle);
         case csr::minstret:
-            return get_csr_addr(shadow_csr::minstret);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::minstret);
         case csr::mstatus:
-            return get_csr_addr(shadow_csr::mstatus);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::mstatus);
         case csr::mtvec:
-            return get_csr_addr(shadow_csr::mtvec);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::mtvec);
         case csr::mscratch:
-            return get_csr_addr(shadow_csr::mscratch);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::mscratch);
         case csr::mepc:
-            return get_csr_addr(shadow_csr::mepc);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::mepc);
         case csr::mcause:
-            return get_csr_addr(shadow_csr::mcause);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::mcause);
         case csr::mtval:
-            return get_csr_addr(shadow_csr::mtval);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::mtval);
         case csr::misa:
-            return get_csr_addr(shadow_csr::misa);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::misa);
         case csr::mie:
-            return get_csr_addr(shadow_csr::mie);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::mie);
         case csr::mip:
-            return get_csr_addr(shadow_csr::mip);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::mip);
         case csr::medeleg:
-            return get_csr_addr(shadow_csr::medeleg);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::medeleg);
         case csr::mideleg:
-            return get_csr_addr(shadow_csr::mideleg);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::mideleg);
         case csr::mcounteren:
-            return get_csr_addr(shadow_csr::mcounteren);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::mcounteren);
         case csr::menvcfg:
-            return get_csr_addr(shadow_csr::menvcfg);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::menvcfg);
         case csr::stvec:
-            return get_csr_addr(shadow_csr::stvec);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::stvec);
         case csr::sscratch:
-            return get_csr_addr(shadow_csr::sscratch);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::sscratch);
         case csr::sepc:
-            return get_csr_addr(shadow_csr::sepc);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::sepc);
         case csr::scause:
-            return get_csr_addr(shadow_csr::scause);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::scause);
         case csr::stval:
-            return get_csr_addr(shadow_csr::stval);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::stval);
         case csr::satp:
-            return get_csr_addr(shadow_csr::satp);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::satp);
         case csr::scounteren:
-            return get_csr_addr(shadow_csr::scounteren);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::scounteren);
         case csr::senvcfg:
-            return get_csr_addr(shadow_csr::senvcfg);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::senvcfg);
         case csr::ilrsc:
-            return get_csr_addr(shadow_csr::ilrsc);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::ilrsc);
         case csr::iflags:
-            return get_csr_addr(shadow_csr::iflags);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::iflags);
+        case csr::brkflag:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::brkflag);
         case csr::htif_tohost:
-            return htif_get_csr_addr(htif::csr::tohost);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::htif_tohost);
         case csr::htif_fromhost:
-            return htif_get_csr_addr(htif::csr::fromhost);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::htif_fromhost);
         case csr::htif_ihalt:
-            return htif_get_csr_addr(htif::csr::ihalt);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::htif_ihalt);
         case csr::htif_iconsole:
-            return htif_get_csr_addr(htif::csr::iconsole);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::htif_iconsole);
         case csr::htif_iyield:
-            return htif_get_csr_addr(htif::csr::iyield);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::htif_iyield);
         case csr::clint_mtimecmp:
-            return clint_get_csr_addr(clint_csr::mtimecmp);
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::clint_mtimecmp);
+        case csr::uarch_pc:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_pc);
+        case csr::uarch_cycle:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_cycle);
+        case csr::uarch_rom_length:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_rom_length);
+        case csr::uarch_ram_length:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_ram_length);
         default:
             throw std::invalid_argument{"unknown CSR"};
     }
@@ -1161,12 +1173,11 @@ uint64_t machine::get_csr_address(csr w) {
 
 void machine::set_mip(uint32_t mask) {
     m_s.mip |= mask;
-    m_s.or_brk_with_mip_mie();
+    // m_s.or_brk_with_mip_mie();
 }
 
 void machine::reset_mip(uint32_t mask) {
     m_s.mip &= ~mask;
-    m_s.set_brk_from_all();
 }
 
 uint8_t machine::read_iflags_PRV(void) const {
@@ -1183,7 +1194,6 @@ void machine::reset_iflags_Y(void) {
 
 void machine::set_iflags_Y(void) {
     m_s.iflags.Y = true;
-    m_s.brk = true;
 }
 
 bool machine::read_iflags_X(void) const {
@@ -1196,7 +1206,6 @@ void machine::reset_iflags_X(void) {
 
 void machine::set_iflags_X(void) {
     m_s.iflags.X = true;
-    m_s.brk = true;
 }
 
 bool machine::read_iflags_H(void) const {
@@ -1205,7 +1214,6 @@ bool machine::read_iflags_H(void) const {
 
 void machine::set_iflags_H(void) {
     m_s.iflags.H = true;
-    m_s.brk = true;
 }
 
 static double now(void) {
@@ -1608,7 +1616,7 @@ static uint64_t saturate_next_mcycle(uint64_t mcycle) {
 
 static uint64_t get_next_mcycle_from_log(const access_log &log) {
     const auto &first_access = log.get_accesses().front();
-    auto mcycle_address = PMA_SHADOW_START + shadow_get_csr_rel_addr(shadow_csr::mcycle);
+    auto mcycle_address = PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mcycle);
 
     // The first access should always be a read to mcycle
     if (first_access.get_type() != access_type::read || first_access.get_address() != mcycle_address) {

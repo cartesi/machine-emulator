@@ -1595,11 +1595,27 @@ static bool write_csr_senvcfg(STATE_ACCESS &a, uint64_t val) {
 }
 
 template <typename STATE_ACCESS>
+static void set_brkflag_from_all(STATE_ACCESS &a) {
+    bool brkflag = false;
+    auto mip = a.read_mip();
+    auto mie = a.read_mie();
+    brkflag |= (mip & mie);
+    brkflag |= a.read_iflags_H();
+    brkflag |= a.read_iflags_Y();
+    brkflag |= a.read_iflags_X();
+    if (brkflag) {
+        a.set_brkflag();
+    } else {
+        a.reset_brkflag();
+    }
+}
+
+template <typename STATE_ACCESS>
 static bool write_csr_sie(STATE_ACCESS &a, uint64_t val) {
     uint64_t mask = a.read_mideleg();
     uint64_t mie = a.read_mie();
     a.write_mie((mie & ~mask) | (val & mask));
-    a.set_brk_from_all();
+    set_brkflag_from_all(a);
     return true;
 }
 
@@ -1645,7 +1661,7 @@ static bool write_csr_sip(STATE_ACCESS &a, uint64_t val) {
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
-    a.set_brk_from_all();
+    set_brkflag_from_all(a);
     return true;
 }
 
@@ -1714,7 +1730,7 @@ template <typename STATE_ACCESS>
 static bool write_csr_mie(STATE_ACCESS &a, uint64_t val) {
     const uint64_t mask = MIP_MSIP_MASK | MIP_MTIP_MASK | MIP_MEIP_MASK | MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
     a.write_mie((a.read_mie() & ~mask) | (val & mask));
-    a.set_brk_from_all();
+    set_brkflag_from_all(a);
     return true;
 }
 
@@ -1781,7 +1797,7 @@ static bool write_csr_mip(STATE_ACCESS &a, uint64_t val) {
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
-    a.set_brk_from_all();
+    set_brkflag_from_all(a);
     return true;
 }
 
@@ -3268,6 +3284,17 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
     return fetch_status::success;
 }
 
+/// \brief Checks that false brk is consistent with rest of state
+template <typename STATE_ACCESS>
+static void assert_no_brkflag(STATE_ACCESS &a) {
+    auto mip = a.read_mip();
+    auto mie = a.read_mie();
+    assert((mip & mie) == 0);
+    assert(a.read_iflags_X() == 0);
+    assert(a.read_iflags_Y() == 0);
+    assert(a.read_iflags_H() == 0);
+}
+
 template <typename STATE_ACCESS>
 interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
 
@@ -3310,7 +3337,7 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     set_rtc_interrupt(a, mcycle);
 
     // Rebuild brk flag from all conditions.
-    a.set_brk_from_all();
+    set_brkflag_from_all(a);
 
     // Raise the highest priority pending interrupt, if any
     raise_interrupt_if_any(a);
@@ -3343,7 +3370,7 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         a.write_mcycle(mcycle);
 
         // If the break flag is active, break from the inner loop
-        if (a.get_brkflag()) {
+        if (a.read_brkflag()) {
             return interpreter_status::brk;
         }
         // Otherwise, there can be no pending interrupts
@@ -3355,7 +3382,7 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         // get_pending_irq_mask for details.
         // assert(get_pending_irq_mask(a.get_naked_state()) == 0);
         // For simplicity, we brk whenever mie & mip != 0
-        a.assert_no_brk();
+        assert_no_brkflag(a);
 
         // If we reached the target mcycle, we are done
         if (mcycle >= mcycle_end) {

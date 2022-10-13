@@ -328,11 +328,12 @@ static void check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_si
     cm_hash_array *sibling_hashes) {
     luaL_checktype(L, idx, LUA_TTABLE);
     memset(sibling_hashes, 0, sizeof(cm_hash_array));
-    sibling_hashes->count = log2_root_size - log2_target_size;
-    if (sibling_hashes->count > 64) {
-        luaL_error(L, "too many sibling hashes (expected max %u, got %u)", 64, sibling_hashes->count);
+    size_t sibling_hashes_count = log2_root_size - log2_target_size;
+    if (sibling_hashes_count > 64) {
+        luaL_error(L, "too many sibling hashes (expected max %d, got %d)", 64, static_cast<int>(sibling_hashes_count));
     }
-    sibling_hashes->entry = new cm_hash[sibling_hashes->count]{};
+    sibling_hashes->count = sibling_hashes_count;
+    sibling_hashes->entry = new cm_hash[sibling_hashes_count]{};
     for (; log2_target_size < log2_root_size; ++log2_target_size) {
         lua_rawgeti(L, idx, static_cast<lua_Integer>(log2_root_size - log2_target_size));
         auto index = log2_root_size - 1 - log2_target_size;
@@ -963,11 +964,13 @@ static void check_cm_flash_drive_configs(lua_State *L, int tabidx, cm_memory_ran
         return;
     }
     auto flash_drive_table_idx = lua_gettop(L);
-    fs->count = luaL_len(L, flash_drive_table_idx);
-    if (fs->count > CM_FLASH_DRIVE_CONFIGS_MAX_SIZE) {
-        luaL_error(L, "too many flash drives (expected max %u, got %u)", CM_FLASH_DRIVE_CONFIGS_MAX_SIZE, fs->count);
+    size_t count = luaL_len(L, flash_drive_table_idx);
+    if (count > CM_FLASH_DRIVE_CONFIGS_MAX_SIZE) {
+        luaL_error(L, "too many flash drives (expected max %d, got %d)", CM_FLASH_DRIVE_CONFIGS_MAX_SIZE,
+            static_cast<int>(fs->count));
     }
-    fs->entry = new cm_memory_range_config[fs->count]{};
+    fs->count = count;
+    fs->entry = new cm_memory_range_config[count]{};
     for (unsigned i = 1; i <= fs->count; ++i) {
         lua_geti(L, flash_drive_table_idx, i);
         clua_check_cm_memory_range_config(L, -1, "flash drive", &fs->entry[i - 1]);

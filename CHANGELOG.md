@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed many instruction inconsistencies with respect to the RISC-V specification.
 - Fixed overflow in page table entries due to using large physical address ranges.
+- Fixed crash when trying to use too many flash drives.
 
 ## [0.11.1] - 2022-09-28
 ### Fixed

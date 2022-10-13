@@ -272,7 +272,7 @@ static uint64_t new_session_id() {
 }
 
 static uint64_t flash_start_address(uint8_t position) {
-    return (1ULL << 63) + (position * (1ULL << 60));
+    return (1ULL << 55) + (position * (1ULL << 52));
 }
 
 static path get_machine_directory(const std::string &storage_path, const std::string &machine) {
@@ -3133,7 +3133,7 @@ static void test_inspect_state(const std::function<void(const std::string &title
 static bool check_session_store(const std::string &machine_dir) {
     static const std::vector<std::string> files = {"0000000000001000-f000.bin", "0000000060000000-200000.bin",
         "0000000060200000-200000.bin", "0000000060400000-1000.bin", "0000000060600000-200000.bin",
-        "0000000060800000-200000.bin", "0000000080000000-4000000.bin", "8000000000000000-5000000.bin",
+        "0000000060800000-200000.bin", "0000000080000000-4000000.bin", "0080000000000000-5000000.bin",
         "config.protobuf", "hash"};
     if (machine_dir.empty()) {
         return false;

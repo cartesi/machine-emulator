@@ -52,7 +52,12 @@ enum PMA_constants : uint64_t {
     PMA_PAGE_SIZE = (UINT64_C(1) << PMA_PAGE_SIZE_LOG2_DEF),      ///< Physical memory page size.
     PMA_WORD_SIZE = EXPAND_UINT64_C(PMA_WORD_SIZE_DEF),           ///< Physical memory word size.
     PMA_MAX = EXPAND_UINT64_C(PMA_MAX_DEF),                       ///< Maximum number of PMAs
-    PMA_BOARD_SHADOW_START = EXPAND_UINT64_C(PMA_START_DEF)       ///< Base of board shadow, where PMAs start
+    PMA_BOARD_SHADOW_START = EXPAND_UINT64_C(PMA_START_DEF),      ///< Base of board shadow, where PMAs start
+};
+
+/// \brief PMA masks.
+enum PMA_masks : uint64_t {
+    PMA_ADDRESSABLE_MASK = ((UINT64_C(1) << 56) - 1) ///< Mask for addressable PMA ranges.
 };
 
 /// \brief PMA istart shifts

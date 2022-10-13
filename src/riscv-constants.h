@@ -222,23 +222,25 @@ enum PTE_shifts {
     PTE_G_SHIFT = 5,
     PTE_A_SHIFT = 6,
     PTE_D_SHIFT = 7,
+    PTE_PPN_SHIFT = 10,
     PTE_PBMT_SHIFT = 61,
     PTE_N_SHIFT = 63
 };
 
 /// \brief Page-table entry masks
 enum PTE_masks : uint64_t {
-    PTE_V_MASK = UINT64_C(1) << PTE_V_SHIFT,       ///< Valid
-    PTE_R_MASK = UINT64_C(1) << PTE_R_SHIFT,       ///< Readable
-    PTE_W_MASK = UINT64_C(1) << PTE_W_SHIFT,       ///< Writable
-    PTE_X_MASK = UINT64_C(1) << PTE_X_SHIFT,       ///< Executable
-    PTE_U_MASK = UINT64_C(1) << PTE_U_SHIFT,       ///< Accessible to user mode
-    PTE_G_MASK = UINT64_C(1) << PTE_G_SHIFT,       ///< Global mapping
-    PTE_A_MASK = UINT64_C(1) << PTE_A_SHIFT,       ///< Accessed
-    PTE_D_MASK = UINT64_C(1) << PTE_D_SHIFT,       ///< Dirty
-    PTE_60_54_MASK = UINT64_C(127) << 54,          ///< Reserved for future use
-    PTE_PBMT_MASK = UINT64_C(3) << PTE_PBMT_SHIFT, ///< Svpbmt: Page-based memory types
-    PTE_N_MASK = UINT64_C(1) << PTE_N_SHIFT        ///< Svnapot: NAPOT translation contiguity
+    PTE_V_MASK = UINT64_C(1) << PTE_V_SHIFT,                   ///< Valid
+    PTE_R_MASK = UINT64_C(1) << PTE_R_SHIFT,                   ///< Readable
+    PTE_W_MASK = UINT64_C(1) << PTE_W_SHIFT,                   ///< Writable
+    PTE_X_MASK = UINT64_C(1) << PTE_X_SHIFT,                   ///< Executable
+    PTE_U_MASK = UINT64_C(1) << PTE_U_SHIFT,                   ///< Accessible to user mode
+    PTE_G_MASK = UINT64_C(1) << PTE_G_SHIFT,                   ///< Global mapping
+    PTE_A_MASK = UINT64_C(1) << PTE_A_SHIFT,                   ///< Accessed
+    PTE_D_MASK = UINT64_C(1) << PTE_D_SHIFT,                   ///< Dirty
+    PTE_PPN_MASK = ((UINT64_C(1) << 44) - 1) << PTE_PPN_SHIFT, ///< Physical page number
+    PTE_60_54_MASK = UINT64_C(127) << 54,                      ///< Reserved for future use
+    PTE_PBMT_MASK = UINT64_C(3) << PTE_PBMT_SHIFT,             ///< Svpbmt: Page-based memory types
+    PTE_N_MASK = UINT64_C(1) << PTE_N_SHIFT                    ///< Svnapot: NAPOT translation contiguity
 };
 
 /// \brief menvcfg shifts

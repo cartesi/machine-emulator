@@ -267,7 +267,7 @@ protected:
     }
 
     void _setup_flash(const std::string &flash_path) {
-        cm_memory_range_config flash_cfg = {0x8000000000000000, 0x3c00000, true, flash_path.c_str()};
+        cm_memory_range_config flash_cfg = {0x80000000000000, 0x3c00000, true, flash_path.c_str()};
         _setup_flash({flash_cfg});
     }
 };
@@ -316,8 +316,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_unknown_rom_file_test, incomplete_
 class machine_rom_flash_fixture : public machine_rom_fixture {
 public:
     machine_rom_flash_fixture() {
-        cm_memory_range_config flash1_cfg = {0x8000000000000000, 0x3c00000, true, _flash1_path.c_str()};
-        cm_memory_range_config flash2_cfg = {0x7ffffffffffff000, 0x2000, true, _flash2_path.c_str()};
+        cm_memory_range_config flash1_cfg = {0x80000000000000, 0x3c00000, true, _flash1_path.c_str()};
+        cm_memory_range_config flash2_cfg = {0x7ffffffffff000, 0x2000, true, _flash2_path.c_str()};
         _setup_flash({flash1_cfg, flash2_cfg});
     }
 
@@ -376,6 +376,21 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, mach
 
     std::string result = err_msg;
     std::string origin("PMA start must be aligned to page boundary");
+    BOOST_CHECK_EQUAL(origin, result);
+
+    cm_delete_error_message(err_msg);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machine_rom_flash_simple_fixture) {
+    _machine_config.flash_drive.entry[0].start = 0x100000000000000 - 0x3c00000 + 4096;
+    _machine_config.flash_drive.entry[0].length = 0x3c00000;
+
+    char *err_msg{};
+    int error_code = cm_create_machine(&_machine_config, &_runtime_config, &_machine, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+
+    std::string result = err_msg;
+    std::string origin("PMA range must use at most 56 bits to be addressable");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1516,7 +1531,7 @@ public:
         flash_stream.close();
         std::filesystem::resize_file(flash_file, flash_size);
 
-        _flash_config = {0x8000000000000000, flash_size, true, new_cstr(flash_file.c_str())};
+        _flash_config = {0x80000000000000, flash_size, true, new_cstr(flash_file.c_str())};
     }
 
     ~flash_drive_machine_fixture() {
@@ -1540,7 +1555,7 @@ protected:
 BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_basic_test, flash_drive_machine_fixture) {
     std::array dump_list{"0000000000000000--0000000000001000.bin", "0000000000001000--000000000000f000.bin",
         "0000000002000000--00000000000c0000.bin", "0000000040008000--0000000000001000.bin",
-        "0000000080000000--0000000000100000.bin", "8000000000000000--0000000003c00000.bin"};
+        "0000000080000000--0000000000100000.bin", "0080000000000000--0000000003c00000.bin"};
 
     char *err_msg{};
     int error_code = cm_dump_pmas(_machine, &err_msg);

@@ -95,7 +95,7 @@ where options are:
 
         start (optional)
         sets the starting physical memory offset for flash drive in bytes.
-        when omitted, drives start at 2 << 63 and are spaced by 2 << 60.
+        when omitted, drives start at 1 << 55 and are spaced by 1 << 52.
         if any start offset is set, all of them must be set.
 
         length (optional)
@@ -972,11 +972,11 @@ local function resolve_flash_lengths(label_order, image_filename, start, length)
 end
 
 local function resolve_flash_starts(label_order, image_filename, start, length)
-    local auto_start = 1<<63
+    local auto_start = 1<<55
     if next(start) == nil then
         for i, label in ipairs(label_order) do
             start[label] = auto_start
-            auto_start = auto_start + (1 << 60)
+            auto_start = auto_start + (1 << 52)
         end
     else
         local missing = {}

@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Updated emulator implementation with respect to latest RISC-V specification.
 - Optimized Lua API to avoid allocating a uservalue for error messages for every API call.
+- Lower PMA addressable ranges from 64-bit to 56-bit.
 
 ### Fixed
 
 - Fixed many instruction inconsistencies with respect to the RISC-V specification.
+- Fixed overflow in page table entries due to using large physical address ranges.
 
 ## [0.11.1] - 2022-09-28
 ### Fixed

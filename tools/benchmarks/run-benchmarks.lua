@@ -102,7 +102,7 @@ local function build_machine(exec_args)
         },
         flash_drive = {
             {
-                start = 0x8000000000000000,
+                start = 0x80000000000000,
                 length = 0x40000000,
                 image_filename = flash_image_filename,
             }

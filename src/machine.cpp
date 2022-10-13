@@ -164,6 +164,16 @@ pma_entry &machine::register_pma_entry(pma_entry &&pma) {
     if ((length & (PMA_PAGE_SIZE - 1)) != 0) {
         throw std::invalid_argument{"PMA length must be multiple of page size"};
     }
+    // Check PMA range, when not the sentinel PMA entry
+    if (!(start == 0 && length == 0)) {
+        if (length == 0) {
+            throw std::invalid_argument{"PMA length must be greater than 0"};
+        }
+        // Checks if PMA is in addressable range, safe unsigned overflows
+        if (start > PMA_ADDRESSABLE_MASK || (length - 1) > (PMA_ADDRESSABLE_MASK - start)) {
+            throw std::invalid_argument{"PMA range must use at most 56 bits to be addressable"};
+        }
+    }
     // Range A overlaps with B if A starts before B ends and A ends after B starts
     for (const auto &existing_pma : m_s.pmas) {
         if (start < existing_pma.get_start() + existing_pma.get_length() && start + length > existing_pma.get_start()) {

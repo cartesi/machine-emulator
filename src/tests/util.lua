@@ -102,10 +102,10 @@ local test_util = {
     tests_path = adjust_images_path(os.getenv("CARTESI_TESTS_PATH"))
 }
 
-function test_util.make_do_test(build_machine, type)
+function test_util.make_do_test(build_machine, type, config)
     return function(description, f)
         io.write("  " .. description .. "...\n")
-        local machine = build_machine(type)
+        local machine = build_machine(type, config)
         f(machine)
         machine:destroy()
         print("<<<<<<<<<<<<<<<< passed >>>>>>>>>>>>>>>")

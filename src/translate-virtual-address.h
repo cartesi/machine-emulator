@@ -178,11 +178,15 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
         // Bits 60–54 are reserved for future standard use and must be zeroed
         // by software for forward compatibility. If any of these bits are set,
         // a page-fault exception is raised.
-        if (pte & PTE_60_54_MASK) {
+        // Bits 62–61 are reserved for use by the Svpbmt extension and must be zeroed
+        // by software for forward compatibility, or else a page-fault exception is raised.
+        // If Svnapot is not implemented, bit 63 remains reserved and must be zeroed
+        // by software for forward compatibility, or else a page-fault exception is raised.
+        if (pte & (PTE_60_54_MASK | PTE_PBMT_MASK | PTE_N_MASK)) {
             return false;
         }
-        // Clear all flags in least significant bits, then shift back to multiple of page size to form physical address
-        uint64_t ppn = (pte >> 10) << PAGE_NUMBER_SHIFT;
+        // Clear all flags in least significant bits, then shift back to multiple of page size to form physical address.
+        uint64_t ppn = (pte & PTE_PPN_MASK) << (PAGE_NUMBER_SHIFT - PTE_PPN_SHIFT);
         // Obtain X, W, R protection bits
         auto xwr = (pte >> 1) & 7;
         // xwr != 0 means we are done walking the page tables
@@ -238,12 +242,6 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
             return true;
             // xwr == 0 means we have a pointer to the start of the next page table
         } else {
-            // For non-leaf PTEs, bits 62–61 are reserved for future standard use.
-            // Until their use is defined by a standard extension, they must be cleared by
-            // software for forward compatibility, or else a page-fault exception is raised.
-            if (pte & PTE_PBMT_MASK) {
-                return false;
-            }
             pte_addr = ppn;
         }
     }

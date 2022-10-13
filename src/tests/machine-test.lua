@@ -142,11 +142,11 @@ local function run_loop(machine, mcycle_end)
     end
 end
 
-local function build_machine(type)
+local function build_machine(type, config)
     -- Create new machine
     -- Use default config to be max reproducible
     local concurrency_update_merkle_tree = 0
-    local config = {
+    config = config or {
         processor = {},
         ram = {length = 1 << 20},
         rom = {image_filename = test_util.images_path .. "rom.bin"}
@@ -166,44 +166,7 @@ local function build_machine(type)
     return new_machine
 end
 
-
-
-local function build_machine_with_flash(type)
-    flash_drive_config = {
-
-        start = 0x8000000000000000,
-        length = 0x5000000,
-        shared = false,
-        image_filename = test_util.images_path .. "rootfs.ext2"
-    }
-
-    local config = {
-        processor = {},
-        ram = {length = 1 << 20},
-        rom = {image_filename = test_util.images_path .. "rom.bin"},
-        flash_drive = {flash_drive_config}
-    }
-    local concurrency_update_merkle_tree = 0
-    local runtime = {
-        concurrency = {
-            update_merkle_tree = concurrency_update_merkle_tree
-        }
-    }
-
-    -- Use default config to be max reproducible
-    local new_machine = nil
-    if (type == "grpc") then
-        if not remote then remote = connect() end
-        new_machine = assert(remote.machine(config, runtime))
-    else
-        new_machine = assert(cartesi.machine(config, runtime))
-    end
-    return new_machine
-end
-
-
 local do_test = test_util.make_do_test(build_machine, machine_type)
-local do_test_with_flash = test_util.make_do_test(build_machine_with_flash, machine_type)
 
 local function remove_files(file_names)
     for _, file_name in pairs(file_names) do os.remove(test_path .. file_name) end
@@ -464,7 +427,17 @@ do_test("dirty page maps should be consistent",
 )
 
 print("\n\n check replace flash drives")
-do_test_with_flash("should replace flash drive and read something",
+test_util.make_do_test(build_machine, machine_type, {
+    processor = {},
+    ram = {length = 1 << 20},
+    rom = {image_filename = test_util.images_path .. "rom.bin"},
+    flash_drive = {{
+        start = 0x80000000000000,
+        length = 0x5000000,
+        shared = false,
+        image_filename = test_util.images_path .. "rootfs.ext2"
+    }}
+})("should replace flash drive and read something",
     function(machine)
         -- Create temp flash file
         local input_path =  test_path .. "input.raw"
@@ -472,23 +445,58 @@ do_test_with_flash("should replace flash drive and read something",
         local p = io.popen(command)
         p:close()
 
-        local initial_config = machine:get_initial_config()
-
-        local flash_address_start = 0x8000000000000000
-        flash_drive_config = {
+        local flash_address_start = 0x80000000000000
+        local flash_drive_config = {
             start = flash_address_start,
             length = 0x5000000,
             image_filename = input_path,
             shared = true
         }
 
-        local flash_data = machine:read_memory(flash_address_start, 20)
+        machine:read_memory(flash_address_start, 20)
 
         machine:replace_memory_range(flash_drive_config)
 
         local flash_data = machine:read_memory(flash_address_start, 20)
         assert(flash_data == "test data 1234567890", "data read from replaced flash failed")
         os.remove(input_path)
+    end
+)
+
+print("\n\n check reading from an input and writing to an output flash drive")
+test_util.make_do_test(build_machine, machine_type, {
+    processor = {},
+    ram = {
+        image_filename = test_util.images_path .. "linux.bin",
+        length = 0x4000000,
+    },
+    rom = {
+        image_filename = test_util.images_path .. "rom.bin",
+        bootargs =
+            "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce single=yes splash=no "..
+            "mtdparts=flash.0:-(root);flash.1:-(input);flash.2:-(output) -- "..
+            "cat /mnt/input/etc/issue | dd status=none of=/dev/mtdblock2",
+    },
+    flash_drive = {{
+        start = 0x80000000000000,
+        length = 0x5000000,
+        image_filename = test_util.images_path .. "rootfs.ext2"
+    }, {
+        start = 0x90000000000000,
+        length = 0x5000000,
+        image_filename = test_util.images_path .. "rootfs.ext2"
+    }, {
+        start = 0xa0000000000000,
+        length = 4096,
+    }}
+})("should boot mount input flash drive and output to another flash drive",
+    function(machine)
+        machine:run(MAX_MCYCLE)
+        assert(machine:read_iflags_H(), "machine should be halted")
+
+        local expected_issue = 'Welcome to Cartesi'
+        local flash_data = machine:read_memory(0xa0000000000000, #expected_issue)
+        assert(flash_data == expected_issue, 'unexpected flash drive output')
     end
 )
 

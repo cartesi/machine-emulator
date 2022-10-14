@@ -519,7 +519,7 @@ do_test("should return expected values",
     function(machine)
         local initial_csr_values = get_cpu_csr_test_values()
         initial_csr_values.mvendorid = 0x6361727465736920
-        initial_csr_values.marchid = 0xc
+        initial_csr_values.marchid = 0xd
         initial_csr_values.mimpid = 0x1
         initial_csr_values.htif_tohost = 0x0
         initial_csr_values.htif_fromhost = 0x0
@@ -696,7 +696,7 @@ do_test("dumped register values should match",
         print("--------------------------")
         assert((output:find "mcycle = 0"),
             "Cound not find mcycle register value in output")
-        assert((output:find "marchid = c"),
+        assert((output:find "marchid = d"),
             "Cound not find marchid register value in output")
         assert((output:find "clint_mtimecmp = 0"),
             "Cound not find clint_mtimecmp register value in output")

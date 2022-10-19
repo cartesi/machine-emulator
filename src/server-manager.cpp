@@ -32,10 +32,18 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #pragma GCC diagnostic ignored "-Wdeprecated-copy"
+#define BOOST_LOG_DYN_LINK 1 // NOLINT(cppcoreguidelines-macro-usage)
+#include <boost/core/demangle.hpp>
 #include <boost/coroutine2/coroutine.hpp>
 #include <boost/endian/conversion.hpp>
 #include <boost/iostreams/device/null.hpp>
 #include <boost/iostreams/stream.hpp>
+#include <boost/log/attributes/function.hpp>
+#include <boost/log/attributes/named_scope.hpp>
+#include <boost/log/attributes/scoped_attribute.hpp>
+#include <boost/log/trivial.hpp>
+#include <boost/log/utility/setup/common_attributes.hpp>
+#include <boost/log/utility/setup/console.hpp>
 #include <boost/process.hpp>
 #define BOOST_DLL_USE_STD_FS
 #include <boost/dll/runtime_symbol_info.hpp>
@@ -56,6 +64,18 @@
 #include "server-manager.grpc.pb.h"
 #pragma GCC diagnostic pop
 
+#include <htif-defines.h>
+
+#include "complete-merkle-tree.h"
+#include "htif.h"
+#include "keccak-256-hasher.h"
+#include "merkle-tree-proof.h"
+#include "protobuf-util.h"
+#include "strict-aliasing.h"
+
+constexpr const uint64_t ROLLUP_ADVANCE_STATE = 0;
+constexpr const uint64_t ROLLUP_INSPECT_STATE = 1;
+
 static constexpr uint32_t manager_version_major = 0;
 static constexpr uint32_t manager_version_minor = 5;
 static constexpr uint32_t manager_version_patch = 0;
@@ -69,82 +89,32 @@ using namespace CartesiServerManager;
 using namespace CartesiMachine;
 using namespace Versioning;
 
-#ifndef NDEBUG
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define THROW(e)                                                                                                       \
-    do {                                                                                                               \
-        std::cerr << "Throwing from " << __FILE__ << ":" << __LINE__ << " at " << __PRETTY_FUNCTION__ << '\n';         \
-        throw(e);                                                                                                      \
-    } while (0);
-#else
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define THROW(e)                                                                                                       \
-    do {                                                                                                               \
-        throw(e);                                                                                                      \
-    } while (0);
-#endif
-
-/// \brief Debug output, prefixed by session-id and request-id gRPC metadata,
-/// and terminated by endline
-class dout {
-public:
-    dout(const grpc::ServerContext &context) {
-#ifndef NDEBUG
-        static const std::array keys = {"request-id", "test-id"};
-        for (const auto &key : keys) {
-            auto [begin, end] = context.client_metadata().equal_range(key);
-            if (begin != end) {
-                out() << key << ':';
-                while (begin != end) {
-                    out() << begin->second << ' ';
-                    ++begin;
-                }
+static std::string request_metadata(const grpc::ServerContext &context) {
+    static const std::array keys = {"request-id", "test-id"};
+    std::string metadata;
+    for (const auto &key : keys) {
+        auto [begin, end] = context.client_metadata().equal_range(key);
+        if (begin != end) {
+            metadata.append(key).append(":");
+            while (begin != end) {
+                metadata.append(begin->second.begin(), begin->second.end());
+                ++begin;
             }
+            metadata.append(" ");
         }
-#else
-        (void) context;
-#endif
     }
-
-    static std::ostream &out(void) {
-        return std::clog;
-    }
-
-    ~dout() {
-#ifndef NDEBUG
-        out() << std::endl;
-#endif
-    }
-
-    dout(const dout &other) = delete;
-    dout(dout &&other) = delete;
-    dout &operator=(const dout &other) = delete;
-    dout &operator=(dout &&other) = delete;
-};
-
-template <class T>
-dout &operator<<(dout &&os, const T &x) {
-    dout::out() << x;
-    return os;
+    return metadata;
 }
 
-template <class T>
-dout &operator<<(dout &os, const T &x) {
-    dout::out() << x;
-    return os;
-}
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define LOG_CONTEXT(level, context) BOOST_LOG_TRIVIAL(level) << request_metadata(context)
 
-#include <htif-defines.h>
-
-constexpr const uint64_t ROLLUP_ADVANCE_STATE = 0;
-constexpr const uint64_t ROLLUP_INSPECT_STATE = 1;
-
-#include "complete-merkle-tree.h"
-#include "htif.h"
-#include "keccak-256-hasher.h"
-#include "merkle-tree-proof.h"
-#include "protobuf-util.h"
-#include "strict-aliasing.h"
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define THROW(e)                                                                                                       \
+    do {                                                                                                               \
+        BOOST_LOG_TRIVIAL(debug) << "Throwing from " << __FILE__ << ":" << __LINE__ << " at " << __PRETTY_FUNCTION__;  \
+        throw(e);                                                                                                      \
+    } while (0);
 
 // gRPC async server calls involve a variety of objects:
 // 1) The service object;
@@ -591,9 +561,10 @@ static handler_type::pull_type *new_GetVersion_handler(handler_context &hctx) {
         new_GetVersion_handler(hctx);
         // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
         if (!hctx.ok) {
+            LOG_CONTEXT(error, request_context) << "Received GetVersion RPC with handle_context ok set to false";
             return;
         }
-        dout{request_context} << "Received GetVersion";
+        LOG_CONTEXT(info, request_context) << "Received GetVersion"; // NOLINT: avoid boost warnings?
         Status status;
         GetVersionResponse response;
         auto *version = response.mutable_version();
@@ -623,13 +594,14 @@ static handler_type::pull_type *new_GetStatus_handler(handler_context &hctx) {
         new_GetStatus_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
         // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
         if (!hctx.ok) { // NOLINT: Unknown. Maybe linter bug?
+            LOG_CONTEXT(error, request_context) << "Received GetStatus RPC with handle_context ok set to false";
             return;
         }
-        dout{request_context} << "Received GetStatus";
+        LOG_CONTEXT(info, request_context) << "Received GetStatus"; // NOLINT: avoid boost warnings?
         Status status;
         GetStatusResponse response;
         for (const auto &[session_id, session] : hctx.sessions) {
-            dout{request_context} << "  " << session_id;
+            LOG_CONTEXT(debug, request_context) << "  " << session_id;
             response.add_session_id(session_id);
         }
         writer.Finish(response, grpc::Status::OK, self); // NOLINT: Unknown. Maybe linter bug?
@@ -703,15 +675,16 @@ static handler_type::pull_type *new_FinishEpoch_handler(handler_context &hctx) {
         new_FinishEpoch_handler(hctx);
         // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
         if (!hctx.ok) {
+            LOG_CONTEXT(error, request_context) << "Received FinishEpoch RPC with handle_context ok set to false";
             return;
         }
         try {
-            Status status;
+            Status status; // NOLINT: Unknown. Maybe linter bug?
             Void response;
             auto &sessions = hctx.sessions;
             const auto &id = request.session_id();
             auto epoch_index = request.active_epoch_index();
-            dout{request_context} << "Received FinishEpoch for session " << id << " epoch " << epoch_index;
+            LOG_CONTEXT(info, request_context) << "Received FinishEpoch for session " << id << " epoch " << epoch_index;
             // If a session is unknown, a bail out
             if (sessions.find(id) == sessions.end()) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "session id not found"}));
@@ -758,7 +731,7 @@ static handler_type::pull_type *new_FinishEpoch_handler(handler_context &hctx) {
             }
             // Try to store session before we change anything
             if (!request.storage_directory().empty()) {
-                dout{request_context} << "  Storing into " << request.storage_directory();
+                LOG_CONTEXT(debug, request_context) << "  Storing into " << request.storage_directory();
                 async_context actx{session, request_context, hctx.completion_queue.get(), self, yield};
                 store(actx, request.storage_directory());
             }
@@ -767,11 +740,11 @@ static handler_type::pull_type *new_FinishEpoch_handler(handler_context &hctx) {
             writer.Finish(response, grpc::Status::OK, self);
             yield(side_effect::none);
         } catch (finish_error_yield_none &e) {
-            dout{request_context} << "Caught finish_error_yield_none " << e.status().error_message();
+            LOG_CONTEXT(error, request_context) << "Caught finish_error_yield_none " << e.status().error_message();
             writer.FinishWithError(e.status(), self);
             yield(side_effect::none);
         } catch (std::exception &e) {
-            dout{request_context} << "Caught unexpected exception " << e.what();
+            LOG_CONTEXT(error, request_context) << "Caught unexpected exception " << e.what();
             writer.FinishWithError(
                 grpc::Status{grpc::StatusCode::INTERNAL, std::string{"unexpected exception "} + e.what()}, self);
             yield(side_effect::none);
@@ -783,7 +756,7 @@ static handler_type::pull_type *new_FinishEpoch_handler(handler_context &hctx) {
 /// \brief Asynchronously shutsdown the machine server
 /// \param actx Context for async operations
 static void shutdown_server(async_context &actx) {
-    dout{actx.request_context} << "  Shutting server down";
+    LOG_CONTEXT(debug, actx.request_context) << "  Shutting server down";
     Void request;
     Void response;
     grpc::ClientContext client_context;
@@ -812,14 +785,15 @@ static handler_type::pull_type *new_EndSession_handler(handler_context &hctx) {
         new_EndSession_handler(hctx);
         // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
         if (!hctx.ok) {
+            LOG_CONTEXT(error, request_context) << "Received EndSession RPC with handle_context ok set to false";
             return;
         }
         try {
-            Status status;
+            Status status; // NOLINT: Unknown. Maybe linter bug?
             Void response;
             auto &sessions = hctx.sessions;
             const auto &id = request.session_id();
-            dout{request_context} << "Received EndSession for session " << id;
+            LOG_CONTEXT(info, request_context) << "Received EndSession for session " << id;
             // If a session is unknown, a bail out
             if (sessions.find(id) == sessions.end()) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "session id not found"}));
@@ -857,19 +831,19 @@ static handler_type::pull_type *new_EndSession_handler(handler_context &hctx) {
             }
             shutdown_server(actx);
             if (session.tainted) {
-                dout{request_context} << "Session " << id
-                                      << " is tainted. Terminating remote-cartesi-machine process group";
+                LOG_CONTEXT(info, request_context)
+                    << "Session " << id << " is tainted. Terminating remote-cartesi-machine process group";
                 session.server_process_group.terminate();
             }
             sessions.erase(id);
             writer.Finish(response, grpc::Status::OK, self);
             yield(side_effect::none);
         } catch (finish_error_yield_none &e) {
-            dout{request_context} << "Caught finish_error_yield_none " << e.status().error_message();
+            LOG_CONTEXT(error, request_context) << "Caught finish_error_yield_none " << e.status().error_message();
             writer.FinishWithError(e.status(), self);
             yield(side_effect::none);
         } catch (std::exception &e) {
-            dout{request_context} << "Caught unexpected exception " << e.what();
+            LOG_CONTEXT(error, request_context) << "Caught unexpected exception " << e.what();
             writer.FinishWithError(
                 grpc::Status{grpc::StatusCode::INTERNAL, std::string{"unexpected exception "} + e.what()}, self);
             yield(side_effect::none);
@@ -893,13 +867,14 @@ static handler_type::pull_type *new_GetSessionStatus_handler(handler_context &hc
         new_GetSessionStatus_handler(hctx);
         // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
         if (!hctx.ok) {
+            LOG_CONTEXT(error, request_context) << "Received GetSessionStatus RPC with handle_context ok set to false";
             return;
         }
         Status status; // NOLINT: cannot leak (pointer is in completion queue)
         GetSessionStatusResponse response;
         auto &sessions = hctx.sessions;
         const auto &id = request.session_id();
-        dout{request_context} << "Received GetSessionStatus for session " << id;
+        LOG_CONTEXT(info, request_context) << "Received GetSessionStatus for session " << id;
         try {
             // If a session is unknown, a bail out
             if (sessions.find(id) == sessions.end()) {
@@ -920,7 +895,7 @@ static handler_type::pull_type *new_GetSessionStatus_handler(handler_context &hc
             response.set_session_id(id);
             response.set_active_epoch_index(session.active_epoch_index);
             for (const auto &[index, epoch] : session.epochs) {
-                dout{request_context} << "  " << index;
+                LOG_CONTEXT(debug, request_context) << "  " << index;
                 response.add_epoch_index(index);
             }
             if (session.tainted) {
@@ -930,11 +905,11 @@ static handler_type::pull_type *new_GetSessionStatus_handler(handler_context &hc
             writer.Finish(response, grpc::Status::OK, self);
             yield(side_effect::none);
         } catch (finish_error_yield_none &e) {
-            dout{request_context} << "Caught finish_error_yield_none " << e.status().error_message();
+            LOG_CONTEXT(error, request_context) << "Caught finish_error_yield_none " << e.status().error_message();
             writer.FinishWithError(e.status(), self);
             yield(side_effect::none);
         } catch (std::exception &e) {
-            dout{request_context} << "Caught unexpected exception " << e.what();
+            LOG_CONTEXT(error, request_context) << "Caught unexpected exception " << e.what();
             writer.FinishWithError(
                 grpc::Status{grpc::StatusCode::INTERNAL, std::string{"unexpected exception "} + e.what()}, self);
             yield(side_effect::none);
@@ -1070,6 +1045,7 @@ static handler_type::pull_type *new_GetEpochStatus_handler(handler_context &hctx
         new_GetEpochStatus_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
         // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
         if (!hctx.ok) {
+            LOG_CONTEXT(error, request_context) << "Received GetEpochStatus RPC with handle_context ok set to false";
             return;
         }
         try {
@@ -1077,7 +1053,8 @@ static handler_type::pull_type *new_GetEpochStatus_handler(handler_context &hctx
             auto &sessions = hctx.sessions;
             const auto &id = request.session_id();
             auto epoch_index = request.epoch_index();
-            dout{request_context} << "Received GetEpochStatus for session " << id << " epoch " << epoch_index;
+            LOG_CONTEXT(info, request_context)
+                << "Received GetEpochStatus for session " << id << " epoch " << epoch_index;
             // If a session is unknown, a bail out
             if (sessions.find(id) == sessions.end()) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "session id not found"}));
@@ -1126,11 +1103,11 @@ static handler_type::pull_type *new_GetEpochStatus_handler(handler_context &hctx
             writer.Finish(response, grpc::Status::OK, self);
             yield(side_effect::none);
         } catch (finish_error_yield_none &e) {
-            dout{request_context} << "Caught finish_error_yield_none " << e.status().error_message();
+            LOG_CONTEXT(error, request_context) << "Caught finish_error_yield_none " << e.status().error_message();
             writer.FinishWithError(e.status(), self);
             yield(side_effect::none);
         } catch (std::exception &e) {
-            dout{request_context} << "Caught unexpected exception " << e.what();
+            LOG_CONTEXT(error, request_context) << "Caught unexpected exception " << e.what();
             writer.FinishWithError(
                 grpc::Status{grpc::StatusCode::INTERNAL, std::string{"unexpected exception "} + e.what()}, self);
             yield(side_effect::none);
@@ -1194,7 +1171,7 @@ static auto get_proto_session(const StartSessionRequest &request) {
 /// \brief Asynchronously checks that server version matches manager
 /// \param actx Context for async operations
 static void check_server_version(async_context &actx) {
-    dout{actx.request_context} << "  Checking server version";
+    LOG_CONTEXT(debug, actx.request_context) << "  Checking server version";
     // Try to get version from client
     GetVersionResponse response;
     Void request;
@@ -1218,7 +1195,7 @@ static void check_server_version(async_context &actx) {
 /// \param actx Context for async operations
 /// \param request Machine request received from StartSession RPC
 static void check_server_machine(async_context &actx, const std::string &directory) {
-    dout{actx.request_context} << "  Instantiating machine " << directory;
+    LOG_CONTEXT(debug, actx.request_context) << "  Instantiating machine " << directory;
     MachineRequest request;
     request.set_directory(directory);
     Void response;
@@ -1237,7 +1214,7 @@ static void check_server_machine(async_context &actx, const std::string &directo
 /// \param actx Context for async operations
 /// \return Initial MachineConfig returned by server
 static MachineConfig get_initial_config(async_context &actx) {
-    dout{actx.request_context} << "  Getting initial config";
+    LOG_CONTEXT(debug, actx.request_context) << "  Getting initial config";
     Void request;
     GetInitialConfigResponse response;
     grpc::ClientContext client_context;
@@ -1258,7 +1235,7 @@ static MachineConfig get_initial_config(async_context &actx) {
 /// \param config MemoryRangeConfig returned by server
 static void check_memory_range_config(grpc::ServerContext &request_context, memory_range_description_type &desc,
     const std::string &name, const MemoryRangeConfig &config) {
-    dout{request_context} << "  Checking " << name << " buffer config";
+    LOG_CONTEXT(debug, request_context) << "  Checking " << name << " buffer config";
     desc.config = config;
     if (desc.config.shared()) {
         THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, name + " buffer cannot be shared"}));
@@ -1333,14 +1310,14 @@ static void check_server_stub(session_type &session) {
 template <class T>
 void trigger_and_wait_checkin(handler_context &hctx, async_context &actx, T trigger_checkin) {
     // trigger remote check-in
-    dout{actx.request_context} << "  Triggering machine server check-in";
+    LOG_CONTEXT(debug, actx.request_context) << "  Triggering machine server check-in";
     hctx.sessions_waiting_checkin[actx.session.id] = actx.self;
     trigger_checkin(hctx, actx); // NOLINT: avoid boost warnings?
     // Wait for CheckIn
-    dout{actx.request_context} << "  Waiting check-in";
+    LOG_CONTEXT(debug, actx.request_context) << "  Waiting check-in";
     actx.yield(side_effect::none);
-    dout{actx.request_context} << "  Check-in for session " << actx.session.id << " passed with address "
-                               << actx.session.server_address;
+    LOG_CONTEXT(debug, actx.request_context)
+        << "  Check-in for session " << actx.session.id << " passed with address " << actx.session.server_address;
     // update server stub
     check_server_stub(actx.session);
 }
@@ -1405,7 +1382,7 @@ static void check_yield_reason_accepted(uint64_t value) {
 /// \param actx Context for async operations
 /// \return Register value
 static uint64_t get_current_mcycle(async_context &actx) {
-    dout{actx.request_context} << "  Reading machine current mcycle";
+    LOG_CONTEXT(debug, actx.request_context) << "  Reading machine current mcycle";
     ReadCsrRequest request;
     request.set_csr(Csr::MCYCLE);
     grpc::ClientContext client_context;
@@ -1426,7 +1403,7 @@ static uint64_t get_current_mcycle(async_context &actx) {
 static uint64_t check_is_yielded(async_context &actx) {
     // if already yielded manual, this won't change anything
     auto current_mcycle = get_current_mcycle(actx);
-    dout{actx.request_context} << "  Checking machine is yielded";
+    LOG_CONTEXT(debug, actx.request_context) << "  Checking machine is yielded";
     RunRequest run_request;
     run_request.set_limit(current_mcycle); // This will not change the machine
     grpc::ClientContext client_context;
@@ -1494,13 +1471,14 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
         new_StartSession_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
         // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
         if (!hctx.ok) {
+            LOG_CONTEXT(error, request_context) << "Received StartSession RPC with handle_context ok set to false";
             return;
         }
         try {
             // We now received a StartSession RPC
             auto &sessions = hctx.sessions; // NOLINT: Unknown. Maybe linter bug?
             const auto &id = start_session_request.session_id();
-            dout{request_context} << "Received StartSession request for session " << id;
+            LOG_CONTEXT(info, request_context) << "Received StartSession request for session " << id;
             // Empty id is invalid, so a bail out
             if (id.empty()) {
                 start_session_writer.FinishWithError(grpc::Status{StatusCode::INVALID_ARGUMENT, "session id is empty"},
@@ -1573,7 +1551,7 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
                 // Spawn a new server and ask it to check-in
                 auto cmdline = hctx.remote_cartesi_machine_path + " --session-id=" + actx.session.id +
                     " --checkin-address=" + hctx.manager_address + " --server-address=" + hctx.server_address;
-                dout{actx.request_context} << "  Spawning " << cmdline;
+                LOG_CONTEXT(debug, actx.request_context) << "  Spawning " << cmdline;
                 try {
                     // NOLINTNEXTLINE: boost generated warnings
                     auto server_process = boost::process::child(cmdline, actx.session.server_process_group);
@@ -1610,12 +1588,12 @@ static handler_type::pull_type *new_StartSession_handler(handler_context &hctx) 
                 throw; // rethrow so it is caught outside and we report the error
             }
         } catch (finish_error_yield_none &e) {
-            dout{request_context} << "Caught finish_error_yield_none " << e.status().error_message();
+            LOG_CONTEXT(error, request_context) << "Caught finish_error_yield_none " << e.status().error_message();
             hctx.sessions.erase(start_session_request.session_id());
             start_session_writer.FinishWithError(e.status(), self);
             yield(side_effect::none);
         } catch (std::exception &e) {
-            dout{request_context} << "Caught unexpected exception " << e.what();
+            LOG_CONTEXT(error, request_context) << "Caught unexpected exception " << e.what();
             hctx.sessions.erase(start_session_request.session_id());
             start_session_writer.FinishWithError(
                 grpc::Status{grpc::StatusCode::INTERNAL, std::string{"unexpected exception "} + e.what()}, self);
@@ -1634,7 +1612,7 @@ static void clear_memory_ranges(async_context &actx) {
         std::make_pair(&actx.session.memory_range.voucher_hashes.config, "voucher hashes"),
         std::make_pair(&actx.session.memory_range.notice_hashes.config, "notice hashes")};
     for (auto config : range_configs) {
-        dout{actx.request_context} << "      clearing " << config.second;
+        LOG_CONTEXT(debug, actx.request_context) << "      clearing " << config.second;
         ReplaceMemoryRangeRequest replace_request;
         replace_request.set_allocated_config(config.first);
         Void replace_response;
@@ -1746,7 +1724,7 @@ static std::optional<RunResponse> run_machine(async_context &actx, uint64_t curr
     auto limit = std::min(curr_mcycle + mcycle_increment, max_mcycle);
     int i = 0;
     for (;;) {
-        dout{actx.request_context} << "  Running advance/inspect state increment " << i++;
+        LOG_CONTEXT(debug, actx.request_context) << "  Running advance/inspect state increment " << i++;
         RunRequest run_request;
         run_request.set_limit(limit);
         grpc::ClientContext client_context;
@@ -2025,9 +2003,9 @@ static proof_type get_proof(async_context &actx, uint64_t address, uint64_t log2
 /// \return Voucher
 static voucher_type read_voucher(async_context &actx) {
     uint64_t payload_data_length = 0;
-    dout{actx.request_context} << "      Reading voucher address and length";
+    LOG_CONTEXT(debug, actx.request_context) << "      Reading voucher address and length";
     auto address = read_voucher_address_and_payload_data_length(actx, &payload_data_length);
-    dout{actx.request_context} << "      Reading voucher payload of length " << payload_data_length;
+    LOG_CONTEXT(debug, actx.request_context) << "      Reading voucher payload of length " << payload_data_length;
     auto payload_data = read_voucher_payload_data(actx, payload_data_length);
     return {std::move(address), std::move(payload_data), {}};
 }
@@ -2036,9 +2014,9 @@ static voucher_type read_voucher(async_context &actx) {
 /// \param actx Context for async operations
 /// \return Notice
 static notice_type read_notice(async_context &actx) {
-    dout{actx.request_context} << "      Reading notice length";
+    LOG_CONTEXT(debug, actx.request_context) << "      Reading notice length";
     auto payload_data_length = read_tx_payload_data_length(actx);
-    dout{actx.request_context} << "      Reading notice payload of length " << payload_data_length;
+    LOG_CONTEXT(debug, actx.request_context) << "      Reading notice payload of length " << payload_data_length;
     auto payload_data = read_tx_payload_data(actx, payload_data_length);
     return {std::move(payload_data), {}};
 }
@@ -2047,9 +2025,9 @@ static notice_type read_notice(async_context &actx) {
 /// \param actx Context for async operations
 /// \return Report
 static report_type read_report(async_context &actx) {
-    dout{actx.request_context} << "      Reading report length";
+    LOG_CONTEXT(debug, actx.request_context) << "      Reading report length";
     auto payload_data_length = read_tx_payload_data_length(actx);
-    dout{actx.request_context} << "      Reading report payload of length " << payload_data_length;
+    LOG_CONTEXT(debug, actx.request_context) << "      Reading report payload of length " << payload_data_length;
     auto payload_data = read_tx_payload_data(actx, payload_data_length);
     return {std::move(payload_data)};
 }
@@ -2058,9 +2036,9 @@ static report_type read_report(async_context &actx) {
 /// \param actx Context for async operations
 /// \return Exception
 static std::string read_exception(async_context &actx) {
-    dout{actx.request_context} << "      Reading exception length";
+    LOG_CONTEXT(debug, actx.request_context) << "      Reading exception length";
     auto payload_data_length = read_tx_payload_data_length(actx);
-    dout{actx.request_context} << "      Reading exception payload of length " << payload_data_length;
+    LOG_CONTEXT(debug, actx.request_context) << "      Reading exception payload of length " << payload_data_length;
     return read_tx_payload_data(actx, payload_data_length);
 }
 
@@ -2180,20 +2158,20 @@ static void process_pending_query(handler_context &hctx, async_context &actx, ep
     }
     auto &q = e.pending_query.value();
     q.current_input_index = e.pending_inputs.size() + e.processed_inputs.size();
-    dout{actx.request_context} << "  Processing pending query";
-    dout{actx.request_context} << "    Creating Snapshot";
+    LOG_CONTEXT(debug, actx.request_context) << "  Processing pending query";
+    LOG_CONTEXT(debug, actx.request_context) << "    Creating Snapshot";
     // Wait machine server to checkin after spawned
     trigger_and_wait_checkin(hctx, actx, [](handler_context &hctx, async_context &actx) {
         (void) hctx;
         snapshot(actx);
     });
-    dout{actx.request_context} << "    Clearing rx buffer";
+    LOG_CONTEXT(debug, actx.request_context) << "    Clearing rx buffer";
     clear_rx_buffer(actx);
-    dout{actx.request_context} << "    Writing rx buffer";
+    LOG_CONTEXT(debug, actx.request_context) << "    Writing rx buffer";
     write_evm_abi_string(actx, q.payload.begin(), q.payload.end(), actx.session.memory_range.rx_buffer.config);
-    dout{actx.request_context} << "    Resetting iflags_Y";
+    LOG_CONTEXT(debug, actx.request_context) << "    Resetting iflags_Y";
     reset_iflags_y(actx);
-    dout{actx.request_context} << "    Setting inspect request in htif fromhost";
+    LOG_CONTEXT(debug, actx.request_context) << "    Setting inspect request in htif fromhost";
     set_htif_yield_ack_data(actx, ROLLUP_INSPECT_STATE);
     auto max_mcycle = actx.session.current_mcycle + actx.session.server_cycles.max_inspect_state;
     // Loop getting reports until the machine exceeds max_mcycle, rejects the query, accepts the query,
@@ -2209,17 +2187,17 @@ static void process_pending_query(handler_context &hctx, async_context &actx, ep
             deadline_increment, max_deadline);
         if (!run_response.has_value()) {
             q.status = completion_status::time_limit_exceeded;
-            dout{actx.request_context} << "    Query aborted because time limit was exceeded";
+            LOG_CONTEXT(debug, actx.request_context) << "    Query aborted because time limit was exceeded";
             break;
         }
         if (run_response.value().mcycle() >= max_mcycle) {
             q.status = completion_status::cycle_limit_exceeded;
-            dout{actx.request_context} << "    Query aborted because cycle limit was exceeded";
+            LOG_CONTEXT(debug, actx.request_context) << "    Query aborted because cycle limit was exceeded";
             break;
         }
         if (run_response.value().iflags_h()) {
             q.status = completion_status::machine_halted;
-            dout{actx.request_context} << "    Query aborted because machine is halted";
+            LOG_CONTEXT(debug, actx.request_context) << "    Query aborted because machine is halted";
             break;
         }
         uint64_t yield_reason = run_response.value().tohost() << 16 >> 48;
@@ -2227,15 +2205,15 @@ static void process_pending_query(handler_context &hctx, async_context &actx, ep
         if (run_response.value().iflags_y()) {
             if (yield_reason == cartesi::HTIF_YIELD_REASON_RX_REJECTED) {
                 q.status = completion_status::rejected;
-                dout{actx.request_context} << "    Query aborted because machine rejected it";
+                LOG_CONTEXT(debug, actx.request_context) << "    Query aborted because machine rejected it";
                 break;
             } else if (yield_reason == cartesi::HTIF_YIELD_REASON_RX_ACCEPTED) {
                 q.status = completion_status::accepted;
-                dout{actx.request_context} << "    Query accepted";
+                LOG_CONTEXT(debug, actx.request_context) << "    Query accepted";
                 break;
             } else if (yield_reason == cartesi::HTIF_YIELD_REASON_TX_EXCEPTION) {
                 q.status = completion_status::exception;
-                dout{actx.request_context} << "    Received an exception while executing query";
+                LOG_CONTEXT(debug, actx.request_context) << "    Received an exception while executing query";
                 q.exception_data = read_exception(actx);
                 break;
             }
@@ -2247,14 +2225,14 @@ static void process_pending_query(handler_context &hctx, async_context &actx, ep
         }
         // process automatic yields
         if (yield_reason == cartesi::HTIF_YIELD_REASON_TX_REPORT) {
-            dout{actx.request_context} << "    Reading report " << q.reports.size();
+            LOG_CONTEXT(debug, actx.request_context) << "    Reading report " << q.reports.size();
             q.reports.push_back(read_report(actx));
         } // else ignore automatic yield
         // advance current mcycle and continue
         current_mcycle = run_response.value().mcycle();
     }
-    dout{actx.request_context} << "  Done processing query";
-    dout{actx.request_context} << "    Rolling back";
+    LOG_CONTEXT(debug, actx.request_context) << "  Done processing query";
+    LOG_CONTEXT(debug, actx.request_context) << "    Rolling back";
     // Wait machine server to checkin after spawned
     trigger_and_wait_checkin(hctx, actx, [](handler_context &hctx, async_context &actx) {
         (void) hctx;
@@ -2275,22 +2253,22 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
     auto_lock processing_lock(actx.session.processing_lock, "process_pending_inputs processing lock");
     while (!e.pending_inputs.empty()) {
         auto input_index = e.processed_inputs.size();
-        dout{actx.request_context} << "  Processing input " << input_index;
-        dout{actx.request_context} << "    Creating Snapshot";
+        LOG_CONTEXT(debug, actx.request_context) << "  Processing input " << input_index;
+        LOG_CONTEXT(debug, actx.request_context) << "    Creating Snapshot";
         // Wait machine server to checkin after spawned
         trigger_and_wait_checkin(hctx, actx, [](handler_context &hctx, async_context &actx) {
             (void) hctx;
             snapshot(actx);
         });
-        dout{actx.request_context} << "    Clearing buffers";
+        LOG_CONTEXT(debug, actx.request_context) << "    Clearing buffers";
         clear_memory_ranges(actx);
         const auto &i = e.pending_inputs.front();
-        dout{actx.request_context} << "    Writing rx buffer";
+        LOG_CONTEXT(debug, actx.request_context) << "    Writing rx buffer";
         write_evm_abi_string(actx, i.payload.begin(), i.payload.end(), actx.session.memory_range.rx_buffer.config);
-        dout{actx.request_context} << "    Writing input metadata";
+        LOG_CONTEXT(debug, actx.request_context) << "    Writing input metadata";
         auto metadata = evm_abi_encoded_input_metadata(i.metadata);
         write_memory_range(actx, metadata.begin(), metadata.end(), actx.session.memory_range.input_metadata.config);
-        dout{actx.request_context} << "    Resetting iflags_Y";
+        LOG_CONTEXT(debug, actx.request_context) << "    Resetting iflags_Y";
         reset_iflags_y(actx);
         check_htif_yield_ack_data(actx, ROLLUP_ADVANCE_STATE);
         auto max_mcycle = actx.session.current_mcycle + actx.session.server_cycles.max_advance_state;
@@ -2311,17 +2289,17 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
                 deadline_increment, max_deadline);
             if (!run_response.has_value()) {
                 skip_reason = completion_status::time_limit_exceeded;
-                dout{actx.request_context} << "    Input skipped because time limit was exceeded";
+                LOG_CONTEXT(debug, actx.request_context) << "    Input skipped because time limit was exceeded";
                 break;
             }
             if (run_response.value().mcycle() >= max_mcycle) {
                 skip_reason = completion_status::cycle_limit_exceeded;
-                dout{actx.request_context} << "    Input skipped because cycle limit was exceeded";
+                LOG_CONTEXT(debug, actx.request_context) << "    Input skipped because cycle limit was exceeded";
                 break;
             }
             if (run_response.value().iflags_h()) {
                 skip_reason = completion_status::machine_halted;
-                dout{actx.request_context} << "    Input skipped because machine is halted";
+                LOG_CONTEXT(debug, actx.request_context) << "    Input skipped because machine is halted";
                 break;
             }
             uint64_t yield_reason = run_response.value().tohost() << 16 >> 48;
@@ -2329,16 +2307,16 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
             if (run_response.value().iflags_y()) {
                 if (yield_reason == cartesi::HTIF_YIELD_REASON_RX_REJECTED) {
                     skip_reason = completion_status::rejected;
-                    dout{actx.request_context} << "    Input skipped because machine requested";
+                    LOG_CONTEXT(debug, actx.request_context) << "    Input skipped because machine requested";
                     break;
                 } else if (yield_reason == cartesi::HTIF_YIELD_REASON_RX_ACCEPTED) {
                     // no skip reason because it was not skipped
-                    dout{actx.request_context} << "    Input accepted";
+                    LOG_CONTEXT(debug, actx.request_context) << "    Input accepted";
                     current_mcycle = run_response.value().mcycle();
                     break;
                 } else if (yield_reason == cartesi::HTIF_YIELD_REASON_TX_EXCEPTION) {
                     skip_reason = completion_status::exception;
-                    dout{actx.request_context} << "    Received an exception while processing input";
+                    LOG_CONTEXT(debug, actx.request_context) << "    Received an exception while processing input";
                     exception_data = read_exception(actx);
                     break;
                 }
@@ -2350,14 +2328,14 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
             }
             // process automatic yields
             if (yield_reason == cartesi::HTIF_YIELD_REASON_TX_VOUCHER) {
-                dout{actx.request_context} << "    Reading voucher " << vouchers.size();
+                LOG_CONTEXT(debug, actx.request_context) << "    Reading voucher " << vouchers.size();
                 // read voucher payload
                 vouchers.push_back(read_voucher(actx));
             } else if (yield_reason == cartesi::HTIF_YIELD_REASON_TX_NOTICE) {
-                dout{actx.request_context} << "    Reading notice " << notices.size();
+                LOG_CONTEXT(debug, actx.request_context) << "    Reading notice " << notices.size();
                 notices.push_back(read_notice(actx));
             } else if (yield_reason == cartesi::HTIF_YIELD_REASON_TX_REPORT) {
-                dout{actx.request_context} << "    Reading report " << reports.size();
+                LOG_CONTEXT(debug, actx.request_context) << "    Reading report " << reports.size();
                 reports.push_back(read_report(actx));
             } // else ignore automatic yield
             // advance current mcycle and continue
@@ -2374,17 +2352,17 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
         // If the machine accepted the input
         if (skip_reason == completion_status::accepted) {
             // Read proof of voucher hashes memory range in machine
-            dout{actx.request_context} << "    Getting voucher hashes memory range proof";
+            LOG_CONTEXT(debug, actx.request_context) << "    Getting voucher hashes memory range proof";
             auto voucher_hashes_in_machine = get_proof(actx, actx.session.memory_range.voucher_hashes.start,
                 actx.session.memory_range.voucher_hashes.log2_size);
             // Get proof of voucher hashes memory range in epoch
             e.vouchers_tree.push_back(voucher_hashes_in_machine.get_target_hash());
             auto voucher_hashes_in_epoch = e.vouchers_tree.get_proof(input_index << LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE);
             // Read voucher hashes memory range and count the number of non-zero hashes
-            dout{actx.request_context} << "    Reading voucher hashes memory range";
+            LOG_CONTEXT(debug, actx.request_context) << "    Reading voucher hashes memory range";
             auto voucher_hashes = read_memory_range(actx, actx.session.memory_range.voucher_hashes.config);
             uint64_t voucher_count = count_null_terminated_entries(voucher_hashes, KECCAK_SIZE);
-            dout{actx.request_context} << "    Voucher count " << voucher_count;
+            LOG_CONTEXT(debug, actx.request_context) << "    Voucher count " << voucher_count;
             if (voucher_count != vouchers.size()) {
                 THROW((taint_session{actx.session, grpc::StatusCode::INVALID_ARGUMENT,
                     "number of vouchers yielded and non-zero voucher hashes disagree"}));
@@ -2393,8 +2371,8 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
             for (uint64_t entry_index = 0; entry_index < voucher_count; ++entry_index) {
                 auto keccak = get_hash(actx.session, &voucher_hashes[entry_index * KECCAK_SIZE],
                     &voucher_hashes[(entry_index + 1) * KECCAK_SIZE]);
-                dout{actx.request_context} << "      Getting proof of keccak " << entry_index
-                                           << " in voucher hashes memory range";
+                LOG_CONTEXT(debug, actx.request_context)
+                    << "      Getting proof of keccak " << entry_index << " in voucher hashes memory range";
                 auto keccak_in_voucher_hashes =
                     get_proof(actx, actx.session.memory_range.voucher_hashes.start + entry_index * KECCAK_SIZE,
                         LOG2_KECCAK_SIZE)
@@ -2403,17 +2381,17 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
                 vouchers[entry_index].hash = keccak_type{std::move(keccak), std::move(keccak_in_voucher_hashes)};
             }
             // Read proof of notice hashes memory range in machine
-            dout{actx.request_context} << "    Getting notice hashes memory range proof";
+            LOG_CONTEXT(debug, actx.request_context) << "    Getting notice hashes memory range proof";
             auto notice_hashes_in_machine = get_proof(actx, actx.session.memory_range.notice_hashes.start,
                 actx.session.memory_range.notice_hashes.log2_size);
             // Get proof of notice hashes memory range in epoch
             e.notices_tree.push_back(notice_hashes_in_machine.get_target_hash());
             auto notice_hashes_in_epoch = e.notices_tree.get_proof(input_index << LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE);
             // Read notice hashes memory range count the number of non-zero hashes
-            dout{actx.request_context} << "    Reading notice hashes memory range";
+            LOG_CONTEXT(debug, actx.request_context) << "    Reading notice hashes memory range";
             auto notice_hashes = read_memory_range(actx, actx.session.memory_range.notice_hashes.config);
             uint64_t notice_count = count_null_terminated_entries(notice_hashes, KECCAK_SIZE);
-            dout{actx.request_context} << "    Notice count " << notice_count;
+            LOG_CONTEXT(debug, actx.request_context) << "    Notice count " << notice_count;
             if (notice_count != notices.size()) {
                 THROW((taint_session{actx.session, grpc::StatusCode::INVALID_ARGUMENT,
                     "number notices yielded and non-zero notice hashes disagree"}));
@@ -2422,8 +2400,8 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
             for (uint64_t entry_index = 0; entry_index < notice_count; ++entry_index) {
                 auto keccak = get_hash(actx.session, &notice_hashes[entry_index * KECCAK_SIZE],
                     &notice_hashes[(entry_index + 1) * KECCAK_SIZE]);
-                dout{actx.request_context} << "      Getting proof of keccak " << entry_index
-                                           << " in notice hashes memory range";
+                LOG_CONTEXT(debug, actx.request_context)
+                    << "      Getting proof of keccak " << entry_index << " in notice hashes memory range";
                 auto keccak_in_notice_hashes =
                     get_proof(actx, actx.session.memory_range.notice_hashes.start + entry_index * KECCAK_SIZE,
                         LOG2_KECCAK_SIZE)
@@ -2445,10 +2423,10 @@ static void process_pending_inputs(handler_context &hctx, async_context &actx, e
                 std::move(reports)});
             // Advance session.current_mcycle
             actx.session.current_mcycle = current_mcycle;
-            dout{actx.request_context} << "  Done processing input " << input_index;
+            LOG_CONTEXT(debug, actx.request_context) << "  Done processing input " << input_index;
         } else {
-            dout{actx.request_context} << "  Skipped input " << input_index;
-            dout{actx.request_context} << "    Rolling back";
+            LOG_CONTEXT(debug, actx.request_context) << "  Skipped input " << input_index;
+            LOG_CONTEXT(debug, actx.request_context) << "    Rolling back";
             // Wait machine server to checkin after spawned
             trigger_and_wait_checkin(hctx, actx, [](handler_context &hctx, async_context &actx) {
                 (void) hctx;
@@ -2507,14 +2485,15 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
         new_AdvanceState_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
         // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
         if (!hctx.ok) {
+            LOG_CONTEXT(error, request_context) << "Received AdvanceState RPC with handle_context ok set to false";
             return;
         }
         try {
             // Check if session id exists
             auto &sessions = hctx.sessions; // NOLINT: Unknown. Maybe linter bug?
             const auto &id = advance_state_request.session_id();
-            dout{request_context} << "Received AdvanceState for session " << id << " epoch "
-                                  << advance_state_request.active_epoch_index();
+            LOG_CONTEXT(info, request_context) << "Received AdvanceState for session " << id << " epoch "
+                                               << advance_state_request.active_epoch_index();
             // If a session is unknown, a bail out
             if (sessions.find(id) == sessions.end()) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "session id not found!"}));
@@ -2564,7 +2543,7 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
             }
             // Check size of input payload
             const auto input_payload_size = advance_state_request.input_payload().size();
-            dout{request_context} << "  Input payload size " << input_payload_size;
+            LOG_CONTEXT(debug, request_context) << "  Input payload size " << input_payload_size;
             if (input_payload_size + EVM_ABI_STRING_HEADER_LENGTH >= session.memory_range.rx_buffer.length) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
                     "input payload too long for rx buffer length (expected " +
@@ -2634,11 +2613,12 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
                 process_pending_inputs(hctx, actx, e);
             }
         } catch (finish_error_yield_none &e) {
-            dout{request_context} << "Caught finish_error_yield_none '" << e.status().error_message() << '\'';
+            LOG_CONTEXT(error, request_context)
+                << "Caught finish_error_yield_none '" << e.status().error_message() << '\'';
             advance_state_writer.FinishWithError(e.status(), self);
             yield(side_effect::none);
         } catch (taint_session &x) {
-            dout{request_context} << "Caught taint_status " << x.status().error_message();
+            LOG_CONTEXT(error, request_context) << "Caught taint_status " << x.status().error_message();
             auto &session = x.session();
             session.tainted = true;
             session.taint_status = x.status();
@@ -2654,7 +2634,7 @@ static handler_type::pull_type *new_AdvanceState_handler(handler_context &hctx) 
             }
             // No need to return rpc results because we already have if we reach here
         } catch (std::exception &x) {
-            dout{request_context} << "Caught unexpected exception " << x.what();
+            LOG_CONTEXT(error, request_context) << "Caught unexpected exception " << x.what();
             const auto &id = advance_state_request.session_id();
             if (hctx.sessions.find(id) != hctx.sessions.end()) {
                 auto &session = hctx.sessions[id];
@@ -2720,13 +2700,14 @@ static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) 
         new_InspectState_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
         // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
         if (!hctx.ok) {
+            LOG_CONTEXT(error, request_context) << "Received InspectState RPC with handle_context ok set to false";
             return;
         }
         try {
             // Check if session id exists
             auto &sessions = hctx.sessions; // NOLINT: Unknown. Maybe linter bug?
             const auto &id = inspect_state_request.session_id();
-            dout{request_context} << "Received InspectState for session " << id;
+            LOG_CONTEXT(info, request_context) << "Received InspectState for session " << id;
             // If a session is unknown, a bail out
             if (sessions.find(id) == sessions.end()) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT, "session id not found!"}));
@@ -2827,18 +2808,19 @@ static handler_type::pull_type *new_InspectState_handler(handler_context &hctx) 
             inspect_state_writer.Finish(inspect_state_response, grpc::Status::OK, self);
             yield(side_effect::none);
         } catch (finish_error_yield_none &e) {
-            dout{request_context} << "Caught finish_error_yield_none '" << e.status().error_message() << '\'';
+            LOG_CONTEXT(error, request_context)
+                << "Caught finish_error_yield_none '" << e.status().error_message() << '\'';
             inspect_state_writer.FinishWithError(e.status(), self);
             yield(side_effect::none);
         } catch (taint_session &e) {
-            dout{request_context} << "Caught taint_status " << e.status().error_message();
+            LOG_CONTEXT(error, request_context) << "Caught taint_status " << e.status().error_message();
             auto &session = e.session();
             session.tainted = true;
             session.taint_status = e.status();
             inspect_state_writer.FinishWithError(session.taint_status, self);
             yield(side_effect::none);
         } catch (std::exception &e) {
-            dout{request_context} << "Caught unexpected exception " << e.what();
+            LOG_CONTEXT(error, request_context) << "Caught unexpected exception " << e.what();
             const auto &id = inspect_state_request.session_id();
             auto taint_status =
                 grpc::Status{grpc::StatusCode::INTERNAL, std::string{"unexpected exception "} + e.what()};
@@ -2861,21 +2843,22 @@ static handler_type::pull_type *new_Checkin_handler(handler_context &hctx) {
     new (self) handler_type::pull_type{[self, &hctx](handler_type::push_type &yield) {
         using namespace grpc;
         // Start accepting CheckIn rpcs.
-        ServerContext checkin_context;
+        ServerContext request_context;
         CheckInRequest checkin_request;
-        ServerAsyncResponseWriter<Void> checkin_writer(&checkin_context);
+        ServerAsyncResponseWriter<Void> checkin_writer(&request_context);
         auto *cq = hctx.completion_queue.get();
         // Start expecting check-in rpcs
-        hctx.checkin_async_service.RequestCheckIn(&checkin_context, &checkin_request, &checkin_writer, cq, cq, self);
+        hctx.checkin_async_service.RequestCheckIn(&request_context, &checkin_request, &checkin_writer, cq, cq, self);
         yield(side_effect::none);
         new_Checkin_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
         // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
         if (!hctx.ok) {
+            LOG_CONTEXT(error, request_context) << "Received CheckIn RPC with handle_context ok set to false";
             return;
         }
         try {
             const auto &id = checkin_request.session_id(); // NOLINT: Unknown. Maybe linter bug?
-            dout{checkin_context} << "Received CheckIn for session " << id;
+            LOG_CONTEXT(info, request_context) << "Received CheckIn for session " << id;
             // If check-in is for the wrong session, bail out
             if (hctx.sessions_waiting_checkin.find(id) == hctx.sessions_waiting_checkin.end()) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
@@ -2899,11 +2882,11 @@ static handler_type::pull_type *new_Checkin_handler(handler_context &hctx) {
             (*coroutine)();
 
         } catch (finish_error_yield_none &e) {
-            dout{checkin_context} << "Caught finish_error_yield_none " << e.status().error_message();
+            LOG_CONTEXT(error, request_context) << "Caught finish_error_yield_none " << e.status().error_message();
             checkin_writer.FinishWithError(e.status(), self);
             yield(side_effect::none);
         } catch (std::exception &e) {
-            dout{checkin_context} << "Caught unexpected exception " << e.what();
+            LOG_CONTEXT(error, request_context) << "Caught unexpected exception " << e.what();
             checkin_writer.FinishWithError(
                 grpc::Status{grpc::StatusCode::INTERNAL, std::string{"unexpected exception "} + e.what()}, self);
             yield(side_effect::none);
@@ -2930,10 +2913,11 @@ static handler_type::pull_type *new_Health_Check_handler(handler_context &hctx) 
         new_Health_Check_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
         // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
         if (!hctx.ok) {
+            LOG_CONTEXT(error, request_context) << "Received Health Check RPC with handle_context ok set to false";
             return;
         }
-        const auto &service = health_request.service();
-        dout{request_context} << "Received Health Check for service " << service;
+        const auto &service = health_request.service(); // NOLINT: grpc warnings
+        LOG_CONTEXT(info, request_context) << "Received Health Check for service " << service;
         auto iter = hctx.service_health.find(service);
         if (iter == hctx.service_health.end()) {
             health_writer.FinishWithError(grpc::Status(StatusCode::NOT_FOUND, "Service not found"), self);
@@ -2965,9 +2949,10 @@ static handler_type::pull_type *new_Health_Watch_handler(handler_context &hctx) 
         new_Health_Watch_handler(hctx); // NOLINT: cannot leak (pointer is in completion queue)
         // Not sure if we can receive an RPC with ok set to false. To be safe, we will ignore those.
         if (!hctx.ok) {
+            LOG_CONTEXT(error, request_context) << "Received Health Watch RPC with handle_context ok set to false";
             return;
         }
-        dout{request_context} << "Received Health Watch (Unimplemented)"; // NOLINT
+        LOG_CONTEXT(info, request_context) << "Received Health Watch (Unimplemented)"; // NOLINT
         health_writer.Finish(grpc::Status(StatusCode::UNIMPLEMENTED, "Not implemented"), self);
         yield(side_effect::none);
     }};
@@ -3082,6 +3067,25 @@ static void cleanup_child_handler(int signal) {
     }
 }
 
+static boost::log::trivial::severity_level get_log_level() {
+    if (const char *env_level = std::getenv("SERVER_MANAGER_LOG_LEVEL")) {
+        boost::log::trivial::severity_level level = boost::log::trivial::info;
+        if (boost::log::trivial::from_string(env_level, strlen(env_level), level)) {
+            return level;
+        }
+    }
+    return boost::log::trivial::info;
+}
+
+static void init_logger() {
+    namespace keywords = boost::log::keywords;
+    auto core = boost::log::core::get();
+    core->add_global_attribute("TimeStamp", boost::log::attributes::local_clock());
+    core->add_global_attribute("PID", boost::log::attributes::make_function(&getpid));
+    boost::log::add_console_log(std::clog, keywords::filter = boost::log::trivial::severity >= get_log_level(),
+        keywords::format = "%TimeStamp% %Severity% server-manager pid:%PID% %Message%");
+}
+
 int main(int argc, char *argv[]) try {
 
     static_assert(std::tuple_size<hash_type>::value == KECCAK_SIZE, "hash size mismatch");
@@ -3112,18 +3116,19 @@ int main(int argc, char *argv[]) try {
         exit(1);
     }
 
+    init_logger();
     handler_context hctx{};
 
     hctx.remote_cartesi_machine_path = boost::dll::program_location().replace_filename("remote-cartesi-machine");
     hctx.manager_address = manager_address;
     hctx.server_address = server_address;
 
-    std::cerr << "manager version is " << manager_version_major << "." << manager_version_minor << "."
-              << manager_version_patch << "\n";
+    BOOST_LOG_TRIVIAL(info) << "manager version is " << manager_version_major << "." << manager_version_minor << "."
+                            << manager_version_patch;
 
     auto manager = build_manager(manager_address, hctx);
     if (!manager) {
-        std::cerr << "manager server creation failed\n";
+        BOOST_LOG_TRIVIAL(fatal) << "manager server creation failed";
         exit(1);
     }
 

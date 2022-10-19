@@ -59,6 +59,7 @@ constexpr static const int LOG2_ROOT_SIZE = 37;
 constexpr static const int LOG2_KECCAK_SIZE = 5;
 constexpr static const int LOG2_WORD_SIZE = 3;
 constexpr static const uint64_t MEMORY_REGION_LENGTH = 2 << 20;
+constexpr static const int WAITING_PENDING_INPUT_MAX_RETRIES = 20;
 static const path MANAGER_ROOT_DIR = "/tmp/server-manager-root"; // NOLINT: ignore static initialization warning
 
 class ServerManagerClient {
@@ -980,7 +981,8 @@ static void end_session_after_processing_pending_inputs(ServerManagerClient &man
 
     status_request.set_session_id(session_id);
     status_request.set_epoch_index(epoch);
-    wait_pending_inputs_to_be_processed(manager, status_request, status_response, accept_tainted, 10);
+    wait_pending_inputs_to_be_processed(manager, status_request, status_response, accept_tainted,
+        WAITING_PENDING_INPUT_MAX_RETRIES);
 
     // finish epoch
     if ((!accept_tainted && !status_response.has_taint_status()) && (status_response.state() != EpochState::FINISHED) &&
@@ -1935,7 +1937,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             status_request.set_session_id(session_request.session_id());
             status_request.set_epoch_index(session_request.active_epoch_index());
             GetEpochStatusResponse status_response;
-            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+                WAITING_PENDING_INPUT_MAX_RETRIES);
 
             // assert status_resonse content
             ASSERT(status_response.session_id() == session_request.session_id(),
@@ -1991,7 +1994,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             status_request.set_session_id(session_request.session_id());
             status_request.set_epoch_index(session_request.active_epoch_index() + 1);
             GetEpochStatusResponse status_response;
-            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+                WAITING_PENDING_INPUT_MAX_RETRIES);
 
             // assert status_resonse content
             ASSERT(status_response.session_id() == session_request.session_id(),
@@ -2040,7 +2044,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             status_request.set_session_id(session_request.session_id());
             status_request.set_epoch_index(session_request.active_epoch_index());
             GetEpochStatusResponse status_response;
-            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+                WAITING_PENDING_INPUT_MAX_RETRIES);
 
             // assert status_resonse content
             ASSERT(status_response.session_id() == session_request.session_id(),
@@ -2089,7 +2094,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             status_request.set_session_id(session_request.session_id());
             status_request.set_epoch_index(session_request.active_epoch_index());
             GetEpochStatusResponse status_response;
-            wait_pending_inputs_to_be_processed(manager, status_request, status_response, true, 10);
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, true,
+                WAITING_PENDING_INPUT_MAX_RETRIES);
 
             // assert status_resonse content
             ASSERT(status_response.session_id() == session_request.session_id(),
@@ -2138,7 +2144,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
         status_request.set_session_id(session_request.session_id());
         status_request.set_epoch_index(session_request.active_epoch_index());
         GetEpochStatusResponse status_response;
-        wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+        wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+            WAITING_PENDING_INPUT_MAX_RETRIES);
 
         // assert status_resonse content
         ASSERT(status_response.session_id() == session_request.session_id(),
@@ -2187,7 +2194,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             status_request.set_session_id(session_request.session_id());
             status_request.set_epoch_index(session_request.active_epoch_index());
             GetEpochStatusResponse status_response;
-            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+                WAITING_PENDING_INPUT_MAX_RETRIES);
 
             // assert status_resonse content
             ASSERT(status_response.session_id() == session_request.session_id(),
@@ -2455,7 +2463,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
         status_request.set_session_id(session_request.session_id());
         status_request.set_epoch_index(session_request.active_epoch_index());
         GetEpochStatusResponse status_response;
-        wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+        wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+            WAITING_PENDING_INPUT_MAX_RETRIES);
 
         // assert status_response content
         ASSERT(status_response.session_id() == session_request.session_id(),
@@ -2495,7 +2504,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             status_request.set_session_id(session_request.session_id());
             status_request.set_epoch_index(session_request.active_epoch_index());
             GetEpochStatusResponse status_response;
-            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+                WAITING_PENDING_INPUT_MAX_RETRIES);
 
             // assert status_response content
             ASSERT(status_response.session_id() == session_request.session_id(),
@@ -2535,7 +2545,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             status_request.set_session_id(session_request.session_id());
             status_request.set_epoch_index(session_request.active_epoch_index());
             GetEpochStatusResponse status_response;
-            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+                WAITING_PENDING_INPUT_MAX_RETRIES);
 
             // assert status_response content
             ASSERT(status_response.session_id() == session_request.session_id(),
@@ -2575,7 +2586,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             status_request.set_session_id(session_request.session_id());
             status_request.set_epoch_index(session_request.active_epoch_index());
             GetEpochStatusResponse status_response;
-            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+                WAITING_PENDING_INPUT_MAX_RETRIES);
 
             // assert status_response content
             ASSERT(status_response.session_id() == session_request.session_id(),
@@ -2615,7 +2627,8 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             status_request.set_session_id(session_request.session_id());
             status_request.set_epoch_index(session_request.active_epoch_index());
             GetEpochStatusResponse status_response;
-            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+                WAITING_PENDING_INPUT_MAX_RETRIES);
 
             // assert status_response content
             ASSERT(status_response.session_id() == session_request.session_id(),
@@ -3485,7 +3498,8 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
         status_request.set_session_id(session_request.session_id());
         status_request.set_epoch_index(session_request.active_epoch_index());
         GetEpochStatusResponse status_response;
-        wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+        wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+            WAITING_PENDING_INPUT_MAX_RETRIES);
 
         // assert status_resonse content
         ASSERT(status_response.session_id() == session_request.session_id(),
@@ -3585,7 +3599,8 @@ static void test_end_session(const std::function<void(const std::string &title, 
             status_request.set_session_id(session_request.session_id());
             status_request.set_epoch_index(session_request.active_epoch_index());
             GetEpochStatusResponse status_response;
-            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+                WAITING_PENDING_INPUT_MAX_RETRIES);
 
             status = manager.end_session(end_session_request);
             ASSERT_STATUS(status, "EndSession", false);
@@ -3620,7 +3635,8 @@ static void test_session_simulations(const std::function<void(const std::string 
         status_request.set_session_id(session_request.session_id());
         status_request.set_epoch_index(session_request.active_epoch_index());
         GetEpochStatusResponse status_response;
-        wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+        wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+            WAITING_PENDING_INPUT_MAX_RETRIES);
 
         // assert status_resonse content
         ASSERT(status_response.session_id() == session_request.session_id(),
@@ -3674,7 +3690,8 @@ static void test_session_simulations(const std::function<void(const std::string 
             status_request.set_session_id(session_request.session_id());
             status_request.set_epoch_index(session_request.active_epoch_index());
             GetEpochStatusResponse status_response;
-            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+                WAITING_PENDING_INPUT_MAX_RETRIES);
 
             // assert status_resonse content
             ASSERT(status_response.session_id() == session_request.session_id(),
@@ -3708,7 +3725,8 @@ static void test_session_simulations(const std::function<void(const std::string 
             ASSERT_STATUS(status, "AdvanceState", true);
 
             status_request.set_epoch_index(1);
-            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+                WAITING_PENDING_INPUT_MAX_RETRIES);
 
             ASSERT(status_response.session_id() == session_request.session_id(),
                 "status response session_id should be the same as the one created");
@@ -3730,7 +3748,8 @@ static void test_session_simulations(const std::function<void(const std::string 
             ASSERT_STATUS(status, "FinishEpoch", true);
 
             status_request.set_epoch_index(2);
-            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false, 10);
+            wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
+                WAITING_PENDING_INPUT_MAX_RETRIES);
 
             ASSERT(status_response.session_id() == session_request.session_id(),
                 "status response session_id should be the same as the one created");

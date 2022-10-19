@@ -169,9 +169,10 @@ jobs:
 
       - name: Run server-manager tests with ioctl-echo-loop
         env:
+          CARTESI_IMAGES_PATH: /opt/cartesi/share/images
           REMOTE_CARTESI_MACHINE_LOG_LEVEL: debug
+          SERVER_MANAGER_LOG_LEVEL: trace
         run: |
-          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           cd /opt/cartesi/bin && ./server-manager --manager-address=127.0.0.1:50001 &
           timeout 20 bash -c 'while ! nc -q0 127.0.0.1 50001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
           cd ~/work/machine-emulator/machine-emulator && ./tests/test-server-manager 127.0.0.1:50001
@@ -180,9 +181,10 @@ jobs:
 
       - name: Run server-manager tests with rollup http-echo-dapp
         env:
+          CARTESI_IMAGES_PATH: /opt/cartesi/share/images
           REMOTE_CARTESI_MACHINE_LOG_LEVEL: debug
+          SERVER_MANAGER_LOG_LEVEL: trace
         run: |
-          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           cd /opt/cartesi/bin && ./server-manager --manager-address=127.0.0.1:50001 &
           timeout 20 bash -c 'while ! nc -q0 127.0.0.1 50001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
           cd ~/work/machine-emulator/machine-emulator && ./tests/test-server-manager -r --http 127.0.0.1:50001

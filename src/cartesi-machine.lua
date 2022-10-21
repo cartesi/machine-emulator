@@ -316,6 +316,9 @@ where options are:
   --dump-pmas
     dump all PMA ranges to disk when done.
 
+  --assert-rolling-template
+    exit with failure in case the generated machine is not yielded
+
 and command and arguments:
 
   command
@@ -664,6 +667,11 @@ local options = {
     { "^%-%-dump%-pmas$", function(all)
         if not all then return false end
         dump_pmas = true
+        return true
+    end },
+    { "%-%-assert%-rolling%-template", function(all)
+        if not all then return false end
+        assert_rolling_template = true
         return true
     end },
     { "^%-%-step$", function(all)
@@ -1192,10 +1200,15 @@ local function check_rollup_htif_config(htif)
     assert(htif.yield_automatic, "yield automatic must be enabled for rollup")
 end
 
-local function get_and_print_yield(machine, htif)
+local function get_yield(machine)
     local cmd = machine:read_htif_tohost_cmd()
     local data = machine:read_htif_tohost_data()
     local reason = data >> 32
+    return cmd, reason, data
+end
+
+local function get_and_print_yield(machine, htif)
+    local cmd, reason, data = get_yield(machine)
     if cmd == cartesi.machine.HTIF_YIELD_AUTOMATIC and reason == cartesi.machine.HTIF_YIELD_REASON_PROGRESS then
         stderr("Progress: %6.2f" .. (htif.console_getchar and "\n" or "\r"), data/10)
     else
@@ -1510,6 +1523,12 @@ else
     dump_value_proofs(machine, final_proof, config.htif.console_getchar)
     if store_dir then
         store_machine(machine, config, store_dir)
+    end
+    if assert_rolling_template then
+        local cmd, reason = get_yield(machine)
+        if not (cmd == cartesi.machine.HTIF_YIELD_MANUAL and reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED) then
+            exit_code = 2
+        end
     end
     if not remote or remote_destroy then
         machine:destroy()

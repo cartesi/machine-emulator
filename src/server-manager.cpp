@@ -63,7 +63,7 @@ static constexpr const char *manager_version_pre_release = "";
 static constexpr const char *manager_version_build = "";
 
 static constexpr uint32_t machine_version_major = 0;
-static constexpr uint32_t machine_version_minor = 6;
+static constexpr uint32_t machine_version_minor = 7;
 
 using namespace CartesiServerManager;
 using namespace CartesiMachine;

@@ -30,7 +30,7 @@ using namespace std::string_literals;
 #pragma GCC diagnostic pop
 
 static constexpr uint32_t proxy_version_major = 0;
-static constexpr uint32_t proxy_version_minor = 6;
+static constexpr uint32_t proxy_version_minor = 7;
 static constexpr uint32_t proxy_version_patch = 0;
 
 #pragma GCC diagnostic push

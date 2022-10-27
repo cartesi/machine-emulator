@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed overflow in page table entries due to using large physical address ranges.
 - Fixed crash when trying to use too many flash drives.
 
+## [0.11.2] - 2022-10-28
+### Changed
+
+- Changed grpc lib version to v1.50
+
 ## [0.11.1] - 2022-09-28
 ### Fixed
 
@@ -170,7 +175,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.2.0]
 - [0.1.0]
 
-[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.11.0...HEAD
+[0.11.2]: https://github.com/cartesi/machine-emulator/releases/tag/v0.11.2
+[0.11.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.11.1
+[0.11.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.11.0
+[0.10.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.10.0
 [0.9.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.9.0
 [0.8.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.8.0
 [0.7.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.7.0

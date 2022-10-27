@@ -31,7 +31,7 @@ using namespace std::string_literals;
 
 static constexpr uint32_t proxy_version_major = 0;
 static constexpr uint32_t proxy_version_minor = 6;
-static constexpr uint32_t proxy_version_patch = 0;
+static constexpr uint32_t proxy_version_patch = 2;
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"

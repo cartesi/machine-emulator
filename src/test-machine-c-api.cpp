@@ -2281,7 +2281,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_no_server_test, grpc_machine_
 
     std::string result = err_msg;
     std::string origin("failed to connect to all addresses");
-    BOOST_CHECK_EQUAL(origin, result);
+    BOOST_CHECK_MESSAGE(result.find(origin) != std::string::npos, "unexpected error message: " << result);
     cm_delete_error_message(err_msg);
     cm_delete_machine(new_machine);
 }

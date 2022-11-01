@@ -125,7 +125,7 @@ where options are:
     semantics are the same as for the --flash-drive option with the following
     difference: start and length are mandatory, and must match those of a
     previously existing flash drive or rollup memory memory range.
-  
+
   --rollup-rx-buffer=<key>:<value>[,<key>:<value>[,...]...]
   --rollup-tx-buffer=<key>:<value>[,<key>:<value>[,...]...]
   --rollup-input-metadata=<key>:<value>[,<key>:<value>[,...]...]
@@ -292,19 +292,19 @@ where options are:
     load initial machine config from <filename>. If a field is omitted on
     machine_config table, it will fall back into the respective command-line
     argument or into the default value.
-  
+
   --uarch-rom-image=<filename>
     name of file containing microarchitecture ROM image.
-  
+
   --uarch-rom-length=<number>
     set microarchitecture ROM length.
-  
+
   --uarch-ram-image=<filename>
     name of file containing microarchitecture RAM image.
-  
+
   --uarch-ram-length=<number>
     set microarchitecture RAM length.
-    
+
   --dump-pmas
     dump all PMA ranges to disk when done.
 
@@ -314,6 +314,25 @@ where options are:
   --quiet
     supress cartesi-machine.lua output.
     exceptions: --initial-hash, --final-hash and text emitted from the target.
+
+  --gdb[=<address>]
+    listen at <address> and wait for a GDB connection to debug the machine.
+    If <address> is omitted, '127.0.0.1:1234' is used by default.
+    The host GDB client must have support for RISC-V architecture.
+
+    host GDB can connect with the following command:
+        gdb -ex "set arch riscv:rv64" -ex "target remote <address>" [elf]
+
+        elf (optional)
+        the binary elf file with symbols and debugging information to be debugged, such as:
+        - vmlinux (for kernel debugging)
+        - ROM elf (for debugging the ROM)
+        - BBL elf (for debugging the BBL boot loader)
+        - a test elf (for debugging tests)
+
+    to perform cycle stepping in a debug session,
+    use the command "stepc" after adding the following in your ~/.gdbinit file:
+      source <emulator-path>/tools/gdb/gdbinit
 
 and command and arguments:
 
@@ -379,6 +398,7 @@ local load_dir = nil
 local cmdline_opts_finished = false
 local store_config = false
 local load_config = false
+local gdb_address = nil
 local exec_arguments = {}
 local quiet = false
 
@@ -806,6 +826,16 @@ local options = {
         rollup.notice_hashes = parse_memory_range(opts, "rollup notice hashes", all)
         return true
     end },
+    { "^%-%-gdb(%=?)(.*)$", function(o, address)
+        if o == '='  and #o > 0 then
+          gdb_address = address
+          return true
+        elseif o == '' then
+          gdb_address = '127.0.0.1:1234'
+          return true
+        end
+        return false
+    end },
     { ".*", function(all)
         if not all then return false end
         local not_option = all:sub(1,1) ~= "-"
@@ -966,7 +996,7 @@ local function store_machine_config(config, output)
     comment_default(uarch.ram.image_filename, def.uarch.ram.image_filename)
     output("    },\n")
     output("    processor = {\n")
-    output("      x = {\n")    
+    output("      x = {\n")
     for i = 1, 31 do
         local xi = uarch.processor.x[i] or def.uarch.processor.x[i]
         output("        0x%x,",  xi)
@@ -1391,6 +1421,15 @@ if json_steps then
         store_machine(machine, config, store_dir)
     end
 else
+    local gdb_stub
+    if gdb_address then
+        assert(periodic_hashes_start == 0 and periodic_hashes_period == math.maxinteger,
+          "periodic hashing is not supported when debugging")
+        gdb_stub = require"cartesi.gdbstub".new(machine)
+        local address, port = gdb_address:match('^(.*):(%d+)$')
+        assert(address and port, "invalid address for GDB")
+        gdb_stub:listen_and_wait_gdb(address, tonumber(port))
+    end
     if config.htif.console_getchar then
         stderr("Running in interactive mode!\n")
     end
@@ -1433,7 +1472,12 @@ else
     -- if so, we feed the query, reset iflags_Y, and resume the machine
     -- the machine can now continue processing and may yield automatic to produce reports we save
     while math.ult(cycles, max_mcycle) do
-        machine:run(math.min(next_hash_mcycle, max_mcycle))
+        local next_mcycle = math.min(next_hash_mcycle, max_mcycle)
+        if gdb_stub and gdb_stub:is_connected() then
+          gdb_stub:run(next_mcycle)
+        else
+          machine:run(next_mcycle)
+        end
         cycles = machine:read_mcycle()
         -- deal with halt
         if machine:read_iflags_H() then
@@ -1532,9 +1576,12 @@ else
         machine:uarch_run(max_uarch_cycle)
         stderr("\nCycles: %u uCycles: %u\n", machine:read_mcycle(), machine:read_uarch_cycle())
     else
-        if not math.ult(cycles, max_mcycle) then
+        if not math.ult(cycles, max_mcycle) and not machine:read_iflags_H()  then
             stderr("\nCycles: %u\n", cycles)
         end
+    end
+    if gdb_stub then
+        gdb_stub:close()
     end
     if step then
         assert(not config.htif.console_getchar, "step proof is meaningless in interactive mode")

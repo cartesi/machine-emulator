@@ -35,7 +35,7 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 #### Ubuntu 22.04
 
 ```
-sudo apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-filesystem-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates liblua5.3-dev luarocks
+sudo apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-filesystem-dev libboost-log-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates liblua5.3-dev luarocks
 
 sudo luarock install lpeg
 sudo luarock install dkjson
@@ -214,4 +214,3 @@ Please note we have a [Code of Conduct](CODE_OF_CONDUCT.md), please follow it in
 
 The machine-emulator repository and all contributions are licensed under
 [LGPL 3.0](https://www.gnu.org/licenses/lgpl-3.0.html). Please review our [COPYING](COPYING) file.
-

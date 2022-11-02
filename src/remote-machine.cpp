@@ -19,6 +19,7 @@
 #include <exception>
 #include <string>
 #include <sys/wait.h>
+#include <thread>
 #include <typeinfo>
 
 #pragma GCC diagnostic push
@@ -55,12 +56,21 @@ using grpc::ServerCompletionQueue;
 using grpc::ServerContext;
 using grpc::Status;
 using grpc::StatusCode;
+// NOLINTNEXTLINE(misc-unused-using-decls)
+using std::chrono_literals::operator""ms;
 
 static constexpr uint32_t server_version_major = 0;
 static constexpr uint32_t server_version_minor = 7;
 static constexpr uint32_t server_version_patch = 0;
 static constexpr const char *server_version_pre_release = "";
 static constexpr const char *server_version_build = "";
+
+// Check-in deadline/timeout in milliseconds
+static constexpr uint64_t checkin_deadline = 5000;
+// Check-in max number of retry attempts
+static constexpr uint64_t checkin_retry_attempts = 3;
+// Check-in retry wait time before next attempt
+static constexpr std::chrono::milliseconds checkin_retry_wait_time = 500ms;
 
 static std::string message_to_json(const google::protobuf::Message &msg) {
     std::string json_msg;
@@ -1139,18 +1149,26 @@ std::unique_ptr<Server> build_server(const char *server_address, handler_context
     if (hctx.checkin.has_value()) {
         auto stub = MachineCheckIn::NewStub(
             grpc::CreateChannel(hctx.checkin.value().checkin_address, grpc::InsecureChannelCredentials()));
-        grpc::ClientContext context;
         CheckInRequest request;
         Void response;
         request.set_session_id(hctx.checkin.value().session_id);
         request.set_address(replace_port(server_address, server_port));
         BOOST_LOG_TRIVIAL(debug) << "Doing check-in. Session id: " << request.session_id() << " " << request.address();
-        auto status = stub->CheckIn(&context, request, &response);
-        if (!status.ok()) {
-            BOOST_LOG_TRIVIAL(fatal) << "Check-in failed: " << status.error_message();
-            return nullptr;
+        BOOST_LOG_TRIVIAL(debug) << "check-in timeout: " << checkin_deadline;
+        for (uint64_t i = 1; i <= checkin_retry_attempts; i++) {
+            BOOST_LOG_TRIVIAL(debug) << "check-in attempt: " << i;
+            grpc::ClientContext context;
+            context.set_deadline(std::chrono::system_clock::now() + std::chrono::milliseconds(checkin_deadline));
+            auto status = stub->CheckIn(&context, request, &response);
+            if (status.ok()) {
+                BOOST_LOG_TRIVIAL(debug) << "check-in succeeded!";
+                return server;
+            }
+            BOOST_LOG_TRIVIAL(error) << "check-in failed. " << status.error_message();
+            std::this_thread::sleep_for(checkin_retry_wait_time);
         }
-        BOOST_LOG_TRIVIAL(debug) << "check-in succeeded!";
+        BOOST_LOG_TRIVIAL(fatal) << "unable to check-in";
+        return nullptr;
     }
     return server;
 }

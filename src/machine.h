@@ -304,6 +304,18 @@ public:
     /// and not a device PMA.
     void write_memory(uint64_t address, const unsigned char *data, size_t length);
 
+    /// \brief Reads a chunk of data from the machine virtual memory.
+    /// \param vaddr_start Virtual address to start reading.
+    /// \param data Receives chunk of memory.
+    /// \param length Size of chunk.
+    void read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uint64_t length);
+
+    /// \brief Writes a chunk of data to the machine virtual memory.
+    /// \param vaddr_start Virtual address to start writing.
+    /// \param data Source for chunk of data.
+    /// \param length Size of chunk.
+    void write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, size_t length);
+
     /// \brief Reads the value of a general-purpose register.
     /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
     /// \returns The value of the register.

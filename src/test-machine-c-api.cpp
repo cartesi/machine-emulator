@@ -989,6 +989,72 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_memory_massive_test, ordinary_machine_
     BOOST_CHECK_EQUAL_COLLECTIONS(write_data.begin(), write_data.end(), read_data.begin(), read_data.end());
 }
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_virtual_memory_basic_test, ordinary_machine_fixture) {
+    uint64_t read_value = 0;
+    uint64_t write_value = 0x1234;
+    uint64_t address = 0x80000000;
+    std::array<uint8_t, sizeof(uint64_t)> write_data{};
+    std::array<uint8_t, sizeof(uint64_t)> read_data{};
+    char *err_msg{};
+    memcpy(write_data.data(), &write_value, write_data.size());
+
+    int error_code = cm_write_virtual_memory(_machine, address, write_data.data(), write_data.size(), &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+
+    error_code = cm_read_virtual_memory(_machine, address, read_data.data(), read_data.size(), &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    memcpy(&read_value, read_data.data(), read_data.size());
+    BOOST_CHECK_EQUAL(read_value, write_value);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_virtual_memory_scattered_data, ordinary_machine_fixture) {
+    uint16_t read_value = 0;
+    uint16_t write_value = 0xdead;
+
+    // we are going to write data on a page junction:
+    // one byte at the end of the third page and one byte
+    // at the beginning of the fourth
+    uint64_t address = 0x80004000 - sizeof(write_value) / 2;
+
+    std::array<uint8_t, sizeof(uint16_t)> write_data{};
+    std::array<uint8_t, sizeof(uint16_t)> read_data{};
+    char *err_msg{};
+    memcpy(write_data.data(), &write_value, write_data.size());
+
+    int error_code = cm_write_virtual_memory(_machine, address, write_data.data(), write_data.size(), &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+
+    error_code = cm_read_virtual_memory(_machine, address, read_data.data(), read_data.size(), &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    memcpy(&read_value, read_data.data(), read_data.size());
+    BOOST_CHECK_EQUAL(read_value, write_value);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_virtual_memory_massive_test, ordinary_machine_fixture) {
+    // writing somewhere in the middle of a page
+    uint64_t address = 0x8000000F;
+    // data occupies several pages and ends somewhere in the middle of a page
+    constexpr size_t data_size = 12404;
+
+    std::array<uint8_t, data_size> write_data{};
+    std::array<uint8_t, data_size> read_data{};
+    char *err_msg{};
+    memset(write_data.data(), 0xda, data_size);
+
+    int error_code = cm_write_virtual_memory(_machine, address, write_data.data(), write_data.size(), &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+
+    error_code = cm_read_virtual_memory(_machine, address, read_data.data(), read_data.size(), &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_CHECK_EQUAL_COLLECTIONS(write_data.begin(), write_data.end(), read_data.begin(), read_data.end());
+}
+
 // NOLINTNEXTLINE
 #define CHECK_READER_FAILS_ON_nullptr_MACHINE(reader_f)                                                                \
     BOOST_AUTO_TEST_CASE_NOLINT(read_##reader_f##_null_machine_test) {                                                 \

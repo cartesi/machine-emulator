@@ -101,6 +101,16 @@ public:
         do_write_memory(address, data, length);
     }
 
+    /// \brief Reads a chunk of data from the machine virtual memory.
+    void read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const {
+        do_read_virtual_memory(address, data, length);
+    }
+
+    /// \brief Writes a chunk of data to the machine virtual memory.
+    void write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) {
+        do_write_virtual_memory(address, data, length);
+    }
+
     /// \brief Reads the value of a general-purpose register.
     uint64_t read_x(int i) const {
         return do_read_x(i);
@@ -629,6 +639,8 @@ private:
     virtual void do_write_csr(csr w, uint64_t val) = 0;
     virtual void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const = 0;
     virtual void do_write_memory(uint64_t address, const unsigned char *data, size_t length) = 0;
+    virtual void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const = 0;
+    virtual void do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) = 0;
     virtual uint64_t do_read_x(int i) const = 0;
     virtual void do_write_x(int i, uint64_t val) = 0;
     virtual uint64_t do_read_pc(void) const = 0;

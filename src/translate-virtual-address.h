@@ -88,13 +88,14 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
 
 /// \brief Walk the page table and translate a virtual address to the corresponding physical address
 /// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \tparam UPDATE_PTE Whether PTE entries can be modified during the translation.
 /// \param a Machine state accessor object.
 /// \param vaddr Virtual address
 /// \param ppaddr Pointer to physical address.
 /// \param xwr_shift Encodes the access mode by the shift to the XWR triad (PTE_XWR_R_SHIFT,
 ///  PTE_XWR_R_SHIFT, or PTE_XWR_R_SHIFT)
 /// \returns True if succeeded, false otherwise.
-template <typename STATE_ACCESS>
+template <typename STATE_ACCESS, bool UPDATE_PTE = true>
 static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
     auto note = a.make_scoped_note("translate_virtual_address");
     (void) note;
@@ -234,8 +235,10 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
                 pte |= PTE_D_MASK;
             }
             // If so, update pte
-            if (update_pte) {
-                write_ram_uint64(a, pte_addr, pte); // Can't fail since read succeeded earlier
+            if constexpr (UPDATE_PTE) {
+                if (update_pte) {
+                    write_ram_uint64(a, pte_addr, pte); // Can't fail since read succeeded earlier
+                }
             }
             // Add page offset in vaddr to ppn to form physical address
             *ppaddr = (vaddr & vaddr_mask) | (ppn & ~vaddr_mask);

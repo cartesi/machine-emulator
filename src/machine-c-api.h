@@ -554,6 +554,30 @@ CM_API int cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *
 /// and not a device PMA.
 CM_API int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length, char **err_msg);
 
+/// \brief Reads a chunk of data from the machine virtual memory.
+/// \param m Pointer to valid machine instance
+/// \param address Virtual address to start reading.
+/// \param data Receives chunk of memory.
+/// \param length Size of chunk.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_virtual_memory(const cm_machine *m, uint64_t address, unsigned char *data, uint64_t length,
+    char **err_msg);
+
+/// \brief Writes a chunk of data to the machine virtual memory.
+/// \param m Pointer to valid machine instance
+/// \param address Virtual address to start writing.
+/// \param data Source for chunk of data.
+/// \param length Size of chunk.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_virtual_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length,
+    char **err_msg);
+
 /// \brief Reads the value of a general-purpose register.
 /// \param m Pointer to valid machine instance
 /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.

@@ -371,6 +371,27 @@ static int machine_obj_index_read_memory(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:read_virtual_memory() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_read_virtual_memory(lua_State *L) {
+    lua_settop(L, 3);
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const uint64_t address = luaL_checkinteger(L, 2);
+    const size_t length = luaL_checkinteger(L, 3);
+    unsigned char *data{};
+    try {
+        data = new unsigned char[length];
+    } catch (std::bad_alloc &e) {
+        luaL_error(L, "Failed to allocate memory for buffer");
+    }
+    auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
+    TRY_EXECUTE(cm_read_virtual_memory(m.get(), address, managed_data.get(), length, err_msg));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    lua_pushlstring(L, reinterpret_cast<const char *>(managed_data.get()), length);
+    managed_data.reset();
+    return 1;
+}
+
 /// \brief This is the machine:read_word() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_read_word(lua_State *L) {
@@ -483,6 +504,19 @@ static int machine_obj_index_write_memory(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:write_virtual_memory() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_write_virtual_memory(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    size_t length{0};
+    const uint64_t address = luaL_checkinteger(L, 2);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
+    TRY_EXECUTE(cm_write_virtual_memory(m.get(), address, data, length, err_msg));
+    lua_pushboolean(L, true);
+    return 1;
+}
+
 /// \brief Replaces a memory range.
 /// \param L Lua state.
 static int machine_obj_index_replace_memory_range(lua_State *L) {
@@ -562,6 +596,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_mcycle", machine_obj_index_read_mcycle},
     {"read_medeleg", machine_obj_index_read_medeleg},
     {"read_memory", machine_obj_index_read_memory},
+    {"read_virtual_memory", machine_obj_index_read_virtual_memory},
     {"read_mepc", machine_obj_index_read_mepc},
     {"read_mideleg", machine_obj_index_read_mideleg},
     {"read_mie", machine_obj_index_read_mie},
@@ -607,6 +642,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"write_mcycle", machine_obj_index_write_mcycle},
     {"write_medeleg", machine_obj_index_write_medeleg},
     {"write_memory", machine_obj_index_write_memory},
+    {"write_virtual_memory", machine_obj_index_write_virtual_memory},
     {"write_mepc", machine_obj_index_write_mepc},
     {"write_mideleg", machine_obj_index_write_mideleg},
     {"write_mie", machine_obj_index_write_mie},

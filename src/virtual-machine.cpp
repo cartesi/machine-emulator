@@ -67,6 +67,14 @@ void virtual_machine::do_write_memory(uint64_t address, const unsigned char *dat
     m_machine->write_memory(address, data, length);
 }
 
+void virtual_machine::do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const {
+    m_machine->read_virtual_memory(address, data, length);
+}
+
+void virtual_machine::do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) {
+    m_machine->write_virtual_memory(address, data, length);
+}
+
 uint64_t virtual_machine::do_read_x(int i) const {
     return m_machine->read_x(i);
 }

@@ -580,6 +580,61 @@ public:
     }
 };
 
+class handler_ReadVirtualMemory final : public handler<ReadMemoryRequest, ReadMemoryResponse> {
+
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, ReadMemoryRequest *req,
+        ServerAsyncResponseWriter<ReadMemoryResponse> *writer) override {
+        hctx.s->RequestReadVirtualMemory(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        return side_effect::none;
+    }
+
+    side_effect go(handler_context &hctx, ReadMemoryRequest *req,
+        ServerAsyncResponseWriter<ReadMemoryResponse> *writer) override {
+        if (!hctx.m) {
+            return finish_with_error_no_machine(writer);
+        }
+        uint64_t address = req->address();
+        uint64_t length = req->length();
+        auto data = cartesi::unique_calloc<unsigned char>(length);
+        hctx.m->read_virtual_memory(address, data.get(), length);
+        ReadMemoryResponse resp;
+        resp.set_data(data.get(), length);
+        return finish_ok(writer, resp);
+    }
+
+public:
+    handler_ReadVirtualMemory(handler_context &hctx) {
+        advance(hctx);
+    }
+};
+
+class handler_WriteVirtualMemory final : public handler<WriteMemoryRequest, Void> {
+
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, WriteMemoryRequest *req,
+        ServerAsyncResponseWriter<Void> *writer) override {
+        hctx.s->RequestWriteVirtualMemory(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        return side_effect::none;
+    }
+
+    side_effect go(handler_context &hctx, WriteMemoryRequest *req, ServerAsyncResponseWriter<Void> *writer) override {
+        if (!hctx.m) {
+            return finish_with_error_no_machine(writer);
+        }
+        uint64_t address = req->address();
+        const auto &data = req->data();
+        Void resp;
+
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        hctx.m->write_virtual_memory(address, reinterpret_cast<const unsigned char *>(data.data()), data.size());
+        return finish_ok(writer, resp);
+    }
+
+public:
+    handler_WriteVirtualMemory(handler_context &hctx) {
+        advance(hctx);
+    }
+};
+
 class handler_ReadWord final : public handler<ReadWordRequest, ReadWordResponse> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, ReadWordRequest *req,
@@ -1141,6 +1196,8 @@ static void server_loop(const char *server_address, const char *session_id, cons
         handler_Step hStep(hctx);
         handler_ReadMemory hReadMemory(hctx);
         handler_WriteMemory hWriteMemory(hctx);
+        handler_ReadVirtualMemory hReadVirtualMemory(hctx);
+        handler_WriteVirtualMemory hWriteVirtualMemory(hctx);
         handler_ReadWord hReadWord(hctx);
         handler_GetRootHash hGetRootHash(hctx);
         handler_GetProof hGetProof(hctx);

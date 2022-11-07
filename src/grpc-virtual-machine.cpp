@@ -392,6 +392,27 @@ void grpc_virtual_machine::do_write_memory(uint64_t address, const unsigned char
     check_status(m_stub->get_stub()->WriteMemory(&context, request, &response));
 }
 
+void grpc_virtual_machine::do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const {
+    ReadMemoryRequest request;
+    request.set_address(address);
+    request.set_length(length);
+    ReadMemoryResponse response;
+    ClientContext context;
+    check_status(m_stub->get_stub()->ReadVirtualMemory(&context, request, &response));
+    assert(response.data().size() == length);
+    memcpy(data, response.data().data(), length);
+}
+
+void grpc_virtual_machine::do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) {
+    WriteMemoryRequest request;
+    request.set_address(address);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    request.set_data(std::string(reinterpret_cast<const char *>(data), length));
+    ClientContext context;
+    Void response;
+    check_status(m_stub->get_stub()->WriteVirtualMemory(&context, request, &response));
+}
+
 uint64_t grpc_virtual_machine::do_read_pc(void) const {
     return read_csr(csr::pc);
 }

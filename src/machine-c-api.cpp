@@ -954,6 +954,24 @@ int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char *data, 
     return cm_result_failure(err_msg);
 }
 
+int cm_read_virtual_memory(const cm_machine *m, uint64_t address, unsigned char *data, uint64_t length,
+    char **err_msg) try {
+    const auto *cpp_machine = convert_from_c(m);
+    cpp_machine->read_virtual_memory(address, data, length);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_write_virtual_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length,
+    char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cpp_machine->write_virtual_memory(address, data, length);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
 int cm_read_x(const cm_machine *m, int i, uint64_t *val, char **err_msg) try {
     const auto *cpp_machine = convert_from_c(m);
     *val = cpp_machine->read_x(i);

@@ -40,6 +40,7 @@
 #include "state-access.h"
 #include "step-state-access.h"
 #include "strict-aliasing.h"
+#include "translate-virtual-address.h"
 #include "uarch-interpret.h"
 #include "uarch-state-access.h"
 #include "unique-c-ptr.h"
@@ -1537,6 +1538,58 @@ void machine::write_memory(uint64_t address, const unsigned char *data, size_t l
         page_in_range += page_size;
     }
     memcpy(pma.get_memory().get_host_memory() + (address - pma.get_start()), data, length);
+}
+
+void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uint64_t length) {
+    state_access a(*this);
+    uint64_t vaddr_limit = vaddr_start + length;
+    uint64_t vaddr_page_start = vaddr_start & ~(PMA_PAGE_SIZE - 1);                       // align page backward
+    uint64_t vaddr_page_limit = (vaddr_limit + PMA_PAGE_SIZE - 1) & ~(PMA_PAGE_SIZE - 1); // align page forward
+    // copy page by page, because we need to perform address translation again for each page
+    for (uint64_t vaddr_page = vaddr_page_start; vaddr_page < vaddr_page_limit; vaddr_page += PMA_PAGE_SIZE) {
+        uint64_t paddr_page = 0;
+        if (!translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
+            throw std::runtime_error{"page fault"};
+        }
+        uint64_t paddr = paddr_page;
+        uint64_t vaddr = vaddr_page;
+        uint64_t chunklen = std::min<uint64_t>(PMA_PAGE_SIZE, vaddr_limit - vaddr);
+        if (vaddr_page < vaddr_start) {
+            uint64_t off = vaddr_start - vaddr_page;
+            paddr += off;
+            vaddr += off;
+            chunklen -= off;
+        }
+        uint64_t chunkoff = vaddr - vaddr_start;
+        read_memory(paddr, data + chunkoff, chunklen);
+    }
+}
+
+void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, size_t length) {
+    state_access a(*this);
+    uint64_t vaddr_limit = vaddr_start + length;
+    uint64_t vaddr_page_start = vaddr_start & ~(PMA_PAGE_SIZE - 1);                       // align page backward
+    uint64_t vaddr_page_limit = (vaddr_limit + PMA_PAGE_SIZE - 1) & ~(PMA_PAGE_SIZE - 1); // align page forward
+    // copy page by page, because we need to perform address translation again for each page
+    for (uint64_t vaddr_page = vaddr_page_start; vaddr_page < vaddr_page_limit; vaddr_page += PMA_PAGE_SIZE) {
+        uint64_t paddr_page = 0;
+        // perform address translation using read access mode,
+        // so we can write any reachable virtual memory range
+        if (!translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
+            throw std::runtime_error{"page fault"};
+        }
+        uint64_t paddr = paddr_page;
+        uint64_t vaddr = vaddr_page;
+        uint64_t chunklen = std::min<uint64_t>(PMA_PAGE_SIZE, vaddr_limit - vaddr);
+        if (vaddr_page < vaddr_start) {
+            uint64_t off = vaddr_start - vaddr_page;
+            paddr += off;
+            vaddr += off;
+            chunklen -= off;
+        }
+        uint64_t chunkoff = vaddr - vaddr_start;
+        write_memory(paddr, data + chunkoff, chunklen);
+    }
 }
 
 bool machine::read_word(uint64_t word_address, uint64_t &word_value) const {

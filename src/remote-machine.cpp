@@ -1263,10 +1263,11 @@ static void server_loop(const char *server_address, const char *session_id, cons
             }
         }
 
-        BOOST_LOG_TRIVIAL(trace) << "Shutting down GRPC server";
+        BOOST_LOG_TRIVIAL(trace) << "Start GRPC server shutdown";
         // Shutdown server and completion queue before handling side effect
         // Server must be shutdown before completion queue
-        server->Shutdown();
+        server->Shutdown(std::chrono::system_clock::now());
+        BOOST_LOG_TRIVIAL(trace) << "GRPC completion queue shutdown";
         hctx.cq->Shutdown();
         {
             // Drain completion queue before exiting
@@ -1277,6 +1278,7 @@ static void server_loop(const char *server_address, const char *session_id, cons
                 ;
             }
         }
+        BOOST_LOG_TRIVIAL(trace) << "Waiting GRPC server to finish shutdown";
         server->Wait();
         // Release and delete
         server.reset(nullptr);

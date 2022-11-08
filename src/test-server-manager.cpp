@@ -452,7 +452,7 @@ static StartSessionRequest create_valid_start_session_request(const std::string 
 
     // Set server_deadline
     auto *server_deadline = session_request.mutable_server_deadline();
-    server_deadline->set_checkin(1000ULL * 5);
+    server_deadline->set_checkin(1000ULL * 60);
     server_deadline->set_advance_state(1000ULL * 60 * 3);
     server_deadline->set_advance_state_increment(1000ULL * 10);
     server_deadline->set_inspect_state(1000ULL * 60 * 3);
@@ -951,6 +951,16 @@ static void test_start_session(const std::function<void(const std::string &title
             ASSERT_STATUS(status, "StartSession", false);
             ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INVALID_ARGUMENT);
         });
+
+    test("Should fail to complete a request when the check-in deadline is reached", [](ServerManagerClient &manager) {
+        StartSessionRequest session_request = create_valid_start_session_request();
+        StartSessionResponse session_response;
+        auto *server_deadline = session_request.mutable_server_deadline();
+        server_deadline->set_checkin(1);
+        Status status = manager.start_session(session_request, session_response);
+        ASSERT_STATUS(status, "StartSession", false);
+        ASSERT_STATUS_CODE(status, "StartSession", StatusCode::INTERNAL);
+    });
 }
 
 static void wait_pending_inputs_to_be_processed(ServerManagerClient &manager, GetEpochStatusRequest &status_request,
@@ -959,7 +969,8 @@ static void wait_pending_inputs_to_be_processed(ServerManagerClient &manager, Ge
         Status status = manager.get_epoch_status(status_request, status_response);
         ASSERT_STATUS(status, "GetEpochStatus", true);
 
-        ASSERT(accept_tainted || !status_response.has_taint_status(), "tainted session was not expected");
+        ASSERT(accept_tainted || !status_response.has_taint_status(),
+            "tainted session was not expected: " + status_response.taint_status().error_message());
         if (accept_tainted && status_response.has_taint_status()) {
             break;
         }

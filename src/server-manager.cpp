@@ -461,6 +461,13 @@ using service_name_type = std::string;
 /// \brief Type of grpc service serving status
 using health_status_type = grpc::health::v1::HealthCheckResponse::ServingStatus;
 
+/// \brief Context for internal functions that handle the checkin
+struct checkin_context {
+    handler_type::pull_type *coroutine{nullptr}; ///< Coroutine that should be continued
+    std::unique_ptr<grpc::Alarm> alarm;          ///< Check-in deadline alarm
+    std::optional<bool> status;                  ///< Check-in status
+};
+
 /// \brief Context shared by all handlers
 struct handler_context {
     std::string remote_cartesi_machine_path;            ///< Path to remote-cartesi-machine executable
@@ -468,7 +475,7 @@ struct handler_context {
     std::string server_address;                         ///< Address to which machine servers are bound
     std::unordered_map<id_type, session_type> sessions; ///< Known sessions
     /// Sessions waiting for server checkin
-    std::unordered_map<id_type, handler_type::pull_type *> sessions_waiting_checkin;
+    std::unordered_map<id_type, checkin_context> sessions_waiting_checkin;
     /// Health status of each service
     std::unordered_map<service_name_type, health_status_type> service_health;
     ServerManager::AsyncService manager_async_service;             ///< Assynchronous manager service
@@ -1307,15 +1314,80 @@ static void check_server_stub(session_type &session) {
     }
 }
 
+/// \brief Creates a new handler for the Checkin Deadline handler
+/// \param hctx Handler context shared between all handlers
+static handler_type::pull_type *new_CheckinDeadline_handler(handler_context &hctx, const id_type &id,
+    uint64_t deadline) {
+    auto *self = static_cast<handler_type::pull_type *>(operator new(sizeof(handler_type::pull_type)));
+    new (self) handler_type::pull_type{[self, &hctx, id, deadline](handler_type::push_type &yield) {
+        using namespace grpc;
+        auto it_before = hctx.sessions_waiting_checkin.find(id);
+        // If there isn't a session with id waiting for check-in, it's a bug on the implementation
+        if (it_before == hctx.sessions_waiting_checkin.end()) {
+            BOOST_LOG_TRIVIAL(fatal) << "registering check-in deadline with wrong session id " << id;
+            exit(1);
+        }
+        // Registering session check-in deadline alarm.
+        auto *cq = hctx.completion_queue.get();
+        it_before->second.alarm->Set(cq, std::chrono::system_clock::now() + std::chrono::milliseconds(deadline), self);
+        yield(side_effect::none);
+        BOOST_LOG_TRIVIAL(debug) << "Resuming Check-in deadline alarm coroutine for session: " << id;
+        if (!hctx.ok) {
+            BOOST_LOG_TRIVIAL(debug) << "Check-in deadline alarm was canceled";
+            return;
+        }
+        auto it_after = hctx.sessions_waiting_checkin.find(id);
+        // If there isn't a session with id waiting for check-in, it's a bug on the implementation
+        if (it_after == hctx.sessions_waiting_checkin.end()) {
+            BOOST_LOG_TRIVIAL(fatal) << "Deadline alarm failed to find session waiting for check-in with id: " << id;
+            exit(1);
+        }
+        BOOST_LOG_TRIVIAL(error) << "Check-in deadline for remote machine was reached on session: " << id;
+        // auto &session = hctx.sessions[id];
+        checkin_context &cctx = it_after->second;
+        // Acknowledge that check-in has failed
+        cctx.status = false;
+        // Resume after checkin trigger
+        (*cctx.coroutine)();
+    }};
+    return self;
+}
+
 template <class T>
 void trigger_and_wait_checkin(handler_context &hctx, async_context &actx, T trigger_checkin) {
     // trigger remote check-in
     LOG_CONTEXT(debug, actx.request_context) << "  Triggering machine server check-in";
-    hctx.sessions_waiting_checkin[actx.session.id] = actx.self;
+    // Assert that this session is not waiting for check-in already
+    if (hctx.sessions_waiting_checkin.find(actx.session.id) != hctx.sessions_waiting_checkin.end()) {
+        LOG_CONTEXT(fatal, actx.request_context) << "Session is already waiting for a previous check-in.";
+        exit(1);
+    }
     trigger_checkin(hctx, actx); // NOLINT: avoid boost warnings?
     // Wait for CheckIn
     LOG_CONTEXT(debug, actx.request_context) << "  Waiting check-in";
-    actx.yield(side_effect::none);
+    hctx.sessions_waiting_checkin[actx.session.id] = {actx.self, std::make_unique<grpc::Alarm>(), std::nullopt};
+    // NOLINTNEXTLINE: cannot leak (pointer is in completion queue)
+    new_CheckinDeadline_handler(hctx, actx.session.id, actx.session.server_deadline.checkin);
+    actx.yield(side_effect::none); // NOLINT: avoid boost warnings
+    // Check if the check-in context is still there
+    auto it = hctx.sessions_waiting_checkin.find(actx.session.id);
+    if (it == hctx.sessions_waiting_checkin.end()) {
+        LOG_CONTEXT(fatal, actx.request_context) << "Check-in context was already erased";
+        exit(1);
+    }
+    // Check if the check-in context status was set
+    if (!it->second.status.has_value()) {
+        LOG_CONTEXT(fatal, actx.request_context) << "Check-in context status was not set";
+        exit(1);
+    }
+    // Check if the check-in failed / reached it deadline
+    if (!it->second.status.value()) {
+        hctx.sessions_waiting_checkin.erase(it);
+        THROW((taint_session{actx.session, grpc::StatusCode::INTERNAL,
+            "Remote machine check-in has failed on session: " + actx.session.id}));
+    }
+    // Check-in was successful
+    hctx.sessions_waiting_checkin.erase(it);
     LOG_CONTEXT(debug, actx.request_context)
         << "  Check-in for session " << actx.session.id << " passed with address " << actx.session.server_address;
     // update server stub
@@ -2869,11 +2941,14 @@ static handler_type::pull_type *new_Checkin_handler(handler_context &hctx) {
                 THROW((finish_error_yield_none{grpc::StatusCode::INVALID_ARGUMENT,
                     "could not find an actual session with id " + id}));
             }
-            // get session and handler coroutine
+            // Get session and register remote machine address
             auto &session = hctx.sessions[id];
-            auto *coroutine = hctx.sessions_waiting_checkin[id];
-            hctx.sessions_waiting_checkin.erase(id);
             session.server_address = checkin_request.address();
+            // Session is not waiting for check-in anymore. Cancel it's deadline
+            auto &cctx = hctx.sessions_waiting_checkin[id];
+            cctx.status = true;
+            cctx.alarm->Cancel();
+            auto *coroutine = cctx.coroutine;
             // Acknowledge check-in
             Void checkin_response;
             checkin_writer.Finish(checkin_response, grpc::Status::OK, self);

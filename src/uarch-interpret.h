@@ -14,8 +14,8 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#ifndef UARCH__INTERPRET_H
-#define UARCH__INTERPRET_H
+#ifndef UARCH_INTERPRET_H
+#define UARCH_INTERPRET_H
 
 #include "state-access.h"
 #include "uarch-state-access.h"

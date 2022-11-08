@@ -14,8 +14,8 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#ifndef CLINT_FACTORy_H
-#define CLINT_FACTORy_H
+#ifndef CLINT_FACTORY_H
+#define CLINT_FACTORY_H
 
 #include <cstdint>
 

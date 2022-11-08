@@ -75,7 +75,8 @@ public:
         m_one_based{one_based},
         m_root_hash{},
         m_hasher{},
-        m_mock_pmas{} {
+        m_mock_pmas{},
+        m_stats{} {
         if (m_verify_proofs && !log.get_log_type().has_proofs()) {
             throw std::invalid_argument{"log has no proofs"};
         }
@@ -839,7 +840,7 @@ private:
         check_write_word(iflags_addr, new_iflags, "iflags");
     }
 
-    unsigned char *do_get_host_memory(pma_entry &pma) {
+    static unsigned char *do_get_host_memory(pma_entry &pma) {
         return pma.get_memory().get_host_memory();
     }
 

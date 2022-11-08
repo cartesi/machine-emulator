@@ -166,6 +166,7 @@ private:
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
         if (m_log->get_log_type().has_proofs()) {
             bool updated = m_m.update_merkle_tree_page(paligned);
+            (void) updated;
             assert(updated);
         }
     }
@@ -725,6 +726,7 @@ private:
         m_m.write_memory(paddr, data, size);
         if (m_log->get_log_type().has_proofs()) {
             bool updated = m_m.update_merkle_tree();
+            (void) updated;
             assert(updated);
         }
     }
@@ -773,7 +775,7 @@ private:
         log_before_write(iflags_addr, old_iflags, new_iflags, "iflags");
     }
 
-    unsigned char *do_get_host_memory(pma_entry &pma) {
+    static unsigned char *do_get_host_memory(pma_entry &pma) {
         return pma.get_memory().get_host_memory();
     }
 

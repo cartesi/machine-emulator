@@ -3382,7 +3382,9 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         // get_pending_irq_mask for details.
         // assert(get_pending_irq_mask(a.get_naked_state()) == 0);
         // For simplicity, we brk whenever mie & mip != 0
+#ifndef NDEBUG
         assert_no_brkflag(a);
+#endif
 
         // If we reached the target mcycle, we are done
         if (mcycle >= mcycle_end) {

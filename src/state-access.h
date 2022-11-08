@@ -462,7 +462,7 @@ private:
         }
     }
 
-    unsigned char *do_get_host_memory(pma_entry &pma) {
+    static unsigned char *do_get_host_memory(pma_entry &pma) {
         return pma.get_memory().get_host_memory();
     }
 

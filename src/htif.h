@@ -21,14 +21,10 @@
 #include <array>
 #include <cstdint>
 #include <htif-defines.h>
+#include <pma-defines.h>
 
 /// \file
 /// \brief Host-Target interface device.
-
-// helper for using UINT64_C with defines
-#ifndef EXPAND_UINT64_C
-#define EXPAND_UINT64_C(a) UINT64_C(a)
-#endif
 
 namespace cartesi {
 

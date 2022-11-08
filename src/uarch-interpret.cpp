@@ -24,10 +24,11 @@
 
 namespace cartesi {
 
-enum class execute_status : int {
+enum class uarch_execute_status : int {
     success, // instruction executed successfully
     halt     // instruction executed successfully and halted the microinterpreter
 };
+using execute_status = uarch_execute_status;
 
 // Operand decoders
 

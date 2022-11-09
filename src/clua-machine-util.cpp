@@ -766,6 +766,16 @@ static void push_cm_rom_config(lua_State *L, const cm_rom_config *r) {
     }
 }
 
+/// \brief Pushes an cm_tlb_config to the Lua stack
+/// \param L Lua state.
+/// \param c Tlb configuration to be pushed.
+static void push_cm_tlb_config(lua_State *L, const cm_tlb_config *t) {
+    lua_newtable(L);
+    if (t->image_filename != nullptr) {
+        clua_setstringfield(L, t->image_filename, "image_filename", -1);
+    }
+}
+
 /// \brief Pushes an cm_htif_config to the Lua stack
 /// \param L Lua state.
 /// \param h Htif configuration to be pushed.
@@ -881,6 +891,8 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
     lua_newtable(L);                                 // config
     push_cm_processor_config(L, &c->processor);      // config processor
     lua_setfield(L, -2, "processor");                // config
+    push_cm_tlb_config(L, &c->tlb);                  // config tlb
+    lua_setfield(L, -2, "tlb");                      // config
     push_cm_htif_config(L, &c->htif);                // config htif
     lua_setfield(L, -2, "htif");                     // config
     push_cm_clint_config(L, &c->clint);              // config clint
@@ -1055,6 +1067,19 @@ static void check_cm_processor_config(lua_State *L, int tabidx, cm_processor_con
     lua_pop(L, 1);
 }
 
+/// \brief Loads tlb config from a Lua to C api machine config
+/// \param L Lua state
+/// \param tabidx Config stack index
+/// \param p Pointer to C api processor config structure to receive results
+/// \param def Default configuration
+static void check_cm_tlb_config(lua_State *L, int tabidx, cm_tlb_config *t) {
+    if (!opt_table_field(L, tabidx, "tlb")) {
+        return;
+    }
+    t->image_filename = opt_copy_string_field(L, -1, "image_filename");
+    lua_pop(L, 1);
+}
+
 /// \brief Loads C api HTIF config from Lua.
 /// \param L Lua state.
 /// \param tabidx Config stack index.
@@ -1175,6 +1200,7 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
     check_cm_processor_config(L, tabidx, &config->processor, &config->processor);
     check_cm_ram_config(L, tabidx, &config->ram);
     check_cm_rom_config(L, tabidx, &config->rom);
+    check_cm_tlb_config(L, tabidx, &config->tlb);
     check_cm_htif_config(L, tabidx, &config->htif);
     check_cm_clint_config(L, tabidx, &config->clint);
     check_cm_uarch_config(L, tabidx, &config->uarch);

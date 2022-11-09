@@ -84,7 +84,7 @@ local zero_keccak_hash_table = {
     "916ca832592485093644e8760cd7b4c01dba1ccc82b661bf13f0e3f34acd6b88" -- 63
 }
 
-function adjust_images_path(path)
+local function adjust_images_path(path)
     if not path then return "" end
     return string.gsub(path, "/*$", "") .. "/"
 end
@@ -240,7 +240,7 @@ end
 function test_util.calculate_region_hash(data_buffer, data_number_of_pages,
                                           page_log2_size, tree_log2_size)
 
-    local page_size = 2 ^ page_log2_size
+    local page_size = 1 << page_log2_size
 
     local incremental_tree = test_util.incremental_merkle_tree_of_pages:new({},
                                                                              page_log2_size,
@@ -267,7 +267,7 @@ function test_util.extend_region_hash(data_hash, data_address, data_log2_size,
     local result_hash = data_hash
     local result_address = data_address
     for n = data_log2_size + 1, tree_log2_size do
-        if result_address % (2 ^ n) == 0 then
+        if result_address & ((1 << n)-1) == 0 then
             local child1 = result_hash
             local child2 = test_util.fromhex(zero_keccak_hash_table[n - 1])
             result_hash = cartesi.keccak(child1, child2)
@@ -299,7 +299,7 @@ function test_util.calculate_region_hash_2(data_address, data_buffer,
     local result_hash = data_hash
     local result_address = data_address
     for n = log2_data_size + 1, log2_result_address_space do
-        if result_address % (2 ^ n) == 0 then
+        if result_address & ((1 << n)-1) == 0 then
             local child1 = result_hash
             local child2 = test_util.fromhex(zero_keccak_hash_table[n - 1])
             result_hash = cartesi.keccak(child1, child2)
@@ -321,61 +321,74 @@ function test_util.parse_pma_file(filename)
     fd:seek("set")
     local data = fd:read(data_size)
     fd:close(filename)
-    return {data_size=data_size, data=data}
+    return data
 end
+
+-- PMA defs
+local PMA_SHADOW_STATE_LENGTH = 0x1000
+local PMA_SHADOW_PMAS_LENGTH = 0x1000
+local PMA_ROM_LENGTH = 0xF000
+local PMA_SHADOW_TLB_START = 0x20000
+local PMA_SHADOW_TLB_LENGTH = 0x6000
+local PMA_CLINT_START = 0x2000000
+local PMA_CLINT_LENGTH = 0xC0000
+local PMA_HTIF_START = 0x40008000
+local PMA_RAM_START = 0x80000000
+local PMA_PAGE_SIZE_LOG2 = 12
+local PMA_PAGE_SIZE = 1 << PMA_PAGE_SIZE_LOG2
+
+local function ceil_log2(x)
+    return math.ceil(math.log(x, 2)) // 1
+end
+
+local extend_region_hash = test_util.extend_region_hash
+local calculate_region_hash = test_util.calculate_region_hash
+local calculate_region_hash_2 = test_util.calculate_region_hash_2
 
 -- Take data from dumped memory files
 -- and calculate root hash of the machine
 function test_util.calculate_emulator_hash(test_path, pmas_files)
-    -- Read Data
-    print(test_path)
-    print(pmas_files[1])
-    local procesor_board_shadow = test_util.parse_pma_file(test_path .. pmas_files[1])
+    local shadow_state = test_util.parse_pma_file(test_path .. pmas_files[1])
     local rom = test_util.parse_pma_file(test_path .. pmas_files[2])
-    local pmas = test_util.parse_pma_file(test_path .. pmas_files[3])
-    local cli = test_util.parse_pma_file(test_path .. pmas_files[4])
-    local hti = test_util.parse_pma_file(test_path .. pmas_files[5])
-    local ram = test_util.parse_pma_file(test_path .. pmas_files[6])
+    local shadow_pmas = test_util.parse_pma_file(test_path .. pmas_files[3])
+    local shadow_tlb = test_util.parse_pma_file(test_path .. pmas_files[4])
+    local clint = test_util.parse_pma_file(test_path .. pmas_files[5])
+    local htif = test_util.parse_pma_file(test_path .. pmas_files[6])
+    local ram = test_util.parse_pma_file(test_path .. pmas_files[7])
 
-    local cpu_and_rom_data = procesor_board_shadow.data .. rom.data .. pmas.data
-    local cpu_and_rom_data_pages = (procesor_board_shadow.data_size +
-                                       rom.data_size + pmas.data_size) / (2 ^ 12)
-    local cpu_and_rom_space_hash = test_util.calculate_region_hash(
-                                       cpu_and_rom_data, cpu_and_rom_data_pages,
-                                       12, 17)
-    
-    cpu_and_rom_space_hash = test_util.extend_region_hash(
-                                 cpu_and_rom_space_hash, 0x0, 17, 25)
+    local shadow_rom = shadow_state .. rom .. shadow_pmas
 
-    local cli_space_hash = test_util.calculate_region_hash(cli.data,
-                                                            cli.data_size /
-                                                                (2 ^ 12), 12, 20)
-    cli_space_hash = test_util.extend_region_hash(cli_space_hash, 0x02000000,
-                                                   20, 25)
+    local shadow_rom_hash_size_log2 = ceil_log2(PMA_SHADOW_STATE_LENGTH + PMA_ROM_LENGTH + PMA_SHADOW_PMAS_LENGTH)
+    local shadow_rom_space_hash = calculate_region_hash(shadow_rom,
+        (#shadow_rom + PMA_PAGE_SIZE - 1) // PMA_PAGE_SIZE, PMA_PAGE_SIZE_LOG2, shadow_rom_hash_size_log2)
+    shadow_rom_space_hash = extend_region_hash(shadow_rom_space_hash, 0, shadow_rom_hash_size_log2, 17)
 
-    local cpu_rom_cli_hash = cartesi.keccak(cpu_and_rom_space_hash,
-                                            cli_space_hash) -- 26
-    cpu_rom_cli_hash = test_util.extend_region_hash(cpu_rom_cli_hash, 0x0, 26,
-                                                     30)
+    local tlb_size_log2 = ceil_log2(PMA_SHADOW_TLB_LENGTH)
+    local tlb_space_hash =
+        calculate_region_hash(shadow_tlb, (#shadow_tlb + PMA_PAGE_SIZE - 1) // PMA_PAGE_SIZE, PMA_PAGE_SIZE_LOG2, tlb_size_log2)
+    tlb_space_hash = extend_region_hash(tlb_space_hash, PMA_SHADOW_TLB_START, tlb_size_log2, 17)
 
-    local hti_log2_data_size = math.log(hti.data_size, 2)
-    local hti_space_hash = test_util.calculate_region_hash_2(0x40008000,
-                                                              hti.data,
-                                                              hti_log2_data_size,
-                                                              30)
+    local shadow_rom_tlb_space_hash = cartesi.keccak(shadow_rom_space_hash, tlb_space_hash) -- 18
+    shadow_rom_tlb_space_hash =
+        extend_region_hash(shadow_rom_tlb_space_hash, 0, 18, 25)
 
-    local ram_log2_data_size = math.log(ram.data_size, 2)
-    local ram_space_hash = test_util.calculate_region_hash_2(0x80000000,
-                                                              ram.data,
-                                                              ram_log2_data_size,
-                                                              31)
+    local clint_size_log2 = ceil_log2(PMA_CLINT_LENGTH)
+    local clint_space_hash =
+        calculate_region_hash(clint, (#clint + PMA_PAGE_SIZE - 1) // PMA_PAGE_SIZE, PMA_PAGE_SIZE_LOG2, clint_size_log2)
+    clint_space_hash = extend_region_hash(clint_space_hash, PMA_CLINT_START, clint_size_log2, 25)
 
-    local left = cartesi.keccak(cpu_rom_cli_hash, hti_space_hash) -- 31
+    local shadow_rom_tlb_clint_hash = cartesi.keccak(shadow_rom_tlb_space_hash, clint_space_hash) -- 26
+    shadow_rom_tlb_clint_hash = extend_region_hash(shadow_rom_tlb_clint_hash, 0, 26, 30)
+
+    local htif_size_log2 = ceil_log2(#htif)
+    local htif_space_hash = calculate_region_hash_2(PMA_HTIF_START, htif, htif_size_log2, 30)
+    local left = cartesi.keccak(shadow_rom_tlb_clint_hash, htif_space_hash) -- 31
+
+    local ram_size_log2 = ceil_log2(#ram)
+    local ram_space_hash = calculate_region_hash_2(PMA_RAM_START, ram, ram_size_log2, 31)
     local used_space_hash = cartesi.keccak(left, ram_space_hash) -- 32
-    local total_space_hash = test_util.extend_region_hash(used_space_hash, 0x0,
-                                                           32, 64)
 
-    return total_space_hash
+    return test_util.extend_region_hash(used_space_hash, 0, 32, 64)
 end
 
 return test_util

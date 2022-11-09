@@ -84,6 +84,7 @@ EMULATOR_SOURCES=\
 	interpret.cpp \
 	pma-driver.cpp \
 	htif.cpp \
+	shadow-tlb.cpp \
 	shadow-state.cpp \
 	shadow-pmas.cpp \
 	clint.cpp

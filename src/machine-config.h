@@ -91,6 +91,11 @@ enum FLASH_DRIVE_constants {
 /// \brief List of flash drives
 using flash_drive_configs = boost::container::static_vector<memory_range_config, FLASH_DRIVE_MAX>;
 
+/// \brief TLB device state configuration
+struct tlb_config final {
+    std::string image_filename{}; ///< TLB image file name
+};
+
 /// \brief CLINT device state configuration
 struct clint_config final {
     uint64_t mtimecmp{MTIMECMP_INIT}; ///< Value of mtimecmp CSR
@@ -122,6 +127,7 @@ struct machine_config final {
     ram_config ram{};                      ///< RAM state
     rom_config rom{};                      ///< ROM state
     flash_drive_configs flash_drive{};     ///< Flash drives state
+    tlb_config tlb{};                      ///< TLB device state
     clint_config clint{};                  ///< CLINT device state
     htif_config htif{};                    ///< HTIF device state
     uarch_config uarch{};                  ///< microarchitecture configuration

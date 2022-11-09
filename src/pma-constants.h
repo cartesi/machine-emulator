@@ -34,6 +34,8 @@ enum PMA_ranges : uint64_t {
     PMA_SHADOW_PMAS_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_PMAS_LENGTH_DEF),   ///< Length of pma board shadow range
     PMA_ROM_START = EXPAND_UINT64_C(PMA_ROM_START_DEF),                     ///< Start of ROM range
     PMA_ROM_LENGTH = EXPAND_UINT64_C(PMA_ROM_LENGTH_DEF),                   ///< Length of ROM range
+    PMA_SHADOW_TLB_START = EXPAND_UINT64_C(PMA_SHADOW_TLB_START_DEF),       ///< Start of TLB shadow range
+    PMA_SHADOW_TLB_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_TLB_LENGTH_DEF),     ///< Length of TLB shadow range
     PMA_CLINT_START = EXPAND_UINT64_C(PMA_CLINT_START_DEF),                 ///< Start of CLINT range
     PMA_CLINT_LENGTH = EXPAND_UINT64_C(PMA_CLINT_LENGTH_DEF),               ///< Length of CLINT range
     PMA_HTIF_START = EXPAND_UINT64_C(PMA_HTIF_START_DEF),                   ///< Start of HTIF range
@@ -54,6 +56,11 @@ enum PMA_constants : uint64_t {
     PMA_PAGE_SIZE = (UINT64_C(1) << PMA_PAGE_SIZE_LOG2_DEF),      ///< Physical memory page size.
     PMA_WORD_SIZE = EXPAND_UINT64_C(PMA_WORD_SIZE_DEF),           ///< Physical memory word size.
     PMA_MAX = EXPAND_UINT64_C(PMA_MAX_DEF)                        ///< Maximum number of PMAs
+};
+
+/// \brief PMA TLB constants.
+enum PMA_tlb_constants : uint64_t {
+    PMA_TLB_SIZE = EXPAND_UINT64_C(PMA_TLB_SIZE_DEF), ///< Number for entries per TLB type
 };
 
 /// \brief PMA masks.
@@ -94,6 +101,7 @@ enum class PMA_ISTART_DID {
     memory = PMA_MEMORY_DID_DEF,                               ///< DID for memory
     shadow_state = PMA_SHADOW_STATE_DID_DEF,                   ///< DID for shadow device
     shadow_pmas = PMA_SHADOW_PMAS_DID_DEF,                     ///< DID for shadow pma array device
+    shadow_TLB = PMA_SHADOW_TLB_DID_DEF,                       ///< DID for shadow TLB device
     flash_drive = PMA_FLASH_DRIVE_DID_DEF,                     ///< DID for drive device
     CLINT = PMA_CLINT_DID_DEF,                                 ///< DID for CLINT device
     HTIF = PMA_HTIF_DID_DEF,                                   ///< DID for HTIF device

@@ -224,6 +224,24 @@ static cm_memory_range_config convert_to_c(const cartesi::memory_range_config &c
 }
 
 // ----------------------------------------------
+// TLB configuration conversion functions
+// ----------------------------------------------
+static cartesi::tlb_config convert_from_c(const cm_tlb_config *c_config) {
+    if (c_config == nullptr) {
+        throw std::invalid_argument("Invalid tlb configuration");
+    }
+    cartesi::tlb_config new_cpp_config{};
+    new_cpp_config.image_filename = null_to_empty(c_config->image_filename);
+    return new_cpp_config;
+}
+
+static cm_tlb_config convert_to_c(const cartesi::tlb_config &cpp_config) {
+    cm_tlb_config new_c_config{};
+    new_c_config.image_filename = convert_to_c(cpp_config.image_filename);
+    return new_c_config;
+}
+
+// ----------------------------------------------
 // CLINT configuration conversion functions
 // ----------------------------------------------
 static cartesi::clint_config convert_from_c(const cm_clint_config *c_config) {
@@ -405,6 +423,7 @@ cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
     new_cpp_machine_config.processor = convert_from_c(&c_config->processor);
     new_cpp_machine_config.ram = convert_from_c(&c_config->ram);
     new_cpp_machine_config.rom = convert_from_c(&c_config->rom);
+    new_cpp_machine_config.tlb = convert_from_c(&c_config->tlb);
     new_cpp_machine_config.clint = convert_from_c(&c_config->clint);
     new_cpp_machine_config.htif = convert_from_c(&c_config->htif);
     new_cpp_machine_config.uarch = convert_from_c(&c_config->uarch);
@@ -434,6 +453,7 @@ const cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config)
     new_machine_config->ram = convert_to_c(cpp_config.ram);
     new_machine_config->rom = convert_to_c(cpp_config.rom);
     new_machine_config->flash_drive = convert_to_c(cpp_config.flash_drive);
+    new_machine_config->tlb = convert_to_c(cpp_config.tlb);
     new_machine_config->clint = convert_to_c(cpp_config.clint);
     new_machine_config->htif = convert_to_c(cpp_config.htif);
     new_machine_config->uarch = convert_to_c(cpp_config.uarch);
@@ -721,6 +741,7 @@ void cm_delete_machine_config(const cm_machine_config *config) {
     delete[] config->rom.image_filename;
     delete[] config->rom.bootargs;
     delete[] config->ram.image_filename;
+    delete[] config->tlb.image_filename;
     delete[] config->rollup.rx_buffer.image_filename;
     delete[] config->rollup.tx_buffer.image_filename;
     delete[] config->rollup.input_metadata.image_filename;

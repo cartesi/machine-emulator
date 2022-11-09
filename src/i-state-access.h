@@ -25,6 +25,7 @@
 
 #include "machine-statistics.h"
 #include "meta.h"
+#include "shadow-tlb.h"
 
 namespace cartesi {
 
@@ -650,6 +651,83 @@ public:
         return derived().do_read_brkflag();
     }
 
+    /// \brief Reads a field of a TLB entry.
+    /// \param hot If true read from hot TLB entries, otherwise from cold TLB entries.
+    /// \param etype TLB entry type.
+    /// \param eidx TLB entry index.
+    /// \param fieldoff TLB entry field offset.
+    /// \param pval Pointer to word receiving value.
+    /// \returns True if the field was read, false otherwise.
+    bool read_tlb_entry_field(bool hot, uint64_t etype, uint64_t eidx, uint64_t fieldoff, uint64_t *pval) {
+        return derived().do_read_tlb_entry_field(hot, etype, eidx, fieldoff, pval);
+    }
+
+    /// \brief Writes a field of a TLB entry.
+    /// \param hot If true write to hot TLB entries, otherwise to cold TLB entries.
+    /// \param etype TLB entry type.
+    /// \param eidx TLB entry index.
+    /// \param fieldoff TLB entry field offset.
+    /// \param val Value to be written.
+    /// \returns True if the field was written, false otherwise.
+    bool write_tlb_entry_field(bool hot, uint64_t etype, uint64_t eidx, uint64_t fieldoff, uint64_t val) {
+        return derived().do_write_tlb_entry_field(hot, etype, eidx, fieldoff, val);
+    }
+
+    /// \brief Try to read a word from memory through the TLB.
+    /// \tparam ETYPE TLB entry type.
+    /// \tparam T Type of word to read.
+    /// \param vaddr Target virtual address.
+    /// \param pval Pointer to word receiving value.
+    /// \returns True if successful (TLB hit), false otherwise.
+    template <TLB_entry_type ETYPE, typename T>
+    bool read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
+        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        return derived().template do_read_memory_word_via_tlb<ETYPE, T>(vaddr, pval);
+    }
+
+    /// \brief Try to write a word to memory through the TLB.
+    /// \tparam ETYPE TLB entry type.
+    /// \tparam T Type of word to write.
+    /// \param vaddr Target virtual address.
+    /// \param val Value to be written.
+    /// \returns True if successful (TLB hit), false otherwise.
+    template <TLB_entry_type ETYPE, typename T>
+    bool write_memory_word_via_tlb(uint64_t vaddr, T val) {
+        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        return derived().template do_write_memory_word_via_tlb<ETYPE, T>(vaddr, val);
+    }
+
+    /// \brief Replaces an entry in the TLB.
+    /// \tparam ETYPE TLB entry type to replace.
+    /// \param vaddr Target virtual address.
+    /// \param paddr Target physical address.
+    /// \param pma PMA entry for the physical address.
+    /// \returns Pointer to page start in host memory.
+    template <TLB_entry_type ETYPE>
+    unsigned char *replace_tlb_entry(uint64_t vaddr, uint64_t paddr, PMA_ENTRY_TYPE &pma) {
+        return derived().template do_replace_tlb_entry<ETYPE>(vaddr, paddr, pma);
+    }
+
+    /// \brief Invalidates all TLB entries of a type.
+    /// \tparam ETYPE TLB entry type to flush.
+    template <TLB_entry_type ETYPE>
+    void flush_tlb_type() {
+        return derived().template do_flush_tlb_type<ETYPE>();
+    }
+
+    /// \brief Invalidates all TLB entries of all types.
+    void flush_all_tlb() {
+        derived().template flush_tlb_type<TLB_CODE>();
+        derived().template flush_tlb_type<TLB_READ>();
+        derived().template flush_tlb_type<TLB_WRITE>();
+    }
+
+    /// \brief Invalidates TLB entries for a specific virtual address.
+    /// \param vaddr Target virtual address.
+    void flush_tlb_vaddr(uint64_t vaddr) {
+        return derived().do_flush_tlb_vaddr(vaddr);
+    }
+
 #ifdef DUMP_COUNTERS
     auto &get_statistics() {
         return derived().do_get_statistics();
@@ -661,13 +739,6 @@ public:
 template <typename DERIVED>
 using is_an_i_state_access =
     std::integral_constant<bool, is_template_base_of<i_state_access, typename remove_cvref<DERIVED>::type>::value>;
-
-/// \brief Type-trait selecting the use of TLB while
-/// accessing memory in the state
-template <typename STATE_ACCESS>
-struct avoid_tlb {
-    static constexpr bool value = false;
-};
 
 } // namespace cartesi
 

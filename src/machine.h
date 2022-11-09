@@ -713,6 +713,9 @@ public:
         return find_pma_entry(paddr, sizeof(T));
     }
 
+    /// \brief Go over the write TLB and mark as dirty all pages currently there.
+    void mark_write_tlb_dirty_pages(void) const;
+
     /// \brief Verify if dirty page maps are consistent.
     /// \returns true if they are, false if there is an error.
     bool verify_dirty_page_maps(void) const;

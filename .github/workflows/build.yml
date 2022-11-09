@@ -182,7 +182,7 @@ jobs:
         run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
 
       - name: Run test suite with Microarchitecture
-        run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests --uarch-ram-length=0x10000 --uarch-rom-length=0x10000 --uarch-rom-image=./tests/uarch-rom.bin uarch_run
+        run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests --uarch-ram-length=0x20000 --uarch-rom-length=0x20000 --uarch-rom-image=./tests/uarch-rom.bin uarch_run
 
       - name: Run grpc lua test scripts
         run: |

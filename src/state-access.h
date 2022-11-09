@@ -512,6 +512,152 @@ private:
         return m_m.get_state().brkflag;
     }
 
+    bool do_read_tlb_entry_field(bool hot, uint64_t etype, uint64_t eidx, uint64_t fieldoff, uint64_t *pval) {
+        if (etype > TLB_WRITE || eidx >= PMA_TLB_SIZE) {
+            return false;
+        }
+        const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[etype][eidx];
+        const tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[etype][eidx];
+        if (hot) {
+            switch (fieldoff) {
+                case offsetof(tlb_hot_entry, vaddr_page):
+                    *pval = tlbhe.vaddr_page;
+                    return true;
+                default:
+                    // Other fields like vh_offset contains host data, and cannot be read
+                    return false;
+            }
+        } else {
+            switch (fieldoff) {
+                case offsetof(tlb_cold_entry, paddr_page):
+                    *pval = tlbce.paddr_page;
+                    return true;
+                case offsetof(tlb_cold_entry, pma_index):
+                    *pval = tlbce.pma_index;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+    }
+
+    bool do_write_tlb_entry_field(bool hot, uint64_t etype, uint64_t eidx, uint64_t fieldoff, uint64_t val) {
+        if (etype > TLB_WRITE || eidx >= PMA_TLB_SIZE) {
+            return false;
+        }
+        tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[etype][eidx];
+        tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[etype][eidx];
+        if (hot) {
+            switch (fieldoff) {
+                case offsetof(tlb_hot_entry, vaddr_page):
+                    tlbhe.vaddr_page = val;
+                    return true;
+                default:
+                    // Other fields like vh_offset contains host data, and cannot be written
+                    return false;
+            }
+        } else {
+            switch (fieldoff) {
+                case offsetof(tlb_cold_entry, paddr_page): {
+                    tlbce.paddr_page = val;
+                    // Update vh_offset
+                    pma_entry &pma = do_find_pma_entry<uint64_t>(tlbce.paddr_page);
+                    assert(pma.get_istart_M()); // TLB only works for memory mapped PMAs
+                    unsigned char *hpage = pma.get_memory().get_host_memory() + (tlbce.paddr_page - pma.get_start());
+                    tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[etype][eidx];
+                    tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - tlbhe.vaddr_page;
+                    return true;
+                }
+                case offsetof(tlb_cold_entry, pma_index):
+                    tlbce.pma_index = val;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+    }
+
+    template <TLB_entry_type ETYPE, typename T>
+    inline bool do_read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
+        uint64_t eidx = tlb_get_entry_index(vaddr);
+        const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
+        if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
+            return false;
+        }
+        const auto *h = cast_addr_to_ptr<const unsigned char *>(tlbhe.vh_offset + vaddr);
+        *pval = aliased_aligned_read<T>(h);
+        return true;
+    }
+
+    template <TLB_entry_type ETYPE, typename T>
+    inline bool do_write_memory_word_via_tlb(uint64_t vaddr, T val) {
+        uint64_t eidx = tlb_get_entry_index(vaddr);
+        const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
+        if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
+            return false;
+        }
+        auto *h = cast_addr_to_ptr<unsigned char *>(tlbhe.vh_offset + vaddr);
+        aliased_aligned_write(h, val);
+        return true;
+    }
+
+    template <TLB_entry_type ETYPE>
+    unsigned char *do_replace_tlb_entry(uint64_t vaddr, uint64_t paddr, pma_entry &pma) {
+        uint64_t eidx = tlb_get_entry_index(vaddr);
+        tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
+        tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
+        // Mark page that was on TLB as dirty so we know to update the Merkle tree
+        if constexpr (ETYPE == TLB_WRITE) {
+            if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
+                pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
+                pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
+            }
+        }
+        uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
+        uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+        unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
+        tlbhe.vaddr_page = vaddr_page;
+        tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - vaddr_page;
+        tlbce.paddr_page = paddr_page;
+        tlbce.pma_index = static_cast<uint64_t>(pma.get_index());
+        return hpage;
+    }
+
+    template <TLB_entry_type ETYPE>
+    void do_flush_tlb_entry(uint64_t eidx) {
+        tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
+        // Mark page that was on TLB as dirty so we know to update the Merkle tree
+        if constexpr (ETYPE == TLB_WRITE) {
+            if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
+                tlbhe.vaddr_page = TLB_INVALID_PAGE;
+                tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
+                pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
+                pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
+            } else {
+                tlbhe.vaddr_page = TLB_INVALID_PAGE;
+            }
+        } else {
+            tlbhe.vaddr_page = TLB_INVALID_PAGE;
+        }
+    }
+
+    template <TLB_entry_type ETYPE>
+    void do_flush_tlb_type() {
+        for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
+            do_flush_tlb_entry<ETYPE>(i);
+        }
+    }
+
+    void do_flush_tlb_vaddr(uint64_t vaddr) {
+        (void) vaddr;
+        // We can't flush just one TLB entry for that specific virtual address,
+        // because megapages/gigapages may be in use while this TLB implementation ignores it,
+        // so we have to flush all addresses.
+        do_flush_tlb_type<TLB_CODE>();
+        do_flush_tlb_type<TLB_READ>();
+        do_flush_tlb_type<TLB_WRITE>();
+    }
+
 #ifdef DUMP_COUNTERS
     machine_statistics &do_get_statistics() {
         return m_m.get_state().stats;

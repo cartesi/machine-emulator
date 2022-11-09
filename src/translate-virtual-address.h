@@ -43,6 +43,8 @@
 #ifndef TRANSLATE_VIRTUAL_ADDRESS_H
 #define TRANSLATE_VIRTUAL_ADDRESS_H
 
+#include "compiler-defines.h"
+
 namespace cartesi {
 
 /// \brief Write an aligned word to memory.
@@ -94,9 +96,10 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
 /// \param ppaddr Pointer to physical address.
 /// \param xwr_shift Encodes the access mode by the shift to the XWR triad (PTE_XWR_R_SHIFT,
 ///  PTE_XWR_R_SHIFT, or PTE_XWR_R_SHIFT)
+/// \details This function is outlined to minimize host CPU code cache pressure.
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS, bool UPDATE_PTE = true>
-static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
+static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
     auto note = a.make_scoped_note("translate_virtual_address");
     (void) note;
     auto priv = a.read_iflags_PRV();
@@ -119,17 +122,17 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
 
     uint64_t satp = a.read_satp();
 
-    // In RV64, mode can be
-    //   0: Bare: No translation or protection
-    //   8: sv39: Page-based 39-bit virtual addressing
-    //   9: sv48: Page-based 48-bit virtual addressing
-    //   10: sv57: Page-based 57-bit virtual addressing
-    auto mode = static_cast<int>(satp >> 60) & 0xf;
-    if (mode == 0) {
-        *ppaddr = vaddr;
-        return true;
-    } else if (mode < 8 || mode > 10) {
-        return false;
+    uint64_t mode = satp >> SATP_MODE_SHIFT;
+    switch (mode) {
+        case SATP_MODE_BARE: // Bare: No translation or protection
+            *ppaddr = vaddr;
+            return true;
+        case SATP_MODE_SV39: // Sv39: Page-based 39-bit virtual addressing
+        case SATP_MODE_SV48: // Sv48: Page-based 48-bit virtual addressing
+        case SATP_MODE_SV57: // Sv57: Page-based 57-bit virtual addressing
+            break;
+        default: // Unsupported mode
+            return false;
     }
     // Here we know we are in sv39, sv48 or sv57 modes
 
@@ -138,7 +141,7 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
     // ??D It doesn't seem like restricting to one or the other will
     //     simplify the code much. However, we may want to use sv39
     //     to reduce the size of the log sent to the blockchain
-    int levels = mode - 8 + 3;
+    int levels = static_cast<int>(mode - SATP_MODE_SV39) + 3;
 
     // The least significant 12 bits of vaddr are the page offset
     // Then come levels virtual page numbers (VPN)
@@ -150,10 +153,8 @@ static bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_
         return false;
     }
 
-    // The least significant 44 bits of satp contain the physical page number for the root page table
-    const int satp_ppn_bits = 44;
     // Initialize pte_addr with the base address for the root page table
-    uint64_t pte_addr = (satp & ((UINT64_C(1) << satp_ppn_bits) - 1)) << PAGE_NUMBER_SHIFT;
+    uint64_t pte_addr = (satp & SATP_PPN_MASK) << PAGE_NUMBER_SHIFT;
     // All page table entries have 8 bytes
     const int log2_pte_size = 3;
     // Each page table has 4k/pte_size entries

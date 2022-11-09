@@ -50,6 +50,8 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
     auto *proto_ram = proto_c->mutable_ram();
     proto_ram->set_length(c.ram.length);
     proto_ram->set_image_filename(c.ram.image_filename);
+    auto *proto_tlb = proto_c->mutable_tlb();
+    proto_tlb->set_image_filename(c.tlb.image_filename);
     auto *proto_htif = proto_c->mutable_htif();
     proto_htif->set_console_getchar(c.htif.console_getchar);
     proto_htif->set_yield_manual(c.htif.yield_manual);
@@ -696,6 +698,9 @@ machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &pro
     }
     if (proto_c.has_rollup()) {
         c.rollup = get_proto_rollup_config(proto_c.rollup());
+    }
+    if (proto_c.has_tlb()) {
+        c.tlb.image_filename = proto_c.tlb().image_filename();
     }
     if (proto_c.has_clint()) {
         const auto &clint = proto_c.clint();

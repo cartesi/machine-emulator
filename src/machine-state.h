@@ -33,6 +33,7 @@
 #include "machine-statistics.h"
 #include "pma.h"
 #include "riscv-constants.h"
+#include "shadow-tlb.h"
 
 namespace cartesi {
 
@@ -97,6 +98,9 @@ struct machine_state {
     struct {
         uint64_t mtimecmp; ///< CSR mtimecmp.
     } clint;
+
+    /// \brief TLB state
+    shadow_tlb_state tlb;
 
     /// \brief HTIF state
     struct {

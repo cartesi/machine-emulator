@@ -189,6 +189,7 @@ public:
 private:
     uint64_t m_start;  ///< Start of physical memory range in target.
     uint64_t m_length; ///< Length of physical memory range in target.
+    int m_index;       ///< PMA entry index in target.
     flags m_flags;     ///< PMA Flags
 
     pma_peek m_peek; ///< Callback for peek operations.
@@ -217,6 +218,7 @@ public:
     pma_entry(uint64_t start, uint64_t length) :
         m_start{start},
         m_length{length},
+        m_index{PMA_MAX},
         m_flags{},
         m_peek{pma_peek_error},
         m_data{pma_empty{}} {
@@ -235,6 +237,7 @@ public:
     pma_entry(uint64_t start, uint64_t length, pma_memory &&memory, pma_peek peek = pma_peek_error) :
         m_start{start},
         m_length{length},
+        m_index{PMA_MAX},
         m_flags{},
         m_peek{peek},
         m_data{std::move(memory)} {
@@ -249,12 +252,23 @@ public:
     pma_entry(uint64_t start, uint64_t length, pma_device &&device, pma_peek peek = pma_peek_error) :
         m_start{start},
         m_length{length},
+        m_index{PMA_MAX},
         m_flags{},
         m_peek{peek},
         m_data{std::move(device)} {
         if (length & (PMA_PAGE_SIZE - 1)) {
             throw std::invalid_argument{"PMA length must be multiple of page size"};
         }
+    }
+
+    /// \brief Set PMA entry index in target.
+    void set_index(int index) {
+        m_index = index;
+    }
+
+    /// \brief Returns PMA entry index in target.
+    int get_index(void) const {
+        return m_index;
     }
 
     /// \brief Set flags for lvalue references

@@ -130,6 +130,7 @@ local pmas_file_names = {
     "0000000000000000--0000000000001000.bin", -- shadow state
     "0000000000001000--000000000000f000.bin", -- rom
     "0000000000010000--0000000000001000.bin", -- shadow pmas
+    "0000000000020000--0000000000006000.bin", -- shadow tlb
     "0000000002000000--00000000000c0000.bin", -- clint
     "0000000040008000--0000000000001000.bin", -- htif
     "0000000080000000--0000000000100000.bin"  -- ram
@@ -300,9 +301,9 @@ do_test("proof check should pass",
 
         local ram_address_start = tonumber(test_util.split_string(ram_file_name,
                                                                 "--.")[1], 16)
-        local ram_data_number_of_pages = ram.data_size / (2 ^ 12)
-        local ram_log2_data_size = math.log(ram.data_size, 2)
-        local calculated_ram_hash = test_util.calculate_region_hash(ram.data,
+        local ram_data_number_of_pages = math.ceil(#ram / (1 << 12))
+        local ram_log2_data_size = math.ceil(math.log(#ram, 2))
+        local calculated_ram_hash = test_util.calculate_region_hash(ram,
                                                                     ram_data_number_of_pages,
                                                                     12,
                                                                     ram_log2_data_size)

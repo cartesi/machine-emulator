@@ -26,7 +26,9 @@ namespace cartesi {
 
 /// \brief Global RISC-V constants
 enum RISCV_constants {
-    XLEN = 64 ///< Maximum XLEN
+    XLEN = 64,   ///< Maximum XLEN
+    ASIDLEN = 0, ///< Number of implemented ASID bits
+    ASIDMAX = 16 ///< Maximum number of implemented ASID bits
 };
 
 /// \brief Register counts
@@ -208,6 +210,27 @@ enum SSTATUS_rw_masks : uint64_t {
         MSTATUS_FS_MASK | MSTATUS_XS_MASK | MSTATUS_SUM_MASK | MSTATUS_MXR_MASK | MSTATUS_UXL_MASK |
         MSTATUS_SD_MASK) ///< Read mask for sstatus
 };
+
+/// \brief satp shifts
+enum SATP_shifts : uint64_t { SATP_PPN_SHIFT = 0, SATP_ASID_SHIFT = 44, SATP_MODE_SHIFT = 60 };
+
+/// \brief satp masks
+enum SATP_masks : uint64_t {
+    SATP_PPN_MASK = (UINT64_C(1) << SATP_ASID_SHIFT) - 1,
+    SATP_ASID_MASK = ((UINT64_C(1) << ASIDLEN) - 1) << SATP_ASID_SHIFT,
+    SATP_MODE_MASK = UINT64_C(15) << SATP_MODE_SHIFT,
+};
+
+/// \brief satp modes
+enum SATP_modes : uint64_t {
+    SATP_MODE_BARE = 0,
+    SATP_MODE_SV39 = 8,
+    SATP_MODE_SV48 = 9,
+    SATP_MODE_SV57 = 10,
+};
+
+/// \brief ASID masks
+enum ASID_masks : uint64_t { ASID_R_MASK = (UINT64_C(1) << ASIDLEN) - 1, ASID_MAX_MASK = (UINT64_C(1) << ASIDMAX) - 1 };
 
 /// \brief Page-table entry shifts
 enum PTE_shifts {

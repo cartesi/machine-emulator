@@ -81,6 +81,10 @@ public:
         ;
     }
 
+    int get_index(void) const {
+        return m_pma_index;
+    }
+
     flags get_flags(void) const {
         return m_flags;
     }
@@ -573,6 +577,9 @@ private:
                 case PMA_ISTART_DID::shadow_pmas:
                     driver = &shadow_pmas_driver;
                     break;
+                case PMA_ISTART_DID::shadow_TLB:
+                    driver = &shadow_tlb_driver;
+                    break;
                 case PMA_ISTART_DID::CLINT:
                     driver = &clint_driver;
                     break;
@@ -597,6 +604,102 @@ private:
         f.IW = (istart & PMA_ISTART_IW_MASK) >> PMA_ISTART_IW_SHIFT;
         f.DID = static_cast<PMA_ISTART_DID>((istart & PMA_ISTART_DID_MASK) >> PMA_ISTART_DID_SHIFT);
         start = istart & PMA_ISTART_START_MASK;
+    }
+
+    template <TLB_entry_type ETYPE>
+    volatile tlb_hot_entry& do_get_tlb_hot_entry(uint64_t eidx) {
+        // Volatile is used, so the compiler does not optimize out, or do of order writes.
+        volatile tlb_hot_entry *tlbe = reinterpret_cast<tlb_hot_entry *>(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
+        return *tlbe;
+    }
+
+    template <TLB_entry_type ETYPE>
+    volatile tlb_cold_entry& do_get_tlb_entry_cold(uint64_t eidx) {
+        // Volatile is used, so the compiler does not optimize out, or do of order writes.
+        volatile tlb_cold_entry *tlbe = reinterpret_cast<tlb_cold_entry *>(tlb_get_entry_cold_abs_addr<ETYPE>(eidx));
+        return *tlbe;
+    }
+
+    template <TLB_entry_type ETYPE, typename T>
+    bool do_read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
+        uint64_t eidx = tlb_get_entry_index(vaddr);
+        const volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
+        if (tlb_is_hit<T>(tlbhe.vaddr_page, vaddr)) {
+            uint64_t poffset = vaddr & PAGE_OFFSET_MASK;
+            const volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
+            *pval = raw_read_memory<T>(tlbce.paddr_page + poffset);
+            return true;
+        }
+        return false;
+    }
+
+    template <TLB_entry_type ETYPE, typename T>
+    bool do_write_memory_word_via_tlb(uint64_t vaddr, T val) {
+        uint64_t eidx = tlb_get_entry_index(vaddr);
+        volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
+        if (tlb_is_hit<T>(tlbhe.vaddr_page, vaddr)) {
+            uint64_t poffset = vaddr & PAGE_OFFSET_MASK;
+            const volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
+            raw_write_memory(tlbce.paddr_page + poffset, val);
+            return true;
+        }
+        return false;
+    }
+
+    template <TLB_entry_type ETYPE>
+    unsigned char *do_replace_tlb_entry(uint64_t vaddr, uint64_t paddr, uarch_pma_entry &pma) {
+        uint64_t eidx = tlb_get_entry_index(vaddr);
+        volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
+        volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
+        // Mark page that was on TLB as dirty so we know to update the Merkle tree
+        if constexpr (ETYPE == TLB_WRITE) {
+            if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
+                uarch_pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
+                pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
+            }
+        }
+        uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
+        uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+        tlbhe.vaddr_page = vaddr_page;
+        // The paddr_must field must be written only after vaddr_page is written,
+        // because the uarch memory bridge reads vaddr_page to compute vh_offset when updating paddr_page.
+        tlbce.paddr_page = paddr_page;
+        tlbce.pma_index = static_cast<uint64_t>(pma.get_index());
+        // Note that we can't write here the correct vh_offset value, because it depends in a host pointer,
+        // however the uarch memory bridge will take care of updating it.
+        return nullptr;
+    }
+
+    template <TLB_entry_type ETYPE>
+    void do_flush_tlb_entry(uint64_t eidx) {
+        volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
+        // Mark page that was on TLB as dirty so we know to update the Merkle tree
+        if constexpr (ETYPE == TLB_WRITE) {
+            if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
+                tlbhe.vaddr_page = TLB_INVALID_PAGE;
+                volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
+                uarch_pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
+                pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
+            } else {
+                tlbhe.vaddr_page = TLB_INVALID_PAGE;
+            }
+        } else {
+            tlbhe.vaddr_page = TLB_INVALID_PAGE;
+        }
+    }
+
+    template <TLB_entry_type ETYPE>
+    void do_flush_tlb_type() {
+        for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
+            do_flush_tlb_entry<ETYPE>(i);
+        }
+    }
+
+    void do_flush_tlb_vaddr(uint64_t vaddr) {
+        (void) vaddr;
+        do_flush_tlb_type<TLB_CODE>();
+        do_flush_tlb_type<TLB_READ>();
+        do_flush_tlb_type<TLB_WRITE>();
     }
 };
 

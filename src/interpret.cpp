@@ -81,6 +81,18 @@
 /// Fortunately, GCC offers intrinsics that have well-defined overflow behavior.
 ///
 ///   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Integer-Overflow-Builtins.html#Integer-Overflow-Builtins
+///
+/// The code assumes that arithmetic operations over pointers result in the same value
+/// as arithmetic operations over unsigned integers mapped from pointers, including unsigned overflows.
+/// According to the C and C++ standard performing arithmetic operations over unsigned integers
+/// mapped from pointers and converting the result back to a pointer is undefined behavior.
+/// However in common implementations (such as GCC x86_64) this is fine,
+/// because pointers shares the same bit representation as unsigned integers.
+/// Furthermore to avoid violating strict aliasing rules when compiler optimizations are enabled,
+/// a special aliasing aware read/write is performed to access the memory of such pointers.
+/// This assumption is made to optimize the TLB implementation.
+///
+///   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Arrays-and-pointers-implementation.html#Arrays-and-pointers-implementation
 /// \}
 
 #include "interpret.h"
@@ -127,7 +139,7 @@ static int64_t mul64hsu(int64_t a, uint64_t b) {
 #endif
 }
 
-int64_t mul64h(int64_t a, int64_t b) {
+static int64_t mul64h(int64_t a, int64_t b) {
 #ifdef __SIZEOF_INT128__
     return static_cast<int64_t>((static_cast<int128_t>(a) * static_cast<int64_t>(b)) >> 64);
 #else
@@ -327,24 +339,28 @@ static inline uint32_t csr_priv(CSR_address csr) {
 /// \param a Machine state accessor object.
 /// \param previous_prv Previous privilege level.
 /// \param new_prv New privilege level.
+/// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static void set_priv(STATE_ACCESS &a, int previous_prv, int new_prv) {
-    if (previous_prv != new_prv) {
-        INC_COUNTER(a.get_statistics(), priv_level[new_prv]);
-        a.write_iflags_PRV(new_prv);
-        //??D new priv 1.11 draft says invalidation should
-        // happen within a trap handler, although it could
-        // also happen in xRET insn.
-        a.write_ilrsc(-1); // invalidate reserved address
-    }
+static NO_INLINE void set_priv(STATE_ACCESS &a, int new_prv) {
+    INC_COUNTER(a.get_statistics(), priv_level[new_prv]);
+    a.write_iflags_PRV(new_prv);
+    // Invalidate all TLB entries
+    a.flush_all_tlb();
+    INC_COUNTER(a.get_statistics(), tlb_flush_all);
+    INC_COUNTER(a.get_statistics(), tlb_flush_set_priv);
+    //??D new priv 1.11 draft says invalidation should
+    // happen within a trap handler, although it could
+    // also happen in xRET insn.
+    a.write_ilrsc(-1); // invalidate reserved address
 }
 
 /// \brief Raise an exception (or interrupt).
 /// \param a Machine state accessor object.
 /// \param cause Exception (or interrupt) mcause (or scause).
 /// \param tval Associated tval.
+/// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
+static NO_INLINE void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
     auto note = a.make_scoped_note("raise_exception");
     (void) note;
 #if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS)
@@ -399,7 +415,9 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
         mstatus = (mstatus & ~MSTATUS_SPP_MASK) | (priv << MSTATUS_SPP_SHIFT);
         mstatus &= ~MSTATUS_SIE_MASK;
         a.write_mstatus(mstatus);
-        set_priv(a, priv, PRV_S);
+        if (priv != PRV_S) {
+            set_priv(a, PRV_S);
+        }
         a.write_pc(a.read_stvec());
 #ifdef DUMP_COUNTERS
         if (cause & MCAUSE_INTERRUPT_FLAG) {
@@ -417,7 +435,9 @@ static void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
         mstatus = (mstatus & ~MSTATUS_MPP_MASK) | (priv << MSTATUS_MPP_SHIFT);
         mstatus &= ~MSTATUS_MIE_MASK;
         a.write_mstatus(mstatus);
-        set_priv(a, priv, PRV_M);
+        if (priv != PRV_M) {
+            set_priv(a, PRV_M);
+        }
         a.write_pc(a.read_mtvec());
 #ifdef DUMP_COUNTERS
         if (cause & MCAUSE_INTERRUPT_FLAG) {
@@ -559,7 +579,8 @@ static inline int32_t insn_U_get_imm(uint32_t insn) {
 
 /// \brief Obtains the immediate value from a B-type instruction.
 /// \param insn Instruction.
-static inline int32_t insn_B_get_imm(uint32_t insn) {
+/// \details This function is forced to be inline because GCC may not always inline it.
+static FORCE_INLINE int32_t insn_B_get_imm(uint32_t insn) {
     auto imm = static_cast<int>(((insn >> (31 - 12)) & (1 << 12)) | ((insn >> (25 - 5)) & 0x7e0) |
         ((insn >> (8 - 1)) & 0x1e) | ((insn << (11 - 7)) & (1 << 11)));
     imm = (imm << 19) >> 19;
@@ -568,7 +589,8 @@ static inline int32_t insn_B_get_imm(uint32_t insn) {
 
 /// \brief Obtains the immediate value from a J-type instruction.
 /// \param insn Instruction.
-static inline int32_t insn_J_get_imm(uint32_t insn) {
+/// \details This function is forced to be inline because GCC may not always inline it.
+static FORCE_INLINE int32_t insn_J_get_imm(uint32_t insn) {
     auto imm = static_cast<int>(((insn >> (31 - 20)) & (1 << 20)) | ((insn >> (21 - 1)) & 0x7fe) |
         ((insn >> (20 - 11)) & (1 << 11)) | (insn & 0xff000));
     imm = (imm << 11) >> 11;
@@ -577,7 +599,8 @@ static inline int32_t insn_J_get_imm(uint32_t insn) {
 
 /// \brief Obtains the immediate value from a S-type instruction.
 /// \param insn Instruction.
-static inline int32_t insn_S_get_imm(uint32_t insn) {
+/// \details This function is forced to be inline because GCC may not always inline it.
+static FORCE_INLINE int32_t insn_S_get_imm(uint32_t insn) {
     return (static_cast<int32_t>(insn & 0xfe000000) >> (25 - 5)) | static_cast<int>((insn >> 7) & 0b11111);
 }
 
@@ -602,7 +625,7 @@ static inline uint32_t insn_get_funct7(uint32_t insn) {
     return insn >> 25;
 }
 
-/// \brief Read an aligned word from virtual memory.
+/// \brief Read an aligned word from virtual memory (slow path that goes through virtual address translation).
 /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \tparam RAISE_STORE_EXCEPTIONS Boolean, when true load exceptions are converted into store exceptions.
@@ -610,8 +633,9 @@ static inline uint32_t insn_get_funct7(uint32_t insn) {
 /// \param vaddr Virtual address for word.
 /// \param pval Pointer to word receiving value.
 /// \returns True if succeeded, false otherwise.
+/// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>
-static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval) {
+static NO_INLINE bool read_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr, T *pval) {
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (vaddr & (sizeof(T) - 1)) {
@@ -631,8 +655,7 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
                 vaddr);
             return false;
         } else if (pma.get_istart_M()) {
-            uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-            unsigned char *hpage = a.get_host_memory(pma) + (paddr_page - pma.get_start());
+            unsigned char *hpage = a.template replace_tlb_entry<TLB_READ>(vaddr, paddr, pma);
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             a.read_memory_word(paddr, hpage, hoffset, pval);
             return true;
@@ -640,7 +663,6 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
             assert(pma.get_istart_IO());
             uint64_t offset = paddr - pma.get_start();
             uint64_t val{};
-
             // If we do not know how to read, we treat this as a PMA violation
             if (!a.read_device(pma, offset, &val, log2_size<U>::value)) {
                 raise_exception(a, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT,
@@ -654,15 +676,35 @@ static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval)
     }
 }
 
-/// \brief Writes an aligned word to virtual memory.
+/// \brief Read an aligned word from virtual memory.
+/// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param vaddr Virtual address for word.
+/// \param pval Pointer to word receiving value.
+/// \returns True if succeeded, false otherwise.
+template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>
+static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval) {
+    // Try hitting the TLB
+    if (unlikely(!(a.template read_memory_word_via_tlb<TLB_READ>(vaddr, pval)))) {
+        // Outline the slow path into a function call to minimize host CPU code cache pressure
+        INC_COUNTER(a.get_statistics(), tlb_rmiss);
+        return read_virtual_memory_slow<T, STATE_ACCESS, RAISE_STORE_EXCEPTIONS>(a, vaddr, pval);
+    }
+    INC_COUNTER(a.get_statistics(), tlb_rhit);
+    return true;
+}
+
+/// \brief Writes an aligned word to virtual memory (slow path that goes through virtual address translation).
 /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param vaddr Virtual address for word.
 /// \param val64 Value to write.
 /// \returns True if succeeded, false if exception raised.
+/// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename T, typename STATE_ACCESS>
-static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_t val64) {
+static NO_INLINE bool write_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr, uint64_t val64) {
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (vaddr & (sizeof(T) - 1)) {
@@ -680,11 +722,8 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             raise_exception(a, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
             return false;
         } else if (pma.get_istart_M()) {
-            uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-            unsigned char *hpage = a.get_host_memory(pma) + (paddr_page - pma.get_start());
-            pma.mark_dirty_page(paddr_page - pma.get_start());
+            unsigned char *hpage = a.template replace_tlb_entry<TLB_WRITE>(vaddr, paddr, pma);
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
-            // write to memory
             a.write_memory_word(paddr, hpage, hoffset, static_cast<T>(val64));
             return true;
         } else {
@@ -698,6 +737,25 @@ static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_
             return true;
         }
     }
+}
+
+/// \brief Writes an aligned word to virtual memory.
+/// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param vaddr Virtual address for word.
+/// \param val64 Value to write.
+/// \returns True if succeeded, false if exception raised.
+template <typename T, typename STATE_ACCESS>
+static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_t val64) {
+    // Try hitting the TLB
+    if (unlikely((!a.template write_memory_word_via_tlb<TLB_WRITE>(vaddr, static_cast<T>(val64))))) {
+        INC_COUNTER(a.get_statistics(), tlb_wmiss);
+        // Outline the slow path into a function call to minimize host CPU code cache pressure
+        return write_virtual_memory_slow<T>(a, vaddr, val64);
+    }
+    INC_COUNTER(a.get_statistics(), tlb_whit);
+    return true;
 }
 
 template <typename STATE_ACCESS>
@@ -1472,8 +1530,9 @@ static inline uint64_t read_csr_mimpid(STATE_ACCESS &a, bool *status) {
 /// \param csraddr Address of CSR in file.
 /// \param status Returns the status of the operation (true for success, false otherwise).
 /// \returns Register value.
+/// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
+static NO_INLINE uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
 
     if (csr_priv(csraddr) > a.read_iflags_PRV()) {
         return read_csr_fail(status);
@@ -1666,21 +1725,58 @@ static bool write_csr_sip(STATE_ACCESS &a, uint64_t val) {
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_satp(STATE_ACCESS &a, uint64_t val) {
-    uint64_t satp = a.read_satp();
-    auto mode = satp >> 60;
-    auto new_mode = (val >> 60) & 0xf;
-    if (new_mode == 0 || (new_mode >= 8 && new_mode <= 10)) {
-        mode = new_mode;
+static NO_INLINE bool write_csr_satp(STATE_ACCESS &a, uint64_t val) {
+    uint64_t mstatus = a.read_mstatus();
+    auto priv = a.read_iflags_PRV();
+
+    // When TVM=1, attempts to read or write the satp CSR
+    // while executing in S-mode will raise an illegal instruction exception
+    if (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK)) {
+        return false;
     }
-    // no ASID implemented
-    a.write_satp((val & ((UINT64_C(1) << 44) - 1)) | (static_cast<uint64_t>(mode) << 60));
+
+    uint64_t old_satp = a.read_satp();
+    uint64_t stap = old_satp;
+    uint64_t mode = val >> SATP_MODE_SHIFT;
+
+    // Checks for supported MODE
+    switch (mode) {
+        case SATP_MODE_BARE:
+        case SATP_MODE_SV39:
+        case SATP_MODE_SV48:
+        case SATP_MODE_SV57:
+            stap = (val & SATP_PPN_MASK) | (val & SATP_ASID_MASK) | (val & SATP_MODE_MASK);
+            break;
+        default:
+            // Implementations are not required to support all MODE settings,
+            // and if satp is written with an unsupported MODE,
+            // the entire write has no effect; no fields in satp are modified.
+            break;
+    }
+    a.write_satp(stap);
+
+#ifdef DUMP_COUNTERS
+    uint64_t asid = (stap & SATP_ASID_MASK) >> SATP_ASID_SHIFT;
+    if (asid != ASID_MAX_MASK) { // Software is not testing ASID bits
+        a.get_statistics().max_asid = std::max(a.get_statistics().max_asid, asid);
+    }
+#endif
+
+    // Changes to MODE and ASID, flushes the TLBs.
+    // Note that there is no need to flush the TLB when PPN has changed,
+    // because software is required to execute SFENCE.VMA when recycling an ASID.
+    uint64_t mod = old_satp ^ stap;
+    if (mod & (SATP_ASID_MASK | SATP_MODE_MASK)) {
+        a.flush_all_tlb();
+        INC_COUNTER(a.get_statistics(), tlb_flush_all);
+        INC_COUNTER(a.get_statistics(), tlb_flush_satp);
+    }
     return true;
 }
 
 template <typename STATE_ACCESS>
 static bool write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
-    uint64_t mstatus = a.read_mstatus() & MSTATUS_R_MASK;
+    uint64_t old_mstatus = a.read_mstatus() & MSTATUS_R_MASK;
 
     // M-mode software can determine whether a privilege mode is implemented
     // by writing that mode to MPP then reading it back.
@@ -1690,13 +1786,50 @@ static bool write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
     }
 
     // Modify only bits that can be written to
-    mstatus = (mstatus & ~MSTATUS_W_MASK) | (val & MSTATUS_W_MASK);
+    uint64_t mstatus = (old_mstatus & ~MSTATUS_W_MASK) | (val & MSTATUS_W_MASK);
     // Update the SD bit
     if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_MASK) {
         mstatus |= MSTATUS_SD_MASK;
     }
     // Store results
     a.write_mstatus(mstatus);
+
+    // If MMU configuration was changed, we may have to flush the TLBs
+    bool flush_tlb_read = false;
+    bool flush_tlb_write = false;
+    uint64_t mod = old_mstatus ^ mstatus;
+    if ((mod & MSTATUS_MXR_MASK) != 0) {
+        // MXR allows read access to execute-only pages,
+        // therefore it only affects read translations
+        flush_tlb_read = true;
+    }
+    if ((mod & MSTATUS_SUM_MASK) != 0) {
+        // SUM allows S-mode for accessing U-mode memory, except to code,
+        // therefore it only affects read/write translations
+        flush_tlb_read = true;
+        flush_tlb_write = true;
+    }
+    if ((mod & MSTATUS_MPRV_MASK) != 0 || ((mstatus & MSTATUS_MPRV_MASK) && (mod & MSTATUS_MPP_MASK) != 0)) {
+        // When MPRV is set, data loads and stores use privilege in MPP
+        // instead of the current privilege level, but code access is unaffected,
+        // therefore it only affects read/write translations
+        flush_tlb_read = true;
+        flush_tlb_write = true;
+    }
+
+    // Flush TLBs when needed
+    if (flush_tlb_read) {
+        a.template flush_tlb_type<TLB_READ>();
+        INC_COUNTER(a.get_statistics(), tlb_flush_read);
+    }
+    if (flush_tlb_write) {
+        a.template flush_tlb_type<TLB_WRITE>();
+        INC_COUNTER(a.get_statistics(), tlb_flush_write);
+    }
+    if (flush_tlb_read || flush_tlb_write) {
+        INC_COUNTER(a.get_statistics(), tlb_flush_mstatus);
+    }
+
     return true;
 }
 
@@ -1806,8 +1939,9 @@ static bool write_csr_mip(STATE_ACCESS &a, uint64_t val) {
 /// \param csraddr Address of CSR in file.
 /// \param val New register value.
 /// \returns The status of the operation (true for success, false otherwise).
+/// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t val) {
+static NO_INLINE bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t val) {
 #if defined(DUMP_CSR)
     fprintf(stderr, "csr_write: csr=0x%03x val=0x", static_cast<int>(csraddr));
     print_uint64_t(val);
@@ -2091,7 +2225,9 @@ static inline execute_status execute_SRET(STATE_ACCESS &a, uint64_t pc, uint32_t
             mstatus &= ~MSTATUS_MPRV_MASK;
         }
         a.write_mstatus(mstatus);
-        set_priv(a, priv, spp);
+        if (priv != spp) {
+            set_priv(a, spp);
+        }
         a.write_pc(a.read_sepc());
         return execute_status::retired;
     }
@@ -2123,22 +2259,26 @@ static inline execute_status execute_MRET(STATE_ACCESS &a, uint64_t pc, uint32_t
             mstatus &= ~MSTATUS_MPRV_MASK;
         }
         a.write_mstatus(mstatus);
-        set_priv(a, priv, mpp);
+        if (priv != mpp) {
+            set_priv(a, mpp);
+        }
         a.write_pc(a.read_mepc());
         return execute_status::retired;
     }
 }
 
 /// \brief Implementation of the WFI instruction.
+/// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static inline execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static NO_INLINE execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "wfi");
     auto note = a.make_scoped_note("wfi");
     (void) note;
     // Check privileges and do nothing else
     auto priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
-    if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TW_MASK))) {
+    // WFI can always causes an illegal instruction exception in less-privileged modes when TW=1
+    if (priv == PRV_U || (priv < PRV_M && (mstatus & MSTATUS_TW_MASK))) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     a.poll_console();
@@ -2837,8 +2977,9 @@ static inline execute_status execute_JALR(STATE_ACCESS &a, uint64_t pc, uint32_t
 }
 
 /// \brief Implementation of the SFENCE.VMA instruction.
+/// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static NO_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     // rs1 and rs2 are arbitrary, rest is set
     if ((insn & 0b11111110000000000111111111111111) == 0b00010010000000000000000001110011) {
         INC_COUNTER(a.get_statistics(), fence_vma);
@@ -2847,8 +2988,41 @@ static execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t 
         (void) note;
         auto priv = a.read_iflags_PRV();
         uint64_t mstatus = a.read_mstatus();
+
+        // When TVM=1, attempts to execute an SFENCE.VMA while executing in S-mode
+        // will raise an illegal instruction exception.
         if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK))) {
             return raise_illegal_insn_exception(a, pc, insn);
+        }
+        uint32_t rs1 = insn_get_rs1(insn);
+        uint32_t rs2 = insn_get_rs2(insn);
+        if (rs1 == 0) {
+            a.flush_all_tlb();
+            INC_COUNTER(a.get_statistics(), tlb_flush_all);
+            if (rs2 == 0) {
+                // Invalidates all address-translation cache entries, for all address spaces
+                INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_all);
+            } else {
+                // Invalidates all address-translation cache entries matching the
+                // address space identified by integer register rs2,
+                // except for entries containing global mappings.
+                INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_asid);
+            }
+        } else {
+            uint64_t vaddr = a.read_x(rs1);
+            a.flush_tlb_vaddr(vaddr);
+            INC_COUNTER(a.get_statistics(), tlb_flush_vaddr);
+            if (rs2 == 0) {
+                // Invalidates all address-translation cache entries that contain leaf page table entries
+                // corresponding to the virtual address in rs1, for all address spaces.
+                INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_vaddr);
+            } else {
+                // Invalidates all address-translation cache entries that contain leaf page table entries
+                // corresponding to the virtual address in rs1
+                // and that match the address space identified by integer register rs2,
+                // except for entries containing global mappings.
+                INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_asid_vaddr);
+            }
         }
         return advance_to_next_insn(a, pc);
     } else {
@@ -3250,19 +3424,18 @@ enum class fetch_status : int {
     success    ///< Instruction fetch succeeded: proceed to execute
 };
 
-/// \brief Loads the next instruction.
+/// \brief Loads the next instruction (slow path that goes through virtual address translation).
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
-/// \param pc Receives current pc.
+/// \param vaddr Virtual address for the instruction.
 /// \param pinsn Receives fetched instruction.
 /// \return Returns fetch_status::success if load succeeded, fetch_status::exception if it caused an exception.
 //          In that case, raise the exception.
 template <typename STATE_ACCESS>
-static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
-    auto note = a.make_scoped_note("fetch_insn");
-    (void) note;
-    // Get current pc from state
-    uint64_t vaddr = *pc = a.read_pc();
+static fetch_status fetch_insn_slow(STATE_ACCESS &a, uint64_t vaddr, uint32_t *pinsn) {
+    //??E Unlikely other slow functions, this one is not outlined,
+    //    because outlining it can actually degrade performance,
+    //    we should change this in the future in case we implement fetch instruction page cache.
     uint64_t paddr{};
     // Walk page table and obtain the physical address
     if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_C_SHIFT)) {
@@ -3277,10 +3450,30 @@ static fetch_status fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *pinsn) {
         raise_exception(a, MCAUSE_INSN_ACCESS_FAULT, vaddr);
         return fetch_status::exception;
     }
-    uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-    unsigned char *hpage = a.get_host_memory(pma) + (paddr_page - pma.get_start());
+    unsigned char *hpage = a.template replace_tlb_entry<TLB_CODE>(vaddr, paddr, pma);
     uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
     a.read_memory_word(paddr, hpage, hoffset, pinsn);
+    return fetch_status::success;
+}
+
+/// \brief Loads the next instruction.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param vaddr Virtual address for the instruction.
+/// \param pinsn Receives fetched instruction.
+/// \return Returns fetch_status::success if load succeeded, fetch_status::exception if it caused an exception.
+//          In that case, raise the exception.
+template <typename STATE_ACCESS>
+static inline fetch_status fetch_insn(STATE_ACCESS &a, uint64_t vaddr, uint32_t *pinsn) {
+    auto note = a.make_scoped_note("fetch_insn");
+    (void) note;
+    // Try hitting the TLB
+    if (unlikely(!(a.template read_memory_word_via_tlb<TLB_CODE>(vaddr, pinsn)))) {
+        INC_COUNTER(a.get_statistics(), tlb_cmiss);
+        // Outline the slow path into a function call to minimize host CPU code cache pressure
+        return fetch_insn_slow(a, vaddr, pinsn);
+    }
+    INC_COUNTER(a.get_statistics(), tlb_chit);
     return fetch_status::success;
 }
 
@@ -3350,10 +3543,12 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     // The inner loops continues until there is an interrupt condition
     // or mcycle reaches mcycle_end
     for (;;) {
+        // Get current pc from state
+        pc = a.read_pc();
         // Try to fetch the next instruction
-        if (fetch_insn(a, &pc, &insn) == fetch_status::success) {
+        if (likely(fetch_insn(a, pc, &insn) == fetch_status::success)) {
             // Try to execute it
-            if (execute_insn(a, pc, insn) == execute_status::retired) {
+            if (likely(execute_insn(a, pc, insn) == execute_status::retired)) {
                 // If successful, increment the number of retired instructions minstret
                 // WARNING: if an instruction modifies minstret, it needs to take into
                 // account it this unconditional increment and set the value accordingly
@@ -3370,7 +3565,7 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         a.write_mcycle(mcycle);
 
         // If the break flag is active, break from the inner loop
-        if (a.read_brkflag()) {
+        if (unlikely(a.read_brkflag())) {
             return interpreter_status::brk;
         }
         // Otherwise, there can be no pending interrupts
@@ -3387,7 +3582,7 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
 #endif
 
         // If we reached the target mcycle, we are done
-        if (mcycle >= mcycle_end) {
+        if (unlikely(mcycle >= mcycle_end)) {
             return interpreter_status::success;
         }
         INC_COUNTER(a.get_statistics(), inner_loop);

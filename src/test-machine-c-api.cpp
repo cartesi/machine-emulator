@@ -46,9 +46,15 @@ static void monitor_system_throw(std::function<void()> const &f) {
 }
 
 static hash_type get_verification_root_hash(cm_machine *machine) {
-    std::array dump_list{"0000000000000000--0000000000001000.bin", "0000000000001000--000000000000f000.bin",
-        "0000000000010000--0000000000001000.bin", "0000000002000000--00000000000c0000.bin",
-        "0000000040008000--0000000000001000.bin", "0000000080000000--0000000000100000.bin"};
+    std::array dump_list{
+        "0000000000000000--0000000000001000.bin", // shadow state
+        "0000000000001000--000000000000f000.bin", // rom
+        "0000000000010000--0000000000001000.bin", // shadow pmas
+        "0000000000020000--0000000000006000.bin", // shadow tlb
+        "0000000002000000--00000000000c0000.bin", // clint
+        "0000000040008000--0000000000001000.bin", // htif
+        "0000000080000000--0000000000100000.bin"  // ram
+    };
 
     char *err_msg{};
     int error_code = cm_dump_pmas(machine, &err_msg);
@@ -221,6 +227,7 @@ protected:
             target->flash_drive.entry[i].image_filename = new_cstr(source->flash_drive.entry[i].image_filename);
         }
 
+        target->tlb.image_filename = new_cstr(source->tlb.image_filename);
         target->clint = source->clint;
         target->htif = source->htif;
         target->rollup = source->rollup;
@@ -230,6 +237,7 @@ protected:
         for (size_t i = 0; i < config->flash_drive.count; ++i) {
             delete[] config->flash_drive.entry[i].image_filename;
         }
+        delete[] config->tlb.image_filename;
         delete[] config->flash_drive.entry;
         delete[] config->rom.image_filename;
         delete[] config->rom.bootargs;
@@ -435,6 +443,10 @@ bool operator==(const cm_rom_config &lhs, const cm_rom_config &rhs) {
     return ((strcmp(lhs.bootargs, rhs.bootargs) == 0) && (strcmp(lhs.image_filename, rhs.image_filename) == 0));
 }
 
+bool operator==(const cm_tlb_config &lhs, const cm_tlb_config &rhs) {
+    return (strcmp(lhs.image_filename, rhs.image_filename) == 0);
+}
+
 bool operator==(const cm_clint_config &lhs, const cm_clint_config &rhs) {
     return (lhs.mtimecmp == rhs.mtimecmp);
 }
@@ -445,7 +457,7 @@ bool operator==(const cm_htif_config &lhs, const cm_htif_config &rhs) {
 }
 
 bool operator==(const cm_machine_config &lhs, const cm_machine_config &rhs) {
-    return ((lhs.processor == rhs.processor) && (lhs.rom == rhs.rom) && (lhs.ram == rhs.ram) &&
+    return ((lhs.processor == rhs.processor) && (lhs.rom == rhs.rom) && (lhs.ram == rhs.ram) && (lhs.tlb == rhs.tlb) &&
         (lhs.clint == rhs.clint) && (lhs.htif == rhs.htif));
 }
 
@@ -1557,10 +1569,16 @@ protected:
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_basic_test, flash_drive_machine_fixture) {
-    std::array dump_list{"0000000000000000--0000000000001000.bin", "0000000000001000--000000000000f000.bin",
-        "0000000000010000--0000000000001000.bin", "0000000002000000--00000000000c0000.bin",
-        "0000000040008000--0000000000001000.bin", "0000000080000000--0000000000100000.bin",
-        "0080000000000000--0000000003c00000.bin"};
+    std::array dump_list{
+        "0000000000000000--0000000000001000.bin", // shadow state
+        "0000000000001000--000000000000f000.bin", // rom
+        "0000000000010000--0000000000001000.bin", // shadow pmas
+        "0000000000020000--0000000000006000.bin", // shadow tlb
+        "0000000002000000--00000000000c0000.bin", // clint
+        "0000000040008000--0000000000001000.bin", // htif
+        "0000000080000000--0000000000100000.bin", // ram
+        "0080000000000000--0000000003c00000.bin"  // flash drive
+    };
 
     char *err_msg{};
     int error_code = cm_dump_pmas(_machine, &err_msg);

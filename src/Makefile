@@ -278,6 +278,8 @@ CARTESI_OBJS:= \
 	shadow-state-factory.o \
 	shadow-pmas.o \
 	shadow-pmas-factory.o \
+	shadow-tlb.o \
+	shadow-tlb-factory.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
 	pma.o \
@@ -502,6 +504,8 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	shadow-state-factory.o \
 	shadow-pmas.o \
 	shadow-pmas-factory.o \
+	shadow-tlb.o \
+	shadow-tlb-factory.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
 	pma.o \

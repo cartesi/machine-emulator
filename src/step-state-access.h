@@ -735,10 +735,11 @@ private:
         }
     }
 
-    pma_entry &allocate_mock_pma_entry(pma_entry &&pma) {
+    pma_entry &allocate_mock_pma_entry(int index, pma_entry &&pma) {
         if (m_mock_pmas.size() == m_mock_pmas.capacity()) { // NOLINT(readability-static-accessed-through-instance)
             throw std::invalid_argument{"too many PMA accesses"};
         }
+        pma.set_index(index);
         m_mock_pmas.push_back(std::move(pma));
         return m_mock_pmas.back();
     }
@@ -750,33 +751,33 @@ private:
         return empty; // never reached
     }
 
-    pma_entry &build_mock_memory_pma_entry(uint64_t start, uint64_t length, const pma_entry::flags &f) {
+    pma_entry &build_mock_memory_pma_entry(int index, uint64_t start, uint64_t length, const pma_entry::flags &f) {
         if (f.DID != PMA_ISTART_DID::memory && f.DID != PMA_ISTART_DID::flash_drive &&
             f.DID != PMA_ISTART_DID::rollup_rx_buffer && f.DID != PMA_ISTART_DID::rollup_tx_buffer &&
             f.DID != PMA_ISTART_DID::rollup_input_metadata && f.DID != PMA_ISTART_DID::rollup_voucher_hashes &&
             f.DID != PMA_ISTART_DID::rollup_notice_hashes) {
             return error_flags("invalid DID " + std::to_string(static_cast<int>(f.DID)) + " for M");
         }
-        return allocate_mock_pma_entry(make_mockd_memory_pma_entry(start, length).set_flags(f));
+        return allocate_mock_pma_entry(index, make_mockd_memory_pma_entry(start, length).set_flags(f));
     }
 
-    pma_entry &build_mock_device_pma_entry(uint64_t start, uint64_t length, const pma_entry::flags &f) {
+    pma_entry &build_mock_device_pma_entry(int index, uint64_t start, uint64_t length, const pma_entry::flags &f) {
         switch (f.DID) {
             case PMA_ISTART_DID::shadow_state:
-                return allocate_mock_pma_entry(make_shadow_state_pma_entry(start, length).set_flags(f));
+                return allocate_mock_pma_entry(index, make_shadow_state_pma_entry(start, length).set_flags(f));
             case PMA_ISTART_DID::shadow_pmas:
-                return allocate_mock_pma_entry(make_shadow_pmas_pma_entry(start, length).set_flags(f));
+                return allocate_mock_pma_entry(index, make_shadow_pmas_pma_entry(start, length).set_flags(f));
             case PMA_ISTART_DID::CLINT:
-                return allocate_mock_pma_entry(make_clint_pma_entry(start, length).set_flags(f));
+                return allocate_mock_pma_entry(index, make_clint_pma_entry(start, length).set_flags(f));
             case PMA_ISTART_DID::HTIF:
-                return allocate_mock_pma_entry(make_htif_pma_entry(start, length).set_flags(f));
+                return allocate_mock_pma_entry(index, make_htif_pma_entry(start, length).set_flags(f));
             default:
                 return error_flags("invalid DID " + std::to_string(static_cast<int>(f.DID)) + " for IO");
         }
     }
 
-    pma_entry &build_mock_empty_pma_entry(uint64_t start, uint64_t length, const pma_entry::flags &f) {
-        return allocate_mock_pma_entry(make_empty_pma_entry(start, length).set_flags(f));
+    pma_entry &build_mock_empty_pma_entry(int index, uint64_t start, uint64_t length, const pma_entry::flags &f) {
+        return allocate_mock_pma_entry(index, make_empty_pma_entry(start, length).set_flags(f));
     }
 
     static constexpr void split_istart(uint64_t istart, uint64_t &start, bool &M, bool &IO, bool &E,
@@ -793,7 +794,7 @@ private:
         start = istart & PMA_ISTART_START_MASK;
     }
 
-    pma_entry &build_mock_pma_entry(uint64_t istart, uint64_t ilength) {
+    pma_entry &build_mock_pma_entry(int index, uint64_t istart, uint64_t ilength) {
         bool M{};
         bool IO{};
         bool E{};
@@ -804,11 +805,11 @@ private:
             return error_flags("multiple M/IO/E set");
         }
         if (M) {
-            return build_mock_memory_pma_entry(start, ilength, f);
+            return build_mock_memory_pma_entry(index, start, ilength, f);
         } else if (IO) {
-            return build_mock_device_pma_entry(start, ilength, f);
+            return build_mock_device_pma_entry(index, start, ilength, f);
         } else {
-            return build_mock_empty_pma_entry(start, ilength, f);
+            return build_mock_empty_pma_entry(index, start, ilength, f);
         }
     }
 
@@ -819,11 +820,11 @@ private:
             auto istart = this->read_pma_istart(i);
             auto ilength = this->read_pma_ilength(i);
             if (ilength == 0) {
-                return this->build_mock_pma_entry(istart, ilength);
+                return this->build_mock_pma_entry(i, istart, ilength);
             }
             uint64_t start = istart & PMA_ISTART_START_MASK;
             if (paddr >= start && paddr - start <= ilength - sizeof(T)) {
-                return this->build_mock_pma_entry(istart, ilength);
+                return this->build_mock_pma_entry(i, istart, ilength);
             }
             i++;
         }
@@ -869,18 +870,77 @@ private:
             "brkflag");
     }
 
+    template <TLB_entry_type ETYPE, typename T>
+    bool do_read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
+        uint64_t eidx = tlb_get_entry_index(vaddr);
+        uint64_t vaddr_page = check_read_word(PMA_SHADOW_TLB_START + tlb_get_vaddr_page_rel_addr<ETYPE>(eidx),
+            "tlb.vaddr_page (hit check)");
+        if (!tlb_is_hit<T>(vaddr_page, vaddr)) {
+            return false;
+        }
+        uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
+        uint64_t paddr_page =
+            check_read_word(PMA_SHADOW_TLB_START + tlb_get_paddr_page_rel_addr<ETYPE>(eidx), "tlb.paddr_page (hit)");
+        do_read_memory_word<T>(paddr_page + hoffset, nullptr, hoffset, pval);
+        return true;
+    }
+
+    template <TLB_entry_type ETYPE, typename T>
+    bool do_write_memory_word_via_tlb(uint64_t vaddr, T val) {
+        uint64_t eidx = tlb_get_entry_index(vaddr);
+        uint64_t vaddr_page = check_read_word(PMA_SHADOW_TLB_START + tlb_get_vaddr_page_rel_addr<ETYPE>(eidx),
+            "tlb.vaddr_page (hit check)");
+        if (!tlb_is_hit<T>(vaddr_page, vaddr)) {
+            return false;
+        }
+        uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
+        uint64_t paddr_page =
+            check_read_word(PMA_SHADOW_TLB_START + tlb_get_paddr_page_rel_addr<ETYPE>(eidx), "tlb.paddr_page (hit)");
+        do_write_memory_word<T>(paddr_page + hoffset, nullptr, hoffset, val);
+        return true;
+    }
+
+    template <TLB_entry_type ETYPE>
+    unsigned char *do_replace_tlb_entry(uint64_t vaddr, uint64_t paddr, pma_entry &pma) {
+        (void) pma;
+        uint64_t eidx = tlb_get_entry_index(vaddr);
+        uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
+        uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+        auto pma_index = static_cast<uint64_t>(pma.get_index());
+        check_write_word(PMA_SHADOW_TLB_START + tlb_get_vaddr_page_rel_addr<ETYPE>(eidx), vaddr_page,
+            "tlb.vaddr_page (replace)");
+        check_write_word(PMA_SHADOW_TLB_START + tlb_get_paddr_page_rel_addr<ETYPE>(eidx), paddr_page,
+            "tlb.paddr_page (replace)");
+        check_write_word(PMA_SHADOW_TLB_START + tlb_get_pma_index_rel_addr<ETYPE>(eidx), pma_index,
+            "tlb.pma_index (replace)");
+        return nullptr;
+    }
+
+    template <TLB_entry_type ETYPE>
+    void do_flush_tlb_entry(uint64_t eidx) {
+        check_write_word(PMA_SHADOW_TLB_START + tlb_get_vaddr_page_rel_addr<ETYPE>(eidx), TLB_INVALID_PAGE,
+            "tlb.vaddr_page (flush)");
+    }
+
+    template <TLB_entry_type ETYPE>
+    void do_flush_tlb_type() {
+        for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
+            do_flush_tlb_entry<ETYPE>(i);
+        }
+    }
+
+    void do_flush_tlb_vaddr(uint64_t vaddr) {
+        (void) vaddr;
+        do_flush_tlb_type<TLB_CODE>();
+        do_flush_tlb_type<TLB_READ>();
+        do_flush_tlb_type<TLB_WRITE>();
+    }
+
 #ifdef DUMP_COUNTERS
     machine_statistics &do_get_statistics() {
         return m_stats;
     }
 #endif
-};
-
-/// \brief Type-trait preventing the use of TLB while
-/// accessing memory in the state
-template <>
-struct avoid_tlb<step_state_access> {
-    static constexpr bool value = true;
 };
 
 } // namespace cartesi

@@ -249,14 +249,15 @@ local function connect()
 end
 
 local pmas_file_names = {
-    "0000000000000000--0000000000001000.bin",
-    "0000000000001000--000000000000f000.bin",
-    "0000000000010000--0000000000001000.bin",
-    "0000000002000000--00000000000c0000.bin",
-    "0000000040008000--0000000000001000.bin",
-    "0000000080000000--0000000000100000.bin"
+    "0000000000000000--0000000000001000.bin", -- shadow state
+    "0000000000001000--000000000000f000.bin", -- rom
+    "0000000000010000--0000000000001000.bin", -- shadow pmas
+    "0000000000020000--0000000000006000.bin", -- shadow tlb
+    "0000000002000000--00000000000c0000.bin", -- clint
+    "0000000040008000--0000000000001000.bin", -- htif
+    "0000000080000000--0000000000100000.bin"  -- ram
 }
-local pmas_sizes = { 4096, 61440, 4096, 786432, 4096, 1048576 }
+local pmas_sizes = { 4096, 61440, 4096, 24576, 786432, 4096, 1048576 }
 
 local function build_machine(type)
     -- Create new machine
@@ -417,6 +418,8 @@ local function test_config(config)
     local rom = config.rom
     assert(rom.image_filename == nil or type(rom.image_filename) == "string", "invalid rom.image_filename")
     assert(rom.bootargs == nil or type(rom.bootargs) == "string", "invalid rom.bootargs")
+    local tlb = config.tlb
+    assert(tlb.image_filename == nil or type(tlb.image_filename) == "string", "invalid tlb.image_filename")
     for i, f in ipairs(config.flash_drive) do
         test_config_memory_range(f)
     end
@@ -711,10 +714,10 @@ do_test("dumped log content should match",
         print(output)
         print("--------------------------")
         assert((output:find "1: read @0x120%(288%)"), "Cound not find step 1 ")
-        assert((output:find "20: read @0x10010%(65552%): 0x1069%(4201%)"),
-            "Cound not find step 20")
-        assert((output:find "28: write @0x120%(288%): 0x0%(0%) %-> 0x1%(1%)"),
-            "Cound not find step 28")
+        assert((output:find "21: read @0x10010%(65552%): 0x1069%(4201%)"),
+            "Cound not find step 21")
+        assert((output:find "32: write @0x120%(288%): 0x0%(0%) %-> 0x1%(1%)"),
+            "Cound not find step 32")
     end
 )
 

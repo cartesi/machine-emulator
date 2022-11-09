@@ -37,6 +37,7 @@
 #include "rtc.h"
 #include "shadow-pmas-factory.h"
 #include "shadow-state-factory.h"
+#include "shadow-tlb-factory.h"
 #include "state-access.h"
 #include "step-state-access.h"
 #include "strict-aliasing.h"
@@ -184,6 +185,7 @@ pma_entry &machine::register_pma_entry(pma_entry &&pma) {
             throw std::invalid_argument{"PMA overlaps with existing PMA"};
         }
     }
+    pma.set_index(static_cast<int>(m_s.pmas.size()));
     m_s.pmas.push_back(std::move(pma));
     return m_s.pmas.back();
 }
@@ -220,6 +222,50 @@ void machine::replace_memory_range(const memory_range_config &new_range) {
         }
     }
     throw std::invalid_argument{"Cannot replace inexistent memory range"};
+}
+
+template <TLB_entry_type ETYPE>
+static void load_tlb_entry(machine &m, uint64_t eidx, unsigned char *hmem) {
+    tlb_hot_entry &tlbhe = m.get_state().tlb.hot[ETYPE][eidx];
+    tlb_cold_entry &tlbce = m.get_state().tlb.cold[ETYPE][eidx];
+    auto vaddr_page = aliased_aligned_read<uint64_t>(hmem + tlb_get_vaddr_page_rel_addr<ETYPE>(eidx));
+    auto paddr_page = aliased_aligned_read<uint64_t>(hmem + tlb_get_paddr_page_rel_addr<ETYPE>(eidx));
+    auto pma_index = aliased_aligned_read<uint64_t>(hmem + tlb_get_pma_index_rel_addr<ETYPE>(eidx));
+    if (vaddr_page != TLB_INVALID_PAGE) {
+        if ((vaddr_page & ~PAGE_OFFSET_MASK) != vaddr_page) {
+            throw std::invalid_argument{"misaligned virtual page address in TLB entry"};
+        }
+        if ((paddr_page & ~PAGE_OFFSET_MASK) != paddr_page) {
+            throw std::invalid_argument{"misaligned physical page address in TLB entry"};
+        }
+        pma_entry &pma = m.find_pma_entry<uint64_t>(paddr_page);
+        // Checks if the PMA still valid
+        if (pma.get_length() == 0 || !pma.get_istart_M() || pma_index >= m.get_state().pmas.size() ||
+            &pma != &m.get_state().pmas[pma_index]) {
+            throw std::invalid_argument{"invalid PMA for TLB entry"};
+        }
+        unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
+        // Valid TLB entry
+        tlbhe.vaddr_page = vaddr_page;
+        tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - vaddr_page;
+        tlbce.paddr_page = paddr_page;
+        tlbce.pma_index = pma_index;
+    } else { // Empty or invalidated TLB entry
+        tlbhe.vaddr_page = vaddr_page;
+        tlbhe.vh_offset = 0;
+        tlbce.paddr_page = paddr_page;
+        tlbce.pma_index = pma_index;
+    }
+}
+
+template <TLB_entry_type ETYPE>
+static void init_tlb_entry(machine &m, uint64_t eidx) {
+    tlb_hot_entry &tlbhe = m.get_state().tlb.hot[ETYPE][eidx];
+    tlb_cold_entry &tlbce = m.get_state().tlb.cold[ETYPE][eidx];
+    tlbhe.vaddr_page = TLB_INVALID_PAGE;
+    tlbhe.vh_offset = 0;
+    tlbce.paddr_page = TLB_INVALID_PAGE;
+    tlbce.pma_index = TLB_INVALID_PMA;
 }
 
 machine::machine(const machine_config &c, const machine_runtime_config &r) :
@@ -343,6 +389,9 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // Copy CLINT state to from config to machine
     write_clint_mtimecmp(m_c.clint.mtimecmp);
 
+    // Register TLB device
+    register_pma_entry(make_shadow_tlb_pma_entry(PMA_SHADOW_TLB_START, PMA_SHADOW_TLB_LENGTH));
+
     // Register state shadow device
     register_pma_entry(make_shadow_state_pma_entry(PMA_SHADOW_STATE_START, PMA_SHADOW_STATE_LENGTH));
 
@@ -363,6 +412,26 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // Second, add the pmas visible only to the microarchitecture interpreter, whichincludes a sentinel
     for (auto &pma : m_uarch.get_state().pmas) {
         m_pmas.push_back(&pma);
+    }
+
+    // Initialize TLB device
+    // this must be done after all PMA entries are already registered, so we can lookup page addresses
+    if (!m_c.tlb.image_filename.empty()) {
+        // Create a temporary PMA entry just to load TLB contents from an image file
+        pma_entry tlb_image_pma =
+            make_mmapd_memory_pma_entry(PMA_SHADOW_TLB_START, PMA_SHADOW_TLB_LENGTH, m_c.tlb.image_filename, false);
+        unsigned char *hmem = tlb_image_pma.get_memory().get_host_memory();
+        for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
+            load_tlb_entry<TLB_CODE>(*this, i, hmem);
+            load_tlb_entry<TLB_READ>(*this, i, hmem);
+            load_tlb_entry<TLB_WRITE>(*this, i, hmem);
+        }
+    } else {
+        for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
+            init_tlb_entry<TLB_CODE>(*this, i);
+            init_tlb_entry<TLB_READ>(*this, i);
+            init_tlb_entry<TLB_WRITE>(*this, i);
+        }
     }
 
     // Initialize TTY if console input is enabled
@@ -447,6 +516,7 @@ machine_config machine::get_serialization_config(void) const {
     c.ram.image_filename.clear();
     c.uarch.rom.image_filename.clear();
     c.uarch.ram.image_filename.clear();
+    c.tlb.image_filename.clear();
     for (auto &f : c.flash_drive) {
         f.image_filename.clear();
     }
@@ -464,6 +534,34 @@ machine_config machine::get_serialization_config(void) const {
         c.uarch.processor.x[i] = read_uarch_x(i);
     }
     return c;
+}
+
+static void store_device_pma(const machine &m, const pma_entry &pma, const std::string &dir) {
+    if (!pma.get_istart_IO()) {
+        throw std::runtime_error{"attempt to save non-device PMA"};
+    }
+    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
+    if (!scratch) {
+        throw std::runtime_error{"failed to allocate scratch"};
+    }
+    auto name = machine_config::get_image_filename(dir, pma.get_start(), pma.get_length());
+    auto fp = unique_fopen(name.c_str(), "wb");
+    for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length();
+         page_start_in_range += PMA_PAGE_SIZE) {
+        const unsigned char *page_data = nullptr;
+        auto peek = pma.get_peek();
+        if (!peek(pma, m, page_start_in_range, &page_data, scratch.get())) {
+            throw std::runtime_error{"peek failed"};
+        } else {
+            if (!page_data) {
+                memset(scratch.get(), 0, PMA_PAGE_SIZE);
+                page_data = scratch.get();
+            }
+            if (fwrite(page_data, 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
+                throw std::system_error{errno, std::generic_category(), "error writing to '" + name + "'"};
+            }
+        }
+    }
 }
 
 static void store_memory_pma(const pma_entry &pma, const std::string &dir) {
@@ -525,6 +623,7 @@ static inline T &deref(T *t) {
 void machine::store_pmas(const machine_config &c, const std::string &dir) const {
     store_memory_pma(find_pma_entry<uint64_t>(PMA_ROM_START), dir);
     store_memory_pma(find_pma_entry<uint64_t>(PMA_RAM_START), dir);
+    store_device_pma(*this, find_pma_entry<uint64_t>(PMA_SHADOW_TLB_START), dir);
     // Could iterate over PMAs checking for those with a drive DID
     // but this is easier
     for (const auto &f : c.flash_drive) {
@@ -590,17 +689,34 @@ machine::~machine() {
     (void) fprintf(stderr, "machine ints: %" PRIu64 "\n", m_s.stats.m_int);
     (void) fprintf(stderr, "machine ex: %" PRIu64 "\n", m_s.stats.m_ex);
     (void) fprintf(stderr, "atomic mem ops: %" PRIu64 "\n", m_s.stats.atomic_mop);
-    (void) fprintf(stderr, "tlb read hit ratio: %.2f\n", TLB_HIT_RATIO(m_s, tlb_rmiss, tlb_rhit));
-    (void) fprintf(stderr, "tlb write hit ratio: %.2f\n", TLB_HIT_RATIO(m_s, tlb_wmiss, tlb_whit));
-    (void) fprintf(stderr, "tlb code hit ratio: %.2f\n", TLB_HIT_RATIO(m_s, tlb_cmiss, tlb_chit));
-    (void) fprintf(stderr, "flush_all: %" PRIu64 "\n", m_s.stats.flush_all);
-    (void) fprintf(stderr, "flush_vaddr: %" PRIu64 "\n", m_s.stats.flush_va);
     (void) fprintf(stderr, "fence: %" PRIu64 "\n", m_s.stats.fence);
     (void) fprintf(stderr, "fence.i: %" PRIu64 "\n", m_s.stats.fence_i);
     (void) fprintf(stderr, "fence.vma: %" PRIu64 "\n", m_s.stats.fence_vma);
+    (void) fprintf(stderr, "max asid: %" PRIu64 "\n", m_s.stats.max_asid);
     (void) fprintf(stderr, "User mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_U]);
     (void) fprintf(stderr, "Supervisor mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_S]);
     (void) fprintf(stderr, "Machine mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_M]);
+
+    (void) fprintf(stderr, "tlb code hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_cmiss, tlb_chit));
+    (void) fprintf(stderr, "tlb read hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_rmiss, tlb_rhit));
+    (void) fprintf(stderr, "tlb write hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_wmiss, tlb_whit));
+    (void) fprintf(stderr, "tlb_chit: %" PRIu64 "\n", m_s.stats.tlb_chit);
+    (void) fprintf(stderr, "tlb_cmiss: %" PRIu64 "\n", m_s.stats.tlb_cmiss);
+    (void) fprintf(stderr, "tlb_rhit: %" PRIu64 "\n", m_s.stats.tlb_rhit);
+    (void) fprintf(stderr, "tlb_rmiss: %" PRIu64 "\n", m_s.stats.tlb_rmiss);
+    (void) fprintf(stderr, "tlb_whit: %" PRIu64 "\n", m_s.stats.tlb_whit);
+    (void) fprintf(stderr, "tlb_wmiss: %" PRIu64 "\n", m_s.stats.tlb_wmiss);
+    (void) fprintf(stderr, "tlb_flush_all: %" PRIu64 "\n", m_s.stats.tlb_flush_all);
+    (void) fprintf(stderr, "tlb_flush_read: %" PRIu64 "\n", m_s.stats.tlb_flush_read);
+    (void) fprintf(stderr, "tlb_flush_write: %" PRIu64 "\n", m_s.stats.tlb_flush_write);
+    (void) fprintf(stderr, "tlb_flush_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_vaddr);
+    (void) fprintf(stderr, "tlb_flush_satp: %" PRIu64 "\n", m_s.stats.tlb_flush_satp);
+    (void) fprintf(stderr, "tlb_flush_mstatus: %" PRIu64 "\n", m_s.stats.tlb_flush_mstatus);
+    (void) fprintf(stderr, "tlb_flush_set_priv: %" PRIu64 "\n", m_s.stats.tlb_flush_set_priv);
+    (void) fprintf(stderr, "tlb_flush_fence_vma_all: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_all);
+    (void) fprintf(stderr, "tlb_flush_fence_vma_asid: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid);
+    (void) fprintf(stderr, "tlb_flush_fence_vma_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_vaddr);
+    (void) fprintf(stderr, "tlb_flush_fence_vma_asid_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid_vaddr);
 #endif
 }
 
@@ -1223,6 +1339,17 @@ static double now(void) {
         1.e-6;
 }
 
+void machine::mark_write_tlb_dirty_pages(void) const {
+    for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
+        const tlb_hot_entry &tlbhe = m_s.tlb.hot[TLB_WRITE][i];
+        if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
+            const tlb_cold_entry &tlbce = m_s.tlb.cold[TLB_WRITE][i];
+            pma_entry &pma = m_s.pmas[tlbce.pma_index];
+            pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
+        }
+    }
+}
+
 bool machine::verify_dirty_page_maps(void) const {
     // double begin = now();
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
@@ -1233,6 +1360,8 @@ bool machine::verify_dirty_page_maps(void) const {
         return false;
     }
     bool broken = false;
+    // Go over the write TLB and mark as dirty all pages currently there
+    mark_write_tlb_dirty_pages();
     // Now go over all memory PMAs verifying that all dirty pages are marked
     for (const auto &pma : m_s.pmas) {
         auto peek = pma.get_peek();
@@ -1280,7 +1409,8 @@ bool machine::update_merkle_tree(void) const {
     // double begin = now();
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
-
+    // Go over the write TLB and mark as dirty all pages currently there
+    mark_write_tlb_dirty_pages();
     // Now go over all PMAs and updating the Merkle tree
     m_t.begin_update();
     for (const auto &pma : m_pmas) {

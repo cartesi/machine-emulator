@@ -198,6 +198,11 @@ typedef struct { // NOLINT(modernize-use-using)
     size_t count;
 } cm_memory_range_config_array;
 
+/// \brief TLB device state configuration
+typedef struct {                // NOLINT(modernize-use-using)
+    const char *image_filename; ///< TLB image file name
+} cm_tlb_config;
+
 /// \brief CLINT device state configuration
 typedef struct {       // NOLINT(modernize-use-using)
     uint64_t mtimecmp; ///< Value of mtimecmp CSR
@@ -254,6 +259,7 @@ typedef struct { // NOLINT(modernize-use-using)
     cm_ram_config ram;
     cm_rom_config rom;
     cm_memory_range_config_array flash_drive;
+    cm_tlb_config tlb;
     cm_clint_config clint;
     cm_htif_config htif;
     cm_rollup_config rollup;

@@ -896,6 +896,11 @@ local function store_machine_config(config, output)
     output("    bootargs = %q,", rom.bootargs or def.rom.bootargs)
     comment_default(rom.bootargs, def.rom.bootargs)
     output("  },\n")
+    local tlb = config.tlb or {}
+    output("  tlb = {\n")
+    output("    image_filename = %q,", tlb.image_filename or def.tlb.image_filename)
+    comment_default(tlb.image_filename, def.tlb.image_filename)
+    output("  },\n")
     local htif = config.htif or {}
     output("  htif = {\n")
     output("    tohost = 0x%x,", htif.tohost or def.htif.tohost)

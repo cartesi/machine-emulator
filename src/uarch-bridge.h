@@ -134,6 +134,9 @@ private:
         if (try_write_x(a, paddr, data)) {
             return true;
         }
+        if (try_write_tlb(a, paddr, data)) {
+            return true;
+        }
         switch (static_cast<shadow_state_csr>(paddr)) {
             case shadow_state_csr::pc:
                 a.write_pc(data);
@@ -258,6 +261,9 @@ private:
     /// \brief Tries to read a uint64_t word from a machine state register.
     static bool try_read_register(STATE_ACCESS &a, uint64_t paddr, uint64_t *data) {
         if (try_read_x(a, paddr, data)) {
+            return true;
+        }
+        if (try_read_tlb(a, paddr, data)) {
             return true;
         }
         if (try_read_pma(a, paddr, data)) {
@@ -436,6 +442,58 @@ private:
             *data = pma.get_ilength();
         }
         return true;
+    }
+
+    static bool try_read_tlb(STATE_ACCESS &a, uint64_t paddr, uint64_t *data) {
+        if (paddr < PMA_SHADOW_TLB_START ||
+            paddr >= PMA_SHADOW_TLB_START + PMA_SHADOW_TLB_LENGTH) { // In PMA TLB range?
+            return false;
+        }
+        if (paddr % sizeof(uint64_t) != 0) { // Misaligned field?
+            return false;
+        }
+        uint64_t tlboff = paddr - PMA_SHADOW_TLB_START;
+        if (tlboff < offsetof(shadow_tlb_state, cold)) { // Hot entry
+            uint64_t etype = tlboff / sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
+            uint64_t etypeoff = tlboff % sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
+            uint64_t eidx = etypeoff / sizeof(tlb_hot_entry);
+            uint64_t fieldoff = etypeoff % sizeof(tlb_hot_entry);
+            return a.read_tlb_entry_field(true, etype, eidx, fieldoff, data);
+        } else if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
+            uint64_t coldoff = tlboff - offsetof(shadow_tlb_state, cold);
+            uint64_t etype = coldoff / sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
+            uint64_t etypeoff = coldoff % sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
+            uint64_t eidx = etypeoff / sizeof(tlb_cold_entry);
+            uint64_t fieldoff = etypeoff % sizeof(tlb_cold_entry);
+            return a.read_tlb_entry_field(false, etype, eidx, fieldoff, data);
+        }
+        return false;
+    }
+
+    static bool try_write_tlb(STATE_ACCESS &a, uint64_t paddr, uint64_t data) {
+        if (paddr < PMA_SHADOW_TLB_START ||
+            paddr >= PMA_SHADOW_TLB_START + PMA_SHADOW_TLB_LENGTH) { // In PMA TLB range?
+            return false;
+        }
+        if (paddr % sizeof(uint64_t) != 0) { // Misaligned field?
+            return false;
+        }
+        uint64_t tlboff = paddr - PMA_SHADOW_TLB_START;
+        if (tlboff < offsetof(shadow_tlb_state, cold)) { // Hot entry
+            uint64_t etype = tlboff / sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
+            uint64_t etypeoff = tlboff % sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
+            uint64_t eidx = etypeoff / sizeof(tlb_hot_entry);
+            uint64_t fieldoff = etypeoff % sizeof(tlb_hot_entry);
+            return a.write_tlb_entry_field(true, etype, eidx, fieldoff, data);
+        } else if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
+            uint64_t coldoff = tlboff - offsetof(shadow_tlb_state, cold);
+            uint64_t etype = coldoff / sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
+            uint64_t etypeoff = coldoff % sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
+            uint64_t eidx = etypeoff / sizeof(tlb_cold_entry);
+            uint64_t fieldoff = etypeoff % sizeof(tlb_cold_entry);
+            return a.write_tlb_entry_field(false, etype, eidx, fieldoff, data);
+        }
+        return false;
     }
 
     static bool uarch_putchar(uint64_t data) {

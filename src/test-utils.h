@@ -23,6 +23,7 @@
 #include "keccak-256-hasher.h"
 #include "machine-c-api.h"
 #include "machine-merkle-tree.h"
+#include "pma-constants.h"
 
 using hash_type = cartesi::keccak_256_hasher::hash_type;
 
@@ -170,8 +171,9 @@ struct incremental_merkle_tree_of_pages {
     void add_page(const hash_type &new_page_hash) {
         cartesi::keccak_256_hasher h;
         hash_type right = new_page_hash;
-        if (m_page_count >= m_max_pages)
+        if (m_page_count >= m_max_pages) {
             throw std::out_of_range("Page count must be smaller than max pages");
+        }
         int depth = m_tree_log2_size - m_page_log2_size;
         for (int i = 0; i <= depth; ++i) {
             if (m_page_count & (0x01 << i)) {
@@ -186,8 +188,9 @@ struct incremental_merkle_tree_of_pages {
     }
 
     hash_type get_root_hash() const {
-        if (m_page_count > m_max_pages)
+        if (m_page_count > m_max_pages) {
             throw std::out_of_range("Page count must be smaller or equal than max pages");
+        }
         cartesi::keccak_256_hasher h;
         int depth = m_tree_log2_size - m_page_log2_size;
         if (m_page_count < m_max_pages) {
@@ -231,8 +234,8 @@ hash_type calculate_root_hash(const std::vector<uint8_t> &data, int log2_size) {
 // of page size page_log2_size
 // calculate merke hash for region of up to tree_log2_size,
 // using zero sibling hashes where needed
-hash_type calculate_region_hash(const std::vector<uint8_t> &data_buffer, int data_number_of_pages, int page_log2_size,
-    int tree_log2_size) {
+static hash_type calculate_region_hash(const std::vector<uint8_t> &data_buffer, int data_number_of_pages,
+    int page_log2_size, int tree_log2_size) {
     int page_size = 1 << page_log2_size;
     auto incremental_tree = incremental_merkle_tree_of_pages(page_log2_size, tree_log2_size);
 
@@ -247,7 +250,8 @@ hash_type calculate_region_hash(const std::vector<uint8_t> &data_buffer, int dat
 
 // Take data hash of some region and extend it with pristine space
 // up to tree_log2_size, calculating target hash
-hash_type extend_region_hash(hash_type data_hash, uint64_t data_address, int data_log2_size, int tree_log2_size) {
+static hash_type extend_region_hash(hash_type data_hash, uint64_t data_address, int data_log2_size,
+    int tree_log2_size) {
     auto result_hash = data_hash;
     auto result_address = data_address;
     for (int n = data_log2_size + 1; n <= tree_log2_size; ++n) {
@@ -272,8 +276,8 @@ hash_type extend_region_hash(hash_type data_hash, uint64_t data_address, int dat
 // calculate merke hash for region of up to log2_result_address_space,
 // using zero sibling hashes where needed. Data_address may not be aligned
 // to the beginning of the log2_result_address_space
-hash_type calculate_region_hash_2(uint64_t data_address, const std::vector<uint8_t> data_buffer, int log2_data_size,
-    int log2_result_address_space) {
+static hash_type calculate_region_hash_2(uint64_t data_address, const std::vector<uint8_t> data_buffer,
+    int log2_data_size, int log2_result_address_space) {
 #pragma GCC diagnostic ignored "-Wshift-negative-value"
     data_address = data_address & (~0x01 << (log2_data_size - 1));
     auto data_hash = calculate_root_hash(data_buffer, log2_data_size);
@@ -326,44 +330,64 @@ static std::vector<uint8_t> parse_pma_file(const std::string &path) {
     file.seekg(0, std::ios::beg);
 
     std::vector<uint8_t> data(size);
-    file.read((char *) &data[0], size);
+    file.read(reinterpret_cast<char *>(&data[0]), size);
     return data;
 }
 
-static hash_type calculate_emulator_hash(const std::array<const char *, 6> &pmas_files) {
+static int ceil_log2(uint64_t x) {
+    return static_cast<int>(std::ceil(std::log2(static_cast<double>(x))));
+}
+
+static hash_type calculate_emulator_hash(const std::array<const char *, 7> &pmas_files) {
+    using namespace cartesi;
     cartesi::keccak_256_hasher h;
-    auto procesor_board_shadow = parse_pma_file(pmas_files[0]);
+    auto shadow_state = parse_pma_file(pmas_files[0]);
     auto rom = parse_pma_file(pmas_files[1]);
-    auto pmas = parse_pma_file(pmas_files[2]);
-    auto cli = parse_pma_file(pmas_files[3]);
-    auto hti = parse_pma_file(pmas_files[4]);
-    auto ram = parse_pma_file(pmas_files[5]);
+    auto shadow_pmas = parse_pma_file(pmas_files[2]);
+    auto shadow_tlb = parse_pma_file(pmas_files[3]);
+    auto clint = parse_pma_file(pmas_files[4]);
+    auto htif = parse_pma_file(pmas_files[5]);
+    auto ram = parse_pma_file(pmas_files[6]);
 
-    std::vector<uint8_t> cpu_and_rom_data;
-    cpu_and_rom_data.reserve(procesor_board_shadow.size() + rom.size() + pmas.size());
-    cpu_and_rom_data.insert(cpu_and_rom_data.end(), procesor_board_shadow.begin(), procesor_board_shadow.end());
-    cpu_and_rom_data.insert(cpu_and_rom_data.end(), rom.begin(), rom.end());
-    cpu_and_rom_data.insert(cpu_and_rom_data.end(), pmas.begin(), pmas.end());
+    std::vector<uint8_t> shadow_rom;
+    shadow_rom.reserve(shadow_state.size() + rom.size() + shadow_pmas.size());
+    shadow_rom.insert(shadow_rom.end(), shadow_state.begin(), shadow_state.end());
+    shadow_rom.insert(shadow_rom.end(), rom.begin(), rom.end());
+    shadow_rom.insert(shadow_rom.end(), shadow_pmas.begin(), shadow_pmas.end());
 
-    uint64_t cpu_and_rom_data_pages = cpu_and_rom_data.size() / (1 << 12);
-    auto cpu_and_rom_space_hash = calculate_region_hash(cpu_and_rom_data, cpu_and_rom_data_pages, 12, 17);
-    cpu_and_rom_space_hash = extend_region_hash(cpu_and_rom_space_hash, 0x0, 17, 25);
+    hash_type shadow_rom_tlb_space_hash;
+    hash_type shadow_rom_tlb_clint_hash;
+    hash_type left;
+    hash_type used_space_hash;
 
-    auto cli_space_hash = calculate_region_hash(cli, cli.size() / (1 << 12), 12, 20);
-    cli_space_hash = extend_region_hash(cli_space_hash, 0x02000000, 20, 25);
+    int shadow_rom_hash_size_log2 = ceil_log2(PMA_SHADOW_STATE_LENGTH + PMA_ROM_LENGTH + PMA_SHADOW_PMAS_LENGTH);
+    auto shadow_rom_space_hash = calculate_region_hash(shadow_rom,
+        (shadow_rom.size() + PMA_PAGE_SIZE - 1) / PMA_PAGE_SIZE, PMA_PAGE_SIZE_LOG2, shadow_rom_hash_size_log2);
+    shadow_rom_space_hash = extend_region_hash(shadow_rom_space_hash, 0, shadow_rom_hash_size_log2, 17);
 
-    hash_type cpu_rom_cli_hash;
-    get_concat_hash(h, cpu_and_rom_space_hash, cli_space_hash, cpu_rom_cli_hash);
-    cpu_rom_cli_hash = extend_region_hash(cpu_rom_cli_hash, 0x0, 26, 30);
+    auto tlb_size_log2 = ceil_log2(PMA_SHADOW_TLB_LENGTH);
+    auto tlb_space_hash = calculate_region_hash(shadow_tlb, (shadow_tlb.size() + PMA_PAGE_SIZE - 1) / PMA_PAGE_SIZE,
+        PMA_PAGE_SIZE_LOG2, tlb_size_log2);
+    tlb_space_hash = extend_region_hash(tlb_space_hash, PMA_SHADOW_TLB_START, tlb_size_log2, 17);
 
-    uint64_t hti_log2_data_size = static_cast<int>(std::log2(hti.size()));
-    auto hti_space_hash = calculate_region_hash_2(0x40008000, hti, hti_log2_data_size, 30);
+    get_concat_hash(h, shadow_rom_space_hash, tlb_space_hash, shadow_rom_tlb_space_hash); // 18
+    shadow_rom_tlb_space_hash = extend_region_hash(shadow_rom_tlb_space_hash, 0, 18, 25);
 
-    uint64_t ram_log2_data_size = static_cast<int>(std::log2(ram.size()));
-    auto ram_space_hash = calculate_region_hash_2(0x80000000, ram, ram_log2_data_size, 31);
+    auto clint_size_log2 = ceil_log2(PMA_CLINT_LENGTH);
+    auto clint_space_hash = calculate_region_hash(clint, (clint.size() + PMA_PAGE_SIZE - 1) / PMA_PAGE_SIZE,
+        PMA_PAGE_SIZE_LOG2, clint_size_log2);
+    clint_space_hash = extend_region_hash(clint_space_hash, PMA_CLINT_START, clint_size_log2, 25);
 
-    hash_type left, used_space_hash;
-    get_concat_hash(h, cpu_rom_cli_hash, hti_space_hash, left);
-    get_concat_hash(h, left, ram_space_hash, used_space_hash);
-    return extend_region_hash(used_space_hash, 0x0, 32, 64);
+    get_concat_hash(h, shadow_rom_tlb_space_hash, clint_space_hash, shadow_rom_tlb_clint_hash); // 26
+    shadow_rom_tlb_clint_hash = extend_region_hash(shadow_rom_tlb_clint_hash, 0, 26, 30);
+
+    uint64_t htif_size_log2 = ceil_log2(htif.size());
+    auto htif_space_hash = calculate_region_hash_2(PMA_HTIF_START, htif, htif_size_log2, 30);
+    get_concat_hash(h, shadow_rom_tlb_clint_hash, htif_space_hash, left); // 31
+
+    uint64_t ram_size_log2 = ceil_log2(ram.size());
+    auto ram_space_hash = calculate_region_hash_2(PMA_RAM_START, ram, ram_size_log2, 31);
+    get_concat_hash(h, left, ram_space_hash, used_space_hash); // 32
+
+    return extend_region_hash(used_space_hash, 0, 32, 64);
 }

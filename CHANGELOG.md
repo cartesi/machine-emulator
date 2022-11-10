@@ -5,14 +5,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+
+- Added support for RISC-V floating-point instructions
+- Added read/write virtual memory methods
 
 ### Changed
 
-- Updated emulator implementation with respect to latest RISC-V specification.
-- Optimized Lua API to avoid allocating a uservalue for error messages for every API call.
-- Lower PMA addressable ranges from 64-bit to 56-bit.
+- Updated emulator implementation with respect to latest RISC-V specification
+- Optimized Lua API to avoid allocating a uservalue for error messages for every API call
+- Lowered PMA addressable ranges from 64-bit to 56-bit
 - Changed marchid to 0xd
 - Improved error messages relating to PMAs
+- Removed DHD device
+- Refactored the shadow
+- Exposed TLB in the shadow
+- Optimized TLB implementation
 
 ### Fixed
 

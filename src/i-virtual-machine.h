@@ -121,6 +121,16 @@ public:
         do_write_x(i, val);
     }
 
+    /// \brief Reads the value of a floating-point register.
+    uint64_t read_f(int i) const {
+        return do_read_f(i);
+    }
+
+    /// \brief Writes the value of a floating-point register.
+    void write_f(int i, uint64_t val) {
+        do_write_f(i, val);
+    }
+
     /// \brief Replaces a flash drive.
     void replace_memory_range(const memory_range_config &new_range) {
         do_replace_memory_range(new_range);
@@ -170,6 +180,16 @@ public:
     void write_pc(uint64_t val) {
         do_write_pc(val);
     };
+
+    /// \brief Reads the fcsr register
+    uint64_t read_fcsr(void) const {
+        return do_read_fcsr();
+    }
+
+    /// \brief Writes the fcsr register
+    void write_fcsr(uint64_t val) {
+        do_write_fcsr(val);
+    }
 
     /// \brief Reads the mvendorid register
     uint64_t read_mvendorid(void) const {
@@ -643,8 +663,12 @@ private:
     virtual void do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) = 0;
     virtual uint64_t do_read_x(int i) const = 0;
     virtual void do_write_x(int i, uint64_t val) = 0;
+    virtual uint64_t do_read_f(int i) const = 0;
+    virtual void do_write_f(int i, uint64_t val) = 0;
     virtual uint64_t do_read_pc(void) const = 0;
     virtual void do_write_pc(uint64_t val) = 0;
+    virtual uint64_t do_read_fcsr(void) const = 0;
+    virtual void do_write_fcsr(uint64_t val) = 0;
     virtual uint64_t do_read_mvendorid(void) const = 0;
     virtual uint64_t do_read_marchid(void) const = 0;
     virtual uint64_t do_read_mimpid(void) const = 0;

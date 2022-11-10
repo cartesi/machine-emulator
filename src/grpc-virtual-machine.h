@@ -101,7 +101,7 @@ public:
         const access_log &log, const hash_type &root_hash_after, bool one_based = false);
 
     static uint64_t get_x_address(const grpc_machine_stub_ptr &stub, int i);
-
+    static uint64_t get_f_address(const grpc_machine_stub_ptr &stub, int i);
     static uint64_t get_csr_address(const grpc_machine_stub_ptr &stub, csr w);
 
 private:
@@ -113,12 +113,16 @@ private:
     void do_write_csr(csr w, uint64_t val) override;
     uint64_t do_read_x(int i) const override;
     void do_write_x(int i, uint64_t val) override;
+    uint64_t do_read_f(int i) const override;
+    void do_write_f(int i, uint64_t val) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
     void do_write_memory(uint64_t address, const unsigned char *data, size_t length) override;
     void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
     void do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) override;
     uint64_t do_read_pc(void) const override;
     void do_write_pc(uint64_t val) override;
+    uint64_t do_read_fcsr(void) const override;
+    void do_write_fcsr(uint64_t val) override;
     uint64_t do_read_mvendorid(void) const override;
     uint64_t do_read_marchid(void) const override;
     uint64_t do_read_mimpid(void) const override;

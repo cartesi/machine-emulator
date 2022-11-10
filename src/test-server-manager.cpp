@@ -3155,10 +3155,18 @@ static void test_inspect_state(const std::function<void(const std::string &title
 }
 
 static bool check_session_store(const std::string &machine_dir) {
-    static const std::vector<std::string> files = {"0000000000001000-f000.bin", "0000000060000000-200000.bin",
-        "0000000060200000-200000.bin", "0000000060400000-1000.bin", "0000000060600000-200000.bin",
-        "0000000060800000-200000.bin", "0000000080000000-4000000.bin", "0080000000000000-5000000.bin",
-        "config.protobuf", "hash"};
+    static const std::vector<std::string> files = {
+        "hash", "config.protobuf",
+        "0000000000001000-f000.bin",    // rom
+        "0000000000020000-6000.bin",    // shadow tlb
+        "0000000060000000-200000.bin",  // rollup rx buffer
+        "0000000060200000-200000.bin",  // rollup tx buffer
+        "0000000060400000-1000.bin",    // rollup input metadata
+        "0000000060600000-200000.bin",  // rollup voucher hashes
+        "0000000060800000-200000.bin",  // rollup notice hashes
+        "0000000080000000-4000000.bin", // ram
+        "0080000000000000-4400000.bin"  // root drive
+    };
     if (machine_dir.empty()) {
         return false;
     }

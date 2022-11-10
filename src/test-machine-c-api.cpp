@@ -424,7 +424,12 @@ bool operator==(const cm_processor_config &lhs, const cm_processor_config &rhs) 
             return false;
         }
     }
-    return lhs.pc == rhs.pc && lhs.mvendorid == rhs.mvendorid && lhs.marchid == rhs.marchid &&
+    for (int i = 0; i < CM_MACHINE_F_REG_COUNT; i++) {
+        if (lhs.f[i] != rhs.f[i]) {
+            return false;
+        }
+    }
+    return lhs.pc == rhs.pc && lhs.fcsr == rhs.fcsr && lhs.mvendorid == rhs.mvendorid && lhs.marchid == rhs.marchid &&
         lhs.mimpid == rhs.mimpid && lhs.mcycle == rhs.mcycle && lhs.minstret == rhs.minstret &&
         lhs.mstatus == rhs.mstatus && lhs.mtvec == rhs.mtvec && lhs.mscratch == rhs.mscratch && lhs.mepc == rhs.mepc &&
         lhs.mcause == rhs.mcause && lhs.mtval == rhs.mtval && lhs.misa == rhs.misa && lhs.mie == rhs.mie &&
@@ -827,7 +832,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_null_error_placeholder_test, default_ma
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_basic_test, ordinary_machine_fixture) {
     uint64_t word_value = 0;
     char *err_msg{};
-    int error_code = cm_read_word(_machine, 0x100, &word_value, &err_msg);
+    int error_code = cm_read_word(_machine, cm_get_csr_address(CM_PROC_PC), &word_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(word_value, static_cast<uint64_t>(0x1000));
@@ -1080,6 +1085,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_virtual_memory_massive_test, ordinary_
 
 // clang-format off
 CHECK_READER_FAILS_ON_nullptr_MACHINE(pc)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(fcsr)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(mcycle)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(minstret)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(mstatus)
@@ -1158,6 +1164,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_brkflag_null_machine_test) {
 
 // clang-format off
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(pc)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(fcsr)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mcycle)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(minstret)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mstatus)
@@ -1208,6 +1215,7 @@ CHECK_WRITER_FAILS_ON_nullptr_MACHINE(clint_mtimecmp)
 
     // clang-format off
 CHECK_REGISTER_READ_WRITE(pc)
+CHECK_REGISTER_READ_WRITE(fcsr)
 CHECK_REGISTER_READ_WRITE(mcycle)
 CHECK_REGISTER_READ_WRITE(minstret)
 CHECK_REGISTER_READ_WRITE(mstatus)
@@ -1834,7 +1842,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_csr_basic_test, ordinary_machine_fixtu
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(csr_origin, csr_read);
 
-    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x100), cm_get_csr_address(CM_PROC_PC));
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x200), cm_get_csr_address(CM_PROC_PC));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(verify_merkle_tree_null_machine_test) {
@@ -2436,7 +2444,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_csr_address_basic_test, grpc_machine_fix
         printf("Error getting csr address: %s\n", err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_REQUIRE_EQUAL(val, static_cast<uint64_t>(280));
+    BOOST_REQUIRE_EQUAL(val, static_cast<uint64_t>(544));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_version_wrong_addr_test, grpc_machine_fixture_with_server) {

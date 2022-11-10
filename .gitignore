@@ -26,6 +26,7 @@ doc/xml/
 .vscode
 .ycm_extra_conf.py
 
+*.raw
 *.so
 *.dylib
 *.dtb

@@ -91,12 +91,28 @@ private:
         m_m.get_state().x[reg] = val;
     }
 
+    uint64_t do_read_f(int reg) const {
+        return m_m.get_state().f[reg];
+    }
+
+    void do_write_f(int reg, uint64_t val) {
+        m_m.get_state().f[reg] = val;
+    }
+
     uint64_t do_read_pc(void) const {
         return m_m.get_state().pc;
     }
 
     void do_write_pc(uint64_t val) {
         m_m.get_state().pc = val;
+    }
+
+    uint64_t do_read_fcsr(void) const {
+        return m_m.get_state().fcsr;
+    }
+
+    void do_write_fcsr(uint64_t val) {
+        m_m.get_state().fcsr = val;
     }
 
     uint64_t do_read_minstret(void) const {

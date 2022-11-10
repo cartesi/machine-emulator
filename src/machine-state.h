@@ -62,8 +62,11 @@ struct machine_state {
     uint64_t pc;                         ///< Program counter.
     std::array<uint64_t, X_REG_COUNT> x; ///< Register file.
 
+    uint64_t fcsr;                       ///< CSR fcsr.
+    std::array<uint64_t, F_REG_COUNT> f; ///< Floating-point register file.
+
+    uint64_t mcycle;   ///< CSR mcycle.
     uint64_t minstret; ///< CSR minstret.
-    uint64_t mcycle;
 
     uint64_t mstatus;  ///< CSR mstatus.
     uint64_t mtvec;    ///< CSR mtvec.

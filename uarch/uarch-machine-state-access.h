@@ -173,12 +173,28 @@ private:
         raw_write_memory(shadow_state_get_x_abs_addr(reg), val);
     }
 
+    uint64_t do_read_f(int reg) {
+        return raw_read_memory<uint64_t>(shadow_state_get_f_abs_addr(reg));
+    }
+
+    void do_write_f(int reg, uint64_t val) {
+        raw_write_memory(shadow_state_get_f_abs_addr(reg), val);
+    }
+
     uint64_t do_read_pc(void) {
         return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::pc));
     }
 
     void do_write_pc(uint64_t val) {
         raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::pc), val);
+    }
+
+    uint64_t do_read_fcsr(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::fcsr));
+    }
+
+    void do_write_fcsr(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::fcsr), val);
     }
 
     uint64_t do_read_minstret(void) {

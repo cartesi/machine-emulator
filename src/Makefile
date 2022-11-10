@@ -25,6 +25,7 @@ CRYPTOPP_LIB:=-L$(BUILDDIR)/lib -lcryptopp
 CRYPTOPP_INC:=-I$(BUILDDIR)/include
 GRPC_DIR:=../lib/grpc-interfaces
 HEALTHCHECK_DIR:=$(BUILDDIR)/share/grpc/health/v1
+SOFTFP_INC:=-I../third-party/tinyemu-softfp
 
 PROTOC:=$(BUILDDIR)/bin/protoc
 GRPC_CPP_PLUGIN=$(BUILDDIR)/bin/grpc_cpp_plugin
@@ -142,7 +143,7 @@ HASH_LIBS:=$(CRYPTOPP_LIB)
 WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
-INCS= -I../lib/machine-emulator-defines $(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
+INCS= -I../lib/machine-emulator-defines $(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) $(GRPC_INC) $(SOFTFP_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 #DEFS+=-DUMP_ILLEGAL_INSN
@@ -286,6 +287,7 @@ CARTESI_OBJS:= \
 	machine.o \
 	machine-config.o \
 	interpret.o \
+	soft-float.o \
 	virtual-machine.o \
 	protobuf-util.o \
 	machine-c-api.o \
@@ -512,6 +514,7 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	machine.o \
 	machine-config.o \
 	interpret.o \
+	soft-float.o \
 	uarch-machine.o \
 	uarch-interpret.o
 

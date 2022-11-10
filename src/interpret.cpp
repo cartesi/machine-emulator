@@ -100,6 +100,7 @@
 #include "riscv-constants.h"
 #include "rom.h"
 #include "rtc.h"
+#include "soft-float.h"
 #include "strict-aliasing.h"
 #include "translate-virtual-address.h"
 
@@ -161,6 +162,10 @@ static void print_uint64_t(uint64_t a) {
 static const std::array<const char *, X_REG_COUNT> reg_name{"zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0",
     "s1", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11",
     "t3", "t4", "t5", "t6"};
+
+static const std::array<const char *, F_REG_COUNT> f_reg_name{"ft0", "ft1", "ft2", "ft3", "ft4", "ft5", "ft6", "ft7",
+    "fs0", "fs1", "fa0", "fa1", "fa2", "fa3", "fa4", "fa5", "fa6", "fa7", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7",
+    "fs8", "fs9", "fs10", "fs11", "ft8", "ft9", "ft10", "ft11"};
 
 static const char *sbi_ecall_name(uint64_t a7) {
     switch (a7) {
@@ -302,6 +307,15 @@ static void dump_regs(const STATE &s) {
             (void) fprintf(stderr, " ");
         }
     }
+    for (int i = 0; i < F_REG_COUNT; i++) {
+        (void) fprintf(stderr, "%-3s= ", f_reg_name[i]);
+        print_uint64_t(s.f[i]);
+        if ((i & (cols - 1)) == (cols - 1)) {
+            (void) fprintf(stderr, "\n");
+        } else {
+            (void) fprintf(stderr, " ");
+        }
+    }
     (void) fprintf(stderr, "priv=%c", priv_str[s.iflags.PRV]);
     (void) fprintf(stderr, " mstatus=");
     print_uint64_t(s.mstatus);
@@ -363,7 +377,8 @@ template <typename STATE_ACCESS>
 static NO_INLINE void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t tval) {
     auto note = a.make_scoped_note("raise_exception");
     (void) note;
-#if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS)
+#if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS) ||                            \
+    defined(DUMP_ILLEGAL_INSN_EXCEPTIONS)
     {
         int flag;
         flag = 0;
@@ -378,6 +393,10 @@ static NO_INLINE void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t 
 #endif
 #ifdef DUMP_EXCEPTIONS
         flag |= (cause & MCAUSE_INTERRUPT_FLAG) == 0;
+#endif
+#ifdef DUMP_ILLEGAL_INSN_EXCEPTIONS
+        if (cause == MCAUSE_ILLEGAL_INSN)
+            flag = 1;
 #endif
         if (flag) {
             (void) fprintf(stderr, "raise_exception: cause=0x");
@@ -541,6 +560,12 @@ static inline uint32_t insn_get_funct3_00000_opcode(uint32_t insn) {
     return insn & 0b111000001111111;
 }
 
+/// \brief Obtains the funct2 field from an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_funct2(uint32_t insn) {
+    return (insn << 5) >> 30;
+}
+
 /// \brief Obtains the RD field from an instruction.
 /// \param insn Instruction.
 static inline uint32_t insn_get_rd(uint32_t insn) {
@@ -623,6 +648,34 @@ static inline uint32_t insn_get_funct7_sr1(uint32_t insn) {
 static inline uint32_t insn_get_funct7(uint32_t insn) {
     // std::cerr << "funct7: " << std::bitset<7>((insn >> 25)) << '\n';
     return insn >> 25;
+}
+
+/// \brief Obtains the funct7 field concatenated with rs2 field from an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_funct7_rs2(uint32_t insn) {
+    // std::cerr << "funct7_rs2: " << std::bitset<12>((insn >> 20)) << '\n';
+    return insn >> 20;
+}
+
+/// \brief Obtains the rm field from an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_rm(uint32_t insn) {
+    // std::cerr << "rm: " << std::bitset<3>((insn >> 12) & 0b111) << '\n';
+    return (insn >> 12) & 0b111;
+}
+
+/// \brief Obtains the fmt field from an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_fmt(uint32_t insn) {
+    // std::cerr << "fmt: " << std::bitset<3>((insn >> 25) & 0b11) << '\n';
+    return (insn >> 25) & 0b11;
+}
+
+/// \brief Obtains the rs3 field from an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_rs3(uint32_t insn) {
+    // std::cerr << "rs3: " << std::bitset<5>((insn >> 27)) << '\n';
+    return (insn >> 27);
 }
 
 /// \brief Read an aligned word from virtual memory (slow path that goes through virtual address translation).
@@ -1525,6 +1578,35 @@ static inline uint64_t read_csr_mimpid(STATE_ACCESS &a, bool *status) {
     return read_csr_success(a.read_mimpid(), status);
 }
 
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_fflags(STATE_ACCESS &a, bool *status) {
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return read_csr_fail(status);
+    }
+    uint64_t fflags = (a.read_fcsr() & FCSR_FFLAGS_RW_MASK) >> FCSR_FFLAGS_SHIFT;
+    return read_csr_success(fflags, status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_frm(STATE_ACCESS &a, bool *status) {
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return read_csr_fail(status);
+    }
+    uint64_t frm = (a.read_fcsr() & FCSR_FRM_RW_MASK) >> FCSR_FRM_SHIFT;
+    return read_csr_success(frm, status);
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_fcsr(STATE_ACCESS &a, bool *status) {
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return read_csr_fail(status);
+    }
+    return read_csr_success(a.read_fcsr(), status);
+}
+
 /// \brief Reads the value of a CSR given its address
 /// \param a Machine state accessor object.
 /// \param csraddr Address of CSR in file.
@@ -1539,6 +1621,13 @@ static NO_INLINE uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *s
     }
 
     switch (csraddr) {
+        case CSR_address::fflags:
+            return read_csr_fflags(a, status);
+        case CSR_address::frm:
+            return read_csr_frm(a, status);
+        case CSR_address::fcsr:
+            return read_csr_fcsr(a, status);
+
         case CSR_address::ucycle:
             return read_csr_cycle(a, status);
         case CSR_address::uinstret:
@@ -1787,8 +1876,8 @@ static bool write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
 
     // Modify only bits that can be written to
     uint64_t mstatus = (old_mstatus & ~MSTATUS_W_MASK) | (val & MSTATUS_W_MASK);
-    // Update the SD bit
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_MASK) {
+    // The SD bit is read-only and is set when either the FS, VS, or XS bits encode a Dirty state
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_DIRTY) {
         mstatus |= MSTATUS_SD_MASK;
     }
     // Store results
@@ -1934,6 +2023,45 @@ static bool write_csr_mip(STATE_ACCESS &a, uint64_t val) {
     return true;
 }
 
+template <typename STATE_ACCESS>
+static inline uint64_t write_csr_fflags(STATE_ACCESS &a, uint64_t val) {
+    uint64_t mstatus = a.read_mstatus();
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return false;
+    }
+    uint64_t fcsr = (a.read_fcsr() & ~FCSR_FFLAGS_RW_MASK) | ((val << FCSR_FFLAGS_SHIFT) & FCSR_FFLAGS_RW_MASK);
+    a.write_fcsr(fcsr);
+    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t write_csr_frm(STATE_ACCESS &a, uint64_t val) {
+    uint64_t mstatus = a.read_mstatus();
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return false;
+    }
+    uint64_t fcsr = (a.read_fcsr() & ~FCSR_FRM_RW_MASK) | ((val << FCSR_FRM_SHIFT) & FCSR_FRM_RW_MASK);
+    a.write_fcsr(fcsr);
+    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
+    return true;
+}
+
+template <typename STATE_ACCESS>
+static inline uint64_t write_csr_fcsr(STATE_ACCESS &a, uint64_t val) {
+    uint64_t mstatus = a.read_mstatus();
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return false;
+    }
+    uint64_t fcsr = val & FCSR_RW_MASK;
+    a.write_fcsr(fcsr);
+    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
+    return true;
+}
+
 /// \brief Writes a value to a CSR given its address
 /// \param a Machine state accessor object.
 /// \param csraddr Address of CSR in file.
@@ -1955,6 +2083,13 @@ static NO_INLINE bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t v
     }
 
     switch (csraddr) {
+        case CSR_address::fflags:
+            return write_csr_fflags(a, val);
+        case CSR_address::frm:
+            return write_csr_frm(a, val);
+        case CSR_address::fcsr:
+            return write_csr_fcsr(a, val);
+
         case CSR_address::sstatus:
             return write_csr_sstatus(a, val);
         case CSR_address::senvcfg:
@@ -3260,6 +3395,1262 @@ static inline execute_status execute_privileged(STATE_ACCESS &a, uint64_t pc, ui
     }
 }
 
+/// \brief Performs NaN-boxing for a float value.
+/// \param val Float value as an unsigned integer.
+/// \returns A valid NaN-boxed float value.
+template <typename T>
+static inline uint64_t float_box(T val) {
+    constexpr uint64_t TLEN = sizeof(T) * 8;
+    // Any operation that writes a narrower result to an f register must write all 1s to
+    // the uppermost FLEN−n bits to yield a legal NaN-boxed value.
+    if constexpr (TLEN < FLEN) {
+        return val | (UINT64_C(-1) << TLEN);
+    } else {
+        return val;
+    }
+}
+
+/// \brief Performs NaN-unboxing for a float value.
+/// \tparam T Respective float unsigned type to save the unboxed value.
+/// \param val Float value as an unsigned integer.
+/// \returns A valid float if the NaN-unboxing succeeds, otherwise the canonical NaN for type T.
+template <typename T>
+static inline T float_unbox(uint64_t val) {
+    constexpr uint64_t TLEN = sizeof(T) * 8;
+    static_assert(TLEN == 32 || TLEN == 64, "unsupported soft float length");
+    if constexpr (TLEN < FLEN) {
+        // Floating-point operations on narrower n-bit operations (n < FLEN),
+        // must check if the input operands are correctly NaN-boxed, i.e., all upper FLEN−n bits are 1.
+        // If so, the n least-significant bits of the input are used as the
+        // input value, otherwise the input value is treated as an n-bit canonical NaN.
+        if ((val >> TLEN) != (UINT64_C(-1) >> TLEN)) {
+            // The canonical NaN has a positive sign and all significand bits clear except the MSB,
+            // a.k.a. the quiet bit.
+            if constexpr (TLEN == 32) {
+                return F32_CANONICAL_NAN;
+            } else if constexpr (TLEN == 64) {
+                return F64_CANONICAL_NAN;
+            }
+        }
+    }
+    // Returns the n least-significant bits of the input.
+    return static_cast<T>(val);
+}
+
+template <typename T, typename STATE_ACCESS, typename F>
+static inline execute_status execute_float_ternary_op_rm(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+    uint64_t mstatus = a.read_mstatus();
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint64_t fcsr = a.read_fcsr();
+    // The rounding mode comes from the insn
+    uint32_t rm = insn_get_rm(insn);
+    // Unless it is set to FRM_DYN, in which case it comes from fcsr.frm
+    if (rm == FRM_DYN) {
+        rm = fcsr >> FCSR_FRM_SHIFT;
+    }
+    // If the rounding mode is invalid, the instruction is considered illegal
+    if (rm > FRM_RMM) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint32_t rd = insn_get_rd(insn);
+    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    // We must always check if input operands are properly NaN-boxed.
+    T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
+    T s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
+    T s3 = float_unbox<T>(a.read_f(insn_get_rs3(insn)));
+    // Must store a valid NaN-boxed value.
+    a.write_f(rd, float_box(f(s1, s2, s3, rm, &fflags)));
+    a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
+    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename T, typename STATE_ACCESS, typename F>
+static inline execute_status execute_float_binary_op_rm(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+    uint64_t mstatus = a.read_mstatus();
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint64_t fcsr = a.read_fcsr();
+    // The rounding mode comes from the insn
+    uint32_t rm = insn_get_rm(insn);
+    // Unless it is set to FRM_DYN, in which case it comes from fcsr.frm
+    if (rm == FRM_DYN) {
+        rm = fcsr >> FCSR_FRM_SHIFT;
+    }
+    // If the rounding mode is invalid, the instruction is considered illegal
+    if (rm > FRM_RMM) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint32_t rd = insn_get_rd(insn);
+    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    // We must always check if input operands are properly NaN-boxed.
+    T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
+    T s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
+    // Must store a valid NaN-boxed value.
+    a.write_f(rd, float_box(f(s1, s2, rm, &fflags)));
+    a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
+    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename T, typename STATE_ACCESS, typename F>
+static inline execute_status execute_float_unary_op_rm(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+    uint64_t mstatus = a.read_mstatus();
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint64_t fcsr = a.read_fcsr();
+    // Unary operation should have rs2 set to 0
+    if (insn_get_rs2(insn) != 0) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    // The rounding mode comes from the insn
+    uint32_t rm = insn_get_rm(insn);
+    // Unless it is set to FRM_DYN, in which case it comes from fcsr.frm
+    if (rm == FRM_DYN) {
+        rm = fcsr >> FCSR_FRM_SHIFT;
+    }
+    // If the rounding mode is invalid, the instruction is considered illegal
+    if (rm > FRM_RMM) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint32_t rd = insn_get_rd(insn);
+    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    // We must always check if input operands are properly NaN-boxed.
+    T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
+    // Must store a valid NaN-boxed value.
+    a.write_f(rd, float_box(f(s1, rm, &fflags)));
+    a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
+    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename T, typename STATE_ACCESS>
+static inline execute_status execute_FS(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint64_t vaddr = a.read_x(insn_get_rs1(insn));
+    int32_t imm = insn_S_get_imm(insn);
+    // A narrower n-bit transfer out of the floating-point
+    // registers will transfer the lower n bits of the register ignoring the upper FLEN−n bits.
+    T val = static_cast<T>(a.read_f(insn_get_rs2(insn)));
+    if (!write_virtual_memory<T>(a, vaddr + imm, val)) {
+        return advance_to_raised_exception(a);
+    }
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FSW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fsw");
+    auto note = a.make_scoped_note("fsw");
+    (void) note;
+    return execute_FS<uint32_t>(a, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FSD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fsd");
+    auto note = a.make_scoped_note("fsd");
+    (void) note;
+    return execute_FS<uint64_t>(a, pc, insn);
+}
+
+template <typename T, typename STATE_ACCESS>
+static inline execute_status execute_FL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    uint64_t mstatus = a.read_mstatus();
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    // Loads the float value from virtual memory
+    uint64_t vaddr = a.read_x(insn_get_rs1(insn));
+    int32_t imm = insn_I_get_imm(insn);
+    T val = 0;
+    if (!read_virtual_memory(a, vaddr + imm, &val)) {
+        return advance_to_raised_exception(a);
+    }
+    // A narrower n-bit transfer, n < FLEN,
+    // into the f registers will create a valid NaN-boxed value.
+    uint32_t rd = insn_get_rd(insn);
+    a.write_f(rd, float_box(val));
+    // Implementations may choose to track the dirtiness of the floating-point register state
+    // imprecisely by reporting the state to be dirty even when it has not been modified.
+    // If an instruction explicitly or implicitly writes a floating-point register
+    // and FS is not Off, it is implementation-defined whether FS transitions to Dirty.
+    // For now, for simplicity, we always transition to Dirty.
+    //??E Maybe we could maybe optimize this later, to not always transition to dirty.
+    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FLW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "flw");
+    auto note = a.make_scoped_note("flw");
+    (void) note;
+    return execute_FL<uint32_t>(a, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FLD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fld");
+    auto note = a.make_scoped_note("fld");
+    (void) note;
+    return execute_FL<uint64_t>(a, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMADD_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fmadd.s");
+    auto note = a.make_scoped_note("fmadd.s");
+    (void) note;
+    return execute_float_ternary_op_rm<uint32_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t s2, uint32_t s3, uint32_t rm, uint32_t *fflags) -> uint32_t {
+            return fma_sf32(s1, s2, s3, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMADD_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fmadd.d");
+    auto note = a.make_scoped_note("fmadd.d");
+    (void) note;
+    return execute_float_ternary_op_rm<uint64_t>(a, pc, insn,
+        [](uint64_t s1, uint64_t s2, uint64_t s3, uint32_t rm, uint32_t *fflags) -> uint64_t {
+            return fma_sf64(s1, s2, s3, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMADD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_FM_funct2>(insn_get_funct2(insn))) {
+        case insn_FM_funct2::S:
+            return execute_FMADD_S(a, pc, insn);
+        case insn_FM_funct2::D:
+            return execute_FMADD_D(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMSUB_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fmsub.s");
+    auto note = a.make_scoped_note("fmsub.s");
+    (void) note;
+    return execute_float_ternary_op_rm<uint32_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t s2, uint32_t s3, uint32_t rm, uint32_t *fflags) -> uint32_t {
+            return fma_sf32(s1, s2, s3 ^ F32_SIGN_MASK, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMSUB_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fmsub.d");
+    auto note = a.make_scoped_note("fmsub.d");
+    (void) note;
+    return execute_float_ternary_op_rm<uint64_t>(a, pc, insn,
+        [](uint64_t s1, uint64_t s2, uint64_t s3, uint32_t rm, uint32_t *fflags) -> uint64_t {
+            return fma_sf64(s1, s2, s3 ^ F64_SIGN_MASK, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMSUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_FM_funct2>(insn_get_funct2(insn))) {
+        case insn_FM_funct2::S:
+            return execute_FMSUB_S(a, pc, insn);
+        case insn_FM_funct2::D:
+            return execute_FMSUB_D(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FNMADD_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fnmadd.s");
+    auto note = a.make_scoped_note("fnmadd.s");
+    (void) note;
+    return execute_float_ternary_op_rm<uint32_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t s2, uint32_t s3, uint32_t rm, uint32_t *fflags) -> uint32_t {
+            return fma_sf32(s1 ^ F32_SIGN_MASK, s2, s3 ^ F32_SIGN_MASK, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FNMADD_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fnmadd.d");
+    auto note = a.make_scoped_note("fnmadd.d");
+    (void) note;
+    return execute_float_ternary_op_rm<uint64_t>(a, pc, insn,
+        [](uint64_t s1, uint64_t s2, uint64_t s3, uint32_t rm, uint32_t *fflags) -> uint64_t {
+            return fma_sf64(s1 ^ F64_SIGN_MASK, s2, s3 ^ F64_SIGN_MASK, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FNMADD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_FM_funct2>(insn_get_funct2(insn))) {
+        case insn_FM_funct2::S:
+            return execute_FNMADD_S(a, pc, insn);
+        case insn_FM_funct2::D:
+            return execute_FNMADD_D(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FNMSUB_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fnmsub.s");
+    auto note = a.make_scoped_note("fnmsub.s");
+    (void) note;
+    return execute_float_ternary_op_rm<uint32_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t s2, uint32_t s3, uint32_t rm, uint32_t *fflags) -> uint32_t {
+            return fma_sf32(s1 ^ F32_SIGN_MASK, s2, s3, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FNMSUB_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fnmsub.d");
+    auto note = a.make_scoped_note("fnmsub.d");
+    (void) note;
+    return execute_float_ternary_op_rm<uint64_t>(a, pc, insn,
+        [](uint64_t s1, uint64_t s2, uint64_t s3, uint32_t rm, uint32_t *fflags) -> uint64_t {
+            return fma_sf64(s1 ^ F64_SIGN_MASK, s2, s3, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FNMSUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_FM_funct2>(insn_get_funct2(insn))) {
+        case insn_FM_funct2::S:
+            return execute_FNMSUB_S(a, pc, insn);
+        case insn_FM_funct2::D:
+            return execute_FNMSUB_D(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FADD_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fadd.s");
+    auto note = a.make_scoped_note("fadd.s");
+    (void) note;
+    return execute_float_binary_op_rm<uint32_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t s2, uint32_t rm, uint32_t *fflags) -> uint32_t {
+            return add_sf32(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FADD_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fadd.d");
+    auto note = a.make_scoped_note("fadd.d");
+    (void) note;
+    return execute_float_binary_op_rm<uint64_t>(a, pc, insn,
+        [](uint64_t s1, uint64_t s2, uint32_t rm, uint32_t *fflags) -> uint64_t {
+            return add_sf64(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FSUB_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fsub.s");
+    auto note = a.make_scoped_note("fsub.s");
+    (void) note;
+    return execute_float_binary_op_rm<uint32_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t s2, uint32_t rm, uint32_t *fflags) -> uint32_t {
+            return sub_sf32(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FSUB_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fsub.d");
+    auto note = a.make_scoped_note("fsub.d");
+    (void) note;
+    return execute_float_binary_op_rm<uint64_t>(a, pc, insn,
+        [](uint64_t s1, uint64_t s2, uint32_t rm, uint32_t *fflags) -> uint64_t {
+            return sub_sf64(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMUL_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fmul.s");
+    auto note = a.make_scoped_note("fmul.s");
+    (void) note;
+    return execute_float_binary_op_rm<uint32_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t s2, uint32_t rm, uint32_t *fflags) -> uint32_t {
+            return mul_sf32(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMUL_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fmul.d");
+    auto note = a.make_scoped_note("fmul.d");
+    (void) note;
+    return execute_float_binary_op_rm<uint64_t>(a, pc, insn,
+        [](uint64_t s1, uint64_t s2, uint32_t rm, uint32_t *fflags) -> uint64_t {
+            return mul_sf64(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FDIV_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fdiv.s");
+    auto note = a.make_scoped_note("fdiv.s");
+    (void) note;
+    return execute_float_binary_op_rm<uint32_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t s2, uint32_t rm, uint32_t *fflags) -> uint32_t {
+            return div_sf32(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FDIV_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fdiv.d");
+    auto note = a.make_scoped_note("fdiv.d");
+    (void) note;
+    return execute_float_binary_op_rm<uint64_t>(a, pc, insn,
+        [](uint64_t s1, uint64_t s2, uint32_t rm, uint32_t *fflags) -> uint64_t {
+            return div_sf64(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename T, typename STATE_ACCESS, typename F>
+static inline execute_status execute_FCLASS(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint32_t rd = insn_get_rd(insn);
+    if (rd != 0) {
+        // We must always check if input operands are properly NaN-boxed.
+        T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
+        a.write_x(rd, f(s1));
+    }
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename T, typename STATE_ACCESS, typename F>
+static inline execute_status execute_float_binary_op(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+    uint64_t mstatus = a.read_mstatus();
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint64_t fcsr = a.read_fcsr();
+    // We must always check if input operands are properly NaN-boxed.
+    T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
+    T s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
+    uint32_t rd = insn_get_rd(insn);
+    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    // Must store a valid NaN-boxed value.
+    a.write_f(rd, float_box(f(s1, s2, &fflags)));
+    a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
+    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename T, typename STATE_ACCESS, typename F>
+static inline execute_status execute_float_cmp_op(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+    uint64_t mstatus = a.read_mstatus();
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint64_t fcsr = a.read_fcsr();
+    // We must always check if input operands are properly NaN-boxed.
+    T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
+    T s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
+    uint32_t rd = insn_get_rd(insn);
+    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    // Comparisons with NaNs may set NV (invalid operation) exception flag in fflags
+    uint64_t val = f(s1, s2, &fflags);
+    if (rd != 0) {
+        a.write_x(rd, val);
+    }
+    a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
+    //??E For now we always mark the state as dirty, since fflags may change, we could optimize this later.
+    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FSGNJ_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fsgnj.s");
+    auto note = a.make_scoped_note("fsgnj.s");
+    (void) note;
+    return execute_float_binary_op<uint32_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t s2, const uint32_t *fflags) -> uint32_t {
+            (void) fflags;
+            return (s1 & ~F32_SIGN_MASK) | (s2 & F32_SIGN_MASK);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FSGNJN_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fsgnjn.s");
+    auto note = a.make_scoped_note("fsgnjn.s");
+    (void) note;
+    return execute_float_binary_op<uint32_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t s2, const uint32_t *fflags) -> uint32_t {
+            (void) fflags;
+            return (s1 & ~F32_SIGN_MASK) | ((s2 & F32_SIGN_MASK) ^ F32_SIGN_MASK);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FSGNJX_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fsgnjx.s");
+    auto note = a.make_scoped_note("fsgnjx.s");
+    (void) note;
+    return execute_float_binary_op<uint32_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t s2, const uint32_t *fflags) -> uint32_t {
+            (void) fflags;
+            return s1 ^ (s2 & F32_SIGN_MASK);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FSGN_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_FSGN_rm>(insn_get_rm(insn))) {
+        case insn_FSGN_rm::J:
+            return execute_FSGNJ_S(a, pc, insn);
+        case insn_FSGN_rm::JN:
+            return execute_FSGNJN_S(a, pc, insn);
+        case insn_FSGN_rm::JX:
+            return execute_FSGNJX_S(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FSGNJ_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fsgnj.d");
+    auto note = a.make_scoped_note("fsgnj.d");
+    (void) note;
+    return execute_float_binary_op<uint64_t>(a, pc, insn,
+        [](uint64_t s1, uint64_t s2, const uint32_t *fflags) -> uint64_t {
+            (void) fflags;
+            return (s1 & ~F64_SIGN_MASK) | (s2 & F64_SIGN_MASK);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FSGNJN_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fsgnjn.d");
+    auto note = a.make_scoped_note("fsgnjn.d");
+    (void) note;
+    return execute_float_binary_op<uint64_t>(a, pc, insn,
+        [](uint64_t s1, uint64_t s2, const uint32_t *fflags) -> uint64_t {
+            (void) fflags;
+            return (s1 & ~F64_SIGN_MASK) | ((s2 & F64_SIGN_MASK) ^ F64_SIGN_MASK);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FSGNJX_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fsgnjx.d");
+    auto note = a.make_scoped_note("fsgnjx.d");
+    (void) note;
+    return execute_float_binary_op<uint64_t>(a, pc, insn,
+        [](uint64_t s1, uint64_t s2, const uint32_t *fflags) -> uint64_t {
+            (void) fflags;
+            return s1 ^ (s2 & F64_SIGN_MASK);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FSGN_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_FSGN_rm>(insn_get_rm(insn))) {
+        case insn_FSGN_rm::J:
+            return execute_FSGNJ_D(a, pc, insn);
+        case insn_FSGN_rm::JN:
+            return execute_FSGNJN_D(a, pc, insn);
+        case insn_FSGN_rm::JX:
+            return execute_FSGNJX_D(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMIN_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fmin.s");
+    auto note = a.make_scoped_note("fmin.s");
+    (void) note;
+    return execute_float_binary_op<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint32_t {
+        return min_sf32(s1, s2, fflags, FMINMAX_IEEE754_201X);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMAX_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fmax.s");
+    auto note = a.make_scoped_note("fmax.s");
+    (void) note;
+    return execute_float_binary_op<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint32_t {
+        return max_sf32(s1, s2, fflags, FMINMAX_IEEE754_201X);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMINMAX_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_FMIN_FMAX_rm>(insn_get_rm(insn))) {
+        case insn_FMIN_FMAX_rm::MIN:
+            return execute_FMIN_S(a, pc, insn);
+        case insn_FMIN_FMAX_rm::MAX:
+            return execute_FMAX_S(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMIN_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fmin.d");
+    auto note = a.make_scoped_note("fmin.d");
+    (void) note;
+    return execute_float_binary_op<uint64_t>(a, pc, insn, [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t {
+        return min_sf64(s1, s2, fflags, FMINMAX_IEEE754_201X);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMAX_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fmax.d");
+    auto note = a.make_scoped_note("fmax.d");
+    (void) note;
+    return execute_float_binary_op<uint64_t>(a, pc, insn, [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t {
+        return max_sf64(s1, s2, fflags, FMINMAX_IEEE754_201X);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMINMAX_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_FMIN_FMAX_rm>(insn_get_rm(insn))) {
+        case insn_FMIN_FMAX_rm::MIN:
+            return execute_FMIN_D(a, pc, insn);
+        case insn_FMIN_FMAX_rm::MAX:
+            return execute_FMAX_D(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename ST, typename DT, typename STATE_ACCESS, typename F>
+static inline execute_status execute_FCVT_F_F(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+    uint64_t mstatus = a.read_mstatus();
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint64_t fcsr = a.read_fcsr();
+    // The rounding mode comes from the insn
+    uint32_t rm = insn_get_rm(insn);
+    // Unless it is set to FRM_DYN, in which case it comes from fcsr.frm
+    if (rm == FRM_DYN) {
+        rm = fcsr >> FCSR_FRM_SHIFT;
+    }
+    // If the rounding mode is invalid, the instruction is considered illegal
+    if (rm > FRM_RMM) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint32_t rd = insn_get_rd(insn);
+    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    // We must always check if input operands are properly NaN-boxed.
+    ST s1 = float_unbox<ST>(a.read_f(insn_get_rs1(insn)));
+    DT val = f(s1, rm, &fflags);
+    // Must store a valid NaN-boxed value.
+    a.write_f(rd, float_box(val));
+    a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
+    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename T, typename STATE_ACCESS, typename F>
+static inline execute_status execute_FCVT_X_F(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+    uint64_t mstatus = a.read_mstatus();
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint64_t fcsr = a.read_fcsr();
+    // The rounding mode comes from the insn
+    uint32_t rm = insn_get_rm(insn);
+    // Unless it is set to FRM_DYN, in which case it comes from fcsr.frm
+    if (rm == FRM_DYN) {
+        rm = fcsr >> FCSR_FRM_SHIFT;
+    }
+    // If the rounding mode is invalid, the instruction is considered illegal
+    if (rm > FRM_RMM) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint32_t rd = insn_get_rd(insn);
+    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    // We must always check if input operands are properly NaN-boxed.
+    T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
+    uint64_t val = f(s1, rm, &fflags);
+    if (rd != 0) {
+        a.write_x(rd, val);
+    }
+    a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
+    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename T, typename STATE_ACCESS, typename F>
+static inline execute_status execute_FCVT_F_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+    uint64_t mstatus = a.read_mstatus();
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint64_t fcsr = a.read_fcsr();
+    // The rounding mode comes from the insn
+    uint32_t rm = insn_get_rm(insn);
+    // Unless it is set to FRM_DYN, in which case it comes from fcsr.frm
+    if (rm == FRM_DYN) {
+        rm = fcsr >> FCSR_FRM_SHIFT;
+    }
+    // If the rounding mode is invalid, the instruction is considered illegal
+    if (rm > FRM_RMM) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint32_t rd = insn_get_rd(insn);
+    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    uint64_t s1 = a.read_x(insn_get_rs1(insn));
+    T val = f(s1, rm, &fflags);
+    // Must store a valid NaN-boxed value.
+    a.write_f(rd, float_box(val));
+    a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
+    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_S_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.s.d");
+    auto note = a.make_scoped_note("fcvt.s.d");
+    (void) note;
+    return execute_FCVT_F_F<uint64_t, uint32_t>(a, pc, insn,
+        [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
+            return cvt_sf64_sf32(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_D_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.d.s");
+    auto note = a.make_scoped_note("fcvt.d.s");
+    (void) note;
+    return execute_FCVT_F_F<uint32_t, uint64_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+            // FCVT.D.S will never round, since it's a widen operation.
+            (void) rm;
+            return cvt_sf32_sf64(s1, fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FSQRT_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fsqrt.s");
+    auto note = a.make_scoped_note("fsqrt.s");
+    (void) note;
+    return execute_float_unary_op_rm<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
+        return sqrt_sf32(s1, static_cast<RoundingModeEnum>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FSQRT_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fsqrt.d");
+    auto note = a.make_scoped_note("fsqrt.d");
+    (void) note;
+    return execute_float_unary_op_rm<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        return sqrt_sf64(s1, static_cast<RoundingModeEnum>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FLE_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fle.s");
+    auto note = a.make_scoped_note("fle.s");
+    (void) note;
+    return execute_float_cmp_op<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint64_t {
+        return static_cast<uint64_t>(le_sf32(s1, s2, fflags));
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FLT_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "flt.s");
+    auto note = a.make_scoped_note("flt.s");
+    (void) note;
+    return execute_float_cmp_op<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint64_t {
+        return static_cast<uint64_t>(lt_sf32(s1, s2, fflags));
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FEQ_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "feq.s");
+    auto note = a.make_scoped_note("feq.s");
+    (void) note;
+    return execute_float_cmp_op<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint64_t {
+        return static_cast<uint64_t>(eq_quiet_sf32(s1, s2, fflags));
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCMP_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_FCMP_rm>(insn_get_rm(insn))) {
+        case insn_FCMP_rm::LT:
+            return execute_FLT_S(a, pc, insn);
+        case insn_FCMP_rm::LE:
+            return execute_FLE_S(a, pc, insn);
+        case insn_FCMP_rm::EQ:
+            return execute_FEQ_S(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FLE_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fle.d");
+    auto note = a.make_scoped_note("fle.d");
+    (void) note;
+    return execute_float_cmp_op<uint64_t>(a, pc, insn, [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t {
+        return static_cast<uint64_t>(le_sf64(s1, s2, fflags));
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FLT_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "flt.d");
+    auto note = a.make_scoped_note("flt.d");
+    (void) note;
+    return execute_float_cmp_op<uint64_t>(a, pc, insn, [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t {
+        return static_cast<uint64_t>(lt_sf64(s1, s2, fflags));
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FEQ_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "feq.d");
+    auto note = a.make_scoped_note("feq.d");
+    (void) note;
+    return execute_float_cmp_op<uint64_t>(a, pc, insn, [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t {
+        return static_cast<uint64_t>(eq_quiet_sf64(s1, s2, fflags));
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCMP_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_FCMP_rm>(insn_get_rm(insn))) {
+        case insn_FCMP_rm::LT:
+            return execute_FLT_D(a, pc, insn);
+        case insn_FCMP_rm::LE:
+            return execute_FLE_D(a, pc, insn);
+        case insn_FCMP_rm::EQ:
+            return execute_FEQ_D(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_W_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.w.s");
+    auto note = a.make_scoped_note("fcvt.w.s");
+    (void) note;
+    return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        int32_t val = cvt_sf32_i32(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        // For XLEN > 32, FCVT.W.S sign-extends the 32-bit result.
+        return static_cast<uint64_t>(static_cast<int64_t>(val));
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_WU_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.wu.s");
+    auto note = a.make_scoped_note("fcvt.wu.s");
+    (void) note;
+    return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        uint32_t val = cvt_sf32_u32(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        // For XLEN > 32, FCVT.WU.S sign-extends the 32-bit result.
+        return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val)));
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_L_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.l.s");
+    auto note = a.make_scoped_note("fcvt.l.s");
+    (void) note;
+    return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        int64_t val = cvt_sf32_i64(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        return static_cast<uint64_t>(val);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_LU_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.lu.s");
+    auto note = a.make_scoped_note("fcvt.lu.s");
+    (void) note;
+    return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        return cvt_sf32_u64(s1, static_cast<RoundingModeEnum>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_W_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.w.d");
+    auto note = a.make_scoped_note("fcvt.w.d");
+    (void) note;
+    return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        int32_t val = cvt_sf64_i32(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        // For RV64, FCVT.W.D sign-extends the 32-bit result.
+        return static_cast<uint64_t>(static_cast<int64_t>(val));
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_WU_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.wu.d");
+    auto note = a.make_scoped_note("fcvt.wu.d");
+    (void) note;
+    return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        uint32_t val = cvt_sf64_u32(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        // For RV64, FCVT.WU.D sign-extends the 32-bit result.
+        return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val)));
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_L_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.l.d");
+    auto note = a.make_scoped_note("fcvt.l.d");
+    (void) note;
+    return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        int64_t val = cvt_sf64_i64(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        return static_cast<uint64_t>(val);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_LU_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.lu.d");
+    auto note = a.make_scoped_note("fcvt.lu.d");
+    (void) note;
+    return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        return cvt_sf64_u64(s1, static_cast<RoundingModeEnum>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_S_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.s.w");
+    auto note = a.make_scoped_note("fcvt.s.w");
+    (void) note;
+    return execute_FCVT_F_X<uint32_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
+        return cvt_i32_sf32(static_cast<int32_t>(s1), static_cast<RoundingModeEnum>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_S_WU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.s.wu");
+    auto note = a.make_scoped_note("fcvt.s.wu");
+    (void) note;
+    return execute_FCVT_F_X<uint32_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
+        return cvt_u32_sf32(static_cast<uint32_t>(s1), static_cast<RoundingModeEnum>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_S_L(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.s.l");
+    auto note = a.make_scoped_note("fcvt.s.l");
+    (void) note;
+    return execute_FCVT_F_X<uint32_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
+        return cvt_i64_sf32(static_cast<int64_t>(s1), static_cast<RoundingModeEnum>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_S_LU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.s.lu");
+    auto note = a.make_scoped_note("fcvt.s.lu");
+    (void) note;
+    return execute_FCVT_F_X<uint32_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
+        return cvt_u64_sf32(s1, static_cast<RoundingModeEnum>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_D_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.d.w");
+    auto note = a.make_scoped_note("fcvt.d.w");
+    (void) note;
+    return execute_FCVT_F_X<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        return cvt_i32_sf64(static_cast<int32_t>(s1), static_cast<RoundingModeEnum>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_D_WU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.d.wu");
+    auto note = a.make_scoped_note("fcvt.d.wu");
+    (void) note;
+    return execute_FCVT_F_X<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        return cvt_u32_sf64(static_cast<uint32_t>(s1), static_cast<RoundingModeEnum>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_D_L(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.d.l");
+    auto note = a.make_scoped_note("fcvt.d.l");
+    (void) note;
+    return execute_FCVT_F_X<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        return cvt_i64_sf64(static_cast<int64_t>(s1), static_cast<RoundingModeEnum>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_D_LU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fcvt.d.lu");
+    auto note = a.make_scoped_note("fcvt.d.lu");
+    (void) note;
+    return execute_FCVT_F_X<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        return cvt_u64_sf64(s1, static_cast<RoundingModeEnum>(rm), fflags);
+    });
+}
+
+template <typename T, typename STATE_ACCESS>
+static inline execute_status execute_FMV_F_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    uint64_t mstatus = a.read_mstatus();
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    // Should have rm set to 0
+    if (insn_get_rm(insn) != 0) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint32_t rd = insn_get_rd(insn);
+    // A narrower n-bit transfer, n < FLEN,
+    // into the f registers will create a valid NaN-boxed value.
+    a.write_f(rd, float_box(static_cast<T>(a.read_x(insn_get_rs1(insn)))));
+    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMV_W_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fmv.w.x");
+    auto note = a.make_scoped_note("fmv.w.x");
+    (void) note;
+    return execute_FMV_F_X<uint32_t>(a, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMV_D_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fmv.d.x");
+    auto note = a.make_scoped_note("fmv.d.x");
+    (void) note;
+    return execute_FMV_F_X<uint64_t>(a, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCLASS_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fclass.s");
+    auto note = a.make_scoped_note("fclass.s");
+    (void) note;
+    return execute_FCLASS<uint32_t>(a, pc, insn, [](uint32_t s1) -> uint64_t { return fclass_sf32(s1); });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMV_X_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fmv.x.w");
+    auto note = a.make_scoped_note("fmv.x.w");
+    (void) note;
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint32_t rd = insn_get_rd(insn);
+    if (rd != 0) {
+        uint32_t val = static_cast<uint32_t>(a.read_f(insn_get_rs1(insn)));
+        // For RV64, the higher 32 bits of the destination register are
+        // filled with copies of the floating-point number’s sign bit.
+        // We can perform this with a sign extension.
+        a.write_x(rd, static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val))));
+    }
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMV_FCLASS_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_FMV_FCLASS_rm>(insn_get_rm(insn))) {
+        case insn_FMV_FCLASS_rm::FMV:
+            return execute_FMV_X_W(a, pc, insn);
+        case insn_FMV_FCLASS_rm::FCLASS:
+            return execute_FCLASS_S(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCLASS_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fclass.d");
+    auto note = a.make_scoped_note("fclass.d");
+    (void) note;
+    return execute_FCLASS<uint64_t>(a, pc, insn, [](uint64_t s1) -> uint64_t { return fclass_sf64(s1); });
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMV_X_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    dump_insn(a, pc, insn, "fmv.x.d");
+    auto note = a.make_scoped_note("fmv.x.d");
+    (void) note;
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint32_t rd = insn_get_rd(insn);
+    if (rd != 0) {
+        uint64_t val = a.read_f(insn_get_rs1(insn));
+        a.write_x(rd, val);
+    }
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FMV_FCLASS_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_FMV_FCLASS_rm>(insn_get_rm(insn))) {
+        case insn_FMV_FCLASS_rm::FMV:
+            return execute_FMV_X_D(a, pc, insn);
+        case insn_FMV_FCLASS_rm::FCLASS:
+            return execute_FCLASS_D(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FCVT_FMV_FCLASS(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_FD_funct7_rs2>(insn_get_funct7_rs2(insn))) {
+        case insn_FD_funct7_rs2::FCVT_W_S:
+            return execute_FCVT_W_S(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_WU_S:
+            return execute_FCVT_WU_S(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_L_S:
+            return execute_FCVT_L_S(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_LU_S:
+            return execute_FCVT_LU_S(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_W_D:
+            return execute_FCVT_W_D(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_WU_D:
+            return execute_FCVT_WU_D(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_L_D:
+            return execute_FCVT_L_D(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_LU_D:
+            return execute_FCVT_LU_D(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_S_D:
+            return execute_FCVT_S_D(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_S_W:
+            return execute_FCVT_S_W(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_S_WU:
+            return execute_FCVT_S_WU(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_S_L:
+            return execute_FCVT_S_L(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_S_LU:
+            return execute_FCVT_S_LU(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_D_S:
+            return execute_FCVT_D_S(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_D_W:
+            return execute_FCVT_D_W(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_D_WU:
+            return execute_FCVT_D_WU(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_D_L:
+            return execute_FCVT_D_L(a, pc, insn);
+        case insn_FD_funct7_rs2::FCVT_D_LU:
+            return execute_FCVT_D_LU(a, pc, insn);
+        case insn_FD_funct7_rs2::FMV_W_X:
+            return execute_FMV_W_X(a, pc, insn);
+        case insn_FD_funct7_rs2::FMV_D_X:
+            return execute_FMV_D_X(a, pc, insn);
+        case insn_FD_funct7_rs2::FMV_FCLASS_S:
+            return execute_FMV_FCLASS_S(a, pc, insn);
+        case insn_FD_funct7_rs2::FMV_FCLASS_D:
+            return execute_FMV_FCLASS_D(a, pc, insn);
+        default:
+            return raise_illegal_insn_exception(a, pc, insn);
+    }
+}
+
+template <typename STATE_ACCESS>
+static inline execute_status execute_FD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+    switch (static_cast<insn_FD_funct7>(insn_get_funct7(insn))) {
+        case insn_FD_funct7::FADD_S:
+            return execute_FADD_S(a, pc, insn);
+        case insn_FD_funct7::FADD_D:
+            return execute_FADD_D(a, pc, insn);
+        case insn_FD_funct7::FSUB_S:
+            return execute_FSUB_S(a, pc, insn);
+        case insn_FD_funct7::FSUB_D:
+            return execute_FSUB_D(a, pc, insn);
+        case insn_FD_funct7::FMUL_S:
+            return execute_FMUL_S(a, pc, insn);
+        case insn_FD_funct7::FMUL_D:
+            return execute_FMUL_D(a, pc, insn);
+        case insn_FD_funct7::FDIV_S:
+            return execute_FDIV_S(a, pc, insn);
+        case insn_FD_funct7::FDIV_D:
+            return execute_FDIV_D(a, pc, insn);
+        case insn_FD_funct7::FSGN_S:
+            return execute_FSGN_S(a, pc, insn);
+        case insn_FD_funct7::FSGN_D:
+            return execute_FSGN_D(a, pc, insn);
+        case insn_FD_funct7::FMINMAX_S:
+            return execute_FMINMAX_S(a, pc, insn);
+        case insn_FD_funct7::FMINMAX_D:
+            return execute_FMINMAX_D(a, pc, insn);
+        case insn_FD_funct7::FSQRT_S:
+            return execute_FSQRT_S(a, pc, insn);
+        case insn_FD_funct7::FSQRT_D:
+            return execute_FSQRT_D(a, pc, insn);
+        case insn_FD_funct7::FCMP_S:
+            return execute_FCMP_S(a, pc, insn);
+        case insn_FD_funct7::FCMP_D:
+            return execute_FCMP_D(a, pc, insn);
+        default:
+            return execute_FCVT_FMV_FCLASS(a, pc, insn);
+    }
+}
+
 /// \brief Decodes and executes an instruction.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
@@ -3413,6 +4804,49 @@ static inline execute_status execute_insn(STATE_ACCESS &a, uint64_t pc, uint32_t
             return execute_SRLW_DIVUW_SRAW(a, pc, insn);
         case insn_funct3_00000_opcode::privileged:
             return execute_privileged(a, pc, insn);
+        case insn_funct3_00000_opcode::FSW:
+            return execute_FSW(a, pc, insn);
+        case insn_funct3_00000_opcode::FSD:
+            return execute_FSD(a, pc, insn);
+        case insn_funct3_00000_opcode::FLW:
+            return execute_FLW(a, pc, insn);
+        case insn_funct3_00000_opcode::FLD:
+            return execute_FLD(a, pc, insn);
+        case insn_funct3_00000_opcode::FMADD_RNE:
+        case insn_funct3_00000_opcode::FMADD_RTZ:
+        case insn_funct3_00000_opcode::FMADD_RDN:
+        case insn_funct3_00000_opcode::FMADD_RUP:
+        case insn_funct3_00000_opcode::FMADD_RMM:
+        case insn_funct3_00000_opcode::FMADD_DYN:
+            return execute_FMADD(a, pc, insn);
+        case insn_funct3_00000_opcode::FMSUB_RNE:
+        case insn_funct3_00000_opcode::FMSUB_RTZ:
+        case insn_funct3_00000_opcode::FMSUB_RDN:
+        case insn_funct3_00000_opcode::FMSUB_RUP:
+        case insn_funct3_00000_opcode::FMSUB_RMM:
+        case insn_funct3_00000_opcode::FMSUB_DYN:
+            return execute_FMSUB(a, pc, insn);
+        case insn_funct3_00000_opcode::FNMSUB_RNE:
+        case insn_funct3_00000_opcode::FNMSUB_RTZ:
+        case insn_funct3_00000_opcode::FNMSUB_RDN:
+        case insn_funct3_00000_opcode::FNMSUB_RUP:
+        case insn_funct3_00000_opcode::FNMSUB_RMM:
+        case insn_funct3_00000_opcode::FNMSUB_DYN:
+            return execute_FNMSUB(a, pc, insn);
+        case insn_funct3_00000_opcode::FNMADD_RNE:
+        case insn_funct3_00000_opcode::FNMADD_RTZ:
+        case insn_funct3_00000_opcode::FNMADD_RDN:
+        case insn_funct3_00000_opcode::FNMADD_RUP:
+        case insn_funct3_00000_opcode::FNMADD_RMM:
+        case insn_funct3_00000_opcode::FNMADD_DYN:
+            return execute_FNMADD(a, pc, insn);
+        case insn_funct3_00000_opcode::FD_000:
+        case insn_funct3_00000_opcode::FD_001:
+        case insn_funct3_00000_opcode::FD_010:
+        case insn_funct3_00000_opcode::FD_011:
+        case insn_funct3_00000_opcode::FD_100:
+        case insn_funct3_00000_opcode::FD_111:
+            return execute_FD(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
     }

@@ -27,12 +27,13 @@ namespace cartesi {
 /// \brief Global RISC-V constants
 enum RISCV_constants {
     XLEN = 64,   ///< Maximum XLEN
+    FLEN = 64,   ///< Maximum FLEN
     ASIDLEN = 0, ///< Number of implemented ASID bits
     ASIDMAX = 16 ///< Maximum number of implemented ASID bits
 };
 
 /// \brief Register counts
-enum REG_COUNT { X_REG_COUNT = 32, UARCH_X_REG_COUNT = 32 };
+enum REG_COUNT { X_REG_COUNT = 32, F_REG_COUNT = 32, UARCH_X_REG_COUNT = 32 };
 
 /// \brief MIP shifts
 enum MIP_shifts {
@@ -188,7 +189,12 @@ enum MSTATUS_masks : uint64_t {
     MSTATUS_SXL_MASK = UINT64_C(3) << MSTATUS_SXL_SHIFT,
     MSTATUS_SBE_MASK = UINT64_C(1) << MSTATUS_SBE_SHIFT,
     MSTATUS_MBE_MASK = UINT64_C(1) << MSTATUS_MBE_SHIFT,
-    MSTATUS_SD_MASK = UINT64_C(1) << MSTATUS_SD_SHIFT
+    MSTATUS_SD_MASK = UINT64_C(1) << MSTATUS_SD_SHIFT,
+
+    MSTATUS_FS_OFF = UINT64_C(0) << MSTATUS_FS_SHIFT,
+    MSTATUS_FS_INITIAL = UINT64_C(1) << MSTATUS_FS_SHIFT,
+    MSTATUS_FS_CLEAN = UINT64_C(2) << MSTATUS_FS_SHIFT,
+    MSTATUS_FS_DIRTY = UINT64_C(3) << MSTATUS_FS_SHIFT
 };
 
 /// \brief mstatus read-write masks
@@ -316,6 +322,57 @@ enum SENVCFG_RW_masks : uint64_t {
     SENVCFG_R_MASK = SENVCFG_FIOM_MASK, ///< read mask for senvcfg
 };
 
+/// \brief fcsr fflags shifts
+enum FFLAGS_shifts {
+    FFLAGS_NX_SHIFT = 0,
+    FFLAGS_UF_SHIFT = 1,
+    FFLAGS_OF_SHIFT = 2,
+    FFLAGS_DZ_SHIFT = 3,
+    FFLAGS_NV_SHIFT = 4,
+};
+
+/// \brief fcsr fflags masks
+enum FFLAGS_masks : uint64_t {
+    FFLAGS_RW_MASK = 0b11111,
+    FFLAGS_NX_MASK = UINT64_C(1) << FFLAGS_NX_SHIFT,
+    FFLAGS_UF_MASK = UINT64_C(1) << FFLAGS_UF_SHIFT,
+    FFLAGS_OF_MASK = UINT64_C(1) << FFLAGS_OF_SHIFT,
+    FFLAGS_DZ_MASK = UINT64_C(1) << FFLAGS_DZ_SHIFT,
+    FFLAGS_NV_MASK = UINT64_C(1) << FFLAGS_NV_SHIFT
+};
+
+/// \brief fcsr frm modes
+enum FRM_modes : uint32_t {
+    FRM_RNE = UINT32_C(0b000),
+    FRM_RTZ = UINT32_C(0b001),
+    FRM_RDN = UINT32_C(0b010),
+    FRM_RUP = UINT32_C(0b011),
+    FRM_RMM = UINT32_C(0b100),
+    FRM_DYN = UINT32_C(0b111)
+};
+
+/// \brief frm masks
+enum FCSR_FRM_masks : uint64_t { FRM_RW_MASK = 0b111 };
+
+/// \brief fcsr shifts
+enum FCSR_shifts {
+    FCSR_FFLAGS_SHIFT = 0,
+    FCSR_FRM_SHIFT = 5,
+};
+
+/// \brief fcsr masks
+enum FCSR_rw_masks : uint64_t {
+    FCSR_FFLAGS_RW_MASK = FFLAGS_RW_MASK << FCSR_FFLAGS_SHIFT,
+    FCSR_FRM_RW_MASK = FRM_RW_MASK << FCSR_FRM_SHIFT,
+    FCSR_RW_MASK = FCSR_FFLAGS_RW_MASK | FCSR_FRM_RW_MASK
+};
+
+/// \brief float32 constants
+enum F32_constants : uint32_t { F32_CANONICAL_NAN = UINT32_C(0x7FC00000), F32_SIGN_MASK = UINT32_C(1) << 31 };
+
+/// \brief float64 constants
+enum F64_constants : uint64_t { F64_CANONICAL_NAN = UINT64_C(0x7FF8000000000000), F64_SIGN_MASK = UINT64_C(1) << 63 };
+
 /// \brief Paging shifts
 enum PAGE_shifts {
     PAGE_NUMBER_SHIFT = 12,
@@ -354,6 +411,7 @@ enum IFLAGS_masks : uint64_t {
 /// \brief Initial values for Cartesi machines
 enum CARTESI_init : uint64_t {
     PC_INIT = UINT64_C(0x1000),                    ///< Initial value for pc
+    FCSR_INIT = UINT64_C(0),                       ///< Initial value for fcsr
     MVENDORID_INIT = UINT64_C(0x6361727465736920), ///< Initial value for mvendorid
     MARCHID_INIT = UINT64_C(0xd),                  ///< Initial value for marchid
     MIMPID_INIT = UINT64_C(1),                     ///< Initial value for mimpid
@@ -367,32 +425,36 @@ enum CARTESI_init : uint64_t {
     MCAUSE_INIT = UINT64_C(0),                                                         ///< Initial value for mcause
     MTVAL_INIT = UINT64_C(0),                                                          ///< Initial value for mtval
     MISA_INIT = (MISA_MXL_VALUE << MISA_MXL_SHIFT) | MISA_EXT_S_MASK | MISA_EXT_U_MASK | MISA_EXT_I_MASK |
-        MISA_EXT_M_MASK | MISA_EXT_A_MASK,                          ///< Initial value for misa
-    MIE_INIT = UINT64_C(0),                                         ///< Initial value for mie
-    MIP_INIT = UINT64_C(0),                                         ///< Initial value for mip
-    MEDELEG_INIT = UINT64_C(0),                                     ///< Initial value for medeleg
-    MIDELEG_INIT = UINT64_C(0),                                     ///< Initial value for mideleg
-    MCOUNTEREN_INIT = UINT64_C(0),                                  ///< Initial value for mcounteren
-    STVEC_INIT = UINT64_C(0),                                       ///< Initial value for stvec
-    SSCRATCH_INIT = UINT64_C(0),                                    ///< Initial value for sscratch
-    SEPC_INIT = UINT64_C(0),                                        ///< Initial value for sepc
-    SCAUSE_INIT = UINT64_C(0),                                      ///< Initial value for scause
-    STVAL_INIT = UINT64_C(0),                                       ///< Initial value for stval
-    SATP_INIT = UINT64_C(0),                                        ///< Initial value for satp
-    SCOUNTEREN_INIT = UINT64_C(0),                                  ///< Initial value for scounteren
-    ILRSC_INIT = UINT64_C(-1),                                      ///< Initial value for ilrsc
-    IFLAGS_INIT = static_cast<uint64_t>(PRV_M) << IFLAGS_PRV_SHIFT, ///< Initial value for iflags
-    MTIMECMP_INIT = UINT64_C(0),                                    ///< Initial value for mtimecmp
-    FROMHOST_INIT = UINT64_C(0),                                    ///< Initial value for fromhost
-    TOHOST_INIT = UINT64_C(0),                                      ///< Initial value for tohost
-    MENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for menvcfg
-    SENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for senvcfg
-    UARCH_PC_INIT = UINT64_C(0x60000000),                           ///< Initial value for microarchitecture pc
-    UARCH_CYCLE_INIT = UINT64_C(0),                                 ///< Initial value for microarchitecture cycle
+        MISA_EXT_M_MASK | MISA_EXT_A_MASK | MISA_EXT_F_MASK | MISA_EXT_D_MASK, ///< Initial value for misa
+    MIE_INIT = UINT64_C(0),                                                    ///< Initial value for mie
+    MIP_INIT = UINT64_C(0),                                                    ///< Initial value for mip
+    MEDELEG_INIT = UINT64_C(0),                                                ///< Initial value for medeleg
+    MIDELEG_INIT = UINT64_C(0),                                                ///< Initial value for mideleg
+    MCOUNTEREN_INIT = UINT64_C(0),                                             ///< Initial value for mcounteren
+    STVEC_INIT = UINT64_C(0),                                                  ///< Initial value for stvec
+    SSCRATCH_INIT = UINT64_C(0),                                               ///< Initial value for sscratch
+    SEPC_INIT = UINT64_C(0),                                                   ///< Initial value for sepc
+    SCAUSE_INIT = UINT64_C(0),                                                 ///< Initial value for scause
+    STVAL_INIT = UINT64_C(0),                                                  ///< Initial value for stval
+    SATP_INIT = UINT64_C(0),                                                   ///< Initial value for satp
+    SCOUNTEREN_INIT = UINT64_C(0),                                             ///< Initial value for scounteren
+    ILRSC_INIT = UINT64_C(-1),                                                 ///< Initial value for ilrsc
+    IFLAGS_INIT = static_cast<uint64_t>(PRV_M) << IFLAGS_PRV_SHIFT,            ///< Initial value for iflags
+    MTIMECMP_INIT = UINT64_C(0),                                               ///< Initial value for mtimecmp
+    FROMHOST_INIT = UINT64_C(0),                                               ///< Initial value for fromhost
+    TOHOST_INIT = UINT64_C(0),                                                 ///< Initial value for tohost
+    MENVCFG_INIT = UINT64_C(0),                                                ///< Initial value for menvcfg
+    SENVCFG_INIT = UINT64_C(0),                                                ///< Initial value for senvcfg
+    UARCH_PC_INIT = UINT64_C(0x60000000), ///< Initial value for microarchitecture pc
+    UARCH_CYCLE_INIT = UINT64_C(0),       ///< Initial value for microarchitecture cycle
 };
 
 /// \brief Mapping between CSR names and addresses
 enum class CSR_address : uint32_t {
+    fflags = 0x001,
+    frm = 0x002,
+    fcsr = 0x003,
+
     ucycle = 0xc00,
     utime = 0xc01,
     uinstret = 0xc02,
@@ -517,7 +579,41 @@ enum class insn_funct3_00000_opcode : uint32_t {
     JAL_101 = 0b101000001101111,
     JAL_110 = 0b110000001101111,
     JAL_111 = 0b111000001101111,
+    FSW = 0b010000000100111,
+    FSD = 0b011000000100111,
+    FLW = 0b010000000000111,
+    FLD = 0b011000000000111,
+    FMADD_RNE = 0b000000001000011,
+    FMADD_RTZ = 0b001000001000011,
+    FMADD_RDN = 0b010000001000011,
+    FMADD_RUP = 0b011000001000011,
+    FMADD_RMM = 0b100000001000011,
+    FMADD_DYN = 0b111000001000011,
+    FMSUB_RNE = 0b000000001000111,
+    FMSUB_RTZ = 0b001000001000111,
+    FMSUB_RDN = 0b010000001000111,
+    FMSUB_RUP = 0b011000001000111,
+    FMSUB_RMM = 0b100000001000111,
+    FMSUB_DYN = 0b111000001000111,
+    FNMSUB_RNE = 0b000000001001011,
+    FNMSUB_RTZ = 0b001000001001011,
+    FNMSUB_RDN = 0b010000001001011,
+    FNMSUB_RUP = 0b011000001001011,
+    FNMSUB_RMM = 0b100000001001011,
+    FNMSUB_DYN = 0b111000001001011,
+    FNMADD_RNE = 0b000000001001111,
+    FNMADD_RTZ = 0b001000001001111,
+    FNMADD_RDN = 0b010000001001111,
+    FNMADD_RUP = 0b011000001001111,
+    FNMADD_RMM = 0b100000001001111,
+    FNMADD_DYN = 0b111000001001111,
     // some instructions need additional inspection of funct7 (or part thereof)
+    FD_000 = 0b000000001010011,
+    FD_001 = 0b001000001010011,
+    FD_010 = 0b010000001010011,
+    FD_011 = 0b011000001010011,
+    FD_100 = 0b100000001010011,
+    FD_111 = 0b111000001010011,
     SRLI_SRAI = 0b101000000010011,
     SRLIW_SRAIW = 0b101000000011011,
     AMO_W = 0b010000000101111,
@@ -583,6 +679,68 @@ enum insn_SRL_DIVU_SRA_funct7 : uint32_t {
     SRA = 0b0100000,
 };
 
+/// \brief funct7 constants for floating-point instructions
+enum insn_FD_funct7 : uint32_t {
+    FADD_S = 0b0000000,
+    FADD_D = 0b0000001,
+    FSUB_S = 0b0000100,
+    FSUB_D = 0b0000101,
+    FMUL_S = 0b0001000,
+    FMUL_D = 0b0001001,
+    FDIV_S = 0b0001100,
+    FDIV_D = 0b0001101,
+    FSGN_S = 0b0010000,
+    FSGN_D = 0b0010001,
+    FMINMAX_S = 0b0010100,
+    FMINMAX_D = 0b0010101,
+    FSQRT_S = 0b0101100,
+    FSQRT_D = 0b0101101,
+    FCMP_S = 0b1010000,
+    FCMP_D = 0b1010001
+};
+
+/// \brief funct7_rs2 constants for floating-point instructions
+enum insn_FD_funct7_rs2 : uint32_t {
+    FCVT_W_S = 0b110000000000,
+    FCVT_WU_S = 0b110000000001,
+    FCVT_L_S = 0b110000000010,
+    FCVT_LU_S = 0b110000000011,
+    FCVT_W_D = 0b110000100000,
+    FCVT_WU_D = 0b110000100001,
+    FCVT_L_D = 0b110000100010,
+    FCVT_LU_D = 0b110000100011,
+    FCVT_S_D = 0b010000000001,
+    FCVT_S_W = 0b110100000000,
+    FCVT_S_WU = 0b110100000001,
+    FCVT_S_L = 0b110100000010,
+    FCVT_S_LU = 0b110100000011,
+    FCVT_D_S = 0b010000100000,
+    FCVT_D_W = 0b110100100000,
+    FCVT_D_WU = 0b110100100001,
+    FCVT_D_L = 0b110100100010,
+    FCVT_D_LU = 0b110100100011,
+    FMV_W_X = 0b111100000000,
+    FMV_D_X = 0b111100100000,
+    FMV_FCLASS_S = 0b111000000000,
+    FMV_FCLASS_D = 0b111000100000
+};
+
+/// \brief rm constants for FSGNJ floating-point instructions
+enum insn_FSGN_rm : uint32_t { J = 0b000, JN = 0b001, JX = 0b010 };
+
+/// \brief rm constants for FMIN and FMAX floating-point instructions
+enum insn_FMIN_FMAX_rm : uint32_t {
+    MIN = 0b000,
+    MAX = 0b001,
+};
+
+/// \brief rm constants for FLE, FLT, and FEQ floating-point instructions
+enum insn_FCMP_rm : uint32_t {
+    LE = 0b000,
+    LT = 0b001,
+    EQ = 0b010,
+};
+
 /// \brief funct7 constants for OR, REM instructions
 enum insn_OR_REM_funct7 : uint32_t { OR = 0b0000000, REM = 0b0000001 };
 
@@ -603,6 +761,12 @@ enum class insn_privileged : uint32_t {
     MRET = 0b00110000001000000000000001110011,
     WFI = 0b00010000010100000000000001110011
 };
+
+/// \brief funct2 constants for FMADD, FMSUB, FNMADD, FMNSUB instructions
+enum insn_FM_funct2 : uint32_t { S = 0b00, D = 0b01 };
+
+/// \brief rm constants for FMV and FCLASS instructions
+enum insn_FMV_FCLASS_rm : uint32_t { FMV = 0b000, FCLASS = 0b001 };
 
 } // namespace cartesi
 

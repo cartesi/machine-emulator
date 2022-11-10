@@ -1013,6 +1013,26 @@ uint64_t cm_get_x_address(int i) {
     return cartesi::machine::get_x_address(i);
 }
 
+int cm_read_f(const cm_machine *m, int i, uint64_t *val, char **err_msg) try {
+    const auto *cpp_machine = convert_from_c(m);
+    *val = cpp_machine->read_f(i);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_write_f(cm_machine *m, int i, uint64_t val, char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cpp_machine->write_f(i, val);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+uint64_t cm_get_f_address(int i) {
+    return cartesi::machine::get_f_address(i);
+}
+
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define IMPL_MACHINE_READ_WRITE(field)                                                                                 \
     int cm_read_##field(const cm_machine *m, uint64_t *val, char **err_msg) try {                                      \
@@ -1052,6 +1072,7 @@ uint64_t cm_get_x_address(int i) {
 
 // clang-format-off
 IMPL_MACHINE_READ_WRITE(pc)
+IMPL_MACHINE_READ_WRITE(fcsr)
 IMPL_MACHINE_READ(mvendorid)
 IMPL_MACHINE_READ(marchid)
 IMPL_MACHINE_READ(mimpid)

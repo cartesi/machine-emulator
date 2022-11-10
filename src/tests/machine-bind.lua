@@ -104,127 +104,95 @@ for i, argument in ipairs({...}) do
     end
 end
 
-local function get_cpu_xreg_test_values()
+local SHADOW_BASE = 0x0
 
-    local cpu_addr_x = {}
-    cpu_addr_x[0] = 0x000
-    cpu_addr_x[1] = 0x008
-    cpu_addr_x[2] = 0x010
-    cpu_addr_x[3] = 0x018
-    cpu_addr_x[4] = 0x020
-    cpu_addr_x[5] = 0x028
-    cpu_addr_x[6] = 0x030
-    cpu_addr_x[7] = 0x038
-    cpu_addr_x[8] = 0x040
-    cpu_addr_x[9] = 0x048
-    cpu_addr_x[10] = 0x050
-    cpu_addr_x[11] = 0x058
-    cpu_addr_x[12] = 0x060
-    cpu_addr_x[13] = 0x068
-    cpu_addr_x[14] = 0x070
-    cpu_addr_x[15] = 0x078
-    cpu_addr_x[16] = 0x080
-    cpu_addr_x[17] = 0x088
-    cpu_addr_x[18] = 0x090
-    cpu_addr_x[19] = 0x098
-    cpu_addr_x[20] = 0x0a0
-    cpu_addr_x[21] = 0x0a8
-    cpu_addr_x[22] = 0x0b0
-    cpu_addr_x[23] = 0x0b8
-    cpu_addr_x[24] = 0x0c0
-    cpu_addr_x[25] = 0x0c8
-    cpu_addr_x[26] = 0x0d0
-    cpu_addr_x[27] = 0x0d8
-    cpu_addr_x[28] = 0x0e0
-    cpu_addr_x[29] = 0x0e8
-    cpu_addr_x[30] = 0x0f0
-    cpu_addr_x[31] = 0x0f8
-
-    return cpu_addr_x
+local cpu_x_addr = {}
+local cpu_f_addr = {}
+for i=0,31 do
+    cpu_x_addr[i] = i * 8
+    cpu_f_addr[i] = 0x100 + i * 8
 end
+
+local function get_cpu_xreg_test_values()
+    local values = {}
+    for i=0,31 do
+        values[i] = i * 8
+    end
+    return values
+end
+
+local cpu_csr_addr = {
+    pc = 512,
+    fcsr = 520,
+    mvendorid = 528,
+    marchid = 536,
+    mimpid = 544,
+    mcycle = 552,
+    minstret = 560,
+    mstatus = 568,
+    mtvec = 576,
+    mscratch = 584,
+    mepc = 592,
+    mcause = 600,
+    mtval = 608,
+    misa = 616,
+    mie = 624,
+    mip = 632,
+    medeleg = 640,
+    mideleg = 648,
+    mcounteren = 656,
+    menvcfg = 664,
+    stvec = 672,
+    sscratch = 680,
+    sepc = 688,
+    scause = 696,
+    stval = 704,
+    satp = 712,
+    scounteren = 720,
+    senvcfg = 728,
+    ilrsc = 736,
+    iflags = 744,
+    brkflag = 752,
+    clint_mtimecmp = 760,
+    htif_tohost = 768,
+    htif_fromhost = 776,
+    htif_ihalt = 784,
+    htif_iconsole = 792,
+    htif_iyield = 800,
+}
 
 local function get_cpu_csr_test_values()
-
-    local cpu_addr = {}
-    cpu_addr.pc = 0x100
-    cpu_addr.mvendorid = -1
-    cpu_addr.marchid = -1
-    cpu_addr.mimpid = -1
-    cpu_addr.mcycle = 0x120
-    cpu_addr.minstret = 0x128
-    cpu_addr.mstatus = 0x130
-    cpu_addr.mtvec = 0x138
-    cpu_addr.mscratch = 0x140
-    cpu_addr.mepc = 0x148
-    cpu_addr.mcause = 0x150
-    cpu_addr.mtval = 0x158
-    cpu_addr.misa = 0x160
-    cpu_addr.mie = 0x168
-    cpu_addr.mip = 0x170
-    cpu_addr.medeleg = 0x178
-    cpu_addr.mideleg = 0x180
-    cpu_addr.mcounteren = 0x188
-    cpu_addr.menvcfg = 0x190
-    cpu_addr.stvec = 0x198
-    cpu_addr.sscratch = 0x1a0
-    cpu_addr.sepc = 0x1a8
-    cpu_addr.scause = 0x1b0
-    cpu_addr.stval = 0x1b8
-    cpu_addr.satp = 0x1c0
-    cpu_addr.scounteren = 0x1c8
-    cpu_addr.senvcfg = 0x1d0
-    cpu_addr.ilrsc = 0x1d8
-
-    return cpu_addr
-end
-
-local SHADOW_BASE = 0x0
-local CLINT_BASE = 0x2000000
-local HTIF_BASE = 0x40008000
-
-local function get_cpu_csr_names_addresses()
-
-    local cpu_csr_names = {
-        {"pc", 0x100},
-        {"mvendorid", 0x108},
-        {"marchid", 0x110},
-        {"mimpid", 0x118},
-        {"mcycle", 0x120},
-        {"minstret", 0x128},
-        {"mstatus", 0x130},
-        {"mtvec", 0x138},
-        {"mscratch", 0x140},
-        {"mepc", 0x148},
-        {"mcause", 0x150},
-        {"mtval", 0x158},
-        {"misa", 0x160},
-        {"mie", 0x168},
-        {"mip", 0x170},
-        {"medeleg", 0x178},
-        {"mideleg", 0x180},
-        {"mcounteren", 0x188},
-        {"menvcfg", 0x190},
-        {"stvec", 0x198},
-        {"sscratch", 0x1a0},
-        {"sepc", 0x1a8},
-        {"scause", 0x1b0},
-        {"stval", 0x1b8},
-        {"satp", 0x1c0},
-        {"scounteren", 0x1c8},
-        {"senvcfg", 0x1d0},
-        {"ilrsc", 0x1d8},
-        {"iflags", 0x1e0},
-        {"brkflag", 0x1e8},
-        {"clint_mtimecmp", 0x1f0},
-        {"htif_tohost", 0x1f8},
-        {"htif_fromhost", 0x200},
-        {"htif_ihalt", 0x208},
-        {"htif_iconsole", 0x210},
-        {"htif_iyield", 0x218},
+    return {
+        pc = 0x200,
+        mvendorid = -1,
+        marchid = -1,
+        mimpid = -1,
+        mcycle = 0x220,
+        minstret = 0x228,
+        mstatus = 0x230,
+        mtvec = 0x238,
+        mscratch = 0x240,
+        mepc = 0x248,
+        mcause = 0x250,
+        mtval = 0x258,
+        misa = 0x260,
+        mie = 0x268,
+        mip = 0x270,
+        medeleg = 0x278,
+        mideleg = 0x280,
+        mcounteren = 0x288,
+        menvcfg = 0x290,
+        stvec = 0x298,
+        sscratch = 0x2a0,
+        sepc = 0x2a8,
+        scause = 0x2b0,
+        stval = 0x2b8,
+        satp = 0x2c0,
+        scounteren = 0x2c8,
+        senvcfg = 0x2d0,
+        fcsr = 0x61,
+        ilrsc = 0x2e0,
     }
-
-    return cpu_csr_names
-
 end
 
 local machine_type = assert(arguments[1], "missing machine type")
@@ -316,12 +284,12 @@ do_test("machine should have default config shadow register values",
         initial_csr_values.marchid = nil
         initial_csr_values.mimpid = nil
         -- Check initialization and shadow reads
-        for _, v in pairs(initial_csr_values) do
-            local r = machine:read_word(v)
+        for k, v in pairs(initial_csr_values) do
+            local r = machine:read_word(cpu_csr_addr[k])
             assert(v == r)
         end
-        for _, v in pairs(initial_xreg_values) do
-            local r = machine:read_word(v)
+        for k, v in pairs(initial_xreg_values) do
+            local r = machine:read_word(cpu_x_addr[k])
             assert(v == r)
         end
     end
@@ -366,9 +334,9 @@ do_test("should return address value for csr register",
             module = remote
         end
         -- Check CSR address
-        for _, v in pairs(get_cpu_csr_names_addresses()) do
-            local u = module.machine.get_csr_address(v[1])
-            assert(u == v[2], "invalid return for " .. v[2])
+        for k, v in pairs(cpu_csr_addr) do
+            local u = module.machine.get_csr_address(k)
+            assert(u == v, "invalid return for " .. v)
         end
     end
 )
@@ -478,11 +446,11 @@ do_test("should have expected values",
         -- Check initial config
         local initial_config = machine:get_initial_config()
         test_config(initial_config)
-        assert(initial_config.processor.pc == 0x100,
+        assert(initial_config.processor.pc == 0x200,
             "wrong pc reg initial config value")
-        assert(initial_config.processor.ilrsc == 0x1d8,
+        assert(initial_config.processor.ilrsc == 0x2e0,
             "wrong ilrsc reg initial config value")
-        assert(initial_config.processor.mstatus == 0x130,
+        assert(initial_config.processor.mstatus == 0x230,
             "wrong mstatus reg initial config value")
         assert(initial_config.clint.mtimecmp == 0,
             "wrong clint mtimecmp initial config value")
@@ -513,19 +481,18 @@ do_test("should return expected values",
         initial_csr_values.htif_iyield = 0x0
 
         -- Check csr register read
-        local to_ignore = {            
+        local to_ignore = {
             iflags = true,
             clint_mtimecmp = true,
             htif_ihalt = true,
             htif_iconsole = true,
             brkflag = true,
         }
-        for k, v in pairs(get_cpu_csr_names_addresses()) do
-            if not to_ignore[v[1]] then
-                local method_name = "read_" .. v[1]
-                local value = machine[method_name](machine)
-                assert(machine[method_name](machine) == initial_csr_values[v[1]],
-                    "wrong " .. v[1] .. " value")
+        for k in pairs(cpu_csr_addr) do
+            if not to_ignore[k] then
+                local method_name = "read_" .. k
+                assert(machine[method_name](machine) == initial_csr_values[k],
+                    "wrong " .. k .. " value")
             end
         end
     end
@@ -713,10 +680,10 @@ do_test("dumped log content should match",
         print("--------------------------")
         print(output)
         print("--------------------------")
-        assert((output:find "1: read @0x120%(288%)"), "Cound not find step 1 ")
-        assert((output:find "21: read @0x10010%(65552%): 0x1069%(4201%)"),
+        assert(output:find("1: read @0x228(552)",1,true), "Cound not find step 1 ")
+        assert(output:find("21: read @0x10010(65552): 0x1069(4201)",1,true),
             "Cound not find step 21")
-        assert((output:find "32: write @0x120%(288%): 0x0%(0%) %-> 0x1%(1%)"),
+        assert(output:find("32: write @0x228(552): 0x0(0) -> 0x1(1)",1,true),
             "Cound not find step 32")
     end
 )

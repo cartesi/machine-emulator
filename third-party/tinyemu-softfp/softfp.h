@@ -24,6 +24,7 @@
 #ifndef SOFTFP_H
 #define SOFTFP_H
 
+#include <stddef.h>
 #include <inttypes.h>
 #include "cutils.h"
 

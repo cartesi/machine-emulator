@@ -371,6 +371,33 @@ uint64_t grpc_virtual_machine::get_x_address(const grpc_machine_stub_ptr &stub, 
     return response.address();
 }
 
+uint64_t grpc_virtual_machine::do_read_f(int i) const {
+    ReadFRequest request;
+    request.set_index(i);
+    ReadFResponse response;
+    ClientContext context;
+    check_status(m_stub->get_stub()->ReadF(&context, request, &response));
+    return response.value();
+}
+
+void grpc_virtual_machine::do_write_f(int i, uint64_t val) {
+    WriteFRequest request;
+    request.set_index(i);
+    request.set_value(val);
+    Void response;
+    ClientContext context;
+    check_status(m_stub->get_stub()->WriteF(&context, request, &response));
+}
+
+uint64_t grpc_virtual_machine::get_f_address(const grpc_machine_stub_ptr &stub, int i) {
+    GetFAddressRequest request;
+    request.set_index(i);
+    GetFAddressResponse response;
+    ClientContext context;
+    check_status(stub->get_stub()->GetFAddress(&context, request, &response));
+    return response.address();
+}
+
 void grpc_virtual_machine::do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const {
     ReadMemoryRequest request;
     request.set_address(address);
@@ -419,6 +446,14 @@ uint64_t grpc_virtual_machine::do_read_pc(void) const {
 
 void grpc_virtual_machine::do_write_pc(uint64_t val) {
     write_csr(csr::pc, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_fcsr(void) const {
+    return read_csr(csr::fcsr);
+}
+
+void grpc_virtual_machine::do_write_fcsr(uint64_t val) {
+    write_csr(csr::fcsr, val);
 }
 
 uint64_t grpc_virtual_machine::do_read_mvendorid(void) const {

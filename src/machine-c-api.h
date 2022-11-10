@@ -95,6 +95,7 @@ enum CM_ERROR {
 /// \brief List of CSRs to use with read_csr and write_csr
 typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_PC,
+    CM_PROC_FCSR,
     CM_PROC_MVENDORID,
     CM_PROC_MARCHID,
     CM_PROC_MIMPID,
@@ -140,7 +141,9 @@ typedef enum { // NOLINT(modernize-use-using)
 /// \brief Processor state configuration
 typedef struct {                        // NOLINT(modernize-use-using)
     uint64_t x[CM_MACHINE_X_REG_COUNT]; ///< Value of general-purpose registers
+    uint64_t f[CM_MACHINE_F_REG_COUNT]; ///< Value of floating-point registers
     uint64_t pc;                        ///< Value of pc
+    uint64_t fcsr;                      ///< Value of fcsr CSR
     uint64_t mvendorid;                 ///< Value of mvendorid CSR
     uint64_t marchid;                   ///< Value of marchid CSR
     uint64_t mimpid;                    ///< Value of mimpid CSR
@@ -609,6 +612,31 @@ CM_API int cm_write_x(cm_machine *m, int i, uint64_t val, char **err_msg);
 /// \returns Address of the specified register
 CM_API uint64_t cm_get_x_address(int i);
 
+/// \brief Reads the value of a floating-point register.
+/// \param m Pointer to valid machine instance
+/// \param i Register index. Between 0 and F_REG_COUNT-1, inclusive.
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_f(const cm_machine *m, int i, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of a floating-point register.
+/// \param m Pointer to valid machine instance
+/// \param i Register index. Between 0 and F_REG_COUNT-1, inclusive.
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_f(cm_machine *m, int i, uint64_t val, char **err_msg);
+
+/// \brief Gets the address of a floating-point register.
+/// \param i Register index. Between 0 and F_REG_COUNT-1, inclusive.
+/// \returns Address of the specified register
+CM_API uint64_t cm_get_f_address(int i);
+
 /// \brief Reads the value of the pc register.
 /// \param m Pointer to valid machine instance
 /// \param val Receives the value of the register
@@ -626,6 +654,24 @@ CM_API int cm_read_pc(const cm_machine *m, uint64_t *val, char **err_msg);
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_pc(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the fcsr register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_fcsr(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the fcsr register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_fcsr(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the mvendorid register.
 /// \param m Pointer to valid machine instance

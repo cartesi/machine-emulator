@@ -30,6 +30,19 @@ local checkin_address = nil
 local test_path = "./"
 local cleanup = {}
 
+local function get_file_length(filename)
+    local file = io.open(filename, "rb")
+    if not file then return nil end
+    local size = file:seek("end")    -- get file size
+    file:close()
+    return size
+end
+
+local linux_image = test_util.images_path .. "linux.bin"
+local rom_image = test_util.images_path .. "rom.bin"
+local rootfs_image = test_util.images_path .. "rootfs.ext2"
+local rootfs_length = get_file_length(rootfs_image)
+
 -- Print help and exit
 local function help()
     io.stderr:write(string.format([=[
@@ -151,7 +164,7 @@ local function build_machine(type, config)
     config = config or {
         processor = {},
         ram = {length = 1 << 20},
-        rom = {image_filename = test_util.images_path .. "rom.bin"}
+        rom = {image_filename = rom_image}
     }
     local runtime = {
         concurrency = {
@@ -432,25 +445,26 @@ print("\n\n check replace flash drives")
 test_util.make_do_test(build_machine, machine_type, {
     processor = {},
     ram = {length = 1 << 20},
-    rom = {image_filename = test_util.images_path .. "rom.bin"},
+    rom = {image_filename = rom_image},
     flash_drive = {{
         start = 0x80000000000000,
-        length = 0x5000000,
+        length = rootfs_length,
         shared = false,
-        image_filename = test_util.images_path .. "rootfs.ext2"
+        image_filename = rootfs_image
     }}
 })("should replace flash drive and read something",
     function(machine)
         -- Create temp flash file
         local input_path =  test_path .. "input.raw"
-        local command  = "echo 'test data 1234567890' > " .. input_path .. " && truncate -s 83886080 " .. input_path
+        local command  = "echo 'test data 1234567890' > " .. input_path ..
+            " && truncate -s " .. tostring(rootfs_length) .. " " .. input_path
         local p = io.popen(command)
         p:close()
 
         local flash_address_start = 0x80000000000000
         local flash_drive_config = {
             start = flash_address_start,
-            length = 0x5000000,
+            length = rootfs_length,
             image_filename = input_path,
             shared = true
         }
@@ -469,11 +483,11 @@ print("\n\n check reading from an input and writing to an output flash drive")
 test_util.make_do_test(build_machine, machine_type, {
     processor = {},
     ram = {
-        image_filename = test_util.images_path .. "linux.bin",
+        image_filename = linux_image,
         length = 0x4000000,
     },
     rom = {
-        image_filename = test_util.images_path .. "rom.bin",
+        image_filename = rom_image,
         bootargs =
             "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce single=yes splash=no "..
             "mtdparts=flash.0:-(root);flash.1:-(input);flash.2:-(output) -- "..
@@ -481,12 +495,12 @@ test_util.make_do_test(build_machine, machine_type, {
     },
     flash_drive = {{
         start = 0x80000000000000,
-        length = 0x5000000,
-        image_filename = test_util.images_path .. "rootfs.ext2"
+        length = rootfs_length,
+        image_filename = rootfs_image
     }, {
         start = 0x90000000000000,
-        length = 0x5000000,
-        image_filename = test_util.images_path .. "rootfs.ext2"
+        length = rootfs_length,
+        image_filename = rootfs_image
     }, {
         start = 0xa0000000000000,
         length = 4096,

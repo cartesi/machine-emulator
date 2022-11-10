@@ -134,12 +134,18 @@ private:
         if (try_write_x(a, paddr, data)) {
             return true;
         }
+        if (try_write_f(a, paddr, data)) {
+            return true;
+        }
         if (try_write_tlb(a, paddr, data)) {
             return true;
         }
         switch (static_cast<shadow_state_csr>(paddr)) {
             case shadow_state_csr::pc:
                 a.write_pc(data);
+                return true;
+            case shadow_state_csr::fcsr:
+                a.write_fcsr(data);
                 return true;
             case shadow_state_csr::mcycle:
                 a.write_mcycle(data);
@@ -263,6 +269,9 @@ private:
         if (try_read_x(a, paddr, data)) {
             return true;
         }
+        if (try_read_f(a, paddr, data)) {
+            return true;
+        }
         if (try_read_tlb(a, paddr, data)) {
             return true;
         }
@@ -272,6 +281,9 @@ private:
         switch (static_cast<shadow_state_csr>(paddr)) {
             case shadow_state_csr::pc:
                 *data = a.read_pc();
+                return true;
+            case shadow_state_csr::fcsr:
+                *data = a.read_fcsr();
                 return true;
             case shadow_state_csr::mvendorid:
                 *data = a.read_mvendorid();
@@ -401,8 +413,8 @@ private:
         if (paddr > shadow_state_get_x_abs_addr(X_REG_COUNT - 1)) {
             return false;
         }
-        if (paddr & 3) {
-            throw std::runtime_error("Read register value not correctly aligned");
+        if (paddr & 0b111) {
+            throw std::runtime_error("read register value not correctly aligned");
         }
         paddr -= shadow_state_get_x_abs_addr(0);
         a.write_x(paddr >> 3, data);
@@ -421,11 +433,51 @@ private:
         if (paddr > shadow_state_get_x_abs_addr(X_REG_COUNT - 1)) {
             return false;
         }
-        if (paddr & 3) {
-            throw std::runtime_error("Read register value not correctly aligned");
+        if (paddr & 0b111) {
+            throw std::runtime_error("read register value not correctly aligned");
         }
         paddr -= shadow_state_get_x_abs_addr(0);
         *data = a.read_x(paddr >> 3);
+        return true;
+    }
+
+    /// \brief Tries to write a floating-point machine register.
+    /// \param a Machine state accessor object.
+    /// \param paddr Absolute address of the register within shadow-state range
+    /// \param data Data to write
+    /// \return true if the register was successfully written.
+    static bool try_write_f(STATE_ACCESS &a, uint64_t paddr, uint64_t data) {
+        if (paddr < shadow_state_get_f_abs_addr(0)) {
+            return false;
+        }
+        if (paddr > shadow_state_get_f_abs_addr(F_REG_COUNT - 1)) {
+            return false;
+        }
+        if (paddr & 0b111) {
+            throw std::runtime_error("read floating-point register value not correctly aligned");
+        }
+        paddr -= shadow_state_get_f_abs_addr(0);
+        a.write_f(paddr >> 3, data);
+        return true;
+    }
+
+    /// \brief Tries to read a floating-point machine register.
+    /// \param a Machine state accessor object.
+    /// \param paddr Absolute address of the register within shadow-state range
+    /// \param data Pointer to word receiving value.
+    /// \return true if the register was successfully read
+    static bool try_read_f(STATE_ACCESS &a, uint64_t paddr, uint64_t *data) {
+        if (paddr < shadow_state_get_f_abs_addr(0)) {
+            return false;
+        }
+        if (paddr > shadow_state_get_f_abs_addr(F_REG_COUNT - 1)) {
+            return false;
+        }
+        if (paddr & 0b111) {
+            throw std::runtime_error("read floating-point register value not correctly aligned");
+        }
+        paddr -= shadow_state_get_f_abs_addr(0);
+        *data = a.read_f(paddr >> 3);
         return true;
     }
 

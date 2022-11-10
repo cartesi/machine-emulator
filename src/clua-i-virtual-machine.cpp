@@ -51,8 +51,14 @@ static int machine_obj_index_dump_regs(lua_State *L) {
         TRY_EXECUTE(cm_read_x(m, i, &val, err_msg));
         (void) fprintf(stderr, "x%d = %" PRIx64 "\n", i, val);
     }
-    PRINT_PROCESSOR_CSR(m, minstret);
+    PRINT_PROCESSOR_CSR(m, fcsr);
+    for (int i = 0; i < 32; ++i) {
+        uint64_t val{0};
+        TRY_EXECUTE(cm_read_f(m, i, &val, err_msg));
+        (void) fprintf(stderr, "x%d = %" PRIx64 "\n", i, val);
+    }
     PRINT_PROCESSOR_CSR(m, mcycle);
+    PRINT_PROCESSOR_CSR(m, minstret);
     PRINT_PROCESSOR_CSR(m, mvendorid);
     PRINT_PROCESSOR_CSR(m, marchid);
     PRINT_PROCESSOR_CSR(m, mimpid);
@@ -173,6 +179,7 @@ static int machine_obj_index_get_root_hash(lua_State *L) {
     }
 
 IMPL_MACHINE_OBJ_READ_WRITE(pc)
+IMPL_MACHINE_OBJ_READ_WRITE(fcsr)
 IMPL_MACHINE_OBJ_READ(mvendorid)
 IMPL_MACHINE_OBJ_READ(marchid)
 IMPL_MACHINE_OBJ_READ(mimpid)
@@ -236,6 +243,20 @@ static int machine_obj_index_read_x(lua_State *L) {
     }
     uint64_t val{};
     TRY_EXECUTE(cm_read_x(m.get(), i, &val, err_msg));
+    lua_pushinteger(L, static_cast<lua_Integer>(val));
+    return 1;
+}
+
+/// \brief This is the machine:read_f() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_read_f(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    auto i = luaL_checkinteger(L, 2);
+    if (i < 0 || i >= F_REG_COUNT) {
+        luaL_error(L, "register index out of range");
+    }
+    uint64_t val{};
+    TRY_EXECUTE(cm_read_f(m.get(), i, &val, err_msg));
     lua_pushinteger(L, static_cast<lua_Integer>(val));
     return 1;
 }
@@ -479,6 +500,18 @@ static int machine_obj_index_write_x(lua_State *L) {
     return 0;
 }
 
+/// \brief This is the machine:write_f() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_write_f(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    auto i = luaL_checkinteger(L, 2);
+    if (i < 0 || i >= F_REG_COUNT) {
+        luaL_error(L, "register index out of range");
+    }
+    TRY_EXECUTE(cm_write_f(m.get(), i, luaL_checkinteger(L, 3), err_msg));
+    return 0;
+}
+
 /// \brief This is the machine:write_uarch_x() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_write_uarch_x(lua_State *L) {
@@ -610,6 +643,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_mtvec", machine_obj_index_read_mtvec},
     {"read_mvendorid", machine_obj_index_read_mvendorid},
     {"read_pc", machine_obj_index_read_pc},
+    {"read_fcsr", machine_obj_index_read_fcsr},
     {"read_satp", machine_obj_index_read_satp},
     {"read_scause", machine_obj_index_read_scause},
     {"read_scounteren", machine_obj_index_read_scounteren},
@@ -620,6 +654,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_stvec", machine_obj_index_read_stvec},
     {"read_word", machine_obj_index_read_word},
     {"read_x", machine_obj_index_read_x},
+    {"read_f", machine_obj_index_read_f},
     {"run", machine_obj_index_run},
     {"uarch_run", machine_obj_index_uarch_run},
     {"step", machine_obj_index_step},
@@ -654,6 +689,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"write_mtval", machine_obj_index_write_mtval},
     {"write_mtvec", machine_obj_index_write_mtvec},
     {"write_pc", machine_obj_index_write_pc},
+    {"write_fcsr", machine_obj_index_write_fcsr},
     {"write_satp", machine_obj_index_write_satp},
     {"write_scause", machine_obj_index_write_scause},
     {"write_scounteren", machine_obj_index_write_scounteren},
@@ -663,6 +699,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"write_stval", machine_obj_index_write_stval},
     {"write_stvec", machine_obj_index_write_stvec},
     {"write_x", machine_obj_index_write_x},
+    {"write_f", machine_obj_index_write_f},
     {"replace_memory_range", machine_obj_index_replace_memory_range},
     {"destroy", machine_obj_index_destroy},
     {"snapshot", machine_obj_index_snapshot},

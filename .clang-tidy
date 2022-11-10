@@ -22,6 +22,7 @@ Checks: >-
   -modernize-use-nodiscard,
   -modernize-use-trailing-return-type,
   -modernize-avoid-c-arrays,
+  -modernize-use-auto,
   performance*,
   portability*,
   readability*,

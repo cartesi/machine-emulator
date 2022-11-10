@@ -210,6 +210,15 @@ private:
             m_m.get_state().x[reg], val, "x");
     }
 
+    uint64_t do_read_f(int reg) const {
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_f_rel_addr(reg), m_m.get_state().f[reg], "f");
+    }
+
+    void do_write_f(int reg, uint64_t val) {
+        return log_before_write_write_and_update(PMA_SHADOW_STATE_START + shadow_state_get_f_rel_addr(reg),
+            m_m.get_state().f[reg], val, "f");
+    }
+
     uint64_t do_read_pc(void) const {
         return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::pc),
             m_m.get_state().pc, "pc");
@@ -218,6 +227,17 @@ private:
     void do_write_pc(uint64_t val) {
         log_before_write_write_and_update(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::pc),
             m_m.get_state().pc, val, "pc");
+    }
+
+    uint64_t do_read_fcsr(void) const {
+        return log_read(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::fcsr),
+            m_m.get_state().fcsr, "fcsr");
+    }
+
+    void do_write_fcsr(uint64_t val) {
+        log_before_write_write_and_update(PMA_SHADOW_STATE_START +
+                shadow_state_get_csr_rel_addr(shadow_state_csr::fcsr),
+            m_m.get_state().fcsr, val, "fcsr");
     }
 
     uint64_t do_read_minstret(void) const {

@@ -92,7 +92,40 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
     proto_p->set_x29(c.processor.x[29]);
     proto_p->set_x30(c.processor.x[30]);
     proto_p->set_x31(c.processor.x[31]);
+    proto_p->set_f0(c.processor.f[0]);
+    proto_p->set_f1(c.processor.f[1]);
+    proto_p->set_f2(c.processor.f[2]);
+    proto_p->set_f3(c.processor.f[3]);
+    proto_p->set_f4(c.processor.f[4]);
+    proto_p->set_f5(c.processor.f[5]);
+    proto_p->set_f6(c.processor.f[6]);
+    proto_p->set_f7(c.processor.f[7]);
+    proto_p->set_f8(c.processor.f[8]);
+    proto_p->set_f9(c.processor.f[9]);
+    proto_p->set_f10(c.processor.f[10]);
+    proto_p->set_f11(c.processor.f[11]);
+    proto_p->set_f12(c.processor.f[12]);
+    proto_p->set_f13(c.processor.f[13]);
+    proto_p->set_f14(c.processor.f[14]);
+    proto_p->set_f15(c.processor.f[15]);
+    proto_p->set_f16(c.processor.f[16]);
+    proto_p->set_f17(c.processor.f[17]);
+    proto_p->set_f18(c.processor.f[18]);
+    proto_p->set_f19(c.processor.f[19]);
+    proto_p->set_f20(c.processor.f[20]);
+    proto_p->set_f21(c.processor.f[21]);
+    proto_p->set_f22(c.processor.f[22]);
+    proto_p->set_f23(c.processor.f[23]);
+    proto_p->set_f24(c.processor.f[24]);
+    proto_p->set_f25(c.processor.f[25]);
+    proto_p->set_f26(c.processor.f[26]);
+    proto_p->set_f27(c.processor.f[27]);
+    proto_p->set_f28(c.processor.f[28]);
+    proto_p->set_f29(c.processor.f[29]);
+    proto_p->set_f30(c.processor.f[30]);
+    proto_p->set_f31(c.processor.f[31]);
     proto_p->set_pc(c.processor.pc);
+    proto_p->set_fcsr(c.processor.fcsr);
     proto_p->set_mvendorid(c.processor.mvendorid);
     proto_p->set_marchid(c.processor.marchid);
     proto_p->set_mimpid(c.processor.mimpid);
@@ -432,8 +465,107 @@ processor_config get_proto_processor_config(const CartesiMachine::ProcessorConfi
     if (proto_p.has_x31()) {
         p.x[31] = proto_p.x31();
     }
+    if (proto_p.has_f0()) {
+        p.f[0] = proto_p.f0();
+    }
+    if (proto_p.has_f1()) {
+        p.f[1] = proto_p.f1();
+    }
+    if (proto_p.has_f2()) {
+        p.f[2] = proto_p.f2();
+    }
+    if (proto_p.has_f3()) {
+        p.f[3] = proto_p.f3();
+    }
+    if (proto_p.has_f4()) {
+        p.f[4] = proto_p.f4();
+    }
+    if (proto_p.has_f5()) {
+        p.f[5] = proto_p.f5();
+    }
+    if (proto_p.has_f6()) {
+        p.f[6] = proto_p.f6();
+    }
+    if (proto_p.has_f7()) {
+        p.f[7] = proto_p.f7();
+    }
+    if (proto_p.has_f8()) {
+        p.f[8] = proto_p.f8();
+    }
+    if (proto_p.has_f9()) {
+        p.f[9] = proto_p.f9();
+    }
+    if (proto_p.has_f10()) {
+        p.f[10] = proto_p.f10();
+    }
+    if (proto_p.has_f11()) {
+        p.f[11] = proto_p.f11();
+    }
+    if (proto_p.has_f12()) {
+        p.f[12] = proto_p.f12();
+    }
+    if (proto_p.has_f13()) {
+        p.f[13] = proto_p.f13();
+    }
+    if (proto_p.has_f14()) {
+        p.f[14] = proto_p.f14();
+    }
+    if (proto_p.has_f15()) {
+        p.f[15] = proto_p.f15();
+    }
+    if (proto_p.has_f16()) {
+        p.f[16] = proto_p.f16();
+    }
+    if (proto_p.has_f17()) {
+        p.f[17] = proto_p.f17();
+    }
+    if (proto_p.has_f18()) {
+        p.f[18] = proto_p.f18();
+    }
+    if (proto_p.has_f19()) {
+        p.f[19] = proto_p.f19();
+    }
+    if (proto_p.has_f20()) {
+        p.f[20] = proto_p.f20();
+    }
+    if (proto_p.has_f21()) {
+        p.f[21] = proto_p.f21();
+    }
+    if (proto_p.has_f22()) {
+        p.f[22] = proto_p.f22();
+    }
+    if (proto_p.has_f23()) {
+        p.f[23] = proto_p.f23();
+    }
+    if (proto_p.has_f24()) {
+        p.f[24] = proto_p.f24();
+    }
+    if (proto_p.has_f25()) {
+        p.f[25] = proto_p.f25();
+    }
+    if (proto_p.has_f26()) {
+        p.f[26] = proto_p.f26();
+    }
+    if (proto_p.has_f27()) {
+        p.f[27] = proto_p.f27();
+    }
+    if (proto_p.has_f28()) {
+        p.f[28] = proto_p.f28();
+    }
+    if (proto_p.has_f29()) {
+        p.f[29] = proto_p.f29();
+    }
+    if (proto_p.has_f30()) {
+        p.f[30] = proto_p.f30();
+    }
+    if (proto_p.has_f31()) {
+        p.f[31] = proto_p.f31();
+    }
     if (proto_p.has_pc()) {
         p.pc = proto_p.pc();
+    }
+    if (proto_p.has_fcsr()) {
+        p.fcsr = proto_p.fcsr();
     }
     if (proto_p.has_mvendorid()) {
         p.mvendorid = proto_p.mvendorid();

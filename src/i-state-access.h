@@ -82,19 +82,33 @@ public:
     }
 
     /// \brief Reads from general-purpose register.
-    /// \tparam reg Register index.
+    /// \param reg Register index.
     /// \returns Register value.
     uint64_t read_x(int reg) {
         return derived().do_read_x(reg);
     }
 
     /// \brief Writes register to general-purpose register.
-    /// \tparam reg Register index.
-    /// \tparam val New register value.
+    /// \param reg Register index.
+    /// \param val New register value.
     /// \details Writes to register zero *break* the machine. There is an assertion to catch this, but NDEBUG will let
     /// the value pass through.
     void write_x(int reg, uint64_t val) {
         return derived().do_write_x(reg, val);
+    }
+
+    /// \brief Reads from floating-point register.
+    /// \param reg Register index.
+    /// \returns Register value.
+    uint64_t read_f(int reg) {
+        return derived().do_read_f(reg);
+    }
+
+    /// \brief Writes register to floating-point register.
+    /// \param reg Register index.
+    /// \param val New register value.
+    void write_f(int reg, uint64_t val) {
+        return derived().do_write_f(reg, val);
     }
 
     /// \brief Reads the program counter.
@@ -107,6 +121,18 @@ public:
     /// \param val New register value.
     void write_pc(uint64_t val) {
         return derived().do_write_pc(val);
+    }
+
+    /// \brief Writes CSR fcsr.
+    /// \param val New register value.
+    void write_fcsr(uint64_t val) {
+        return derived().do_write_fcsr(val);
+    }
+
+    /// \brief Reads CSR fcsr.
+    /// \returns Register value.
+    uint64_t read_fcsr(void) {
+        return derived().do_read_fcsr();
     }
 
     /// \brief Reads CSR minstret.

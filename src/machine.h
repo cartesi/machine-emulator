@@ -128,6 +128,7 @@ public:
     /// \brief List of CSRs to use with read_csr and write_csr
     enum class csr {
         pc,
+        fcsr,
         mvendorid,
         marchid,
         mimpid,
@@ -333,6 +334,21 @@ public:
     /// \returns Address of the specified register
     static uint64_t get_x_address(int i);
 
+    /// \brief Reads the value of a floating-point register.
+    /// \param i Register index. Between 0 and F_REG_COUNT-1, inclusive.
+    /// \returns The value of the register.
+    uint64_t read_f(int i) const;
+
+    /// \brief Writes the value of a floating-point register.
+    /// \param i Register index. Between 1 and F_REG_COUNT-1, inclusive.
+    /// \param val New register value.
+    void write_f(int i, uint64_t val);
+
+    /// \brief Gets the address of a floating-point register.
+    /// \param i Register index. Between 0 and F_REG_COUNT-1, inclusive.
+    /// \returns Address of the specified register
+    static uint64_t get_f_address(int i);
+
     /// \brief Reads the value of the pc register.
     /// \returns The value of the register.
     uint64_t read_pc(void) const;
@@ -340,6 +356,14 @@ public:
     /// \brief Reads the value of the pc register.
     /// \param val New register value.
     void write_pc(uint64_t val);
+
+    /// \brief Reads the value of the fcsr register.
+    /// \returns The value of the register.
+    uint64_t read_fcsr(void) const;
+
+    /// \brief Writes the value of the fcsr register.
+    /// \param val New register value.
+    void write_fcsr(uint64_t val);
 
     /// \brief Reads the value of the mvendorid register.
     /// \returns The value of the register.

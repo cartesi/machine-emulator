@@ -502,6 +502,7 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
     const static std::unordered_map<std::string, CM_PROC_CSR> g_cm_proc_csr_name = {
         // clang-format off
         {"pc", CM_PROC_PC},
+        {"fcsr", CM_PROC_FCSR},
         {"mvendorid", CM_PROC_MVENDORID},
         {"marchid", CM_PROC_MARCHID},
         {"mimpid", CM_PROC_MIMPID},
@@ -711,6 +712,7 @@ static void push_cm_processor_config(lua_State *L, const cm_processor_config *p)
     }
     lua_setfield(L, -2, "x");
     PUSH_CM_PROCESSOR_CONFIG_CSR(pc);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(fcsr);
     PUSH_CM_PROCESSOR_CONFIG_CSR(mvendorid);
     PUSH_CM_PROCESSOR_CONFIG_CSR(marchid);
     PUSH_CM_PROCESSOR_CONFIG_CSR(mimpid);
@@ -1035,6 +1037,7 @@ static void check_cm_processor_config(lua_State *L, int tabidx, cm_processor_con
     }
     lua_pop(L, 1);
     p->pc = opt_uint_field(L, -1, "pc", def->pc);
+    p->fcsr = opt_uint_field(L, -1, "fcsr", def->fcsr);
     p->mvendorid = opt_uint_field(L, -1, "mvendorid", def->mvendorid);
     p->marchid = opt_uint_field(L, -1, "marchid", def->marchid);
     p->mimpid = opt_uint_field(L, -1, "mimpid", def->mimpid);

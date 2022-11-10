@@ -50,8 +50,13 @@ static bool shadow_state_peek(const pma_entry &pma, const machine &m, uint64_t p
     for (int i = 0; i < X_REG_COUNT; ++i) {
         s->x[i] = m.read_x(i);
     }
+    // Copy floating-point registers
+    for (int i = 0; i < F_REG_COUNT; ++i) {
+        s->f[i] = m.read_f(i);
+    }
     // Copy named registers
     s->pc = m.read_pc();
+    s->fcsr = m.read_fcsr();
     s->mvendorid = m.read_mvendorid();
     s->marchid = m.read_marchid();
     s->mimpid = m.read_mimpid();

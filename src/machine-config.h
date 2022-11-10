@@ -31,7 +31,9 @@ namespace cartesi {
 /// \brief Processor state configuration
 struct processor_config final {
     std::array<uint64_t, X_REG_COUNT> x{}; ///< Value of general-purpose registers
+    std::array<uint64_t, F_REG_COUNT> f{}; ///< Value of floating-point registers
     uint64_t pc{PC_INIT};                  ///< Value of pc
+    uint64_t fcsr{FCSR_INIT};              ///< Value of fcsr CSR
     uint64_t mvendorid{MVENDORID_INIT};    ///< Value of mvendorid CSR
     uint64_t marchid{MARCHID_INIT};        ///< Value of marchid CSR
     uint64_t mimpid{MIMPID_INIT};          ///< Value of mimpid CSR

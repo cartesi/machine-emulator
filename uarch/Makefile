@@ -4,6 +4,8 @@ TOOLCHAIN_PREFIX ?= riscv64-cartesi-linux-gnu-
 CONTAINER_ROOT_DIR = /opt/cartesi/uarch
 UARCH_SRC_DIR = $(abspath .)
 CONTAINER_UARCH_SRC_DIR = $(CONTAINER_ROOT_DIR)/src/uarch
+SOFTFP_SRC_DIR = $(abspath ../third-party/tinyemu-softfp)
+CONTAINER_SOFTFP_SRC_DIR = $(CONTAINER_ROOT_DIR)/third-party/tinyemu-softfp
 EMULATOR_SRC_DIR = $(abspath ../src)
 CONTAINER_EMULATOR_SRC_DIR = $(CONTAINER_ROOT_DIR)/src/emulator
 MACHINE_EMULATOR_DEFINES_DIR := $(abspath ../lib)/machine-emulator-defines
@@ -31,6 +33,7 @@ RUN_TOOLCHAIN=docker run --rm  \
 	-v $(OUTPUT_DIR):$(CONTAINER_OUTPUT_DIR) \
 	-v $(UARCH_SRC_DIR):$(CONTAINER_UARCH_SRC_DIR) \
 	-v $(EMULATOR_SRC_DIR):$(CONTAINER_EMULATOR_SRC_DIR) \
+	-v $(SOFTFP_SRC_DIR):$(CONTAINER_SOFTFP_SRC_DIR) \
 	-v $(MACHINE_EMULATOR_DEFINES_DIR):$(CONTAINER_MACHINE_EMULATOR_DEFINES_DIR) \
 	-v $(BOOST_INC_DIR):$(CONTAINER_BOOST_INC_DIR) \
 	-w $(CONTAINER_OUTPUT_DIR) \
@@ -70,6 +73,7 @@ CFLAGS :=  -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) \
     -mcmodel=medany -static -fvisibility=hidden \
 	-I$(CONTAINER_MACHINE_EMULATOR_DEFINES_DIR) \
 	-I$(CONTAINER_EMULATOR_SRC_DIR) \
+	-I$(CONTAINER_SOFTFP_SRC_DIR) \
 	-I$(CONTAINER_UARCH_SRC_DIR) \
 	-I$(CONTAINER_BOOST_INC_DIR)
 	
@@ -82,6 +86,7 @@ UARCH_SOURCES=\
 
 EMULATOR_SOURCES=\
 	interpret.cpp \
+	soft-float.cpp \
 	pma-driver.cpp \
 	htif.cpp \
 	shadow-tlb.cpp \

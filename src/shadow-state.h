@@ -31,7 +31,9 @@ namespace cartesi {
 #pragma pack(push, 1)
 struct shadow_state {
     uint64_t x[X_REG_COUNT]; ///< Register file.
+    uint64_t f[F_REG_COUNT]; ///< Floating-point register file.
     uint64_t pc;
+    uint64_t fcsr;
     uint64_t mvendorid;
     uint64_t marchid;
     uint64_t mimpid;
@@ -81,6 +83,7 @@ extern const pma_driver shadow_state_driver;
 /// \brief Mapping between CSRs and their relative addresses in shadow memory
 enum class shadow_state_csr {
     pc = offsetof(shadow_state, pc),
+    fcsr = offsetof(shadow_state, fcsr),
     mvendorid = offsetof(shadow_state, mvendorid),
     marchid = offsetof(shadow_state, marchid),
     mimpid = offsetof(shadow_state, mimpid),
@@ -142,6 +145,12 @@ uint64_t shadow_state_get_x_rel_addr(int reg);
 
 /// \brief Obtains the absolute address of a general purpose register
 uint64_t shadow_state_get_x_abs_addr(int reg);
+
+/// \brief Obtains the relative address of a floating-point register
+uint64_t shadow_state_get_f_rel_addr(int reg);
+
+/// \brief Obtains the absolute address of a floating-point register
+uint64_t shadow_state_get_f_abs_addr(int reg);
 
 /// \brief Obtains the relative address of a microarchitecture general purpose register
 uint64_t shadow_state_get_uarch_x_rel_addr(int reg);

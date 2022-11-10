@@ -417,6 +417,13 @@ F_UINT fma_sf(F_UINT a, F_UINT b, F_UINT c, RoundingModeEnum rm,
     b_mant = b & MANT_MASK;
     c_mant = c & MANT_MASK;
     if (a_exp == EXP_MASK || b_exp == EXP_MASK || c_exp == EXP_MASK) {
+        // The fused multiply-add instructions must set the invalid operation exception flag
+        // when the multiplicands are infinite and zero, even when the addend is a quiet NaN.
+        if (((a_exp == EXP_MASK && a_mant == 0) && (b_exp == 0 && b_mant == 0)) ||
+            ((b_exp == EXP_MASK && b_mant == 0) && (a_exp == 0 && a_mant == 0))) {
+            *pfflags |= FFLAG_INVALID_OP;
+            return F_QNAN;
+        }
         if (isnan_sf(a) || isnan_sf(b) || isnan_sf(c)) {
             if (issignan_sf(a) || issignan_sf(b) || issignan_sf(c)) {
                 *pfflags |= FFLAG_INVALID_OP;
@@ -461,7 +468,7 @@ F_UINT fma_sf(F_UINT a, F_UINT b, F_UINT c, RoundingModeEnum rm,
     }
     /* multiply */
     r_exp = a_exp + b_exp - (1 << (EXP_SIZE - 1)) + 3;
-    
+
     r_mant1 = mul_u(&r_mant0, a_mant << RND_SIZE, b_mant << RND_SIZE);
     /* normalize to F_SIZE - 3 */
     if (r_mant1 < ((F_UINT)1 << (F_SIZE - 3))) {
@@ -624,7 +631,7 @@ F_UINT div_sf(F_UINT a, F_UINT b, RoundingModeEnum rm,
     }
 
     if (b_exp == 0) {
-        if (b_mant == 0) { 
+        if (b_mant == 0) {
             /* zero */
             if (a_exp == 0 && a_mant == 0) {
                 *pfflags |= FFLAG_INVALID_OP;
@@ -779,7 +786,7 @@ static F_UINT glue(min_max_nan_sf, F_SIZE)(F_UINT a, F_UINT b, uint32_t *pfflags
         return F_QNAN;
     } else {
         if (isnan_sf(a)) {
-            if (isnan_sf(b)) 
+            if (isnan_sf(b))
                 return F_QNAN;
             else
                 return b;

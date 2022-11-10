@@ -309,7 +309,13 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
         write_x(i, m_c.processor.x[i]);
     }
 
+    // Floating-point registers
+    for (int i = 0; i < F_REG_COUNT; i++) {
+        write_f(i, m_c.processor.f[i]);
+    }
+
     write_pc(m_c.processor.pc);
+    write_fcsr(m_c.processor.fcsr);
     write_mcycle(m_c.processor.mcycle);
     write_minstret(m_c.processor.minstret);
     write_mstatus(m_c.processor.mstatus);
@@ -475,7 +481,11 @@ machine_config machine::get_serialization_config(void) const {
     for (int i = 1; i < X_REG_COUNT; ++i) {
         c.processor.x[i] = read_x(i);
     }
+    for (int i = 0; i < F_REG_COUNT; ++i) {
+        c.processor.f[i] = read_f(i);
+    }
     c.processor.pc = read_pc();
+    c.processor.fcsr = read_fcsr();
     c.processor.mvendorid = read_mvendorid();
     c.processor.marchid = read_marchid();
     c.processor.mimpid = read_mimpid();
@@ -741,12 +751,32 @@ void machine::write_x(int i, uint64_t val) {
     }
 }
 
+uint64_t machine::read_f(int i) const {
+    return m_s.f[i];
+}
+
+uint64_t machine::get_f_address(int i) {
+    return PMA_SHADOW_STATE_START + shadow_state_get_f_rel_addr(i);
+}
+
+void machine::write_f(int i, uint64_t val) {
+    m_s.f[i] = val;
+}
+
 uint64_t machine::read_pc(void) const {
     return m_s.pc;
 }
 
 void machine::write_pc(uint64_t val) {
     m_s.pc = val;
+}
+
+uint64_t machine::read_fcsr(void) const {
+    return m_s.fcsr;
+}
+
+void machine::write_fcsr(uint64_t val) {
+    m_s.fcsr = val;
 }
 
 uint64_t machine::read_mvendorid(void) const { // NOLINT(readability-convert-member-functions-to-static)
@@ -1037,6 +1067,8 @@ uint64_t machine::read_csr(csr r) const {
     switch (r) {
         case csr::pc:
             return read_pc();
+        case csr::fcsr:
+            return read_fcsr();
         case csr::mvendorid:
             return read_mvendorid();
         case csr::marchid:
@@ -1125,6 +1157,8 @@ void machine::write_csr(csr w, uint64_t val) {
     switch (w) {
         case csr::pc:
             return write_pc(val);
+        case csr::fcsr:
+            return write_fcsr(val);
         case csr::mcycle:
             return write_mcycle(val);
         case csr::minstret:
@@ -1212,6 +1246,8 @@ uint64_t machine::get_csr_address(csr w) {
     switch (w) {
         case csr::pc:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::pc);
+        case csr::fcsr:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::fcsr);
         case csr::mvendorid:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::mvendorid);
         case csr::marchid:

@@ -337,12 +337,28 @@ private:
         check_write_word(PMA_SHADOW_STATE_START + shadow_state_get_x_rel_addr(reg), val, "x");
     }
 
+    uint64_t do_read_f(int reg) {
+        return check_read_word(PMA_SHADOW_STATE_START + shadow_state_get_f_rel_addr(reg), "f");
+    }
+
+    void do_write_f(int reg, uint64_t val) {
+        check_write_word(PMA_SHADOW_STATE_START + shadow_state_get_f_rel_addr(reg), val, "f");
+    }
+
     uint64_t do_read_pc(void) {
         return check_read_word(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::pc), "pc");
     }
 
     void do_write_pc(uint64_t val) {
         check_write_word(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::pc), val, "pc");
+    }
+
+    uint64_t do_read_fcsr(void) {
+        return check_read_word(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::fcsr), "fcsr");
+    }
+
+    void do_write_fcsr(uint64_t val) {
+        check_write_word(PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::fcsr), val, "fcsr");
     }
 
     uint64_t do_read_minstret(void) {

@@ -35,6 +35,15 @@ uint64_t shadow_state_get_x_abs_addr(int reg) {
     return PMA_SHADOW_STATE_START + shadow_state_get_x_rel_addr(reg);
 }
 
+uint64_t shadow_state_get_f_rel_addr(int reg) {
+    assert(reg >= 0 && reg < F_REG_COUNT);
+    return offsetof(shadow_state, f) + reg * sizeof(uint64_t);
+}
+
+uint64_t shadow_state_get_f_abs_addr(int reg) {
+    return PMA_SHADOW_STATE_START + shadow_state_get_f_rel_addr(reg);
+}
+
 uint64_t shadow_state_get_uarch_x_rel_addr(int reg) {
     assert(reg >= 0 && reg < UARCH_X_REG_COUNT);
     return PMA_SHADOW_STATE_START + offsetof(shadow_state, uarch_x) + reg * sizeof(uint64_t);

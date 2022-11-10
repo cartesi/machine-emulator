@@ -90,7 +90,7 @@ for _, proofs in ipairs{true, false} do
         assert(machine:read_mcycle() == MAX_MCYCLE)
         assert(#log.accesses == 1)
         assert(log.accesses[1].type == "read")
-        assert(log.accesses[1].address == 0x120)
+        assert(log.accesses[1].address == 0x228)
         assert(log.accesses[1].read == string.pack('J', MAX_MCYCLE))
         assert((log.accesses[1].proof ~= nil) == proofs)
     end)

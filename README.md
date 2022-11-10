@@ -37,11 +37,11 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 ```
 sudo apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-filesystem-dev libboost-log-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates liblua5.3-dev luarocks
 
-sudo luarock install lpeg
-sudo luarock install dkjson
-sudo luarock install luasocket
-sudo luarock install luasec
-sudo luarock install md5
+sudo luarocks install lpeg
+sudo luarocks install dkjson
+sudo luarocks install luasocket
+sudo luarocks install luasec
+sudo luarocks install md5
 ```
 #### MacOS
 
@@ -49,11 +49,11 @@ sudo luarock install md5
 ```
 sudo port install clang-14 automake boost libtool wget cmake pkgconfig c-ares zlib openssl lua lua-luarocks
 
-sudo luarock install lpeg
-sudo luarock install dkjson
-sudo luarock install luasocket
-sudo luarock install luasec
-sudo luarock install md5
+sudo luarocks install lpeg
+sudo luarocks install dkjson
+sudo luarocks install luasocket
+sudo luarocks install luasec
+sudo luarocks install md5
 ```
 
 ##### Homebrew

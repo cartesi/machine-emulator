@@ -745,7 +745,7 @@ private:
     }
 
     pma_entry &error_flags(const std::string &what) {
-        static pma_entry empty{};
+        static pma_entry empty{"dummy"};
         throw std::invalid_argument{
             "invalid flags in access " + std::to_string(access_to_report()) + " to PMA (" + what + ")"};
         return empty; // never reached
@@ -758,7 +758,7 @@ private:
             f.DID != PMA_ISTART_DID::rollup_notice_hashes) {
             return error_flags("invalid DID " + std::to_string(static_cast<int>(f.DID)) + " for M");
         }
-        return allocate_mock_pma_entry(index, make_mockd_memory_pma_entry(start, length).set_flags(f));
+        return allocate_mock_pma_entry(index, make_mockd_memory_pma_entry("mock PMA", start, length).set_flags(f));
     }
 
     pma_entry &build_mock_device_pma_entry(int index, uint64_t start, uint64_t length, const pma_entry::flags &f) {
@@ -777,7 +777,7 @@ private:
     }
 
     pma_entry &build_mock_empty_pma_entry(int index, uint64_t start, uint64_t length, const pma_entry::flags &f) {
-        return allocate_mock_pma_entry(index, make_empty_pma_entry(start, length).set_flags(f));
+        return allocate_mock_pma_entry(index, make_empty_pma_entry("mock PMA", start, length).set_flags(f));
     }
 
     static constexpr void split_istart(uint64_t istart, uint64_t &start, bool &M, bool &IO, bool &E,

@@ -308,7 +308,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_unknown_rom_file_test, incomplete_
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
     std::string result = err_msg;
-    std::string origin("error opening backing file '/unknown/file.bin': No such file or directory");
+    std::string origin("error opening image file '/unknown/file.bin' when initializing ROM: No such file or directory");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -343,7 +343,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, machin
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin("PMA overlaps with existing PMA");
+    std::string origin("range of flash drive 1 overlaps with range of existing flash drive 0");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -376,7 +376,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, mach
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin("PMA start must be aligned to page boundary");
+    std::string origin("start of flash drive 0 (36028797018963967) must be aligned to page boundary of 4096 bytes");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -391,7 +391,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machin
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin("PMA range must use at most 56 bits to be addressable");
+    std::string origin("range of flash drive 0 must use at most 56 bits to be addressable");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1612,7 +1612,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_pma_test, flash_driv
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin = "Cannot replace inexistent memory range";
+    std::string origin = "attempt to replace inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1627,7 +1627,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_length_test, flash_d
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin = "Cannot replace inexistent memory range";
+    std::string origin = "attempt to replace inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1641,7 +1641,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_file_length_mismatch_test, f
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin = "Cannot replace inexistent memory range";
+    std::string origin = "attempt to replace inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1655,7 +1655,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_zero_length_test, flash_driv
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin = "Cannot replace inexistent memory range";
+    std::string origin = "attempt to replace inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);

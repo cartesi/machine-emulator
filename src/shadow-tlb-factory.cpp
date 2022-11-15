@@ -85,7 +85,7 @@ pma_entry make_shadow_tlb_pma_entry(uint64_t start, uint64_t length) {
         false,                     // IW
         PMA_ISTART_DID::shadow_TLB // DID
     };
-    return make_device_pma_entry(start, length, shadow_tlb_peek, &shadow_tlb_driver).set_flags(f);
+    return make_device_pma_entry("shadow TLB device", start, length, shadow_tlb_peek, &shadow_tlb_driver).set_flags(f);
 }
 
 } // namespace cartesi

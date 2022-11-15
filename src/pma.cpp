@@ -60,7 +60,7 @@ pma_memory::pma_memory(pma_memory &&other) noexcept :
     other.m_length = 0;
 }
 
-pma_memory::pma_memory(uint64_t length, const callocd &c) :
+pma_memory::pma_memory(const std::string &description, uint64_t length, const callocd &c) :
     m_length{length},
     m_host_memory{nullptr},
     m_backing_file{-1} {
@@ -69,81 +69,92 @@ pma_memory::pma_memory(uint64_t length, const callocd &c) :
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-prefer-member-initializer)
     m_host_memory = static_cast<unsigned char *>(std::calloc(1, length));
     if (!m_host_memory) {
-        throw std::bad_alloc{};
+        throw std::runtime_error{"error allocating memory for "s + description};
     }
 }
 
-pma_memory::pma_memory(uint64_t length, const mockd &m) : m_length{length}, m_host_memory{nullptr}, m_backing_file{-1} {
+pma_memory::pma_memory(const std::string &description, uint64_t length, const mockd &m) :
+    m_length{length},
+    m_host_memory{nullptr},
+    m_backing_file{-1} {
     (void) m;
+    (void) description;
 }
 
-pma_memory::pma_memory(uint64_t length, const std::string &path, const callocd &c) : pma_memory{length, c} {
-    // Try to load backing file, if any
+pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, const callocd &c) :
+    pma_memory{description, length, c} {
+    // Try to load image file, if any
     if (!path.empty()) {
         auto fp = unique_fopen(path.c_str(), "rb", std::nothrow_t{});
         if (!fp) {
-            throw std::system_error{errno, std::generic_category(), "error opening backing file '"s + path + "'"s};
+            throw std::system_error{errno, std::generic_category(),
+                "error opening image file '"s + path + "' when initializing "s + description};
         }
         // Get file size
         if (fseek(fp.get(), 0, SEEK_END)) {
             throw std::system_error{errno, std::generic_category(),
-                "error set position on the end of the file '"s + path + "'"s};
+                "error obtaining length of image file '"s + path + "' when initializing "s + description};
         }
         auto file_length = ftell(fp.get());
         if (fseek(fp.get(), 0, SEEK_SET)) {
             throw std::system_error{errno, std::generic_category(),
-                "error set position on the beginning of the file '"s + path + "'"s};
+                "error obtaining length of image file '"s + path + "' when initializing "s + description};
         }
         // Check against PMA range size
         if (static_cast<uint64_t>(file_length) > length) {
-            throw std::runtime_error{"backing file '" + path + "' too large for range"};
+            throw std::runtime_error{"image file '"s + path + "' of "s + description + " is too large for range"s};
         }
         // Read to host memory
         auto read = fread(m_host_memory, 1, length, fp.get());
         (void) read;
         if (ferror(fp.get())) {
-            throw std::system_error{errno, std::generic_category(), "error reading from backing file '"s + path + "'"s};
+            throw std::system_error{errno, std::generic_category(),
+                "error reading from image file '"s + path + "' when initializing "s + description};
         }
     }
 }
 
-pma_memory::pma_memory(uint64_t length, const std::string &path, const mmapd &m) :
+pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, const mmapd &m) :
     m_length{length},
     m_host_memory{nullptr},
     m_backing_file{-1} {
     if (path.empty()) {
-        throw std::runtime_error{"backing file required"};
+        throw std::runtime_error{"image file must be specified for "s + description};
     }
 
     int oflag = m.shared ? O_RDWR : O_RDONLY;
     int mflag = m.shared ? MAP_SHARED : MAP_PRIVATE;
 
-    // Try to open backing file
+    // Try to open image file
     int backing_file = open(path.c_str(), oflag);
     if (backing_file < 0) {
-        throw std::system_error{errno, std::generic_category(), "could not open backing file '"s + path + "'"s};
+        throw std::system_error{errno, std::generic_category(),
+            "could not open image file '"s + path + "' when initializing "s + description};
     }
 
     // Try to get file size
     struct stat statbuf {};
     if (fstat(backing_file, &statbuf) < 0) {
         close(backing_file);
-        throw std::system_error{errno, std::generic_category(), "unable to stat backing file '"s + path + "'"s};
+        throw std::system_error{errno, std::generic_category(),
+            "unable to obtain length of image file '"s + path + "' when initializing "s + description};
     }
 
     // Check that it matches range length
     if (static_cast<uint64_t>(statbuf.st_size) != length) {
         close(backing_file);
-        throw std::invalid_argument{"backing file size does not match range length"};
+        throw std::invalid_argument{"image file '"s + path + "' size ("s +
+            std::to_string(static_cast<uint64_t>(statbuf.st_size)) + ") does not match range length ("s +
+            std::to_string(length) + ") of "s + description};
     }
 
-    // Try to map backing file to host memory
+    // Try to map image file to host memory
     auto *host_memory =
         static_cast<unsigned char *>(mmap(nullptr, length, PROT_READ | PROT_WRITE, mflag, backing_file, 0));
     if (host_memory == MAP_FAILED) { // NOLINT(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr)
         close(backing_file);
         throw std::system_error{errno, std::generic_category(),
-            "could not map backing file '"s + path + "' to memory"s};
+            "could not map image file '"s + path + "' to memory when initializing "s + description};
     }
 
     // Finally store everything in object
@@ -216,41 +227,48 @@ static bool memory_peek(const pma_entry &pma, const machine &m, uint64_t page_ad
     }
 }
 
-pma_entry make_mmapd_memory_pma_entry(uint64_t start, uint64_t length, const std::string &path, bool shared) {
+pma_entry make_mmapd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length,
+    const std::string &path, bool shared) {
     if (length == 0) {
-        throw std::invalid_argument{"PMA length cannot be zero"};
+        throw std::invalid_argument{description + " length cannot be zero"s};
     }
-    return pma_entry{start, length, pma_memory{length, path, pma_memory::mmapd{shared}}, memory_peek};
+    return pma_entry{description, start, length, pma_memory{description, length, path, pma_memory::mmapd{shared}},
+        memory_peek};
 }
 
-pma_entry make_callocd_memory_pma_entry(uint64_t start, uint64_t length) {
+pma_entry make_callocd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length) {
     if (length == 0) {
-        throw std::invalid_argument{"PMA length cannot be zero"};
+        throw std::invalid_argument{description + " length cannot be zero"s};
     }
-    return pma_entry{start, length, pma_memory{length, pma_memory::callocd{}}, memory_peek};
+    return pma_entry{description, start, length, pma_memory{description, length, pma_memory::callocd{}}, memory_peek};
 }
 
-pma_entry make_callocd_memory_pma_entry(uint64_t start, uint64_t length, const std::string &path) {
+pma_entry make_callocd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length,
+    const std::string &path) {
     if (length == 0) {
-        throw std::invalid_argument{"PMA length cannot be zero"};
+        throw std::invalid_argument{description + " length cannot be zero"s};
     }
-    return pma_entry{start, length, pma_memory{length, path, pma_memory::callocd{}}, memory_peek};
+    return pma_entry{description, start, length, pma_memory{description, length, path, pma_memory::callocd{}},
+        memory_peek};
 }
 
-pma_entry make_mockd_memory_pma_entry(uint64_t start, uint64_t length) {
+pma_entry make_mockd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length) {
     if (length == 0) {
-        throw std::invalid_argument{"PMA length cannot be zero"};
+        throw std::invalid_argument{description + " length cannot be zero"s};
     }
-    return pma_entry{start, length, pma_memory{length, pma_memory::mockd{}}, pma_peek_error};
+    return pma_entry{description, start, length, pma_memory{description, length, pma_memory::mockd{}}, pma_peek_error};
 }
 
-pma_entry make_device_pma_entry(uint64_t start, uint64_t length, pma_peek peek, const pma_driver *driver,
-    void *context) {
-    return pma_entry{start, length, pma_device{driver, context}, peek};
+pma_entry make_device_pma_entry(const std::string &description, uint64_t start, uint64_t length, pma_peek peek,
+    const pma_driver *driver, void *context) {
+    if (length == 0) {
+        throw std::invalid_argument{description + " length cannot be zero"s};
+    }
+    return pma_entry{description, start, length, pma_device{description, driver, context}, peek};
 }
 
-pma_entry make_empty_pma_entry(uint64_t start, uint64_t length) {
-    return pma_entry{start, length};
+pma_entry make_empty_pma_entry(const std::string &description, uint64_t start, uint64_t length) {
+    return pma_entry{description, start, length};
 }
 
 } // namespace cartesi

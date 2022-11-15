@@ -23,7 +23,6 @@
 #include <iomanip>
 #include <iostream>
 #include <mutex>
-#include <sstream>
 #include <sys/stat.h>
 #include <thread>
 
@@ -126,63 +125,69 @@ const pma_entry::flags machine::m_rollup_notice_hashes_flags{
     PMA_ISTART_DID::rollup_notice_hashes // DID
 };
 
-pma_entry machine::make_memory_range_pma_entry(const memory_range_config &c) {
+pma_entry machine::make_memory_range_pma_entry(const std::string &description, const memory_range_config &c) {
     if (c.image_filename.empty()) {
-        return make_callocd_memory_pma_entry(c.start, c.length);
+        return make_callocd_memory_pma_entry(description, c.start, c.length);
     }
-    return make_mmapd_memory_pma_entry(c.start, c.length, c.image_filename, c.shared);
+    return make_mmapd_memory_pma_entry(description, c.start, c.length, c.image_filename, c.shared);
 }
 
-pma_entry machine::make_flash_drive_pma_entry(const memory_range_config &c) {
-    return make_memory_range_pma_entry(c).set_flags(m_flash_drive_flags);
+pma_entry machine::make_flash_drive_pma_entry(const std::string &description, const memory_range_config &c) {
+    return make_memory_range_pma_entry(description, c).set_flags(m_flash_drive_flags);
 }
 
 pma_entry machine::make_rollup_rx_buffer_pma_entry(const memory_range_config &c) {
-    return make_memory_range_pma_entry(c).set_flags(m_rollup_rx_buffer_flags);
+    return make_memory_range_pma_entry("rollup rx buffer memory range"s, c).set_flags(m_rollup_rx_buffer_flags);
 }
 
 pma_entry machine::make_rollup_tx_buffer_pma_entry(const memory_range_config &c) {
-    return make_memory_range_pma_entry(c).set_flags(m_rollup_tx_buffer_flags);
+    return make_memory_range_pma_entry("rollup tx buffer memory range"s, c).set_flags(m_rollup_tx_buffer_flags);
 }
 
 pma_entry machine::make_rollup_input_metadata_pma_entry(const memory_range_config &c) {
-    return make_memory_range_pma_entry(c).set_flags(m_rollup_input_metadata_flags);
+    return make_memory_range_pma_entry("rollup input metadata memory range"s, c)
+        .set_flags(m_rollup_input_metadata_flags);
 }
 
 pma_entry machine::make_rollup_voucher_hashes_pma_entry(const memory_range_config &c) {
-    return make_memory_range_pma_entry(c).set_flags(m_rollup_voucher_hashes_flags);
+    return make_memory_range_pma_entry("rollup voucher hashes memory range"s, c)
+        .set_flags(m_rollup_voucher_hashes_flags);
 }
 
 pma_entry machine::make_rollup_notice_hashes_pma_entry(const memory_range_config &c) {
-    return make_memory_range_pma_entry(c).set_flags(m_rollup_notice_hashes_flags);
+    return make_memory_range_pma_entry("rollup notice hashes memory range"s, c).set_flags(m_rollup_notice_hashes_flags);
 }
 
 pma_entry &machine::register_pma_entry(pma_entry &&pma) {
     if (m_s.pmas.capacity() <= m_s.pmas.size()) { // NOLINT(readability-static-accessed-through-instance)
-        throw std::runtime_error{"too many PMAs"};
+        throw std::runtime_error{"too many PMAs when adding "s + pma.get_description()};
     }
     auto start = pma.get_start();
     if ((start & (PMA_PAGE_SIZE - 1)) != 0) {
-        throw std::invalid_argument{"PMA start must be aligned to page boundary"};
+        throw std::invalid_argument{"start of "s + pma.get_description() + " ("s + std::to_string(start) +
+            ") must be aligned to page boundary of "s + std::to_string(PMA_PAGE_SIZE) + " bytes"s};
     }
     auto length = pma.get_length();
     if ((length & (PMA_PAGE_SIZE - 1)) != 0) {
-        throw std::invalid_argument{"PMA length must be multiple of page size"};
+        throw std::invalid_argument{"length of "s + pma.get_description() + " ("s + std::to_string(length) +
+            ") must be multiple of page size "s + std::to_string(PMA_PAGE_SIZE)};
     }
     // Check PMA range, when not the sentinel PMA entry
-    if (!(start == 0 && length == 0)) {
+    if (!(length == 0 && start == 0)) {
         if (length == 0) {
-            throw std::invalid_argument{"PMA length must be greater than 0"};
+            throw std::invalid_argument{"length of "s + pma.get_description() + " cannot be zero"s};
         }
         // Checks if PMA is in addressable range, safe unsigned overflows
         if (start > PMA_ADDRESSABLE_MASK || (length - 1) > (PMA_ADDRESSABLE_MASK - start)) {
-            throw std::invalid_argument{"PMA range must use at most 56 bits to be addressable"};
+            throw std::invalid_argument{
+                "range of "s + pma.get_description() + " must use at most 56 bits to be addressable"s};
         }
     }
     // Range A overlaps with B if A starts before B ends and A ends after B starts
     for (const auto &existing_pma : m_s.pmas) {
         if (start < existing_pma.get_start() + existing_pma.get_length() && start + length > existing_pma.get_start()) {
-            throw std::invalid_argument{"PMA overlaps with existing PMA"};
+            throw std::invalid_argument{"range of "s + pma.get_description() + " overlaps with range of existing "s +
+                existing_pma.get_description()};
         }
     }
     pma.set_index(static_cast<int>(m_s.pmas.size()));
@@ -214,14 +219,14 @@ void machine::replace_memory_range(const memory_range_config &new_range) {
         if (pma.get_start() == new_range.start && pma.get_length() == new_range.length) {
             const auto curr = pma.get_istart_DID();
             if (DID_is_protected(curr)) {
-                throw std::invalid_argument{"Attempt to replace a protected memory range"};
+                throw std::invalid_argument{"attempt to replace a protected range "s + pma.get_description()};
             }
             // replace range preserving original flags
-            pma = make_memory_range_pma_entry(new_range).set_flags(pma.get_flags());
+            pma = make_memory_range_pma_entry(pma.get_description(), new_range).set_flags(pma.get_flags());
             return;
         }
     }
-    throw std::invalid_argument{"Cannot replace inexistent memory range"};
+    throw std::invalid_argument{"attempt to replace inexistent memory range"};
 }
 
 template <TLB_entry_type ETYPE>
@@ -338,19 +343,21 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
 
     // Register RAM
     if (m_c.ram.image_filename.empty()) {
-        register_pma_entry(make_callocd_memory_pma_entry(PMA_RAM_START, m_c.ram.length).set_flags(m_ram_flags));
+        register_pma_entry(make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, m_c.ram.length).set_flags(m_ram_flags));
     } else {
-        register_pma_entry(make_callocd_memory_pma_entry(PMA_RAM_START, m_c.ram.length, m_c.ram.image_filename)
+        register_pma_entry(make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, m_c.ram.length, m_c.ram.image_filename)
                                .set_flags(m_ram_flags));
     }
 
     // Register ROM
-    pma_entry &rom = register_pma_entry(
-        make_callocd_memory_pma_entry(PMA_ROM_START, PMA_ROM_LENGTH, m_c.rom.image_filename).set_flags(m_rom_flags));
+    pma_entry &rom =
+        register_pma_entry(make_callocd_memory_pma_entry("ROM"s, PMA_ROM_START, PMA_ROM_LENGTH, m_c.rom.image_filename)
+                               .set_flags(m_rom_flags));
 
     // Register all flash drives
+    int i = 0;
     for (const auto &f : m_c.flash_drive) {
-        register_pma_entry(make_flash_drive_pma_entry(f));
+        register_pma_entry(make_flash_drive_pma_entry("flash drive "s + std::to_string(i++), f));
     }
 
     // Register rollup memory ranges
@@ -402,7 +409,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     rom_init(m_c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
 
     // Add sentinel to PMA vector
-    register_pma_entry(make_empty_pma_entry(0, 0));
+    register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
 
     // Initialize the vector of the pmas used by the merkle tree to compute hashes.
     // First, add all pmas from the machine state, except the sentinel
@@ -418,8 +425,8 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // this must be done after all PMA entries are already registered, so we can lookup page addresses
     if (!m_c.tlb.image_filename.empty()) {
         // Create a temporary PMA entry just to load TLB contents from an image file
-        pma_entry tlb_image_pma =
-            make_mmapd_memory_pma_entry(PMA_SHADOW_TLB_START, PMA_SHADOW_TLB_LENGTH, m_c.tlb.image_filename, false);
+        pma_entry tlb_image_pma = make_mmapd_memory_pma_entry("shadow TLB device"s, PMA_SHADOW_TLB_START,
+            PMA_SHADOW_TLB_LENGTH, m_c.tlb.image_filename, false);
         unsigned char *hmem = tlb_image_pma.get_memory().get_host_memory();
         for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
             load_tlb_entry<TLB_CODE>(*this, i, hmem);

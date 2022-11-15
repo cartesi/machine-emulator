@@ -38,7 +38,7 @@ pma_entry make_htif_pma_entry(uint64_t start, uint64_t length) {
         false,               // IW
         PMA_ISTART_DID::HTIF // DID
     };
-    return make_device_pma_entry(start, length, htif_peek, &htif_driver).set_flags(f);
+    return make_device_pma_entry("HTIF device", start, length, htif_peek, &htif_driver).set_flags(f);
 }
 
 } // namespace cartesi

@@ -41,7 +41,7 @@ pma_entry make_clint_pma_entry(uint64_t start, uint64_t length) {
         false,                // IW
         PMA_ISTART_DID::CLINT // DID
     };
-    return make_device_pma_entry(start, length, clint_peek, &clint_driver).set_flags(f);
+    return make_device_pma_entry("CLINT device", start, length, clint_peek, &clint_driver).set_flags(f);
 }
 
 } // namespace cartesi

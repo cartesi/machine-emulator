@@ -17,8 +17,6 @@
 #ifndef MACHINE_RUNTIME_CONFIG_H
 #define MACHINE_RUNTIME_CONFIG_H
 
-#include <string>
-
 /// \file
 /// \brief Runtime configuration for machines.
 

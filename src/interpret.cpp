@@ -558,10 +558,16 @@ static inline uint32_t insn_get_funct3_00000_opcode(uint32_t insn) {
     return insn & 0b111000001111111;
 }
 
-/// \brief Obtains the funct2 field from an instruction.
+/// \brief Obtains the funct3 and trailing 0 bits from an instruction.
 /// \param insn Instruction.
-static inline uint32_t insn_get_funct2(uint32_t insn) {
-    return (insn << 5) >> 30;
+static inline uint32_t insn_get_funct3_000000000000(uint32_t insn) {
+    return insn & 0b111000000000000;
+}
+
+/// \brief Obtains the funct2 and trailing 0 bits from an instruction.
+/// \param insn Instruction.
+static inline uint32_t insn_get_funct2_0000000000000000000000000(uint32_t insn) {
+    return insn & 0b110000000000000000000000000;
 }
 
 /// \brief Obtains the RD field from an instruction.
@@ -3623,10 +3629,10 @@ static FORCE_INLINE execute_status execute_FMADD_D(STATE_ACCESS &a, uint64_t pc,
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMADD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_FM_funct2>(insn_get_funct2(insn))) {
-        case insn_FM_funct2::S:
+    switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
+        case insn_FM_funct2_0000000000000000000000000::S:
             return execute_FMADD_S(a, pc, insn);
-        case insn_FM_funct2::D:
+        case insn_FM_funct2_0000000000000000000000000::D:
             return execute_FMADD_D(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
@@ -3657,10 +3663,10 @@ static FORCE_INLINE execute_status execute_FMSUB_D(STATE_ACCESS &a, uint64_t pc,
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMSUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_FM_funct2>(insn_get_funct2(insn))) {
-        case insn_FM_funct2::S:
+    switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
+        case insn_FM_funct2_0000000000000000000000000::S:
             return execute_FMSUB_S(a, pc, insn);
-        case insn_FM_funct2::D:
+        case insn_FM_funct2_0000000000000000000000000::D:
             return execute_FMSUB_D(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
@@ -3691,10 +3697,10 @@ static FORCE_INLINE execute_status execute_FNMADD_D(STATE_ACCESS &a, uint64_t pc
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FNMADD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_FM_funct2>(insn_get_funct2(insn))) {
-        case insn_FM_funct2::S:
+    switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
+        case insn_FM_funct2_0000000000000000000000000::S:
             return execute_FNMADD_S(a, pc, insn);
-        case insn_FM_funct2::D:
+        case insn_FM_funct2_0000000000000000000000000::D:
             return execute_FNMADD_D(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
@@ -3725,10 +3731,10 @@ static FORCE_INLINE execute_status execute_FNMSUB_D(STATE_ACCESS &a, uint64_t pc
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FNMSUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_FM_funct2>(insn_get_funct2(insn))) {
-        case insn_FM_funct2::S:
+    switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
+        case insn_FM_funct2_0000000000000000000000000::S:
             return execute_FNMSUB_S(a, pc, insn);
-        case insn_FM_funct2::D:
+        case insn_FM_funct2_0000000000000000000000000::D:
             return execute_FNMSUB_D(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
@@ -3920,12 +3926,12 @@ static FORCE_INLINE execute_status execute_FSGNJX_S(STATE_ACCESS &a, uint64_t pc
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGN_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_FSGN_rm>(insn_get_rm(insn))) {
-        case insn_FSGN_rm::J:
+    switch (static_cast<insn_FSGN_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
+        case insn_FSGN_funct3_000000000000::J:
             return execute_FSGNJ_S(a, pc, insn);
-        case insn_FSGN_rm::JN:
+        case insn_FSGN_funct3_000000000000::JN:
             return execute_FSGNJN_S(a, pc, insn);
-        case insn_FSGN_rm::JX:
+        case insn_FSGN_funct3_000000000000::JX:
             return execute_FSGNJX_S(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
@@ -3970,12 +3976,12 @@ static FORCE_INLINE execute_status execute_FSGNJX_D(STATE_ACCESS &a, uint64_t pc
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGN_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_FSGN_rm>(insn_get_rm(insn))) {
-        case insn_FSGN_rm::J:
+    switch (static_cast<insn_FSGN_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
+        case insn_FSGN_funct3_000000000000::J:
             return execute_FSGNJ_D(a, pc, insn);
-        case insn_FSGN_rm::JN:
+        case insn_FSGN_funct3_000000000000::JN:
             return execute_FSGNJN_D(a, pc, insn);
-        case insn_FSGN_rm::JX:
+        case insn_FSGN_funct3_000000000000::JX:
             return execute_FSGNJX_D(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
@@ -4004,10 +4010,10 @@ static FORCE_INLINE execute_status execute_FMAX_S(STATE_ACCESS &a, uint64_t pc, 
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMINMAX_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_FMIN_FMAX_rm>(insn_get_rm(insn))) {
-        case insn_FMIN_FMAX_rm::MIN:
+    switch (static_cast<insn_FMIN_FMAX_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
+        case insn_FMIN_FMAX_funct3_000000000000::MIN:
             return execute_FMIN_S(a, pc, insn);
-        case insn_FMIN_FMAX_rm::MAX:
+        case insn_FMIN_FMAX_funct3_000000000000::MAX:
             return execute_FMAX_S(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
@@ -4036,10 +4042,10 @@ static FORCE_INLINE execute_status execute_FMAX_D(STATE_ACCESS &a, uint64_t pc, 
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMINMAX_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_FMIN_FMAX_rm>(insn_get_rm(insn))) {
-        case insn_FMIN_FMAX_rm::MIN:
+    switch (static_cast<insn_FMIN_FMAX_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
+        case insn_FMIN_FMAX_funct3_000000000000::MIN:
             return execute_FMIN_D(a, pc, insn);
-        case insn_FMIN_FMAX_rm::MAX:
+        case insn_FMIN_FMAX_funct3_000000000000::MAX:
             return execute_FMAX_D(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
@@ -4212,12 +4218,12 @@ static FORCE_INLINE execute_status execute_FEQ_S(STATE_ACCESS &a, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCMP_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_FCMP_rm>(insn_get_rm(insn))) {
-        case insn_FCMP_rm::LT:
+    switch (static_cast<insn_FCMP_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
+        case insn_FCMP_funct3_000000000000::LT:
             return execute_FLT_S(a, pc, insn);
-        case insn_FCMP_rm::LE:
+        case insn_FCMP_funct3_000000000000::LE:
             return execute_FLE_S(a, pc, insn);
-        case insn_FCMP_rm::EQ:
+        case insn_FCMP_funct3_000000000000::EQ:
             return execute_FEQ_S(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
@@ -4256,12 +4262,12 @@ static FORCE_INLINE execute_status execute_FEQ_D(STATE_ACCESS &a, uint64_t pc, u
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCMP_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_FCMP_rm>(insn_get_rm(insn))) {
-        case insn_FCMP_rm::LT:
+    switch (static_cast<insn_FCMP_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
+        case insn_FCMP_funct3_000000000000::LT:
             return execute_FLT_D(a, pc, insn);
-        case insn_FCMP_rm::LE:
+        case insn_FCMP_funct3_000000000000::LE:
             return execute_FLE_D(a, pc, insn);
-        case insn_FCMP_rm::EQ:
+        case insn_FCMP_funct3_000000000000::EQ:
             return execute_FEQ_D(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
@@ -4503,10 +4509,10 @@ static FORCE_INLINE execute_status execute_FMV_X_W(STATE_ACCESS &a, uint64_t pc,
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMV_FCLASS_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_FMV_FCLASS_rm>(insn_get_rm(insn))) {
-        case insn_FMV_FCLASS_rm::FMV:
+    switch (static_cast<insn_FMV_FCLASS_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
+        case insn_FMV_FCLASS_funct3_000000000000::FMV:
             return execute_FMV_X_W(a, pc, insn);
-        case insn_FMV_FCLASS_rm::FCLASS:
+        case insn_FMV_FCLASS_funct3_000000000000::FCLASS:
             return execute_FCLASS_S(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
@@ -4540,10 +4546,10 @@ static FORCE_INLINE execute_status execute_FMV_X_D(STATE_ACCESS &a, uint64_t pc,
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMV_FCLASS_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    switch (static_cast<insn_FMV_FCLASS_rm>(insn_get_rm(insn))) {
-        case insn_FMV_FCLASS_rm::FMV:
+    switch (static_cast<insn_FMV_FCLASS_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
+        case insn_FMV_FCLASS_funct3_000000000000::FMV:
             return execute_FMV_X_D(a, pc, insn);
-        case insn_FMV_FCLASS_rm::FCLASS:
+        case insn_FMV_FCLASS_funct3_000000000000::FCLASS:
             return execute_FCLASS_D(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);

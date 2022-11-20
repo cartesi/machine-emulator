@@ -726,19 +726,19 @@ enum insn_FD_funct7_rs2 : uint32_t {
 };
 
 /// \brief rm constants for FSGNJ floating-point instructions
-enum insn_FSGN_rm : uint32_t { J = 0b000, JN = 0b001, JX = 0b010 };
+enum insn_FSGN_funct3_000000000000 : uint32_t { J = 0b000000000000000, JN = 0b001000000000000, JX = 0b010000000000000 };
 
 /// \brief rm constants for FMIN and FMAX floating-point instructions
-enum insn_FMIN_FMAX_rm : uint32_t {
-    MIN = 0b000,
-    MAX = 0b001,
+enum insn_FMIN_FMAX_funct3_000000000000 : uint32_t {
+    MIN = 0b000000000000000,
+    MAX = 0b001000000000000,
 };
 
 /// \brief rm constants for FLE, FLT, and FEQ floating-point instructions
-enum insn_FCMP_rm : uint32_t {
-    LE = 0b000,
-    LT = 0b001,
-    EQ = 0b010,
+enum insn_FCMP_funct3_000000000000 : uint32_t {
+    LE = 0b000000000000000,
+    LT = 0b001000000000000,
+    EQ = 0b010000000000000,
 };
 
 /// \brief funct7 constants for OR, REM instructions
@@ -763,10 +763,13 @@ enum class insn_privileged : uint32_t {
 };
 
 /// \brief funct2 constants for FMADD, FMSUB, FNMADD, FMNSUB instructions
-enum insn_FM_funct2 : uint32_t { S = 0b00, D = 0b01 };
+enum insn_FM_funct2_0000000000000000000000000 : uint32_t {
+    S = 0b000000000000000000000000000,
+    D = 0b010000000000000000000000000
+};
 
 /// \brief rm constants for FMV and FCLASS instructions
-enum insn_FMV_FCLASS_rm : uint32_t { FMV = 0b000, FCLASS = 0b001 };
+enum insn_FMV_FCLASS_funct3_000000000000 : uint32_t { FMV = 0b000000000000000, FCLASS = 0b001000000000000 };
 
 } // namespace cartesi
 

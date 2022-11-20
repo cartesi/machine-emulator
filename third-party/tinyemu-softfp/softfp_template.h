@@ -360,7 +360,7 @@ F_UINT mul_sf(F_UINT a, F_UINT b, RoundingModeEnum rm,
     b_exp = (b >> MANT_SIZE) & EXP_MASK;
     a_mant = a & MANT_MASK;
     b_mant = b & MANT_MASK;
-    if (a_exp == EXP_MASK || b_exp == EXP_MASK) {
+    if (unlikely(a_exp == EXP_MASK || b_exp == EXP_MASK)) {
         if (isnan_sf(a) || isnan_sf(b)) {
             if (issignan_sf(a) || issignan_sf(b)) {
                 *pfflags |= FFLAG_INVALID_OP;
@@ -392,7 +392,7 @@ F_UINT mul_sf(F_UINT a, F_UINT b, RoundingModeEnum rm,
         b_mant |= (F_UINT)1 << MANT_SIZE;
     }
     r_exp = a_exp + b_exp - (1 << (EXP_SIZE - 1)) + 2;
-    
+
     r_mant = mul_u(&r_mant_low,a_mant << RND_SIZE, b_mant << (RND_SIZE + 1));
     r_mant |= (r_mant_low != 0);
     return normalize_sf(r_sign, r_exp, r_mant, rm, pfflags);
@@ -416,7 +416,7 @@ F_UINT fma_sf(F_UINT a, F_UINT b, F_UINT c, RoundingModeEnum rm,
     a_mant = a & MANT_MASK;
     b_mant = b & MANT_MASK;
     c_mant = c & MANT_MASK;
-    if (a_exp == EXP_MASK || b_exp == EXP_MASK || c_exp == EXP_MASK) {
+    if (unlikely(a_exp == EXP_MASK || b_exp == EXP_MASK || c_exp == EXP_MASK)) {
         // The fused multiply-add instructions must set the invalid operation exception flag
         // when the multiplicands are infinite and zero, even when the addend is a quiet NaN.
         if (((a_exp == EXP_MASK && a_mant == 0) && (b_exp == 0 && b_mant == 0)) ||
@@ -607,7 +607,7 @@ F_UINT div_sf(F_UINT a, F_UINT b, RoundingModeEnum rm,
     b_exp = (b >> MANT_SIZE) & EXP_MASK;
     a_mant = a & MANT_MASK;
     b_mant = b & MANT_MASK;
-    if (a_exp == EXP_MASK) {
+    if (unlikely(a_exp == EXP_MASK)) {
         if (a_mant != 0 || isnan_sf(b)) {
             if (issignan_sf(a) || issignan_sf(b)) {
                 *pfflags |= FFLAG_INVALID_OP;
@@ -619,7 +619,7 @@ F_UINT div_sf(F_UINT a, F_UINT b, RoundingModeEnum rm,
         } else {
             return pack_sf(r_sign, EXP_MASK, 0);
         }
-    } else if (b_exp == EXP_MASK) {
+    } else if (unlikely(b_exp == EXP_MASK)) {
         if (b_mant != 0) {
             if (issignan_sf(a) || issignan_sf(b)) {
                 *pfflags |= FFLAG_INVALID_OP;
@@ -631,7 +631,7 @@ F_UINT div_sf(F_UINT a, F_UINT b, RoundingModeEnum rm,
     }
 
     if (b_exp == 0) {
-        if (b_mant == 0) {
+        if (unlikely(b_mant == 0)) {
             /* zero */
             if (a_exp == 0 && a_mant == 0) {
                 *pfflags |= FFLAG_INVALID_OP;
@@ -734,7 +734,7 @@ F_UINT sqrt_sf(F_UINT a, RoundingModeEnum rm,
     a_sign = a >> (F_SIZE - 1);
     a_exp = (a >> MANT_SIZE) & EXP_MASK;
     a_mant = a & MANT_MASK;
-    if (a_exp == EXP_MASK) {
+    if (unlikely(a_exp == EXP_MASK)) {
         if (a_mant != 0) {
             if (issignan_sf(a)) {
                 *pfflags |= FFLAG_INVALID_OP;
@@ -747,7 +747,7 @@ F_UINT sqrt_sf(F_UINT a, RoundingModeEnum rm,
         }
     }
     if (a_sign) {
-        if (a_exp == 0 && a_mant == 0)
+        if (likely(a_exp == 0 && a_mant == 0))
             return a; /* -zero */
     neg_error:
         *pfflags |= FFLAG_INVALID_OP;
@@ -777,7 +777,7 @@ F_UINT sqrt_sf(F_UINT a, RoundingModeEnum rm,
 
 static F_UINT glue(min_max_nan_sf, F_SIZE)(F_UINT a, F_UINT b, uint32_t *pfflags, SoftFPMinMaxTypeEnum minmax_type)
 {
-    if (issignan_sf(a) || issignan_sf(b)) {
+    if (unlikely(issignan_sf(a) || issignan_sf(b))) {
         *pfflags |= FFLAG_INVALID_OP;
         if (minmax_type == FMINMAX_IEEE754_2008)
             return F_QNAN;
@@ -846,7 +846,7 @@ F_UINT glue(max_sf, F_SIZE)(F_UINT a, F_UINT b, uint32_t *pfflags,
 
 int glue(eq_quiet_sf, F_SIZE)(F_UINT a, F_UINT b, uint32_t *pfflags)
 {
-    if (isnan_sf(a) || isnan_sf(b)) {
+    if (unlikely(isnan_sf(a) || isnan_sf(b))) {
         if (issignan_sf(a) || issignan_sf(b)) {
             *pfflags |= FFLAG_INVALID_OP;
         }
@@ -862,7 +862,7 @@ int glue(le_sf, F_SIZE)(F_UINT a, F_UINT b, uint32_t *pfflags)
 {
     uint32_t a_sign, b_sign;
 
-    if (isnan_sf(a) || isnan_sf(b)) {
+    if (unlikely(isnan_sf(a) || isnan_sf(b))) {
         *pfflags |= FFLAG_INVALID_OP;
         return 0;
     }
@@ -884,7 +884,7 @@ int glue(lt_sf, F_SIZE)(F_UINT a, F_UINT b, uint32_t *pfflags)
 {
     uint32_t a_sign, b_sign;
 
-    if (isnan_sf(a) || isnan_sf(b)) {
+    if (unlikely(isnan_sf(a) || isnan_sf(b))) {
         *pfflags |= FFLAG_INVALID_OP;
         return 0;
     }
@@ -912,7 +912,7 @@ uint32_t glue(fclass_sf, F_SIZE)(F_UINT a)
     a_sign = a >> (F_SIZE - 1);
     a_exp = (a >> MANT_SIZE) & EXP_MASK;
     a_mant = a & MANT_MASK;
-    if (a_exp == EXP_MASK) {
+    if (unlikely(a_exp == EXP_MASK)) {
         if (a_mant != 0) {
             if (a_mant & QNAN_MASK)
                 ret = FCLASS_QNAN;
@@ -956,7 +956,7 @@ F_UINT cvt_sf32_sf(uint32_t a, uint32_t *pfflags)
     F_UINT a_mant;
 
     a_mant = unpack_sf32(&a_sign, &a_exp, a);
-    if (a_exp == 0xff) {
+    if (unlikely(a_exp == 0xff)) {
         if (a_mant != 0) {
             /* NaN */
             if (issignan_sf32(a)) {
@@ -990,7 +990,7 @@ uint32_t glue(glue(cvt_sf, F_SIZE), _sf32)(F_UINT a, RoundingModeEnum rm,
     F_UINT a_mant;
 
     a_mant = unpack_sf(&a_sign, &a_exp, a);
-    if (a_exp == EXP_MASK) {
+    if (unlikely(a_exp == EXP_MASK)) {
         if (a_mant != 0) {
             /* NaN */
             if (issignan_sf(a)) {
@@ -1028,7 +1028,7 @@ F_UINT cvt_sf64_sf(uint64_t a, uint32_t *pfflags)
 
     a_mant = unpack_sf64(&a_sign, &a_exp, a);
 
-    if (a_exp == 0x7ff) {
+    if (unlikely(a_exp == 0x7ff)) {
         if (a_mant != 0) {
             /* NaN */
             if (issignan_sf64(a)) {
@@ -1060,7 +1060,7 @@ uint64_t glue(glue(cvt_sf, F_SIZE), _sf64)(F_UINT a, RoundingModeEnum rm,
     F_UINT a_mant;
 
     a_mant = unpack_sf(&a_sign, &a_exp, a);
-    if (a_exp == EXP_MASK) {
+    if (unlikely(a_exp == EXP_MASK)) {
         if (a_mant != 0) {
             /* NaN */
             if (issignan_sf(a)) {

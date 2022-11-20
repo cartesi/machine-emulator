@@ -61,9 +61,9 @@ static inline ICVT_INT glue(glue(glue(internal_cvt_sf, F_SIZE), _i), ICVT_SIZE)(
     else
         r_max = ((ICVT_UINT)1 << (ICVT_SIZE - 1)) - (ICVT_UINT)(a_sign ^ 1);
     if (a_exp >= 0) {
-        if (a_exp <= (ICVT_SIZE - 1 - MANT_SIZE)) {
+        if (likely(a_exp <= (ICVT_SIZE - 1 - MANT_SIZE))) {
             r = (ICVT_UINT)(a_mant >> RND_SIZE) << a_exp;
-            if (r > r_max)
+            if (unlikely(r > r_max))
                 goto overflow;
         } else {
         overflow:
@@ -90,13 +90,13 @@ static inline ICVT_INT glue(glue(glue(internal_cvt_sf, F_SIZE), _i), ICVT_SIZE)(
                 addend = 0;
             break;
         }
-        
+
         rnd_bits = a_mant & ((1 << RND_SIZE ) - 1);
         a_mant = (a_mant + addend) >> RND_SIZE;
         /* half way: select even result */
         if (rm == RM_RNE && rnd_bits == (1 << (RND_SIZE - 1)))
             a_mant &= ~1;
-        if (a_mant > r_max)
+        if (unlikely(a_mant > r_max))
             goto overflow;
         r = a_mant;
         if (rnd_bits != 0)

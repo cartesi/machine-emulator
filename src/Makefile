@@ -208,7 +208,7 @@ endif
 PGO_WORKLOAD=\
 	tar c -C / bin | gzip > a.tar.gz && gzip -c a.tar.gz | sha256sum; \
 	dhrystone 500000; \
-	whetstone 250
+	whetstone 2500
 
 # We ignore xkcp-keccak-256-hasher.cpp because it is missing a header file.
 # The file is not being compiled but we want to keep it for reference.

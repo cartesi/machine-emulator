@@ -531,7 +531,7 @@ static void raise_interrupt_if_any(STATE_ACCESS &a) {
     auto note = a.make_scoped_note("raise_interrupt_if_any");
     (void) note;
     uint32_t mask = get_pending_irq_mask(a);
-    if (mask != 0) {
+    if (unlikely(mask != 0)) {
         uint64_t irq_num = ilog2(mask);
         raise_exception(a, irq_num | MCAUSE_INTERRUPT_FLAG, 0);
     }
@@ -689,19 +689,19 @@ template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false
 static NO_INLINE bool read_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr, T *pval) {
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
-    if (vaddr & (sizeof(T) - 1)) {
+    if (unlikely(vaddr & (sizeof(T) - 1))) {
         raise_exception(a,
             RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ADDRESS_MISALIGNED : MCAUSE_LOAD_ADDRESS_MISALIGNED, vaddr);
         return false;
         // Deal with aligned accesses
     } else {
         uint64_t paddr{};
-        if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) {
+        if (unlikely(!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_R_SHIFT))) {
             raise_exception(a, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_PAGE_FAULT : MCAUSE_LOAD_PAGE_FAULT, vaddr);
             return false;
         }
         auto &pma = a.template find_pma_entry<T>(paddr);
-        if (pma.get_istart_E() || !pma.get_istart_R()) {
+        if (unlikely(pma.get_istart_E() || !pma.get_istart_R())) {
             raise_exception(a, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT,
                 vaddr);
             return false;
@@ -715,7 +715,7 @@ static NO_INLINE bool read_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr, 
             uint64_t offset = paddr - pma.get_start();
             uint64_t val{};
             // If we do not know how to read, we treat this as a PMA violation
-            if (!a.read_device(pma, offset, &val, log2_size<U>::value)) {
+            if (unlikely(!a.read_device(pma, offset, &val, log2_size<U>::value))) {
                 raise_exception(a, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT,
                     vaddr);
                 return false;
@@ -758,18 +758,18 @@ template <typename T, typename STATE_ACCESS>
 static NO_INLINE bool write_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr, uint64_t val64) {
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
-    if (vaddr & (sizeof(T) - 1)) {
+    if (unlikely(vaddr & (sizeof(T) - 1))) {
         raise_exception(a, MCAUSE_STORE_AMO_ADDRESS_MISALIGNED, vaddr);
         return false;
         // Deal with aligned accesses
     } else {
         uint64_t paddr{};
-        if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_W_SHIFT)) {
+        if (unlikely(!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_W_SHIFT))) {
             raise_exception(a, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
             return false;
         }
         auto &pma = a.template find_pma_entry<T>(paddr);
-        if (pma.get_istart_E() || !pma.get_istart_W()) {
+        if (unlikely(pma.get_istart_E() || !pma.get_istart_W())) {
             raise_exception(a, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
             return false;
         } else if (pma.get_istart_M()) {
@@ -781,7 +781,7 @@ static NO_INLINE bool write_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr,
             assert(pma.get_istart_IO());
             uint64_t offset = paddr - pma.get_start();
             // If we do not know how to write, we treat this as a PMA violation
-            if (!a.write_device(pma, offset, val64, log2_size<U>::value)) {
+            if (unlikely(!a.write_device(pma, offset, val64, log2_size<U>::value))) {
                 raise_exception(a, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
                 return false;
             }
@@ -914,7 +914,7 @@ template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_LR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     T val = 0;
-    if (!read_virtual_memory<T>(a, vaddr, &val)) {
+    if (unlikely(!read_virtual_memory<T>(a, vaddr, &val))) {
         return advance_to_raised_exception(a);
     }
     a.write_ilrsc(vaddr);
@@ -935,7 +935,7 @@ static FORCE_INLINE execute_status execute_SC(STATE_ACCESS &a, uint64_t pc, uint
     uint64_t val = 0;
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     if (a.read_ilrsc() == vaddr) {
-        if (!write_virtual_memory<T>(a, vaddr, static_cast<T>(a.read_x(insn_get_rs2(insn))))) {
+        if (unlikely(!write_virtual_memory<T>(a, vaddr, static_cast<T>(a.read_x(insn_get_rs2(insn)))))) {
             return advance_to_raised_exception(a);
         }
     } else {
@@ -955,14 +955,13 @@ static FORCE_INLINE execute_status execute_LR_W(STATE_ACCESS &a, uint64_t pc, ui
     (void) a;
     (void) pc;
     (void) insn;
-    if ((insn & 0b00000001111100000000000000000000) == 0) {
-        dump_insn(a, pc, insn, "lr.w");
-        auto note = a.make_scoped_note("lr.w");
-        (void) note;
-        return execute_LR<int32_t>(a, pc, insn);
-    } else {
+    if (unlikely((insn & 0b00000001111100000000000000000000) != 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
+    dump_insn(a, pc, insn, "lr.w");
+    auto note = a.make_scoped_note("lr.w");
+    (void) note;
+    return execute_LR<int32_t>(a, pc, insn);
 }
 
 /// \brief Implementation of the SC.W instruction.
@@ -980,12 +979,12 @@ static FORCE_INLINE execute_status execute_AMO(STATE_ACCESS &a, uint64_t pc, uin
     T valm = 0;
     // AMOs never raise load exceptions. Since any unreadable page is also unwritable,
     // attempting to perform an AMO on an unreadable page always raises a store page-fault exception.
-    if (!read_virtual_memory<T, STATE_ACCESS, true>(a, vaddr, &valm)) {
+    if (unlikely((!read_virtual_memory<T, STATE_ACCESS, true>(a, vaddr, &valm)))) {
         return advance_to_raised_exception(a);
     }
     T valr = static_cast<T>(a.read_x(insn_get_rs2(insn)));
     valr = f(valm, valr);
-    if (!write_virtual_memory<T>(a, vaddr, valr)) {
+    if (unlikely(!write_virtual_memory<T>(a, vaddr, valr))) {
         return advance_to_raised_exception(a);
     }
     uint32_t rd = insn_get_rd(insn);
@@ -1091,14 +1090,13 @@ static FORCE_INLINE execute_status execute_AMOMAXU_W(STATE_ACCESS &a, uint64_t p
 /// \brief Implementation of the LR.D instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_LR_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    if ((insn & 0b00000001111100000000000000000000) == 0) {
-        dump_insn(a, pc, insn, "lr.d");
-        auto note = a.make_scoped_note("lr.d");
-        (void) note;
-        return execute_LR<uint64_t>(a, pc, insn);
-    } else {
+    if (unlikely((insn & 0b00000001111100000000000000000000) != 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
+    dump_insn(a, pc, insn, "lr.d");
+    auto note = a.make_scoped_note("lr.d");
+    (void) note;
+    return execute_LR<uint64_t>(a, pc, insn);
 }
 
 /// \brief Implementation of the SC.D instruction.
@@ -1579,7 +1577,7 @@ static inline uint64_t read_csr_mimpid(STATE_ACCESS &a, bool *status) {
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_fflags(STATE_ACCESS &a, bool *status) {
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return read_csr_fail(status);
     }
     uint64_t fflags = (a.read_fcsr() & FCSR_FFLAGS_RW_MASK) >> FCSR_FFLAGS_SHIFT;
@@ -1589,7 +1587,7 @@ static inline uint64_t read_csr_fflags(STATE_ACCESS &a, bool *status) {
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_frm(STATE_ACCESS &a, bool *status) {
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return read_csr_fail(status);
     }
     uint64_t frm = (a.read_fcsr() & FCSR_FRM_RW_MASK) >> FCSR_FRM_SHIFT;
@@ -1599,7 +1597,7 @@ static inline uint64_t read_csr_frm(STATE_ACCESS &a, bool *status) {
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_fcsr(STATE_ACCESS &a, bool *status) {
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return read_csr_fail(status);
     }
     return read_csr_success(a.read_fcsr(), status);
@@ -1818,7 +1816,7 @@ static NO_INLINE bool write_csr_satp(STATE_ACCESS &a, uint64_t val) {
 
     // When TVM=1, attempts to read or write the satp CSR
     // while executing in S-mode will raise an illegal instruction exception
-    if (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK)) {
+    if (unlikely(priv == PRV_S && (mstatus & MSTATUS_TVM_MASK))) {
         return false;
     }
 
@@ -2025,7 +2023,7 @@ template <typename STATE_ACCESS>
 static inline uint64_t write_csr_fflags(STATE_ACCESS &a, uint64_t val) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return false;
     }
     uint64_t fcsr = (a.read_fcsr() & ~FCSR_FFLAGS_RW_MASK) | ((val << FCSR_FFLAGS_SHIFT) & FCSR_FFLAGS_RW_MASK);
@@ -2038,7 +2036,7 @@ template <typename STATE_ACCESS>
 static inline uint64_t write_csr_frm(STATE_ACCESS &a, uint64_t val) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return false;
     }
     uint64_t fcsr = (a.read_fcsr() & ~FCSR_FRM_RW_MASK) | ((val << FCSR_FRM_SHIFT) & FCSR_FRM_RW_MASK);
@@ -2051,7 +2049,7 @@ template <typename STATE_ACCESS>
 static inline uint64_t write_csr_fcsr(STATE_ACCESS &a, uint64_t val) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return false;
     }
     uint64_t fcsr = val & FCSR_RW_MASK;
@@ -2073,10 +2071,10 @@ static NO_INLINE bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t v
     print_uint64_t(val);
     fprintf(stderr, "\n");
 #endif
-    if (csr_is_read_only(csraddr)) {
+    if (unlikely(csr_is_read_only(csraddr))) {
         return false;
     }
-    if (csr_priv(csraddr) > a.read_iflags_PRV()) {
+    if (unlikely(csr_priv(csraddr) > a.read_iflags_PRV())) {
         return false;
     }
 
@@ -2180,7 +2178,7 @@ static FORCE_INLINE execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t pc, 
     if (rd != 0) {
         csrval = read_csr(a, csraddr, &status);
     }
-    if (!status) {
+    if (unlikely(!status)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     // Try to write new CSR value
@@ -2188,7 +2186,7 @@ static FORCE_INLINE execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t pc, 
     //    will have to check if there was a change to the
     //    memory manager and report back from here so we
     //    break out of the inner loop
-    if (!write_csr(a, csraddr, rs1val(a, insn))) {
+    if (unlikely(!write_csr(a, csraddr, rs1val(a, insn)))) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     // Write to rd only after potential read/write exceptions
@@ -2224,7 +2222,7 @@ static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, 
     // Try to read old CSR value
     bool status = false;
     uint64_t csrval = read_csr(a, csraddr, &status);
-    if (!status) {
+    if (unlikely(!status)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     // Load value of rs1 before potentially overwriting it
@@ -2236,7 +2234,7 @@ static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, 
         //    will have to check if there was a change to the
         //    memory manager and report back from here so we
         //    break out of the inner loop
-        if (!write_csr(a, csraddr, f(csrval, rs1val))) {
+        if (unlikely(!write_csr(a, csraddr, f(csrval, rs1val)))) {
             return raise_illegal_insn_exception(a, pc, insn);
         }
     }
@@ -2272,7 +2270,7 @@ static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc,
     // Try to read old CSR value
     bool status = false;
     uint64_t csrval = read_csr(a, csraddr, &status);
-    if (!status) {
+    if (unlikely(!status)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint32_t rs1 = insn_get_rs1(insn);
@@ -2281,7 +2279,7 @@ static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc,
         //    will have to check if there was a change to the
         //    memory manager and report back from here so we
         //    break out of the inner loop
-        if (!write_csr(a, csraddr, f(csrval, rs1))) {
+        if (unlikely(!write_csr(a, csraddr, f(csrval, rs1)))) {
             return raise_illegal_insn_exception(a, pc, insn);
         }
     }
@@ -2341,29 +2339,28 @@ static FORCE_INLINE execute_status execute_SRET(STATE_ACCESS &a, uint64_t pc, ui
     (void) note;
     auto priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
-    if (priv < PRV_S || (priv == PRV_S && (mstatus & MSTATUS_TSR_MASK))) {
+    if (unlikely(priv < PRV_S || (priv == PRV_S && (mstatus & MSTATUS_TSR_MASK)))) {
         return raise_illegal_insn_exception(a, pc, insn);
-    } else {
-        auto spp = (mstatus & MSTATUS_SPP_MASK) >> MSTATUS_SPP_SHIFT;
-        /* set the IE state to previous IE state */
-        auto spie = (mstatus & MSTATUS_SPIE_MASK) >> MSTATUS_SPIE_SHIFT;
-        mstatus = (mstatus & ~MSTATUS_SIE_MASK) | (spie << MSTATUS_SIE_SHIFT);
-        /* set SPIE to 1 */
-        mstatus |= MSTATUS_SPIE_MASK;
-        /* set SPP to U */
-        mstatus &= ~MSTATUS_SPP_MASK;
-        /* An SRET instruction that changes the privilege mode to a mode
-         * less privileged than M also sets MPRV = 0 */
-        if (spp < PRV_M) {
-            mstatus &= ~MSTATUS_MPRV_MASK;
-        }
-        a.write_mstatus(mstatus);
-        if (priv != spp) {
-            set_priv(a, spp);
-        }
-        a.write_pc(a.read_sepc());
-        return execute_status::retired;
     }
+    auto spp = (mstatus & MSTATUS_SPP_MASK) >> MSTATUS_SPP_SHIFT;
+    /* set the IE state to previous IE state */
+    auto spie = (mstatus & MSTATUS_SPIE_MASK) >> MSTATUS_SPIE_SHIFT;
+    mstatus = (mstatus & ~MSTATUS_SIE_MASK) | (spie << MSTATUS_SIE_SHIFT);
+    /* set SPIE to 1 */
+    mstatus |= MSTATUS_SPIE_MASK;
+    /* set SPP to U */
+    mstatus &= ~MSTATUS_SPP_MASK;
+    /* An SRET instruction that changes the privilege mode to a mode
+     * less privileged than M also sets MPRV = 0 */
+    if (spp < PRV_M) {
+        mstatus &= ~MSTATUS_MPRV_MASK;
+    }
+    a.write_mstatus(mstatus);
+    if (priv != spp) {
+        set_priv(a, spp);
+    }
+    a.write_pc(a.read_sepc());
+    return execute_status::retired;
 }
 
 /// \brief Implementation of the MRET instruction.
@@ -2373,31 +2370,30 @@ static FORCE_INLINE execute_status execute_MRET(STATE_ACCESS &a, uint64_t pc, ui
     auto note = a.make_scoped_note("mret");
     (void) note;
     auto priv = a.read_iflags_PRV();
-    if (priv < PRV_M) {
+    if (unlikely(priv < PRV_M)) {
         return raise_illegal_insn_exception(a, pc, insn);
-    } else {
-        uint64_t mstatus = a.read_mstatus();
-        auto mpp = (mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
-        //??D we can save one shift here, but maybe the compiler already does
-        /* set the IE state to previous IE state */
-        auto mpie = (mstatus & MSTATUS_MPIE_MASK) >> MSTATUS_MPIE_SHIFT;
-        mstatus = (mstatus & ~MSTATUS_MIE_MASK) | (mpie << MSTATUS_MIE_SHIFT);
-        /* set MPIE to 1 */
-        mstatus |= MSTATUS_MPIE_MASK;
-        /* set MPP to U */
-        mstatus &= ~MSTATUS_MPP_MASK;
-        /* An MRET instruction that changes the privilege mode to a mode
-         * less privileged than M also sets MPRV = 0 */
-        if (mpp < PRV_M) {
-            mstatus &= ~MSTATUS_MPRV_MASK;
-        }
-        a.write_mstatus(mstatus);
-        if (priv != mpp) {
-            set_priv(a, mpp);
-        }
-        a.write_pc(a.read_mepc());
-        return execute_status::retired;
     }
+    uint64_t mstatus = a.read_mstatus();
+    auto mpp = (mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
+    //??D we can save one shift here, but maybe the compiler already does
+    /* set the IE state to previous IE state */
+    auto mpie = (mstatus & MSTATUS_MPIE_MASK) >> MSTATUS_MPIE_SHIFT;
+    mstatus = (mstatus & ~MSTATUS_MIE_MASK) | (mpie << MSTATUS_MIE_SHIFT);
+    /* set MPIE to 1 */
+    mstatus |= MSTATUS_MPIE_MASK;
+    /* set MPP to U */
+    mstatus &= ~MSTATUS_MPP_MASK;
+    /* An MRET instruction that changes the privilege mode to a mode
+     * less privileged than M also sets MPRV = 0 */
+    if (mpp < PRV_M) {
+        mstatus &= ~MSTATUS_MPRV_MASK;
+    }
+    a.write_mstatus(mstatus);
+    if (priv != mpp) {
+        set_priv(a, mpp);
+    }
+    a.write_pc(a.read_mepc());
+    return execute_status::retired;
 }
 
 /// \brief Implementation of the WFI instruction.
@@ -2411,7 +2407,7 @@ static NO_INLINE execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32
     auto priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
     // WFI can always causes an illegal instruction exception in less-privileged modes when TW=1
-    if (priv == PRV_U || (priv < PRV_M && (mstatus & MSTATUS_TW_MASK))) {
+    if (unlikely(priv == PRV_U || (priv < PRV_M && (mstatus & MSTATUS_TW_MASK)))) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     a.poll_console();
@@ -2773,18 +2769,17 @@ static FORCE_INLINE execute_status execute_ANDI(STATE_ACCESS &a, uint64_t pc, ui
 /// \brief Implementation of the SLLI instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SLLI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    if ((insn & (0b111111 << 26)) == 0) {
-        dump_insn(a, pc, insn, "slli");
-        auto note = a.make_scoped_note("slli");
-        (void) note;
-        return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
-            // No need to mask lower 6 bits in imm because of the if condition a above
-            // We do it anyway here to prevent problems if this code is moved
-            return rs1 << (imm & 0b111111);
-        });
-    } else {
+    if (unlikely((insn & (0b111111 << 26)) != 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
+    dump_insn(a, pc, insn, "slli");
+    auto note = a.make_scoped_note("slli");
+    (void) note;
+    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
+        // No need to mask lower 6 bits in imm because of the if condition a above
+        // We do it anyway here to prevent problems if this code is moved
+        return rs1 << (imm & 0b111111);
+    });
 }
 
 /// \brief Implementation of the ADDIW instruction.
@@ -2803,19 +2798,18 @@ static FORCE_INLINE execute_status execute_ADDIW(STATE_ACCESS &a, uint64_t pc, u
 /// \brief Implementation of the SLLIW instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    if (insn_get_funct7(insn) == 0) {
-        dump_insn(a, pc, insn, "slliw");
-        auto note = a.make_scoped_note("slliw");
-        (void) note;
-        return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
-            // No need to mask lower 5 bits in imm because of the if condition a above
-            // We do it anyway here to prevent problems if this code is moved
-            int32_t rs1w = static_cast<int32_t>(rs1) << (imm & 0b11111);
-            return static_cast<uint64_t>(rs1w);
-        });
-    } else {
+    if (unlikely(insn_get_funct7(insn) != 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
+    dump_insn(a, pc, insn, "slliw");
+    auto note = a.make_scoped_note("slliw");
+    (void) note;
+    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
+        // No need to mask lower 5 bits in imm because of the if condition a above
+        // We do it anyway here to prevent problems if this code is moved
+        int32_t rs1w = static_cast<int32_t>(rs1) << (imm & 0b11111);
+        return static_cast<uint64_t>(rs1w);
+    });
 }
 
 /// \brief Implementation of the SRLIW instruction.
@@ -2849,11 +2843,10 @@ static FORCE_INLINE execute_status execute_S(STATE_ACCESS &a, uint64_t pc, uint3
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     int32_t imm = insn_S_get_imm(insn);
     uint64_t val = a.read_x(insn_get_rs2(insn));
-    if (write_virtual_memory<T>(a, vaddr + imm, val)) {
-        return advance_to_next_insn(a, pc);
-    } else {
+    if (unlikely(!write_virtual_memory<T>(a, vaddr + imm, val))) {
         return advance_to_raised_exception(a);
     }
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the SB instruction.
@@ -2897,21 +2890,20 @@ static FORCE_INLINE execute_status execute_L(STATE_ACCESS &a, uint64_t pc, uint3
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     int32_t imm = insn_I_get_imm(insn);
     T val;
-    if (read_virtual_memory<T>(a, vaddr + imm, &val)) {
-        uint32_t rd = insn_get_rd(insn);
-        // don't write x0
-        if (rd != 0) {
-            // This static branch is eliminated by the compiler
-            if (std::is_signed<T>::value) {
-                a.write_x(rd, static_cast<int64_t>(val));
-            } else {
-                a.write_x(rd, static_cast<uint64_t>(val));
-            }
-        }
-        return advance_to_next_insn(a, pc);
-    } else {
+    if (unlikely(!read_virtual_memory<T>(a, vaddr + imm, &val))) {
         return advance_to_raised_exception(a);
     }
+    uint32_t rd = insn_get_rd(insn);
+    // don't write x0
+    if (rd != 0) {
+        // This static branch is eliminated by the compiler
+        if (std::is_signed<T>::value) {
+            a.write_x(rd, static_cast<int64_t>(val));
+        } else {
+            a.write_x(rd, static_cast<uint64_t>(val));
+        }
+    }
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the LB instruction.
@@ -2983,7 +2975,7 @@ static FORCE_INLINE execute_status execute_branch(STATE_ACCESS &a, uint64_t pc, 
     uint64_t rs2 = a.read_x(insn_get_rs2(insn));
     if (f(rs1, rs2)) {
         uint64_t new_pc = static_cast<int64_t>(pc + insn_B_get_imm(insn));
-        if (new_pc & 3) {
+        if (unlikely(new_pc & 3)) {
             return raise_misaligned_fetch_exception(a, new_pc);
         } else {
             return execute_jump(a, new_pc);
@@ -3081,7 +3073,7 @@ static FORCE_INLINE execute_status execute_JAL(STATE_ACCESS &a, uint64_t pc, uin
     auto note = a.make_scoped_note("jal");
     (void) note;
     uint64_t new_pc = pc + insn_J_get_imm(insn);
-    if (new_pc & 3) {
+    if (unlikely(new_pc & 3)) {
         return raise_misaligned_fetch_exception(a, new_pc);
     }
     uint32_t rd = insn_get_rd(insn);
@@ -3100,7 +3092,7 @@ static FORCE_INLINE execute_status execute_JALR(STATE_ACCESS &a, uint64_t pc, ui
     uint64_t val = pc + 4;
     uint64_t new_pc =
         static_cast<int64_t>(a.read_x(insn_get_rs1(insn)) + insn_I_get_imm(insn)) & ~static_cast<uint64_t>(1);
-    if (new_pc & 3) {
+    if (unlikely(new_pc & 3)) {
         return raise_misaligned_fetch_exception(a, new_pc);
     }
     uint32_t rd = insn_get_rd(insn);
@@ -3115,53 +3107,52 @@ static FORCE_INLINE execute_status execute_JALR(STATE_ACCESS &a, uint64_t pc, ui
 template <typename STATE_ACCESS>
 static NO_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     // rs1 and rs2 are arbitrary, rest is set
-    if ((insn & 0b11111110000000000111111111111111) == 0b00010010000000000000000001110011) {
-        INC_COUNTER(a.get_statistics(), fence_vma);
-        dump_insn(a, pc, insn, "sfence.vma");
-        auto note = a.make_scoped_note("sfence.vma");
-        (void) note;
-        auto priv = a.read_iflags_PRV();
-        uint64_t mstatus = a.read_mstatus();
-
-        // When TVM=1, attempts to execute an SFENCE.VMA while executing in S-mode
-        // will raise an illegal instruction exception.
-        if (priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK))) {
-            return raise_illegal_insn_exception(a, pc, insn);
-        }
-        uint32_t rs1 = insn_get_rs1(insn);
-        uint32_t rs2 = insn_get_rs2(insn);
-        if (rs1 == 0) {
-            a.flush_all_tlb();
-            INC_COUNTER(a.get_statistics(), tlb_flush_all);
-            if (rs2 == 0) {
-                // Invalidates all address-translation cache entries, for all address spaces
-                INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_all);
-            } else {
-                // Invalidates all address-translation cache entries matching the
-                // address space identified by integer register rs2,
-                // except for entries containing global mappings.
-                INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_asid);
-            }
-        } else {
-            uint64_t vaddr = a.read_x(rs1);
-            a.flush_tlb_vaddr(vaddr);
-            INC_COUNTER(a.get_statistics(), tlb_flush_vaddr);
-            if (rs2 == 0) {
-                // Invalidates all address-translation cache entries that contain leaf page table entries
-                // corresponding to the virtual address in rs1, for all address spaces.
-                INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_vaddr);
-            } else {
-                // Invalidates all address-translation cache entries that contain leaf page table entries
-                // corresponding to the virtual address in rs1
-                // and that match the address space identified by integer register rs2,
-                // except for entries containing global mappings.
-                INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_asid_vaddr);
-            }
-        }
-        return advance_to_next_insn(a, pc);
-    } else {
+    if (unlikely((insn & 0b11111110000000000111111111111111) != 0b00010010000000000000000001110011)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
+    INC_COUNTER(a.get_statistics(), fence_vma);
+    dump_insn(a, pc, insn, "sfence.vma");
+    auto note = a.make_scoped_note("sfence.vma");
+    (void) note;
+    auto priv = a.read_iflags_PRV();
+    uint64_t mstatus = a.read_mstatus();
+
+    // When TVM=1, attempts to execute an SFENCE.VMA while executing in S-mode
+    // will raise an illegal instruction exception.
+    if (unlikely(priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK)))) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    uint32_t rs1 = insn_get_rs1(insn);
+    uint32_t rs2 = insn_get_rs2(insn);
+    if (rs1 == 0) {
+        a.flush_all_tlb();
+        INC_COUNTER(a.get_statistics(), tlb_flush_all);
+        if (rs2 == 0) {
+            // Invalidates all address-translation cache entries, for all address spaces
+            INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_all);
+        } else {
+            // Invalidates all address-translation cache entries matching the
+            // address space identified by integer register rs2,
+            // except for entries containing global mappings.
+            INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_asid);
+        }
+    } else {
+        uint64_t vaddr = a.read_x(rs1);
+        a.flush_tlb_vaddr(vaddr);
+        INC_COUNTER(a.get_statistics(), tlb_flush_vaddr);
+        if (rs2 == 0) {
+            // Invalidates all address-translation cache entries that contain leaf page table entries
+            // corresponding to the virtual address in rs1, for all address spaces.
+            INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_vaddr);
+        } else {
+            // Invalidates all address-translation cache entries that contain leaf page table entries
+            // corresponding to the virtual address in rs1
+            // and that match the address space identified by integer register rs2,
+            // except for entries containing global mappings.
+            INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_asid_vaddr);
+        }
+    }
+    return advance_to_next_insn(a, pc);
 }
 
 template <typename STATE_ACCESS>
@@ -3441,7 +3432,7 @@ static FORCE_INLINE execute_status execute_float_ternary_op_rm(STATE_ACCESS &a, 
     const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint64_t fcsr = a.read_fcsr();
@@ -3452,7 +3443,7 @@ static FORCE_INLINE execute_status execute_float_ternary_op_rm(STATE_ACCESS &a, 
         rm = fcsr >> FCSR_FRM_SHIFT;
     }
     // If the rounding mode is invalid, the instruction is considered illegal
-    if (rm > FRM_RMM) {
+    if (unlikely(rm > FRM_RMM)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint32_t rd = insn_get_rd(insn);
@@ -3472,7 +3463,7 @@ template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_binary_op_rm(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint64_t fcsr = a.read_fcsr();
@@ -3483,7 +3474,7 @@ static FORCE_INLINE execute_status execute_float_binary_op_rm(STATE_ACCESS &a, u
         rm = fcsr >> FCSR_FRM_SHIFT;
     }
     // If the rounding mode is invalid, the instruction is considered illegal
-    if (rm > FRM_RMM) {
+    if (unlikely(rm > FRM_RMM)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint32_t rd = insn_get_rd(insn);
@@ -3502,12 +3493,12 @@ template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_unary_op_rm(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint64_t fcsr = a.read_fcsr();
     // Unary operation should have rs2 set to 0
-    if (insn_get_rs2(insn) != 0) {
+    if (unlikely(insn_get_rs2(insn) != 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     // The rounding mode comes from the insn
@@ -3517,7 +3508,7 @@ static FORCE_INLINE execute_status execute_float_unary_op_rm(STATE_ACCESS &a, ui
         rm = fcsr >> FCSR_FRM_SHIFT;
     }
     // If the rounding mode is invalid, the instruction is considered illegal
-    if (rm > FRM_RMM) {
+    if (unlikely(rm > FRM_RMM)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint32_t rd = insn_get_rd(insn);
@@ -3534,7 +3525,7 @@ static FORCE_INLINE execute_status execute_float_unary_op_rm(STATE_ACCESS &a, ui
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FS(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
@@ -3542,7 +3533,7 @@ static FORCE_INLINE execute_status execute_FS(STATE_ACCESS &a, uint64_t pc, uint
     // A narrower n-bit transfer out of the floating-point
     // registers will transfer the lower n bits of the register ignoring the upper FLEN−n bits.
     T val = static_cast<T>(a.read_f(insn_get_rs2(insn)));
-    if (!write_virtual_memory<T>(a, vaddr + imm, val)) {
+    if (unlikely(!write_virtual_memory<T>(a, vaddr + imm, val))) {
         return advance_to_raised_exception(a);
     }
     return advance_to_next_insn(a, pc);
@@ -3568,14 +3559,14 @@ template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     // Loads the float value from virtual memory
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     int32_t imm = insn_I_get_imm(insn);
     T val = 0;
-    if (!read_virtual_memory(a, vaddr + imm, &val)) {
+    if (unlikely(!read_virtual_memory(a, vaddr + imm, &val))) {
         return advance_to_raised_exception(a);
     }
     // A narrower n-bit transfer, n < FLEN,
@@ -3835,7 +3826,7 @@ static FORCE_INLINE execute_status execute_FDIV_D(STATE_ACCESS &a, uint64_t pc, 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCLASS(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint32_t rd = insn_get_rd(insn);
@@ -3851,7 +3842,7 @@ template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_binary_op(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint64_t fcsr = a.read_fcsr();
@@ -3871,7 +3862,7 @@ template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_cmp_op(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint64_t fcsr = a.read_fcsr();
@@ -4059,7 +4050,7 @@ template <typename ST, typename DT, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCVT_F_F(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint64_t fcsr = a.read_fcsr();
@@ -4089,7 +4080,7 @@ template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCVT_X_F(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint64_t fcsr = a.read_fcsr();
@@ -4120,7 +4111,7 @@ template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCVT_F_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint64_t fcsr = a.read_fcsr();
@@ -4451,11 +4442,11 @@ template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMV_F_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     // Should have rm set to 0
-    if (insn_get_rm(insn) != 0) {
+    if (unlikely(insn_get_rm(insn) != 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint32_t rd = insn_get_rd(insn);
@@ -4496,7 +4487,7 @@ static FORCE_INLINE execute_status execute_FMV_X_W(STATE_ACCESS &a, uint64_t pc,
     auto note = a.make_scoped_note("fmv.x.w");
     (void) note;
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint32_t rd = insn_get_rd(insn);
@@ -4536,7 +4527,7 @@ static FORCE_INLINE execute_status execute_FMV_X_D(STATE_ACCESS &a, uint64_t pc,
     auto note = a.make_scoped_note("fmv.x.d");
     (void) note;
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint32_t rd = insn_get_rd(insn);
@@ -4872,7 +4863,7 @@ static fetch_status fetch_insn_slow(STATE_ACCESS &a, uint64_t vaddr, uint32_t *p
     //    we should change this in the future in case we implement fetch instruction page cache.
     uint64_t paddr{};
     // Walk page table and obtain the physical address
-    if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_C_SHIFT)) {
+    if (unlikely(!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_C_SHIFT))) {
         raise_exception(a, MCAUSE_FETCH_PAGE_FAULT, vaddr);
         return fetch_status::exception;
     }
@@ -4880,7 +4871,7 @@ static fetch_status fetch_insn_slow(STATE_ACCESS &a, uint64_t vaddr, uint32_t *p
     auto &pma = a.template find_pma_entry<uint32_t>(paddr);
     // We only execute directly from RAM (as in "random access memory", which includes ROM)
     // If the range is not memory or not executable, this as a PMA violation
-    if (!pma.get_istart_M() || !pma.get_istart_X()) {
+    if (unlikely(!pma.get_istart_M() || !pma.get_istart_X())) {
         raise_exception(a, MCAUSE_INSN_ACCESS_FAULT, vaddr);
         return fetch_status::exception;
     }

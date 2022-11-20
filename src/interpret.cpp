@@ -1878,9 +1878,18 @@ static bool write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
 
     // Modify only bits that can be written to
     uint64_t mstatus = (old_mstatus & ~MSTATUS_W_MASK) | (val & MSTATUS_W_MASK);
-    // The SD bit is read-only and is set when either the FS, VS, or XS bits encode a Dirty state
-    if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_DIRTY) {
+    // Is FS enabled?
+    if ((mstatus & MSTATUS_FS_MASK) != MSTATUS_FS_OFF) {
+        // Implementations may choose to track the dirtiness of the floating-point register state
+        // imprecisely by reporting the state to be dirty even when it has not been modified.
+        // In our implementation an attempt to set FS to Initial or Clean causes FS to be set to Dirty,
+        // therefore FS is always Dirty when enabled.
+        mstatus |= MSTATUS_FS_DIRTY;
+        // The SD bit is read-only and is set when either the FS, VS, or XS bits encode a Dirty state
         mstatus |= MSTATUS_SD_MASK;
+    } else {
+        // No FS, VS or XS dirty state, SD bit can be cleared
+        mstatus &= ~MSTATUS_SD_MASK;
     }
     // Store results
     a.write_mstatus(mstatus);
@@ -2034,7 +2043,6 @@ static inline uint64_t write_csr_fflags(STATE_ACCESS &a, uint64_t val) {
     }
     uint64_t fcsr = (a.read_fcsr() & ~FCSR_FFLAGS_RW_MASK) | ((val << FCSR_FFLAGS_SHIFT) & FCSR_FFLAGS_RW_MASK);
     a.write_fcsr(fcsr);
-    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
     return true;
 }
 
@@ -2047,7 +2055,6 @@ static inline uint64_t write_csr_frm(STATE_ACCESS &a, uint64_t val) {
     }
     uint64_t fcsr = (a.read_fcsr() & ~FCSR_FRM_RW_MASK) | ((val << FCSR_FRM_SHIFT) & FCSR_FRM_RW_MASK);
     a.write_fcsr(fcsr);
-    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
     return true;
 }
 
@@ -2060,7 +2067,6 @@ static inline uint64_t write_csr_fcsr(STATE_ACCESS &a, uint64_t val) {
     }
     uint64_t fcsr = val & FCSR_RW_MASK;
     a.write_fcsr(fcsr);
-    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
     return true;
 }
 
@@ -3436,11 +3442,6 @@ static inline T float_unbox(uint64_t val) {
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_ternary_op_rm(STATE_ACCESS &a, uint64_t pc, uint32_t insn,
     const F &f) {
-    uint64_t mstatus = a.read_mstatus();
-    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     uint64_t fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
     uint32_t rm = insn_get_rm(insn);
@@ -3461,17 +3462,11 @@ static FORCE_INLINE execute_status execute_float_ternary_op_rm(STATE_ACCESS &a, 
     // Must store a valid NaN-boxed value.
     a.write_f(rd, float_box(f(s1, s2, s3, rm, &fflags)));
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
-    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
     return advance_to_next_insn(a, pc);
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_binary_op_rm(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    uint64_t mstatus = a.read_mstatus();
-    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     uint64_t fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
     uint32_t rm = insn_get_rm(insn);
@@ -3491,17 +3486,11 @@ static FORCE_INLINE execute_status execute_float_binary_op_rm(STATE_ACCESS &a, u
     // Must store a valid NaN-boxed value.
     a.write_f(rd, float_box(f(s1, s2, rm, &fflags)));
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
-    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
     return advance_to_next_insn(a, pc);
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_unary_op_rm(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    uint64_t mstatus = a.read_mstatus();
-    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     uint64_t fcsr = a.read_fcsr();
     // Unary operation should have rs2 set to 0
     if (unlikely(insn_get_rs2(insn) != 0)) {
@@ -3524,16 +3513,11 @@ static FORCE_INLINE execute_status execute_float_unary_op_rm(STATE_ACCESS &a, ui
     // Must store a valid NaN-boxed value.
     a.write_f(rd, float_box(f(s1, rm, &fflags)));
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
-    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
     return advance_to_next_insn(a, pc);
 }
 
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FS(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     int32_t imm = insn_S_get_imm(insn);
     // A narrower n-bit transfer out of the floating-point
@@ -3563,11 +3547,6 @@ static FORCE_INLINE execute_status execute_FSD(STATE_ACCESS &a, uint64_t pc, uin
 
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    uint64_t mstatus = a.read_mstatus();
-    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     // Loads the float value from virtual memory
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     int32_t imm = insn_I_get_imm(insn);
@@ -3579,13 +3558,6 @@ static FORCE_INLINE execute_status execute_FL(STATE_ACCESS &a, uint64_t pc, uint
     // into the f registers will create a valid NaN-boxed value.
     uint32_t rd = insn_get_rd(insn);
     a.write_f(rd, float_box(val));
-    // Implementations may choose to track the dirtiness of the floating-point register state
-    // imprecisely by reporting the state to be dirty even when it has not been modified.
-    // If an instruction explicitly or implicitly writes a floating-point register
-    // and FS is not Off, it is implementation-defined whether FS transitions to Dirty.
-    // For now, for simplicity, we always transition to Dirty.
-    //??E Maybe we could maybe optimize this later, to not always transition to dirty.
-    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
     return advance_to_next_insn(a, pc);
 }
 
@@ -3831,10 +3803,6 @@ static FORCE_INLINE execute_status execute_FDIV_D(STATE_ACCESS &a, uint64_t pc, 
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCLASS(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0) {
         // We must always check if input operands are properly NaN-boxed.
@@ -3846,11 +3814,6 @@ static FORCE_INLINE execute_status execute_FCLASS(STATE_ACCESS &a, uint64_t pc, 
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_binary_op(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    uint64_t mstatus = a.read_mstatus();
-    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     uint64_t fcsr = a.read_fcsr();
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
@@ -3860,17 +3823,11 @@ static FORCE_INLINE execute_status execute_float_binary_op(STATE_ACCESS &a, uint
     // Must store a valid NaN-boxed value.
     a.write_f(rd, float_box(f(s1, s2, &fflags)));
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
-    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
     return advance_to_next_insn(a, pc);
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_cmp_op(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    uint64_t mstatus = a.read_mstatus();
-    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     uint64_t fcsr = a.read_fcsr();
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
@@ -3883,8 +3840,6 @@ static FORCE_INLINE execute_status execute_float_cmp_op(STATE_ACCESS &a, uint64_
         a.write_x(rd, val);
     }
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
-    //??E For now we always mark the state as dirty, since fflags may change, we could optimize this later.
-    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
     return advance_to_next_insn(a, pc);
 }
 
@@ -4054,11 +4009,6 @@ static FORCE_INLINE execute_status execute_FMINMAX_D(STATE_ACCESS &a, uint64_t p
 
 template <typename ST, typename DT, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCVT_F_F(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    uint64_t mstatus = a.read_mstatus();
-    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     uint64_t fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
     uint32_t rm = insn_get_rm(insn);
@@ -4078,17 +4028,11 @@ static FORCE_INLINE execute_status execute_FCVT_F_F(STATE_ACCESS &a, uint64_t pc
     // Must store a valid NaN-boxed value.
     a.write_f(rd, float_box(val));
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
-    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
     return advance_to_next_insn(a, pc);
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCVT_X_F(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    uint64_t mstatus = a.read_mstatus();
-    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     uint64_t fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
     uint32_t rm = insn_get_rm(insn);
@@ -4109,17 +4053,11 @@ static FORCE_INLINE execute_status execute_FCVT_X_F(STATE_ACCESS &a, uint64_t pc
         a.write_x(rd, val);
     }
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
-    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
     return advance_to_next_insn(a, pc);
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCVT_F_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
-    uint64_t mstatus = a.read_mstatus();
-    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     uint64_t fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
     uint32_t rm = insn_get_rm(insn);
@@ -4138,7 +4076,6 @@ static FORCE_INLINE execute_status execute_FCVT_F_X(STATE_ACCESS &a, uint64_t pc
     // Must store a valid NaN-boxed value.
     a.write_f(rd, float_box(val));
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
-    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
     return advance_to_next_insn(a, pc);
 }
 
@@ -4446,11 +4383,6 @@ static FORCE_INLINE execute_status execute_FCVT_D_LU(STATE_ACCESS &a, uint64_t p
 
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMV_F_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
-    uint64_t mstatus = a.read_mstatus();
-    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     // Should have rm set to 0
     if (unlikely(insn_get_rm(insn) != 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
@@ -4459,7 +4391,6 @@ static FORCE_INLINE execute_status execute_FMV_F_X(STATE_ACCESS &a, uint64_t pc,
     // A narrower n-bit transfer, n < FLEN,
     // into the f registers will create a valid NaN-boxed value.
     a.write_f(rd, float_box(static_cast<T>(a.read_x(insn_get_rs1(insn)))));
-    a.write_mstatus(mstatus | (MSTATUS_FS_DIRTY | MSTATUS_SD_MASK));
     return advance_to_next_insn(a, pc);
 }
 
@@ -4492,10 +4423,6 @@ static FORCE_INLINE execute_status execute_FMV_X_W(STATE_ACCESS &a, uint64_t pc,
     dump_insn(a, pc, insn, "fmv.x.w");
     auto note = a.make_scoped_note("fmv.x.w");
     (void) note;
-    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0) {
         uint32_t val = static_cast<uint32_t>(a.read_f(insn_get_rs1(insn)));
@@ -4532,10 +4459,6 @@ static FORCE_INLINE execute_status execute_FMV_X_D(STATE_ACCESS &a, uint64_t pc,
     dump_insn(a, pc, insn, "fmv.x.d");
     auto note = a.make_scoped_note("fmv.x.d");
     (void) note;
-    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0) {
         uint64_t val = a.read_f(insn_get_rs1(insn));
@@ -4665,7 +4588,8 @@ static FORCE_INLINE execute_status execute_insn(STATE_ACCESS &a, uint64_t pc, ui
     // std::cerr << "insn: " << std::bitset<32>(insn) << '\n';
     //??D We should probably try doing the first branch on the combined opcode, funct3, and funct7.
     //    Maybe it reduces the number of levels needed to decode most instructions.
-    switch (static_cast<insn_funct3_00000_opcode>(insn_get_funct3_00000_opcode(insn))) {
+    auto funct3_00000_opcode = static_cast<insn_funct3_00000_opcode>(insn_get_funct3_00000_opcode(insn));
+    switch (funct3_00000_opcode) {
         case insn_funct3_00000_opcode::LB:
             return execute_LB(a, pc, insn);
         case insn_funct3_00000_opcode::LH:
@@ -4801,51 +4725,63 @@ static FORCE_INLINE execute_status execute_insn(STATE_ACCESS &a, uint64_t pc, ui
             return execute_SRLW_DIVUW_SRAW(a, pc, insn);
         case insn_funct3_00000_opcode::privileged:
             return execute_privileged(a, pc, insn);
-        case insn_funct3_00000_opcode::FSW:
-            return execute_FSW(a, pc, insn);
-        case insn_funct3_00000_opcode::FSD:
-            return execute_FSD(a, pc, insn);
-        case insn_funct3_00000_opcode::FLW:
-            return execute_FLW(a, pc, insn);
-        case insn_funct3_00000_opcode::FLD:
-            return execute_FLD(a, pc, insn);
-        case insn_funct3_00000_opcode::FMADD_RNE:
-        case insn_funct3_00000_opcode::FMADD_RTZ:
-        case insn_funct3_00000_opcode::FMADD_RDN:
-        case insn_funct3_00000_opcode::FMADD_RUP:
-        case insn_funct3_00000_opcode::FMADD_RMM:
-        case insn_funct3_00000_opcode::FMADD_DYN:
-            return execute_FMADD(a, pc, insn);
-        case insn_funct3_00000_opcode::FMSUB_RNE:
-        case insn_funct3_00000_opcode::FMSUB_RTZ:
-        case insn_funct3_00000_opcode::FMSUB_RDN:
-        case insn_funct3_00000_opcode::FMSUB_RUP:
-        case insn_funct3_00000_opcode::FMSUB_RMM:
-        case insn_funct3_00000_opcode::FMSUB_DYN:
-            return execute_FMSUB(a, pc, insn);
-        case insn_funct3_00000_opcode::FNMSUB_RNE:
-        case insn_funct3_00000_opcode::FNMSUB_RTZ:
-        case insn_funct3_00000_opcode::FNMSUB_RDN:
-        case insn_funct3_00000_opcode::FNMSUB_RUP:
-        case insn_funct3_00000_opcode::FNMSUB_RMM:
-        case insn_funct3_00000_opcode::FNMSUB_DYN:
-            return execute_FNMSUB(a, pc, insn);
-        case insn_funct3_00000_opcode::FNMADD_RNE:
-        case insn_funct3_00000_opcode::FNMADD_RTZ:
-        case insn_funct3_00000_opcode::FNMADD_RDN:
-        case insn_funct3_00000_opcode::FNMADD_RUP:
-        case insn_funct3_00000_opcode::FNMADD_RMM:
-        case insn_funct3_00000_opcode::FNMADD_DYN:
-            return execute_FNMADD(a, pc, insn);
-        case insn_funct3_00000_opcode::FD_000:
-        case insn_funct3_00000_opcode::FD_001:
-        case insn_funct3_00000_opcode::FD_010:
-        case insn_funct3_00000_opcode::FD_011:
-        case insn_funct3_00000_opcode::FD_100:
-        case insn_funct3_00000_opcode::FD_111:
-            return execute_FD(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
+        default: {
+            // Here we are sure that the next instruction, at best, can only be a floating point instruction,
+            // or, at worst, an illegal instruction.
+            // Since all float instructions try to read the float state,
+            // we can put the next check before all of them.
+            // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+            if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+                return raise_illegal_insn_exception(a, pc, insn);
+            }
+            switch (funct3_00000_opcode) {
+                case insn_funct3_00000_opcode::FSW:
+                    return execute_FSW(a, pc, insn);
+                case insn_funct3_00000_opcode::FSD:
+                    return execute_FSD(a, pc, insn);
+                case insn_funct3_00000_opcode::FLW:
+                    return execute_FLW(a, pc, insn);
+                case insn_funct3_00000_opcode::FLD:
+                    return execute_FLD(a, pc, insn);
+                case insn_funct3_00000_opcode::FMADD_RNE:
+                case insn_funct3_00000_opcode::FMADD_RTZ:
+                case insn_funct3_00000_opcode::FMADD_RDN:
+                case insn_funct3_00000_opcode::FMADD_RUP:
+                case insn_funct3_00000_opcode::FMADD_RMM:
+                case insn_funct3_00000_opcode::FMADD_DYN:
+                    return execute_FMADD(a, pc, insn);
+                case insn_funct3_00000_opcode::FMSUB_RNE:
+                case insn_funct3_00000_opcode::FMSUB_RTZ:
+                case insn_funct3_00000_opcode::FMSUB_RDN:
+                case insn_funct3_00000_opcode::FMSUB_RUP:
+                case insn_funct3_00000_opcode::FMSUB_RMM:
+                case insn_funct3_00000_opcode::FMSUB_DYN:
+                    return execute_FMSUB(a, pc, insn);
+                case insn_funct3_00000_opcode::FNMSUB_RNE:
+                case insn_funct3_00000_opcode::FNMSUB_RTZ:
+                case insn_funct3_00000_opcode::FNMSUB_RDN:
+                case insn_funct3_00000_opcode::FNMSUB_RUP:
+                case insn_funct3_00000_opcode::FNMSUB_RMM:
+                case insn_funct3_00000_opcode::FNMSUB_DYN:
+                    return execute_FNMSUB(a, pc, insn);
+                case insn_funct3_00000_opcode::FNMADD_RNE:
+                case insn_funct3_00000_opcode::FNMADD_RTZ:
+                case insn_funct3_00000_opcode::FNMADD_RDN:
+                case insn_funct3_00000_opcode::FNMADD_RUP:
+                case insn_funct3_00000_opcode::FNMADD_RMM:
+                case insn_funct3_00000_opcode::FNMADD_DYN:
+                    return execute_FNMADD(a, pc, insn);
+                case insn_funct3_00000_opcode::FD_000:
+                case insn_funct3_00000_opcode::FD_001:
+                case insn_funct3_00000_opcode::FD_010:
+                case insn_funct3_00000_opcode::FD_011:
+                case insn_funct3_00000_opcode::FD_100:
+                case insn_funct3_00000_opcode::FD_111:
+                    return execute_FD(a, pc, insn);
+                default:
+                    return raise_illegal_insn_exception(a, pc, insn);
+            }
+        }
     }
 }
 

@@ -3948,9 +3948,8 @@ static FORCE_INLINE execute_status execute_FMIN_S(STATE_ACCESS &a, uint64_t pc, 
     dump_insn(a, pc, insn, "fmin.s");
     auto note = a.make_scoped_note("fmin.s");
     (void) note;
-    return execute_float_binary_op<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint32_t {
-        return min_sf32(s1, s2, fflags, FMINMAX_IEEE754_201X);
-    });
+    return execute_float_binary_op<uint32_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint32_t { return min_sf32(s1, s2, fflags); });
 }
 
 template <typename STATE_ACCESS>
@@ -3958,9 +3957,8 @@ static FORCE_INLINE execute_status execute_FMAX_S(STATE_ACCESS &a, uint64_t pc, 
     dump_insn(a, pc, insn, "fmax.s");
     auto note = a.make_scoped_note("fmax.s");
     (void) note;
-    return execute_float_binary_op<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint32_t {
-        return max_sf32(s1, s2, fflags, FMINMAX_IEEE754_201X);
-    });
+    return execute_float_binary_op<uint32_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint32_t { return max_sf32(s1, s2, fflags); });
 }
 
 template <typename STATE_ACCESS>
@@ -3980,9 +3978,8 @@ static FORCE_INLINE execute_status execute_FMIN_D(STATE_ACCESS &a, uint64_t pc, 
     dump_insn(a, pc, insn, "fmin.d");
     auto note = a.make_scoped_note("fmin.d");
     (void) note;
-    return execute_float_binary_op<uint64_t>(a, pc, insn, [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t {
-        return min_sf64(s1, s2, fflags, FMINMAX_IEEE754_201X);
-    });
+    return execute_float_binary_op<uint64_t>(a, pc, insn,
+        [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t { return min_sf64(s1, s2, fflags); });
 }
 
 template <typename STATE_ACCESS>
@@ -3990,9 +3987,8 @@ static FORCE_INLINE execute_status execute_FMAX_D(STATE_ACCESS &a, uint64_t pc, 
     dump_insn(a, pc, insn, "fmax.d");
     auto note = a.make_scoped_note("fmax.d");
     (void) note;
-    return execute_float_binary_op<uint64_t>(a, pc, insn, [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t {
-        return max_sf64(s1, s2, fflags, FMINMAX_IEEE754_201X);
-    });
+    return execute_float_binary_op<uint64_t>(a, pc, insn,
+        [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t { return max_sf64(s1, s2, fflags); });
 }
 
 template <typename STATE_ACCESS>

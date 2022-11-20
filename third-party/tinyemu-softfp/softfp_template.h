@@ -90,7 +90,7 @@ static inline F_UINT unpack_sf(uint32_t *pa_sign, int32_t *pa_exp,
     return a & MANT_MASK;
 } 
 
-static F_UINT rshift_rnd(F_UINT a, int d)
+static inline F_UINT rshift_rnd(F_UINT a, int d)
 {
     F_UINT mask;
     if (d != 0) {
@@ -105,7 +105,7 @@ static F_UINT rshift_rnd(F_UINT a, int d)
 }
 
 /* a_mant is considered to have its MSB at F_SIZE - 2 bits */
-static F_UINT round_pack_sf(uint32_t a_sign, int a_exp, F_UINT a_mant,
+static inline F_UINT round_pack_sf(uint32_t a_sign, int a_exp, F_UINT a_mant,
                             RoundingModeEnum rm, uint32_t *pfflags)
 {
     int diff;
@@ -175,7 +175,7 @@ static F_UINT round_pack_sf(uint32_t a_sign, int a_exp, F_UINT a_mant,
 }
 
 /* a_mant is considered to have at most F_SIZE - 1 bits */
-static F_UINT normalize_sf(uint32_t a_sign, int a_exp, F_UINT a_mant,
+static inline F_UINT normalize_sf(uint32_t a_sign, int a_exp, F_UINT a_mant,
                            RoundingModeEnum rm, uint32_t *pfflags)
 {
     int shift;
@@ -188,7 +188,7 @@ static F_UINT normalize_sf(uint32_t a_sign, int a_exp, F_UINT a_mant,
 
 /* same as normalize_sf() but with a double word mantissa. a_mant1 is
    considered to have at most F_SIZE - 1 bits */
-static F_UINT normalize2_sf(uint32_t a_sign, int a_exp, F_UINT a_mant1, F_UINT a_mant0,
+static inline F_UINT normalize2_sf(uint32_t a_sign, int a_exp, F_UINT a_mant1, F_UINT a_mant0,
                             RoundingModeEnum rm, uint32_t *pfflags)
 {
     int l, shift;
@@ -212,7 +212,7 @@ static F_UINT normalize2_sf(uint32_t a_sign, int a_exp, F_UINT a_mant1, F_UINT a
     return round_pack_sf(a_sign, a_exp, a_mant1, rm, pfflags);
 }
 
-BOOL issignan_sf(F_UINT a)
+static inline BOOL issignan_sf(F_UINT a)
 {
     uint32_t a_exp1;
     F_UINT a_mant;
@@ -221,7 +221,7 @@ BOOL issignan_sf(F_UINT a)
     return (a_exp1 == (2 * EXP_MASK) && a_mant != 0);
 }
 
-BOOL isnan_sf(F_UINT a)
+static inline BOOL isnan_sf(F_UINT a)
 {
     uint32_t a_exp;
     F_UINT a_mant;
@@ -305,7 +305,7 @@ static inline F_UINT normalize_subnormal_sf(int32_t *pa_exp, F_UINT a_mant)
 
 #ifdef F_ULONG
 
-static F_UINT mul_u(F_UINT *plow, F_UINT a, F_UINT b)
+static inline F_UINT mul_u(F_UINT *plow, F_UINT a, F_UINT b)
 {
     F_ULONG r;
     r = (F_ULONG)a * (F_ULONG)b;
@@ -317,7 +317,7 @@ static F_UINT mul_u(F_UINT *plow, F_UINT a, F_UINT b)
 
 #define FH_SIZE (F_SIZE / 2)
 
-static F_UINT mul_u(F_UINT *plow, F_UINT a, F_UINT b)
+static inline F_UINT mul_u(F_UINT *plow, F_UINT a, F_UINT b)
 {
     F_UHALF a0, a1, b0, b1, r0, r1, r2, r3;
     F_UINT r00, r01, r10, r11, c;
@@ -560,7 +560,7 @@ F_UINT fma_sf(F_UINT a, F_UINT b, F_UINT c, RoundingModeEnum rm,
 
 #ifdef F_ULONG
 
-static F_UINT divrem_u(F_UINT *pr, F_UINT ah, F_UINT al, F_UINT b)
+static inline F_UINT divrem_u(F_UINT *pr, F_UINT ah, F_UINT al, F_UINT b)
 {
     F_ULONG a;
     a = ((F_ULONG)ah << F_SIZE) | al;
@@ -571,7 +571,7 @@ static F_UINT divrem_u(F_UINT *pr, F_UINT ah, F_UINT al, F_UINT b)
 #else
 
 /* XXX: optimize */
-static F_UINT divrem_u(F_UINT *pr, F_UINT a1, F_UINT a0, F_UINT b)
+static inline F_UINT divrem_u(F_UINT *pr, F_UINT a1, F_UINT a0, F_UINT b)
 {
     int i, qb, ab;
 
@@ -663,7 +663,7 @@ F_UINT div_sf(F_UINT a, F_UINT b, RoundingModeEnum rm,
 
 /* compute sqrt(a) with a = ah*2^F_SIZE+al and a < 2^(F_SIZE - 2)
    return true if not exact square. */
-static int sqrtrem_u(F_UINT *pr, F_UINT ah, F_UINT al)
+static inline int sqrtrem_u(F_UINT *pr, F_UINT ah, F_UINT al)
 {
     F_ULONG a, u, s;
     int l, inexact;
@@ -693,7 +693,7 @@ static int sqrtrem_u(F_UINT *pr, F_UINT ah, F_UINT al)
 
 #else
 
-static int sqrtrem_u(F_UINT *pr, F_UINT a1, F_UINT a0)
+static inline int sqrtrem_u(F_UINT *pr, F_UINT a1, F_UINT a0)
 {
     int l, inexact;
     F_UINT u, s, r, q, sq0, sq1;

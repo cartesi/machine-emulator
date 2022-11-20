@@ -735,7 +735,7 @@ static NO_INLINE bool read_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr, 
 /// \param pval Pointer to word receiving value.
 /// \returns True if succeeded, false otherwise.
 template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>
-static inline bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval) {
+static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T *pval) {
     // Try hitting the TLB
     if (unlikely(!(a.template read_memory_word_via_tlb<TLB_READ>(vaddr, pval)))) {
         // Outline the slow path into a function call to minimize host CPU code cache pressure
@@ -798,7 +798,7 @@ static NO_INLINE bool write_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr,
 /// \param val64 Value to write.
 /// \returns True if succeeded, false if exception raised.
 template <typename T, typename STATE_ACCESS>
-static inline bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_t val64) {
+static FORCE_INLINE bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_t val64) {
     // Try hitting the TLB
     if (unlikely((!a.template write_memory_word_via_tlb<TLB_WRITE>(vaddr, static_cast<T>(val64))))) {
         INC_COUNTER(a.get_statistics(), tlb_wmiss);
@@ -852,7 +852,7 @@ enum class execute_status : int {
 /// \details This function is tail-called whenever the caller decoded enough of the instruction to identify it as
 /// illegal.
 template <typename STATE_ACCESS>
-static inline execute_status raise_illegal_insn_exception(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status raise_illegal_insn_exception(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) pc;
     raise_exception(a, MCAUSE_ILLEGAL_INSN, insn);
     return execute_status::exception_raised;
@@ -865,7 +865,7 @@ static inline execute_status raise_illegal_insn_exception(STATE_ACCESS &a, uint6
 /// \return execute_status::exception_raised
 /// \details This function is tail-called whenever the caller identified that the next value of pc is misaligned.
 template <typename STATE_ACCESS>
-static inline execute_status raise_misaligned_fetch_exception(STATE_ACCESS &a, uint64_t pc) {
+static FORCE_INLINE execute_status raise_misaligned_fetch_exception(STATE_ACCESS &a, uint64_t pc) {
     raise_exception(a, MCAUSE_INSN_ADDRESS_MISALIGNED, pc);
     return execute_status::exception_raised;
 }
@@ -876,7 +876,7 @@ static inline execute_status raise_misaligned_fetch_exception(STATE_ACCESS &a, u
 /// \return execute_status::exception_raised
 /// \details This function is tail-called whenever the caller identified a raised exception.
 template <typename STATE_ACCESS>
-static inline execute_status advance_to_raised_exception(STATE_ACCESS &a) {
+static FORCE_INLINE execute_status advance_to_raised_exception(STATE_ACCESS &a) {
     (void) a;
     return execute_status::exception_raised;
 }
@@ -888,7 +888,7 @@ static inline execute_status advance_to_raised_exception(STATE_ACCESS &a) {
 /// \return execute_status::retired
 /// \details This function is tail-called whenever the caller wants move to the next instruction.
 template <typename STATE_ACCESS>
-static inline execute_status advance_to_next_insn(STATE_ACCESS &a, uint64_t pc) {
+static FORCE_INLINE execute_status advance_to_next_insn(STATE_ACCESS &a, uint64_t pc) {
     a.write_pc(pc + 4);
     return execute_status::retired;
 }
@@ -900,7 +900,7 @@ static inline execute_status advance_to_next_insn(STATE_ACCESS &a, uint64_t pc) 
 /// \return execute_status::retired
 /// \details This function is tail-called whenever the caller wants to jump.
 template <typename STATE_ACCESS>
-static inline execute_status execute_jump(STATE_ACCESS &a, uint64_t pc) {
+static FORCE_INLINE execute_status execute_jump(STATE_ACCESS &a, uint64_t pc) {
     a.write_pc(pc);
     return execute_status::retired;
 }
@@ -911,7 +911,7 @@ static inline execute_status execute_jump(STATE_ACCESS &a, uint64_t pc) {
 /// \param pc Current pc.
 /// \param insn Instruction.
 template <typename T, typename STATE_ACCESS>
-static inline execute_status execute_LR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     T val = 0;
     if (!read_virtual_memory<T>(a, vaddr, &val)) {
@@ -931,7 +931,7 @@ static inline execute_status execute_LR(STATE_ACCESS &a, uint64_t pc, uint32_t i
 /// \param pc Current pc.
 /// \param insn Instruction.
 template <typename T, typename STATE_ACCESS>
-static inline execute_status execute_SC(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SC(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     uint64_t val = 0;
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     if (a.read_ilrsc() == vaddr) {
@@ -951,7 +951,7 @@ static inline execute_status execute_SC(STATE_ACCESS &a, uint64_t pc, uint32_t i
 
 /// \brief Implementation of the LR.W instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_LR_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LR_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) a;
     (void) pc;
     (void) insn;
@@ -967,7 +967,7 @@ static inline execute_status execute_LR_W(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the SC.W instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SC_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SC_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sc.w");
     auto note = a.make_scoped_note("sc.w");
     (void) note;
@@ -975,7 +975,7 @@ static inline execute_status execute_SC_W(STATE_ACCESS &a, uint64_t pc, uint32_t
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
-static inline execute_status execute_AMO(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_AMO(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     T valm = 0;
     // AMOs never raise load exceptions. Since any unreadable page is also unwritable,
@@ -997,7 +997,7 @@ static inline execute_status execute_AMO(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the AMOSWAP.W instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOSWAP_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOSWAP_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoswap.w");
     auto note = a.make_scoped_note("amoswap.w");
     (void) note;
@@ -1009,7 +1009,7 @@ static inline execute_status execute_AMOSWAP_W(STATE_ACCESS &a, uint64_t pc, uin
 
 /// \brief Implementation of the AMOADD.W instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOADD_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOADD_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoadd.w");
     auto note = a.make_scoped_note("amoadd.w");
     (void) note;
@@ -1021,7 +1021,7 @@ static inline execute_status execute_AMOADD_W(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOXOR_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOXOR_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoxor.w");
     auto note = a.make_scoped_note("amoxor.w");
     (void) note;
@@ -1030,7 +1030,7 @@ static inline execute_status execute_AMOXOR_W(STATE_ACCESS &a, uint64_t pc, uint
 
 /// \brief Implementation of the AMOAND.W instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOAND_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOAND_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoand.w");
     auto note = a.make_scoped_note("amoand.w");
     (void) note;
@@ -1039,7 +1039,7 @@ static inline execute_status execute_AMOAND_W(STATE_ACCESS &a, uint64_t pc, uint
 
 /// \brief Implementation of the AMOOR.W instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOOR_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOOR_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoor.w");
     auto note = a.make_scoped_note("amoor.w");
     (void) note;
@@ -1048,7 +1048,7 @@ static inline execute_status execute_AMOOR_W(STATE_ACCESS &a, uint64_t pc, uint3
 
 /// \brief Implementation of the AMOMIN.W instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOMIN_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMIN_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amomin.w");
     auto note = a.make_scoped_note("amomin.w");
     (void) note;
@@ -1058,7 +1058,7 @@ static inline execute_status execute_AMOMIN_W(STATE_ACCESS &a, uint64_t pc, uint
 
 /// \brief Implementation of the AMOMAX.W instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOMAX_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMAX_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amomax.w");
     auto note = a.make_scoped_note("amomax.w");
     (void) note;
@@ -1068,7 +1068,7 @@ static inline execute_status execute_AMOMAX_W(STATE_ACCESS &a, uint64_t pc, uint
 
 /// \brief Implementation of the AMOMINU.W instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOMINU_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMINU_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amominu.w");
     auto note = a.make_scoped_note("amominu.w");
     (void) note;
@@ -1079,7 +1079,7 @@ static inline execute_status execute_AMOMINU_W(STATE_ACCESS &a, uint64_t pc, uin
 
 /// \brief Implementation of the AMOMAXU.W instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOMAXU_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMAXU_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amomaxu.w");
     auto note = a.make_scoped_note("amomaxu.w");
     (void) note;
@@ -1090,7 +1090,7 @@ static inline execute_status execute_AMOMAXU_W(STATE_ACCESS &a, uint64_t pc, uin
 
 /// \brief Implementation of the LR.D instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_LR_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LR_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     if ((insn & 0b00000001111100000000000000000000) == 0) {
         dump_insn(a, pc, insn, "lr.d");
         auto note = a.make_scoped_note("lr.d");
@@ -1103,7 +1103,7 @@ static inline execute_status execute_LR_D(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the SC.D instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SC_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SC_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sc.d");
     auto note = a.make_scoped_note("sc.d");
     (void) note;
@@ -1112,7 +1112,7 @@ static inline execute_status execute_SC_D(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the AMOSWAP.D instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOSWAP_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOSWAP_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoswap.d");
     auto note = a.make_scoped_note("amoswap.d");
     (void) note;
@@ -1124,7 +1124,7 @@ static inline execute_status execute_AMOSWAP_D(STATE_ACCESS &a, uint64_t pc, uin
 
 /// \brief Implementation of the AMOADD.D instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOADD_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOADD_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoadd.d");
     auto note = a.make_scoped_note("amoadd.d");
     (void) note;
@@ -1136,7 +1136,7 @@ static inline execute_status execute_AMOADD_D(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOXOR_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOXOR_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoxor.d");
     auto note = a.make_scoped_note("amoxor.d");
     (void) note;
@@ -1145,7 +1145,7 @@ static inline execute_status execute_AMOXOR_D(STATE_ACCESS &a, uint64_t pc, uint
 
 /// \brief Implementation of the AMOAND.D instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOAND_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOAND_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoand.d");
     auto note = a.make_scoped_note("amoand.d");
     (void) note;
@@ -1154,7 +1154,7 @@ static inline execute_status execute_AMOAND_D(STATE_ACCESS &a, uint64_t pc, uint
 
 /// \brief Implementation of the AMOOR.D instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOOR_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOOR_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoor.d");
     auto note = a.make_scoped_note("amoor.d");
     (void) note;
@@ -1163,7 +1163,7 @@ static inline execute_status execute_AMOOR_D(STATE_ACCESS &a, uint64_t pc, uint3
 
 /// \brief Implementation of the AMOMIN.D instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOMIN_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMIN_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amomin.d");
     auto note = a.make_scoped_note("amomin.d");
     (void) note;
@@ -1173,7 +1173,7 @@ static inline execute_status execute_AMOMIN_D(STATE_ACCESS &a, uint64_t pc, uint
 
 /// \brief Implementation of the AMOMAX.D instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOMAX_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMAX_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amomax.d");
     auto note = a.make_scoped_note("amomax.d");
     (void) note;
@@ -1183,7 +1183,7 @@ static inline execute_status execute_AMOMAX_D(STATE_ACCESS &a, uint64_t pc, uint
 
 /// \brief Implementation of the AMOMINU.D instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOMINU_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMINU_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amominu.d");
     auto note = a.make_scoped_note("amominu.d");
     (void) note;
@@ -1193,7 +1193,7 @@ static inline execute_status execute_AMOMINU_D(STATE_ACCESS &a, uint64_t pc, uin
 
 /// \brief Implementation of the AMOMAXU.D instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMOMAXU_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMAXU_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amomaxu.d");
     auto note = a.make_scoped_note("amomaxu.d");
     (void) note;
@@ -1203,7 +1203,7 @@ static inline execute_status execute_AMOMAXU_D(STATE_ACCESS &a, uint64_t pc, uin
 
 /// \brief Implementation of the ADDW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_ADDW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_ADDW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "addw");
     auto note = a.make_scoped_note("addw");
     (void) note;
@@ -1219,7 +1219,7 @@ static inline execute_status execute_ADDW(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the SUBW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SUBW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SUBW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "subw");
     auto note = a.make_scoped_note("subw");
     (void) note;
@@ -1235,7 +1235,7 @@ static inline execute_status execute_SUBW(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the SLLW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLLW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLLW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sllw");
     auto note = a.make_scoped_note("sllw");
     (void) note;
@@ -1247,7 +1247,7 @@ static inline execute_status execute_SLLW(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the SRLW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRLW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRLW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "srlw");
     auto note = a.make_scoped_note("srlw");
     (void) note;
@@ -1259,7 +1259,7 @@ static inline execute_status execute_SRLW(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the SRAW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRAW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRAW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sraw");
     auto note = a.make_scoped_note("sraw");
     (void) note;
@@ -1271,7 +1271,7 @@ static inline execute_status execute_SRAW(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the MULW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_MULW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_MULW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "mulw");
     auto note = a.make_scoped_note("mulw");
     (void) note;
@@ -1286,7 +1286,7 @@ static inline execute_status execute_MULW(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the DIVW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_DIVW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_DIVW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "divw");
     auto note = a.make_scoped_note("divw");
     (void) note;
@@ -1305,7 +1305,7 @@ static inline execute_status execute_DIVW(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the DIVUW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_DIVUW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_DIVUW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "divuw");
     auto note = a.make_scoped_note("divuw");
     (void) note;
@@ -1322,7 +1322,7 @@ static inline execute_status execute_DIVUW(STATE_ACCESS &a, uint64_t pc, uint32_
 
 /// \brief Implementation of the REMW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_REMW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_REMW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "remw");
     auto note = a.make_scoped_note("remw");
     (void) note;
@@ -1341,7 +1341,7 @@ static inline execute_status execute_REMW(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the REMUW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_REMUW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_REMUW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) a;
     (void) pc;
     (void) insn;
@@ -2170,7 +2170,7 @@ static NO_INLINE bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t v
 }
 
 template <typename STATE_ACCESS, typename RS1VAL>
-static inline execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const RS1VAL &rs1val) {
+static FORCE_INLINE execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const RS1VAL &rs1val) {
     auto csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
     bool status = true;
@@ -2200,7 +2200,7 @@ static inline execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t pc, uint32
 
 /// \brief Implementation of the CSRRW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_CSRRW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_CSRRW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "csrrw");
     auto note = a.make_scoped_note("csrrw");
     (void) note;
@@ -2210,7 +2210,7 @@ static inline execute_status execute_CSRRW(STATE_ACCESS &a, uint64_t pc, uint32_
 
 /// \brief Implementation of the CSRRWI instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_CSRRWI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_CSRRWI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "csrrwi");
     auto note = a.make_scoped_note("csrrwi");
     (void) note;
@@ -2219,7 +2219,7 @@ static inline execute_status execute_CSRRWI(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS, typename F>
-static inline execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     auto csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
     bool status = false;
@@ -2250,7 +2250,7 @@ static inline execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, uint32
 
 /// \brief Implementation of the CSRRS instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_CSRRS(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_CSRRS(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "csrrs");
     auto note = a.make_scoped_note("csrrs");
     (void) note;
@@ -2259,7 +2259,7 @@ static inline execute_status execute_CSRRS(STATE_ACCESS &a, uint64_t pc, uint32_
 
 /// \brief Implementation of the CSRRC instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_CSRRC(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_CSRRC(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "csrrc");
     auto note = a.make_scoped_note("csrrc");
     (void) note;
@@ -2267,7 +2267,7 @@ static inline execute_status execute_CSRRC(STATE_ACCESS &a, uint64_t pc, uint32_
 }
 
 template <typename STATE_ACCESS, typename F>
-static inline execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     auto csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
     bool status = false;
@@ -2295,7 +2295,7 @@ static inline execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc, uint3
 
 /// \brief Implementation of the CSRRSI instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_CSRRSI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_CSRRSI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "csrrsi");
     auto note = a.make_scoped_note("csrrsi");
     (void) note;
@@ -2304,7 +2304,7 @@ static inline execute_status execute_CSRRSI(STATE_ACCESS &a, uint64_t pc, uint32
 
 /// \brief Implementation of the CSRRCI instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_CSRRCI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_CSRRCI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "csrrci");
     auto note = a.make_scoped_note("csrrci");
     (void) note;
@@ -2313,7 +2313,7 @@ static inline execute_status execute_CSRRCI(STATE_ACCESS &a, uint64_t pc, uint32
 
 /// \brief Implementation of the ECALL instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_ECALL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_ECALL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "ecall");
     auto note = a.make_scoped_note("ecall");
     (void) note;
@@ -2324,7 +2324,7 @@ static inline execute_status execute_ECALL(STATE_ACCESS &a, uint64_t pc, uint32_
 
 /// \brief Implementation of the EBREAK instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) a;
     dump_insn(a, pc, insn, "ebreak");
     auto note = a.make_scoped_note("ebreak");
@@ -2335,7 +2335,7 @@ static inline execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t pc, uint32
 
 /// \brief Implementation of the SRET instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRET(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRET(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sret");
     auto note = a.make_scoped_note("sret");
     (void) note;
@@ -2368,7 +2368,7 @@ static inline execute_status execute_SRET(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the MRET instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_MRET(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_MRET(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "mret");
     auto note = a.make_scoped_note("mret");
     (void) note;
@@ -2421,7 +2421,7 @@ static NO_INLINE execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32
 
 /// \brief Implementation of the FENCE instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_FENCE(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FENCE(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) insn;
     INC_COUNTER(a.get_statistics(), fence);
     dump_insn(a, pc, insn, "fence");
@@ -2433,7 +2433,7 @@ static inline execute_status execute_FENCE(STATE_ACCESS &a, uint64_t pc, uint32_
 
 /// \brief Implementation of the FENCE.I instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_FENCE_I(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FENCE_I(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) insn;
     INC_COUNTER(a.get_statistics(), fence_i);
     dump_insn(a, pc, insn, "fence.i");
@@ -2444,7 +2444,7 @@ static inline execute_status execute_FENCE_I(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS, typename F>
-static inline execute_status execute_arithmetic(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_arithmetic(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0) {
         // Ensure rs1 and rs2 are loaded in order: do not nest with call to f() as
@@ -2459,7 +2459,7 @@ static inline execute_status execute_arithmetic(STATE_ACCESS &a, uint64_t pc, ui
 
 /// \brief Implementation of the ADD instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_ADD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_ADD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "add");
     auto note = a.make_scoped_note("add");
     (void) note;
@@ -2472,7 +2472,7 @@ static inline execute_status execute_ADD(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the SUB instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sub");
     auto note = a.make_scoped_note("sub");
     (void) note;
@@ -2485,7 +2485,7 @@ static inline execute_status execute_SUB(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the SLL instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sll");
     auto note = a.make_scoped_note("sll");
     (void) note;
@@ -2495,7 +2495,7 @@ static inline execute_status execute_SLL(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the SLT instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLT(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLT(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "slt");
     auto note = a.make_scoped_note("slt");
     (void) note;
@@ -2505,7 +2505,7 @@ static inline execute_status execute_SLT(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the SLTU instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLTU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLTU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sltu");
     auto note = a.make_scoped_note("sltu");
     (void) note;
@@ -2514,7 +2514,7 @@ static inline execute_status execute_SLTU(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the XOR instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_XOR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_XOR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "xor");
     auto note = a.make_scoped_note("xor");
     (void) note;
@@ -2523,7 +2523,7 @@ static inline execute_status execute_XOR(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the SRL instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "srl");
     auto note = a.make_scoped_note("srl");
     (void) note;
@@ -2533,7 +2533,7 @@ static inline execute_status execute_SRL(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the SRA instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRA(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRA(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sra");
     auto note = a.make_scoped_note("sra");
     (void) note;
@@ -2544,7 +2544,7 @@ static inline execute_status execute_SRA(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the OR instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_OR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_OR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "or");
     auto note = a.make_scoped_note("or");
     (void) note;
@@ -2553,7 +2553,7 @@ static inline execute_status execute_OR(STATE_ACCESS &a, uint64_t pc, uint32_t i
 
 /// \brief Implementation of the AND instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AND(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AND(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "and");
     auto note = a.make_scoped_note("and");
     (void) note;
@@ -2562,7 +2562,7 @@ static inline execute_status execute_AND(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the MUL instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_MUL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_MUL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "mul");
     auto note = a.make_scoped_note("mul");
     (void) note;
@@ -2577,7 +2577,7 @@ static inline execute_status execute_MUL(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the MULH instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_MULH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_MULH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "mulh");
     auto note = a.make_scoped_note("mulh");
     (void) note;
@@ -2590,7 +2590,7 @@ static inline execute_status execute_MULH(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the MULHSU instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_MULHSU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_MULHSU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "mulhsu");
     auto note = a.make_scoped_note("mulhsu");
     (void) note;
@@ -2602,7 +2602,7 @@ static inline execute_status execute_MULHSU(STATE_ACCESS &a, uint64_t pc, uint32
 
 /// \brief Implementation of the MULHU instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_MULHU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_MULHU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "mulhu");
     auto note = a.make_scoped_note("mulhu");
     (void) note;
@@ -2611,7 +2611,7 @@ static inline execute_status execute_MULHU(STATE_ACCESS &a, uint64_t pc, uint32_
 
 /// \brief Implementation of the DIV instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_DIV(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_DIV(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "div");
     auto note = a.make_scoped_note("div");
     (void) note;
@@ -2630,7 +2630,7 @@ static inline execute_status execute_DIV(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the DIVU instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_DIVU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_DIVU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "divu");
     auto note = a.make_scoped_note("divu");
     (void) note;
@@ -2645,7 +2645,7 @@ static inline execute_status execute_DIVU(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the REM instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_REM(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_REM(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "rem");
     auto note = a.make_scoped_note("rem");
     (void) note;
@@ -2664,7 +2664,7 @@ static inline execute_status execute_REM(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the REMU instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_REMU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_REMU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "remu");
     auto note = a.make_scoped_note("remu");
     (void) note;
@@ -2678,7 +2678,8 @@ static inline execute_status execute_REMU(STATE_ACCESS &a, uint64_t pc, uint32_t
 }
 
 template <typename STATE_ACCESS, typename F>
-static inline execute_status execute_arithmetic_immediate(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_arithmetic_immediate(STATE_ACCESS &a, uint64_t pc, uint32_t insn,
+    const F &f) {
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0) {
         uint64_t rs1 = a.read_x(insn_get_rs1(insn));
@@ -2690,7 +2691,7 @@ static inline execute_status execute_arithmetic_immediate(STATE_ACCESS &a, uint6
 
 /// \brief Implementation of the SRLI instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRLI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRLI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "srli");
     auto note = a.make_scoped_note("srli");
     (void) note;
@@ -2700,7 +2701,7 @@ static inline execute_status execute_SRLI(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the SRAI instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRAI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRAI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "srai");
     auto note = a.make_scoped_note("srai");
     (void) note;
@@ -2711,7 +2712,7 @@ static inline execute_status execute_SRAI(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the ADDI instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_ADDI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_ADDI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "addi");
     auto note = a.make_scoped_note("addi");
     (void) note;
@@ -2724,7 +2725,7 @@ static inline execute_status execute_ADDI(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the SLTI instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLTI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLTI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "slti");
     auto note = a.make_scoped_note("slti");
     (void) note;
@@ -2734,7 +2735,7 @@ static inline execute_status execute_SLTI(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the SLTIU instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLTIU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLTIU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sltiu");
     auto note = a.make_scoped_note("sltiu");
     (void) note;
@@ -2744,7 +2745,7 @@ static inline execute_status execute_SLTIU(STATE_ACCESS &a, uint64_t pc, uint32_
 
 /// \brief Implementation of the XORI instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_XORI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_XORI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "xori");
     auto note = a.make_scoped_note("xori");
     (void) note;
@@ -2753,7 +2754,7 @@ static inline execute_status execute_XORI(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the ORI instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_ORI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_ORI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "ori");
     auto note = a.make_scoped_note("ori");
     (void) note;
@@ -2762,7 +2763,7 @@ static inline execute_status execute_ORI(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the ANDI instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_ANDI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_ANDI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "andi");
     auto note = a.make_scoped_note("andi");
     (void) note;
@@ -2771,7 +2772,7 @@ static inline execute_status execute_ANDI(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the SLLI instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLLI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLLI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     if ((insn & (0b111111 << 26)) == 0) {
         dump_insn(a, pc, insn, "slli");
         auto note = a.make_scoped_note("slli");
@@ -2788,7 +2789,7 @@ static inline execute_status execute_SLLI(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the ADDIW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_ADDIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_ADDIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "addiw");
     auto note = a.make_scoped_note("addiw");
     (void) note;
@@ -2801,7 +2802,7 @@ static inline execute_status execute_ADDIW(STATE_ACCESS &a, uint64_t pc, uint32_
 
 /// \brief Implementation of the SLLIW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     if (insn_get_funct7(insn) == 0) {
         dump_insn(a, pc, insn, "slliw");
         auto note = a.make_scoped_note("slliw");
@@ -2819,7 +2820,7 @@ static inline execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t pc, uint32_
 
 /// \brief Implementation of the SRLIW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRLIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRLIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "srliw");
     auto note = a.make_scoped_note("srliw");
     (void) note;
@@ -2833,7 +2834,7 @@ static inline execute_status execute_SRLIW(STATE_ACCESS &a, uint64_t pc, uint32_
 
 /// \brief Implementation of the SRAIW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRAIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRAIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sraiw");
     auto note = a.make_scoped_note("sraiw");
     (void) note;
@@ -2844,7 +2845,7 @@ static inline execute_status execute_SRAIW(STATE_ACCESS &a, uint64_t pc, uint32_
 }
 
 template <typename T, typename STATE_ACCESS>
-static inline execute_status execute_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     int32_t imm = insn_S_get_imm(insn);
     uint64_t val = a.read_x(insn_get_rs2(insn));
@@ -2857,7 +2858,7 @@ static inline execute_status execute_S(STATE_ACCESS &a, uint64_t pc, uint32_t in
 
 /// \brief Implementation of the SB instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sb");
     auto note = a.make_scoped_note("sb");
     (void) note;
@@ -2866,7 +2867,7 @@ static inline execute_status execute_SB(STATE_ACCESS &a, uint64_t pc, uint32_t i
 
 /// \brief Implementation of the SH instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sh");
     auto note = a.make_scoped_note("sh");
     (void) note;
@@ -2875,7 +2876,7 @@ static inline execute_status execute_SH(STATE_ACCESS &a, uint64_t pc, uint32_t i
 
 /// \brief Implementation of the SW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sw");
     auto note = a.make_scoped_note("sw");
     (void) note;
@@ -2884,7 +2885,7 @@ static inline execute_status execute_SW(STATE_ACCESS &a, uint64_t pc, uint32_t i
 
 /// \brief Implementation of the SD instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_SD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sd");
     auto note = a.make_scoped_note("sd");
     (void) note;
@@ -2892,7 +2893,7 @@ static inline execute_status execute_SD(STATE_ACCESS &a, uint64_t pc, uint32_t i
 }
 
 template <typename T, typename STATE_ACCESS>
-static inline execute_status execute_L(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_L(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     int32_t imm = insn_I_get_imm(insn);
     T val;
@@ -2915,7 +2916,7 @@ static inline execute_status execute_L(STATE_ACCESS &a, uint64_t pc, uint32_t in
 
 /// \brief Implementation of the LB instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_LB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lb");
     auto note = a.make_scoped_note("lb");
     (void) note;
@@ -2924,7 +2925,7 @@ static inline execute_status execute_LB(STATE_ACCESS &a, uint64_t pc, uint32_t i
 
 /// \brief Implementation of the LH instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_LH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lh");
     auto note = a.make_scoped_note("lh");
     (void) note;
@@ -2933,7 +2934,7 @@ static inline execute_status execute_LH(STATE_ACCESS &a, uint64_t pc, uint32_t i
 
 /// \brief Implementation of the LW instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_LW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lw");
     auto note = a.make_scoped_note("lw");
     (void) note;
@@ -2942,7 +2943,7 @@ static inline execute_status execute_LW(STATE_ACCESS &a, uint64_t pc, uint32_t i
 
 /// \brief Implementation of the LD instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_LD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "ld");
     auto note = a.make_scoped_note("ld");
     (void) note;
@@ -2951,7 +2952,7 @@ static inline execute_status execute_LD(STATE_ACCESS &a, uint64_t pc, uint32_t i
 
 /// \brief Implementation of the LBU instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_LBU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LBU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lbu");
     auto note = a.make_scoped_note("lbu");
     (void) note;
@@ -2960,7 +2961,7 @@ static inline execute_status execute_LBU(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the LHU instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_LHU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LHU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lhu");
     auto note = a.make_scoped_note("lhu");
     (void) note;
@@ -2969,7 +2970,7 @@ static inline execute_status execute_LHU(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the LWU instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_LWU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LWU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lwu");
     auto note = a.make_scoped_note("lwu");
     (void) note;
@@ -2977,7 +2978,7 @@ static inline execute_status execute_LWU(STATE_ACCESS &a, uint64_t pc, uint32_t 
 }
 
 template <typename STATE_ACCESS, typename F>
-static inline execute_status execute_branch(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_branch(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t rs1 = a.read_x(insn_get_rs1(insn));
     uint64_t rs2 = a.read_x(insn_get_rs2(insn));
     if (f(rs1, rs2)) {
@@ -2993,7 +2994,7 @@ static inline execute_status execute_branch(STATE_ACCESS &a, uint64_t pc, uint32
 
 /// \brief Implementation of the BEQ instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_BEQ(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_BEQ(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "beq");
     auto note = a.make_scoped_note("beq");
     (void) note;
@@ -3002,7 +3003,7 @@ static inline execute_status execute_BEQ(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the BNE instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_BNE(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_BNE(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "bne");
     auto note = a.make_scoped_note("bne");
     (void) note;
@@ -3011,7 +3012,7 @@ static inline execute_status execute_BNE(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the BLT instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_BLT(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_BLT(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "blt");
     auto note = a.make_scoped_note("blt");
     (void) note;
@@ -3021,7 +3022,7 @@ static inline execute_status execute_BLT(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the BGE instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_BGE(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_BGE(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "bge");
     auto note = a.make_scoped_note("bge");
     (void) note;
@@ -3031,7 +3032,7 @@ static inline execute_status execute_BGE(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the BLTU instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_BLTU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_BLTU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "bltu");
     auto note = a.make_scoped_note("bltu");
     (void) note;
@@ -3040,7 +3041,7 @@ static inline execute_status execute_BLTU(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the BGEU instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_BGEU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_BGEU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "bgeu");
     auto note = a.make_scoped_note("bgeu");
     (void) note;
@@ -3049,7 +3050,7 @@ static inline execute_status execute_BGEU(STATE_ACCESS &a, uint64_t pc, uint32_t
 
 /// \brief Implementation of the LUI instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_LUI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LUI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lui");
     auto note = a.make_scoped_note("lui");
     (void) note;
@@ -3062,7 +3063,7 @@ static inline execute_status execute_LUI(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the AUIPC instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_AUIPC(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AUIPC(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "auipc");
     auto note = a.make_scoped_note("auipc");
     (void) note;
@@ -3075,7 +3076,7 @@ static inline execute_status execute_AUIPC(STATE_ACCESS &a, uint64_t pc, uint32_
 
 /// \brief Implementation of the JAL instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_JAL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_JAL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "jal");
     auto note = a.make_scoped_note("jal");
     (void) note;
@@ -3092,7 +3093,7 @@ static inline execute_status execute_JAL(STATE_ACCESS &a, uint64_t pc, uint32_t 
 
 /// \brief Implementation of the JALR instruction.
 template <typename STATE_ACCESS>
-static inline execute_status execute_JALR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_JALR(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "jalr");
     auto note = a.make_scoped_note("jalr");
     (void) note;
@@ -3164,7 +3165,7 @@ static NO_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t pc,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRLI_SRAI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRLI_SRAI(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_SRLI_SRAI_funct7_sr1>(insn_get_funct7_sr1(insn))) {
         case insn_SRLI_SRAI_funct7_sr1::SRLI:
             return execute_SRLI(a, pc, insn);
@@ -3176,7 +3177,7 @@ static inline execute_status execute_SRLI_SRAI(STATE_ACCESS &a, uint64_t pc, uin
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRLIW_SRAIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRLIW_SRAIW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_SRLIW_SRAIW_funct7>(insn_get_funct7(insn))) {
         case insn_SRLIW_SRAIW_funct7::SRLIW:
             return execute_SRLIW(a, pc, insn);
@@ -3188,7 +3189,7 @@ static inline execute_status execute_SRLIW_SRAIW(STATE_ACCESS &a, uint64_t pc, u
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMO_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMO_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_AMO_funct7_sr2>(insn_get_funct7_sr2(insn))) {
         case insn_AMO_funct7_sr2::AMOADD:
             return execute_AMOADD_W(a, pc, insn);
@@ -3218,7 +3219,7 @@ static inline execute_status execute_AMO_W(STATE_ACCESS &a, uint64_t pc, uint32_
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_AMO_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMO_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_AMO_funct7_sr2>(insn_get_funct7_sr2(insn))) {
         case insn_AMO_funct7_sr2::AMOADD:
             return execute_AMOADD_D(a, pc, insn);
@@ -3248,7 +3249,7 @@ static inline execute_status execute_AMO_D(STATE_ACCESS &a, uint64_t pc, uint32_
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_ADD_MUL_SUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_ADD_MUL_SUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_ADD_MUL_SUB_funct7>(insn_get_funct7(insn))) {
         case insn_ADD_MUL_SUB_funct7::ADD:
             return execute_ADD(a, pc, insn);
@@ -3262,7 +3263,7 @@ static inline execute_status execute_ADD_MUL_SUB(STATE_ACCESS &a, uint64_t pc, u
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLL_MULH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLL_MULH(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_SLL_MULH_funct7>(insn_get_funct7(insn))) {
         case insn_SLL_MULH_funct7::SLL:
             return execute_SLL(a, pc, insn);
@@ -3274,7 +3275,7 @@ static inline execute_status execute_SLL_MULH(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLT_MULHSU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLT_MULHSU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_SLT_MULHSU_funct7>(insn_get_funct7(insn))) {
         case insn_SLT_MULHSU_funct7::SLT:
             return execute_SLT(a, pc, insn);
@@ -3286,7 +3287,7 @@ static inline execute_status execute_SLT_MULHSU(STATE_ACCESS &a, uint64_t pc, ui
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLTU_MULHU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLTU_MULHU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_SLTU_MULHU_funct7>(insn_get_funct7(insn))) {
         case insn_SLTU_MULHU_funct7::SLTU:
             return execute_SLTU(a, pc, insn);
@@ -3298,7 +3299,7 @@ static inline execute_status execute_SLTU_MULHU(STATE_ACCESS &a, uint64_t pc, ui
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_XOR_DIV(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_XOR_DIV(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_XOR_DIV_funct7>(insn_get_funct7(insn))) {
         case insn_XOR_DIV_funct7::XOR:
             return execute_XOR(a, pc, insn);
@@ -3310,7 +3311,7 @@ static inline execute_status execute_XOR_DIV(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRL_DIVU_SRA(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRL_DIVU_SRA(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_SRL_DIVU_SRA_funct7>(insn_get_funct7(insn))) {
         case insn_SRL_DIVU_SRA_funct7::SRL:
             return execute_SRL(a, pc, insn);
@@ -3324,7 +3325,7 @@ static inline execute_status execute_SRL_DIVU_SRA(STATE_ACCESS &a, uint64_t pc, 
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_OR_REM(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_OR_REM(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_OR_REM_funct7>(insn_get_funct7(insn))) {
         case insn_OR_REM_funct7::OR:
             return execute_OR(a, pc, insn);
@@ -3336,7 +3337,7 @@ static inline execute_status execute_OR_REM(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_AND_REMU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AND_REMU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_AND_REMU_funct7>(insn_get_funct7(insn))) {
         case insn_AND_REMU_funct7::AND:
             return execute_AND(a, pc, insn);
@@ -3348,7 +3349,7 @@ static inline execute_status execute_AND_REMU(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_ADDW_MULW_SUBW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_ADDW_MULW_SUBW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_ADDW_MULW_SUBW_funct7>(insn_get_funct7(insn))) {
         case insn_ADDW_MULW_SUBW_funct7::ADDW:
             return execute_ADDW(a, pc, insn);
@@ -3362,7 +3363,7 @@ static inline execute_status execute_ADDW_MULW_SUBW(STATE_ACCESS &a, uint64_t pc
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRLW_DIVUW_SRAW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRLW_DIVUW_SRAW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_SRLW_DIVUW_SRAW_funct7>(insn_get_funct7(insn))) {
         case insn_SRLW_DIVUW_SRAW_funct7::SRLW:
             return execute_SRLW(a, pc, insn);
@@ -3376,7 +3377,7 @@ static inline execute_status execute_SRLW_DIVUW_SRAW(STATE_ACCESS &a, uint64_t p
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_privileged(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_privileged(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_privileged>(insn)) {
         case insn_privileged::ECALL:
             return execute_ECALL(a, pc, insn);
@@ -3436,7 +3437,8 @@ static inline T float_unbox(uint64_t val) {
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
-static inline execute_status execute_float_ternary_op_rm(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_float_ternary_op_rm(STATE_ACCESS &a, uint64_t pc, uint32_t insn,
+    const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
@@ -3467,7 +3469,7 @@ static inline execute_status execute_float_ternary_op_rm(STATE_ACCESS &a, uint64
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
-static inline execute_status execute_float_binary_op_rm(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_float_binary_op_rm(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
@@ -3497,7 +3499,7 @@ static inline execute_status execute_float_binary_op_rm(STATE_ACCESS &a, uint64_
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
-static inline execute_status execute_float_unary_op_rm(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_float_unary_op_rm(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
@@ -3530,7 +3532,7 @@ static inline execute_status execute_float_unary_op_rm(STATE_ACCESS &a, uint64_t
 }
 
 template <typename T, typename STATE_ACCESS>
-static inline execute_status execute_FS(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FS(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
         return raise_illegal_insn_exception(a, pc, insn);
@@ -3547,7 +3549,7 @@ static inline execute_status execute_FS(STATE_ACCESS &a, uint64_t pc, uint32_t i
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FSW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsw");
     auto note = a.make_scoped_note("fsw");
     (void) note;
@@ -3555,7 +3557,7 @@ static inline execute_status execute_FSW(STATE_ACCESS &a, uint64_t pc, uint32_t 
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FSD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsd");
     auto note = a.make_scoped_note("fsd");
     (void) note;
@@ -3563,7 +3565,7 @@ static inline execute_status execute_FSD(STATE_ACCESS &a, uint64_t pc, uint32_t 
 }
 
 template <typename T, typename STATE_ACCESS>
-static inline execute_status execute_FL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FL(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
@@ -3591,7 +3593,7 @@ static inline execute_status execute_FL(STATE_ACCESS &a, uint64_t pc, uint32_t i
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FLW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FLW(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "flw");
     auto note = a.make_scoped_note("flw");
     (void) note;
@@ -3599,7 +3601,7 @@ static inline execute_status execute_FLW(STATE_ACCESS &a, uint64_t pc, uint32_t 
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FLD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FLD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fld");
     auto note = a.make_scoped_note("fld");
     (void) note;
@@ -3607,7 +3609,7 @@ static inline execute_status execute_FLD(STATE_ACCESS &a, uint64_t pc, uint32_t 
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMADD_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMADD_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmadd.s");
     auto note = a.make_scoped_note("fmadd.s");
     (void) note;
@@ -3618,7 +3620,7 @@ static inline execute_status execute_FMADD_S(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMADD_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMADD_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmadd.d");
     auto note = a.make_scoped_note("fmadd.d");
     (void) note;
@@ -3629,7 +3631,7 @@ static inline execute_status execute_FMADD_D(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMADD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMADD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_FM_funct2>(insn_get_funct2(insn))) {
         case insn_FM_funct2::S:
             return execute_FMADD_S(a, pc, insn);
@@ -3641,7 +3643,7 @@ static inline execute_status execute_FMADD(STATE_ACCESS &a, uint64_t pc, uint32_
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMSUB_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMSUB_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmsub.s");
     auto note = a.make_scoped_note("fmsub.s");
     (void) note;
@@ -3652,7 +3654,7 @@ static inline execute_status execute_FMSUB_S(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMSUB_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMSUB_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmsub.d");
     auto note = a.make_scoped_note("fmsub.d");
     (void) note;
@@ -3663,7 +3665,7 @@ static inline execute_status execute_FMSUB_D(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMSUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMSUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_FM_funct2>(insn_get_funct2(insn))) {
         case insn_FM_funct2::S:
             return execute_FMSUB_S(a, pc, insn);
@@ -3675,7 +3677,7 @@ static inline execute_status execute_FMSUB(STATE_ACCESS &a, uint64_t pc, uint32_
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FNMADD_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FNMADD_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fnmadd.s");
     auto note = a.make_scoped_note("fnmadd.s");
     (void) note;
@@ -3686,7 +3688,7 @@ static inline execute_status execute_FNMADD_S(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FNMADD_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FNMADD_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fnmadd.d");
     auto note = a.make_scoped_note("fnmadd.d");
     (void) note;
@@ -3697,7 +3699,7 @@ static inline execute_status execute_FNMADD_D(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FNMADD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FNMADD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_FM_funct2>(insn_get_funct2(insn))) {
         case insn_FM_funct2::S:
             return execute_FNMADD_S(a, pc, insn);
@@ -3709,7 +3711,7 @@ static inline execute_status execute_FNMADD(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FNMSUB_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FNMSUB_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fnmsub.s");
     auto note = a.make_scoped_note("fnmsub.s");
     (void) note;
@@ -3720,7 +3722,7 @@ static inline execute_status execute_FNMSUB_S(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FNMSUB_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FNMSUB_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fnmsub.d");
     auto note = a.make_scoped_note("fnmsub.d");
     (void) note;
@@ -3731,7 +3733,7 @@ static inline execute_status execute_FNMSUB_D(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FNMSUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FNMSUB(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_FM_funct2>(insn_get_funct2(insn))) {
         case insn_FM_funct2::S:
             return execute_FNMSUB_S(a, pc, insn);
@@ -3743,7 +3745,7 @@ static inline execute_status execute_FNMSUB(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FADD_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FADD_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fadd.s");
     auto note = a.make_scoped_note("fadd.s");
     (void) note;
@@ -3754,7 +3756,7 @@ static inline execute_status execute_FADD_S(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FADD_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FADD_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fadd.d");
     auto note = a.make_scoped_note("fadd.d");
     (void) note;
@@ -3765,7 +3767,7 @@ static inline execute_status execute_FADD_D(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FSUB_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSUB_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsub.s");
     auto note = a.make_scoped_note("fsub.s");
     (void) note;
@@ -3776,7 +3778,7 @@ static inline execute_status execute_FSUB_S(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FSUB_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSUB_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsub.d");
     auto note = a.make_scoped_note("fsub.d");
     (void) note;
@@ -3787,7 +3789,7 @@ static inline execute_status execute_FSUB_D(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMUL_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMUL_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmul.s");
     auto note = a.make_scoped_note("fmul.s");
     (void) note;
@@ -3798,7 +3800,7 @@ static inline execute_status execute_FMUL_S(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMUL_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMUL_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmul.d");
     auto note = a.make_scoped_note("fmul.d");
     (void) note;
@@ -3809,7 +3811,7 @@ static inline execute_status execute_FMUL_D(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FDIV_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FDIV_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fdiv.s");
     auto note = a.make_scoped_note("fdiv.s");
     (void) note;
@@ -3820,7 +3822,7 @@ static inline execute_status execute_FDIV_S(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FDIV_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FDIV_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fdiv.d");
     auto note = a.make_scoped_note("fdiv.d");
     (void) note;
@@ -3831,7 +3833,7 @@ static inline execute_status execute_FDIV_D(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
-static inline execute_status execute_FCLASS(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_FCLASS(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
         return raise_illegal_insn_exception(a, pc, insn);
@@ -3846,7 +3848,7 @@ static inline execute_status execute_FCLASS(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
-static inline execute_status execute_float_binary_op(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_float_binary_op(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
@@ -3866,7 +3868,7 @@ static inline execute_status execute_float_binary_op(STATE_ACCESS &a, uint64_t p
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
-static inline execute_status execute_float_cmp_op(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_float_cmp_op(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
@@ -3890,7 +3892,7 @@ static inline execute_status execute_float_cmp_op(STATE_ACCESS &a, uint64_t pc, 
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FSGNJ_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSGNJ_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsgnj.s");
     auto note = a.make_scoped_note("fsgnj.s");
     (void) note;
@@ -3902,7 +3904,7 @@ static inline execute_status execute_FSGNJ_S(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FSGNJN_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSGNJN_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsgnjn.s");
     auto note = a.make_scoped_note("fsgnjn.s");
     (void) note;
@@ -3914,7 +3916,7 @@ static inline execute_status execute_FSGNJN_S(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FSGNJX_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSGNJX_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsgnjx.s");
     auto note = a.make_scoped_note("fsgnjx.s");
     (void) note;
@@ -3926,7 +3928,7 @@ static inline execute_status execute_FSGNJX_S(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FSGN_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSGN_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_FSGN_rm>(insn_get_rm(insn))) {
         case insn_FSGN_rm::J:
             return execute_FSGNJ_S(a, pc, insn);
@@ -3940,7 +3942,7 @@ static inline execute_status execute_FSGN_S(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FSGNJ_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSGNJ_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsgnj.d");
     auto note = a.make_scoped_note("fsgnj.d");
     (void) note;
@@ -3952,7 +3954,7 @@ static inline execute_status execute_FSGNJ_D(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FSGNJN_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSGNJN_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsgnjn.d");
     auto note = a.make_scoped_note("fsgnjn.d");
     (void) note;
@@ -3964,7 +3966,7 @@ static inline execute_status execute_FSGNJN_D(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FSGNJX_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSGNJX_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsgnjx.d");
     auto note = a.make_scoped_note("fsgnjx.d");
     (void) note;
@@ -3976,7 +3978,7 @@ static inline execute_status execute_FSGNJX_D(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FSGN_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSGN_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_FSGN_rm>(insn_get_rm(insn))) {
         case insn_FSGN_rm::J:
             return execute_FSGNJ_D(a, pc, insn);
@@ -3990,7 +3992,7 @@ static inline execute_status execute_FSGN_D(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMIN_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMIN_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmin.s");
     auto note = a.make_scoped_note("fmin.s");
     (void) note;
@@ -4000,7 +4002,7 @@ static inline execute_status execute_FMIN_S(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMAX_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMAX_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmax.s");
     auto note = a.make_scoped_note("fmax.s");
     (void) note;
@@ -4010,7 +4012,7 @@ static inline execute_status execute_FMAX_S(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMINMAX_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMINMAX_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_FMIN_FMAX_rm>(insn_get_rm(insn))) {
         case insn_FMIN_FMAX_rm::MIN:
             return execute_FMIN_S(a, pc, insn);
@@ -4022,7 +4024,7 @@ static inline execute_status execute_FMINMAX_S(STATE_ACCESS &a, uint64_t pc, uin
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMIN_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMIN_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmin.d");
     auto note = a.make_scoped_note("fmin.d");
     (void) note;
@@ -4032,7 +4034,7 @@ static inline execute_status execute_FMIN_D(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMAX_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMAX_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmax.d");
     auto note = a.make_scoped_note("fmax.d");
     (void) note;
@@ -4042,7 +4044,7 @@ static inline execute_status execute_FMAX_D(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMINMAX_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMINMAX_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_FMIN_FMAX_rm>(insn_get_rm(insn))) {
         case insn_FMIN_FMAX_rm::MIN:
             return execute_FMIN_D(a, pc, insn);
@@ -4054,7 +4056,7 @@ static inline execute_status execute_FMINMAX_D(STATE_ACCESS &a, uint64_t pc, uin
 }
 
 template <typename ST, typename DT, typename STATE_ACCESS, typename F>
-static inline execute_status execute_FCVT_F_F(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_FCVT_F_F(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
@@ -4084,7 +4086,7 @@ static inline execute_status execute_FCVT_F_F(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
-static inline execute_status execute_FCVT_X_F(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_FCVT_X_F(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
@@ -4115,7 +4117,7 @@ static inline execute_status execute_FCVT_X_F(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
-static inline execute_status execute_FCVT_F_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
+static FORCE_INLINE execute_status execute_FCVT_F_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const F &f) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
@@ -4144,7 +4146,7 @@ static inline execute_status execute_FCVT_F_X(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_S_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_S_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.s.d");
     auto note = a.make_scoped_note("fcvt.s.d");
     (void) note;
@@ -4155,7 +4157,7 @@ static inline execute_status execute_FCVT_S_D(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_D_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_D_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.d.s");
     auto note = a.make_scoped_note("fcvt.d.s");
     (void) note;
@@ -4168,7 +4170,7 @@ static inline execute_status execute_FCVT_D_S(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FSQRT_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSQRT_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsqrt.s");
     auto note = a.make_scoped_note("fsqrt.s");
     (void) note;
@@ -4178,7 +4180,7 @@ static inline execute_status execute_FSQRT_S(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FSQRT_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSQRT_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsqrt.d");
     auto note = a.make_scoped_note("fsqrt.d");
     (void) note;
@@ -4188,7 +4190,7 @@ static inline execute_status execute_FSQRT_D(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FLE_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FLE_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fle.s");
     auto note = a.make_scoped_note("fle.s");
     (void) note;
@@ -4198,7 +4200,7 @@ static inline execute_status execute_FLE_S(STATE_ACCESS &a, uint64_t pc, uint32_
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FLT_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FLT_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "flt.s");
     auto note = a.make_scoped_note("flt.s");
     (void) note;
@@ -4208,7 +4210,7 @@ static inline execute_status execute_FLT_S(STATE_ACCESS &a, uint64_t pc, uint32_
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FEQ_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FEQ_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "feq.s");
     auto note = a.make_scoped_note("feq.s");
     (void) note;
@@ -4218,7 +4220,7 @@ static inline execute_status execute_FEQ_S(STATE_ACCESS &a, uint64_t pc, uint32_
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCMP_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCMP_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_FCMP_rm>(insn_get_rm(insn))) {
         case insn_FCMP_rm::LT:
             return execute_FLT_S(a, pc, insn);
@@ -4232,7 +4234,7 @@ static inline execute_status execute_FCMP_S(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FLE_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FLE_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fle.d");
     auto note = a.make_scoped_note("fle.d");
     (void) note;
@@ -4242,7 +4244,7 @@ static inline execute_status execute_FLE_D(STATE_ACCESS &a, uint64_t pc, uint32_
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FLT_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FLT_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "flt.d");
     auto note = a.make_scoped_note("flt.d");
     (void) note;
@@ -4252,7 +4254,7 @@ static inline execute_status execute_FLT_D(STATE_ACCESS &a, uint64_t pc, uint32_
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FEQ_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FEQ_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "feq.d");
     auto note = a.make_scoped_note("feq.d");
     (void) note;
@@ -4262,7 +4264,7 @@ static inline execute_status execute_FEQ_D(STATE_ACCESS &a, uint64_t pc, uint32_
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCMP_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCMP_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_FCMP_rm>(insn_get_rm(insn))) {
         case insn_FCMP_rm::LT:
             return execute_FLT_D(a, pc, insn);
@@ -4276,7 +4278,7 @@ static inline execute_status execute_FCMP_D(STATE_ACCESS &a, uint64_t pc, uint32
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_W_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_W_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.w.s");
     auto note = a.make_scoped_note("fcvt.w.s");
     (void) note;
@@ -4288,7 +4290,7 @@ static inline execute_status execute_FCVT_W_S(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_WU_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_WU_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.wu.s");
     auto note = a.make_scoped_note("fcvt.wu.s");
     (void) note;
@@ -4300,7 +4302,7 @@ static inline execute_status execute_FCVT_WU_S(STATE_ACCESS &a, uint64_t pc, uin
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_L_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_L_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.l.s");
     auto note = a.make_scoped_note("fcvt.l.s");
     (void) note;
@@ -4311,7 +4313,7 @@ static inline execute_status execute_FCVT_L_S(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_LU_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_LU_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.lu.s");
     auto note = a.make_scoped_note("fcvt.lu.s");
     (void) note;
@@ -4321,7 +4323,7 @@ static inline execute_status execute_FCVT_LU_S(STATE_ACCESS &a, uint64_t pc, uin
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_W_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_W_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.w.d");
     auto note = a.make_scoped_note("fcvt.w.d");
     (void) note;
@@ -4333,7 +4335,7 @@ static inline execute_status execute_FCVT_W_D(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_WU_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_WU_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.wu.d");
     auto note = a.make_scoped_note("fcvt.wu.d");
     (void) note;
@@ -4345,7 +4347,7 @@ static inline execute_status execute_FCVT_WU_D(STATE_ACCESS &a, uint64_t pc, uin
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_L_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_L_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.l.d");
     auto note = a.make_scoped_note("fcvt.l.d");
     (void) note;
@@ -4356,7 +4358,7 @@ static inline execute_status execute_FCVT_L_D(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_LU_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_LU_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.lu.d");
     auto note = a.make_scoped_note("fcvt.lu.d");
     (void) note;
@@ -4366,7 +4368,7 @@ static inline execute_status execute_FCVT_LU_D(STATE_ACCESS &a, uint64_t pc, uin
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_S_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_S_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.s.w");
     auto note = a.make_scoped_note("fcvt.s.w");
     (void) note;
@@ -4376,7 +4378,7 @@ static inline execute_status execute_FCVT_S_W(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_S_WU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_S_WU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.s.wu");
     auto note = a.make_scoped_note("fcvt.s.wu");
     (void) note;
@@ -4386,7 +4388,7 @@ static inline execute_status execute_FCVT_S_WU(STATE_ACCESS &a, uint64_t pc, uin
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_S_L(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_S_L(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.s.l");
     auto note = a.make_scoped_note("fcvt.s.l");
     (void) note;
@@ -4396,7 +4398,7 @@ static inline execute_status execute_FCVT_S_L(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_S_LU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_S_LU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.s.lu");
     auto note = a.make_scoped_note("fcvt.s.lu");
     (void) note;
@@ -4406,7 +4408,7 @@ static inline execute_status execute_FCVT_S_LU(STATE_ACCESS &a, uint64_t pc, uin
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_D_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_D_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.d.w");
     auto note = a.make_scoped_note("fcvt.d.w");
     (void) note;
@@ -4416,7 +4418,7 @@ static inline execute_status execute_FCVT_D_W(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_D_WU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_D_WU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.d.wu");
     auto note = a.make_scoped_note("fcvt.d.wu");
     (void) note;
@@ -4426,7 +4428,7 @@ static inline execute_status execute_FCVT_D_WU(STATE_ACCESS &a, uint64_t pc, uin
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_D_L(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_D_L(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.d.l");
     auto note = a.make_scoped_note("fcvt.d.l");
     (void) note;
@@ -4436,7 +4438,7 @@ static inline execute_status execute_FCVT_D_L(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_D_LU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_D_LU(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.d.lu");
     auto note = a.make_scoped_note("fcvt.d.lu");
     (void) note;
@@ -4446,7 +4448,7 @@ static inline execute_status execute_FCVT_D_LU(STATE_ACCESS &a, uint64_t pc, uin
 }
 
 template <typename T, typename STATE_ACCESS>
-static inline execute_status execute_FMV_F_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMV_F_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) {
@@ -4465,7 +4467,7 @@ static inline execute_status execute_FMV_F_X(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMV_W_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMV_W_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmv.w.x");
     auto note = a.make_scoped_note("fmv.w.x");
     (void) note;
@@ -4473,7 +4475,7 @@ static inline execute_status execute_FMV_W_X(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMV_D_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMV_D_X(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmv.d.x");
     auto note = a.make_scoped_note("fmv.d.x");
     (void) note;
@@ -4481,7 +4483,7 @@ static inline execute_status execute_FMV_D_X(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCLASS_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCLASS_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fclass.s");
     auto note = a.make_scoped_note("fclass.s");
     (void) note;
@@ -4489,7 +4491,7 @@ static inline execute_status execute_FCLASS_S(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMV_X_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMV_X_W(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmv.x.w");
     auto note = a.make_scoped_note("fmv.x.w");
     (void) note;
@@ -4509,7 +4511,7 @@ static inline execute_status execute_FMV_X_W(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMV_FCLASS_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMV_FCLASS_S(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_FMV_FCLASS_rm>(insn_get_rm(insn))) {
         case insn_FMV_FCLASS_rm::FMV:
             return execute_FMV_X_W(a, pc, insn);
@@ -4521,7 +4523,7 @@ static inline execute_status execute_FMV_FCLASS_S(STATE_ACCESS &a, uint64_t pc, 
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCLASS_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCLASS_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fclass.d");
     auto note = a.make_scoped_note("fclass.d");
     (void) note;
@@ -4529,7 +4531,7 @@ static inline execute_status execute_FCLASS_D(STATE_ACCESS &a, uint64_t pc, uint
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMV_X_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMV_X_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmv.x.d");
     auto note = a.make_scoped_note("fmv.x.d");
     (void) note;
@@ -4546,7 +4548,7 @@ static inline execute_status execute_FMV_X_D(STATE_ACCESS &a, uint64_t pc, uint3
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FMV_FCLASS_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FMV_FCLASS_D(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_FMV_FCLASS_rm>(insn_get_rm(insn))) {
         case insn_FMV_FCLASS_rm::FMV:
             return execute_FMV_X_D(a, pc, insn);
@@ -4558,7 +4560,7 @@ static inline execute_status execute_FMV_FCLASS_D(STATE_ACCESS &a, uint64_t pc, 
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FCVT_FMV_FCLASS(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FCVT_FMV_FCLASS(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_FD_funct7_rs2>(insn_get_funct7_rs2(insn))) {
         case insn_FD_funct7_rs2::FCVT_W_S:
             return execute_FCVT_W_S(a, pc, insn);
@@ -4610,7 +4612,7 @@ static inline execute_status execute_FCVT_FMV_FCLASS(STATE_ACCESS &a, uint64_t p
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_FD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FD(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     switch (static_cast<insn_FD_funct7>(insn_get_funct7(insn))) {
         case insn_FD_funct7::FADD_S:
             return execute_FADD_S(a, pc, insn);
@@ -4662,7 +4664,7 @@ static inline execute_status execute_FD(STATE_ACCESS &a, uint64_t pc, uint32_t i
 ///  Listings](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#chapter.19) and [Instruction
 ///  listings for RISC-V](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#table.19.2).
 template <typename STATE_ACCESS>
-static inline execute_status execute_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     // std::cerr << "insn: " << std::bitset<32>(insn) << '\n';
     //??D We should probably try doing the first branch on the combined opcode, funct3, and funct7.
     //    Maybe it reduces the number of levels needed to decode most instructions.

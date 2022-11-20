@@ -35,7 +35,7 @@
 #endif
 
 /* conversions between float and integers */
-static ICVT_INT glue(glue(glue(internal_cvt_sf, F_SIZE), _i), ICVT_SIZE)(F_UINT a, RoundingModeEnum rm,
+static inline ICVT_INT glue(glue(glue(internal_cvt_sf, F_SIZE), _i), ICVT_SIZE)(F_UINT a, RoundingModeEnum rm,
                                                                          uint32_t *pfflags, BOOL is_unsigned)
 {
     uint32_t a_sign, addend, rnd_bits;

@@ -610,7 +610,7 @@ static inline int32_t insn_U_get_imm(uint32_t insn) {
 /// \param insn Instruction.
 /// \details This function is forced to be inline because GCC may not always inline it.
 static FORCE_INLINE int32_t insn_B_get_imm(uint32_t insn) {
-    auto imm = static_cast<int>(((insn >> (31 - 12)) & (1 << 12)) | ((insn >> (25 - 5)) & 0x7e0) |
+    auto imm = static_cast<int32_t>(((insn >> (31 - 12)) & (1 << 12)) | ((insn >> (25 - 5)) & 0x7e0) |
         ((insn >> (8 - 1)) & 0x1e) | ((insn << (11 - 7)) & (1 << 11)));
     imm = (imm << 19) >> 19;
     return imm;
@@ -620,7 +620,7 @@ static FORCE_INLINE int32_t insn_B_get_imm(uint32_t insn) {
 /// \param insn Instruction.
 /// \details This function is forced to be inline because GCC may not always inline it.
 static FORCE_INLINE int32_t insn_J_get_imm(uint32_t insn) {
-    auto imm = static_cast<int>(((insn >> (31 - 20)) & (1 << 20)) | ((insn >> (21 - 1)) & 0x7fe) |
+    auto imm = static_cast<int32_t>(((insn >> (31 - 20)) & (1 << 20)) | ((insn >> (21 - 1)) & 0x7fe) |
         ((insn >> (20 - 11)) & (1 << 11)) | (insn & 0xff000));
     imm = (imm << 11) >> 11;
     return imm;
@@ -630,7 +630,7 @@ static FORCE_INLINE int32_t insn_J_get_imm(uint32_t insn) {
 /// \param insn Instruction.
 /// \details This function is forced to be inline because GCC may not always inline it.
 static FORCE_INLINE int32_t insn_S_get_imm(uint32_t insn) {
-    return (static_cast<int32_t>(insn & 0xfe000000) >> (25 - 5)) | static_cast<int>((insn >> 7) & 0b11111);
+    return (static_cast<int32_t>(insn & 0xfe000000) >> (25 - 5)) | static_cast<int32_t>((insn >> 7) & 0b11111);
 }
 
 /// \brief Obtains the 5 most significant bits of the funct7 field from an instruction.
@@ -1416,7 +1416,7 @@ static inline uint64_t read_csr_time(STATE_ACCESS &a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_hpmcounter(STATE_ACCESS &a, CSR_address csraddr, bool *status) {
-    uint64_t mask = UINT64_C(1) << (static_cast<int>(csraddr) - static_cast<int>(CSR_address::ucycle));
+    uint64_t mask = UINT64_C(1) << (static_cast<int32_t>(csraddr) - static_cast<int32_t>(CSR_address::ucycle));
     if (rdcounteren(a, mask)) {
         return read_csr_success(0, status);
     } else {

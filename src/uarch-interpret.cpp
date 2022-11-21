@@ -44,34 +44,34 @@ static inline uint8_t operand_rs2(uint32_t insn) {
     return (insn << 7) >> 27;
 }
 
-static inline int operand_imm12(uint32_t insn) {
-    return static_cast<int>(insn) >> 20;
+static inline int32_t operand_imm12(uint32_t insn) {
+    return static_cast<int32_t>(insn) >> 20;
 }
 
-static inline int operand_imm20(uint32_t insn) {
-    return (static_cast<int>(insn) >> 12) << 12;
+static inline int32_t operand_imm20(uint32_t insn) {
+    return (static_cast<int32_t>(insn) >> 12) << 12;
 }
 
-static inline int operand_jimm20(uint32_t insn) {
-    return static_cast<int>((static_cast<int>(insn) >> 31) << 20 | ((insn << 1) >> 22) << 1 |
+static inline int32_t operand_jimm20(uint32_t insn) {
+    return static_cast<int32_t>((static_cast<int32_t>(insn) >> 31) << 20 | ((insn << 1) >> 22) << 1 |
         ((insn << 11) >> 31) << 11 | ((insn << 12) >> 24) << 12);
 }
 
-static inline int operand_shamt5(uint32_t insn) {
-    return static_cast<int>((insn << 7) >> 27);
+static inline int32_t operand_shamt5(uint32_t insn) {
+    return static_cast<int32_t>((insn << 7) >> 27);
 }
 
-static inline int operand_shamt6(uint32_t insn) {
-    return static_cast<int>((insn << 6) >> 26);
+static inline int32_t operand_shamt6(uint32_t insn) {
+    return static_cast<int32_t>((insn << 6) >> 26);
 }
 
-static inline int operand_sbimm12(uint32_t insn) {
-    return static_cast<int>((static_cast<int>(insn) >> 31) << 12 | ((insn << 1) >> 26) << 5 |
+static inline int32_t operand_sbimm12(uint32_t insn) {
+    return static_cast<int32_t>((static_cast<int32_t>(insn) >> 31) << 12 | ((insn << 1) >> 26) << 5 |
         ((insn << 20) >> 28) << 1 | ((insn << 24) >> 31) << 11);
 }
 
-static inline int operand_simm12(uint32_t insn) {
-    return static_cast<int>((static_cast<int>(insn) >> 25) << 5 | (insn << 20) >> 27);
+static inline int32_t operand_simm12(uint32_t insn) {
+    return static_cast<int32_t>((static_cast<int32_t>(insn) >> 25) << 5 | (insn << 20) >> 27);
 }
 
 struct decoded_insn {
@@ -405,7 +405,7 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_ADDIW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
     auto note = a.make_scoped_note("addiw");
     (void) note;
-    auto rs1 = static_cast<int>(a.read_x(d.rs1));
+    auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
     if (d.rd != 0) {
         a.write_x(d.rd, rs1 + d.imm);
     }
@@ -484,7 +484,7 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_SLLIW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
     auto note = a.make_scoped_note("slliw");
     (void) note;
-    auto rs1 = static_cast<int>(a.read_x(d.rs1));
+    auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
     if (d.rd != 0) {
         a.write_x(d.rd, rs1 << d.imm);
     }
@@ -518,7 +518,7 @@ static inline execute_status execute_SRLIW(STATE_ACCESS &a, const decoded_insn &
     auto note = a.make_scoped_note("srliw");
     (void) note;
     auto rs1 = static_cast<uint32_t>(a.read_x(d.rs1));
-    auto rd = static_cast<int>(rs1 >> d.imm);
+    auto rd = static_cast<int32_t>(rs1 >> d.imm);
     if (d.rd != 0) {
         a.write_x(d.rd, rd);
     }
@@ -539,9 +539,9 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_SRAIW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
     auto note = a.make_scoped_note("sraiw");
     (void) note;
-    auto rs1 = static_cast<int>(a.read_x(d.rs1));
+    auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
     if (d.rd != 0) {
-        a.write_x(d.rd, static_cast<int>(rs1) >> d.imm);
+        a.write_x(d.rd, static_cast<int32_t>(rs1) >> d.imm);
     }
     return advance_pc(a, pc);
 }
@@ -560,8 +560,8 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_ADDW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
     auto note = a.make_scoped_note("addw");
     (void) note;
-    auto rs1 = static_cast<int>(a.read_x(d.rs1));
-    auto rs2 = static_cast<int>(a.read_x(d.rs2));
+    auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
+    auto rs2 = static_cast<int32_t>(a.read_x(d.rs2));
     if (d.rd != 0) {
         a.write_x(d.rd, rs1 + rs2);
     }
@@ -582,8 +582,8 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_SUBW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
     auto note = a.make_scoped_note("subw");
     (void) note;
-    auto rs1 = static_cast<int>(a.read_x(d.rs1));
-    auto rs2 = static_cast<int>(a.read_x(d.rs2));
+    auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
+    auto rs2 = static_cast<int32_t>(a.read_x(d.rs2));
     if (d.rd != 0) {
         a.write_x(d.rd, rs1 - rs2);
     }
@@ -604,8 +604,8 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_SLLW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
     auto note = a.make_scoped_note("sllw");
     (void) note;
-    auto rs1 = static_cast<int>(a.read_x(d.rs1));
-    auto rs2 = static_cast<int>(a.read_x(d.rs2));
+    auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
+    auto rs2 = static_cast<int32_t>(a.read_x(d.rs2));
     int32_t rd = rs1 << rs2;
     if (d.rd != 0) {
         a.write_x(d.rd, rd);
@@ -667,9 +667,9 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_SRAW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
     auto note = a.make_scoped_note("sraw");
     (void) note;
-    auto rs1 = static_cast<int>(a.read_x(d.rs1));
-    auto rs2 = static_cast<int>(a.read_x(d.rs2));
-    int32_t rd = static_cast<int>(rs1) >> rs2;
+    auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
+    auto rs2 = static_cast<int32_t>(a.read_x(d.rs2));
+    int32_t rd = static_cast<int32_t>(rs1) >> rs2;
     if (d.rd != 0) {
         a.write_x(d.rd, rd);
     }

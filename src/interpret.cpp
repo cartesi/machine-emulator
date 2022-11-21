@@ -1244,7 +1244,7 @@ static FORCE_INLINE execute_status execute_SLLW(STATE_ACCESS &a, uint64_t pc, ui
     auto note = a.make_scoped_note("sllw");
     (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        int32_t rs1w = static_cast<int32_t>(rs1) << (rs2 & 31);
+        int32_t rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) << (rs2 & 31));
         return static_cast<uint64_t>(rs1w);
     });
 }
@@ -2819,7 +2819,7 @@ static FORCE_INLINE execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t pc, u
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         // No need to mask lower 5 bits in imm because of the if condition a above
         // We do it anyway here to prevent problems if this code is moved
-        int32_t rs1w = static_cast<int32_t>(rs1) << (imm & 0b11111);
+        int32_t rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) << (imm & 0b11111));
         return static_cast<uint64_t>(rs1w);
     });
 }

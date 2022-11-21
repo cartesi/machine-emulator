@@ -149,7 +149,7 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppadd
     // most significant bit in VPN[levels]
     // Hence, the use of arithmetic shifts here
     int vaddr_shift = XLEN - (PAGE_NUMBER_SHIFT + levels * 9);
-    if (((static_cast<int64_t>(vaddr) << vaddr_shift) >> vaddr_shift) != static_cast<int64_t>(vaddr)) {
+    if ((static_cast<int64_t>(vaddr << vaddr_shift) >> vaddr_shift) != static_cast<int64_t>(vaddr)) {
         return false;
     }
 

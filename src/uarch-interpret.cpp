@@ -49,12 +49,12 @@ static inline int32_t operand_imm12(uint32_t insn) {
 }
 
 static inline int32_t operand_imm20(uint32_t insn) {
-    return (static_cast<int32_t>(insn) >> 12) << 12;
+    return static_cast<int32_t>((insn >> 12) << 12);
 }
 
 static inline int32_t operand_jimm20(uint32_t insn) {
-    return static_cast<int32_t>((static_cast<int32_t>(insn) >> 31) << 20 | ((insn << 1) >> 22) << 1 |
-        ((insn << 11) >> 31) << 11 | ((insn << 12) >> 24) << 12);
+    return static_cast<int32_t>(static_cast<uint32_t>(static_cast<int32_t>(insn) >> 31) << 20 |
+        ((insn << 1) >> 22) << 1 | ((insn << 11) >> 31) << 11 | ((insn << 12) >> 24) << 12);
 }
 
 static inline int32_t operand_shamt5(uint32_t insn) {
@@ -66,12 +66,12 @@ static inline int32_t operand_shamt6(uint32_t insn) {
 }
 
 static inline int32_t operand_sbimm12(uint32_t insn) {
-    return static_cast<int32_t>((static_cast<int32_t>(insn) >> 31) << 12 | ((insn << 1) >> 26) << 5 |
-        ((insn << 20) >> 28) << 1 | ((insn << 24) >> 31) << 11);
+    return static_cast<int32_t>(static_cast<uint32_t>(static_cast<int32_t>(insn) >> 31) << 12 |
+        ((insn << 1) >> 26) << 5 | ((insn << 20) >> 28) << 1 | ((insn << 24) >> 31) << 11);
 }
 
 static inline int32_t operand_simm12(uint32_t insn) {
-    return static_cast<int32_t>((static_cast<int32_t>(insn) >> 25) << 5 | (insn << 20) >> 27);
+    return static_cast<int32_t>((static_cast<uint32_t>(static_cast<int32_t>(insn) >> 25) << 5) | ((insn << 20) >> 27));
 }
 
 struct decoded_insn {
@@ -396,7 +396,9 @@ static inline execute_status execute_ADDI(STATE_ACCESS &a, const decoded_insn &d
     auto note = a.make_scoped_note("addi");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, a.read_x(d.rs1) + d.imm);
+        int64_t val = 0;
+        __builtin_add_overflow(static_cast<int64_t>(a.read_x(d.rs1)), static_cast<int64_t>(d.imm), &val);
+        a.write_x(d.rd, static_cast<uint64_t>(val));
     }
     return advance_pc(a, pc);
 }
@@ -407,7 +409,9 @@ static inline execute_status execute_ADDIW(STATE_ACCESS &a, const decoded_insn &
     (void) note;
     auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
     if (d.rd != 0) {
-        a.write_x(d.rd, rs1 + d.imm);
+        int32_t val = 0;
+        __builtin_add_overflow(rs1, d.imm, &val);
+        a.write_x(d.rd, static_cast<uint64_t>(val));
     }
     return advance_pc(a, pc);
 }
@@ -475,7 +479,7 @@ static inline execute_status execute_SLLI(STATE_ACCESS &a, const decoded_insn &d
     auto note = a.make_scoped_note("slli");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, a.read_x(d.rs1) << d.imm);
+        a.write_x(d.rd, a.read_x(d.rs1) << (d.imm & 0b111111));
     }
     return advance_pc(a, pc);
 }
@@ -484,9 +488,9 @@ template <typename STATE_ACCESS>
 static inline execute_status execute_SLLIW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
     auto note = a.make_scoped_note("slliw");
     (void) note;
-    auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
+    auto rs1 = static_cast<uint32_t>(a.read_x(d.rs1));
     if (d.rd != 0) {
-        a.write_x(d.rd, rs1 << d.imm);
+        a.write_x(d.rd, static_cast<int32_t>(rs1 << (d.imm & 0b11111)));
     }
     return advance_pc(a, pc);
 }
@@ -496,7 +500,7 @@ static inline execute_status execute_SRLI(STATE_ACCESS &a, const decoded_insn &d
     auto note = a.make_scoped_note("srli");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, a.read_x(d.rs1) >> d.imm);
+        a.write_x(d.rd, a.read_x(d.rs1) >> (d.imm & (XLEN - 1)));
     }
     return advance_pc(a, pc);
 }
@@ -506,7 +510,7 @@ static inline execute_status execute_SRLW(STATE_ACCESS &a, const decoded_insn &d
     auto note = a.make_scoped_note("srlw");
     (void) note;
     auto rs1 = static_cast<uint32_t>(a.read_x(d.rs1));
-    int32_t rd = rs1 >> a.read_x(d.rs2);
+    int32_t rd = static_cast<int32_t>(rs1 >> (a.read_x(d.rs2) & 31));
     if (d.rd != 0) {
         a.write_x(d.rd, rd);
     }
@@ -518,7 +522,7 @@ static inline execute_status execute_SRLIW(STATE_ACCESS &a, const decoded_insn &
     auto note = a.make_scoped_note("srliw");
     (void) note;
     auto rs1 = static_cast<uint32_t>(a.read_x(d.rs1));
-    auto rd = static_cast<int32_t>(rs1 >> d.imm);
+    auto rd = static_cast<int32_t>(rs1 >> (d.imm & 0b11111));
     if (d.rd != 0) {
         a.write_x(d.rd, rd);
     }
@@ -530,7 +534,7 @@ static inline execute_status execute_SRAI(STATE_ACCESS &a, const decoded_insn &d
     auto note = a.make_scoped_note("srai");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, static_cast<int64_t>(a.read_x(d.rs1)) >> d.imm);
+        a.write_x(d.rd, static_cast<int64_t>(a.read_x(d.rs1)) >> (d.imm & (XLEN - 1)));
     }
     return advance_pc(a, pc);
 }
@@ -541,7 +545,7 @@ static inline execute_status execute_SRAIW(STATE_ACCESS &a, const decoded_insn &
     (void) note;
     auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
     if (d.rd != 0) {
-        a.write_x(d.rd, static_cast<int32_t>(rs1) >> d.imm);
+        a.write_x(d.rd, static_cast<int32_t>(rs1) >> (d.imm & 0b11111));
     }
     return advance_pc(a, pc);
 }
@@ -563,7 +567,9 @@ static inline execute_status execute_ADDW(STATE_ACCESS &a, const decoded_insn &d
     auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
     auto rs2 = static_cast<int32_t>(a.read_x(d.rs2));
     if (d.rd != 0) {
-        a.write_x(d.rd, rs1 + rs2);
+        int32_t val = 0;
+        __builtin_add_overflow(rs1, rs2, &val);
+        a.write_x(d.rd, val);
     }
     return advance_pc(a, pc);
 }
@@ -585,7 +591,9 @@ static inline execute_status execute_SUBW(STATE_ACCESS &a, const decoded_insn &d
     auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
     auto rs2 = static_cast<int32_t>(a.read_x(d.rs2));
     if (d.rd != 0) {
-        a.write_x(d.rd, rs1 - rs2);
+        int32_t val = 0;
+        __builtin_sub_overflow(rs1, rs2, &val);
+        a.write_x(d.rd, val);
     }
     return advance_pc(a, pc);
 }
@@ -595,7 +603,7 @@ static inline execute_status execute_SLL(STATE_ACCESS &a, const decoded_insn &d,
     auto note = a.make_scoped_note("sll");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, static_cast<int64_t>(a.read_x(d.rs1)) << static_cast<int64_t>(a.read_x(d.rs2)));
+        a.write_x(d.rd, a.read_x(d.rs1) << (a.read_x(d.rs2) & (XLEN - 1)));
     }
     return advance_pc(a, pc);
 }
@@ -606,9 +614,9 @@ static inline execute_status execute_SLLW(STATE_ACCESS &a, const decoded_insn &d
     (void) note;
     auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
     auto rs2 = static_cast<int32_t>(a.read_x(d.rs2));
-    int32_t rd = rs1 << rs2;
+    int32_t rd = static_cast<int32_t>(static_cast<uint32_t>(rs1) << (rs2 & 31));
     if (d.rd != 0) {
-        a.write_x(d.rd, rd);
+        a.write_x(d.rd, static_cast<uint64_t>(rd));
     }
     return advance_pc(a, pc);
 }
@@ -648,7 +656,7 @@ static inline execute_status execute_SRL(STATE_ACCESS &a, const decoded_insn &d,
     auto note = a.make_scoped_note("srl");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, a.read_x(d.rs1) >> a.read_x(d.rs2));
+        a.write_x(d.rd, a.read_x(d.rs1) >> (a.read_x(d.rs2) & (XLEN - 1)));
     }
     return advance_pc(a, pc);
 }
@@ -658,7 +666,7 @@ static inline execute_status execute_SRA(STATE_ACCESS &a, const decoded_insn &d,
     auto note = a.make_scoped_note("sra");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, static_cast<int64_t>(a.read_x(d.rs1)) >> a.read_x(d.rs2));
+        a.write_x(d.rd, static_cast<int64_t>(a.read_x(d.rs1)) >> (a.read_x(d.rs2) & (XLEN - 1)));
     }
     return advance_pc(a, pc);
 }
@@ -669,7 +677,7 @@ static inline execute_status execute_SRAW(STATE_ACCESS &a, const decoded_insn &d
     (void) note;
     auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
     auto rs2 = static_cast<int32_t>(a.read_x(d.rs2));
-    int32_t rd = static_cast<int32_t>(rs1) >> rs2;
+    int32_t rd = static_cast<int32_t>(rs1) >> (rs2 & 31);
     if (d.rd != 0) {
         a.write_x(d.rd, rd);
     }

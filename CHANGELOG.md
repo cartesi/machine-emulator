@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added support for RISC-V floating-point instructions
 - Added read/write virtual memory methods
+- Added --quiet flag to cartesi-machine.lua
 
 ### Changed
 

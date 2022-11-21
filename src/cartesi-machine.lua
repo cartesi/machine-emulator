@@ -19,9 +19,10 @@
 local cartesi = require"cartesi"
 local util = require"cartesi.util"
 
-local function stderr(fmt, ...)
+local function stderr_unsilenceable(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
 end
+local stderr = stderr_unsilenceable
 
 local function adjust_images_path(path)
     if not path then return "" end
@@ -308,7 +309,11 @@ where options are:
     dump all PMA ranges to disk when done.
 
   --assert-rolling-template
-    exit with failure in case the generated machine is not yielded
+    exit with failure in case the generated machine is not yielded.
+
+  --quiet
+    supress cartesi-machine.lua output.
+    exceptions: --initial-hash, --final-hash and text emitted from the target.
 
 and command and arguments:
 
@@ -375,6 +380,7 @@ local cmdline_opts_finished = false
 local store_config = false
 local load_config = false
 local exec_arguments = {}
+local quiet = false
 
 local function parse_memory_range(opts, what, all)
     local f = util.parse_options(opts, {
@@ -667,6 +673,12 @@ local options = {
         assert_rolling_template = true
         return true
     end },
+    { "%-%-quiet", function(all)
+        if not all then return false end
+        stderr = function(...) end
+        quiet = true
+        return true
+    end },
     { "^%-%-step$", function(all)
         if not all then return false end
         step = true
@@ -827,8 +839,8 @@ local function get_file_length(filename)
     return size
 end
 
-local function print_root_hash(machine)
-    stderr("%u: %s\n", machine:read_mcycle(), util.hexhash(machine:get_root_hash()))
+local function print_root_hash(machine, print)
+    (print or stderr)("%u: %s\n", machine:read_mcycle(), util.hexhash(machine:get_root_hash()))
 end
 
 local function store_memory_range(r, indent, output)
@@ -1124,7 +1136,9 @@ else
             table.concat(mtdparts, ";"))
     end
 
-    config.rom.bootargs = append(config.rom.bootargs, append_rom_bootargs)
+    config.rom.bootargs = append(
+        append(config.rom.bootargs, append_rom_bootargs),
+        quiet and ' splash=no' or '')
 
     if #exec_arguments > 0 then
         config.rom.bootargs = append(config.rom.bootargs, "-- " ..
@@ -1396,7 +1410,7 @@ else
     local cycles = machine:read_mcycle()
     if initial_hash then
         assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
-        print_root_hash(machine)
+        print_root_hash(machine, stderr_unsilenceable)
     end
     dump_value_proofs(machine, initial_proof, config.htif.console_getchar)
     local exit_code = 0
@@ -1532,7 +1546,7 @@ else
     end
     if final_hash then
         assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
-        print_root_hash(machine)
+        print_root_hash(machine, stderr_unsilenceable)
     end
     dump_value_proofs(machine, final_proof, config.htif.console_getchar)
     if store_dir then

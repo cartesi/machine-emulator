@@ -43,12 +43,9 @@ struct uarch_state {
     uint64_t pc;                               ///< Program counter.
     std::array<uint64_t, UARCH_X_REG_COUNT> x; ///< Register file.
     uint64_t cycle;                            ///< Cycles counter
-    uint64_t ram_length;                       ///< ROM length
-    uint64_t rom_length;                       ///< RAM length
-
-    /// Map of physical memory ranges
-    boost::container::static_vector<pma_entry, PMA_MAX> pmas;
-    pma_entry empty_pma; ///< fallback to PMA for empty range
+    pma_entry rom;                             ///< Memory range for micro ROM
+    pma_entry ram;                             ///< Memory range for micro RAM
+    pma_entry empty_pma;                       ///< Empty range fallback
 };
 
 } // namespace cartesi

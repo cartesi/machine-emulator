@@ -140,11 +140,3 @@ uarch-ram-entry.o: $(UARCH_SRC_DIR)/uarch-ram-entry.S
 
 clean:
 	rm -f *.ld *.elf *.bin *.tmp link.ld *.o
-
-MICRO_EMULATOR_ROM_BIN := $(abspath uarch-rom.bin)
-MACRO_EMULATOR_ROM_BIN := $(abspath ../../rom.bin)
-MACRO_EMULATOR_RAM_BIN := $(abspath ../../linux.bin)
-RUNNER_SCRIPT := $(abspath ./run-micro-emulator.lua)
-SRCDIR := $(abspath .)
-run:
-	$(RUNNER_SCRIPT) $(MICRO_EMULATOR_ROM_BIN)  $(MACRO_EMULATOR_ROM_BIN) $(MACRO_EMULATOR_RAM_BIN)

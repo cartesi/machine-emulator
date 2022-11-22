@@ -17,6 +17,7 @@
 #ifndef I_UARCH_STATE_ACCESS_H
 #define I_UARCH_STATE_ACCESS_H
 
+#include "bracket-note.h"
 #include "pma.h"
 #include <cinttypes>
 
@@ -35,7 +36,21 @@ class i_uarch_state_access { // CRTP
     }
 
 public:
-    auto read_x(int r) const {
+    /// \brief Adds an annotation bracket to the log
+    /// \param type Type of bracket
+    /// \param text String with the text for the annotation
+    void push_bracket(bracket_type type, const char *text) {
+        return derived().do_push_bracket(type, text);
+    }
+
+    /// \brief Adds annotations to the state, bracketing a scope
+    /// \param text String with the text for the annotation
+    /// \returns An object that, when constructed and destroyed issues an annonation.
+    auto make_scoped_note(const char *text) {
+        return derived().do_make_scoped_note(text);
+    }
+
+    auto read_x(int r) {
         return derived().do_read_x(r);
     }
 
@@ -43,7 +58,7 @@ public:
         return derived().do_write_x(r, v);
     }
 
-    auto read_pc() const {
+    auto read_pc() {
         return derived().do_read_pc();
     }
 
@@ -51,7 +66,7 @@ public:
         return derived().do_write_pc(v);
     }
 
-    auto read_cycle() const {
+    auto read_cycle() {
         return derived().do_read_cycle();
     }
 

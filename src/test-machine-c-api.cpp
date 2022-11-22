@@ -22,6 +22,9 @@
 #include <tuple>
 #include <vector>
 
+// decorator for disabling a test that needs to be ported to the new uarch-based access log
+using disabled_for_uarch = boost::unit_test::disabled;
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -1894,7 +1897,7 @@ protected:
     cm_access_log_type _log_type;
 };
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_log_test, default_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_log_test, default_machine_fixture, *disabled_for_uarch()) {
     char *err_msg{};
     int error_code = cm_verify_access_log(nullptr, &_runtime_config, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
@@ -1906,7 +1909,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_log_test, default_machine_
     cm_delete_error_message(err_msg);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_rt_config_test, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_rt_config_test, access_log_machine_fixture,
+    *disabled_for_uarch()) {
     char *err_msg{};
     int error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
@@ -1923,7 +1927,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_rt_config_test, access_log
     cm_delete_access_log(_access_log);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_error_placeholder_test, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_error_placeholder_test, access_log_machine_fixture,
+    *disabled_for_uarch()) {
     char *err_msg{};
     int error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
@@ -1935,7 +1940,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_error_placeholder_test, ac
     cm_delete_access_log(_access_log);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_machine_test, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_machine_test, access_log_machine_fixture, *disabled_for_uarch()) {
     auto f = [l = &_access_log, lt = _log_type]() {
         char *err_msg{};
         cm_step(nullptr, lt, false, l, &err_msg);
@@ -1943,7 +1948,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_machine_test, access_log_machine_fixtur
     monitor_system_throw(f);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_access_log_test, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_access_log_test, access_log_machine_fixture, *disabled_for_uarch()) {
     auto f = [m = _machine, lt = _log_type]() {
         char *err_msg{};
         cm_step(m, lt, false, nullptr, &err_msg);
@@ -1951,12 +1956,13 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_access_log_test, access_log_machine_fix
     monitor_system_throw(f);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_error_placeholder_test, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_error_placeholder_test, access_log_machine_fixture, *disabled_for_uarch()) {
     auto f = [m = _machine, l = &_access_log, lt = _log_type]() { cm_step(m, lt, false, l, nullptr); };
     monitor_system_throw(f);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_hash0_test, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_hash0_test, access_log_machine_fixture,
+    *disabled_for_uarch()) {
     char *err_msg{};
     cm_hash hash1;
     int error_code = cm_verify_state_transition(nullptr, _access_log, &hash1, &_runtime_config, false, &err_msg);
@@ -1996,7 +2002,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_access_log_test, acc
     cm_delete_error_message(err_msg);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, access_log_machine_fixture,
+    *disabled_for_uarch()) {
     char *err_msg{};
     int error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
@@ -2023,7 +2030,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_error_placeholder_te
     monitor_system_throw(f);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture, *disabled_for_uarch()) {
     char *err_msg{};
     cm_hash hash0;
     cm_hash hash1;
@@ -2051,7 +2058,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
     cm_delete_access_log(_access_log);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, access_log_machine_fixture, *disabled_for_uarch()) {
     char *err_msg{};
 
     int error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);

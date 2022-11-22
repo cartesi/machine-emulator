@@ -29,7 +29,6 @@
 #include "clint-factory.h"
 #include "htif-factory.h"
 #include "interpret.h"
-#include "logged-state-access.h"
 #include "machine.h"
 #include "riscv-constants.h"
 #include "rom.h"
@@ -38,7 +37,6 @@
 #include "shadow-state-factory.h"
 #include "shadow-tlb-factory.h"
 #include "state-access.h"
-#include "step-state-access.h"
 #include "strict-aliasing.h"
 #include "translate-virtual-address.h"
 #include "uarch-interpret.h"
@@ -422,10 +420,15 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     for (auto &pma : m_s.pmas | sliced(0, m_s.pmas.size() - 1)) {
         m_pmas.push_back(&pma);
     }
-    // Second, add the pmas visible only to the microarchitecture interpreter, whichincludes a sentinel
-    for (auto &pma : m_uarch.get_state().pmas) {
-        m_pmas.push_back(&pma);
+    // Second, add the pmas visible only to the microarchitecture interpreter
+    if (!m_uarch.get_state().rom.get_istart_E()) {
+        m_pmas.push_back(&m_uarch.get_state().rom);
     }
+    if (!m_uarch.get_state().ram.get_istart_E()) {
+        m_pmas.push_back(&m_uarch.get_state().ram);
+    }
+    // Last, add sentinel
+    m_pmas.push_back(&m_s.empty_pma);
 
     // Initialize TLB device
     // this must be done after all PMA entries are already registered, so we can lookup page addresses
@@ -654,10 +657,11 @@ void machine::store_pmas(const machine_config &c, const std::string &dir) const 
         store_memory_pma(find_pma_entry<uint64_t>(r.voucher_hashes.start), dir);
         store_memory_pma(find_pma_entry<uint64_t>(r.notice_hashes.start), dir);
     }
-    for (const auto &pma : m_uarch.get_state().pmas) {
-        if (pma.get_istart_M()) {
-            store_memory_pma(pma, dir);
-        }
+    if (!m_uarch.get_state().rom.get_istart_E()) {
+        store_memory_pma(m_uarch.get_state().rom, dir);
+    }
+    if (!m_uarch.get_state().ram.get_istart_E()) {
+        store_memory_pma(m_uarch.get_state().ram, dir);
     }
 }
 
@@ -1630,7 +1634,7 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
     // or entirely outside it.
     if (log2_size < machine_merkle_tree::get_log2_page_size()) {
         uint64_t length = UINT64_C(1) << log2_size;
-        const pma_entry &pma = find_pma_entry(address, length);
+        const pma_entry &pma = find_pma_entry(m_pmas, address, length);
         auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
         const unsigned char *page_data = nullptr;
         // If the PMA range is empty, we know the desired range is
@@ -1836,21 +1840,20 @@ void machine::run_inner_loop(uint64_t mcycle_end) {
     interpret(a, mcycle_end);
 }
 
-static uint64_t saturate_next_mcycle(uint64_t mcycle) {
-    return (mcycle < UINT64_MAX) ? mcycle + 1 : UINT64_MAX;
+static uint64_t saturate_next_cycle(uint64_t cycle) {
+    return (cycle < UINT64_MAX) ? cycle + 1 : UINT64_MAX;
 }
 
-static uint64_t get_next_mcycle_from_log(const access_log &log) {
+static uint64_t get_next_uarch_cycle_from_log(const access_log &log) {
     const auto &first_access = log.get_accesses().front();
-    auto mcycle_address = PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(shadow_state_csr::mcycle);
-
-    // The first access should always be a read to mcycle
-    if (first_access.get_type() != access_type::read || first_access.get_address() != mcycle_address) {
+    // The first access should always be a read to uarch cycle
+    if (first_access.get_type() != access_type::read ||
+        first_access.get_address() != shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_cycle)) {
         throw std::invalid_argument{"invalid access log"};
     }
 
-    uint64_t mcycle = get_word_access_data(first_access.get_read());
-    return saturate_next_mcycle(mcycle);
+    uint64_t uarch_cycle = get_word_access_data(first_access.get_read());
+    return saturate_next_cycle(uarch_cycle);
 }
 
 void machine::verify_access_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
@@ -1859,9 +1862,9 @@ void machine::verify_access_log(const access_log &log, const machine_runtime_con
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
-    step_state_access a(log, log.get_log_type().has_proofs(), one_based);
-    uint64_t next_mcycle = get_next_mcycle_from_log(log);
-    interpret(a, next_mcycle);
+    uarch_replay_state_access a(log, log.get_log_type().has_proofs(), one_based);
+    uint64_t next_uarch_cycle = get_next_uarch_cycle_from_log(log);
+    uarch_interpret(a, next_uarch_cycle);
     a.finish();
 }
 
@@ -1886,18 +1889,18 @@ void machine::verify_state_transition(const hash_type &root_hash_before, const a
     }
     // Make sure the access log starts from the same root hash as the state
     if (log.get_accesses().front().get_proof().value().get_root_hash() != root_hash_before) {
-        throw std::invalid_argument{"mismatch in root hash before step"};
+        throw std::invalid_argument{"mismatch in root hash before replay"};
     }
     // Verify all intermediate state transitions
-    step_state_access a(log, true /* verify proofs! */, one_based);
-    uint64_t next_mcycle = get_next_mcycle_from_log(log);
-    interpret(a, next_mcycle);
+    uarch_replay_state_access a(log, true /* verify proofs! */, one_based);
+    uint64_t next_uarch_cycle = get_next_uarch_cycle_from_log(log);
+    uarch_interpret(a, next_uarch_cycle);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
     hash_type obtained_root_hash;
     a.get_root_hash(obtained_root_hash);
     if (obtained_root_hash != root_hash_after) {
-        throw std::invalid_argument{"mismatch in root hash after step"};
+        throw std::invalid_argument{"mismatch in root hash after replay"};
     }
 }
 
@@ -1908,10 +1911,10 @@ access_log machine::step(const access_log::type &log_type, bool one_based) {
         get_root_hash(root_hash_before);
     }
     // Call interpret with a logged state access object
-    logged_state_access a(*this, log_type);
+    uarch_record_state_access a(m_uarch.get_state(), *this, log_type);
     a.push_bracket(bracket_type::begin, "step");
-    uint64_t next_mcycle = saturate_next_mcycle(read_mcycle());
-    interpret(a, next_mcycle);
+    uint64_t next_uarch_cycle = saturate_next_cycle(read_uarch_cycle());
+    uarch_interpret(a, next_uarch_cycle);
     a.push_bracket(bracket_type::end, "step");
     // Verify access log before returning
     if (log_type.has_proofs()) {
@@ -1927,9 +1930,8 @@ access_log machine::step(const access_log::type &log_type, bool one_based) {
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 void machine::uarch_run(uint64_t uarch_cycle_end) {
-    state_access a(*this);
-    uarch_state_access<state_access> ua(m_uarch, a);
-    uarch_interpret(ua, uarch_cycle_end);
+    uarch_state_access a(m_uarch.get_state(), get_state());
+    uarch_interpret(a, uarch_cycle_end);
 }
 
 void machine::run(uint64_t mcycle_end) {

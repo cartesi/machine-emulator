@@ -14,23 +14,56 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#ifndef uarch_machine_H
-#define uarch_machine_H
+#ifndef UARCH_STATE_ACCESS_H
+#define UARCH_STATE_ACCESS_H
 
 #include "i-uarch-state-access.h"
+#include "machine-state.h"
+#include "shadow-state.h"
 #include "uarch-bridge.h"
 #include "uarch-constants.h"
-#include "uarch-machine.h"
+#include "uarch-state.h"
 
 namespace cartesi {
 
-template <typename MACRO_STATE_ACCESS>
-class uarch_state_access : public i_uarch_state_access<uarch_state_access<MACRO_STATE_ACCESS>> {
-    uarch_machine &m_um;
-    MACRO_STATE_ACCESS &m_a;
+class uarch_state_access : public i_uarch_state_access<uarch_state_access> {
+    uarch_state &m_us;
+    machine_state &m_s;
+
+    /// \brief Obtain Memory PMA entry that covers a given physical memory region
+    /// \param paddr Start of physical memory region.
+    /// \param length Length of physical memory region.
+    /// \returns Corresponding entry if found, or a sentinel entry
+    /// for an empty range.
+    pma_entry &find_memory_pma_entry(uint64_t paddr, size_t length) {
+        // First, search microarchitecture private PMA entries
+        if (m_us.rom.contains(paddr, length)) {
+            return m_us.rom;
+        }
+        if (m_us.ram.contains(paddr, length)) {
+            return m_us.ram;
+        }
+        int i = 0;
+        // Search machine memory PMA entries (not devices or anything else)
+        while (true) {
+            auto &pma = m_s.pmas[i];
+            // The pmas array always contain a sentinel. It is an entry with
+            // zero length. If we hit it, return it
+            if (pma.get_length() == 0) {
+                return pma;
+            }
+            if (pma.get_istart_M() && pma.contains(paddr, length)) {
+                return pma;
+            }
+            i++;
+        }
+    }
 
 public:
-    explicit uarch_state_access(uarch_machine &um, MACRO_STATE_ACCESS &a) : m_um(um), m_a(a) {
+    /// \brief Constructor from machine and uarch states.
+    /// \param um Reference to uarch state.
+    /// \param m Reference to machine state.
+    explicit uarch_state_access(uarch_state &us, machine_state &s) : m_us(us), m_s(s) {
         ;
     }
 
@@ -48,62 +81,89 @@ public:
 private:
     friend i_uarch_state_access<uarch_state_access>;
 
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    void do_push_bracket(bracket_type type, const char *text) {
+        (void) type;
+        (void) text;
+    }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    int do_make_scoped_note(const char *text) {
+        (void) text;
+        return 0;
+    }
+
     uint64_t do_read_x(int reg) const {
-        return m_um.get_state().x[reg];
+        return m_us.x[reg];
     }
 
     void do_write_x(int reg, uint64_t val) {
         assert(reg != 0);
-        m_um.get_state().x[reg] = val;
+        m_us.x[reg] = val;
     }
 
     uint64_t do_read_pc() const {
-        return m_um.get_state().pc;
+        return m_us.pc;
     }
 
     void do_write_pc(uint64_t val) {
-        m_um.get_state().pc = val;
+        m_us.pc = val;
     }
 
     uint64_t do_read_cycle() const {
-        return m_um.get_state().cycle;
+        return m_us.cycle;
     }
 
     void do_write_cycle(uint64_t val) {
-        m_um.get_state().cycle = val;
+        m_us.cycle = val;
     }
 
     template <typename T>
     void do_read_word(uint64_t paddr, T *data) {
-        auto &pma = find_pma_entry<T>(paddr);
+        // Find a memory range that contains the specified address
+        auto &pma = find_memory_pma_entry(paddr, sizeof(T));
         if (pma.get_istart_E()) {
-            return uarch_bridge<MACRO_STATE_ACCESS>::read_word(m_a, paddr, data);
+            // This word doesn't fall within any memory PMA range.
+            // Check if uarch is trying to access a machine state register
+            return read_register(paddr, data);
         }
         if (!pma.get_istart_R()) {
             throw std::runtime_error("pma is not readable");
         }
-        if (!pma.get_istart_M()) {
-            throw std::runtime_error("Attempt to read non-memory pma");
-        }
-
+        // Found a writable memory range. Access host memory accordingly.
         uint64_t hoffset = paddr - pma.get_start();
         unsigned char *hmem = pma.get_memory().get_host_memory() + hoffset;
         *data = aliased_aligned_read<T>(hmem);
     }
 
+    /// \brief Reads a uint64 machine state register mapped to a memory address
+    /// \param paddr Address of the state register
+    /// \param data Pointer receiving register value
+    void read_register(uint64_t paddr, uint64_t *data) {
+        return uarch_bridge::read_register(paddr, m_s, m_us, data);
+    }
+
+    template <typename T>
+    void read_register(uint64_t paddr, T *data) {
+        (void) paddr;
+        (void) data;
+        throw std::runtime_error("invalid memory read access from microarchitecture");
+    }
+
+    /// \brief Fallback to error on all other word sizes
     template <typename T>
     void do_write_word(uint64_t paddr, T data) {
-        auto &pma = find_pma_entry<T>(paddr);
+        // Find a memory range that contains the specified address
+        auto &pma = find_memory_pma_entry(paddr, sizeof(T));
         if (pma.get_istart_E()) {
-            return uarch_bridge<MACRO_STATE_ACCESS>::write_word(m_a, paddr, data);
+            // This word doesn't fall within any memory PMA range.
+            // Check if uarch is trying to access a machine state register
+            return write_register(paddr, data);
         }
         if (!pma.get_istart_W()) {
             throw std::runtime_error("pma is not writable");
         }
-        if (!pma.get_istart_M()) {
-            throw std::runtime_error("Attempt to write non-memory pma");
-        }
-
+        // Found a writable memory range. Access host memory accordingly.
         uint64_t hoffset = paddr - pma.get_start();
         unsigned char *hmem = pma.get_memory().get_host_memory() + hoffset;
         aliased_aligned_write(hmem, data);
@@ -111,19 +171,19 @@ private:
         pma.mark_dirty_page(paddr_page - pma.get_start());
     }
 
+    /// \brief Writes a uint64 machine state register mapped to a memory address
+    /// \param paddr Address of the state register
+    /// \param data New register value
+    void write_register(uint64_t paddr, uint64_t data) {
+        return uarch_bridge::write_register(paddr, m_s, data);
+    }
+
+    /// \brief Fallback to error on all other word sizes
     template <typename T>
-    pma_entry &find_pma_entry(uint64_t paddr) {
-        int i = 0;
-        while (true) {
-            auto &pma = m_um.get_state().pmas[i];
-            if (pma.get_length() == 0) {
-                return pma; // sentinel  == end of pmas
-            }
-            if (paddr >= pma.get_start() && paddr - pma.get_start() <= pma.get_length() - sizeof(T)) {
-                return pma;
-            }
-            i++;
-        }
+    void write_register(uint64_t paddr, T data) {
+        (void) paddr;
+        (void) data;
+        throw std::runtime_error("invalid memory write access from microarchitecture");
     }
 };
 

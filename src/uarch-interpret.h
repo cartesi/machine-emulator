@@ -17,7 +17,8 @@
 #ifndef UARCH_INTERPRET_H
 #define UARCH_INTERPRET_H
 
-#include "state-access.h"
+#include "uarch-record-state-access.h"
+#include "uarch-replay-state-access.h"
 #include "uarch-state-access.h"
 
 namespace cartesi {
@@ -25,10 +26,17 @@ namespace cartesi {
 enum class uarch_interpreter_status : int { success, halt };
 
 // Run the microarchitecture interpreter until cycle hits a target or the micro machine halts
-template <typename MACRO_STATE_ACCESS>
-uarch_interpreter_status uarch_interpret(uarch_state_access<MACRO_STATE_ACCESS> &a, uint64_t uarch_cycle_end);
+template <typename STATE_ACCESS>
+uarch_interpreter_status uarch_interpret(STATE_ACCESS &a, uint64_t uarch_cycle_end);
 
-extern template uarch_interpreter_status uarch_interpret(uarch_state_access<state_access> &ua, uint64_t cycle_end);
+// Declaration of explicit instantiation in module uarch_interpret.cpp
+extern template uarch_interpreter_status uarch_interpret(uarch_state_access &a, uint64_t cycle_end);
+
+// Declaration of explicit instantiation in module uarch_interpret.cpp
+extern template uarch_interpreter_status uarch_interpret(uarch_record_state_access &a, uint64_t cycle_end);
+
+// Declaration of explicit instantiation in module uarch_interpret.cpp
+extern template uarch_interpreter_status uarch_interpret(uarch_replay_state_access &a, uint64_t cycle_end);
 
 } // namespace cartesi
 

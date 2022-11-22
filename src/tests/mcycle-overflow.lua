@@ -83,7 +83,7 @@ do_test("machine run shouldn't change state in max mcycle", function(machine)
 end)
 
 for _, proofs in ipairs{true, false} do
-    do_test("machine step should do nothing on max mcycle [proofs=" ..
+    test_util.disabled_test("machine step should do nothing on max mcycle [proofs=" ..
             tostring(proofs) .. "]", function(machine)
         machine:write_mcycle(MAX_MCYCLE)
         local log = machine:step{proofs=proofs}

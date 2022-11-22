@@ -263,7 +263,7 @@ do_test("machine initial hash should match",
 )
 
 print("\n\ntesting root hash after step one")
-do_test("machine root hash after step one should match",
+test_util.disabled_test("machine root hash after step one should match",
     function(machine)
         -- Get starting root hash
         local root_hash = machine:get_root_hash()
@@ -298,7 +298,7 @@ do_test("machine root hash after step one should match",
 )
 
 print("\n\ntesting proof after step one")
-do_test("proof check should pass",
+test_util.disabled_test("proof check should pass",
     function(machine)
         local log_type = {}
         machine:step(log_type)
@@ -517,7 +517,7 @@ test_util.make_do_test(build_machine, machine_type, {
 )
 
 print("\n\n check for relevant register values after step 1")
-do_test("register values should match",
+test_util.disabled_test("register values should match",
     function(machine)
         local pc_before = machine:read_pc()
         local minstret_before = machine:read_minstret()

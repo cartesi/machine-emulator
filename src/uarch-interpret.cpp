@@ -208,6 +208,8 @@ static inline execute_status branch(STATE_ACCESS &a, uint64_t new_pc) {
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_LUI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("lui");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, d.imm);
     }
@@ -216,6 +218,8 @@ static inline execute_status execute_LUI(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_AUIPC(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("auipc");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, a.read_pc() + d.imm);
     }
@@ -224,6 +228,8 @@ static inline execute_status execute_AUIPC(STATE_ACCESS &a, const decoded_insn &
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_JAL(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("jal");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, pc + 4);
     }
@@ -232,6 +238,8 @@ static inline execute_status execute_JAL(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_JALR(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("jalr");
+    (void) note;
     auto rs1 = a.read_x(d.rs1);
     if (d.rd != 0) {
         a.write_x(d.rd, pc + 4);
@@ -241,6 +249,8 @@ static inline execute_status execute_JALR(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_BEQ(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("beq");
+    (void) note;
     if (a.read_x(d.rs1) == a.read_x(d.rs2)) {
         return branch(a, a.read_pc() + d.imm);
     }
@@ -249,6 +259,8 @@ static inline execute_status execute_BEQ(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_BNE(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("bne");
+    (void) note;
     if (a.read_x(d.rs1) != a.read_x(d.rs2)) {
         return branch(a, a.read_pc() + d.imm);
     }
@@ -257,6 +269,8 @@ static inline execute_status execute_BNE(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_BLT(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("blt");
+    (void) note;
     if (static_cast<int64_t>(a.read_x(d.rs1)) < static_cast<int64_t>(a.read_x(d.rs2))) {
         return branch(a, a.read_pc() + d.imm);
     }
@@ -265,6 +279,8 @@ static inline execute_status execute_BLT(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_BGE(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("bge");
+    (void) note;
     if (static_cast<int64_t>(a.read_x(d.rs1)) >= static_cast<int64_t>(a.read_x(d.rs2))) {
         return branch(a, a.read_pc() + d.imm);
     }
@@ -273,6 +289,8 @@ static inline execute_status execute_BGE(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_BLTU(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("bltu");
+    (void) note;
     if (a.read_x(d.rs1) < a.read_x(d.rs2)) {
         return branch(a, a.read_pc() + d.imm);
     }
@@ -281,6 +299,8 @@ static inline execute_status execute_BLTU(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_BGEU(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("bgeu");
+    (void) note;
     if (a.read_x(d.rs1) >= a.read_x(d.rs2)) {
         return branch(a, a.read_pc() + d.imm);
     }
@@ -289,6 +309,8 @@ static inline execute_status execute_BGEU(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_LB(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("lb");
+    (void) note;
     int8_t i8 = 0;
     a.read_word(a.read_x(d.rs1) + d.imm, &i8);
     if (d.rd != 0) {
@@ -299,6 +321,8 @@ static inline execute_status execute_LB(STATE_ACCESS &a, const decoded_insn &d, 
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_LHU(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("lhu");
+    (void) note;
     uint16_t u16 = 0;
     a.read_word(a.read_x(d.rs1) + d.imm, &u16);
     if (d.rd != 0) {
@@ -309,6 +333,8 @@ static inline execute_status execute_LHU(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_LH(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("lh");
+    (void) note;
     int16_t i16 = 0;
     a.read_word(a.read_x(d.rs1) + d.imm, &i16);
     if (d.rd != 0) {
@@ -319,6 +345,8 @@ static inline execute_status execute_LH(STATE_ACCESS &a, const decoded_insn &d, 
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_LW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("lw");
+    (void) note;
     int32_t i32 = 0;
     a.read_word(a.read_x(d.rs1) + d.imm, &i32); // sign promotion
     if (d.rd != 0) {
@@ -329,6 +357,8 @@ static inline execute_status execute_LW(STATE_ACCESS &a, const decoded_insn &d, 
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_LBU(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("lbu");
+    (void) note;
     uint8_t u8 = 0;
     a.read_word(a.read_x(d.rs1) + d.imm, &u8);
     if (d.rd != 0) {
@@ -339,24 +369,32 @@ static inline execute_status execute_LBU(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SB(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("sb");
+    (void) note;
     a.write_word(a.read_x(d.rs1) + d.imm, static_cast<uint8_t>(a.read_x(d.rs2)));
     return advance_pc(a, pc);
 }
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SH(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("sh");
+    (void) note;
     a.write_word(a.read_x(d.rs1) + d.imm, static_cast<uint16_t>(a.read_x(d.rs2)));
     return advance_pc(a, pc);
 }
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("sw");
+    (void) note;
     a.write_word(a.read_x(d.rs1) + d.imm, static_cast<uint32_t>(a.read_x(d.rs2)));
     return advance_pc(a, pc);
 }
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_ADDI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("addi");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, a.read_x(d.rs1) + d.imm);
     }
@@ -365,6 +403,8 @@ static inline execute_status execute_ADDI(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_ADDIW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("addiw");
+    (void) note;
     auto rs1 = static_cast<int>(a.read_x(d.rs1));
     if (d.rd != 0) {
         a.write_x(d.rd, rs1 + d.imm);
@@ -374,6 +414,8 @@ static inline execute_status execute_ADDIW(STATE_ACCESS &a, const decoded_insn &
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLTI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("slti");
+    (void) note;
     if (d.rd != 0) {
         if (static_cast<int64_t>(a.read_x(d.rs1)) < d.imm) {
             a.write_x(d.rd, 1);
@@ -386,6 +428,8 @@ static inline execute_status execute_SLTI(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLTIU(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("sltiu");
+    (void) note;
     if (d.rd != 0) {
         if (a.read_x(d.rs1) < static_cast<uint64_t>(d.imm)) {
             a.write_x(d.rd, 1);
@@ -398,6 +442,8 @@ static inline execute_status execute_SLTIU(STATE_ACCESS &a, const decoded_insn &
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_XORI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("xori");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, a.read_x(d.rs1) ^ d.imm);
     }
@@ -406,6 +452,8 @@ static inline execute_status execute_XORI(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_ORI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("ori");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, a.read_x(d.rs1) | d.imm);
     }
@@ -414,6 +462,8 @@ static inline execute_status execute_ORI(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_ANDI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("andi");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, a.read_x(d.rs1) & d.imm);
     }
@@ -422,6 +472,8 @@ static inline execute_status execute_ANDI(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLLI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("slli");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, a.read_x(d.rs1) << d.imm);
     }
@@ -430,6 +482,8 @@ static inline execute_status execute_SLLI(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLLIW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("slliw");
+    (void) note;
     auto rs1 = static_cast<int>(a.read_x(d.rs1));
     if (d.rd != 0) {
         a.write_x(d.rd, rs1 << d.imm);
@@ -439,6 +493,8 @@ static inline execute_status execute_SLLIW(STATE_ACCESS &a, const decoded_insn &
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRLI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("srli");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, a.read_x(d.rs1) >> d.imm);
     }
@@ -447,6 +503,8 @@ static inline execute_status execute_SRLI(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRLW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("srlw");
+    (void) note;
     auto rs1 = static_cast<uint32_t>(a.read_x(d.rs1));
     int32_t rd = rs1 >> a.read_x(d.rs2);
     if (d.rd != 0) {
@@ -457,6 +515,8 @@ static inline execute_status execute_SRLW(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRLIW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("srliw");
+    (void) note;
     auto rs1 = static_cast<uint32_t>(a.read_x(d.rs1));
     auto rd = static_cast<int>(rs1 >> d.imm);
     if (d.rd != 0) {
@@ -467,6 +527,8 @@ static inline execute_status execute_SRLIW(STATE_ACCESS &a, const decoded_insn &
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRAI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("srai");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, static_cast<int64_t>(a.read_x(d.rs1)) >> d.imm);
     }
@@ -475,6 +537,8 @@ static inline execute_status execute_SRAI(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRAIW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("sraiw");
+    (void) note;
     auto rs1 = static_cast<int>(a.read_x(d.rs1));
     if (d.rd != 0) {
         a.write_x(d.rd, static_cast<int>(rs1) >> d.imm);
@@ -484,6 +548,8 @@ static inline execute_status execute_SRAIW(STATE_ACCESS &a, const decoded_insn &
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_ADD(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("add");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, a.read_x(d.rs1) + a.read_x(d.rs2));
     }
@@ -492,6 +558,8 @@ static inline execute_status execute_ADD(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_ADDW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("addw");
+    (void) note;
     auto rs1 = static_cast<int>(a.read_x(d.rs1));
     auto rs2 = static_cast<int>(a.read_x(d.rs2));
     if (d.rd != 0) {
@@ -502,6 +570,8 @@ static inline execute_status execute_ADDW(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SUB(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("sub");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, a.read_x(d.rs1) - a.read_x(d.rs2));
     }
@@ -510,6 +580,8 @@ static inline execute_status execute_SUB(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SUBW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("subw");
+    (void) note;
     auto rs1 = static_cast<int>(a.read_x(d.rs1));
     auto rs2 = static_cast<int>(a.read_x(d.rs2));
     if (d.rd != 0) {
@@ -520,6 +592,8 @@ static inline execute_status execute_SUBW(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLL(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("sll");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, static_cast<int64_t>(a.read_x(d.rs1)) << static_cast<int64_t>(a.read_x(d.rs2)));
     }
@@ -528,6 +602,8 @@ static inline execute_status execute_SLL(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLLW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("sllw");
+    (void) note;
     auto rs1 = static_cast<int>(a.read_x(d.rs1));
     auto rs2 = static_cast<int>(a.read_x(d.rs2));
     int32_t rd = rs1 << rs2;
@@ -539,6 +615,8 @@ static inline execute_status execute_SLLW(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLT(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("slt");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, static_cast<int64_t>(a.read_x(d.rs1)) < static_cast<int64_t>(a.read_x(d.rs2)) ? 1 : 0);
     }
@@ -547,6 +625,8 @@ static inline execute_status execute_SLT(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SLTU(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("sltu");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, a.read_x(d.rs1) < a.read_x(d.rs2) ? 1 : 0);
     }
@@ -555,6 +635,8 @@ static inline execute_status execute_SLTU(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_XOR(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("xor");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, a.read_x(d.rs1) ^ a.read_x(d.rs2));
     }
@@ -563,6 +645,8 @@ static inline execute_status execute_XOR(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRL(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("srl");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, a.read_x(d.rs1) >> a.read_x(d.rs2));
     }
@@ -571,6 +655,8 @@ static inline execute_status execute_SRL(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRA(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("sra");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, static_cast<int64_t>(a.read_x(d.rs1)) >> a.read_x(d.rs2));
     }
@@ -579,6 +665,8 @@ static inline execute_status execute_SRA(STATE_ACCESS &a, const decoded_insn &d,
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_SRAW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("sraw");
+    (void) note;
     auto rs1 = static_cast<int>(a.read_x(d.rs1));
     auto rs2 = static_cast<int>(a.read_x(d.rs2));
     int32_t rd = static_cast<int>(rs1) >> rs2;
@@ -590,6 +678,8 @@ static inline execute_status execute_SRAW(STATE_ACCESS &a, const decoded_insn &d
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_OR(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("or");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, a.read_x(d.rs1) | a.read_x(d.rs2));
     }
@@ -598,6 +688,8 @@ static inline execute_status execute_OR(STATE_ACCESS &a, const decoded_insn &d, 
 
 template <typename STATE_ACCESS>
 static execute_status execute_AND(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("and");
+    (void) note;
     if (d.rd != 0) {
         a.write_x(d.rd, a.read_x(d.rs1) & a.read_x(d.rs2));
     }
@@ -606,11 +698,15 @@ static execute_status execute_AND(STATE_ACCESS &a, const decoded_insn &d, uint64
 
 template <typename STATE_ACCESS>
 static execute_status execute_FENCE(STATE_ACCESS &a, const decoded_insn &, uint64_t pc) {
+    auto note = a.make_scoped_note("fence");
+    (void) note;
     return advance_pc(a, pc);
 }
 
 template <typename STATE_ACCESS>
 static execute_status execute_LWU(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("lwu");
+    (void) note;
     uint32_t u32 = 0;
     a.read_word(a.read_x(d.rs1) + d.imm, &u32); // sign promotion
     if (d.rd != 0) {
@@ -621,6 +717,8 @@ static execute_status execute_LWU(STATE_ACCESS &a, const decoded_insn &d, uint64
 
 template <typename STATE_ACCESS>
 static execute_status execute_LD(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("ld");
+    (void) note;
     uint64_t u64 = 0;
     a.read_word(a.read_x(d.rs1) + d.imm, &u64);
     if (d.rd != 0) {
@@ -631,6 +729,8 @@ static execute_status execute_LD(STATE_ACCESS &a, const decoded_insn &d, uint64_
 
 template <typename STATE_ACCESS>
 static execute_status execute_SD(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+    auto note = a.make_scoped_note("sd");
+    (void) note;
     a.write_word(a.read_x(d.rs1) + d.imm, a.read_x(d.rs2));
     return advance_pc(a, pc);
 }
@@ -877,26 +977,30 @@ static inline execute_status execute_insn(STATE_ACCESS &a, uint32_t insn, uint64
 }
 
 template <typename STATE_ACCESS>
-uarch_interpreter_status uarch_interpret(uarch_state_access<STATE_ACCESS> &a, uint64_t cycle_end) {
-    for (;;) {
+uarch_interpreter_status uarch_interpret(STATE_ACCESS &a, uint64_t cycle_end) {
+    auto cycle = a.read_cycle();
+    while (cycle < cycle_end) {
         uint64_t pc = 0;
         uint32_t insn = 0;
-        if (a.read_cycle() >= cycle_end) {
-            return uarch_interpreter_status::success;
-        }
-
         fetch_insn(a, &pc, &insn);
-        execute_status status = execute_insn(a, insn, pc);
+        auto status = execute_insn(a, insn, pc);
         if (status == execute_status::halt) {
             a.write_cycle(0);
             return uarch_interpreter_status::halt;
         }
-
-        uint64_t cycle = a.read_cycle();
-        a.write_cycle(cycle + 1);
+        cycle = cycle + 1;
+        a.write_cycle(cycle);
     }
+    return uarch_interpreter_status::success;
 }
 
-template uarch_interpreter_status uarch_interpret(uarch_state_access<state_access> &ua, uint64_t uarch_cycle_end);
+// Explicit instantiation for uarch_state_access
+template uarch_interpreter_status uarch_interpret(uarch_state_access &a, uint64_t uarch_cycle_end);
+
+// Explicit instantiation for uarch_record_state_access
+template uarch_interpreter_status uarch_interpret(uarch_record_state_access &a, uint64_t uarch_cycle_end);
+
+// Explicit instantiation for uarch_replay_state_access
+template uarch_interpreter_status uarch_interpret(uarch_replay_state_access &a, uint64_t uarch_cycle_end);
 
 } // namespace cartesi

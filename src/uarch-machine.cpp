@@ -43,69 +43,27 @@ const pma_entry::flags uarch_machine::m_ram_flags{
 uarch_machine::uarch_machine(uarch_config c) : m_s{}, m_c{std::move(c)} {
     m_s.pc = m_c.processor.pc;
     m_s.cycle = m_c.processor.cycle;
-    m_s.rom_length = m_c.rom.length;
-    m_s.ram_length = m_c.ram.length;
     // General purpose registers
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
         m_s.x[i] = m_c.processor.x[i];
     }
     // Register memory PMAs
     if (!m_c.ram.image_filename.empty()) {
-        register_pma_entry(
-            make_callocd_memory_pma_entry("uarch RAM"s, PMA_UARCH_RAM_START, m_c.ram.length, m_c.ram.image_filename)
-                .set_flags(m_ram_flags));
+        m_s.ram =
+            make_callocd_memory_pma_entry("uarch ROM", PMA_UARCH_RAM_START, m_c.ram.length, m_c.ram.image_filename)
+                .set_flags(m_ram_flags);
     } else if (m_c.ram.length > 0) {
-        register_pma_entry(
-            make_callocd_memory_pma_entry("uarch RAM"s, PMA_UARCH_RAM_START, m_c.ram.length).set_flags(m_ram_flags));
+        m_s.ram =
+            make_callocd_memory_pma_entry("uarch ROM", PMA_UARCH_RAM_START, m_c.ram.length).set_flags(m_ram_flags);
     }
-
     if (!m_c.rom.image_filename.empty()) {
-        register_pma_entry(
-            make_callocd_memory_pma_entry("uarch ROM"s, PMA_UARCH_ROM_START, m_c.rom.length, m_c.rom.image_filename)
-                .set_flags(m_rom_flags));
+        m_s.rom =
+            make_callocd_memory_pma_entry("uarch RAM", PMA_UARCH_ROM_START, m_c.rom.length, m_c.rom.image_filename)
+                .set_flags(m_rom_flags);
     } else if (m_c.rom.length > 0) {
-        register_pma_entry(
-            make_callocd_memory_pma_entry("uarch ROM"s, PMA_UARCH_ROM_START, m_c.rom.length).set_flags(m_rom_flags));
+        m_s.rom =
+            make_callocd_memory_pma_entry("uarch RAM", PMA_UARCH_ROM_START, m_c.rom.length).set_flags(m_rom_flags);
     }
-
-    register_pma_entry(make_empty_pma_entry("uarch sentinel"s, 0, 0));
-}
-
-pma_entry &uarch_machine::register_pma_entry(pma_entry &&pma) {
-    if (m_s.pmas.capacity() <= m_s.pmas.size()) { // NOLINT(readability-static-accessed-through-instance)
-        throw std::runtime_error{"too many PMAs when adding "s + pma.get_description()};
-    }
-    auto start = pma.get_start();
-    if ((start & (PMA_PAGE_SIZE - 1)) != 0) {
-        throw std::invalid_argument{"start of "s + pma.get_description() + " ("s + std::to_string(start) +
-            ") must be aligned to page boundary of "s + std::to_string(PMA_PAGE_SIZE) + " bytes"s};
-    }
-    auto length = pma.get_length();
-    if ((length & (PMA_PAGE_SIZE - 1)) != 0) {
-        throw std::invalid_argument{"length of "s + pma.get_description() + " ("s + std::to_string(length) +
-            ") must be multiple of page size "s + std::to_string(PMA_PAGE_SIZE)};
-    }
-    // Check PMA range, when not the sentinel PMA entry
-    if (!(length == 0 && start == 0)) {
-        if (length == 0) {
-            throw std::invalid_argument{"length of "s + pma.get_description() + " cannot be zero"s};
-        }
-        // Checks if PMA is in addressable range, safe unsigned overflows
-        if (start > PMA_ADDRESSABLE_MASK || (length - 1) > (PMA_ADDRESSABLE_MASK - start)) {
-            throw std::invalid_argument{
-                "range of "s + pma.get_description() + " must use at most 56 bits to be addressable"s};
-        }
-    }
-    // Range A overlaps with B if A starts before B ends and A ends after B starts
-    for (const auto &existing_pma : m_s.pmas) {
-        if (start < existing_pma.get_start() + existing_pma.get_length() && start + length > existing_pma.get_start()) {
-            throw std::invalid_argument{"range of "s + pma.get_description() + " overlaps with range of existing "s +
-                existing_pma.get_description()};
-        }
-    }
-    pma.set_index(static_cast<int>(m_s.pmas.size()));
-    m_s.pmas.push_back(std::move(pma));
-    return m_s.pmas.back();
 }
 
 uint64_t uarch_machine::read_cycle(void) const {
@@ -135,11 +93,11 @@ void uarch_machine::write_x(int i, uint64_t val) {
 }
 
 uint64_t uarch_machine::read_rom_length(void) const {
-    return m_s.rom_length;
+    return m_s.rom.get_length();
 }
 
 uint64_t uarch_machine::read_ram_length(void) const {
-    return m_s.ram_length;
+    return m_s.ram.get_length();
 }
 
 pma_entry &uarch_machine::find_pma_entry(uint64_t paddr, size_t length) {
@@ -148,19 +106,13 @@ pma_entry &uarch_machine::find_pma_entry(uint64_t paddr, size_t length) {
 }
 
 const pma_entry &uarch_machine::find_pma_entry(uint64_t paddr, size_t length) const {
-    for (const auto &pma : m_s.pmas) {
-        // Stop at first empty PMA
-        if (pma.get_length() == 0) {
-            return pma;
-        }
-        // Check if data is in range
-        if (paddr >= pma.get_start() && pma.get_length() >= length &&
-            paddr - pma.get_start() <= pma.get_length() - length) {
-            return pma;
-        }
+    if (m_s.rom.contains(paddr, length)) {
+        return m_s.rom;
     }
-    // Last PMA is always the empty range
-    return m_s.pmas.back();
+    if (m_s.ram.contains(paddr, length)) {
+        return m_s.ram;
+    }
+    return m_s.empty_pma;
 }
 
 } // namespace cartesi

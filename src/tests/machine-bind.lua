@@ -557,7 +557,7 @@ do_test("writen and expected register values should match",
 )
 
 print("\n\n perform step and check mcycle register")
-do_test("mcycle value should match",
+test_util.disabled_test("mcycle value should match",
     function(machine)
         local log_type = {}
         local mcycle_initial_value = machine:read_csr('mcycle')
@@ -653,7 +653,7 @@ do_test("dumped register values should match",
 )
 
 print("\n\n dump log  to console")
-do_test("dumped log content should match",
+test_util.disabled_test("dumped log content should match",
     function(machine)
         -- Dump log and check values
         local lua_code = [[ "
@@ -689,7 +689,7 @@ do_test("dumped log content should match",
 )
 
 print("\n\ntesting step and verification")
-do_test("machine step should pass verifications",
+test_util.disabled_test("machine step should pass verifications",
     function(machine)
         local module = cartesi
         if (type == "grpc") then

@@ -14,230 +14,105 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#ifndef UARCH_MEMORY_MAPPED_IO_H
-#define UARCH_MEMORY_MAPPED_IO_H
+#ifndef UARCH_BRIDGE_H
+#define UARCH_BRIDGE_H
 
 #include "clint.h"
 #include "htif.h"
+#include "machine-state.h"
+#include "riscv-constants.h"
 #include "shadow-state.h"
+#include "strict-aliasing.h"
 #include "uarch-constants.h"
+#include "uarch-state.h"
 
 namespace cartesi {
 
 /// \brief Allows microarchitecture code to access the machine state
-/// \tparam STATE_ACCESS Machine state accessor type (i_state_access derived)
-template <typename STATE_ACCESS>
 class uarch_bridge {
 public:
-    /// \brief Writes a word to the machine state.
-    /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
-    /// \param a Machine state accessor object.
-    /// \param paddr Address that identifies the machine state register or memory to be written to
-    /// \param data Data to write
+    /// \brief Updates the value of a machine state register.
+    /// \param s Machine state.
+    /// \param paddr Address that identifies the machine register to be written.
+    /// \param data Data to write.
     /// \details \{
-    /// If the address falls within a device memory range, the respective register is updated.
-    /// If the address falls within a memory range, that memory address is updated.
-    /// An exception is thrown, otherwise.
+    /// An exception is thrown if paddr can't me mapped to a valid state register.
     //// \}
-    template <typename T>
-    static void write_word(STATE_ACCESS &a, uint64_t paddr, T data) {
-        // Check if the memory address refers to a machine state field (register, CSR, flag)
-        if (try_write_register(a, paddr, data)) {
-            return; // The machine state was updated, we are done here
+    static void write_register(uint64_t paddr, machine_state &s, uint64_t data) {
+        if (try_write_x(s, paddr, data)) {
+            return;
         }
-
-        // Assumes that this is an attempt to write to a memory range
-        // Find the pma entry that contains this word
-        auto &pma = a.template find_pma_entry<T>(paddr);
-
-        if (pma.get_istart_E()) {
-            throw std::runtime_error(
-                "write memory attempt from microarchitecture does not reference any registered PMA range");
+        if (try_write_f(s, paddr, data)) {
+            return;
         }
-
-        if (!pma.get_istart_W()) {
-            throw std::runtime_error("Memory range referenced by microarchitecture is not writable");
-        }
-
-        if (!pma.get_istart_M()) {
-            // we only allow memory writes.
-            throw std::runtime_error("Memory write attempt from microarchitecture references a non-memory PMA range");
-        }
-
-        // Write to host memory
-        uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        unsigned char *hpage = a.get_host_memory(pma) + (paddr_page - pma.get_start());
-        pma.mark_dirty_page(paddr_page - pma.get_start());
-        uint64_t hoffset = paddr & PAGE_OFFSET_MASK;
-        a.write_memory_word(paddr, hpage, hoffset, data);
-    }
-
-    /// \brief Reads a word from the machine state.
-    /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
-    /// \param a Machine state accessor object.
-    /// \param paddr Address that identifies the machine state register or memory to be read from.
-    /// \param data Receives the word that was read
-    /// \details \{
-    /// If the address falls within a device memory range, the respective register is read.
-    /// If the address falls within a memory range, that memory address is read.
-    /// An exception is thrown, otherwise.
-    //// \}
-    template <typename T>
-    static void read_word(STATE_ACCESS &a, uint64_t paddr, T *data) {
-        // Check if the memory address refers to a machine state field (register, CSR, flag)
-        if (try_read_register(a, paddr, data)) {
-            return; // The machine state was read, we are done here
-        }
-
-        // Assumes that this is an attempt to write to a memory range
-        // Find the pma entry that contains this word
-        auto &pma = a.template find_pma_entry<T>(paddr);
-        if (pma.get_istart_E()) {
-            throw std::runtime_error(
-                "Read memory attempt from microarchitecture does not reference any registered PMA range");
-        }
-
-        if (!pma.get_istart_R()) {
-            throw std::runtime_error("Memory range referenced by microarchitecture is not readable");
-        }
-
-        if (!pma.get_istart_M()) {
-            // we only allow memory read.
-            throw std::runtime_error("Memory read attempt from microarchitecture references a non-memory PMA range");
-        }
-
-        // Read host memory
-        unsigned char *hpage = nullptr;
-        uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        hpage = a.get_host_memory(pma) + (paddr_page - pma.get_start());
-        uint64_t hoffset = paddr & PAGE_OFFSET_MASK;
-        a.template read_memory_word(paddr, hpage, hoffset, data);
-    }
-
-private:
-    template <typename T>
-    /// \brief Tries to write a word to a machine state register.
-    /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
-    /// \param a Machine state accessor object.
-    /// \param paddr Address of the state register to write to.
-    /// \param data Data to write
-    /// \return true, if paddr identifies a valid machine state register and the register is successfully updated.
-    static bool try_write_register(STATE_ACCESS &a, uint64_t paddr, T data) {
-        (void) a;
-        (void) paddr;
-        (void) data;
-        return false;
-    }
-
-    /// \brief Tries to write a uint64_t word to a machine state register.
-    static bool try_write_register(STATE_ACCESS &a, uint64_t paddr, uint64_t data) {
-        if (try_write_x(a, paddr, data)) {
-            return true;
-        }
-        if (try_write_f(a, paddr, data)) {
-            return true;
-        }
-        if (try_write_tlb(a, paddr, data)) {
-            return true;
+        if (try_write_tlb(s, paddr, data)) {
+            return;
         }
         switch (static_cast<shadow_state_csr>(paddr)) {
             case shadow_state_csr::pc:
-                a.write_pc(data);
-                return true;
+                return success_write(s.pc, data);
             case shadow_state_csr::fcsr:
-                a.write_fcsr(data);
-                return true;
+                return success_write(s.fcsr, data);
             case shadow_state_csr::mcycle:
-                a.write_mcycle(data);
-                return true;
+                return success_write(s.mcycle, data);
             case shadow_state_csr::minstret:
-                a.write_minstret(data);
-                return true;
+                return success_write(s.minstret, data);
             case shadow_state_csr::mstatus:
-                a.write_mstatus(data);
-                return true;
+                return success_write(s.mstatus, data);
             case shadow_state_csr::mtvec:
-                a.write_mtvec(data);
-                return true;
+                return success_write(s.mtvec, data);
             case shadow_state_csr::mscratch:
-                a.write_mscratch(data);
-                return true;
+                return success_write(s.mscratch, data);
             case shadow_state_csr::mepc:
-                a.write_mepc(data);
-                return true;
+                return success_write(s.mepc, data);
             case shadow_state_csr::mcause:
-                a.write_mcause(data);
-                return true;
+                return success_write(s.mcause, data);
             case shadow_state_csr::mtval:
-                a.write_mtval(data);
-                return true;
+                return success_write(s.mtval, data);
             case shadow_state_csr::misa:
-                a.write_misa(data);
-                return true;
+                return success_write(s.misa, data);
             case shadow_state_csr::mie:
-                a.write_mie(data);
-                return true;
+                return success_write(s.mie, data);
             case shadow_state_csr::mip:
-                a.write_mip(data);
-                return true;
+                return success_write(s.mip, data);
             case shadow_state_csr::medeleg:
-                a.write_medeleg(data);
-                return true;
+                return success_write(s.medeleg, data);
             case shadow_state_csr::mideleg:
-                a.write_mideleg(data);
-                return true;
+                return success_write(s.mideleg, data);
             case shadow_state_csr::mcounteren:
-                a.write_mcounteren(data);
-                return true;
+                return success_write(s.mcounteren, data);
             case shadow_state_csr::menvcfg:
-                a.write_menvcfg(data);
-                return true;
+                return success_write(s.menvcfg, data);
             case shadow_state_csr::stvec:
-                a.write_stvec(data);
-                return true;
+                return success_write(s.stvec, data);
             case shadow_state_csr::sscratch:
-                a.write_sscratch(data);
-                return true;
+                return success_write(s.sscratch, data);
             case shadow_state_csr::sepc:
-                a.write_sepc(data);
-                return true;
+                return success_write(s.sepc, data);
             case shadow_state_csr::scause:
-                a.write_scause(data);
-                return true;
+                return success_write(s.scause, data);
             case shadow_state_csr::stval:
-                a.write_stval(data);
-                return true;
+                return success_write(s.stval, data);
             case shadow_state_csr::satp:
-                a.write_satp(data);
-                return true;
+                return success_write(s.satp, data);
             case shadow_state_csr::scounteren:
-                a.write_scounteren(data);
-                return true;
+                return success_write(s.scounteren, data);
             case shadow_state_csr::senvcfg:
-                a.write_senvcfg(data);
-                return true;
+                return success_write(s.senvcfg, data);
             case shadow_state_csr::ilrsc:
-                a.write_ilrsc(data);
-                return true;
+                return success_write(s.ilrsc, data);
             case shadow_state_csr::iflags:
-                a.write_iflags(data);
-                return true;
+                s.write_iflags(data);
+                return;
             case shadow_state_csr::clint_mtimecmp:
-                a.write_clint_mtimecmp(data);
-                return true;
+                return success_write(s.clint.mtimecmp, data);
             case shadow_state_csr::htif_tohost:
-                a.write_htif_tohost(data);
-                return true;
+                return success_write(s.htif.tohost, data);
             case shadow_state_csr::htif_fromhost:
-                a.write_htif_fromhost(data);
-                return true;
+                return success_write(s.htif.fromhost, data);
             case shadow_state_csr::brkflag:
-                if (data) {
-                    a.set_brkflag();
-                } else {
-                    a.reset_brkflag();
-                }
-                return true;
+                s.brkflag = data;
+                return;
             default:
                 break;
         }
@@ -247,166 +122,254 @@ private:
             case uarch_mmio::abort:
                 return uarch_abort();
         }
-        return false;
+
+        throw std::runtime_error("invalid write memory access from microarchitecture");
     }
 
-    /// \brief Tries to read a word from a machine state register.
-    /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
-    /// \param a Machine state accessor object.
-    /// \param paddr Address of the state register to write to.
-    /// \param data Receives the data that was read
-    /// \return true, if paddr identifies a valid machine state register and the register is successfully read.
-    template <typename T>
-    static bool try_read_register(STATE_ACCESS &a, uint64_t paddr, T *data) {
-        (void) a;
-        (void) paddr;
-        (void) data;
-        return false;
-    }
-
-    /// \brief Tries to read a uint64_t word from a machine state register.
-    static bool try_read_register(STATE_ACCESS &a, uint64_t paddr, uint64_t *data) {
-        if (try_read_x(a, paddr, data)) {
-            return true;
+    /// \brief Reads a machine state register.
+    /// \param s Machine state.
+    /// \param us Microarchitecture (uarch) state.
+    /// \param paddr Address that identifies the machine register to be read.
+    /// \param data Receives the state register value.
+    /// \details \{
+    /// An exception is thrown if paddr can't me mapped to a valid state register.
+    //// \}
+    static void read_register(uint64_t paddr, machine_state &s, uarch_state &us, uint64_t *data) {
+        if (try_read_x(s, paddr, data)) {
+            return;
         }
-        if (try_read_f(a, paddr, data)) {
-            return true;
+        if (try_read_f(s, paddr, data)) {
+            return;
         }
-        if (try_read_tlb(a, paddr, data)) {
-            return true;
+        if (try_read_tlb(s, paddr, data)) {
+            return;
         }
-        if (try_read_pma(a, paddr, data)) {
-            return true;
+        if (try_read_pma(s, paddr, data)) {
+            return;
         }
         switch (static_cast<shadow_state_csr>(paddr)) {
             case shadow_state_csr::pc:
-                *data = a.read_pc();
-                return true;
+                return success_read(s.pc, data);
             case shadow_state_csr::fcsr:
-                *data = a.read_fcsr();
-                return true;
+                return success_read(s.fcsr, data);
             case shadow_state_csr::mvendorid:
-                *data = a.read_mvendorid();
-                return true;
+                return success_read(MVENDORID_INIT, data);
             case shadow_state_csr::marchid:
-                *data = a.read_marchid();
-                return true;
+                return success_read(MARCHID_INIT, data);
             case shadow_state_csr::mimpid:
-                *data = a.read_mimpid();
-                return true;
+                return success_read(MIMPID_INIT, data);
             case shadow_state_csr::mcycle:
-                *data = a.read_mcycle();
-                return true;
+                return success_read(s.mcycle, data);
             case shadow_state_csr::minstret:
-                *data = a.read_minstret();
-                return true;
+                return success_read(s.minstret, data);
             case shadow_state_csr::mstatus:
-                *data = a.read_mstatus();
-                return true;
+                return success_read(s.mstatus, data);
             case shadow_state_csr::mtvec:
-                *data = a.read_mtvec();
-                return true;
+                return success_read(s.mtvec, data);
             case shadow_state_csr::mscratch:
-                *data = a.read_mscratch();
-                return true;
+                return success_read(s.mscratch, data);
             case shadow_state_csr::mepc:
-                *data = a.read_mepc();
-                return true;
+                return success_read(s.mepc, data);
             case shadow_state_csr::mcause:
-                *data = a.read_mcause();
-                return true;
+                return success_read(s.mcause, data);
             case shadow_state_csr::mtval:
-                *data = a.read_mtval();
-                return true;
+                return success_read(s.mtval, data);
             case shadow_state_csr::misa:
-                *data = a.read_misa();
-                return true;
+                return success_read(s.misa, data);
             case shadow_state_csr::mie:
-                *data = a.read_mie();
-                return true;
+                return success_read(s.mie, data);
             case shadow_state_csr::mip:
-                *data = a.read_mip();
-                return true;
+                return success_read(s.mip, data);
             case shadow_state_csr::medeleg:
-                *data = a.read_medeleg();
-                return true;
+                return success_read(s.medeleg, data);
             case shadow_state_csr::mideleg:
-                *data = a.read_mideleg();
-                return true;
+                return success_read(s.mideleg, data);
             case shadow_state_csr::mcounteren:
-                *data = a.read_mcounteren();
-                return true;
+                return success_read(s.mcounteren, data);
             case shadow_state_csr::menvcfg:
-                *data = a.read_menvcfg();
-                return true;
+                return success_read(s.menvcfg, data);
             case shadow_state_csr::stvec:
-                *data = a.read_stvec();
-                return true;
+                return success_read(s.stvec, data);
             case shadow_state_csr::sscratch:
-                *data = a.read_sscratch();
-                return true;
+                return success_read(s.sscratch, data);
             case shadow_state_csr::sepc:
-                *data = a.read_sepc();
-                return true;
+                return success_read(s.sepc, data);
             case shadow_state_csr::scause:
-                *data = a.read_scause();
-                return true;
+                return success_read(s.scause, data);
             case shadow_state_csr::stval:
-                *data = a.read_stval();
-                return true;
+                return success_read(s.stval, data);
             case shadow_state_csr::satp:
-                *data = a.read_satp();
-                return true;
+                return success_read(s.satp, data);
             case shadow_state_csr::scounteren:
-                *data = a.read_scounteren();
-                return true;
+                return success_read(s.scounteren, data);
             case shadow_state_csr::senvcfg:
-                *data = a.read_senvcfg();
-                return true;
+                return success_read(s.senvcfg, data);
             case shadow_state_csr::ilrsc:
-                *data = a.read_ilrsc();
-                return true;
+                return success_read(s.ilrsc, data);
             case shadow_state_csr::iflags:
-                *data = a.read_iflags();
-                return true;
+                *data = s.read_iflags();
+                return;
             case shadow_state_csr::brkflag:
-                *data = a.read_brkflag();
-                return true;
+                *data = s.brkflag;
+                return;
             case shadow_state_csr::clint_mtimecmp:
-                *data = a.read_clint_mtimecmp();
-                return true;
+                return success_read(s.clint.mtimecmp, data);
             case shadow_state_csr::htif_tohost:
-                *data = a.read_htif_tohost();
-                return true;
+                return success_read(s.htif.tohost, data);
             case shadow_state_csr::htif_fromhost:
-                *data = a.read_htif_fromhost();
-                return true;
+                return success_read(s.htif.fromhost, data);
             case shadow_state_csr::htif_ihalt:
-                *data = a.read_htif_ihalt();
-                return true;
+                return success_read(s.htif.ihalt, data);
             case shadow_state_csr::htif_iconsole:
-                *data = a.read_htif_iconsole();
-                return true;
+                return success_read(s.htif.iconsole, data);
             case shadow_state_csr::htif_iyield:
-                *data = a.read_htif_iyield();
-                return true;
+                return success_read(s.htif.iyield, data);
             case shadow_state_csr::uarch_rom_length:
-                *data = a.read_uarch_rom_length();
-                return true;
+                *data = us.rom.get_length();
+                return;
             case shadow_state_csr::uarch_ram_length:
-                *data = a.read_uarch_ram_length();
-                return true;
+                *data = us.ram.get_length();
+                return;
             default:
-                return false;
+                break;
         }
+
+        throw std::runtime_error("invalid read memory access from microarchitecture");
     }
 
+    /// \brief Reads the name of a machine state register.
+    /// \param paddr Address of the state register.
+    /// \returns The register name, if paddr maps to a register, or nullptr otherwise.
+    static const char *get_register_name(uint64_t paddr) {
+        switch (static_cast<shadow_state_csr>(paddr)) {
+            case shadow_state_csr::pc:
+                return "pc";
+            case shadow_state_csr::fcsr:
+                return "fcsr";
+            case shadow_state_csr::mvendorid:
+                return "mvendorid";
+            case shadow_state_csr::marchid:
+                return "marchid";
+            case shadow_state_csr::mimpid:
+                return "mimpid";
+            case shadow_state_csr::mcycle:
+                return "mcycle";
+            case shadow_state_csr::minstret:
+                return "minstret";
+            case shadow_state_csr::mstatus:
+                return "mstatus";
+            case shadow_state_csr::mtvec:
+                return "mtvec";
+            case shadow_state_csr::mscratch:
+                return "mscratch";
+            case shadow_state_csr::mepc:
+                return "mepc";
+            case shadow_state_csr::mcause:
+                return "mcause";
+            case shadow_state_csr::mtval:
+                return "mtval";
+            case shadow_state_csr::misa:
+                return "misa";
+            case shadow_state_csr::mie:
+                return "mie";
+            case shadow_state_csr::mip:
+                return "mip";
+            case shadow_state_csr::medeleg:
+                return "medeleg";
+            case shadow_state_csr::mideleg:
+                return "mideleg";
+            case shadow_state_csr::mcounteren:
+                return "mcounteren";
+            case shadow_state_csr::menvcfg:
+                return "menvcfg";
+            case shadow_state_csr::stvec:
+                return "stvec";
+            case shadow_state_csr::sscratch:
+                return "sscratch";
+            case shadow_state_csr::sepc:
+                return "sepc";
+            case shadow_state_csr::scause:
+                return "scause";
+            case shadow_state_csr::stval:
+                return "stval";
+            case shadow_state_csr::satp:
+                return "satp";
+            case shadow_state_csr::scounteren:
+                return "scounteren";
+            case shadow_state_csr::senvcfg:
+                return "senvcfg";
+            case shadow_state_csr::ilrsc:
+                return "ilrsc";
+            case shadow_state_csr::iflags:
+                return "iflags";
+            case shadow_state_csr::brkflag:
+                return "brkflag";
+            case shadow_state_csr::clint_mtimecmp:
+                return "clint.mtimecmp";
+            case shadow_state_csr::htif_tohost:
+                return "htif.tohost";
+            case shadow_state_csr::htif_fromhost:
+                return "htif.fromhost";
+            case shadow_state_csr::htif_ihalt:
+                return "htif.ihalt";
+            case shadow_state_csr::htif_iconsole:
+                return "htif.iconsole";
+            case shadow_state_csr::htif_iyield:
+                return "htif.iyield";
+            case shadow_state_csr::uarch_rom_length:
+                return "uarch.rom_length";
+            case shadow_state_csr::uarch_ram_length:
+                return "uarch.ram_length";
+            default:
+                break;
+        }
+
+        switch (static_cast<uarch_mmio>(paddr)) {
+            case uarch_mmio::putchar:
+                return "uarch.putchar";
+            case uarch_mmio::abort:
+                return "uarch.abort";
+        }
+
+        if (paddr >= shadow_state_get_x_abs_addr(0) && paddr <= shadow_state_get_x_abs_addr(X_REG_COUNT - 1) &&
+            (paddr & 0b111) == 0) {
+            return "x";
+        }
+
+        if (paddr >= shadow_state_get_f_abs_addr(0) && paddr <= shadow_state_get_f_abs_addr(F_REG_COUNT - 1) &&
+            (paddr & 0b111) == 0) {
+            return "f";
+        }
+
+        if (paddr >= PMA_SHADOW_PMAS_START && paddr < PMA_SHADOW_PMAS_START + (PMA_MAX * PMA_WORD_SIZE * 2)) {
+            auto word_index = (paddr - PMA_SHADOW_PMAS_START) >> 3;
+            if ((word_index & 1) == 0) {
+                return "pma.istart";
+            } else {
+                return "pma.ilength";
+            }
+        }
+
+        if (paddr >= PMA_SHADOW_TLB_START && paddr < PMA_SHADOW_TLB_START + PMA_SHADOW_TLB_LENGTH &&
+            paddr % sizeof(uint64_t) == 0) {
+            uint64_t tlboff = paddr - PMA_SHADOW_TLB_START;
+            if (tlboff < offsetof(shadow_tlb_state, cold)) {
+                return "cold_tlb_entry_field";
+            } else if (tlboff < sizeof(shadow_tlb_state)) {
+                return "hot_tlb_entry_field";
+            }
+        }
+
+        return nullptr;
+    }
+
+private:
     /// \brief Tries to write a general-purpose machine register.
-    /// \param a Machine state accessor object.
+    /// \param s Machine state.
     /// \param paddr Absolute address of the register within shadow-state range
     /// \param data Data to write
     /// \return true if the register was successfully written.
-    static bool try_write_x(STATE_ACCESS &a, uint64_t paddr, uint64_t data) {
+    static bool try_write_x(machine_state &s, uint64_t paddr, uint64_t data) {
         if (paddr < shadow_state_get_x_abs_addr(0)) {
             return false;
         }
@@ -414,19 +377,19 @@ private:
             return false;
         }
         if (paddr & 0b111) {
-            throw std::runtime_error("read register value not correctly aligned");
+            throw std::runtime_error("write register value not correctly aligned");
         }
         paddr -= shadow_state_get_x_abs_addr(0);
-        a.write_x(paddr >> 3, data);
+        s.x[paddr >> 3] = data;
         return true;
     }
 
     /// \brief Tries to read a general-purpose machine register.
-    /// \param a Machine state accessor object.
+    /// \param s Machine state.
     /// \param paddr Absolute address of the register within shadow-state range
     /// \param data Pointer to word receiving value.
     /// \return true if the register was successfully read
-    static bool try_read_x(STATE_ACCESS &a, uint64_t paddr, uint64_t *data) {
+    static bool try_read_x(machine_state &s, uint64_t paddr, uint64_t *data) {
         if (paddr < shadow_state_get_x_abs_addr(0)) {
             return false;
         }
@@ -437,57 +400,26 @@ private:
             throw std::runtime_error("read register value not correctly aligned");
         }
         paddr -= shadow_state_get_x_abs_addr(0);
-        *data = a.read_x(paddr >> 3);
+        *data = s.x[paddr >> 3];
         return true;
     }
 
-    /// \brief Tries to write a floating-point machine register.
-    /// \param a Machine state accessor object.
-    /// \param paddr Absolute address of the register within shadow-state range
-    /// \param data Data to write
-    /// \return true if the register was successfully written.
-    static bool try_write_f(STATE_ACCESS &a, uint64_t paddr, uint64_t data) {
-        if (paddr < shadow_state_get_f_abs_addr(0)) {
-            return false;
-        }
-        if (paddr > shadow_state_get_f_abs_addr(F_REG_COUNT - 1)) {
-            return false;
-        }
-        if (paddr & 0b111) {
-            throw std::runtime_error("read floating-point register value not correctly aligned");
-        }
-        paddr -= shadow_state_get_f_abs_addr(0);
-        a.write_f(paddr >> 3, data);
-        return true;
-    }
-
-    /// \brief Tries to read a floating-point machine register.
-    /// \param a Machine state accessor object.
-    /// \param paddr Absolute address of the register within shadow-state range
+    /// \brief Tries to read a PMA entry field.
+    /// \param s Machine state.
+    /// \param paddr Absolute address of the PMA entry field within shadow PMAs range
     /// \param data Pointer to word receiving value.
     /// \return true if the register was successfully read
-    static bool try_read_f(STATE_ACCESS &a, uint64_t paddr, uint64_t *data) {
-        if (paddr < shadow_state_get_f_abs_addr(0)) {
-            return false;
-        }
-        if (paddr > shadow_state_get_f_abs_addr(F_REG_COUNT - 1)) {
-            return false;
-        }
-        if (paddr & 0b111) {
-            throw std::runtime_error("read floating-point register value not correctly aligned");
-        }
-        paddr -= shadow_state_get_f_abs_addr(0);
-        *data = a.read_f(paddr >> 3);
-        return true;
-    }
-
-    static bool try_read_pma(STATE_ACCESS &a, uint64_t paddr, uint64_t *data) {
+    static bool try_read_pma(machine_state &s, uint64_t paddr, uint64_t *data) {
         if (paddr < PMA_SHADOW_PMAS_START || paddr >= PMA_SHADOW_PMAS_START + (PMA_MAX * PMA_WORD_SIZE * 2)) {
             return false;
         }
         auto word_index = (paddr - PMA_SHADOW_PMAS_START) >> 3;
         auto pma_index = word_index >> 1;
-        auto &pma = a.get_pma_entry(pma_index);
+        if (pma_index >= s.pmas.size()) {
+            *data = 0;
+            return true;
+        }
+        auto &pma = s.pmas[pma_index];
         if ((word_index & 1) == 0) {
             *data = pma.get_istart();
         } else {
@@ -496,7 +428,52 @@ private:
         return true;
     }
 
-    static bool try_read_tlb(STATE_ACCESS &a, uint64_t paddr, uint64_t *data) {
+    /// \brief Tries to write a floating-point machine register.
+    /// \param s Machine state.
+    /// \param paddr Absolute address of the register within shadow-state range
+    /// \param data Data to write
+    /// \return true if the register was successfully written.
+    static bool try_write_f(machine_state &s, uint64_t paddr, uint64_t data) {
+        if (paddr < shadow_state_get_f_abs_addr(0)) {
+            return false;
+        }
+        if (paddr > shadow_state_get_f_abs_addr(F_REG_COUNT - 1)) {
+            return false;
+        }
+        if (paddr & 0b111) {
+            throw std::runtime_error("read floating-point register value not correctly aligned");
+        }
+        paddr -= shadow_state_get_f_abs_addr(0);
+        s.f[paddr >> 3] = data;
+        return true;
+    }
+
+    /// \brief Tries to read a floating-point machine register.
+    /// \param s Machine state.
+    /// \param paddr Absolute address of the register within shadow-state range
+    /// \param data Pointer to word receiving value.
+    /// \return true if the register was successfully read
+    static bool try_read_f(machine_state &s, uint64_t paddr, uint64_t *data) {
+        if (paddr < shadow_state_get_f_abs_addr(0)) {
+            return false;
+        }
+        if (paddr > shadow_state_get_f_abs_addr(F_REG_COUNT - 1)) {
+            return false;
+        }
+        if (paddr & 0b111) {
+            throw std::runtime_error("read floating-point register value not correctly aligned");
+        }
+        paddr -= shadow_state_get_f_abs_addr(0);
+        *data = s.f[paddr >> 3];
+        return true;
+    }
+
+    /// \brief Tries to read a TLB entry field.
+    /// \param s Machine state.
+    /// \param paddr Absolute address of the TLB entry fieldwithin shadow TLB range
+    /// \param data Pointer to word receiving value.
+    /// \return true if the register was successfully read
+    static bool try_read_tlb(machine_state &s, uint64_t paddr, uint64_t *data) {
         if (paddr < PMA_SHADOW_TLB_START ||
             paddr >= PMA_SHADOW_TLB_START + PMA_SHADOW_TLB_LENGTH) { // In PMA TLB range?
             return false;
@@ -510,19 +487,24 @@ private:
             uint64_t etypeoff = tlboff % sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
             uint64_t eidx = etypeoff / sizeof(tlb_hot_entry);
             uint64_t fieldoff = etypeoff % sizeof(tlb_hot_entry);
-            return a.read_tlb_entry_field(true, etype, eidx, fieldoff, data);
+            return read_tlb_entry_field(s, true, etype, eidx, fieldoff, data);
         } else if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
             uint64_t coldoff = tlboff - offsetof(shadow_tlb_state, cold);
             uint64_t etype = coldoff / sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
             uint64_t etypeoff = coldoff % sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
             uint64_t eidx = etypeoff / sizeof(tlb_cold_entry);
             uint64_t fieldoff = etypeoff % sizeof(tlb_cold_entry);
-            return a.read_tlb_entry_field(false, etype, eidx, fieldoff, data);
+            return read_tlb_entry_field(s, false, etype, eidx, fieldoff, data);
         }
         return false;
     }
 
-    static bool try_write_tlb(STATE_ACCESS &a, uint64_t paddr, uint64_t data) {
+    /// \brief Tries to update a PMA entry field.
+    /// \param s Machine state.
+    /// \param paddr Absolute address of the PMA entry property within shadow PMAs range
+    /// \param data Data to write
+    /// \return true if the register was successfully written
+    static bool try_write_tlb(machine_state &s, uint64_t paddr, uint64_t data) {
         if (paddr < PMA_SHADOW_TLB_START ||
             paddr >= PMA_SHADOW_TLB_START + PMA_SHADOW_TLB_LENGTH) { // In PMA TLB range?
             return false;
@@ -536,26 +518,141 @@ private:
             uint64_t etypeoff = tlboff % sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
             uint64_t eidx = etypeoff / sizeof(tlb_hot_entry);
             uint64_t fieldoff = etypeoff % sizeof(tlb_hot_entry);
-            return a.write_tlb_entry_field(true, etype, eidx, fieldoff, data);
+            return write_tlb_entry_field(s, true, etype, eidx, fieldoff, data);
         } else if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
             uint64_t coldoff = tlboff - offsetof(shadow_tlb_state, cold);
             uint64_t etype = coldoff / sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
             uint64_t etypeoff = coldoff % sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
             uint64_t eidx = etypeoff / sizeof(tlb_cold_entry);
             uint64_t fieldoff = etypeoff % sizeof(tlb_cold_entry);
-            return a.write_tlb_entry_field(false, etype, eidx, fieldoff, data);
+            return write_tlb_entry_field(s, false, etype, eidx, fieldoff, data);
         }
         return false;
     }
 
-    static bool uarch_putchar(uint64_t data) {
+    /// \brief Reads a field of a TLB entry.
+    /// \param s Machine state.
+    /// \param hot If true read from hot TLB entries, otherwise from cold TLB entries.
+    /// \param etype TLB entry type.
+    /// \param eidx TLB entry index.
+    /// \param fieldoff TLB entry field offset.
+    /// \param pval Pointer to word receiving value.
+    /// \returns True if the field was read, false otherwise.
+    static bool read_tlb_entry_field(machine_state &s, bool hot, uint64_t etype, uint64_t eidx, uint64_t fieldoff,
+        uint64_t *pval) {
+        if (etype > TLB_WRITE || eidx >= PMA_TLB_SIZE) {
+            return false;
+        }
+        const tlb_hot_entry &tlbhe = s.tlb.hot[etype][eidx];
+        const tlb_cold_entry &tlbce = s.tlb.cold[etype][eidx];
+        if (hot) {
+            switch (fieldoff) {
+                case offsetof(tlb_hot_entry, vaddr_page):
+                    *pval = tlbhe.vaddr_page;
+                    return true;
+                default:
+                    // Other fields like vh_offset contains host data, and cannot be read
+                    return false;
+            }
+        } else {
+            switch (fieldoff) {
+                case offsetof(tlb_cold_entry, paddr_page):
+                    *pval = tlbce.paddr_page;
+                    return true;
+                case offsetof(tlb_cold_entry, pma_index):
+                    *pval = tlbce.pma_index;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+    }
+
+    /// \brief Writes a field of a TLB entry.
+    /// \param s Machine state.
+    /// \param hot If true write to hot TLB entries, otherwise to cold TLB entries.
+    /// \param etype TLB entry type.
+    /// \param eidx TLB entry index.
+    /// \param fieldoff TLB entry field offset.
+    /// \param val Value to be written.
+    /// \returns True if the field was written, false otherwise.
+    static bool write_tlb_entry_field(machine_state &s, bool hot, uint64_t etype, uint64_t eidx, uint64_t fieldoff,
+        uint64_t val) {
+        if (etype > TLB_WRITE || eidx >= PMA_TLB_SIZE) {
+            return false;
+        }
+        tlb_hot_entry &tlbhe = s.tlb.hot[etype][eidx];
+        tlb_cold_entry &tlbce = s.tlb.cold[etype][eidx];
+        if (hot) {
+            switch (fieldoff) {
+                case offsetof(tlb_hot_entry, vaddr_page):
+                    tlbhe.vaddr_page = val;
+                    return true;
+                default:
+                    // Other fields like vh_offset contains host data, and cannot be written
+                    return false;
+            }
+        } else {
+            switch (fieldoff) {
+                case offsetof(tlb_cold_entry, paddr_page): {
+                    tlbce.paddr_page = val;
+                    // Update vh_offset
+                    const pma_entry &pma = find_pma_entry<uint64_t>(s, tlbce.paddr_page);
+                    assert(pma.get_istart_M()); // TLB only works for memory mapped PMAs
+                    const unsigned char *hpage =
+                        pma.get_memory().get_host_memory() + (tlbce.paddr_page - pma.get_start());
+                    tlb_hot_entry &tlbhe = s.tlb.hot[etype][eidx];
+                    tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - tlbhe.vaddr_page;
+                    return true;
+                }
+                case offsetof(tlb_cold_entry, pma_index):
+                    tlbce.pma_index = val;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+    }
+
+    /// \brief Obtain PMA entry that covers a given physical memory region
+    /// \tparam T Type of word.
+    /// \param s Mmachine state.
+    /// \param paddr Start of physical memory region.
+    /// \returns Corresponding entry if found, or a sentinel entry
+    /// for an empty range.
+    template <typename T>
+    static const pma_entry &find_pma_entry(machine_state &s, uint64_t paddr) {
+        for (const auto &pma : s.pmas) {
+            // Stop at first empty PMA
+            if (pma.get_length() == 0) {
+                return pma;
+            }
+            if (pma.contains(paddr, sizeof(T))) {
+                return pma;
+            }
+        }
+        // Last PMA is always the empty range
+        return s.pmas.back();
+    }
+
+    /// \brief Write src to dst
+    static inline void success_read(const uint64_t &src, uint64_t *dst) {
+        *dst = src;
+    }
+
+    /// \brief Write src to dst
+    static inline void success_write(uint64_t &dst, const uint64_t &src) {
+        dst = src;
+    }
+
+    /// \brief Writes a character to the console
+    static void uarch_putchar(uint64_t data) {
         putchar(static_cast<char>(data));
-        return true;
     }
 
-    static bool uarch_abort() {
+    /// \brief Abort request received from uarch
+    static void uarch_abort() {
         throw std::runtime_error("Microarchitecture execution aborted");
-        return true;
     }
 };
 

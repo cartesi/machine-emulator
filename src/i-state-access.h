@@ -677,28 +677,6 @@ public:
         return derived().do_read_brkflag();
     }
 
-    /// \brief Reads a field of a TLB entry.
-    /// \param hot If true read from hot TLB entries, otherwise from cold TLB entries.
-    /// \param etype TLB entry type.
-    /// \param eidx TLB entry index.
-    /// \param fieldoff TLB entry field offset.
-    /// \param pval Pointer to word receiving value.
-    /// \returns True if the field was read, false otherwise.
-    bool read_tlb_entry_field(bool hot, uint64_t etype, uint64_t eidx, uint64_t fieldoff, uint64_t *pval) {
-        return derived().do_read_tlb_entry_field(hot, etype, eidx, fieldoff, pval);
-    }
-
-    /// \brief Writes a field of a TLB entry.
-    /// \param hot If true write to hot TLB entries, otherwise to cold TLB entries.
-    /// \param etype TLB entry type.
-    /// \param eidx TLB entry index.
-    /// \param fieldoff TLB entry field offset.
-    /// \param val Value to be written.
-    /// \returns True if the field was written, false otherwise.
-    bool write_tlb_entry_field(bool hot, uint64_t etype, uint64_t eidx, uint64_t fieldoff, uint64_t val) {
-        return derived().do_write_tlb_entry_field(hot, etype, eidx, fieldoff, val);
-    }
-
     /// \brief Try to read a word from memory through the TLB.
     /// \tparam ETYPE TLB entry type.
     /// \tparam T Type of word to read.

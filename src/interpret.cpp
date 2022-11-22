@@ -21,9 +21,7 @@
 #include "uarch-machine-state-access.h"
 #include "uarch-runtime.h"
 #else
-#include "logged-state-access.h"
 #include "state-access.h"
-#include "step-state-access.h"
 #endif
 #include <cinttypes>
 #include <cstdint>
@@ -5028,12 +5026,6 @@ template interpreter_status interpret(uarch_machine_state_access &a, uint64_t mc
 #else
 // Explicit instantiation for state_access
 template interpreter_status interpret(state_access &a, uint64_t mcycle_end);
-
-// Explicit instantiation for logged_state_access
-template interpreter_status interpret(logged_state_access &a, uint64_t mcycle_end);
-
-// Explicit instantiation for logged_state_access
-template interpreter_status interpret(step_state_access &a, uint64_t mcycle_end);
 #endif // MICROARCHITECTURE
 
 } // namespace cartesi

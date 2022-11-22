@@ -452,6 +452,17 @@ public:
     const std::string &get_description(void) const {
         return m_description;
     }
+
+    /// \brief Checks if a memory range is within this PMA boundaries
+    /// \param address Address
+    /// \param length Length
+    /// \return true if this PMA contains the given range
+    bool contains(uint64_t address, size_t length) const {
+        if (get_istart_E()) {
+            return false;
+        }
+        return address >= get_start() && get_length() >= length && address - get_start() <= get_length() - length;
+    }
 };
 
 /// \brief Creates a PMA entry for a new memory range initially filled with zeros.

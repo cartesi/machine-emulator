@@ -112,6 +112,10 @@ function test_util.make_do_test(build_machine, type, config)
     end
 end
 
+function test_util.disabled_test(description, f)
+    print("Disabled test - "..description)
+end
+
 function test_util.incremental_merkle_tree_of_pages:new(o, page_log2_size,
                                                          tree_log2_size)
     o = o or {}

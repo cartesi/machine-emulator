@@ -309,7 +309,7 @@ where options are:
     dump all PMA ranges to disk when done.
 
   --assert-rolling-template
-    exit with failure in case the generated machine is not yielded.
+    exit with failure in case the generated machine is not Rolling Cartesi Machine templates compatible.
 
   --quiet
     supress cartesi-machine.lua output.

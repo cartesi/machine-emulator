@@ -324,11 +324,11 @@ enum SENVCFG_RW_masks : uint64_t {
 
 /// \brief fcsr fflags shifts
 enum FFLAGS_shifts {
-    FFLAGS_NX_SHIFT = 0,
-    FFLAGS_UF_SHIFT = 1,
-    FFLAGS_OF_SHIFT = 2,
-    FFLAGS_DZ_SHIFT = 3,
-    FFLAGS_NV_SHIFT = 4,
+    FFLAGS_NX_SHIFT = 0, // Inexact
+    FFLAGS_UF_SHIFT = 1, // Underflow
+    FFLAGS_OF_SHIFT = 2, // Overflow
+    FFLAGS_DZ_SHIFT = 3, // Divide by zero
+    FFLAGS_NV_SHIFT = 4, // Invalid op
 };
 
 /// \brief fcsr fflags masks
@@ -351,6 +351,20 @@ enum FRM_modes : uint32_t {
     FRM_DYN = UINT32_C(0b111)
 };
 
+/// \brief float classes
+enum FCLASS_classes : uint32_t {
+    FCLASS_NINF = 1 << 0,
+    FCLASS_NNORMAL = 1 << 1,
+    FCLASS_NSUBNORMAL = 1 << 2,
+    FCLASS_NZERO = 1 << 3,
+    FCLASS_PZERO = 1 << 4,
+    FCLASS_PSUBNORMAL = 1 << 5,
+    FCLASS_PNORMAL = 1 << 6,
+    FCLASS_PINF = 1 << 7,
+    FCLASS_SNAN = 1 << 8,
+    FCLASS_QNAN = 1 << 9
+};
+
 /// \brief frm masks
 enum FCSR_FRM_masks : uint64_t { FRM_RW_MASK = 0b111 };
 
@@ -366,12 +380,6 @@ enum FCSR_rw_masks : uint64_t {
     FCSR_FRM_RW_MASK = FRM_RW_MASK << FCSR_FRM_SHIFT,
     FCSR_RW_MASK = FCSR_FFLAGS_RW_MASK | FCSR_FRM_RW_MASK
 };
-
-/// \brief float32 constants
-enum F32_constants : uint32_t { F32_CANONICAL_NAN = UINT32_C(0x7FC00000), F32_SIGN_MASK = UINT32_C(1) << 31 };
-
-/// \brief float64 constants
-enum F64_constants : uint64_t { F64_CANONICAL_NAN = UINT64_C(0x7FF8000000000000), F64_SIGN_MASK = UINT64_C(1) << 63 };
 
 /// \brief Paging shifts
 enum PAGE_shifts {

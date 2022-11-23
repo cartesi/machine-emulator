@@ -294,7 +294,6 @@ CARTESI_OBJS:= \
 	machine.o \
 	machine-config.o \
 	interpret.o \
-	soft-float.o \
 	virtual-machine.o \
 	protobuf-util.o \
 	machine-c-api.o \
@@ -521,7 +520,6 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	machine.o \
 	machine-config.o \
 	interpret.o \
-	soft-float.o \
 	uarch-machine.o \
 	uarch-interpret.o
 

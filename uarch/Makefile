@@ -86,7 +86,6 @@ UARCH_SOURCES=\
 
 EMULATOR_SOURCES=\
 	interpret.cpp \
-	soft-float.cpp \
 	pma-driver.cpp \
 	htif.cpp \
 	shadow-tlb.cpp \

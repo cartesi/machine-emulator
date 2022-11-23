@@ -1299,7 +1299,7 @@ static FORCE_INLINE execute_status execute_DIVW(STATE_ACCESS &a, uint64_t pc, ui
         auto rs2w = static_cast<int32_t>(rs2);
         if (rs2w == 0) {
             return static_cast<uint64_t>(-1);
-        } else if (rs1w == ((int32_t) 1 << (32 - 1)) && rs2w == -1) {
+        } else if (rs1w == (static_cast<int32_t>(1) << (32 - 1)) && rs2w == -1) {
             return static_cast<uint64_t>(rs1w);
         } else {
             return static_cast<uint64_t>(rs1w / rs2w);
@@ -1335,7 +1335,7 @@ static FORCE_INLINE execute_status execute_REMW(STATE_ACCESS &a, uint64_t pc, ui
         auto rs2w = static_cast<int32_t>(rs2);
         if (rs2w == 0) {
             return static_cast<uint64_t>(rs1w);
-        } else if (rs1w == ((int32_t) 1 << (32 - 1)) && rs2w == -1) {
+        } else if (rs1w == (static_cast<int32_t>(1) << (32 - 1)) && rs2w == -1) {
             return static_cast<uint64_t>(0);
         } else {
             return static_cast<uint64_t>(rs1w % rs2w);
@@ -3429,9 +3429,9 @@ static inline T float_unbox(uint64_t val) {
             // The canonical NaN has a positive sign and all significand bits clear except the MSB,
             // a.k.a. the quiet bit.
             if constexpr (TLEN == 32) {
-                return F32_CANONICAL_NAN;
+                return i_sfloat32::F_QNAN;
             } else if constexpr (TLEN == 64) {
-                return F64_CANONICAL_NAN;
+                return i_sfloat64::F_QNAN;
             }
         }
     }
@@ -3584,7 +3584,7 @@ static FORCE_INLINE execute_status execute_FMADD_S(STATE_ACCESS &a, uint64_t pc,
     (void) note;
     return execute_float_ternary_op_rm<uint32_t>(a, pc, insn,
         [](uint32_t s1, uint32_t s2, uint32_t s3, uint32_t rm, uint32_t *fflags) -> uint32_t {
-            return fma_sf32(s1, s2, s3, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat32::fma(s1, s2, s3, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3595,7 +3595,7 @@ static FORCE_INLINE execute_status execute_FMADD_D(STATE_ACCESS &a, uint64_t pc,
     (void) note;
     return execute_float_ternary_op_rm<uint64_t>(a, pc, insn,
         [](uint64_t s1, uint64_t s2, uint64_t s3, uint32_t rm, uint32_t *fflags) -> uint64_t {
-            return fma_sf64(s1, s2, s3, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat64::fma(s1, s2, s3, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3618,7 +3618,7 @@ static FORCE_INLINE execute_status execute_FMSUB_S(STATE_ACCESS &a, uint64_t pc,
     (void) note;
     return execute_float_ternary_op_rm<uint32_t>(a, pc, insn,
         [](uint32_t s1, uint32_t s2, uint32_t s3, uint32_t rm, uint32_t *fflags) -> uint32_t {
-            return fma_sf32(s1, s2, s3 ^ F32_SIGN_MASK, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat32::fma(s1, s2, s3 ^ i_sfloat32::SIGN_MASK, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3629,7 +3629,7 @@ static FORCE_INLINE execute_status execute_FMSUB_D(STATE_ACCESS &a, uint64_t pc,
     (void) note;
     return execute_float_ternary_op_rm<uint64_t>(a, pc, insn,
         [](uint64_t s1, uint64_t s2, uint64_t s3, uint32_t rm, uint32_t *fflags) -> uint64_t {
-            return fma_sf64(s1, s2, s3 ^ F64_SIGN_MASK, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat64::fma(s1, s2, s3 ^ i_sfloat64::SIGN_MASK, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3652,7 +3652,8 @@ static FORCE_INLINE execute_status execute_FNMADD_S(STATE_ACCESS &a, uint64_t pc
     (void) note;
     return execute_float_ternary_op_rm<uint32_t>(a, pc, insn,
         [](uint32_t s1, uint32_t s2, uint32_t s3, uint32_t rm, uint32_t *fflags) -> uint32_t {
-            return fma_sf32(s1 ^ F32_SIGN_MASK, s2, s3 ^ F32_SIGN_MASK, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat32::fma(s1 ^ i_sfloat32::SIGN_MASK, s2, s3 ^ i_sfloat32::SIGN_MASK,
+                static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3663,7 +3664,8 @@ static FORCE_INLINE execute_status execute_FNMADD_D(STATE_ACCESS &a, uint64_t pc
     (void) note;
     return execute_float_ternary_op_rm<uint64_t>(a, pc, insn,
         [](uint64_t s1, uint64_t s2, uint64_t s3, uint32_t rm, uint32_t *fflags) -> uint64_t {
-            return fma_sf64(s1 ^ F64_SIGN_MASK, s2, s3 ^ F64_SIGN_MASK, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat64::fma(s1 ^ i_sfloat64::SIGN_MASK, s2, s3 ^ i_sfloat64::SIGN_MASK,
+                static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3686,7 +3688,7 @@ static FORCE_INLINE execute_status execute_FNMSUB_S(STATE_ACCESS &a, uint64_t pc
     (void) note;
     return execute_float_ternary_op_rm<uint32_t>(a, pc, insn,
         [](uint32_t s1, uint32_t s2, uint32_t s3, uint32_t rm, uint32_t *fflags) -> uint32_t {
-            return fma_sf32(s1 ^ F32_SIGN_MASK, s2, s3, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat32::fma(s1 ^ i_sfloat32::SIGN_MASK, s2, s3, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3697,7 +3699,7 @@ static FORCE_INLINE execute_status execute_FNMSUB_D(STATE_ACCESS &a, uint64_t pc
     (void) note;
     return execute_float_ternary_op_rm<uint64_t>(a, pc, insn,
         [](uint64_t s1, uint64_t s2, uint64_t s3, uint32_t rm, uint32_t *fflags) -> uint64_t {
-            return fma_sf64(s1 ^ F64_SIGN_MASK, s2, s3, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat64::fma(s1 ^ i_sfloat64::SIGN_MASK, s2, s3, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3720,7 +3722,7 @@ static FORCE_INLINE execute_status execute_FADD_S(STATE_ACCESS &a, uint64_t pc, 
     (void) note;
     return execute_float_binary_op_rm<uint32_t>(a, pc, insn,
         [](uint32_t s1, uint32_t s2, uint32_t rm, uint32_t *fflags) -> uint32_t {
-            return add_sf32(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat32::add(s1, s2, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3731,7 +3733,7 @@ static FORCE_INLINE execute_status execute_FADD_D(STATE_ACCESS &a, uint64_t pc, 
     (void) note;
     return execute_float_binary_op_rm<uint64_t>(a, pc, insn,
         [](uint64_t s1, uint64_t s2, uint32_t rm, uint32_t *fflags) -> uint64_t {
-            return add_sf64(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat64::add(s1, s2, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3742,7 +3744,7 @@ static FORCE_INLINE execute_status execute_FSUB_S(STATE_ACCESS &a, uint64_t pc, 
     (void) note;
     return execute_float_binary_op_rm<uint32_t>(a, pc, insn,
         [](uint32_t s1, uint32_t s2, uint32_t rm, uint32_t *fflags) -> uint32_t {
-            return sub_sf32(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat32::add(s1, s2 ^ i_sfloat32::SIGN_MASK, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3753,7 +3755,7 @@ static FORCE_INLINE execute_status execute_FSUB_D(STATE_ACCESS &a, uint64_t pc, 
     (void) note;
     return execute_float_binary_op_rm<uint64_t>(a, pc, insn,
         [](uint64_t s1, uint64_t s2, uint32_t rm, uint32_t *fflags) -> uint64_t {
-            return sub_sf64(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat64::add(s1, s2 ^ i_sfloat64::SIGN_MASK, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3764,7 +3766,7 @@ static FORCE_INLINE execute_status execute_FMUL_S(STATE_ACCESS &a, uint64_t pc, 
     (void) note;
     return execute_float_binary_op_rm<uint32_t>(a, pc, insn,
         [](uint32_t s1, uint32_t s2, uint32_t rm, uint32_t *fflags) -> uint32_t {
-            return mul_sf32(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat32::mul(s1, s2, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3775,7 +3777,7 @@ static FORCE_INLINE execute_status execute_FMUL_D(STATE_ACCESS &a, uint64_t pc, 
     (void) note;
     return execute_float_binary_op_rm<uint64_t>(a, pc, insn,
         [](uint64_t s1, uint64_t s2, uint32_t rm, uint32_t *fflags) -> uint64_t {
-            return mul_sf64(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat64::mul(s1, s2, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3786,7 +3788,7 @@ static FORCE_INLINE execute_status execute_FDIV_S(STATE_ACCESS &a, uint64_t pc, 
     (void) note;
     return execute_float_binary_op_rm<uint32_t>(a, pc, insn,
         [](uint32_t s1, uint32_t s2, uint32_t rm, uint32_t *fflags) -> uint32_t {
-            return div_sf32(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat32::div(s1, s2, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3797,7 +3799,7 @@ static FORCE_INLINE execute_status execute_FDIV_D(STATE_ACCESS &a, uint64_t pc, 
     (void) note;
     return execute_float_binary_op_rm<uint64_t>(a, pc, insn,
         [](uint64_t s1, uint64_t s2, uint32_t rm, uint32_t *fflags) -> uint64_t {
-            return div_sf64(s1, s2, static_cast<RoundingModeEnum>(rm), fflags);
+            return i_sfloat64::div(s1, s2, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -3851,7 +3853,7 @@ static FORCE_INLINE execute_status execute_FSGNJ_S(STATE_ACCESS &a, uint64_t pc,
     return execute_float_binary_op<uint32_t>(a, pc, insn,
         [](uint32_t s1, uint32_t s2, const uint32_t *fflags) -> uint32_t {
             (void) fflags;
-            return (s1 & ~F32_SIGN_MASK) | (s2 & F32_SIGN_MASK);
+            return (s1 & ~i_sfloat32::SIGN_MASK) | (s2 & i_sfloat32::SIGN_MASK);
         });
 }
 
@@ -3863,7 +3865,7 @@ static FORCE_INLINE execute_status execute_FSGNJN_S(STATE_ACCESS &a, uint64_t pc
     return execute_float_binary_op<uint32_t>(a, pc, insn,
         [](uint32_t s1, uint32_t s2, const uint32_t *fflags) -> uint32_t {
             (void) fflags;
-            return (s1 & ~F32_SIGN_MASK) | ((s2 & F32_SIGN_MASK) ^ F32_SIGN_MASK);
+            return (s1 & ~i_sfloat32::SIGN_MASK) | ((s2 & i_sfloat32::SIGN_MASK) ^ i_sfloat32::SIGN_MASK);
         });
 }
 
@@ -3875,7 +3877,7 @@ static FORCE_INLINE execute_status execute_FSGNJX_S(STATE_ACCESS &a, uint64_t pc
     return execute_float_binary_op<uint32_t>(a, pc, insn,
         [](uint32_t s1, uint32_t s2, const uint32_t *fflags) -> uint32_t {
             (void) fflags;
-            return s1 ^ (s2 & F32_SIGN_MASK);
+            return s1 ^ (s2 & i_sfloat32::SIGN_MASK);
         });
 }
 
@@ -3901,7 +3903,7 @@ static FORCE_INLINE execute_status execute_FSGNJ_D(STATE_ACCESS &a, uint64_t pc,
     return execute_float_binary_op<uint64_t>(a, pc, insn,
         [](uint64_t s1, uint64_t s2, const uint32_t *fflags) -> uint64_t {
             (void) fflags;
-            return (s1 & ~F64_SIGN_MASK) | (s2 & F64_SIGN_MASK);
+            return (s1 & ~i_sfloat64::SIGN_MASK) | (s2 & i_sfloat64::SIGN_MASK);
         });
 }
 
@@ -3913,7 +3915,7 @@ static FORCE_INLINE execute_status execute_FSGNJN_D(STATE_ACCESS &a, uint64_t pc
     return execute_float_binary_op<uint64_t>(a, pc, insn,
         [](uint64_t s1, uint64_t s2, const uint32_t *fflags) -> uint64_t {
             (void) fflags;
-            return (s1 & ~F64_SIGN_MASK) | ((s2 & F64_SIGN_MASK) ^ F64_SIGN_MASK);
+            return (s1 & ~i_sfloat64::SIGN_MASK) | ((s2 & i_sfloat64::SIGN_MASK) ^ i_sfloat64::SIGN_MASK);
         });
 }
 
@@ -3925,7 +3927,7 @@ static FORCE_INLINE execute_status execute_FSGNJX_D(STATE_ACCESS &a, uint64_t pc
     return execute_float_binary_op<uint64_t>(a, pc, insn,
         [](uint64_t s1, uint64_t s2, const uint32_t *fflags) -> uint64_t {
             (void) fflags;
-            return s1 ^ (s2 & F64_SIGN_MASK);
+            return s1 ^ (s2 & i_sfloat64::SIGN_MASK);
         });
 }
 
@@ -3949,7 +3951,7 @@ static FORCE_INLINE execute_status execute_FMIN_S(STATE_ACCESS &a, uint64_t pc, 
     auto note = a.make_scoped_note("fmin.s");
     (void) note;
     return execute_float_binary_op<uint32_t>(a, pc, insn,
-        [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint32_t { return min_sf32(s1, s2, fflags); });
+        [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint32_t { return i_sfloat32::min(s1, s2, fflags); });
 }
 
 template <typename STATE_ACCESS>
@@ -3958,7 +3960,7 @@ static FORCE_INLINE execute_status execute_FMAX_S(STATE_ACCESS &a, uint64_t pc, 
     auto note = a.make_scoped_note("fmax.s");
     (void) note;
     return execute_float_binary_op<uint32_t>(a, pc, insn,
-        [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint32_t { return max_sf32(s1, s2, fflags); });
+        [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint32_t { return i_sfloat32::max(s1, s2, fflags); });
 }
 
 template <typename STATE_ACCESS>
@@ -3979,7 +3981,7 @@ static FORCE_INLINE execute_status execute_FMIN_D(STATE_ACCESS &a, uint64_t pc, 
     auto note = a.make_scoped_note("fmin.d");
     (void) note;
     return execute_float_binary_op<uint64_t>(a, pc, insn,
-        [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t { return min_sf64(s1, s2, fflags); });
+        [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t { return i_sfloat64::min(s1, s2, fflags); });
 }
 
 template <typename STATE_ACCESS>
@@ -3988,7 +3990,7 @@ static FORCE_INLINE execute_status execute_FMAX_D(STATE_ACCESS &a, uint64_t pc, 
     auto note = a.make_scoped_note("fmax.d");
     (void) note;
     return execute_float_binary_op<uint64_t>(a, pc, insn,
-        [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t { return max_sf64(s1, s2, fflags); });
+        [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t { return i_sfloat64::max(s1, s2, fflags); });
 }
 
 template <typename STATE_ACCESS>
@@ -4082,7 +4084,7 @@ static FORCE_INLINE execute_status execute_FCVT_S_D(STATE_ACCESS &a, uint64_t pc
     (void) note;
     return execute_FCVT_F_F<uint64_t, uint32_t>(a, pc, insn,
         [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
-            return cvt_sf64_sf32(s1, static_cast<RoundingModeEnum>(rm), fflags);
+            return sfloat_cvt_f64_f32(s1, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -4095,7 +4097,7 @@ static FORCE_INLINE execute_status execute_FCVT_D_S(STATE_ACCESS &a, uint64_t pc
         [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
             // FCVT.D.S will never round, since it's a widen operation.
             (void) rm;
-            return cvt_sf32_sf64(s1, fflags);
+            return sfloat_cvt_f32_f64(s1, fflags);
         });
 }
 
@@ -4105,7 +4107,7 @@ static FORCE_INLINE execute_status execute_FSQRT_S(STATE_ACCESS &a, uint64_t pc,
     auto note = a.make_scoped_note("fsqrt.s");
     (void) note;
     return execute_float_unary_op_rm<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
-        return sqrt_sf32(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        return i_sfloat32::sqrt(s1, static_cast<FRM_modes>(rm), fflags);
     });
 }
 
@@ -4115,7 +4117,7 @@ static FORCE_INLINE execute_status execute_FSQRT_D(STATE_ACCESS &a, uint64_t pc,
     auto note = a.make_scoped_note("fsqrt.d");
     (void) note;
     return execute_float_unary_op_rm<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        return sqrt_sf64(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        return i_sfloat64::sqrt(s1, static_cast<FRM_modes>(rm), fflags);
     });
 }
 
@@ -4125,7 +4127,7 @@ static FORCE_INLINE execute_status execute_FLE_S(STATE_ACCESS &a, uint64_t pc, u
     auto note = a.make_scoped_note("fle.s");
     (void) note;
     return execute_float_cmp_op<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint64_t {
-        return static_cast<uint64_t>(le_sf32(s1, s2, fflags));
+        return static_cast<uint64_t>(i_sfloat32::le(s1, s2, fflags));
     });
 }
 
@@ -4135,7 +4137,7 @@ static FORCE_INLINE execute_status execute_FLT_S(STATE_ACCESS &a, uint64_t pc, u
     auto note = a.make_scoped_note("flt.s");
     (void) note;
     return execute_float_cmp_op<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint64_t {
-        return static_cast<uint64_t>(lt_sf32(s1, s2, fflags));
+        return static_cast<uint64_t>(i_sfloat32::lt(s1, s2, fflags));
     });
 }
 
@@ -4145,7 +4147,7 @@ static FORCE_INLINE execute_status execute_FEQ_S(STATE_ACCESS &a, uint64_t pc, u
     auto note = a.make_scoped_note("feq.s");
     (void) note;
     return execute_float_cmp_op<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint64_t {
-        return static_cast<uint64_t>(eq_quiet_sf32(s1, s2, fflags));
+        return static_cast<uint64_t>(i_sfloat32::eq(s1, s2, fflags));
     });
 }
 
@@ -4169,7 +4171,7 @@ static FORCE_INLINE execute_status execute_FLE_D(STATE_ACCESS &a, uint64_t pc, u
     auto note = a.make_scoped_note("fle.d");
     (void) note;
     return execute_float_cmp_op<uint64_t>(a, pc, insn, [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t {
-        return static_cast<uint64_t>(le_sf64(s1, s2, fflags));
+        return static_cast<uint64_t>(i_sfloat64::le(s1, s2, fflags));
     });
 }
 
@@ -4179,7 +4181,7 @@ static FORCE_INLINE execute_status execute_FLT_D(STATE_ACCESS &a, uint64_t pc, u
     auto note = a.make_scoped_note("flt.d");
     (void) note;
     return execute_float_cmp_op<uint64_t>(a, pc, insn, [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t {
-        return static_cast<uint64_t>(lt_sf64(s1, s2, fflags));
+        return static_cast<uint64_t>(i_sfloat64::lt(s1, s2, fflags));
     });
 }
 
@@ -4189,7 +4191,7 @@ static FORCE_INLINE execute_status execute_FEQ_D(STATE_ACCESS &a, uint64_t pc, u
     auto note = a.make_scoped_note("feq.d");
     (void) note;
     return execute_float_cmp_op<uint64_t>(a, pc, insn, [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t {
-        return static_cast<uint64_t>(eq_quiet_sf64(s1, s2, fflags));
+        return static_cast<uint64_t>(i_sfloat64::eq(s1, s2, fflags));
     });
 }
 
@@ -4213,7 +4215,7 @@ static FORCE_INLINE execute_status execute_FCVT_W_S(STATE_ACCESS &a, uint64_t pc
     auto note = a.make_scoped_note("fcvt.w.s");
     (void) note;
     return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        int32_t val = cvt_sf32_i32(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        int32_t val = i_sfloat32::cvt_f_i<int32_t>(s1, static_cast<FRM_modes>(rm), fflags);
         // For XLEN > 32, FCVT.W.S sign-extends the 32-bit result.
         return static_cast<uint64_t>(static_cast<int64_t>(val));
     });
@@ -4225,7 +4227,7 @@ static FORCE_INLINE execute_status execute_FCVT_WU_S(STATE_ACCESS &a, uint64_t p
     auto note = a.make_scoped_note("fcvt.wu.s");
     (void) note;
     return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        uint32_t val = cvt_sf32_u32(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        uint32_t val = i_sfloat32::cvt_f_i<uint32_t>(s1, static_cast<FRM_modes>(rm), fflags);
         // For XLEN > 32, FCVT.WU.S sign-extends the 32-bit result.
         return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val)));
     });
@@ -4237,7 +4239,7 @@ static FORCE_INLINE execute_status execute_FCVT_L_S(STATE_ACCESS &a, uint64_t pc
     auto note = a.make_scoped_note("fcvt.l.s");
     (void) note;
     return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        int64_t val = cvt_sf32_i64(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        int64_t val = i_sfloat32::cvt_f_i<int64_t>(s1, static_cast<FRM_modes>(rm), fflags);
         return static_cast<uint64_t>(val);
     });
 }
@@ -4248,7 +4250,7 @@ static FORCE_INLINE execute_status execute_FCVT_LU_S(STATE_ACCESS &a, uint64_t p
     auto note = a.make_scoped_note("fcvt.lu.s");
     (void) note;
     return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        return cvt_sf32_u64(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        return i_sfloat32::cvt_f_i<uint64_t>(s1, static_cast<FRM_modes>(rm), fflags);
     });
 }
 
@@ -4258,7 +4260,7 @@ static FORCE_INLINE execute_status execute_FCVT_W_D(STATE_ACCESS &a, uint64_t pc
     auto note = a.make_scoped_note("fcvt.w.d");
     (void) note;
     return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        int32_t val = cvt_sf64_i32(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        int32_t val = i_sfloat64::cvt_f_i<int32_t>(s1, static_cast<FRM_modes>(rm), fflags);
         // For RV64, FCVT.W.D sign-extends the 32-bit result.
         return static_cast<uint64_t>(static_cast<int64_t>(val));
     });
@@ -4270,7 +4272,7 @@ static FORCE_INLINE execute_status execute_FCVT_WU_D(STATE_ACCESS &a, uint64_t p
     auto note = a.make_scoped_note("fcvt.wu.d");
     (void) note;
     return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        uint32_t val = cvt_sf64_u32(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        uint32_t val = i_sfloat64::cvt_f_i<uint32_t>(s1, static_cast<FRM_modes>(rm), fflags);
         // For RV64, FCVT.WU.D sign-extends the 32-bit result.
         return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val)));
     });
@@ -4282,7 +4284,7 @@ static FORCE_INLINE execute_status execute_FCVT_L_D(STATE_ACCESS &a, uint64_t pc
     auto note = a.make_scoped_note("fcvt.l.d");
     (void) note;
     return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        int64_t val = cvt_sf64_i64(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        int64_t val = i_sfloat64::cvt_f_i<int64_t>(s1, static_cast<FRM_modes>(rm), fflags);
         return static_cast<uint64_t>(val);
     });
 }
@@ -4293,7 +4295,7 @@ static FORCE_INLINE execute_status execute_FCVT_LU_D(STATE_ACCESS &a, uint64_t p
     auto note = a.make_scoped_note("fcvt.lu.d");
     (void) note;
     return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        return cvt_sf64_u64(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        return i_sfloat64::cvt_f_i<uint64_t>(s1, static_cast<FRM_modes>(rm), fflags);
     });
 }
 
@@ -4303,7 +4305,7 @@ static FORCE_INLINE execute_status execute_FCVT_S_W(STATE_ACCESS &a, uint64_t pc
     auto note = a.make_scoped_note("fcvt.s.w");
     (void) note;
     return execute_FCVT_F_X<uint32_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
-        return cvt_i32_sf32(static_cast<int32_t>(s1), static_cast<RoundingModeEnum>(rm), fflags);
+        return i_sfloat32::cvt_i_f(static_cast<int32_t>(s1), static_cast<FRM_modes>(rm), fflags);
     });
 }
 
@@ -4313,7 +4315,7 @@ static FORCE_INLINE execute_status execute_FCVT_S_WU(STATE_ACCESS &a, uint64_t p
     auto note = a.make_scoped_note("fcvt.s.wu");
     (void) note;
     return execute_FCVT_F_X<uint32_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
-        return cvt_u32_sf32(static_cast<uint32_t>(s1), static_cast<RoundingModeEnum>(rm), fflags);
+        return i_sfloat32::cvt_i_f(static_cast<uint32_t>(s1), static_cast<FRM_modes>(rm), fflags);
     });
 }
 
@@ -4323,7 +4325,7 @@ static FORCE_INLINE execute_status execute_FCVT_S_L(STATE_ACCESS &a, uint64_t pc
     auto note = a.make_scoped_note("fcvt.s.l");
     (void) note;
     return execute_FCVT_F_X<uint32_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
-        return cvt_i64_sf32(static_cast<int64_t>(s1), static_cast<RoundingModeEnum>(rm), fflags);
+        return i_sfloat32::cvt_i_f(static_cast<int64_t>(s1), static_cast<FRM_modes>(rm), fflags);
     });
 }
 
@@ -4333,7 +4335,7 @@ static FORCE_INLINE execute_status execute_FCVT_S_LU(STATE_ACCESS &a, uint64_t p
     auto note = a.make_scoped_note("fcvt.s.lu");
     (void) note;
     return execute_FCVT_F_X<uint32_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
-        return cvt_u64_sf32(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        return i_sfloat32::cvt_i_f(s1, static_cast<FRM_modes>(rm), fflags);
     });
 }
 
@@ -4343,7 +4345,7 @@ static FORCE_INLINE execute_status execute_FCVT_D_W(STATE_ACCESS &a, uint64_t pc
     auto note = a.make_scoped_note("fcvt.d.w");
     (void) note;
     return execute_FCVT_F_X<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        return cvt_i32_sf64(static_cast<int32_t>(s1), static_cast<RoundingModeEnum>(rm), fflags);
+        return i_sfloat64::cvt_i_f(static_cast<int32_t>(s1), static_cast<FRM_modes>(rm), fflags);
     });
 }
 
@@ -4353,7 +4355,7 @@ static FORCE_INLINE execute_status execute_FCVT_D_WU(STATE_ACCESS &a, uint64_t p
     auto note = a.make_scoped_note("fcvt.d.wu");
     (void) note;
     return execute_FCVT_F_X<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        return cvt_u32_sf64(static_cast<uint32_t>(s1), static_cast<RoundingModeEnum>(rm), fflags);
+        return i_sfloat64::cvt_i_f(static_cast<uint32_t>(s1), static_cast<FRM_modes>(rm), fflags);
     });
 }
 
@@ -4363,7 +4365,7 @@ static FORCE_INLINE execute_status execute_FCVT_D_L(STATE_ACCESS &a, uint64_t pc
     auto note = a.make_scoped_note("fcvt.d.l");
     (void) note;
     return execute_FCVT_F_X<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        return cvt_i64_sf64(static_cast<int64_t>(s1), static_cast<RoundingModeEnum>(rm), fflags);
+        return i_sfloat64::cvt_i_f(static_cast<int64_t>(s1), static_cast<FRM_modes>(rm), fflags);
     });
 }
 
@@ -4373,7 +4375,7 @@ static FORCE_INLINE execute_status execute_FCVT_D_LU(STATE_ACCESS &a, uint64_t p
     auto note = a.make_scoped_note("fcvt.d.lu");
     (void) note;
     return execute_FCVT_F_X<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        return cvt_u64_sf64(s1, static_cast<RoundingModeEnum>(rm), fflags);
+        return i_sfloat64::cvt_i_f(s1, static_cast<FRM_modes>(rm), fflags);
     });
 }
 
@@ -4411,7 +4413,7 @@ static FORCE_INLINE execute_status execute_FCLASS_S(STATE_ACCESS &a, uint64_t pc
     dump_insn(a, pc, insn, "fclass.s");
     auto note = a.make_scoped_note("fclass.s");
     (void) note;
-    return execute_FCLASS<uint32_t>(a, pc, insn, [](uint32_t s1) -> uint64_t { return fclass_sf32(s1); });
+    return execute_FCLASS<uint32_t>(a, pc, insn, [](uint32_t s1) -> uint64_t { return i_sfloat32::fclass(s1); });
 }
 
 template <typename STATE_ACCESS>
@@ -4447,7 +4449,7 @@ static FORCE_INLINE execute_status execute_FCLASS_D(STATE_ACCESS &a, uint64_t pc
     dump_insn(a, pc, insn, "fclass.d");
     auto note = a.make_scoped_note("fclass.d");
     (void) note;
-    return execute_FCLASS<uint64_t>(a, pc, insn, [](uint64_t s1) -> uint64_t { return fclass_sf64(s1); });
+    return execute_FCLASS<uint64_t>(a, pc, insn, [](uint64_t s1) -> uint64_t { return i_sfloat64::fclass(s1); });
 }
 
 template <typename STATE_ACCESS>

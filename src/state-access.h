@@ -70,6 +70,10 @@ private:
     // Declare interface as friend to it can forward calls to the "overriden" methods.
     friend i_state_access<state_access, pma_entry>;
 
+    machine_state &do_get_naked_state(void) {
+        return m_m.get_state();
+    }
+
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     void do_push_bracket(bracket_type type, const char *text) {
         (void) type;

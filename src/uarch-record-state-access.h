@@ -189,6 +189,7 @@ private:
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
         if (m_log->get_log_type().has_proofs()) {
             bool updated = m_m.update_merkle_tree_page(paligned);
+            (void) updated;
             assert(updated);
         }
     }

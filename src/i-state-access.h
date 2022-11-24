@@ -67,6 +67,11 @@ class i_state_access { // CRTP
     }
 
 public:
+    /// \brief Returns machine state for direct access.
+    auto &get_naked_state(void) {
+        return derived().do_get_naked_state();
+    }
+
     /// \brief Adds an annotation bracket to the log
     /// \param type Type of bracket
     /// \param text String with the text for the annotation

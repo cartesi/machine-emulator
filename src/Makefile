@@ -152,8 +152,9 @@ WARNS=-W -Wall -pedantic
 INCS= -I../lib/machine-emulator-defines $(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) $(GRPC_INC) $(SOFTFP_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
-#DEFS+=-DUMP_ILLEGAL_INSN
+#DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
 #DEFS+=-DDUMP_EXCEPTIONS
+#DEFS+=-DDUMP_INTERRUPTS
 DEFS+=-DDUMP_HIST
 #DEFS+=-DDUMP_MMU_EXCEPTIONS
 #DEFS+=-DDUMP_INVALID_MEM_ACCESS
@@ -234,8 +235,8 @@ UBFLAGS+=-fno-strict-aliasing
 UBFLAGS+=-fno-strict-overflow
 UBFLAGS+=-fno-delete-null-pointer-checks
 
-CXXFLAGS=$(OPTFLAGS) -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
-CFLAGS=$(OPTFLAGS) -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
+CXXFLAGS=$(OPTFLAGS) -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS) $(MYCFLAGS)
+CFLAGS=$(OPTFLAGS) -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS) $(MYCFLAGS)
 
 ifeq ($(coverage-toolchain),gcc)
 CC=gcc

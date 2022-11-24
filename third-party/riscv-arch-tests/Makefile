@@ -1,5 +1,5 @@
-MACHINE_EMULATOR_DEFINES_DIR ?= $(abspath ../lib/machine-emulator-defines)
-EMULATOR_ROM ?= $(abspath ../../rom.bin)
+MACHINE_EMULATOR_DEFINES_DIR ?= $(abspath ../../lib/machine-emulator-defines)
+EMULATOR_ROM ?= $(abspath ../../../rom.bin)
 
 RISCV_ARCH_TEST_PROJ = riscv-arch-test
 RISCV_ARCHTEST_BASE_URL = https://github.com/riscv-non-isa/$(RISCV_ARCH_TEST_PROJ)/archive

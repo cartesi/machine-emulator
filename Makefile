@@ -40,7 +40,7 @@ SRCDIR := $(abspath src)
 BUILDBASE := $(abspath build)
 BUILDDIR = $(BUILDBASE)/$(UNAME)_$(shell uname -m)
 DOWNLOADDIR := $(DEPDIR)/downloads
-SUBCLEAN := $(addsuffix .clean,$(SRCDIR))
+SUBCLEAN := $(addsuffix .clean,$(SRCDIR) uarch third-party/riscv-arch-tests)
 DEPDIRS := $(addprefix $(DEPDIR)/,cryptopp-CRYPTOPP_7_0_0 grpc)
 DEPCLEAN := $(addsuffix .clean,$(DEPDIRS))
 COREPROTO := lib/grpc-interfaces/core.proto
@@ -121,6 +121,8 @@ help:
 	@echo 'Generic targets:'
 	@echo '* all                        - build the src/ code. To build from a clean clone, run: make submodules downloads dep all'
 	@echo '  doc                        - build the doxygen documentation (requires doxygen to be installed)'
+	@echo '  uarch                      - build microarchitecture'
+	@echo '  riscv-arch-tests           - build and run microarchitecture rv64i instruction tests'
 
 $(DOWNLOADDIR):
 	@mkdir -p $(DOWNLOADDIR)
@@ -142,14 +144,15 @@ submodules:
 $(COREPROTO):
 	$(info gprc-interfaces submodule not initialized!)
 	@exit 1
-
 grpc: | $(COREPROTO)
 hash luacartesi grpc test lint coverage-report check-format format:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
-
+riscv-arch-tests:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C third-party/riscv-arch-tests
 source-default:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR)
-
+uarch:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C uarch
 $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 $(BUILDDIR)/lib/libcryptopp.$(LIB_EXTENSION): | $(BUILDDIR) $(DOWNLOADDIR)
 	if [ ! -d $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 ]; then tar -xzf $(DOWNLOADDIR)/CRYPTOPP_7_0_0.tar.gz -C $(DEPDIR); fi
 	$(MAKE) -C $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 shared
@@ -226,5 +229,5 @@ install: install-dep install-emulator install-strip $(INSTALL_PLAT)
 
 .SECONDARY: $(DOWNLOADDIR) $(DEPDIRS) $(COREPROTO)
 
-.PHONY: help all submodules doc clean distclean downloads src test luacartesi grpc hash\
+.PHONY: help all submodules doc clean distclean downloads src test luacartesi grpc hash uarch \
 	$(SUBDIRS) $(SUBCLEAN) $(DEPCLEAN)

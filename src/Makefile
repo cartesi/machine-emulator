@@ -25,7 +25,6 @@ CRYPTOPP_LIB:=-L$(BUILDDIR)/lib -lcryptopp
 CRYPTOPP_INC:=-I$(BUILDDIR)/include
 GRPC_DIR:=../lib/grpc-interfaces
 HEALTHCHECK_DIR:=$(BUILDDIR)/share/grpc/health/v1
-SOFTFP_INC:=-I../third-party/tinyemu-softfp
 
 PROTOC:=$(BUILDDIR)/bin/protoc
 GRPC_CPP_PLUGIN=$(BUILDDIR)/bin/grpc_cpp_plugin
@@ -33,11 +32,11 @@ GRPC_CPP_PLUGIN=$(BUILDDIR)/bin/grpc_cpp_plugin
 # So we can use gcc to check if there are unused symbols
 ifeq ($(gc),yes)
 GCFLAGS= -fno-inline-small-functions -fno-inline -fdata-sections -ffunction-sections
-GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections $(LUA_LIB)
+GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections
 endif
 
 # Mac OS X specific setup
-SOLDFLAGS_Darwin:=-undefined dynamic_lookup
+SOLDFLAGS_Darwin:=-bundle -undefined dynamic_lookup
 CC_Darwin=clang
 CXX_Darwin=clang++
 INCS_Darwin=
@@ -74,8 +73,6 @@ LIBCARTESI_GRPC_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_na
 LIBCARTESI_GRPC_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
 CARTESI_EXECUTABLE_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
 PROFILE_DATA_Darwin=default.profdata
-LUACARTESI_FLAGS_Darwin:=-bundle
-LUACARTESI_GRPC_FLAGS_Darwin:=-bundle
 
 # Linux specific setup
 SOLDFLAGS_Linux:=-shared -fPIC -pthread
@@ -92,17 +89,15 @@ GRPC_INC_Linux:=-I$(BUILDDIR)/include
 GRPC_LIB_Linux:=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
 PROTOBUF_LIB_Linux:=-L$(BUILDDIR)/lib -lprotobuf -lpthread
 LIBCARTESI_Linux=libcartesi.so
-LIBCARTESI_LDFLAGS_Linux=
+LIBCARTESI_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
 LIBCARTESI_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
 LIBCARTESI_PROTOBUF_Linux=libcartesi_protobuf.so
-LIBCARTESI_PROTOBUF_LDFLAGS_Linux=
+LIBCARTESI_PROTOBUF_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
 LIBCARTESI_GRPC_Linux=libcartesi_grpc.so
-LIBCARTESI_GRPC_LDFLAGS_Linux=
+LIBCARTESI_GRPC_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
 LIBCARTESI_GRPC_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
 CARTESI_EXECUTABLE_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/'
 PROFILE_DATA_Linux=
-LUACARTESI_FLAGS_Linux=
-LUACARTESI_GRPC_FLAGS_Linux=
 
 CC=$(CC_$(UNAME))
 CXX=$(CXX_$(UNAME))
@@ -128,8 +123,6 @@ CARTESI_EXECUTABLE_LDFLAGS=$(CARTESI_EXECUTABLE_LDFLAGS_$(UNAME))
 LIBCARTESI_GRPC=$(LIBCARTESI_GRPC_$(UNAME))
 LIBCARTESI_GRPC_LDFLAGS=$(LIBCARTESI_GRPC_LDFLAGS_$(UNAME))
 LIBCARTESI_GRPC_TESTS_LDFLAGS=$(LIBCARTESI_GRPC_TESTS_LDFLAGS_$(UNAME))
-LUACARTESI_FLAGS=$(LUACARTESI_FLAGS_$(UNAME)_$(UNAME))
-LUACARTESI_GRPC_FLAGS=$(LUACARTESI_GRPC_FLAGS_$(UNAME))
 LIBCARTESI_GRPC_LIB=-L. -lcartesi_grpc
 
 CARTESI_LIBS:=$(CRYPTOPP_LIB) $(LIBCARTESI_PROTOBUF_LIB)
@@ -149,7 +142,7 @@ HASH_LIBS:=$(CRYPTOPP_LIB)
 WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
-INCS= -I../lib/machine-emulator-defines $(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) $(GRPC_INC) $(SOFTFP_INC) $(INCS_$(UNAME))
+INCS= -I../lib/machine-emulator-defines $(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
@@ -341,22 +334,22 @@ LUACARTESI_LIBS+=-lprofiler
 endif
 
 $(LIBCARTESI): $(CARTESI_OBJS) $(LIBCARTESI_PROTOBUF)
-	$(CXX) $(SOLDFLAGS) $(LIBCARTESI_LDFLAGS) -o $@ $(CARTESI_OBJS) $(CARTESI_LIBS)
+	$(CXX) $(LIBCARTESI_LDFLAGS) -o $@ $(CARTESI_OBJS) $(CARTESI_LIBS)
 
 # $(LIBCARTESI_PROTOBUF) is a dynamic library that exports all symbols
 $(CARTESI_PROTOBUF_GEN_OBJS): CXXFLAGS += -fvisibility=default
 
 $(LIBCARTESI_PROTOBUF): $(CARTESI_PROTOBUF_GEN_OBJS)
-	$(CXX) $(SOLDFLAGS) $(LIBCARTESI_PROTOBUF_LDFLAGS) -o $@ $^ $(CARTESI_PROTOBUF_LIBS)
+	$(CXX) $(LIBCARTESI_PROTOBUF_LDFLAGS) -o $@ $^ $(CARTESI_PROTOBUF_LIBS)
 
 $(LIBCARTESI_GRPC): $(CARTESI_GRPC_OBJS) $(LIBCARTESI)
-	$(CXX) $(SOLDFLAGS) $(LIBCARTESI_GRPC_LDFLAGS) -o $@ $(CARTESI_GRPC_OBJS) $(CARTESI_GRPC_LIBS) $(LIBCARTESI_LIB)
+	$(CXX) $(LIBCARTESI_GRPC_LDFLAGS) -o $@ $(CARTESI_GRPC_OBJS) $(CARTESI_GRPC_LIBS) $(LIBCARTESI_LIB)
 
 cartesi.so: $(LUACARTESI_OBJS) $(LIBCARTESI)
-	$(CXX) $(SOLDFLAGS) $(LUACARTESI_FLAGS) -o $@ $(LUACARTESI_OBJS) $(LUACARTESI_LIBS)
+	$(CXX) $(SOLDFLAGS) -o $@ $(LUACARTESI_OBJS) $(LUACARTESI_LIBS)
 
 cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS) $(LIBCARTESI_GRPC) $(LIBCARTESI)
-	$(CXX) $(SOLDFLAGS) $(LUACARTESI_GRPC_FLAGS) -o $@ $(LUACARTESI_GRPC_OBJS) $(LUACARTESI_GRPC_LIBS)
+	$(CXX) $(SOLDFLAGS) -o $@ $(LUACARTESI_GRPC_OBJS) $(LUACARTESI_GRPC_LIBS)
 
 test: luacartesi
 	$(LUA_BIN) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
@@ -391,6 +384,9 @@ fs.ext2: fs/*
 
 generate: CXXFLAGS += -fprofile-generate
 generate: SOLDFLAGS += -fprofile-generate
+generate: LIBCARTESI_LDFLAGS += -fprofile-generate
+generate: LIBCARTESI_PROTOBUF_LDFLAGS += -fprofile-generate
+generate: LIBCARTESI_GRPC_LDFLAGS += -fprofile-generate
 generate: luacartesi
 
 ifeq ($(coverage-toolchain),gcc)
@@ -421,20 +417,22 @@ $(PROFILE_DATA_Darwin):
 
 use: CXXFLAGS += -fprofile-use
 use: SOLDFLAGS += -fprofile-use
+use: LIBCARTESI_LDFLAGS += -fprofile-use
+use: LIBCARTESI_PROTOBUF_LDFLAGS += -fprofile-use -Wno-missing-profile
+use: LIBCARTESI_GRPC_LDFLAGS += -fprofile-use -Wno-missing-profile
 use: $(PROFILE_DATA_$(UNAME)) luacartesi
 
 compile_flags.txt:
 	@echo "$(CXXFLAGS)" "-xc++" | sed -e $$'s/ \{1,\}/\\\n/g' | grep -v "MMD" > $@
 
-luacartesi: cartesi.so
+luacartesi: cartesi.so cartesi/grpc.so
 
-luacartesi-pgo: $(LIBCARTESI_PROTOBUF)
-	rm -f cartesi.so $(CARTESI_OBJS) $(LUACARTESI_OBJS) $(LIBCARTESI) $(PROFILE_DATA_$(UNAME)) *.gcda
+luacartesi-pgo:
 	$(MAKE) --no-print-directory generate
 	./cartesi-machine.lua -- "$(PGO_WORKLOAD)"
-	rm -f cartesi.so $(CARTESI_OBJS) $(LUACARTESI_OBJS) $(LIBCARTESI)
+	$(MAKE) clean-libcartesi
 	$(MAKE) --no-print-directory use
-	rm -f $(PROFILE_DATA_$(UNAME)) *.gcda
+	$(MAKE) clean-profile
 
 grpc: cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager
 
@@ -646,16 +644,27 @@ grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o proxy.o: $(CARTESI_
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-clean: profile-clean
-	rm -f dis/*.o dis/*.d *.pb.cc *.pb.h *.gcno *.o *.d *.clang-tidy \
-		$(LIBCARTESI) $(LIBCARTESI_GRPC) cartesi.so cartesi/grpc.so \
-		remote-cartesi-machine remote-cartesi-machine-proxy \
-		merkle-tree-hash server-manager \
-		tests/test-merkle-tree-hash \
-		tests/test-machine-c-api \
-		tests/test-server-manager
+clean: clean-profile clean-proto-sources clean-tidy clean-libcartesi clean-executables clean-tests
 
-profile-clean:
-	rm -f *.profdata *.profraw tests/*.profraw *.gcda
+clean-proto-sources:
+	@rm -f *.pb.cc *.pb.h
+
+clean-tidy:
+	@rm -f *.clang-tidy
+
+clean-objs:
+	@rm -f *.o *.d
+
+clean-libcartesi: clean-objs
+	@rm -f $(LIBCARTESI) $(LIBCARTESI_PROTOBUF) $(LIBCARTESI_GRPC) cartesi.so cartesi/grpc.so
+
+clean-executables:
+	@rm -f remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash server-manager
+
+clean-tests:
+	@rm -f tests/test-merkle-tree-hash tests/test-machine-c-api tests/test-server-manager
+
+clean-profile:
+	@rm -f *.profdata *.profraw tests/*.profraw *.gcda *.gcno
 
 -include $(wildcard *.d)

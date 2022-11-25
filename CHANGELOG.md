@@ -5,11 +5,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.12.0] - 2022-11-25
 ### Added
 
 - Added support for RISC-V floating-point instructions
 - Added read/write virtual memory methods
 - Added --quiet flag to cartesi-machine.lua
+- Added --assert-rolling-template flag to cartesi-machine.lua
+- Added the microarchitecture (RV64I) implementation
+- Added new optimizations build options on the Makefile
+- Added log messages to remote-cartesi-machine
+- Added check-in deadline and retry on remote-cartesi-machine
+- Added check-in deadline timeout on the server-manager
 
 ### Changed
 
@@ -22,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactored the shadow
 - Exposed TLB in the shadow
 - Optimized TLB implementation
+- Improved server-manager log messages
 
 ### Fixed
 
@@ -185,7 +194,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.2.0]
 - [0.1.0]
 
-[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.12.0
 [0.11.2]: https://github.com/cartesi/machine-emulator/releases/tag/v0.11.2
 [0.11.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.11.1
 [0.11.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.11.0

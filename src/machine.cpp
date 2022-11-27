@@ -1846,12 +1846,6 @@ uint64_t machine::read_uarch_ram_length(void) const {
     return m_uarch.read_ram_length();
 }
 
-void machine::run_inner_loop(uint64_t mcycle_end) {
-    // Call interpret with a non-logging state access object
-    state_access a(*this);
-    interpret(a, mcycle_end);
-}
-
 static uint64_t saturate_next_cycle(uint64_t cycle) {
     return (cycle < UINT64_MAX) ? cycle + 1 : UINT64_MAX;
 }
@@ -1946,20 +1940,12 @@ void machine::uarch_run(uint64_t uarch_cycle_end) {
     uarch_interpret(a, uarch_cycle_end);
 }
 
-void machine::run(uint64_t mcycle_end) {
+interpreter_break_reason machine::run(uint64_t mcycle_end) {
     if (mcycle_end < read_mcycle()) {
         throw std::invalid_argument{"mcycle is past"};
     }
-    // The interpreter loop inside this function is not required by
-    // specification.  However, this loop is an optimization to reduce
-    // the number of calls to machine::run, which can be expensive in
-    // some bindings such as gRPC.
-    while (read_mcycle() < mcycle_end && !read_iflags_H() && !read_iflags_Y()) {
-        run_inner_loop(mcycle_end);
-        if (read_iflags_X()) {
-            return;
-        }
-    }
+    state_access a(*this);
+    return interpret(a, mcycle_end);
 }
 
 } // namespace cartesi

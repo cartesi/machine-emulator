@@ -19,10 +19,8 @@
 local cartesi = require"cartesi"
 local test_util = require "tests.util"
 
-
-
 local function build_machine()
-    machine_config = {
+    local machine_config = {
         rom = {
             image_filename = test_util.tests_path .. "bootstrap.bin"
         },
@@ -42,7 +40,8 @@ local function do_test(description, f)
     print(" passed")
 end
 
-local EXPECTED_MCYCLE = 220
+local RTC_FREQ_DIV = 8192
+local EXPECTED_MCYCLE = RTC_FREQ_DIV*2 + 20
 
 local function check_state(machine)
     assert(machine:read_iflags_H(), "machine did not halt")

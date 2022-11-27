@@ -415,11 +415,11 @@ valgrind: luacartesi
 $(PROFILE_DATA_Darwin):
 	llvm-profdata merge -output=default.profdata default*.profraw
 
-use: CXXFLAGS += -fprofile-use
+use: CXXFLAGS += -fprofile-use -Wno-missing-profile
 use: SOLDFLAGS += -fprofile-use
 use: LIBCARTESI_LDFLAGS += -fprofile-use
-use: LIBCARTESI_PROTOBUF_LDFLAGS += -fprofile-use -Wno-missing-profile
-use: LIBCARTESI_GRPC_LDFLAGS += -fprofile-use -Wno-missing-profile
+use: LIBCARTESI_PROTOBUF_LDFLAGS += -fprofile-use
+use: LIBCARTESI_GRPC_LDFLAGS += -fprofile-use
 use: $(PROFILE_DATA_$(UNAME)) luacartesi
 
 compile_flags.txt:

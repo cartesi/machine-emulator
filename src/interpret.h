@@ -24,33 +24,36 @@
 
 namespace cartesi {
 
-/// \brief Interpreter status code
-enum class interpreter_status : int {
-    brk,    ///< brk is set, indicating the tight loop was broken
-    success ///< mcycle reached target value
+/// \brief Reasons for interpreter loop interruption
+enum class interpreter_break_reason {
+    failed, ///< This value is not really returned by the interpreter loop, but it's reserved for C API
+    halted,
+    yielded_manually,
+    yielded_automatically,
+    reached_target_mcycle
 };
 
 /// \brief Tries to run the interpreter until mcycle hits a target
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param mcycle_end Target value for mcycle.
-/// \returns Returns a status code that tells if the loop hit the target mcycle or stopped early.
+/// \returns Returns a reason code that tells why the interpreter loop has been stopped.
 /// \details The interpret may stop early if the machine halts permanently or becomes temporarily idle (waiting for
 /// interrupts).
 template <typename STATE_ACCESS>
-interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end);
+interpreter_break_reason interpret(STATE_ACCESS &a, uint64_t mcycle_end);
 
 #ifdef MICROARCHITECTURE
 class uarch_machine_state_access;
 // Declaration of explicit instantiation in module interpret.cpp when compiled with microarchitecture
-extern template interpreter_status interpret(uarch_machine_state_access &a, uint64_t mcycle_end);
+extern template interpreter_break_reason interpret(uarch_machine_state_access &a, uint64_t mcycle_end);
 #else
 // Forward declarations
 class state_access;
 class machine;
 
 // Declaration of explicit instantiation in module interpret.cpp
-extern template interpreter_status interpret(state_access &a, uint64_t mcycle_end);
+extern template interpreter_break_reason interpret(state_access &a, uint64_t mcycle_end);
 
 #endif // MICROARCHITECTURE
 } // namespace cartesi

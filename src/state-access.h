@@ -399,13 +399,13 @@ private:
         return m_m.get_state().htif.iyield;
     }
 
-    void do_poll_console() {
+    execute_status do_poll_console() {
         bool htif_console_getchar = static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
         if (htif_console_getchar) {
             uint64_t mcycle = read_mcycle();
             uint64_t warp_cycle = rtc_time_to_cycle(read_clint_mtimecmp());
             if (warp_cycle > mcycle) {
-                const uint64_t cycles_per_us = 100; // CLOCK_FREQ / 10^6; see rom-defines.h
+                const uint64_t cycles_per_us = RTC_CLOCK_FREQ / 1000000; // CLOCK_FREQ / 10^6
                 uint64_t wait = (warp_cycle - mcycle) / cycles_per_us;
                 timeval start{};
                 timeval end{};
@@ -417,9 +417,10 @@ private:
                 uint64_t real_cycle = rtc_time_to_cycle(elapsed_cycles + rtc_cycle_to_time(mcycle));
                 warp_cycle = elapsed_us >= wait ? warp_cycle : real_cycle;
                 write_mcycle(warp_cycle);
-                set_brkflag();
+                return execute_status::success_and_break_inner_loop;
             }
         }
+        return execute_status::success;
     }
 
     uint64_t do_read_pma_istart(int i) const {
@@ -508,7 +509,7 @@ private:
             log2_size);
     }
 
-    bool do_write_device(pma_entry &pma, uint64_t offset, uint64_t val, int log2_size) {
+    execute_status do_write_device(pma_entry &pma, uint64_t offset, uint64_t val, int log2_size) {
         device_state_access da(*this);
         return pma.get_device_noexcept().get_driver()->write(pma.get_device_noexcept().get_context(), &da, offset, val,
             log2_size);

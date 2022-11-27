@@ -1,7 +1,7 @@
 name: Build/Test/Verify/Release
 on: [push]
 env:
-  ROM_VERSION: v0.13.0
+  ROM_VERSION: v0.14.0
   KERNEL_VERSION: v0.14.0
   LINUX_VERSION: 5.15.63-ctsi-1
   ROOTFS_VERSION: v0.15.0

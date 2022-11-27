@@ -579,7 +579,7 @@ public:
     }
 
     /// \brief Polls console for pending input.
-    void poll_console(void) {
+    execute_status poll_console(void) {
         return derived().do_poll_console();
     }
 

@@ -51,19 +51,25 @@ public:
     i_device_state_access &operator=(i_device_state_access &&other) noexcept = delete;
 
     /// \brief Sets bits in mip.
-    void set_mip(uint32_t mask) {
+    void set_mip(uint64_t mask) {
         return do_set_mip(mask);
     }
 
     /// \brief Resets bits in mip.
-    void reset_mip(uint32_t mask) {
+    void reset_mip(uint64_t mask) {
         return do_reset_mip(mask);
     }
 
     /// \brief Reads the value of the mip register.
     /// \returns Register value.
-    uint32_t read_mip(void) {
+    uint64_t read_mip(void) {
         return do_read_mip();
+    }
+
+    /// \brief Reads the value of the mie register.
+    /// \returns Register value.
+    uint64_t read_mie(void) {
+        return do_read_mie();
     }
 
     /// \brief Reads CSR mcycle.
@@ -167,9 +173,10 @@ public:
     }
 
 private:
-    virtual void do_set_mip(uint32_t mask) = 0;
-    virtual void do_reset_mip(uint32_t mask) = 0;
-    virtual uint32_t do_read_mip(void) = 0;
+    virtual void do_set_mip(uint64_t mask) = 0;
+    virtual void do_reset_mip(uint64_t mask) = 0;
+    virtual uint64_t do_read_mip(void) = 0;
+    virtual uint64_t do_read_mie(void) = 0;
     virtual uint64_t do_read_mcycle(void) = 0;
     virtual void do_set_iflags_H(void) = 0;
     virtual void do_set_iflags_Y(void) = 0;

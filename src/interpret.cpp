@@ -530,11 +530,11 @@ static inline uint32_t ilog2(uint32_t v) {
 /// \brief Raises an interrupt if any are enabled and pending.
 /// \param a Machine state accessor object.
 template <typename STATE_ACCESS>
-static void raise_interrupt_if_any(STATE_ACCESS &a) {
+static inline void raise_interrupt_if_any(STATE_ACCESS &a) {
     auto note = a.make_scoped_note("raise_interrupt_if_any");
     (void) note;
     uint32_t mask = get_pending_irq_mask(a);
-    if (unlikely(mask != 0)) {
+    if (mask != 0) {
         uint64_t irq_num = ilog2(mask);
         raise_exception(a, irq_num | MCAUSE_INTERRUPT_FLAG, 0);
     }
@@ -543,7 +543,7 @@ static void raise_interrupt_if_any(STATE_ACCESS &a) {
 /// \brief At every tick, set interrupt as pending if the timer is expired
 /// \param a Machine state accessor object.
 template <typename STATE_ACCESS>
-static void set_rtc_interrupt(STATE_ACCESS &a, uint64_t mcycle) {
+static inline void set_rtc_interrupt(STATE_ACCESS &a, uint64_t mcycle) {
     auto note = a.make_scoped_note("set_rtc_interrupt");
     (void) note;
     if (rtc_is_tick(mcycle)) {
@@ -766,39 +766,40 @@ static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, T 
 /// \returns True if succeeded, false if exception raised.
 /// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename T, typename STATE_ACCESS>
-static NO_INLINE bool write_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr, uint64_t val64) {
+static NO_INLINE execute_status write_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr, uint64_t val64) {
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (unlikely(vaddr & (sizeof(T) - 1))) {
         raise_exception(a, MCAUSE_STORE_AMO_ADDRESS_MISALIGNED, vaddr);
-        return false;
+        return execute_status::failure;
         // Deal with aligned accesses
     } else {
         uint64_t paddr{};
         if (unlikely(!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_W_SHIFT))) {
             raise_exception(a, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
-            return false;
+            return execute_status::failure;
         }
         auto &pma = a.template find_pma_entry<T>(paddr);
         if (unlikely(pma.get_istart_E() || !pma.get_istart_W())) {
             raise_exception(a, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
-            return false;
+            return execute_status::failure;
         } else if (pma.get_istart_M()) {
             unsigned char *hpage = a.template replace_tlb_entry<TLB_WRITE>(vaddr, paddr, pma);
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             a.write_memory_word(paddr, hpage, hoffset, static_cast<T>(val64));
-            return true;
+            return execute_status::success;
         } else if (pma.get_istart_IO()) {
             uint64_t offset = paddr - pma.get_start();
             // If we do not know how to write, we treat this as a PMA violation
-            if (unlikely(!a.write_device(pma, offset, val64, log2_size<U>::value))) {
+            auto status = a.write_device(pma, offset, val64, log2_size<U>::value);
+            if (unlikely(status == execute_status::failure)) {
                 raise_exception(a, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
-                return false;
+                return execute_status::failure;
             }
-            return true;
+            return status;
         } else {
             assert(false);
-            return false;
+            return execute_status::failure;
         }
     }
 }
@@ -811,7 +812,7 @@ static NO_INLINE bool write_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr,
 /// \param val64 Value to write.
 /// \returns True if succeeded, false if exception raised.
 template <typename T, typename STATE_ACCESS>
-static FORCE_INLINE bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_t val64) {
+static FORCE_INLINE execute_status write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, uint64_t val64) {
     // Try hitting the TLB
     if (unlikely((!a.template write_memory_word_via_tlb<TLB_WRITE>(vaddr, static_cast<T>(val64))))) {
         INC_COUNTER(a.get_statistics(), tlb_wmiss);
@@ -819,7 +820,7 @@ static FORCE_INLINE bool write_virtual_memory(STATE_ACCESS &a, uint64_t vaddr, u
         return write_virtual_memory_slow<T>(a, vaddr, val64);
     }
     INC_COUNTER(a.get_statistics(), tlb_whit);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
@@ -850,72 +851,80 @@ static void dump_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const char *n
 #endif
 }
 
-/// \brief Instruction fetch status code
-enum class execute_status : int {
-    exception_raised, ///< Instruction raised an exception
-    retired           ///< Instruction was retired
-};
-
 /// \brief Raises an illegal instruction exception.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param pc Current pc.
 /// \param insn Instruction.
-/// \return execute_status::exception_raised
+/// \return execute_status::failure
 /// \details This function is tail-called whenever the caller decoded enough of the instruction to identify it as
 /// illegal.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status raise_illegal_insn_exception(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     (void) pc;
     raise_exception(a, MCAUSE_ILLEGAL_INSN, insn);
-    return execute_status::exception_raised;
+    return execute_status::failure;
 }
 
 /// \brief Raises an misaligned-fetch exception.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param pc Current pc.
-/// \return execute_status::exception_raised
+/// \return execute_status::failure
 /// \details This function is tail-called whenever the caller identified that the next value of pc is misaligned.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status raise_misaligned_fetch_exception(STATE_ACCESS &a, uint64_t pc) {
     raise_exception(a, MCAUSE_INSN_ADDRESS_MISALIGNED, pc);
-    return execute_status::exception_raised;
+    return execute_status::failure;
 }
 
 /// \brief Returns from execution due to raised exception.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
-/// \return execute_status::exception_raised
+/// \return execute_status::failure
 /// \details This function is tail-called whenever the caller identified a raised exception.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status advance_to_raised_exception(STATE_ACCESS &a) {
     (void) a;
-    return execute_status::exception_raised;
+    return execute_status::failure;
 }
 
 /// \brief Advances pc to the next instruction.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param pc Current pc.
-/// \return execute_status::retired
+/// \return execute_status::success
 /// \details This function is tail-called whenever the caller wants move to the next instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status advance_to_next_insn(STATE_ACCESS &a, uint64_t pc) {
     a.write_pc(pc + 4);
-    return execute_status::retired;
+    return execute_status::success;
+}
+
+/// \brief Advances pc to the next instruction.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param pc Current pc.
+/// \param status Status to return.
+/// \return status
+/// \details This function is tail-called whenever the caller wants move to the next instruction.
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status advance_to_next_insn_with_status(STATE_ACCESS &a, uint64_t pc,
+    execute_status status) {
+    a.write_pc(pc + 4);
+    return status;
 }
 
 /// \brief Changes pc arbitrarily, potentially causing a jump.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param pc Current pc.
-/// \return execute_status::retired
+/// \return execute_status::success
 /// \details This function is tail-called whenever the caller wants to jump.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_jump(STATE_ACCESS &a, uint64_t pc) {
     a.write_pc(pc);
-    return execute_status::retired;
+    return execute_status::success;
 }
 
 /// \brief Execute the LR instruction.
@@ -947,8 +956,10 @@ template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SC(STATE_ACCESS &a, uint64_t pc, uint32_t insn) {
     uint64_t val = 0;
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
+    execute_status status = execute_status::success;
     if (a.read_ilrsc() == vaddr) {
-        if (unlikely(!write_virtual_memory<T>(a, vaddr, static_cast<T>(a.read_x(insn_get_rs2(insn)))))) {
+        status = write_virtual_memory<T>(a, vaddr, static_cast<T>(a.read_x(insn_get_rs2(insn))));
+        if (unlikely(status == execute_status::failure)) {
             return advance_to_raised_exception(a);
         }
     } else {
@@ -959,7 +970,7 @@ static FORCE_INLINE execute_status execute_SC(STATE_ACCESS &a, uint64_t pc, uint
     if (rd != 0) {
         a.write_x(rd, val);
     }
-    return advance_to_next_insn(a, pc);
+    return advance_to_next_insn_with_status(a, pc, status);
 }
 
 /// \brief Implementation of the LR.W instruction.
@@ -997,14 +1008,15 @@ static FORCE_INLINE execute_status execute_AMO(STATE_ACCESS &a, uint64_t pc, uin
     }
     T valr = static_cast<T>(a.read_x(insn_get_rs2(insn)));
     valr = f(valm, valr);
-    if (unlikely(!write_virtual_memory<T>(a, vaddr, valr))) {
+    execute_status status = write_virtual_memory<T>(a, vaddr, valr);
+    if (unlikely(status == execute_status::failure)) {
         return advance_to_raised_exception(a);
     }
     uint32_t rd = insn_get_rd(insn);
     if (rd != 0) {
         a.write_x(rd, static_cast<uint64_t>(valm));
     }
-    return advance_to_next_insn(a, pc);
+    return advance_to_next_insn_with_status(a, pc, status);
 }
 
 /// \brief Implementation of the AMOSWAP.W instruction.
@@ -1745,98 +1757,87 @@ static NO_INLINE uint64_t read_csr(STATE_ACCESS &a, CSR_address csraddr, bool *s
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_sstatus(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_sstatus(STATE_ACCESS &a, uint64_t val) {
     uint64_t mstatus = a.read_mstatus();
     return write_csr_mstatus(a, (mstatus & ~SSTATUS_W_MASK) | (val & SSTATUS_W_MASK));
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_senvcfg(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_senvcfg(STATE_ACCESS &a, uint64_t val) {
     uint64_t senvcfg = a.read_senvcfg();
     a.write_senvcfg((senvcfg & ~SENVCFG_W_MASK) | (val & SENVCFG_W_MASK));
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static void set_brkflag_from_all(STATE_ACCESS &a) {
-    bool brkflag = false;
-    auto mip = a.read_mip();
-    auto mie = a.read_mie();
-    brkflag |= (mip & mie);
-    brkflag |= a.read_iflags_H();
-    brkflag |= a.read_iflags_Y();
-    brkflag |= a.read_iflags_X();
-    if (brkflag) {
-        a.set_brkflag();
-    } else {
-        a.reset_brkflag();
-    }
-}
-
-template <typename STATE_ACCESS>
-static bool write_csr_sie(STATE_ACCESS &a, uint64_t val) {
-    uint64_t mask = a.read_mideleg();
+static execute_status write_csr_sie(STATE_ACCESS &a, uint64_t val) {
     uint64_t mie = a.read_mie();
-    a.write_mie((mie & ~mask) | (val & mask));
-    set_brkflag_from_all(a);
-    return true;
+    uint64_t mask = a.read_mideleg();
+    mie = (mie & ~mask) | (val & mask);
+    a.write_mie(mie);
+    if (get_pending_irq_mask(a)) {
+        return execute_status::success_and_break_inner_loop;
+    }
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_stvec(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_stvec(STATE_ACCESS &a, uint64_t val) {
     a.write_stvec(val & ~3);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_scounteren(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_scounteren(STATE_ACCESS &a, uint64_t val) {
     a.write_scounteren(val & SCOUNTEREN_RW_MASK);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_sscratch(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_sscratch(STATE_ACCESS &a, uint64_t val) {
     a.write_sscratch(val);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_sepc(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_sepc(STATE_ACCESS &a, uint64_t val) {
     a.write_sepc(val & ~3);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_scause(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_scause(STATE_ACCESS &a, uint64_t val) {
     a.write_scause(val);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_stval(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_stval(STATE_ACCESS &a, uint64_t val) {
     a.write_stval(val);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_sip(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_sip(STATE_ACCESS &a, uint64_t val) {
     uint64_t mask = a.read_mideleg();
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
-    set_brkflag_from_all(a);
-    return true;
+    if (get_pending_irq_mask(a)) {
+        return execute_status::success_and_break_inner_loop;
+    }
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static NO_INLINE bool write_csr_satp(STATE_ACCESS &a, uint64_t val) {
+static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
     uint64_t mstatus = a.read_mstatus();
     auto priv = a.read_iflags_PRV();
 
     // When TVM=1, attempts to read or write the satp CSR
     // while executing in S-mode will raise an illegal instruction exception
     if (unlikely(priv == PRV_S && (mstatus & MSTATUS_TVM_MASK))) {
-        return false;
+        return execute_status::failure;
     }
 
     uint64_t old_satp = a.read_satp();
@@ -1875,11 +1876,11 @@ static NO_INLINE bool write_csr_satp(STATE_ACCESS &a, uint64_t val) {
         INC_COUNTER(a.get_statistics(), tlb_flush_all);
         INC_COUNTER(a.get_statistics(), tlb_flush_satp);
     }
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
     uint64_t old_mstatus = a.read_mstatus() & MSTATUS_R_MASK;
 
     // M-mode software can determine whether a privilege mode is implemented
@@ -1943,65 +1944,79 @@ static bool write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
         INC_COUNTER(a.get_statistics(), tlb_flush_mstatus);
     }
 
-    return true;
+    // When changing an interrupt enabled bit, we may have to break inner loop
+    if ((mod & (MSTATUS_SIE_MASK | MSTATUS_MIE_MASK)) && get_pending_irq_mask(a)) {
+        return execute_status::success_and_break_inner_loop;
+    }
+
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_menvcfg(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_menvcfg(STATE_ACCESS &a, uint64_t val) {
     uint64_t menvcfg = a.read_menvcfg() & MENVCFG_R_MASK;
 
     // Modify only bits that can be written to
     menvcfg = (menvcfg & ~MENVCFG_W_MASK) | (val & MENVCFG_W_MASK);
     // Store results
     a.write_menvcfg(menvcfg);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_medeleg(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_medeleg(STATE_ACCESS &a, uint64_t val) {
     // For exceptions that cannot occur in less privileged modes,
     // the corresponding medeleg bits should be read-only zero
     a.write_medeleg((a.read_medeleg() & ~MEDELEG_W_MASK) | (val & MEDELEG_W_MASK));
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mideleg(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_mideleg(STATE_ACCESS &a, uint64_t val) {
     const uint64_t mask = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
-    a.write_mideleg((a.read_mideleg() & ~mask) | (val & mask));
-    return true;
+    uint64_t mideleg = a.read_mideleg();
+    mideleg = (mideleg & ~mask) | (val & mask);
+    a.write_mideleg(mideleg);
+    if (get_pending_irq_mask(a)) {
+        return execute_status::success_and_break_inner_loop;
+    }
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mie(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_mie(STATE_ACCESS &a, uint64_t val) {
     const uint64_t mask = MIP_MSIP_MASK | MIP_MTIP_MASK | MIP_MEIP_MASK | MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
-    a.write_mie((a.read_mie() & ~mask) | (val & mask));
-    set_brkflag_from_all(a);
-    return true;
+    uint64_t mie = a.read_mie();
+    mie = (mie & ~mask) | (val & mask);
+    a.write_mie(mie);
+    if (get_pending_irq_mask(a)) {
+        return execute_status::success_and_break_inner_loop;
+    }
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mtvec(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_mtvec(STATE_ACCESS &a, uint64_t val) {
     a.write_mtvec(val & ~3);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mcounteren(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_mcounteren(STATE_ACCESS &a, uint64_t val) {
     a.write_mcounteren(val & MCOUNTEREN_RW_MASK);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_minstret(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_minstret(STATE_ACCESS &a, uint64_t val) {
     uint64_t mcycle = a.read_mcycle();
     uint64_t iexcepts = mcycle - val;
     a.write_minstret(iexcepts + 1); // The value will be incremented after the instruction is executed
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mcycle(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_mcycle(STATE_ACCESS &a, uint64_t val) {
     // We can't allow writes to mcycle because we use it to measure the progress in machine execution.
     // The specs say it is an MRW CSR, read-writeable in M-mode.
     // BBL enables all counters in both M- and S-modes.
@@ -2010,77 +2025,79 @@ static bool write_csr_mcycle(STATE_ACCESS &a, uint64_t val) {
     // We instead raise an exception.
     (void) a;
     (void) val;
-    return false;
+    return execute_status::failure;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mscratch(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_mscratch(STATE_ACCESS &a, uint64_t val) {
     a.write_mscratch(val);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mepc(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_mepc(STATE_ACCESS &a, uint64_t val) {
     a.write_mepc(val & ~3);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mcause(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_mcause(STATE_ACCESS &a, uint64_t val) {
     a.write_mcause(val);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mtval(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_mtval(STATE_ACCESS &a, uint64_t val) {
     a.write_mtval(val);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static bool write_csr_mip(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_mip(STATE_ACCESS &a, uint64_t val) {
     const uint64_t mask = MIP_SEIP_MASK | MIP_SSIP_MASK | MIP_STIP_MASK;
-    uint64_t mip = a.read_mip();
+    auto mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
-    set_brkflag_from_all(a);
-    return true;
+    if (get_pending_irq_mask(a)) {
+        return execute_status::success_and_break_inner_loop;
+    }
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t write_csr_fflags(STATE_ACCESS &a, uint64_t val) {
+static inline execute_status write_csr_fflags(STATE_ACCESS &a, uint64_t val) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return false;
+        return execute_status::failure;
     }
     uint64_t fcsr = (a.read_fcsr() & ~FCSR_FFLAGS_RW_MASK) | ((val << FCSR_FFLAGS_SHIFT) & FCSR_FFLAGS_RW_MASK);
     a.write_fcsr(fcsr);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t write_csr_frm(STATE_ACCESS &a, uint64_t val) {
+static inline execute_status write_csr_frm(STATE_ACCESS &a, uint64_t val) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return false;
+        return execute_status::failure;
     }
     uint64_t fcsr = (a.read_fcsr() & ~FCSR_FRM_RW_MASK) | ((val << FCSR_FRM_SHIFT) & FCSR_FRM_RW_MASK);
     a.write_fcsr(fcsr);
-    return true;
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t write_csr_fcsr(STATE_ACCESS &a, uint64_t val) {
+static inline execute_status write_csr_fcsr(STATE_ACCESS &a, uint64_t val) {
     uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-        return false;
+        return execute_status::failure;
     }
     uint64_t fcsr = val & FCSR_RW_MASK;
     a.write_fcsr(fcsr);
-    return true;
+    return execute_status::success;
 }
 
 /// \brief Writes a value to a CSR given its address
@@ -2090,17 +2107,17 @@ static inline uint64_t write_csr_fcsr(STATE_ACCESS &a, uint64_t val) {
 /// \returns The status of the operation (true for success, false otherwise).
 /// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static NO_INLINE bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t val) {
+static NO_INLINE execute_status write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t val) {
 #if defined(DUMP_CSR)
     fprintf(stderr, "csr_write: csr=0x%03x val=0x", static_cast<int>(csraddr));
     print_uint64_t(val);
     fprintf(stderr, "\n");
 #endif
     if (unlikely(csr_is_read_only(csraddr))) {
-        return false;
+        return execute_status::failure;
     }
     if (unlikely(csr_priv(csraddr) > a.read_iflags_PRV())) {
-        return false;
+        return execute_status::failure;
     }
 
     switch (csraddr) {
@@ -2174,7 +2191,7 @@ static NO_INLINE bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t v
         case CSR_address::tdata1:
         case CSR_address::tdata2:
         case CSR_address::tdata3:
-            return true;
+            return execute_status::success;
 
         default:
             // Ignore writes to hardware performance counters and event selectors
@@ -2182,13 +2199,13 @@ static NO_INLINE bool write_csr(STATE_ACCESS &a, CSR_address csraddr, uint64_t v
                     to_underlying(csraddr) <= to_underlying(CSR_address::mhpmcounter31)) ||
                 (to_underlying(csraddr) >= to_underlying(CSR_address::mhpmevent3) &&
                     to_underlying(csraddr) <= to_underlying(CSR_address::mhpmevent31))) {
-                return true; // NOLINT(readability-simplify-boolean-expr)
+                return execute_status::success; // NOLINT(readability-simplify-boolean-expr)
             }
             // Invalid CSRs
 #ifdef DUMP_INVALID_CSR
             fprintf(stderr, "csr_write: invalid CSR=0x%x\n", static_cast<int>(csraddr));
 #endif
-            return false;
+            return execute_status::failure;
     }
 }
 
@@ -2211,14 +2228,15 @@ static FORCE_INLINE execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t pc, 
     //    will have to check if there was a change to the
     //    memory manager and report back from here so we
     //    break out of the inner loop
-    if (unlikely(!write_csr(a, csraddr, rs1val(a, insn)))) {
+    execute_status wstatus = write_csr(a, csraddr, rs1val(a, insn));
+    if (unlikely(wstatus == execute_status::failure)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     // Write to rd only after potential read/write exceptions
     if (rd != 0) {
         a.write_x(rd, csrval);
     }
-    return advance_to_next_insn(a, pc);
+    return advance_to_next_insn_with_status(a, pc, wstatus);
 }
 
 /// \brief Implementation of the CSRRW instruction.
@@ -2254,12 +2272,14 @@ static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, 
     // with the value of the csr when rd=rs1
     uint32_t rs1 = insn_get_rs1(insn);
     uint64_t rs1val = a.read_x(rs1);
+    execute_status wstatus = execute_status::success;
     if (rs1 != 0) {
         //??D When we optimize the inner interpreter loop, we
         //    will have to check if there was a change to the
         //    memory manager and report back from here so we
         //    break out of the inner loop
-        if (unlikely(!write_csr(a, csraddr, f(csrval, rs1val)))) {
+        wstatus = write_csr(a, csraddr, f(csrval, rs1val));
+        if (unlikely(wstatus == execute_status::failure)) {
             return raise_illegal_insn_exception(a, pc, insn);
         }
     }
@@ -2268,7 +2288,7 @@ static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t pc, 
     if (rd != 0) {
         a.write_x(rd, csrval);
     }
-    return advance_to_next_insn(a, pc);
+    return advance_to_next_insn_with_status(a, pc, wstatus);
 }
 
 /// \brief Implementation of the CSRRS instruction.
@@ -2299,12 +2319,14 @@ static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc,
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint32_t rs1 = insn_get_rs1(insn);
+    execute_status wstatus = execute_status::success;
     if (rs1 != 0) {
         //??D When we optimize the inner interpreter loop, we
         //    will have to check if there was a change to the
         //    memory manager and report back from here so we
         //    break out of the inner loop
-        if (unlikely(!write_csr(a, csraddr, f(csrval, rs1)))) {
+        wstatus = write_csr(a, csraddr, f(csrval, rs1));
+        if (unlikely(wstatus == execute_status::failure)) {
             return raise_illegal_insn_exception(a, pc, insn);
         }
     }
@@ -2313,7 +2335,7 @@ static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t pc,
     if (rd != 0) {
         a.write_x(rd, csrval);
     }
-    return advance_to_next_insn(a, pc);
+    return advance_to_next_insn_with_status(a, pc, wstatus);
 }
 
 /// \brief Implementation of the CSRRSI instruction.
@@ -2385,7 +2407,10 @@ static FORCE_INLINE execute_status execute_SRET(STATE_ACCESS &a, uint64_t pc, ui
         set_priv(a, spp);
     }
     a.write_pc(a.read_sepc());
-    return execute_status::retired;
+    if (get_pending_irq_mask(a)) {
+        return execute_status::success_and_break_inner_loop;
+    }
+    return execute_status::success;
 }
 
 /// \brief Implementation of the MRET instruction.
@@ -2418,7 +2443,10 @@ static FORCE_INLINE execute_status execute_MRET(STATE_ACCESS &a, uint64_t pc, ui
         set_priv(a, mpp);
     }
     a.write_pc(a.read_mepc());
-    return execute_status::retired;
+    if (get_pending_irq_mask(a)) {
+        return execute_status::success_and_break_inner_loop;
+    }
+    return execute_status::success;
 }
 
 /// \brief Implementation of the WFI instruction.
@@ -2435,9 +2463,8 @@ static NO_INLINE execute_status execute_WFI(STATE_ACCESS &a, uint64_t pc, uint32
     if (unlikely(priv == PRV_U || (priv < PRV_M && (mstatus & MSTATUS_TW_MASK)))) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    a.poll_console();
-
-    return advance_to_next_insn(a, pc);
+    execute_status status = a.poll_console();
+    return advance_to_next_insn_with_status(a, pc, status);
 }
 
 /// \brief Implementation of the FENCE instruction.
@@ -2868,10 +2895,11 @@ static FORCE_INLINE execute_status execute_S(STATE_ACCESS &a, uint64_t pc, uint3
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     int32_t imm = insn_S_get_imm(insn);
     uint64_t val = a.read_x(insn_get_rs2(insn));
-    if (unlikely(!write_virtual_memory<T>(a, vaddr + imm, val))) {
+    execute_status status = write_virtual_memory<T>(a, vaddr + imm, val);
+    if (unlikely(status == execute_status::failure)) {
         return advance_to_raised_exception(a);
     }
-    return advance_to_next_insn(a, pc);
+    return advance_to_next_insn_with_status(a, pc, status);
 }
 
 /// \brief Implementation of the SB instruction.
@@ -3536,10 +3564,11 @@ static FORCE_INLINE execute_status execute_FS(STATE_ACCESS &a, uint64_t pc, uint
     // A narrower n-bit transfer out of the floating-point
     // registers will transfer the lower n bits of the register ignoring the upper FLEN−n bits.
     T val = static_cast<T>(a.read_f(insn_get_rs2(insn)));
-    if (unlikely(!write_virtual_memory<T>(a, vaddr + imm, val))) {
+    execute_status status = write_virtual_memory<T>(a, vaddr + imm, val);
+    if (unlikely(status == execute_status::failure)) {
         return advance_to_raised_exception(a);
     }
-    return advance_to_next_insn(a, pc);
+    return advance_to_next_insn_with_status(a, pc, status);
 }
 
 template <typename STATE_ACCESS>
@@ -4587,8 +4616,8 @@ static FORCE_INLINE execute_status execute_FD(STATE_ACCESS &a, uint64_t pc, uint
 /// \param a Machine state accessor object.
 /// \param pc Current pc.
 /// \param insn Instruction.
-/// \return execute_status::exception_raised if an exception was raised, or
-///  execute_status::retired otherwise.
+/// \return execute_status::failure if an exception was raised, or
+///  execute_status::success otherwise.
 /// \details The execute_insn function decodes the instruction in multiple levels. When we know for sure that
 ///  the instruction could only be a &lt;FOO&gt;, a function with the name execute_&lt;FOO&gt; will be called.
 ///  See [RV32/64G Instruction Set
@@ -4857,112 +4886,124 @@ static inline fetch_status fetch_insn(STATE_ACCESS &a, uint64_t vaddr, uint32_t 
 
 /// \brief Checks that false brk is consistent with rest of state
 template <typename STATE_ACCESS>
-static void assert_no_brkflag(STATE_ACCESS &a) {
-    auto mip = a.read_mip();
-    auto mie = a.read_mie();
-    assert((mip & mie) == 0);
+static void assert_no_brk(STATE_ACCESS &a) {
+    assert(get_pending_irq_mask(a) == 0);
     assert(a.read_iflags_X() == 0);
     assert(a.read_iflags_Y() == 0);
     assert(a.read_iflags_H() == 0);
 }
 
+/// \brief Interpreter hot loop
 template <typename STATE_ACCESS>
-interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
+NO_INLINE void interpret_loop(STATE_ACCESS &a, uint64_t mcycle_end, uint64_t mcycle) {
+    // The outer loop continues until there is an interruption that should be handled
+    // externally, or mcycle reaches mcycle_end
+    while (mcycle < mcycle_end) {
+        INC_COUNTER(a.get_statistics(), outer_loop);
 
+        // Set interrupt flag for RTC
+        set_rtc_interrupt(a, mcycle);
+
+        // Raise the highest priority pending interrupt, if any
+        raise_interrupt_if_any(a);
+
+#ifndef NDEBUG
+        // After raising any exception for a given interrupt, we expect no pending break
+        assert_no_brk(a);
+#endif
+
+        // Limit mcycle_tick_end up to the next RTC tick, while avoiding unsigned overflows
+        uint64_t mcycle_tick_end = mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV);
+
+        // The inner loop continues until there is an interrupt condition
+        // or mcycle reaches mcycle_tick_end
+        while (mcycle < mcycle_tick_end) {
+            INC_COUNTER(a.get_statistics(), inner_loop);
+
+            // Get current pc from state
+            uint64_t pc = a.read_pc();
+            uint32_t insn = 0;
+
+            // Try to fetch the next instruction
+            if (likely(fetch_insn(a, pc, &insn) == fetch_status::success)) {
+                // Try to execute it
+                execute_status status = execute_insn(a, pc, insn);
+
+                // Break from the inner/outer loop when an interruption is requested
+                if (status >= execute_status::success_and_break_inner_loop) {
+                    // We have to read mcycle again before incrementing it,
+                    // because HTIF console poll can overwrite mcycle while in interactive mode
+                    mcycle = a.read_mcycle() + 1;
+                    a.write_mcycle(mcycle);
+                    if (unlikely(status == execute_status::success_and_break_outer_loop)) {
+                        // Got an interruption that must be handled externally, such as halt or yield
+                        return;
+                    }
+                    // Got an interruption that should be handled internally, such as timer interruption
+                    break;
+                }
+            }
+
+            // Increment the cycle counter mcycle
+            a.write_mcycle(++mcycle);
+
+#ifndef NDEBUG
+            // After a inner loop iteration, there can be no pending interrupts
+            assert_no_brk(a);
+#endif
+        }
+    }
+}
+
+template <typename STATE_ACCESS>
+interpreter_break_reason interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "code assumes little-endian byte ordering");
-
     static_assert(is_an_i_state_access<STATE_ACCESS>::value, "not an i_state_access");
 
     // This must be the first read because we assume the first log access is a
     // mcycle read in machine::verify_state_transition
     uint64_t mcycle = a.read_mcycle();
 
-    // Limit mcycle_end up to the next RTC tick
-    // Checks for overflow before setting this limit
-    uint64_t next_rtc_offset = RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV;
-    if (mcycle <= UINT64_MAX - next_rtc_offset) {
-        uint64_t next_rtc_cycle = mcycle + next_rtc_offset;
-        mcycle_end = std::min(mcycle_end, next_rtc_cycle);
-    }
-
-    // If we reached the target mcycle, we are done
-    // In Solidity, also check against UINT64_MAX (2^64-1)
-    if (mcycle >= mcycle_end) {
-        return interpreter_status::success;
-    }
-
     // If the cpu is halted, we are done
     if (a.read_iflags_H()) {
-        return interpreter_status::success;
+        return interpreter_break_reason::halted;
     }
 
     // If the cpu has yielded manually, we are done
     if (a.read_iflags_Y()) {
-        return interpreter_status::success;
+        return interpreter_break_reason::yielded_manually;
+    }
+
+    // If we reached the target mcycle, we are done
+    if (mcycle >= mcycle_end) {
+        return interpreter_break_reason::reached_target_mcycle;
     }
 
     // Just reset the automatic yield flag and continue
     a.reset_iflags_X();
 
-    // Set interrupt flag for RTC
-    set_rtc_interrupt(a, mcycle);
+    // Run the interpreter loop,
+    // the loop is outlined in a dedicated function so the compiler can optimize it better
+    interpret_loop(a, mcycle_end, mcycle);
 
-    // Rebuild brk flag from all conditions.
-    set_brkflag_from_all(a);
-
-    // Raise the highest priority pending interrupt, if any
-    raise_interrupt_if_any(a);
-
-    uint64_t pc = 0;
-    uint32_t insn = 0;
-
-    INC_COUNTER(a.get_statistics(), outer_loop);
-
-    // The inner loops continues until there is an interrupt condition
-    // or mcycle reaches mcycle_end
-    for (;;) {
-        // Get current pc from state
-        pc = a.read_pc();
-        // Try to fetch the next instruction
-        if (likely(fetch_insn(a, pc, &insn) == fetch_status::success)) {
-            // Try to execute it
-            execute_insn(a, pc, insn);
-        }
-        // Increment the cycle counter mcycle
-        // (We do not allow writes to mcycle)
-        uint64_t mcycle = a.read_mcycle() + 1;
-        a.write_mcycle(mcycle);
-
-        // If the break flag is active, break from the inner loop
-        if (unlikely(a.read_brkflag())) {
-            return interpreter_status::brk;
-        }
-        // Otherwise, there can be no pending interrupts
-        //
-        // An interrupt is pending when mie & mip != 0
-        // and when interrupts are not globally disabled
-        // in mstatus (MIE or SIE). The logic is a bit
-        // complicated by privilege and delegation. See
-        // get_pending_irq_mask for details.
-        // assert(get_pending_irq_mask(a.get_naked_state()) == 0);
-        // For simplicity, we brk whenever mie & mip != 0
-#ifndef NDEBUG
-        assert_no_brkflag(a);
-#endif
-
-        // If we reached the target mcycle, we are done
-        if (unlikely(mcycle >= mcycle_end)) {
-            return interpreter_status::success;
-        }
-        INC_COUNTER(a.get_statistics(), inner_loop);
+    // Detect and return the reason for stopping the interpreter loop
+    if (a.read_iflags_H()) {
+        return interpreter_break_reason::halted;
+    } else if (a.read_iflags_Y()) {
+        return interpreter_break_reason::yielded_manually;
+    } else if (a.read_iflags_X()) {
+        return interpreter_break_reason::yielded_automatically;
+    } else { // Reached mcycle_end
+        assert(a.read_mcycle() == mcycle_end);
+        return interpreter_break_reason::reached_target_mcycle;
     }
 }
 
 #ifdef MICROARCHITECTURE
-template interpreter_status interpret(uarch_machine_state_access &a, uint64_t mcycle_end);
+template interpreter_break_reason interpret(uarch_machine_state_access &a, uint64_t mcycle_end);
 #else
 // Explicit instantiation for state_access
-template interpreter_status interpret(state_access &a, uint64_t mcycle_end);
+template interpreter_break_reason interpret(state_access &a, uint64_t mcycle_end);
 #endif // MICROARCHITECTURE
 
 } // namespace cartesi

@@ -79,7 +79,8 @@ static bool clint_read(void *context, i_device_state_access *a, uint64_t offset,
 }
 
 /// \brief CLINT device read callback. See ::pma_write.
-static bool clint_write(void *context, i_device_state_access *a, uint64_t offset, uint64_t val, int log2_size) {
+static execute_status clint_write(void *context, i_device_state_access *a, uint64_t offset, uint64_t val,
+    int log2_size) {
     (void) context;
 
     switch (offset) {
@@ -90,23 +91,28 @@ static bool clint_write(void *context, i_device_state_access *a, uint64_t offset
                 //    Will investigate.
                 if (val & 1) {
                     a->set_mip(MIP_MSIP_MASK);
+                    auto mip = a->read_mip();
+                    auto mie = a->read_mie();
+                    if (mip & mie) {
+                        return execute_status::success_and_break_inner_loop;
+                    }
                 } else {
                     a->reset_mip(MIP_MSIP_MASK);
                 }
-                return true;
+                return execute_status::success;
             }
-            return false;
+            return execute_status::failure;
         case clint_mtimecmp_rel_addr:
             if (log2_size == 3) {
                 a->write_clint_mtimecmp(val);
                 a->reset_mip(MIP_MTIP_MASK);
-                return true;
+                return execute_status::success;
             }
             // partial mtimecmp is not supported
-            return false;
+            return execute_status::failure;
         default:
             // other writes are exceptions
-            return false;
+            return execute_status::failure;
     }
 }
 

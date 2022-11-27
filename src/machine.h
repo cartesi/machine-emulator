@@ -24,6 +24,7 @@
 
 #include "access-log.h"
 #include "htif.h"
+#include "interpret.h"
 #include "machine-config.h"
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
@@ -99,14 +100,6 @@ class machine final {
     /// \param c Memory range configuration.
     /// \returns New PMA entry with rollup notice hashes flags already set.
     static pma_entry make_rollup_notice_hashes_pma_entry(const memory_range_config &c);
-
-    /// \brief Runs the machine until mcycle reaches *at most* \p mcycle_end.
-    /// \param mcycle_end Maximum value of mcycle before function returns.
-    /// \details Several conditions can cause the function to
-    ///  break before mcycle reaches \p mcycle_end. The most
-    ///  frequent scenario is when the program executes a WFI
-    ///  instruction. Another example is when the machine halts.
-    void run_inner_loop(uint64_t mcycle_end);
 
     /// \brief Obtain PMA entry that covers a given physical memory region
     /// \param pmas Container of pmas to be searched.
@@ -194,8 +187,9 @@ public:
     /// \brief No move assignment
     machine &operator=(machine &&other) = delete;
 
-    /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
-    void run(uint64_t mcycle_end);
+    /// \brief Runs the machine until mcycle reaches mcycle_end, the machine halts or yields.
+    /// \returns The reason the machine was interrupted.
+    interpreter_break_reason run(uint64_t mcycle_end);
 
     /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle
     /// counter (uarch_cycle) reaches uarch_cycle_end

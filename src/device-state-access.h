@@ -54,46 +54,24 @@ public:
 private:
     STATE_ACCESS &m_a;
 
-    void do_set_mip(uint32_t mask) override {
-        uint32_t mip = m_a.read_mip();
+    void do_set_mip(uint64_t mask) override {
+        uint64_t mip = m_a.read_mip();
         mip |= mask;
         m_a.write_mip(mip);
-        // Tell inner loop mip/mie have been modified, so it
-        // may break out if need be
-        auto mie = m_a.read_mie();
-        auto mip_and_mie = mip & mie;
-        if (mip_and_mie) {
-            m_a.set_brkflag();
-        }
     }
 
-    void do_reset_mip(uint32_t mask) override {
-        uint32_t mip = m_a.read_mip();
+    void do_reset_mip(uint64_t mask) override {
+        uint64_t mip = m_a.read_mip();
         mip &= ~mask;
         m_a.write_mip(mip);
-        // Tell inner loop mip/mie have been modified, so whatever
-        // reason it had to break may not exist anymore
-        set_brkflag_from_all();
     }
 
-    /// \brief Rebuild brkflag flag from all.
-    void set_brkflag_from_all(void) {
-        bool brkflag = false;
-        auto mip = m_a.read_mip();
-        auto mie = m_a.read_mie();
-        brkflag |= (mip & mie);
-        brkflag |= m_a.read_iflags_H();
-        brkflag |= m_a.read_iflags_Y();
-        brkflag |= m_a.read_iflags_X();
-        if (brkflag) {
-            m_a.set_brkflag();
-        } else {
-            m_a.reset_brkflag();
-        }
-    }
-
-    uint32_t do_read_mip(void) override {
+    uint64_t do_read_mip(void) override {
         return m_a.read_mip();
+    }
+
+    uint64_t do_read_mie(void) override {
+        return m_a.read_mie();
     }
 
     uint64_t do_read_mcycle(void) override {
@@ -102,20 +80,14 @@ private:
 
     void do_set_iflags_H(void) override {
         m_a.set_iflags_H();
-        // Tell inner loop H has been set, so it must break out
-        m_a.set_brkflag();
     }
 
     void do_set_iflags_Y(void) override {
         m_a.set_iflags_Y();
-        // Tell inner loop Y has been set, so it must break out
-        m_a.set_brkflag();
     }
 
     void do_set_iflags_X(void) override {
         m_a.set_iflags_X();
-        // Tell inner loop X has been set, so it must break out
-        m_a.set_brkflag();
     }
 
     uint64_t do_read_clint_mtimecmp(void) override {

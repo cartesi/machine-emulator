@@ -27,8 +27,9 @@
 namespace cartesi {
 
 /// \brief RTC constants
-enum RTC_constants {
-    RTC_FREQ_DIV = RTC_FREQ_DIV_DEF ///< Clock divisor is set stone in whitepaper
+enum RTC_constants : uint64_t {
+    RTC_FREQ_DIV = RTC_FREQ_DIV_DEF,     ///< Clock divisor is set stone in whitepaper
+    RTC_CLOCK_FREQ = RTC_CLOCK_FREQ_DEF, ///< Clock frequency
 };
 
 /// \brief Converts from cycle count to time count

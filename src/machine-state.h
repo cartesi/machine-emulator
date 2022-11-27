@@ -59,13 +59,14 @@ struct machine_state {
     machine_state &operator=(const machine_state &other) = delete;
     machine_state &operator=(machine_state &&other) = delete;
 
+    // The following state fields are very hot,
+    // and are carefully ordered to have better data locality in the interpreter loop.
     uint64_t pc;                         ///< Program counter.
     std::array<uint64_t, X_REG_COUNT> x; ///< Register file.
-
+    uint64_t mcycle;                     ///< CSR mcycle.
     uint64_t fcsr;                       ///< CSR fcsr.
     std::array<uint64_t, F_REG_COUNT> f; ///< Floating-point register file.
 
-    uint64_t mcycle;   ///< CSR mcycle.
     uint64_t minstret; ///< CSR minstret.
 
     uint64_t mstatus;  ///< CSR mstatus.

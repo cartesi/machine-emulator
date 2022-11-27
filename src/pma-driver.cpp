@@ -22,8 +22,8 @@ bool device_read_error(void *, i_device_state_access *, uint64_t, uint64_t *, in
     return false;
 }
 
-bool device_write_error(void *, i_device_state_access *, uint64_t, uint64_t, int) {
-    return false;
+execute_status device_write_error(void *, i_device_state_access *, uint64_t, uint64_t, int) {
+    return execute_status::failure;
 }
 
 } // namespace cartesi

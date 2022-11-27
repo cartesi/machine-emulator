@@ -503,7 +503,8 @@ private:
         return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::htif_iyield));
     }
 
-    void do_poll_console(void) {
+    execute_status do_poll_console(void) {
+        return execute_status::success;
     }
     
     uint64_t do_read_pma_istart(int i) {
@@ -562,7 +563,7 @@ private:
         return pma.get_device_driver()->read(pma.get_device_context(), &da, offset, pval, log2_size);
     }
 
-    bool do_write_device(uarch_pma_entry &pma, uint64_t offset, uint64_t val, int log2_size) {
+    execute_status do_write_device(uarch_pma_entry &pma, uint64_t offset, uint64_t val, int log2_size) {
         device_state_access da(*this);
         return pma.get_device_driver()->write(pma.get_device_context(), &da, offset, val, log2_size);
     }

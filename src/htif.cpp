@@ -63,32 +63,36 @@ static bool htif_read(void *context, i_device_state_access *a, uint64_t offset, 
     }
 }
 
-static bool htif_halt(i_device_state_access *a, uint64_t cmd, uint64_t data) {
+static execute_status htif_halt(i_device_state_access *a, uint64_t cmd, uint64_t data) {
     if (cmd == HTIF_HALT_HALT && (data & 1)) {
         a->set_iflags_H();
+        return execute_status::success_and_break_outer_loop;
     }
     //??D Write acknowledgement to fromhost???
     // a->write_htif_fromhost(htif_build(HTIF_DEVICE_HALT,
     //     HTIF_HALT_HALT, cmd))
-    return true;
+    return execute_status::success;
 }
 
-static bool htif_yield(i_device_state_access *a, uint64_t cmd, uint64_t data) {
+static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_t data) {
     (void) data;
+    execute_status status = execute_status::success;
     // If yield command is enabled, yield and acknowledge
     if ((a->read_htif_iyield() >> cmd) & 1) {
         if (cmd == HTIF_YIELD_MANUAL) {
             a->set_iflags_Y();
+            status = execute_status::success_and_break_outer_loop;
         } else if (cmd == HTIF_YIELD_AUTOMATIC) {
             a->set_iflags_X();
+            status = execute_status::success_and_break_outer_loop;
         }
         a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD, cmd, 0));
     }
     // Otherwise, silently ignore it
-    return true;
+    return status;
 }
 
-static bool htif_console(i_device_state_access *a, uint64_t cmd, uint64_t data) {
+static execute_status htif_console(i_device_state_access *a, uint64_t cmd, uint64_t data) {
     // If console command is enabled, perform it and acknowledge
     if ((a->read_htif_iconsole() >> cmd) & 1) {
         if (cmd == HTIF_CONSOLE_PUTCHAR) {
@@ -105,10 +109,10 @@ static bool htif_console(i_device_state_access *a, uint64_t cmd, uint64_t data) 
         }
     }
     // Otherwise, silently ignore it
-    return true;
+    return execute_status::success;
 }
 
-static bool htif_write_tohost(i_device_state_access *a, uint64_t tohost) {
+static execute_status htif_write_tohost(i_device_state_access *a, uint64_t tohost) {
     // Decode tohost
     uint32_t device = HTIF_DEV_FIELD(tohost);
     uint32_t cmd = HTIF_CMD_FIELD(tohost);
@@ -125,16 +129,17 @@ static bool htif_write_tohost(i_device_state_access *a, uint64_t tohost) {
             return htif_yield(a, cmd, data);
         //??D Unknown HTIF devices are silently ignored
         default:
-            return true;
+            return execute_status::success;
     }
 }
 
 /// \brief HTIF device write callback. See ::pma_write.
-static bool htif_write(void *context, i_device_state_access *a, uint64_t offset, uint64_t val, int log2_size) {
+static execute_status htif_write(void *context, i_device_state_access *a, uint64_t offset, uint64_t val,
+    int log2_size) {
     (void) context;
     // Our HTIF only supports aligned 64-bit writes
     if (log2_size != 3 || offset & 7) {
-        return false;
+        return execute_status::failure;
     }
 
     switch (offset) {
@@ -142,10 +147,10 @@ static bool htif_write(void *context, i_device_state_access *a, uint64_t offset,
             return htif_write_tohost(a, val);
         case htif_fromhost_rel_addr:
             a->write_htif_fromhost(val);
-            return true;
+            return execute_status::success;
         default:
             // other writes are exceptions
-            return false;
+            return execute_status::failure;
     }
 }
 

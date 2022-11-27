@@ -17,6 +17,7 @@
 #ifndef PMA_H
 #define PMA_H
 
+#include <cassert>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -342,6 +343,11 @@ public:
         return std::get<pma_memory>(m_data);
     }
 
+    /// \returns data specific to IO ranges (cannot throw exceptions).
+    pma_memory &get_memory_noexcept(void) {
+        return *std::get_if<pma_memory>(&m_data);
+    }
+
     /// \returns data specific to IO ranges
     const pma_device &get_device(void) const {
         return std::get<pma_device>(m_data);
@@ -350,6 +356,11 @@ public:
     /// \returns data specific to IO ranges
     pma_device &get_device(void) {
         return std::get<pma_device>(m_data);
+    }
+
+    /// \returns data specific to IO ranges (cannot throw exceptions).
+    pma_device &get_device_noexcept(void) {
+        return *std::get_if<pma_device>(&m_data);
     }
 
     /// \brief Returns packed PMA istart field as per whitepaper
@@ -417,7 +428,9 @@ public:
     void mark_dirty_page(uint64_t address_in_range) {
         if (!m_dirty_page_map.empty()) {
             auto page_number = address_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
-            m_dirty_page_map.at(page_number >> 3) |= (1 << (page_number & 7));
+            auto map_index = page_number >> 3;
+            assert(map_index < m_dirty_page_map.size());
+            m_dirty_page_map[map_index] |= (1 << (page_number & 7));
         }
     }
 
@@ -426,7 +439,9 @@ public:
     void mark_clean_page(uint64_t address_in_range) {
         if (!m_dirty_page_map.empty()) {
             auto page_number = address_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
-            m_dirty_page_map.at(page_number >> 3) &= ~(1 << (page_number & 7));
+            auto map_index = page_number >> 3;
+            assert(map_index < m_dirty_page_map.size());
+            m_dirty_page_map[map_index] &= ~(1 << (page_number & 7));
         }
     }
 
@@ -436,7 +451,9 @@ public:
     bool is_page_marked_dirty(uint64_t address_in_range) const {
         if (!m_dirty_page_map.empty()) {
             auto page_number = address_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
-            return m_dirty_page_map.at(page_number >> 3) & (1 << (page_number & 7));
+            auto map_index = page_number >> 3;
+            assert(map_index < m_dirty_page_map.size());
+            return m_dirty_page_map[map_index] & (1 << (page_number & 7));
         } else {
             return true;
         }

@@ -716,8 +716,7 @@ static NO_INLINE bool read_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr, 
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             a.read_memory_word(paddr, hpage, hoffset, pval);
             return true;
-        } else {
-            assert(pma.get_istart_IO());
+        } else if (pma.get_istart_IO()) {
             uint64_t offset = paddr - pma.get_start();
             uint64_t val{};
             // If we do not know how to read, we treat this as a PMA violation
@@ -729,6 +728,9 @@ static NO_INLINE bool read_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr, 
             *pval = static_cast<T>(val);
             // device logs its own state accesses
             return true;
+        } else {
+            assert(false);
+            return false;
         }
     }
 }
@@ -783,8 +785,7 @@ static NO_INLINE bool write_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr,
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             a.write_memory_word(paddr, hpage, hoffset, static_cast<T>(val64));
             return true;
-        } else {
-            assert(pma.get_istart_IO());
+        } else if (pma.get_istart_IO()) {
             uint64_t offset = paddr - pma.get_start();
             // If we do not know how to write, we treat this as a PMA violation
             if (unlikely(!a.write_device(pma, offset, val64, log2_size<U>::value))) {
@@ -792,6 +793,9 @@ static NO_INLINE bool write_virtual_memory_slow(STATE_ACCESS &a, uint64_t vaddr,
                 return false;
             }
             return true;
+        } else {
+            assert(false);
+            return false;
         }
     }
 }

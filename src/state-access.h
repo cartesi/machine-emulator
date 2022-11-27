@@ -483,7 +483,7 @@ private:
     }
 
     static unsigned char *do_get_host_memory(pma_entry &pma) {
-        return pma.get_memory().get_host_memory();
+        return pma.get_memory_noexcept().get_host_memory();
     }
 
     pma_entry &do_get_pma_entry(int index) {
@@ -504,12 +504,14 @@ private:
 
     bool do_read_device(pma_entry &pma, uint64_t offset, uint64_t *pval, int log2_size) {
         device_state_access da(*this);
-        return pma.get_device().get_driver()->read(pma.get_device().get_context(), &da, offset, pval, log2_size);
+        return pma.get_device_noexcept().get_driver()->read(pma.get_device_noexcept().get_context(), &da, offset, pval,
+            log2_size);
     }
 
     bool do_write_device(pma_entry &pma, uint64_t offset, uint64_t val, int log2_size) {
         device_state_access da(*this);
-        return pma.get_device().get_driver()->write(pma.get_device().get_context(), &da, offset, val, log2_size);
+        return pma.get_device_noexcept().get_driver()->write(pma.get_device_noexcept().get_context(), &da, offset, val,
+            log2_size);
     }
 
     uint64_t do_read_uarch_rom_length() {
@@ -570,7 +572,7 @@ private:
         }
         uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
         uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
+        unsigned char *hpage = pma.get_memory_noexcept().get_host_memory() + (paddr_page - pma.get_start());
         tlbhe.vaddr_page = vaddr_page;
         tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - vaddr_page;
         tlbce.paddr_page = paddr_page;

@@ -318,7 +318,7 @@ static void dump_regs(const STATE &s) {
     (void) fprintf(stderr, " mstatus=");
     print_uint64_t(s.mstatus);
     (void) fprintf(stderr, " cycles=%" PRId64, s.mcycle);
-    (void) fprintf(stderr, " insns=%" PRId64, s.minstret);
+    (void) fprintf(stderr, " insns=%" PRId64, s.mcycle - s.minstret);
     (void) fprintf(stderr, "\n");
 #if 1
     (void) fprintf(stderr, "mideleg=");
@@ -422,6 +422,9 @@ static NO_INLINE void raise_exception(STATE_ACCESS &a, uint64_t cause, uint64_t 
             deleg = (a.read_medeleg() >> cause) & 1;
         }
     }
+
+    // Every raised exception increases the exception counter, so we can compute minstret later
+    a.write_minstret(a.read_minstret() + 1);
 
     if (deleg) {
         a.write_scause(cause);
@@ -1402,7 +1405,10 @@ static inline uint64_t read_csr_cycle(STATE_ACCESS &a, bool *status) {
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_instret(STATE_ACCESS &a, bool *status) {
     if (rdcounteren(a, MCOUNTEREN_IR_MASK)) {
-        return read_csr_success(a.read_minstret(), status);
+        uint64_t mcycle = a.read_mcycle();
+        uint64_t iexcepts = a.read_minstret();
+        uint64_t minstret = mcycle - iexcepts;
+        return read_csr_success(minstret, status);
     } else {
         return read_csr_fail(status);
     }
@@ -1566,7 +1572,10 @@ static inline uint64_t read_csr_mcycle(STATE_ACCESS &a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_minstret(STATE_ACCESS &a, bool *status) {
-    return read_csr_success(a.read_minstret(), status);
+    uint64_t mcycle = a.read_mcycle();
+    uint64_t iexcepts = a.read_minstret();
+    uint64_t minstret = mcycle - iexcepts;
+    return read_csr_success(minstret, status);
 }
 
 template <typename STATE_ACCESS>
@@ -1985,9 +1994,9 @@ static bool write_csr_mcounteren(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static bool write_csr_minstret(STATE_ACCESS &a, uint64_t val) {
-    // In Spike, QEMU, and riscvemu, mcycle and minstret are the aliases for the same counter
-    // QEMU calls exit (!) on writes to mcycle or minstret
-    a.write_minstret(val - 1); // The value will be incremented after the instruction is executed
+    uint64_t mcycle = a.read_mcycle();
+    uint64_t iexcepts = mcycle - val;
+    a.write_minstret(iexcepts + 1); // The value will be incremented after the instruction is executed
     return true;
 }
 
@@ -4917,16 +4926,7 @@ interpreter_status interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         // Try to fetch the next instruction
         if (likely(fetch_insn(a, pc, &insn) == fetch_status::success)) {
             // Try to execute it
-            if (likely(execute_insn(a, pc, insn) == execute_status::retired)) {
-                // If successful, increment the number of retired instructions minstret
-                // WARNING: if an instruction modifies minstret, it needs to take into
-                // account it this unconditional increment and set the value accordingly
-                a.write_minstret(a.read_minstret() + 1);
-                // ??D We could simply ignore writes to minstret.
-                //     We already ignore writes to mcycle.
-                //     In Spike, QEMU, and riscvemu, mcycle and minstret are the aliases for the same counter
-                //     QEMU calls exit (!) on writes to mcycle and minstret
-            }
+            execute_insn(a, pc, insn);
         }
         // Increment the cycle counter mcycle
         // (We do not allow writes to mcycle)

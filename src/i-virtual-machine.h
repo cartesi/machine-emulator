@@ -52,8 +52,8 @@ public:
     i_virtual_machine &operator=(i_virtual_machine &&other) noexcept = delete;
 
     /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
-    void run(uint64_t mcycle_end) {
-        do_run(mcycle_end);
+    interpreter_break_reason run(uint64_t mcycle_end) {
+        return do_run(mcycle_end);
     }
 
     /// \brief Serialize entire state to directory
@@ -649,7 +649,7 @@ public:
     }
 
 private:
-    virtual void do_run(uint64_t mcycle_end) = 0;
+    virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
     virtual void do_store(const std::string &dir) = 0;
     virtual access_log do_step(const access_log::type &log_type, bool one_based = false) = 0;
     virtual machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const = 0;

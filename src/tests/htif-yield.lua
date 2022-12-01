@@ -68,6 +68,7 @@ function test(config, yield_automatic_enable, yield_manual_enable)
         yield_manual = yield_manual_enable,
     }
     local machine = cartesi.machine(config)
+    local break_reason
     for i, v in ipairs(yields) do
         if (v.reason == REASON_PROGRESS and progress_enable) or
            (v.cmd    == YIELD_MANUAL and yield_manual_enable) or
@@ -76,7 +77,7 @@ function test(config, yield_automatic_enable, yield_manual_enable)
             while not machine:read_iflags_Y() and
                   not machine:read_iflags_X() and
                   not machine:read_iflags_H() do
-                machine:run(math.maxinteger)
+                break_reason = machine:run()
             end
 
             -- mcycle should be as expected
@@ -85,9 +86,11 @@ function test(config, yield_automatic_enable, yield_manual_enable)
                 string.format("mcycle: expected %d, got %d", v.mcycle, mcycle))
 
             if yield_automatic_enable and v.cmd == YIELD_AUTOMATIC then
+                assert(break_reason == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY, "expected break reason yielded automatically")
                 assert(machine:read_iflags_X(), "expected iflags_X set")
                 assert(not machine:read_iflags_Y(), "expected iflags_Y not set")
             elseif yield_manual_enable and v.cmd == YIELD_MANUAL then
+                assert(break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY, "expected break reason yielded manually")
                 assert(machine:read_iflags_Y(), "expected iflags_Y set")
                 assert(not machine:read_iflags_X(), "expected iflags_X not set")
             else
@@ -105,7 +108,7 @@ function test(config, yield_automatic_enable, yield_manual_enable)
             assert(machine:read_htif_tohost_cmd() == v.cmd)
             -- trying to run it without resetting iflags.Y should not advance
             if machine:read_iflags_Y() then
-                machine:run(math.maxinteger)
+                machine:run()
                 assert(mcycle == machine:read_mcycle())
                 assert(machine:read_iflags_Y())
             end
@@ -116,9 +119,10 @@ function test(config, yield_automatic_enable, yield_manual_enable)
     end
     -- finally run to completion
     while not machine:read_iflags_Y() and not machine:read_iflags_H() do
-        machine:run(math.maxinteger)
+        break_reason = machine:run()
     end
     -- should be halted
+    assert(break_reason == cartesi.BREAK_REASON_HALTED)
     assert(machine:read_iflags_H(), "expected iflags_H set")
     -- at the expected mcycle
     assert(machine:read_mcycle() == final_mcycle, string.format("mcycle: expected, %u got %u",

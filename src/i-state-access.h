@@ -579,6 +579,8 @@ public:
     }
 
     /// \brief Polls console for pending input.
+    /// \returns execute_status::success_and_break_inner_loop when polling inputs from tty console,
+    /// execute_status::success otherwise.
     execute_status poll_console(void) {
         return derived().do_poll_console();
     }

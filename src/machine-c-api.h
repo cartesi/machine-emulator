@@ -51,7 +51,7 @@ typedef struct { // NOLINT(modernize-use-using)
 } cm_hash_array;
 
 /// brief Error codes returned from machine emulator C API
-enum CM_ERROR {
+typedef enum { // NOLINT(modernize-use-using)
     CM_ERROR_OK = 0,
     // Logic errors
     CM_ERROR_INVALID_ARGUMENT,
@@ -90,7 +90,16 @@ enum CM_ERROR {
     CM_OTHER_ERROR_END,
     // C API Errors
     CM_ERROR_UNKNOWN
-};
+} CM_ERROR;
+
+/// \brief Reasons for a machine run interruption
+typedef enum { // NOLINT(modernize-use-using)
+    CM_BREAK_REASON_FAILED,
+    CM_BREAK_REASON_HALTED,
+    CM_BREAK_REASON_YIELDED_MANUALLY,
+    CM_BREAK_REASON_YIELDED_AUTOMATICALLY,
+    CM_BREAK_REASON_REACHED_TARGET_MCYCLE
+} CM_BREAK_REASON;
 
 /// \brief List of CSRs to use with read_csr and write_csr
 typedef enum { // NOLINT(modernize-use-using)
@@ -418,11 +427,12 @@ CM_API void cm_delete_machine(cm_machine *m);
 /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
 /// \param m Pointer to valid machine instance
 /// \param mcycle_end End cycle value
+/// \param break_reason Receives reason for machine run interruption when not NULL
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg);
+CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason_result, char **err_msg);
 
 /// \brief Runs the machine for one cycle logging all accesses to the state.
 /// \param m Pointer to valid machine instance

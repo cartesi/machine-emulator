@@ -109,6 +109,12 @@ CM_API int luaopen_cartesi(lua_State *L) {
     lua_pushvalue(L, -2);                    // cluactx cartesi cluactx
     luaL_setfuncs(L, cartesi_mod.data(), 1); // cluactx cartesi
 
+    // Set cartesi constants
+    clua_setintegerfield(L, CM_BREAK_REASON_FAILED, "BREAK_REASON_FAILED", -1);
+    clua_setintegerfield(L, CM_BREAK_REASON_HALTED, "BREAK_REASON_HALTED", -1);
+    clua_setintegerfield(L, CM_BREAK_REASON_YIELDED_MANUALLY, "BREAK_REASON_YIELDED_MANUALLY", -1);
+    clua_setintegerfield(L, CM_BREAK_REASON_YIELDED_AUTOMATICALLY, "BREAK_REASON_YIELDED_AUTOMATICALLY", -1);
+    clua_setintegerfield(L, CM_BREAK_REASON_REACHED_TARGET_MCYCLE, "BREAK_REASON_REACHED_TARGET_MCYCLE", -1);
     return 1;
 }
 }

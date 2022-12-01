@@ -22,14 +22,6 @@ local test_util = require "tests.util"
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
 local MAX_MCYCLE = -1
 
-
-local function run_loop(machine, mcycle_end)
-    while machine:read_mcycle() < mcycle_end do
-        machine:run(mcycle_end)
-        if machine:read_iflags_H() then break end
-    end
-end
-
 local function build_machine()
     local config =  {
         processor = {
@@ -50,7 +42,7 @@ local function build_machine()
 
     -- Stop the machine before the first RAM instruction
     local wfi_cycle = 7
-    run_loop(machine, wfi_cycle)
+    assert(machine:run(wfi_cycle) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
 
     return machine
 end
@@ -69,15 +61,15 @@ do_test("machine should run up to mcycle limit", function(machine)
     machine:write_mcycle(MAX_MCYCLE - 5)
     -- Run once to trigger an interrupt, which might cause an overflow on the
     -- next call to machine:run
-    run_loop(machine, MAX_MCYCLE - 4)
-    run_loop(machine, MAX_MCYCLE)
+    assert(machine:run(MAX_MCYCLE - 4) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+    assert(machine:run(MAX_MCYCLE) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
     assert(machine:read_mcycle() == MAX_MCYCLE)
 end)
 
 do_test("machine run shouldn't change state in max mcycle", function(machine)
     machine:write_mcycle(MAX_MCYCLE)
     local hash_before = machine:get_root_hash()
-    run_loop(machine, MAX_MCYCLE)
+    assert(machine:run(MAX_MCYCLE) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
     local hash_after = machine:get_root_hash()
     assert(hash_before == hash_after)
 end)

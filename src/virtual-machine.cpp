@@ -31,8 +31,8 @@ void virtual_machine::do_store(const std::string &dir) {
     m_machine->store(dir);
 }
 
-void virtual_machine::do_run(uint64_t mcycle_end) {
-    m_machine->run(mcycle_end);
+interpreter_break_reason virtual_machine::do_run(uint64_t mcycle_end) {
+    return m_machine->run(mcycle_end);
 }
 
 access_log virtual_machine::do_step(const access_log::type &log_type, bool one_based) {

@@ -107,7 +107,7 @@ public:
 private:
     machine_config do_get_initial_config(void) const override;
 
-    void do_run(uint64_t mcycle_end) override;
+    interpreter_break_reason do_run(uint64_t mcycle_end) override;
     void do_store(const std::string &dir) override;
     uint64_t do_read_csr(csr r) const override;
     void do_write_csr(csr w, uint64_t val) override;

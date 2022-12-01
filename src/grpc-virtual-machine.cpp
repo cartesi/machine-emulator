@@ -298,12 +298,22 @@ void grpc_virtual_machine::verify_state_transition(const grpc_machine_stub_ptr &
     check_status(stub->get_stub()->VerifyStateTransition(&context, request, &response));
 }
 
-void grpc_virtual_machine::do_run(uint64_t mcycle_end) {
+interpreter_break_reason grpc_virtual_machine::do_run(uint64_t mcycle_end) {
     RunRequest request;
     request.set_limit(mcycle_end);
     RunResponse response;
     ClientContext context;
     check_status(m_stub->get_stub()->Run(&context, request, &response));
+    if (response.iflags_h()) {
+        return interpreter_break_reason::halted;
+    } else if (response.iflags_y()) {
+        return interpreter_break_reason::yielded_manually;
+    } else if (response.iflags_x()) {
+        return interpreter_break_reason::yielded_automatically;
+    } else {
+        assert(response.mcycle() == mcycle_end);
+        return interpreter_break_reason::reached_target_mcycle;
+    }
 }
 
 void grpc_virtual_machine::do_store(const std::string &dir) {

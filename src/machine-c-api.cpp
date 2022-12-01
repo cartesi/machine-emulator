@@ -800,11 +800,17 @@ int cm_store(cm_machine *m, const char *dir, char **err_msg) try {
     return cm_result_failure(err_msg);
 }
 
-int cm_machine_run(cm_machine *m, uint64_t mcycle_end, char **err_msg) try {
+int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason_result, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
-    cpp_machine->run(mcycle_end);
+    cartesi::interpreter_break_reason break_reason = cpp_machine->run(mcycle_end);
+    if (break_reason_result) {
+        *break_reason_result = static_cast<CM_BREAK_REASON>(break_reason);
+    }
     return cm_result_success(err_msg);
 } catch (...) {
+    if (break_reason_result) {
+        *break_reason_result = CM_BREAK_REASON_FAILED;
+    }
     return cm_result_failure(err_msg);
 }
 

@@ -2079,19 +2079,19 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, access_log_machine_fixture, *disa
 BOOST_AUTO_TEST_CASE_NOLINT(machine_run_null_machine_test) {
     auto f = []() {
         char *err_msg{};
-        cm_machine_run(nullptr, 1000, &err_msg);
+        cm_machine_run(nullptr, 1000, nullptr, &err_msg);
     };
     monitor_system_throw(f);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_null_error_placeholder_test, ordinary_machine_fixture) {
-    auto f = [m = _machine]() { cm_machine_run(m, 1000, nullptr); };
+    auto f = [m = _machine]() { cm_machine_run(m, 1000, nullptr, nullptr); };
     monitor_system_throw(f);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_1000_cycle_test, ordinary_machine_fixture) {
     char *err_msg{};
-    int error_code = cm_machine_run(_machine, 1000, &err_msg);
+    int error_code = cm_machine_run(_machine, 1000, nullptr, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
@@ -2115,7 +2115,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_to_past_test, ordinary_machine_fixtur
     uint64_t cycle_num_to_past = 100;
 
     char *err_msg{};
-    int error_code = cm_machine_run(_machine, cycle_num, &err_msg);
+    int error_code = cm_machine_run(_machine, cycle_num, nullptr, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
@@ -2125,7 +2125,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_to_past_test, ordinary_machine_fixtur
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(read_mcycle, cycle_num);
 
-    error_code = cm_machine_run(_machine, cycle_num_to_past, &err_msg);
+    error_code = cm_machine_run(_machine, cycle_num_to_past, nullptr, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
@@ -2135,7 +2135,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_to_past_test, ordinary_machine_fixtur
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_long_cycle_test, ordinary_machine_fixture) {
     char *err_msg{};
-    int error_code = cm_machine_run(_machine, 600000, &err_msg);
+    int error_code = cm_machine_run(_machine, 600000, nullptr, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
@@ -2164,7 +2164,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_root_updates_test, ord
     auto verification = get_verification_root_hash(_machine);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), start_hash, start_hash + sizeof(cm_hash));
 
-    error_code = cm_machine_run(_machine, 1000, &err_msg);
+    error_code = cm_machine_run(_machine, 1000, nullptr, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
@@ -2191,7 +2191,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, or
         start_proof->root_hash + sizeof(cm_hash));
     cm_delete_merkle_tree_proof(start_proof);
 
-    error_code = cm_machine_run(_machine, 1000, &err_msg);
+    error_code = cm_machine_run(_machine, 1000, nullptr, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 

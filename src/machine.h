@@ -188,7 +188,12 @@ public:
     machine &operator=(machine &&other) = delete;
 
     /// \brief Runs the machine until mcycle reaches mcycle_end, the machine halts or yields.
+    /// \param mcycle_end Maximum value of mcycle before function returns.
     /// \returns The reason the machine was interrupted.
+    /// \details Several conditions can cause the function to
+    ///  break before mcycle reaches mcycle_end. The most
+    ///  frequent scenario is when the program executes a WFI
+    ///  instruction. Another example is when the machine halts.
     interpreter_break_reason run(uint64_t mcycle_end);
 
     /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle

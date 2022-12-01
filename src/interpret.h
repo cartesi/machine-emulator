@@ -24,6 +24,16 @@
 
 namespace cartesi {
 
+/// \brief Instruction execution status code
+enum execute_status : uint64_t {
+    failure,                      // Instruction execution failed, the interpreter should continue normally
+    success,                      // Instruction execution succeed, the interpreter should continue normally
+    success_and_break_inner_loop, // Instruction execution succeed, the interpreter must break inner loop to process
+                                  // pending interrupts
+    success_and_break_outer_loop  // Instruction execution succeed, the interpreter must break outer loop to process
+                                  // halt/yield/poll events
+};
+
 /// \brief Reasons for interpreter loop interruption
 enum class interpreter_break_reason {
     failed, ///< This value is not really returned by the interpreter loop, but it's reserved for C API
@@ -37,7 +47,7 @@ enum class interpreter_break_reason {
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param mcycle_end Target value for mcycle.
-/// \returns Returns a reason code that tells why the interpreter loop has been stopped.
+/// \returns Returns a reason code informing why the interpreter loop has been stopped.
 /// \details The interpret may stop early if the machine halts permanently or becomes temporarily idle (waiting for
 /// interrupts).
 template <typename STATE_ACCESS>

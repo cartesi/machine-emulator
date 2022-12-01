@@ -399,7 +399,7 @@ private:
         return m_m.get_state().htif.iyield;
     }
 
-    execute_status do_poll_console() {
+    NO_INLINE execute_status do_poll_console() {
         bool htif_console_getchar = static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
         if (htif_console_getchar) {
             uint64_t mcycle = read_mcycle();

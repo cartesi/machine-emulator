@@ -17,18 +17,10 @@
 #ifndef PMA_DRIVER_H
 #define PMA_DRIVER_H
 
+#include "interpret.h"
 #include <cstdint>
-namespace cartesi {
 
-/// \brief Instruction execution status code
-enum execute_status : uint32_t {
-    failure,                      // Instruction execution failed, the interpreter should continue normally
-    success,                      // Instruction execution succeed, the interpreter should continue normally
-    success_and_break_inner_loop, // Instruction execution succeed, the interpreter must break inner loop to process
-                                  // pending interrupts
-    success_and_break_outer_loop  // Instruction execution succeed, the interpreter must break outer loop to process
-                                  // halt/yield/poll events
-};
+namespace cartesi {
 
 /// \file
 /// \brief Declares pma_driver, which provides callback functions for reading and writing to device memory ranges
@@ -54,7 +46,7 @@ bool device_read_error(void *context, i_device_state_access *, uint64_t, uint64_
 /// \param offset Offset of requested value from range base address.
 /// \param val Word to be written at \p offset.
 /// \param log2_size log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
-/// \returns True if operation succeeded, false otherwise.
+/// \returns execute::failure if operation failed, otherwise other success enumeration if operation succeeded.
 using device_write = execute_status (*)(void *, i_device_state_access *, uint64_t, uint64_t, int);
 
 /// \brief Default write callback issues error on write.

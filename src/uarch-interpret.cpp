@@ -24,6 +24,92 @@
 
 namespace cartesi {
 
+/// \brief  Bitmask used to obtain the byte offset of a memory address with respect to its 64-bit page.
+static constexpr uint64_t u64_offset_mask = sizeof(uint64_t) - 1;
+
+/// \brief  Bitmask used to align a memory address to 64-bit page.
+static constexpr uint64_t u64_align_mask = ~u64_offset_mask;
+
+template <typename STATE_ACCESS>
+static inline uint64_t read_uint64(STATE_ACCESS &a, uint64_t paddr) {
+    assert((paddr & 0b111) == 0);
+    return a.read_word(paddr);
+}
+
+template <typename STATE_ACCESS>
+static inline uint32_t read_uint32(STATE_ACCESS &a, uint64_t paddr) {
+    assert((paddr & 0b11) == 0);
+    uint64_t palign = paddr & u64_align_mask;
+    uint64_t bitoffset = (paddr & u64_offset_mask) << 3;
+    uint64_t val64 = read_uint64(a, palign);
+    return static_cast<uint32_t>(val64 >> bitoffset);
+}
+
+template <typename STATE_ACCESS>
+static inline uint16_t read_uint16(STATE_ACCESS &a, uint64_t paddr) {
+    assert((paddr & 1) == 0);
+    uint64_t palign = paddr & u64_align_mask;
+    uint64_t bitoffset = (paddr & u64_offset_mask) << 3;
+    uint64_t val64 = read_uint64(a, palign);
+    return static_cast<uint16_t>(val64 >> bitoffset);
+}
+
+template <typename STATE_ACCESS>
+static inline uint8_t read_uint8(STATE_ACCESS &a, uint64_t paddr) {
+    uint64_t palign = paddr & u64_align_mask;
+    uint64_t bitoffset = (paddr & u64_offset_mask) << 3;
+    uint64_t val64 = read_uint64(a, palign);
+    return static_cast<uint8_t>(val64 >> bitoffset);
+}
+
+template <typename STATE_ACCESS>
+static inline void write_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t val) {
+    assert((paddr & 0b111) == 0);
+    a.write_word(paddr, val);
+}
+
+/// \brief Copies bits from a uint64 word, starting at bit 0, to another uint64 word at the specified bit offset.
+/// \param from Source of bits to copy, starting at offset 0.
+/// \param count Number of bits to copy.
+/// \param to Destination of copy.
+/// \param offset Bit offset in destination to copy bits to.
+/// \return The uint64_t word containing the copy result.
+static inline uint64_t copy_bits(uint64_t from, int count, uint64_t to, uint64_t offset) {
+    assert(offset + count <= (sizeof(uint64_t) << 3));
+    uint64_t erase_mask = (static_cast<uint64_t>(1) << count) - 1;
+    erase_mask = ~(erase_mask << offset);
+    return (from << offset) | (to & erase_mask);
+}
+
+template <typename STATE_ACCESS>
+static inline void write_uint32(STATE_ACCESS &a, uint64_t paddr, uint32_t val) {
+    assert((paddr & 0b11) == 0);
+    uint64_t palign = paddr & u64_align_mask;
+    uint64_t offset = (paddr & u64_offset_mask) << 3;
+    uint64_t oldval64 = read_uint64(a, palign);
+    uint64_t newval64 = copy_bits(val, sizeof(val) << 3, oldval64, offset);
+    write_uint64(a, palign, newval64);
+}
+
+template <typename STATE_ACCESS>
+static inline void write_uint16(STATE_ACCESS &a, uint64_t paddr, uint16_t val) {
+    assert((paddr & 0b1) == 0);
+    uint64_t palign = paddr & u64_align_mask;
+    uint64_t offset = (paddr & u64_offset_mask) << 3;
+    uint64_t oldval64 = read_uint64(a, palign);
+    uint64_t newval64 = copy_bits(val, sizeof(val) << 3, oldval64, offset);
+    write_uint64(a, palign, newval64);
+}
+
+template <typename STATE_ACCESS>
+static inline void write_uint8(STATE_ACCESS &a, uint64_t paddr, uint8_t val) {
+    uint64_t palign = paddr & u64_align_mask;
+    uint64_t offset = (paddr & u64_offset_mask) << 3;
+    uint64_t oldval64 = read_uint64(a, palign);
+    uint64_t newval64 = copy_bits(val, sizeof(val) << 3, oldval64, offset);
+    write_uint64(a, palign, newval64);
+}
+
 enum class uarch_execute_status : int {
     success, // instruction executed successfully
     halt     // instruction executed successfully and halted the microinterpreter
@@ -229,7 +315,7 @@ static inline execute_status execute_AUIPC(STATE_ACCESS &a, uint32_t insn, uint6
     auto note = a.make_scoped_note("auipc");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, a.read_pc() + d.imm);
+        a.write_x(d.rd, pc + d.imm);
     }
     return advance_pc(a, pc);
 }
@@ -243,7 +329,7 @@ static inline execute_status execute_JAL(STATE_ACCESS &a, uint32_t insn, uint64_
     if (d.rd != 0) {
         a.write_x(d.rd, pc + 4);
     }
-    return branch(a, a.read_pc() + d.imm);
+    return branch(a, pc + d.imm);
 }
 
 template <typename STATE_ACCESS>
@@ -266,7 +352,7 @@ static inline execute_status execute_BEQ(STATE_ACCESS &a, uint32_t insn, uint64_
     auto note = a.make_scoped_note("beq");
     (void) note;
     if (a.read_x(d.rs1) == a.read_x(d.rs2)) {
-        return branch(a, a.read_pc() + d.imm);
+        return branch(a, pc + d.imm);
     }
     return advance_pc(a, pc);
 }
@@ -277,8 +363,10 @@ static inline execute_status execute_BNE(STATE_ACCESS &a, uint32_t insn, uint64_
     dump_insn(a, pc, insn, "bne");
     auto note = a.make_scoped_note("bne");
     (void) note;
-    if (a.read_x(d.rs1) != a.read_x(d.rs2)) {
-        return branch(a, a.read_pc() + d.imm);
+    auto rs1 = a.read_x(d.rs1);
+    auto rs2 = a.read_x(d.rs2);
+    if (rs1 != rs2) {
+        return branch(a, pc + d.imm);
     }
     return advance_pc(a, pc);
 }
@@ -289,8 +377,10 @@ static inline execute_status execute_BLT(STATE_ACCESS &a, uint32_t insn, uint64_
     dump_insn(a, pc, insn, "blt");
     auto note = a.make_scoped_note("blt");
     (void) note;
-    if (static_cast<int64_t>(a.read_x(d.rs1)) < static_cast<int64_t>(a.read_x(d.rs2))) {
-        return branch(a, a.read_pc() + d.imm);
+    auto rs1 = static_cast<int64_t>(a.read_x(d.rs1));
+    auto rs2 = static_cast<int64_t>(a.read_x(d.rs2));
+    if (rs1 < rs2) {
+        return branch(a, pc + d.imm);
     }
     return advance_pc(a, pc);
 }
@@ -301,8 +391,10 @@ static inline execute_status execute_BGE(STATE_ACCESS &a, uint32_t insn, uint64_
     dump_insn(a, pc, insn, "bge");
     auto note = a.make_scoped_note("bge");
     (void) note;
-    if (static_cast<int64_t>(a.read_x(d.rs1)) >= static_cast<int64_t>(a.read_x(d.rs2))) {
-        return branch(a, a.read_pc() + d.imm);
+    auto rs1 = static_cast<int64_t>(a.read_x(d.rs1));
+    auto rs2 = static_cast<int64_t>(a.read_x(d.rs2));
+    if (rs1 >= rs2) {
+        return branch(a, pc + d.imm);
     }
     return advance_pc(a, pc);
 }
@@ -313,8 +405,10 @@ static inline execute_status execute_BLTU(STATE_ACCESS &a, uint32_t insn, uint64
     dump_insn(a, pc, insn, "bltu");
     auto note = a.make_scoped_note("bltu");
     (void) note;
-    if (a.read_x(d.rs1) < a.read_x(d.rs2)) {
-        return branch(a, a.read_pc() + d.imm);
+    auto rs1 = a.read_x(d.rs1);
+    auto rs2 = a.read_x(d.rs2);
+    if (rs1 < rs2) {
+        return branch(a, pc + d.imm);
     }
     return advance_pc(a, pc);
 }
@@ -325,8 +419,10 @@ static inline execute_status execute_BGEU(STATE_ACCESS &a, uint32_t insn, uint64
     dump_insn(a, pc, insn, "bgeu");
     auto note = a.make_scoped_note("bgeu");
     (void) note;
-    if (a.read_x(d.rs1) >= a.read_x(d.rs2)) {
-        return branch(a, a.read_pc() + d.imm);
+    auto rs1 = a.read_x(d.rs1);
+    auto rs2 = a.read_x(d.rs2);
+    if (rs1 >= rs2) {
+        return branch(a, pc + d.imm);
     }
     return advance_pc(a, pc);
 }
@@ -337,8 +433,7 @@ static inline execute_status execute_LB(STATE_ACCESS &a, uint32_t insn, uint64_t
     dump_insn(a, pc, insn, "lb");
     auto note = a.make_scoped_note("lb");
     (void) note;
-    int8_t i8 = 0;
-    a.read_word(a.read_x(d.rs1) + d.imm, &i8);
+    int8_t i8 = read_uint8(a, a.read_x(d.rs1) + d.imm);
     if (d.rd != 0) {
         a.write_x(d.rd, i8);
     }
@@ -351,8 +446,7 @@ static inline execute_status execute_LHU(STATE_ACCESS &a, uint32_t insn, uint64_
     dump_insn(a, pc, insn, "lhu");
     auto note = a.make_scoped_note("lhu");
     (void) note;
-    uint16_t u16 = 0;
-    a.read_word(a.read_x(d.rs1) + d.imm, &u16);
+    uint16_t u16 = read_uint16(a, a.read_x(d.rs1) + d.imm);
     if (d.rd != 0) {
         a.write_x(d.rd, u16);
     }
@@ -365,8 +459,7 @@ static inline execute_status execute_LH(STATE_ACCESS &a, uint32_t insn, uint64_t
     dump_insn(a, pc, insn, "lh");
     auto note = a.make_scoped_note("lh");
     (void) note;
-    int16_t i16 = 0;
-    a.read_word(a.read_x(d.rs1) + d.imm, &i16);
+    int16_t i16 = read_uint16(a, a.read_x(d.rs1) + d.imm);
     if (d.rd != 0) {
         a.write_x(d.rd, i16);
     }
@@ -379,8 +472,7 @@ static inline execute_status execute_LW(STATE_ACCESS &a, uint32_t insn, uint64_t
     dump_insn(a, pc, insn, "lw");
     auto note = a.make_scoped_note("lw");
     (void) note;
-    int32_t i32 = 0;
-    a.read_word(a.read_x(d.rs1) + d.imm, &i32); // sign promotion
+    int32_t i32 = read_uint32(a, a.read_x(d.rs1) + d.imm);
     if (d.rd != 0) {
         a.write_x(d.rd, i32);
     }
@@ -393,8 +485,7 @@ static inline execute_status execute_LBU(STATE_ACCESS &a, uint32_t insn, uint64_
     dump_insn(a, pc, insn, "lbu");
     auto note = a.make_scoped_note("lbu");
     (void) note;
-    uint8_t u8 = 0;
-    a.read_word(a.read_x(d.rs1) + d.imm, &u8);
+    uint8_t u8 = read_uint8(a, a.read_x(d.rs1) + d.imm);
     if (d.rd != 0) {
         a.write_x(d.rd, u8);
     }
@@ -407,7 +498,9 @@ static inline execute_status execute_SB(STATE_ACCESS &a, uint32_t insn, uint64_t
     dump_insn(a, pc, insn, "sb");
     auto note = a.make_scoped_note("sb");
     (void) note;
-    a.write_word(a.read_x(d.rs1) + d.imm, static_cast<uint8_t>(a.read_x(d.rs2)));
+    auto rs1 = a.read_x(d.rs1);
+    auto rs2 = a.read_x(d.rs2);
+    write_uint8(a, rs1 + d.imm, static_cast<uint8_t>(rs2));
     return advance_pc(a, pc);
 }
 
@@ -417,7 +510,9 @@ static inline execute_status execute_SH(STATE_ACCESS &a, uint32_t insn, uint64_t
     dump_insn(a, pc, insn, "sh");
     auto note = a.make_scoped_note("sh");
     (void) note;
-    a.write_word(a.read_x(d.rs1) + d.imm, static_cast<uint16_t>(a.read_x(d.rs2)));
+    auto rs1 = a.read_x(d.rs1);
+    auto rs2 = static_cast<uint16_t>(a.read_x(d.rs2));
+    write_uint16(a, rs1 + d.imm, rs2);
     return advance_pc(a, pc);
 }
 
@@ -427,7 +522,9 @@ static inline execute_status execute_SW(STATE_ACCESS &a, uint32_t insn, uint64_t
     dump_insn(a, pc, insn, "sw");
     auto note = a.make_scoped_note("sw");
     (void) note;
-    a.write_word(a.read_x(d.rs1) + d.imm, static_cast<uint32_t>(a.read_x(d.rs2)));
+    auto rs1 = a.read_x(d.rs1);
+    auto rs2 = static_cast<uint32_t>(a.read_x(d.rs2));
+    write_uint32(a, rs1 + d.imm, rs2);
     return advance_pc(a, pc);
 }
 
@@ -625,7 +722,9 @@ static inline execute_status execute_ADD(STATE_ACCESS &a, uint32_t insn, uint64_
     auto note = a.make_scoped_note("add");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, a.read_x(d.rs1) + a.read_x(d.rs2));
+        auto rs1 = a.read_x(d.rs1);
+        auto rs2 = a.read_x(d.rs2);
+        a.write_x(d.rd, rs1 + rs2);
     }
     return advance_pc(a, pc);
 }
@@ -653,7 +752,9 @@ static inline execute_status execute_SUB(STATE_ACCESS &a, uint32_t insn, uint64_
     auto note = a.make_scoped_note("sub");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, a.read_x(d.rs1) - a.read_x(d.rs2));
+        auto rs1 = a.read_x(d.rs1);
+        auto rs2 = a.read_x(d.rs2);
+        a.write_x(d.rd, rs1 - rs2);
     }
     return advance_pc(a, pc);
 }
@@ -681,7 +782,9 @@ static inline execute_status execute_SLL(STATE_ACCESS &a, uint32_t insn, uint64_
     auto note = a.make_scoped_note("sll");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, a.read_x(d.rs1) << (a.read_x(d.rs2) & (XLEN - 1)));
+        auto rs1 = a.read_x(d.rs1);
+        auto rs2 = a.read_x(d.rs2);
+        a.write_x(d.rd, rs1 << (rs2 & (XLEN - 1)));
     }
     return advance_pc(a, pc);
 }
@@ -708,7 +811,9 @@ static inline execute_status execute_SLT(STATE_ACCESS &a, uint32_t insn, uint64_
     auto note = a.make_scoped_note("slt");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, static_cast<int64_t>(a.read_x(d.rs1)) < static_cast<int64_t>(a.read_x(d.rs2)) ? 1 : 0);
+        auto rs1 = static_cast<int64_t>(a.read_x(d.rs1));
+        auto rs2 = static_cast<int64_t>(a.read_x(d.rs2));
+        a.write_x(d.rd, rs1 < rs2 ? 1 : 0);
     }
     return advance_pc(a, pc);
 }
@@ -720,7 +825,9 @@ static inline execute_status execute_SLTU(STATE_ACCESS &a, uint32_t insn, uint64
     auto note = a.make_scoped_note("sltu");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, a.read_x(d.rs1) < a.read_x(d.rs2) ? 1 : 0);
+        auto rs1 = a.read_x(d.rs1);
+        auto rs2 = a.read_x(d.rs2);
+        a.write_x(d.rd, rs1 < rs2 ? 1 : 0);
     }
     return advance_pc(a, pc);
 }
@@ -732,7 +839,9 @@ static inline execute_status execute_XOR(STATE_ACCESS &a, uint32_t insn, uint64_
     auto note = a.make_scoped_note("xor");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, a.read_x(d.rs1) ^ a.read_x(d.rs2));
+        auto rs1 = a.read_x(d.rs1);
+        auto rs2 = a.read_x(d.rs2);
+        a.write_x(d.rd, rs1 ^ rs2);
     }
     return advance_pc(a, pc);
 }
@@ -744,7 +853,9 @@ static inline execute_status execute_SRL(STATE_ACCESS &a, uint32_t insn, uint64_
     auto note = a.make_scoped_note("srl");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, a.read_x(d.rs1) >> (a.read_x(d.rs2) & (XLEN - 1)));
+        auto rs1 = a.read_x(d.rs1);
+        auto rs2 = a.read_x(d.rs2);
+        a.write_x(d.rd, rs1 >> (rs2 & (XLEN - 1)));
     }
     return advance_pc(a, pc);
 }
@@ -756,7 +867,9 @@ static inline execute_status execute_SRA(STATE_ACCESS &a, uint32_t insn, uint64_
     auto note = a.make_scoped_note("sra");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, static_cast<int64_t>(a.read_x(d.rs1)) >> (a.read_x(d.rs2) & (XLEN - 1)));
+        auto rs1 = static_cast<int64_t>(a.read_x(d.rs1));
+        auto rs2 = a.read_x(d.rs2);
+        a.write_x(d.rd, rs1 >> (rs2 & (XLEN - 1)));
     }
     return advance_pc(a, pc);
 }
@@ -783,7 +896,9 @@ static inline execute_status execute_OR(STATE_ACCESS &a, uint32_t insn, uint64_t
     auto note = a.make_scoped_note("or");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, a.read_x(d.rs1) | a.read_x(d.rs2));
+        auto rs1 = a.read_x(d.rs1);
+        auto rs2 = a.read_x(d.rs2);
+        a.write_x(d.rd, rs1 | rs2);
     }
     return advance_pc(a, pc);
 }
@@ -795,7 +910,9 @@ static execute_status execute_AND(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto note = a.make_scoped_note("and");
     (void) note;
     if (d.rd != 0) {
-        a.write_x(d.rd, a.read_x(d.rs1) & a.read_x(d.rs2));
+        auto rs1 = a.read_x(d.rs1);
+        auto rs2 = a.read_x(d.rs2);
+        a.write_x(d.rd, rs1 & rs2);
     }
     return advance_pc(a, pc);
 }
@@ -814,8 +931,7 @@ static execute_status execute_LWU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     dump_insn(a, pc, insn, "lwu");
     auto note = a.make_scoped_note("lwu");
     (void) note;
-    uint32_t u32 = 0;
-    a.read_word(a.read_x(d.rs1) + d.imm, &u32); // sign promotion
+    uint32_t u32 = read_uint32(a, a.read_x(d.rs1) + d.imm);
     if (d.rd != 0) {
         a.write_x(d.rd, u32);
     }
@@ -828,8 +944,7 @@ static execute_status execute_LD(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     dump_insn(a, pc, insn, "ld");
     auto note = a.make_scoped_note("ld");
     (void) note;
-    uint64_t u64 = 0;
-    a.read_word(a.read_x(d.rs1) + d.imm, &u64);
+    uint64_t u64 = read_uint64(a, a.read_x(d.rs1) + d.imm);
     if (d.rd != 0) {
         a.write_x(d.rd, u64);
     }
@@ -842,7 +957,7 @@ static execute_status execute_SD(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     dump_insn(a, pc, insn, "sd");
     auto note = a.make_scoped_note("sd");
     (void) note;
-    a.write_word(a.read_x(d.rs1) + d.imm, a.read_x(d.rs2));
+    write_uint64(a, a.read_x(d.rs1) + d.imm, a.read_x(d.rs2));
     return advance_pc(a, pc);
 }
 
@@ -983,9 +1098,8 @@ template <typename STATE_ACCESS>
 uarch_interpreter_status uarch_interpret(STATE_ACCESS &a, uint64_t cycle_end) {
     auto cycle = a.read_cycle();
     while (cycle < cycle_end) {
-        uint32_t insn = 0;
         auto pc = a.read_pc();
-        a.read_word(pc, &insn);
+        auto insn = read_uint32(a, pc);
         auto status = execute_insn(a, insn, pc);
         if (status == execute_status::halt) {
             a.write_cycle(0);

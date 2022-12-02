@@ -250,50 +250,39 @@ private:
             m_us.cycle, val, "uarch.cycle");
     }
 
-    template <typename T>
-    void do_read_word(uint64_t paddr, T *data) {
+    uint64_t do_read_word(uint64_t paddr) {
+        assert((paddr & (sizeof(uint64_t) - 1)) == 0);
         // Find a memory range that contains the specified address
-        auto &pma = find_memory_pma_entry(paddr, sizeof(T));
+        auto &pma = find_memory_pma_entry(paddr, sizeof(uint64_t));
         if (pma.get_istart_E()) {
             // Memory not found. Try reading a machine state register
-            return read_register(paddr, data);
+            return read_register(paddr);
         }
         if (!pma.get_istart_R()) {
             throw std::runtime_error("pma is not readable");
         }
         // Found a readable memory range. Access host memory accordingly.
-
-        // Log access to aligned 64-bit word that contains T value
         uint64_t hoffset = paddr - pma.get_start();
         auto hmem = pma.get_memory().get_host_memory();
-        uint64_t haligned_offset = hoffset & (~(sizeof(uint64_t) - 1));
-        auto data64 = aliased_aligned_read<uint64_t>(hmem + haligned_offset);
-        uint64_t paligned = paddr & (~(sizeof(uint64_t) - 1));
-        log_read(paligned, data64, "memory");
-        *data = aliased_aligned_read<T>(hmem + hoffset);
+        auto data = aliased_aligned_read<uint64_t>(hmem + hoffset);
+        log_read(paddr, data, "memory");
+        return data;
     }
 
     /// \brief Reads a uint64 machine state register mapped to a memory address
     /// \param paddr Address of the state register
     /// \param data Pointer receiving register value
-    void read_register(uint64_t paddr, uint64_t *data) {
-        uarch_bridge::read_register(paddr, m_s, m_us, data);
+    uint64_t read_register(uint64_t paddr) {
+        auto data = uarch_bridge::read_register(paddr, m_s, m_us);
         auto name = uarch_bridge::get_register_name(paddr);
-        log_read(paddr, *data, name);
+        log_read(paddr, data, name);
+        return data;
     }
 
-    /// \brief Fallback to error on all other word sizes
-    template <typename T>
-    void read_register(uint64_t paddr, T *data) {
-        (void) paddr;
-        (void) data;
-        throw std::runtime_error("invalid memory read access from microarchitecture");
-    }
-
-    template <typename T>
-    void do_write_word(uint64_t paddr, T data) {
+    void do_write_word(uint64_t paddr, uint64_t data) {
+        assert((paddr & (sizeof(uint64_t) - 1)) == 0);
         // Find a memory range that contains the specified address
-        auto &pma = find_memory_pma_entry(paddr, sizeof(T));
+        auto &pma = find_memory_pma_entry(paddr, sizeof(uint64_t));
         if (pma.get_istart_E()) {
             // Memory not found. Try to write a machine state register
             return write_register(paddr, data);
@@ -307,38 +296,22 @@ private:
         // But log needs the word value before and after the change.
         // So we first get value before the write
         uint64_t hoffset = paddr - pma.get_start();
-        uint64_t haligned_offset = hoffset & (~(sizeof(uint64_t) - 1));
         unsigned char *hmem = pma.get_memory().get_host_memory();
-        void *hdata64 = hmem + haligned_offset;
-        auto old_data64 = aliased_aligned_read<uint64_t>(hdata64);
-        // Then the value after the write, leaving no trace of our dirty changes
         void *hdata = hmem + hoffset;
-        T old_data = aliased_aligned_read<T>(hdata);
-        aliased_aligned_write<T>(hdata, data);
-        auto new_data64 = aliased_aligned_read<uint64_t>(hdata64);
-        aliased_aligned_write<T>(hdata, old_data);
-        // ??D At the moment, the blockchain implementation does not know
-        // how to use the old_val64 we already send along with the write
-        // access to build the new_val64 when writing at smaller granularities.
-        // We therefore log a superfluous read access.
-        uint64_t paligned = paddr & (~(sizeof(uint64_t) - 1));
-        if (sizeof(T) < sizeof(uint64_t)) {
-            log_read(paligned, old_data64, "memory (superfluous)");
-        }
-        // Log the real write access
-        log_before_write(paligned, old_data64, new_data64, "memory");
+        auto old_data = aliased_aligned_read<uint64_t>(hdata);
+        // Log the write access
+        log_before_write(paddr, old_data, data, "memory");
         // Actually modify the state
-        aliased_aligned_write<T>(hdata, data);
+        aliased_aligned_write<uint64_t>(hdata, data);
         // Finaly update the Merkle tree
-        update_after_write(paligned);
+        update_after_write(paddr);
     }
 
     /// \brief Writes a uint64 machine state register mapped to a memory address
     /// \param paddr Address of the state register
     /// \param data New register value
     void write_register(uint64_t paddr, uint64_t data) {
-        uint64_t old_data = 0;
-        uarch_bridge::read_register(paddr, m_s, m_us, &old_data);
+        auto old_data = uarch_bridge::read_register(paddr, m_s, m_us);
         auto name = uarch_bridge::get_register_name(paddr);
         uarch_bridge::write_register(paddr, m_s, data);
         log_before_write_write_and_update(paddr, old_data, data, name);

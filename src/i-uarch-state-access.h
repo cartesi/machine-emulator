@@ -74,16 +74,12 @@ public:
         return derived().do_write_cycle(v);
     }
 
-    template <typename T>
-    void read_word(uint64_t paddr, T *data) {
-        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
-        return derived().template do_read_word<T>(paddr, data);
+    uint64_t read_word(uint64_t paddr) {
+        return derived().do_read_word(paddr);
     }
 
-    template <typename T>
-    void write_word(uint64_t paddr, T data) {
-        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
-        return derived().template do_write_word<T>(paddr, data);
+    void write_word(uint64_t paddr, uint64_t data) {
+        return derived().do_write_word(paddr, data);
     }
 
     template <typename T>

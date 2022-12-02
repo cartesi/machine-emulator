@@ -334,45 +334,26 @@ private:
         check_write_word(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_cycle), val, "uarch.cycle");
     }
 
-    template <typename T>
-    void do_read_word(uint64_t paddr, T *data) {
-        uint64_t paligned = paddr & (~(sizeof(uint64_t) - 1));
-        uint64_t poffset = paddr & (sizeof(uint64_t) - 1);
-
+    uint64_t do_read_word(uint64_t paddr) {
+        assert((paddr & (sizeof(uint64_t) - 1)) == 0);
         // Get the name of the state register identified by this address
         auto name = uarch_bridge::get_register_name(paddr);
         if (!name) {
             // this is a regular memory access
             name = "memory";
         }
-
-        uint64_t val64 = check_read_word(paligned, name);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        const auto *pval64 = reinterpret_cast<const unsigned char *>(&val64);
-        assert((paddr & (sizeof(T) - 1)) == 0);
-        *data = aliased_aligned_read<T>(pval64 + poffset);
+        return check_read_word(paddr, name);
     }
 
-    template <typename T>
-    void do_write_word(uint64_t paddr, T data) {
-        assert((paddr & (sizeof(T) - 1)) == 0);
-        if constexpr (sizeof(T) < sizeof(uint64_t)) {
-            uint64_t paligned = paddr & (~(sizeof(uint64_t) - 1));
-            uint64_t val64 = check_read_word(paligned, "memory (superfluous)");
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            auto *pval64 = reinterpret_cast<unsigned char *>(&val64);
-            uint64_t poffset = paddr & (sizeof(uint64_t) - 1);
-            aliased_aligned_write<T>(pval64 + poffset, data);
-            check_write_word(paligned, val64, "memory");
-        } else {
-            // Get the name of the state register identified by this address
-            auto name = uarch_bridge::get_register_name(paddr);
-            if (!name) {
-                // this is a regular memory access
-                name = "memory";
-            }
-            check_write_word(paddr, data, name);
+    void do_write_word(uint64_t paddr, uint64_t data) {
+        assert((paddr & (sizeof(uint64_t) - 1)) == 0);
+        // Get the name of the state register identified by this address
+        auto name = uarch_bridge::get_register_name(paddr);
+        if (!name) {
+            // this is a regular memory access
+            name = "memory";
         }
+        check_write_word(paddr, data, name);
     }
 };
 

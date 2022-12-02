@@ -40,7 +40,7 @@
 #define RVMODEL_BOOT
 
 #define RVMODEL_DATA_BEGIN        \
-  .dword 0; \
+  .align 8; \
   .ascii "BEGIN_CTSI_SIGNATURE____"; 
 
 #define RVMODEL_DATA_END       \

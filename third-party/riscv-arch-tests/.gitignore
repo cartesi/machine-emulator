@@ -4,6 +4,7 @@
 third-party
 .vscode
 .DS_Store
+.objdump
 
 
 

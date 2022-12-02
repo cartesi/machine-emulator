@@ -31,10 +31,14 @@ COMPILE_CMD=$(RUN_TOOLCHAIN) \
 							-T$(CONTAINER_TARGETDIR)/$(RISCV_TARGET)/link.ld \
               $$(<) -o $$(subst $(WORK),$(CONTAINER_WORKDIR),$$@).temp
 
+CONTAINER_TARGET = $$(subst $(WORK),$(CONTAINER_WORKDIR),$$@)
+
 OBJCOPY_CMD=$(RUN_TOOLCHAIN) \
   $(TOOLCHAIN_PREFIX)objcopy  -S -O binary  \
-    $$(subst $(WORK),$(CONTAINER_WORKDIR),$$@).temp \
-    $$(subst $(WORK),$(CONTAINER_WORKDIR),$$@)
+    $(CONTAINER_TARGET).temp \
+    $(CONTAINER_TARGET)
+
+OBJDUMP_CMD=$(RUN_TOOLCHAIN) bash -c '$(TOOLCHAIN_PREFIX)objdump $(CONTAINER_TARGET).temp -D > $(CONTAINER_TARGET).objdump'
 
 # Symbols used by the test suite runner
 COMPILE_TARGET=\
@@ -45,6 +49,7 @@ COMPILE_TARGET=\
                 exit 1 ; \
                 fi ; \
       $(OBJCOPY_CMD); \
+      $(OBJDUMP_CMD); \
       if [ $$$$? -ne 0 ] ; \
               then \
               echo "\e[31m$$(RISCV_OBJCOPY) failed for target $$(@) \e[39m" ; \

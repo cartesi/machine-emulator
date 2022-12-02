@@ -118,14 +118,13 @@ private:
         m_us.cycle = val;
     }
 
-    template <typename T>
-    void do_read_word(uint64_t paddr, T *data) {
+    uint64_t do_read_word(uint64_t paddr) {
         // Find a memory range that contains the specified address
-        auto &pma = find_memory_pma_entry(paddr, sizeof(T));
+        auto &pma = find_memory_pma_entry(paddr, sizeof(uint64_t));
         if (pma.get_istart_E()) {
             // This word doesn't fall within any memory PMA range.
             // Check if uarch is trying to access a machine state register
-            return read_register(paddr, data);
+            return read_register(paddr);
         }
         if (!pma.get_istart_R()) {
             throw std::runtime_error("pma is not readable");
@@ -133,28 +132,20 @@ private:
         // Found a writable memory range. Access host memory accordingly.
         uint64_t hoffset = paddr - pma.get_start();
         unsigned char *hmem = pma.get_memory().get_host_memory() + hoffset;
-        *data = aliased_aligned_read<T>(hmem);
+        return aliased_aligned_read<uint64_t>(hmem);
     }
 
     /// \brief Reads a uint64 machine state register mapped to a memory address
     /// \param paddr Address of the state register
     /// \param data Pointer receiving register value
-    void read_register(uint64_t paddr, uint64_t *data) {
-        return uarch_bridge::read_register(paddr, m_s, m_us, data);
-    }
-
-    template <typename T>
-    void read_register(uint64_t paddr, T *data) {
-        (void) paddr;
-        (void) data;
-        throw std::runtime_error("invalid memory read access from microarchitecture");
+    uint64_t read_register(uint64_t paddr) {
+        return uarch_bridge::read_register(paddr, m_s, m_us);
     }
 
     /// \brief Fallback to error on all other word sizes
-    template <typename T>
-    void do_write_word(uint64_t paddr, T data) {
+    void do_write_word(uint64_t paddr, uint64_t data) {
         // Find a memory range that contains the specified address
-        auto &pma = find_memory_pma_entry(paddr, sizeof(T));
+        auto &pma = find_memory_pma_entry(paddr, sizeof(uint64_t));
         if (pma.get_istart_E()) {
             // This word doesn't fall within any memory PMA range.
             // Check if uarch is trying to access a machine state register
@@ -176,14 +167,6 @@ private:
     /// \param data New register value
     void write_register(uint64_t paddr, uint64_t data) {
         return uarch_bridge::write_register(paddr, m_s, data);
-    }
-
-    /// \brief Fallback to error on all other word sizes
-    template <typename T>
-    void write_register(uint64_t paddr, T data) {
-        (void) paddr;
-        (void) data;
-        throw std::runtime_error("invalid memory write access from microarchitecture");
     }
 };
 

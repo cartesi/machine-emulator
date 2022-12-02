@@ -50,66 +50,95 @@ public:
         }
         switch (static_cast<shadow_state_csr>(paddr)) {
             case shadow_state_csr::pc:
-                return success_write(s.pc, data);
+                s.pc = data;
+                return;
             case shadow_state_csr::fcsr:
-                return success_write(s.fcsr, data);
+                s.fcsr = data;
+                return;
             case shadow_state_csr::mcycle:
-                return success_write(s.mcycle, data);
+                s.mcycle = data;
+                return;
             case shadow_state_csr::minstret:
-                return success_write(s.minstret, data);
+                s.minstret = data;
+                return;
             case shadow_state_csr::mstatus:
-                return success_write(s.mstatus, data);
+                s.mstatus = data;
+                return;
             case shadow_state_csr::mtvec:
-                return success_write(s.mtvec, data);
+                s.mtvec = data;
+                return;
             case shadow_state_csr::mscratch:
-                return success_write(s.mscratch, data);
+                s.mscratch = data;
+                return;
             case shadow_state_csr::mepc:
-                return success_write(s.mepc, data);
+                s.mepc = data;
+                return;
             case shadow_state_csr::mcause:
-                return success_write(s.mcause, data);
+                s.mcause = data;
+                return;
             case shadow_state_csr::mtval:
-                return success_write(s.mtval, data);
+                s.mtval = data;
+                return;
             case shadow_state_csr::misa:
-                return success_write(s.misa, data);
+                s.misa = data;
+                return;
             case shadow_state_csr::mie:
-                return success_write(s.mie, data);
+                s.mie = data;
+                return;
             case shadow_state_csr::mip:
-                return success_write(s.mip, data);
+                s.mip = data;
+                return;
             case shadow_state_csr::medeleg:
-                return success_write(s.medeleg, data);
+                s.medeleg = data;
+                return;
             case shadow_state_csr::mideleg:
-                return success_write(s.mideleg, data);
+                s.mideleg = data;
+                return;
             case shadow_state_csr::mcounteren:
-                return success_write(s.mcounteren, data);
+                s.mcounteren = data;
+                return;
             case shadow_state_csr::menvcfg:
-                return success_write(s.menvcfg, data);
+                s.menvcfg = data;
+                return;
             case shadow_state_csr::stvec:
-                return success_write(s.stvec, data);
+                s.stvec = data;
+                return;
             case shadow_state_csr::sscratch:
-                return success_write(s.sscratch, data);
+                s.sscratch = data;
+                return;
             case shadow_state_csr::sepc:
-                return success_write(s.sepc, data);
+                s.sepc = data;
+                return;
             case shadow_state_csr::scause:
-                return success_write(s.scause, data);
+                s.scause = data;
+                return;
             case shadow_state_csr::stval:
-                return success_write(s.stval, data);
+                s.stval = data;
+                return;
             case shadow_state_csr::satp:
-                return success_write(s.satp, data);
+                s.satp = data;
+                return;
             case shadow_state_csr::scounteren:
-                return success_write(s.scounteren, data);
+                s.scounteren = data;
+                return;
             case shadow_state_csr::senvcfg:
-                return success_write(s.senvcfg, data);
+                s.senvcfg = data;
+                return;
             case shadow_state_csr::ilrsc:
-                return success_write(s.ilrsc, data);
+                s.ilrsc = data;
+                return;
             case shadow_state_csr::iflags:
                 s.write_iflags(data);
                 return;
             case shadow_state_csr::clint_mtimecmp:
-                return success_write(s.clint.mtimecmp, data);
+                s.clint.mtimecmp = data;
+                return;
             case shadow_state_csr::htif_tohost:
-                return success_write(s.htif.tohost, data);
+                s.htif.tohost = data;
+                return;
             case shadow_state_csr::htif_fromhost:
-                return success_write(s.htif.fromhost, data);
+                s.htif.fromhost = data;
+                return;
             case shadow_state_csr::brkflag:
                 s.brkflag = data;
                 return;
@@ -134,102 +163,99 @@ public:
     /// \details \{
     /// An exception is thrown if paddr can't me mapped to a valid state register.
     //// \}
-    static void read_register(uint64_t paddr, machine_state &s, uarch_state &us, uint64_t *data) {
-        if (try_read_x(s, paddr, data)) {
-            return;
+    static uint64_t read_register(uint64_t paddr, machine_state &s, uarch_state &us) {
+        uint64_t data = 0;
+        if (try_read_x(s, paddr, &data)) {
+            return data;
         }
-        if (try_read_f(s, paddr, data)) {
-            return;
+        if (try_read_f(s, paddr, &data)) {
+            return data;
         }
-        if (try_read_tlb(s, paddr, data)) {
-            return;
+        if (try_read_tlb(s, paddr, &data)) {
+            return data;
         }
-        if (try_read_pma(s, paddr, data)) {
-            return;
+        if (try_read_pma(s, paddr, &data)) {
+            return data;
         }
         switch (static_cast<shadow_state_csr>(paddr)) {
             case shadow_state_csr::pc:
-                return success_read(s.pc, data);
+                return s.pc;
             case shadow_state_csr::fcsr:
-                return success_read(s.fcsr, data);
+                return s.fcsr;
             case shadow_state_csr::mvendorid:
-                return success_read(MVENDORID_INIT, data);
+                return MVENDORID_INIT;
             case shadow_state_csr::marchid:
-                return success_read(MARCHID_INIT, data);
+                return MARCHID_INIT;
             case shadow_state_csr::mimpid:
-                return success_read(MIMPID_INIT, data);
+                return MIMPID_INIT;
             case shadow_state_csr::mcycle:
-                return success_read(s.mcycle, data);
+                return s.mcycle;
             case shadow_state_csr::minstret:
-                return success_read(s.minstret, data);
+                return s.minstret;
             case shadow_state_csr::mstatus:
-                return success_read(s.mstatus, data);
+                return s.mstatus;
             case shadow_state_csr::mtvec:
-                return success_read(s.mtvec, data);
+                return s.mtvec;
             case shadow_state_csr::mscratch:
-                return success_read(s.mscratch, data);
+                return s.mscratch;
             case shadow_state_csr::mepc:
-                return success_read(s.mepc, data);
+                return s.mepc;
             case shadow_state_csr::mcause:
-                return success_read(s.mcause, data);
+                return s.mcause;
             case shadow_state_csr::mtval:
-                return success_read(s.mtval, data);
+                return s.mtval;
             case shadow_state_csr::misa:
-                return success_read(s.misa, data);
+                return s.misa;
             case shadow_state_csr::mie:
-                return success_read(s.mie, data);
+                return s.mie;
             case shadow_state_csr::mip:
-                return success_read(s.mip, data);
+                return s.mip;
             case shadow_state_csr::medeleg:
-                return success_read(s.medeleg, data);
+                return s.medeleg;
             case shadow_state_csr::mideleg:
-                return success_read(s.mideleg, data);
+                return s.mideleg;
             case shadow_state_csr::mcounteren:
-                return success_read(s.mcounteren, data);
+                return s.mcounteren;
             case shadow_state_csr::menvcfg:
-                return success_read(s.menvcfg, data);
+                return s.menvcfg;
             case shadow_state_csr::stvec:
-                return success_read(s.stvec, data);
+                return s.stvec;
             case shadow_state_csr::sscratch:
-                return success_read(s.sscratch, data);
+                return s.sscratch;
             case shadow_state_csr::sepc:
-                return success_read(s.sepc, data);
+                return s.sepc;
             case shadow_state_csr::scause:
-                return success_read(s.scause, data);
+                return s.scause;
             case shadow_state_csr::stval:
-                return success_read(s.stval, data);
+                return s.stval;
             case shadow_state_csr::satp:
-                return success_read(s.satp, data);
+                return s.satp;
             case shadow_state_csr::scounteren:
-                return success_read(s.scounteren, data);
+                return s.scounteren;
             case shadow_state_csr::senvcfg:
-                return success_read(s.senvcfg, data);
+                return s.senvcfg;
             case shadow_state_csr::ilrsc:
-                return success_read(s.ilrsc, data);
+                return s.ilrsc;
             case shadow_state_csr::iflags:
-                *data = s.read_iflags();
-                return;
+                return s.read_iflags();
             case shadow_state_csr::brkflag:
-                *data = s.brkflag;
-                return;
+                return s.brkflag;
             case shadow_state_csr::clint_mtimecmp:
-                return success_read(s.clint.mtimecmp, data);
+                return s.clint.mtimecmp;
             case shadow_state_csr::htif_tohost:
-                return success_read(s.htif.tohost, data);
+                return s.htif.tohost;
             case shadow_state_csr::htif_fromhost:
-                return success_read(s.htif.fromhost, data);
+                return s.htif.fromhost;
             case shadow_state_csr::htif_ihalt:
-                return success_read(s.htif.ihalt, data);
+                return s.htif.ihalt;
             case shadow_state_csr::htif_iconsole:
-                return success_read(s.htif.iconsole, data);
+                return s.htif.iconsole;
             case shadow_state_csr::htif_iyield:
-                return success_read(s.htif.iyield, data);
+                return s.htif.iyield;
             case shadow_state_csr::uarch_rom_length:
-                *data = us.rom.get_length();
-                return;
+                return us.rom.get_length();
             case shadow_state_csr::uarch_ram_length:
-                *data = us.ram.get_length();
-                return;
+                return us.ram.get_length();
             default:
                 break;
         }
@@ -633,16 +659,6 @@ private:
         }
         // Last PMA is always the empty range
         return s.pmas.back();
-    }
-
-    /// \brief Write src to dst
-    static inline void success_read(const uint64_t &src, uint64_t *dst) {
-        *dst = src;
-    }
-
-    /// \brief Write src to dst
-    static inline void success_write(uint64_t &dst, const uint64_t &src) {
-        dst = src;
     }
 
     /// \brief Writes a character to the console

@@ -178,7 +178,7 @@ ifneq (,$(filter gcc,$(CC)))
 # saving some host instructions and improving performance.
 # This flag is usually enabled by default at -O3,
 # but we don't use -O3 because it enables some other flags that are not worth for the interpreter.
-OPTFLAGS+=-ftree-partial-pre
+OPTFLAGS+=-fgcse-after-reload -fpredictive-commoning -fsplit-paths -ftree-partial-pre
 endif
 endif
 

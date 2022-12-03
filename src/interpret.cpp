@@ -960,9 +960,10 @@ static FORCE_INLINE execute_status execute_LR(STATE_ACCESS &a, uint64_t &pc, uin
     }
     a.write_ilrsc(vaddr);
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        a.write_x(rd, static_cast<uint64_t>(val));
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn(a, pc);
     }
+    a.write_x(rd, static_cast<uint64_t>(val));
     return advance_to_next_insn(a, pc);
 }
 
@@ -986,9 +987,10 @@ static FORCE_INLINE execute_status execute_SC(STATE_ACCESS &a, uint64_t &pc, uin
     }
     a.write_ilrsc(-1); // Must clear reservation, regardless of failure
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        a.write_x(rd, val);
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn_with_status(a, pc, status);
     }
+    a.write_x(rd, val);
     return advance_to_next_insn_with_status(a, pc, status);
 }
 
@@ -1032,9 +1034,10 @@ static FORCE_INLINE execute_status execute_AMO(STATE_ACCESS &a, uint64_t &pc, ui
         return advance_to_raised_exception(a, pc);
     }
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        a.write_x(rd, static_cast<uint64_t>(valm));
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn_with_status(a, pc, status);
     }
+    a.write_x(rd, static_cast<uint64_t>(valm));
     return advance_to_next_insn_with_status(a, pc, status);
 }
 
@@ -1335,9 +1338,9 @@ static FORCE_INLINE execute_status execute_DIVW(STATE_ACCESS &a, uint64_t &pc, u
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         auto rs1w = static_cast<int32_t>(rs1);
         auto rs2w = static_cast<int32_t>(rs2);
-        if (rs2w == 0) {
+        if (unlikely(rs2w == 0)) {
             return static_cast<uint64_t>(-1);
-        } else if (rs1w == (static_cast<int32_t>(1) << (32 - 1)) && rs2w == -1) {
+        } else if (unlikely(rs2w == -1 && rs1w == (static_cast<int32_t>(1) << (32 - 1)))) {
             return static_cast<uint64_t>(rs1w);
         } else {
             return static_cast<uint64_t>(rs1w / rs2w);
@@ -1354,7 +1357,7 @@ static FORCE_INLINE execute_status execute_DIVUW(STATE_ACCESS &a, uint64_t &pc, 
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         auto rs1w = static_cast<uint32_t>(rs1);
         auto rs2w = static_cast<uint32_t>(rs2);
-        if (rs2w == 0) {
+        if (unlikely(rs2w == 0)) {
             return static_cast<uint64_t>(-1);
         } else {
             return static_cast<uint64_t>(static_cast<int32_t>(rs1w / rs2w));
@@ -1371,9 +1374,9 @@ static FORCE_INLINE execute_status execute_REMW(STATE_ACCESS &a, uint64_t &pc, u
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         auto rs1w = static_cast<int32_t>(rs1);
         auto rs2w = static_cast<int32_t>(rs2);
-        if (rs2w == 0) {
+        if (unlikely(rs2w == 0)) {
             return static_cast<uint64_t>(rs1w);
-        } else if (rs1w == (static_cast<int32_t>(1) << (32 - 1)) && rs2w == -1) {
+        } else if (unlikely(rs2w == -1 && rs1w == (static_cast<int32_t>(1) << (32 - 1)))) {
             return static_cast<uint64_t>(0);
         } else {
             return static_cast<uint64_t>(rs1w % rs2w);
@@ -1393,7 +1396,7 @@ static FORCE_INLINE execute_status execute_REMUW(STATE_ACCESS &a, uint64_t &pc, 
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         auto rs1w = static_cast<uint32_t>(rs1);
         auto rs2w = static_cast<uint32_t>(rs2);
-        if (rs2w == 0) {
+        if (unlikely(rs2w == 0)) {
             return static_cast<uint64_t>(static_cast<int32_t>(rs1w));
         } else {
             return static_cast<uint64_t>(static_cast<int32_t>(rs1w % rs2w));
@@ -2252,9 +2255,10 @@ static FORCE_INLINE execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t &pc,
         return raise_illegal_insn_exception(a, pc, insn);
     }
     // Write to rd only after potential read/write exceptions
-    if (rd != 0) {
-        a.write_x(rd, csrval);
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn_with_status(a, pc, wstatus);
     }
+    a.write_x(rd, csrval);
     return advance_to_next_insn_with_status(a, pc, wstatus);
 }
 
@@ -2304,9 +2308,10 @@ static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t &pc,
     }
     // Write to rd only after potential read/write exceptions
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        a.write_x(rd, csrval);
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn_with_status(a, pc, wstatus);
     }
+    a.write_x(rd, csrval);
     return advance_to_next_insn_with_status(a, pc, wstatus);
 }
 
@@ -2351,9 +2356,10 @@ static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t &pc
     }
     // Write to rd only after potential read/write exceptions
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        a.write_x(rd, csrval);
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn_with_status(a, pc, wstatus);
     }
+    a.write_x(rd, csrval);
     return advance_to_next_insn_with_status(a, pc, wstatus);
 }
 
@@ -2513,14 +2519,15 @@ static FORCE_INLINE execute_status execute_FENCE_I(STATE_ACCESS &a, uint64_t &pc
 template <typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_arithmetic(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, const F &f) {
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        // Ensure rs1 and rs2 are loaded in order: do not nest with call to f() as
-        // the order of evaluation of arguments in a function call is undefined.
-        uint64_t rs1 = a.read_x(insn_get_rs1(insn));
-        uint64_t rs2 = a.read_x(insn_get_rs2(insn));
-        // Now we can safely invoke f()
-        a.write_x(rd, f(rs1, rs2));
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn(a, pc);
     }
+    // Ensure rs1 and rs2 are loaded in order: do not nest with call to f() as
+    // the order of evaluation of arguments in a function call is undefined.
+    uint64_t rs1 = a.read_x(insn_get_rs1(insn));
+    uint64_t rs2 = a.read_x(insn_get_rs2(insn));
+    // Now we can safely invoke f()
+    a.write_x(rd, f(rs1, rs2));
     return advance_to_next_insn(a, pc);
 }
 
@@ -2685,9 +2692,9 @@ static FORCE_INLINE execute_status execute_DIV(STATE_ACCESS &a, uint64_t &pc, ui
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         auto srs1 = static_cast<int64_t>(rs1);
         auto srs2 = static_cast<int64_t>(rs2);
-        if (srs2 == 0) {
+        if (unlikely(srs2 == 0)) {
             return static_cast<uint64_t>(-1);
-        } else if (srs1 == (INT64_C(1) << (XLEN - 1)) && srs2 == -1) {
+        } else if (unlikely(srs2 == -1 && srs1 == (INT64_C(1) << (XLEN - 1)))) {
             return static_cast<uint64_t>(srs1);
         } else {
             return static_cast<uint64_t>(srs1 / srs2);
@@ -2702,7 +2709,7 @@ static FORCE_INLINE execute_status execute_DIVU(STATE_ACCESS &a, uint64_t &pc, u
     auto note = a.make_scoped_note("divu");
     (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        if (rs2 == 0) {
+        if (unlikely(rs2 == 0)) {
             return static_cast<uint64_t>(-1);
         } else {
             return rs1 / rs2;
@@ -2719,9 +2726,9 @@ static FORCE_INLINE execute_status execute_REM(STATE_ACCESS &a, uint64_t &pc, ui
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         auto srs1 = static_cast<int64_t>(rs1);
         auto srs2 = static_cast<int64_t>(rs2);
-        if (srs2 == 0) {
+        if (unlikely(srs2 == 0)) {
             return srs1;
-        } else if (srs1 == (INT64_C(1) << (XLEN - 1)) && srs2 == -1) {
+        } else if (unlikely(srs2 == -1 && srs1 == (INT64_C(1) << (XLEN - 1)))) {
             return 0;
         } else {
             return static_cast<uint64_t>(srs1 % srs2);
@@ -2736,7 +2743,7 @@ static FORCE_INLINE execute_status execute_REMU(STATE_ACCESS &a, uint64_t &pc, u
     auto note = a.make_scoped_note("remu");
     (void) note;
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        if (rs2 == 0) {
+        if (unlikely(rs2 == 0)) {
             return rs1;
         } else {
             return rs1 % rs2;
@@ -2748,11 +2755,12 @@ template <typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_arithmetic_immediate(STATE_ACCESS &a, uint64_t &pc, uint32_t insn,
     const F &f) {
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        uint64_t rs1 = a.read_x(insn_get_rs1(insn));
-        int32_t imm = insn_I_get_imm(insn);
-        a.write_x(rd, f(rs1, imm));
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn(a, pc);
     }
+    uint64_t rs1 = a.read_x(insn_get_rs1(insn));
+    int32_t imm = insn_I_get_imm(insn);
+    a.write_x(rd, f(rs1, imm));
     return advance_to_next_insn(a, pc);
 }
 
@@ -2961,19 +2969,20 @@ template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_L(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     int32_t imm = insn_I_get_imm(insn);
-    T val;
+    T val = 0;
     if (unlikely(!read_virtual_memory<T>(a, pc, vaddr + imm, &val))) {
         return advance_to_raised_exception(a, pc);
     }
     uint32_t rd = insn_get_rd(insn);
     // don't write x0
-    if (rd != 0) {
-        // This static branch is eliminated by the compiler
-        if (std::is_signed<T>::value) {
-            a.write_x(rd, static_cast<int64_t>(val));
-        } else {
-            a.write_x(rd, static_cast<uint64_t>(val));
-        }
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn(a, pc);
+    }
+    // This static branch is eliminated by the compiler
+    if constexpr (std::is_signed<T>::value) {
+        a.write_x(rd, static_cast<int64_t>(val));
+    } else {
+        a.write_x(rd, static_cast<uint64_t>(val));
     }
     return advance_to_next_insn(a, pc);
 }
@@ -3049,9 +3058,8 @@ static FORCE_INLINE execute_status execute_branch(STATE_ACCESS &a, uint64_t &pc,
         uint64_t new_pc = static_cast<int64_t>(pc + insn_B_get_imm(insn));
         if (unlikely(new_pc & 3)) {
             return raise_misaligned_fetch_exception(a, pc, new_pc);
-        } else {
-            return execute_jump(a, pc, new_pc);
         }
+        return execute_jump(a, pc, new_pc);
     }
     return advance_to_next_insn(a, pc);
 }
@@ -3119,9 +3127,10 @@ static FORCE_INLINE execute_status execute_LUI(STATE_ACCESS &a, uint64_t &pc, ui
     auto note = a.make_scoped_note("lui");
     (void) note;
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        a.write_x(rd, insn_U_get_imm(insn));
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn(a, pc);
     }
+    a.write_x(rd, insn_U_get_imm(insn));
     return advance_to_next_insn(a, pc);
 }
 
@@ -3132,9 +3141,10 @@ static FORCE_INLINE execute_status execute_AUIPC(STATE_ACCESS &a, uint64_t &pc, 
     auto note = a.make_scoped_note("auipc");
     (void) note;
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        a.write_x(rd, pc + insn_U_get_imm(insn));
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn(a, pc);
     }
+    a.write_x(rd, pc + insn_U_get_imm(insn));
     return advance_to_next_insn(a, pc);
 }
 
@@ -3149,9 +3159,10 @@ static FORCE_INLINE execute_status execute_JAL(STATE_ACCESS &a, uint64_t &pc, ui
         return raise_misaligned_fetch_exception(a, pc, new_pc);
     }
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        a.write_x(rd, pc + 4);
+    if (unlikely(rd == 0)) {
+        return execute_jump(a, pc, new_pc);
     }
+    a.write_x(rd, pc + 4);
     return execute_jump(a, pc, new_pc);
 }
 
@@ -3168,8 +3179,9 @@ static FORCE_INLINE execute_status execute_JALR(STATE_ACCESS &a, uint64_t &pc, u
         return raise_misaligned_fetch_exception(a, pc, new_pc);
     }
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
+    if (unlikely(rd != 0)) {
         a.write_x(rd, val);
+        return execute_jump(a, pc, new_pc);
     }
     return execute_jump(a, pc, new_pc);
 }
@@ -3868,11 +3880,12 @@ static FORCE_INLINE execute_status execute_FDIV_D(STATE_ACCESS &a, uint64_t &pc,
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCLASS(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, const F &f) {
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        // We must always check if input operands are properly NaN-boxed.
-        T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
-        a.write_x(rd, f(s1));
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn(a, pc);
     }
+    // We must always check if input operands are properly NaN-boxed.
+    T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
+    a.write_x(rd, f(s1));
     return advance_to_next_insn(a, pc);
 }
 
@@ -3900,10 +3913,11 @@ static FORCE_INLINE execute_status execute_float_cmp_op(STATE_ACCESS &a, uint64_
     uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // Comparisons with NaNs may set NV (invalid operation) exception flag in fflags
     uint64_t val = f(s1, s2, &fflags);
-    if (rd != 0) {
-        a.write_x(rd, val);
-    }
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn(a, pc);
+    }
+    a.write_x(rd, val);
     return advance_to_next_insn(a, pc);
 }
 
@@ -4109,10 +4123,11 @@ static FORCE_INLINE execute_status execute_FCVT_X_F(STATE_ACCESS &a, uint64_t &p
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
     uint64_t val = f(s1, rm, &fflags);
-    if (rd != 0) {
-        a.write_x(rd, val);
-    }
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn(a, pc);
+    }
+    a.write_x(rd, val);
     return advance_to_next_insn(a, pc);
 }
 
@@ -4484,13 +4499,14 @@ static FORCE_INLINE execute_status execute_FMV_X_W(STATE_ACCESS &a, uint64_t &pc
     auto note = a.make_scoped_note("fmv.x.w");
     (void) note;
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        uint32_t val = static_cast<uint32_t>(a.read_f(insn_get_rs1(insn)));
-        // For RV64, the higher 32 bits of the destination register are
-        // filled with copies of the floating-point number’s sign bit.
-        // We can perform this with a sign extension.
-        a.write_x(rd, static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val))));
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn(a, pc);
     }
+    uint32_t val = static_cast<uint32_t>(a.read_f(insn_get_rs1(insn)));
+    // For RV64, the higher 32 bits of the destination register are
+    // filled with copies of the floating-point number’s sign bit.
+    // We can perform this with a sign extension.
+    a.write_x(rd, static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val))));
     return advance_to_next_insn(a, pc);
 }
 
@@ -4520,10 +4536,11 @@ static FORCE_INLINE execute_status execute_FMV_X_D(STATE_ACCESS &a, uint64_t &pc
     auto note = a.make_scoped_note("fmv.x.d");
     (void) note;
     uint32_t rd = insn_get_rd(insn);
-    if (rd != 0) {
-        uint64_t val = a.read_f(insn_get_rs1(insn));
-        a.write_x(rd, val);
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn(a, pc);
     }
+    uint64_t val = a.read_f(insn_get_rs1(insn));
+    a.write_x(rd, val);
     return advance_to_next_insn(a, pc);
 }
 

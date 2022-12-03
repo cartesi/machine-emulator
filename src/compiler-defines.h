@@ -20,8 +20,7 @@
 #define FORCE_INLINE __attribute__((always_inline)) inline
 #define NO_INLINE __attribute__((noinline))
 
-// These macros are used only in very hot code paths (such as TLB hit checks),
-// making use of them everywhere is not worth it.
+// These macros are used only in very hot code paths (such as TLB hit checks).
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define likely(x) __builtin_expect((x), 1)
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)

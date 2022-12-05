@@ -197,12 +197,12 @@ private:
         raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::fcsr), val);
     }
 
-    uint64_t do_read_minstret(void) {
-        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::minstret));
+    uint64_t do_read_icycleinstret(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::icycleinstret));
     }
 
-    void do_write_minstret(uint64_t val) {
-        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::minstret), val);
+    void do_write_icycleinstret(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::icycleinstret), val);
     }
 
     uint64_t do_read_mvendorid(void) {

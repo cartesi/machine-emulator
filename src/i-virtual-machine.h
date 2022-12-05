@@ -216,14 +216,14 @@ public:
         do_write_mcycle(val);
     }
 
-    /// \brief Reads the minstret register
-    uint64_t read_minstret(void) const {
-        return do_read_minstret();
+    /// \brief Reads the icycleinstret register
+    uint64_t read_icycleinstret(void) const {
+        return do_read_icycleinstret();
     }
 
-    /// \brief Writes the minstret register
-    void write_minstret(uint64_t val) {
-        do_write_minstret(val);
+    /// \brief Writes the icycleinstret register
+    void write_icycleinstret(uint64_t val) {
+        do_write_icycleinstret(val);
     }
 
     /// \brief Reads the mstatus register
@@ -659,8 +659,8 @@ private:
     virtual uint64_t do_read_mimpid(void) const = 0;
     virtual uint64_t do_read_mcycle(void) const = 0;
     virtual void do_write_mcycle(uint64_t val) = 0;
-    virtual uint64_t do_read_minstret(void) const = 0;
-    virtual void do_write_minstret(uint64_t val) = 0;
+    virtual uint64_t do_read_icycleinstret(void) const = 0;
+    virtual void do_write_icycleinstret(uint64_t val) = 0;
     virtual uint64_t do_read_mstatus(void) const = 0;
     virtual void do_write_mstatus(uint64_t val) = 0;
     virtual uint64_t do_read_menvcfg(void) const = 0;

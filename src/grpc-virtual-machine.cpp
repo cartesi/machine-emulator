@@ -486,12 +486,12 @@ void grpc_virtual_machine::do_write_mcycle(uint64_t val) {
     write_csr(csr::mcycle, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_minstret(void) const {
-    return read_csr(csr::minstret);
+uint64_t grpc_virtual_machine::do_read_icycleinstret(void) const {
+    return read_csr(csr::icycleinstret);
 }
 
-void grpc_virtual_machine::do_write_minstret(uint64_t val) {
-    write_csr(csr::minstret, val);
+void grpc_virtual_machine::do_write_icycleinstret(uint64_t val) {
+    write_csr(csr::icycleinstret, val);
 }
 
 uint64_t grpc_virtual_machine::do_read_mstatus(void) const {

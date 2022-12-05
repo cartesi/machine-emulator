@@ -128,8 +128,8 @@ private:
     uint64_t do_read_mimpid(void) const override;
     uint64_t do_read_mcycle(void) const override;
     void do_write_mcycle(uint64_t val) override;
-    uint64_t do_read_minstret(void) const override;
-    void do_write_minstret(uint64_t val) override;
+    uint64_t do_read_icycleinstret(void) const override;
+    void do_write_icycleinstret(uint64_t val) override;
     uint64_t do_read_mstatus(void) const override;
     void do_write_mstatus(uint64_t val) override;
     uint64_t do_read_menvcfg(void) const override;

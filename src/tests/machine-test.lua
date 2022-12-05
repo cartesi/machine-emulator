@@ -520,18 +520,18 @@ print("\n\n check for relevant register values after step 1")
 test_util.disabled_test("register values should match",
     function(machine)
         local pc_before = machine:read_pc()
-        local minstret_before = machine:read_minstret()
+        local icycleinstret_before = machine:read_icycleinstret()
         local mcycle_before = machine:read_mcycle()
 
         local log_type = {}
         machine:step(log_type)
 
         local pc_after = machine:read_pc()
-        local minstret_after = machine:read_minstret()
+        local icycleinstret_after = machine:read_icycleinstret()
         local mcycle_after = machine:read_mcycle()
 
         assert(pc_before + 4 == pc_after, "wrong pc value")
-        assert(minstret_before + 1 == minstret_after, "wrong minstret value")
+        assert(icycleinstret_before == icycleinstret_after, "wrong icycleinstret value")
         assert(mcycle_before + 1 == mcycle_after, "wrong mcycle value")
     end
 )

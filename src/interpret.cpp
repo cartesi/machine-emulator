@@ -318,7 +318,7 @@ static void dump_regs(const STATE &s) {
     (void) fprintf(stderr, " mstatus=");
     print_uint64_t(s.mstatus);
     (void) fprintf(stderr, " cycles=%" PRId64, s.mcycle);
-    (void) fprintf(stderr, " insns=%" PRId64, s.mcycle - s.minstret);
+    (void) fprintf(stderr, " insns=%" PRId64, s.mcycle - s.icycleinstret);
     (void) fprintf(stderr, "\n");
 #if 1
     (void) fprintf(stderr, "mideleg=");
@@ -426,7 +426,7 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t
     }
 
     // Every raised exception increases the exception counter, so we can compute minstret later
-    a.write_minstret(a.read_minstret() + 1);
+    a.write_icycleinstret(a.read_icycleinstret() + 1);
 
     uint64_t new_pc = 0;
     if (deleg) {
@@ -1440,8 +1440,8 @@ template <typename STATE_ACCESS>
 static inline uint64_t read_csr_instret(STATE_ACCESS &a, bool *status) {
     if (rdcounteren(a, MCOUNTEREN_IR_MASK)) {
         uint64_t mcycle = a.read_mcycle();
-        uint64_t iexcepts = a.read_minstret();
-        uint64_t minstret = mcycle - iexcepts;
+        uint64_t icycleinstret = a.read_icycleinstret();
+        uint64_t minstret = mcycle - icycleinstret;
         return read_csr_success(minstret, status);
     } else {
         return read_csr_fail(status);
@@ -1607,8 +1607,8 @@ static inline uint64_t read_csr_mcycle(STATE_ACCESS &a, bool *status) {
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_minstret(STATE_ACCESS &a, bool *status) {
     uint64_t mcycle = a.read_mcycle();
-    uint64_t iexcepts = a.read_minstret();
-    uint64_t minstret = mcycle - iexcepts;
+    uint64_t icycleinstret = a.read_icycleinstret();
+    uint64_t minstret = mcycle - icycleinstret;
     return read_csr_success(minstret, status);
 }
 
@@ -2032,8 +2032,8 @@ static execute_status write_csr_mcounteren(STATE_ACCESS &a, uint64_t val) {
 template <typename STATE_ACCESS>
 static execute_status write_csr_minstret(STATE_ACCESS &a, uint64_t val) {
     uint64_t mcycle = a.read_mcycle();
-    uint64_t iexcepts = mcycle - val;
-    a.write_minstret(iexcepts + 1); // The value will be incremented after the instruction is executed
+    uint64_t icycleinstret = mcycle - val;
+    a.write_icycleinstret(icycleinstret + 1); // The value will be incremented after the instruction is executed
     return execute_status::success;
 }
 

@@ -119,12 +119,12 @@ private:
         m_m.get_state().fcsr = val;
     }
 
-    uint64_t do_read_minstret(void) const {
-        return m_m.get_state().minstret;
+    uint64_t do_read_icycleinstret(void) const {
+        return m_m.get_state().icycleinstret;
     }
 
-    void do_write_minstret(uint64_t val) {
-        m_m.get_state().minstret = val;
+    void do_write_icycleinstret(uint64_t val) {
+        m_m.get_state().icycleinstret = val;
     }
 
     uint64_t do_read_mvendorid(void) const { // NOLINT(readability-convert-member-functions-to-static)

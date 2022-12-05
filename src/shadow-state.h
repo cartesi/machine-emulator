@@ -38,7 +38,7 @@ struct shadow_state {
     uint64_t marchid;
     uint64_t mimpid;
     uint64_t mcycle;
-    uint64_t minstret;
+    uint64_t icycleinstret;
     uint64_t mstatus;
     uint64_t mtvec;
     uint64_t mscratch;
@@ -87,7 +87,7 @@ enum class shadow_state_csr {
     marchid = offsetof(shadow_state, marchid),
     mimpid = offsetof(shadow_state, mimpid),
     mcycle = offsetof(shadow_state, mcycle),
-    minstret = offsetof(shadow_state, minstret),
+    icycleinstret = offsetof(shadow_state, icycleinstret),
     mstatus = offsetof(shadow_state, mstatus),
     mtvec = offsetof(shadow_state, mtvec),
     mscratch = offsetof(shadow_state, mscratch),

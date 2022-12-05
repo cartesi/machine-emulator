@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added return to machine run API informing the reason for breaking the interpreter loop
+
+### Changed
+
+- Optimized and refactored interpreter hot loop
+- Removed brkflag CSR
+- Replaced minstret by icycleinstret CSR
+- Changed RTC_FREQ_DIV from 100 to 8192
+- Changed RTC_CLOCK_FREQ from 100MHz to 128MHz
+
 ## [0.12.0] - 2022-11-25
 ### Added
 

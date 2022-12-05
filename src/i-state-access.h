@@ -140,16 +140,16 @@ public:
         return derived().do_read_fcsr();
     }
 
-    /// \brief Reads CSR minstret.
+    /// \brief Reads CSR icycleinstret.
     /// \returns Register value.
-    uint64_t read_minstret(void) {
-        return derived().do_read_minstret();
+    uint64_t read_icycleinstret(void) {
+        return derived().do_read_icycleinstret();
     }
 
-    /// \brief Writes CSR minstret.
+    /// \brief Writes CSR icycleinstret.
     /// \param val New register value.
-    void write_minstret(uint64_t val) {
-        return derived().do_write_minstret(val);
+    void write_icycleinstret(uint64_t val) {
+        return derived().do_write_icycleinstret(val);
     }
 
     /// \brief Reads CSR mvendorid.

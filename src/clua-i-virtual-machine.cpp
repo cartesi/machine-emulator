@@ -58,7 +58,7 @@ static int machine_obj_index_dump_regs(lua_State *L) {
         (void) fprintf(stderr, "x%d = %" PRIx64 "\n", i, val);
     }
     PRINT_PROCESSOR_CSR(m, mcycle);
-    PRINT_PROCESSOR_CSR(m, minstret);
+    PRINT_PROCESSOR_CSR(m, icycleinstret);
     PRINT_PROCESSOR_CSR(m, mvendorid);
     PRINT_PROCESSOR_CSR(m, marchid);
     PRINT_PROCESSOR_CSR(m, mimpid);
@@ -180,7 +180,7 @@ IMPL_MACHINE_OBJ_READ(mvendorid)
 IMPL_MACHINE_OBJ_READ(marchid)
 IMPL_MACHINE_OBJ_READ(mimpid)
 IMPL_MACHINE_OBJ_READ_WRITE(mcycle)
-IMPL_MACHINE_OBJ_READ_WRITE(minstret)
+IMPL_MACHINE_OBJ_READ_WRITE(icycleinstret)
 IMPL_MACHINE_OBJ_READ_WRITE(mstatus)
 IMPL_MACHINE_OBJ_READ_WRITE(mtvec)
 IMPL_MACHINE_OBJ_READ_WRITE(mscratch)
@@ -604,7 +604,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_mideleg", machine_obj_index_read_mideleg},
     {"read_mie", machine_obj_index_read_mie},
     {"read_mimpid", machine_obj_index_read_mimpid},
-    {"read_minstret", machine_obj_index_read_minstret},
+    {"read_icycleinstret", machine_obj_index_read_icycleinstret},
     {"read_mip", machine_obj_index_read_mip},
     {"read_misa", machine_obj_index_read_misa},
     {"read_mscratch", machine_obj_index_read_mscratch},
@@ -651,7 +651,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"write_mepc", machine_obj_index_write_mepc},
     {"write_mideleg", machine_obj_index_write_mideleg},
     {"write_mie", machine_obj_index_write_mie},
-    {"write_minstret", machine_obj_index_write_minstret},
+    {"write_icycleinstret", machine_obj_index_write_icycleinstret},
     {"write_mip", machine_obj_index_write_mip},
     {"write_misa", machine_obj_index_write_misa},
     {"write_mscratch", machine_obj_index_write_mscratch},

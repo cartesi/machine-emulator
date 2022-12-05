@@ -433,7 +433,7 @@ bool operator==(const cm_processor_config &lhs, const cm_processor_config &rhs) 
         }
     }
     return lhs.pc == rhs.pc && lhs.fcsr == rhs.fcsr && lhs.mvendorid == rhs.mvendorid && lhs.marchid == rhs.marchid &&
-        lhs.mimpid == rhs.mimpid && lhs.mcycle == rhs.mcycle && lhs.minstret == rhs.minstret &&
+        lhs.mimpid == rhs.mimpid && lhs.mcycle == rhs.mcycle && lhs.icycleinstret == rhs.icycleinstret &&
         lhs.mstatus == rhs.mstatus && lhs.mtvec == rhs.mtvec && lhs.mscratch == rhs.mscratch && lhs.mepc == rhs.mepc &&
         lhs.mcause == rhs.mcause && lhs.mtval == rhs.mtval && lhs.misa == rhs.misa && lhs.mie == rhs.mie &&
         lhs.mip == rhs.mip && lhs.medeleg == rhs.medeleg && lhs.mideleg == rhs.mideleg &&
@@ -1090,7 +1090,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_virtual_memory_massive_test, ordinary_
 CHECK_READER_FAILS_ON_nullptr_MACHINE(pc)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(fcsr)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(mcycle)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(minstret)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(icycleinstret)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(mstatus)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(mtvec)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(mscratch)
@@ -1160,7 +1160,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_iflags_H_null_machine_test) {
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(pc)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(fcsr)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mcycle)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(minstret)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(icycleinstret)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mstatus)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mtvec)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mscratch)
@@ -1211,7 +1211,7 @@ CHECK_WRITER_FAILS_ON_nullptr_MACHINE(clint_mtimecmp)
 CHECK_REGISTER_READ_WRITE(pc)
 CHECK_REGISTER_READ_WRITE(fcsr)
 CHECK_REGISTER_READ_WRITE(mcycle)
-CHECK_REGISTER_READ_WRITE(minstret)
+CHECK_REGISTER_READ_WRITE(icycleinstret)
 CHECK_REGISTER_READ_WRITE(mstatus)
 CHECK_REGISTER_READ_WRITE(mtvec)
 CHECK_REGISTER_READ_WRITE(mscratch)

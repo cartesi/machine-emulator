@@ -127,12 +127,12 @@ void virtual_machine::do_write_mcycle(uint64_t val) {
     return m_machine->write_mcycle(val);
 }
 
-uint64_t virtual_machine::do_read_minstret(void) const {
-    return m_machine->read_minstret();
+uint64_t virtual_machine::do_read_icycleinstret(void) const {
+    return m_machine->read_icycleinstret();
 }
 
-void virtual_machine::do_write_minstret(uint64_t val) {
-    return m_machine->write_minstret(val);
+void virtual_machine::do_write_icycleinstret(uint64_t val) {
+    return m_machine->write_icycleinstret(val);
 }
 
 uint64_t virtual_machine::do_read_mstatus(void) const {

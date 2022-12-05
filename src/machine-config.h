@@ -30,38 +30,38 @@ namespace cartesi {
 
 /// \brief Processor state configuration
 struct processor_config final {
-    std::array<uint64_t, X_REG_COUNT> x{}; ///< Value of general-purpose registers
-    std::array<uint64_t, F_REG_COUNT> f{}; ///< Value of floating-point registers
-    uint64_t pc{PC_INIT};                  ///< Value of pc
-    uint64_t fcsr{FCSR_INIT};              ///< Value of fcsr CSR
-    uint64_t mvendorid{MVENDORID_INIT};    ///< Value of mvendorid CSR
-    uint64_t marchid{MARCHID_INIT};        ///< Value of marchid CSR
-    uint64_t mimpid{MIMPID_INIT};          ///< Value of mimpid CSR
-    uint64_t mcycle{MCYCLE_INIT};          ///< Value of mcycle CSR
-    uint64_t minstret{MINSTRET_INIT};      ///< Value of minstret CSR
-    uint64_t mstatus{MSTATUS_INIT};        ///< Value of mstatus CSR
-    uint64_t mtvec{MTVEC_INIT};            ///< Value of mtvec CSR
-    uint64_t mscratch{MSCRATCH_INIT};      ///< Value of mscratch CSR
-    uint64_t mepc{MEPC_INIT};              ///< Value of mepc CSR
-    uint64_t mcause{MCAUSE_INIT};          ///< Value of mcause CSR
-    uint64_t mtval{MTVAL_INIT};            ///< Value of mtval CSR
-    uint64_t misa{MISA_INIT};              ///< Value of misa CSR
-    uint64_t mie{MIE_INIT};                ///< Value of mie CSR
-    uint64_t mip{MIP_INIT};                ///< Value of mip CSR
-    uint64_t medeleg{MEDELEG_INIT};        ///< Value of medeleg CSR
-    uint64_t mideleg{MIDELEG_INIT};        ///< Value of mideleg CSR
-    uint64_t mcounteren{MCOUNTEREN_INIT};  ///< Value of mcounteren CSR
-    uint64_t menvcfg{MENVCFG_INIT};        ///< Value of menvcfg CSR
-    uint64_t stvec{STVEC_INIT};            ///< Value of stvec CSR
-    uint64_t sscratch{SSCRATCH_INIT};      ///< Value of sscratch CSR
-    uint64_t sepc{SEPC_INIT};              ///< Value of sepc CSR
-    uint64_t scause{SCAUSE_INIT};          ///< Value of scause CSR
-    uint64_t stval{STVAL_INIT};            ///< Value of stval CSR
-    uint64_t satp{SATP_INIT};              ///< Value of satp CSR
-    uint64_t scounteren{SCOUNTEREN_INIT};  ///< Value of scounteren CSR
-    uint64_t senvcfg{SENVCFG_INIT};        ///< Value of senvcfg CSR
-    uint64_t ilrsc{ILRSC_INIT};            ///< Value of ilrsc CSR
-    uint64_t iflags{IFLAGS_INIT};          ///< Value of iflags CSR
+    std::array<uint64_t, X_REG_COUNT> x{};      ///< Value of general-purpose registers
+    std::array<uint64_t, F_REG_COUNT> f{};      ///< Value of floating-point registers
+    uint64_t pc{PC_INIT};                       ///< Value of pc
+    uint64_t fcsr{FCSR_INIT};                   ///< Value of fcsr CSR
+    uint64_t mvendorid{MVENDORID_INIT};         ///< Value of mvendorid CSR
+    uint64_t marchid{MARCHID_INIT};             ///< Value of marchid CSR
+    uint64_t mimpid{MIMPID_INIT};               ///< Value of mimpid CSR
+    uint64_t mcycle{MCYCLE_INIT};               ///< Value of mcycle CSR
+    uint64_t icycleinstret{ICYCLEINSTRET_INIT}; ///< Value of icycleinstret CSR
+    uint64_t mstatus{MSTATUS_INIT};             ///< Value of mstatus CSR
+    uint64_t mtvec{MTVEC_INIT};                 ///< Value of mtvec CSR
+    uint64_t mscratch{MSCRATCH_INIT};           ///< Value of mscratch CSR
+    uint64_t mepc{MEPC_INIT};                   ///< Value of mepc CSR
+    uint64_t mcause{MCAUSE_INIT};               ///< Value of mcause CSR
+    uint64_t mtval{MTVAL_INIT};                 ///< Value of mtval CSR
+    uint64_t misa{MISA_INIT};                   ///< Value of misa CSR
+    uint64_t mie{MIE_INIT};                     ///< Value of mie CSR
+    uint64_t mip{MIP_INIT};                     ///< Value of mip CSR
+    uint64_t medeleg{MEDELEG_INIT};             ///< Value of medeleg CSR
+    uint64_t mideleg{MIDELEG_INIT};             ///< Value of mideleg CSR
+    uint64_t mcounteren{MCOUNTEREN_INIT};       ///< Value of mcounteren CSR
+    uint64_t menvcfg{MENVCFG_INIT};             ///< Value of menvcfg CSR
+    uint64_t stvec{STVEC_INIT};                 ///< Value of stvec CSR
+    uint64_t sscratch{SSCRATCH_INIT};           ///< Value of sscratch CSR
+    uint64_t sepc{SEPC_INIT};                   ///< Value of sepc CSR
+    uint64_t scause{SCAUSE_INIT};               ///< Value of scause CSR
+    uint64_t stval{STVAL_INIT};                 ///< Value of stval CSR
+    uint64_t satp{SATP_INIT};                   ///< Value of satp CSR
+    uint64_t scounteren{SCOUNTEREN_INIT};       ///< Value of scounteren CSR
+    uint64_t senvcfg{SENVCFG_INIT};             ///< Value of senvcfg CSR
+    uint64_t ilrsc{ILRSC_INIT};                 ///< Value of ilrsc CSR
+    uint64_t iflags{IFLAGS_INIT};               ///< Value of iflags CSR
 };
 
 /// \brief RAM state configuration

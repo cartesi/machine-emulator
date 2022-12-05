@@ -507,7 +507,7 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"marchid", CM_PROC_MARCHID},
         {"mimpid", CM_PROC_MIMPID},
         {"mcycle", CM_PROC_MCYCLE},
-        {"minstret", CM_PROC_MINSTRET},
+        {"icycleinstret", CM_PROC_ICYCLEINSTRET},
         {"mstatus", CM_PROC_MSTATUS},
         {"mtvec", CM_PROC_MTVEC},
         {"mscratch", CM_PROC_MSCRATCH},
@@ -716,7 +716,7 @@ static void push_cm_processor_config(lua_State *L, const cm_processor_config *p)
     PUSH_CM_PROCESSOR_CONFIG_CSR(marchid);
     PUSH_CM_PROCESSOR_CONFIG_CSR(mimpid);
     PUSH_CM_PROCESSOR_CONFIG_CSR(mcycle);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(minstret);
+    PUSH_CM_PROCESSOR_CONFIG_CSR(icycleinstret);
     PUSH_CM_PROCESSOR_CONFIG_CSR(mstatus);
     PUSH_CM_PROCESSOR_CONFIG_CSR(mtvec);
     PUSH_CM_PROCESSOR_CONFIG_CSR(mscratch);
@@ -1040,7 +1040,7 @@ static void check_cm_processor_config(lua_State *L, int tabidx, cm_processor_con
     p->marchid = opt_uint_field(L, -1, "marchid", def->marchid);
     p->mimpid = opt_uint_field(L, -1, "mimpid", def->mimpid);
     p->mcycle = opt_uint_field(L, -1, "mcycle", def->mcycle);
-    p->minstret = opt_uint_field(L, -1, "minstret", def->minstret);
+    p->icycleinstret = opt_uint_field(L, -1, "icycleinstret", def->icycleinstret);
     p->mstatus = opt_uint_field(L, -1, "mstatus", def->mstatus);
     p->mtvec = opt_uint_field(L, -1, "mtvec", def->mtvec);
     p->mscratch = opt_uint_field(L, -1, "mscratch", def->mscratch);

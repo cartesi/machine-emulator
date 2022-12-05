@@ -126,7 +126,7 @@ public:
         marchid,
         mimpid,
         mcycle,
-        minstret,
+        icycleinstret,
         mstatus,
         mtvec,
         mscratch,
@@ -395,13 +395,13 @@ public:
     /// \param val New register value.
     void write_mcycle(uint64_t val);
 
-    /// \brief Reads the value of the minstret register.
+    /// \brief Reads the value of the icycleinstret register.
     /// \returns The value of the register.
-    uint64_t read_minstret(void) const;
+    uint64_t read_icycleinstret(void) const;
 
-    /// \brief Writes the value of the minstret register.
+    /// \brief Writes the value of the icycleinstret register.
     /// \param val New register value.
-    void write_minstret(uint64_t val);
+    void write_icycleinstret(uint64_t val);
 
     /// \brief Reads the value of the mstatus register.
     /// \returns The value of the register.

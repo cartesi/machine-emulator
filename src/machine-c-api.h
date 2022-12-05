@@ -109,7 +109,7 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_MARCHID,
     CM_PROC_MIMPID,
     CM_PROC_MCYCLE,
-    CM_PROC_MINSTRET,
+    CM_PROC_ICYCLEINSTRET,
     CM_PROC_MSTATUS,
     CM_PROC_MTVEC,
     CM_PROC_MSCRATCH,
@@ -156,7 +156,7 @@ typedef struct {                        // NOLINT(modernize-use-using)
     uint64_t marchid;                   ///< Value of marchid CSR
     uint64_t mimpid;                    ///< Value of mimpid CSR
     uint64_t mcycle;                    ///< Value of mcycle CSR
-    uint64_t minstret;                  ///< Value of minstret CSR
+    uint64_t icycleinstret;             ///< Value of icycleinstret CSR
     uint64_t mstatus;                   ///< Value of mstatus CSR
     uint64_t mtvec;                     ///< Value of mtvec CSR
     uint64_t mscratch;                  ///< Value of mscratch CSR
@@ -726,23 +726,23 @@ CM_API int cm_read_mcycle(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_mcycle(cm_machine *m, uint64_t val, char **err_msg);
 
-/// \brief Reads the value of the minstret register.
+/// \brief Reads the value of the icycleinstret register.
 /// \param m Pointer to valid machine instance
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_read_minstret(const cm_machine *m, uint64_t *val, char **err_msg);
+CM_API int cm_read_icycleinstret(const cm_machine *m, uint64_t *val, char **err_msg);
 
-/// \brief Writes the value of the minstret register.
+/// \brief Writes the value of the icycleinstret register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_write_minstret(cm_machine *m, uint64_t val, char **err_msg);
+CM_API int cm_write_icycleinstret(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of the mstatus register.
 /// \param m Pointer to valid machine instance

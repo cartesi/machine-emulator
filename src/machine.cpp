@@ -315,7 +315,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     write_pc(m_c.processor.pc);
     write_fcsr(m_c.processor.fcsr);
     write_mcycle(m_c.processor.mcycle);
-    write_minstret(m_c.processor.minstret);
+    write_icycleinstret(m_c.processor.icycleinstret);
     write_mstatus(m_c.processor.mstatus);
     write_mtvec(m_c.processor.mtvec);
     write_mscratch(m_c.processor.mscratch);
@@ -492,7 +492,7 @@ machine_config machine::get_serialization_config(void) const {
     c.processor.marchid = read_marchid();
     c.processor.mimpid = read_mimpid();
     c.processor.mcycle = read_mcycle();
-    c.processor.minstret = read_minstret();
+    c.processor.icycleinstret = read_icycleinstret();
     c.processor.mstatus = read_mstatus();
     c.processor.mtvec = read_mtvec();
     c.processor.mscratch = read_mscratch();
@@ -801,12 +801,12 @@ void machine::write_mcycle(uint64_t val) {
     m_s.mcycle = val;
 }
 
-uint64_t machine::read_minstret(void) const {
-    return m_s.minstret;
+uint64_t machine::read_icycleinstret(void) const {
+    return m_s.icycleinstret;
 }
 
-void machine::write_minstret(uint64_t val) {
-    m_s.minstret = val;
+void machine::write_icycleinstret(uint64_t val) {
+    m_s.icycleinstret = val;
 }
 
 uint64_t machine::read_mstatus(void) const {
@@ -1071,8 +1071,8 @@ uint64_t machine::read_csr(csr r) const {
             return read_mimpid();
         case csr::mcycle:
             return read_mcycle();
-        case csr::minstret:
-            return read_minstret();
+        case csr::icycleinstret:
+            return read_icycleinstret();
         case csr::mstatus:
             return read_mstatus();
         case csr::mtvec:
@@ -1153,8 +1153,8 @@ void machine::write_csr(csr w, uint64_t val) {
             return write_fcsr(val);
         case csr::mcycle:
             return write_mcycle(val);
-        case csr::minstret:
-            return write_minstret(val);
+        case csr::icycleinstret:
+            return write_icycleinstret(val);
         case csr::mstatus:
             return write_mstatus(val);
         case csr::mtvec:
@@ -1246,8 +1246,8 @@ uint64_t machine::get_csr_address(csr w) {
             return shadow_state_get_csr_abs_addr(shadow_state_csr::mimpid);
         case csr::mcycle:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::mcycle);
-        case csr::minstret:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::minstret);
+        case csr::icycleinstret:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::icycleinstret);
         case csr::mstatus:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::mstatus);
         case csr::mtvec:

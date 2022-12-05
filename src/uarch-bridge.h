@@ -58,8 +58,8 @@ public:
             case shadow_state_csr::mcycle:
                 s.mcycle = data;
                 return;
-            case shadow_state_csr::minstret:
-                s.minstret = data;
+            case shadow_state_csr::icycleinstret:
+                s.icycleinstret = data;
                 return;
             case shadow_state_csr::mstatus:
                 s.mstatus = data;
@@ -187,8 +187,8 @@ public:
                 return MIMPID_INIT;
             case shadow_state_csr::mcycle:
                 return s.mcycle;
-            case shadow_state_csr::minstret:
-                return s.minstret;
+            case shadow_state_csr::icycleinstret:
+                return s.icycleinstret;
             case shadow_state_csr::mstatus:
                 return s.mstatus;
             case shadow_state_csr::mtvec:
@@ -275,8 +275,8 @@ public:
                 return "mimpid";
             case shadow_state_csr::mcycle:
                 return "mcycle";
-            case shadow_state_csr::minstret:
-                return "minstret";
+            case shadow_state_csr::icycleinstret:
+                return "icycleinstret";
             case shadow_state_csr::mstatus:
                 return "mstatus";
             case shadow_state_csr::mtvec:

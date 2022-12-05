@@ -130,7 +130,7 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
     proto_p->set_marchid(c.processor.marchid);
     proto_p->set_mimpid(c.processor.mimpid);
     proto_p->set_mcycle(c.processor.mcycle);
-    proto_p->set_minstret(c.processor.minstret);
+    proto_p->set_icycleinstret(c.processor.icycleinstret);
     proto_p->set_mstatus(c.processor.mstatus);
     proto_p->set_mtvec(c.processor.mtvec);
     proto_p->set_mscratch(c.processor.mscratch);
@@ -578,8 +578,8 @@ processor_config get_proto_processor_config(const CartesiMachine::ProcessorConfi
     if (proto_p.has_mcycle()) {
         p.mcycle = proto_p.mcycle();
     }
-    if (proto_p.has_minstret()) {
-        p.minstret = proto_p.minstret();
+    if (proto_p.has_icycleinstret()) {
+        p.icycleinstret = proto_p.icycleinstret();
     }
     if (proto_p.has_mstatus()) {
         p.mstatus = proto_p.mstatus();

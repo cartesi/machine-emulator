@@ -424,7 +424,7 @@ enum CARTESI_init : uint64_t {
     MARCHID_INIT = UINT64_C(0xd),                  ///< Initial value for marchid
     MIMPID_INIT = UINT64_C(1),                     ///< Initial value for mimpid
     MCYCLE_INIT = UINT64_C(0),                     ///< Initial value for mcycle
-    MINSTRET_INIT = UINT64_C(0),                   ///< Initial value for minstret
+    ICYCLEINSTRET_INIT = UINT64_C(0),              ///< Initial value for icycleinstret
     MSTATUS_INIT =
         (MISA_MXL_VALUE << MSTATUS_UXL_SHIFT) | (MISA_MXL_VALUE << MSTATUS_SXL_SHIFT), ///< Initial value for mstatus
     MTVEC_INIT = UINT64_C(0),                                                          ///< Initial value for mtvec

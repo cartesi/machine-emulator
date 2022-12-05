@@ -341,7 +341,7 @@ static inline uarch_execute_status execute_JALR(STATE_ACCESS &a, uint32_t insn, 
     if (d.rd != 0) {
         a.write_x(d.rd, pc + 4);
     }
-    return branch(a, rs1 + d.imm);
+    return branch(a, (rs1 + d.imm) & ~static_cast<uint64_t>(1));
 }
 
 template <typename STATE_ACCESS>

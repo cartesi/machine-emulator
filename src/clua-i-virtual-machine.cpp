@@ -92,10 +92,6 @@ static int machine_obj_index_dump_regs(lua_State *L) {
     PRINT_PROCESSOR_CSR(m, htif_iconsole);
     PRINT_PROCESSOR_CSR(m, htif_iyield);
 
-    bool brkflag{false};
-    TRY_EXECUTE(cm_read_brkflag(m, &brkflag, err_msg));
-    (void) fprintf(stderr, "brkflag = %d\n", brkflag);
-
     PRINT_PROCESSOR_CSR(m, uarch_cycle);
     PRINT_PROCESSOR_CSR(m, uarch_rom_length);
     PRINT_PROCESSOR_CSR(m, uarch_ram_length);
@@ -345,32 +341,6 @@ static int machine_obj_index_reset_iflags_X(lua_State *L) {
     return 0;
 }
 
-/// \brief This is the machine:read_brkflag() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_brkflag(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    bool val{};
-    TRY_EXECUTE(cm_read_brkflag(m.get(), &val, err_msg));
-    lua_pushboolean(L, val);
-    return 1;
-}
-
-/// \brief This is the machine:set_brkflag() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_set_brkflag(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_set_brkflag(m.get(), err_msg));
-    return 0;
-}
-
-/// \brief This is the machine:reset_brkflag() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_reset_brkflag(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_reset_brkflag(m.get(), err_msg));
-    return 0;
-}
-
 /// \brief This is the machine:read_memory() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_read_memory(lua_State *L) {
@@ -612,9 +582,6 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_uarch_x", machine_obj_index_read_uarch_x},
     {"read_uarch_rom_length", machine_obj_index_read_uarch_rom_length},
     {"read_uarch_ram_length", machine_obj_index_read_uarch_ram_length},
-    {"read_brkflag", machine_obj_index_read_brkflag},
-    {"set_brkflag", machine_obj_index_set_brkflag},
-    {"reset_brkflag", machine_obj_index_reset_brkflag},
     {"read_iflags", machine_obj_index_read_iflags},
     {"read_iflags_H", machine_obj_index_read_iflags_H},
     {"read_iflags_Y", machine_obj_index_read_iflags_Y},

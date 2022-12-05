@@ -523,18 +523,6 @@ private:
         return m_m.get_initial_config().uarch.ram.length;
     }
 
-    void do_set_brkflag(void) {
-        m_m.get_state().brkflag = true;
-    }
-
-    void do_reset_brkflag(void) {
-        m_m.get_state().brkflag = false;
-    }
-
-    bool do_read_brkflag(void) const {
-        return m_m.get_state().brkflag;
-    }
-
     template <TLB_entry_type ETYPE, typename T>
     inline bool do_read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
         uint64_t eidx = tlb_get_entry_index(vaddr);

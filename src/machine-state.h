@@ -122,8 +122,6 @@ struct machine_state {
 
     // Entries below this mark are not needed in the blockchain
 
-    bool brkflag; ///< Flag set when the tight loop must be broken.
-
 #ifdef DUMP_COUNTERS
     machine_statistics stats;
 #endif

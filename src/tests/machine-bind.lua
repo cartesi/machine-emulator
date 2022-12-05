@@ -152,13 +152,12 @@ local cpu_csr_addr = {
     senvcfg = 728,
     ilrsc = 736,
     iflags = 744,
-    brkflag = 752,
-    clint_mtimecmp = 760,
-    htif_tohost = 768,
-    htif_fromhost = 776,
-    htif_ihalt = 784,
-    htif_iconsole = 792,
-    htif_iyield = 800,
+    clint_mtimecmp = 752,
+    htif_tohost = 760,
+    htif_fromhost = 768,
+    htif_ihalt = 776,
+    htif_iconsole = 784,
+    htif_iyield = 792,
 }
 
 local function get_cpu_csr_test_values()
@@ -486,7 +485,6 @@ do_test("should return expected values",
             clint_mtimecmp = true,
             htif_ihalt = true,
             htif_iconsole = true,
-            brkflag = true,
         }
         for k in pairs(cpu_csr_addr) do
             if not to_ignore[k] then

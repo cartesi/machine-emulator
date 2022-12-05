@@ -1191,30 +1191,6 @@ int cm_set_iflags_H(cm_machine *m, char **err_msg) try {
     return cm_result_failure(err_msg);
 }
 
-int cm_read_brkflag(const cm_machine *m, bool *val, char **err_msg) try {
-    const auto *cpp_machine = convert_from_c(m);
-    *val = cpp_machine->read_brkflag();
-    return cm_result_success(err_msg);
-} catch (...) {
-    return cm_result_failure(err_msg);
-}
-
-int cm_reset_brkflag(cm_machine *m, char **err_msg) try {
-    auto *cpp_machine = convert_from_c(m);
-    cpp_machine->reset_brkflag();
-    return cm_result_success(err_msg);
-} catch (...) {
-    return cm_result_failure(err_msg);
-}
-
-int cm_set_brkflag(cm_machine *m, char **err_msg) try {
-    auto *cpp_machine = convert_from_c(m);
-    cpp_machine->set_brkflag();
-    return cm_result_success(err_msg);
-} catch (...) {
-    return cm_result_failure(err_msg);
-}
-
 int cm_dump_pmas(const cm_machine *m, char **err_msg) try {
     const auto *cpp_machine = convert_from_c(m);
     cpp_machine->dump_pmas();

@@ -139,9 +139,6 @@ public:
             case shadow_state_csr::htif_fromhost:
                 s.htif.fromhost = data;
                 return;
-            case shadow_state_csr::brkflag:
-                s.brkflag = data;
-                return;
             default:
                 break;
         }
@@ -238,8 +235,6 @@ public:
                 return s.ilrsc;
             case shadow_state_csr::iflags:
                 return s.read_iflags();
-            case shadow_state_csr::brkflag:
-                return s.brkflag;
             case shadow_state_csr::clint_mtimecmp:
                 return s.clint.mtimecmp;
             case shadow_state_csr::htif_tohost:
@@ -328,8 +323,6 @@ public:
                 return "ilrsc";
             case shadow_state_csr::iflags:
                 return "iflags";
-            case shadow_state_csr::brkflag:
-                return "brkflag";
             case shadow_state_csr::clint_mtimecmp:
                 return "clint.mtimecmp";
             case shadow_state_csr::htif_tohost:

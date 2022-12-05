@@ -531,7 +531,6 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"senvcfg", CM_PROC_SENVCFG},
         {"ilrsc", CM_PROC_ILRSC},
         {"iflags", CM_PROC_IFLAGS},
-        {"brkflag", CM_PROC_BRKFLAG},
         {"clint_mtimecmp", CM_PROC_CLINT_MTIMECMP},
         {"htif_tohost", CM_PROC_HTIF_TOHOST},
         {"htif_fromhost", CM_PROC_HTIF_FROMHOST},
@@ -741,7 +740,6 @@ static void push_cm_processor_config(lua_State *L, const cm_processor_config *p)
     PUSH_CM_PROCESSOR_CONFIG_CSR(senvcfg);
     PUSH_CM_PROCESSOR_CONFIG_CSR(ilrsc);
     PUSH_CM_PROCESSOR_CONFIG_CSR(iflags);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(brkflag);
 }
 
 /// \brief Pushes a cm_ram_config to the Lua stack
@@ -1066,7 +1064,6 @@ static void check_cm_processor_config(lua_State *L, int tabidx, cm_processor_con
     p->senvcfg = opt_uint_field(L, -1, "senvcfg", def->senvcfg);
     p->ilrsc = opt_uint_field(L, -1, "ilrsc", def->ilrsc);
     p->iflags = opt_uint_field(L, -1, "iflags", def->iflags);
-    p->brkflag = opt_boolean_field(L, -1, "brkflag", def->brkflag);
     lua_pop(L, 1);
 }
 

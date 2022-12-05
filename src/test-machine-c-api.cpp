@@ -440,7 +440,7 @@ bool operator==(const cm_processor_config &lhs, const cm_processor_config &rhs) 
         lhs.mcounteren == rhs.mcounteren && lhs.menvcfg == rhs.menvcfg && lhs.stvec == rhs.stvec &&
         lhs.sscratch == rhs.sscratch && lhs.sepc == rhs.sepc && lhs.scause == rhs.scause && lhs.stval == rhs.stval &&
         lhs.satp == rhs.satp && lhs.scounteren == rhs.scounteren && lhs.senvcfg == rhs.senvcfg &&
-        lhs.ilrsc == rhs.ilrsc && lhs.iflags == rhs.iflags && lhs.brkflag == rhs.brkflag;
+        lhs.ilrsc == rhs.ilrsc && lhs.iflags == rhs.iflags;
 }
 
 bool operator==(const cm_ram_config &lhs, const cm_ram_config &rhs) {
@@ -1146,15 +1146,6 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_iflags_H_null_machine_test) {
     monitor_system_throw(f);
 }
 
-BOOST_AUTO_TEST_CASE_NOLINT(read_brkflag_null_machine_test) {
-    auto f = []() {
-        char *err_msg{};
-        bool out{};
-        cm_read_brkflag(nullptr, &out, &err_msg);
-    };
-    monitor_system_throw(f);
-}
-
 // NOLINTNEXTLINE
 #define CHECK_WRITER_FAILS_ON_nullptr_MACHINE(writer_f)                                                                \
     BOOST_AUTO_TEST_CASE_NOLINT(write_##writer_f##_null_machine_test) {                                                \
@@ -1322,45 +1313,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(read_value, write_value);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(brkflag_read_write_complex_test, ordinary_machine_fixture) {
-    char *err_msg{};
-
-    // set and read brkflag
-    int error_code = cm_set_brkflag(_machine, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-    bool brkflag{false};
-    error_code = cm_read_brkflag(_machine, &brkflag, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(brkflag, true);
-
-    // reset and read brkflag
-    error_code = cm_reset_brkflag(_machine, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-    error_code = cm_read_brkflag(_machine, &brkflag, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(brkflag, false);
-}
-
-BOOST_AUTO_TEST_CASE_NOLINT(set_brkflag_null_machine_test) {
-    auto f = []() {
-        char *err_msg{};
-        cm_set_brkflag(nullptr, &err_msg);
-    };
-    monitor_system_throw(f);
-}
-
-BOOST_AUTO_TEST_CASE_NOLINT(reset_null_machine_test) {
-    auto f = []() {
-        char *err_msg{};
-        cm_reset_brkflag(nullptr, &err_msg);
-    };
-    monitor_system_throw(f);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(ids_read_test, ordinary_machine_fixture) {

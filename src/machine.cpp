@@ -339,7 +339,6 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     write_senvcfg(m_c.processor.senvcfg);
     write_ilrsc(m_c.processor.ilrsc);
     write_iflags(m_c.processor.iflags);
-    write_brkflag(m_c.processor.brkflag);
 
     if (m_c.rom.image_filename.empty()) {
         throw std::invalid_argument{"ROM image filename is undefined"};
@@ -517,7 +516,6 @@ machine_config machine::get_serialization_config(void) const {
     c.processor.senvcfg = read_senvcfg();
     c.processor.ilrsc = read_ilrsc();
     c.processor.iflags = read_iflags();
-    c.processor.brkflag = read_brkflag();
     // Copy current CLINT state to config
     c.clint.mtimecmp = read_clint_mtimecmp();
     // Copy current HTIF state to config
@@ -995,14 +993,6 @@ void machine::write_iflags(uint64_t val) {
     m_s.write_iflags(val);
 }
 
-void machine::write_brkflag(bool val) {
-    m_s.brkflag = val;
-}
-
-uint64_t machine::read_brkflag(void) const {
-    return m_s.brkflag;
-}
-
 uint64_t machine::read_htif_tohost(void) const {
     return m_s.htif.tohost;
 }
@@ -1129,8 +1119,6 @@ uint64_t machine::read_csr(csr r) const {
             return read_ilrsc();
         case csr::iflags:
             return read_iflags();
-        case csr::brkflag:
-            return read_brkflag();
         case csr::clint_mtimecmp:
             return read_clint_mtimecmp();
         case csr::htif_tohost:
@@ -1225,8 +1213,6 @@ void machine::write_csr(csr w, uint64_t val) {
             return write_htif_iconsole(val);
         case csr::htif_iyield:
             return write_htif_iyield(val);
-        case csr::brkflag:
-            return write_brkflag(val);
         case csr::uarch_cycle:
             return write_uarch_cycle(val);
         case csr::uarch_pc:
@@ -1308,8 +1294,6 @@ uint64_t machine::get_csr_address(csr w) {
             return shadow_state_get_csr_abs_addr(shadow_state_csr::ilrsc);
         case csr::iflags:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::iflags);
-        case csr::brkflag:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::brkflag);
         case csr::htif_tohost:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::htif_tohost);
         case csr::htif_fromhost:

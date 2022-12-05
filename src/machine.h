@@ -150,7 +150,6 @@ public:
         senvcfg,
         ilrsc,
         iflags,
-        brkflag,
         clint_mtimecmp,
         htif_tohost,
         htif_fromhost,
@@ -591,14 +590,6 @@ public:
     /// \brief Reads the value of the iflags register.
     /// \param val New register value.
     void write_iflags(uint64_t val);
-
-    /// \brief Writes the value of the break flag
-    /// \param val New value.
-    void write_brkflag(bool val);
-
-    /// \brief Reads the value of the break flag
-    /// \returns The value of the break flag.
-    uint64_t read_brkflag(void) const;
 
     /// \brief Reads the value of HTIF's tohost register.
     /// \returns The value of the register.

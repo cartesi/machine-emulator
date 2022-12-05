@@ -467,21 +467,6 @@ public:
         return do_read_iflags_X();
     }
 
-    /// \brief Reads the value of the break flag
-    uint64_t read_brkflag(void) const {
-        return do_read_brkflag();
-    }
-
-    /// \brief Sets the value of the break flag
-    void set_brkflag() {
-        return do_set_brkflag();
-    }
-
-    /// \brief Resets the value of the break flag
-    void reset_brkflag() {
-        return do_reset_brkflag();
-    }
-
     /// \brief Sets the H iflag
     void set_iflags_H(void) {
         return do_set_iflags_H();
@@ -730,9 +715,6 @@ private:
     virtual void do_reset_iflags_Y(void) = 0;
     virtual void do_reset_iflags_X(void) = 0;
     virtual void do_write_iflags(uint64_t val) = 0;
-    virtual uint64_t do_read_brkflag(void) const = 0;
-    virtual void do_set_brkflag(void) = 0;
-    virtual void do_reset_brkflag(void) = 0;
     virtual uint64_t do_read_htif_tohost(void) const = 0;
     virtual uint64_t do_read_htif_tohost_dev(void) const = 0;
     virtual uint64_t do_read_htif_tohost_cmd(void) const = 0;

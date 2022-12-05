@@ -568,18 +568,6 @@ private:
         return pma.get_device_driver()->write(pma.get_device_context(), &da, offset, val, log2_size);
     }
 
-    void do_set_brkflag(void) {
-        raw_write_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::brkflag), true);
-    }
-
-    void do_reset_brkflag(void) {
-        raw_write_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::brkflag), false);
-    }
-
-    bool do_read_brkflag(void) const {
-        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::brkflag));
-    }
-
     uarch_pma_entry build_uarch_pma_entry(int index, uint64_t istart, uint64_t ilength) {
         uint64_t start;
         uarch_pma_entry::flags flags;

@@ -672,18 +672,6 @@ public:
         return derived().do_read_uarch_ram_length();
     }
 
-    auto set_brkflag(void) {
-        return derived().do_set_brkflag();
-    }
-
-    auto reset_brkflag(void) {
-        return derived().do_reset_brkflag();
-    }
-
-    auto read_brkflag(void) {
-        return derived().do_read_brkflag();
-    }
-
     /// \brief Try to read a word from memory through the TLB.
     /// \tparam ETYPE TLB entry type.
     /// \tparam T Type of word to read.

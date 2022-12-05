@@ -154,7 +154,6 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
     proto_p->set_senvcfg(c.processor.senvcfg);
     proto_p->set_ilrsc(c.processor.ilrsc);
     proto_p->set_iflags(c.processor.iflags);
-    proto_p->set_brkflag(c.processor.brkflag);
     for (const auto &f : c.flash_drive) {
         auto *proto_f = proto_c->add_flash_drive();
         set_proto_memory_range(f, proto_f);
@@ -650,9 +649,6 @@ processor_config get_proto_processor_config(const CartesiMachine::ProcessorConfi
     }
     if (proto_p.has_iflags()) {
         p.iflags = proto_p.iflags();
-    }
-    if (proto_p.has_brkflag()) {
-        p.brkflag = proto_p.brkflag();
     }
     return p;
 }

@@ -62,7 +62,6 @@ struct shadow_state {
     uint64_t senvcfg;
     uint64_t ilrsc;
     uint64_t iflags;
-    uint64_t brkflag;
     uint64_t clint_mtimecmp;
     uint64_t htif_tohost;
     uint64_t htif_fromhost;
@@ -112,7 +111,6 @@ enum class shadow_state_csr {
     senvcfg = offsetof(shadow_state, senvcfg),
     ilrsc = offsetof(shadow_state, ilrsc),
     iflags = offsetof(shadow_state, iflags),
-    brkflag = offsetof(shadow_state, brkflag),
     clint_mtimecmp = offsetof(shadow_state, clint_mtimecmp),
     htif_tohost = offsetof(shadow_state, htif_tohost),
     htif_fromhost = offsetof(shadow_state, htif_fromhost),

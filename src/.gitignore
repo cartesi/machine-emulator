@@ -3,6 +3,8 @@
 *.ext2
 *.bin
 *.gcno
+*.gcov
 *.gcda
 *.profraw
 compile_flags.txt
+coverage*

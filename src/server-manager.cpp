@@ -1892,7 +1892,7 @@ static uint64_t count_null_terminated_entries(const std::string &data, int entry
 template <typename IT>
 static inline hash_type get_hash(session_type &session, IT begin, IT end) {
     hash_type hash;
-    if (end - begin != hash.size()) {
+    if (static_cast<size_t>(end - begin) != hash.size()) {
         THROW((taint_session{session, grpc::StatusCode::OUT_OF_RANGE, "invalid hash length"}));
     }
     std::copy(begin, end, hash.begin());
@@ -1906,7 +1906,7 @@ static inline hash_type get_hash(session_type &session, IT begin, IT end) {
 template <typename IT>
 static inline evm_address_type get_evm_address(session_type &session, IT begin, IT end) {
     evm_address_type a;
-    if (end - begin != a.size()) {
+    if (static_cast<size_t>(end - begin) != a.size()) {
         THROW((taint_session{session, grpc::StatusCode::OUT_OF_RANGE, "invalid address length"}));
     }
     std::copy(begin, end, a.begin());

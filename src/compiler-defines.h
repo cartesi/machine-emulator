@@ -17,7 +17,14 @@
 #ifndef COMPILER_DEFINES_H
 #define COMPILER_DEFINES_H
 
+#ifndef CODE_COVERAGE
 #define FORCE_INLINE __attribute__((always_inline)) inline
+#else
+// Avoid using always_inline attribute when code coverage is enabled,
+// because it makes code coverage results harder to read
+#define FORCE_INLINE inline
+#endif
+
 #define NO_INLINE __attribute__((noinline))
 
 // These macros are used only in very hot code paths (such as TLB hit checks).

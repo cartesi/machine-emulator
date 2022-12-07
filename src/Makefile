@@ -31,7 +31,7 @@ GRPC_CPP_PLUGIN=$(BUILDDIR)/bin/grpc_cpp_plugin
 
 # So we can use gcc to check if there are unused symbols
 ifeq ($(gc),yes)
-GCFLAGS= -fno-inline-small-functions -fno-inline -fdata-sections -ffunction-sections
+GCFLAGS=-fno-inline-small-functions -fno-inline -fdata-sections -ffunction-sections
 GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections
 endif
 
@@ -101,7 +101,6 @@ PROFILE_DATA_Linux=
 
 CC=$(CC_$(UNAME))
 CXX=$(CXX_$(UNAME))
-CC_MARCH=
 SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 BOOST_CORO_LIB=$(BOOST_CORO_LIB_$(UNAME))
 BOOST_PROCESS_LIB=$(BOOST_PROCESS_LIB_$(UNAME))
@@ -187,14 +186,22 @@ ifeq ($(lto),yes)
 OPTFLAGS+=-flto=auto
 endif
 
-# Sanitizer
+# Undefined Sanitizer
 ifeq ($(sanitize),yes)
-OPTFLAGS+=-fsanitize=undefined,address
+UBFLAGS+=-fsanitize=undefined #-fsanitize-undefined-trap-on-error
+UBLDFLAGS+=-fsanitize=undefined
+else
+# Flags to minimize undefined behavior
+UBFLAGS+=-fno-strict-aliasing
+UBFLAGS+=-fno-strict-overflow
+UBFLAGS+=-fno-delete-null-pointer-checks
 endif
 
 # Compile for current system processor
 ifeq ($(native),yes)
 CC_MARCH=-march=native
+else
+CC_MARCH=
 endif
 
 # Workload to use in PGO
@@ -223,41 +230,26 @@ EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
 CLANG_TIDY_HEADER_FILTER=$(PWD)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
 
-# Flags to minimize undefined behavior
-UBFLAGS+=-fno-strict-aliasing
-UBFLAGS+=-fno-strict-overflow
-UBFLAGS+=-fno-delete-null-pointer-checks
+CXXFLAGS+=$(OPTFLAGS) -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS) $(MYCFLAGS)
+CFLAGS+=$(OPTFLAGS) -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS) $(MYCFLAGS)
+LDFLAGS+=$(UBFLAGS) $(MYLDFLAGS)
 
-CXXFLAGS=$(OPTFLAGS) -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS) $(MYCFLAGS)
-CFLAGS=$(OPTFLAGS) -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS) $(MYCFLAGS)
-
+COVERAGE_WORKLOAD=\
+	dhrystone 100; \
+	whetstone 100
+COVERAGE_CPP_SOURCES=$(wildcard *.cpp)
+COVERAGE_SOURCES=$(filter-out %.pb.h, $(wildcard *.h) $(wildcard *.cpp))
 ifeq ($(coverage-toolchain),gcc)
 CC=gcc
 CXX=g++
-CXXFLAGS += -g -O0 --coverage
-SOLDFLAGS += --coverage
-REMOTE_CARTESI_MACHINE_LIBS += --coverage
-REMOTE_CARTESI_MACHINE_PROXY_LIBS += --coverage
-SERVER_MANAGER_LIBS += --coverage
-TEST_SERVER_MANAGER_LIBS += --coverage
-HASH_LIBS += --coverage
-LIBCARTESI_LDFLAGS += --coverage
-LIBCARTESI_GRPC_LDFLAGS += --coverage
-LIBCARTESI_TESTS_LDFLAGS += --coverage
+CXXFLAGS+=-g -Og -fno-dce -fno-inline -DCODE_COVERAGE --coverage
+LDFLAGS+=--coverage
+LCOV_CONFIG=--rc lcov_branch_coverage=1
 else ifeq ($(coverage-toolchain),clang)
 CC=clang
 CXX=clang++
-CXXFLAGS += -g -O0 -fprofile-instr-generate -fcoverage-mapping
-SOLDFLAGS += -fprofile-instr-generate -fcoverage-mapping
-REMOTE_CARTESI_MACHINE_LIBS += -fprofile-instr-generate -fcoverage-mapping
-REMOTE_CARTESI_MACHINE_PROXY_LIBS += -fprofile-instr-generate -fcoverage-mapping
-SERVER_MANAGER_LIBS += -fprofile-instr-generate -fcoverage-mapping
-TEST_SERVER_MANAGER_LIBS += -fprofile-instr-generate -fcoverage-mapping
-HASH_LIBS += -fprofile-instr-generate -fcoverage-mapping
-LIBCARTESI_LDFLAGS += -fprofile-instr-generate -fcoverage-mapping
-LIBCARTESI_GRPC_LDFLAGS += -fprofile-instr-generate -fcoverage-mapping
-LIBCARTESI_TESTS_LDFLAGS += -fprofile-instr-generate -fcoverage-mapping
-COVERAGE_SOURCES = $(filter-out %.pb.h, $(wildcard *.h) $(wildcard *.cpp))
+CXXFLAGS+=-g -O0 -DCODE_COVERAGE -fprofile-instr-generate -fcoverage-mapping
+LDFLAGS+=-fprofile-instr-generate -fcoverage-mapping
 export LLVM_PROFILE_FILE=coverage-%p.profraw
 else ifneq ($(coverage-toolchain),)
 $(error invalid value for coverage-toolchain: $(coverage-toolchain))
@@ -334,22 +326,22 @@ LUACARTESI_LIBS+=-lprofiler
 endif
 
 $(LIBCARTESI): $(CARTESI_OBJS) $(LIBCARTESI_PROTOBUF)
-	$(CXX) $(LIBCARTESI_LDFLAGS) -o $@ $(CARTESI_OBJS) $(CARTESI_LIBS)
+	$(CXX) $(LDFLAGS) $(LIBCARTESI_LDFLAGS) -o $@ $(CARTESI_OBJS) $(CARTESI_LIBS)
 
 # $(LIBCARTESI_PROTOBUF) is a dynamic library that exports all symbols
 $(CARTESI_PROTOBUF_GEN_OBJS): CXXFLAGS += -fvisibility=default
 
 $(LIBCARTESI_PROTOBUF): $(CARTESI_PROTOBUF_GEN_OBJS)
-	$(CXX) $(LIBCARTESI_PROTOBUF_LDFLAGS) -o $@ $^ $(CARTESI_PROTOBUF_LIBS)
+	$(CXX) $(LDFLAGS) $(LIBCARTESI_PROTOBUF_LDFLAGS) -o $@ $^ $(CARTESI_PROTOBUF_LIBS)
 
 $(LIBCARTESI_GRPC): $(CARTESI_GRPC_OBJS) $(LIBCARTESI)
-	$(CXX) $(LIBCARTESI_GRPC_LDFLAGS) -o $@ $(CARTESI_GRPC_OBJS) $(CARTESI_GRPC_LIBS) $(LIBCARTESI_LIB)
+	$(CXX) $(LDFLAGS) $(LIBCARTESI_GRPC_LDFLAGS) -o $@ $(CARTESI_GRPC_OBJS) $(CARTESI_GRPC_LIBS) $(LIBCARTESI_LIB)
 
 cartesi.so: $(LUACARTESI_OBJS) $(LIBCARTESI)
-	$(CXX) $(SOLDFLAGS) -o $@ $(LUACARTESI_OBJS) $(LUACARTESI_LIBS)
+	$(CXX) $(LDFLAGS) $(SOLDFLAGS) -o $@ $(LUACARTESI_OBJS) $(LUACARTESI_LIBS)
 
 cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS) $(LIBCARTESI_GRPC) $(LIBCARTESI)
-	$(CXX) $(SOLDFLAGS) -o $@ $(LUACARTESI_GRPC_OBJS) $(LUACARTESI_GRPC_LIBS)
+	$(CXX) $(LDFLAGS) $(SOLDFLAGS) -o $@ $(LUACARTESI_GRPC_OBJS) $(LUACARTESI_GRPC_LIBS)
 
 test: luacartesi
 	$(LUA_BIN) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
@@ -367,7 +359,7 @@ test-scripts: luacartesi
 		echo -n 'CTSICTSI' | $(LUA_BIN) $$x local || exit 1; \
 	done
 
-test-c-api: c-api
+test-c-api: c-api remote-cartesi-machine
 	./tests/test-machine-c-api
 
 lint: $(CLANG_TIDY_TARGETS)
@@ -383,18 +375,19 @@ fs.ext2: fs/*
 	truncate -s %4096 fs.ext2
 
 generate: CXXFLAGS += -fprofile-generate
-generate: SOLDFLAGS += -fprofile-generate
-generate: LIBCARTESI_LDFLAGS += -fprofile-generate
-generate: LIBCARTESI_PROTOBUF_LDFLAGS += -fprofile-generate
-generate: LIBCARTESI_GRPC_LDFLAGS += -fprofile-generate
+generate: LDFLAGS += -fprofile-generate
 generate: luacartesi
 
 ifeq ($(coverage-toolchain),gcc)
-coverage-report: test test-hash test-grpc test-scripts test-c-api
-	lcov --capture --directory . --no-external --exclude '*.pb.*' -o coverage.info
-	genhtml coverage.info -o coverage-gcc
+coverage-report:
+	rm -f *.pb.cc.gcda *.pb.h.gcda
+	gcov --demangled-names --relative-only --branch-probabilities *.gcda
+	lcov --capture --directory . --no-external --exclude '*.pb.*' -o coverage.info $(LCOV_CONFIG) --quiet
+	genhtml --quiet coverage.info --output-directory coverage-gcc $(LCOV_CONFIG)
+	lcov --list coverage.info $(LCOV_CONFIG) | tee coverage.txt
+	lcov --summary coverage.info $(LCOV_CONFIG) | tee -a coverage.txt
 else ifeq ($(coverage-toolchain),clang)
-coverage-report: test test-hash test-grpc test-scripts test-c-api
+coverage-report:
 	llvm-profdata merge -sparse $(shell find . -name 'coverage*.profraw') -o coverage.profdata
 	llvm-cov show -format=html -output-dir=coverage-clang -instr-profile=coverage.profdata \
 		./cartesi.so \
@@ -407,19 +400,28 @@ coverage-report: test test-hash test-grpc test-scripts test-c-api
 		$(COVERAGE_SOURCES)
 endif
 
-valgrind: luacartesi
-	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) cartesi-machine-tests.lua
-	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) cartesi-machine.lua --initial-hash --final-hash --memory-size=16 --batch --cmdline="-- /bin/true"
+run-coverage-workload: luacartesi
+	$(LUA_BIN) ./cartesi-machine.lua -- "$(COVERAGE_WORKLOAD)"
+	# Test interactive mode (to cover mcycle overwriting)
+	echo uname | $(LUA_BIN) ./cartesi-machine.lua -i sh
+	# Test max mcycle (to cover max mcycle branch)
+	$(LUA_BIN) ./cartesi-machine.lua --max-mcycle=1
 
+ifneq ($(coverage-toolchain),)
+.NOTPARALLEL: coverage-run coverage-run-quick
+coverage-run: test test-hash test-grpc test-scripts test-c-api run-coverage-workload coverage-report
+coverage-run-quick: test run-coverage-workload coverage-report
+endif
+
+valgrind: luacartesi
+	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
+	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) cartesi-machine.lua --initial-hash --final-hash -- /bin/true
 
 $(PROFILE_DATA_Darwin):
 	llvm-profdata merge -output=default.profdata default*.profraw
 
 use: CXXFLAGS += -fprofile-use -Wno-missing-profile
-use: SOLDFLAGS += -fprofile-use
-use: LIBCARTESI_LDFLAGS += -fprofile-use
-use: LIBCARTESI_PROTOBUF_LDFLAGS += -fprofile-use
-use: LIBCARTESI_GRPC_LDFLAGS += -fprofile-use
+use: LDFLAGS += -fprofile-use
 use: $(PROFILE_DATA_$(UNAME)) luacartesi
 
 compile_flags.txt:
@@ -583,29 +585,29 @@ $(GROUND_TRUTH_DIR)/$(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(GROUND_TRUTH_DIR)
 	brotli -j -f $(basename $@)
 
 merkle-tree-hash: $(MERKLE_TREE_HASH_OBJS)
-	$(CXX) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $^ $(HASH_LIBS)
+	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $^ $(HASH_LIBS)
 
 tests/test-merkle-tree-hash: $(TEST_MERKLE_TREE_HASH_OBJS)
-	$(CXX) -o $@ $^ $(HASH_LIBS)
+	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $^ $(HASH_LIBS)
 
 grpc-interfaces: $(PROTO_SOURCES)
 
 remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS) $(LIBCARTESI_PROTOBUF)
-	$(CXX) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(REMOTE_CARTESI_MACHINE_OBJS) $(REMOTE_CARTESI_MACHINE_LIBS)
+	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(REMOTE_CARTESI_MACHINE_OBJS) $(REMOTE_CARTESI_MACHINE_LIBS)
 
 remote-cartesi-machine-proxy: $(REMOTE_CARTESI_MACHINE_PROXY_OBJS) $(LIBCARTESI_PROTOBUF)
-	$(CXX) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(REMOTE_CARTESI_MACHINE_PROXY_OBJS) $(REMOTE_CARTESI_MACHINE_PROXY_LIBS)
+	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(REMOTE_CARTESI_MACHINE_PROXY_OBJS) $(REMOTE_CARTESI_MACHINE_PROXY_LIBS)
 
 server-manager: $(SERVER_MANAGER_OBJS) $(LIBCARTESI_PROTOBUF)
-	$(CXX) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(SERVER_MANAGER_OBJS) $(SERVER_MANAGER_LIBS)
+	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(SERVER_MANAGER_OBJS) $(SERVER_MANAGER_LIBS)
 
 tests/test-server-manager: $(TEST_SERVER_MANAGER_OBJS) $(LIBCARTESI_PROTOBUF)
-	$(CXX) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(TEST_SERVER_MANAGER_OBJS) $(TEST_SERVER_MANAGER_LIBS)
+	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(TEST_SERVER_MANAGER_OBJS) $(TEST_SERVER_MANAGER_LIBS)
 
 remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
 tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_GRPC)
-	$(CXX) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(TEST_MACHINE_C_API_LIBS)
+	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(TEST_MACHINE_C_API_LIBS)
 
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 
@@ -638,13 +640,13 @@ grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o proxy.o: $(CARTESI_
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-%.o: %.cc
+%.o: %.cc $(PROTO_SOURCES)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-clean: clean-profile clean-proto-sources clean-tidy clean-libcartesi clean-executables clean-tests
+clean: clean-coverage clean-profile clean-proto-sources clean-tidy clean-libcartesi clean-executables clean-tests
 
 clean-proto-sources:
 	@rm -f *.pb.cc *.pb.h
@@ -663,6 +665,10 @@ clean-executables:
 
 clean-tests:
 	@rm -f tests/test-merkle-tree-hash tests/test-machine-c-api tests/test-server-manager
+
+clean-coverage:
+	@rm -f *.profdata *.profraw tests/*.profraw *.gcda *.gcov coverage.info coverage.txt
+	@rm -rf coverage-gcc coverage-clang
 
 clean-profile:
 	@rm -f *.profdata *.profraw tests/*.profraw *.gcda *.gcno

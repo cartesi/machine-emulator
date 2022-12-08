@@ -91,11 +91,7 @@ static execute_status clint_write(void *context, i_device_state_access *a, uint6
                 //    Will investigate.
                 if (val & 1) {
                     a->set_mip(MIP_MSIP_MASK);
-                    auto mip = a->read_mip();
-                    auto mie = a->read_mie();
-                    if (mip & mie) {
-                        return execute_status::success_and_break_inner_loop;
-                    }
+                    return execute_status::success_and_serve_interrupts;
                 } else {
                     a->reset_mip(MIP_MSIP_MASK);
                 }

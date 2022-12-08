@@ -417,7 +417,7 @@ private:
                 uint64_t real_cycle = rtc_time_to_cycle(elapsed_cycles + rtc_cycle_to_time(mcycle));
                 warp_cycle = elapsed_us >= wait ? warp_cycle : real_cycle;
                 write_mcycle(warp_cycle);
-                return execute_status::success_and_break_inner_loop;
+                return execute_status::success_and_reload_mcycle;
             }
         }
         return execute_status::success;

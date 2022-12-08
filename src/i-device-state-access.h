@@ -66,12 +66,6 @@ public:
         return do_read_mip();
     }
 
-    /// \brief Reads the value of the mie register.
-    /// \returns Register value.
-    uint64_t read_mie(void) {
-        return do_read_mie();
-    }
-
     /// \brief Reads CSR mcycle.
     /// \returns Register value.
     uint64_t read_mcycle(void) {
@@ -176,7 +170,6 @@ private:
     virtual void do_set_mip(uint64_t mask) = 0;
     virtual void do_reset_mip(uint64_t mask) = 0;
     virtual uint64_t do_read_mip(void) = 0;
-    virtual uint64_t do_read_mie(void) = 0;
     virtual uint64_t do_read_mcycle(void) = 0;
     virtual void do_set_iflags_H(void) = 0;
     virtual void do_set_iflags_Y(void) = 0;

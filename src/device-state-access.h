@@ -70,10 +70,6 @@ private:
         return m_a.read_mip();
     }
 
-    uint64_t do_read_mie(void) override {
-        return m_a.read_mie();
-    }
-
     uint64_t do_read_mcycle(void) override {
         return m_a.read_mcycle();
     }

@@ -25,6 +25,7 @@
 #endif
 #include <cinttypes>
 #include <cstdint>
+#include <utility>
 
 /// \file
 /// \brief Interpreter implementation.
@@ -442,7 +443,6 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t
             set_priv(a, PRV_S);
         }
         new_pc = a.read_stvec();
-        a.write_pc(new_pc);
 #ifdef DUMP_COUNTERS
         if (cause & MCAUSE_INTERRUPT_FLAG) {
             INC_COUNTER(a.get_statistics(), sv_int);
@@ -463,7 +463,6 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t
             set_priv(a, PRV_M);
         }
         new_pc = a.read_mtvec();
-        a.write_pc(new_pc);
 #ifdef DUMP_COUNTERS
         if (cause & MCAUSE_INTERRUPT_FLAG) {
             INC_COUNTER(a.get_statistics(), m_int);
@@ -480,7 +479,6 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t
 /// \returns The mask.
 template <typename STATE_ACCESS>
 static inline uint32_t get_pending_irq_mask(STATE_ACCESS &a) {
-
     uint64_t mip = a.read_mip();
     uint64_t mie = a.read_mie();
 
@@ -533,6 +531,34 @@ static inline uint32_t ilog2(uint32_t v) {
     return 31 - __builtin_clz(v);
 }
 
+/// \brief Returns the highest priority interrupt number that should be handled.
+static inline uint32_t get_highest_priority_irq_num(uint32_t v) {
+    // Interrupts for higher privilege modes must be serviced before interrupts for lower privilege modes
+    // Multiple simultaneous interrupts destined for M-mode are handled in the following
+    // decreasing priority order: MEI, MSI, MTI, SEI, SSI, STI.
+    // Multiple simultaneous interrupts destined for supervisor mode are handled in the following
+    // decreasing priority order: SEI, SSI, STI.
+    // Multiple simultaneous interrupts destined for HS-mode are handled in the following decreasing
+    // priority order: SEI, SSI, STI, SGEI, VSEI, VSSI, VSTI.
+    if (v & MIP_MEIP_MASK) {
+        return MIP_MEIP_SHIFT;
+    } else if (v & MIP_MSIP_MASK) {
+        return MIP_MSIP_SHIFT;
+    } else if (v & MIP_MTIP_MASK) {
+        return MIP_MTIP_SHIFT;
+    } else if (v & MIP_SEIP_MASK) {
+        return MIP_SEIP_SHIFT;
+    } else if (v & MIP_SSIP_MASK) {
+        return MIP_SSIP_SHIFT;
+    } else if (v & MIP_STIP_MASK) {
+        return MIP_STIP_SHIFT;
+    } else {
+        // This is impossible, the interrupt is invalid or not supported yet
+        assert(false);
+        return ilog2(v);
+    }
+}
+
 /// \brief Raises an interrupt if any are enabled and pending.
 /// \param a Machine state accessor object.
 /// \param pc Machine current program counter.
@@ -541,8 +567,8 @@ static inline uint64_t raise_interrupt_if_any(STATE_ACCESS &a, uint64_t pc) {
     auto note = a.make_scoped_note("raise_interrupt_if_any");
     (void) note;
     uint32_t mask = get_pending_irq_mask(a);
-    if (mask != 0) {
-        uint64_t irq_num = ilog2(mask);
+    if (unlikely(mask != 0)) {
+        uint64_t irq_num = get_highest_priority_irq_num(mask);
         return raise_exception(a, pc, irq_num | MCAUSE_INTERRUPT_FLAG, 0);
     }
     return pc;
@@ -702,49 +728,55 @@ static inline uint32_t insn_get_rs3(uint32_t insn) {
 /// \param pc Machine current program counter.
 /// \param vaddr Virtual address for word.
 /// \param pval Pointer to word receiving value.
-/// \returns True if succeeded, false otherwise.
+/// \returns A pair, the first value is true if succeeded, false otherwise.
+/// The second value is the input pc if succeeded, otherwise the pc for a raised exception trap.
 /// \details This function is outlined to minimize host CPU code cache pressure.
+/// Unlike other inline functions in this file, this function does not take PC by reference,
+/// instead it returns a new PC in case an exception is raised. This is because the function
+/// is outlined, and taking PC by reference would cause the compiler to store it in a stack variable
+/// instead of always storing it in register (this is an optimization).
 template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>
-static NO_INLINE bool read_virtual_memory_slow(STATE_ACCESS &a, uint64_t pc, uint64_t vaddr, T *pval) {
+static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS &a, uint64_t pc, uint64_t vaddr,
+    T *pval) {
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (unlikely(vaddr & (sizeof(T) - 1))) {
-        raise_exception(a, pc,
+        pc = raise_exception(a, pc,
             RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ADDRESS_MISALIGNED : MCAUSE_LOAD_ADDRESS_MISALIGNED, vaddr);
-        return false;
+        return {false, pc};
         // Deal with aligned accesses
     } else {
         uint64_t paddr{};
         if (unlikely(!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_R_SHIFT))) {
-            raise_exception(a, pc, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_PAGE_FAULT : MCAUSE_LOAD_PAGE_FAULT,
+            pc = raise_exception(a, pc, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_PAGE_FAULT : MCAUSE_LOAD_PAGE_FAULT,
                 vaddr);
-            return false;
+            return {false, pc};
         }
         auto &pma = a.template find_pma_entry<T>(paddr);
         if (unlikely(pma.get_istart_E() || !pma.get_istart_R())) {
-            raise_exception(a, pc, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT,
-                vaddr);
-            return false;
+            pc = raise_exception(a, pc,
+                RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT, vaddr);
+            return {false, pc};
         } else if (pma.get_istart_M()) {
             unsigned char *hpage = a.template replace_tlb_entry<TLB_READ>(vaddr, paddr, pma);
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             a.read_memory_word(paddr, hpage, hoffset, pval);
-            return true;
+            return {true, pc};
         } else if (pma.get_istart_IO()) {
             uint64_t offset = paddr - pma.get_start();
             uint64_t val{};
             // If we do not know how to read, we treat this as a PMA violation
             if (unlikely(!a.read_device(pma, offset, &val, log2_size<U>::value))) {
-                raise_exception(a, pc,
+                pc = raise_exception(a, pc,
                     RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT, vaddr);
-                return false;
+                return {false, pc};
             }
             *pval = static_cast<T>(val);
             // device logs its own state accesses
-            return true;
+            return {true, pc};
         } else {
             assert(false);
-            return false;
+            return {false, pc};
         }
     }
 }
@@ -753,17 +785,19 @@ static NO_INLINE bool read_virtual_memory_slow(STATE_ACCESS &a, uint64_t pc, uin
 /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
-/// \param pc Machine current program counter.
+/// \param pc Interpreter loop program counter (will be overwritten).
 /// \param vaddr Virtual address for word.
 /// \param pval Pointer to word receiving value.
 /// \returns True if succeeded, false otherwise.
 template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>
-static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS &a, uint64_t pc, uint64_t vaddr, T *pval) {
+static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS &a, uint64_t &pc, uint64_t vaddr, T *pval) {
     // Try hitting the TLB
     if (unlikely(!(a.template read_memory_word_via_tlb<TLB_READ>(vaddr, pval)))) {
         // Outline the slow path into a function call to minimize host CPU code cache pressure
         INC_COUNTER(a.get_statistics(), tlb_rmiss);
-        return read_virtual_memory_slow<T, STATE_ACCESS, RAISE_STORE_EXCEPTIONS>(a, pc, vaddr, pval);
+        auto [status, new_pc] = read_virtual_memory_slow<T, STATE_ACCESS, RAISE_STORE_EXCEPTIONS>(a, pc, vaddr, pval);
+        pc = new_pc;
+        return status;
     }
     INC_COUNTER(a.get_statistics(), tlb_rhit);
     return true;
@@ -776,44 +810,49 @@ static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS &a, uint64_t pc, uint6
 /// \param pc Machine current program counter.
 /// \param vaddr Virtual address for word.
 /// \param val64 Value to write.
-/// \returns True if succeeded, false if exception raised.
+/// \returns A pair, the first value is success status if succeeded, execute_status::failure otherwise.
+/// The second value is the input pc if succeeded, otherwise the pc for a raised exception trap.
 /// \details This function is outlined to minimize host CPU code cache pressure.
+/// Unlike other inline functions in this file, this function does not take PC by reference,
+/// instead it returns a new PC in case an exception is raised. This is because the function
+/// is outlined, and taking PC by reference would cause the compiler to store it in a stack variable
+/// instead of always storing it in register (this is an optimization).
 template <typename T, typename STATE_ACCESS>
-static NO_INLINE execute_status write_virtual_memory_slow(STATE_ACCESS &a, uint64_t pc, uint64_t vaddr,
-    uint64_t val64) {
+static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(STATE_ACCESS &a, uint64_t pc,
+    uint64_t vaddr, uint64_t val64) {
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (unlikely(vaddr & (sizeof(T) - 1))) {
-        raise_exception(a, pc, MCAUSE_STORE_AMO_ADDRESS_MISALIGNED, vaddr);
-        return execute_status::failure;
+        pc = raise_exception(a, pc, MCAUSE_STORE_AMO_ADDRESS_MISALIGNED, vaddr);
+        return {execute_status::failure, pc};
         // Deal with aligned accesses
     } else {
         uint64_t paddr{};
         if (unlikely(!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_W_SHIFT))) {
-            raise_exception(a, pc, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
-            return execute_status::failure;
+            pc = raise_exception(a, pc, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
+            return {execute_status::failure, pc};
         }
         auto &pma = a.template find_pma_entry<T>(paddr);
         if (unlikely(pma.get_istart_E() || !pma.get_istart_W())) {
-            raise_exception(a, pc, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
-            return execute_status::failure;
+            pc = raise_exception(a, pc, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
+            return {execute_status::failure, pc};
         } else if (pma.get_istart_M()) {
             unsigned char *hpage = a.template replace_tlb_entry<TLB_WRITE>(vaddr, paddr, pma);
             uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             a.write_memory_word(paddr, hpage, hoffset, static_cast<T>(val64));
-            return execute_status::success;
+            return {execute_status::success, pc};
         } else if (pma.get_istart_IO()) {
             uint64_t offset = paddr - pma.get_start();
             auto status = a.write_device(pma, offset, val64, log2_size<U>::value);
             // If we do not know how to write, we treat this as a PMA violation
             if (unlikely(status == execute_status::failure)) {
-                raise_exception(a, pc, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
-                return execute_status::failure;
+                pc = raise_exception(a, pc, MCAUSE_STORE_AMO_ACCESS_FAULT, vaddr);
+                return {execute_status::failure, pc};
             }
-            return status;
+            return {status, pc};
         } else {
             assert(false);
-            return execute_status::failure;
+            return {execute_status::failure, pc};
         }
     }
 }
@@ -822,17 +861,19 @@ static NO_INLINE execute_status write_virtual_memory_slow(STATE_ACCESS &a, uint6
 /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
-/// \param pc Machine current program counter.
+/// \param pc Interpreter loop program counter (will be overwritten).
 /// \param vaddr Virtual address for word.
 /// \param val64 Value to write.
 /// \returns True if succeeded, false if exception raised.
 template <typename T, typename STATE_ACCESS>
-static FORCE_INLINE execute_status write_virtual_memory(STATE_ACCESS &a, uint64_t pc, uint64_t vaddr, uint64_t val64) {
+static FORCE_INLINE execute_status write_virtual_memory(STATE_ACCESS &a, uint64_t &pc, uint64_t vaddr, uint64_t val64) {
     // Try hitting the TLB
     if (unlikely((!a.template write_memory_word_via_tlb<TLB_WRITE>(vaddr, static_cast<T>(val64))))) {
         INC_COUNTER(a.get_statistics(), tlb_wmiss);
         // Outline the slow path into a function call to minimize host CPU code cache pressure
-        return write_virtual_memory_slow<T>(a, pc, vaddr, val64);
+        auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, vaddr, val64);
+        pc = new_pc;
+        return status;
     }
     INC_COUNTER(a.get_statistics(), tlb_whit);
     return execute_status::success;
@@ -901,7 +942,7 @@ static FORCE_INLINE execute_status raise_misaligned_fetch_exception(STATE_ACCESS
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status advance_to_raised_exception(STATE_ACCESS &a, uint64_t &pc) {
     (void) a;
-    pc = a.read_pc();
+    (void) pc;
     return execute_status::failure;
 }
 
@@ -909,25 +950,12 @@ static FORCE_INLINE execute_status advance_to_raised_exception(STATE_ACCESS &a, 
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param pc Interpreter loop program counter (will be overwritten).
-/// \return execute_status::success
-/// \details This function is tail-called whenever the caller wants move to the next instruction.
-template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status advance_to_next_insn(STATE_ACCESS &a, uint64_t &pc) {
-    (void) a;
-    pc += 4;
-    return execute_status::success;
-}
-
-/// \brief Advances pc to the next instruction.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Interpreter loop program counter (will be overwritten).
-/// \param status Status to return.
+/// \param status Status to return, the default is execute_status::success.
 /// \return status
 /// \details This function is tail-called whenever the caller wants move to the next instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status advance_to_next_insn_with_status(STATE_ACCESS &a, uint64_t &pc,
-    execute_status status) {
+static FORCE_INLINE execute_status advance_to_next_insn(STATE_ACCESS &a, uint64_t &pc,
+    execute_status status = execute_status::success) {
     (void) a;
     pc += 4;
     return status;
@@ -988,10 +1016,10 @@ static FORCE_INLINE execute_status execute_SC(STATE_ACCESS &a, uint64_t &pc, uin
     a.write_ilrsc(-1); // Must clear reservation, regardless of failure
     uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
-        return advance_to_next_insn_with_status(a, pc, status);
+        return advance_to_next_insn(a, pc, status);
     }
     a.write_x(rd, val);
-    return advance_to_next_insn_with_status(a, pc, status);
+    return advance_to_next_insn(a, pc, status);
 }
 
 /// \brief Implementation of the LR.W instruction.
@@ -1035,10 +1063,10 @@ static FORCE_INLINE execute_status execute_AMO(STATE_ACCESS &a, uint64_t &pc, ui
     }
     uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
-        return advance_to_next_insn_with_status(a, pc, status);
+        return advance_to_next_insn(a, pc, status);
     }
     a.write_x(rd, static_cast<uint64_t>(valm));
-    return advance_to_next_insn_with_status(a, pc, status);
+    return advance_to_next_insn(a, pc, status);
 }
 
 /// \brief Implementation of the AMOSWAP.W instruction.
@@ -1797,10 +1825,7 @@ static execute_status write_csr_sie(STATE_ACCESS &a, uint64_t val) {
     uint64_t mask = a.read_mideleg();
     mie = (mie & ~mask) | (val & mask);
     a.write_mie(mie);
-    if (get_pending_irq_mask(a)) {
-        return execute_status::success_and_break_inner_loop;
-    }
-    return execute_status::success;
+    return execute_status::success_and_serve_interrupts;
 }
 
 template <typename STATE_ACCESS>
@@ -1845,10 +1870,7 @@ static execute_status write_csr_sip(STATE_ACCESS &a, uint64_t val) {
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
-    if (get_pending_irq_mask(a)) {
-        return execute_status::success_and_break_inner_loop;
-    }
-    return execute_status::success;
+    return execute_status::success_and_serve_interrupts;
 }
 
 template <typename STATE_ACCESS>
@@ -1966,9 +1988,9 @@ static execute_status write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
         INC_COUNTER(a.get_statistics(), tlb_flush_mstatus);
     }
 
-    // When changing an interrupt enabled bit, we may have to break inner loop
-    if ((mod & (MSTATUS_SIE_MASK | MSTATUS_MIE_MASK)) && get_pending_irq_mask(a)) {
-        return execute_status::success_and_break_inner_loop;
+    // When changing an interrupt enabled bit, we may have to service any pending interrupt
+    if ((mod & (MSTATUS_SIE_MASK | MSTATUS_MIE_MASK)) != 0) {
+        return execute_status::success_and_serve_interrupts;
     }
 
     return execute_status::success;
@@ -1999,10 +2021,7 @@ static execute_status write_csr_mideleg(STATE_ACCESS &a, uint64_t val) {
     uint64_t mideleg = a.read_mideleg();
     mideleg = (mideleg & ~mask) | (val & mask);
     a.write_mideleg(mideleg);
-    if (get_pending_irq_mask(a)) {
-        return execute_status::success_and_break_inner_loop;
-    }
-    return execute_status::success;
+    return execute_status::success_and_serve_interrupts;
 }
 
 template <typename STATE_ACCESS>
@@ -2011,10 +2030,7 @@ static execute_status write_csr_mie(STATE_ACCESS &a, uint64_t val) {
     uint64_t mie = a.read_mie();
     mie = (mie & ~mask) | (val & mask);
     a.write_mie(mie);
-    if (get_pending_irq_mask(a)) {
-        return execute_status::success_and_break_inner_loop;
-    }
-    return execute_status::success;
+    return execute_status::success_and_serve_interrupts;
 }
 
 template <typename STATE_ACCESS>
@@ -2031,9 +2047,11 @@ static execute_status write_csr_mcounteren(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_minstret(STATE_ACCESS &a, uint64_t val) {
-    uint64_t mcycle = a.read_mcycle();
+    // Note that mcycle will only be incremented after the instruction is executed,
+    // but we have to compute this in advance
+    uint64_t mcycle = a.read_mcycle() + 1;
     uint64_t icycleinstret = mcycle - val;
-    a.write_icycleinstret(icycleinstret + 1); // The value will be incremented after the instruction is executed
+    a.write_icycleinstret(icycleinstret);
     return execute_status::success;
 }
 
@@ -2080,10 +2098,7 @@ static execute_status write_csr_mip(STATE_ACCESS &a, uint64_t val) {
     auto mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
-    if (get_pending_irq_mask(a)) {
-        return execute_status::success_and_break_inner_loop;
-    }
-    return execute_status::success;
+    return execute_status::success_and_serve_interrupts;
 }
 
 template <typename STATE_ACCESS>
@@ -2256,10 +2271,10 @@ static FORCE_INLINE execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t &pc,
     }
     // Write to rd only after potential read/write exceptions
     if (unlikely(rd == 0)) {
-        return advance_to_next_insn_with_status(a, pc, wstatus);
+        return advance_to_next_insn(a, pc, wstatus);
     }
     a.write_x(rd, csrval);
-    return advance_to_next_insn_with_status(a, pc, wstatus);
+    return advance_to_next_insn(a, pc, wstatus);
 }
 
 /// \brief Implementation of the CSRRW instruction.
@@ -2309,10 +2324,10 @@ static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t &pc,
     // Write to rd only after potential read/write exceptions
     uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
-        return advance_to_next_insn_with_status(a, pc, wstatus);
+        return advance_to_next_insn(a, pc, wstatus);
     }
     a.write_x(rd, csrval);
-    return advance_to_next_insn_with_status(a, pc, wstatus);
+    return advance_to_next_insn(a, pc, wstatus);
 }
 
 /// \brief Implementation of the CSRRS instruction.
@@ -2357,10 +2372,10 @@ static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t &pc
     // Write to rd only after potential read/write exceptions
     uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
-        return advance_to_next_insn_with_status(a, pc, wstatus);
+        return advance_to_next_insn(a, pc, wstatus);
     }
     a.write_x(rd, csrval);
-    return advance_to_next_insn_with_status(a, pc, wstatus);
+    return advance_to_next_insn(a, pc, wstatus);
 }
 
 /// \brief Implementation of the CSRRSI instruction.
@@ -2432,10 +2447,7 @@ static FORCE_INLINE execute_status execute_SRET(STATE_ACCESS &a, uint64_t &pc, u
         set_priv(a, spp);
     }
     pc = a.read_sepc();
-    if (get_pending_irq_mask(a)) {
-        return execute_status::success_and_break_inner_loop;
-    }
-    return execute_status::success;
+    return execute_status::success_and_serve_interrupts;
 }
 
 /// \brief Implementation of the MRET instruction.
@@ -2468,10 +2480,7 @@ static FORCE_INLINE execute_status execute_MRET(STATE_ACCESS &a, uint64_t &pc, u
         set_priv(a, mpp);
     }
     pc = a.read_mepc();
-    if (get_pending_irq_mask(a)) {
-        return execute_status::success_and_break_inner_loop;
-    }
-    return execute_status::success;
+    return execute_status::success_and_serve_interrupts;
 }
 
 /// \brief Implementation of the WFI instruction.
@@ -2489,7 +2498,7 @@ static FORCE_INLINE execute_status execute_WFI(STATE_ACCESS &a, uint64_t &pc, ui
         return raise_illegal_insn_exception(a, pc, insn);
     }
     execute_status status = a.poll_console();
-    return advance_to_next_insn_with_status(a, pc, status);
+    return advance_to_next_insn(a, pc, status);
 }
 
 /// \brief Implementation of the FENCE instruction.
@@ -2926,7 +2935,7 @@ static FORCE_INLINE execute_status execute_S(STATE_ACCESS &a, uint64_t &pc, uint
     if (unlikely(status == execute_status::failure)) {
         return advance_to_raised_exception(a, pc);
     }
-    return advance_to_next_insn_with_status(a, pc, status);
+    return advance_to_next_insn(a, pc, status);
 }
 
 /// \brief Implementation of the SB instruction.
@@ -3600,7 +3609,7 @@ static FORCE_INLINE execute_status execute_FS(STATE_ACCESS &a, uint64_t &pc, uin
     if (unlikely(status == execute_status::failure)) {
         return advance_to_raised_exception(a, pc);
     }
-    return advance_to_next_insn_with_status(a, pc, status);
+    return advance_to_next_insn(a, pc, status);
 }
 
 template <typename STATE_ACCESS>
@@ -4871,7 +4880,7 @@ enum class fetch_status : int {
 /// \brief Loads the next instruction (slow path that goes through virtual address translation).
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
-/// \param vaddr Virtual address for the instruction.
+/// \param pc Virtual address for the instruction.
 /// \param pinsn Receives fetched instruction.
 /// \return Returns fetch_status::success if load succeeded, fetch_status::exception if it caused an exception.
 //          In that case, raise the exception.
@@ -4903,7 +4912,7 @@ static FORCE_INLINE fetch_status fetch_insn_slow(STATE_ACCESS &a, uint64_t &pc, 
 /// \brief Loads the next instruction.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
-/// \param vaddr Virtual address for the instruction.
+/// \param pc Virtual address for the instruction.
 /// \param pinsn Receives fetched instruction.
 /// \return Returns fetch_status::success if load succeeded, fetch_status::exception if it caused an exception.
 //          In that case, raise the exception.
@@ -4968,23 +4977,30 @@ NO_INLINE void interpret_loop(STATE_ACCESS &a, uint64_t mcycle_end, uint64_t mcy
                 // Try to execute it
                 execute_status status = execute_insn(a, pc, insn);
 
-                // Break from the inner/outer loop when an interruption is requested
-                if (status >= execute_status::success_and_break_inner_loop) {
-                    // Increment the cycle counter mcycle
-                    // we have to read mcycle again before incrementing it,
-                    // because HTIF console poll can overwrite mcycle while in interactive mode
-                    mcycle = a.read_mcycle() + 1;
+                // When execute status is above success, we have to deal with special loop conditions,
+                // this is very unlikely to happen most of the time
+                if (unlikely(status > execute_status::success)) {
+                    if (unlikely(status == execute_status::success_and_reload_mcycle)) {
+                        // We have to read mcycle again, because it has been overwritten
+                        // This happens only in console poll while in interactive mode
+                        mcycle = a.read_mcycle();
+                        // We can continue normally
+                    } else { // All other execute status will require breaking the loop
+                        // Increment the cycle counter mcycle
+                        ++mcycle;
 
-                    // Commit machine state
-                    a.write_pc(pc);
-                    a.write_mcycle(mcycle);
+                        // Commit machine state
+                        a.write_pc(pc);
+                        a.write_mcycle(mcycle);
 
-                    if (unlikely(status == execute_status::success_and_break_outer_loop)) {
-                        // Got an interruption that must be handled externally, such as halt or yield
-                        return;
+                        if (status == execute_status::success_and_serve_interrupts) {
+                            // We have to break the inner loop to check and serve any pending interrupt immediately
+                            break;
+                        } else { // execute_status::success_and_yield or execute_status::success_and_halt
+                            // Got an interruption that must be handled externally
+                            return;
+                        }
                     }
-                    // Got an interruption that should be handled internally, such as timer interruption
-                    break;
                 }
             }
 

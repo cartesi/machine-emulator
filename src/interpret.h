@@ -28,10 +28,11 @@ namespace cartesi {
 enum execute_status : uint64_t {
     failure,                      // Instruction execution failed, the interpreter should continue normally
     success,                      // Instruction execution succeed, the interpreter should continue normally
-    success_and_break_inner_loop, // Instruction execution succeed, the interpreter must break inner loop to process
-                                  // pending interrupts
-    success_and_break_outer_loop  // Instruction execution succeed, the interpreter must break outer loop to process
-                                  // halt/yield/poll events
+    success_and_reload_mcycle,    // Instruction execution succeed, the interpreter must reload mcycle
+    success_and_serve_interrupts, // Instruction execution succeed, the interpreter must serve pending interrupts
+                                  // immediately
+    success_and_yield, // Instruction execution succeed, the interpreter must stop and handle a yield externally
+    success_and_halt,  // Instruction execution succeed, the interpreter must stop because the machine cannot continue
 };
 
 /// \brief Reasons for interpreter loop interruption

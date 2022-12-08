@@ -15,8 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optimized and refactored interpreter hot loop
 - Removed brkflag CSR
 - Replaced minstret by icycleinstret CSR
-- Changed RTC_FREQ_DIV from 100 to 8192
-- Changed RTC_CLOCK_FREQ from 100MHz to 128MHz
+- Changed RTC\_FREQ\_DIV from 100 to 8192
+- Changed RTC\_CLOCK\_FREQ from 100MHz to 128MHz
+- Fixed interrupts servicing priority, to honor the same priority as in the RISC-V specification
 
 ## [0.12.0] - 2022-11-25
 ### Added

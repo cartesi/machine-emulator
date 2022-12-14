@@ -119,11 +119,15 @@ static inline bool sqrtrem_u(UINT *pr, UINT ah, UINT al) {
     if (ah != 0) {
         l = 2 * UINT_SIZE - clz(ah - 1);
     } else {
+        // This branch will actually never be taken,
+        // because at this moment sqrtrem_u() is only called by sqrt() which makes sure that ah > 0
+        // LCOV_EXCL_START
         if (al == 0) {
             *pr = 0;
             return false;
         }
         l = UINT_SIZE - clz(al - 1);
+        // LCOV_EXCL_STOP
     }
     ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
     ULONG u = static_cast<ULONG>(1) << ((l + 1) / 2);
@@ -265,7 +269,7 @@ struct i_sfloat {
     /// \details a_mant is considered to have at most F_SIZE - 1 bits
     static inline F_UINT normalize(uint32_t a_sign, int a_exp, F_UINT a_mant, FRM_modes rm, uint32_t *pfflags) {
         int shift = clz(a_mant) - (F_SIZE - 1 - IMANT_SIZE);
-        assert(shift >= 0);
+        assert(shift >= 0); // LCOV_EXCL_LINE
         a_exp -= shift;
         a_mant <<= shift;
         return round_pack(a_sign, a_exp, a_mant, rm, pfflags);
@@ -282,7 +286,7 @@ struct i_sfloat {
             l = clz(a_mant1);
         }
         int shift = l - (F_SIZE - 1 - IMANT_SIZE);
-        assert(shift >= 0);
+        assert(shift >= 0); // LCOV_EXCL_LINE
         a_exp -= shift;
         if (shift == 0) {
             a_mant1 |= (a_mant0 != 0);
@@ -437,9 +441,7 @@ struct i_sfloat {
                 }
                 return F_QNAN;
             } else { // infinities
-                if ((a_exp == EXP_MASK && (b_exp == 0 && b_mant == 0)) ||
-                    (b_exp == EXP_MASK && (a_exp == 0 && a_mant == 0)) ||
-                    ((a_exp == EXP_MASK || b_exp == EXP_MASK) && (c_exp == EXP_MASK && r_sign != c_sign))) {
+                if ((a_exp == EXP_MASK || b_exp == EXP_MASK) && (c_exp == EXP_MASK && r_sign != c_sign)) {
                     *pfflags |= FFLAGS_NV_MASK;
                     return F_QNAN;
                 } else if (c_exp == EXP_MASK) {
@@ -564,7 +566,7 @@ struct i_sfloat {
             }
         } else if (unlikely(b_exp == EXP_MASK)) {
             if (b_mant != 0) {
-                if (issignan(a) || issignan(b)) {
+                if (issignan(b)) {
                     *pfflags |= FFLAGS_NV_MASK;
                 }
                 return F_QNAN;

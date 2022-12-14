@@ -20,16 +20,8 @@
 
 namespace cartesi {
 
-int clua_htif_init(lua_State *L, int ctxidx) {
-    (void) L;
-    (void) ctxidx;
-    return 0;
-}
-
 int clua_htif_export(lua_State *L, int ctxidx) {
-    ctxidx = lua_absindex(L, ctxidx);
-    // cartesi
-    clua_htif_init(L, ctxidx); // cartesi
+    (void) ctxidx;
     struct named_constant {
         uint64_t value;
         const char *name;

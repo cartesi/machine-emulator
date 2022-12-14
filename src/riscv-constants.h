@@ -242,7 +242,7 @@ enum ASID_masks : uint64_t { ASID_R_MASK = (UINT64_C(1) << ASIDLEN) - 1, ASID_MA
 enum PTE_shifts {
     PTE_XWR_R_SHIFT = 0,
     PTE_XWR_W_SHIFT = 1,
-    PTE_XWR_C_SHIFT = 2,
+    PTE_XWR_X_SHIFT = 2,
     PTE_V_SHIFT = 0,
     PTE_R_SHIFT = 1,
     PTE_W_SHIFT = 2,
@@ -258,6 +258,9 @@ enum PTE_shifts {
 
 /// \brief Page-table entry masks
 enum PTE_masks : uint64_t {
+    PTE_XWR_R_MASK = UINT64_C(1) << PTE_XWR_R_SHIFT,
+    PTE_XWR_W_MASK = UINT64_C(1) << PTE_XWR_W_SHIFT,
+    PTE_XWR_X_MASK = UINT64_C(1) << PTE_XWR_X_SHIFT,
     PTE_V_MASK = UINT64_C(1) << PTE_V_SHIFT,                   ///< Valid
     PTE_R_MASK = UINT64_C(1) << PTE_R_SHIFT,                   ///< Readable
     PTE_W_MASK = UINT64_C(1) << PTE_W_SHIFT,                   ///< Writable
@@ -381,13 +384,18 @@ enum FCSR_rw_masks : uint64_t {
     FCSR_RW_MASK = FCSR_FFLAGS_RW_MASK | FCSR_FRM_RW_MASK
 };
 
-/// \brief Paging shifts
-enum PAGE_shifts {
-    PAGE_NUMBER_SHIFT = 12,
+/// \brief Translate virtual address constants
+enum TRANSLATE_VADDR_constants {
+    LOG2_PAGE_SIZE = 12,
+    LOG2_PTE_SIZE = 3,                              ///< All page table entries have 8 bytes
+    LOG2_VPN_SIZE = LOG2_PAGE_SIZE - LOG2_PTE_SIZE, ///< Number of bits to index all PTE entries
 };
 
-/// \brief Paging masks
-enum PAGE_masks : uint64_t { PAGE_OFFSET_MASK = (UINT64_C(1) << PAGE_NUMBER_SHIFT) - 1 };
+/// \brief Translate virtual address masks
+enum TRANSLATE_VADDR_masks : uint64_t {
+    PAGE_OFFSET_MASK = (UINT64_C(1) << LOG2_PAGE_SIZE) - 1,
+    VPN_MASK = (UINT64_C(1) << LOG2_VPN_SIZE) - 1
+};
 
 /// \brief mcounteren shifts
 enum MCOUNTEREN_shifts { MCOUNTEREN_CY_SHIFT = 0, MCOUNTEREN_TM_SHIFT = 1, MCOUNTEREN_IR_SHIFT = 2 };
@@ -467,8 +475,6 @@ enum class CSR_address : uint32_t {
     ucycle = 0xc00,
     utime = 0xc01,
     uinstret = 0xc02,
-    uhpmcounter3 = 0xc03,
-    uhpmcounter31 = 0xc1f,
 
     sstatus = 0x100,
     sie = 0x104,
@@ -510,10 +516,64 @@ enum class CSR_address : uint32_t {
     mcycle = 0xb00,
     minstret = 0xb02,
     mhpmcounter3 = 0xb03,
+    mhpmcounter4 = 0xb04,
+    mhpmcounter5 = 0xb05,
+    mhpmcounter6 = 0xb06,
+    mhpmcounter7 = 0xb07,
+    mhpmcounter8 = 0xb08,
+    mhpmcounter9 = 0xb09,
+    mhpmcounter10 = 0xb0a,
+    mhpmcounter11 = 0xb0b,
+    mhpmcounter12 = 0xb0c,
+    mhpmcounter13 = 0xb0d,
+    mhpmcounter14 = 0xb0e,
+    mhpmcounter15 = 0xb0f,
+    mhpmcounter16 = 0xb10,
+    mhpmcounter17 = 0xb11,
+    mhpmcounter18 = 0xb12,
+    mhpmcounter19 = 0xb13,
+    mhpmcounter20 = 0xb14,
+    mhpmcounter21 = 0xb15,
+    mhpmcounter22 = 0xb16,
+    mhpmcounter23 = 0xb17,
+    mhpmcounter24 = 0xb18,
+    mhpmcounter25 = 0xb19,
+    mhpmcounter26 = 0xb1a,
+    mhpmcounter27 = 0xb1b,
+    mhpmcounter28 = 0xb1c,
+    mhpmcounter29 = 0xb1d,
+    mhpmcounter30 = 0xb1e,
     mhpmcounter31 = 0xb1f,
 
     mcountinhibit = 0x320,
     mhpmevent3 = 0x323,
+    mhpmevent4 = 0x324,
+    mhpmevent5 = 0x325,
+    mhpmevent6 = 0x326,
+    mhpmevent7 = 0x327,
+    mhpmevent8 = 0x328,
+    mhpmevent9 = 0x329,
+    mhpmevent10 = 0x32a,
+    mhpmevent11 = 0x32b,
+    mhpmevent12 = 0x32c,
+    mhpmevent13 = 0x32d,
+    mhpmevent14 = 0x32e,
+    mhpmevent15 = 0x32f,
+    mhpmevent16 = 0x330,
+    mhpmevent17 = 0x331,
+    mhpmevent18 = 0x332,
+    mhpmevent19 = 0x333,
+    mhpmevent20 = 0x334,
+    mhpmevent21 = 0x335,
+    mhpmevent22 = 0x336,
+    mhpmevent23 = 0x337,
+    mhpmevent24 = 0x338,
+    mhpmevent25 = 0x339,
+    mhpmevent26 = 0x33a,
+    mhpmevent27 = 0x33b,
+    mhpmevent28 = 0x33c,
+    mhpmevent29 = 0x33d,
+    mhpmevent30 = 0x33e,
     mhpmevent31 = 0x33f,
 
     tselect = 0x7a0,

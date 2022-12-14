@@ -24,11 +24,6 @@
 
 namespace cartesi {
 
-/// \brief Initialize HTIF device Lua interface
-/// \param L Lua state
-/// \param ctxidx Index of Clua context
-int clua_htif_init(lua_State *L, int ctxidx);
-
 /// \brief Exports symbols to table on top of Lua stack
 /// \param L Lua state
 /// \param ctxidx Index of Clua context

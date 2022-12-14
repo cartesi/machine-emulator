@@ -92,6 +92,9 @@ void cm_delete(cm_merkle_tree_proof *p);
 template <>
 void cm_delete(cm_memory_range_config *p);
 
+// clua_managed_cm_ptr is a smart pointer,
+// however we don't use all its functionally, therefore we exclude it from code coverage.
+// LCOV_EXCL_START
 template <typename T>
 class clua_managed_cm_ptr final {
 public:
@@ -146,6 +149,7 @@ public:
 private:
     T *m_ptr;
 };
+// LCOV_EXCL_STOP
 
 /// \brief Pushes a C api proof to the Lua stack
 /// \param L Lua state

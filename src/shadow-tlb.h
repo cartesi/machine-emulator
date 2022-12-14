@@ -80,7 +80,7 @@ static_assert(PMA_SHADOW_TLB_LENGTH == sizeof(shadow_tlb_state),
 /// \brief Gets a TLB entry index.
 /// \param vaddr Target virtual address.
 static inline uint64_t tlb_get_entry_index(uint64_t vaddr) {
-    return (vaddr >> PAGE_NUMBER_SHIFT) & (PMA_TLB_SIZE - 1);
+    return (vaddr >> PMA_PAGE_SIZE_LOG2) & (PMA_TLB_SIZE - 1);
 }
 
 /// \brief Checks for a TLB hit.

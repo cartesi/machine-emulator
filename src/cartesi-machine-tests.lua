@@ -260,18 +260,31 @@ local tests = {
   {"rv64ud-v-move.bin", 12003},
   {"rv64ud-v-recoding.bin", 10663},
   {"rv64ud-v-structural.bin", 6473},
--- spec v1.12 tests
+  {"fclass.bin", 457},
+  {"fcvt.bin", 17614},
+  {"fcmp.bin", 46787},
+  {"funary.bin", 2834},
+  {"fbinary_s.bin", 204284},
+  {"fbinary_d.bin", 204284},
+  {"fternary_s.bin", 216784},
+  {"fternary_d.bin", 216784},
+-- cartesi tests
   {"ebreak.bin", 21},
   {"pte_reserved_exception.bin", 34},
--- regression tests
   {"sd_pma_overflow.bin", 16},
   {"xpie_exceptions.bin", 51},
-  {"dont_write_x0.bin", 44},
+  {"dont_write_x0.bin", 68},
   {"mcycle_write.bin", 18},
-  {"lrsc_semantics.bin", 34},
-  {"csr_counters.bin", 119},
-  {"csr_semantics.bin", 40},
+  {"lrsc_semantics.bin", 35},
+  {"csr_counters.bin", 752},
+  {"csr_semantics.bin", 382},
+  {"amo.bin", 166},
+  {"access.bin", 101},
+  {"interrupts.bin", 8209},
+  {"mtime_interrupt.bin", 16404},
+  {"illegal_insn.bin", 976},
   {"version_check.bin", 30},
+  {"translate_vaddr.bin", 347},
 }
 
 -- Microarchitecture configuration
@@ -571,6 +584,10 @@ local function build_machine(test_name)
             yield_progress = false,
             yield_rollup = false
         },
+        flash_drive = {{
+          start = 0x80000000000000,
+          length = 0x40000,
+        }}
     }
     if uarch then
         config.uarch = uarch

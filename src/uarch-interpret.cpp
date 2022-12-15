@@ -82,6 +82,20 @@ struct decoded_insn {
     const uint8_t rs2;
 };
 
+template <typename STATE_ACCESS>
+static void dump_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const char *name) {
+#ifdef DUMP_INSN
+    fprintf(stderr, "%08" PRIx64, pc);
+    fprintf(stderr, ":   %08" PRIx32 "   ", insn);
+    fprintf(stderr, "%s\n", name);
+#else
+    (void) a;
+    (void) insn;
+    (void) pc;
+    (void) name;
+#endif
+}
+
 // Instruction decoders - decode all operands into `decoded_insn`
 
 static inline decoded_insn decode_s(uint32_t insn) {
@@ -174,16 +188,6 @@ static inline decoded_insn decode_iuj(uint32_t insn) {
     };
 }
 
-static inline decoded_insn decode_nothing(uint32_t insn) {
-    return decoded_insn{
-        insn,
-        0, // imm
-        0, // rd
-        0, // rs1
-        0, // rs2
-    };
-}
-
 // Execute instruction
 
 template <typename STATE_ACCESS>
@@ -207,7 +211,9 @@ static inline execute_status branch(STATE_ACCESS &a, uint64_t new_pc) {
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_LUI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_LUI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_iu(insn);
+    dump_insn(a, pc, insn, "lui");
     auto note = a.make_scoped_note("lui");
     (void) note;
     if (d.rd != 0) {
@@ -217,7 +223,9 @@ static inline execute_status execute_LUI(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_AUIPC(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_AUIPC(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_iu(insn);
+    dump_insn(a, pc, insn, "auipc");
     auto note = a.make_scoped_note("auipc");
     (void) note;
     if (d.rd != 0) {
@@ -227,7 +235,9 @@ static inline execute_status execute_AUIPC(STATE_ACCESS &a, const decoded_insn &
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_JAL(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_JAL(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_iuj(insn);
+    dump_insn(a, pc, insn, "jal");
     auto note = a.make_scoped_note("jal");
     (void) note;
     if (d.rd != 0) {
@@ -237,7 +247,9 @@ static inline execute_status execute_JAL(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_JALR(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_JALR(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "jalr");
     auto note = a.make_scoped_note("jalr");
     (void) note;
     auto rs1 = a.read_x(d.rs1);
@@ -248,7 +260,9 @@ static inline execute_status execute_JALR(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_BEQ(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_BEQ(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_isb(insn);
+    dump_insn(a, pc, insn, "beq");
     auto note = a.make_scoped_note("beq");
     (void) note;
     if (a.read_x(d.rs1) == a.read_x(d.rs2)) {
@@ -258,7 +272,9 @@ static inline execute_status execute_BEQ(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_BNE(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_BNE(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_isb(insn);
+    dump_insn(a, pc, insn, "bne");
     auto note = a.make_scoped_note("bne");
     (void) note;
     if (a.read_x(d.rs1) != a.read_x(d.rs2)) {
@@ -268,7 +284,9 @@ static inline execute_status execute_BNE(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_BLT(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_BLT(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_isb(insn);
+    dump_insn(a, pc, insn, "blt");
     auto note = a.make_scoped_note("blt");
     (void) note;
     if (static_cast<int64_t>(a.read_x(d.rs1)) < static_cast<int64_t>(a.read_x(d.rs2))) {
@@ -278,7 +296,9 @@ static inline execute_status execute_BLT(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_BGE(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_BGE(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_isb(insn);
+    dump_insn(a, pc, insn, "bge");
     auto note = a.make_scoped_note("bge");
     (void) note;
     if (static_cast<int64_t>(a.read_x(d.rs1)) >= static_cast<int64_t>(a.read_x(d.rs2))) {
@@ -288,7 +308,9 @@ static inline execute_status execute_BGE(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_BLTU(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_BLTU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_isb(insn);
+    dump_insn(a, pc, insn, "bltu");
     auto note = a.make_scoped_note("bltu");
     (void) note;
     if (a.read_x(d.rs1) < a.read_x(d.rs2)) {
@@ -298,7 +320,9 @@ static inline execute_status execute_BLTU(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_BGEU(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_BGEU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_isb(insn);
+    dump_insn(a, pc, insn, "bgeu");
     auto note = a.make_scoped_note("bgeu");
     (void) note;
     if (a.read_x(d.rs1) >= a.read_x(d.rs2)) {
@@ -308,7 +332,9 @@ static inline execute_status execute_BGEU(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_LB(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_LB(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "lb");
     auto note = a.make_scoped_note("lb");
     (void) note;
     int8_t i8 = 0;
@@ -320,7 +346,9 @@ static inline execute_status execute_LB(STATE_ACCESS &a, const decoded_insn &d, 
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_LHU(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_LHU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "lhu");
     auto note = a.make_scoped_note("lhu");
     (void) note;
     uint16_t u16 = 0;
@@ -332,7 +360,9 @@ static inline execute_status execute_LHU(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_LH(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_LH(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "lh");
     auto note = a.make_scoped_note("lh");
     (void) note;
     int16_t i16 = 0;
@@ -344,7 +374,9 @@ static inline execute_status execute_LH(STATE_ACCESS &a, const decoded_insn &d, 
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_LW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_LW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "lw");
     auto note = a.make_scoped_note("lw");
     (void) note;
     int32_t i32 = 0;
@@ -356,7 +388,9 @@ static inline execute_status execute_LW(STATE_ACCESS &a, const decoded_insn &d, 
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_LBU(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_LBU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "lbu");
     auto note = a.make_scoped_note("lbu");
     (void) note;
     uint8_t u8 = 0;
@@ -368,7 +402,9 @@ static inline execute_status execute_LBU(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SB(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SB(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_is(insn);
+    dump_insn(a, pc, insn, "sb");
     auto note = a.make_scoped_note("sb");
     (void) note;
     a.write_word(a.read_x(d.rs1) + d.imm, static_cast<uint8_t>(a.read_x(d.rs2)));
@@ -376,7 +412,9 @@ static inline execute_status execute_SB(STATE_ACCESS &a, const decoded_insn &d, 
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SH(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SH(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_is(insn);
+    dump_insn(a, pc, insn, "sh");
     auto note = a.make_scoped_note("sh");
     (void) note;
     a.write_word(a.read_x(d.rs1) + d.imm, static_cast<uint16_t>(a.read_x(d.rs2)));
@@ -384,7 +422,9 @@ static inline execute_status execute_SH(STATE_ACCESS &a, const decoded_insn &d, 
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_is(insn);
+    dump_insn(a, pc, insn, "sw");
     auto note = a.make_scoped_note("sw");
     (void) note;
     a.write_word(a.read_x(d.rs1) + d.imm, static_cast<uint32_t>(a.read_x(d.rs2)));
@@ -392,7 +432,9 @@ static inline execute_status execute_SW(STATE_ACCESS &a, const decoded_insn &d, 
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_ADDI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_ADDI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "addi");
     auto note = a.make_scoped_note("addi");
     (void) note;
     if (d.rd != 0) {
@@ -404,7 +446,9 @@ static inline execute_status execute_ADDI(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_ADDIW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_ADDIW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "addiw");
     auto note = a.make_scoped_note("addiw");
     (void) note;
     auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
@@ -417,7 +461,9 @@ static inline execute_status execute_ADDIW(STATE_ACCESS &a, const decoded_insn &
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLTI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SLTI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "slti");
     auto note = a.make_scoped_note("slti");
     (void) note;
     if (d.rd != 0) {
@@ -431,7 +477,9 @@ static inline execute_status execute_SLTI(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLTIU(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SLTIU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "sltiu");
     auto note = a.make_scoped_note("sltiu");
     (void) note;
     if (d.rd != 0) {
@@ -445,7 +493,9 @@ static inline execute_status execute_SLTIU(STATE_ACCESS &a, const decoded_insn &
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_XORI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_XORI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "xori");
     auto note = a.make_scoped_note("xori");
     (void) note;
     if (d.rd != 0) {
@@ -455,7 +505,9 @@ static inline execute_status execute_XORI(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_ORI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_ORI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "ori");
     auto note = a.make_scoped_note("ori");
     (void) note;
     if (d.rd != 0) {
@@ -465,7 +517,9 @@ static inline execute_status execute_ORI(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_ANDI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_ANDI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "andi");
     auto note = a.make_scoped_note("andi");
     (void) note;
     if (d.rd != 0) {
@@ -475,7 +529,9 @@ static inline execute_status execute_ANDI(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLLI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SLLI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_sh6(insn);
+    dump_insn(a, pc, insn, "slli");
     auto note = a.make_scoped_note("slli");
     (void) note;
     if (d.rd != 0) {
@@ -485,7 +541,9 @@ static inline execute_status execute_SLLI(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLLIW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SLLIW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_sh5(insn);
+    dump_insn(a, pc, insn, "slliw");
     auto note = a.make_scoped_note("slliw");
     (void) note;
     auto rs1 = static_cast<uint32_t>(a.read_x(d.rs1));
@@ -496,7 +554,9 @@ static inline execute_status execute_SLLIW(STATE_ACCESS &a, const decoded_insn &
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRLI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SRLI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_sh6(insn);
+    dump_insn(a, pc, insn, "srli");
     auto note = a.make_scoped_note("srli");
     (void) note;
     if (d.rd != 0) {
@@ -506,7 +566,9 @@ static inline execute_status execute_SRLI(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRLW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SRLW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "srlw");
     auto note = a.make_scoped_note("srlw");
     (void) note;
     auto rs1 = static_cast<uint32_t>(a.read_x(d.rs1));
@@ -518,7 +580,9 @@ static inline execute_status execute_SRLW(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRLIW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SRLIW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_sh5(insn);
+    dump_insn(a, pc, insn, "srliw");
     auto note = a.make_scoped_note("srliw");
     (void) note;
     auto rs1 = static_cast<uint32_t>(a.read_x(d.rs1));
@@ -530,7 +594,9 @@ static inline execute_status execute_SRLIW(STATE_ACCESS &a, const decoded_insn &
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRAI(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SRAI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_sh6(insn);
+    dump_insn(a, pc, insn, "srai");
     auto note = a.make_scoped_note("srai");
     (void) note;
     if (d.rd != 0) {
@@ -540,7 +606,9 @@ static inline execute_status execute_SRAI(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRAIW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SRAIW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_sh5(insn);
+    dump_insn(a, pc, insn, "sraiw");
     auto note = a.make_scoped_note("sraiw");
     (void) note;
     auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
@@ -551,7 +619,9 @@ static inline execute_status execute_SRAIW(STATE_ACCESS &a, const decoded_insn &
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_ADD(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_ADD(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "add");
     auto note = a.make_scoped_note("add");
     (void) note;
     if (d.rd != 0) {
@@ -561,7 +631,9 @@ static inline execute_status execute_ADD(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_ADDW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_ADDW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "addw");
     auto note = a.make_scoped_note("addw");
     (void) note;
     auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
@@ -575,7 +647,9 @@ static inline execute_status execute_ADDW(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SUB(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SUB(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "sub");
     auto note = a.make_scoped_note("sub");
     (void) note;
     if (d.rd != 0) {
@@ -585,7 +659,9 @@ static inline execute_status execute_SUB(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SUBW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SUBW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "subw");
     auto note = a.make_scoped_note("subw");
     (void) note;
     auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
@@ -599,7 +675,9 @@ static inline execute_status execute_SUBW(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLL(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SLL(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "sll");
     auto note = a.make_scoped_note("sll");
     (void) note;
     if (d.rd != 0) {
@@ -609,7 +687,9 @@ static inline execute_status execute_SLL(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLLW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SLLW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "sllw");
     auto note = a.make_scoped_note("sllw");
     (void) note;
     auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
@@ -622,7 +702,9 @@ static inline execute_status execute_SLLW(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLT(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SLT(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "slt");
     auto note = a.make_scoped_note("slt");
     (void) note;
     if (d.rd != 0) {
@@ -632,7 +714,9 @@ static inline execute_status execute_SLT(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SLTU(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SLTU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "sltu");
     auto note = a.make_scoped_note("sltu");
     (void) note;
     if (d.rd != 0) {
@@ -642,7 +726,9 @@ static inline execute_status execute_SLTU(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_XOR(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_XOR(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "xor");
     auto note = a.make_scoped_note("xor");
     (void) note;
     if (d.rd != 0) {
@@ -652,7 +738,9 @@ static inline execute_status execute_XOR(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRL(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SRL(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "srl");
     auto note = a.make_scoped_note("srl");
     (void) note;
     if (d.rd != 0) {
@@ -662,7 +750,9 @@ static inline execute_status execute_SRL(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRA(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SRA(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "sra");
     auto note = a.make_scoped_note("sra");
     (void) note;
     if (d.rd != 0) {
@@ -672,7 +762,9 @@ static inline execute_status execute_SRA(STATE_ACCESS &a, const decoded_insn &d,
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_SRAW(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_SRAW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "sraw");
     auto note = a.make_scoped_note("sraw");
     (void) note;
     auto rs1 = static_cast<int32_t>(a.read_x(d.rs1));
@@ -685,7 +777,9 @@ static inline execute_status execute_SRAW(STATE_ACCESS &a, const decoded_insn &d
 }
 
 template <typename STATE_ACCESS>
-static inline execute_status execute_OR(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static inline execute_status execute_OR(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "or");
     auto note = a.make_scoped_note("or");
     (void) note;
     if (d.rd != 0) {
@@ -695,7 +789,9 @@ static inline execute_status execute_OR(STATE_ACCESS &a, const decoded_insn &d, 
 }
 
 template <typename STATE_ACCESS>
-static execute_status execute_AND(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static execute_status execute_AND(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_ir(insn);
+    dump_insn(a, pc, insn, "and");
     auto note = a.make_scoped_note("and");
     (void) note;
     if (d.rd != 0) {
@@ -705,14 +801,17 @@ static execute_status execute_AND(STATE_ACCESS &a, const decoded_insn &d, uint64
 }
 
 template <typename STATE_ACCESS>
-static execute_status execute_FENCE(STATE_ACCESS &a, const decoded_insn &, uint64_t pc) {
+static execute_status execute_FENCE(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    dump_insn(a, pc, insn, "fence");
     auto note = a.make_scoped_note("fence");
     (void) note;
     return advance_pc(a, pc);
 }
 
 template <typename STATE_ACCESS>
-static execute_status execute_LWU(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static execute_status execute_LWU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "lwu");
     auto note = a.make_scoped_note("lwu");
     (void) note;
     uint32_t u32 = 0;
@@ -724,7 +823,9 @@ static execute_status execute_LWU(STATE_ACCESS &a, const decoded_insn &d, uint64
 }
 
 template <typename STATE_ACCESS>
-static execute_status execute_LD(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static execute_status execute_LD(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_i_l(insn);
+    dump_insn(a, pc, insn, "ld");
     auto note = a.make_scoped_note("ld");
     (void) note;
     uint64_t u64 = 0;
@@ -736,249 +837,143 @@ static execute_status execute_LD(STATE_ACCESS &a, const decoded_insn &d, uint64_
 }
 
 template <typename STATE_ACCESS>
-static execute_status execute_SD(STATE_ACCESS &a, const decoded_insn &d, uint64_t pc) {
+static execute_status execute_SD(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+    auto d = decode_s(insn);
+    dump_insn(a, pc, insn, "sd");
     auto note = a.make_scoped_note("sd");
     (void) note;
     a.write_word(a.read_x(d.rs1) + d.imm, a.read_x(d.rs2));
     return advance_pc(a, pc);
 }
 
-using decode_fn = decoded_insn (*)(uint32_t);
-
-#include "clint.h"
-
-template <typename STATE_ACCESS>
-static inline void fetch_insn(STATE_ACCESS &a, uint64_t *pc, uint32_t *insn) {
-    *pc = a.read_pc();
-    a.read_word(*pc, insn);
+/// \brief Returns true if the opcode field of an instruction matches the provided argument
+static inline bool insn_match_opcode(uint32_t insn, uint32_t opcode) {
+    return ((insn & 0b1111111)) == opcode;
 }
 
-/// \brief Obtains the funct3 and opcode fields an instruction.
-/// \param insn Instruction.
-static inline uint32_t insn_get_funct3_00000_opcode(uint32_t insn) {
-    return insn & 0b111000001111111;
+/// \brief Returns true if the opcode and funct3 fields of an instruction match the provided arguments
+static inline bool insn_match_opcode_funct3(uint32_t insn, uint32_t opcode, uint32_t funct3) {
+    constexpr uint32_t mask = (0b111 << 12) | 0b1111111;
+    return ((insn & mask)) == ((funct3 << 12) | opcode);
 }
 
-/// \brief Obtains the 5 most significant bits of the funct7 field from an instruction.
-/// \param insn Instruction.
-static inline uint32_t insn_get_funct7_sr2(uint32_t insn) {
-    // std::cerr << "funct7_sr2: " << std::bitset<5>((insn >> 27)) << '\n';
-    return insn >> 27;
+/// \brief Returns true if the opcode, funct3 and funct7 fields of an instruction match the provided arguments
+static inline bool insn_match_opcode_funct3_funct7(uint32_t insn, uint32_t opcode, uint32_t funct3, uint32_t funct7) {
+    constexpr uint32_t mask = (0b1111111 << 25) | (0b111 << 12) | 0b1111111;
+    return ((insn & mask)) == ((funct7 << 25) | (funct3 << 12) | opcode);
 }
 
-/// \brief Obtains the 6 most significant bits of the funct7 field from an instruction.
-/// \param insn Instruction.
-static inline uint32_t insn_get_funct7_sr1(uint32_t insn) {
-    // std::cerr << "funct7_sr1: " << std::bitset<6>((insn >> 26)) << '\n';
-    return insn >> 26;
-}
-
-/// \brief Obtains the funct7 field from an instruction.
-/// \param insn Instruction.
-static inline uint32_t insn_get_funct7(uint32_t insn) {
-    // std::cerr << "funct7: " << std::bitset<7>((insn >> 25)) << '\n';
-    return insn >> 25;
+/// \brief Returns true if the opcode, funct3 and 6 most significant bits of funct7 fields of an instruction match the
+/// provided arguments
+static inline bool insn_match_opcode_funct3_funct7_sr1(uint32_t insn, uint32_t opcode, uint32_t funct3,
+    uint32_t funct7_sr1) {
+    constexpr uint32_t mask = (0b111111 << 26) | (0b111 << 12) | 0b1111111;
+    return ((insn & mask)) == ((funct7_sr1 << 26) | (funct3 << 12) | opcode);
 }
 
 // Decode and execute one instruction
 template <typename STATE_ACCESS>
 static inline execute_status execute_insn(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
-    switch (static_cast<insn_funct3_00000_opcode>(insn_get_funct3_00000_opcode(insn))) {
-        case insn_funct3_00000_opcode::LB:
-            return execute_LB(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::LH:
-            return execute_LH(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::LW:
-            return execute_LW(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::LD:
-            return execute_LD(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::LBU:
-            return execute_LBU(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::LHU:
-            return execute_LHU(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::LWU:
-            return execute_LWU(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::SB:
-            return execute_SB(a, decode_is(insn), pc);
-        case insn_funct3_00000_opcode::SH:
-            return execute_SH(a, decode_is(insn), pc);
-        case insn_funct3_00000_opcode::SW:
-            return execute_SW(a, decode_is(insn), pc);
-        case insn_funct3_00000_opcode::SD:
-            return execute_SD(a, decode_s(insn), pc);
-        case insn_funct3_00000_opcode::FENCE:
-            return execute_FENCE(a, decode_nothing(insn), pc);
-        case insn_funct3_00000_opcode::ADDI:
-            return execute_ADDI(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::SLLI:
-            return execute_SLLI(a, decode_i_sh6(insn), pc);
-        case insn_funct3_00000_opcode::SLTI:
-            return execute_SLTI(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::SLTIU:
-            return execute_SLTIU(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::XORI:
-            return execute_XORI(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::ORI:
-            return execute_ORI(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::ANDI:
-            return execute_ANDI(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::ADDIW:
-            return execute_ADDIW(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::SLLIW:
-            return execute_SLLIW(a, decode_i_sh5(insn), pc);
-        case insn_funct3_00000_opcode::SLLW:
-            return execute_SLLW(a, decode_ir(insn), pc);
-        case insn_funct3_00000_opcode::BEQ:
-            return execute_BEQ(a, decode_isb(insn), pc);
-        case insn_funct3_00000_opcode::BNE:
-            return execute_BNE(a, decode_isb(insn), pc);
-        case insn_funct3_00000_opcode::BLT:
-            return execute_BLT(a, decode_isb(insn), pc);
-        case insn_funct3_00000_opcode::BGE:
-            return execute_BGE(a, decode_isb(insn), pc);
-        case insn_funct3_00000_opcode::BLTU:
-            return execute_BLTU(a, decode_isb(insn), pc);
-        case insn_funct3_00000_opcode::BGEU:
-            return execute_BGEU(a, decode_isb(insn), pc);
-        case insn_funct3_00000_opcode::JALR:
-            return execute_JALR(a, decode_i_l(insn), pc);
-        case insn_funct3_00000_opcode::AUIPC_000:
-        case insn_funct3_00000_opcode::AUIPC_001:
-        case insn_funct3_00000_opcode::AUIPC_010:
-        case insn_funct3_00000_opcode::AUIPC_011:
-        case insn_funct3_00000_opcode::AUIPC_100:
-        case insn_funct3_00000_opcode::AUIPC_101:
-        case insn_funct3_00000_opcode::AUIPC_110:
-        case insn_funct3_00000_opcode::AUIPC_111:
-            return execute_AUIPC(a, decode_iu(insn), pc);
-        case insn_funct3_00000_opcode::LUI_000:
-        case insn_funct3_00000_opcode::LUI_001:
-        case insn_funct3_00000_opcode::LUI_010:
-        case insn_funct3_00000_opcode::LUI_011:
-        case insn_funct3_00000_opcode::LUI_100:
-        case insn_funct3_00000_opcode::LUI_101:
-        case insn_funct3_00000_opcode::LUI_110:
-        case insn_funct3_00000_opcode::LUI_111:
-            return execute_LUI(a, decode_iu(insn), pc);
-        case insn_funct3_00000_opcode::JAL_000:
-        case insn_funct3_00000_opcode::JAL_001:
-        case insn_funct3_00000_opcode::JAL_010:
-        case insn_funct3_00000_opcode::JAL_011:
-        case insn_funct3_00000_opcode::JAL_100:
-        case insn_funct3_00000_opcode::JAL_101:
-        case insn_funct3_00000_opcode::JAL_110:
-        case insn_funct3_00000_opcode::JAL_111:
-            return execute_JAL(a, decode_iuj(insn), pc);
-        case insn_funct3_00000_opcode::SRLI_SRAI:
-            switch (static_cast<insn_SRLI_SRAI_funct7_sr1>(insn_get_funct7_sr1(insn))) {
-                case insn_SRLI_SRAI_funct7_sr1::SRLI:
-                    return execute_SRLI(a, decode_i_sh6(insn), pc);
-                case insn_SRLI_SRAI_funct7_sr1::SRAI:
-                    return execute_SRAI(a, decode_i_sh6(insn), pc);
-                default:
-                    break;
-            }
-            break;
-        case insn_funct3_00000_opcode::SRLIW_SRAIW:
-            switch (static_cast<insn_SRLIW_SRAIW_funct7>(insn_get_funct7(insn))) {
-                case insn_SRLIW_SRAIW_funct7::SRLIW:
-                    return execute_SRLIW(a, decode_i_sh5(insn), pc);
-                case insn_SRLIW_SRAIW_funct7::SRAIW:
-                    return execute_SRAIW(a, decode_i_sh5(insn), pc);
-                default:
-                    break;
-            }
-            break;
-        case insn_funct3_00000_opcode::ADD_MUL_SUB:
-            switch (static_cast<insn_ADD_MUL_SUB_funct7>(insn_get_funct7(insn))) {
-                case insn_ADD_MUL_SUB_funct7::ADD:
-                    return execute_ADD(a, decode_ir(insn), pc);
-                case insn_ADD_MUL_SUB_funct7::SUB:
-                    return execute_SUB(a, decode_ir(insn), pc);
-                default:
-                    break;
-            }
-            break;
-        case insn_funct3_00000_opcode::SLL_MULH:
-            switch (static_cast<insn_SLL_MULH_funct7>(insn_get_funct7(insn))) {
-                case insn_SLL_MULH_funct7::SLL:
-                    return execute_SLL(a, decode_ir(insn), pc);
-                default:
-                    break;
-            }
-            break;
-        case insn_funct3_00000_opcode::SLT_MULHSU:
-            switch (static_cast<insn_SLT_MULHSU_funct7>(insn_get_funct7(insn))) {
-                case insn_SLT_MULHSU_funct7::SLT:
-                    return execute_SLT(a, decode_ir(insn), pc);
-                default:
-                    break;
-            }
-            break;
-        case insn_funct3_00000_opcode::SLTU_MULHU:
-            switch (static_cast<insn_SLTU_MULHU_funct7>(insn_get_funct7(insn))) {
-                case insn_SLTU_MULHU_funct7::SLTU:
-                    return execute_SLTU(a, decode_ir(insn), pc);
-                default:
-                    break;
-            }
-            break;
-        case insn_funct3_00000_opcode::XOR_DIV:
-            switch (static_cast<insn_XOR_DIV_funct7>(insn_get_funct7(insn))) {
-                case insn_XOR_DIV_funct7::XOR:
-                    return execute_XOR(a, decode_ir(insn), pc);
-                default:
-                    break;
-            }
-            break;
-        case insn_funct3_00000_opcode::SRL_DIVU_SRA:
-            switch (static_cast<insn_SRL_DIVU_SRA_funct7>(insn_get_funct7(insn))) {
-                case insn_SRL_DIVU_SRA_funct7::SRL:
-                    return execute_SRL(a, decode_ir(insn), pc);
-                case insn_SRL_DIVU_SRA_funct7::SRA:
-                    return execute_SRA(a, decode_ir(insn), pc);
-                default:
-                    break;
-            }
-            break;
-        case insn_funct3_00000_opcode::OR_REM:
-            switch (static_cast<insn_OR_REM_funct7>(insn_get_funct7(insn))) {
-                case insn_OR_REM_funct7::OR:
-                    return execute_OR(a, decode_ir(insn), pc);
-                default:
-                    break;
-            }
-            break;
-        case insn_funct3_00000_opcode::AND_REMU:
-            switch (static_cast<insn_AND_REMU_funct7>(insn_get_funct7(insn))) {
-                case insn_AND_REMU_funct7::AND:
-                    return execute_AND(a, decode_ir(insn), pc);
-                default:
-                    break;
-            }
-            break;
-        case insn_funct3_00000_opcode::ADDW_MULW_SUBW:
-            switch (static_cast<insn_ADDW_MULW_SUBW_funct7>(insn_get_funct7(insn))) {
-                case insn_ADDW_MULW_SUBW_funct7::ADDW:
-                    return execute_ADDW(a, decode_ir(insn), pc);
-                case insn_ADDW_MULW_SUBW_funct7::SUBW:
-                    return execute_SUBW(a, decode_ir(insn), pc);
-                default:
-                    break;
-            }
-            break;
-        case insn_funct3_00000_opcode::SRLW_DIVUW_SRAW:
-            switch (static_cast<insn_SRLW_DIVUW_SRAW_funct7>(insn_get_funct7(insn))) {
-                case insn_SRLW_DIVUW_SRAW_funct7::SRLW:
-                    return execute_SRLW(a, decode_ir(insn), pc);
-                case insn_SRLW_DIVUW_SRAW_funct7::SRAW:
-                    return execute_SRAW(a, decode_ir(insn), pc);
-                default:
-                    break;
-            }
-            break;
-        default:
-            break;
+    if (insn_match_opcode_funct3(insn, 0b0010011, 0b000)) {
+        return execute_ADDI(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0000011, 0b011)) {
+        return execute_LD(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b1100011, 0b110)) {
+        return execute_BLTU(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b1100011, 0b000)) {
+        return execute_BEQ(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0010011, 0b111)) {
+        return execute_ANDI(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0110011, 0b000, 0b0000000)) {
+        return execute_ADD(a, insn, pc);
+    } else if (insn_match_opcode(insn, 0b1101111)) {
+        return execute_JAL(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7_sr1(insn, 0b0010011, 0b001, 0b000000)) {
+        return execute_SLLI(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0110011, 0b111, 0b0000000)) {
+        return execute_AND(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0100011, 0b011)) {
+        return execute_SD(a, insn, pc);
+    } else if (insn_match_opcode(insn, 0b0110111)) {
+        return execute_LUI(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b1100111, 0b000)) {
+        return execute_JALR(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0011011, 0b000)) {
+        return execute_ADDIW(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7_sr1(insn, 0b0010011, 0b101, 0b000000)) {
+        return execute_SRLI(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0011011, 0b101, 0b0000000)) {
+        return execute_SRLIW(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b1100011, 0b001)) {
+        return execute_BNE(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0000011, 0b010)) {
+        return execute_LW(a, insn, pc);
+    } else if (insn_match_opcode(insn, 0b0010111)) {
+        return execute_AUIPC(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b1100011, 0b111)) {
+        return execute_BGEU(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0111011, 0b000, 0b0000000)) {
+        return execute_ADDW(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7_sr1(insn, 0b0010011, 0b101, 0b010000)) {
+        return execute_SRAI(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0110011, 0b110, 0b0000000)) {
+        return execute_OR(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0011011, 0b101, 0b0100000)) {
+        return execute_SRAIW(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b1100011, 0b101)) {
+        return execute_BGE(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0110011, 0b000, 0b0100000)) {
+        return execute_SUB(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0000011, 0b100)) {
+        return execute_LBU(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0011011, 0b001, 0b0000000)) {
+        return execute_SLLIW(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0110011, 0b101, 0b0000000)) {
+        return execute_SRL(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0110011, 0b100, 0b0000000)) {
+        return execute_XOR(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0100011, 0b010)) {
+        return execute_SW(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0110011, 0b001, 0b0000000)) {
+        return execute_SLL(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b1100011, 0b100)) {
+        return execute_BLT(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0100011, 0b000)) {
+        return execute_SB(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0111011, 0b000, 0b0100000)) {
+        return execute_SUBW(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0010011, 0b100)) {
+        return execute_XORI(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0110011, 0b101, 0b0100000)) {
+        return execute_SRA(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0000011, 0b101)) {
+        return execute_LHU(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0100011, 0b001)) {
+        return execute_SH(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0111011, 0b101, 0b0000000)) {
+        return execute_SRLW(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0000011, 0b110)) {
+        return execute_LWU(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0111011, 0b001, 0b0000000)) {
+        return execute_SLLW(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0000011, 0b000)) {
+        return execute_LB(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0110011, 0b011, 0b0000000)) {
+        return execute_SLTU(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0111011, 0b101, 0b0100000)) {
+        return execute_SRAW(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0000011, 0b001)) {
+        return execute_LH(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0010011, 0b110)) {
+        return execute_ORI(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0010011, 0b011)) {
+        return execute_SLTIU(a, insn, pc);
+    } else if (insn_match_opcode_funct3_funct7(insn, 0b0110011, 0b010, 0b0000000)) {
+        return execute_SLT(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0010011, 0b010)) {
+        return execute_SLTI(a, insn, pc);
+    } else if (insn_match_opcode_funct3(insn, 0b0001111, 0b000)) {
+        return execute_FENCE(a, insn, pc);
     }
 
     throw std::runtime_error("illegal instruction");
@@ -988,9 +983,9 @@ template <typename STATE_ACCESS>
 uarch_interpreter_status uarch_interpret(STATE_ACCESS &a, uint64_t cycle_end) {
     auto cycle = a.read_cycle();
     while (cycle < cycle_end) {
-        uint64_t pc = 0;
         uint32_t insn = 0;
-        fetch_insn(a, &pc, &insn);
+        auto pc = a.read_pc();
+        a.read_word(pc, &insn);
         auto status = execute_insn(a, insn, pc);
         if (status == execute_status::halt) {
             a.write_cycle(0);

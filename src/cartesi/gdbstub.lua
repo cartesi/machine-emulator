@@ -314,6 +314,21 @@ function GDBStub:_handle_query(_, query)
         end
       end
       return self:_send_ok()
+    elseif payload:find('^breakpc [xXa-fA-F0-9]+$') then
+      local pcstr = payload:match('^breakpc ([xXa-fA-F0-9]+)$')
+      local pc = tonumber(pcstr)
+      if pc then
+        if self.breakpoints[pc] then
+          self.breakpoints[pc] = nil
+          self:_send_rcmd_reply(string.format("disabled PC breakpoint at 0x%x\n", pc))
+        else
+          self:_send_rcmd_reply(string.format("enabled PC breakpoint at 0x%x\n", pc))
+          self.breakpoints[pc] = true
+        end
+      else
+        self:_send_rcmd_reply(string.format("ERROR: malformed PC address '%s'\n", pcstr))
+      end
+      return self:_send_ok()
     else -- invalid command
       return self:_send_unsupported()
     end

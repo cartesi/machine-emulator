@@ -44,6 +44,11 @@ define lua
     monitor lua $arg0
 end
 
+# toggle a hardware breakpoint at PC
+define breakpc
+    monitor breakpc $arg0
+end
+
 # dump registers (example on how to execute arbitrary Lua code)
 define dump_regs
     lua "machine:dump_regs() return 'read the machine registers in the machine terminal'"
@@ -52,3 +57,4 @@ end
 # shortcuts
 alias sc=stepc
 alias su=stepu
+alias bpc=breakpc

@@ -28,10 +28,12 @@ The following is a list of all custom GDB commands contained in `tools/gdb/gdbin
 - `hash` print machine hash in the current state
 - `store <dir>` store machine state into `dir`
 - `lua "<code>"` execute an arbitrary machine Lua code, e.g. `lua "machine:dump_regs()"`
+- `breakpc <address>` toggle a hardware breakpoint at PC
 
 Aliases:
 - `sc` alias for `stepc`
 - `su` alias for `stepu`
+- `bpc` alias for `breakpc`
 
 ## Tips
 
@@ -40,6 +42,7 @@ Aliases:
 - Use `layout asm` to open a window to see the current instructions being executed.
 - Use `layout regs` to open a window to see all registers values and highlight register changes.
 - Use `break *0x2000` to break at a specific PC (`0x2000` in this case) and then `continue` to let the machine run until reaching that PC.
+- Use `breakpc 0x2000` to break at a specific PC even when the memory range is not available yet, and then `continue` to let the machine run until reaching that PC.
 - If you need to place breakpoints after kernel boot, placing it at the session start and letting it continue can be very slow. Prefer to use `stepu <n>` where `<n>` is a number of cycles large enough to let the kernel boot first, and just later after boot place your breakpoint and let it continue.
 
 ## Improving debugging experience
@@ -51,18 +54,9 @@ You could add the following lines to `$HOME/.gdbinit` to improve your debugging 
 set verbose off
 set confirm off
 
-# make gdb never pause in its output
-set height 0
-set width 0
-
 # save command history
 set history filename ~/.gdb_history
 set history save
-
-# default gdb layout
-layout asm
-layout regs
-focus cmd
 
 # cartesi machine debugging commands
 source <EMULATOR_PATH>/tools/gdb/gdbinit

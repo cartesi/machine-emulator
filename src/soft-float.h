@@ -50,6 +50,7 @@
 
 #include "compiler-defines.h"
 #include "riscv-constants.h"
+#include "uint128.h"
 
 namespace cartesi {
 
@@ -77,19 +78,10 @@ struct make_long_uint<uint32_t> {
     using type = uint64_t;
 };
 
-#ifdef __SIZEOF_INT128__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-using uint128_t = unsigned __int128;
-#pragma GCC diagnostic pop
-#endif
-
-#ifdef __SIZEOF_INT128__
 template <>
 struct make_long_uint<uint64_t> {
     using type = uint128_t;
 };
-#endif
 
 /// \brief Compute multiplication of a * b.
 /// \param plow is used to store the high bits of the result.
@@ -99,8 +91,8 @@ static inline UINT mul_u(UINT *plow, UINT a, UINT b) {
     using ULONG = typename make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
     ULONG r = static_cast<ULONG>(a) * static_cast<ULONG>(b);
-    *plow = r;
-    return r >> UINT_SIZE;
+    *plow = static_cast<UINT>(r);
+    return static_cast<UINT>(r >> UINT_SIZE);
 }
 
 /// \brief Compute division and remainder of a / b, with a = (ah << UINT_SIZE) | al.
@@ -111,8 +103,8 @@ static inline UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT b) {
     using ULONG = typename make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
     ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
-    *pr = a % b;
-    return a / b;
+    *pr = static_cast<UINT>(a % b);
+    return static_cast<UINT>(a / b);
 }
 
 /// \brief Compute sqrt(a) with a = ah*2^UINT_SIZE+al and a < 2^(UINT_SIZE - 2).
@@ -140,83 +132,9 @@ static inline bool sqrtrem_u(UINT *pr, UINT ah, UINT al) {
         s = u;
         u = ((a / s) + s) / 2;
     } while (u < s);
-    *pr = s;
+    *pr = static_cast<UINT>(s);
     return (a - s * s) != 0;
 }
-
-// Specialization for compilers without support for uint128_t
-#ifndef __SIZEOF_INT128__
-
-template <>
-inline uint64_t mul_u(uint64_t *plow, uint64_t a, uint64_t b) {
-    uint32_t a0 = a;
-    uint32_t a1 = a >> 32;
-    uint32_t b0 = b;
-    uint32_t b1 = b >> 32;
-
-    uint64_t r00 = static_cast<uint64_t>(a0) * static_cast<uint64_t>(b0);
-    uint64_t r01 = static_cast<uint64_t>(a0) * static_cast<uint64_t>(b1);
-    uint64_t r10 = static_cast<uint64_t>(a1) * static_cast<uint64_t>(b0);
-    uint64_t r11 = static_cast<uint64_t>(a1) * static_cast<uint64_t>(b1);
-
-    uint32_t r0 = r00;
-    uint64_t c = (r00 >> 32) + static_cast<uint32_t>(r01) + static_cast<uint32_t>(r10);
-    uint32_t r1 = c;
-    c = (c >> 32) + (r01 >> 32) + (r10 >> 32) + static_cast<uint32_t>(r11);
-    uint32_t r2 = c;
-    uint32_t r3 = (c >> 32) + (r11 >> 32);
-
-    *plow = (static_cast<uint64_t>(r1) << 32) | r0;
-    return (static_cast<uint64_t>(r3) << 32) | r2;
-}
-
-template <>
-inline uint64_t divrem_u(uint64_t *pr, uint64_t a1, uint64_t a0, uint64_t b) {
-    assert(a1 < b);
-    int qb = 0, ab = 0;
-    for (int i = 0; i < 64; i++) {
-        ab = a1 >> (64 - 1);
-        a1 = (a1 << 1) | (a0 >> (64 - 1));
-        if (ab || a1 >= b) {
-            a1 -= b;
-            qb = 1;
-        } else {
-            qb = 0;
-        }
-        a0 = (a0 << 1) | qb;
-    }
-    *pr = a1;
-    return a0;
-}
-
-template <>
-inline bool sqrtrem_u(uint64_t *pr, uint64_t a1, uint64_t a0) {
-    int l = 0;
-    // 2^l >= a
-    if (a1 != 0) {
-        l = 2 * 64 - clz(a1 - 1);
-    } else {
-        if (a0 == 0) {
-            *pr = 0;
-            return false;
-        }
-        l = 64 - clz(a0 - 1);
-    }
-    uint64_t u = static_cast<uint64_t>(1) << ((l + 1) / 2);
-    uint64_t s = 0;
-    do {
-        s = u;
-        uint64_t r = 0;
-        uint64_t q = divrem_u(&r, a1, a0, s);
-        u = (q + s) / 2;
-    } while (u < s);
-    uint64_t sq0 = 0;
-    uint64_t sq1 = mul_u(&sq0, s, s);
-    *pr = s;
-    return sq0 != a0 || sq1 != a1;
-}
-
-#endif // __SIZEOF_INT128__
 
 /// \class i_sfloat
 /// \brief Interface for software floating-point operations.

@@ -15,9 +15,6 @@
 //
 
 #ifdef MICROARCHITECTURE
-/// This will go away when we start using a different toolchain to compile interpret.cpp to run in the microarch.
-#undef __SIZEOF_INT128__
-
 #include "uarch-machine-state-access.h"
 #include "uarch-runtime.h"
 #else
@@ -102,55 +99,7 @@
 #include "soft-float.h"
 #include "strict-aliasing.h"
 #include "translate-virtual-address.h"
-
-#ifdef __SIZEOF_INT128__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-using int128_t = __int128;
-using uint128_t = unsigned __int128;
-#pragma GCC diagnostic pop
-#endif
-
-static uint64_t mul64hu(uint64_t a, uint64_t b) {
-#ifdef __SIZEOF_INT128__
-    return static_cast<uint64_t>((static_cast<uint128_t>(a) * static_cast<uint128_t>(b)) >> 64);
-#else
-    uint64_t al = static_cast<uint64_t>(static_cast<uint32_t>(a));
-    uint64_t ah = a >> 32;
-    uint64_t bl = static_cast<uint64_t>(static_cast<uint32_t>(b));
-    uint64_t bh = b >> 32;
-    uint64_t pl = al * bl;
-    uint64_t pm0 = al * bh;
-    uint64_t pm1 = ah * bl;
-    uint64_t ph = ah * bh;
-    uint32_t c = static_cast<uint32_t>(((pl >> 32) + static_cast<uint32_t>(pm0) + static_cast<uint32_t>(pm1)) >> 32);
-    return ph + (pm0 >> 32) + (pm1 >> 32) + c;
-#endif
-}
-
-static int64_t mul64hsu(int64_t a, uint64_t b) {
-#ifdef __SIZEOF_INT128__
-    return static_cast<int64_t>((static_cast<int128_t>(a) * static_cast<int128_t>(b)) >> 64);
-#else
-    int64_t h = static_cast<int64_t>(mul64hu(static_cast<uint64_t>(a), static_cast<uint64_t>(b)));
-    if (a < INT64_C(0))
-        h -= b;
-    return h;
-#endif
-}
-
-static int64_t mul64h(int64_t a, int64_t b) {
-#ifdef __SIZEOF_INT128__
-    return static_cast<int64_t>((static_cast<int128_t>(a) * static_cast<int64_t>(b)) >> 64);
-#else
-    int64_t h = static_cast<int64_t>(mul64hu(static_cast<uint64_t>(a), static_cast<uint64_t>(b)));
-    if (a < INT64_C(0))
-        h -= b;
-    if (b < INT64_C(0))
-        h -= a;
-    return h;
-#endif
-}
+#include "uint128.h"
 
 namespace cartesi {
 
@@ -2678,7 +2627,8 @@ static FORCE_INLINE execute_status execute_MULH(STATE_ACCESS &a, uint64_t &pc, u
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         auto srs1 = static_cast<int64_t>(rs1);
         auto srs2 = static_cast<int64_t>(rs2);
-        return static_cast<uint64_t>(mul64h(srs1, srs2));
+        return static_cast<uint64_t>(
+            static_cast<int64_t>((static_cast<int128_t>(srs1) * static_cast<int64_t>(srs2)) >> 64));
     });
 }
 
@@ -2688,7 +2638,8 @@ static FORCE_INLINE execute_status execute_MULHSU(STATE_ACCESS &a, uint64_t &pc,
     dump_insn(a, pc, insn, "mulhsu");
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         auto srs1 = static_cast<int64_t>(rs1);
-        return static_cast<uint64_t>(mul64hsu(srs1, rs2));
+        return static_cast<uint64_t>(
+            static_cast<int64_t>((static_cast<int128_t>(srs1) * static_cast<int128_t>(rs2)) >> 64));
     });
 }
 
@@ -2696,7 +2647,9 @@ static FORCE_INLINE execute_status execute_MULHSU(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_MULHU(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "mulhu");
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t { return mul64hu(rs1, rs2); });
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        return static_cast<uint64_t>((static_cast<uint128_t>(rs1) * static_cast<uint128_t>(rs2)) >> 64);
+    });
 }
 
 /// \brief Implementation of the DIV instruction.

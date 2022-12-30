@@ -6,7 +6,7 @@ RUN apt-get update && \
         build-essential wget git \
         libreadline-dev libboost-coroutine-dev libboost-context-dev \
         libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev \
-        ca-certificates automake libtool patchelf cmake pkg-config lua5.3 liblua5.3-dev luarocks && \
+        ca-certificates automake libtool patchelf cmake pkg-config lua5.3 liblua5.3-dev luarocks libb64-dev && \
     rm -rf /var/lib/apt/lists/*
 
 RUN luarocks install luasocket && \
@@ -40,6 +40,7 @@ RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
     libgomp1 \
     lua5.3 \
     genext2fs \
+    libb64-0d \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/opt/cartesi/bin:${PATH}"

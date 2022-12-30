@@ -18,6 +18,8 @@
 --
 -- Note: for grpc machine test to work, remote-cartesi-machine must run on
 -- same computer and remote-cartesi-machine execution path must be provided
+-- Note: for jsongrpc machine test to work, jsonrpc-remote-cartesi-machine must run on
+-- same computer and jsonrpc-remote-cartesi-machine execution path must be provided
 
 local cartesi = require "cartesi"
 local cartesi_util = require "cartesi.util"
@@ -40,8 +42,8 @@ Usage:
 where options are:
 
   --remote-address=<address>
-    run tests on a remote cartesi machine (when machine type is grpc).
-    (requires --checkin-address)
+    run tests on a remote cartesi machine (when machine type is grpc or jsonrpc).
+    (grcp requires --checkin-address to be defined as well)
 
   --checkin-address=<address>
     address of the local checkin server to run
@@ -203,18 +205,23 @@ local function get_cpu_csr_test_values()
 end
 
 local machine_type = assert(arguments[1], "missing machine type")
-assert(machine_type == "local" or machine_type == "grpc", "unknown machine type, should be 'local' or 'grpc'")
+assert(machine_type == "local" or machine_type == "grpc" or machine_type == "jsonrpc",
+    "unknown machine type, should be 'local', 'grpc', or 'jsonrpc'")
+local protocol
 if (machine_type == "grpc") then
     assert(remote_address ~= nil, "remote cartesi machine address is missing")
-    assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
-end
-if remote_address then
     assert(checkin_address, "missing checkin address")
-    cartesi.grpc = require("cartesi.grpc")
+    assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
+    protocol = require("cartesi.grpc")
+end
+if (machine_type == "jsonrpc") then
+    assert(remote_address ~= nil, "remote cartesi machine address is missing")
+    assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
+    protocol = require("cartesi.jsonrpc")
 end
 
 local function connect()
-    local remote = cartesi.grpc.stub(remote_address, checkin_address)
+    local remote = protocol.stub(remote_address, checkin_address)
     local version = assert(remote.get_version(),
         "could not connect to remote cartesi machine at " .. remote_address)
     local shutdown = function() remote.shutdown() end
@@ -260,7 +267,7 @@ local function build_machine(type)
     }
 
     local new_machine = nil
-    if (type == "grpc") then
+    if (type ~= "local") then
         if not remote then remote = connect() end
         new_machine = assert(remote.machine(config, runtime))
     else
@@ -343,7 +350,7 @@ print("\n\ntesting get_csr_address function binding")
 do_test("should return address value for csr register",
     function(machine)
         local module = cartesi
-        if (machine_type == "grpc") then
+        if (machine_type ~= "local") then
             if not remote then remote = connect() end
             module = remote
         end
@@ -359,7 +366,7 @@ print("\n\ntesting get_x_address function binding")
 do_test("should return address value for x registers",
     function(machine)
         local module = cartesi
-        if (machine_type == "grpc") then
+        if (machine_type ~= "local") then
             if not remote then remote = connect() end
             module = remote
         end
@@ -435,7 +442,7 @@ print("\n\ntesting get_default_config function binding")
 do_test("should return default machine config",
     function(machine)
         local module = cartesi
-        if (machine_type == "grpc") then
+        if (machine_type ~= "local") then
             if not remote then remote = connect() end
             module = remote
         end
@@ -742,7 +749,7 @@ print("\n\ntesting step and verification")
 do_test("machine step should pass verifications",
     function(machine)
         local module = cartesi
-        if (type == "grpc") then
+        if (machine_type ~= "local") then
             if not remote then remote = connect() end
             module = remote
         end

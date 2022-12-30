@@ -71,6 +71,9 @@ LIBCARTESI_PROTOBUF_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -instal
 LIBCARTESI_GRPC_Darwin=libcartesi_grpc.dylib
 LIBCARTESI_GRPC_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_GRPC_Darwin)'
 LIBCARTESI_GRPC_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
+LIBCARTESI_JSONRPC_Darwin=libcartesi_jsonrpc.dylib
+LIBCARTESI_JSONRPC_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_JSONRPC_Darwin)'
+LIBCARTESI_JSONRPC_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
 CARTESI_EXECUTABLE_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
 PROFILE_DATA_Darwin=default.profdata
 
@@ -84,6 +87,7 @@ BOOST_CORO_LIB_Linux:=-lboost_coroutine -lboost_context
 BOOST_FILESYSTEM_LIB_Linux:=-lboost_system -lboost_filesystem
 BOOST_LOG_LIB_Linux:=-lboost_log -lboost_log_setup -lboost_thread
 BOOST_PROCESS_LIB_Linux:=-lpthread
+B64_LIB_Linux:=-lb64
 BOOST_INC_Linux=
 GRPC_INC_Linux:=-I$(BUILDDIR)/include
 GRPC_LIB_Linux:=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
@@ -96,6 +100,9 @@ LIBCARTESI_PROTOBUF_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
 LIBCARTESI_GRPC_Linux=libcartesi_grpc.so
 LIBCARTESI_GRPC_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
 LIBCARTESI_GRPC_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
+LIBCARTESI_JSONRPC_Linux=libcartesi_jsonrpc.so
+LIBCARTESI_JSONRPC_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
+LIBCARTESI_JSONRPC_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
 CARTESI_EXECUTABLE_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/'
 PROFILE_DATA_Linux=
 
@@ -109,6 +116,7 @@ BOOST_LOG_LIB=$(BOOST_LOG_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
 GRPC_LIB=$(GRPC_LIB_$(UNAME))
 GRPC_INC=$(GRPC_INC_$(UNAME))
+B64_LIB=$(B64_LIB_$(UNAME))
 PROTOBUF_LIB=$(PROTOBUF_LIB_$(UNAME))
 LIBCARTESI=$(LIBCARTESI_$(UNAME))
 LIBCARTESI_LDFLAGS=$(LIBCARTESI_LDFLAGS_$(UNAME))
@@ -129,7 +137,9 @@ CARTESI_PROTOBUF_LIBS:=$(PROTOBUF_LIB)
 CARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB)
 LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(LIBCARTESI_LIB)
 LUACARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(LIBCARTESI_GRPC_LIB) $(GRPC_LIB)  $(LIBCARTESI_LIB)
+LUACARTESI_JSONRPC_LIBS:=$(CRYPTOPP_LIB) $(LIBCARTESI_JSONRPC_LIB) $(LIBCARTESI_LIB) $(B64_LIB)
 REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_LOG_LIB) $(LIBCARTESI_PROTOBUF_LIB)
+JSONRPC_REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(BOOST_LOG_LIB) $(LIBCARTESI_PROTOBUF_LIB) $(PROTOBUF_LIB) $(B64_LIB)
 REMOTE_CARTESI_MACHINE_PROXY_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB) $(LIBCARTESI_PROTOBUF_LIB) -ldl
 SERVER_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB) $(BOOST_LOG_LIB) $(LIBCARTESI_PROTOBUF_LIB) -ldl
 TEST_SERVER_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(LIBCARTESI_PROTOBUF_LIB) -ldl
@@ -260,7 +270,7 @@ else ifneq ($(coverage-toolchain),)
 $(error invalid value for coverage-toolchain: $(coverage-toolchain))
 endif
 
-all: luacartesi grpc hash c-api
+all: luacartesi grpc hash c-api jsonrpc-remote-cartesi-machine
 
 .PHONY: all generate use clean test lint format check-format luacartesi grpc hash docker c-api compile_flags.txt
 
@@ -322,6 +332,19 @@ LUACARTESI_GRPC_OBJS:= \
 	clua-grpc-machine.o \
 	clua.o
 
+LUACARTESI_JSONRPC_OBJS:= \
+	clua-i-virtual-machine.o \
+	clua-htif.o \
+	clua-machine-util.o \
+	clua-cartesi-jsonrpc.o \
+	clua-jsonrpc-machine.o \
+	json-util.o \
+	base64.o \
+	$(BUILDDIR)/lib/mongoose.o \
+	jsonrpc-machine-c-api.o \
+	jsonrpc-virtual-machine.o \
+	clua.o
+
 ifeq ($(gperf),yes)
 DEFS+=-DGPERF
 CARTESI_LIBS+=-lprofiler
@@ -348,6 +371,9 @@ cartesi.so: $(LUACARTESI_OBJS) $(LIBCARTESI)
 cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS) $(LIBCARTESI_GRPC) $(LIBCARTESI)
 	$(CXX) $(LDFLAGS) $(SOLDFLAGS) -o $@ $(LUACARTESI_GRPC_OBJS) $(LUACARTESI_GRPC_LIBS)
 
+cartesi/jsonrpc.so: $(LUACARTESI_JSONRPC_OBJS) $(LIBCARTESI_JSONRPC) $(LIBCARTESI)
+	$(CXX) $(LDFLAGS) $(SOLDFLAGS) -o $@ $(LUACARTESI_JSONRPC_OBJS) $(LUACARTESI_JSONRPC_LIBS)
+
 test: luacartesi
 	$(LUA) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
 
@@ -364,6 +390,11 @@ test-hash: hash
 test-grpc: luacartesi grpc
 	./tests/test-grpc-server.sh ./remote-cartesi-machine "$(LUA) ./cartesi-machine.lua" "$(LUA) ./cartesi-machine-tests.lua" "$(TEST_PATH)" "$(LUA)"
 
+# In order to run tests environment variable TEST_PATH with directory path
+# to asset files for cartesi machine tests must be set
+test-jsonrpc: luacartesi jsonrpc
+	./tests/test-jsonrpc-server.sh ./jsonrpc-remote-cartesi-machine "$(LUA) ./cartesi-machine.lua" "$(LUA) ./cartesi-machine-tests.lua" "$(TEST_PATH)" "$(LUA)"
+
 test-scripts: luacartesi
 	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do \
 		echo -n 'CTSICTSI' | $(LUA) $$x local || exit 1; \
@@ -379,7 +410,7 @@ test-linux-workload: luacartesi
 	# Test max mcycle (to cover max mcycle branch)
 	$(LUA) ./cartesi-machine.lua --max-mcycle=1
 
-test-all: test test-hash test-scripts test-grpc test-c-api test-uarch-for-coverage test-linux-workload
+test-all: test test-hash test-scripts test-grpc test-jsonrpc test-c-api test-uarch-for-coverage test-linux-workload
 
 lint: $(CLANG_TIDY_TARGETS)
 
@@ -411,11 +442,13 @@ coverage-report:
 	llvm-cov show -format=html -output-dir=coverage-clang -instr-profile=coverage.profdata \
 		./cartesi.so \
 		-object ./cartesi/grpc.so \
+		-object ./cartesi/jsonrpc.so \
 		-object ./libcartesi.so \
 		-object ./libcartesi_grpc.so \
 		-object ./tests/test-merkle-tree-hash \
 		-object ./tests/test-machine-c-api \
 		-object ./remote-cartesi-machine \
+		-object ./jsonrpc-remote-cartesi-machine \
 		$(COVERAGE_SOURCES)
 endif
 
@@ -437,7 +470,7 @@ use: $(PROFILE_DATA_$(UNAME)) luacartesi
 compile_flags.txt:
 	@echo "$(CXXFLAGS)" "-xc++" | sed -e $$'s/ \{1,\}/\\\n/g' | grep -v "MMD" > $@
 
-luacartesi: cartesi.so cartesi/grpc.so
+luacartesi: cartesi.so cartesi/grpc.so cartesi/jsonrpc.so
 
 luacartesi-pgo:
 	$(MAKE) --no-print-directory generate
@@ -446,7 +479,9 @@ luacartesi-pgo:
 	$(MAKE) --no-print-directory use
 	$(MAKE) clean-profile
 
-grpc: cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager
+grpc: cartesi/jsonrpc.so cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager
+
+jsonrpc: cartesi/jsonrpc.so jsonrpc-remote-cartesi-machine
 
 hash: merkle-tree-hash tests/test-merkle-tree-hash
 
@@ -518,6 +553,35 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	tty.o \
 	htif.o \
 	htif-factory.o \
+	shadow-state.o \
+	shadow-state-factory.o \
+	shadow-pmas.o \
+	shadow-pmas-factory.o \
+	shadow-tlb.o \
+	shadow-tlb-factory.o \
+	machine-merkle-tree.o \
+	pristine-merkle-tree.o \
+	pma.o \
+	machine.o \
+	machine-config.o \
+	interpret.o \
+	uarch-machine.o \
+	uarch-interpret.o
+
+JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
+	jsonrpc-remote-machine.o \
+	jsonrpc-discover.o \
+	$(BUILDDIR)/lib/mongoose.o \
+	protobuf-util.o \
+	pma-driver.o \
+	clint.o \
+	clint-factory.o \
+	rom.o \
+	tty.o \
+	htif.o \
+	htif-factory.o \
+	json-util.o \
+	base64.o \
 	shadow-state.o \
 	shadow-state-factory.o \
 	shadow-pmas.o \
@@ -605,6 +669,11 @@ grpc-interfaces: $(PROTO_SOURCES)
 remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS) $(LIBCARTESI_PROTOBUF)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(REMOTE_CARTESI_MACHINE_OBJS) $(REMOTE_CARTESI_MACHINE_LIBS)
 
+$(BUILDDIR)/lib/mongoose.o: CFLAGS := $(patsubst %-std=c99,%,$(CFLAGS))
+
+jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) $(LIBCARTESI_PROTOBUF)
+	$(CXX) $(LDFLAGS) -o $@ $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) $(JSONRPC_REMOTE_CARTESI_MACHINE_LIBS)
+
 remote-cartesi-machine-proxy: $(REMOTE_CARTESI_MACHINE_PROXY_OBJS) $(LIBCARTESI_PROTOBUF)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(REMOTE_CARTESI_MACHINE_PROXY_OBJS) $(REMOTE_CARTESI_MACHINE_PROXY_LIBS)
 
@@ -637,6 +706,14 @@ machine-config.o protobuf-util.o: $(CARTESI_PROTOBUF_GEN_OBJS)
 
 grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o proxy.o: $(CARTESI_GRPC_GEN_OBJS) $(CARTESI_PROTOBUF_GEN_OBJS)
 
+jsonrpc-discover.cpp: jsonrpc-discover.json
+	echo '// This file is auto-generated and should not be modified' > jsonrpc-discover.cpp
+	echo 'namespace cartesi {' >> jsonrpc-discover.cpp
+	echo 'extern char const * const jsonrpc_discover_json = R"json(' >> jsonrpc-discover.cpp
+	cat jsonrpc-discover.json >> jsonrpc-discover.cpp
+	echo ')json";' >> jsonrpc-discover.cpp
+	echo '} // namespace cartesi' >> jsonrpc-discover.cpp
+
 %.clang-tidy: %.cpp $(PROTO_SOURCES)
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) 2>/dev/null
 	@$(CXX) $(CXXFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
@@ -656,7 +733,10 @@ grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o proxy.o: $(CARTESI_
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-clean: clean-coverage clean-profile clean-proto-sources clean-tidy clean-libcartesi clean-executables clean-tests
+clean: clean-auto-generated clean-coverage clean-profile clean-proto-sources clean-tidy clean-libcartesi clean-executables clean-tests
+
+clean-auto-generated:
+	@rm -f jsonrpc-discover.cpp
 
 clean-proto-sources:
 	@rm -f *.pb.cc *.pb.h
@@ -668,10 +748,10 @@ clean-objs:
 	@rm -f *.o *.d
 
 clean-libcartesi: clean-objs
-	@rm -f $(LIBCARTESI) $(LIBCARTESI_PROTOBUF) $(LIBCARTESI_GRPC) cartesi.so cartesi/grpc.so
+	@rm -f $(LIBCARTESI) $(LIBCARTESI_PROTOBUF) $(LIBCARTESI_GRPC) cartesi.so cartesi/grpc.so cartesi/jsonrpc.so
 
 clean-executables:
-	@rm -f remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash server-manager
+	@rm -f jsonrpc-remote-cartesi-machine remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash server-manager
 
 clean-tests:
 	@rm -f tests/test-merkle-tree-hash tests/test-machine-c-api tests/test-server-manager

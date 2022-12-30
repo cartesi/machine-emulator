@@ -21,6 +21,8 @@ local md5 = require "md5"
 
 -- Note: for grpc machine test to work, remote-cartesi-machine must run on
 -- same computer and remote-cartesi-machine execution path must be provided
+-- Note: for jsonrpc machine test to work, remote-cartesi-machine must run on
+-- same computer and jsonremote-cartesi-machine execution path must be provided
 
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
 local MAX_MCYCLE = -1
@@ -53,8 +55,8 @@ Usage:
 where options are:
 
   --remote-address=<address>
-    run tests on a remote cartesi machine (when machine type is grpc).
-    (requires option --checkin to be defined as well)
+    run tests on a remote cartesi machine (when machine type is grpc or jsonrpc).
+    (grpc requires option --checkin to be defined as well)
 
   --checkin-address=<address>
     address of the local checkin server to run
@@ -118,18 +120,23 @@ for i, argument in ipairs({...}) do
 end
 
 local machine_type = assert(arguments[1], "missing machine type")
-assert(machine_type == "local" or machine_type == "grpc", "unknown machine type, should be 'local' or 'grpc'")
+assert(machine_type == "local" or machine_type == "grpc" or machine_type == "jsonrpc",
+    "unknown machine type, should be 'local', 'grpc', or 'jsonrpc'")
+local protocol
 if (machine_type == "grpc") then
     assert(remote_address ~= nil, "remote cartesi machine address is missing")
-    assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
-end
-if remote_address then
     assert(checkin_address, "missing checkin address")
-    cartesi.grpc = require("cartesi.grpc")
+    assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
+    protocol = require("cartesi.grpc")
+end
+if (machine_type == "jsonrpc") then
+    assert(remote_address ~= nil, "remote cartesi machine address is missing")
+    assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
+    protocol = require("cartesi.jsonrpc")
 end
 
 local function connect()
-    local remote = cartesi.grpc.stub(remote_address, checkin_address)
+    local remote = protocol.stub(remote_address, checkin_address)
     local version = assert(remote.get_version(),
         "could not connect to remote cartesi machine at " .. remote_address)
     local shutdown = function() remote.shutdown() end
@@ -137,7 +144,6 @@ local function connect()
     setmetatable(cleanup, mt)
     return remote, version
 end
-
 
 local pmas_file_names = {
     "0000000000000000--0000000000001000.bin", -- shadow state
@@ -183,7 +189,7 @@ local function build_machine(type, config)
         }
     }
     local new_machine = nil
-    if (type == "grpc") then
+    if (type ~= "local") then
         if not remote then remote = connect() end
         new_machine = assert(remote.machine(config, runtime))
     else
@@ -560,7 +566,7 @@ test_util.make_do_test(build_uarch_machine, machine_type)("register values shoul
     end
 )
 
-if machine_type == "grpc" then
+if machine_type ~= "local" then
     print("\n\n check remote get_machine")
     do_test("get_machine should get reference to working machine",
         function(machine)

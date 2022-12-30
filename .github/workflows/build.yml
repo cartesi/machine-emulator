@@ -7,7 +7,7 @@ env:
   ROOTFS_VERSION: v0.16.0
   TEST_VERSION: v0.26.0
   GROUND_TRUTH_VERSION: v0.24.0-0001
-  BUILD_CACHE_VERSION: v0.10.0-0001
+  BUILD_CACHE_VERSION: v0.10.0-0003
   SERVER_MANAGER_VERSION: 0.7.0
 jobs:
   build:
@@ -22,7 +22,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev lua-socket
+          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev lua-socket libb64-dev
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
@@ -85,7 +85,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Install Ubuntu dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.74.0 libboost-coroutine1.74.0 libboost-filesystem1.74.0 libboost-log1.74.0 libssl1.1 libc-ares2 zlib1g netcat patchelf lua5.3 lua-socket liblua5.3-dev luarocks
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.74.0 libboost-coroutine1.74.0 libboost-filesystem1.74.0 libboost-log1.74.0 libssl1.1 libc-ares2 zlib1g netcat patchelf lua5.3 lua-socket liblua5.3-dev luarocks libb64-dev
 
       - name: Install lua test dependencies
         run: |
@@ -114,7 +114,7 @@ jobs:
           find /opt/cartesi/bin -type f \! -iname "*.lua" -exec chmod 755 {} +
           find /opt/cartesi/lib -type f -exec chmod 755 {} +
           find ./tests/ -type f -name "*.lua" -exec chmod 755 {} +
-          chmod 755 ./tests/test-merkle-tree-hash ./tests/test-machine-c-api ./tests/test-server-manager ./tests/test-grpc-server.sh
+          chmod 755 ./tests/test-merkle-tree-hash ./tests/test-machine-c-api ./tests/test-server-manager ./tests/test-grpc-server.sh ./tests/test-jsonrpc-server.sh
           patchelf --set-rpath /opt/cartesi/lib ./tests/test-merkle-tree-hash
           patchelf --set-rpath /opt/cartesi/lib ./tests/test-machine-c-api
           patchelf --set-rpath /opt/cartesi/lib ./tests/test-server-manager
@@ -190,6 +190,15 @@ jobs:
           export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
           ./tests/test-grpc-server.sh remote-cartesi-machine cartesi-machine cartesi-machine-tests $CARTESI_TESTS_PATH
 
+      - name: Run jsonrpc lua test scripts
+        run: |
+          export PATH=/opt/cartesi/bin:$PATH
+          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
+          export CARTESI_TESTS_PATH=/opt/cartesi/tests
+          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?.lua;"
+          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
+          ./tests/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests $CARTESI_TESTS_PATH
+
       - name: Run Merkle tree tests
         run: |
          ./tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
@@ -236,7 +245,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libboost-context1.74.0 libboost-coroutine1.74.0 libboost-filesystem1.74.0 libboost-log1.74.0 libssl1.1 libc-ares2 zlib1g lua5.3 lua-socket liblua5.3-dev luarocks
+          sudo apt-get install -y libboost-context1.74.0 libboost-coroutine1.74.0 libboost-filesystem1.74.0 libboost-log1.74.0 libssl1.1 libc-ares2 zlib1g lua5.3 lua-socket liblua5.3-dev luarocks libb64-dev
 
       - name: Install lua test dependencies
         run: |
@@ -304,7 +313,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev lua-socket
+          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev lua-socket libb64-dev
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
@@ -342,7 +351,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y build-essential libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev luarocks lua-socket clang llvm lcov
+          sudo apt-get install -y build-essential libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev luarocks lua-socket clang llvm lcov libb64-dev
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 12
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 12
           sudo update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-12 12
@@ -473,7 +482,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y build-essential libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev luarocks lua-socket clang llvm lcov
+          sudo apt-get install -y build-essential libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev luarocks lua-socket clang llvm lcov libb64-dev
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 12
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 12
           sudo update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-12 12
@@ -602,7 +611,7 @@ jobs:
           find /opt/cartesi/lib -type f -exec chmod 755 {} +
 
       - name: Install Ubuntu dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y libboost-coroutine1.74.0 libboost-context1.74.0 libboost-filesystem1.74.0 libboost-log1.74.0 libreadline8 openssl libc-ares2 zlib1g ca-certificates libgomp1 lua5.3 liblua5.3-dev lua-socket
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-coroutine1.74.0 libboost-context1.74.0 libboost-filesystem1.74.0 libboost-log1.74.0 libreadline8 openssl libc-ares2 zlib1g ca-certificates libgomp1 lua5.3 liblua5.3-dev lua-socket libb64-dev
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0

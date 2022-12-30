@@ -811,10 +811,10 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_invalid_address_test, ordinary_machine_
     uint64_t word_value = 0;
     char *err_msg{};
     int error_code = cm_read_word(_machine, 0xffffffff, &word_value, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin("read word failed");
+    std::string origin("address not aligned");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);

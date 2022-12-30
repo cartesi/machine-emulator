@@ -214,15 +214,15 @@ static bool DID_is_protected(PMA_ISTART_DID DID) {
     }
 }
 
-void machine::replace_memory_range(const memory_range_config &new_range) {
+void machine::replace_memory_range(const memory_range_config &range) {
     for (auto &pma : m_s.pmas) {
-        if (pma.get_start() == new_range.start && pma.get_length() == new_range.length) {
+        if (pma.get_start() == range.start && pma.get_length() == range.length) {
             const auto curr = pma.get_istart_DID();
             if (DID_is_protected(curr)) {
                 throw std::invalid_argument{"attempt to replace a protected range "s + pma.get_description()};
             }
             // replace range preserving original flags
-            pma = make_memory_range_pma_entry(pma.get_description(), new_range).set_flags(pma.get_flags());
+            pma = make_memory_range_pma_entry(pma.get_description(), range).set_flags(pma.get_flags());
             return;
         }
     }
@@ -1142,80 +1142,80 @@ uint64_t machine::read_csr(csr r) const {
     }
 }
 
-void machine::write_csr(csr w, uint64_t val) {
-    switch (w) {
+void machine::write_csr(csr csr, uint64_t value) {
+    switch (csr) {
         case csr::pc:
-            return write_pc(val);
+            return write_pc(value);
         case csr::fcsr:
-            return write_fcsr(val);
+            return write_fcsr(value);
         case csr::mcycle:
-            return write_mcycle(val);
+            return write_mcycle(value);
         case csr::icycleinstret:
-            return write_icycleinstret(val);
+            return write_icycleinstret(value);
         case csr::mstatus:
-            return write_mstatus(val);
+            return write_mstatus(value);
         case csr::mtvec:
-            return write_mtvec(val);
+            return write_mtvec(value);
         case csr::mscratch:
-            return write_mscratch(val);
+            return write_mscratch(value);
         case csr::mepc:
-            return write_mepc(val);
+            return write_mepc(value);
         case csr::mcause:
-            return write_mcause(val);
+            return write_mcause(value);
         case csr::mtval:
-            return write_mtval(val);
+            return write_mtval(value);
         case csr::misa:
-            return write_misa(val);
+            return write_misa(value);
         case csr::mie:
-            return write_mie(val);
+            return write_mie(value);
         case csr::mip:
-            return write_mip(val);
+            return write_mip(value);
         case csr::medeleg:
-            return write_medeleg(val);
+            return write_medeleg(value);
         case csr::mideleg:
-            return write_mideleg(val);
+            return write_mideleg(value);
         case csr::mcounteren:
-            return write_mcounteren(val);
+            return write_mcounteren(value);
         case csr::menvcfg:
-            return write_menvcfg(val);
+            return write_menvcfg(value);
         case csr::stvec:
-            return write_stvec(val);
+            return write_stvec(value);
         case csr::sscratch:
-            return write_sscratch(val);
+            return write_sscratch(value);
         case csr::sepc:
-            return write_sepc(val);
+            return write_sepc(value);
         case csr::scause:
-            return write_scause(val);
+            return write_scause(value);
         case csr::stval:
-            return write_stval(val);
+            return write_stval(value);
         case csr::satp:
-            return write_satp(val);
+            return write_satp(value);
         case csr::scounteren:
-            return write_scounteren(val);
+            return write_scounteren(value);
         case csr::senvcfg:
-            return write_senvcfg(val);
+            return write_senvcfg(value);
         case csr::ilrsc:
-            return write_ilrsc(val);
+            return write_ilrsc(value);
         case csr::iflags:
-            return write_iflags(val);
+            return write_iflags(value);
         case csr::clint_mtimecmp:
-            return write_clint_mtimecmp(val);
+            return write_clint_mtimecmp(value);
         case csr::htif_tohost:
-            return write_htif_tohost(val);
+            return write_htif_tohost(value);
         case csr::htif_fromhost:
-            return write_htif_fromhost(val);
+            return write_htif_fromhost(value);
         case csr::htif_ihalt:
-            return write_htif_ihalt(val);
+            return write_htif_ihalt(value);
         case csr::htif_iconsole:
-            return write_htif_iconsole(val);
+            return write_htif_iconsole(value);
         case csr::htif_iyield:
-            return write_htif_iyield(val);
+            return write_htif_iyield(value);
         case csr::uarch_cycle:
-            return write_uarch_cycle(val);
+            return write_uarch_cycle(value);
         case csr::uarch_halt_flag:
             return set_uarch_halt_flag();
         case csr::uarch_pc:
-            return write_uarch_pc(val);
+            return write_uarch_pc(value);
         case csr::mvendorid:
             [[fallthrough]];
         case csr::marchid:
@@ -1229,8 +1229,8 @@ void machine::write_csr(csr w, uint64_t val) {
     }
 }
 
-uint64_t machine::get_csr_address(csr w) {
-    switch (w) {
+uint64_t machine::get_csr_address(csr csr) {
+    switch (csr) {
         case csr::pc:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::pc);
         case csr::fcsr:

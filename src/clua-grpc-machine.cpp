@@ -23,12 +23,6 @@
 
 namespace cartesi {
 
-/// \brief Deleter for C api semantic version
-template <>
-void cm_delete(const cm_semantic_version *p) {
-    cm_delete_semantic_version(p);
-}
-
 /// \brief Deleter for C api grpc stub
 template <>
 void cm_delete(cm_grpc_machine_stub *ptr) {

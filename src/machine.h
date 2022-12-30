@@ -221,7 +221,8 @@ public:
     /// \param log State access log to be verified.
     /// \param runtime Machine runtime configuration to use during verification.
     /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_access_log(const access_log &log, const machine_runtime_config &runtime = {}, bool one_based = false);
+    static void verify_access_log(const access_log &log, const machine_runtime_config &runtime = {},
+        bool one_based = false);
 
     /// \brief Checks the validity of a state transition.
     /// \param root_hash_before State hash before step.
@@ -314,7 +315,7 @@ public:
     /// \param vaddr_start Virtual address to start reading.
     /// \param data Receives chunk of memory.
     /// \param length Size of chunk.
-    void read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uint64_t length) ;
+    void read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uint64_t length);
 
     /// \brief Writes a chunk of data to the machine virtual memory.
     /// \param vaddr_start Virtual address to start writing.
@@ -743,10 +744,10 @@ public:
     }
 
     /// \brief Replaces a memory range.
-    /// \param new_range Configuration of the new memory range.
+    /// \param range Configuration of the new memory range.
     /// \details The machine must contain an existing memory range
-    /// matching the start and length specified in new_range.
-    void replace_memory_range(const memory_range_config &new_range);
+    /// matching the start and length specified in range.
+    void replace_memory_range(const memory_range_config &range);
 
     /// \brief Reads the value of a microarchitecture register.
     /// \param index Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.

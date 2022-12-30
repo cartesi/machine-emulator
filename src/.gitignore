@@ -8,3 +8,4 @@
 *.profraw
 compile_flags.txt
 coverage*
+jsonrpc-discover.cpp

@@ -1,9 +1,23 @@
+// Copyright 2023 Cartesi Pte. Ltd.
+//
+// This file is part of the machine-emulator. The machine-emulator is free
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// Lesser General Public License as published by the Free Software Foundation,
+// either version 3 of the License, or (at your option) any later version.
+//
+// The machine-emulator is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
+// for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
+//
 
 #include "grpc-machine-c-api.h"
 #include "grpc-virtual-machine.h"
 #include "i-virtual-machine.h"
 #include "machine-c-api-internal.h"
-#include "semantic-version.h"
 #include "virtual-machine.h"
 
 static const cartesi::grpc_machine_stub_ptr *convert_from_c(const cm_grpc_machine_stub *stub) {
@@ -20,16 +34,6 @@ static cartesi::grpc_machine_stub_ptr *convert_from_c(cm_grpc_machine_stub *stub
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return reinterpret_cast<cartesi::grpc_machine_stub_ptr *>(stub);
-}
-
-static cm_semantic_version *convert_to_c(const cartesi::semantic_version &cpp_version) {
-    auto *new_semantic_version = new cm_semantic_version{};
-    new_semantic_version->major = cpp_version.major;
-    new_semantic_version->minor = cpp_version.minor;
-    new_semantic_version->patch = cpp_version.patch;
-    new_semantic_version->pre_release = convert_to_c(cpp_version.pre_release);
-    new_semantic_version->build = convert_to_c(cpp_version.build);
-    return new_semantic_version;
 }
 
 static inline cartesi::i_virtual_machine *create_grpc_virtual_machine(const cartesi::grpc_machine_stub_ptr &stub,
@@ -181,16 +185,6 @@ int cm_grpc_get_semantic_version(const cm_grpc_machine_stub *stub, const cm_sema
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
-}
-
-void cm_delete_semantic_version(const cm_semantic_version *version) {
-    if (version == nullptr) {
-        return;
-    }
-
-    delete[] version->pre_release;
-    delete[] version->build;
-    delete version;
 }
 
 int cm_grpc_shutdown(const cm_grpc_machine_stub *stub, char **err_msg) try {

@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added reset_uarch_state
 - Added and improved uarch tests
 - Added get_uarch_x_address
+- Added new jsonrpc-remote-cartesi-machine server
+- Added client support for new jsonrpc-remote-cartesi-machine server
+- Added command-line support for new jsonrpc-remote-cartesi-machine server in cartesi-machine
 
 ### Changed
 

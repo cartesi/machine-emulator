@@ -26,6 +26,7 @@
 #include "machine-c-api.h"
 #include "machine-c-defines.h"
 #include "machine.h"
+#include "semantic-version.h"
 
 /// \brief Helper function that returns error result from C api function
 CM_API int cm_result_failure(char **err_msg);
@@ -46,7 +47,10 @@ CM_API cartesi::machine_config convert_from_c(const cm_machine_config *c_config)
 CM_API cartesi::machine_runtime_config convert_from_c(const cm_machine_runtime_config *c_config);
 
 /// \brief Helper function converts machine configuration to C api structure
-CM_API const cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config);
+CM_API cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config);
+
+/// \brief Helper function converts a semantic version to C api structure
+CM_API cm_semantic_version *convert_to_c(const cartesi::semantic_version &cpp_version);
 
 /// \brief Helper function that parses hash from C api structure
 CM_API cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash);

@@ -77,8 +77,8 @@ inline static void get_concat_hash(H &h, const typename H::hash_type &left, cons
     typename H::hash_type &result) {
     static_assert(is_an_i_hasher<H>::value, "not an i_hasher");
     h.begin();
-    h.add_data(left.data(), left.size());
-    h.add_data(right.data(), right.size());
+    h.add_data(left.data(), static_cast<int>(left.size()));
+    h.add_data(right.data(), static_cast<int>(right.size()));
     h.end(result);
 }
 

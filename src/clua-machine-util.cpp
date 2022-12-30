@@ -34,6 +34,12 @@ void cm_delete<unsigned char>(unsigned char *ptr) { // NOLINT(readability-non-co
     delete[] ptr;
 }
 
+/// \brief Deleter for C api semantic version
+template <>
+void cm_delete(const cm_semantic_version *p) {
+    cm_delete_semantic_version(p);
+}
+
 /// \brief Deleter for C api machine configuration
 template <>
 void cm_delete<const cm_machine_config>(const cm_machine_config *ptr) {
@@ -346,10 +352,10 @@ static void check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_si
     }
 }
 
-cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx) {
+cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx, int ctxidx) {
     tabidx = lua_absindex(L, tabidx);
     luaL_checktype(L, tabidx, LUA_TTABLE);
-    auto &managed = clua_push_to(L, clua_managed_cm_ptr<cm_merkle_tree_proof>(new cm_merkle_tree_proof{}));
+    auto &managed = clua_push_to(L, clua_managed_cm_ptr<cm_merkle_tree_proof>(new cm_merkle_tree_proof{}), ctxidx);
     cm_merkle_tree_proof *proof = managed.get();
     proof->log2_target_size = check_uint_field(L, tabidx, "log2_target_size");
     proof->log2_root_size = check_uint_field(L, tabidx, "log2_root_size");
@@ -413,7 +419,9 @@ static unsigned char *opt_cm_access_data_field(lua_State *L, int tabidx, const c
 /// \param L Lua state
 /// \param tabidx access stack index
 /// \param a Pointer to receive access
-static void check_cm_access(lua_State *L, int tabidx, bool proofs, cm_access *a) {
+/// \param ctxidx Index (or pseudo-index) of clua context
+static void check_cm_access(lua_State *L, int tabidx, bool proofs, cm_access *a, int ctxidx) {
+    ctxidx = lua_absindex(L, ctxidx);
     tabidx = lua_absindex(L, tabidx);
     luaL_checktype(L, tabidx, LUA_TTABLE);
     a->type = check_cm_access_type_field(L, tabidx, "type");
@@ -425,17 +433,18 @@ static void check_cm_access(lua_State *L, int tabidx, bool proofs, cm_access *a)
     }
     if (proofs) {
         lua_getfield(L, tabidx, "proof");
-        a->proof = clua_check_cm_merkle_tree_proof(L, -1);
+        a->proof = clua_check_cm_merkle_tree_proof(L, -1, ctxidx);
         lua_pop(L, 1);
     }
     a->read_data = check_cm_access_data_field(L, tabidx, "read", a->log2_size, &a->read_data_size);
     a->written_data = opt_cm_access_data_field(L, tabidx, "written", a->log2_size, &a->written_data_size);
 }
 
-cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx) {
+cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx, int ctxidx) {
     tabidx = lua_absindex(L, tabidx);
+    ctxidx = lua_absindex(L, ctxidx);
     luaL_checktype(L, tabidx, LUA_TTABLE);
-    auto &managed = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(new cm_access_log{}));
+    auto &managed = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(new cm_access_log{}), ctxidx);
     cm_access_log *log = managed.get();
     check_table_field(L, tabidx, "log_type");
     log->log_type.proofs = opt_boolean_field(L, -1, "proofs");
@@ -449,7 +458,7 @@ cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx) {
         if (!lua_istable(L, -1)) {
             luaL_error(L, "access [%d] not a table", i);
         }
-        check_cm_access(L, -1, log->log_type.proofs, &log->accesses.entry[i - 1]);
+        check_cm_access(L, -1, log->log_type.proofs, &log->accesses.entry[i - 1], ctxidx);
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
@@ -987,7 +996,6 @@ static void check_cm_rollup_config(lua_State *L, int tabidx, cm_rollup_config *r
 /// \param L Lua state
 /// \param tabidx Machine config stack index
 /// \param fs Receives allocated array of flash drive configs
-/// \param ctxidx Index of clua context
 static void check_cm_flash_drive_configs(lua_State *L, int tabidx, cm_memory_range_config_array *fs) {
     memset(fs, 0, sizeof(cm_memory_range_config_array));
     if (!opt_table_field(L, tabidx, "flash_drive")) {

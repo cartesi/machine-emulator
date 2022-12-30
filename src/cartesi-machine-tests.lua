@@ -331,10 +331,14 @@ where options are:
     uarch cycle. Only take effect with hash and step commands.
     (default: none)
 
+  --remote-protocol=<protocol>
+    select protocol to use with remote cartesi machine.
+    can be "jsonrpc" or "grpc" (default: "grpc").
+
   --remote-address=<address>
-    run tests on a remote cartesi machine instead of
-    on a local cartesi machine
-    (requires --checkin-address)
+    use a remote cartesi machine listenning to <address> instead of
+    running a local cartesi machine.
+    (if remote-protocol="grpc", option requires --checkin-address)
 
   --checkin-address=<address>
     address of the local checkin server to run
@@ -396,6 +400,7 @@ end
 
 local test_path = "./"
 local test_pattern = ".*"
+local remote_protocol = "grpc"
 local remote_address = nil
 local checkin_address = nil
 local remote = nil
@@ -427,6 +432,11 @@ local options = {
     { "^%-%-remote%-address%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         remote_address = o
+        return true
+    end },
+    { "^%-%-remote%-protocol%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        remote_protocol = o
         return true
     end },
     { "^%-%-checkin%-address%=(.*)$", function(o)
@@ -533,8 +543,10 @@ local command = assert(values[1], "missing command")
 assert(test_path, "missing test path")
 
 if remote_address then
-    assert(checkin_address, "checkin address missing")
-	cartesi.grpc = require("cartesi.grpc")
+    protocol = require("cartesi." .. remote_protocol)
+    if remote_protocol == "grpc" then
+        assert(checkin_address, "checkin address missing")
+    end
 end
 
 local function nothing()
@@ -569,7 +581,7 @@ local function run_machine_with_uarch(machine, ctx, max_mcycle, callback)
 end
 
 local function connect()
-    local remote = cartesi.grpc.stub(remote_address, checkin_address)
+    local remote = protocol.stub(remote_address, checkin_address)
     local version = assert(remote.get_version(),
         "could not connect to remote cartesi machine at " .. remote_address)
     local shutdown = function() remote.shutdown() end

@@ -26,12 +26,12 @@ STRIP_EXEC= strip -x
 
 DEP_TO_BIN=
 DEP_TO_LIB=
-EMU_TO_BIN= remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash server-manager
+EMU_TO_BIN= jsonrpc-remote-cartesi-machine remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash server-manager
 EMU_TO_LIB= $(LIBCARTESI_$(UNAME)) $(LIBCARTESI_PROTOBUF_$(UNAME)) $(LIBCARTESI_GRPC_$(UNAME))
 EMU_LUA_TO_BIN= cartesi-machine-tests.lua cartesi-machine.lua cartesi-machine-stored-hash.lua rollup-memory-range.lua uarch-riscv-tests.lua
 EMU_TO_LUA_PATH= cartesi/util.lua cartesi/proof.lua
 EMU_TO_LUA_CPATH= cartesi.so
-EMU_TO_LUA_CARTESI_CPATH= cartesi/grpc.so
+EMU_TO_LUA_CARTESI_CPATH= cartesi/grpc.so cartesi/jsonrpc.so
 EMU_TO_INC= pma-defines.h rtc-defines.h
 
 # Build settings
@@ -41,7 +41,7 @@ BUILDBASE := $(abspath build)
 BUILDDIR = $(BUILDBASE)/$(UNAME)_$(shell uname -m)
 DOWNLOADDIR := $(DEPDIR)/downloads
 SUBCLEAN := $(addsuffix .clean,$(SRCDIR) uarch third-party/riscv-arch-tests)
-DEPDIRS := $(addprefix $(DEPDIR)/,cryptopp-CRYPTOPP_7_0_0 grpc)
+DEPDIRS := $(addprefix $(DEPDIR)/,cryptopp-CRYPTOPP_7_0_0 grpc mongoose-7.9)
 DEPCLEAN := $(addsuffix .clean,$(DEPDIRS))
 COREPROTO := lib/grpc-interfaces/core.proto
 GRPC_VERSION ?= v1.50.0
@@ -82,7 +82,7 @@ endif
 
 # Check if some binary dependencies already exists on build directory to skip
 # downloading and building them.
-DEPBINS := $(addprefix $(BUILDDIR)/,lib/libcryptopp.$(LIB_EXTENSION) lib/libgrpc.$(LIB_EXTENSION))
+DEPBINS := $(addprefix $(BUILDDIR)/,lib/libcryptopp.$(LIB_EXTENSION) lib/libgrpc.$(LIB_EXTENSION) include/nlohmann/json.hpp include/mongoose.h)
 
 all: source-default
 
@@ -158,6 +158,16 @@ $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 $(BUILDDIR)/lib/libcryptopp.$(LIB_EXTENSION): 
 	$(MAKE) -C $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 PREFIX=$(BUILDDIR) install
 	if [ "$(UNAME)" = "Darwin" ]; then install_name_tool -id @rpath/libcryptopp.$(LIB_EXTENSION) $(BUILDDIR)/lib/libcryptopp.$(LIB_EXTENSION); fi
 
+$(BUILDDIR)/include/nlohmann/json.hpp: | $(BUILDDIR) $(DOWNLOADDIR)
+	mkdir -p $(BUILDDIR)/include/nlohmann
+	mkdir -p $(BUILDDIR)/lib
+	cp $(DOWNLOADDIR)/json.hpp $(BUILDDIR)/include/nlohmann
+
+$(BUILDDIR)/include/mongoose.h $(BUILDDIR)/lib/libmongoose.a: | $(BUILDDIR) $(DOWNLOADDIR)
+	if [ ! -d $(DEPDIR)/mongoose-7.9 ]; then unzip $(DOWNLOADDIR)/7.9.zip -d $(DEPDIR); fi
+	cp $(DEPDIR)/mongoose-7.9/mongoose.c $(BUILDDIR)/lib
+	cp $(DEPDIR)/mongoose-7.9/mongoose.h $(BUILDDIR)/include
+
 $(DEPDIR)/grpc $(BUILDDIR)/lib/libgrpc.$(LIB_EXTENSION): | $(BUILDDIR)
 	if [ ! -d $(DEPDIR)/grpc ]; then git clone --branch $(GRPC_VERSION) --depth 1 https://github.com/grpc/grpc.git $(DEPDIR)/grpc; fi
 	cd $(DEPDIR)/grpc && git submodule update --init --recursive --depth 1
@@ -187,6 +197,7 @@ build-server-manager-image:
 install-Darwin:
 	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi.so
 	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi/grpc.so
+	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi/jsonrpc.so
 	cd $(BIN_INSTALL_PATH) && \
 		for x in $(DEP_TO_BIN) $(EMU_TO_BIN); do \
 			install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_INSTALL_PATH) $$x ;\

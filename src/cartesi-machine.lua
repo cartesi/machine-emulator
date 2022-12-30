@@ -38,10 +38,14 @@ Usage:
 
 where options are:
 
+  --remote-protocol=<protocol>
+    select protocol to use with remote cartesi machine.
+    can be "jsonrpc" or "grpc" (default: "grpc").
+
   --remote-address=<address>
     use a remote cartesi machine listenning to <address> instead of
     running a local cartesi machine.
-    (requires --checkin-address)
+    (if remote-protocol="grpc", option requires --checkin-address)
 
   --checkin-address=<address>
     address of the local checkin server to run.
@@ -354,6 +358,7 @@ or a left shift (e.g., 2 << 20).
     os.exit()
 end
 
+local remote_protocol = "grpc"
 local remote_address = nil
 local checkin_address = nil
 local remote_shutdown = false
@@ -716,6 +721,11 @@ local options = {
     { "^%-%-remote%-address%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         remote_address = o
+        return true
+    end },
+    { "^%-%-remote%-protocol%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        remote_protocol = o
         return true
     end },
     { "^%-%-checkin%-address%=(.*)$", function(o)
@@ -1086,11 +1096,13 @@ end
 local machine
 
 if remote_address then
-    assert(checkin_address, "checkin address missing")
-    stderr("Listening for checkin at '%s'\n", checkin_address)
-    stderr("Connecting to remote cartesi machine at '%s'\n", remote_address)
-    cartesi.grpc = require"cartesi.grpc"
-    remote = assert(cartesi.grpc.stub(remote_address, checkin_address))
+    stderr("Connecting to %s remote cartesi machine at '%s'\n", remote_protocol, remote_address)
+    local protocol = require("cartesi." .. remote_protocol)
+    if remote_protocol == "grpc" then
+        assert(checkin_address, "checkin address missing")
+        stderr("Listening for checkin at '%s'\n", checkin_address)
+    end
+    remote = assert(protocol.stub(remote_address, checkin_address))
     local v = assert(remote.get_version())
     stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
     local shutdown = function() remote.shutdown() end

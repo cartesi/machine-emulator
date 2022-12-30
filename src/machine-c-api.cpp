@@ -32,6 +32,7 @@
 #include "machine-config.h"
 #include "machine.h"
 #include "riscv-constants.h"
+#include "semantic-version.h"
 #include "virtual-machine.h"
 
 static char *copy_cstr(const char *str) {
@@ -404,7 +405,7 @@ cm_memory_range_config_array convert_to_c(const cartesi::flash_drive_configs &fl
     return new_flash_drive;
 }
 
-const cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config) {
+cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config) {
     auto *new_machine_config = new cm_machine_config{};
     new_machine_config->processor = convert_to_c(cpp_config.processor);
     new_machine_config->ram = convert_to_c(cpp_config.ram);
@@ -429,6 +430,20 @@ cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash) {
     cartesi::machine_merkle_tree::hash_type cpp_hash; // In emulator this is std::array<unsigned char, hash_size>;
     memcpy(cpp_hash.data(), c_hash, sizeof(cm_hash));
     return cpp_hash;
+}
+
+// ----------------------------------------------
+// Semantic version conversion functions
+// ----------------------------------------------
+
+cm_semantic_version *convert_to_c(const cartesi::semantic_version &cpp_version) {
+    auto *new_semantic_version = new cm_semantic_version{};
+    new_semantic_version->major = cpp_version.major;
+    new_semantic_version->minor = cpp_version.minor;
+    new_semantic_version->patch = cpp_version.patch;
+    new_semantic_version->pre_release = convert_to_c(cpp_version.pre_release);
+    new_semantic_version->build = convert_to_c(cpp_version.build);
+    return new_semantic_version;
 }
 
 // ----------------------------------------------
@@ -896,6 +911,16 @@ void cm_delete_merkle_tree_proof(cm_merkle_tree_proof *proof) {
     }
     delete[] proof->sibling_hashes.entry;
     delete proof;
+}
+
+void cm_delete_semantic_version(const cm_semantic_version *version) {
+    if (version == nullptr) {
+        return;
+    }
+
+    delete[] version->pre_release;
+    delete[] version->build;
+    delete version;
 }
 
 int cm_get_root_hash(const cm_machine *m, cm_hash *hash, char **err_msg) try {

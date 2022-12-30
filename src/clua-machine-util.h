@@ -92,6 +92,10 @@ void cm_delete(cm_merkle_tree_proof *p);
 template <>
 void cm_delete(cm_memory_range_config *p);
 
+/// \brief Deleter for C api semantic version
+template <>
+void cm_delete(const cm_semantic_version *p);
+
 // clua_managed_cm_ptr is a smart pointer,
 // however we don't use all its functionally, therefore we exclude it from code coverage.
 // LCOV_EXCL_START
@@ -210,8 +214,9 @@ cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx);
 /// \brief Loads an cm_access_log from Lua.
 /// \param L Lua state
 /// \param tabidx Access_log stack index.
+/// \param ctxidx Index of clua context
 /// \returns The access log. Must be delete by the user with cm_delete_access_log
-cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx);
+cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx, int ctxidx = lua_upvalueindex(1));
 
 /// \brief Loads a cm_machine_config object from a Lua table
 /// \param L Lua state

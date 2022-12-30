@@ -370,6 +370,15 @@ typedef struct { // NOLINT(modernize-use-using)
 /// where pointer size depend on types, this api might not work
 typedef struct cm_machine_tag cm_machine; // NOLINT(modernize-use-using)
 
+/// \brief Semantic version
+typedef struct { // NOLINT(modernize-use-using)
+    uint32_t major;
+    uint32_t minor;
+    uint32_t patch;
+    const char *pre_release;
+    const char *build;
+} cm_semantic_version;
+
 // ---------------------------------
 // API function definitions
 // ---------------------------------
@@ -1557,6 +1566,10 @@ CM_API void cm_delete_uarch_ram_config(const cm_uarch_ram_config *config);
 /// \brief Deletes allocated dhd microarchitecture config
 /// \returns void
 CM_API void cm_delete_uarch_config(const cm_uarch_config *config);
+
+/// \brief Deletes semantic version instance
+/// \param m Valid pointer to the existing semantic version instance
+CM_API void cm_delete_semantic_version(const cm_semantic_version *version);
 
 /// \brief Destroys machine
 /// \param err_msg Receives the error message if function execution fails

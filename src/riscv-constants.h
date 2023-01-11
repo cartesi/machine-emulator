@@ -433,28 +433,29 @@ enum CARTESI_init : uint64_t {
     MCAUSE_INIT = UINT64_C(0),                                                         ///< Initial value for mcause
     MTVAL_INIT = UINT64_C(0),                                                          ///< Initial value for mtval
     MISA_INIT = (MISA_MXL_VALUE << MISA_MXL_SHIFT) | MISA_EXT_S_MASK | MISA_EXT_U_MASK | MISA_EXT_I_MASK |
-        MISA_EXT_M_MASK | MISA_EXT_A_MASK | MISA_EXT_F_MASK | MISA_EXT_D_MASK, ///< Initial value for misa
-    MIE_INIT = UINT64_C(0),                                                    ///< Initial value for mie
-    MIP_INIT = UINT64_C(0),                                                    ///< Initial value for mip
-    MEDELEG_INIT = UINT64_C(0),                                                ///< Initial value for medeleg
-    MIDELEG_INIT = UINT64_C(0),                                                ///< Initial value for mideleg
-    MCOUNTEREN_INIT = UINT64_C(0),                                             ///< Initial value for mcounteren
-    STVEC_INIT = UINT64_C(0),                                                  ///< Initial value for stvec
-    SSCRATCH_INIT = UINT64_C(0),                                               ///< Initial value for sscratch
-    SEPC_INIT = UINT64_C(0),                                                   ///< Initial value for sepc
-    SCAUSE_INIT = UINT64_C(0),                                                 ///< Initial value for scause
-    STVAL_INIT = UINT64_C(0),                                                  ///< Initial value for stval
-    SATP_INIT = UINT64_C(0),                                                   ///< Initial value for satp
-    SCOUNTEREN_INIT = UINT64_C(0),                                             ///< Initial value for scounteren
-    ILRSC_INIT = UINT64_C(-1),                                                 ///< Initial value for ilrsc
-    IFLAGS_INIT = static_cast<uint64_t>(PRV_M) << IFLAGS_PRV_SHIFT,            ///< Initial value for iflags
-    MTIMECMP_INIT = UINT64_C(0),                                               ///< Initial value for mtimecmp
-    FROMHOST_INIT = UINT64_C(0),                                               ///< Initial value for fromhost
-    TOHOST_INIT = UINT64_C(0),                                                 ///< Initial value for tohost
-    MENVCFG_INIT = UINT64_C(0),                                                ///< Initial value for menvcfg
-    SENVCFG_INIT = UINT64_C(0),                                                ///< Initial value for senvcfg
-    UARCH_PC_INIT = UINT64_C(0x60000000), ///< Initial value for microarchitecture pc
-    UARCH_CYCLE_INIT = UINT64_C(0),       ///< Initial value for microarchitecture cycle
+        MISA_EXT_M_MASK | MISA_EXT_A_MASK | MISA_EXT_F_MASK | MISA_EXT_D_MASK |
+        MISA_EXT_C_MASK,                                            ///< Initial value for misa
+    MIE_INIT = UINT64_C(0),                                         ///< Initial value for mie
+    MIP_INIT = UINT64_C(0),                                         ///< Initial value for mip
+    MEDELEG_INIT = UINT64_C(0),                                     ///< Initial value for medeleg
+    MIDELEG_INIT = UINT64_C(0),                                     ///< Initial value for mideleg
+    MCOUNTEREN_INIT = UINT64_C(0),                                  ///< Initial value for mcounteren
+    STVEC_INIT = UINT64_C(0),                                       ///< Initial value for stvec
+    SSCRATCH_INIT = UINT64_C(0),                                    ///< Initial value for sscratch
+    SEPC_INIT = UINT64_C(0),                                        ///< Initial value for sepc
+    SCAUSE_INIT = UINT64_C(0),                                      ///< Initial value for scause
+    STVAL_INIT = UINT64_C(0),                                       ///< Initial value for stval
+    SATP_INIT = UINT64_C(0),                                        ///< Initial value for satp
+    SCOUNTEREN_INIT = UINT64_C(0),                                  ///< Initial value for scounteren
+    ILRSC_INIT = UINT64_C(-1),                                      ///< Initial value for ilrsc
+    IFLAGS_INIT = static_cast<uint64_t>(PRV_M) << IFLAGS_PRV_SHIFT, ///< Initial value for iflags
+    MTIMECMP_INIT = UINT64_C(0),                                    ///< Initial value for mtimecmp
+    FROMHOST_INIT = UINT64_C(0),                                    ///< Initial value for fromhost
+    TOHOST_INIT = UINT64_C(0),                                      ///< Initial value for tohost
+    MENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for menvcfg
+    SENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for senvcfg
+    UARCH_PC_INIT = UINT64_C(0x60000000),                           ///< Initial value for microarchitecture pc
+    UARCH_CYCLE_INIT = UINT64_C(0),                                 ///< Initial value for microarchitecture cycle
 };
 
 /// \brief Mapping between CSR names and addresses
@@ -519,6 +520,59 @@ enum class CSR_address : uint32_t {
     tdata1 = 0x7a1,
     tdata2 = 0x7a2,
     tdata3 = 0x7a3,
+};
+
+/// \brief The result of insn & 0b1110000000000011 can be used to identify
+/// most compressed instructions directly
+enum class insn_c_funct3 : uint32_t {
+    // Quadrant 0
+    C_ADDI4SPN = 0b0000000000000000,
+    C_FLD = 0b0010000000000000,
+    C_LW = 0b0100000000000000,
+    C_LD = 0b0110000000000000,
+    C_FSD = 0b1010000000000000,
+    C_SW = 0b1100000000000000,
+    C_SD = 0b1110000000000000,
+
+    // Quadrant 1
+    C_Q1_SET0 = 0b0000000000000001, // C_NOP and C_ADDI
+    C_ADDIW = 0b0010000000000001,
+    C_LI = 0b0100000000000001,
+    C_Q1_SET1 = 0b0110000000000001, // C_ADDI16SP and C_LUI
+    C_Q1_SET2 = 0b1000000000000001, // C_SRLI64, C_SRAI64, C_ANDI, C_SUB
+                                    // C_XOR, C_OR, C_AND, C_SUBW and C_ADDW
+    C_J = 0b1010000000000001,
+    C_BEQZ = 0b1100000000000001,
+    C_BNEZ = 0b1110000000000001,
+
+    // Quadrant 2
+    C_SLLI = 0b0000000000000010,
+    C_FLDSP = 0b0010000000000010,
+    C_LWSP = 0b0100000000000010,
+    C_LDSP = 0b0110000000000010,
+    C_Q2_SET0 = 0b1000000000000010, // C_JR, C_MV, C_EBREAK, C_JALR, C_ADD
+    C_FSDSP = 0b1010000000000010,
+    C_SWSP = 0b1100000000000010,
+    C_SDSP = 0b1110000000000010,
+};
+
+/// \brief The result of insn & 0b1110110000000011 can be used to identify
+/// most compressed instructions directly
+enum class insn_CB_funct2 : uint32_t {
+    C_SRLI = 0b1000000000000001,
+    C_SRAI = 0b1000010000000001,
+    C_ANDI = 0b1000100000000001,
+};
+
+/// \brief The result of insn & 0b1111110001100011 can be used to identify
+/// most compressed instructions directly
+enum class insn_CA_funct6_funct2 : uint32_t {
+    C_SUB = 0b1000110000000001,
+    C_XOR = 0b1000110000100001,
+    C_OR = 0b1000110001000001,
+    C_AND = 0b1000110001100001,
+    C_SUBW = 0b1001110000000001,
+    C_ADDW = 0b1001110000100001,
 };
 
 /// \brief The result of insn & 0b111000001111111 can be used to identify

@@ -91,11 +91,8 @@ clean: $(SUBCLEAN)
 depclean: $(DEPCLEAN) clean
 	rm -rf $(BUILDDIR)
 
-distclean: clean profile-clean
+distclean: clean
 	rm -rf $(BUILDBASE) $(DOWNLOADDIR) $(DEPDIRS)
-
-profile-clean:
-	$(MAKE) -C $(SRCDIR) $@
 
 $(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH):
 	mkdir -m 0755 -p $@

@@ -30,7 +30,7 @@ local tests = {
   {"rv64mi-p-lh-misaligned.bin", 121},
   {"rv64mi-p-lw-misaligned.bin", 181},
   {"rv64mi-p-ma_addr.bin", 742},
-  {"rv64mi-p-ma_fetch.bin", 230},
+  {"rv64mi-p-ma_fetch.bin", 138},
   {"rv64mi-p-mcsr.bin", 103},
   {"rv64mi-p-sbreak.bin", 111},
   {"rv64mi-p-scall.bin", 95},
@@ -40,7 +40,7 @@ local tests = {
   {"rv64si-p-csr.bin", 196},
   {"rv64si-p-dirty.bin", 177},
   {"rv64si-p-icache-alias.bin", 227},
-  {"rv64si-p-ma_fetch.bin", 187},
+  {"rv64si-p-ma_fetch.bin", 125},
   {"rv64si-p-sbreak.bin", 105},
   {"rv64si-p-scall.bin", 112},
   {"rv64si-p-wfi.bin", 91},
@@ -210,6 +210,9 @@ local tests = {
   {"rv64um-v-remu.bin", 6408},
   {"rv64um-v-remuw.bin", 6403},
   {"rv64um-v-remw.bin", 6409},
+-- C extension tests
+  {"rv64uc-p-rvc.bin", 299},
+  {"rv64uc-v-rvc.bin", 15501},
 -- float tests
   {"rv64uf-p-fadd.bin", 214},
   {"rv64uf-p-fclass.bin", 151},
@@ -266,7 +269,7 @@ local tests = {
   {"dont_write_x0.bin", 44},
   {"mcycle_write.bin", 18},
   {"lrsc_semantics.bin", 34},
-  {"csr_counters.bin", 127},
+  {"csr_counters.bin", 119},
   {"csr_semantics.bin", 40},
   {"version_check.bin", 30},
 }

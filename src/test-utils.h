@@ -164,7 +164,7 @@ struct incremental_merkle_tree_of_pages {
         m_page_log2_size(page_log2_size),
         m_tree_log2_size(tree_log2_size),
         m_page_count(0),
-        m_max_pages(1 << (tree_log2_size - page_log2_size)) {
+        m_max_pages(UINT64_C(1) << (tree_log2_size - page_log2_size)) {
         m_tree.resize(2 * m_max_pages);
     }
 
@@ -176,7 +176,7 @@ struct incremental_merkle_tree_of_pages {
         }
         int depth = m_tree_log2_size - m_page_log2_size;
         for (int i = 0; i <= depth; ++i) {
-            if (m_page_count & (0x01 << i)) {
+            if (m_page_count & (UINT64_C(1) << i)) {
                 hash_type left = m_tree[i];
                 get_concat_hash(h, left, right, right);
             } else {
@@ -196,7 +196,7 @@ struct incremental_merkle_tree_of_pages {
         if (m_page_count < m_max_pages) {
             hash_type root = zero_keccak_hash_table[m_page_log2_size];
             for (int i = 0; i < depth; ++i) {
-                if (m_page_count & (0x01 << i)) {
+                if (m_page_count & (UINT64_C(1) << i)) {
                     auto left = m_tree[i];
                     get_concat_hash(h, left, root, root);
                 } else {
@@ -256,7 +256,7 @@ static hash_type extend_region_hash(hash_type data_hash, uint64_t data_address, 
     auto result_address = data_address;
     for (int n = data_log2_size + 1; n <= tree_log2_size; ++n) {
         cartesi::keccak_256_hasher h;
-        if (result_address % (1 << n) == 0) {
+        if ((result_address & (UINT64_C(-1) >> (64 - n))) == 0) {
             auto child1 = result_hash;
             auto child2 = zero_keccak_hash_table[n - 1];
             get_concat_hash(h, child1, child2, result_hash);
@@ -264,8 +264,7 @@ static hash_type extend_region_hash(hash_type data_hash, uint64_t data_address, 
             auto child1 = zero_keccak_hash_table[n - 1];
             auto child2 = result_hash;
             get_concat_hash(h, child1, child2, result_hash);
-#pragma GCC diagnostic ignored "-Wshift-negative-value"
-            result_address = result_address & (~0x01 << (n - 1));
+            result_address = result_address & (~UINT64_C(1) << (n - 1));
         }
     }
 
@@ -278,15 +277,13 @@ static hash_type extend_region_hash(hash_type data_hash, uint64_t data_address, 
 // to the beginning of the log2_result_address_space
 static hash_type calculate_region_hash_2(uint64_t data_address, const std::vector<uint8_t> data_buffer,
     int log2_data_size, int log2_result_address_space) {
-#pragma GCC diagnostic ignored "-Wshift-negative-value"
-    data_address = data_address & (~0x01 << (log2_data_size - 1));
+    data_address = data_address & (~UINT64_C(1) << (log2_data_size - 1));
     auto data_hash = calculate_root_hash(data_buffer, log2_data_size);
-
     auto result_hash = data_hash;
     auto result_address = data_address;
     for (int n = log2_data_size + 1; n <= log2_result_address_space; ++n) {
         cartesi::keccak_256_hasher h;
-        if (result_address % (1 << n) == 0) {
+        if ((result_address & (UINT64_C(-1) >> (64 - n))) == 0) {
             auto child1 = result_hash;
             auto child2 = zero_keccak_hash_table[n - 1];
             get_concat_hash(h, child1, child2, result_hash);
@@ -294,8 +291,7 @@ static hash_type calculate_region_hash_2(uint64_t data_address, const std::vecto
             auto child1 = zero_keccak_hash_table[n - 1];
             auto child2 = result_hash;
             get_concat_hash(h, child1, child2, result_hash);
-#pragma GCC diagnostic ignored "-Wshift-negative-value"
-            result_address = result_address & (~0x01 << (n - 1));
+            result_address = result_address & (~UINT64_C(1) << (n - 1));
         }
     }
     return result_hash;
@@ -307,7 +303,7 @@ static hash_type calculate_proof_root_hash(const cm_merkle_tree_proof *proof) {
     for (int log2_size = static_cast<int>(proof->log2_target_size); log2_size < static_cast<int>(proof->log2_root_size);
          ++log2_size) {
         cartesi::keccak_256_hasher h;
-        auto bit = (proof->target_address & (1 << log2_size));
+        auto bit = (proof->target_address & (UINT64_C(1) << log2_size));
         hash_type first, second;
         if (bit) {
             memcpy(first.data(), proof->sibling_hashes.entry[proof->log2_root_size - log2_size - 1], sizeof(cm_hash));

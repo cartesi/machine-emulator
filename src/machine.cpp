@@ -1653,6 +1653,12 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
 }
 
 void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length) const {
+    if (length == 0) {
+        return;
+    }
+    if (!data) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     const pma_entry &pma = find_pma_entry(m_pmas, address, length);
     if (pma.get_istart_M()) {
         memcpy(data, pma.get_memory().get_host_memory() + (address - pma.get_start()), length);
@@ -1698,6 +1704,12 @@ void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length
 }
 
 void machine::write_memory(uint64_t address, const unsigned char *data, size_t length) {
+    if (length == 0) {
+        return;
+    }
+    if (!data) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     pma_entry &pma = find_pma_entry(address, length);
     if (!pma.get_istart_M() || pma.get_istart_E()) {
         throw std::invalid_argument{"address range not entirely in memory PMA"};
@@ -1715,6 +1727,12 @@ void machine::write_memory(uint64_t address, const unsigned char *data, size_t l
 
 void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uint64_t length) {
     state_access a(*this);
+    if (length == 0) {
+        return;
+    }
+    if (!data) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     uint64_t vaddr_limit = vaddr_start + length;
     uint64_t vaddr_page_start = vaddr_start & ~(PMA_PAGE_SIZE - 1);                       // align page backward
     uint64_t vaddr_page_limit = (vaddr_limit + PMA_PAGE_SIZE - 1) & ~(PMA_PAGE_SIZE - 1); // align page forward
@@ -1740,6 +1758,12 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
 
 void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, size_t length) {
     state_access a(*this);
+    if (length == 0) {
+        return;
+    }
+    if (!data) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     uint64_t vaddr_limit = vaddr_start + length;
     uint64_t vaddr_page_start = vaddr_start & ~(PMA_PAGE_SIZE - 1);                       // align page backward
     uint64_t vaddr_page_limit = (vaddr_limit + PMA_PAGE_SIZE - 1) & ~(PMA_PAGE_SIZE - 1); // align page forward

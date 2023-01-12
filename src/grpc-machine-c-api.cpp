@@ -7,11 +7,17 @@
 #include "virtual-machine.h"
 
 static const cartesi::grpc_machine_stub_ptr *convert_from_c(const cm_grpc_machine_stub *stub) {
+    if (stub == nullptr) {
+        throw std::invalid_argument("Invalid stub output");
+    }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
 }
 
 static cartesi::grpc_machine_stub_ptr *convert_from_c(cm_grpc_machine_stub *stub) {
+    if (stub == nullptr) {
+        throw std::invalid_argument("Invalid stub output");
+    }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return reinterpret_cast<cartesi::grpc_machine_stub_ptr *>(stub);
 }
@@ -42,6 +48,9 @@ static inline cartesi::i_virtual_machine *get_grpc_virtual_machine(const cartesi
 
 int cm_create_grpc_machine_stub(const char *remote_address, const char *checkin_address, cm_grpc_machine_stub **stub,
     char **err_msg) try {
+    if (stub == nullptr) {
+        throw std::invalid_argument("Invalid stub output");
+    }
     auto *cpp_stub = new std::shared_ptr<cartesi::grpc_machine_stub>(
         new cartesi::grpc_machine_stub{null_to_empty(remote_address), null_to_empty(checkin_address)});
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -62,10 +71,12 @@ void cm_delete_grpc_machine_stub(const cm_grpc_machine_stub *stub) {
 
 int cm_create_grpc_machine(const cm_grpc_machine_stub *stub, const cm_machine_config *config,
     const cm_machine_runtime_config *runtime_config, cm_machine **new_machine, char **err_msg) try {
+    if (new_machine == nullptr) {
+        throw std::invalid_argument("Invalid new machine output");
+    }
     const cartesi::machine_config c = convert_from_c(config);
     const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const auto *cpp_stub = reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
+    const auto *cpp_stub = convert_from_c(stub);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine = reinterpret_cast<cm_machine *>(create_grpc_virtual_machine(*cpp_stub, c, r));
     return cm_result_success(err_msg);
@@ -75,9 +86,11 @@ int cm_create_grpc_machine(const cm_grpc_machine_stub *stub, const cm_machine_co
 
 int cm_load_grpc_machine(const cm_grpc_machine_stub *stub, const char *dir,
     const cm_machine_runtime_config *runtime_config, cm_machine **new_machine, char **err_msg) try {
+    if (new_machine == nullptr) {
+        throw std::invalid_argument("Invalid new machine output");
+    }
     const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const auto *cpp_stub = reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
+    const auto *cpp_stub = convert_from_c(stub);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine = reinterpret_cast<cm_machine *>(load_grpc_virtual_machine(*cpp_stub, dir, r));
     return cm_result_success(err_msg);
@@ -86,8 +99,10 @@ int cm_load_grpc_machine(const cm_grpc_machine_stub *stub, const char *dir,
 }
 
 int cm_get_grpc_machine(const cm_grpc_machine_stub *stub, cm_machine **new_machine, char **err_msg) try {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const auto *cpp_stub = reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
+    if (new_machine == nullptr) {
+        throw std::invalid_argument("Invalid new machine output");
+    }
+    const auto *cpp_stub = convert_from_c(stub);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine = reinterpret_cast<cm_machine *>(get_grpc_virtual_machine(*cpp_stub));
     return cm_result_success(err_msg);
@@ -96,6 +111,9 @@ int cm_get_grpc_machine(const cm_grpc_machine_stub *stub, cm_machine **new_machi
 }
 
 int cm_grpc_get_default_config(const cm_grpc_machine_stub *stub, const cm_machine_config **config, char **err_msg) try {
+    if (config == nullptr) {
+        throw std::invalid_argument("Invalid config output");
+    }
     const auto *cpp_stub = convert_from_c(stub);
     const cartesi::machine_config cpp_config = cartesi::grpc_virtual_machine::get_default_config(*cpp_stub);
     *config = convert_to_c(cpp_config);
@@ -146,6 +164,9 @@ int cm_grpc_get_csr_address(const cm_grpc_machine_stub *stub, CM_PROC_CSR w, uin
 
 int cm_grpc_get_semantic_version(const cm_grpc_machine_stub *stub, const cm_semantic_version **version,
     char **err_msg) try {
+    if (version == nullptr) {
+        throw std::invalid_argument("Invalid version output");
+    }
     const auto *cpp_stub = convert_from_c(stub);
     const cartesi::semantic_version cpp_version = cartesi::grpc_virtual_machine::get_version(*cpp_stub);
     *version = convert_to_c(cpp_version);

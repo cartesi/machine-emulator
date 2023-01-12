@@ -41,6 +41,7 @@ sudo luarocks install lpeg
 sudo luarocks install dkjson
 sudo luarocks install luasocket
 sudo luarocks install luasec
+sudo luarocks install luaposix
 sudo luarocks install md5
 ```
 #### MacOS
@@ -53,6 +54,7 @@ sudo luarocks install lpeg
 sudo luarocks install dkjson
 sudo luarocks install luasocket
 sudo luarocks install luasec
+sudo luarocks install luaposix
 sudo luarocks install md5
 ```
 
@@ -63,6 +65,7 @@ luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install lpeg
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install dkjson
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install luasocket
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install luasec
+luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install luaposix
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install md5
 ```
 

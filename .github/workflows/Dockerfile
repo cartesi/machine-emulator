@@ -10,6 +10,7 @@ RUN apt-get update && \
 
 RUN luarocks install luasocket && \
     luarocks install luasec && \
+    luarocks install luaposix && \
     luarocks install lpeg && \
     luarocks install md5 && \
     luarocks install dkjson

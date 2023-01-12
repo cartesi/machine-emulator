@@ -307,6 +307,10 @@ where options are:
     select tests to run based on a Lua string <pattern>
     (default: ".*", i.e., all tests)
 
+  --jobs=<N>
+    run N tests in parallel
+    (default: 1, i.e., run tests sequentially)
+
   --periodic-action=<number-period>[,<number-start>]
     stop execution every <number> of cycles and perform action. If
     <number-start> is given, the periodic action will start at that
@@ -382,6 +386,7 @@ local remote_address = nil
 local checkin_address = nil
 local remote = nil
 local output = nil
+local jobs = 1
 local json_list = false
 local periodic_action = false
 local periodic_action_period = math.maxinteger
@@ -433,6 +438,12 @@ local options = {
     { "^%-%-test%=(.*)$", function(o, a)
         if not o or #o < 1 then return false end
         test_pattern = o
+        return true
+    end },
+    { "^%-%-jobs%=([0-9]+)$", function(o, a)
+        if not o or #o < 1 then return false end
+        jobs = tonumber(o)
+        assert(jobs and jobs >= 1, 'invalid number of jobs')
         return true
     end },
     { "^(%-%-periodic%-action%=(.*))$", function(all, v)
@@ -615,62 +626,106 @@ local function print_machine(test_name, expected_cycles)
     )
 end
 
-local function add_error(errors, ram_image, msg, ...)
-    local e = string.format(msg, ...)
-    if not errors[ram_image] then errors[ram_image] = {} end
-    local ram_image_errors = errors[ram_image]
-    ram_image_errors[#ram_image_errors + 1] = e
-end
-
-local function check_test_result(machine, ctx, errors)
+local function run_test(test, run_machine_fn)
+    local ctx = {
+        ram_image = test[1],
+        expected_cycles = test[2],
+        expected_halt_payload = test[3] or 0,
+        expected_yield_payloads = test[4] or {},
+        yield_payload_index = 1,
+        cycles = 0
+    }
+    local machine = build_machine(ctx.ram_image)
+    ctx.cycles = run_machine_fn(machine, 2 * ctx.expected_cycles)
+    local errors = {}
     if #ctx.expected_yield_payloads ~= (ctx.yield_payload_index - 1) then
-        add_error(errors, ctx.ram_image, "yielded %d times, expected %d", ctx.yield_payload_index-1, #ctx.expected_yield_payloads)
-        ctx.failed = true
+        table.insert(errors, string.format("\t%s: yielded %d times, expected %d",
+            ctx.ram_image, ctx.yield_payload_index-1, #ctx.expected_yield_payloads))
     end
     if machine:read_htif_tohost_data() >> 1 ~= ctx.expected_halt_payload then
-        add_error(errors, ctx.ram_image, "returned halt payload %d, expected %d",  machine:read_htif_tohost_data() >> 1, ctx.expected_halt_payload)
-        ctx.failed = true
+        table.insert(errors, string.format("\t%s: returned halt payload %d, expected %d",
+            ctx.ram_image, machine:read_htif_tohost_data() >> 1, ctx.expected_halt_payload))
     end
     if ctx.cycles ~= ctx.expected_cycles then
-        add_error(errors, ctx.ram_image, "terminated with mcycle = %d, expected %d", ctx.cycles, ctx.expected_cycles)
-        ctx.failed = true
+        table.insert(errors, string.format("\t%s: terminated with mcycle = %d, expected %d",
+            ctx.ram_image, ctx.cycles, ctx.expected_cycles))
     end
+    machine:destroy()
+    if #errors == 0 then -- success
+        print(ctx.ram_image.. ": passed")
+        return true
+    else
+        print(ctx.ram_image.. ": failed\n"..table.concat(errors, '\n'))
+        return false
+    end
+end
+
+local function run_parallel(tests, run_machine_fn)
+    local unistd = require 'posix.unistd'
+    local syswait = require 'posix.sys.wait'
+    local error_count = 0
+    local pids = {}
+    local running_jobs = 0
+    -- sort to run slower tests first to maximize utilization of CPU cores
+    table.sort(tests, function(a ,b) return b[2] < a[2] end)
+    for _,test in ipairs(tests) do
+        do -- run test in parallel
+            local pid = assert(unistd.fork())
+            if pid == 0 then -- child
+                local ok = run_test(test, run_machine_fn)
+                unistd._exit(ok and 0 or 1)
+            else -- parent
+                pids[pid] = true
+                running_jobs = running_jobs + 1
+            end
+        end
+        while running_jobs >= jobs do
+            -- wait a child to finish
+            local pid, reason, exitcode = syswait.wait(-1)
+            if pid and pid > 0 and reason ~= 'running' then
+                if not (reason == 'exited' and exitcode == 0) then
+                    error_count = error_count + 1
+                end
+                pids[pid] = nil
+                running_jobs = running_jobs - 1
+                break
+            end
+        end
+    end
+    -- wait all children
+    for pid in pairs(pids) do
+        local retpid, reason, exitcode = syswait.wait(pid)
+        if not (retpid == pid and reason == 'exited' and exitcode == 0) then
+            error_count = error_count + 1
+        end
+        pids[pid] = nil
+        running_jobs = running_jobs - 1
+    end
+    assert(running_jobs == 0 and next(pids) == nil)
+    return error_count
+end
+
+local function run_sync(tests, run_machine_fn)
+    local error_count = 0
+    for _,test in ipairs(tests) do
+        if not run_test(test, run_machine_fn) then
+            error_count = error_count + 1
+        end
+    end
+    return error_count
 end
 
 local function run(tests, run_machine_fn)
     run_machine_fn = run_machine_fn or run_machine
-    local errors, error_count = {}, 0
-    for _, test in ipairs(tests) do
-        local ctx = {
-            ram_image = test[1],
-            expected_cycles = test[2],
-            expected_halt_payload = test[3] or 0,
-            expected_yield_payloads = test[4] or {},
-            yield_payload_index = 1,
-            failed = false,
-            cycles = 0
-        }
-        local machine = build_machine(ctx.ram_image)
-
-        io.write(ctx.ram_image, ": ")
-        ctx.cycles = run_machine_fn(machine, 2 * ctx.expected_cycles)
-        check_test_result(machine, ctx, errors)
-
-        if ctx.failed then
-            print("failed")
-            error_count = error_count + 1
-        else
-            print("passed")
-        end
-        machine:destroy()
+    local error_count
+    if jobs > 1 then
+        error_count = run_parallel(tests, run_machine_fn)
+    else
+        error_count = run_sync(tests, run_machine_fn)
     end
+    -- print summary
     if error_count > 0 then
-        io.write(string.format("\nFAILED %d of %d tests:\n\n", error_count, #tests))
-        for k, v in pairs(errors) do
-          for _, e in ipairs(v) do
-            io.write(string.format("\t%s: %s\n", k, e))
-          end
-        end
+        io.write(string.format("\nFAILED %d of %d tests\n\n", error_count, #tests))
         os.exit(1, true)
     else
         io.write(string.format("\nPASSED all %d tests\n\n", #tests))

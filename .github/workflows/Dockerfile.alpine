@@ -23,6 +23,7 @@ RUN apk add --no-cache \
 
 RUN luarocks-5.3 install luasocket && \
     luarocks-5.3 install luasec && \
+    luarocks-5.3 install luaposix && \
     luarocks-5.3 install lpeg && \
     luarocks-5.3 install md5 && \
     luarocks-5.3 install dkjson

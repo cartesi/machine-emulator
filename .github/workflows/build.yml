@@ -52,19 +52,14 @@ jobs:
       - name: Build
         run: make -j$(nproc)
 
+      - name: Build uarch-based interpreter
+        run: make -j$(nproc) uarch
+
       - name: Install [/opt/cartesi]
         run: make install
 
       - name: Fix install permissions [/opt/cartesi]
         run: find /opt/cartesi -type d -exec chmod 755 {} +
-
-      - name: Build uarch-based interpreter
-        run: |
-          make uarch
-
-      - name: Test microarchitecture interpreter
-        run: |
-          make riscv-arch-tests
 
       - name: Upload emulator
         uses: actions/upload-artifact@master
@@ -93,7 +88,9 @@ jobs:
         run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.74.0 libboost-coroutine1.74.0 libboost-filesystem1.74.0 libboost-log1.74.0 libssl1.1 libc-ares2 zlib1g netcat patchelf lua5.3 lua-socket liblua5.3-dev luarocks
 
       - name: Install lua test dependencies
-        run: sudo luarocks install md5
+        run: |
+          sudo luarocks install md5
+          sudo luarocks install luaposix
 
       - name: Download emulator
         uses: actions/download-artifact@master
@@ -109,12 +106,6 @@ jobs:
 
       - name: Create images folder
         run: mkdir -m 755 -p /opt/cartesi/share/images
-
-      - name: Download Microarchitecture ROM
-        uses: actions/download-artifact@master
-        with:
-          name: uarch-rom.bin
-          path: tests
 
       - name: Fix install directories and permissions [/opt/cartesi, ./tests]
         run: |
@@ -181,8 +172,14 @@ jobs:
       - name: Run test suite
         run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
 
-      - name: Run test suite with Microarchitecture
-        run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests --uarch-ram-length=0x20000 --uarch-rom-length=0x20000 --uarch-rom-image=./tests/uarch-rom.bin uarch_run
+      - name: Run test scripts
+        run: |
+          export PATH=/opt/cartesi/bin:$PATH
+          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
+          export CARTESI_TESTS_PATH=/opt/cartesi/tests
+          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?.lua;"
+          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
+          for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do echo -n 'CTSICTSI' | lua5.3 $x local; done
 
       - name: Run grpc lua test scripts
         run: |
@@ -192,6 +189,15 @@ jobs:
           export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?.lua;"
           export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
           ./tests/test-grpc-server.sh remote-cartesi-machine cartesi-machine cartesi-machine-tests $CARTESI_TESTS_PATH
+
+      - name: Run Merkle tree tests
+        run: |
+         ./tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
+
+      - name: Run C API tests
+        run: |
+          export PATH=/opt/cartesi/bin:$PATH
+          ./tests/test-machine-c-api
 
       - name: Run server-manager tests with ioctl-echo-loop
         env:
@@ -217,23 +223,66 @@ jobs:
           pkill -f server-manager || true
           pkill -f remote-cartesi-machine || true
 
-      - name: Run test scripts
+  uarch-test:
+    name: Microarchitecture Test
+    needs: build
+    runs-on: ubuntu-latest-8-cores
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Install Ubuntu dependencies
         run: |
-          export PATH=/opt/cartesi/bin:$PATH
-          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
-          export CARTESI_TESTS_PATH=/opt/cartesi/tests
+          sudo apt-get update -y
+          sudo apt-get install -y libboost-context1.74.0 libboost-coroutine1.74.0 libboost-filesystem1.74.0 libboost-log1.74.0 libssl1.1 libc-ares2 zlib1g lua5.3 lua-socket liblua5.3-dev luarocks
+
+      - name: Install lua test dependencies
+        run: |
+          sudo luarocks install luaposix
+
+      - name: Download emulator
+        uses: actions/download-artifact@master
+        with:
+          name: emulator
+          path: /opt/cartesi
+
+      - name: Download Microarchitecture ROM
+        uses: actions/download-artifact@master
+        with:
+          name: uarch-rom.bin
+          path: tests
+
+      - name: Fix install directories and permissions [/opt/cartesi]
+        run: |
+          find /opt/cartesi -type d -exec chmod 755 {} +
+          find /opt/cartesi -type f -exec chmod 644 {} +
+          find /opt/cartesi/bin -type f \! -iname "*.lua" -exec chmod 755 {} +
+          find /opt/cartesi/lib -type f -exec chmod 755 {} +
+
+      - name: Test microarchitecture interpreter
+        run: |
           export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?.lua;"
           export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
-          for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do echo -n 'CTSICTSI' | lua5.3 $x local; done
+          make riscv-arch-tests JOBS=$(nproc)
 
-      - name: Run Merkle tree tests
-        run: |
-         ./tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
+      - name: Download test suite
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/machine-tests
+          tag: ${{ env.TEST_VERSION }}
+          file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
+          token: ${{ secrets.CI_TOKEN }}
 
-      - name: Run C API tests
-        run: |
-          export PATH=/opt/cartesi/bin:$PATH
-          ./tests/test-machine-c-api
+      - name: Untar test suite
+        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
+
+      - name: Run test suite
+        run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
+
+      - name: Run test suite with Microarchitecture
+        run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests --uarch-ram-length=0x20000 --uarch-rom-length=0x20000 --uarch-rom-image=./tests/uarch-rom.bin --jobs=$(nproc) uarch_run
 
   static-analysis:
     name: Static Analysis
@@ -286,10 +335,18 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev luarocks lua-socket clang llvm lcov
+          sudo apt-get install -y build-essential libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev luarocks lua-socket clang llvm lcov
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 12
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 12
+          sudo update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-12 12
+          sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-12 12
+          gcc -v
+          g++ -v
 
       - name: Install lua test dependencies
-        run: sudo luarocks install md5
+        run: |
+          sudo luarocks install md5
+          sudo luarocks install luaposix
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
@@ -362,7 +419,7 @@ jobs:
         run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
 
       - name: Build
-        run: make coverage-toolchain=gcc -j$(nproc)
+        run: make -j$(nproc) coverage-toolchain=gcc
 
       - name: Install [/opt/cartesi]
         run: make install
@@ -377,7 +434,7 @@ jobs:
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
           export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?.lua;"
           export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
-          make coverage-toolchain=gcc coverage-run
+          make -j1 coverage-toolchain=gcc coverage
 
       - name: Show coverage summary
         run: cat src/coverage.txt
@@ -396,6 +453,123 @@ jobs:
       #  with:
       #    github-token: ${{ secrets.GITHUB_TOKEN }}
       #    path-to-lcov: ./src/coverage.info
+
+  sanitize:
+    name: Sanitize
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Install Ubuntu dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev luarocks lua-socket clang llvm lcov
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 12
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 12
+          sudo update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-12 12
+          sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-12 12
+          gcc -v
+          g++ -v
+
+      # We also need to preload libstdc++ to workaround issue https://github.com/google/sanitizers/issues/934 in Ubuntu
+      - name: Patch libasan.so
+        run: sudo patchelf --add-needed `gcc -print-file-name=libstdc++.so` `gcc -print-file-name=libasan.so`
+
+      - name: Install lua test dependencies
+        run: |
+          sudo luarocks install md5
+          sudo luarocks install luaposix
+
+      - name: Download cache of third-party build
+        run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
+        id: download_cache
+        continue-on-error: true
+        env:
+          AWS_REGION: 'us-east-1'
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Build third-party dependencies
+        id: build_dep
+        if: ${{ steps.download_cache.outcome == 'failure' }}
+        run: make -j$(nproc) dep
+
+      - name: Fix build dependencies permissions
+        run: chmod +x ./build/`uname`_`uname -m`/bin/protoc ./build/`uname`_`uname -m`/bin/grpc_cpp_plugin
+
+      - name: Cache third-party build
+        if: ${{ steps.build_dep.outcome == 'success' }}
+        run: aws s3 sync ./build s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION}
+        env:
+          AWS_REGION: 'us-east-1'
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Download [rootfs.ext2]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/image-rootfs
+          tag: ${{ env.ROOTFS_VERSION }}
+          file: rootfs-${{ env.ROOTFS_VERSION }}.ext2
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Download [kernel.bin]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/image-kernel
+          tag: ${{ env.KERNEL_VERSION }}
+          file: linux-${{ env.LINUX_VERSION }}.bin
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Download [rom.bin]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/machine-emulator-rom
+          tag: ${{ env.ROM_VERSION }}
+          file: rom-${{ env.ROM_VERSION }}.bin
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Create images folder
+        run: mkdir -m 755 -p /opt/cartesi/share/images
+
+      - name: Move images to cartesi images folder
+        run: |
+          mv rom-*.bin linux-*.bin rootfs-*.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
+          cd /opt/cartesi/share/images/ && ln -s rom-${{ env.ROM_VERSION }}.bin rom.bin
+          cd /opt/cartesi/share/images/ && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
+
+      - name: Download test suite
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/machine-tests
+          tag: ${{ env.TEST_VERSION }}
+          file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Untar test suite
+        run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
+
+      - name: Build
+        run: make sanitize=yes -j$(nproc)
+
+      - name: Install [/opt/cartesi]
+        run: make install
+
+      - name: Fix install permissions [/opt/cartesi]
+        run: find /opt/cartesi -type d -exec chmod 755 {} +
+
+      - name: Run tests with sanitizer
+        run: |
+          export TEST_PATH=/opt/cartesi/tests
+          export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
+          export CARTESI_TESTS_PATH=/opt/cartesi/tests
+          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?.lua;"
+          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
+          make sanitize=yes test-all
 
   verify:
     name: Verify
@@ -738,7 +912,7 @@ jobs:
 
   publish_images:
     name: Publish Docker images
-    needs: [static-analysis, test, ubuntu-image-build, alpine-image-build]
+    needs: [static-analysis, coverage, sanitize, test, uarch-test, ubuntu-image-build, alpine-image-build]
     runs-on: ubuntu-22.04
     if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/develop') }}
     steps:
@@ -826,7 +1000,7 @@ jobs:
 
   release:
     name: Release machine emulator tarball
-    needs: [static-analysis, test, ubuntu-image-build, alpine-image-build]
+    needs: [static-analysis, coverage, sanitize, test, uarch-test, ubuntu-image-build, alpine-image-build]
     runs-on: ubuntu-22.04
     if: startsWith(github.ref, 'refs/tags/v')
     steps:

@@ -20,14 +20,15 @@ remote_cartesi_machine=$1
 cartesi_machine=$2
 cartesi_machine_tests=$3
 test_path=$4
+lua=${5:-lua5.3}
 
 server_address=127.0.0.1:5001
 checkin_address=127.0.0.1:5002
 
 tests=(
     "$cartesi_machine_tests --remote-address=$server_address --checkin-address=$checkin_address --test-path=\"$test_path\" --test='.*' run"
-    "./tests/machine-bind.lua grpc --remote-address=$server_address --checkin-address=$checkin_address"
-    "./tests/machine-test.lua grpc --remote-address=$server_address --checkin-address=$checkin_address"
+    "$lua ./tests/machine-bind.lua grpc --remote-address=$server_address --checkin-address=$checkin_address"
+    "$lua ./tests/machine-test.lua grpc --remote-address=$server_address --checkin-address=$checkin_address"
     "$cartesi_machine --remote-address=$server_address --checkin-address=$checkin_address --remote-shutdown"
 )
 

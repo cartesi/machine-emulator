@@ -162,6 +162,8 @@ else ifeq ($(release),yes)
 OPTFLAGS+=-O2
 else ifeq ($(debug),yes)
 OPTFLAGS+=-Og -g
+else ifeq ($(sanitize),yes)
+OPTFLAGS+=-Og -g
 else
 OPTFLAGS+=-O2 -g
 endif
@@ -186,15 +188,17 @@ ifeq ($(lto),yes)
 OPTFLAGS+=-flto=auto
 endif
 
-# Undefined Sanitizer
 ifeq ($(sanitize),yes)
-UBFLAGS+=-fsanitize=undefined #-fsanitize-undefined-trap-on-error
-UBLDFLAGS+=-fsanitize=undefined
+# Enable address and undefined sanitizers
+UBFLAGS+=-fsanitize=address,undefined -fno-sanitize-recover=all
+LIBASAN_SO=$(shell realpath `$(CC) -print-file-name=libasan.so`)
+LUA=LD_PRELOAD=$(LIBASAN_SO) $(LUA_BIN)
 else
 # Flags to minimize undefined behavior
 UBFLAGS+=-fno-strict-aliasing
 UBFLAGS+=-fno-strict-overflow
 UBFLAGS+=-fno-delete-null-pointer-checks
+LUA=$(LUA_BIN)
 endif
 
 # Compile for current system processor
@@ -344,7 +348,12 @@ cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS) $(LIBCARTESI_GRPC) $(LIBCARTESI)
 	$(CXX) $(LDFLAGS) $(SOLDFLAGS) -o $@ $(LUACARTESI_GRPC_OBJS) $(LUACARTESI_GRPC_LIBS)
 
 test: luacartesi
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
+	$(LUA) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
+
+test-uarch-for-coverage:
+	$(MAKE) -C ../third-party/riscv-arch-tests LUA="$(LUA)"
+	$(MAKE) -C ../uarch
+	$(LUA) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*csr.*" --uarch-ram-length=0x20000 --uarch-ram-length=0x20000 --uarch-rom-length=0x20000 --uarch-rom-image=../uarch/uarch-rom.bin uarch_run
 
 test-hash: hash
 	./tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
@@ -352,15 +361,24 @@ test-hash: hash
 # In order to run tests environment variable TEST_PATH with directory path
 # to asset files for cartesi machine tests must be set
 test-grpc: luacartesi grpc
-	./tests/test-grpc-server.sh ./remote-cartesi-machine ./cartesi-machine.lua ./cartesi-machine-tests.lua "$(TEST_PATH)"
+	./tests/test-grpc-server.sh ./remote-cartesi-machine "$(LUA) ./cartesi-machine.lua" "$(LUA) ./cartesi-machine-tests.lua" "$(TEST_PATH)" "$(LUA)"
 
 test-scripts: luacartesi
 	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do \
-		echo -n 'CTSICTSI' | $(LUA_BIN) $$x local || exit 1; \
+		echo -n 'CTSICTSI' | $(LUA) $$x local || exit 1; \
 	done
 
 test-c-api: c-api remote-cartesi-machine
 	./tests/test-machine-c-api
+
+test-linux-workload: luacartesi
+	$(LUA) ./cartesi-machine.lua -- "$(COVERAGE_WORKLOAD)"
+	# Test interactive mode (to cover mcycle overwriting)
+	echo uname | $(LUA) ./cartesi-machine.lua -i sh
+	# Test max mcycle (to cover max mcycle branch)
+	$(LUA) ./cartesi-machine.lua --max-mcycle=1
+
+test-all: test test-hash test-scripts test-grpc test-c-api test-uarch-for-coverage test-linux-workload
 
 lint: $(CLANG_TIDY_TARGETS)
 
@@ -400,17 +418,8 @@ coverage-report:
 		$(COVERAGE_SOURCES)
 endif
 
-run-coverage-workload: luacartesi
-	$(LUA_BIN) ./cartesi-machine.lua -- "$(COVERAGE_WORKLOAD)"
-	# Test interactive mode (to cover mcycle overwriting)
-	echo uname | $(LUA_BIN) ./cartesi-machine.lua -i sh
-	# Test max mcycle (to cover max mcycle branch)
-	$(LUA_BIN) ./cartesi-machine.lua --max-mcycle=1
-
 ifneq ($(coverage-toolchain),)
-.NOTPARALLEL: coverage-run coverage-run-quick
-coverage-run: test test-hash test-grpc test-scripts test-c-api run-coverage-workload coverage-report
-coverage-run-quick: test run-coverage-workload coverage-report
+coverage: test-all coverage-report
 endif
 
 valgrind: luacartesi
@@ -566,22 +575,22 @@ compare-hashes: | $(TEST_EACH_CYCLE_HASHES) $(TEST_HASHES)
 	done
 
 $(HASH_EACH_CYCLE_DIR)/%.hashes: $(TEST_PATH)/%.bin | $(HASH_EACH_CYCLE_DIR)
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=1 --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
+	$(LUA) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=1 --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
 
 $(HASH_DIR)/%.hashes: $(TEST_PATH)/%.bin | $(HASH_DIR)
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
+	$(LUA) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
 	diff $@ $(GROUND_TRUTH_DIR)/$@
 
 $(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(LOG_DIR)
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$(basename $@) step
+	$(LUA) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$(basename $@) step
 	brotli -j -f $(basename $@)
 	diff $@ $(GROUND_TRUTH_DIR)/$@
 
 $(GROUND_TRUTH_DIR)/$(HASH_DIR)/%.hashes: $(TEST_PATH)/%.bin | $(GROUND_TRUTH_DIR)/$(HASH_DIR)
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
+	$(LUA) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
 
 $(GROUND_TRUTH_DIR)/$(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(GROUND_TRUTH_DIR)/$(LOG_DIR)
-	$(LUA_BIN) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$(basename $@) step
+	$(LUA) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$(basename $@) step
 	brotli -j -f $(basename $@)
 
 merkle-tree-hash: $(MERKLE_TREE_HASH_OBJS)

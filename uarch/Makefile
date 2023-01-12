@@ -89,49 +89,53 @@ EMULATOR_SOURCES=\
 	shadow-state.cpp \
 	shadow-pmas.cpp \
 	clint.cpp
-UARCH_OBJS = $(patsubst %.c,%.o,$(patsubst %.cpp,%.o,$(UARCH_SOURCES)))
-EMULATOR_OBJS = $(patsubst %.c,%.o,$(patsubst %.cpp,%.o,$(EMULATOR_SOURCES)))
-UARCH_CPP_TARGETS=$(patsubst %.cpp,%.uarch_cpp,$(filter %.cpp,$(UARCH_SOURCES)))
-UARCH_C_TARGETS=$(patsubst %.c,%.uarch_c,$(filter %.c,$(UARCH_SOURCES)))
-EMULATOR_CPP_TARGETS=$(patsubst %.cpp,%.emulator_cpp,$(filter %.cpp,$(EMULATOR_SOURCES)))
-TARGETS=$(UARCH_C_TARGETS) $(UARCH_CPP_TARGETS) $(EMULATOR_CPP_TARGETS)
+
+UARCH_ROM_OBJS =\
+	uarch-run.bin.o \
+	uarch-rom-entry.o \
+	uarch-runtime.uarch_cpp.o \
+	shadow-state.emulator_cpp.o
+
+UARCH_OBJS = $(patsubst %.c,%.uarch_c.o,$(patsubst %.cpp,%.uarch_cpp.o,$(UARCH_SOURCES)))
+EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,$(EMULATOR_SOURCES)))
+TARGETS=$(UARCH_OBJS) $(EMULATOR_OBJS)
 
 .PHONY: all clean
 
-all: $(TARGETS) uarch-rom.bin
+all: uarch-rom.bin
  
 uarch-rom.bin: uarch-rom.elf
-	$(OBJCOPY) -S -O binary  $^ $@
+	$(OBJCOPY) -S -O binary $^ $@
 
-uarch-rom.elf: $(TARGETS) uarch-rom-entry.o uarch-rom.ld uarch-run.bin.o
-	$(CC) $(CFLAGS) -Wl,uarch-rom.ld -o $@ uarch-run.bin.o uarch-rom-entry.o uarch-runtime.o shadow-state.o
+uarch-rom.elf: uarch-rom.ld $(UARCH_ROM_OBJS)
+	$(CC) $(CFLAGS) -Wl,uarch-rom.ld -o $@ $(UARCH_ROM_OBJS)
 
 uarch-rom-entry.o: $(UARCH_SRC_DIR)/uarch-rom-entry.S
-	$(CC) $(CFLAGS) -c -o $(CONTAINER_OUTPUT_DIR)/$(@F) $(CONTAINER_UARCH_SRC_DIR)/$(<F)
+	$(CC) $(CFLAGS) -c -o $@ $(CONTAINER_UARCH_SRC_DIR)/$(<F)
 
 uarch-run.bin.o: uarch-run.bin
 	$(LD) -r -b binary -o $@ $^ 
 
 uarch-run.bin: uarch-run.elf
-	$(OBJCOPY) -S -O binary  $^ $@
+	$(OBJCOPY) -S -O binary $^ $@
 
-uarch-run.elf: $(UARCH_TARGETS) $(EMULATOR_TARGETS) uarch-ram-entry.o uarch-ram.ld
-	$(CXX) $(CFLAGS) $(CXXFLAGS) -Wl,-T$(CONTAINER_OUTPUT_DIR)/uarch-ram.ld  -o $@  $(EMULATOR_OBJS) $(UARCH_OBJS) uarch-ram-entry.o  -lgcc
+uarch-run.elf: $(UARCH_OBJS) $(EMULATOR_OBJS) uarch-ram.ld uarch-ram-entry.o
+	$(CXX) $(CFLAGS) $(CXXFLAGS) -Wl,-Tuarch-ram.ld -o $@ $(EMULATOR_OBJS) $(UARCH_OBJS) uarch-ram-entry.o -lgcc
 
 uarch-ram-entry.o: $(UARCH_SRC_DIR)/uarch-ram-entry.S
-	$(CC) $(CFLAGS) -c -o $(CONTAINER_OUTPUT_DIR)/$(@F) $(CONTAINER_UARCH_SRC_DIR)/$(<F)
+	$(CC) $(CFLAGS) -c -o $@ $(CONTAINER_UARCH_SRC_DIR)/$(<F)
 
-%.emulator_cpp: $(EMULATOR_SRC_DIR)/%.cpp 
-	$(CXX) $(CXXFLAGS) $(CFLAGS) -c -o $(CONTAINER_OUTPUT_DIR)/$(subst .cpp,.o,$(<F))  $(CONTAINER_EMULATOR_SRC_DIR)/$(<F)
+%.emulator_cpp.o: $(EMULATOR_SRC_DIR)/%.cpp
+	$(CXX) $(CXXFLAGS) $(CFLAGS) -c -o $@ $(CONTAINER_EMULATOR_SRC_DIR)/$(<F)
 
-%.uarch_c: $(UARCH_SRC_DIR)/%.c 
-	$(CC) $(CFLAGS) -c -o $(CONTAINER_OUTPUT_DIR)/$(subst .c,.o,$(<F)) $(CONTAINER_UARCH_SRC_DIR)/$(<F)
+%.uarch_c.o: $(UARCH_SRC_DIR)/%.c
+	$(CC) $(CFLAGS) -c -o $@ $(CONTAINER_UARCH_SRC_DIR)/$(<F)
 
-%.uarch_cpp: $(UARCH_SRC_DIR)/%.cpp 
-	$(CXX) $(CXXFLAGS) $(CFLAGS) -c -o $(CONTAINER_OUTPUT_DIR)/$(subst .cpp,.o,$(<F))  $(CONTAINER_UARCH_SRC_DIR)/$(<F)
+%.uarch_cpp.o: $(UARCH_SRC_DIR)/%.cpp
+	$(CXX) $(CXXFLAGS) $(CFLAGS) -c -o $@ $(CONTAINER_UARCH_SRC_DIR)/$(<F)
 
 %.ld: $(UARCH_SRC_DIR)/%.ld.in
-	$(CC) -o $(CONTAINER_OUTPUT_DIR)/$(@F).tmp -x c $(CFLAGS) -E  $(CONTAINER_UARCH_SRC_DIR)/$(^F)
+	$(CC) -o $(@F).tmp -x c $(CFLAGS) -E $(CONTAINER_UARCH_SRC_DIR)/$(^F)
 	grep -v '^#' $@.tmp > $@
 
 clean:

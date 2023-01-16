@@ -55,7 +55,7 @@ local function stderr(...)
     io.stderr:write(string.format(...))
 end
 
-local final_mcycle = 553
+local final_mcycle = 561
 local exit_payload = 42
 
 function test(config, yield_automatic_enable, yield_manual_enable)

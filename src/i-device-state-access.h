@@ -144,6 +144,7 @@ public:
         return do_read_htif_iyield();
     }
 
+    // LCOV_EXCL_START
     /// \brief Writes a chunk of data to a memory PMA range.
     /// \param paddr Target physical address. Must be aligned to data size.
     /// \param data Pointer to chunk of data.
@@ -153,6 +154,7 @@ public:
     void write_memory(uint64_t paddr, const unsigned char *data, uint64_t log2_size) {
         return do_write_memory(paddr, data, log2_size);
     }
+    // LCOV_EXCL_STOP
 
     /// \brief Reads the istart field of a PMA entry
     /// \param p Index of PMA

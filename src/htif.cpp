@@ -28,19 +28,16 @@ static constexpr auto htif_ihalt_rel_addr = static_cast<uint64_t>(htif_csr::ihal
 static constexpr auto htif_iconsole_rel_addr = static_cast<uint64_t>(htif_csr::iconsole);
 static constexpr auto htif_iyield_rel_addr = static_cast<uint64_t>(htif_csr::iyield);
 
-uint64_t htif_get_csr_rel_addr(htif_csr reg) {
-    return static_cast<uint64_t>(reg);
-}
-
 /// \brief HTIF device read callback. See ::pma_read.
 static bool htif_read(void *context, i_device_state_access *a, uint64_t offset, uint64_t *pval, int log2_size) {
     (void) context;
 
-    // Our HTIF only supports aligned 64-bit reads
-    if (log2_size != 3 || offset & 7) {
+    // Our HTIF only supports 64-bit reads
+    if (log2_size != 3) {
         return false;
     }
 
+    // Only these 64-bit aligned offsets are valid
     switch (offset) {
         case htif_tohost_rel_addr:
             *pval = a->read_htif_tohost();
@@ -78,15 +75,16 @@ static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_
     (void) data;
     execute_status status = execute_status::success;
     // If yield command is enabled, yield and acknowledge
-    if ((a->read_htif_iyield() >> cmd) & 1) {
+    if (cmd < 64 && (a->read_htif_iyield() >> cmd) & 1) {
         if (cmd == HTIF_YIELD_MANUAL) {
             a->set_iflags_Y();
             status = execute_status::success_and_yield;
+            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD, cmd, 0));
         } else if (cmd == HTIF_YIELD_AUTOMATIC) {
             a->set_iflags_X();
             status = execute_status::success_and_yield;
+            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD, cmd, 0));
         }
-        a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD, cmd, 0));
     }
     // Otherwise, silently ignore it
     return status;
@@ -94,7 +92,7 @@ static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_
 
 static execute_status htif_console(i_device_state_access *a, uint64_t cmd, uint64_t data) {
     // If console command is enabled, perform it and acknowledge
-    if ((a->read_htif_iconsole() >> cmd) & 1) {
+    if (cmd < 64 && (a->read_htif_iconsole() >> cmd) & 1) {
         if (cmd == HTIF_CONSOLE_PUTCHAR) {
             uint8_t ch = data & 0xff;
             tty_putchar(ch);
@@ -137,11 +135,12 @@ static execute_status htif_write_tohost(i_device_state_access *a, uint64_t tohos
 static execute_status htif_write(void *context, i_device_state_access *a, uint64_t offset, uint64_t val,
     int log2_size) {
     (void) context;
-    // Our HTIF only supports aligned 64-bit writes
-    if (log2_size != 3 || offset & 7) {
+    // Our HTIF only supports 64-bit writes
+    if (log2_size != 3) {
         return execute_status::failure;
     }
 
+    // Only these 64-bit aligned offsets are valid
     switch (offset) {
         case htif_tohost_rel_addr:
             return htif_write_tohost(a, val);

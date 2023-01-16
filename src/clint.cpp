@@ -23,10 +23,6 @@
 
 namespace cartesi {
 
-uint64_t clint_get_csr_rel_addr(clint_csr reg) {
-    return static_cast<uint64_t>(reg);
-}
-
 static constexpr uint64_t base(uint64_t v) {
     return v - (v % PMA_PAGE_SIZE);
 }

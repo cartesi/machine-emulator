@@ -122,9 +122,11 @@ private:
         return m_a.read_htif_iyield();
     }
 
+    // LCOV_EXCL_START
     void do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t log2_length) override {
         return m_a.write_memory(paddr, data, log2_length);
     }
+    // LCOV_EXCL_STOP
 
     uint64_t do_read_pma_istart(int p) override {
         return m_a.read_pma_istart(p);

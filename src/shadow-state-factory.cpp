@@ -105,7 +105,7 @@ static bool shadow_state_peek(const pma_entry &pma, const machine &m, uint64_t p
 
 pma_entry make_shadow_state_pma_entry(uint64_t start, uint64_t length) {
     pma_entry::flags f{
-        true,                        // R
+        false,                       // R
         false,                       // W
         false,                       // X
         false,                       // IR

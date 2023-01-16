@@ -102,11 +102,6 @@ enum class htif_csr {
     iyield = UINT64_C(0x20)
 };
 
-/// \brief Obtains the relative address of a CSR in HTIF memory.
-/// \param reg CSR name.
-/// \returns The address.
-uint64_t htif_get_csr_rel_addr(htif_csr reg);
-
 } // namespace cartesi
 
 #endif

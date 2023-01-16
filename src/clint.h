@@ -35,11 +35,6 @@ enum class clint_csr {
     mtime = UINT64_C(0xbff8)
 };
 
-/// \brief Obtains the relative address of a CSR in CLINT memory.
-/// \param reg CSR name.
-/// \returns The address.
-uint64_t clint_get_csr_rel_addr(clint_csr reg);
-
 /// \brief Obtains the relative address of the msip0 CSR in HTIF memory.
 static constexpr auto clint_msip0_rel_addr = static_cast<uint64_t>(clint_csr::msip0);
 

@@ -276,7 +276,7 @@ local tests = {
   {"dont_write_x0.bin", 68},
   {"mcycle_write.bin", 18},
   {"lrsc_semantics.bin", 35},
-  {"csr_counters.bin", 752},
+  {"csr_counters.bin", 741},
   {"csr_semantics.bin", 382},
   {"amo.bin", 166},
   {"access.bin", 101},
@@ -285,6 +285,9 @@ local tests = {
   {"illegal_insn.bin", 976},
   {"version_check.bin", 30},
   {"translate_vaddr.bin", 347},
+  {"htif_invalid_ops.bin", 113},
+  {"clint_ops.bin", 137},
+  {"shadow_ops.bin", 118},
 }
 
 -- Microarchitecture configuration

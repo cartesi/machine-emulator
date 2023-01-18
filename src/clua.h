@@ -30,6 +30,8 @@ extern "C" {
 
 namespace cartesi {
 
+#ifdef CLUA_DEBUG_UTILS
+
 /// \brief Prints element at given stack index
 /// \param L Lua state.
 /// \param idx Stack index.
@@ -38,6 +40,8 @@ void clua_print(lua_State *L, int idx);
 /// \brief Dumps stack contents
 /// \param L Lua state.
 void clua_dumpstack(lua_State *L);
+
+#endif
 
 namespace detail {
 template <size_t N, std::size_t... I>
@@ -321,14 +325,6 @@ void clua_setintegerfield(lua_State *L, uint64_t val, const char *name, int idx)
 /// \param idx Index (or pseudo-index) of object in stack
 /// \param ctxidx Index (or pseudo-index) of clua context
 void clua_setstringfield(lua_State *L, const char *val, const char *name, int idx);
-
-/// \brief Sets the lua named field to string value of particular size
-/// \param L Lua state
-/// \param val String value
-/// \param len Size of string
-/// \param idx Index (or pseudo-index) of object in stack
-/// \param ctxidx Index (or pseudo-index) of clua context
-void clua_setlstringfield(lua_State *L, const char *val, size_t len, const char *name, int idx);
 
 /// \brief Sets the lua named field to boolean value
 /// \param L Lua state

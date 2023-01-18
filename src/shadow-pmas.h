@@ -17,6 +17,7 @@
 #ifndef SHADOW_PMAS_H
 #define SHADOW_PMAS_H
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 
@@ -50,10 +51,15 @@ extern const pma_driver shadow_pmas_driver;
 /// \brief Obtains the relative address of a PMA entry in shadow memory.
 /// \param p Index of desired shadow PMA entry, in 0..31.
 /// \returns The address.
-uint64_t shadow_pmas_get_pma_rel_addr(int p);
+static inline uint64_t shadow_pmas_get_pma_rel_addr(int p) {
+    assert(p >= 0 && p < (int) PMA_MAX);
+    return p * sizeof(shadow_pma_entry);
+}
 
 /// \brief Obtains the absolute address of a PMA entry in shadow memory.
-uint64_t shadow_pmas_get_pma_abs_addr(int p);
+static inline uint64_t shadow_pmas_get_pma_abs_addr(int p) {
+    return PMA_SHADOW_PMAS_START_DEF + shadow_pmas_get_pma_rel_addr(p);
+}
 
 } // namespace cartesi
 

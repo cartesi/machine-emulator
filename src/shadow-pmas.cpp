@@ -14,20 +14,9 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#include <cassert>
-
 #include "shadow-pmas.h"
 
 namespace cartesi {
-
-uint64_t shadow_pmas_get_pma_rel_addr(int p) {
-    assert(p >= 0 && p < (int) PMA_MAX);
-    return p * sizeof(shadow_pma_entry);
-}
-
-uint64_t shadow_pmas_get_pma_abs_addr(int p) {
-    return PMA_SHADOW_PMAS_START_DEF + shadow_pmas_get_pma_rel_addr(p);
-}
 
 /// \brief Shadow device read callback. See ::pma_read.
 static bool shadow_pmas_read(void *context, i_device_state_access *a, uint64_t offset, uint64_t *pval, int log2_size) {

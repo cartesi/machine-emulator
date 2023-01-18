@@ -16,9 +16,10 @@
 
 #define MICROARCHITECTURE 1
 
+#include "uarch-runtime.h" // must be included first, because of assert
+
 #include "interpret.h"
 #include "uarch-machine-state-access.h"
-#include "uarch-runtime.h"
 #include <cinttypes>
 
 using namespace cartesi;

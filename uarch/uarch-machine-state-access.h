@@ -18,6 +18,8 @@
 #ifndef uarch_machine_state_access_H
 #define uarch_machine_state_access_H
 
+#include "uarch-runtime.h" // must be included first, because of assert
+
 #include "clint.h"
 #include "device-state-access.h"
 #include "htif.h"
@@ -28,7 +30,6 @@
 #include "shadow-pmas.h"
 #include "uarch-constants.h"
 #include "uarch-defines.h"
-#include "uarch-runtime.h"
 #include <optional>
 
 namespace cartesi {

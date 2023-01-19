@@ -444,7 +444,7 @@ void virtual_machine::do_snapshot(void) {
 }
 
 void virtual_machine::do_rollback(void) {
-    throw std::runtime_error("do_rollback is not supported");
+    throw std::runtime_error("rollback is not supported");
 }
 
 uint64_t virtual_machine::do_read_uarch_x(int i) const {

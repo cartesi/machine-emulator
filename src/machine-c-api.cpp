@@ -157,9 +157,6 @@ static const cartesi::i_virtual_machine *convert_from_c(const cm_machine *m) {
 // Processor configuration conversion functions
 // --------------------------------------------
 static cartesi::processor_config convert_from_c(const cm_processor_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("Invalid processor configuration");
-    }
     cartesi::processor_config new_cpp_config{};
     // Both C and C++ structs contain only aligned uint64_t values
     // so it is safe to do copy
@@ -179,9 +176,6 @@ static cm_processor_config convert_to_c(const cartesi::processor_config &cpp_con
 // Ram configuration conversion functions
 // --------------------------------------------
 static cartesi::ram_config convert_from_c(const cm_ram_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("Invalid ram configuration");
-    }
     cartesi::ram_config new_cpp_ram_config{};
     new_cpp_ram_config.length = c_config->length;
     new_cpp_ram_config.image_filename = null_to_empty(c_config->image_filename);
@@ -200,9 +194,6 @@ static cm_ram_config convert_to_c(const cartesi::ram_config &cpp_config) {
 // --------------------------------------------
 
 static cartesi::rom_config convert_from_c(const cm_rom_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("Invalid rom configuration");
-    }
     cartesi::rom_config new_cpp_rom_config{};
     new_cpp_rom_config.bootargs = null_to_empty(c_config->bootargs);
     new_cpp_rom_config.image_filename = null_to_empty(c_config->image_filename);
@@ -241,9 +232,6 @@ static cm_memory_range_config convert_to_c(const cartesi::memory_range_config &c
 // TLB configuration conversion functions
 // ----------------------------------------------
 static cartesi::tlb_config convert_from_c(const cm_tlb_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("Invalid tlb configuration");
-    }
     cartesi::tlb_config new_cpp_config{};
     new_cpp_config.image_filename = null_to_empty(c_config->image_filename);
     return new_cpp_config;
@@ -259,9 +247,6 @@ static cm_tlb_config convert_to_c(const cartesi::tlb_config &cpp_config) {
 // CLINT configuration conversion functions
 // ----------------------------------------------
 static cartesi::clint_config convert_from_c(const cm_clint_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("Invalid clint configuration");
-    }
     cartesi::clint_config new_cpp_clint_config{};
     new_cpp_clint_config.mtimecmp = c_config->mtimecmp;
     return new_cpp_clint_config;
@@ -278,9 +263,6 @@ static cm_clint_config convert_to_c(const cartesi::clint_config &cpp_config) {
 // HTIF configuration conversion functions
 // ----------------------------------------------
 static cartesi::htif_config convert_from_c(const cm_htif_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("Invalid htif configuration");
-    }
     cartesi::htif_config new_cpp_htif_config{};
     new_cpp_htif_config.fromhost = c_config->fromhost;
     new_cpp_htif_config.tohost = c_config->tohost;
@@ -306,9 +288,6 @@ static cm_htif_config convert_to_c(const cartesi::htif_config &cpp_config) {
 // Rollup configuration conversion functions
 // --------------------------------------------
 static std::optional<cartesi::rollup_config> convert_from_c(const cm_rollup_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("Invalid rollup configuration");
-    }
     if (!c_config->has_value) {
         return {};
     }
@@ -337,9 +316,6 @@ static cm_rollup_config convert_to_c(const std::optional<cartesi::rollup_config>
 // --------------------------------------------
 
 static cartesi::uarch_ram_config convert_from_c(const cm_uarch_ram_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("Invalid uarch ram configuration");
-    }
     cartesi::uarch_ram_config new_cpp_uarch_ram_config{};
     new_cpp_uarch_ram_config.length = c_config->length;
     new_cpp_uarch_ram_config.image_filename = null_to_empty(c_config->image_filename);
@@ -354,9 +330,6 @@ static cm_uarch_ram_config convert_to_c(const cartesi::uarch_ram_config &cpp_con
 }
 
 static cartesi::uarch_rom_config convert_from_c(const cm_uarch_rom_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("Invalid uarch ram configuration");
-    }
     cartesi::uarch_rom_config new_cpp_uarch_rom_config{};
     new_cpp_uarch_rom_config.length = c_config->length;
     new_cpp_uarch_rom_config.image_filename = null_to_empty(c_config->image_filename);
@@ -371,9 +344,6 @@ static cm_uarch_rom_config convert_to_c(const cartesi::uarch_rom_config &cpp_con
 }
 
 static cartesi::uarch_processor_config convert_from_c(const cm_uarch_processor_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("Invalid uarch processor configuration");
-    }
     cartesi::uarch_processor_config new_cpp_config{};
     new_cpp_config.pc = c_config->pc;
     new_cpp_config.cycle = c_config->cycle;
@@ -394,9 +364,6 @@ static cm_uarch_processor_config convert_to_c(const cartesi::uarch_processor_con
 }
 
 static cartesi::uarch_config convert_from_c(const cm_uarch_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("Invalid uarch configuration");
-    }
     cartesi::uarch_config new_cpp_uarch_config{};
     new_cpp_uarch_config.processor = convert_from_c(&c_config->processor);
     new_cpp_uarch_config.ram = convert_from_c(&c_config->ram);
@@ -432,7 +399,6 @@ cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
     if (c_config == nullptr) {
         throw std::invalid_argument("Invalid machine configuration");
     }
-
     cartesi::machine_config new_cpp_machine_config{};
     new_cpp_machine_config.processor = convert_from_c(&c_config->processor);
     new_cpp_machine_config.ram = convert_from_c(&c_config->ram);
@@ -531,9 +497,6 @@ static cm_merkle_tree_proof *convert_to_c(const cartesi::machine_merkle_tree::pr
 }
 
 static cartesi::machine_merkle_tree::proof_type convert_from_c(const cm_merkle_tree_proof *c_proof) {
-    if (c_proof == nullptr) {
-        throw std::invalid_argument("Invalid proof");
-    }
     cartesi::machine_merkle_tree::proof_type cpp_proof(static_cast<int>(c_proof->log2_root_size),
         static_cast<int>(c_proof->log2_target_size));
     cpp_proof.set_target_address(c_proof->target_address);
@@ -572,9 +535,6 @@ static cartesi::access_type convert_from_c(const CM_ACCESS_TYPE c_type) {
 }
 
 cartesi::access_log::type convert_from_c(const cm_access_log_type *type) {
-    if (type == nullptr) {
-        throw std::invalid_argument("Invalid access log type");
-    }
     cartesi::access_log::type cpp_type(type->proofs, type->annotations);
     return cpp_type;
 }
@@ -609,9 +569,6 @@ static cm_access convert_to_c(const cartesi::access &cpp_access) {
 }
 
 static cartesi::access convert_from_c(const cm_access *c_access) {
-    if (c_access == nullptr) {
-        throw std::invalid_argument("Invalid access");
-    }
     cartesi::access cpp_access{};
     cpp_access.set_type(convert_from_c(c_access->type));
     cpp_access.set_log2_size(c_access->log2_size);
@@ -667,9 +624,6 @@ static cm_bracket_note convert_to_c(const cartesi::bracket_note &cpp_bracket_not
 }
 
 static cartesi::bracket_note convert_from_c(const cm_bracket_note *c_bracket_note) {
-    if (c_bracket_note == nullptr) {
-        throw std::invalid_argument("Invalid bracket note");
-    }
     cartesi::bracket_note cpp_bracket_note{};
     cpp_bracket_note.type = convert_from_c(c_bracket_note->type);
     cpp_bracket_note.where = c_bracket_note->where;
@@ -738,12 +692,10 @@ cartesi::access_log convert_from_c(const cm_access_log *c_acc_log) {
 // -----------------------------------------------------
 const cm_machine_config *cm_new_default_machine_config(void) {
     cartesi::machine_config cpp_config = cartesi::machine::get_default_config();
-
     return convert_to_c(cpp_config);
 }
 
 void cm_delete_machine_config(const cm_machine_config *config) {
-
     if (config == nullptr) {
         return;
     }
@@ -1312,44 +1264,11 @@ void cm_delete_memory_range_config(const cm_memory_range_config *config) {
     delete config;
 }
 
-void cm_delete_rollup_config(const cm_rollup_config *config) {
-    if (config == nullptr) {
-        return;
-    }
-    delete[] config->input_metadata.image_filename;
-    delete[] config->voucher_hashes.image_filename;
-    delete[] config->notice_hashes.image_filename;
-    delete config;
-}
-
 void cm_delete_error_message(const char *err_msg) {
     delete[] err_msg;
 }
 
 void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config) {
-    if (config == nullptr) {
-        return;
-    }
-    delete config;
-}
-
-void cm_delete_uarch_ram_config(const cm_uarch_ram_config *config) {
-    if (config == nullptr) {
-        return;
-    }
-    delete[] config->image_filename;
-    delete config;
-}
-
-void cm_delete_uarch_rom_config(const cm_uarch_rom_config *config) {
-    if (config == nullptr) {
-        return;
-    }
-    delete[] config->image_filename;
-    delete config;
-}
-
-void cm_delete_uarch_config(const cm_uarch_config *config) {
     if (config == nullptr) {
         return;
     }

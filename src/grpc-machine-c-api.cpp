@@ -8,7 +8,7 @@
 
 static const cartesi::grpc_machine_stub_ptr *convert_from_c(const cm_grpc_machine_stub *stub) {
     if (stub == nullptr) {
-        throw std::invalid_argument("Invalid stub output");
+        throw std::invalid_argument("Invalid stub");
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
@@ -16,7 +16,7 @@ static const cartesi::grpc_machine_stub_ptr *convert_from_c(const cm_grpc_machin
 
 static cartesi::grpc_machine_stub_ptr *convert_from_c(cm_grpc_machine_stub *stub) {
     if (stub == nullptr) {
-        throw std::invalid_argument("Invalid stub output");
+        throw std::invalid_argument("Invalid stub");
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return reinterpret_cast<cartesi::grpc_machine_stub_ptr *>(stub);

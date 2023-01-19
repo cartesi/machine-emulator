@@ -1740,7 +1740,7 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
     for (uint64_t vaddr_page = vaddr_page_start; vaddr_page < vaddr_page_limit; vaddr_page += PMA_PAGE_SIZE) {
         uint64_t paddr_page = 0;
         if (!translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
-            throw std::runtime_error{"page fault"};
+            throw std::invalid_argument{"page fault"};
         }
         uint64_t paddr = paddr_page;
         uint64_t vaddr = vaddr_page;
@@ -1773,7 +1773,7 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
         // perform address translation using read access mode,
         // so we can write any reachable virtual memory range
         if (!translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
-            throw std::runtime_error{"page fault"};
+            throw std::invalid_argument{"page fault"};
         }
         uint64_t paddr = paddr_page;
         uint64_t vaddr = vaddr_page;

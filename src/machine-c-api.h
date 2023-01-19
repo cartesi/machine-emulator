@@ -1545,18 +1545,6 @@ CM_API void cm_delete_error_message(const char *err_msg);
 /// \returns void
 CM_API void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config);
 
-/// \brief Deletes allocated microarchitecture ram config
-/// \returns void
-CM_API void cm_delete_uarch_ram_config(const cm_uarch_ram_config *config);
-
-/// \brief Deletes allocated microarchitecture rom config
-/// \returns void
-CM_API void cm_delete_uarch_rom_config(const cm_uarch_rom_config *config);
-
-/// \brief Deletes allocated dhd microarchitecture config
-/// \returns void
-CM_API void cm_delete_uarch_config(const cm_uarch_config *config);
-
 /// \brief Destroys machine
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg

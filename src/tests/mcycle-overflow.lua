@@ -21,6 +21,7 @@ local test_util = require "tests.util"
 
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
 local MAX_MCYCLE = -1
+local MAX_UARCH_CYCLE = -1
 
 local function build_machine()
     local config =  {
@@ -37,9 +38,15 @@ local function build_machine()
             image_filename = test_util.tests_path .. "mcycle_overflow.bin",
             length = 32 << 20,
         },
+        uarch = { 
+            ram = { 
+                length = 1 << 20,
+                image_filename = test_util.create_test_uarch_program() 
+            }
+        }
     }
     local machine = cartesi.machine(config)
-
+    os.remove(config.uarch.ram.image_filename)
     -- Stop the machine before the first RAM instruction
     local wfi_cycle = 7
     assert(machine:run(wfi_cycle) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
@@ -75,15 +82,15 @@ do_test("machine run shouldn't change state in max mcycle", function(machine)
 end)
 
 for _, proofs in ipairs{true, false} do
-    test_util.disabled_test("machine step should do nothing on max mcycle [proofs=" ..
+    do_test("machine step should do nothing on max mcycle [proofs=" ..
             tostring(proofs) .. "]", function(machine)
-        machine:write_mcycle(MAX_MCYCLE)
+        machine:write_uarch_cycle(MAX_UARCH_CYCLE)
         local log = machine:step{proofs=proofs}
-        assert(machine:read_mcycle() == MAX_MCYCLE)
+        assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
         assert(#log.accesses == 1)
         assert(log.accesses[1].type == "read")
-        assert(log.accesses[1].address == 0x228)
-        assert(log.accesses[1].read == string.pack('J', MAX_MCYCLE))
+        assert(log.accesses[1].address == 0x320) -- address of uarch_cycle in shadow
+        assert(log.accesses[1].read == string.pack('J', MAX_UARCH_CYCLE))
         assert((log.accesses[1].proof ~= nil) == proofs)
     end)
 end

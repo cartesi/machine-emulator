@@ -320,7 +320,6 @@ static hash_type calculate_proof_root_hash(const cm_merkle_tree_proof *proof) {
 static std::vector<uint8_t> parse_pma_file(const std::string &path) {
     std::streampos size;
     std::ifstream file(path, std::ios::binary);
-
     file.seekg(0, std::ios::end);
     size = file.tellg();
     file.seekg(0, std::ios::beg);
@@ -334,7 +333,8 @@ static int ceil_log2(uint64_t x) {
     return static_cast<int>(std::ceil(std::log2(static_cast<double>(x))));
 }
 
-static hash_type calculate_emulator_hash(const std::array<const char *, 7> &pmas_files) {
+static hash_type calculate_emulator_hash(const std::vector<const char *> &pmas_files) {
+    assert(pmas_files.size() >= 7);
     using namespace cartesi;
     cartesi::keccak_256_hasher h;
     auto shadow_state = parse_pma_file(pmas_files[0]);
@@ -344,6 +344,10 @@ static hash_type calculate_emulator_hash(const std::array<const char *, 7> &pmas
     auto clint = parse_pma_file(pmas_files[4]);
     auto htif = parse_pma_file(pmas_files[5]);
     auto ram = parse_pma_file(pmas_files[6]);
+    std::vector<uint8_t> uarch_ram(0);
+    if (pmas_files.size() >= 8) {
+        uarch_ram = parse_pma_file(pmas_files[7]);
+    }
 
     std::vector<uint8_t> shadow_rom;
     shadow_rom.reserve(shadow_state.size() + rom.size() + shadow_pmas.size());
@@ -375,11 +379,20 @@ static hash_type calculate_emulator_hash(const std::array<const char *, 7> &pmas
     clint_space_hash = extend_region_hash(clint_space_hash, PMA_CLINT_START, clint_size_log2, 25);
 
     get_concat_hash(h, shadow_rom_tlb_space_hash, clint_space_hash, shadow_rom_tlb_clint_hash); // 26
-    shadow_rom_tlb_clint_hash = extend_region_hash(shadow_rom_tlb_clint_hash, 0, 26, 30);
+    shadow_rom_tlb_clint_hash = extend_region_hash(shadow_rom_tlb_clint_hash, 0, 26, 29);
 
     uint64_t htif_size_log2 = ceil_log2(htif.size());
-    auto htif_space_hash = calculate_region_hash_2(PMA_HTIF_START, htif, htif_size_log2, 30);
-    get_concat_hash(h, shadow_rom_tlb_clint_hash, htif_space_hash, left); // 31
+    auto htif_space_hash = calculate_region_hash_2(PMA_HTIF_START, htif, htif_size_log2, 29);
+    get_concat_hash(h, shadow_rom_tlb_clint_hash, htif_space_hash, left); // 30
+
+    auto uarch_ram_space_hash = zero_keccak_hash_table[30];
+    if (uarch_ram.size() > 0) {
+        auto uarch_ram_size_log2 = ceil_log2(uarch_ram.size());
+        uarch_ram_space_hash = calculate_region_hash(uarch_ram, (uarch_ram.size() + PMA_PAGE_SIZE - 1) / PMA_PAGE_SIZE,
+            PMA_PAGE_SIZE_LOG2, uarch_ram_size_log2);
+        uarch_ram_space_hash = extend_region_hash(uarch_ram_space_hash, PMA_UARCH_RAM_START, uarch_ram_size_log2, 30);
+    }
+    get_concat_hash(h, left, uarch_ram_space_hash, left); // 31
 
     uint64_t ram_size_log2 = ceil_log2(ram.size());
     auto ram_space_hash = calculate_region_hash_2(PMA_RAM_START, ram, ram_size_log2, 31);

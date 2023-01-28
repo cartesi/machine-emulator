@@ -1552,19 +1552,19 @@ const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas(voi
 
 void machine::dump_pmas(void) const {
     auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
-    for (const auto &pma : m_s.pmas) {
-        if (pma.get_length() == 0) {
+    for (const auto &pma : m_pmas) {
+        if (pma->get_length() == 0) {
             break;
         }
         std::array<char, 256> filename{};
-        (void) sprintf(filename.data(), "%016" PRIx64 "--%016" PRIx64 ".bin", pma.get_start(), pma.get_length());
+        (void) sprintf(filename.data(), "%016" PRIx64 "--%016" PRIx64 ".bin", pma->get_start(), pma->get_length());
         std::cerr << "writing to " << filename.data() << '\n';
         auto fp = unique_fopen(filename.data(), "wb");
-        for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length();
+        for (uint64_t page_start_in_range = 0; page_start_in_range < pma->get_length();
              page_start_in_range += PMA_PAGE_SIZE) {
             const unsigned char *page_data = nullptr;
-            auto peek = pma.get_peek();
-            if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
+            auto peek = pma->get_peek();
+            if (!peek(*pma, *this, page_start_in_range, &page_data, scratch.get())) {
                 throw std::runtime_error{"peek failed"};
             } else {
                 if (!page_data) {

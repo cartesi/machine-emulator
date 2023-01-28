@@ -222,9 +222,10 @@ local pmas_file_names = {
     "0000000000020000--0000000000006000.bin", -- shadow tlb
     "0000000002000000--00000000000c0000.bin", -- clint
     "0000000040008000--0000000000001000.bin", -- htif
-    "0000000080000000--0000000000100000.bin"  -- ram
+    "0000000080000000--0000000000100000.bin", -- ram
+    "0000000070000000--0000000000010000.bin"  -- uarch ram
 }
-local pmas_sizes = { 4096, 61440, 4096, 24576, 786432, 4096, 1048576 }
+local pmas_sizes = { 4096, 61440, 4096, 24576, 786432, 4096, 1048576, 65536, 65536}
 
 local function build_machine(type)
     -- Create new machine
@@ -232,11 +233,13 @@ local function build_machine(type)
     local initial_csr_values = get_cpu_csr_test_values()
     local initial_xreg_values = get_cpu_xreg_test_values()
     initial_csr_values.x = initial_xreg_values
-
     local config = {
         processor = initial_csr_values,
         rom = {image_filename = test_util.images_path .. "rom.bin"},
         ram = {length = 1 << 20},
+        uarch = { 
+            ram = { length = 1 << 16, image_filename = test_util.create_test_uarch_program() },
+        }
     }
     local runtime = {
         concurrency = {
@@ -251,7 +254,7 @@ local function build_machine(type)
     else
         new_machine = assert(cartesi.machine(config, runtime))
     end
-
+    os.remove(config.uarch.ram.image_filename)
     initial_csr_values.x = nil
     initial_csr_values.mvendorid = nil
     initial_csr_values.marchid = nil
@@ -555,17 +558,17 @@ do_test("writen and expected register values should match",
 )
 
 print("\n\n perform step and check mcycle register")
-test_util.disabled_test("mcycle value should match",
+do_test("mcycle value should match",
     function(machine)
         local log_type = {}
-        local mcycle_initial_value = machine:read_csr('mcycle')
+        local uarch_cycle_initial_value = machine:read_csr('uarch_cycle')
 
         machine:step(log_type)
 
         -- Check mcycle increment
-        local mcycle_current_value = machine:read_csr('mcycle')
-        assert(mcycle_current_value == mcycle_initial_value + 1,
-            "wrong mcycle value")
+        local uarch_cycle_current_value = machine:read_csr('uarch_cycle')
+        assert(uarch_cycle_current_value == uarch_cycle_initial_value + 1,
+            "wrong uarch_cycle value")
     end
 )
 
@@ -651,7 +654,7 @@ do_test("dumped register values should match",
 )
 
 print("\n\n dump log  to console")
-test_util.disabled_test("dumped log content should match",
+do_test("dumped log content should match",
     function(machine)
         -- Dump log and check values
         local lua_code = [[ "
@@ -660,34 +663,47 @@ test_util.disabled_test("dumped log content should match",
                                  cartesi_util = require 'cartesi.util'
 
                                  local initial_csr_values = {}
-
+                                 local uarch_ram_path = test_util.create_test_uarch_program()
                                  local machine = cartesi.machine {
                                  processor = initial_csr_values,
                                  ram = {length = 1 << 20},
-                                 rom = {image_filename = test_util.images_path .. 'rom.bin'}
+                                 rom = {image_filename = test_util.images_path .. 'rom.bin'},
+                                 uarch = { 
+                                    ram = { length = 1 << 16, image_filename = uarch_ram_path }
                                  }
-                                 local log_type = {}
+                                 }
+                                 os.remove(uarch_ram_path)
+                                 local log_type = {proofs = false, annotations = true}
                                  local log = machine:step(log_type)
                                  cartesi_util.dump_log(log, io.stdout)
                                  " 2>&1]]
         local p = io.popen(lua_cmd .. lua_code)
         local output = p:read(2000)
         p:close()
+        local expected_output = 
+            "begin step\n" ..
+            "  1: read uarch.cycle@0x320(800): 0x0(0)\n" ..
+            "  2: read uarch.halt_flag@0x328(808): 0x0(0)\n" ..
+            "  3: read uarch.pc@0x330(816): 0x70000000(1879048192)\n" ..
+            "  4: read memory@0x70000000(1879048192): 0x7ffff2b707b00513(9223357429799978259)\n" ..
+            "  begin addi\n" ..
+            "    5: read uarch.x@0x340(832): 0x0(0)\n" ..
+            "    6: write uarch.x@0x390(912): 0x0(0) -> 0x7b(123)\n" ..
+            "    7: write uarch.pc@0x330(816): 0x70000000(1879048192) -> 0x70000004(1879048196)\n" ..
+            "  end addi\n" ..
+            "  8: write uarch.cycle@0x320(800): 0x0(0) -> 0x1(1)\n" ..
+            "end step\n"
 
         print("Output of dump log:")
         print("--------------------------")
         print(output)
         print("--------------------------")
-        assert(output:find("1: read @0x228(552)",1,true), "Cound not find step 1 ")
-        assert(output:find("21: read @0x10010(65552): 0x1069(4201)",1,true),
-            "Cound not find step 21")
-        assert(output:find("32: write @0x228(552): 0x0(0) -> 0x1(1)",1,true),
-            "Cound not find step 32")
+        assert(output == expected_output, "Output does not match expected output:\n"..expected_output)
     end
 )
 
 print("\n\ntesting step and verification")
-test_util.disabled_test("machine step should pass verifications",
+do_test("machine step should pass verifications",
     function(machine)
         local module = cartesi
         if (type == "grpc") then

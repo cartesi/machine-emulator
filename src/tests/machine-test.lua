@@ -146,7 +146,18 @@ local pmas_file_names = {
     "0000000000020000--0000000000006000.bin", -- shadow tlb
     "0000000002000000--00000000000c0000.bin", -- clint
     "0000000040008000--0000000000001000.bin", -- htif
-    "0000000080000000--0000000000100000.bin"  -- ram
+    "0000000080000000--0000000000100000.bin",  -- ram
+}
+
+local pmas_file_names_with_uarch = {
+    "0000000000000000--0000000000001000.bin", -- shadow state
+    "0000000000001000--000000000000f000.bin", -- rom
+    "0000000000010000--0000000000001000.bin", -- shadow pmas
+    "0000000000020000--0000000000006000.bin", -- shadow tlb
+    "0000000002000000--00000000000c0000.bin", -- clint
+    "0000000040008000--0000000000001000.bin", -- htif
+    "0000000080000000--0000000000100000.bin",  -- ram
+    "0000000070000000--0000000000100000.bin" -- uarch ram
 }
 
 
@@ -179,6 +190,23 @@ local function build_machine(type, config)
         new_machine = assert(cartesi.machine(config, runtime))
     end
     return new_machine
+end
+
+local function build_uarch_machine(type)
+    local config = {
+        processor = {},
+        ram = {length = 1 << 20},
+        rom = {image_filename = rom_image},
+        uarch = { 
+            ram = { 
+                length = 1 << 20, 
+                image_filename = test_util.create_test_uarch_program() 
+            }
+        }
+    }
+    local machine = build_machine(type, config)
+    os.remove(config.uarch.ram.image_filename)
+    return machine
 end
 
 local do_test = test_util.make_do_test(build_machine, machine_type)
@@ -263,15 +291,14 @@ do_test("machine initial hash should match",
 )
 
 print("\n\ntesting root hash after step one")
-test_util.disabled_test("machine root hash after step one should match",
+test_util.make_do_test(build_uarch_machine, machine_type)("machine root hash after step one should match",
     function(machine)
         -- Get starting root hash
         local root_hash = machine:get_root_hash()
         print("Root hash:", test_util.tohex(root_hash))
 
         machine:dump_pmas()
-        local calculated_root_hash = test_util.calculate_emulator_hash(test_path,
-                                                pmas_file_names, machine)
+        local calculated_root_hash = test_util.calculate_emulator_hash(test_path, pmas_file_names_with_uarch, machine)
         remove_files(pmas_file_names)
 
         assert(test_util.tohex(root_hash) ==
@@ -286,7 +313,7 @@ test_util.disabled_test("machine root hash after step one should match",
 
         machine:dump_pmas()
         local calculated_root_hash_step1 = test_util.calculate_emulator_hash(test_path,
-                                                        pmas_file_names, machine)
+                                                    pmas_file_names_with_uarch, machine)
 
         -- Remove dumped pmas files
         remove_files(pmas_file_names)
@@ -298,7 +325,7 @@ test_util.disabled_test("machine root hash after step one should match",
 )
 
 print("\n\ntesting proof after step one")
-test_util.disabled_test("proof check should pass",
+test_util.make_do_test(build_uarch_machine, machine_type)("proof check should pass",
     function(machine)
         local log_type = {}
         machine:step(log_type)
@@ -517,22 +544,19 @@ test_util.make_do_test(build_machine, machine_type, {
 )
 
 print("\n\n check for relevant register values after step 1")
-test_util.disabled_test("register values should match",
+test_util.make_do_test(build_uarch_machine, machine_type)("register values should match",
     function(machine)
-        local pc_before = machine:read_pc()
-        local icycleinstret_before = machine:read_icycleinstret()
-        local mcycle_before = machine:read_mcycle()
+        local uarch_pc_before = machine:read_uarch_pc()
+        local uarch_cycle_before = machine:read_uarch_cycle()
 
         local log_type = {}
         machine:step(log_type)
 
-        local pc_after = machine:read_pc()
-        local icycleinstret_after = machine:read_icycleinstret()
-        local mcycle_after = machine:read_mcycle()
+        local uarch_pc_after = machine:read_uarch_pc()
+        local uarch_cycle_after = machine:read_uarch_cycle()
 
-        assert(pc_before + 4 == pc_after, "wrong pc value")
-        assert(icycleinstret_before == icycleinstret_after, "wrong icycleinstret value")
-        assert(mcycle_before + 1 == mcycle_after, "wrong mcycle value")
+        assert(uarch_pc_before + 4 == uarch_pc_after, "wrong uarch_pc value")
+        assert(uarch_cycle_before + 1 == uarch_cycle_after, "wrong uarch_cycle value")
     end
 )
 

@@ -102,6 +102,18 @@ local test_util = {
     tests_path = adjust_images_path(os.getenv("CARTESI_TESTS_PATH"))
 }
 
+function test_util.create_test_uarch_program() 
+    local file_path = os.tmpname()
+    local f = io.open(file_path, 'wb')
+    f:write(string.pack("I4", 0x07b00513)) --   li	a0,123
+    f:write(string.pack("I4", 0x7ffff2b7)) --   lui	t0,0x7ffff   UARCH_MMIO_HALT_ADDR_DEF
+    f:write(string.pack("I4", 0x0182829b)) --   addiw	t0,t0,24
+    f:write(string.pack("I4", 0x00100313)) --   li	t1,1           UARCH_MMIO_HALT_VALUE_DEF
+    f:write(string.pack("I4", 0x0062b023)) --   sd	t1,0(t0)       Halt uarch
+    f:close()
+    return file_path
+end
+
 function test_util.make_do_test(build_machine, type, config)
     return function(description, f)
         io.write("  " .. description .. "...\n")
@@ -321,6 +333,9 @@ end
 
 function test_util.parse_pma_file(filename)
     local fd = io.open(filename, "rb")
+    if not fd then
+        return ""
+    end
     local data_size = fd:seek("end")
     fd:seek("set")
     local data = fd:read(data_size)
@@ -337,6 +352,7 @@ local PMA_SHADOW_TLB_LENGTH = 0x6000
 local PMA_CLINT_START = 0x2000000
 local PMA_CLINT_LENGTH = 0xC0000
 local PMA_HTIF_START = 0x40008000
+local PMA_UARCH_RAM_START = 0x70000000
 local PMA_RAM_START = 0x80000000
 local PMA_PAGE_SIZE_LOG2 = 12
 local PMA_PAGE_SIZE = 1 << PMA_PAGE_SIZE_LOG2
@@ -359,6 +375,10 @@ function test_util.calculate_emulator_hash(test_path, pmas_files)
     local clint = test_util.parse_pma_file(test_path .. pmas_files[5])
     local htif = test_util.parse_pma_file(test_path .. pmas_files[6])
     local ram = test_util.parse_pma_file(test_path .. pmas_files[7])
+    local uarch_ram = ""
+    if pmas_files[8] then
+        uarch_ram = test_util.parse_pma_file(test_path .. pmas_files[8])
+    end
 
     local shadow_rom = shadow_state .. rom .. shadow_pmas
 
@@ -382,11 +402,18 @@ function test_util.calculate_emulator_hash(test_path, pmas_files)
     clint_space_hash = extend_region_hash(clint_space_hash, PMA_CLINT_START, clint_size_log2, 25)
 
     local shadow_rom_tlb_clint_hash = cartesi.keccak(shadow_rom_tlb_space_hash, clint_space_hash) -- 26
-    shadow_rom_tlb_clint_hash = extend_region_hash(shadow_rom_tlb_clint_hash, 0, 26, 30)
+    shadow_rom_tlb_clint_hash = extend_region_hash(shadow_rom_tlb_clint_hash, 0, 26, 29)
 
     local htif_size_log2 = ceil_log2(#htif)
-    local htif_space_hash = calculate_region_hash_2(PMA_HTIF_START, htif, htif_size_log2, 30)
-    local left = cartesi.keccak(shadow_rom_tlb_clint_hash, htif_space_hash) -- 31
+    local htif_space_hash = calculate_region_hash_2(PMA_HTIF_START, htif, htif_size_log2, 29)
+    local left = cartesi.keccak(shadow_rom_tlb_clint_hash, htif_space_hash) -- 30
+    local uarch_ram_space_hash = test_util.fromhex(zero_keccak_hash_table[30])
+    if #uarch_ram > 0 then
+        local uarch_ram_size_log2 = ceil_log2(#uarch_ram)
+        uarch_ram_space_hash = calculate_region_hash(uarch_ram, (#uarch_ram + PMA_PAGE_SIZE - 1) // PMA_PAGE_SIZE, PMA_PAGE_SIZE_LOG2, uarch_ram_size_log2)
+        uarch_ram_space_hash = extend_region_hash(uarch_ram_space_hash, PMA_UARCH_RAM_START, uarch_ram_size_log2, 30)
+    end
+    left = cartesi.keccak(left, uarch_ram_space_hash) -- 31
 
     local ram_size_log2 = ceil_log2(#ram)
     local ram_space_hash = calculate_region_hash_2(PMA_RAM_START, ram, ram_size_log2, 31)

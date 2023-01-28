@@ -21,9 +21,6 @@
 #include <tuple>
 #include <vector>
 
-// decorator for disabling a test that needs to be ported to the new uarch-based access log
-using disabled_for_uarch = boost::unit_test::disabled;
-
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -42,27 +39,32 @@ using disabled_for_uarch = boost::unit_test::disabled;
 #define BOOST_FIXTURE_TEST_CASE_NOLINT(...) BOOST_FIXTURE_TEST_CASE(__VA_ARGS__)
 
 static hash_type get_verification_root_hash(cm_machine *machine) {
-    std::array dump_list{
+    std::vector dump_list{
         "0000000000000000--0000000000001000.bin", // shadow state
         "0000000000001000--000000000000f000.bin", // rom
         "0000000000010000--0000000000001000.bin", // shadow pmas
         "0000000000020000--0000000000006000.bin", // shadow tlb
         "0000000002000000--00000000000c0000.bin", // clint
         "0000000040008000--0000000000001000.bin", // htif
-        "0000000080000000--0000000000100000.bin"  // ram
+        "0000000080000000--0000000000100000.bin", // ram
     };
-
     char *err_msg{};
+
     int error_code = cm_dump_pmas(machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
-    auto hash = calculate_emulator_hash(dump_list);
+    const cm_machine_config *cfg{nullptr};
+    BOOST_CHECK_EQUAL(cm_get_initial_config(machine, &cfg, &err_msg), CM_ERROR_OK);
+    if (cfg->uarch.ram.length) {
+        dump_list.push_back("0000000070000000--0000000000100000.bin"); // uarch ram
+    }
+    cm_delete_machine_config(cfg);
 
+    auto hash = calculate_emulator_hash(dump_list);
     for (const auto &file : dump_list) {
         std::filesystem::remove(file);
     }
-
     return hash;
 }
 
@@ -231,6 +233,9 @@ protected:
         target->clint = source->clint;
         target->htif = source->htif;
         target->rollup = source->rollup;
+
+        target->uarch.ram.image_filename = new_cstr(source->uarch.ram.image_filename);
+        target->uarch.ram.length = source->uarch.ram.length;
     }
 
     static void _cleanup_machine_config(cm_machine_config *config) {
@@ -242,6 +247,7 @@ protected:
         delete[] config->rom.image_filename;
         delete[] config->rom.bootargs;
         delete[] config->ram.image_filename;
+        delete[] config->uarch.ram.image_filename;
     }
 
     void _set_rom_image(const std::string &image_name) {
@@ -270,6 +276,11 @@ protected:
     void _setup_flash(const std::string &flash_path) {
         cm_memory_range_config flash_cfg = {0x80000000000000, 0x3c00000, true, flash_path.c_str()};
         _setup_flash({flash_cfg});
+    }
+
+    void _set_uarch_ram_image(const std::string &image_name) {
+        delete[] _machine_config.uarch.ram.image_filename;
+        _machine_config.uarch.ram.image_filename = new_cstr(image_name.c_str());
     }
 };
 
@@ -1891,21 +1902,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_merkle_tree_basic_test, ordinary_machine_f
     BOOST_CHECK(ret);
 }
 
-class access_log_machine_fixture : public ordinary_machine_fixture {
-public:
-    access_log_machine_fixture() : _access_log{}, _log_type{true, true} {}
-
-    ~access_log_machine_fixture() = default;
-    access_log_machine_fixture(const access_log_machine_fixture &other) = delete;
-    access_log_machine_fixture(access_log_machine_fixture &&other) noexcept = delete;
-    access_log_machine_fixture &operator=(const access_log_machine_fixture &other) = delete;
-    access_log_machine_fixture &operator=(access_log_machine_fixture &&other) noexcept = delete;
-
-protected:
-    cm_access_log *_access_log;
-    cm_access_log_type _log_type;
-};
-
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_log_test, default_machine_fixture) {
     char *err_msg{};
     int error_code = cm_verify_access_log(nullptr, &_runtime_config, false, &err_msg);
@@ -1918,8 +1914,49 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_log_test, default_machine_
     cm_delete_error_message(err_msg);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_rt_config_test, access_log_machine_fixture,
-    *disabled_for_uarch()) {
+class access_log_machine_fixture : public machine_rom_fixture {
+public:
+    access_log_machine_fixture() {
+        _log_type = {true, true};
+        _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
+
+        uint32_t test_uarch_ram[] = {
+            0x07b00513, //  li	a0,123
+            0x7ffff2b7, //  lui	t0,0x7ffff      UARCH_MMIO_HALT_ADDR_DEF
+            0x0182829b, //  addiw	t0,t0,24
+            0x00100313, //  li	t1,1            UARCH_MMIO_HALT_VALUE_DEF
+            0x0062b023, //  sd	t1,0(t0)        Halt microarchitecture
+        };
+        std::ofstream of(_uarch_ram_path, std::ios::binary);
+        of.write(static_cast<char *>(static_cast<void *>(&test_uarch_ram)), sizeof(test_uarch_ram));
+        of.close();
+        _machine_config.uarch.ram.length = 1 << 20;
+        _set_uarch_ram_image(_uarch_ram_path);
+        _machine_config.uarch.ram.length = 1 << 20;
+        _machine_config.uarch.processor.pc = cartesi::PMA_UARCH_RAM_START;
+
+        char *err_msg{};
+        cm_create_machine(&_machine_config, &_runtime_config, &_machine, &err_msg);
+    }
+    ~access_log_machine_fixture() {
+        std::filesystem::remove_all(_machine_dir_path);
+        std::filesystem::remove_all(_uarch_ram_path);
+        cm_delete_machine(_machine);
+    }
+
+    access_log_machine_fixture(const access_log_machine_fixture &other) = delete;
+    access_log_machine_fixture(access_log_machine_fixture &&other) noexcept = delete;
+    access_log_machine_fixture &operator=(const access_log_machine_fixture &other) = delete;
+    access_log_machine_fixture &operator=(access_log_machine_fixture &&other) noexcept = delete;
+
+protected:
+    std::string _machine_dir_path;
+    const std::string _uarch_ram_path = "./test-uarch-ram.bin";
+    cm_access_log *_access_log{};
+    cm_access_log_type _log_type{};
+};
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_rt_config_test, access_log_machine_fixture) {
     char *err_msg{};
     int error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
@@ -1927,8 +1964,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_rt_config_test, access_log
 
     error_code = cm_verify_access_log(_access_log, nullptr, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-
     std::string result = err_msg;
+
     std::string origin("invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
@@ -1936,8 +1973,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_rt_config_test, access_log
     cm_delete_access_log(_access_log);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_error_placeholder_test, access_log_machine_fixture,
-    *disabled_for_uarch()) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_error_placeholder_test, access_log_machine_fixture) {
     char *err_msg{};
     int error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
@@ -1959,7 +1995,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_access_log_test, access_log_machine_fix
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_error_placeholder_test, access_log_machine_fixture, *disabled_for_uarch()) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_error_placeholder_test, access_log_machine_fixture) {
     int error_code = cm_step(_machine, _log_type, false, &_access_log, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
@@ -2006,8 +2042,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_access_log_test, acc
     cm_delete_error_message(err_msg);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, access_log_machine_fixture,
-    *disabled_for_uarch()) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, access_log_machine_fixture) {
     char *err_msg{};
     int error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
@@ -2019,14 +2054,14 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, acce
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
+    cm_delete_error_message(err_msg);
     std::string origin("invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_access_log(_access_log);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test_null_error_placeholder_test, access_log_machine_fixture,
-    *disabled_for_uarch()) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test_null_error_placeholder_test, access_log_machine_fixture) {
     cm_hash hash0;
     cm_hash hash1;
 
@@ -2048,7 +2083,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test_null_error_placeholder_test, ac
     cm_delete_access_log(_access_log);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture, *disabled_for_uarch()) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
     char *err_msg{};
     cm_hash hash0;
     cm_hash hash1;
@@ -2076,7 +2111,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture, *d
     cm_delete_access_log(_access_log);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, access_log_machine_fixture, *disabled_for_uarch()) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, access_log_machine_fixture) {
     char *err_msg{};
 
     int error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);

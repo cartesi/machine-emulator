@@ -575,7 +575,7 @@ local function run_machine(machine, ctx, max_mcycle, callback, call_machine_run_
 end
 
 local function advance_one_mcycle_with_uarch(machine)
-    machine:uarch_run(-1)
+    machine:uarch_run()
     if machine:read_uarch_halt_flag() then
         machine:uarch_reset_state()
     end

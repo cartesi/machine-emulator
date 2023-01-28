@@ -539,6 +539,7 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"htif_iyield", CM_PROC_HTIF_IYIELD},
         {"uarch_pc", CM_PROC_UARCH_PC},
         {"uarch_cycle", CM_PROC_UARCH_CYCLE},
+        {"uarch_halt_flag", CM_PROC_UARCH_HALT_FLAG},
         {"uarch_ram_length", CM_PROC_UARCH_RAM_LENGTH}
         // clang-format on
     };

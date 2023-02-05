@@ -405,18 +405,16 @@ private:
             uint64_t mcycle = read_mcycle();
             uint64_t warp_cycle = rtc_time_to_cycle(read_clint_mtimecmp());
             if (warp_cycle > mcycle) {
-                const uint64_t cycles_per_us = RTC_CLOCK_FREQ / 1000000; // CLOCK_FREQ / 10^6
+                constexpr uint64_t cycles_per_us = RTC_CLOCK_FREQ / 1000000; // CLOCK_FREQ / 10^6
                 uint64_t wait = (warp_cycle - mcycle) / cycles_per_us;
                 timeval start{};
                 timeval end{};
                 gettimeofday(&start, nullptr);
                 tty_poll_console(wait);
                 gettimeofday(&end, nullptr);
-                uint64_t elapsed_us = end.tv_usec - start.tv_usec;
-                uint64_t elapsed_cycles = elapsed_us * cycles_per_us;
-                uint64_t real_cycle = rtc_time_to_cycle(elapsed_cycles + rtc_cycle_to_time(mcycle));
-                warp_cycle = elapsed_us >= wait ? warp_cycle : real_cycle;
-                write_mcycle(warp_cycle);
+                uint64_t elapsed_us = (end.tv_sec - start.tv_sec) * 1000000 + end.tv_usec - start.tv_usec;
+                uint64_t tty_cycle = mcycle + (elapsed_us * cycles_per_us);
+                write_mcycle(std::min(std::max(tty_cycle, mcycle), warp_cycle));
                 return execute_status::success_and_reload_mcycle;
             }
         }

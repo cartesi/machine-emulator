@@ -141,7 +141,6 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_HTIF_IYIELD,
     CM_PROC_UARCH_CYCLE,
     CM_PROC_UARCH_PC,
-    CM_PROC_UARCH_ROM_LENGTH,
     CM_PROC_UARCH_RAM_LENGTH,
     CM_PROC_UNKNOWN
 } CM_PROC_CSR;
@@ -243,12 +242,6 @@ typedef struct {                // NOLINT(modernize-use-using)
     const char *image_filename; ///< RAM image file name
 } cm_uarch_ram_config;
 
-/// \brief microarchitecture ROM configuration
-typedef struct {                // NOLINT(modernize-use-using)
-    uint64_t length;            ///< RAM length
-    const char *image_filename; ///< RAM image file name
-} cm_uarch_rom_config;
-
 /// \brief Microarchitecture processor configuration
 typedef struct { // NOLINT(modernize-use-using)
     uint64_t x[CM_MACHINE_UARCH_X_REG_COUNT];
@@ -259,7 +252,6 @@ typedef struct { // NOLINT(modernize-use-using)
 /// \brief Microarchitecture state configuration
 typedef struct { // NOLINT(modernize-use-using)
     cm_uarch_processor_config processor;
-    cm_uarch_rom_config rom;
     cm_uarch_ram_config ram;
 } cm_uarch_config;
 
@@ -1550,6 +1542,14 @@ CM_API void cm_delete_error_message(const char *err_msg);
 /// \returns void
 CM_API void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config);
 
+/// \brief Deletes allocated microarchitecture ram config
+/// \returns void
+CM_API void cm_delete_uarch_ram_config(const cm_uarch_ram_config *config);
+
+/// \brief Deletes allocated dhd microarchitecture config
+/// \returns void
+CM_API void cm_delete_uarch_config(const cm_uarch_config *config);
+
 /// \brief Destroys machine
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
@@ -1625,16 +1625,6 @@ CM_API int cm_write_uarch_pc(cm_machine *m, uint64_t val, char **err_msg);
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_uarch_cycle(const cm_machine *m, uint64_t *val, char **err_msg);
-
-/// \brief Reads the value of the microarchitecture ROM length
-/// \param m Pointer to valid machine instance
-/// \param val Receives value of the microarchitecture ROM length.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
-/// err_msg can be NULL, meaning the error message won't be received.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_uarch_rom_length(const cm_machine *m, uint64_t *val, char **err_msg);
 
 /// \brief Reads the value of the microarchitecture RAM length
 /// \param m Pointer to valid machine instance

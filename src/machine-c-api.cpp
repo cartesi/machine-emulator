@@ -322,20 +322,6 @@ static cm_uarch_ram_config convert_to_c(const cartesi::uarch_ram_config &cpp_con
     return new_c_uarch_ram_config;
 }
 
-static cartesi::uarch_rom_config convert_from_c(const cm_uarch_rom_config *c_config) {
-    cartesi::uarch_rom_config new_cpp_uarch_rom_config{};
-    new_cpp_uarch_rom_config.length = c_config->length;
-    new_cpp_uarch_rom_config.image_filename = null_to_empty(c_config->image_filename);
-    return new_cpp_uarch_rom_config;
-}
-
-static cm_uarch_rom_config convert_to_c(const cartesi::uarch_rom_config &cpp_config) {
-    cm_uarch_rom_config new_c_uarch_rom_config{};
-    new_c_uarch_rom_config.length = cpp_config.length;
-    new_c_uarch_rom_config.image_filename = convert_to_c(cpp_config.image_filename);
-    return new_c_uarch_rom_config;
-}
-
 static cartesi::uarch_processor_config convert_from_c(const cm_uarch_processor_config *c_config) {
     cartesi::uarch_processor_config new_cpp_config{};
     new_cpp_config.pc = c_config->pc;
@@ -360,7 +346,6 @@ static cartesi::uarch_config convert_from_c(const cm_uarch_config *c_config) {
     cartesi::uarch_config new_cpp_uarch_config{};
     new_cpp_uarch_config.processor = convert_from_c(&c_config->processor);
     new_cpp_uarch_config.ram = convert_from_c(&c_config->ram);
-    new_cpp_uarch_config.rom = convert_from_c(&c_config->rom);
     return new_cpp_uarch_config;
 }
 
@@ -368,7 +353,6 @@ static cm_uarch_config convert_to_c(const cartesi::uarch_config &cpp_config) {
     cm_uarch_config new_c_uarch_config{};
     new_c_uarch_config.processor = convert_to_c(cpp_config.processor);
     new_c_uarch_config.ram = convert_to_c(cpp_config.ram);
-    new_c_uarch_config.rom = convert_to_c(cpp_config.rom);
     return new_c_uarch_config;
 }
 
@@ -708,7 +692,6 @@ void cm_delete_machine_config(const cm_machine_config *config) {
     delete[] config->rollup.input_metadata.image_filename;
     delete[] config->rollup.voucher_hashes.image_filename;
     delete[] config->rollup.notice_hashes.image_filename;
-    delete[] config->uarch.rom.image_filename;
     delete[] config->uarch.ram.image_filename;
 
     delete config;
@@ -1122,7 +1105,6 @@ IMPL_MACHINE_READ_WRITE(htif_iyield)
 IMPL_MACHINE_READ_WRITE(clint_mtimecmp)
 IMPL_MACHINE_READ_WRITE(uarch_cycle)
 IMPL_MACHINE_READ_WRITE(uarch_pc)
-IMPL_MACHINE_READ(uarch_rom_length)
 IMPL_MACHINE_READ(uarch_ram_length)
 // clang-format-on
 
@@ -1270,6 +1252,21 @@ void cm_delete_error_message(const char *err_msg) {
 }
 
 void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config) {
+    if (config == nullptr) {
+        return;
+    }
+    delete config;
+}
+
+void cm_delete_uarch_ram_config(const cm_uarch_ram_config *config) {
+    if (config == nullptr) {
+        return;
+    }
+    delete[] config->image_filename;
+    delete config;
+}
+
+void cm_delete_uarch_config(const cm_uarch_config *config) {
     if (config == nullptr) {
         return;
     }

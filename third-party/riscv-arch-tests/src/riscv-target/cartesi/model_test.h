@@ -34,7 +34,7 @@
 //RV_COMPLIANCE_HALT
 
 #define RVMODEL_HALT                                                    \
-        li	t0, PMA_UARCH_ROM_START_DEF;                                \
+        li	t0, PMA_UARCH_RAM_START_DEF;                                \
         jalr x0, 0(t0)                                                  \
 
 #define RVMODEL_BOOT

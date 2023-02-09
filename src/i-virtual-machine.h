@@ -617,12 +617,6 @@ public:
 
     /// \brief Reads the value of the microarchitecture ROM length
     /// \returns The value of microarchitecture ROM length
-    uint64_t read_uarch_rom_length(void) const {
-        return do_read_uarch_rom_length();
-    }
-
-    /// \brief Reads the value of the microarchitecture ROM length
-    /// \returns The value of microarchitecture ROM length
     uint64_t read_uarch_ram_length(void) const {
         return do_read_uarch_ram_length();
     }
@@ -745,7 +739,6 @@ private:
     virtual void do_write_uarch_pc(uint64_t val) = 0;
     virtual uint64_t do_read_uarch_cycle(void) const = 0;
     virtual void do_write_uarch_cycle(uint64_t val) = 0;
-    virtual uint64_t do_read_uarch_rom_length(void) const = 0;
     virtual uint64_t do_read_uarch_ram_length(void) const = 0;
     virtual void do_uarch_run(uint64_t uarch_cycle_end) = 0;
 };

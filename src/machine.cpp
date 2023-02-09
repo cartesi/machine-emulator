@@ -420,9 +420,6 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
         m_pmas.push_back(&pma);
     }
     // Second, add the pmas visible only to the microarchitecture interpreter
-    if (!m_uarch.get_state().rom.get_istart_E()) {
-        m_pmas.push_back(&m_uarch.get_state().rom);
-    }
     if (!m_uarch.get_state().ram.get_istart_E()) {
         m_pmas.push_back(&m_uarch.get_state().ram);
     }
@@ -532,7 +529,6 @@ machine_config machine::get_serialization_config(void) const {
     // (they will be ignored by save and load for security reasons)
     c.rom.image_filename.clear();
     c.ram.image_filename.clear();
-    c.uarch.rom.image_filename.clear();
     c.uarch.ram.image_filename.clear();
     c.tlb.image_filename.clear();
     for (auto &f : c.flash_drive) {
@@ -1136,8 +1132,6 @@ uint64_t machine::read_csr(csr r) const {
             return read_uarch_cycle();
         case csr::uarch_pc:
             return read_uarch_pc();
-        case csr::uarch_rom_length:
-            return read_uarch_rom_length();
         case csr::uarch_ram_length:
             return read_uarch_ram_length();
         default:
@@ -1223,9 +1217,7 @@ void machine::write_csr(csr w, uint64_t val) {
         case csr::marchid:
             [[fallthrough]];
         case csr::mimpid:
-            [[fallthrough]];
-        case csr::uarch_rom_length:
-            [[fallthrough]];
+            throw std::invalid_argument{"CSR is read-only"};
         case csr::uarch_ram_length:
             throw std::invalid_argument{"CSR is read-only"};
         default:
@@ -1311,8 +1303,6 @@ uint64_t machine::get_csr_address(csr w) {
             return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_pc);
         case csr::uarch_cycle:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_cycle);
-        case csr::uarch_rom_length:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_rom_length);
         case csr::uarch_ram_length:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_ram_length);
         default:
@@ -1836,10 +1826,6 @@ uint64_t machine::read_uarch_cycle(void) const {
 
 void machine::write_uarch_cycle(uint64_t val) {
     return m_uarch.write_cycle(val);
-}
-
-uint64_t machine::read_uarch_rom_length(void) const {
-    return m_uarch.read_rom_length();
 }
 
 uint64_t machine::read_uarch_ram_length(void) const {

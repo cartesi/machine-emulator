@@ -664,10 +664,6 @@ public:
         return derived().do_write_device(pma, mcycle, offset, pval, log2_size);
     }
 
-    auto read_uarch_rom_length() {
-        return derived().do_read_uarch_rom_length();
-    }
-
     auto read_uarch_ram_length() {
         return derived().do_read_uarch_ram_length();
     }

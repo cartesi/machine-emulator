@@ -71,7 +71,6 @@ struct shadow_state {
     uint64_t htif_iyield;
     uint64_t uarch_cycle;
     uint64_t uarch_pc;
-    uint64_t uarch_rom_length;
     uint64_t uarch_ram_length;
     uint64_t uarch_x[UARCH_X_REG_COUNT];
 };
@@ -119,7 +118,6 @@ enum class shadow_state_csr {
     htif_iconsole = offsetof(shadow_state, htif_iconsole),
     htif_iyield = offsetof(shadow_state, htif_iyield),
     uarch_cycle = offsetof(shadow_state, uarch_cycle),
-    uarch_rom_length = offsetof(shadow_state, uarch_rom_length),
     uarch_ram_length = offsetof(shadow_state, uarch_ram_length),
     uarch_pc = offsetof(shadow_state, uarch_pc),
 };

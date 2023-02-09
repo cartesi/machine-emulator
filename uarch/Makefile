@@ -107,25 +107,13 @@ TARGETS=$(UARCH_OBJS) $(EMULATOR_OBJS)
 
 .PHONY: all clean
 
-all: uarch-rom.bin
- 
-uarch-rom.bin: uarch-rom.elf
-	$(OBJCOPY) -S -O binary $^ $@
+all: $(TARGETS) uarch-ram.bin
 
-uarch-rom.elf: uarch-rom.ld $(UARCH_ROM_OBJS)
-	$(CC) $(CFLAGS) -Wl,uarch-rom.ld -o $@ $(UARCH_ROM_OBJS)
+uarch-ram.bin: uarch-ram.elf
+	$(OBJCOPY) -S -O binary  $^ $@
 
-uarch-rom-entry.o: $(UARCH_SRC_DIR)/uarch-rom-entry.S
-	$(CC) $(CFLAGS) -c -o $@ $(CONTAINER_UARCH_SRC_DIR)/$(<F)
-
-uarch-run.bin.o: uarch-run.bin
-	$(LD) -r -b binary -o $@ $^ 
-
-uarch-run.bin: uarch-run.elf
-	$(OBJCOPY) -S -O binary $^ $@
-
-uarch-run.elf: $(UARCH_OBJS) $(EMULATOR_OBJS) uarch-ram.ld uarch-ram-entry.o
-	$(CXX) $(CFLAGS) $(CXXFLAGS) -Wl,-Tuarch-ram.ld -o $@ $(EMULATOR_OBJS) $(UARCH_OBJS) uarch-ram-entry.o -lgcc
+uarch-ram.elf: $(EMULATOR_OBJS) $(UARCH_OBJS) uarch-ram-entry.o uarch-ram.ld
+	$(CXX) $(CFLAGS) $(CXXFLAGS) -Wl,-T$(CONTAINER_OUTPUT_DIR)/uarch-ram.ld  -o $@  $(EMULATOR_OBJS) $(UARCH_OBJS) uarch-ram-entry.o  -lgcc
 
 uarch-ram-entry.o: $(UARCH_SRC_DIR)/uarch-ram-entry.S
 	$(CC) $(CFLAGS) -c -o $@ $(CONTAINER_UARCH_SRC_DIR)/$(<F)

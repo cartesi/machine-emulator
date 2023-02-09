@@ -56,14 +56,6 @@ uarch_machine::uarch_machine(uarch_config c) : m_s{}, m_c{std::move(c)} {
         m_s.ram =
             make_callocd_memory_pma_entry("uarch ROM", PMA_UARCH_RAM_START, m_c.ram.length).set_flags(m_ram_flags);
     }
-    if (!m_c.rom.image_filename.empty()) {
-        m_s.rom =
-            make_callocd_memory_pma_entry("uarch RAM", PMA_UARCH_ROM_START, m_c.rom.length, m_c.rom.image_filename)
-                .set_flags(m_rom_flags);
-    } else if (m_c.rom.length > 0) {
-        m_s.rom =
-            make_callocd_memory_pma_entry("uarch RAM", PMA_UARCH_ROM_START, m_c.rom.length).set_flags(m_rom_flags);
-    }
 }
 
 uint64_t uarch_machine::read_cycle(void) const {

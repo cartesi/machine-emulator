@@ -32,12 +32,6 @@ struct uarch_ram_config final {
     std::string image_filename{}; ///< RAM image file name
 };
 
-/// \brief ROM state configuration for the microarchitecture
-struct uarch_rom_config final {
-    uint64_t length{0};           ///< RAM length
-    std::string image_filename{}; ///< ROM image file
-};
-
 /// \brief Microarchitecture processor configuration
 struct uarch_processor_config final {
     std::array<uint64_t, UARCH_X_REG_COUNT> x{}; ///< Value of general-purpose registers
@@ -48,7 +42,6 @@ struct uarch_processor_config final {
 /// \brief Microarchitecture configuration
 struct uarch_config final {
     uarch_processor_config processor{}; ///< processor configuration
-    uarch_rom_config rom{};             ///< ROM configuration
     uarch_ram_config ram{};             ///< RAM configuration
 };
 

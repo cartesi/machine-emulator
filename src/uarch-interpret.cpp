@@ -278,7 +278,7 @@ static inline decoded_insn decode_iuj(uint32_t insn) {
 template <typename STATE_ACCESS>
 static inline uarch_execute_status write_pc(STATE_ACCESS &a, uint64_t new_pc) {
     a.write_pc(new_pc);
-    if (new_pc == PMA_UARCH_ROM_START) {
+    if (new_pc == PMA_UARCH_RAM_START) {
         return uarch_execute_status::halt;
     }
     return uarch_execute_status::success;

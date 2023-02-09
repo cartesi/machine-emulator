@@ -18,16 +18,13 @@
 
 local cartesi = require "cartesi"
 
-if  #arg ~= 3 then
+if  #arg ~= 2 then
   io.stderr:write(string.format([=[
 Usage:
 
-  %s <uarch-rom-image> <uarch-ram-image> <output-signature-file>
+  %s <uarch-ram-image> <output-signature-file>
 
 where:
-  <uarch-rom-image>
-  name of file containing the image of microemulator ROM.
-
   <uarch-ram-image>
   name of file containing the image of microemulator RAM.
 
@@ -37,14 +34,13 @@ where:
   os.exit(1)
 end
 
-local uarch_rom_image_filename = arg[1]
-local uarch_ram_image_filename = arg[2]
-local output_signature_file = arg[3]
-
+local uarch_ram_image_filename = arg[1]
+local output_signature_file = arg[2]
 local uarch_ram_start = 0x70000000 
 local uarch_ram_length = 0x1000000
-local uarch_rom_length = 0x1000000
-rom_image_filename=uarch_rom_image_filename
+local dummy_rom_filename = os.tmpname()
+io.open(dummy_rom_filename, 'w'):close()
+local deleter = setmetatable({}, { __gc = function() os.remove(dummy_rom_filename) end } )
 
 local config = {
   uarch ={
@@ -52,13 +48,9 @@ local config = {
       image_filename = uarch_ram_image_filename,
       length = uarch_ram_length
     },
-    rom = {
-      image_filename = uarch_rom_image_filename,
-      length = uarch_rom_length
-    }
   },
   processor = {},
-  rom = { image_filename = uarch_rom_image_filename },
+  rom = { image_filename = dummy_rom_filename },
   ram = { length = 0x1000 }  
 }
 

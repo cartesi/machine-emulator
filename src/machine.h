@@ -158,7 +158,6 @@ public:
         htif_iyield,
         uarch_cycle,
         uarch_pc,
-        uarch_rom_length,
         uarch_ram_length,
         last
     };
@@ -773,10 +772,6 @@ public:
     /// \brief Writes the value ofthe microarchitecture cycle counter register.
     /// \param val New register value.
     void write_uarch_cycle(uint64_t val);
-
-    /// \brief Reads the value of the microarchitecture ROM length
-    /// \returns The value of the microarchitecture ROM length
-    uint64_t read_uarch_rom_length(void) const;
 
     /// \brief Reads the value of the microarchitecture RAM length
     /// \returns The value of the microarchitecture RAM length

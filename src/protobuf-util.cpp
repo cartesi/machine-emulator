@@ -199,9 +199,6 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
     auto *proto_uarch_ram = proto_u->mutable_ram();
     proto_uarch_ram->set_length(c.uarch.ram.length);
     proto_uarch_ram->set_image_filename(c.uarch.ram.image_filename);
-    auto *proto_uarch_rom = proto_u->mutable_rom();
-    proto_uarch_rom->set_length(c.uarch.rom.length);
-    proto_uarch_rom->set_image_filename(c.uarch.rom.image_filename);
 }
 
 void set_proto_machine_runtime_config(const machine_runtime_config &r, CartesiMachine::MachineRuntimeConfig *proto_r) {
@@ -671,10 +668,6 @@ machine_runtime_config get_proto_machine_runtime_config(const CartesiMachine::Ma
 static uarch_config get_proto_uarch_config(const CartesiMachine::UarchConfig &proto_c) {
     using CartesiMachine::UarchConfig;
     uarch_config c;
-    if (proto_c.has_rom()) {
-        c.rom.length = proto_c.rom().length();
-        c.rom.image_filename = proto_c.rom().image_filename();
-    }
     if (proto_c.has_ram()) {
         c.ram.length = proto_c.ram().length();
         c.ram.image_filename = proto_c.ram().image_filename();

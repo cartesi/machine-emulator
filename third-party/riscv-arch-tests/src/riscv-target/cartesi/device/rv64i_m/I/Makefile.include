@@ -1,7 +1,6 @@
 TOOLCHAIN_IMAGE ?= cartesi/toolchain:0.11.0
 TOOLCHAIN_PREFIX ?= riscv64-cartesi-linux-gnu-
 EMULATOR_ROM ?= rom.bin
-TEST_BOOTSTRAP ?= bootstrap.bin
 RUN_ARCH_TEST ?= run-rv64i-arch-test.lua
 MACHINE_EMULATOR_DEFINES_DIR ?= machine-emulator-defines
 
@@ -57,5 +56,5 @@ COMPILE_TARGET=\
               fi ; \
 
 RUN_TARGET=\
-	$(RUN_ARCH_TEST) $(TEST_BOOTSTRAP) $(<)  $(*).signature.output
+	$(RUN_ARCH_TEST) $(<)  $(*).signature.output
 

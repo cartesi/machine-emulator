@@ -20,10 +20,19 @@
 // entry point of the code executed on the microarchitecture's RAM
 
 .section .text.init;
-.align 2;
+.align 3;
 .global _start;
 _start:    
-    j uarch_run;
-  
+    // Stack initialization
+    li sp, PMA_UARCH_RAM_START_DEF  
+    la t0, shadow_state_uarch_ram_length_abs_addr // t0=pointer to address of uarch_ram_length in state shadow
+    ld t0, 0(t0)   // t0=address of uarch_ram_length in state shadow
+    ld t0, 0(t0)   // t0=value of uarch_ram_length
+    add sp, sp, t0 // stack pointer at the end of RAM
+
+    call uarch_run
+      
+    j _start // HALT by jumping to RAM start
+      
 
  

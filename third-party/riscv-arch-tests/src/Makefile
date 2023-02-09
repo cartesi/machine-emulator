@@ -21,15 +21,7 @@ CFLAGS = -march=rv64i  -g0 -Wl,--gc-sections -O0 -ffreestanding -nostartfiles \
 # linker script used by the test suite Makefile to build the tested riscv target
 TARGET_LINK_LD = riscv-target/cartesi/link.ld
 
-all: bootstrap.bin $(TARGET_LINK_LD)
-
-bootstrap.elf: bootstrap.S bootstrap.ld
-	$(RUN_TOOLCHAIN) $(TOOLCHAIN_PREFIX)gcc \
-		$(CFLAGS) -Wl,-Tbootstrap.ld \
-		-o $@ $<
-
-bootstrap.bin: bootstrap.elf
-	$(RUN_TOOLCHAIN) $(TOOLCHAIN_PREFIX)objcopy -S -O binary $^ $@
+all: $(TARGET_LINK_LD)
 
 %.ld: %.ld.in
 	$(RUN_TOOLCHAIN) $(TOOLCHAIN_PREFIX)gcc -o $@.tmp -x c $(CFLAGS) -E  $^

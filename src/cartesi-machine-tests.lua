@@ -338,11 +338,8 @@ where options are:
   --json-test-list
     write the output of the list command as json
 
-  --uarch-rom-image=<filename>
-    name of file containing microarchitecture ROM image.
-
-  --uarch-rom-length=<number>
-    set microarchitecture ROM length.
+  --uarch-ram-image=<filename>
+    name of file containing microarchitecture RAM image.
 
   --uarch-ram-length=<number>
     set microarchitecture RAM length.
@@ -475,18 +472,11 @@ local options = {
         concurrency_update_merkle_tree = c.update_merkle_tree
         return true
     end },
-    { "^%-%-uarch%-rom%-length%=(.+)$", function(n)
-        if not n then return false end
-        uarch = uarch or {}
-        uarch.rom = uarch.rom or {}
-        uarch.rom.length = assert(util.parse_number(n), "invalid microarchitecture ROM length " .. n)
-        return true
-    end },
-    { "^%-%-uarch%-rom%-image%=(.*)$", function(o)
+    { "^%-%-uarch%-ram%-image%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         uarch = uarch or {}
-        uarch.rom = uarch.rom or {}
-        uarch.rom.image_filename = o
+        uarch.ram = uarch.ram or {}
+        uarch.ram.image_filename = o
         return true
     end },
     { "^%-%-uarch%-ram%-length%=(.+)$", function(n)

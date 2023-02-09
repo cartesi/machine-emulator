@@ -910,10 +910,6 @@ void grpc_virtual_machine::do_write_uarch_cycle(uint64_t val) {
     write_csr(csr::uarch_cycle, val);
 }
 
-uint64_t grpc_virtual_machine::do_read_uarch_rom_length(void) const {
-    return read_csr(csr::uarch_rom_length);
-}
-
 uint64_t grpc_virtual_machine::do_read_uarch_ram_length(void) const {
     return read_csr(csr::uarch_ram_length);
 }

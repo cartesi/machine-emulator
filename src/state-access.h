@@ -511,10 +511,6 @@ private:
             log2_size);
     }
 
-    uint64_t do_read_uarch_rom_length() {
-        return m_m.get_initial_config().uarch.rom.length;
-    }
-
     uint64_t do_read_uarch_ram_length() {
         return m_m.get_initial_config().uarch.ram.length;
     }

@@ -18,6 +18,7 @@
 #define RISCV_CONSTANTS_H
 
 #include <cstdint>
+#include <pma-defines.h>
 
 /// \file
 /// \brief RISC-V constants

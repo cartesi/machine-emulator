@@ -93,7 +93,6 @@ static int machine_obj_index_dump_regs(lua_State *L) {
     PRINT_PROCESSOR_CSR(m, htif_iyield);
 
     PRINT_PROCESSOR_CSR(m, uarch_cycle);
-    PRINT_PROCESSOR_CSR(m, uarch_rom_length);
     PRINT_PROCESSOR_CSR(m, uarch_ram_length);
     PRINT_PROCESSOR_CSR(m, uarch_pc);
     for (int i = 0; i < UARCH_X_REG_COUNT; ++i) {
@@ -216,7 +215,6 @@ IMPL_MACHINE_OBJ_READ_WRITE(htif_iyield)
 IMPL_MACHINE_OBJ_READ_WRITE(clint_mtimecmp)
 IMPL_MACHINE_OBJ_READ_WRITE(uarch_cycle)
 IMPL_MACHINE_OBJ_READ_WRITE(uarch_pc)
-IMPL_MACHINE_OBJ_READ(uarch_rom_length)
 IMPL_MACHINE_OBJ_READ(uarch_ram_length)
 
 /// \brief This is the machine:read_csr() method implementation.
@@ -586,7 +584,6 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_uarch_cycle", machine_obj_index_read_uarch_cycle},
     {"read_uarch_pc", machine_obj_index_read_uarch_pc},
     {"read_uarch_x", machine_obj_index_read_uarch_x},
-    {"read_uarch_rom_length", machine_obj_index_read_uarch_rom_length},
     {"read_uarch_ram_length", machine_obj_index_read_uarch_ram_length},
     {"read_iflags", machine_obj_index_read_iflags},
     {"read_iflags_H", machine_obj_index_read_iflags_H},

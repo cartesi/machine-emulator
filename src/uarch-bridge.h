@@ -247,8 +247,6 @@ public:
                 return s.htif.iconsole;
             case shadow_state_csr::htif_iyield:
                 return s.htif.iyield;
-            case shadow_state_csr::uarch_rom_length:
-                return us.rom.get_length();
             case shadow_state_csr::uarch_ram_length:
                 return us.ram.get_length();
             default:
@@ -335,8 +333,6 @@ public:
                 return "htif.iconsole";
             case shadow_state_csr::htif_iyield:
                 return "htif.iyield";
-            case shadow_state_csr::uarch_rom_length:
-                return "uarch.rom_length";
             case shadow_state_csr::uarch_ram_length:
                 return "uarch.ram_length";
             default:

@@ -539,7 +539,6 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"htif_iyield", CM_PROC_HTIF_IYIELD},
         {"uarch_pc", CM_PROC_UARCH_PC},
         {"uarch_cycle", CM_PROC_UARCH_CYCLE},
-        {"uarch_rom_length", CM_PROC_UARCH_ROM_LENGTH},
         {"uarch_ram_length", CM_PROC_UARCH_RAM_LENGTH}
         // clang-format on
     };
@@ -854,17 +853,6 @@ static void push_cm_uarch_ram_config(lua_State *L, const cm_uarch_ram_config *r)
     }
 }
 
-/// \brief Pushes a cm_uarch_rom_config to the Lua stack
-/// \param L Lua state.
-/// \param r microarchitecture ROM configuration to be pushed.
-static void push_cm_uarch_rom_config(lua_State *L, const cm_uarch_rom_config *r) {
-    lua_newtable(L);
-    clua_setintegerfield(L, r->length, "length", -1);
-    if (r->image_filename != nullptr) {
-        clua_setstringfield(L, r->image_filename, "image_filename", -1);
-    }
-}
-
 /// \brief Pushes an cm_uarch_processor_config to the Lua stack
 /// \param L Lua state.
 /// \param c microarchitecture processor configuration to be pushed.
@@ -887,8 +875,6 @@ static void push_cm_uarch_config(lua_State *L, const cm_uarch_config *u) {
     lua_newtable(L);
     push_cm_uarch_ram_config(L, &u->ram);             // config ram
     lua_setfield(L, -2, "ram");                       // config
-    push_cm_uarch_rom_config(L, &u->rom);             // config ram
-    lua_setfield(L, -2, "rom");                       // config
     push_cm_uarch_processor_config(L, &u->processor); // config processor
     lua_setfield(L, -2, "processor");                 // config
 }
@@ -1165,17 +1151,6 @@ static void check_cm_uarch_ram_config(lua_State *L, int tabidx, cm_uarch_ram_con
     lua_pop(L, 1);
 }
 
-/// \brief Loads microarchitecture ROM config from Lua to cm_uarch_rom_config.
-/// \param L Lua state.
-/// \param tabidx Config stack index.
-/// \param r C api microarchitecture ROM config structure to receive results.
-static void check_cm_uarch_rom_config(lua_State *L, int tabidx, cm_uarch_rom_config *r) {
-    check_table_field(L, tabidx, "rom");
-    r->image_filename = opt_copy_string_field(L, -1, "image_filename");
-    r->length = check_uint_field(L, -1, "length");
-    lua_pop(L, 1);
-}
-
 /// \brief Loads C api microarchitecture processor config from Lua to cm_uarch_processor_config
 /// \param L Lua state
 /// \param tabidx Config stack index
@@ -1210,7 +1185,6 @@ static void check_cm_uarch_config(lua_State *L, int tabidx, cm_uarch_config *u) 
         return;
     }
     check_cm_uarch_ram_config(L, -1, &u->ram);
-    check_cm_uarch_rom_config(L, -1, &u->rom);
     check_cm_uarch_processor_config(L, -1, &u->processor, &u->processor);
     lua_pop(L, 1); // uarch
 }

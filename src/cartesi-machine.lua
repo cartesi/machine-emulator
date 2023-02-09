@@ -293,12 +293,6 @@ where options are:
     machine_config table, it will fall back into the respective command-line
     argument or into the default value.
 
-  --uarch-rom-image=<filename>
-    name of file containing microarchitecture ROM image.
-
-  --uarch-rom-length=<number>
-    set microarchitecture ROM length.
-
   --uarch-ram-image=<filename>
     name of file containing microarchitecture RAM image.
 
@@ -481,20 +475,6 @@ local options = {
         uarch = uarch or {}
         uarch.ram = uarch.ram or {}
         uarch.ram.image_filename = o
-        return true
-    end },
-    { "^%-%-uarch%-rom%-length%=(.+)$", function(n)
-        if not n then return false end
-        uarch = uarch or {}
-        uarch.rom = uarch.rom or {}
-        uarch.rom.length = assert(util.parse_number(n), "invalid microarchitecture ROM length " .. n)
-        return true
-    end },
-    { "^%-%-uarch%-rom%-image%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        uarch = uarch or {}
-        uarch.rom = uarch.rom or {}
-        uarch.rom.image_filename = o
         return true
     end },
     { "^%-%-htif%-console%-getchar$", function(all)
@@ -994,12 +974,6 @@ local function store_machine_config(config, output)
     end
     local uarch = config.uarch or def.uarch
     output("  uarch = {\n")
-    output("    rom = {\n")
-    output("      length = 0x%x,", uarch.rom.length or def.uarch.rom.length)
-    comment_default(uarch.rom.length, def.uarch.rom.length)
-    output("      image_filename = %q,", uarch.rom.image_filename or def.uarch.rom.image_filename)
-    comment_default(uarch.rom.image_filename, def.uarch.rom.image_filename)
-    output("    },\n")
     output("    ram = {\n")
     output("      length = 0x%x,", uarch.ram.length or def.uarch.ram.length)
     comment_default(uarch.ram.length, def.uarch.ram.length)

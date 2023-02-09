@@ -53,6 +53,9 @@ static int cartesi_mod_keccak(lua_State *L) {
         luaL_argerror(L, 1, "too few arguments");
     }
     if (lua_isinteger(L, 1)) {
+        if (lua_gettop(L) > 1) {
+            luaL_argerror(L, 2, "too many arguments");
+        }
         uint64_t word = luaL_checkinteger(L, 1);
         h.begin();
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)

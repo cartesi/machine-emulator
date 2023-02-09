@@ -33,10 +33,6 @@ CM_API int cm_result_failure(char **err_msg);
 /// \brief Helper function that returns success result from C api function
 CM_API int cm_result_success(char **err_msg);
 
-/// \brief Helper function that returns unknown error result from
-/// C api function
-CM_API int cm_result_unknown_error(char **err_msg);
-
 /// \brief Helper function that create empty string in case
 /// that C string is NULL
 CM_API std::string null_to_empty(const char *s);

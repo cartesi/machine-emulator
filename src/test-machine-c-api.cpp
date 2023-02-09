@@ -668,6 +668,16 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_root_hash_null_machine_test) {
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
+BOOST_AUTO_TEST_CASE_NOLINT(delete_null_test) {
+    cm_delete_error_message(nullptr);
+    cm_delete_memory_range_config(nullptr);
+    cm_delete_machine_runtime_config(nullptr);
+    cm_delete_machine_config(nullptr);
+    cm_delete_machine(nullptr);
+    cm_delete_access_log(nullptr);
+    cm_delete_merkle_tree_proof(nullptr);
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_null_hash_test, ordinary_machine_fixture) {
     int error_code = cm_get_root_hash(_machine, nullptr, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
@@ -789,10 +799,10 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_invalid_address_test, ordinary_machine_
     uint64_t word_value = 0;
     char *err_msg{};
     int error_code = cm_read_word(_machine, 0xffffffff, &word_value, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_UNKNOWN);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
     std::string result = err_msg;
-    std::string origin("unknown error");
+    std::string origin("read word failed");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1170,6 +1180,7 @@ CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_fromhost_data)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_ihalt)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_iconsole)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_iyield)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(clint_mtimecmp)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(uarch_cycle)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(uarch_pc)
 // clang-format on
@@ -1220,6 +1231,7 @@ CHECK_REGISTER_READ_WRITE(htif_fromhost)
 CHECK_REGISTER_READ_WRITE(htif_ihalt)
 CHECK_REGISTER_READ_WRITE(htif_iconsole)
 CHECK_REGISTER_READ_WRITE(htif_iyield)
+CHECK_REGISTER_READ_WRITE(clint_mtimecmp)
 CHECK_REGISTER_READ_WRITE(uarch_cycle)
 CHECK_REGISTER_READ_WRITE(uarch_pc)
     // clang-format on
@@ -2439,6 +2451,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_default_config_basic_test, grpc_machine_
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
         printf("error getting default config: %s\n", err_msg);
+        cm_delete_error_message(err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     cm_delete_machine_config(config);
@@ -2451,6 +2464,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_x_address_basic_test, grpc_machine_fixtu
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
         printf("error getting x address: %s\n", err_msg);
+        cm_delete_error_message(err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     BOOST_REQUIRE_EQUAL(val, static_cast<uint64_t>(40));
@@ -2463,6 +2477,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_csr_address_basic_test, grpc_machine_fix
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
         printf("error getting csr address: %s\n", err_msg);
+        cm_delete_error_message(err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     BOOST_REQUIRE_EQUAL(val, static_cast<uint64_t>(544));
@@ -2475,6 +2490,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_version_wrong_addr_test, grpc_machine_fi
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
         printf("error getting semantic version: %s\n", err_msg);
+        cm_delete_error_message(err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     cm_delete_semantic_version(version);

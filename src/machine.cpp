@@ -241,13 +241,13 @@ static void load_tlb_entry(machine &m, uint64_t eidx, unsigned char *hmem) {
         if ((paddr_page & ~PAGE_OFFSET_MASK) != paddr_page) {
             throw std::invalid_argument{"misaligned physical page address in TLB entry"};
         }
-        pma_entry &pma = m.find_pma_entry<uint64_t>(paddr_page);
+        const pma_entry &pma = m.find_pma_entry<uint64_t>(paddr_page);
         // Checks if the PMA still valid
         if (pma.get_length() == 0 || !pma.get_istart_M() || pma_index >= m.get_state().pmas.size() ||
             &pma != &m.get_state().pmas[pma_index]) {
             throw std::invalid_argument{"invalid PMA for TLB entry"};
         }
-        unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
+        const unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
         // Valid TLB entry
         tlbhe.vaddr_page = vaddr_page;
         tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - vaddr_page;
@@ -558,10 +558,7 @@ static void store_device_pma(const machine &m, const pma_entry &pma, const std::
     if (!pma.get_istart_IO()) {
         throw std::runtime_error{"attempt to save non-device PMA"};
     }
-    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
-    if (!scratch) {
-        throw std::runtime_error{"failed to allocate scratch"};
-    }
+    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE); // will throw if it fails
     auto name = machine_config::get_image_filename(dir, pma.get_start(), pma.get_length());
     auto fp = unique_fopen(name.c_str(), "wb");
     for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length();
@@ -1222,11 +1219,11 @@ void machine::write_csr(csr w, uint64_t val) {
         case csr::marchid:
             [[fallthrough]];
         case csr::mimpid:
-            throw std::invalid_argument{"CSR is read-only"};
+            [[fallthrough]];
         case csr::uarch_rom_length:
             [[fallthrough]];
         case csr::uarch_ram_length:
-            [[fallthrough]];
+            throw std::invalid_argument{"CSR is read-only"};
         default:
             throw std::invalid_argument{"unknown CSR"};
     }
@@ -1319,15 +1316,6 @@ uint64_t machine::get_csr_address(csr w) {
     }
 }
 
-void machine::set_mip(uint32_t mask) {
-    m_s.mip |= mask;
-    // m_s.or_brk_with_mip_mie();
-}
-
-void machine::reset_mip(uint32_t mask) {
-    m_s.mip &= ~mask;
-}
-
 uint8_t machine::read_iflags_PRV(void) const {
     return m_s.iflags.PRV;
 }
@@ -1386,7 +1374,7 @@ bool machine::verify_dirty_page_maps(void) const {
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
     machine_merkle_tree::hasher_type h;
-    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
+    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
     if (!scratch) {
         return false;
     }
@@ -1462,7 +1450,7 @@ bool machine::update_merkle_tree(void) const {
             futures.emplace_back(std::async(
                 std::launch::async,
                 [&](int j) -> bool {
-                    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
+                    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
                     if (!scratch) {
                         return false;
                     }
@@ -1536,7 +1524,7 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     pma_entry &pma = find_pma_entry(m_pmas, address, sizeof(uint64_t));
     uint64_t page_start_in_range = address - pma.get_start();
     machine_merkle_tree::hasher_type h;
-    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
+    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
     if (!scratch) {
         return false;
     }
@@ -1798,7 +1786,7 @@ bool machine::read_word(uint64_t word_address, uint64_t &word_value) const {
     // ??D We should split peek into peek_word and peek_page
     // for performance. On the other hand, this function
     // will almost never be used, so one wonders if it is worth it...
-    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
+    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
     if (!scratch) {
         return false;
     }

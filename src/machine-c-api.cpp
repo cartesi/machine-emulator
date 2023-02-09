@@ -120,13 +120,6 @@ int cm_result_success(char **err_msg) {
     return 0;
 }
 
-int cm_result_unknown_error(char **err_msg) {
-    if (err_msg) {
-        *err_msg = get_error_message_unknown();
-    }
-    return CM_ERROR_UNKNOWN;
-}
-
 // --------------------------------------------
 // String conversion (strdup equivalent with new)
 // --------------------------------------------
@@ -690,9 +683,11 @@ cartesi::access_log convert_from_c(const cm_access_log *c_acc_log) {
 // -----------------------------------------------------
 // Public API functions for generation of default configs
 // -----------------------------------------------------
-const cm_machine_config *cm_new_default_machine_config(void) {
+const cm_machine_config *cm_new_default_machine_config(void) try {
     cartesi::machine_config cpp_config = cartesi::machine::get_default_config();
     return convert_to_c(cpp_config);
+} catch (...) {
+    return nullptr;
 }
 
 void cm_delete_machine_config(const cm_machine_config *config) {
@@ -948,12 +943,11 @@ int cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *word_valu
     }
     const auto *cpp_machine = convert_from_c(m);
     uint64_t cpp_word_value{0};
-    if (cpp_machine->read_word(word_address, cpp_word_value)) {
-        *word_value = cpp_word_value;
-        return cm_result_success(err_msg);
-    } else {
-        return cm_result_unknown_error(err_msg);
+    if (!cpp_machine->read_word(word_address, cpp_word_value)) {
+        throw std::runtime_error{"read word failed"};
     }
+    *word_value = cpp_word_value;
+    return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
 }
@@ -1265,6 +1259,9 @@ void cm_delete_memory_range_config(const cm_memory_range_config *config) {
 }
 
 void cm_delete_error_message(const char *err_msg) {
+    if (err_msg == nullptr) {
+        return;
+    }
     delete[] err_msg;
 }
 

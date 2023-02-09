@@ -171,10 +171,12 @@ void clua_push_cm_hash(lua_State *L, const cm_hash *hash);
 /// \param c Machine configuration to be pushed
 void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c);
 
+#if 0
 /// \brief Pushes a cm_machine_runtime_config to the Lua stack
 /// \param L Lua state
 /// \param r C api machine runtime config to be pushed
 void clua_push_cm_machine_runtime_config(lua_State *L, const cm_machine_runtime_config *r);
+#endif
 
 /// \brief Returns a CSR selector from Lua
 /// \param L Lua state

@@ -911,6 +911,17 @@ local function store_machine_config(config, output)
         comment_default(xi, def.processor.x[i])
     end
     output("    },\n")
+    output("    f = {\n")
+    for i = 0, 31 do
+        local xi = processor.f[i] or def.processor.f[i]
+        if i == 0 then
+          output("      [0] = 0x%x,",  xi)
+        else
+          output("      0x%x,",  xi)
+        end
+        comment_default(xi, def.processor.f[i])
+    end
+    output("    },\n")
     local order = {}
     for i,v in pairs(def.processor) do
         if type(v) == "number" then

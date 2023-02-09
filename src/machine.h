@@ -686,14 +686,6 @@ public:
     /// \brief Sets the iflags_H flag.
     void set_iflags_H(void);
 
-    /// \brief Sets bits in mip.
-    /// \param mask Bits set in \p mask will also be set in mip
-    void set_mip(uint32_t mask);
-
-    /// \brief Resets bits in mip.
-    /// \param mask Bits set in \p mask will also be reset in mip
-    void reset_mip(uint32_t mask);
-
     /// \brief Dump all memory ranges to files in current working directory.
     /// \returns true if successful, false otherwise.
     void dump_pmas(void) const;
@@ -721,11 +713,6 @@ public:
     /// for an empty range.
     template <typename T>
     const pma_entry &find_pma_entry(uint64_t paddr) const {
-        return find_pma_entry(paddr, sizeof(T));
-    }
-
-    template <typename T>
-    pma_entry &find_pma_entry(uint64_t paddr) {
         return find_pma_entry(paddr, sizeof(T));
     }
 

@@ -51,7 +51,7 @@ static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb) {
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
     T *ptr = static_cast<T *>(calloc(nmemb, sizeof(T)));
     if (!ptr) {
-        throw std::bad_alloc{};
+        throw std::bad_alloc{}; // LCOV_EXCL_LINE
     }
     return unique_calloc_ptr<T>(ptr);
 }

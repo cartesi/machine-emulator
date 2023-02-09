@@ -528,8 +528,14 @@ static int machine_obj_index_write_virtual_memory(lua_State *L) {
 static int machine_obj_index_replace_memory_range(lua_State *L) {
     lua_settop(L, 2);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    cm_memory_range_config *memory_range_config{};
+    try {
+        memory_range_config = new cm_memory_range_config{};
+    } catch (std::bad_alloc &e) {
+        luaL_error(L, "failed to allocate memory range config");
+    }
     auto &managed_memory_range_config =
-        clua_push_to(L, clua_managed_cm_ptr<cm_memory_range_config>(new cm_memory_range_config{}));
+        clua_push_to(L, clua_managed_cm_ptr<cm_memory_range_config>(memory_range_config));
     clua_check_cm_memory_range_config(L, 2, "replace", managed_memory_range_config.get());
     TRY_EXECUTE(cm_replace_memory_range(m.get(), managed_memory_range_config.get(), err_msg));
     managed_memory_range_config.reset();

@@ -706,10 +706,16 @@ static void push_cm_processor_config(lua_State *L, const cm_processor_config *p)
     lua_newtable(L); // p
     lua_newtable(L); // p x
     for (int i = 1; i <= (X_REG_COUNT - 1); i++) {
-        lua_pushinteger(L, static_cast<lua_Integer>(p->x[i - 1]));
+        lua_pushinteger(L, static_cast<lua_Integer>(p->x[i]));
         lua_rawseti(L, -2, i);
     }
     lua_setfield(L, -2, "x");
+    lua_newtable(L); // p f
+    for (int i = 0; i <= (F_REG_COUNT - 1); i++) {
+        lua_pushinteger(L, static_cast<lua_Integer>(p->f[i]));
+        lua_rawseti(L, -2, i);
+    }
+    lua_setfield(L, -2, "f");
     PUSH_CM_PROCESSOR_CONFIG_CSR(pc);
     PUSH_CM_PROCESSOR_CONFIG_CSR(fcsr);
     PUSH_CM_PROCESSOR_CONFIG_CSR(mvendorid);
@@ -867,8 +873,8 @@ static void push_cm_uarch_processor_config(lua_State *L, const cm_uarch_processo
     clua_setintegerfield(L, u->pc, "pc", -1);
     clua_setintegerfield(L, u->cycle, "cycle", -1);
     lua_newtable(L);
-    for (int i = 1; i <= (CM_MACHINE_X_REG_COUNT - 1); i++) {
-        lua_pushinteger(L, static_cast<lua_Integer>(u->x[i - 1]));
+    for (int i = 1; i <= (UARCH_X_REG_COUNT - 1); i++) {
+        lua_pushinteger(L, static_cast<lua_Integer>(u->x[i]));
         lua_rawseti(L, -2, i);
     }
     lua_setfield(L, -2, "x");
@@ -911,6 +917,7 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
     }
 }
 
+#if 0
 /// \brief Pushes an cm_concurrency_config to the Lua stack
 /// \param L Lua state.
 /// \param c C api concurrency config to be pushed.
@@ -924,6 +931,7 @@ void clua_push_cm_machine_runtime_config(lua_State *L, const cm_machine_runtime_
     push_cm_concurrency_runtime_config(L, &r->concurrency); // config concurrency
     lua_setfield(L, -2, "concurrency");                     // config
 }
+#endif
 
 /// \brief Loads RAM config from Lua to cm_machine_config.
 /// \param L Lua state.
@@ -1025,6 +1033,7 @@ static void check_cm_processor_config(lua_State *L, int tabidx, cm_processor_con
         *p = *def;
         return;
     }
+    // x
     lua_getfield(L, -1, "x");
     if (lua_istable(L, -1)) {
         for (int i = 1; i < X_REG_COUNT; i++) {
@@ -1034,6 +1043,17 @@ static void check_cm_processor_config(lua_State *L, int tabidx, cm_processor_con
         luaL_error(L, "invalid processor.x (expected table)");
     }
     lua_pop(L, 1);
+    // f
+    lua_getfield(L, -1, "f");
+    if (lua_istable(L, -1)) {
+        for (int i = 0; i < F_REG_COUNT; i++) {
+            p->f[i] = opt_uint_field(L, -1, i, def->f[i]);
+        }
+    } else if (!lua_isnil(L, -1)) {
+        luaL_error(L, "invalid processor.f (expected table)");
+    }
+    lua_pop(L, 1);
+    // CSRs
     p->pc = opt_uint_field(L, -1, "pc", def->pc);
     p->fcsr = opt_uint_field(L, -1, "fcsr", def->fcsr);
     p->mvendorid = opt_uint_field(L, -1, "mvendorid", def->mvendorid);
@@ -1112,8 +1132,9 @@ cm_processor_config get_default_processor_config(lua_State *L) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to adjust config
     const auto *config = cm_new_default_machine_config();
     if (!config) {
-        luaL_error(L, "unable to obtain default config (out of memory?)");
-        return cm_processor_config{}; // Just to make clang-tidy happy. It doesn't know luaL_error is [[noreturn]]
+        luaL_error(L, "unable to obtain default config (out of memory?)"); // LCOV_EXCL_LINE
+        // Just to make clang-tidy happy. It doesn't know luaL_error is [[noreturn]]
+        return cm_processor_config{}; // LCOV_EXCL_LINE
     }
     cm_processor_config processor = config->processor;
     cm_delete_machine_config(config);
@@ -1124,8 +1145,9 @@ cm_uarch_processor_config get_default_uarch_processor_config(lua_State *L) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to adjust config
     const auto *config = cm_new_default_machine_config();
     if (!config) {
-        luaL_error(L, "unable to obtain default config (out of memory?)");
-        return cm_uarch_processor_config{}; // Just to make clang-tidy happy. It doesn't know luaL_error is [[noreturn]]
+        luaL_error(L, "unable to obtain default config (out of memory?)"); // LCOV_EXCL_LINE
+        // Just to make clang-tidy happy. It doesn't know luaL_error is [[noreturn]]
+        return cm_uarch_processor_config{}; // LCOV_EXCL_LINE
     }
     cm_uarch_processor_config uarch_processor_config = config->uarch.processor;
     cm_delete_machine_config(config);
@@ -1165,11 +1187,11 @@ static void check_cm_uarch_processor_config(lua_State *L, int tabidx, cm_uarch_p
         return;
     }
     p->pc = opt_uint_field(L, -1, "pc", def->pc);
-    p->cycle = opt_uint_field(L, -1, "pc", def->cycle);
+    p->cycle = opt_uint_field(L, -1, "cycle", def->cycle);
     lua_getfield(L, -1, "x");
     if (lua_istable(L, -1)) {
-        for (int i = 1; i < X_REG_COUNT; i++) {
-            p->x[i - 1] = opt_uint_field(L, -1, i, def->x[i - 1]);
+        for (int i = 1; i <= (UARCH_X_REG_COUNT - 1); i++) {
+            p->x[i] = opt_uint_field(L, -1, i, def->x[i]);
         }
     } else if (!lua_isnil(L, -1)) {
         luaL_error(L, "invalid uarch.processor.x (expected table)");

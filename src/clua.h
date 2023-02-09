@@ -84,7 +84,10 @@ void clua_gettypemetatable(lua_State *L, int ctxidx = lua_upvalueindex(1)) {
     lua_pushstring(L, clua_rawname<T>());
     lua_rawget(L, ctxidx);
     if (lua_isnil(L, -1)) {
+        // This should be unreachable, unless there is a code mistake
+        // LCOV_EXCL_START
         luaL_error(L, "unknown type (%s)", boost::typeindex::type_id_with_cvr<T>().pretty_name().c_str());
+        // LCOV_EXCL_STOP
     }
 }
 
@@ -281,7 +284,8 @@ void clua_createtype(lua_State *L, const char *name, int ctxidx) {
     // check if name is already taken
     lua_getfield(L, ctxidx, name);
     if (!lua_isnil(L, -1)) {
-        luaL_error(L, "redefinition of %s", name);
+        // This should be unreachable, unless there is a code mistake
+        luaL_error(L, "redefinition of %s", name); // LCOV_EXCL_LINE
     }
     lua_pop(L, 1);
     // create new type

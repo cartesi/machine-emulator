@@ -100,8 +100,6 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS, bool UPDATE_PTE = true>
 static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
-    auto note = a.make_scoped_note("translate_virtual_address");
-    (void) note;
     auto priv = a.read_iflags_PRV();
     uint64_t mstatus = a.read_mstatus();
 

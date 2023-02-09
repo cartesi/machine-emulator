@@ -553,7 +553,7 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
     luaL_error(L, e.what());
     return CM_PROC_UNKNOWN; // will not be reached
 } catch (...) {
-    luaL_error(L, "Unknown error with csr type conversion");
+    luaL_error(L, "unknown error with csr type conversion");
     return CM_PROC_UNKNOWN; // will not be reached
 }
 

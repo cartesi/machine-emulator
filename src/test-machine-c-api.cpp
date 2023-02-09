@@ -151,7 +151,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_config_test, default_machine_
     int error_code = cm_create_machine(nullptr, &_runtime_config, &_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
-    std::string origin("Invalid machine configuration");
+    std::string origin("invalid machine configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -162,7 +162,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_rt_config_test, default_machi
     int error_code = cm_create_machine(_default_machine_config, nullptr, &_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
-    std::string origin("Invalid machine runtime configuration");
+    std::string origin("invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -299,7 +299,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, machine_rom_fix
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin("Invalid new machine output");
+    std::string origin("invalid new machine output");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -583,7 +583,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_machine_test, ordinary_machine_fixture
     char *err_msg{};
     int error_code = cm_store(nullptr, _machine_dir_path.c_str(), &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-    BOOST_CHECK_EQUAL(std::string("Invalid machine"), std::string(err_msg));
+    BOOST_CHECK_EQUAL(std::string("invalid machine"), std::string(err_msg));
     cm_delete_error_message(err_msg);
 }
 
@@ -611,7 +611,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_rtc_test, ordinary_machine_fixt
     error_code = cm_load_machine(_machine_dir_path.c_str(), nullptr, &_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
-    std::string origin("Invalid machine runtime configuration");
+    std::string origin("invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -792,7 +792,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_invalid_address_test, ordinary_machine_
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_UNKNOWN);
 
     std::string result = err_msg;
-    std::string origin("Unknown error");
+    std::string origin("unknown error");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1450,7 +1450,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_flash_config_test, ordi
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin("Invalid memory range configuration");
+    std::string origin("invalid memory range configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1650,7 +1650,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(snapshot_basic_test, ordinary_machine_fixture) {
     char *err_msg = nullptr;
     int error_code = cm_snapshot(_machine, &err_msg);
     std::string result = err_msg;
-    std::string origin("snapshot not supported");
+    std::string origin("snapshot is not supported");
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
@@ -1899,7 +1899,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_log_test, default_machine_
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin("Invalid access log");
+    std::string origin("invalid access log");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1916,7 +1916,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_rt_config_test, access_log
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin("Invalid machine runtime configuration");
+    std::string origin("invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1960,7 +1960,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_hash0_test, access_l
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin("Invalid hash");
+    std::string origin("invalid hash");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1973,7 +1973,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_hash1_test, access_l
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin("Invalid hash");
+    std::string origin("invalid hash");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -1987,7 +1987,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_access_log_test, acc
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin("Invalid access log");
+    std::string origin("invalid access log");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);
@@ -2006,7 +2006,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, acce
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin("Invalid machine runtime configuration");
+    std::string origin("invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_access_log(_access_log);
@@ -2315,7 +2315,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_config_test, grpc_machin
     int error_code = cm_create_grpc_machine(m_stub, nullptr, &_runtime_config, &new_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
-    std::string origin("Invalid machine configuration");
+    std::string origin("invalid machine configuration");
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
     cm_delete_machine(new_machine);
@@ -2327,7 +2327,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_rt_config_test, grpc_mac
     int error_code = cm_create_grpc_machine(m_stub, &_machine_config, nullptr, &new_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
-    std::string origin("Invalid machine runtime configuration");
+    std::string origin("invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
     cm_delete_machine(new_machine);
@@ -2365,7 +2365,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_basic_test, grpc_machine_fixt
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     if (err_msg != nullptr) {
-        printf("Error creating grpc machine: %s\n", err_msg);
+        printf("error creating grpc machine: %s\n", err_msg);
         cm_delete_error_message(err_msg);
     }
     cm_delete_machine(machine);
@@ -2427,7 +2427,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_rt_config_test, grpc_machi
     int error_code = cm_load_grpc_machine(m_stub, "some_dir", nullptr, &new_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
-    std::string origin("Invalid machine runtime configuration");
+    std::string origin("invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
 }
@@ -2438,7 +2438,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_default_config_basic_test, grpc_machine_
     int error_code = cm_grpc_get_default_config(m_stub, &config, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
-        printf("Error getting default config: %s\n", err_msg);
+        printf("error getting default config: %s\n", err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     cm_delete_machine_config(config);
@@ -2450,7 +2450,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_x_address_basic_test, grpc_machine_fixtu
     int error_code = cm_grpc_get_x_address(m_stub, 5, &val, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
-        printf("Error getting x address: %s\n", err_msg);
+        printf("error getting x address: %s\n", err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     BOOST_REQUIRE_EQUAL(val, static_cast<uint64_t>(40));
@@ -2462,7 +2462,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_csr_address_basic_test, grpc_machine_fix
     int error_code = cm_grpc_get_csr_address(m_stub, CM_PROC_MIMPID, &val, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
-        printf("Error getting csr address: %s\n", err_msg);
+        printf("error getting csr address: %s\n", err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     BOOST_REQUIRE_EQUAL(val, static_cast<uint64_t>(544));
@@ -2474,7 +2474,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_version_wrong_addr_test, grpc_machine_fi
     int error_code = cm_grpc_get_semantic_version(m_stub, &version, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
-        printf("Error getting semantic version: %s\n", err_msg);
+        printf("error getting semantic version: %s\n", err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     cm_delete_semantic_version(version);
@@ -2486,7 +2486,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_hash0_test, grp
     int error_code = cm_grpc_verify_state_transition(m_stub, nullptr, _access_log, &hash1, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
-    std::string origin("Invalid hash");
+    std::string origin("invalid hash");
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
 }
@@ -2497,7 +2497,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_hash1_test, grp
     int error_code = cm_grpc_verify_state_transition(m_stub, &hash0, _access_log, nullptr, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
-    std::string origin("Invalid hash");
+    std::string origin("invalid hash");
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
 }
@@ -2509,7 +2509,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_ljog_test, grpc
     int error_code = cm_grpc_verify_state_transition(m_stub, &hash0, nullptr, &hash1, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
-    std::string origin("Invalid access log");
+    std::string origin("invalid access log");
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
 }
@@ -2519,7 +2519,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_access_log_null_log_test, grpc_access
     int error_code = cm_grpc_verify_access_log(m_stub, nullptr, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
-    std::string origin("Invalid access log");
+    std::string origin("invalid access log");
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
 }

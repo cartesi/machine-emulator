@@ -131,7 +131,7 @@ void tty_initialize(void) {
 void tty_finalize(void) {
     auto *s = get_state();
     if (!s->initialized) {
-        throw std::runtime_error("TTY not initialized.");
+        throw std::runtime_error("TTY not initialized");
     }
     s->initialized = false;
     if (s->ttyfd >= 0) {
@@ -144,7 +144,7 @@ void tty_finalize(void) {
 void tty_poll_console(uint64_t wait) {
     auto *s = get_state();
     if (!s->initialized) {
-        throw std::runtime_error("Can't poll TTY. It is not initialized.");
+        throw std::runtime_error("can't poll TTY, it is not initialized");
     }
     // Check for input from console, if requested by HTIF
     // Obviously, somethind different must be done in blockchain
@@ -159,7 +159,7 @@ void tty_poll_console(uint64_t wait) {
 int tty_getchar(void) {
     auto *s = get_state();
     if (!s->initialized) {
-        throw std::runtime_error("Can't get char. TTY is not initialized.");
+        throw std::runtime_error("can't get char, TTY is not initialized");
     }
     tty_poll_console(0);
     if (s->buf_pos < s->buf_len) {

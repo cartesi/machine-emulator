@@ -263,7 +263,7 @@ static int machine_obj_index_read_uarch_x(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     auto i = luaL_checkinteger(L, 2);
     if (i < 0 || i >= UARCH_X_REG_COUNT) {
-        luaL_error(L, " register index out of range");
+        luaL_error(L, "register index out of range");
     }
     uint64_t val{};
     TRY_EXECUTE(cm_read_uarch_x(m.get(), i, &val, err_msg));
@@ -352,7 +352,7 @@ static int machine_obj_index_read_memory(lua_State *L) {
     try {
         data = new unsigned char[length];
     } catch (std::bad_alloc &e) {
-        luaL_error(L, "Failed to allocate memory for buffer");
+        luaL_error(L, "failed to allocate memory for buffer");
     }
     auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
     TRY_EXECUTE(cm_read_memory(m.get(), address, managed_data.get(), length, err_msg));
@@ -373,7 +373,7 @@ static int machine_obj_index_read_virtual_memory(lua_State *L) {
     try {
         data = new unsigned char[length];
     } catch (std::bad_alloc &e) {
-        luaL_error(L, "Failed to allocate memory for buffer");
+        luaL_error(L, "failed to allocate memory for buffer");
     }
     auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
     TRY_EXECUTE(cm_read_virtual_memory(m.get(), address, managed_data.get(), length, err_msg));

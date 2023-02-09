@@ -440,7 +440,7 @@ void virtual_machine::do_destroy() {
 }
 
 void virtual_machine::do_snapshot(void) {
-    throw std::runtime_error("snapshot not supported");
+    throw std::runtime_error("snapshot is not supported");
 }
 
 void virtual_machine::do_rollback(void) {

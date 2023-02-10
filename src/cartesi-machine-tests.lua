@@ -288,6 +288,7 @@ local tests = {
   {"htif_invalid_ops.bin", 113},
   {"clint_ops.bin", 137},
   {"shadow_ops.bin", 118},
+  {"compressed.bin", 414},
 }
 
 -- Microarchitecture configuration

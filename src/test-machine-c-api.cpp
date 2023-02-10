@@ -1341,7 +1341,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(ids_read_test, ordinary_machine_fixture) {
     error_code = cm_read_marchid(_machine, &archid, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(archid, static_cast<uint64_t>(0xd));
+    BOOST_CHECK_EQUAL(archid, static_cast<uint64_t>(0xe));
 
     error_code = cm_read_mimpid(_machine, &impid, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);

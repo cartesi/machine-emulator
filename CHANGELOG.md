@@ -5,21 +5,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.13.0] - 2023-02-16
 ### Added
+
+- Added support for RISC-V compressed instructions
 - Added support for debugging emulator with GDB
-
-### Added
-
 - Added return to machine run API informing the reason for breaking the interpreter loop
+- Added many new tests to improve testing and coverage of the RISC-V interpreter and the C APIs
+- Added coverage workflow with summary reports to the CI
+- Added sanitize workflow to the CI, for catching leaks and undefined behavior
+- Added support for running RISC-V tests in parallel to the CI
+- Added support for passing NULL err_msg in all C APIs, meaning the error message won't be received
+
+### Fixed
+
+- Fixed interrupts servicing priority, to honor the same priority as in the RISC-V specification
+- Fixed some leaks and undefined behaviors caught by the new sanitize workflow
+- Fixed invalid SLLW, DIVW, REMW and REMUW instructions not raising illegal instruction exception
+- Fixed crash from inside the machine while trying to read shadow PMAs
+- Fixed off by one error in X registers when saving machine Lua configs
+- Fixed F registers not being handled in Lua configs
+- Fixed time advancing incorrectly while in interactive terminals
 
 ### Changed
 
 - Optimized and refactored interpreter hot loop
+- Removed some dead code and simplified some portions of the code
 - Removed brkflag CSR
-- Replaced minstret by icycleinstret CSR
+- Changed marchid to 0xe
 - Changed RTC\_FREQ\_DIV from 100 to 8192
 - Changed RTC\_CLOCK\_FREQ from 100MHz to 128MHz
-- Fixed interrupts servicing priority, to honor the same priority as in the RISC-V specification
+- Replaced minstret by icycleinstret CSR
+- Reworked all int128 operations to use new portable int128 implementation
+- Converted all runtime error messages to lowercase
+- Improved CI to run faster using GitHub large runners
 
 ## [0.12.0] - 2022-11-25
 ### Added
@@ -209,7 +229,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.2.0]
 - [0.1.0]
 
-[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.13.0
 [0.12.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.12.0
 [0.11.2]: https://github.com/cartesi/machine-emulator/releases/tag/v0.11.2
 [0.11.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.11.1

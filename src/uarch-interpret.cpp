@@ -110,11 +110,6 @@ static inline void write_uint8(STATE_ACCESS &a, uint64_t paddr, uint8_t val) {
     write_uint64(a, palign, newval64);
 }
 
-enum class uarch_execute_status : int {
-    success, // instruction executed successfully
-    halt     // instruction executed successfully and halted the microinterpreter
-};
-
 // Operand decoders
 
 static inline uint8_t operand_rd(uint32_t insn) {
@@ -276,27 +271,23 @@ static inline decoded_insn decode_iuj(uint32_t insn) {
 // Execute instruction
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status write_pc(STATE_ACCESS &a, uint64_t new_pc) {
+static inline void write_pc(STATE_ACCESS &a, uint64_t new_pc) {
     a.write_pc(new_pc);
-    if (new_pc == PMA_UARCH_RAM_START) {
-        return uarch_execute_status::halt;
-    }
-    return uarch_execute_status::success;
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status advance_pc(STATE_ACCESS &a, uint64_t pc) {
+static inline void advance_pc(STATE_ACCESS &a, uint64_t pc) {
     uint64_t new_pc = pc + 4;
     return write_pc(a, new_pc);
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status branch(STATE_ACCESS &a, uint64_t new_pc) {
+static inline void branch(STATE_ACCESS &a, uint64_t new_pc) {
     return write_pc(a, new_pc);
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_LUI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_LUI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_iu(insn);
     dump_insn(a, pc, insn, "lui");
     auto note = a.make_scoped_note("lui");
@@ -308,7 +299,7 @@ static inline uarch_execute_status execute_LUI(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_AUIPC(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_AUIPC(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_iu(insn);
     dump_insn(a, pc, insn, "auipc");
     auto note = a.make_scoped_note("auipc");
@@ -320,7 +311,7 @@ static inline uarch_execute_status execute_AUIPC(STATE_ACCESS &a, uint32_t insn,
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_JAL(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_JAL(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_iuj(insn);
     dump_insn(a, pc, insn, "jal");
     auto note = a.make_scoped_note("jal");
@@ -332,7 +323,7 @@ static inline uarch_execute_status execute_JAL(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_JALR(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_JALR(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "jalr");
     auto note = a.make_scoped_note("jalr");
@@ -345,7 +336,7 @@ static inline uarch_execute_status execute_JALR(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_BEQ(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_BEQ(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_isb(insn);
     dump_insn(a, pc, insn, "beq");
     auto note = a.make_scoped_note("beq");
@@ -357,7 +348,7 @@ static inline uarch_execute_status execute_BEQ(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_BNE(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_BNE(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_isb(insn);
     dump_insn(a, pc, insn, "bne");
     auto note = a.make_scoped_note("bne");
@@ -371,7 +362,7 @@ static inline uarch_execute_status execute_BNE(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_BLT(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_BLT(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_isb(insn);
     dump_insn(a, pc, insn, "blt");
     auto note = a.make_scoped_note("blt");
@@ -385,7 +376,7 @@ static inline uarch_execute_status execute_BLT(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_BGE(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_BGE(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_isb(insn);
     dump_insn(a, pc, insn, "bge");
     auto note = a.make_scoped_note("bge");
@@ -399,7 +390,7 @@ static inline uarch_execute_status execute_BGE(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_BLTU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_BLTU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_isb(insn);
     dump_insn(a, pc, insn, "bltu");
     auto note = a.make_scoped_note("bltu");
@@ -413,7 +404,7 @@ static inline uarch_execute_status execute_BLTU(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_BGEU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_BGEU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_isb(insn);
     dump_insn(a, pc, insn, "bgeu");
     auto note = a.make_scoped_note("bgeu");
@@ -427,7 +418,7 @@ static inline uarch_execute_status execute_BGEU(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_LB(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_LB(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "lb");
     auto note = a.make_scoped_note("lb");
@@ -440,7 +431,7 @@ static inline uarch_execute_status execute_LB(STATE_ACCESS &a, uint32_t insn, ui
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_LHU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_LHU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "lhu");
     auto note = a.make_scoped_note("lhu");
@@ -453,7 +444,7 @@ static inline uarch_execute_status execute_LHU(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_LH(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_LH(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "lh");
     auto note = a.make_scoped_note("lh");
@@ -466,7 +457,7 @@ static inline uarch_execute_status execute_LH(STATE_ACCESS &a, uint32_t insn, ui
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_LW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_LW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "lw");
     auto note = a.make_scoped_note("lw");
@@ -479,7 +470,7 @@ static inline uarch_execute_status execute_LW(STATE_ACCESS &a, uint32_t insn, ui
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_LBU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_LBU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "lbu");
     auto note = a.make_scoped_note("lbu");
@@ -492,7 +483,7 @@ static inline uarch_execute_status execute_LBU(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SB(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SB(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_is(insn);
     dump_insn(a, pc, insn, "sb");
     auto note = a.make_scoped_note("sb");
@@ -504,7 +495,7 @@ static inline uarch_execute_status execute_SB(STATE_ACCESS &a, uint32_t insn, ui
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SH(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SH(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_is(insn);
     dump_insn(a, pc, insn, "sh");
     auto note = a.make_scoped_note("sh");
@@ -516,7 +507,7 @@ static inline uarch_execute_status execute_SH(STATE_ACCESS &a, uint32_t insn, ui
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_is(insn);
     dump_insn(a, pc, insn, "sw");
     auto note = a.make_scoped_note("sw");
@@ -528,7 +519,7 @@ static inline uarch_execute_status execute_SW(STATE_ACCESS &a, uint32_t insn, ui
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_ADDI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_ADDI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "addi");
     auto note = a.make_scoped_note("addi");
@@ -542,7 +533,7 @@ static inline uarch_execute_status execute_ADDI(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_ADDIW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_ADDIW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "addiw");
     auto note = a.make_scoped_note("addiw");
@@ -557,7 +548,7 @@ static inline uarch_execute_status execute_ADDIW(STATE_ACCESS &a, uint32_t insn,
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SLTI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SLTI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "slti");
     auto note = a.make_scoped_note("slti");
@@ -573,7 +564,7 @@ static inline uarch_execute_status execute_SLTI(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SLTIU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SLTIU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "sltiu");
     auto note = a.make_scoped_note("sltiu");
@@ -589,7 +580,7 @@ static inline uarch_execute_status execute_SLTIU(STATE_ACCESS &a, uint32_t insn,
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_XORI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_XORI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "xori");
     auto note = a.make_scoped_note("xori");
@@ -601,7 +592,7 @@ static inline uarch_execute_status execute_XORI(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_ORI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_ORI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "ori");
     auto note = a.make_scoped_note("ori");
@@ -613,7 +604,7 @@ static inline uarch_execute_status execute_ORI(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_ANDI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_ANDI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "andi");
     auto note = a.make_scoped_note("andi");
@@ -625,7 +616,7 @@ static inline uarch_execute_status execute_ANDI(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SLLI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SLLI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_sh6(insn);
     dump_insn(a, pc, insn, "slli");
     auto note = a.make_scoped_note("slli");
@@ -637,7 +628,7 @@ static inline uarch_execute_status execute_SLLI(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SLLIW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SLLIW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_sh5(insn);
     dump_insn(a, pc, insn, "slliw");
     auto note = a.make_scoped_note("slliw");
@@ -650,7 +641,7 @@ static inline uarch_execute_status execute_SLLIW(STATE_ACCESS &a, uint32_t insn,
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SRLI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SRLI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_sh6(insn);
     dump_insn(a, pc, insn, "srli");
     auto note = a.make_scoped_note("srli");
@@ -662,7 +653,7 @@ static inline uarch_execute_status execute_SRLI(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SRLW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SRLW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "srlw");
     auto note = a.make_scoped_note("srlw");
@@ -676,7 +667,7 @@ static inline uarch_execute_status execute_SRLW(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SRLIW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SRLIW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_sh5(insn);
     dump_insn(a, pc, insn, "srliw");
     auto note = a.make_scoped_note("srliw");
@@ -690,7 +681,7 @@ static inline uarch_execute_status execute_SRLIW(STATE_ACCESS &a, uint32_t insn,
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SRAI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SRAI(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_sh6(insn);
     dump_insn(a, pc, insn, "srai");
     auto note = a.make_scoped_note("srai");
@@ -702,7 +693,7 @@ static inline uarch_execute_status execute_SRAI(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SRAIW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SRAIW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_sh5(insn);
     dump_insn(a, pc, insn, "sraiw");
     auto note = a.make_scoped_note("sraiw");
@@ -715,7 +706,7 @@ static inline uarch_execute_status execute_SRAIW(STATE_ACCESS &a, uint32_t insn,
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_ADD(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_ADD(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "add");
     auto note = a.make_scoped_note("add");
@@ -729,7 +720,7 @@ static inline uarch_execute_status execute_ADD(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_ADDW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_ADDW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "addw");
     auto note = a.make_scoped_note("addw");
@@ -745,7 +736,7 @@ static inline uarch_execute_status execute_ADDW(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SUB(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SUB(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "sub");
     auto note = a.make_scoped_note("sub");
@@ -759,7 +750,7 @@ static inline uarch_execute_status execute_SUB(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SUBW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SUBW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "subw");
     auto note = a.make_scoped_note("subw");
@@ -775,7 +766,7 @@ static inline uarch_execute_status execute_SUBW(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SLL(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SLL(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "sll");
     auto note = a.make_scoped_note("sll");
@@ -789,7 +780,7 @@ static inline uarch_execute_status execute_SLL(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SLLW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SLLW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "sllw");
     auto note = a.make_scoped_note("sllw");
@@ -804,7 +795,7 @@ static inline uarch_execute_status execute_SLLW(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SLT(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SLT(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "slt");
     auto note = a.make_scoped_note("slt");
@@ -818,7 +809,7 @@ static inline uarch_execute_status execute_SLT(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SLTU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SLTU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "sltu");
     auto note = a.make_scoped_note("sltu");
@@ -832,7 +823,7 @@ static inline uarch_execute_status execute_SLTU(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_XOR(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_XOR(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "xor");
     auto note = a.make_scoped_note("xor");
@@ -846,7 +837,7 @@ static inline uarch_execute_status execute_XOR(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SRL(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SRL(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "srl");
     auto note = a.make_scoped_note("srl");
@@ -860,7 +851,7 @@ static inline uarch_execute_status execute_SRL(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SRA(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SRA(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "sra");
     auto note = a.make_scoped_note("sra");
@@ -874,7 +865,7 @@ static inline uarch_execute_status execute_SRA(STATE_ACCESS &a, uint32_t insn, u
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_SRAW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_SRAW(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "sraw");
     auto note = a.make_scoped_note("sraw");
@@ -889,7 +880,7 @@ static inline uarch_execute_status execute_SRAW(STATE_ACCESS &a, uint32_t insn, 
 }
 
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_OR(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_OR(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "or");
     auto note = a.make_scoped_note("or");
@@ -903,7 +894,7 @@ static inline uarch_execute_status execute_OR(STATE_ACCESS &a, uint32_t insn, ui
 }
 
 template <typename STATE_ACCESS>
-static uarch_execute_status execute_AND(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static void execute_AND(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_ir(insn);
     dump_insn(a, pc, insn, "and");
     auto note = a.make_scoped_note("and");
@@ -917,7 +908,7 @@ static uarch_execute_status execute_AND(STATE_ACCESS &a, uint32_t insn, uint64_t
 }
 
 template <typename STATE_ACCESS>
-static uarch_execute_status execute_FENCE(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static void execute_FENCE(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     dump_insn(a, pc, insn, "fence");
     auto note = a.make_scoped_note("fence");
     (void) note;
@@ -925,7 +916,7 @@ static uarch_execute_status execute_FENCE(STATE_ACCESS &a, uint32_t insn, uint64
 }
 
 template <typename STATE_ACCESS>
-static uarch_execute_status execute_LWU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static void execute_LWU(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "lwu");
     auto note = a.make_scoped_note("lwu");
@@ -938,7 +929,7 @@ static uarch_execute_status execute_LWU(STATE_ACCESS &a, uint32_t insn, uint64_t
 }
 
 template <typename STATE_ACCESS>
-static uarch_execute_status execute_LD(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static void execute_LD(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_i_l(insn);
     dump_insn(a, pc, insn, "ld");
     auto note = a.make_scoped_note("ld");
@@ -951,7 +942,7 @@ static uarch_execute_status execute_LD(STATE_ACCESS &a, uint32_t insn, uint64_t 
 }
 
 template <typename STATE_ACCESS>
-static uarch_execute_status execute_SD(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static void execute_SD(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     auto d = decode_s(insn);
     dump_insn(a, pc, insn, "sd");
     auto note = a.make_scoped_note("sd");
@@ -987,7 +978,7 @@ static inline bool insn_match_opcode_funct3_funct7_sr1(uint32_t insn, uint32_t o
 
 // Decode and execute one instruction
 template <typename STATE_ACCESS>
-static inline uarch_execute_status execute_insn(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
+static inline void execute_insn(STATE_ACCESS &a, uint32_t insn, uint64_t pc) {
     if (insn_match_opcode_funct3(insn, 0b0010011, 0b000)) {
         return execute_ADDI(a, insn, pc);
     } else if (insn_match_opcode_funct3(insn, 0b0000011, 0b011)) {
@@ -1095,15 +1086,16 @@ static inline uarch_execute_status execute_insn(STATE_ACCESS &a, uint32_t insn, 
 
 template <typename STATE_ACCESS>
 uarch_interpreter_status uarch_interpret(STATE_ACCESS &a, uint64_t cycle_end) {
+    // This must be the first read because we assume the first log access is a
+    // uarch_cycle read in machine::verify_state_transition
     auto cycle = a.read_cycle();
     while (cycle < cycle_end) {
-        auto pc = a.read_pc();
-        auto insn = read_uint32(a, pc);
-        auto status = execute_insn(a, insn, pc);
-        if (status == uarch_execute_status::halt) {
-            a.write_cycle(0);
+        if (a.read_halt_flag()) {
             return uarch_interpreter_status::halt;
         }
+        auto pc = a.read_pc();
+        auto insn = read_uint32(a, pc);
+        execute_insn(a, insn, pc);
         cycle = cycle + 1;
         a.write_cycle(cycle);
     }

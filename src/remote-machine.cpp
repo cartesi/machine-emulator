@@ -391,6 +391,34 @@ public:
     }
 };
 
+class handler_UarchRun final : public handler<UarchRunRequest, UarchRunResponse> {
+
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, UarchRunRequest *req,
+        ServerAsyncResponseWriter<UarchRunResponse> *writer) override {
+        hctx.s->RequestUarchRun(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        return side_effect::none;
+    }
+
+    side_effect go(handler_context &hctx, UarchRunRequest *req,
+        ServerAsyncResponseWriter<UarchRunResponse> *writer) override {
+        if (!hctx.m) {
+            return finish_with_error_no_machine(writer);
+        }
+        auto limit = static_cast<uint64_t>(req->limit());
+        UarchRunResponse resp;
+        hctx.m->run(limit);
+        resp.set_cycle(hctx.m->read_uarch_cycle());
+        resp.set_pc(hctx.m->read_uarch_pc());
+        resp.set_halt_flag(hctx.m->read_uarch_halt_flag());
+        return finish_ok(writer, resp);
+    }
+
+public:
+    handler_UarchRun(handler_context &hctx) {
+        advance(hctx);
+    }
+};
+
 class handler_Store final : public handler<StoreRequest, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, StoreRequest *req,
@@ -1188,6 +1216,7 @@ static void server_loop(const char *server_address, const char *session_id, cons
         handler_SetCheckInTarget hSetCheckInTarget(hctx);
         handler_Machine hMachine(hctx);
         handler_Run hRun(hctx);
+        handler_UarchRun hUarchRun(hctx);
         handler_Store hStore(hctx);
         handler_Destroy hDestroy(hctx);
         handler_Snapshot hSnapshot(hctx);

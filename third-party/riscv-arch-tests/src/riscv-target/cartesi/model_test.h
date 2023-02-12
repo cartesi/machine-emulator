@@ -18,6 +18,7 @@
 #define MODEL_TEST_H
 
 #include <pma-defines.h>
+#include <uarch-defines.h>
 
 #if XLEN == 64
   #define ALIGNMENT 3
@@ -34,8 +35,9 @@
 //RV_COMPLIANCE_HALT
 
 #define RVMODEL_HALT                                                    \
-        li	t0, PMA_UARCH_RAM_START_DEF;                                \
-        jalr x0, 0(t0)                                                  \
+        li  t0, UARCH_MMIO_HALT_ADDR_DEF;                               \
+        li  t1, UARCH_MMIO_HALT_VALUE_DEF;                              \
+        sd t1, 0(t0)                                                  \
 
 #define RVMODEL_BOOT
 

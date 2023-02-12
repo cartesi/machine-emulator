@@ -22,15 +22,6 @@ namespace cartesi {
 
 using namespace std::string_literals;
 
-const pma_entry::flags uarch_machine::m_rom_flags{
-    true,                  // R
-    false,                 // W
-    true,                  // X
-    true,                  // IR
-    false,                 // IW
-    PMA_ISTART_DID::memory // DID
-};
-
 const pma_entry::flags uarch_machine::m_ram_flags{
     true,                  // R
     true,                  // W
@@ -41,20 +32,28 @@ const pma_entry::flags uarch_machine::m_ram_flags{
 };
 
 uarch_machine::uarch_machine(uarch_config c) : m_s{}, m_c{std::move(c)} {
-    m_s.pc = m_c.processor.pc;
-    m_s.cycle = m_c.processor.cycle;
+    load_config(m_c);
+}
+
+/// \brief Resets the value of halt flag
+void uarch_machine::reset_state(void) {
+    load_config(m_c);
+}
+
+void uarch_machine::load_config(uarch_config &c) {
+    m_s.pc = c.processor.pc;
+    m_s.cycle = c.processor.cycle;
+    m_s.halt_flag = c.processor.halt_flag;
     // General purpose registers
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
-        m_s.x[i] = m_c.processor.x[i];
+        m_s.x[i] = c.processor.x[i];
     }
     // Register memory PMAs
-    if (!m_c.ram.image_filename.empty()) {
-        m_s.ram =
-            make_callocd_memory_pma_entry("uarch ROM", PMA_UARCH_RAM_START, m_c.ram.length, m_c.ram.image_filename)
-                .set_flags(m_ram_flags);
-    } else if (m_c.ram.length > 0) {
-        m_s.ram =
-            make_callocd_memory_pma_entry("uarch ROM", PMA_UARCH_RAM_START, m_c.ram.length).set_flags(m_ram_flags);
+    if (!c.ram.image_filename.empty()) {
+        m_s.ram = make_callocd_memory_pma_entry("uarch RAM", PMA_UARCH_RAM_START, c.ram.length, c.ram.image_filename)
+                      .set_flags(m_ram_flags);
+    } else if (c.ram.length > 0) {
+        m_s.ram = make_callocd_memory_pma_entry("uarch RAM", PMA_UARCH_RAM_START, c.ram.length).set_flags(m_ram_flags);
     }
 }
 
@@ -68,6 +67,16 @@ void uarch_machine::write_cycle(uint64_t val) {
 
 uint64_t uarch_machine::read_pc(void) const {
     return m_s.pc;
+}
+
+/// \brief Gets the value of halt flag
+bool uarch_machine::read_halt_flag(void) const {
+    return m_s.halt_flag;
+}
+
+/// \brief Sets the value of halt flag
+void uarch_machine::set_halt_flag(void) {
+    m_s.halt_flag = true;
 }
 
 void uarch_machine::write_pc(uint64_t val) {
@@ -84,10 +93,6 @@ void uarch_machine::write_x(int i, uint64_t val) {
     }
 }
 
-uint64_t uarch_machine::read_rom_length(void) const {
-    return m_s.rom.get_length();
-}
-
 uint64_t uarch_machine::read_ram_length(void) const {
     return m_s.ram.get_length();
 }
@@ -98,9 +103,6 @@ pma_entry &uarch_machine::find_pma_entry(uint64_t paddr, size_t length) {
 }
 
 const pma_entry &uarch_machine::find_pma_entry(uint64_t paddr, size_t length) const {
-    if (m_s.rom.contains(paddr, length)) {
-        return m_s.rom;
-    }
     if (m_s.ram.contains(paddr, length)) {
         return m_s.ram;
     }

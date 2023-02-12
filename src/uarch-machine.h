@@ -42,6 +42,9 @@ class uarch_machine final {
     /// \returns Reference to corresponding entry in machine state.
     pma_entry &register_pma_entry(pma_entry &&pma);
 
+    // Setup the machine with the provided configuration
+    void load_config(uarch_config &c);
+
 public:
     /// \brief Constructor from machine configuration
     // I will deal with clang-tidy later.
@@ -60,7 +63,8 @@ public:
     /// \brief No move assignment
     uarch_machine &operator=(uarch_machine &&other) = delete;
 
-    static uarch_config get_default_config(void);
+    // Reset machine state to initial configuration
+    void reset_state(void);
 
     /// \brief Returns machine state for direct access.
     uarch_state &get_state(void) {
@@ -98,9 +102,14 @@ public:
     /// \param val New register value.
     void write_cycle(uint64_t val);
 
-    /// \brief Reads the length of uarch ROM
-    /// \returns Length of uarch ROM
-    uint64_t read_rom_length(void) const;
+    /// \brief Gets the value of halt flag
+    bool read_halt_flag(void) const;
+
+    /// \brief Sets the value of halt flag
+    void set_halt_flag(void);
+
+    /// \brief Resets the value of halt flag
+    void reset_halt_flag(void);
 
     /// \brief Reads the length of uarch RAM
     /// \returns Length of uarch RAM

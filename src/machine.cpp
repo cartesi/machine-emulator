@@ -543,6 +543,7 @@ machine_config machine::get_serialization_config(void) const {
         r.notice_hashes.image_filename.clear();
     }
     c.uarch.processor.cycle = read_uarch_cycle();
+    c.uarch.processor.halt_flag = read_uarch_halt_flag();
     c.uarch.processor.pc = read_uarch_pc();
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
         c.uarch.processor.x[i] = read_uarch_x(i);
@@ -647,9 +648,6 @@ void machine::store_pmas(const machine_config &c, const std::string &dir) const 
         store_memory_pma(find_pma_entry<uint64_t>(r.input_metadata.start), dir);
         store_memory_pma(find_pma_entry<uint64_t>(r.voucher_hashes.start), dir);
         store_memory_pma(find_pma_entry<uint64_t>(r.notice_hashes.start), dir);
-    }
-    if (!m_uarch.get_state().rom.get_istart_E()) {
-        store_memory_pma(m_uarch.get_state().rom, dir);
     }
     if (!m_uarch.get_state().ram.get_istart_E()) {
         store_memory_pma(m_uarch.get_state().ram, dir);
@@ -1130,6 +1128,8 @@ uint64_t machine::read_csr(csr r) const {
             return read_htif_iyield();
         case csr::uarch_cycle:
             return read_uarch_cycle();
+        case csr::uarch_halt_flag:
+            return read_uarch_halt_flag();
         case csr::uarch_pc:
             return read_uarch_pc();
         case csr::uarch_ram_length:
@@ -1210,6 +1210,8 @@ void machine::write_csr(csr w, uint64_t val) {
             return write_htif_iyield(val);
         case csr::uarch_cycle:
             return write_uarch_cycle(val);
+        case csr::uarch_halt_flag:
+            return set_uarch_halt_flag();
         case csr::uarch_pc:
             return write_uarch_pc(val);
         case csr::mvendorid:
@@ -1303,6 +1305,8 @@ uint64_t machine::get_csr_address(csr w) {
             return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_pc);
         case csr::uarch_cycle:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_cycle);
+        case csr::uarch_halt_flag:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag);
         case csr::uarch_ram_length:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_ram_length);
         default:
@@ -1826,6 +1830,21 @@ uint64_t machine::read_uarch_cycle(void) const {
 
 void machine::write_uarch_cycle(uint64_t val) {
     return m_uarch.write_cycle(val);
+}
+
+/// \brief Reads the value of the microarchitecture halt flag.
+/// \returns The current microarchitecture halt value.
+bool machine::read_uarch_halt_flag(void) const {
+    return m_uarch.read_halt_flag();
+}
+
+/// \brief Sets the value ofthe microarchitecture halt flag.
+void machine::set_uarch_halt_flag() {
+    m_uarch.set_halt_flag();
+}
+
+void machine::uarch_reset_state() {
+    m_uarch.reset_state();
 }
 
 uint64_t machine::read_uarch_ram_length(void) const {

@@ -140,6 +140,7 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_HTIF_ICONSOLE,
     CM_PROC_HTIF_IYIELD,
     CM_PROC_UARCH_CYCLE,
+    CM_PROC_UARCH_HALT_FLAG,
     CM_PROC_UARCH_PC,
     CM_PROC_UARCH_RAM_LENGTH,
     CM_PROC_UNKNOWN
@@ -247,6 +248,7 @@ typedef struct { // NOLINT(modernize-use-using)
     uint64_t x[CM_MACHINE_UARCH_X_REG_COUNT];
     uint64_t pc;
     uint64_t cycle;
+    bool halt_flag;
 } cm_uarch_processor_config;
 
 /// \brief Microarchitecture state configuration
@@ -1645,6 +1647,31 @@ CM_API int cm_read_uarch_ram_length(const cm_machine *m, uint64_t *val, char **e
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_uarch_cycle(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Gets the value of the microarchitecture halt flag.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the halt flag.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_uarch_halt_flag(const cm_machine *m, bool *val, char **err_msg);
+
+/// \brief Sets the value of the microarchitecture halt flag.
+/// \param m Pointer to valid machine instance
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_set_uarch_halt_flag(cm_machine *m, char **err_msg);
+
+/// \brief Resets the value of the microarchitecture halt flag.
+/// \param m Pointer to valid machine instance
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_uarch_reset_state(cm_machine *m, char **err_msg);
 
 /// \brief Runs the machine in the microarchitecture until the mcycle advances by one unit or the micro cycles counter
 /// (uarch_cycle) reaches uarch_cycle_end \param m Pointer to valid machine instance \param mcycle_end End cycle value

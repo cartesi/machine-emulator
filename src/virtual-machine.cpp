@@ -471,6 +471,18 @@ void virtual_machine::do_write_uarch_cycle(uint64_t val) {
     m_machine->write_uarch_cycle(val);
 }
 
+void virtual_machine::do_set_uarch_halt_flag() {
+    m_machine->set_uarch_halt_flag();
+}
+
+void virtual_machine::do_uarch_reset_state() {
+    m_machine->uarch_reset_state();
+}
+
+bool virtual_machine::do_read_uarch_halt_flag(void) const {
+    return m_machine->read_uarch_halt_flag();
+}
+
 uint64_t virtual_machine::do_read_uarch_ram_length(void) const {
     return m_machine->read_uarch_ram_length();
 }

@@ -38,7 +38,7 @@ public:
     /// \details \{
     /// An exception is thrown if paddr can't me mapped to a valid state register.
     //// \}
-    static void write_register(uint64_t paddr, machine_state &s, uint64_t data) {
+    static void write_register(uint64_t paddr, machine_state &s, uarch_state &us, uint64_t data) {
         if (try_write_x(s, paddr, data)) {
             return;
         }
@@ -142,10 +142,18 @@ public:
             default:
                 break;
         }
-        switch (static_cast<uarch_mmio>(paddr)) {
-            case uarch_mmio::putchar:
+        switch (static_cast<uarch_mmio_address>(paddr)) {
+            case uarch_mmio_address::halt:
+                if (data != uarch_mmio_halt_value) {
+                    throw std::runtime_error("invalid write attempt to microarchitecture halting address");
+                }
+                return uarch_halt(us);
+            case uarch_mmio_address::putchar:
                 return uarch_putchar(data);
-            case uarch_mmio::abort:
+            case uarch_mmio_address::abort:
+                if (data != uarch_mmio_abort_value) {
+                    throw std::runtime_error("invalid write attempt to microarchitecture abort address");
+                }
                 return uarch_abort();
         }
 
@@ -253,6 +261,19 @@ public:
                 break;
         }
 
+        switch (static_cast<uarch_mmio_address>(paddr)) {
+            case uarch_mmio_address::halt:
+                if (us.halt_flag) {
+                    return uarch_mmio_halt_value;
+                }
+                return 0;
+            case uarch_mmio_address::putchar:
+                //??P Not too elegant, but if we don't allow reading this address, the record state access will fail
+                return 0;
+            case uarch_mmio_address::abort:
+                //??P Not too elegant, but if we don't allow reading this address, the record state access will fail
+                return 0;
+        }
         throw std::runtime_error("invalid read memory access from microarchitecture");
     }
 
@@ -339,10 +360,12 @@ public:
                 break;
         }
 
-        switch (static_cast<uarch_mmio>(paddr)) {
-            case uarch_mmio::putchar:
+        switch (static_cast<uarch_mmio_address>(paddr)) {
+            case uarch_mmio_address::halt:
+                return "uarch.halt_flag";
+            case uarch_mmio_address::putchar:
                 return "uarch.putchar";
-            case uarch_mmio::abort:
+            case uarch_mmio_address::abort:
                 return "uarch.abort";
         }
 
@@ -653,6 +676,11 @@ private:
     /// \brief Writes a character to the console
     static void uarch_putchar(uint64_t data) {
         putchar(static_cast<char>(data));
+    }
+
+    /// \brief Halt  request received from uarch
+    static void uarch_halt(uarch_state &us) {
+        us.halt_flag = true;
     }
 
     /// \brief Abort request received from uarch

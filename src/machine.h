@@ -156,8 +156,9 @@ public:
         htif_ihalt,
         htif_iconsole,
         htif_iyield,
-        uarch_cycle,
         uarch_pc,
+        uarch_cycle,
+        uarch_halt_flag,
         uarch_ram_length,
         last
     };
@@ -198,6 +199,9 @@ public:
     /// counter (uarch_cycle) reaches uarch_cycle_end
     /// \param uarch_cycle_end uarch_cycle limit
     void uarch_run(uint64_t uarch_cycle_end);
+
+    /// \brief Resets the microarchitecture state
+    void uarch_reset_state();
 
     /// \brief Runs the machine for one cycle logging all accesses to the state.
     /// \param log_type Type of access log to generate.
@@ -764,6 +768,13 @@ public:
     /// \brief Writes the value ofthe microarchitecture pc register.
     /// \param val New register value.
     void write_uarch_pc(uint64_t val);
+
+    /// \brief Reads the value of the microarchitecture halt flag.
+    /// \returns The current microarchitecture halt value.
+    bool read_uarch_halt_flag(void) const;
+
+    /// \brief Sets the value ofthe microarchitecture halt flag.
+    void set_uarch_halt_flag();
 
     /// \brief Reads the value of the microarchitecture cycle counter register.
     /// \returns The current microarchitecture cycle.

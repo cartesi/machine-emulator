@@ -42,9 +42,6 @@ class uarch_record_state_access : public i_uarch_state_access<uarch_record_state
     /// for an empty range.
     pma_entry &find_memory_pma_entry(uint64_t paddr, size_t length) {
         // First, search microarchitecture's private PMA entries
-        if (m_us.rom.contains(paddr, length)) {
-            return m_us.rom;
-        }
         if (m_us.ram.contains(paddr, length)) {
             return m_us.ram;
         }
@@ -250,6 +247,21 @@ private:
             m_us.cycle, val, "uarch.cycle");
     }
 
+    bool do_read_halt_flag() const {
+        return log_read(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag), m_us.halt_flag,
+            "uarch.halt_flag");
+    }
+
+    void do_set_halt_flag() {
+        return log_before_write_write_and_update(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag),
+            m_us.halt_flag, true, "uarch.halt_flag");
+    }
+
+    void do_reset_halt_flag() {
+        return log_before_write_write_and_update(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag),
+            m_us.halt_flag, false, "uarch.halt_flag");
+    }
+
     uint64_t do_read_word(uint64_t paddr) {
         assert((paddr & (sizeof(uint64_t) - 1)) == 0);
         // Find a memory range that contains the specified address
@@ -313,7 +325,7 @@ private:
     void write_register(uint64_t paddr, uint64_t data) {
         auto old_data = uarch_bridge::read_register(paddr, m_s, m_us);
         const auto *name = uarch_bridge::get_register_name(paddr);
-        uarch_bridge::write_register(paddr, m_s, data);
+        uarch_bridge::write_register(paddr, m_s, m_us, data);
         log_before_write_write_and_update(paddr, old_data, data, name);
     }
 

@@ -91,8 +91,12 @@ static int machine_obj_index_dump_regs(lua_State *L) {
     PRINT_PROCESSOR_CSR(m, htif_ihalt);
     PRINT_PROCESSOR_CSR(m, htif_iconsole);
     PRINT_PROCESSOR_CSR(m, htif_iyield);
-
     PRINT_PROCESSOR_CSR(m, uarch_cycle);
+
+    bool uarch_halt_flag{false};
+    TRY_EXECUTE(cm_read_uarch_halt_flag(m, &uarch_halt_flag, err_msg));
+    (void) fprintf(stderr, "uarch_halt_flag = %s\n", uarch_halt_flag ? "true" : "false");
+
     PRINT_PROCESSOR_CSR(m, uarch_ram_length);
     PRINT_PROCESSOR_CSR(m, uarch_pc);
     for (int i = 0; i < UARCH_X_REG_COUNT; ++i) {
@@ -402,6 +406,32 @@ static int machine_obj_index_run(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:read_uarch_halt_flag() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_read_uarch_halt_flag(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    bool val{};
+    TRY_EXECUTE(cm_read_uarch_halt_flag(m.get(), &val, err_msg));
+    lua_pushboolean(L, val);
+    return 1;
+}
+
+/// \brief This is the machine:set_uarch_halt_flag() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_set_uarch_halt_flag(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_set_uarch_halt_flag(m.get(), err_msg));
+    return 0;
+}
+
+/// \brief This is the machine:uarch_reset_state() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_uarch_reset_state(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_uarch_reset_state(m.get(), err_msg));
+    return 0;
+}
+
 /// \brief This is the machine:uarch_run() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_uarch_run(lua_State *L) {
@@ -677,6 +707,9 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"destroy", machine_obj_index_destroy},
     {"snapshot", machine_obj_index_snapshot},
     {"rollback", machine_obj_index_rollback},
+    {"read_uarch_halt_flag", machine_obj_index_read_uarch_halt_flag},
+    {"set_uarch_halt_flag", machine_obj_index_set_uarch_halt_flag},
+    {"uarch_reset_state", machine_obj_index_uarch_reset_state},
 });
 
 int clua_i_virtual_machine_init(lua_State *L, int ctxidx) {

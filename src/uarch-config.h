@@ -36,7 +36,8 @@ struct uarch_ram_config final {
 struct uarch_processor_config final {
     std::array<uint64_t, UARCH_X_REG_COUNT> x{}; ///< Value of general-purpose registers
     uint64_t pc{UARCH_PC_INIT};                  ///< Value of pc
-    uint64_t cycle{UARCH_CYCLE_INIT};            ///< Value of ucycle counter
+    bool halt_flag{};
+    uint64_t cycle{UARCH_CYCLE_INIT}; ///< Value of ucycle counter
 };
 
 /// \brief Microarchitecture configuration

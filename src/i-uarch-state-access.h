@@ -70,6 +70,18 @@ public:
         return derived().do_read_cycle();
     }
 
+    auto read_halt_flag() {
+        return derived().do_read_halt_flag();
+    }
+
+    auto set_halt_flag() {
+        return derived().do_set_halt_flag();
+    }
+
+    auto reset_halt_flag() {
+        return derived().do_reset_halt_flag();
+    }
+
     auto write_cycle(uint64_t v) {
         return derived().do_write_cycle(v);
     }

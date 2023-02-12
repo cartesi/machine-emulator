@@ -1,5 +1,4 @@
 // Copyright 2020 Cartesi Pte. Ltd.
-//
 // This file is part of the machine-emulator. The machine-emulator is free
 // software: you can redistribute it and/or modify it under the terms of the GNU
 // Lesser General Public License as published by the Free Software Foundation,
@@ -615,6 +614,22 @@ public:
         return do_write_uarch_cycle(val);
     }
 
+    /// \brief Gets the value of the microarchitecture halt flag
+    /// \returns The current microarchitecture cycle.
+    bool read_uarch_halt_flag(void) const {
+        return do_read_uarch_halt_flag();
+    }
+
+    /// \brief Sets the microarchitecture halt flag
+    void set_uarch_halt_flag() {
+        return do_set_uarch_halt_flag();
+    }
+
+    /// \brief Resets the microarchitecture halt flag
+    void uarch_reset_state() {
+        return do_uarch_reset_state();
+    }
+
     /// \brief Reads the value of the microarchitecture ROM length
     /// \returns The value of microarchitecture ROM length
     uint64_t read_uarch_ram_length(void) const {
@@ -739,6 +754,9 @@ private:
     virtual void do_write_uarch_pc(uint64_t val) = 0;
     virtual uint64_t do_read_uarch_cycle(void) const = 0;
     virtual void do_write_uarch_cycle(uint64_t val) = 0;
+    virtual bool do_read_uarch_halt_flag(void) const = 0;
+    virtual void do_set_uarch_halt_flag() = 0;
+    virtual void do_uarch_reset_state() = 0;
     virtual uint64_t do_read_uarch_ram_length(void) const = 0;
     virtual void do_uarch_run(uint64_t uarch_cycle_end) = 0;
 };

@@ -334,6 +334,19 @@ private:
         check_write_word(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_cycle), val, "uarch.cycle");
     }
 
+    bool do_read_halt_flag() {
+        return check_read_word(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag),
+            "uarch.uarch_halt_flag");
+    }
+
+    void do_set_halt_flag() {
+        check_write_word(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag), true, "uarch.halt_flag");
+    }
+
+    void do_reset_halt_flag() {
+        check_write_word(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag), false, "uarch.halt_flag");
+    }
+
     uint64_t do_read_word(uint64_t paddr) {
         assert((paddr & (sizeof(uint64_t) - 1)) == 0);
         // Get the name of the state register identified by this address

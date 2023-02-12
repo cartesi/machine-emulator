@@ -14,25 +14,25 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-
 #include <pma-defines.h>
-
-// entry point of the code executed on the microarchitecture's RAM
+#include <uarch-defines.h>
 
 .section .text.init;
 .align 3;
 .global _start;
 _start:    
-    // Stack initialization
+    // Initialize stack
     li sp, PMA_UARCH_RAM_START_DEF  
     la t0, shadow_state_uarch_ram_length_abs_addr // t0=pointer to address of uarch_ram_length in state shadow
     ld t0, 0(t0)   // t0=address of uarch_ram_length in state shadow
     ld t0, 0(t0)   // t0=value of uarch_ram_length
     add sp, sp, t0 // stack pointer at the end of RAM
 
+    // Calls the macro machine interpreter that was compiled to microarchitecture
     call uarch_run
-      
-    j _start // HALT by jumping to RAM start
-      
 
- 
+    // Halt the micro machine   
+    li  t0, UARCH_MMIO_HALT_ADDR_DEF
+    li  t1, UARCH_MMIO_HALT_VALUE_DEF
+    sd t1, 0(t0) 
+    // The machine is halted.

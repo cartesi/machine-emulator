@@ -783,6 +783,30 @@ int cm_write_uarch_x(cm_machine *m, int i, uint64_t val, char **err_msg) try {
     return cm_result_failure(err_msg);
 }
 
+CM_API int cm_read_uarch_halt_flag(const cm_machine *m, bool *val, char **err_msg) try {
+    const auto *cpp_machine = convert_from_c(m);
+    *val = cpp_machine->read_uarch_halt_flag();
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+CM_API int cm_set_uarch_halt_flag(cm_machine *m, char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cpp_machine->set_uarch_halt_flag();
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+CM_API int cm_uarch_reset_state(cm_machine *m, char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cpp_machine->uarch_reset_state();
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
 int cm_machine_uarch_run(cm_machine *m, uint64_t uarch_cycle_end, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->uarch_run(uarch_cycle_end);

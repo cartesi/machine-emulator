@@ -251,6 +251,19 @@ static auto new_Run_handler(handler_context &hctx) {
         });
 }
 
+static auto new_UarchRun_handler(handler_context &hctx) {
+    return new_handler<UarchRunRequest, UarchRunResponse>(
+        "UarchRun",
+        [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
+            auto *cq = hctx.completion_queue.get();
+            hctx.async_service.RequestUarchRun(&server_context, &request, &writer, cq, cq, self);
+        },
+        [&hctx](auto &client_context, auto &request) {
+            auto *cq = hctx.completion_queue.get();
+            return hctx.stub->AsyncUarchRun(&client_context, request, cq);
+        });
+}
+
 static auto new_Store_handler(handler_context &hctx) {
     return new_handler<StoreRequest, Void>(
         "Store",
@@ -716,6 +729,7 @@ static void enable_server_handlers(handler_context &hctx) {
     new_SetCheckInTarget_handler(hctx);      // NOLINT: cannot leak (pointer is in completion queue)
     new_Machine_handler(hctx);               // NOLINT: cannot leak (pointer is in completion queue)
     new_Run_handler(hctx);                   // NOLINT: cannot leak (pointer is in completion queue)
+    new_UarchRun_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
     new_Store_handler(hctx);                 // NOLINT: cannot leak (pointer is in completion queue)
     new_Destroy_handler(hctx);               // NOLINT: cannot leak (pointer is in completion queue)
     new_Snapshot_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)

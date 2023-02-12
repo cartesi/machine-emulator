@@ -19,6 +19,8 @@
 #include "uarch-constants.h"
 #include <algorithm>
 
+using namespace cartesi;
+
 extern "C" void __cxa_pure_virtual() {
     abort();
 }
@@ -64,13 +66,13 @@ extern "C" void *memset(void *ptr, int value, size_t num) {
 }
 
 extern "C" void _putchar(char c) {
-    volatile uint64_t *p = reinterpret_cast<uint64_t *>(cartesi::uarch_mmio::putchar);
+    volatile uint64_t *p = reinterpret_cast<uint64_t *>(cartesi::uarch_mmio_address::putchar);
     *p = c;
 }
 
 extern "C" [[noreturn]] void abort(void) {
-    volatile char *p = reinterpret_cast<char *>(cartesi::uarch_mmio::abort);
-    *p = 1;
+    volatile char *p = reinterpret_cast<char *>(cartesi::uarch_mmio_address::abort);
+    *p = uarch_mmio_abort_value;
     // execution will never reach this point
     // infinite loop added to silent the compiler
     for (;;) {

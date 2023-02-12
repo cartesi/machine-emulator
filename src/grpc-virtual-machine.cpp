@@ -910,6 +910,21 @@ void grpc_virtual_machine::do_write_uarch_cycle(uint64_t val) {
     write_csr(csr::uarch_cycle, val);
 }
 
+void grpc_virtual_machine::do_set_uarch_halt_flag() {
+    write_csr(csr::uarch_halt_flag, true);
+}
+
+void grpc_virtual_machine::do_uarch_reset_state() {
+    Void request;
+    Void response;
+    ClientContext context;
+    check_status(m_stub->get_stub()->UarchResetState(&context, request, &response));
+}
+
+bool grpc_virtual_machine::do_read_uarch_halt_flag(void) const {
+    return read_csr(csr::uarch_halt_flag);
+}
+
 uint64_t grpc_virtual_machine::do_read_uarch_ram_length(void) const {
     return read_csr(csr::uarch_ram_length);
 }

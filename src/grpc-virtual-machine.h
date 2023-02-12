@@ -218,6 +218,9 @@ private:
     uint64_t do_read_uarch_cycle(void) const override;
     void do_write_uarch_cycle(uint64_t val) override;
     uint64_t do_read_uarch_ram_length(void) const override;
+    void do_set_uarch_halt_flag() override;
+    void do_uarch_reset_state() override;
+    bool do_read_uarch_halt_flag(void) const override;
     void do_uarch_run(uint64_t uarch_cycle_end) override;
 
     grpc_machine_stub_ptr m_stub;

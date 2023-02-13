@@ -50,7 +50,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Build
-        run: make -j$(nproc)
+        run: make -j$(nproc) release=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
 
       - name: Build uarch-based interpreter
         run: make -j$(nproc) uarch
@@ -758,6 +758,7 @@ jobs:
           load: true
           cache-from: type=gha,mode=max,scope=ubuntu
           cache-to: type=gha,scope=ubuntu
+          build-args: RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
 
       - name: Download [rootfs.ext2]
         uses: Legion2/download-release-action@v2.1.0
@@ -856,6 +857,7 @@ jobs:
           load: true
           cache-from: type=gha,mode=max,scope=alpine
           cache-to: type=gha,scope=alpine
+          build-args: RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
 
       - name: Download [rootfs.ext2]
         uses: Legion2/download-release-action@v2.1.0
@@ -966,6 +968,7 @@ jobs:
           load: false
           cache-from: type=gha,mode=max,scope=ubuntu
           cache-to: type=gha,scope=ubuntu
+          build-args: RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
 
       - name: Build Alpine based Docker image
         id: alpine_docker_build
@@ -980,6 +983,7 @@ jobs:
           load: false
           cache-from: type=gha,mode=max,scope=alpine
           cache-to: type=gha,scope=alpine
+          build-args: RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
 
       - name: Build and push Ubuntu based server-manager docker image
         shell: bash

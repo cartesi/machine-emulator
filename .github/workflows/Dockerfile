@@ -1,4 +1,5 @@
 FROM ubuntu:22.04 as builder
+ARG RELEASE=no
 
 RUN apt-get update && \
     DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends -y \
@@ -19,7 +20,7 @@ WORKDIR /usr/src/emulator
 COPY . .
 
 RUN make -j$(nproc) dep && \
-    make -j$(nproc) && \
+    make -j$(nproc) release=$RELEASE && \
     make install && \
     make clean && \
     rm -rf *

@@ -1,4 +1,5 @@
 FROM alpine:3.12 as builder
+ARG RELEASE=no
 
 RUN apk add --no-cache \
     build-base \
@@ -35,7 +36,7 @@ WORKDIR /usr/src/app
 COPY . .
 
 RUN make -j$(nproc) dep && \
-    make -j$(nproc) && \
+    make -j$(nproc) release=$RELEASE && \
     make install && \
     make clean && \
     rm -rf *

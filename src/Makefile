@@ -141,7 +141,8 @@ HASH_LIBS:=$(CRYPTOPP_LIB)
 WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
-INCS= -I../lib/machine-emulator-defines $(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
+INCS=-I../lib/machine-emulator-defines -I../third-party/llvm-flang-uint128 \
+	$(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS

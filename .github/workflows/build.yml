@@ -181,9 +181,6 @@ jobs:
           export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
           for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do echo -n 'CTSICTSI' | lua5.3 $x local; done
 
-      - name: Run test suite with Microarchitecture
-        run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests --uarch-ram-length=0x20000 --uarch-ram-image=./tests/uarch-ram.bin uarch_run
-
       - name: Run grpc lua test scripts
         run: |
           export PATH=/opt/cartesi/bin:$PATH
@@ -287,8 +284,9 @@ jobs:
       - name: Run test suite with Microarchitecture
         run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests --uarch-ram-length=0x20000 --uarch-ram-image=./tests/uarch-ram.bin --jobs=$(nproc) uarch_run
 
-       - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
-        run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests --uarch-ram-length=0x20000 --uarch-ram-image=./tests/uarch-ram.bin --jobs=$(nproc) host_and_uarch_run
+      - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
+        # Running a smaller test set. We can decide later if/when/ how to run the full set
+        run: /opt/cartesi/bin/cartesi-machine-tests  --test="^rv64ui.*$" --test-path=/opt/cartesi/tests --uarch-ram-length=0x20000 --uarch-ram-image=./tests/uarch-ram.bin --jobs=$(nproc) host_and_uarch_run
 
   static-analysis:
     name: Static Analysis

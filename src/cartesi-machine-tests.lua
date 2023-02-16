@@ -291,8 +291,12 @@ local tests = {
   {"compressed.bin", 414},
 }
 
+local log_proofs = false
+local log_annotations = false
+
 -- Microarchitecture configuration
 local uarch = nil
+
 
 -- Print help and exit
 local function help()
@@ -314,6 +318,12 @@ where options are:
   --jobs=<N>
     run N tests in parallel
     (default: 1, i.e., run tests sequentially)
+
+  --log-proofs
+    include proofs in logs
+
+  --log-annotations
+    include annotations in logs
 
   --periodic-action=<number-period>[,<number-start>]
     stop execution every <number> of cycles and perform action. If
@@ -351,6 +361,9 @@ and command can be:
 
   uarch_run
     run test in the microarchitecture and report if payload and cycles match expected
+
+  host_and_uarch_run
+    run test in two machines: host and microarchitecture based; checking if root hashes match after each mcycle.
 
   hash
     output root hash at every <number> of cycles
@@ -447,6 +460,16 @@ local options = {
         assert(jobs and jobs >= 1, 'invalid number of jobs')
         return true
     end },
+    { "^%-%-log%-proofs$", function(o, a)
+        if not o then return false end
+        log_proofs = true
+        return true
+    end },
+    { "^%-%-log%-annotations$", function(o, a)
+        if not o then return false end
+        log_annotations = true
+        return true
+    end },
     { "^(%-%-periodic%-action%=(.*))$", function(all, v)
         if not v then return false end
         string.gsub(v, "^([^%,]+),(.+)$", function(p, s)
@@ -533,21 +556,13 @@ local function call_machine_run(machine, max_mcycle)
     return machine:run(max_mcycle)
 end
 
-local function advance_one_mcycle_with_uarch(machine, max_mcycle_ignored)
-    machine:uarch_run(-1)
-    if machine:read_uarch_halt_flag() then
-        machine:uarch_reset_state()
-    end
-end
-
-local function run_machine(machine, max_mcycle, callback, run_machine_fn)
+local function run_machine(machine, ctx, max_mcycle, callback, call_machine_run_fn)
     callback = callback or nothing
-    run_machine_fn = run_machine_fn or call_machine_run
-    run_method = run_method or "run"
+    call_machine_run_fn = call_machine_run_fn or call_machine_run
     local cycles = machine:read_mcycle()
     local next_action_mcycle = get_next_action_mcycle(cycles)
     while math.ult(cycles, max_mcycle) do
-        run_machine_fn(machine, math.min(next_action_mcycle, max_mcycle))
+        call_machine_run_fn(machine, math.min(next_action_mcycle, max_mcycle))
         cycles = machine:read_mcycle()
         if periodic_action and cycles == next_action_mcycle then
             next_action_mcycle = next_action_mcycle + periodic_action_period
@@ -555,11 +570,19 @@ local function run_machine(machine, max_mcycle, callback, run_machine_fn)
         end
         if machine:read_iflags_H() then break end
     end
+    ctx.read_htif_tohost_data = machine:read_htif_tohost_data()
     return machine:read_mcycle()
 end
 
-local function uarch_run_machine(machine, max_mcycle, callback)
-    return run_machine(machine, max_mcycle, callback, advance_one_mcycle_with_uarch)
+local function advance_one_mcycle_with_uarch(machine)
+    machine:uarch_run(-1)
+    if machine:read_uarch_halt_flag() then
+        machine:uarch_reset_state()
+    end
+end
+
+local function run_machine_with_uarch(machine, ctx, max_mcycle, callback)
+    return run_machine(machine, ctx, max_mcycle, callback, advance_one_mcycle_with_uarch)
 end
 
 local function connect()
@@ -612,65 +635,78 @@ local function build_machine(test_name)
     return assert(cartesi.machine(config, runtime))
 end
 
-local function print_machine(test_name, expected_cycles)
-    print(
-        string.format(
-            "./cartesi-machine.lua --no-root-image --ram-length=32Mi --rom-image-filename='%s' --ram-image-filename='%s' --no-rom-bootargs --max-mcycle=%d",
-            test_path .. "/bootstrap.bin",
-            test_path .. "/" .. test_name,
-            2*expected_cycles
-        )
-    )
+local function destroy_machine(machine)
+    machine:destroy()
 end
 
-local function run_test(test, run_machine_fn)
-    local ctx = {
-        ram_image = test[1],
-        expected_cycles = test[2],
-        expected_halt_payload = test[3] or 0,
-        expected_yield_payloads = test[4] or {},
-        yield_payload_index = 1,
-        cycles = 0
-    }
-    local machine = build_machine(ctx.ram_image)
-    ctx.cycles = run_machine_fn(machine, 2 * ctx.expected_cycles)
-    local errors = {}
-    if #ctx.expected_yield_payloads ~= (ctx.yield_payload_index - 1) then
-        table.insert(errors, string.format("\t%s: yielded %d times, expected %d",
-            ctx.ram_image, ctx.yield_payload_index-1, #ctx.expected_yield_payloads))
+local function print_machine(test_name, expected_cycles)
+    if not uarch then
+        print(
+                string.format(
+                    "./cartesi-machine.lua --ram-length=32Mi --rom-image='%s' --ram-image='%s' --no-rom-bootargs --max-mcycle=%d ",
+                    test_path .. "/bootstrap.bin",
+                    test_path .. "/" .. test_name,
+                    2*expected_cycles
+                )
+        )
+    else
+        print(
+            string.format(
+                "./cartesi-machine.lua --ram-length=32Mi --rom-image='%s' --ram-image='%s' --no-rom-bootargs --uarch-ram-length=%d --uarch-ram-image=%s --max-mcycle=%d ",
+                test_path .. "/bootstrap.bin",
+                test_path .. "/" .. test_name,
+                uarch.ram.length,
+                uarch.ram.image_filename,
+                2*expected_cycles
+            )
+        )
     end
-    if machine:read_htif_tohost_data() >> 1 ~= ctx.expected_halt_payload then
-        table.insert(errors, string.format("\t%s: returned halt payload %d, expected %d",
-            ctx.ram_image, machine:read_htif_tohost_data() >> 1, ctx.expected_halt_payload))
+end
+
+local function add_error(ctx,  msg, ...)
+    local ram_image = ctx.ram_image
+    local e = string.format(msg, ...)
+    ctx.failed = true
+    ctx.errors[#ctx.errors + 1] = e
+end
+
+local function check_test_result(ctx)
+    io.write(ctx.ram_image, ": ")
+    if #ctx.expected_yield_payloads ~= (ctx.yield_payload_index - 1) then
+        add_error(ctx, "yielded %d times, expected %d", ctx.yield_payload_index-1, #ctx.expected_yield_payloads)        
+    end
+    if ctx.read_htif_tohost_data >> 1 ~= ctx.expected_halt_payload then
+        add_error(ctx,  "returned halt payload %d, expected %d",  read_htif_tohost_data >> 1, ctx.expected_halt_payload)
     end
     if ctx.cycles ~= ctx.expected_cycles then
-        table.insert(errors, string.format("\t%s: terminated with mcycle = %d, expected %d",
-            ctx.ram_image, ctx.cycles, ctx.expected_cycles))
+        add_error(ctx, "terminated with mcycle = %d, expected %d", ctx.cycles, ctx.expected_cycles)
     end
-    machine:destroy()
-    if #errors == 0 then -- success
-        print(ctx.ram_image.. ": passed")
-        return true
+    if ctx.failed then
+        print("failed")
+        for _,e in pairs(ctx.errors) do
+            print(string.format("%s: %s", ctx.ram_image, e))
+        end
     else
-        print(ctx.ram_image.. ": failed\n"..table.concat(errors, '\n'))
-        return false
+        print("passed")
     end
 end
 
-local function run_parallel(tests, run_machine_fn)
+local function run_parallel(contexts)
     local unistd = require 'posix.unistd'
     local syswait = require 'posix.sys.wait'
-    local error_count = 0
     local pids = {}
     local running_jobs = 0
     -- sort to run slower tests first to maximize utilization of CPU cores
     table.sort(tests, function(a ,b) return b[2] < a[2] end)
-    for _,test in ipairs(tests) do
+    for _,ctx in ipairs(contexts) do
         do -- run test in parallel
             local pid = assert(unistd.fork())
             if pid == 0 then -- child
-                local ok = run_test(test, run_machine_fn)
-                unistd._exit(ok and 0 or 1)
+                local machine = ctx.target.build(ctx.ram_image)
+                ctx.cycles = ctx.target.run(machine, ctx, 2 * ctx.expected_cycles)
+                check_test_result(ctx)
+                ctx.target.destroy(machine)
+                unistd._exit(0)
             else -- parent
                 pids[pid] = true
                 running_jobs = running_jobs + 1
@@ -681,7 +717,7 @@ local function run_parallel(tests, run_machine_fn)
             local pid, reason, exitcode = syswait.wait(-1)
             if pid and pid > 0 and reason ~= 'running' then
                 if not (reason == 'exited' and exitcode == 0) then
-                    error_count = error_count + 1
+                    add_error("unexpected child process exit")
                 end
                 pids[pid] = nil
                 running_jobs = running_jobs - 1
@@ -699,26 +735,46 @@ local function run_parallel(tests, run_machine_fn)
         running_jobs = running_jobs - 1
     end
     assert(running_jobs == 0 and next(pids) == nil)
-    return error_count
 end
 
-local function run_sync(tests, run_machine_fn)
+local function  run_sync(contexts)
+    for _, ctx in pairs(contexts) do 
+        local machine = ctx.target.build(ctx.ram_image)
+        ctx.cycles = ctx.target.run(machine, ctx, 2 * ctx.expected_cycles)
+        check_test_result(ctx)
+        ctx.target.destroy(machine)
+    end
+end
+
+local function run_tests(tests, target)
+    local contexts = {}
+    -- construct contexts
+    for _, test in ipairs(tests) do
+        contexts[#contexts + 1] = {
+            target = target,
+            ram_image = test[1],
+            expected_cycles = test[2],
+            expected_halt_payload = test[3] or 0,
+            expected_yield_payloads = test[4] or {},
+            yield_payload_index = 1,
+            failed = false,
+            cycles = 0,
+            errors = {}
+
+        }
+    end
+    -- run
+    if jobs > 1 then
+        run_parallel(contexts)
+    else
+        run_sync(contexts)
+    end
+    -- collect results
     local error_count = 0
-    for _,test in ipairs(tests) do
-        if not run_test(test, run_machine_fn) then
+    for _, ctx in pairs(contexts) do 
+        if ctx.failed then
             error_count = error_count + 1
         end
-    end
-    return error_count
-end
-
-local function run(tests, run_machine_fn)
-    run_machine_fn = run_machine_fn or run_machine
-    local error_count
-    if jobs > 1 then
-        error_count = run_parallel(tests, run_machine_fn)
-    else
-        error_count = run_sync(tests, run_machine_fn)
     end
     -- print summary
     if error_count > 0 then
@@ -728,10 +784,6 @@ local function run(tests, run_machine_fn)
         io.write(string.format("\nPASSED all %d tests\n\n", #tests))
         os.exit(0, true)
     end
-end
-
-local function uarch_run(tests)
-    return run(tests, uarch_run_machine)
 end
 
 local function print_machine_hash(machine, out)
@@ -750,7 +802,7 @@ local function hash(tests)
         local cycles
         out:write(ram_image, ":\n")
         print_machine_hash(machine, out)
-        cycles = run_machine(machine, 2 * expected_cycles, print_callback)
+        cycles = run_machine(machine, {},  2 * expected_cycles, print_callback)
         print_machine_hash(machine, out)
         if machine:read_htif_tohost_data() >> 1 ~= expected_payload or cycles ~= expected_cycles then
             os.exit(1, true)
@@ -779,7 +831,7 @@ local function step(tests)
     local out = io.stdout
     if output then out = assert(io.open(output, "w"), "error opening file: " .. output) end
     local indentout = util.indentout
-    local log_type = {} -- no proofs or annotations
+    local log_type = { annotations = log_annotations, proofs = log_proofs }
     out:write("[\n")
     for i, test in ipairs(tests) do
         local ram_image = test[1]
@@ -795,9 +847,17 @@ local function step(tests)
         indentout(out, 2, '"steps": [\n')
         local cycles
         print_machine_json_log(machine, log_type, out)
-        cycles = run_machine(machine, 2 * expected_cycles, function(machine)
+        cycles = run_machine(machine, {}, 2 * expected_cycles, nothing, function(machine)
+            if machine:read_uarch_halt_flag() then
+                machine:uarch_reset_state()
+            end
             print_machine_json_log(machine, log_type, out)
         end)
+        -- iflags_H was set, but uarch did not finish to interpret the last mcycle
+        while not machine:read_uarch_halt_flag() do
+            -- micro step until we complete interpreting the current mcycle
+            print_machine_json_log(machine, log_type, out)    
+        end
         print_machine_json_log(machine, log_type, out, true)
         indentout(out, 2, "]\n")
         if tests[i+1] then indentout(out, 1, "},\n")
@@ -852,9 +912,86 @@ for _, test in ipairs(tests) do
     end
 end
 
+local function build_both_machines(test_name) 
+    return {
+        host = build_machine(test_name),
+        uarch = build_machine(test_name)
+    }
+end
+
+local function destroy_both_machines(target) 
+    destroy_machine(target.host)
+    destroy_machine(target.uarch)
+end
+
+local function run_host_and_uarch_machines(target, ctx, max_mcycle, callback)
+    local host = target.host
+    local uarch = target.uarch
+    callback = callback or nothing
+    local host_cycles = host:read_mcycle()
+    local uarch_cycles = uarch:read_mcycle()
+    assert(host_cycles == uarch_cycles)
+    if  host_cycles ~= uarch_cycles then
+        add_error(ctx,"host_cycles ~= uarch_cycles: %d ~= %d", host_cycles, uarch_cycles)
+        return 0
+    end
+    while math.ult(host_cycles, max_mcycle) do
+        local host_hash = host:get_root_hash()
+        local uarch_hash = uarch:get_root_hash()
+        if host_hash ~= uarch_hash then
+            add_error(ctx,"Hash mismatch at mcycle %d: %s ~= %s", host_cycles, util.hexhash(host_hash), util.hexhash(uarch_hash))
+            break
+        end
+        host:run(1 + host_cycles)
+        advance_one_mcycle_with_uarch(uarch)
+        host_cycles = host:read_mcycle()
+        uarch_cycles = uarch:read_mcycle()
+        if host_cycles ~= uarch_cycles then
+            add_error(ctx,"host_cycles ~= uarch_cycles: %d ~= %d", host_cycles, uarch_cycles)
+            break
+        end
+        local host_iflags_H = host:read_iflags_H()
+        local uarch_iflags_H = uarch:read_iflags_H()
+        if host_iflags_H ~= uarch_iflags_H then
+            add_error(ctx,"host_iflags_H ~= uarch_iflags_H: %s ~= %s", tostring(host_iflags_H),  tostring(uarch_iflags_H))
+            break
+        end
+        if host_iflags_H then break end
+    end
+    local host_htif_tohost_data = host:read_htif_tohost_data()
+    local uarch_htif_tohost_data = uarch:read_htif_tohost_data()
+    if host_htif_tohost_data ~= uarch_htif_tohost_data then
+        add_error(ctx, "host_htif_tohost_data ~= uarch_htif_tohost_data: %d ~= %d", host_htif_tohost_data, uarch_htif_tohost_data)
+    end
+    ctx.read_htif_tohost_data = host_htif_tohost_data
+    return host_cycles
+end
+
+local targets = {
+    -- Run test on host-based emulator
+    host = {
+        build = build_machine,
+        run = run_machine,
+        destroy = destroy_machine
+    },
+    -- Run test on microarchitecture-based emulator
+    uarch = {
+        build = build_machine,
+        run = run_machine_with_uarch,
+        destroy = destroy_machine
+    },
+    -- Run test on both architectures: macro and micro; comparing root hashes after every mcycle
+    host_and_uarch = {
+        build = build_both_machines,
+        run = run_host_and_uarch_machines,
+        destroy = destroy_both_machines
+    }
+}
+
 if #selected_tests < 1 then error("no test selected")
-elseif command == "run" then run(selected_tests)
-elseif command == "uarch_run" then uarch_run(selected_tests)
+elseif command == "run" then run_tests(selected_tests, targets.host)
+elseif command == "uarch_run" then run_tests(selected_tests, targets.uarch)
+elseif command == "host_and_uarch_run" then run_tests(selected_tests, targets.host_and_uarch)
 elseif command == "hash" then hash(selected_tests)
 elseif command == "step" then step(selected_tests)
 elseif command == "dump" then dump(selected_tests)

@@ -1557,12 +1557,18 @@ else
             next_hash_mcycle = next_hash_mcycle + periodic_hashes_period
         end
     end
+    -- Advance micro cycles
     if max_uarch_cycle > 0 then
+        -- Save halt flag before micro cycles
+        local previously_halted = machine:read_iflags_H() 
         machine:uarch_run(max_uarch_cycle)
-        stderr("\nCycles: %u uCycles: %u\n", machine:read_mcycle(), machine:read_uarch_cycle())
-    else
-        if not math.ult(cycles, max_mcycle) and not machine:read_iflags_H()  then
-            stderr("\nCycles: %u\n", cycles)
+        if machine:read_uarch_halt_flag() then
+            -- Microarchitecture  halted. This means that one "macro" instruction was totally executed
+            -- The mcycle counter was incremented, unless the machine was already halted
+            if machine:read_iflags_H()  and not previously_halted then
+                stderr("Halted\n")
+            end
+            stderr("Cycles: %u\n", machine:read_mcycle())
         end
     end
     if gdb_stub then

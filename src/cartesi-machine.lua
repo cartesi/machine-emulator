@@ -282,7 +282,7 @@ where options are:
     print step log for 1 additional cycle when done.
 
   --json-steps=<filename>
-    output json with step logs for all cycles to <filename>.
+    output json with step logs for all micro cycles to <filename>.
 
   --store-config[=<filename>]
     store initial machine config to <filename>. If <filename> is omitted,
@@ -1386,19 +1386,38 @@ if json_steps then
     assert(not rollup_advance, "json-steps and rollup advance state are incompatible")
     assert(not rollup_inspect, "json-steps and rollup inspect state are incompatible")
     assert(not config.htif.console_getchar, "logs are meaningless in interactive mode")
+    assert(config.uarch.ram.image_filename ~= nil and config.uarch.ram.length > 0, "json-steps requires valid microarchitecture configuration")
     json_steps = assert(io.open(json_steps, "w"))
     json_steps:write("[\n")
     local log_type = {} -- no proofs or annotations
-    local first_cycle = machine:read_mcycle()
-    while not machine:read_iflags_H() do
-        local init_cycles = machine:read_mcycle()
-        if init_cycles == max_mcycle then break end
-        machine:reset_iflags_Y() -- move past any potential yield
+    local steps_counter = 0
+    local init_mcycle = machine:read_mcycle()
+    local final_mcycle = machine:read_uarch_cycle()
+    while true do
+        local init_ucycle = machine:read_uarch_cycle()
+        if init_mcycle > max_mcycle then break end
+        if init_mcycle == max_mcycle and init_ucycle == max_uarch_cycle then break end
+        -- Advance one micro step 
         local log = machine:step(log_type)
-        local final_cycles = machine:read_mcycle()
-        if init_cycles ~= first_cycle then json_steps:write(',\n') end
-        util.dump_json_log(log, init_cycles, final_cycles, json_steps, 1)
-        stderr("%u -> %u\n", init_cycles, final_cycles)
+        steps_counter = steps_counter + 1
+        -- Save log recorded during micro step
+        if steps_counter > 1 then json_steps:write(',\n') end
+        local final_ucycle = machine:read_uarch_cycle()
+        util.dump_json_log(log, init_mcycle, final_mcycle, json_steps, 1)
+        if  machine:read_uarch_halt_flag() then
+            -- microarchitecture halted because it finished interpreting a whole mcycle
+            machine:reset_iflags_Y() -- move past any potential yield
+            -- Reset uarch_halt_flag in order to allow interpreting the next mcycle
+            machine:uarch_reset_state()
+            final_mcycle = machine:read_mcycle()
+            final_ucycle = machine:read_uarch_cycle()
+            if machine:read_iflags_H() then 
+                stderr("Halted at %u.%u\n", final_mcycle, final_ucycle)
+                break
+            end
+        end
+        stderr("%u.%u -> %u.%u\n", init_mcycle, init_ucycle, final_mcycle, final_ucycle)
+        init_mcycle = final_mcycle
     end
     json_steps:write('\n]\n')
     json_steps:close()
@@ -1576,6 +1595,7 @@ else
     end
     if step then
         assert(not config.htif.console_getchar, "step proof is meaningless in interactive mode")
+        assert(config.uarch.ram.image_filename ~= nil and config.uarch.ram.length > 0, "step proof requires valid microarchitecture configuration")
         stderr("Gathering step proof: please wait\n")
         util.dump_log(machine:step{ proofs = true, annotations = true }, io.stderr)
     end

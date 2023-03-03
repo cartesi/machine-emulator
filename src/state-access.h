@@ -399,10 +399,9 @@ private:
         return m_m.get_state().htif.iyield;
     }
 
-    NO_INLINE execute_status do_poll_console() {
+    NO_INLINE uint64_t do_poll_console(uint64_t mcycle) {
         bool htif_console_getchar = static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
         if (htif_console_getchar) {
-            uint64_t mcycle = read_mcycle();
             uint64_t warp_cycle = rtc_time_to_cycle(read_clint_mtimecmp());
             if (warp_cycle > mcycle) {
                 constexpr uint64_t cycles_per_us = RTC_CLOCK_FREQ / 1000000; // CLOCK_FREQ / 10^6
@@ -414,11 +413,10 @@ private:
                 gettimeofday(&end, nullptr);
                 uint64_t elapsed_us = (end.tv_sec - start.tv_sec) * 1000000 + end.tv_usec - start.tv_usec;
                 uint64_t tty_cycle = mcycle + (elapsed_us * cycles_per_us);
-                write_mcycle(std::min(std::max(tty_cycle, mcycle), warp_cycle));
-                return execute_status::success_and_reload_mcycle;
+                mcycle = std::min(std::max(tty_cycle, mcycle), warp_cycle);
             }
         }
-        return execute_status::success;
+        return mcycle;
     }
 
     uint64_t do_read_pma_istart(int i) const {
@@ -501,14 +499,14 @@ private:
         m_m.get_state().write_iflags(val);
     }
 
-    bool do_read_device(pma_entry &pma, uint64_t offset, uint64_t *pval, int log2_size) {
-        device_state_access da(*this);
+    bool do_read_device(pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t *pval, int log2_size) {
+        device_state_access da(*this, mcycle);
         return pma.get_device_noexcept().get_driver()->read(pma.get_device_noexcept().get_context(), &da, offset, pval,
             log2_size);
     }
 
-    execute_status do_write_device(pma_entry &pma, uint64_t offset, uint64_t val, int log2_size) {
-        device_state_access da(*this);
+    execute_status do_write_device(pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t val, int log2_size) {
+        device_state_access da(*this, mcycle);
         return pma.get_device_noexcept().get_driver()->write(pma.get_device_noexcept().get_context(), &da, offset, val,
             log2_size);
     }
@@ -519,6 +517,17 @@ private:
 
     uint64_t do_read_uarch_ram_length() {
         return m_m.get_initial_config().uarch.ram.length;
+    }
+
+    template <TLB_entry_type ETYPE, typename T>
+    inline bool do_translate_vaddr_via_tlb(uint64_t vaddr, unsigned char **phptr) {
+        uint64_t eidx = tlb_get_entry_index(vaddr);
+        const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
+        if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
+            return false;
+        }
+        *phptr = cast_addr_to_ptr<unsigned char *>(tlbhe.vh_offset + vaddr);
+        return true;
     }
 
     template <TLB_entry_type ETYPE, typename T>

@@ -45,6 +45,19 @@ static inline T aliased_aligned_read(const void *p) {
     return v;
 }
 
+/// \brief Reads an unaligned value from memory.
+/// \tparam T Type of unaligned value.
+/// \tparam U Type of aligned value.
+/// \tparam ALIGN Alignment of p.
+/// \param p Where to find value. Must be aligned to sizeof(U).
+/// \returns Value.
+template <typename T, typename U>
+static inline T aliased_unaligned_read(const void *p) {
+    T v;
+    memcpy(&v, __builtin_assume_aligned(p, sizeof(U)), sizeof(T));
+    return v;
+}
+
 /// \brief Casts a pointer to an unsigned integer.
 /// \details The address returned by this function,
 /// can later be converted to a pointer using cast_addr_to_ptr,

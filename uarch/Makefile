@@ -71,6 +71,7 @@ CFLAGS :=  -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) \
 	-nostartfiles \
 	-nostdlib \
 	-fno-exceptions \
+	-mstrict-align \
     -mcmodel=medany -static -fvisibility=hidden \
 	-I$(CONTAINER_MACHINE_EMULATOR_DEFINES_DIR) \
 	-I$(CONTAINER_THIRD_PARTY_DIR)/llvm-flang-uint128 \

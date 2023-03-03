@@ -26,9 +26,10 @@ namespace cartesi {
 
 /// \brief Instruction execution status code
 enum execute_status : uint64_t {
-    failure,                      // Instruction execution failed, the interpreter should continue normally
     success,                      // Instruction execution succeed, the interpreter should continue normally
-    success_and_reload_mcycle,    // Instruction execution succeed, the interpreter must reload mcycle
+    failure,                      // Instruction execution failed, the interpreter should continue normally
+    success_and_flush_fetch,      // Instruction execution succeed, the interpreter must flush fetch address translation
+                                  // cache
     success_and_serve_interrupts, // Instruction execution succeed, the interpreter must serve pending interrupts
                                   // immediately
     success_and_yield, // Instruction execution succeed, the interpreter must stop and handle a yield externally

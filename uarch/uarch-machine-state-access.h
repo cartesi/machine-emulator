@@ -30,6 +30,7 @@
 #include "shadow-pmas.h"
 #include "uarch-constants.h"
 #include "uarch-defines.h"
+#include "strict-aliasing.h"
 #include <optional>
 
 namespace cartesi {
@@ -504,8 +505,8 @@ private:
         return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::htif_iyield));
     }
 
-    execute_status do_poll_console(void) {
-        return execute_status::success;
+    uint64_t do_poll_console(uint64_t mcycle) {
+        return mcycle;
     }
     
     uint64_t do_read_pma_istart(int i) {
@@ -559,13 +560,13 @@ private:
         return nullptr;
     }
 
-    bool do_read_device(uarch_pma_entry &pma, uint64_t offset, uint64_t *pval, int log2_size) {
-        device_state_access da(*this);
+    bool do_read_device(uarch_pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t *pval, int log2_size) {
+        device_state_access da(*this, mcycle);
         return pma.get_device_driver()->read(pma.get_device_context(), &da, offset, pval, log2_size);
     }
 
-    execute_status do_write_device(uarch_pma_entry &pma, uint64_t offset, uint64_t val, int log2_size) {
-        device_state_access da(*this);
+    execute_status do_write_device(uarch_pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t val, int log2_size) {
+        device_state_access da(*this, mcycle);
         return pma.get_device_driver()->write(pma.get_device_context(), &da, offset, val, log2_size);
     }
 
@@ -627,6 +628,19 @@ private:
     }
 
     template <TLB_entry_type ETYPE, typename T>
+    bool do_translate_vaddr_via_tlb(uint64_t vaddr, unsigned char **phptr) {
+        uint64_t eidx = tlb_get_entry_index(vaddr);
+        const volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
+        if (tlb_is_hit<T>(tlbhe.vaddr_page, vaddr)) {
+            uint64_t poffset = vaddr & PAGE_OFFSET_MASK;
+            const volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
+            *phptr = cast_addr_to_ptr<unsigned char *>(tlbce.paddr_page + poffset);
+            return true;
+        }
+        return false;
+    }
+
+    template <TLB_entry_type ETYPE, typename T>
     bool do_read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
         uint64_t eidx = tlb_get_entry_index(vaddr);
         const volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
@@ -673,7 +687,7 @@ private:
         tlbce.pma_index = static_cast<uint64_t>(pma.get_index());
         // Note that we can't write here the correct vh_offset value, because it depends in a host pointer,
         // however the uarch memory bridge will take care of updating it.
-        return nullptr;
+        return cast_addr_to_ptr<unsigned char*>(paddr_page);
     }
 
     template <TLB_entry_type ETYPE>

@@ -579,10 +579,10 @@ public:
     }
 
     /// \brief Polls console for pending input.
-    /// \returns execute_status::success_and_reload_mcycle when polling inputs from tty console,
-    /// execute_status::success otherwise.
-    execute_status poll_console(void) {
-        return derived().do_poll_console();
+    /// \param mcycle Current machine mcycle.
+    /// \returns The new machine mcycle advanced by the relative time elapsed while polling.
+    uint64_t poll_console(uint64_t mcycle) {
+        return derived().do_poll_console(mcycle);
     }
 
     /// \brief Reads PMA at a given index.
@@ -656,12 +656,12 @@ public:
         return derived().do_get_pma_entry(index);
     }
 
-    auto read_device(PMA_ENTRY_TYPE &pma, uint64_t offset, uint64_t *pval, int log2_size) {
-        return derived().do_read_device(pma, offset, pval, log2_size);
+    auto read_device(PMA_ENTRY_TYPE &pma, uint64_t mcycle, uint64_t offset, uint64_t *pval, int log2_size) {
+        return derived().do_read_device(pma, mcycle, offset, pval, log2_size);
     }
 
-    auto write_device(PMA_ENTRY_TYPE &pma, uint64_t offset, uint64_t pval, int log2_size) {
-        return derived().do_write_device(pma, offset, pval, log2_size);
+    auto write_device(PMA_ENTRY_TYPE &pma, uint64_t mcycle, uint64_t offset, uint64_t pval, int log2_size) {
+        return derived().do_write_device(pma, mcycle, offset, pval, log2_size);
     }
 
     auto read_uarch_rom_length() {
@@ -670,6 +670,17 @@ public:
 
     auto read_uarch_ram_length() {
         return derived().do_read_uarch_ram_length();
+    }
+
+    /// \brief Try to translate a virtual address to a host pointer through the TLB.
+    /// \tparam ETYPE TLB entry type.
+    /// \tparam T Type of word that would be read with the pointer.
+    /// \param vaddr Target virtual address.
+    /// \param phptr Pointer to host pointer receiving value.
+    /// \returns True if successful (TLB hit), false otherwise.
+    template <TLB_entry_type ETYPE, typename T>
+    bool translate_vaddr_via_tlb(uint64_t vaddr, unsigned char **phptr) {
+        return derived().template do_translate_vaddr_via_tlb<ETYPE, T>(vaddr, phptr);
     }
 
     /// \brief Try to read a word from memory through the TLB.

@@ -96,6 +96,9 @@ public:
     void set_read(const access_data &read) {
         m_read = read;
     }
+    void set_read(access_data &&read) {
+        m_read = std::move(read);
+    }
 
     /// \brief Gets data that can be read at address before access.
     /// \returns Data at address.
@@ -110,6 +113,9 @@ public:
     /// \param written New data at address.
     void set_written(const access_data &written) {
         m_written = written;
+    }
+    void set_written(access_data &&written) {
+        m_written = std::move(written);
     }
 
     /// \brief Gets data that was written at address after access.

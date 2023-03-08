@@ -664,7 +664,7 @@ static void store_hash(const machine::hash_type &h, const std::string &dir) {
     }
 }
 
-void machine::store(const std::string &dir) {
+void machine::store(const std::string &dir) const {
     if (mkdir(dir.c_str(), 0700)) {
         throw std::runtime_error{"error creating directory '" + dir + "'"};
     }
@@ -1777,34 +1777,29 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
     }
 }
 
-bool machine::read_word(uint64_t word_address, uint64_t &word_value) const {
+uint64_t machine::read_word(uint64_t word_address) const {
     // Make sure address is aligned
     if (word_address & (PMA_WORD_SIZE - 1)) {
-        return false;
+        throw std::invalid_argument{"address not aligned"};
     }
     const pma_entry &pma = find_pma_entry<uint64_t>(word_address);
     // ??D We should split peek into peek_word and peek_page
     // for performance. On the other hand, this function
     // will almost never be used, so one wonders if it is worth it...
-    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
-    if (!scratch) {
-        return false;
-    }
+    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
     const unsigned char *page_data = nullptr;
     uint64_t page_start_in_range = (word_address - pma.get_start()) & (~(PMA_PAGE_SIZE - 1));
     auto peek = pma.get_peek();
     if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
-        return false;
+        throw std::invalid_argument{"peek failed"};
     }
     // If peek returns a page, read from it
     if (page_data) {
         uint64_t word_start_in_range = (word_address - pma.get_start()) & (PMA_PAGE_SIZE - 1);
-        word_value = aliased_aligned_read<uint64_t>(page_data + word_start_in_range);
-        return true;
+        return aliased_aligned_read<uint64_t>(page_data + word_start_in_range);
         // Otherwise, page is always pristine
     } else {
-        word_value = 0;
-        return true;
+        return 0;
     }
 }
 

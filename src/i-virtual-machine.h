@@ -141,8 +141,8 @@ public:
     }
 
     /// \brief Read the value of a word in the machine state.
-    bool read_word(uint64_t word_address, uint64_t &word_value) const {
-        return do_read_word(word_address, word_value);
+    uint64_t read_word(uint64_t address) const {
+        return do_read_word(address);
     }
 
     /// \brief Verify if dirty page maps are consistent.
@@ -742,7 +742,7 @@ private:
     virtual void do_write_clint_mtimecmp(uint64_t val) = 0;
     virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;
     virtual void do_dump_pmas(void) const = 0;
-    virtual bool do_read_word(uint64_t word_address, uint64_t &word_value) const = 0;
+    virtual uint64_t do_read_word(uint64_t address) const = 0;
     virtual bool do_verify_dirty_page_maps(void) const = 0;
     virtual machine_config do_get_initial_config(void) const = 0;
     virtual void do_snapshot() = 0;

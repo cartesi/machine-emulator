@@ -858,14 +858,13 @@ void grpc_virtual_machine::do_dump_pmas(void) const {
     check_status(m_stub->get_stub()->DumpPmas(&context, request, &response));
 }
 
-bool grpc_virtual_machine::do_read_word(uint64_t word_address, uint64_t &word_value) const {
+uint64_t grpc_virtual_machine::do_read_word(uint64_t address) const {
     ReadWordRequest request;
-    request.set_address(word_address);
+    request.set_address(address);
     ReadWordResponse response;
     ClientContext context;
     check_status(m_stub->get_stub()->ReadWord(&context, request, &response));
-    word_value = response.value();
-    return response.success();
+    return response.value();
 }
 
 bool grpc_virtual_machine::do_verify_merkle_tree(void) const {

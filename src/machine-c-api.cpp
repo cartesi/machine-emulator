@@ -953,11 +953,7 @@ int cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *word_valu
         throw std::invalid_argument("invalid word output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    uint64_t cpp_word_value{0};
-    if (!cpp_machine->read_word(word_address, cpp_word_value)) {
-        throw std::runtime_error{"read word failed"};
-    }
-    *word_value = cpp_word_value;
+    *word_value = cpp_machine->read_word(word_address);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);

@@ -102,6 +102,11 @@ class machine final {
     /// \returns New PMA entry with rollup notice hashes flags already set.
     static pma_entry make_rollup_notice_hashes_pma_entry(const memory_range_config &c);
 
+    /// \brief Saves PMAs into files for serialization
+    /// \param config Machine config to be stored
+    /// \param directory Directory where PMAs will be stored
+    void store_pmas(const machine_config &config, const std::string &directory) const;
+
     /// \brief Obtain PMA entry that covers a given physical memory region
     /// \param pmas Container of pmas to be searched.
     /// \param s Pointer to machine state.
@@ -167,14 +172,18 @@ public:
     static constexpr auto num_csr = static_cast<int>(csr::last);
 
     /// \brief Constructor from machine configuration
-    explicit machine(const machine_config &c, const machine_runtime_config &r = {});
+    /// \param config Machine config to use instantiating machine
+    /// \param runtime Runtime config to use with machine
+    explicit machine(const machine_config &config, const machine_runtime_config &runtime = {});
 
     /// \brief Constructor from previously serialized directory
-    explicit machine(const std::string &dir, const machine_runtime_config &r = {});
+    /// \param directory Directory to load stored machine from
+    /// \param runtime Runtime config to use with machine
+    explicit machine(const std::string &directory, const machine_runtime_config &runtime = {});
 
     /// \brief Serialize entire state to directory
-    /// \details The method is not const because it updates the root hash
-    void store(const std::string &dir);
+    /// \param directory Directory to store machine into
+    void store(const std::string &directory) const;
 
     /// \brief No default constructor
     machine(void) = delete;
@@ -190,10 +199,8 @@ public:
     /// \brief Runs the machine until mcycle reaches mcycle_end, the machine halts or yields.
     /// \param mcycle_end Maximum value of mcycle before function returns.
     /// \returns The reason the machine was interrupted.
-    /// \details Several conditions can cause the function to
-    ///  break before mcycle reaches mcycle_end. The most
-    ///  frequent scenario is when the program executes a WFI
-    ///  instruction. Another example is when the machine halts.
+    /// \details Several conditions can cause the function to break before mcycle reaches mcycle_end. The most
+    ///  frequent scenario is when the program executes a WFI instruction. Another example is when the machine halts.
     interpreter_break_reason run(uint64_t mcycle_end);
 
     /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle
@@ -210,25 +217,20 @@ public:
     /// \returns The state access log.
     access_log step_uarch(const access_log::type &log_type, bool one_based = false);
 
-    /// \brief Verifies a proof.
-    /// \param proof Proof to be verified.
-    /// \return True if proof is consistent, false otherwise.
-    static bool verify_proof(const machine_merkle_tree::proof_type &proof);
-
     /// \brief Checks the internal consistency of an access log.
     /// \param log State access log to be verified.
-    /// \param r Machine runtime configuration to use during verification.
+    /// \param runtime Machine runtime configuration to use during verification.
     /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_access_log(const access_log &log, const machine_runtime_config &r, bool one_based = false);
+    static void verify_access_log(const access_log &log, const machine_runtime_config &runtime = {}, bool one_based = false);
 
     /// \brief Checks the validity of a state transition.
     /// \param root_hash_before State hash before step.
     /// \param log Step state access log.
     /// \param root_hash_after State hash after step.
-    /// \param r Machine runtime configuration to use during verification.
+    /// \param runtime Machine runtime configuration to use during verification.
     /// \param one_based Use 1-based indices when reporting errors.
     static void verify_state_transition(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after, const machine_runtime_config &r, bool one_based = false);
+        const hash_type &root_hash_after, const machine_runtime_config &runtime = {}, bool one_based = false);
 
     static machine_config get_default_config(void);
 
@@ -271,26 +273,25 @@ public:
     bool verify_merkle_tree(void) const;
 
     /// \brief Read the value of any CSR
-    /// \param r CSR to read
+    /// \param csr CSR to read
     /// \returns The value of the CSR
-    uint64_t read_csr(csr r) const;
+    uint64_t read_csr(csr csr) const;
 
     /// \brief Write the value of any CSR
-    /// \param w CSR to write
-    /// \param val Value to write
-    void write_csr(csr w, uint64_t val);
+    /// \param csr CSR to write
+    /// \param value Value to write
+    void write_csr(csr csr, uint64_t value);
 
     /// \brief Gets the address of any CSR
-    /// \param w The CSR
-    /// \returns The address of the specified CSR
-    static uint64_t get_csr_address(csr w);
+    /// \param csr The CSR to obtain address
+    /// \returns The address of CSR
+    static uint64_t get_csr_address(csr csr);
 
     /// \brief Read the value of a word in the machine state.
-    /// \param word_address Word address (aligned to 64-bit boundary).
-    /// \param word_value Receives word value.
-    /// \returns true if succeeded, false otherwise.
+    /// \param address Word address (aligned to 64-bit boundary).
+    /// \returns The value of word at address.
     /// \warning The current implementation of this function is very slow!
-    bool read_word(uint64_t word_address, uint64_t &word_value) const;
+    uint64_t read_word(uint64_t address) const;
 
     /// \brief Reads a chunk of data from the machine memory.
     /// \param address Physical address to start reading.
@@ -313,7 +314,7 @@ public:
     /// \param vaddr_start Virtual address to start reading.
     /// \param data Receives chunk of memory.
     /// \param length Size of chunk.
-    void read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uint64_t length);
+    void read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uint64_t length) ;
 
     /// \brief Writes a chunk of data to the machine virtual memory.
     /// \param vaddr_start Virtual address to start writing.
@@ -322,271 +323,271 @@ public:
     void write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, size_t length);
 
     /// \brief Reads the value of a general-purpose register.
-    /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
+    /// \param index Register index. Between 0 and X_REG_COUNT-1, inclusive.
     /// \returns The value of the register.
-    uint64_t read_x(int i) const;
+    uint64_t read_x(int index) const;
 
     /// \brief Writes the value of a general-purpose register.
-    /// \param i Register index. Between 1 and X_REG_COUNT-1, inclusive.
-    /// \param val New register value.
-    void write_x(int i, uint64_t val);
+    /// \param index Register index. Between 1 and X_REG_COUNT-1, inclusive.
+    /// \param value New register value.
+    void write_x(int index, uint64_t value);
 
     /// \brief Gets the address of a general-purpose register.
-    /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
+    /// \param index Register index. Between 0 and X_REG_COUNT-1, inclusive.
     /// \returns Address of the specified register
-    static uint64_t get_x_address(int i);
+    static uint64_t get_x_address(int index);
 
     /// \brief Gets the address of a general-purpose microarchitecture register.
-    /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
+    /// \param index Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
     /// \returns Address of the specified register
-    static uint64_t get_uarch_x_address(int i);
+    static uint64_t get_uarch_x_address(int index);
 
     /// \brief Reads the value of a floating-point register.
-    /// \param i Register index. Between 0 and F_REG_COUNT-1, inclusive.
+    /// \param index Register index. Between 0 and F_REG_COUNT-1, inclusive.
     /// \returns The value of the register.
-    uint64_t read_f(int i) const;
+    uint64_t read_f(int index) const;
 
     /// \brief Writes the value of a floating-point register.
-    /// \param i Register index. Between 1 and F_REG_COUNT-1, inclusive.
-    /// \param val New register value.
-    void write_f(int i, uint64_t val);
+    /// \param index Register index. Between 1 and F_REG_COUNT-1, inclusive.
+    /// \param value New register value.
+    void write_f(int index, uint64_t value);
 
     /// \brief Gets the address of a floating-point register.
-    /// \param i Register index. Between 0 and F_REG_COUNT-1, inclusive.
+    /// \param index Register index. Between 0 and F_REG_COUNT-1, inclusive.
     /// \returns Address of the specified register
-    static uint64_t get_f_address(int i);
+    static uint64_t get_f_address(int index);
 
     /// \brief Reads the value of the pc register.
     /// \returns The value of the register.
     uint64_t read_pc(void) const;
 
     /// \brief Reads the value of the pc register.
-    /// \param val New register value.
-    void write_pc(uint64_t val);
+    /// \param value New register value.
+    void write_pc(uint64_t value);
 
     /// \brief Reads the value of the fcsr register.
     /// \returns The value of the register.
     uint64_t read_fcsr(void) const;
 
     /// \brief Writes the value of the fcsr register.
-    /// \param val New register value.
-    void write_fcsr(uint64_t val);
+    /// \param value New register value.
+    void write_fcsr(uint64_t value);
 
     /// \brief Reads the value of the mvendorid register.
     /// \returns The value of the register.
     uint64_t read_mvendorid(void) const;
 
     /// \brief Reads the value of the mvendorid register.
-    /// \param val New register value.
-    void write_mvendorid(uint64_t val);
+    /// \param value New register value.
+    void write_mvendorid(uint64_t value);
 
     /// \brief Reads the value of the marchid register.
     /// \returns The value of the register.
     uint64_t read_marchid(void) const;
 
     /// \brief Reads the value of the marchid register.
-    /// \param val New register value.
-    void write_marchid(uint64_t val);
+    /// \param value New register value.
+    void write_marchid(uint64_t value);
 
     /// \brief Reads the value of the mimpid register.
     /// \returns The value of the register.
     uint64_t read_mimpid(void) const;
 
     /// \brief Reads the value of the mimpid register.
-    /// \param val New register value.
-    void write_mimpid(uint64_t val);
+    /// \param value New register value.
+    void write_mimpid(uint64_t value);
 
     /// \brief Reads the value of the mcycle register.
     /// \returns The value of the register.
     uint64_t read_mcycle(void) const;
 
     /// \brief Writes the value of the mcycle register.
-    /// \param val New register value.
-    void write_mcycle(uint64_t val);
+    /// \param value New register value.
+    void write_mcycle(uint64_t value);
 
     /// \brief Reads the value of the icycleinstret register.
     /// \returns The value of the register.
     uint64_t read_icycleinstret(void) const;
 
     /// \brief Writes the value of the icycleinstret register.
-    /// \param val New register value.
-    void write_icycleinstret(uint64_t val);
+    /// \param value New register value.
+    void write_icycleinstret(uint64_t value);
 
     /// \brief Reads the value of the mstatus register.
     /// \returns The value of the register.
     uint64_t read_mstatus(void) const;
 
     /// \brief Writes the value of the mstatus register.
-    /// \param val New register value.
-    void write_mstatus(uint64_t val);
+    /// \param value New register value.
+    void write_mstatus(uint64_t value);
 
     /// \brief Reads the value of the menvcfg register.
     /// \returns The value of the register.
     uint64_t read_menvcfg(void) const;
 
     /// \brief Writes the value of the menvcfg register.
-    /// \param val New register value.
-    void write_menvcfg(uint64_t val);
+    /// \param value New register value.
+    void write_menvcfg(uint64_t value);
 
     /// \brief Reads the value of the mtvec register.
     /// \returns The value of the register.
     uint64_t read_mtvec(void) const;
 
     /// \brief Writes the value of the mtvec register.
-    /// \param val New register value.
-    void write_mtvec(uint64_t val);
+    /// \param value New register value.
+    void write_mtvec(uint64_t value);
 
     /// \brief Reads the value of the mscratch register.
     /// \returns The value of the register.
     uint64_t read_mscratch(void) const;
 
     /// \brief Writes the value of the mscratch register.
-    /// \param val New register value.
-    void write_mscratch(uint64_t val);
+    /// \param value New register value.
+    void write_mscratch(uint64_t value);
 
     /// \brief Reads the value of the mepc register.
     /// \returns The value of the register.
     uint64_t read_mepc(void) const;
 
     /// \brief Writes the value of the mepc register.
-    /// \param val New register value.
-    void write_mepc(uint64_t val);
+    /// \param value New register value.
+    void write_mepc(uint64_t value);
 
     /// \brief Reads the value of the mcause register.
     /// \returns The value of the register.
     uint64_t read_mcause(void) const;
 
     /// \brief Writes the value of the mcause register.
-    /// \param val New register value.
-    void write_mcause(uint64_t val);
+    /// \param value New register value.
+    void write_mcause(uint64_t value);
 
     /// \brief Reads the value of the mtval register.
     /// \returns The value of the register.
     uint64_t read_mtval(void) const;
 
     /// \brief Writes the value of the mtval register.
-    /// \param val New register value.
-    void write_mtval(uint64_t val);
+    /// \param value New register value.
+    void write_mtval(uint64_t value);
 
     /// \brief Reads the value of the misa register.
     /// \returns The value of the register.
     uint64_t read_misa(void) const;
 
     /// \brief Writes the value of the misa register.
-    /// \param val New register value.
-    void write_misa(uint64_t val);
+    /// \param value New register value.
+    void write_misa(uint64_t value);
 
     /// \brief Reads the value of the mie register.
     /// \returns The value of the register.
     uint64_t read_mie(void) const;
 
     /// \brief Reads the value of the mie register.
-    /// \param val New register value.
-    void write_mie(uint64_t val);
+    /// \param value New register value.
+    void write_mie(uint64_t value);
 
     /// \brief Reads the value of the mip register.
     /// \returns The value of the register.
     uint64_t read_mip(void) const;
 
     /// \brief Reads the value of the mip register.
-    /// \param val New register value.
-    void write_mip(uint64_t val);
+    /// \param value New register value.
+    void write_mip(uint64_t value);
 
     /// \brief Reads the value of the medeleg register.
     /// \returns The value of the register.
     uint64_t read_medeleg(void) const;
 
     /// \brief Writes the value of the medeleg register.
-    /// \param val New register value.
-    void write_medeleg(uint64_t val);
+    /// \param value New register value.
+    void write_medeleg(uint64_t value);
 
     /// \brief Reads the value of the mideleg register.
     /// \returns The value of the register.
     uint64_t read_mideleg(void) const;
 
     /// \brief Writes the value of the mideleg register.
-    /// \param val New register value.
-    void write_mideleg(uint64_t val);
+    /// \param value New register value.
+    void write_mideleg(uint64_t value);
 
     /// \brief Reads the value of the mcounteren register.
     /// \returns The value of the register.
     uint64_t read_mcounteren(void) const;
 
     /// \brief Writes the value of the mcounteren register.
-    /// \param val New register value.
-    void write_mcounteren(uint64_t val);
+    /// \param value New register value.
+    void write_mcounteren(uint64_t value);
 
     /// \brief Reads the value of the senvcfg register.
     /// \returns The value of the register.
     uint64_t read_senvcfg(void) const;
 
     /// \brief Writes the value of the senvcfg register.
-    /// \param val New register value.
-    void write_senvcfg(uint64_t val);
+    /// \param value New register value.
+    void write_senvcfg(uint64_t value);
 
     /// \brief Reads the value of the stvec register.
     /// \returns The value of the register.
     uint64_t read_stvec(void) const;
 
     /// \brief Writes the value of the stvec register.
-    /// \param val New register value.
-    void write_stvec(uint64_t val);
+    /// \param value New register value.
+    void write_stvec(uint64_t value);
 
     /// \brief Reads the value of the sscratch register.
     /// \returns The value of the register.
     uint64_t read_sscratch(void) const;
 
     /// \brief Writes the value of the sscratch register.
-    /// \param val New register value.
-    void write_sscratch(uint64_t val);
+    /// \param value New register value.
+    void write_sscratch(uint64_t value);
 
     /// \brief Reads the value of the sepc register.
     /// \returns The value of the register.
     uint64_t read_sepc(void) const;
 
     /// \brief Writes the value of the sepc register.
-    /// \param val New register value.
-    void write_sepc(uint64_t val);
+    /// \param value New register value.
+    void write_sepc(uint64_t value);
 
     /// \brief Reads the value of the scause register.
     /// \returns The value of the register.
     uint64_t read_scause(void) const;
 
     /// \brief Writes the value of the scause register.
-    /// \param val New register value.
-    void write_scause(uint64_t val);
+    /// \param value New register value.
+    void write_scause(uint64_t value);
 
     /// \brief Reads the value of the stval register.
     /// \returns The value of the register.
     uint64_t read_stval(void) const;
 
     /// \brief Writes the value of the stval register.
-    /// \param val New register value.
-    void write_stval(uint64_t val);
+    /// \param value New register value.
+    void write_stval(uint64_t value);
 
     /// \brief Reads the value of the satp register.
     /// \returns The value of the register.
     uint64_t read_satp(void) const;
 
     /// \brief Writes the value of the satp register.
-    /// \param val New register value.
-    void write_satp(uint64_t val);
+    /// \param value New register value.
+    void write_satp(uint64_t value);
 
     /// \brief Reads the value of the scounteren register.
     /// \returns The value of the register.
     uint64_t read_scounteren(void) const;
 
     /// \brief Writes the value of the scounteren register.
-    /// \param val New register value.
-    void write_scounteren(uint64_t val);
+    /// \param value New register value.
+    void write_scounteren(uint64_t value);
 
     /// \brief Reads the value of the ilrsc register.
     /// \returns The value of the register.
     uint64_t read_ilrsc(void) const;
 
     /// \brief Writes the value of the ilrsc register.
-    /// \param val New register value.
-    void write_ilrsc(uint64_t val);
+    /// \param value New register value.
+    void write_ilrsc(uint64_t value);
 
     /// \brief Reads the value of the iflags register.
     /// \returns The value of the register.
@@ -597,8 +598,8 @@ public:
     uint64_t packed_iflags(int PRV, int Y, int H);
 
     /// \brief Reads the value of the iflags register.
-    /// \param val New register value.
-    void write_iflags(uint64_t val);
+    /// \param value New register value.
+    void write_iflags(uint64_t value);
 
     /// \brief Reads the value of HTIF's tohost register.
     /// \returns The value of the register.
@@ -617,52 +618,52 @@ public:
     uint64_t read_htif_tohost_data(void) const;
 
     /// \brief Writes the value of HTIF's tohost register.
-    /// \param val New register value.
-    void write_htif_tohost(uint64_t val);
+    /// \param value New register value.
+    void write_htif_tohost(uint64_t value);
 
     /// \brief Reads the value of HTIF's fromhost register.
     /// \returns The value of the register.
     uint64_t read_htif_fromhost(void) const;
 
     /// \brief Writes the value of HTIF's fromhost register.
-    /// \param val New register value.
-    void write_htif_fromhost(uint64_t val);
+    /// \param value New register value.
+    void write_htif_fromhost(uint64_t value);
 
     /// \brief Writes the value of the data field in HTIF's fromhost register.
-    /// \param val New value for the field.
-    void write_htif_fromhost_data(uint64_t val);
+    /// \param value New value for the field.
+    void write_htif_fromhost_data(uint64_t value);
 
     /// \brief Reads the value of HTIF's halt register.
     /// \returns The value of the register.
     uint64_t read_htif_ihalt(void) const;
 
     /// \brief Writes the value of HTIF's halt register.
-    /// \param val New register value.
-    void write_htif_ihalt(uint64_t val);
+    /// \param value New register value.
+    void write_htif_ihalt(uint64_t value);
 
     /// \brief Reads the value of HTIF's console register.
     /// \returns The value of the register.
     uint64_t read_htif_iconsole(void) const;
 
     /// \brief Writes the value of HTIF's console register.
-    /// \param val New register value.
-    void write_htif_iconsole(uint64_t val);
+    /// \param value New register value.
+    void write_htif_iconsole(uint64_t value);
 
     /// \brief Reads the value of HTIF's yield register.
     /// \returns The value of the register.
     uint64_t read_htif_iyield(void) const;
 
     /// \brief Writes the value of HTIF's yield register.
-    /// \param val New register value.
-    void write_htif_iyield(uint64_t val);
+    /// \param value New register value.
+    void write_htif_iyield(uint64_t value);
 
     /// \brief Reads the value of CLINT's mtimecmp register.
     /// \returns The value of the register.
     uint64_t read_clint_mtimecmp(void) const;
 
     /// \brief Writes the value of CLINT's mtimecmp register.
-    /// \param val New register value.
-    void write_clint_mtimecmp(uint64_t val);
+    /// \param value New register value.
+    void write_clint_mtimecmp(uint64_t value);
 
     /// \brief Checks the value of the iflags_X flag.
     /// \returns The flag value.
@@ -741,11 +742,6 @@ public:
         return m_c;
     }
 
-    /// \brief Saves PMAs into files for serialization
-    /// \param c Machine config to be stored
-    /// \param dir Directory where PMAs will be stored
-    void store_pmas(const machine_config &c, const std::string &dir) const;
-
     /// \brief Replaces a memory range.
     /// \param new_range Configuration of the new memory range.
     /// \details The machine must contain an existing memory range
@@ -753,22 +749,22 @@ public:
     void replace_memory_range(const memory_range_config &new_range);
 
     /// \brief Reads the value of a microarchitecture register.
-    /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
+    /// \param index Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
     /// \returns The value of the register.
-    uint64_t read_uarch_x(int i) const;
+    uint64_t read_uarch_x(int index) const;
 
     /// \brief Writes the value of a of a microarchitecture register.
-    /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
-    /// \param val New register value.
-    void write_uarch_x(int i, uint64_t val);
+    /// \param index Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
+    /// \param value New register value.
+    void write_uarch_x(int index, uint64_t value);
 
     /// \brief Reads the value of the microarchitecture pc register.
     /// \returns The current microarchitecture pc value.
     uint64_t read_uarch_pc(void) const;
 
     /// \brief Writes the value ofthe microarchitecture pc register.
-    /// \param val New register value.
-    void write_uarch_pc(uint64_t val);
+    /// \param value New register value.
+    void write_uarch_pc(uint64_t value);
 
     /// \brief Reads the value of the microarchitecture halt flag.
     /// \returns The current microarchitecture halt value.
@@ -782,8 +778,8 @@ public:
     uint64_t read_uarch_cycle(void) const;
 
     /// \brief Writes the value ofthe microarchitecture cycle counter register.
-    /// \param val New register value.
-    void write_uarch_cycle(uint64_t val);
+    /// \param value New register value.
+    void write_uarch_cycle(uint64_t value);
 
     /// \brief Reads the value of the microarchitecture RAM length
     /// \returns The value of the microarchitecture RAM length

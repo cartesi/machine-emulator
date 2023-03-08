@@ -423,8 +423,8 @@ void virtual_machine::do_dump_pmas(void) const {
     m_machine->dump_pmas();
 }
 
-bool virtual_machine::do_read_word(uint64_t word_address, uint64_t &word_value) const {
-    return m_machine->read_word(word_address, word_value);
+uint64_t virtual_machine::do_read_word(uint64_t address) const {
+    return m_machine->read_word(address);
 }
 
 bool virtual_machine::do_verify_dirty_page_maps(void) const {

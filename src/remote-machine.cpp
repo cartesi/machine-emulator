@@ -704,9 +704,8 @@ class handler_ReadWord final : public handler<ReadWordRequest, ReadWordResponse>
         }
         uint64_t address = req->address();
         ReadWordResponse resp;
-        uint64_t word = 0;
-        resp.set_success(hctx.m->read_word(address, word));
-        resp.set_value(word);
+        resp.set_value(hctx.m->read_word(address));
+        resp.set_success(true);
         return finish_ok(writer, resp);
     }
 

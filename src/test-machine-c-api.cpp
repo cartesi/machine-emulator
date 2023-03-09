@@ -1808,6 +1808,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_uarch_x_basic_test, ordinary_machine_f
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(uarch_x_origin, uarch_x_read);
+
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x350), cm_get_uarch_x_address(2));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_csr_null_machine_test) {

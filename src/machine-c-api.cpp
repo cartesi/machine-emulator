@@ -1009,6 +1009,10 @@ uint64_t cm_get_x_address(int i) {
     return cartesi::machine::get_x_address(i);
 }
 
+uint64_t cm_get_uarch_x_address(int i) {
+    return cartesi::machine::get_uarch_x_address(i);
+}
+
 int cm_read_f(const cm_machine *m, int i, uint64_t *val, char **err_msg) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");

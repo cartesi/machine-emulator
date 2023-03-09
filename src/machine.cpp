@@ -741,7 +741,11 @@ uint64_t machine::read_x(int i) const {
 }
 
 uint64_t machine::get_x_address(int i) {
-    return PMA_SHADOW_STATE_START + shadow_state_get_x_rel_addr(i);
+    return shadow_state_get_x_abs_addr(i);
+}
+
+uint64_t machine::get_uarch_x_address(int i) {
+    return shadow_state_get_uarch_x_abs_addr(i);
 }
 
 void machine::write_x(int i, uint64_t val) {
@@ -755,7 +759,7 @@ uint64_t machine::read_f(int i) const {
 }
 
 uint64_t machine::get_f_address(int i) {
-    return PMA_SHADOW_STATE_START + shadow_state_get_f_rel_addr(i);
+    return shadow_state_get_f_abs_addr(i);
 }
 
 void machine::write_f(int i, uint64_t val) {

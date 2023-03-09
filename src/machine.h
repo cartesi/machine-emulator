@@ -332,6 +332,11 @@ public:
     /// \returns Address of the specified register
     static uint64_t get_x_address(int i);
 
+    /// \brief Gets the address of a general-purpose microarchitecture register.
+    /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
+    /// \returns Address of the specified register
+    static uint64_t get_uarch_x_address(int i);
+
     /// \brief Reads the value of a floating-point register.
     /// \param i Register index. Between 0 and F_REG_COUNT-1, inclusive.
     /// \returns The value of the register.

@@ -639,6 +639,11 @@ CM_API int cm_write_x(cm_machine *m, int i, uint64_t val, char **err_msg);
 /// \returns Address of the specified register
 CM_API uint64_t cm_get_x_address(int i);
 
+/// \brief Gets the address of a general-purpose microarchitecture register.
+/// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
+/// \returns Address of the specified register
+CM_API uint64_t cm_get_uarch_x_address(int i);
+
 /// \brief Reads the value of a floating-point register.
 /// \param m Pointer to valid machine instance
 /// \param i Register index. Between 0 and F_REG_COUNT-1, inclusive.

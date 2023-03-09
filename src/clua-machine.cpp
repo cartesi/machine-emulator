@@ -76,6 +76,16 @@ static int machine_class_index_get_x_address(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine.get_uarch_x_address() method implementation.
+static int machine_class_index_get_uarch_x_address(lua_State *L) {
+    int i = static_cast<int>(luaL_checkinteger(L, 1));
+    if (i < 0 || i >= UARCH_X_REG_COUNT) {
+        luaL_error(L, "register index out of range");
+    }
+    lua_pushinteger(L, static_cast<lua_Integer>(cm_get_uarch_x_address(i)));
+    return 1;
+}
+
 /// \brief This is the machine.get_f_address() method implementation.
 static int machine_class_index_get_f_address(lua_State *L) {
     int i = static_cast<int>(luaL_checkinteger(L, 1));
@@ -98,6 +108,7 @@ static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
     {"verify_access_log", machine_class_index_verify_access_log},
     {"verify_state_transition", machine_class_index_verify_state_transition},
     {"get_x_address", machine_class_index_get_x_address},
+    {"get_uarch_x_address", machine_class_index_get_uarch_x_address},
     {"get_f_address", machine_class_index_get_f_address},
     {"get_csr_address", machine_class_index_get_csr_address},
 });

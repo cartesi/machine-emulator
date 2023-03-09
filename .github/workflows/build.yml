@@ -5,7 +5,7 @@ env:
   KERNEL_VERSION: v0.15.0
   LINUX_VERSION: 5.15.63-ctsi-1
   ROOTFS_VERSION: v0.16.0
-  TEST_VERSION: v0.25.0
+  TEST_VERSION: v0.26.0-uarch
   GROUND_TRUTH_VERSION: v0.24.0-0001
   BUILD_CACHE_VERSION: v0.10.0-0001
   SERVER_MANAGER_VERSION: 0.7.0
@@ -280,6 +280,9 @@ jobs:
 
       - name: Run test suite
         run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
+
+      - name: Run rv64ui test suite on microarchitecture
+        run: /opt/cartesi/bin/uarch-riscv-tests --test-path=/opt/cartesi/tests run
 
       - name: Run test suite with Microarchitecture
         run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests --uarch-ram-length=0x20000 --uarch-ram-image=./tests/uarch-ram.bin --jobs=$(nproc) uarch_run

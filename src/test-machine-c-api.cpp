@@ -32,6 +32,7 @@
 #include "grpc-machine-c-api.h"
 #include "machine-c-api.h"
 #include "test-utils.h"
+#include "uarch-solidity-compat.h"
 
 // NOLINTNEXTLINE
 #define BOOST_AUTO_TEST_CASE_NOLINT(...) BOOST_AUTO_TEST_CASE(__VA_ARGS__)
@@ -2574,4 +2575,123 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_access_log_null_log_test, grpc_access
     std::string origin("invalid access log");
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_error_message(err_msg);
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(uarch_solidity_compatibility_layer) {
+    using namespace cartesi;
+    BOOST_CHECK_EQUAL(UINT16_MAX, 65535);
+    BOOST_CHECK_EQUAL(UINT32_MAX, 4294967295U);
+    BOOST_CHECK_EQUAL(UINT64_MAX, 18446744073709551615ULL);
+    BOOST_CHECK_EQUAL(INT16_MAX, 32767);
+    BOOST_CHECK_EQUAL(INT32_MAX, 2147483647);
+    BOOST_CHECK_EQUAL(INT64_MAX, 9223372036854775807LL);
+    BOOST_CHECK_EQUAL(INT16_MIN, -32768);
+    BOOST_CHECK_EQUAL(INT32_MIN, -INT32_MAX - 1);
+    BOOST_CHECK_EQUAL(INT64_MIN, -INT64_MAX - 1);
+
+    BOOST_CHECK_EQUAL(uint64ToInt32(1), 1);
+    BOOST_CHECK_EQUAL(uint64ToInt32(0xffffffffULL), -1);
+    BOOST_CHECK_EQUAL(uint64ToInt32(0xffffffffULL << 31), INT32_MIN);
+    BOOST_CHECK_EQUAL(uint64ToInt32(0xffffffffULL << 32), 0);
+
+    BOOST_CHECK_EQUAL(uint64AddInt32(2, -1), 1);
+    BOOST_CHECK_EQUAL(uint64AddInt32(0, -1), UINT64_MAX);
+    BOOST_CHECK_EQUAL(uint64AddInt32(UINT64_MAX, 1), 0);
+
+    BOOST_CHECK_EQUAL(uint64SubUint64(1, 1), 0);
+    BOOST_CHECK_EQUAL(uint64SubUint64(0, 1), UINT64_MAX);
+
+    BOOST_CHECK_EQUAL(uint64AddUint64(0, 1), 1);
+    BOOST_CHECK_EQUAL(uint64AddUint64(UINT64_MAX, 1), 0);
+
+    BOOST_CHECK_EQUAL(uint64ShiftRight(0, 0), 0);
+    BOOST_CHECK_EQUAL(uint64ShiftRight(0, 1), 0);
+    BOOST_CHECK_EQUAL(uint64ShiftRight(4, 1), 2);
+    BOOST_CHECK_EQUAL(uint64ShiftRight(4, 2), 1);
+    BOOST_CHECK_EQUAL(uint64ShiftRight(4, 3), 0);
+    BOOST_CHECK_EQUAL(uint64ShiftRight(UINT64_MAX, 63), 1);
+
+    BOOST_CHECK_EQUAL(uint64ShiftLeft(0, 0), 0);
+    BOOST_CHECK_EQUAL(uint64ShiftLeft(0, 1), 0);
+    BOOST_CHECK_EQUAL(uint64ShiftLeft(4, 1), 8);
+    BOOST_CHECK_EQUAL(uint64ShiftLeft(4, 2), 16);
+    BOOST_CHECK_EQUAL(uint64ShiftLeft(UINT64_MAX, 63), 1ULL << 63);
+
+    BOOST_CHECK_EQUAL(int64ShiftRight(0, 0), 0);
+    BOOST_CHECK_EQUAL(int64ShiftRight(0, 1), 0);
+    BOOST_CHECK_EQUAL(int64ShiftRight(4, 1), 2);
+    BOOST_CHECK_EQUAL(int64ShiftRight(4, 2), 1);
+    BOOST_CHECK_EQUAL(int64ShiftRight(4, 3), 0);
+    BOOST_CHECK_EQUAL(int64ShiftRight(INT64_MAX, 62), 1);
+    BOOST_CHECK_EQUAL(int64ShiftRight(INT64_MAX, 63), 0);
+    BOOST_CHECK_EQUAL(int64ShiftRight(-1, 1), -1);
+    BOOST_CHECK_EQUAL(int64ShiftRight(-4, 1), -2);
+    BOOST_CHECK_EQUAL(int64ShiftRight(INT64_MIN, 62), -2);
+    BOOST_CHECK_EQUAL(int64ShiftRight(INT64_MIN, 63), -1);
+
+    BOOST_CHECK_EQUAL(int64ShiftLeft(0, 0), 0);
+    BOOST_CHECK_EQUAL(int64ShiftLeft(0, 1), 0);
+    BOOST_CHECK_EQUAL(int64ShiftLeft(4, 1), 8);
+    BOOST_CHECK_EQUAL(int64ShiftLeft(4, 2), 16);
+    BOOST_CHECK_EQUAL(int64ShiftLeft(1, 63), INT64_MIN);
+    BOOST_CHECK_EQUAL(int64ShiftLeft(INT64_MAX, 1), -2);
+
+    BOOST_CHECK_EQUAL(int64AddInt64(0, 0), 0);
+    BOOST_CHECK_EQUAL(int64AddInt64(0, 1), 1);
+    BOOST_CHECK_EQUAL(int64AddInt64(0, -1), -1);
+    BOOST_CHECK_EQUAL(int64AddInt64(-1, 0), -1);
+    BOOST_CHECK_EQUAL(int64AddInt64(INT64_MAX, 1), INT64_MIN);
+    BOOST_CHECK_EQUAL(int64AddInt64(INT64_MAX, INT64_MAX), -2);
+
+    BOOST_CHECK_EQUAL(uint32ShiftRight(0, 0), 0);
+    BOOST_CHECK_EQUAL(uint32ShiftRight(0, 1), 0);
+    BOOST_CHECK_EQUAL(uint32ShiftRight(4, 1), 2);
+    BOOST_CHECK_EQUAL(uint32ShiftRight(4, 2), 1);
+    BOOST_CHECK_EQUAL(uint32ShiftRight(4, 3), 0);
+    BOOST_CHECK_EQUAL(uint32ShiftRight(UINT32_MAX, 31), 1);
+
+    BOOST_CHECK_EQUAL(uint32ShiftLeft(0, 0), 0);
+    BOOST_CHECK_EQUAL(uint32ShiftLeft(0, 1), 0);
+    BOOST_CHECK_EQUAL(uint32ShiftLeft(4, 1), 8);
+    BOOST_CHECK_EQUAL(uint32ShiftLeft(4, 2), 16);
+    BOOST_CHECK_EQUAL(uint32ShiftLeft(4, 3), 32);
+    BOOST_CHECK_EQUAL(uint32ShiftLeft(UINT32_MAX, 31), 0x80000000UL);
+
+    BOOST_CHECK_EQUAL(int32ToUint64(1), 1);
+    BOOST_CHECK_EQUAL(int32ToUint64(INT32_MAX), INT32_MAX);
+    BOOST_CHECK_EQUAL(int32ToUint64(INT32_MIN), 0xffffffff80000000ULL);
+
+    BOOST_CHECK_EQUAL(int32ShiftRight(0, 0), 0);
+    BOOST_CHECK_EQUAL(int32ShiftRight(0, 1), 0);
+    BOOST_CHECK_EQUAL(int32ShiftRight(4, 1), 2);
+    BOOST_CHECK_EQUAL(int32ShiftRight(4, 2), 1);
+    BOOST_CHECK_EQUAL(int32ShiftRight(4, 3), 0);
+    BOOST_CHECK_EQUAL(int32ShiftRight(INT32_MAX, 30), 1);
+    BOOST_CHECK_EQUAL(int32ShiftRight(INT32_MAX, 31), 0);
+    BOOST_CHECK_EQUAL(int32ShiftRight(-1, 1), -1);
+    BOOST_CHECK_EQUAL(int32ShiftRight(-4, 1), -2);
+    BOOST_CHECK_EQUAL(int32ShiftRight(INT32_MIN, 30), -2);
+    BOOST_CHECK_EQUAL(int32ShiftRight(INT32_MIN, 31), -1);
+
+    BOOST_CHECK_EQUAL(int32AddInt32(0, 0), 0);
+    BOOST_CHECK_EQUAL(int32AddInt32(0, 1), 1);
+    BOOST_CHECK_EQUAL(int32AddInt32(0, -1), -1);
+    BOOST_CHECK_EQUAL(int32AddInt32(-1, 0), -1);
+    BOOST_CHECK_EQUAL(int32AddInt32(INT32_MAX, 1), INT32_MIN);
+    BOOST_CHECK_EQUAL(int32AddInt32(INT32_MAX, INT32_MAX), -2);
+
+    BOOST_CHECK_EQUAL(int32SubInt32(1, 1), 0);
+    BOOST_CHECK_EQUAL(int32SubInt32(1, 0), 1);
+    BOOST_CHECK_EQUAL(int32SubInt32(0, 1), -1);
+    BOOST_CHECK_EQUAL(int32SubInt32(-1, -1), 0);
+    BOOST_CHECK_EQUAL(int32SubInt32(INT32_MIN, INT32_MAX), 1);
+    BOOST_CHECK_EQUAL(int32SubInt32(INT32_MAX, INT32_MIN), -1);
+
+    BOOST_CHECK_EQUAL(int16ToUint64(1), 1);
+    BOOST_CHECK_EQUAL(int16ToUint64(INT16_MAX), INT16_MAX);
+    BOOST_CHECK_EQUAL(int16ToUint64(INT16_MIN), 0xffffffffffff8000ULL);
+
+    BOOST_CHECK_EQUAL(int8ToUint64(int8(1)), 1);
+    BOOST_CHECK_EQUAL(int8ToUint64(int8(127)), 127);
+    BOOST_CHECK_EQUAL(int8ToUint64(int8(-128)), 0xffffffffffffff80ULL);
 }

@@ -1588,6 +1588,7 @@ else
                 stderr("Halted\n")
             end
             stderr("Cycles: %u\n", machine:read_mcycle())
+            machine:uarch_reset_state()
         end
     end
     if gdb_stub then

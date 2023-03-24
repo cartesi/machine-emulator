@@ -540,7 +540,15 @@ private:
         *pval = raw_read_memory<T>(paddr);
     }
 
-    void do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t log2_size) {}
+    bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) {
+        // FIXME: this is not implemented yet because its not really being used
+        return false;
+    }
+
+    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+        // FIXME: this is not implemented yet because its not really being used
+        return false;
+    }
 
     template <typename T>
     void do_write_memory_word(uint64_t paddr, const unsigned char *hpage, uint64_t hoffset, T val) {

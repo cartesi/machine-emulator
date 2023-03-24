@@ -628,14 +628,26 @@ public:
         return derived().do_read_pma_ilength(p);
     }
 
-    /// \brief Writes a chunk of data to a memory PMA range.
-    /// \param paddr Target physical address. Must be aligned to data size.
-    /// \param data Pointer to chunk of data.
-    /// \param log2_size Log 2 of data length. Must be >= 3 and < 64.
+    /// \brief Reads a chunk of data from a memory PMA range.
+    /// \param paddr Target physical address.
+    /// \param data Receives chunk of memory.
+    /// \param length Size of chunk.
+    /// \returns True if PMA was found and memory fully read, false otherwise.
     /// \details The entire chunk of data must fit inside the same memory
-    /// PMA range. The search for the PMA range is implicit, and not logged.
-    void write_memory(uint64_t paddr, const unsigned char *data, uint64_t log2_size) {
-        return derived().do_write_memory(paddr, data, log2_size);
+    /// PMA range, otherwise it fails. The search for the PMA range is implicit, and not logged.
+    bool read_memory(uint64_t paddr, unsigned char *data, uint64_t length) {
+        return derived().do_read_memory(paddr, data, length);
+    }
+
+    /// \brief Writes a chunk of data to a memory PMA range.
+    /// \param paddr Target physical address.
+    /// \param data Pointer to chunk of data.
+    /// \param length Size of chunk.
+    /// \returns True if PMA was found and memory fully written, false otherwise.
+    /// \details The entire chunk of data must fit inside the same memory
+    /// PMA range, otherwise it fails. The search for the PMA range is implicit, and not logged.
+    bool write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+        return derived().do_write_memory(paddr, data, length);
     }
 
     /// \brief Reads a word from memory.

@@ -467,8 +467,26 @@ private:
         aliased_aligned_write(hpage + hoffset, val);
     }
 
-    void do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t log2_size) {
-        m_m.write_memory(paddr, data, UINT64_C(1) << log2_size);
+    bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) const {
+        //??(edubart): Treating exceptions here is not ideal, we should probably
+        // move write_memory() method implementation inside state access later
+        try {
+            m_m.read_memory(paddr, data, length);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+        //??(edubart): Treating exceptions here is not ideal, we should probably
+        // move write_memory() method implementation inside state access later
+        try {
+            m_m.write_memory(paddr, data, length);
+            return true;
+        } catch (...) {
+            return false;
+        }
     }
 
     template <typename T>

@@ -29,6 +29,7 @@
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "machine-state.h"
+#include "uarch-interpret.h"
 #include "uarch-machine.h"
 
 namespace cartesi {
@@ -198,7 +199,7 @@ public:
     /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle
     /// counter (uarch_cycle) reaches uarch_cycle_end
     /// \param uarch_cycle_end uarch_cycle limit
-    void uarch_run(uint64_t uarch_cycle_end);
+    uarch_interpreter_status uarch_run(uint64_t uarch_cycle_end);
 
     /// \brief Resets the microarchitecture state
     void uarch_reset_state();

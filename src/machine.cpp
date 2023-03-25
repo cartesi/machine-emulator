@@ -40,6 +40,8 @@
 #include "strict-aliasing.h"
 #include "translate-virtual-address.h"
 #include "uarch-interpret.h"
+#include "uarch-record-state-access.h"
+#include "uarch-replay-state-access.h"
 #include "uarch-state-access.h"
 #include "unique-c-ptr.h"
 
@@ -1940,9 +1942,9 @@ access_log machine::step(const access_log::type &log_type, bool one_based) {
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-void machine::uarch_run(uint64_t uarch_cycle_end) {
+uarch_interpreter_status machine::uarch_run(uint64_t uarch_cycle_end) {
     uarch_state_access a(m_uarch.get_state(), get_state());
-    uarch_interpret(a, uarch_cycle_end);
+    return uarch_interpret(a, uarch_cycle_end);
 }
 
 interpreter_break_reason machine::run(uint64_t mcycle_end) {

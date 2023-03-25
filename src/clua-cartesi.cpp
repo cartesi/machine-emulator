@@ -118,6 +118,8 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_BREAK_REASON_YIELDED_MANUALLY, "BREAK_REASON_YIELDED_MANUALLY", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_YIELDED_AUTOMATICALLY, "BREAK_REASON_YIELDED_AUTOMATICALLY", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_REACHED_TARGET_MCYCLE, "BREAK_REASON_REACHED_TARGET_MCYCLE", -1);
+    clua_setintegerfield(L, CM_UARCH_REACHED_TARGET_CYCLE, "UARCH_REACHED_TARGET_CYCLE", -1);
+    clua_setintegerfield(L, CM_UARCH_HALTED, "UARCH_HALTED", -1);
     return 1;
 }
 }

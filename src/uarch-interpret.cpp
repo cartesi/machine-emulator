@@ -16,8 +16,12 @@
 
 #include <stdexcept>
 
+#include "machine.h"
 #include "uarch-execute-insn.h"
 #include "uarch-interpret.h"
+#include "uarch-record-state-access.h"
+#include "uarch-replay-state-access.h"
+#include "uarch-state-access.h"
 
 namespace cartesi {
 
@@ -28,7 +32,7 @@ uarch_interpreter_status uarch_interpret(STATE_ACCESS &a, uint64_t cycle_end) {
     auto cycle = readCycle(a);
     while (cycle < cycle_end) {
         if (readHaltFlag(a)) {
-            return uarch_interpreter_status::halt;
+            return uarch_interpreter_status::halted;
         }
         auto pc = readPc(a);
         auto insn = readUint32(a, pc);
@@ -36,7 +40,7 @@ uarch_interpreter_status uarch_interpret(STATE_ACCESS &a, uint64_t cycle_end) {
         cycle = cycle + 1;
         writeCycle(a, cycle);
     }
-    return uarch_interpreter_status::success;
+    return uarch_interpreter_status::reached_target_cycle;
 }
 
 // Explicit instantiation for uarch_state_access

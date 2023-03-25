@@ -572,6 +572,30 @@ do_test("mcycle value should match",
     end
 )
 
+print("\n\n uarch_run tests")
+do_test("advance one micro cycle without halting",
+    function(machine)
+        assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
+        assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
+        local status = machine:uarch_run(1)
+        assert(status == cartesi.UARCH_REACHED_TARGET_CYCLE)
+        assert(machine:read_uarch_cycle() == 1, "uarch cycle should be 1")
+        assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
+    end
+)
+
+do_test("advance micro cycles until halt",
+    function(machine)
+        assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
+        assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
+        local status = machine:uarch_run(100)
+        assert(status == cartesi.UARCH_HALTED)
+        assert(machine:read_uarch_cycle() == 5, "uarch cycle should be 5")
+        assert(machine:read_uarch_halt_flag() == true, "machine should be halted")
+    end
+)
+
+
 print("\n\n run machine to 1000 mcycle")
 do_test("mcycle value should be 1000 after execution",
     function(machine)

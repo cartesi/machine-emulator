@@ -1926,7 +1926,7 @@ public:
             0x7ffff2b7, //  lui	t0,0x7ffff      UARCH_MMIO_HALT_ADDR_DEF
             0x0182829b, //  addiw	t0,t0,24
             0x00100313, //  li	t1,1            UARCH_MMIO_HALT_VALUE_DEF
-            0x0062b023, //  sd	t1,0(t0)        Halt microarchitecture
+            0x0062b023, //  sd	t1,0(t0)        Halt microarchitecture at uarch cycle 5
         };
         std::ofstream of(_uarch_ram_path, std::ios::binary);
         of.write(static_cast<char *>(static_cast<void *>(&test_uarch_ram)), sizeof(test_uarch_ram));
@@ -2212,8 +2212,70 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_long_cycle_test, ordinary_machine_fix
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(machine_uarch_run_null_machine_test) {
-    int error_code = cm_machine_uarch_run(nullptr, 1000, nullptr);
+    auto status{CM_UARCH_REACHED_TARGET_CYCLE};
+    int error_code = cm_machine_uarch_run(nullptr, 1000, &status, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(machine_uarch_run_advance_one_cycle, access_log_machine_fixture) {
+    char *err_msg{};
+
+    // ensure that uarch cycle is 0
+    uint64_t cycle{};
+    int error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(cycle, 0);
+
+    // advance one uarch cycle
+    auto status{CM_UARCH_HALTED};
+    error_code = cm_machine_uarch_run(_machine, 1, &status, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_REACHED_TARGET_CYCLE);
+
+    // confirm uarch cycle was incremented
+    error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(cycle, 1);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(machine_uarch_run_advance_until_halt, access_log_machine_fixture) {
+    char *err_msg{};
+    // ensure that uarch cycle is 0
+    uint64_t cycle{};
+    int error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(cycle, 0);
+
+    // ensure not halted
+    uint64_t halt{1};
+    error_code = cm_read_csr(_machine, CM_PROC_UARCH_HALT_FLAG, &halt, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(halt, 0);
+
+    // advance cycles past the point where the program halts (see hard-coded micro code in test fixture )
+    auto status{CM_UARCH_HALTED};
+    error_code = cm_machine_uarch_run(_machine, 100, &status, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    // assert result status reports
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_HALTED);
+
+    // confirm uarch cycle advanced
+    error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(cycle, 5);
+
+    // assert halt flag is set
+    error_code = cm_read_csr(_machine, CM_PROC_UARCH_HALT_FLAG, &halt, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(halt, 1);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_root_updates_test, ordinary_machine_fixture) {

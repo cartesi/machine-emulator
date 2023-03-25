@@ -146,6 +146,12 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_UNKNOWN
 } CM_PROC_CSR;
 
+/// \brief Return values of uarch_interpret
+typedef enum { // NOLINT(modernize-use-using)
+    CM_UARCH_REACHED_TARGET_CYCLE,
+    CM_UARCH_HALTED
+} CM_UARCH_INTERPRETER_STATUS;
+
 /// \brief Processor state configuration
 typedef struct {                        // NOLINT(modernize-use-using)
     uint64_t x[CM_MACHINE_X_REG_COUNT]; ///< Value of general-purpose registers
@@ -1675,12 +1681,14 @@ CM_API int cm_uarch_reset_state(cm_machine *m, char **err_msg);
 
 /// \brief Runs the machine in the microarchitecture until the mcycle advances by one unit or the micro cycles counter
 /// (uarch_cycle) reaches uarch_cycle_end \param m Pointer to valid machine instance \param mcycle_end End cycle value
+/// \param status_result Receives status of machine uarch_run when not NULL
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_machine_uarch_run(cm_machine *m, uint64_t uarch_cycle_end, char **err_msg);
+CM_API int cm_machine_uarch_run(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_INTERPRETER_STATUS *status_result,
+    char **err_msg);
 
 #ifdef __cplusplus
 }

@@ -221,7 +221,7 @@ private:
     void do_set_uarch_halt_flag() override;
     void do_uarch_reset_state() override;
     bool do_read_uarch_halt_flag(void) const override;
-    void do_uarch_run(uint64_t uarch_cycle_end) override;
+    uarch_interpreter_status do_uarch_run(uint64_t uarch_cycle_end) override;
 
     grpc_machine_stub_ptr m_stub;
 };

@@ -406,7 +406,7 @@ class handler_UarchRun final : public handler<UarchRunRequest, UarchRunResponse>
         }
         auto limit = static_cast<uint64_t>(req->limit());
         UarchRunResponse resp;
-        hctx.m->run(limit);
+        hctx.m->uarch_run(limit);
         resp.set_cycle(hctx.m->read_uarch_cycle());
         resp.set_pc(hctx.m->read_uarch_pc());
         resp.set_halt_flag(hctx.m->read_uarch_halt_flag());

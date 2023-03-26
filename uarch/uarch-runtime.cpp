@@ -74,7 +74,7 @@ extern "C" [[noreturn]] void abort(void) {
     volatile char *p = reinterpret_cast<char *>(cartesi::uarch_mmio_address::abort);
     *p = uarch_mmio_abort_value;
     // execution will never reach this point
-    // infinite loop added to silent the compiler
+    // infinite loop added to silence the compiler
     for (;;) {
     }
 }

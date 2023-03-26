@@ -336,7 +336,7 @@ private:
 
     bool do_read_halt_flag() {
         return check_read_word(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag),
-            "uarch.uarch_halt_flag");
+            "uarch.halt_flag");
     }
 
     void do_set_halt_flag() {

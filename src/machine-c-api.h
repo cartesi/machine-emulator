@@ -436,7 +436,7 @@ CM_API void cm_delete_machine(cm_machine *m);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason_result, char **err_msg);
 
-/// \brief Runs the machine for one cycle logging all accesses to the state.
+/// \brief Runs the machine for one micro cycle logging all accesses to the state.
 /// \param m Pointer to valid machine instance
 /// \param log_type Type of access log to generate.
 /// \param one_based Use 1-based indices when reporting errors.
@@ -446,7 +446,7 @@ CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *b
 /// must be deleted by the function caller using cm_delete_error_message.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_step(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
+CM_API int cm_uarch_step(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
     char **err_msg);
 
 /// \brief  Deletes the instance of cm_access_log acquired from cm_step

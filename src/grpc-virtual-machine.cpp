@@ -807,14 +807,14 @@ void grpc_virtual_machine::do_replace_memory_range(const memory_range_config &ne
     check_status(m_stub->get_stub()->ReplaceMemoryRange(&context, request, &response));
 }
 
-access_log grpc_virtual_machine::do_step(const access_log::type &log_type, bool one_based) {
-    StepRequest request;
+access_log grpc_virtual_machine::do_uarch_step(const access_log::type &log_type, bool one_based) {
+    UarchStepRequest request;
     request.mutable_log_type()->set_proofs(log_type.has_proofs());
     request.mutable_log_type()->set_annotations(log_type.has_annotations());
     request.set_one_based(one_based);
-    StepResponse response;
+    UarchStepResponse response;
     ClientContext context;
-    check_status(m_stub->get_stub()->Step(&context, request, &response));
+    check_status(m_stub->get_stub()->UarchStep(&context, request, &response));
     return get_proto_access_log(response.log());
 }
 

@@ -529,26 +529,28 @@ public:
     }
 };
 
-class handler_Step final : public handler<StepRequest, StepResponse> {
+class handler_UarchStep final : public handler<UarchStepRequest, UarchStepResponse> {
 
-    side_effect prepare(handler_context &hctx, ServerContext *sctx, StepRequest *req,
-        ServerAsyncResponseWriter<StepResponse> *writer) override {
-        hctx.s->RequestStep(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, UarchStepRequest *req,
+        ServerAsyncResponseWriter<UarchStepResponse> *writer) override {
+        hctx.s->RequestUarchStep(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
-    side_effect go(handler_context &hctx, StepRequest *req, ServerAsyncResponseWriter<StepResponse> *writer) override {
+    side_effect go(handler_context &hctx, UarchStepRequest *req,
+        ServerAsyncResponseWriter<UarchStepResponse> *writer) override {
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
         AccessLog proto_log;
-        StepResponse resp;
-        set_proto_access_log(hctx.m->step(get_proto_log_type(req->log_type()), req->one_based()), resp.mutable_log());
+        UarchStepResponse resp;
+        set_proto_access_log(hctx.m->uarch_step(get_proto_log_type(req->log_type()), req->one_based()),
+            resp.mutable_log());
         return finish_ok(writer, resp);
     }
 
 public:
-    handler_Step(handler_context &hctx) {
+    handler_UarchStep(handler_context &hctx) {
         advance(hctx);
     }
 };
@@ -1222,7 +1224,7 @@ static void server_loop(const char *server_address, const char *session_id, cons
         handler_Snapshot hSnapshot(hctx);
         handler_Rollback hRollback(hctx);
         handler_Shutdown hShutdown(hctx);
-        handler_Step hStep(hctx);
+        handler_UarchStep hUarchStep(hctx);
         handler_ReadMemory hReadMemory(hctx);
         handler_WriteMemory hWriteMemory(hctx);
         handler_ReadVirtualMemory hReadVirtualMemory(hctx);

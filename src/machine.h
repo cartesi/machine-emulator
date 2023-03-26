@@ -204,11 +204,11 @@ public:
     /// \brief Resets the microarchitecture state
     void uarch_reset_state();
 
-    /// \brief Runs the machine for one cycle logging all accesses to the state.
+    /// \brief Runs the machine for one micro cycle logging all accesses to the state.
     /// \param log_type Type of access log to generate.
     /// \param one_based Use 1-based indices when reporting errors.
     /// \returns The state access log.
-    access_log step(const access_log::type &log_type, bool one_based = false);
+    access_log uarch_step(const access_log::type &log_type, bool one_based = false);
 
     /// \brief Verifies a proof.
     /// \param proof Proof to be verified.

@@ -443,12 +443,12 @@ static int machine_obj_index_uarch_run(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine:step() method implementation.
+/// \brief This is the machine:uarch_step() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_step(lua_State *L) {
+static int machine_obj_index_uarch_step(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(nullptr));
-    TRY_EXECUTE(cm_step(m.get(), clua_check_cm_log_type(L, 2), true, &managed_log.get(), err_msg));
+    TRY_EXECUTE(cm_uarch_step(m.get(), clua_check_cm_log_type(L, 2), true, &managed_log.get(), err_msg));
     clua_push_cm_access_log(L, managed_log.get());
     managed_log.reset();
     return 1;
@@ -661,7 +661,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_f", machine_obj_index_read_f},
     {"run", machine_obj_index_run},
     {"uarch_run", machine_obj_index_uarch_run},
-    {"step", machine_obj_index_step},
+    {"uarch_step", machine_obj_index_uarch_step},
     {"store", machine_obj_index_store},
     {"verify_dirty_page_maps", machine_obj_index_verify_dirty_page_maps},
     {"verify_merkle_tree", machine_obj_index_verify_merkle_tree},

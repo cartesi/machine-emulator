@@ -1959,7 +1959,7 @@ protected:
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_rt_config_test, access_log_machine_fixture) {
     char *err_msg{};
-    int error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);
+    int error_code = cm_uarch_step(_machine, _log_type, false, &_access_log, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
@@ -1976,7 +1976,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_rt_config_test, access_log
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_error_placeholder_test, access_log_machine_fixture) {
     char *err_msg{};
-    int error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);
+    int error_code = cm_uarch_step(_machine, _log_type, false, &_access_log, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
@@ -1987,17 +1987,17 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_error_placeholder_test, ac
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_machine_test, access_log_machine_fixture) {
-    int error_code = cm_step(nullptr, _log_type, false, &_access_log, nullptr);
+    int error_code = cm_uarch_step(nullptr, _log_type, false, &_access_log, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_access_log_test, access_log_machine_fixture) {
-    int error_code = cm_step(_machine, _log_type, false, nullptr, nullptr);
+    int error_code = cm_uarch_step(_machine, _log_type, false, nullptr, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_error_placeholder_test, access_log_machine_fixture) {
-    int error_code = cm_step(_machine, _log_type, false, &_access_log, nullptr);
+    int error_code = cm_uarch_step(_machine, _log_type, false, &_access_log, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
     cm_delete_access_log(_access_log);
@@ -2045,7 +2045,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_access_log_test, acc
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, access_log_machine_fixture) {
     char *err_msg{};
-    int error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);
+    int error_code = cm_uarch_step(_machine, _log_type, false, &_access_log, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
@@ -2069,7 +2069,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test_null_error_placeholder_test, ac
     int error_code = cm_get_root_hash(_machine, &hash0, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
-    error_code = cm_step(_machine, _log_type, false, &_access_log, nullptr);
+    error_code = cm_uarch_step(_machine, _log_type, false, &_access_log, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 
     error_code = cm_verify_access_log(_access_log, &_runtime_config, false, nullptr);
@@ -2093,7 +2093,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
-    error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);
+    error_code = cm_uarch_step(_machine, _log_type, false, &_access_log, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
@@ -2115,7 +2115,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, access_log_machine_fixture) {
     char *err_msg{};
 
-    int error_code = cm_step(_machine, _log_type, false, &_access_log, &err_msg);
+    int error_code = cm_uarch_step(_machine, _log_type, false, &_access_log, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 

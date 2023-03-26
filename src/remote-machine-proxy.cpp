@@ -331,15 +331,15 @@ static auto new_Shutdown_handler(handler_context &hctx) {
 }
 
 static auto new_Step_handler(handler_context &hctx) {
-    return new_handler<StepRequest, StepResponse>(
+    return new_handler<UarchStepRequest, UarchStepResponse>(
         "Step",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
-            hctx.async_service.RequestStep(&server_context, &request, &writer, cq, cq, self);
+            hctx.async_service.RequestUarchStep(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
-            return hctx.stub->AsyncStep(&client_context, request, cq);
+            return hctx.stub->AsyncUarchStep(&client_context, request, cq);
         });
 }
 

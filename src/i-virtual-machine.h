@@ -60,9 +60,9 @@ public:
         do_store(dir);
     }
 
-    /// \brief Runs the machine for one cycle logging all accesses to the state.
-    access_log step(const access_log::type &log_type, bool one_based = false) {
-        return do_step(log_type, one_based);
+    /// \brief Runs the machine for one micro cycle logging all accesses to the state.
+    access_log uarch_step(const access_log::type &log_type, bool one_based = false) {
+        return do_uarch_step(log_type, one_based);
     }
 
     /// \brief Obtains the proof for a node in the Merkle tree.
@@ -645,7 +645,7 @@ public:
 private:
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
     virtual void do_store(const std::string &dir) = 0;
-    virtual access_log do_step(const access_log::type &log_type, bool one_based = false) = 0;
+    virtual access_log do_uarch_step(const access_log::type &log_type, bool one_based = false) = 0;
     virtual machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const = 0;
     virtual void do_get_root_hash(hash_type &hash) const = 0;
     virtual bool do_verify_merkle_tree(void) const = 0;

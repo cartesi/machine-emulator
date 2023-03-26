@@ -203,7 +203,7 @@ private:
     void do_get_root_hash(hash_type &hash) const override;
     machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const override;
     void do_replace_memory_range(const memory_range_config &new_range) override;
-    access_log do_step(const access_log::type &log_type, bool /*one_based = false*/) override;
+    access_log do_uarch_step(const access_log::type &log_type, bool /*one_based = false*/) override;
     void do_destroy() override;
     void do_snapshot() override;
     void do_rollback() override;

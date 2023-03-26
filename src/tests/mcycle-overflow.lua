@@ -85,7 +85,7 @@ for _, proofs in ipairs{true, false} do
     do_test("machine step should do nothing on max mcycle [proofs=" ..
             tostring(proofs) .. "]", function(machine)
         machine:write_uarch_cycle(MAX_UARCH_CYCLE)
-        local log = machine:step{proofs=proofs}
+        local log = machine:uarch_step{proofs=proofs}
         assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
         assert(#log.accesses == 1)
         assert(log.accesses[1].type == "read")

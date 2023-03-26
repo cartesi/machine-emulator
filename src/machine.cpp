@@ -1917,7 +1917,7 @@ void machine::verify_state_transition(const hash_type &root_hash_before, const a
     }
 }
 
-access_log machine::step(const access_log::type &log_type, bool one_based) {
+access_log machine::uarch_step(const access_log::type &log_type, bool one_based) {
     hash_type root_hash_before;
     if (log_type.has_proofs()) {
         update_merkle_tree();

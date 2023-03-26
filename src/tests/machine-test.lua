@@ -308,7 +308,7 @@ test_util.make_do_test(build_uarch_machine, machine_type)("machine root hash aft
         -- Perform step, dump address space to file, calculate emulator root hash
         -- and check if maches
         local log_type = {}
-        machine:step(log_type)
+        machine:uarch_step(log_type)
         local root_hash_step1 = machine:get_root_hash()
 
         machine:dump_pmas()
@@ -328,7 +328,7 @@ print("\n\ntesting proof after step one")
 test_util.make_do_test(build_uarch_machine, machine_type)("proof check should pass",
     function(machine)
         local log_type = {}
-        machine:step(log_type)
+        machine:uarch_step(log_type)
 
         -- Dump RAM memory to file, calculate hash of file
         -- get proof of ram using get_proof and check if
@@ -550,7 +550,7 @@ test_util.make_do_test(build_uarch_machine, machine_type)("register values shoul
         local uarch_cycle_before = machine:read_uarch_cycle()
 
         local log_type = {}
-        machine:step(log_type)
+        machine:uarch_step(log_type)
 
         local uarch_pc_after = machine:read_uarch_pc()
         local uarch_cycle_after = machine:read_uarch_cycle()

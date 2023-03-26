@@ -563,7 +563,7 @@ do_test("mcycle value should match",
         local log_type = {}
         local uarch_cycle_initial_value = machine:read_csr('uarch_cycle')
 
-        machine:step(log_type)
+        machine:uarch_step(log_type)
 
         -- Check mcycle increment
         local uarch_cycle_current_value = machine:read_csr('uarch_cycle')
@@ -698,7 +698,7 @@ do_test("dumped log content should match",
                                  }
                                  os.remove(uarch_ram_path)
                                  local log_type = {proofs = false, annotations = true}
-                                 local log = machine:step(log_type)
+                                 local log = machine:uarch_step(log_type)
                                  cartesi_util.dump_log(log, io.stdout)
                                  " 2>&1]]
         local p = io.popen(lua_cmd .. lua_code)
@@ -735,7 +735,7 @@ do_test("machine step should pass verifications",
             module = remote
         end
         local initial_hash = machine:get_root_hash()
-        local log = machine:step({proofs = true, annotations = true})
+        local log = machine:uarch_step({proofs = true, annotations = true})
         local final_hash = machine:get_root_hash()
         module.machine.verify_state_transition(initial_hash, log, final_hash, {})
         module.machine.verify_access_log(log, {})

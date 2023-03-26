@@ -820,7 +820,7 @@ end
 
 local function print_machine_json_log(machine, log_type, out, last)
     local init_cycles = machine:read_mcycle()
-    local log = machine:step(log_type)
+    local log = machine:uarch_step(log_type)
     local final_cycles = machine:read_mcycle()
     util.dump_json_log(log, init_cycles, final_cycles, out, 3)
     if last then out:write('\n') else out:write(',\n') end

@@ -819,14 +819,14 @@ int cm_machine_uarch_run(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_INTER
     return cm_result_failure(err_msg);
 }
 
-int cm_step(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
+int cm_uarch_step(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
     char **err_msg) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log output");
     }
     auto *cpp_machine = convert_from_c(m);
     cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations};
-    cartesi::access_log cpp_access_log = cpp_machine->step(cpp_log_type, one_based);
+    cartesi::access_log cpp_access_log = cpp_machine->uarch_step(cpp_log_type, one_based);
     *access_log = convert_to_c(cpp_access_log);
     return cm_result_success(err_msg);
 } catch (...) {

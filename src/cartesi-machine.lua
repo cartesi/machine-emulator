@@ -1398,7 +1398,7 @@ if json_steps then
         if init_mcycle > max_mcycle then break end
         if init_mcycle == max_mcycle and init_ucycle == max_uarch_cycle then break end
         -- Advance one micro step 
-        local log = machine:step(log_type)
+        local log = machine:uarch_step(log_type)
         steps_counter = steps_counter + 1
         -- Save log recorded during micro step
         if steps_counter > 1 then json_steps:write(',\n') end
@@ -1597,7 +1597,7 @@ else
         assert(not config.htif.console_getchar, "step proof is meaningless in interactive mode")
         assert(config.uarch.ram.image_filename ~= nil and config.uarch.ram.length > 0, "step proof requires valid microarchitecture configuration")
         stderr("Gathering step proof: please wait\n")
-        util.dump_log(machine:step{ proofs = true, annotations = true }, io.stderr)
+        util.dump_log(machine:uarch_step{ proofs = true, annotations = true }, io.stderr)
     end
     if dump_pmas then
         machine:dump_pmas()

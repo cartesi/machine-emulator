@@ -2278,6 +2278,88 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_uarch_run_advance_until_halt, access_log_
     BOOST_REQUIRE_EQUAL(halt, 1);
 }
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(machine_uarch_reset_state, access_log_machine_fixture) {
+    char *err_msg{};
+    // ensure that uarch cycle is 0
+    uint64_t cycle{};
+    int error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(cycle, 0);
+
+    // ensure not halted
+    uint64_t halt{1};
+    error_code = cm_read_csr(_machine, CM_PROC_UARCH_HALT_FLAG, &halt, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(halt, 0);
+
+    // save initial uarch ram
+    std::vector<unsigned char> initial_uarch_ram(_machine_config.uarch.ram.length);
+    error_code = cm_read_memory(_machine, cartesi::PMA_UARCH_RAM_START, initial_uarch_ram.data(),
+        initial_uarch_ram.size(), &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+
+    // run until halts
+    auto status{CM_UARCH_HALTED};
+    error_code = cm_machine_uarch_run(_machine, 100, &status, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_HALTED);
+
+    // confirm if halt flag is set
+    error_code = cm_read_csr(_machine, CM_PROC_UARCH_HALT_FLAG, &halt, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(halt, 1);
+
+    // change the uarch ram in order to confirm if reset will restore it to the initial value
+    std::array<uint8_t, 8> random_bytes{1, 2, 3, 4, 5, 6, 7, 8};
+    error_code =
+        cm_write_memory(_machine, cartesi::PMA_UARCH_RAM_START, random_bytes.data(), random_bytes.size(), &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+
+    // grab the modified ram bytes
+    std::vector<unsigned char> modified_uarch_ram(_machine_config.uarch.ram.length);
+    error_code = cm_read_memory(_machine, cartesi::PMA_UARCH_RAM_START, modified_uarch_ram.data(),
+        modified_uarch_ram.size(), &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+
+    // ensure that modified ram is diferent from the one initially saved
+    BOOST_REQUIRE(initial_uarch_ram != modified_uarch_ram);
+
+    // reset state
+    error_code = cm_uarch_reset_state(_machine, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+
+    // halt flag should be cleared
+    error_code = cm_read_csr(_machine, CM_PROC_UARCH_HALT_FLAG, &halt, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(halt, 0);
+
+    // grab the ram after reset
+    std::vector<unsigned char> reset_uarch_ram(_machine_config.uarch.ram.length);
+    error_code = cm_read_memory(_machine, cartesi::PMA_UARCH_RAM_START, reset_uarch_ram.data(), reset_uarch_ram.size(),
+        &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+
+    // confirm ram was restored to initial state
+    BOOST_REQUIRE(initial_uarch_ram == reset_uarch_ram);
+
+    // refuse to reset state because it is not halted
+    error_code = cm_uarch_reset_state(_machine, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
+    BOOST_REQUIRE_EQUAL(err_msg, "reset uarch state is not allowed when uarch is not halted");
+    cm_delete_error_message(err_msg);
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_root_updates_test, ordinary_machine_fixture) {
     char *err_msg{};
 

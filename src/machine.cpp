@@ -1698,7 +1698,7 @@ void machine::write_memory(uint64_t address, const unsigned char *data, size_t l
     if (!data) {
         throw std::invalid_argument{"invalid data buffer"};
     }
-    pma_entry &pma = find_pma_entry(address, length);
+    pma_entry &pma = find_pma_entry(m_pmas, address, length);
     if (!pma.get_istart_M() || pma.get_istart_E()) {
         throw std::invalid_argument{"address range not entirely in memory PMA"};
     }

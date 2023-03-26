@@ -37,6 +37,9 @@ uarch_machine::uarch_machine(uarch_config c) : m_s{}, m_c{std::move(c)} {
 
 /// \brief Resets the value of halt flag
 void uarch_machine::reset_state(void) {
+    if (!m_s.halt_flag) {
+        throw std::runtime_error("reset uarch state is not allowed when uarch is not halted");
+    }
     load_config(m_c);
 }
 

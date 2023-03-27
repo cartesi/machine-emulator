@@ -1,4 +1,4 @@
-FROM alpine:3.12 as builder
+FROM alpine:3.17 as builder
 ARG RELEASE=no
 
 RUN apk add --no-cache \
@@ -45,7 +45,7 @@ RUN make -j$(nproc) dep && \
 RUN \
     chmod 0755 /opt/cartesi/bin/cartesi-machine /opt/cartesi/bin/cartesi-machine-tests
 
-FROM alpine:3.12
+FROM alpine:3.17
 
 RUN apk add --no-cache boost libstdc++ libgomp openssl c-ares zlib readline lua5.3
 

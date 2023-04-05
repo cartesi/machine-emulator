@@ -59,8 +59,8 @@ JSON object to stdout.
 
     voucher
       the JSON representation is
-          {"address": <address>, "payload": <string>}
-      where field "address" contains a 20-byte EVM address in hex
+          {"destination": <address>, "payload": <string>}
+      where field "destination" contains a 20-byte EVM address in hex
       (e.g., "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef").
 
     notice
@@ -233,9 +233,9 @@ end
 local function encode_voucher(arg)
     local j = read_json()
     local payload = assert(j.payload, "missing payload")
-    local address = unhexhash(j.address, "address")
+    local destination = unhexhash(j.destination, "destination")
     io.stdout:write(string.rep("\0", 12))
-    io.stdout:write(address)
+    io.stdout:write(destination)
     write_be256(64)
     write_be256(#payload)
     io.stdout:write(payload)
@@ -294,18 +294,18 @@ local function encode_string(arg)
 end
 
 local function decode_voucher(arg)
-    local address = hexhash(read_address())
+    local destination = hexhash(read_address())
     local offset = read_be256()
     assert(offset == 64, "expected offset 64, got " .. offset) -- skip offset
     local length = read_be256()
     local payload = length == 0 and '' or assert(io.stdin:read(length))
     io.stdout:write(json.encode({
-        address = address,
+        destination = destination,
         payload = payload
     }, {
         indent = true,
         keyorder = {
-            "address",
+            "destination",
             "payload"
         }
     }), "\n")

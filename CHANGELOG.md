@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Optimized interpreter instruction fetch
 - Optimized interpreter hot loop to commit pc/mcycle only when necessary
+- Renamed voucher field: address -> destination
 
 ## [0.13.0] - 2023-02-16
 ### Added

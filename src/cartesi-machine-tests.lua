@@ -326,9 +326,9 @@ where options are:
     include annotations in logs
 
   --periodic-action=<number-period>[,<number-start>]
-    stop execution every <number> of cycles and perform action. If
+    stop execution every <number> of uarch cycles and perform action. If
     <number-start> is given, the periodic action will start at that
-    mcycle. Only take effect with hash and step commands.
+    uarch cycle. Only take effect with hash and step commands.
     (default: none)
 
   --remote-address=<address>
@@ -540,48 +540,32 @@ end
 local function nothing()
 end
 
-local function get_next_action_mcycle(cycles)
-    if periodic_action then
-      local next_action_mcycle = periodic_action_start
-      if next_action_mcycle <= cycles then
-          next_action_mcycle = next_action_mcycle
-            + ((((cycles-periodic_action_start)//periodic_action_period)+1) * periodic_action_period)
-      end
-      return next_action_mcycle
-    end
-    return math.maxinteger
-end
-
-local function call_machine_run(machine, max_mcycle)
+local function advance_machine(machine, max_mcycle)
     return machine:run(max_mcycle)
 end
 
-local function run_machine(machine, ctx, max_mcycle, callback, call_machine_run_fn)
+local function run_machine(machine, ctx, max_mcycle, callback, advance_machine_fn)
     callback = callback or nothing
-    call_machine_run_fn = call_machine_run_fn or call_machine_run
-    local cycles = machine:read_mcycle()
-    local next_action_mcycle = get_next_action_mcycle(cycles)
-    while math.ult(cycles, max_mcycle) do
-        call_machine_run_fn(machine, math.min(next_action_mcycle, max_mcycle))
-        cycles = machine:read_mcycle()
-        if periodic_action and cycles == next_action_mcycle then
-            next_action_mcycle = next_action_mcycle + periodic_action_period
-            callback(machine)
-        end
+    advance_machine_fn = advance_machine_fn or advance_machine
+    local mcycle = machine:read_mcycle()
+    local total_cycles = 0
+    while math.ult(mcycle, max_mcycle) do
+        advance_machine_fn(machine, max_mcycle)
+        mcycle = machine:read_mcycle()
         if machine:read_iflags_H() then break end
     end
     ctx.read_htif_tohost_data = machine:read_htif_tohost_data()
     return machine:read_mcycle()
 end
 
-local function advance_one_mcycle_with_uarch(machine)
+local function advance_machine_with_uarch(machine, max_mcycle)
     if machine:uarch_run() == cartesi.UARCH_HALTED then
         machine:uarch_reset_state()
     end
 end
 
 local function run_machine_with_uarch(machine, ctx, max_mcycle, callback)
-    return run_machine(machine, ctx, max_mcycle, callback, advance_one_mcycle_with_uarch)
+    return run_machine(machine, ctx, max_mcycle, callback, advance_machine_with_uarch)
 end
 
 local function connect()
@@ -785,27 +769,42 @@ local function run_tests(tests, target)
     end
 end
 
-local function print_machine_hash(machine, out)
-    out:write(machine:read_mcycle(), " ", util.hexhash(machine:get_root_hash()), "\n")
-end
-
 local function hash(tests)
     local out = io.stdout
     if output then out = assert(io.open(output, "w"), "error opening file: " .. output) end
-    local print_callback = function(machine) print_machine_hash(machine, out) end
-    for _, test in ipairs(tests) do
+    for i, test in ipairs(tests) do
         local ram_image = test[1]
         local expected_cycles = test[2]
         local expected_payload = test[3] or 0
         local machine = build_machine(ram_image)
-        local cycles
-        out:write(ram_image, ":\n")
-        print_machine_hash(machine, out)
-        cycles = run_machine(machine, {},  2 * expected_cycles, print_callback)
-        print_machine_hash(machine, out)
-        if machine:read_htif_tohost_data() >> 1 ~= expected_payload or cycles ~= expected_cycles then
+        local total_cycles = 0
+        local max_mcycle = 2 * expected_cycles
+        while math.ult(machine:read_mcycle(), max_mcycle) do
+            local initial_cycle = machine:read_uarch_cycle()
+            local next_action_cycle = math.maxinteger
+            if periodic_action then
+                next_action_cycle = periodic_action_start
+                if next_action_cycle <= total_cycles then
+                    next_action_cycle = next_action_cycle
+                      + ((((total_cycles-periodic_action_start)//periodic_action_period)+1) * periodic_action_period)
+                end
+            end
+            local status = machine:uarch_run(initial_cycle + (next_action_cycle - total_cycles))
+            local final_cycle = machine:read_uarch_cycle()
+            total_cycles = total_cycles + (final_cycle - initial_cycle)
+            if not periodic_action or total_cycles ==  next_action_cycle then
+                out:write(machine:read_mcycle(), " ", final_cycle, " ", util.hexhash(machine:get_root_hash()), "\n")
+                total_cycles = total_cycles + 1
+            end
+            if status == cartesi.UARCH_HALTED then
+                machine:uarch_reset_state()
+                if machine:read_iflags_H() then break end
+            end
+        end
+        if machine:read_htif_tohost_data() >> 1 ~= expected_payload or machine:read_mcycle() ~= expected_cycles then
             os.exit(1, true)
         end
+        out:write(machine:read_mcycle(), " ", machine:read_uarch_cycle(), " ", util.hexhash(machine:get_root_hash()), "\n")
         machine:destroy()
     end
 end
@@ -816,14 +815,6 @@ local function print_machines(tests)
         local expected_cycles = test[2]
         print_machine(ram_image, expected_cycles)
     end
-end
-
-local function print_machine_json_log(machine, log_type, out, last)
-    local init_cycles = machine:read_mcycle()
-    local log = machine:uarch_step(log_type)
-    local final_cycles = machine:read_mcycle()
-    util.dump_json_log(log, init_cycles, final_cycles, out, 3)
-    if last then out:write('\n') else out:write(',\n') end
 end
 
 local function step(tests)
@@ -844,24 +835,48 @@ local function step(tests)
             indentout(out, 2, '"start": %u,\n', periodic_action_start)
         end
         indentout(out, 2, '"steps": [\n')
-        local cycles
-        print_machine_json_log(machine, log_type, out)
-        cycles = run_machine(machine, {}, 2 * expected_cycles, nothing, function(machine)
+        local total_logged_steps = 0
+        local total_uarch_cycles = 0
+        local max_mcycle = 2 * expected_cycles
+        while math.ult(machine:read_mcycle(), max_mcycle) do
+            local uarch_cycle_increment = 0
+            local next_action_uarch_cycle;
+            if periodic_action then
+                next_action_uarch_cycle = periodic_action_start
+                if next_action_uarch_cycle <= total_uarch_cycles then
+                    next_action_uarch_cycle = next_action_uarch_cycle
+                      + ((((total_uarch_cycles-periodic_action_start)//periodic_action_period)+1) * periodic_action_period)
+                end
+                uarch_cycle_increment = next_action_uarch_cycle - total_uarch_cycles
+            end
+             local init_uarch_cycle = machine:read_uarch_cycle()
+            machine:uarch_run(machine:read_uarch_cycle() + uarch_cycle_increment)
+             local final_uarch_cycle = machine:read_uarch_cycle()
+            total_uarch_cycles = total_uarch_cycles + (final_uarch_cycle - init_uarch_cycle)
             if machine:read_uarch_halt_flag() then
                 machine:uarch_reset_state()
+                if machine:read_iflags_H() then break end
             end
-            print_machine_json_log(machine, log_type, out)
-        end)
-        -- iflags_H was set, but uarch did not finish to interpret the last mcycle
-        while not machine:read_uarch_halt_flag() do
-            -- micro step until we complete interpreting the current mcycle
-            print_machine_json_log(machine, log_type, out)    
+            if not periodic_action or total_uarch_cycles ==  next_action_uarch_cycle then
+                local init_mcycle = machine:read_mcycle()
+                init_uarch_cycle = machine:read_uarch_cycle()
+                local log = machine:uarch_step(log_type)
+                local final_mcycle = machine:read_mcycle()
+                final_uarch_cycle = machine:read_uarch_cycle()
+                if total_logged_steps > 0 then out:write(',\n') end
+                util.dump_json_log(log, init_mcycle, init_uarch_cycle, final_mcycle, final_uarch_cycle, out, 3)
+                total_uarch_cycles = total_uarch_cycles + 1
+                total_logged_steps = total_logged_steps + 1
+                if machine:read_uarch_halt_flag() then
+                    machine:uarch_reset_state()
+                    if machine:read_iflags_H() then break end
+                end
+            end
         end
-        print_machine_json_log(machine, log_type, out, true)
         indentout(out, 2, "]\n")
         if tests[i+1] then indentout(out, 1, "},\n")
         else indentout(out, 1, "}\n") end
-        if machine:read_htif_tohost_data() >> 1 ~= expected_payload or cycles ~= expected_cycles then
+        if machine:read_htif_tohost_data() >> 1 ~= expected_payload or machine:read_mcycle() ~= expected_cycles then
             os.exit(1, true)
         end
         machine:destroy()
@@ -942,7 +957,7 @@ local function run_host_and_uarch_machines(target, ctx, max_mcycle, callback)
             break
         end
         host:run(1 + host_cycles)
-        advance_one_mcycle_with_uarch(uarch)
+        advance_machine_with_uarch(uarch)
         host_cycles = host:read_mcycle()
         uarch_cycles = uarch:read_mcycle()
         if host_cycles ~= uarch_cycles then

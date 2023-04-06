@@ -103,11 +103,13 @@ local function dump_json_log_accesses(accesses, out, indent)
     end
 end
 
-function _M.dump_json_log(log, init_cycles, final_cycles, out, indent)
+function _M.dump_json_log(log, init_mcycle, init_uarch_cycle, final_mcycle,final_uarch_cycle, out, indent)
     indent = indent or 0
     indentout(out, indent, '{\n')
-    indentout(out, indent+1, '"init_cycles": %u,\n', init_cycles)
-    indentout(out, indent+1, '"final_cycles": %u,\n', final_cycles)
+    indentout(out, indent+1, '"init_mcycle": %u,\n', init_mcycle)
+    indentout(out, indent+1, '"init_uarch_cycle": %u,\n', init_uarch_cycle)
+    indentout(out, indent+1, '"final_mcycle": %u,\n', final_mcycle)
+    indentout(out, indent+1, '"final_uarch_cycle": %u,\n', final_uarch_cycle)
     indentout(out, indent+1, '"accesses": [\n')
     dump_json_log_accesses(log.accesses, out, indent+2)
     indentout(out, indent+1, "]");

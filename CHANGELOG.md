@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactored uarch interpreter making it easier to port to Solidity
 - Changed return type of run_uarch from void to break reason
 - Renamed uarch related method names on machine class
+- Removed Alpine image generation from CI
 
 ## [0.13.0] - 2023-02-16
 ### Added

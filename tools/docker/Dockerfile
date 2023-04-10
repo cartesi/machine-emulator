@@ -15,7 +15,8 @@ RUN \
         build-essential vim wget git libreadline-dev libboost-coroutine-dev \
         libboost-context-dev libboost-filesystem-dev libboost-log-dev \
         libssl-dev openssl libc-ares-dev zlib1g-dev clang-tidy-14 clang-format-14 \
-        ca-certificates automake libtool patchelf cmake pkg-config lua5.3 liblua5.3-dev libb64-dev luarocks && \
+        ca-certificates automake libtool patchelf cmake pkg-config lua5.3 liblua5.3-dev \
+        libb64-dev libcrypto++-dev luarocks && \
     rm -rf /var/lib/apt/lists/*
 
 RUN \

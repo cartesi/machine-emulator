@@ -24,7 +24,7 @@ Docker targets:
 
 - C++ Compiler with support for C++17 (tested with GCC >= 8+ and Clang >= 8.x).
 - GNU Make >= 3.81
-- Cryptoapp 7.0.0
+- Cryptopp >= 7.0.0
 - GRPC 1.38.0
 - Lua 5.3.5
 - b64 >=  1.2.1
@@ -35,7 +35,7 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 #### Ubuntu 22.04
 
 ```
-sudo apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-filesystem-dev libboost-log-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates liblua5.3-dev libb64-dev luarocks
+sudo apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-filesystem-dev libboost-log-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates liblua5.3-dev libb64-dev luarocks libcrypto++-dev
 
 sudo luarocks install lpeg
 sudo luarocks install dkjson
@@ -48,7 +48,7 @@ sudo luarocks install md5
 
 ##### MacPorts
 ```
-sudo port install clang-14 automake boost libtool wget cmake pkgconfig c-ares zlib openssl lua libb64 lua-luarocks
+sudo port install clang-14 automake boost libtool wget cmake pkgconfig c-ares zlib openssl lua libb64 libcryptopp lua-luarocks
 
 sudo luarocks install lpeg
 sudo luarocks install dkjson
@@ -60,7 +60,7 @@ sudo luarocks install md5
 
 ##### Homebrew
 ```
-brew install llvm@12 automake boost libomp wget cmake pkg-config c-ares zlib openssl lua@5.3 libb64 luarocks
+brew install llvm@12 automake boost libomp wget cmake pkg-config c-ares zlib openssl lua@5.3 libb64 libcryptopp luarocks
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install lpeg
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install dkjson
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install luasocket

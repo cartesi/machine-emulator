@@ -41,7 +41,7 @@ BUILDBASE := $(abspath build)
 BUILDDIR = $(BUILDBASE)/$(UNAME)_$(shell uname -m)
 DOWNLOADDIR := $(DEPDIR)/downloads
 SUBCLEAN := $(addsuffix .clean,$(SRCDIR) uarch third-party/riscv-arch-tests)
-DEPDIRS := $(addprefix $(DEPDIR)/,cryptopp-CRYPTOPP_7_0_0 grpc mongoose-7.9)
+DEPDIRS := $(addprefix $(DEPDIR)/,grpc mongoose-7.9)
 DEPCLEAN := $(addsuffix .clean,$(DEPDIRS))
 COREPROTO := lib/grpc-interfaces/core.proto
 GRPC_VERSION ?= v1.50.0
@@ -82,7 +82,7 @@ endif
 
 # Check if some binary dependencies already exists on build directory to skip
 # downloading and building them.
-DEPBINS := $(addprefix $(BUILDDIR)/,lib/libcryptopp.$(LIB_EXTENSION) lib/libgrpc.$(LIB_EXTENSION) include/nlohmann/json.hpp include/mongoose.h)
+DEPBINS := $(addprefix $(BUILDDIR)/,lib/libgrpc.$(LIB_EXTENSION) include/nlohmann/json.hpp include/mongoose.h)
 
 all: source-default
 
@@ -149,13 +149,6 @@ source-default:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR)
 uarch:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C uarch
-$(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 $(BUILDDIR)/lib/libcryptopp.$(LIB_EXTENSION): | $(BUILDDIR) $(DOWNLOADDIR)
-	if [ ! -d $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 ]; then tar -xzf $(DOWNLOADDIR)/CRYPTOPP_7_0_0.tar.gz -C $(DEPDIR); fi
-	$(MAKE) -C $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 shared
-	$(MAKE) -C $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 static
-	$(MAKE) -C $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 libcryptopp.pc
-	$(MAKE) -C $(DEPDIR)/cryptopp-CRYPTOPP_7_0_0 PREFIX=$(BUILDDIR) install
-	if [ "$(UNAME)" = "Darwin" ]; then install_name_tool -id @rpath/libcryptopp.$(LIB_EXTENSION) $(BUILDDIR)/lib/libcryptopp.$(LIB_EXTENSION); fi
 
 $(BUILDDIR)/include/nlohmann/json.hpp: | $(BUILDDIR) $(DOWNLOADDIR)
 	mkdir -p $(BUILDDIR)/include/nlohmann

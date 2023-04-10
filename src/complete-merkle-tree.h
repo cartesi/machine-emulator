@@ -73,6 +73,11 @@ public:
         return get_node_hash(0, get_log2_root_size());
     }
 
+    /// \brief Returns the hash of a node at a given address of a given size
+    /// \param address Node address
+    /// \param log2_size Log<sub>2</sub> size subintended by node
+    const hash_type &get_node_hash(address_type address, int log2_size) const;
+
     /// \brief Returns proof for a given node
     /// \param address Node address
     /// \param log2_size Log<sub>2</sub> size subintended by node
@@ -105,11 +110,6 @@ private:
     int get_log2_leaf_size(void) const {
         return m_log2_leaf_size;
     }
-
-    /// \brief Returns the hash of a node at a given address of a given size
-    /// \param address Node address
-    /// \param log2_size Log<sub>2</sub> size subintended by node
-    const hash_type &get_node_hash(address_type address, int log2_size) const;
 
     /// \brief Update node hashes when a new set of non-pristine nodes is added
     /// to the leaf level

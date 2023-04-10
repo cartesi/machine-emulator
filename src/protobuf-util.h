@@ -73,15 +73,16 @@ CM_API machine_merkle_tree::hash_type get_proto_hash(const CartesiMachine::Hash 
 /// \param proto_h Pointer to proto Hash receiving result of conversion
 CM_API void set_proto_hash(const machine_merkle_tree::hash_type &h, CartesiMachine::Hash *proto_h);
 
-/// \brief Converts C++ proof to proto Proof
+/// \brief Converts C++ Merkle tree proof to proto Merkle tree Proof
 /// \param p C++ proof to convert
 /// \param proto_p Pointer to proto Proof receiving result of conversion
-CM_API void set_proto_proof(const machine_merkle_tree::proof_type &p, CartesiMachine::MerkleTreeProof *proto_p);
+CM_API void set_proto_merkle_tree_proof(const machine_merkle_tree::proof_type &p,
+    CartesiMachine::MerkleTreeProof *proto_p);
 
 /// \brief Converts proto Proof to C++ proof
 /// \param proto_proof Proto proof to convert
 /// \returns Converted C++ proof
-CM_API machine_merkle_tree::proof_type get_proto_proof(const CartesiMachine::MerkleTreeProof &proto_proof);
+CM_API machine_merkle_tree::proof_type get_proto_merkle_tree_proof(const CartesiMachine::MerkleTreeProof &proto_proof);
 
 /// \brief Converts C++ access_log to proto Access_Log
 /// \param al C++ access_log to convert

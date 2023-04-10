@@ -23,12 +23,14 @@
 
 #include <cryptopp/filters.h>
 #include <cryptopp/hex.h>
+#include <unordered_map>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #pragma GCC diagnostic ignored "-Wtype-limits"
+#include <boost/endian/conversion.hpp>
 #include <google/protobuf/util/json_util.h>
 #include <grpc++/grpc++.h>
 
@@ -115,11 +117,17 @@ public:
         return m_stub->InspectState(&context, request, &response);
     }
 
-    Status finish_epoch(const FinishEpochRequest &request) {
+    Status finish_epoch(const FinishEpochRequest &request, FinishEpochResponse &response) {
+        ClientContext context;
+        init_client_context(context);
+        return m_stub->FinishEpoch(&context, request, &response);
+    }
+
+    Status delete_epoch(const DeleteEpochRequest &request) {
         ClientContext context;
         Void response;
         init_client_context(context);
-        return m_stub->FinishEpoch(&context, request, &response);
+        return m_stub->DeleteEpoch(&context, request, &response);
     }
 
     Status end_session(const EndSessionRequest &request) {
@@ -616,7 +624,7 @@ static void init_valid_advance_state_request(AdvanceStateRequest &request, const
     *address = get_voucher_address(input_index);
     input_metadata->set_block_number(block_number);
     input_metadata->set_timestamp(static_cast<uint64_t>(std::time(nullptr)));
-    input_metadata->set_epoch_index(epoch);
+    input_metadata->set_epoch_index(0);
     input_metadata->set_input_index(input_index);
 
     auto *input_payload = request.mutable_input_payload();
@@ -677,12 +685,12 @@ void assert_bool(bool value, const std::string &msg, const std::string &file, in
 #define ASSERT_STATUS_CODE(s, f, v) assert_status_code(s, f, v, __FILE__, __LINE__)
 
 static void test_get_version(const std::function<void(const std::string &title, test_function f)> &test) {
-    test("The server-manager server version should be 0.6.x", [](ServerManagerClient &manager) {
+    test("The server-manager server version should be 0.7.x", [](ServerManagerClient &manager) {
         Versioning::GetVersionResponse response;
         Status status = manager.get_version(response);
         ASSERT_STATUS(status, "GetVersion", true);
         ASSERT((response.version().major() == 0), "Version Major should be 0");
-        ASSERT((response.version().minor() == 6), "Version Minor should be 6");
+        ASSERT((response.version().minor() == 7), "Version Minor should be 6");
     });
 }
 
@@ -985,8 +993,174 @@ static void wait_pending_inputs_to_be_processed(ServerManagerClient &manager, Ge
     }
 }
 
+static machine_merkle_tree::proof_type assemble_merkle_proof(int log2_root_size,
+    const machine_merkle_tree::hash_type &target_hash, const machine_merkle_tree::hash_type &root_hash,
+    const google::protobuf::RepeatedPtrField<::CartesiMachine::Hash> &siblings, uint64_t input_index) {
+    if (log2_root_size - siblings.size() != LOG2_KECCAK_SIZE) {
+        throw std::invalid_argument("wrong number of sibling hashes");
+    }
+    machine_merkle_tree::proof_type p{log2_root_size, LOG2_KECCAK_SIZE};
+    for (int i = 0; i < siblings.size(); ++i) {
+        p.set_sibling_hash(get_proto_hash(siblings[i]), LOG2_KECCAK_SIZE + i);
+    }
+    p.set_target_address(input_index << LOG2_KECCAK_SIZE);
+    p.set_target_hash(target_hash);
+    p.set_root_hash(root_hash);
+    return p;
+}
+
+static void assemble_output_epoch_trees(FinishEpochResponse &response, cartesi::complete_merkle_tree &vouchers_tree,
+    cartesi::complete_merkle_tree &notices_tree, uint64_t input_count, bool skipped = false) {
+    cryptopp_keccak_256_hasher h;
+    if (response.proofs_size() == 0) {
+        auto hash =
+            skipped ? cryptopp_keccak_256_hasher::hash_type{} : get_data_hash(h, ilog2(MEMORY_REGION_LENGTH), "");
+        for (uint64_t i = 0; i < input_count; i++) {
+            vouchers_tree.push_back(hash);
+            notices_tree.push_back(hash);
+        }
+        return;
+    }
+    uint64_t input_index = 0;
+    std::unordered_map<uint64_t, std::pair<uint64_t, uint64_t>> outputs_per_input;
+    for (const auto &proof : response.proofs()) {
+        if (outputs_per_input.count(proof.validity().input_index()) == 0) {
+            input_index = proof.validity().input_index();
+            outputs_per_input[input_index] = std::make_pair(0, 0);
+        }
+        auto &[voucher_count, notice_count] = outputs_per_input.at(input_index);
+        if (proof.output_enum() == OutputEnum::VOUCHER) {
+            voucher_count++;
+        } else if (proof.output_enum() == OutputEnum::NOTICE) {
+            notice_count++;
+        } else {
+            ASSERT(false, "Invalid proof output type");
+        }
+    }
+    ASSERT(input_index == input_count - 1, "input_index should match input_count - 1");
+    for (uint64_t i = 0; i <= input_index; i++) {
+        const auto &[voucher_count, notice_count] = outputs_per_input.at(i);
+        auto voucher_root_hash = get_voucher_root_hash(h, i, voucher_count);
+        auto notice_root_hash = get_notice_root_hash(h, i, notice_count);
+        vouchers_tree.push_back(voucher_root_hash);
+        notices_tree.push_back(notice_root_hash);
+    }
+}
+
+static uint64_t get_abi_encoded_context(const std::string &context) {
+    using namespace boost::endian;
+    const auto *end = context.data() + context.size();
+    return endian_load<uint64_t, sizeof(uint64_t), order::big>(
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        reinterpret_cast<const unsigned char *>(end) - sizeof(uint64_t));
+}
+
+static void verify_proof(FinishEpochResponse &response, const Proof &proof, uint64_t epoch_index,
+    const cartesi::complete_merkle_tree &vouchers_tree, const cartesi::complete_merkle_tree &notices_tree) {
+    ASSERT(!proof.context().empty(), "Proof should have a valid context");
+    ASSERT(get_abi_encoded_context(proof.context()) == epoch_index,
+        "Proof context should match ABI encoded epoch index");
+
+    ASSERT(proof.has_validity(), "Proof should have an OutputValidityProof instance");
+    const auto &validity = proof.validity();
+    // Check output indices
+    ASSERT(proof.output_index() == validity.output_index(), "Proof should have a valid output index");
+    // Check if validity proof has all the required fields
+    ASSERT(validity.has_output_hashes_root_hash() && !validity.output_hashes_root_hash().data().empty(),
+        "Validity proof should have a valid output hashes root hash");
+    ASSERT(validity.has_vouchers_epoch_root_hash() && !validity.vouchers_epoch_root_hash().data().empty(),
+        "Validity proof should have a valid vouchers epoch root hash");
+    ASSERT(validity.has_notices_epoch_root_hash() && !validity.notices_epoch_root_hash().data().empty(),
+        "Validity proof should have a valid notices epoch root hash");
+    ASSERT(validity.has_machine_state_hash() && !validity.machine_state_hash().data().empty(),
+        "Validity proof should have a valid machine state hash");
+    ASSERT(validity.keccak_in_hashes_siblings_size() > 0, "Proof should have keccak in hashes siblings");
+    ASSERT(validity.output_hashes_in_epoch_siblings_size() > 0, "Proof should have output in hashes epoch siblings");
+
+    // Check if validity proof fields match the ones in finish epoch response
+    ASSERT(validity.machine_state_hash().data() == response.machine_hash().data(),
+        "Validity proof machine state hash should should match the one in finish epoch response");
+    ASSERT(validity.vouchers_epoch_root_hash().data() == response.vouchers_epoch_root_hash().data(),
+        "Validity proof vouchers epoch root hash should should match the one in finish epoch response");
+    ASSERT(validity.notices_epoch_root_hash().data() == response.notices_epoch_root_hash().data(),
+        "Validity proof notices epoch root hash should should match the one in finish epoch response");
+
+    // verify proofs
+    cryptopp_keccak_256_hasher h;
+    auto metadata_log2_size = ilog2(MEMORY_REGION_LENGTH);
+    const auto &keccak_in_hashes_siblings = validity.keccak_in_hashes_siblings();
+    const auto &output_hashes_in_epoch_siblings = validity.output_hashes_in_epoch_siblings();
+    const auto &output_hashes_root_hash = get_proto_hash(validity.output_hashes_root_hash());
+
+    if (proof.output_enum() == OutputEnum::VOUCHER) {
+        ASSERT(output_hashes_root_hash ==
+                vouchers_tree.get_node_hash(validity.input_index() << LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE),
+            "Received output hashes root hash should match the calculated one");
+
+        const auto &output_target_hash = get_voucher_keccak_hash(h, validity.input_index());
+        auto p1 = assemble_merkle_proof(metadata_log2_size, output_target_hash, output_hashes_root_hash,
+            keccak_in_hashes_siblings, validity.input_index());
+        ASSERT(p1.verify(h),
+            "OutputValidityProof output_hashes_root_hash and keccak_in_hashes_siblings verification failed");
+
+        const auto &output_epoch_root_hash = get_proto_hash(validity.vouchers_epoch_root_hash());
+        ASSERT(output_epoch_root_hash == vouchers_tree.get_root_hash(),
+            "Received vouchers epoch root hash should match the calculated one");
+
+        auto p2 = assemble_merkle_proof(LOG2_ROOT_SIZE, output_hashes_root_hash, output_epoch_root_hash,
+            output_hashes_in_epoch_siblings, validity.input_index());
+        ASSERT(p2.verify(h),
+            "OutputValidityProof vouchers_epoch_root_hash and output_hashes_in_epoch_siblings verification failed");
+
+    } else {
+        ASSERT(output_hashes_root_hash ==
+                notices_tree.get_node_hash(validity.input_index() << LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE),
+            "Received output hashes root hash should match the calculated one");
+
+        const auto &output_target_hash = get_notice_keccak_hash(h, validity.input_index());
+        auto p1 = assemble_merkle_proof(metadata_log2_size, output_target_hash, output_hashes_root_hash,
+            keccak_in_hashes_siblings, validity.input_index());
+        ASSERT(p1.verify(h),
+            "OutputValidityProof output_hashes_root_hash and keccak_in_hashes_siblings verification failed");
+
+        const auto &output_epoch_root_hash = get_proto_hash(validity.notices_epoch_root_hash());
+        ASSERT(output_epoch_root_hash == notices_tree.get_root_hash(),
+            "Received notices epoch root hash should match the calculated one");
+
+        auto p2 = assemble_merkle_proof(LOG2_ROOT_SIZE, output_hashes_root_hash, output_epoch_root_hash,
+            output_hashes_in_epoch_siblings, validity.input_index());
+        ASSERT(p2.verify(h),
+            "OutputValidityProof notices_epoch_root_hash and output_hashes_in_epoch_siblings verification failed");
+    }
+}
+
+static void validate_finish_epoch_response(FinishEpochResponse &response, uint64_t epoch_index, uint64_t input_count,
+    bool skipped = false) {
+    ASSERT(response.has_machine_hash() && !response.machine_hash().data().empty(),
+        "Finish epoch response should have a valid machine hash");
+    ASSERT(response.has_vouchers_epoch_root_hash() && !response.vouchers_epoch_root_hash().data().empty(),
+        "Finish epoch response should have a valid root hash for Merkle tree of voucher hashes memory ranges");
+    ASSERT(response.has_notices_epoch_root_hash() && !response.notices_epoch_root_hash().data().empty(),
+        "Finish epoch response should have a valid root hash for Merkle tree of notices hashes memory ranges");
+
+    cartesi::complete_merkle_tree vouchers_tree{LOG2_ROOT_SIZE, LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE};
+    cartesi::complete_merkle_tree notices_tree{LOG2_ROOT_SIZE, LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE};
+    assemble_output_epoch_trees(response, vouchers_tree, notices_tree, input_count, skipped);
+
+    // Chech vouchers and notices epoch root hashes
+    ASSERT(get_proto_hash(response.vouchers_epoch_root_hash()) == vouchers_tree.get_root_hash(),
+        "Received vouchers epoch root hash should match the calculated one");
+    ASSERT(get_proto_hash(response.notices_epoch_root_hash()) == notices_tree.get_root_hash(),
+        "Received notices epoch root hash should match the calculated one");
+
+    // Verify proofs
+    for (const auto &proof : response.proofs()) {
+        verify_proof(response, proof, epoch_index, vouchers_tree, notices_tree);
+    }
+}
+
 static void end_session_after_processing_pending_inputs(ServerManagerClient &manager, const std::string &session_id,
-    uint64_t epoch, bool accept_tainted = false) {
+    uint64_t epoch, bool accept_tainted = false, bool skipped = false) {
     GetEpochStatusRequest status_request;
     GetEpochStatusResponse status_response;
 
@@ -999,10 +1173,13 @@ static void end_session_after_processing_pending_inputs(ServerManagerClient &man
     if ((!accept_tainted && !status_response.has_taint_status()) && (status_response.state() != EpochState::FINISHED) &&
         (status_response.processed_inputs_size() != 0)) {
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, status_request.session_id(), status_request.epoch_index(),
             status_response.processed_inputs_size());
-        Status status = manager.finish_epoch(epoch_request);
+        Status status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, status_response.epoch_index(),
+            status_response.processed_inputs_size(), skipped);
     }
 
     // EndSession
@@ -1037,17 +1214,17 @@ static void test_advance_state(const std::function<void(const std::string &title
         ASSERT_STATUS(status, "StartSession", true);
 
         // enqueue first
-        AdvanceStateRequest advance_request;
-        init_valid_advance_state_request(advance_request, session_request.session_id(),
+        AdvanceStateRequest advance_request1;
+        init_valid_advance_state_request(advance_request1, session_request.session_id(),
             session_request.active_epoch_index(), 0);
-        status = manager.advance_state(advance_request);
+        status = manager.advance_state(advance_request1);
         ASSERT_STATUS(status, "AdvanceState", true);
 
         // enqueue second
-        advance_request.set_current_input_index(advance_request.current_input_index() + 1);
-        auto *input_metadata = advance_request.mutable_input_metadata();
-        input_metadata->set_input_index(advance_request.current_input_index());
-        status = manager.advance_state(advance_request);
+        AdvanceStateRequest advance_request2;
+        init_valid_advance_state_request(advance_request2, session_request.session_id(),
+            session_request.active_epoch_index(), 1);
+        status = manager.advance_state(advance_request2);
         ASSERT_STATUS(status, "AdvanceState", true);
 
         end_session_after_processing_pending_inputs(manager, session_request.session_id(),
@@ -1148,10 +1325,12 @@ static void test_advance_state(const std::function<void(const std::string &title
 
         // finish epoch
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
         // try to enqueue input on ended session
         AdvanceStateRequest advance_request;
@@ -1176,10 +1355,12 @@ static void test_advance_state(const std::function<void(const std::string &title
 
         // finish epoch
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
         AdvanceStateRequest advance_request;
         init_valid_advance_state_request(advance_request, session_request.session_id(),
@@ -1199,10 +1380,12 @@ static void test_advance_state(const std::function<void(const std::string &title
         ASSERT_STATUS(status, "StartSession", true);
 
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
         AdvanceStateRequest advance_request;
         init_valid_advance_state_request(advance_request, session_request.session_id(),
@@ -1325,10 +1508,12 @@ static void test_advance_state(const std::function<void(const std::string &title
 
             // finish epoch
             FinishEpochRequest epoch_request;
+            FinishEpochResponse epoch_response;
             init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
                 session_request.active_epoch_index(), 0);
-            status = manager.finish_epoch(epoch_request);
+            status = manager.finish_epoch(epoch_request, epoch_response);
             ASSERT_STATUS(status, "FinishEpoch", true);
+            validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
             advance_request.mutable_input_metadata()->set_epoch_index(session_request.active_epoch_index());
             status = manager.advance_state(advance_request);
@@ -1358,10 +1543,12 @@ static void test_advance_state(const std::function<void(const std::string &title
 
             // finish epoch
             FinishEpochRequest epoch_request;
+            FinishEpochResponse epoch_response;
             init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
                 session_request.active_epoch_index(), 0);
-            status = manager.finish_epoch(epoch_request);
+            status = manager.finish_epoch(epoch_request, epoch_response);
             ASSERT_STATUS(status, "FinishEpoch", true);
+            validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
             advance_request.mutable_input_metadata()->set_epoch_index(session_request.active_epoch_index() + 1);
             status = manager.advance_state(advance_request);
@@ -1539,10 +1726,12 @@ static void test_get_session_status(const std::function<void(const std::string &
 
         // finish epoch
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
         // GetSessionStatus
         status = manager.get_session_status(status_request, status_response);
@@ -1558,8 +1747,9 @@ static void test_get_session_status(const std::function<void(const std::string &
         // finish epoch
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index() + 1, 0);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index() + 1, 0);
 
         // GetSessionStatus
         status = manager.get_session_status(status_request, status_response);
@@ -1621,75 +1811,14 @@ static void check_processed_input(ProcessedInput &processed_input, uint64_t inde
     int report_count) {
     // processed_input
     ASSERT(processed_input.input_index() == index, "processed input index should sequential");
-    ASSERT(processed_input.has_most_recent_machine_hash(), "processed input should contain a most_recent_machine_hash");
-    ASSERT(!processed_input.most_recent_machine_hash().data().empty(),
-        "processed input should contain a most_recent_machine_hash and it should not be empty");
-    ASSERT(processed_input.has_voucher_hashes_in_epoch(), "result should have voucher_hashes_in_epoch");
-    ASSERT(processed_input.has_notice_hashes_in_epoch(), "result should have notice_hashes_in_epoch");
     ASSERT(processed_input.reports_size() == report_count,
         "processed input reports size should be equal to report_count");
     ASSERT(processed_input.status() == CompletionStatus::ACCEPTED, "processed input status should be ACCEPTED");
     ASSERT(processed_input.has_accepted_data(), "processed input should contain accepted data");
 
     const auto &result = processed_input.accepted_data();
-    ASSERT(result.has_voucher_hashes_in_machine(), "result should have voucher_hashes_in_machine");
     ASSERT(result.vouchers_size() == voucher_count, "result outputs size should be equal to output_count");
-    ASSERT(result.has_notice_hashes_in_machine(), "result should have notice_hashes_in_machine");
     ASSERT(result.notices_size() == notice_count, "result messages size should be equal to message_count");
-
-    // verify proofs
-    cryptopp_keccak_256_hasher h;
-    auto voucher_root_hash = get_voucher_root_hash(h, index, result.vouchers_size());
-    auto notice_root_hash = get_notice_root_hash(h, index, result.notices_size());
-    auto metadata_log2_size = ilog2(MEMORY_REGION_LENGTH);
-    cartesi::complete_merkle_tree vouchers_tree{LOG2_ROOT_SIZE, LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE};
-    cartesi::complete_merkle_tree notices_tree{LOG2_ROOT_SIZE, LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE};
-
-    for (uint64_t i = 0; i <= index; i++) {
-        auto voucher_root_hash = get_voucher_root_hash(h, i, result.vouchers_size());
-        auto notice_root_hash = get_notice_root_hash(h, i, result.notices_size());
-        vouchers_tree.push_back(voucher_root_hash);
-        notices_tree.push_back(notice_root_hash);
-    }
-
-    auto voucher_hashes_in_machine_proof = get_proto_proof(result.voucher_hashes_in_machine());
-    ASSERT(voucher_hashes_in_machine_proof.get_log2_target_size() == metadata_log2_size,
-        "voucher_hashes_in_machine log2 target size should match");
-    ASSERT(voucher_hashes_in_machine_proof.get_target_hash() == voucher_root_hash,
-        "voucher_hashes_in_machine target hash should match");
-    ASSERT(voucher_hashes_in_machine_proof.verify(h), "voucher_hashes_in_machine proof should be valid");
-
-    auto calculated_vouchers_in_epoch_proof = vouchers_tree.get_proof(index << LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE);
-    auto vouchers_in_epoch_proof = get_proto_proof(processed_input.voucher_hashes_in_epoch());
-    ASSERT(vouchers_in_epoch_proof.get_log2_target_size() == calculated_vouchers_in_epoch_proof.get_log2_target_size(),
-        "vouchers_hashes_in_epoch log2 target size should match");
-    ASSERT(vouchers_in_epoch_proof.get_target_hash() == calculated_vouchers_in_epoch_proof.get_target_hash(),
-        "vouchers_hashes_in_epoch target hash should match");
-    ASSERT(vouchers_in_epoch_proof.get_log2_root_size() == calculated_vouchers_in_epoch_proof.get_log2_root_size(),
-        "vouchers_hashes_in_epoch log2 root size should match");
-    ASSERT(vouchers_in_epoch_proof.get_root_hash() == calculated_vouchers_in_epoch_proof.get_root_hash(),
-        "vouchers_hashes_in_epoch root hash should match");
-    ASSERT(vouchers_in_epoch_proof.verify(h), "vouchers_in_epoch proof should be valid");
-
-    auto notice_hashes_in_machine_proof = get_proto_proof(result.notice_hashes_in_machine());
-    ASSERT(notice_hashes_in_machine_proof.get_log2_target_size() == metadata_log2_size,
-        "notices_hashes_in_machine log2 target size should match");
-    ASSERT(notice_hashes_in_machine_proof.get_target_hash() == notice_root_hash,
-        "notices_hashes_in_machine target hash should match");
-    ASSERT(notice_hashes_in_machine_proof.verify(h), "notices_hashes_in_machine proof should be valid");
-
-    auto calculated_notices_in_epoch_proof = notices_tree.get_proof(index << LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE);
-    auto notice_hashes_in_epoch_proof = get_proto_proof(processed_input.notice_hashes_in_epoch());
-    ASSERT(notice_hashes_in_epoch_proof.get_log2_target_size() ==
-            calculated_notices_in_epoch_proof.get_log2_target_size(),
-        "notices_hashes_in_epoch log2 target size should match");
-    ASSERT(notice_hashes_in_epoch_proof.get_target_hash() == calculated_notices_in_epoch_proof.get_target_hash(),
-        "notices_hashes_in_epoch target hash should match");
-    ASSERT(notice_hashes_in_epoch_proof.get_log2_root_size() == calculated_notices_in_epoch_proof.get_log2_root_size(),
-        "notices_hashes_in_epoch log2 root size should match");
-    ASSERT(notice_hashes_in_epoch_proof.get_root_hash() == calculated_notices_in_epoch_proof.get_root_hash(),
-        "notices_hashes_in_epoch root hash should match");
-    ASSERT(notice_hashes_in_epoch_proof.verify(h), "notices_hashes_in_epoch proof should be valid");
 
     // reports
     for (const auto &report : processed_input.reports()) {
@@ -1699,86 +1828,30 @@ static void check_processed_input(ProcessedInput &processed_input, uint64_t inde
 
     // vouchers
     for (const auto &voucher : result.vouchers()) {
-        ASSERT(voucher.has_keccak() && !voucher.keccak().data().empty(), "voucher should have a keccak hash");
-        ASSERT(voucher.has_address(), "voucher should have an address");
+        ASSERT(voucher.has_destination(), "voucher should have an address");
+        ASSERT(voucher.destination().data() == get_voucher_address(index), "voucher address should match");
         ASSERT(!voucher.payload().empty(), "voucher payload should not be empty");
-        ASSERT(voucher.has_keccak_in_voucher_hashes(), "voucher should have keccak_in_voucher_hashes");
-        ASSERT(voucher.keccak().data() == get_voucher_keccak(index), "voucher keccak should match");
-        ASSERT(voucher.address().data() == get_voucher_address(index), "voucher address should match");
         ASSERT(voucher.payload() == get_voucher_payload(index), "voucher payload should match");
-        auto keccak_proof = get_proto_proof(voucher.keccak_in_voucher_hashes());
-        ASSERT(keccak_proof.get_log2_target_size() == LOG2_KECCAK_SIZE,
-            "keccak_in_voucher_hashes log2 target size should match");
-        ASSERT(keccak_proof.get_target_hash() == get_voucher_keccak_hash(h, index),
-            "keccak_in_voucher_hashes target hash should match");
-        ASSERT(keccak_proof.get_log2_root_size() == metadata_log2_size,
-            "keccak_in_voucher_hashes log2 root size should match");
-        ASSERT(keccak_proof.get_root_hash() == voucher_root_hash, "keccak_in_voucher_hashes root hash should match");
-        ASSERT(keccak_proof.verify(h), "keccak_in_voucher_hashes proof should be valid");
     }
 
     // notices
     for (const auto &notice : result.notices()) {
-        ASSERT(notice.has_keccak() && !notice.keccak().data().empty(), "notice should have a keccak hash");
         ASSERT(!notice.payload().empty(), "notice payload should not be empty");
-        ASSERT(notice.has_keccak_in_notice_hashes(), "notice should have keccak_in_notice_hashes");
-        ASSERT(notice.keccak().data() == get_notice_keccak(index), "notice keccak should match");
         ASSERT(notice.payload() == get_notice_payload(index), "notice payload should match");
-        auto keccak_proof = get_proto_proof(notice.keccak_in_notice_hashes());
-        ASSERT(keccak_proof.get_log2_target_size() == LOG2_KECCAK_SIZE,
-            "keccak_in_notice_hashes log2 target size should match");
-        ASSERT(keccak_proof.get_target_hash() == get_notice_keccak_hash(h, index),
-            "keccak_in_notice_hashes target hash should match");
-        ASSERT(keccak_proof.get_log2_root_size() == metadata_log2_size,
-            "keccak_in_notice_hashes log2 root size should match");
-        ASSERT(keccak_proof.get_root_hash() == notice_root_hash, "keccak_in_notice_hashes root hash should match");
-        ASSERT(keccak_proof.verify(h), "keccak_in_notice_hashes proof should be valid");
-    }
-}
-
-static void check_most_recent_epoch_root_hashes(const GetEpochStatusResponse &status_response) {
-    auto most_recent_vouchers_epoch_root_hash = get_proto_hash(status_response.most_recent_vouchers_epoch_root_hash());
-    auto most_recent_notices_epoch_root_hash = get_proto_hash(status_response.most_recent_notices_epoch_root_hash());
-    if (status_response.processed_inputs_size() == 0) {
-        cartesi::complete_merkle_tree tree{LOG2_ROOT_SIZE, LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE};
-        ASSERT(most_recent_vouchers_epoch_root_hash == tree.get_root_hash(),
-            "most_recent_vouchers_epoch_root_hash should match");
-        ASSERT(most_recent_notices_epoch_root_hash == tree.get_root_hash(),
-            "most_recent_notices_epoch_root_hash should match");
-    } else {
-        auto processed_input = (status_response.processed_inputs())[status_response.processed_inputs_size() - 1];
-        auto vouchers_in_epoch_proof = get_proto_proof(processed_input.voucher_hashes_in_epoch());
-        auto notice_hashes_in_epoch_proof = get_proto_proof(processed_input.notice_hashes_in_epoch());
-        ASSERT(most_recent_vouchers_epoch_root_hash == vouchers_in_epoch_proof.get_root_hash(),
-            "most_recent_vouchers_epoch_root_hash should match");
-        ASSERT(most_recent_notices_epoch_root_hash == notice_hashes_in_epoch_proof.get_root_hash(),
-            "most_recent_notices_epoch_root_hash should match");
     }
 }
 
 static void check_empty_epoch_status(const GetEpochStatusResponse &status_response, const std::string &session_id,
     uint64_t epoch_index, EpochState epoch_state, uint64_t pending_inputs) {
-    cartesi::complete_merkle_tree merkle_tree{LOG2_ROOT_SIZE, LOG2_KECCAK_SIZE, LOG2_KECCAK_SIZE};
-    const auto empty_root_hash = merkle_tree.get_root_hash();
     ASSERT(status_response.session_id() == session_id,
         "status response session_id should be the same as the one created");
     ASSERT(status_response.epoch_index() == epoch_index,
         "status response epoch_index should be the same as the one created");
     ASSERT(status_response.state() == epoch_state, "status response state should be " + EpochState_Name(epoch_state));
-    ASSERT(status_response.has_most_recent_machine_hash(), "status response should have most_recent_machine_hash");
-    ASSERT(status_response.has_most_recent_vouchers_epoch_root_hash(),
-        "status response should have most_recent_vouchers_epoch_root_hash");
-    ASSERT(status_response.has_most_recent_notices_epoch_root_hash(),
-        "status response should have most_recent_notices_epoch_root_hash");
-    ASSERT(get_proto_hash(status_response.most_recent_vouchers_epoch_root_hash()) == empty_root_hash,
-        "status response most_recent_vouchers_epoch_root_hash should match");
-    ASSERT(get_proto_hash(status_response.most_recent_notices_epoch_root_hash()) == empty_root_hash,
-        "status response most_recent_notices_epoch_root_hash should match");
     ASSERT(status_response.processed_inputs_size() == 0, "status response processed_inputs size should be 0");
     ASSERT(status_response.pending_input_count() == pending_inputs,
         "status response pending_input_count should be " + std::to_string(pending_inputs));
     ASSERT(!status_response.has_taint_status(), "status response should not be tainted");
-    check_most_recent_epoch_root_hashes(status_response);
 }
 
 static void test_get_epoch_status(const std::function<void(const std::string &title, test_function f)> &test) {
@@ -1867,10 +1940,12 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
         // finish epoch
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
         // status on old epoch
         GetEpochStatusRequest status_request;
@@ -1963,14 +2038,15 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
             auto processed_input = (status_response.processed_inputs())[0];
             check_processed_input(processed_input, 0, 2, 2, 2);
-            check_most_recent_epoch_root_hashes(status_response);
 
             // Finish epoch
             FinishEpochRequest epoch_request;
+            FinishEpochResponse epoch_response;
             init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
                 session_request.active_epoch_index(), status_response.processed_inputs_size());
-            status = manager.finish_epoch(epoch_request);
+            status = manager.finish_epoch(epoch_request, epoch_response);
             ASSERT_STATUS(status, "FinishEpoch", true);
+            validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 1);
 
             // EndSession
             EndSessionRequest end_session_request;
@@ -1988,10 +2064,12 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
             // finish epoch
             FinishEpochRequest epoch_request;
+            FinishEpochResponse epoch_response;
             init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
                 session_request.active_epoch_index(), 0);
-            status = manager.finish_epoch(epoch_request);
+            status = manager.finish_epoch(epoch_request, epoch_response);
             ASSERT_STATUS(status, "FinishEpoch", true);
+            validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
             // enqueue
             AdvanceStateRequest advance_request;
@@ -2020,12 +2098,11 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
             auto processed_input = (status_response.processed_inputs())[0];
             check_processed_input(processed_input, 0, 2, 2, 2);
-            check_most_recent_epoch_root_hashes(status_response);
 
             // Finish epoch
             init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
                 session_request.active_epoch_index() + 1, status_response.processed_inputs_size());
-            status = manager.finish_epoch(epoch_request);
+            status = manager.finish_epoch(epoch_request, epoch_response);
             ASSERT_STATUS(status, "FinishEpoch", true);
 
             // EndSession
@@ -2070,14 +2147,15 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
             auto processed_input = (status_response.processed_inputs())[0];
             check_processed_input(processed_input, 0, 0, 0, 0);
-            check_most_recent_epoch_root_hashes(status_response);
 
             // Finish epoch
             FinishEpochRequest epoch_request;
+            FinishEpochResponse epoch_response;
             init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
                 session_request.active_epoch_index(), status_response.processed_inputs_size());
-            status = manager.finish_epoch(epoch_request);
+            status = manager.finish_epoch(epoch_request, epoch_response);
             ASSERT_STATUS(status, "FinishEpoch", true);
+            validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 1);
 
             // EndSession
             EndSessionRequest end_session_request;
@@ -2120,12 +2198,6 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
             auto processed_input = (status_response.processed_inputs())[0];
             ASSERT(processed_input.input_index() == 0, "processed input index should sequential");
-            ASSERT(processed_input.has_most_recent_machine_hash(),
-                "processed input should contain a most_recent_machine_hash");
-            ASSERT(!processed_input.most_recent_machine_hash().data().empty(),
-                "processed input should contain a most_recent_machine_hash and it should not be empty");
-            ASSERT(processed_input.has_voucher_hashes_in_epoch(), "result should have voucher_hashes_in_epoch");
-            ASSERT(processed_input.has_notice_hashes_in_epoch(), "result should have notice_hashes_in_epoch");
             ASSERT(processed_input.reports_size() == 0, "processed input reports size should be equal to report_count");
             ASSERT(processed_input.status() == CompletionStatus::EXCEPTION,
                 "processed input status should be EXCEPTION");
@@ -2134,7 +2206,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
                 "exception data should contain the expected payload");
 
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
-                session_request.active_epoch_index(), false);
+                session_request.active_epoch_index(), false, true);
         });
 
     test("Should complete with CompletionStatus EXCEPTION after fatal error", [](ServerManagerClient &manager) {
@@ -2170,12 +2242,6 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
         auto processed_input = (status_response.processed_inputs())[0];
         ASSERT(processed_input.input_index() == 0, "processed_input input index should be 0");
-        ASSERT(processed_input.has_most_recent_machine_hash(),
-            "processed input should contain a most_recent_machine_hash");
-        ASSERT(!processed_input.most_recent_machine_hash().data().empty(),
-            "processed input should contain a most_recent_machine_hash and it should not be empty");
-        ASSERT(processed_input.has_voucher_hashes_in_epoch(), "result should have voucher_hashes_in_epoch");
-        ASSERT(processed_input.has_notice_hashes_in_epoch(), "result should have notice_hashes_in_epoch");
         ASSERT(processed_input.reports_size() == 0, "processed input reports size should be equal to report_count");
         ASSERT(processed_input.status() == CompletionStatus::EXCEPTION, "processed input status should be EXCEPTION");
         ASSERT(processed_input.has_exception_data(), "processed input should contain exception data");
@@ -2183,7 +2249,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             "exception data should contain the expected payload");
 
         end_session_after_processing_pending_inputs(manager, session_request.session_id(),
-            session_request.active_epoch_index());
+            session_request.active_epoch_index(), false, true);
     });
 
     test("Should complete with CompletionStatus EXCEPTION after rollup-http-server error",
@@ -2220,12 +2286,6 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
 
             auto processed_input = (status_response.processed_inputs())[0];
             ASSERT(processed_input.input_index() == 0, "processed_input input index should be 0");
-            ASSERT(processed_input.has_most_recent_machine_hash(),
-                "processed input should contain a most_recent_machine_hash");
-            ASSERT(!processed_input.most_recent_machine_hash().data().empty(),
-                "processed input should contain a most_recent_machine_hash and it should not be empty");
-            ASSERT(processed_input.has_voucher_hashes_in_epoch(), "result should have voucher_hashes_in_epoch");
-            ASSERT(processed_input.has_notice_hashes_in_epoch(), "result should have notice_hashes_in_epoch");
             ASSERT(processed_input.reports_size() == 0, "processed input reports size should be equal to report_count");
             ASSERT(processed_input.status() == CompletionStatus::EXCEPTION,
                 "processed input status should be EXCEPTION");
@@ -2234,7 +2294,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
                 "exception data should contain the expected payload");
 
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
-                session_request.active_epoch_index());
+                session_request.active_epoch_index(), false, true);
         });
 
     test("Should complete with first processed input as CompletionStatus CYCLE_LIMIT_EXCEEDED",
@@ -2280,7 +2340,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
                 "CompletionStatus should be CYCLE_LIMIT_EXCEEDED");
 
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
-                session_request.active_epoch_index());
+                session_request.active_epoch_index(), false, true);
         });
 
     test("Should complete with first processed input as CompletionStatus TIME_LIMIT_EXCEEDED",
@@ -2328,7 +2388,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
                 "CompletionStatus should be TIME_LIMIT_EXCEEDED");
 
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
-                session_request.active_epoch_index());
+                session_request.active_epoch_index(), false, true);
         });
 
     test("Should complete with session taint_status code DEADLINE_EXCEEDED", [](ServerManagerClient &manager) {
@@ -2411,7 +2471,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             ASSERT(processed_input.status() == CompletionStatus::REJECTED, "CompletionStatus should be REJECTED");
 
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
-                session_request.active_epoch_index());
+                session_request.active_epoch_index(), false, true);
         });
 
     test("Should complete with first processed input as CompletionStatus MACHINE_HALTED",
@@ -2454,7 +2514,7 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
                 "CompletionStatus should be MACHINE_HALTED");
 
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
-                session_request.active_epoch_index());
+                session_request.active_epoch_index(), false, true);
         });
 
     test("Should return valid InputResults after request completed with success", [](ServerManagerClient &manager) {
@@ -2490,7 +2550,6 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
         // processed_input
         auto processed_input = (status_response.processed_inputs())[0];
         check_processed_input(processed_input, 0, 2, 2, 2);
-        check_most_recent_epoch_root_hashes(status_response);
 
         // end session
         end_session_after_processing_pending_inputs(manager, session_request.session_id(),
@@ -2531,7 +2590,6 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             // processed_input
             auto processed_input = (status_response.processed_inputs())[0];
             check_processed_input(processed_input, 0, 0, 0, 0);
-            check_most_recent_epoch_root_hashes(status_response);
 
             // end session
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
@@ -2572,7 +2630,6 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             // processed_input
             auto processed_input = (status_response.processed_inputs())[0];
             check_processed_input(processed_input, 0, 1, 0, 0);
-            check_most_recent_epoch_root_hashes(status_response);
 
             // end session
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
@@ -2613,7 +2670,6 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             // processed_input
             auto processed_input = (status_response.processed_inputs())[0];
             check_processed_input(processed_input, 0, 0, 1, 0);
-            check_most_recent_epoch_root_hashes(status_response);
 
             // end session
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
@@ -2654,7 +2710,6 @@ static void test_get_epoch_status(const std::function<void(const std::string &ti
             // processed_input
             auto processed_input = (status_response.processed_inputs())[0];
             check_processed_input(processed_input, 0, 0, 0, 1);
-            check_most_recent_epoch_root_hashes(status_response);
 
             // end session
             end_session_after_processing_pending_inputs(manager, session_request.session_id(),
@@ -2986,10 +3041,12 @@ static void test_inspect_state(const std::function<void(const std::string &title
 
         // finish epoch
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
         InspectStateRequest inspect_request;
         init_valid_inspect_state_request(inspect_request, session_request.session_id(), 1);
@@ -3183,10 +3240,12 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
         ASSERT_STATUS(status, "StartSession", true);
 
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
         // end session
         EndSessionRequest end_session_request;
@@ -3202,10 +3261,11 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
         ASSERT_STATUS(status, "StartSession", true);
 
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
         epoch_request.set_session_id("NON-EXISTENT");
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", false);
         ASSERT_STATUS_CODE(status, "FinishEpoch", StatusCode::INVALID_ARGUMENT);
 
@@ -3229,9 +3289,10 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
         ASSERT_STATUS(status, "EndSession", true);
 
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", false);
         ASSERT_STATUS_CODE(status, "FinishEpoch", StatusCode::INVALID_ARGUMENT);
     });
@@ -3243,12 +3304,14 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
         ASSERT_STATUS(status, "StartSession", true);
 
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", false);
         ASSERT_STATUS_CODE(status, "FinishEpoch", StatusCode::INVALID_ARGUMENT);
 
@@ -3266,10 +3329,11 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
         ASSERT_STATUS(status, "StartSession", true);
 
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
         epoch_request.set_active_epoch_index(epoch_request.active_epoch_index() + 10);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", false);
         ASSERT_STATUS_CODE(status, "FinishEpoch", StatusCode::INVALID_ARGUMENT);
 
@@ -3289,10 +3353,12 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
 
         // Go to active_epoch_index = UINT64_MAX
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
         // status
         GetSessionStatusRequest status_request;
@@ -3302,7 +3368,7 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
         ASSERT_STATUS(status, "GetSessionStatus", true);
         ASSERT(status_response.active_epoch_index() == UINT64_MAX, "active epoch index should be UINT64_MAX");
 
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", false);
         ASSERT_STATUS_CODE(status, "FinishEpoch", StatusCode::OUT_OF_RANGE);
 
@@ -3332,10 +3398,11 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
         ASSERT_STATUS(status, "AdvanceState", true);
 
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
         epoch_request.set_processed_input_count(2);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", false);
         ASSERT_STATUS_CODE(status, "FinishEpoch", StatusCode::INVALID_ARGUMENT);
 
@@ -3351,10 +3418,11 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
         ASSERT_STATUS(status, "StartSession", true);
 
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0);
         epoch_request.set_processed_input_count(10);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", false);
         ASSERT_STATUS_CODE(status, "FinishEpoch", StatusCode::INVALID_ARGUMENT);
 
@@ -3375,11 +3443,13 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
         ASSERT(create_storage_directory(storage_dir), "test should be able to create directory");
 
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         std::string machine_dir = get_machine_directory(storage_dir, "test_" + manager.test_id());
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0, machine_dir);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
         ASSERT(check_session_store(machine_dir),
             "FinishEpoch should store machine to disk if storage directory is defined");
@@ -3404,10 +3474,11 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
             "test should be able to change directory permissions");
 
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         std::string machine_dir = get_machine_directory(storage_dir, "test_" + manager.test_id());
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0, machine_dir);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", false);
         ASSERT_STATUS_CODE(status, "FinishEpoch", StatusCode::ABORTED);
 
@@ -3432,18 +3503,20 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
         ASSERT(create_storage_directory(storage_dir), "test should be able to create directory");
 
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         std::string machine_dir = get_machine_directory(storage_dir, "test_" + manager.test_id());
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), 0, machine_dir);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
         ASSERT(check_session_store(machine_dir),
             "FinishEpoch should store machine to disk if storage directory is defined");
 
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index() + 1, 0, machine_dir);
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", false);
         ASSERT_STATUS_CODE(status, "FinishEpoch", StatusCode::ABORTED);
 
@@ -3467,11 +3540,13 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
             ASSERT(create_storage_directory(storage_dir), "test should be able to create directory");
 
             FinishEpochRequest epoch_request;
+            FinishEpochResponse epoch_response;
             std::string machine_dir = get_machine_directory(storage_dir, "test_" + manager.test_id());
             init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
                 session_request.active_epoch_index(), 0, machine_dir);
-            status = manager.finish_epoch(epoch_request);
+            status = manager.finish_epoch(epoch_request, epoch_response);
             ASSERT_STATUS(status, "FinishEpoch", true);
+            validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
 
             ASSERT(check_session_store(machine_dir),
                 "FinishEpoch should store machine to disk if storage directory is defined");
@@ -3526,18 +3601,182 @@ static void test_finish_epoch(const std::function<void(const std::string &title,
         ASSERT(status_response.epoch_index() == session_request.active_epoch_index(),
             "status response epoch_index should be 0");
         ASSERT(status_response.state() == EpochState::ACTIVE, "status response state should be ACTIVE");
-        ASSERT(status_response.processed_inputs_size() == 2, "status response processed_inputs size should be 1");
+        ASSERT(status_response.processed_inputs_size() == 2, "status response processed_inputs size should be 2");
         ASSERT(status_response.pending_input_count() == 0, "status response pending_input_count should 0");
         ASSERT(!status_response.has_taint_status(), "status response should not be tainted");
 
         // Finish epoch
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), status_response.processed_inputs_size());
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 2);
 
         // EndSession
+        EndSessionRequest end_session_request;
+        end_session_request.set_session_id(session_request.session_id());
+        status = manager.end_session(end_session_request);
+        ASSERT_STATUS(status, "EndSession", true);
+    });
+}
+
+static void test_delete_epoch(const std::function<void(const std::string &title, test_function f)> &test) {
+    test("Should complete a valid request with success", [](ServerManagerClient &manager) {
+        StartSessionRequest session_request = create_valid_start_session_request();
+        StartSessionResponse session_response;
+        Status status = manager.start_session(session_request, session_response);
+        ASSERT_STATUS(status, "StartSession", true);
+
+        // finish epoch
+        FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
+        init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
+            session_request.active_epoch_index(), 0);
+        status = manager.finish_epoch(epoch_request, epoch_response);
+        ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
+
+        GetEpochStatusRequest status_request;
+        status_request.set_session_id(session_request.session_id());
+        status_request.set_epoch_index(0);
+        GetEpochStatusResponse status_response;
+        status = manager.get_epoch_status(status_request, status_response);
+        ASSERT_STATUS(status, "GetEpochStatus", true);
+
+        // assert status_resonse content
+        check_empty_epoch_status(status_response, session_request.session_id(), session_request.active_epoch_index(),
+            EpochState::FINISHED, 0);
+
+        DeleteEpochRequest delete_request;
+        delete_request.set_session_id(session_request.session_id());
+        delete_request.set_epoch_index(0);
+        status = manager.delete_epoch(delete_request);
+        ASSERT_STATUS(status, "DeleteEpoch", true);
+
+        status = manager.get_epoch_status(status_request, status_response);
+        ASSERT_STATUS(status, "GetEpochStatus", false);
+
+        // end session
+        EndSessionRequest end_session_request;
+        end_session_request.set_session_id(session_request.session_id());
+        status = manager.end_session(end_session_request);
+        ASSERT_STATUS(status, "EndSession", true);
+    });
+
+    test("Should fail to complete with a invalid session id", [](ServerManagerClient &manager) {
+        DeleteEpochRequest delete_request;
+        delete_request.set_session_id("NON-EXISTENT");
+        delete_request.set_epoch_index(0);
+        Status status = manager.delete_epoch(delete_request);
+        ASSERT_STATUS(status, "DeleteEpoch", false);
+        ASSERT_STATUS_CODE(status, "DeleteEpoch", StatusCode::INVALID_ARGUMENT);
+    });
+
+    test("Should fail to complete with a ended session id", [](ServerManagerClient &manager) {
+        StartSessionRequest session_request = create_valid_start_session_request();
+        StartSessionResponse session_response;
+        Status status = manager.start_session(session_request, session_response);
+        ASSERT_STATUS(status, "StartSession", true);
+
+        // end session
+        EndSessionRequest end_session_request;
+        end_session_request.set_session_id(session_request.session_id());
+        status = manager.end_session(end_session_request);
+        ASSERT_STATUS(status, "EndSession", true);
+
+        // try to enqueue input on ended session
+        DeleteEpochRequest delete_request;
+        delete_request.set_session_id(session_request.session_id());
+        delete_request.set_epoch_index(0);
+        status = manager.delete_epoch(delete_request);
+        ASSERT_STATUS(status, "DeleteEpoch", false);
+        ASSERT_STATUS_CODE(status, "DeleteEpoch", StatusCode::INVALID_ARGUMENT);
+    });
+
+    test("Should fail to complete if epoch index is not valid", [](ServerManagerClient &manager) {
+        StartSessionRequest session_request = create_valid_start_session_request();
+        StartSessionResponse session_response;
+        Status status = manager.start_session(session_request, session_response);
+        ASSERT_STATUS(status, "StartSession", true);
+
+        // try to enqueue input on ended session
+        DeleteEpochRequest delete_request;
+        delete_request.set_session_id(session_request.session_id());
+        delete_request.set_epoch_index(session_request.active_epoch_index() + 10);
+        status = manager.delete_epoch(delete_request);
+        ASSERT_STATUS(status, "DeleteEpoch", false);
+        ASSERT_STATUS_CODE(status, "DeleteEpoch", StatusCode::INVALID_ARGUMENT);
+
+        // end session
+        EndSessionRequest end_session_request;
+        end_session_request.set_session_id(session_request.session_id());
+        status = manager.end_session(end_session_request);
+        ASSERT_STATUS(status, "EndSession", true);
+    });
+
+    test("Should fail to complete if epoch index is active", [](ServerManagerClient &manager) {
+        StartSessionRequest session_request = create_valid_start_session_request();
+        StartSessionResponse session_response;
+        Status status = manager.start_session(session_request, session_response);
+        ASSERT_STATUS(status, "StartSession", true);
+
+        // try to enqueue input on ended session
+        DeleteEpochRequest delete_request;
+        delete_request.set_session_id(session_request.session_id());
+        delete_request.set_epoch_index(session_request.active_epoch_index());
+        status = manager.delete_epoch(delete_request);
+        ASSERT_STATUS(status, "DeleteEpoch", false);
+        ASSERT_STATUS_CODE(status, "DeleteEpoch", StatusCode::INVALID_ARGUMENT);
+
+        // end session
+        EndSessionRequest end_session_request;
+        end_session_request.set_session_id(session_request.session_id());
+        status = manager.end_session(end_session_request);
+        ASSERT_STATUS(status, "EndSession", true);
+    });
+
+    test("Should fail to complete if epoch index was already erased", [](ServerManagerClient &manager) {
+        StartSessionRequest session_request = create_valid_start_session_request();
+        StartSessionResponse session_response;
+        Status status = manager.start_session(session_request, session_response);
+        ASSERT_STATUS(status, "StartSession", true);
+
+        // finish epoch
+        FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
+        init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
+            session_request.active_epoch_index(), 0);
+        status = manager.finish_epoch(epoch_request, epoch_response);
+        ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 0);
+
+        GetEpochStatusRequest status_request;
+        status_request.set_session_id(session_request.session_id());
+        status_request.set_epoch_index(0);
+        GetEpochStatusResponse status_response;
+        status = manager.get_epoch_status(status_request, status_response);
+        ASSERT_STATUS(status, "GetEpochStatus", true);
+
+        // assert status_resonse content
+        check_empty_epoch_status(status_response, session_request.session_id(), session_request.active_epoch_index(),
+            EpochState::FINISHED, 0);
+
+        DeleteEpochRequest delete_request;
+        delete_request.set_session_id(session_request.session_id());
+        delete_request.set_epoch_index(0);
+        status = manager.delete_epoch(delete_request);
+        ASSERT_STATUS(status, "DeleteEpoch", true);
+
+        status = manager.get_epoch_status(status_request, status_response);
+        ASSERT_STATUS(status, "GetEpochStatus", false);
+
+        status = manager.delete_epoch(delete_request);
+        ASSERT_STATUS(status, "DeleteEpoch", false);
+        ASSERT_STATUS_CODE(status, "DeleteEpoch", StatusCode::INVALID_ARGUMENT);
+
+        // end session
         EndSessionRequest end_session_request;
         end_session_request.set_session_id(session_request.session_id());
         status = manager.end_session(end_session_request);
@@ -3675,10 +3914,12 @@ static void test_session_simulations(const std::function<void(const std::string 
 
         // Finish epoch
         FinishEpochRequest epoch_request;
+        FinishEpochResponse epoch_response;
         init_valid_finish_epoch_request(epoch_request, session_request.session_id(),
             session_request.active_epoch_index(), status_response.processed_inputs_size());
-        status = manager.finish_epoch(epoch_request);
+        status = manager.finish_epoch(epoch_request, epoch_response);
         ASSERT_STATUS(status, "FinishEpoch", true);
+        validate_finish_epoch_response(epoch_response, session_request.active_epoch_index(), 2);
 
         // EndSession
         EndSessionRequest end_session_request;
@@ -3730,16 +3971,18 @@ static void test_session_simulations(const std::function<void(const std::string 
 
             // Finish epoch
             FinishEpochRequest epoch_request;
+            FinishEpochResponse epoch_response;
             init_valid_finish_epoch_request(epoch_request, session_request.session_id(), 0, 2);
-            status = manager.finish_epoch(epoch_request);
+            status = manager.finish_epoch(epoch_request, epoch_response);
             ASSERT_STATUS(status, "FinishEpoch", true);
+            validate_finish_epoch_response(epoch_response, 0, 2);
 
             // enqueue 0 epoch 1
-            init_valid_advance_state_request(advance_request, session_request.session_id(), 1, 0);
+            init_valid_advance_state_request(advance_request, session_request.session_id(), 1, 2);
             status = manager.advance_state(advance_request);
             ASSERT_STATUS(status, "AdvanceState", true);
             // enqueue 1 epoch 1
-            init_valid_advance_state_request(advance_request, session_request.session_id(), 1, 1);
+            init_valid_advance_state_request(advance_request, session_request.session_id(), 1, 3);
             status = manager.advance_state(advance_request);
             ASSERT_STATUS(status, "AdvanceState", true);
 
@@ -3755,16 +3998,16 @@ static void test_session_simulations(const std::function<void(const std::string 
             ASSERT(status_response.pending_input_count() == 0, "status response pending_input_count should 0");
             ASSERT(!status_response.has_taint_status(), "status response should not be tainted");
 
-            index = 0;
             for (auto processed_input : status_response.processed_inputs()) {
                 check_processed_input(processed_input, index, 2, 2, 2);
                 index++;
             }
 
             // Finish epoch
-            init_valid_finish_epoch_request(epoch_request, session_request.session_id(), 1, 2);
-            status = manager.finish_epoch(epoch_request);
+            init_valid_finish_epoch_request(epoch_request, session_request.session_id(), 1, 4);
+            status = manager.finish_epoch(epoch_request, epoch_response);
             ASSERT_STATUS(status, "FinishEpoch", true);
+            validate_finish_epoch_response(epoch_response, 1, 2);
 
             status_request.set_epoch_index(2);
             wait_pending_inputs_to_be_processed(manager, status_request, status_response, false,
@@ -3850,6 +4093,7 @@ static int run_tests(const char *address) {
     suite.add_test_set("GetEpochStatus", test_get_epoch_status);
     suite.add_test_set("InspectState", test_inspect_state);
     suite.add_test_set("FinishEpoch", test_finish_epoch);
+    suite.add_test_set("DeleteEpoch", test_delete_epoch);
     suite.add_test_set("EndSession", test_end_session);
     suite.add_test_set("Session Simulations", test_session_simulations);
     return suite.run();

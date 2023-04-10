@@ -226,7 +226,7 @@ machine_merkle_tree::hash_type get_proto_hash(const CartesiMachine::Hash &proto_
     return hash;
 }
 
-machine_merkle_tree::proof_type get_proto_proof(const CartesiMachine::MerkleTreeProof &proto_proof) {
+machine_merkle_tree::proof_type get_proto_merkle_tree_proof(const CartesiMachine::MerkleTreeProof &proto_proof) {
     int log2_target_size = static_cast<int>(proto_proof.log2_target_size());
     int log2_root_size = static_cast<int>(proto_proof.log2_root_size());
     machine_merkle_tree::proof_type p{log2_root_size, log2_target_size};
@@ -243,7 +243,7 @@ machine_merkle_tree::proof_type get_proto_proof(const CartesiMachine::MerkleTree
     return p;
 }
 
-void set_proto_proof(const machine_merkle_tree::proof_type &p, CartesiMachine::MerkleTreeProof *proto_p) {
+void set_proto_merkle_tree_proof(const machine_merkle_tree::proof_type &p, CartesiMachine::MerkleTreeProof *proto_p) {
     proto_p->set_target_address(p.get_target_address());
     proto_p->set_log2_target_size(p.get_log2_target_size());
     proto_p->set_log2_root_size(p.get_log2_root_size());
@@ -275,7 +275,7 @@ void set_proto_access_log(const access_log &al, CartesiMachine::AccessLog *proto
         proto_a->set_read(a.get_read().data(), a.get_read().size());
         proto_a->set_written(a.get_written().data(), a.get_written().size());
         if (al.get_log_type().has_proofs() && a.get_proof().has_value()) {
-            set_proto_proof(a.get_proof().value(), proto_a->mutable_proof());
+            set_proto_merkle_tree_proof(a.get_proof().value(), proto_a->mutable_proof());
         }
     }
     if (al.get_log_type().has_annotations()) {
@@ -358,7 +358,7 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
                 note = *pnt++;
             }
             if (has_proofs) {
-                a.set_proof(get_proto_proof(pac->proof()));
+                a.set_proof(get_proto_merkle_tree_proof(pac->proof()));
             }
             al.push_access(a, note.c_str());
             pac++;

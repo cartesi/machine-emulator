@@ -704,7 +704,7 @@ class handler_GetProof final : public handler<GetProofRequest, GetProofResponse>
         uint64_t address = req->address();
         int log2_size = static_cast<int>(req->log2_size());
         GetProofResponse resp;
-        set_proto_proof(hctx.m->get_proof(address, log2_size), resp.mutable_proof());
+        set_proto_merkle_tree_proof(hctx.m->get_proof(address, log2_size), resp.mutable_proof());
         return finish_ok(writer, resp);
     }
 

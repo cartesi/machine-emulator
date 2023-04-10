@@ -792,7 +792,7 @@ machine_merkle_tree::proof_type grpc_virtual_machine::do_get_proof(uint64_t addr
     request.set_log2_size(log2_size);
     ClientContext context;
     check_status(m_stub->get_stub()->GetProof(&context, request, &response));
-    return get_proto_proof(response.proof());
+    return get_proto_merkle_tree_proof(response.proof());
 }
 
 void grpc_virtual_machine::do_replace_memory_range(const memory_range_config &new_range) {

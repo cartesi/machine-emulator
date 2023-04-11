@@ -263,7 +263,7 @@ private:
         }
         // Found a readable memory range. Access host memory accordingly.
         uint64_t hoffset = paddr - pma.get_start();
-        auto hmem = pma.get_memory().get_host_memory();
+        auto *hmem = pma.get_memory().get_host_memory();
         auto data = aliased_aligned_read<uint64_t>(hmem + hoffset);
         log_read(paddr, data, "memory");
         return data;
@@ -274,7 +274,7 @@ private:
     /// \param data Pointer receiving register value
     uint64_t read_register(uint64_t paddr) {
         auto data = uarch_bridge::read_register(paddr, m_s, m_us);
-        auto name = uarch_bridge::get_register_name(paddr);
+        const auto *name = uarch_bridge::get_register_name(paddr);
         log_read(paddr, data, name);
         return data;
     }
@@ -312,7 +312,7 @@ private:
     /// \param data New register value
     void write_register(uint64_t paddr, uint64_t data) {
         auto old_data = uarch_bridge::read_register(paddr, m_s, m_us);
-        auto name = uarch_bridge::get_register_name(paddr);
+        const auto *name = uarch_bridge::get_register_name(paddr);
         uarch_bridge::write_register(paddr, m_s, data);
         log_before_write_write_and_update(paddr, old_data, data, name);
     }

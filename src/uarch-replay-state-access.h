@@ -337,7 +337,7 @@ private:
     uint64_t do_read_word(uint64_t paddr) {
         assert((paddr & (sizeof(uint64_t) - 1)) == 0);
         // Get the name of the state register identified by this address
-        auto name = uarch_bridge::get_register_name(paddr);
+        const auto *name = uarch_bridge::get_register_name(paddr);
         if (!name) {
             // this is a regular memory access
             name = "memory";
@@ -348,7 +348,7 @@ private:
     void do_write_word(uint64_t paddr, uint64_t data) {
         assert((paddr & (sizeof(uint64_t) - 1)) == 0);
         // Get the name of the state register identified by this address
-        auto name = uarch_bridge::get_register_name(paddr);
+        const auto *name = uarch_bridge::get_register_name(paddr);
         if (!name) {
             // this is a regular memory access
             name = "memory";

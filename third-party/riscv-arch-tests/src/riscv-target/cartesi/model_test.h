@@ -34,9 +34,9 @@
 
 //RV_COMPLIANCE_HALT
 
-#define RVMODEL_HALT                                                    \
-        li  t0, UARCH_MMIO_HALT_ADDR_DEF;                               \
-        li  t1, UARCH_MMIO_HALT_VALUE_DEF;                              \
+#define RVMODEL_HALT                                                  \
+        li  t0, UARCH_HALT_FLAG_SHADDOW_ADDR_DEF;                     \
+        li  t1, UARCH_HALT_FLAG_HALT_VALUE_DEF;                       \
         sd t1, 0(t0)                                                  \
 
 #define RVMODEL_BOOT

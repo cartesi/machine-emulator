@@ -106,8 +106,7 @@ function test_util.create_test_uarch_program()
     local file_path = os.tmpname()
     local f = io.open(file_path, 'wb')
     f:write(string.pack("I4", 0x07b00513)) --   li	a0,123
-    f:write(string.pack("I4", 0x7ffff2b7)) --   lui	t0,0x7ffff   UARCH_MMIO_HALT_ADDR_DEF
-    f:write(string.pack("I4", 0x0182829b)) --   addiw	t0,t0,24
+    f:write(string.pack("I4", 0x32800293)) --   li t0, UARCH_HALT_FLAG_SHADDOW_ADDR_DEF (0x328)
     f:write(string.pack("I4", 0x00100313)) --   li	t1,1           UARCH_MMIO_HALT_VALUE_DEF
     f:write(string.pack("I4", 0x0062b023)) --   sd	t1,0(t0)       Halt uarch
     f:close()

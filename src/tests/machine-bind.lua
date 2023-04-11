@@ -588,9 +588,9 @@ do_test("advance micro cycles until halt",
     function(machine)
         assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
         assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
-        local status = machine:uarch_run(100)
+        local status = machine:uarch_run()
         assert(status == cartesi.UARCH_HALTED)
-        assert(machine:read_uarch_cycle() == 5, "uarch cycle should be 5")
+        assert(machine:read_uarch_cycle() == 4, "uarch cycle should be 4")
         assert(machine:read_uarch_halt_flag() == true, "machine should be halted")
     end
 )
@@ -709,7 +709,7 @@ do_test("dumped log content should match",
             "  1: read uarch.cycle@0x320(800): 0x0(0)\n" ..
             "  2: read uarch.halt_flag@0x328(808): 0x0(0)\n" ..
             "  3: read uarch.pc@0x330(816): 0x70000000(1879048192)\n" ..
-            "  4: read memory@0x70000000(1879048192): 0x7ffff2b707b00513(9223357429799978259)\n" ..
+            "  4: read memory@0x70000000(1879048192): 0x3280029307b00513(3638911329427784979)\n" ..
             "  begin addi\n" ..
             "    5: read uarch.x@0x340(832): 0x0(0)\n" ..
             "    6: write uarch.x@0x390(912): 0x0(0) -> 0x7b(123)\n" ..

@@ -22,7 +22,7 @@ namespace cartesi {
 
 using namespace std::string_literals;
 
-const pma_entry::flags uarch_machine::m_ram_flags{
+const pma_entry::flags ram_flags{
     true,                  // R
     true,                  // W
     true,                  // X
@@ -51,12 +51,12 @@ void uarch_machine::load_config(uarch_config &c) {
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
         m_s.x[i] = c.processor.x[i];
     }
-    // Register memory PMAs
+    // Register RAM pma
     if (!c.ram.image_filename.empty()) {
         m_s.ram = make_callocd_memory_pma_entry("uarch RAM", PMA_UARCH_RAM_START, c.ram.length, c.ram.image_filename)
-                      .set_flags(m_ram_flags);
+                      .set_flags(ram_flags);
     } else if (c.ram.length > 0) {
-        m_s.ram = make_callocd_memory_pma_entry("uarch RAM", PMA_UARCH_RAM_START, c.ram.length).set_flags(m_ram_flags);
+        m_s.ram = make_callocd_memory_pma_entry("uarch RAM", PMA_UARCH_RAM_START, c.ram.length).set_flags(ram_flags);
     }
 }
 

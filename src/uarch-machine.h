@@ -27,20 +27,11 @@
 
 namespace cartesi {
 
-/// \class machine
-/// \brief Cartesi Machine implementation
+/// \class uarch_machine
+/// \brief Cartesi Machine Microarchitecture implementation
 class uarch_machine final {
     uarch_state m_s;  ///< Opaque microarchitecture machine state
     uarch_config m_c; ///< Copy of initialization config
-
-    static const pma_entry::flags m_rom_flags;      ///< PMA flags used for ROM
-    static const pma_entry::flags m_ram_flags;      ///< PMA flags used for RAM
-    static const pma_entry::flags m_reserved_flags; ///< PMA flags used for the reserved range
-
-    /// \brief Allocates a new PMA entry.
-    /// \param pma PMA entry to add to machine.
-    /// \returns Reference to corresponding entry in machine state.
-    pma_entry &register_pma_entry(pma_entry &&pma);
 
     // Setup the machine with the provided configuration
     void load_config(uarch_config &c);
@@ -107,9 +98,6 @@ public:
 
     /// \brief Sets the value of halt flag
     void set_halt_flag(void);
-
-    /// \brief Resets the value of halt flag
-    void reset_halt_flag(void);
 
     /// \brief Reads the length of uarch RAM
     /// \returns Length of uarch RAM

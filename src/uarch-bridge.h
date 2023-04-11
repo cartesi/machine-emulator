@@ -49,6 +49,11 @@ public:
             return;
         }
         switch (static_cast<shadow_state_csr>(paddr)) {
+            case shadow_state_csr::uarch_halt_flag:
+                if (data != uarch_halt_flag_halt_value) {
+                    throw std::runtime_error("invalid value written  microarchitecture halt flag");
+                }
+                return uarch_halt(us);
             case shadow_state_csr::pc:
                 s.pc = data;
                 return;
@@ -143,11 +148,6 @@ public:
                 break;
         }
         switch (static_cast<uarch_mmio_address>(paddr)) {
-            case uarch_mmio_address::halt:
-                if (data != uarch_mmio_halt_value) {
-                    throw std::runtime_error("invalid write attempt to microarchitecture halting address");
-                }
-                return uarch_halt(us);
             case uarch_mmio_address::putchar:
                 return uarch_putchar(data);
             case uarch_mmio_address::abort:
@@ -156,7 +156,6 @@ public:
                 }
                 return uarch_abort();
         }
-
         throw std::runtime_error("invalid write memory access from microarchitecture");
     }
 
@@ -183,6 +182,8 @@ public:
             return data;
         }
         switch (static_cast<shadow_state_csr>(paddr)) {
+            case shadow_state_csr::uarch_halt_flag:
+                return us.halt_flag;
             case shadow_state_csr::pc:
                 return s.pc;
             case shadow_state_csr::fcsr:
@@ -262,16 +263,9 @@ public:
         }
 
         switch (static_cast<uarch_mmio_address>(paddr)) {
-            case uarch_mmio_address::halt:
-                if (us.halt_flag) {
-                    return uarch_mmio_halt_value;
-                }
-                return 0;
             case uarch_mmio_address::putchar:
-                //??P Not too elegant, but if we don't allow reading this address, the record state access will fail
                 return 0;
             case uarch_mmio_address::abort:
-                //??P Not too elegant, but if we don't allow reading this address, the record state access will fail
                 return 0;
         }
         throw std::runtime_error("invalid read memory access from microarchitecture");
@@ -282,6 +276,8 @@ public:
     /// \returns The register name, if paddr maps to a register, or nullptr otherwise.
     static const char *get_register_name(uint64_t paddr) {
         switch (static_cast<shadow_state_csr>(paddr)) {
+            case shadow_state_csr::uarch_halt_flag:
+                return "uarch.halt_flag";
             case shadow_state_csr::pc:
                 return "pc";
             case shadow_state_csr::fcsr:
@@ -361,8 +357,6 @@ public:
         }
 
         switch (static_cast<uarch_mmio_address>(paddr)) {
-            case uarch_mmio_address::halt:
-                return "uarch.halt_flag";
             case uarch_mmio_address::putchar:
                 return "uarch.putchar";
             case uarch_mmio_address::abort:

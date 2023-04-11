@@ -268,12 +268,12 @@ private:
             }
             const auto &proof = access.get_proof().value();
             if (proof.get_target_address() != access.get_address()) {
-                throw std::invalid_argument{"111 mismatch in write access " + std::to_string(access_to_report()) +
+                throw std::invalid_argument{"mismatch in write access " + std::to_string(access_to_report()) +
                     " address and its proof address"};
             }
             if (m_root_hash != proof.get_root_hash()) {
                 throw std::invalid_argument{
-                    "mismatch in xxxx write access " + std::to_string(access_to_report()) + " root hash"};
+                    "mismatch in write access " + std::to_string(access_to_report()) + " root hash"};
             }
             machine_merkle_tree::hash_type rolling_hash;
             get_hash(m_hasher, access.get_read(), rolling_hash);

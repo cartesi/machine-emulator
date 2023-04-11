@@ -325,8 +325,9 @@ private:
     void write_register(uint64_t paddr, uint64_t data) {
         auto old_data = uarch_bridge::read_register(paddr, m_s, m_us);
         const auto *name = uarch_bridge::get_register_name(paddr);
+        log_before_write(paddr, old_data, data, name);
         uarch_bridge::write_register(paddr, m_s, m_us, data);
-        log_before_write_write_and_update(paddr, old_data, data, name);
+        update_after_write(paddr);
     }
 
     /// \brief Fallback to error on all other word sizes

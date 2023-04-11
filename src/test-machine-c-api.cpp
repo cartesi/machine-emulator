@@ -1923,10 +1923,9 @@ public:
 
         uint32_t test_uarch_ram[] = {
             0x07b00513, //  li	a0,123
-            0x7ffff2b7, //  lui	t0,0x7ffff      UARCH_MMIO_HALT_ADDR_DEF
-            0x0182829b, //  addiw	t0,t0,24
-            0x00100313, //  li	t1,1            UARCH_MMIO_HALT_VALUE_DEF
-            0x0062b023, //  sd	t1,0(t0)        Halt microarchitecture at uarch cycle 5
+            0x32800293, // li t0, UARCH_HALT_FLAG_SHADDOW_ADDR_DEF (0x328)
+            0x00100313, //  li	t1,1
+            0x0062b023, //  sd	t1,0(t0)  Halt microarchitecture at uarch cycle 4
         };
         std::ofstream of(_uarch_ram_path, std::ios::binary);
         of.write(static_cast<char *>(static_cast<void *>(&test_uarch_ram)), sizeof(test_uarch_ram));
@@ -2062,7 +2061,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, acce
     cm_delete_access_log(_access_log);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test_null_error_placeholder_test, access_log_machine_fixture) {
+// loxa
+BOOST_FIXTURE_TEST_CASE_NOLINT(uarch_step_complex_test_null_error_placeholder_test, access_log_machine_fixture) {
     cm_hash hash0;
     cm_hash hash1;
 
@@ -2082,6 +2082,95 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test_null_error_placeholder_test, ac
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 
     cm_delete_access_log(_access_log);
+}
+
+// sunda
+BOOST_FIXTURE_TEST_CASE_NOLINT(uarch_step_until_halt, access_log_machine_fixture) {
+    cm_hash hash0{};
+    cm_hash hash1{};
+    cm_hash hash2{};
+    cm_hash hash3{};
+    cm_hash hash4{};
+
+    int error_code{};
+    uint64_t cycle{};
+    uint64_t halt{1};
+
+    // at micro cycle 0
+    error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cycle, 0);
+
+    // not halted
+    error_code = cm_read_csr(_machine, CM_PROC_UARCH_HALT_FLAG, &halt, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(halt, 0);
+
+    // get initial hash
+    error_code = cm_get_root_hash(_machine, &hash0, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+
+    // step 1
+    error_code = cm_uarch_step(_machine, _log_type, false, &_access_log, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    error_code = cm_verify_access_log(_access_log, &_runtime_config, false, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    // get hash after step
+    error_code = cm_get_root_hash(_machine, &hash1, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    // verify
+    error_code = cm_verify_state_transition(&hash0, _access_log, &hash1, &_runtime_config, false, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    cm_delete_access_log(_access_log);
+
+    // step 2
+    error_code = cm_uarch_step(_machine, _log_type, false, &_access_log, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    error_code = cm_verify_access_log(_access_log, &_runtime_config, false, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    // get hash after step
+    error_code = cm_get_root_hash(_machine, &hash2, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    // verify
+    error_code = cm_verify_state_transition(&hash1, _access_log, &hash2, &_runtime_config, false, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    cm_delete_access_log(_access_log);
+
+    // step 3
+    error_code = cm_uarch_step(_machine, _log_type, false, &_access_log, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    error_code = cm_verify_access_log(_access_log, &_runtime_config, false, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    // get hash after step
+    error_code = cm_get_root_hash(_machine, &hash3, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    // verify
+    error_code = cm_verify_state_transition(&hash2, _access_log, &hash3, &_runtime_config, false, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    cm_delete_access_log(_access_log);
+
+    // step 4
+    error_code = cm_uarch_step(_machine, _log_type, false, &_access_log, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    error_code = cm_verify_access_log(_access_log, &_runtime_config, false, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    // get hash after step
+    error_code = cm_get_root_hash(_machine, &hash4, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    // verify
+    error_code = cm_verify_state_transition(&hash3, _access_log, &hash4, &_runtime_config, false, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    cm_delete_access_log(_access_log);
+
+    // at micro cycle 4
+    error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cycle, 4);
+
+    // halted
+    error_code = cm_read_csr(_machine, CM_PROC_UARCH_HALT_FLAG, &halt, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(halt, 1);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
@@ -2257,8 +2346,29 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_uarch_run_advance_until_halt, access_log_
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     BOOST_REQUIRE_EQUAL(halt, 0);
 
-    // advance cycles past the point where the program halts (see hard-coded micro code in test fixture )
+    // save initial hash
+    cm_hash initial_hash{};
+    cm_get_root_hash(_machine, &initial_hash, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+
+    // advance one micro cycle
     auto status{CM_UARCH_HALTED};
+    error_code = cm_machine_uarch_run(_machine, 1, &status, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_REACHED_TARGET_CYCLE);
+
+    error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cycle, 1);
+
+    // hash after one step should be different from the initial hash
+    cm_hash one_cycle_hash{};
+    cm_get_root_hash(_machine, &one_cycle_hash, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK(0 != memcmp(initial_hash, one_cycle_hash, sizeof(cm_hash)));
+
+    // advance more micro cycles past the point where the program halts (see hard-coded micro code in test fixture )
     error_code = cm_machine_uarch_run(_machine, 100, &status, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
@@ -2269,7 +2379,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_uarch_run_advance_until_halt, access_log_
     error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_REQUIRE_EQUAL(cycle, 5);
+    BOOST_REQUIRE_EQUAL(cycle, 4);
 
     // assert halt flag is set
     error_code = cm_read_csr(_machine, CM_PROC_UARCH_HALT_FLAG, &halt, &err_msg);
@@ -2313,6 +2423,21 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_uarch_reset_state, access_log_machine_fix
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     BOOST_REQUIRE_EQUAL(halt, 1);
+
+    // alted at micro cycle 4
+    error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cycle, 4);
+
+    // try uarch_run past micro cycle 4
+    error_code = cm_machine_uarch_run(_machine, 100, &status, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_HALTED);
+
+    // should stay at micro cycle 4
+    error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, nullptr);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cycle, 4);
 
     // change the uarch ram in order to confirm if reset will restore it to the initial value
     std::array<uint8_t, 8> random_bytes{1, 2, 3, 4, 5, 6, 7, 8};

@@ -264,6 +264,19 @@ static auto new_UarchRun_handler(handler_context &hctx) {
         });
 }
 
+static auto new_UarchResetState_handler(handler_context &hctx) {
+    return new_handler<Void, Void>(
+        "UarchResetState",
+        [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
+            auto *cq = hctx.completion_queue.get();
+            hctx.async_service.RequestUarchResetState(&server_context, &request, &writer, cq, cq, self);
+        },
+        [&hctx](auto &client_context, auto &request) {
+            auto *cq = hctx.completion_queue.get();
+            return hctx.stub->AsyncUarchResetState(&client_context, request, cq);
+        });
+}
+
 static auto new_Store_handler(handler_context &hctx) {
     return new_handler<StoreRequest, Void>(
         "Store",
@@ -330,9 +343,9 @@ static auto new_Shutdown_handler(handler_context &hctx) {
         side_effect::shutdown);
 }
 
-static auto new_Step_handler(handler_context &hctx) {
+static auto new_UarchStep_handler(handler_context &hctx) {
     return new_handler<UarchStepRequest, UarchStepResponse>(
-        "Step",
+        "UarchStep",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
             hctx.async_service.RequestUarchStep(&server_context, &request, &writer, cq, cq, self);
@@ -457,6 +470,45 @@ static auto new_WriteX_handler(handler_context &hctx) {
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
             return hctx.stub->AsyncWriteX(&client_context, request, cq);
+        });
+}
+
+static auto new_GetUarchXAddress_handler(handler_context &hctx) {
+    return new_handler<GetUarchXAddressRequest, GetUarchXAddressResponse>(
+        "GetUarchXAddress",
+        [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
+            auto *cq = hctx.completion_queue.get();
+            hctx.async_service.RequestGetUarchXAddress(&server_context, &request, &writer, cq, cq, self);
+        },
+        [&hctx](auto &client_context, auto &request) {
+            auto *cq = hctx.completion_queue.get();
+            return hctx.stub->AsyncGetUarchXAddress(&client_context, request, cq);
+        });
+}
+
+static auto new_ReadUarchX_handler(handler_context &hctx) {
+    return new_handler<ReadUarchXRequest, ReadUarchXResponse>(
+        "ReadUarchX",
+        [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
+            auto *cq = hctx.completion_queue.get();
+            hctx.async_service.RequestReadUarchX(&server_context, &request, &writer, cq, cq, self);
+        },
+        [&hctx](auto &client_context, auto &request) {
+            auto *cq = hctx.completion_queue.get();
+            return hctx.stub->AsyncReadUarchX(&client_context, request, cq);
+        });
+}
+
+static auto new_WriteUarchX_handler(handler_context &hctx) {
+    return new_handler<WriteUarchXRequest, Void>(
+        "WriteUarchX",
+        [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
+            auto *cq = hctx.completion_queue.get();
+            hctx.async_service.RequestWriteUarchX(&server_context, &request, &writer, cq, cq, self);
+        },
+        [&hctx](auto &client_context, auto &request) {
+            auto *cq = hctx.completion_queue.get();
+            return hctx.stub->AsyncWriteUarchX(&client_context, request, cq);
         });
 }
 
@@ -730,12 +782,13 @@ static void enable_server_handlers(handler_context &hctx) {
     new_Machine_handler(hctx);               // NOLINT: cannot leak (pointer is in completion queue)
     new_Run_handler(hctx);                   // NOLINT: cannot leak (pointer is in completion queue)
     new_UarchRun_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
+    new_UarchResetState_handler(hctx);       // NOLINT: cannot leak (pointer is in completion queue)
     new_Store_handler(hctx);                 // NOLINT: cannot leak (pointer is in completion queue)
     new_Destroy_handler(hctx);               // NOLINT: cannot leak (pointer is in completion queue)
     new_Snapshot_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
     new_Rollback_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
     new_Shutdown_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
-    new_Step_handler(hctx);                  // NOLINT: cannot leak (pointer is in completion queue)
+    new_UarchStep_handler(hctx);             // NOLINT: cannot leak (pointer is in completion queue)
     new_ReadMemory_handler(hctx);            // NOLINT: cannot leak (pointer is in completion queue)
     new_WriteMemory_handler(hctx);           // NOLINT: cannot leak (pointer is in completion queue)
     new_ReadWord_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
@@ -745,6 +798,9 @@ static void enable_server_handlers(handler_context &hctx) {
     new_GetXAddress_handler(hctx);           // NOLINT: cannot leak (pointer is in completion queue)
     new_ReadX_handler(hctx);                 // NOLINT: cannot leak (pointer is in completion queue)
     new_WriteX_handler(hctx);                // NOLINT: cannot leak (pointer is in completion queue)
+    new_GetUarchXAddress_handler(hctx);      // NOLINT: cannot leak (pointer is in completion queue)
+    new_ReadUarchX_handler(hctx);            // NOLINT: cannot leak (pointer is in completion queue)
+    new_WriteUarchX_handler(hctx);           // NOLINT: cannot leak (pointer is in completion queue)
     new_ResetIflagsY_handler(hctx);          // NOLINT: cannot leak (pointer is in completion queue)
     new_GetCsrAddress_handler(hctx);         // NOLINT: cannot leak (pointer is in completion queue)
     new_ReadCsr_handler(hctx);               // NOLINT: cannot leak (pointer is in completion queue)

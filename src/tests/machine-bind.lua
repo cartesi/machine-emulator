@@ -121,6 +121,14 @@ local function get_cpu_xreg_test_values()
     return values
 end
 
+local function get_cpu_uarch_xreg_test_values()
+    local values = {}
+    for i=0,31 do
+        values[i] = 0x10000 + (i * 8)
+    end
+    return values
+end
+
 local cpu_csr_addr = {
     pc = 512,
     fcsr = 520,
@@ -232,12 +240,16 @@ local function build_machine(type)
     local concurrency_update_merkle_tree = 0
     local initial_csr_values = get_cpu_csr_test_values()
     local initial_xreg_values = get_cpu_xreg_test_values()
+    local initial_uarch_xreg_values = get_cpu_uarch_xreg_test_values()
     initial_csr_values.x = initial_xreg_values
     local config = {
         processor = initial_csr_values,
         rom = {image_filename = test_util.images_path .. "rom.bin"},
         ram = {length = 1 << 20},
         uarch = { 
+            processor = {
+                x = initial_uarch_xreg_values
+            },
             ram = { length = 1 << 16, image_filename = test_util.create_test_uarch_program() },
         }
     }
@@ -331,7 +343,7 @@ print("\n\ntesting get_csr_address function binding")
 do_test("should return address value for csr register",
     function(machine)
         local module = cartesi
-        if (type == "grpc") then
+        if (machine_type == "grpc") then
             if not remote then remote = connect() end
             module = remote
         end
@@ -347,7 +359,7 @@ print("\n\ntesting get_x_address function binding")
 do_test("should return address value for x registers",
     function(machine)
         local module = cartesi
-        if (type == "grpc") then
+        if (machine_type == "grpc") then
             if not remote then remote = connect() end
             module = remote
         end
@@ -357,6 +369,22 @@ do_test("should return address value for x registers",
         end
     end
 )
+
+print("\n\ntesting get_x_uarch_address function binding")
+    do_test("should return address value for uarch x registers",
+        function(machine)
+            local SHADOW_UARCH_XBASE = 0x340
+            local module = cartesi
+            if (machine_type == "grpc") then
+                if not remote then remote = connect() end
+                module = remote
+            end
+            -- Check x address
+            for i = 0,31 do
+                assert(module.machine.get_uarch_x_address(i) == SHADOW_UARCH_XBASE+i*8, "invalid return for uarch x"..i)
+            end
+        end
+    )
 
 local function test_config_memory_range(range, name)
     assert(type(range.length) == "number", "invalid "..name..".length")
@@ -407,7 +435,7 @@ print("\n\ntesting get_default_config function binding")
 do_test("should return default machine config",
     function(machine)
         local module = cartesi
-        if (type == "grpc") then
+        if (machine_type == "grpc") then
             if not remote then remote = connect() end
             module = remote
         end
@@ -537,6 +565,23 @@ do_test("writen and expected register values should match",
         -- Read unexsisting register
         local status_invalid_reg, retval = pcall(machine.read_x, machine, 1000)
         assert(status_invalid_reg == false, "no error reading invalid x register")
+    end
+)
+
+print("\n\n read and write uarch x registers")
+do_test("writen and expected register values should match",
+    function(machine)
+        local initial_xreg_values = get_cpu_uarch_xreg_test_values()
+        -- Write/Read uarch X registers
+        local x1_initial_value = machine:read_uarch_x(1)
+        assert(x1_initial_value == initial_xreg_values[1], "error reading uarch x1 register")
+        machine:write_uarch_x(1, 0x1122)
+        assert(machine:read_uarch_x(1) == 0x1122, "error with writing to uarch x1 register")
+        machine:write_uarch_x(1, x1_initial_value)
+        assert(machine:read_uarch_x(1) == x1_initial_value)
+        -- Read unexsisting uarch register
+        local status_invalid_reg, retval = pcall(machine.read_uarch_x, machine, 1000)
+        assert(status_invalid_reg == false, "no error reading invalid uarch x register")
     end
 )
 

@@ -876,6 +876,15 @@ bool grpc_virtual_machine::do_verify_merkle_tree(void) const {
     return response.success();
 }
 
+uint64_t grpc_virtual_machine::get_uarch_x_address(const grpc_machine_stub_ptr &stub, int i) {
+    GetUarchXAddressRequest request;
+    request.set_index(i);
+    GetUarchXAddressResponse response;
+    ClientContext context;
+    check_status(stub->get_stub()->GetUarchXAddress(&context, request, &response));
+    return response.address();
+}
+
 uint64_t grpc_virtual_machine::do_read_uarch_x(int i) const {
     ReadUarchXRequest request;
     request.set_index(i);

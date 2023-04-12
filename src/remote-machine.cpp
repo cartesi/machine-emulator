@@ -529,6 +529,30 @@ public:
     }
 };
 
+class handler_UarchResetState final : public handler<Void, Void> {
+
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
+        ServerAsyncResponseWriter<Void> *writer) override {
+        hctx.s->RequestUarchResetState(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        return side_effect::none;
+    }
+
+    side_effect go(handler_context &hctx, Void *req, ServerAsyncResponseWriter<Void> *writer) override {
+        (void) req;
+        if (!hctx.m) {
+            return finish_with_error_no_machine(writer);
+        }
+        hctx.m->uarch_reset_state();
+        Void resp;
+        return finish_ok(writer, resp);
+    }
+
+public:
+    handler_UarchResetState(handler_context &hctx) {
+        advance(hctx);
+    }
+};
+
 class handler_UarchStep final : public handler<UarchStepRequest, UarchStepResponse> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, UarchStepRequest *req,
@@ -845,6 +869,87 @@ class handler_WriteX final : public handler<WriteXRequest, Void> {
 
 public:
     handler_WriteX(handler_context &hctx) {
+        advance(hctx);
+    }
+};
+
+class handler_GetUarchXAddress final : public handler<GetUarchXAddressRequest, GetUarchXAddressResponse> {
+
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, GetUarchXAddressRequest *req,
+        ServerAsyncResponseWriter<GetUarchXAddressResponse> *writer) override {
+        hctx.s->RequestGetUarchXAddress(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        return side_effect::none;
+    }
+
+    side_effect go(handler_context &hctx, GetUarchXAddressRequest *req,
+        ServerAsyncResponseWriter<GetUarchXAddressResponse> *writer) override {
+        (void) hctx;
+        auto index = req->index();
+        if (index >= UARCH_X_REG_COUNT) {
+            throw std::invalid_argument{"invalid register index"};
+        }
+        GetUarchXAddressResponse resp;
+        resp.set_address(cartesi::machine::get_uarch_x_address(static_cast<int>(index)));
+        return finish_ok(writer, resp);
+    }
+
+public:
+    handler_GetUarchXAddress(handler_context &hctx) {
+        advance(hctx);
+    }
+};
+
+class handler_ReadUarchX final : public handler<ReadUarchXRequest, ReadUarchXResponse> {
+
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, ReadUarchXRequest *req,
+        ServerAsyncResponseWriter<ReadUarchXResponse> *writer) override {
+        hctx.s->RequestReadUarchX(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        return side_effect::none;
+    }
+
+    side_effect go(handler_context &hctx, ReadUarchXRequest *req,
+        ServerAsyncResponseWriter<ReadUarchXResponse> *writer) override {
+        auto index = req->index();
+        if (index >= UARCH_X_REG_COUNT) {
+            throw std::invalid_argument{"invalid register index"};
+        }
+        if (!hctx.m) {
+            return finish_with_error_no_machine(writer);
+        }
+        ReadUarchXResponse resp;
+        resp.set_value(hctx.m->read_uarch_x(static_cast<int>(index)));
+        return finish_ok(writer, resp);
+    }
+
+public:
+    handler_ReadUarchX(handler_context &hctx) {
+        advance(hctx);
+    }
+};
+
+class handler_WriteUarchX final : public handler<WriteUarchXRequest, Void> {
+
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, WriteUarchXRequest *req,
+        ServerAsyncResponseWriter<Void> *writer) override {
+        hctx.s->RequestWriteUarchX(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        return side_effect::none;
+    }
+
+    side_effect go(handler_context &hctx, WriteUarchXRequest *req, ServerAsyncResponseWriter<Void> *writer) override {
+        auto index = req->index();
+        if (index >= UARCH_X_REG_COUNT || index <= 0) { // x0 is read-only
+            throw std::invalid_argument{"invalid register index"};
+        }
+        if (!hctx.m) {
+            return finish_with_error_no_machine(writer);
+        }
+        hctx.m->write_uarch_x(static_cast<int>(index), req->value());
+        Void resp;
+        return finish_ok(writer, resp);
+    }
+
+public:
+    handler_WriteUarchX(handler_context &hctx) {
         advance(hctx);
     }
 };
@@ -1219,6 +1324,7 @@ static void server_loop(const char *server_address, const char *session_id, cons
         handler_Machine hMachine(hctx);
         handler_Run hRun(hctx);
         handler_UarchRun hUarchRun(hctx);
+        handler_UarchResetState hUarchResetState(hctx);
         handler_Store hStore(hctx);
         handler_Destroy hDestroy(hctx);
         handler_Snapshot hSnapshot(hctx);
@@ -1236,6 +1342,9 @@ static void server_loop(const char *server_address, const char *session_id, cons
         handler_GetXAddress hGetXAddress(hctx);
         handler_ReadX hReadX(hctx);
         handler_WriteX hWriteX(hctx);
+        handler_GetUarchXAddress hGetUarchXAddress(hctx);
+        handler_ReadUarchX hReadUarchX(hctx);
+        handler_WriteUarchX hWriteUarchX(hctx);
         handler_ResetIflagsY hResetIflagsY(hctx);
         handler_GetCsrAddress hGetCsrAddress(hctx);
         handler_ReadCsr hReadCsr(hctx);

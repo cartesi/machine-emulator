@@ -153,6 +153,14 @@ int cm_grpc_get_x_address(const cm_grpc_machine_stub *stub, int i, uint64_t *val
     return cm_result_failure(err_msg);
 }
 
+int cm_grpc_get_uarch_x_address(const cm_grpc_machine_stub *stub, int i, uint64_t *val, char **err_msg) try {
+    const auto *cpp_stub = convert_from_c(stub);
+    *val = cartesi::grpc_virtual_machine::get_uarch_x_address(*cpp_stub, i);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
 int cm_grpc_get_csr_address(const cm_grpc_machine_stub *stub, CM_PROC_CSR w, uint64_t *val, char **err_msg) try {
     const auto *cpp_stub = convert_from_c(stub);
     const auto cpp_csr = static_cast<cartesi::machine::csr>(w);

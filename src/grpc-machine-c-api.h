@@ -137,6 +137,16 @@ CM_API int cm_grpc_verify_state_transition(const cm_grpc_machine_stub *stub, con
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_grpc_get_x_address(const cm_grpc_machine_stub *stub, int i, uint64_t *val, char **err_msg);
 
+/// \brief Gets the address of a general-purpose microarchitecture register from remote cartesi server
+/// \param stub Cartesi grpc machine stub. Must be pointer to valid object
+/// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
+/// \param val Receives address of the register
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message
+/// \returns 0 for successfull verification, non zero code for error
+CM_API int cm_grpc_get_uarch_x_address(const cm_grpc_machine_stub *stub, int i, uint64_t *val, char **err_msg);
+
 /// \brief Gets the address of any CSR from remote server
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object
 /// \param w The command and status register

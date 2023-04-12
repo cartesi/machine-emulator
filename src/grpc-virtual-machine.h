@@ -102,6 +102,7 @@ public:
 
     static uint64_t get_x_address(const grpc_machine_stub_ptr &stub, int i);
     static uint64_t get_f_address(const grpc_machine_stub_ptr &stub, int i);
+    static uint64_t get_uarch_x_address(const grpc_machine_stub_ptr &stub, int i);
     static uint64_t get_csr_address(const grpc_machine_stub_ptr &stub, csr w);
 
 private:

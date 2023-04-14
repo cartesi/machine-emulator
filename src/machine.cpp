@@ -1918,6 +1918,9 @@ void machine::verify_state_transition(const hash_type &root_hash_before, const a
 }
 
 access_log machine::step_uarch(const access_log::type &log_type, bool one_based) {
+    if (m_uarch.get_state().ram.get_istart_E()) {
+        throw std::runtime_error("microarchitecture RAM is not present");
+    }
     hash_type root_hash_before;
     if (log_type.has_proofs()) {
         update_merkle_tree();
@@ -1943,6 +1946,9 @@ access_log machine::step_uarch(const access_log::type &log_type, bool one_based)
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
+    if (m_uarch.get_state().ram.get_istart_E()) {
+        throw std::runtime_error("microarchitecture RAM is not present");
+    }
     uarch_state_access a(m_uarch.get_state(), get_state());
     return uarch_interpret(a, uarch_cycle_end);
 }

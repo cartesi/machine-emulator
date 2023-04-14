@@ -1386,7 +1386,6 @@ if json_steps then
     assert(not rollup_advance, "json-steps and rollup advance state are incompatible")
     assert(not rollup_inspect, "json-steps and rollup inspect state are incompatible")
     assert(not config.htif.console_getchar, "logs are meaningless in interactive mode")
-    assert(config.uarch.ram.image_filename ~= nil and config.uarch.ram.length > 0, "json-steps requires valid microarchitecture configuration")
     json_steps = assert(io.open(json_steps, "w"))
     json_steps:write("[\n")
     local log_type = {} -- no proofs or annotations
@@ -1592,7 +1591,6 @@ else
     end
     if step then
         assert(not config.htif.console_getchar, "step proof is meaningless in interactive mode")
-        assert(config.uarch.ram.image_filename ~= nil and config.uarch.ram.length > 0, "step proof requires valid microarchitecture configuration")
         stderr("Gathering step proof: please wait\n")
         util.dump_log(machine:step_uarch{ proofs = true, annotations = true }, io.stderr)
     end

@@ -285,11 +285,11 @@ jobs:
         run: /opt/cartesi/bin/uarch-riscv-tests --test-path=/opt/cartesi/tests run
 
       - name: Run test suite with Microarchitecture
-        run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests --uarch-ram-length=0x20000 --uarch-ram-image=./tests/uarch-ram.bin --jobs=$(nproc) uarch_run
+        run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests --uarch-ram-length=0x20000 --uarch-ram-image=./tests/uarch-ram.bin --jobs=$(nproc) run_uarch
 
       - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
         # Running a smaller test set. We can decide later if/when/ how to run the full set
-        run: /opt/cartesi/bin/cartesi-machine-tests  --test="^rv64ui.*$" --test-path=/opt/cartesi/tests --uarch-ram-length=0x20000 --uarch-ram-image=./tests/uarch-ram.bin --jobs=$(nproc) host_and_uarch_run
+        run: /opt/cartesi/bin/cartesi-machine-tests  --test="^rv64ui.*$" --test-path=/opt/cartesi/tests --uarch-ram-length=0x20000 --uarch-ram-image=./tests/uarch-ram.bin --jobs=$(nproc) run_host_and_uarch
 
   static-analysis:
     name: Static Analysis

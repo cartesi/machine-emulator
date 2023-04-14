@@ -226,7 +226,7 @@ local function run(tests)
         }
         local machine = build_machine(ctx.ram_image)
         io.write(ctx.ram_image, ": ")
-        machine:uarch_run(2 * ctx.expected_cycles)
+        machine:run_uarch(2 * ctx.expected_cycles)
         check_test_result(machine, ctx, errors)
         if ctx.failed then
             print("failed")

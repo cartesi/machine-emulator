@@ -28,7 +28,7 @@ local machine = cartesi.machine(config)
 os.remove(config.uarch.ram.image_filename)
 
 local old_hash = machine:get_root_hash()
-local access_log = machine:uarch_step({ proofs = true })
+local access_log = machine:step_uarch({ proofs = true })
 local new_hash = machine:get_root_hash()
 cartesi.machine.verify_state_transition(old_hash, access_log, new_hash, {})
 print("ok")

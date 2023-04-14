@@ -24,7 +24,7 @@
 
 using namespace cartesi;
 
-extern "C" void uarch_run() {
+extern "C" void run_uarch() {
     uarch_machine_state_access a;
     // We want to advance the cartesi machine to the next mcycle
     uint64_t mcycle_end = a.read_mcycle() + 1;

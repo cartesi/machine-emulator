@@ -1845,7 +1845,7 @@ void machine::set_uarch_halt_flag() {
     m_uarch.set_halt_flag();
 }
 
-void machine::uarch_reset_state() {
+void machine::reset_uarch_state() {
     m_uarch.reset_state();
 }
 
@@ -1917,7 +1917,7 @@ void machine::verify_state_transition(const hash_type &root_hash_before, const a
     }
 }
 
-access_log machine::uarch_step(const access_log::type &log_type, bool one_based) {
+access_log machine::step_uarch(const access_log::type &log_type, bool one_based) {
     hash_type root_hash_before;
     if (log_type.has_proofs()) {
         update_merkle_tree();
@@ -1942,7 +1942,7 @@ access_log machine::uarch_step(const access_log::type &log_type, bool one_based)
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-uarch_interpreter_break_reason machine::uarch_run(uint64_t uarch_cycle_end) {
+uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
     uarch_state_access a(m_uarch.get_state(), get_state());
     return uarch_interpret(a, uarch_cycle_end);
 }

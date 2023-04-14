@@ -29,7 +29,7 @@ _start:
     add sp, sp, t0 // stack pointer at the end of RAM
 
     // Calls the macro machine interpreter that was compiled to microarchitecture
-    call uarch_run
+    call run_uarch
 
     // Halt the micro machine   
     li  t0, UARCH_HALT_FLAG_SHADDOW_ADDR_DEF

@@ -59,7 +59,7 @@ local runtime_config = {}
 local machine = assert(cartesi.machine(config, runtime))
 
 -- run microarchitecture
-machine:uarch_run()
+machine:run_uarch()
 
 -- extract test result signature from microarchitecture RAM 
 local mem = machine:read_memory(uarch_ram_start, uarch_ram_length)

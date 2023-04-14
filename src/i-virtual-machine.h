@@ -61,8 +61,8 @@ public:
     }
 
     /// \brief Runs the machine for one micro cycle logging all accesses to the state.
-    access_log uarch_step(const access_log::type &log_type, bool one_based = false) {
-        return do_uarch_step(log_type, one_based);
+    access_log step_uarch(const access_log::type &log_type, bool one_based = false) {
+        return do_step_uarch(log_type, one_based);
     }
 
     /// \brief Obtains the proof for a node in the Merkle tree.
@@ -626,8 +626,8 @@ public:
     }
 
     /// \brief Resets the microarchitecture halt flag
-    void uarch_reset_state() {
-        return do_uarch_reset_state();
+    void reset_uarch_state() {
+        return do_reset_uarch_state();
     }
 
     /// \brief Reads the value of the microarchitecture ROM length
@@ -638,14 +638,14 @@ public:
 
     /// \brief Runs the microarchitecture until the machine advances to the next mcycle or the current  micro cycle
     /// (uarch_cycle) reaches uarch_cycle_end \param uarch_cycle_end uarch_cycle limit
-    uarch_interpreter_break_reason uarch_run(uint64_t uarch_cycle_end) {
-        return do_uarch_run(uarch_cycle_end);
+    uarch_interpreter_break_reason run_uarch(uint64_t uarch_cycle_end) {
+        return do_run_uarch(uarch_cycle_end);
     }
 
 private:
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
     virtual void do_store(const std::string &dir) = 0;
-    virtual access_log do_uarch_step(const access_log::type &log_type, bool one_based = false) = 0;
+    virtual access_log do_step_uarch(const access_log::type &log_type, bool one_based = false) = 0;
     virtual machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const = 0;
     virtual void do_get_root_hash(hash_type &hash) const = 0;
     virtual bool do_verify_merkle_tree(void) const = 0;
@@ -756,9 +756,9 @@ private:
     virtual void do_write_uarch_cycle(uint64_t val) = 0;
     virtual bool do_read_uarch_halt_flag(void) const = 0;
     virtual void do_set_uarch_halt_flag() = 0;
-    virtual void do_uarch_reset_state() = 0;
+    virtual void do_reset_uarch_state() = 0;
     virtual uint64_t do_read_uarch_ram_length(void) const = 0;
-    virtual uarch_interpreter_break_reason do_uarch_run(uint64_t uarch_cycle_end) = 0;
+    virtual uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) = 0;
 };
 
 } // namespace cartesi

@@ -391,22 +391,22 @@ public:
     }
 };
 
-class handler_UarchRun final : public handler<UarchRunRequest, UarchRunResponse> {
+class handler_RunUarch final : public handler<RunUarchRequest, RunUarchResponse> {
 
-    side_effect prepare(handler_context &hctx, ServerContext *sctx, UarchRunRequest *req,
-        ServerAsyncResponseWriter<UarchRunResponse> *writer) override {
-        hctx.s->RequestUarchRun(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, RunUarchRequest *req,
+        ServerAsyncResponseWriter<RunUarchResponse> *writer) override {
+        hctx.s->RequestRunUarch(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
-    side_effect go(handler_context &hctx, UarchRunRequest *req,
-        ServerAsyncResponseWriter<UarchRunResponse> *writer) override {
+    side_effect go(handler_context &hctx, RunUarchRequest *req,
+        ServerAsyncResponseWriter<RunUarchResponse> *writer) override {
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
         auto limit = static_cast<uint64_t>(req->limit());
-        UarchRunResponse resp;
-        hctx.m->uarch_run(limit);
+        RunUarchResponse resp;
+        hctx.m->run_uarch(limit);
         resp.set_cycle(hctx.m->read_uarch_cycle());
         resp.set_pc(hctx.m->read_uarch_pc());
         resp.set_halt_flag(hctx.m->read_uarch_halt_flag());
@@ -414,7 +414,7 @@ class handler_UarchRun final : public handler<UarchRunRequest, UarchRunResponse>
     }
 
 public:
-    handler_UarchRun(handler_context &hctx) {
+    handler_RunUarch(handler_context &hctx) {
         advance(hctx);
     }
 };
@@ -529,11 +529,11 @@ public:
     }
 };
 
-class handler_UarchResetState final : public handler<Void, Void> {
+class handler_ResetUarchState final : public handler<Void, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s->RequestUarchResetState(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestResetUarchState(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -542,39 +542,39 @@ class handler_UarchResetState final : public handler<Void, Void> {
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        hctx.m->uarch_reset_state();
+        hctx.m->reset_uarch_state();
         Void resp;
         return finish_ok(writer, resp);
     }
 
 public:
-    handler_UarchResetState(handler_context &hctx) {
+    handler_ResetUarchState(handler_context &hctx) {
         advance(hctx);
     }
 };
 
-class handler_UarchStep final : public handler<UarchStepRequest, UarchStepResponse> {
+class handler_StepUarch final : public handler<StepUarchRequest, StepUarchResponse> {
 
-    side_effect prepare(handler_context &hctx, ServerContext *sctx, UarchStepRequest *req,
-        ServerAsyncResponseWriter<UarchStepResponse> *writer) override {
-        hctx.s->RequestUarchStep(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, StepUarchRequest *req,
+        ServerAsyncResponseWriter<StepUarchResponse> *writer) override {
+        hctx.s->RequestStepUarch(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
-    side_effect go(handler_context &hctx, UarchStepRequest *req,
-        ServerAsyncResponseWriter<UarchStepResponse> *writer) override {
+    side_effect go(handler_context &hctx, StepUarchRequest *req,
+        ServerAsyncResponseWriter<StepUarchResponse> *writer) override {
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
         AccessLog proto_log;
-        UarchStepResponse resp;
-        set_proto_access_log(hctx.m->uarch_step(get_proto_log_type(req->log_type()), req->one_based()),
+        StepUarchResponse resp;
+        set_proto_access_log(hctx.m->step_uarch(get_proto_log_type(req->log_type()), req->one_based()),
             resp.mutable_log());
         return finish_ok(writer, resp);
     }
 
 public:
-    handler_UarchStep(handler_context &hctx) {
+    handler_StepUarch(handler_context &hctx) {
         advance(hctx);
     }
 };
@@ -1323,14 +1323,14 @@ static void server_loop(const char *server_address, const char *session_id, cons
         handler_SetCheckInTarget hSetCheckInTarget(hctx);
         handler_Machine hMachine(hctx);
         handler_Run hRun(hctx);
-        handler_UarchRun hUarchRun(hctx);
-        handler_UarchResetState hUarchResetState(hctx);
+        handler_RunUarch hRunUarch(hctx);
+        handler_ResetUarchState hResetUarchState(hctx);
         handler_Store hStore(hctx);
         handler_Destroy hDestroy(hctx);
         handler_Snapshot hSnapshot(hctx);
         handler_Rollback hRollback(hctx);
         handler_Shutdown hShutdown(hctx);
-        handler_UarchStep hUarchStep(hctx);
+        handler_StepUarch hStepUarch(hctx);
         handler_ReadMemory hReadMemory(hctx);
         handler_WriteMemory hWriteMemory(hctx);
         handler_ReadVirtualMemory hReadVirtualMemory(hctx);

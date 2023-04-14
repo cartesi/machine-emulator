@@ -608,7 +608,7 @@ do_test("mcycle value should match",
         local log_type = {}
         local uarch_cycle_initial_value = machine:read_csr('uarch_cycle')
 
-        machine:uarch_step(log_type)
+        machine:step_uarch(log_type)
 
         -- Check mcycle increment
         local uarch_cycle_current_value = machine:read_csr('uarch_cycle')
@@ -617,12 +617,12 @@ do_test("mcycle value should match",
     end
 )
 
-print("\n\n uarch_run tests")
+print("\n\n run_uarch tests")
 do_test("advance one micro cycle without halting",
     function(machine)
         assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
         assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
-        local status = machine:uarch_run(1)
+        local status = machine:run_uarch(1)
         assert(status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE)
         assert(machine:read_uarch_cycle() == 1, "uarch cycle should be 1")
         assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
@@ -633,7 +633,7 @@ do_test("advance micro cycles until halt",
     function(machine)
         assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
         assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
-        local status = machine:uarch_run()
+        local status = machine:run_uarch()
         assert(status == cartesi.UARCH_BREAK_REASON_HALTED)
         assert(machine:read_uarch_cycle() == 4, "uarch cycle should be 4")
         assert(machine:read_uarch_halt_flag() == true, "machine should be halted")
@@ -743,7 +743,7 @@ do_test("dumped log content should match",
                                  }
                                  os.remove(uarch_ram_path)
                                  local log_type = {proofs = false, annotations = true}
-                                 local log = machine:uarch_step(log_type)
+                                 local log = machine:step_uarch(log_type)
                                  cartesi_util.dump_log(log, io.stdout)
                                  " 2>&1]]
         local p = io.popen(lua_cmd .. lua_code)
@@ -780,7 +780,7 @@ do_test("machine step should pass verifications",
             module = remote
         end
         local initial_hash = machine:get_root_hash()
-        local log = machine:uarch_step({proofs = true, annotations = true})
+        local log = machine:step_uarch({proofs = true, annotations = true})
         local final_hash = machine:get_root_hash()
         module.machine.verify_state_transition(initial_hash, log, final_hash, {})
         module.machine.verify_access_log(log, {})

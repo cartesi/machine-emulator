@@ -251,29 +251,29 @@ static auto new_Run_handler(handler_context &hctx) {
         });
 }
 
-static auto new_UarchRun_handler(handler_context &hctx) {
-    return new_handler<UarchRunRequest, UarchRunResponse>(
-        "UarchRun",
+static auto new_RunUarch_handler(handler_context &hctx) {
+    return new_handler<RunUarchRequest, RunUarchResponse>(
+        "RunUarch",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
-            hctx.async_service.RequestUarchRun(&server_context, &request, &writer, cq, cq, self);
+            hctx.async_service.RequestRunUarch(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
-            return hctx.stub->AsyncUarchRun(&client_context, request, cq);
+            return hctx.stub->AsyncRunUarch(&client_context, request, cq);
         });
 }
 
-static auto new_UarchResetState_handler(handler_context &hctx) {
+static auto new_ResetUarchState_handler(handler_context &hctx) {
     return new_handler<Void, Void>(
-        "UarchResetState",
+        "ResetUarchState",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
-            hctx.async_service.RequestUarchResetState(&server_context, &request, &writer, cq, cq, self);
+            hctx.async_service.RequestResetUarchState(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
-            return hctx.stub->AsyncUarchResetState(&client_context, request, cq);
+            return hctx.stub->AsyncResetUarchState(&client_context, request, cq);
         });
 }
 
@@ -343,16 +343,16 @@ static auto new_Shutdown_handler(handler_context &hctx) {
         side_effect::shutdown);
 }
 
-static auto new_UarchStep_handler(handler_context &hctx) {
-    return new_handler<UarchStepRequest, UarchStepResponse>(
-        "UarchStep",
+static auto new_StepUarch_handler(handler_context &hctx) {
+    return new_handler<StepUarchRequest, StepUarchResponse>(
+        "StepUarch",
         [&hctx](auto &server_context, auto &request, auto &writer, auto self) {
             auto *cq = hctx.completion_queue.get();
-            hctx.async_service.RequestUarchStep(&server_context, &request, &writer, cq, cq, self);
+            hctx.async_service.RequestStepUarch(&server_context, &request, &writer, cq, cq, self);
         },
         [&hctx](auto &client_context, auto &request) {
             auto *cq = hctx.completion_queue.get();
-            return hctx.stub->AsyncUarchStep(&client_context, request, cq);
+            return hctx.stub->AsyncStepUarch(&client_context, request, cq);
         });
 }
 
@@ -781,14 +781,14 @@ static void enable_server_handlers(handler_context &hctx) {
     new_SetCheckInTarget_handler(hctx);      // NOLINT: cannot leak (pointer is in completion queue)
     new_Machine_handler(hctx);               // NOLINT: cannot leak (pointer is in completion queue)
     new_Run_handler(hctx);                   // NOLINT: cannot leak (pointer is in completion queue)
-    new_UarchRun_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
-    new_UarchResetState_handler(hctx);       // NOLINT: cannot leak (pointer is in completion queue)
+    new_RunUarch_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
+    new_ResetUarchState_handler(hctx);       // NOLINT: cannot leak (pointer is in completion queue)
     new_Store_handler(hctx);                 // NOLINT: cannot leak (pointer is in completion queue)
     new_Destroy_handler(hctx);               // NOLINT: cannot leak (pointer is in completion queue)
     new_Snapshot_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
     new_Rollback_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
     new_Shutdown_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)
-    new_UarchStep_handler(hctx);             // NOLINT: cannot leak (pointer is in completion queue)
+    new_StepUarch_handler(hctx);             // NOLINT: cannot leak (pointer is in completion queue)
     new_ReadMemory_handler(hctx);            // NOLINT: cannot leak (pointer is in completion queue)
     new_WriteMemory_handler(hctx);           // NOLINT: cannot leak (pointer is in completion queue)
     new_ReadWord_handler(hctx);              // NOLINT: cannot leak (pointer is in completion queue)

@@ -446,7 +446,7 @@ CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *b
 /// must be deleted by the function caller using cm_delete_error_message.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_uarch_step(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
+CM_API int cm_step_uarch(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
     char **err_msg);
 
 /// \brief  Deletes the instance of cm_access_log acquired from cm_step
@@ -1677,17 +1677,17 @@ CM_API int cm_set_uarch_halt_flag(cm_machine *m, char **err_msg);
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_uarch_reset_state(cm_machine *m, char **err_msg);
+CM_API int cm_reset_uarch_state(cm_machine *m, char **err_msg);
 
 /// \brief Runs the machine in the microarchitecture until the mcycle advances by one unit or the micro cycles counter
 /// (uarch_cycle) reaches uarch_cycle_end \param m Pointer to valid machine instance \param mcycle_end End cycle value
-/// \param status_result Receives status of machine uarch_run when not NULL
+/// \param status_result Receives status of machine run_uarch when not NULL
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_machine_uarch_run(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *status_result,
+CM_API int cm_machine_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *status_result,
     char **err_msg);
 
 #ifdef __cplusplus

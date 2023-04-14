@@ -359,10 +359,10 @@ and command can be:
   run
     run test and report if payload and cycles match expected
 
-  uarch_run
+    run_uarch
     run test in the microarchitecture and report if payload and cycles match expected
 
-  host_and_uarch_run
+  run_host_and_uarch
     run test in two machines: host and microarchitecture based; checking if root hashes match after each mcycle.
 
   hash
@@ -559,8 +559,8 @@ local function run_machine(machine, ctx, max_mcycle, callback, advance_machine_f
 end
 
 local function advance_machine_with_uarch(machine, max_mcycle)
-    if machine:uarch_run() == cartesi.UARCH_BREAK_REASON_HALTED then
-        machine:uarch_reset_state()
+    if machine:run_uarch() == cartesi.UARCH_BREAK_REASON_HALTED then
+        machine:reset_uarch_state()
     end
 end
 
@@ -789,7 +789,7 @@ local function hash(tests)
                       + ((((total_cycles-periodic_action_start)//periodic_action_period)+1) * periodic_action_period)
                 end
             end
-            local status = machine:uarch_run(initial_cycle + (next_action_cycle - total_cycles))
+            local status = machine:run_uarch(initial_cycle + (next_action_cycle - total_cycles))
             local final_cycle = machine:read_uarch_cycle()
             total_cycles = total_cycles + (final_cycle - initial_cycle)
             if not periodic_action or total_cycles ==  next_action_cycle then
@@ -797,7 +797,7 @@ local function hash(tests)
                 total_cycles = total_cycles + 1
             end
             if status == cartesi.UARCH_BREAK_REASON_HALTED then
-                machine:uarch_reset_state()
+                machine:reset_uarch_state()
                 if machine:read_iflags_H() then break end
             end
         end
@@ -850,17 +850,17 @@ local function step(tests)
                 uarch_cycle_increment = next_action_uarch_cycle - total_uarch_cycles
             end
              local init_uarch_cycle = machine:read_uarch_cycle()
-            machine:uarch_run(machine:read_uarch_cycle() + uarch_cycle_increment)
+            machine:run_uarch(machine:read_uarch_cycle() + uarch_cycle_increment)
              local final_uarch_cycle = machine:read_uarch_cycle()
             total_uarch_cycles = total_uarch_cycles + (final_uarch_cycle - init_uarch_cycle)
             if machine:read_uarch_halt_flag() then
-                machine:uarch_reset_state()
+                machine:reset_uarch_state()
                 if machine:read_iflags_H() then break end
             end
             if not periodic_action or total_uarch_cycles ==  next_action_uarch_cycle then
                 local init_mcycle = machine:read_mcycle()
                 init_uarch_cycle = machine:read_uarch_cycle()
-                local log = machine:uarch_step(log_type)
+                local log = machine:step_uarch(log_type)
                 local final_mcycle = machine:read_mcycle()
                 final_uarch_cycle = machine:read_uarch_cycle()
                 if total_logged_steps > 0 then out:write(',\n') end
@@ -868,7 +868,7 @@ local function step(tests)
                 total_uarch_cycles = total_uarch_cycles + 1
                 total_logged_steps = total_logged_steps + 1
                 if machine:read_uarch_halt_flag() then
-                    machine:uarch_reset_state()
+                    machine:reset_uarch_state()
                     if machine:read_iflags_H() then break end
                 end
             end
@@ -1004,8 +1004,8 @@ local targets = {
 
 if #selected_tests < 1 then error("no test selected")
 elseif command == "run" then run_tests(selected_tests, targets.host)
-elseif command == "uarch_run" then run_tests(selected_tests, targets.uarch)
-elseif command == "host_and_uarch_run" then run_tests(selected_tests, targets.host_and_uarch)
+elseif command == "run_uarch" then run_tests(selected_tests, targets.uarch)
+elseif command == "run_host_and_uarch" then run_tests(selected_tests, targets.host_and_uarch)
 elseif command == "hash" then hash(selected_tests)
 elseif command == "step" then step(selected_tests)
 elseif command == "dump" then dump(selected_tests)

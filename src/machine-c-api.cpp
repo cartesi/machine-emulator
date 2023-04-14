@@ -799,18 +799,18 @@ CM_API int cm_set_uarch_halt_flag(cm_machine *m, char **err_msg) try {
     return cm_result_failure(err_msg);
 }
 
-CM_API int cm_uarch_reset_state(cm_machine *m, char **err_msg) try {
+CM_API int cm_reset_uarch_state(cm_machine *m, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
-    cpp_machine->uarch_reset_state();
+    cpp_machine->reset_uarch_state();
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
 }
 
-int cm_machine_uarch_run(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *status_result,
+int cm_machine_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *status_result,
     char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
-    auto status = cpp_machine->uarch_run(uarch_cycle_end);
+    auto status = cpp_machine->run_uarch(uarch_cycle_end);
     if (status_result) {
         *status_result = static_cast<CM_UARCH_BREAK_REASON>(status);
     }
@@ -819,14 +819,14 @@ int cm_machine_uarch_run(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK
     return cm_result_failure(err_msg);
 }
 
-int cm_uarch_step(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
+int cm_step_uarch(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
     char **err_msg) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log output");
     }
     auto *cpp_machine = convert_from_c(m);
     cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations};
-    cartesi::access_log cpp_access_log = cpp_machine->uarch_step(cpp_log_type, one_based);
+    cartesi::access_log cpp_access_log = cpp_machine->step_uarch(cpp_log_type, one_based);
     *access_log = convert_to_c(cpp_access_log);
     return cm_result_success(err_msg);
 } catch (...) {

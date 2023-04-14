@@ -199,16 +199,16 @@ public:
     /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle
     /// counter (uarch_cycle) reaches uarch_cycle_end
     /// \param uarch_cycle_end uarch_cycle limit
-    uarch_interpreter_break_reason uarch_run(uint64_t uarch_cycle_end);
+    uarch_interpreter_break_reason run_uarch(uint64_t uarch_cycle_end);
 
     /// \brief Resets the microarchitecture state
-    void uarch_reset_state();
+    void reset_uarch_state();
 
     /// \brief Runs the machine for one micro cycle logging all accesses to the state.
     /// \param log_type Type of access log to generate.
     /// \param one_based Use 1-based indices when reporting errors.
     /// \returns The state access log.
-    access_log uarch_step(const access_log::type &log_type, bool one_based = false);
+    access_log step_uarch(const access_log::type &log_type, bool one_based = false);
 
     /// \brief Verifies a proof.
     /// \param proof Proof to be verified.

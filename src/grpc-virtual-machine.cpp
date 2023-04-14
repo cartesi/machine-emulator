@@ -807,14 +807,14 @@ void grpc_virtual_machine::do_replace_memory_range(const memory_range_config &ne
     check_status(m_stub->get_stub()->ReplaceMemoryRange(&context, request, &response));
 }
 
-access_log grpc_virtual_machine::do_uarch_step(const access_log::type &log_type, bool one_based) {
-    UarchStepRequest request;
+access_log grpc_virtual_machine::do_step_uarch(const access_log::type &log_type, bool one_based) {
+    StepUarchRequest request;
     request.mutable_log_type()->set_proofs(log_type.has_proofs());
     request.mutable_log_type()->set_annotations(log_type.has_annotations());
     request.set_one_based(one_based);
-    UarchStepResponse response;
+    StepUarchResponse response;
     ClientContext context;
-    check_status(m_stub->get_stub()->UarchStep(&context, request, &response));
+    check_status(m_stub->get_stub()->StepUarch(&context, request, &response));
     return get_proto_access_log(response.log());
 }
 
@@ -923,11 +923,11 @@ void grpc_virtual_machine::do_set_uarch_halt_flag() {
     write_csr(csr::uarch_halt_flag, true);
 }
 
-void grpc_virtual_machine::do_uarch_reset_state() {
+void grpc_virtual_machine::do_reset_uarch_state() {
     Void request;
     Void response;
     ClientContext context;
-    check_status(m_stub->get_stub()->UarchResetState(&context, request, &response));
+    check_status(m_stub->get_stub()->ResetUarchState(&context, request, &response));
 }
 
 bool grpc_virtual_machine::do_read_uarch_halt_flag(void) const {
@@ -938,12 +938,12 @@ uint64_t grpc_virtual_machine::do_read_uarch_ram_length(void) const {
     return read_csr(csr::uarch_ram_length);
 }
 
-uarch_interpreter_break_reason grpc_virtual_machine::do_uarch_run(uint64_t uarch_cycle_end) {
-    UarchRunRequest request;
+uarch_interpreter_break_reason grpc_virtual_machine::do_run_uarch(uint64_t uarch_cycle_end) {
+    RunUarchRequest request;
     request.set_limit(uarch_cycle_end);
-    UarchRunResponse response;
+    RunUarchResponse response;
     ClientContext context;
-    check_status(m_stub->get_stub()->UarchRun(&context, request, &response));
+    check_status(m_stub->get_stub()->RunUarch(&context, request, &response));
     if (response.halt_flag()) {
         return uarch_interpreter_break_reason::halted;
     }

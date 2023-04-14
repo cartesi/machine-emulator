@@ -1397,7 +1397,7 @@ if json_steps then
         if init_mcycle > max_mcycle then break end
         if init_mcycle == max_mcycle and init_uarch_cycle == max_uarch_cycle then break end
         -- Advance one micro step 
-        local log = machine:uarch_step(log_type)
+        local log = machine:step_uarch(log_type)
         steps_count = steps_count + 1
         local final_mcycle = machine:read_mcycle()
         local final_uarch_cycle = machine:read_uarch_cycle()
@@ -1408,7 +1408,7 @@ if json_steps then
             -- microarchitecture halted because it finished interpreting a whole mcycle
             machine:reset_iflags_Y() -- move past any potential yield
             -- Reset uarch_halt_flag in order to allow interpreting the next mcycle
-            machine:uarch_reset_state()
+            machine:reset_uarch_state()
             if machine:read_iflags_H() then 
                 stderr("Halted at %u.%u\n", final_mcycle, final_uarch_cycle)
                 break
@@ -1577,14 +1577,14 @@ else
     if max_uarch_cycle > 0 then
         -- Save halt flag before micro cycles
         local previously_halted = machine:read_iflags_H() 
-        if machine:uarch_run(max_uarch_cycle) == cartesi.UARCH_BREAK_REASON_HALTED then
+        if machine:run_uarch(max_uarch_cycle) == cartesi.UARCH_BREAK_REASON_HALTED then
             -- Microarchitecture  halted. This means that one "macro" instruction was totally executed
             -- The mcycle counter was incremented, unless the machine was already halted
             if machine:read_iflags_H()  and not previously_halted then
                 stderr("Halted\n")
             end
             stderr("Cycles: %u\n", machine:read_mcycle())
-            machine:uarch_reset_state()
+            machine:reset_uarch_state()
         end
     end
     if gdb_stub then
@@ -1594,7 +1594,7 @@ else
         assert(not config.htif.console_getchar, "step proof is meaningless in interactive mode")
         assert(config.uarch.ram.image_filename ~= nil and config.uarch.ram.length > 0, "step proof requires valid microarchitecture configuration")
         stderr("Gathering step proof: please wait\n")
-        util.dump_log(machine:uarch_step{ proofs = true, annotations = true }, io.stderr)
+        util.dump_log(machine:step_uarch{ proofs = true, annotations = true }, io.stderr)
     end
     if dump_pmas then
         machine:dump_pmas()

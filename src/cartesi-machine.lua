@@ -250,6 +250,9 @@ where options are:
   --max-uarch-cycle=<number>
     stop at a given micro cycle.
 
+  --auto-reset-uarch-state
+    automatically reset state after miroarchitecture halt
+
   -i or --htif-console-getchar
     run in interactive mode.
 
@@ -386,6 +389,7 @@ local dump_pmas = false
 local max_mcycle = math.maxinteger
 local json_steps
 local max_uarch_cycle = 0
+local auto_reset_uarch_state = false
 local step = false
 local store_dir = nil
 local load_dir = nil
@@ -692,6 +696,11 @@ local options = {
     { "^(%-%-max%-uarch%-cycle%=(.*))$", function(all, n)
         if not n then return false end
         max_uarch_cycle = assert(util.parse_number(n), "invalid option " .. all)
+        return true
+    end },
+    { "^%-%-auto%-reset%-uarch%-state$", function(all)
+        if not all then return false end
+        auto_reset_uarch_state = true
         return true
     end },
     { "^%-%-load%=(.*)$", function(o)
@@ -1583,7 +1592,11 @@ else
                 stderr("Halted\n")
             end
             stderr("Cycles: %u\n", machine:read_mcycle())
-            machine:reset_uarch_state()
+            if auto_reset_uarch_state  then
+                machine:reset_uarch_state()
+            else
+                stderr("uCycles: %u\n", machine:read_uarch_cycle())
+            end
         end
     end
     if gdb_stub then

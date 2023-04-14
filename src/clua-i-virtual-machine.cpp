@@ -41,73 +41,6 @@ static int machine_obj_index_dump_pmas(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine:dump_regs() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_dump_regs(lua_State *L) {
-    auto *m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1).get();
-    PRINT_PROCESSOR_CSR(m, pc);
-    for (int i = 0; i < 32; ++i) {
-        uint64_t val{0};
-        TRY_EXECUTE(cm_read_x(m, i, &val, err_msg));
-        (void) fprintf(stderr, "x%d = %" PRIx64 "\n", i, val);
-    }
-    PRINT_PROCESSOR_CSR(m, fcsr);
-    for (int i = 0; i < 32; ++i) {
-        uint64_t val{0};
-        TRY_EXECUTE(cm_read_f(m, i, &val, err_msg));
-        (void) fprintf(stderr, "x%d = %" PRIx64 "\n", i, val);
-    }
-    PRINT_PROCESSOR_CSR(m, mcycle);
-    PRINT_PROCESSOR_CSR(m, icycleinstret);
-    PRINT_PROCESSOR_CSR(m, mvendorid);
-    PRINT_PROCESSOR_CSR(m, marchid);
-    PRINT_PROCESSOR_CSR(m, mimpid);
-    PRINT_PROCESSOR_CSR(m, mstatus);
-    PRINT_PROCESSOR_CSR(m, mtvec);
-    PRINT_PROCESSOR_CSR(m, mscratch);
-    PRINT_PROCESSOR_CSR(m, mepc);
-    PRINT_PROCESSOR_CSR(m, mcause);
-    PRINT_PROCESSOR_CSR(m, mtval);
-    PRINT_PROCESSOR_CSR(m, misa);
-    PRINT_PROCESSOR_CSR(m, mie);
-    PRINT_PROCESSOR_CSR(m, mip);
-    PRINT_PROCESSOR_CSR(m, medeleg);
-    PRINT_PROCESSOR_CSR(m, mideleg);
-    PRINT_PROCESSOR_CSR(m, mcounteren);
-    PRINT_PROCESSOR_CSR(m, menvcfg);
-    PRINT_PROCESSOR_CSR(m, stvec);
-    PRINT_PROCESSOR_CSR(m, sscratch);
-    PRINT_PROCESSOR_CSR(m, sepc);
-    PRINT_PROCESSOR_CSR(m, scause);
-    PRINT_PROCESSOR_CSR(m, stval);
-    PRINT_PROCESSOR_CSR(m, satp);
-    PRINT_PROCESSOR_CSR(m, scounteren);
-    PRINT_PROCESSOR_CSR(m, senvcfg);
-    PRINT_PROCESSOR_CSR(m, ilrsc);
-    PRINT_PROCESSOR_CSR(m, iflags);
-    PRINT_PROCESSOR_CSR(m, clint_mtimecmp);
-    PRINT_PROCESSOR_CSR(m, htif_tohost);
-    PRINT_PROCESSOR_CSR(m, htif_fromhost);
-    PRINT_PROCESSOR_CSR(m, htif_ihalt);
-    PRINT_PROCESSOR_CSR(m, htif_iconsole);
-    PRINT_PROCESSOR_CSR(m, htif_iyield);
-    PRINT_PROCESSOR_CSR(m, uarch_cycle);
-
-    bool uarch_halt_flag{false};
-    TRY_EXECUTE(cm_read_uarch_halt_flag(m, &uarch_halt_flag, err_msg));
-    (void) fprintf(stderr, "uarch_halt_flag = %s\n", uarch_halt_flag ? "true" : "false");
-
-    PRINT_PROCESSOR_CSR(m, uarch_ram_length);
-    PRINT_PROCESSOR_CSR(m, uarch_pc);
-    for (int i = 0; i < UARCH_X_REG_COUNT; ++i) {
-        uint64_t val{0};
-        TRY_EXECUTE(cm_read_uarch_x(m, i, &val, err_msg));
-        (void) fprintf(stderr, "uarch_x%d = %" PRIx64 "\n", i, val);
-    }
-    (void) fprintf(stderr, "\n");
-    return 0;
-}
-
 /// \brief This is the machine:get_proof() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_get_proof(lua_State *L) {
@@ -598,7 +531,6 @@ static int machine_obj_index_rollback(lua_State *L) {
 /// \brief Contents of the machine object metatable __index table.
 static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"dump_pmas", machine_obj_index_dump_pmas},
-    {"dump_regs", machine_obj_index_dump_regs},
     {"get_proof", machine_obj_index_get_proof},
     {"get_initial_config", machine_obj_index_get_initial_config},
     {"get_root_hash", machine_obj_index_get_root_hash},

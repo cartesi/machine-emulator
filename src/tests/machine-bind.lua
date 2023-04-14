@@ -689,39 +689,6 @@ do_test("written and read values should match",
     end
 )
 
-print("\n\n dump register values to console")
-do_test("dumped register values should match",
-    function(machine)
-        -- Dump regs and check values
-        local lua_code = [[ "local cartesi = require 'cartesi'
-                                 test_util = require 'tests.util'
-
-                                 local initial_csr_values = {}
-
-                                 local machine = cartesi.machine {
-                                 processor = initial_csr_values,
-                                 ram = {length = 1 << 20},
-                                 rom = {image_filename = test_util.images_path .. 'rom.bin'}
-                                 }
-                                 machine:dump_regs()
-                                 " 2>&1]]
-        local p = io.popen(lua_cmd .. lua_code)
-        local output = p:read(2000)
-        p:close()
-
-        print("Output of dump registers:")
-        print("--------------------------")
-        print(output)
-        print("--------------------------")
-        assert((output:find "mcycle = 0"),
-            "Cound not find mcycle register value in output")
-        assert((output:find "marchid = e"),
-            "Cound not find marchid register value in output")
-        assert((output:find "clint_mtimecmp = 0"),
-            "Cound not find clint_mtimecmp register value in output")
-    end
-)
-
 print("\n\n dump log  to console")
 do_test("dumped log content should match",
     function(machine)

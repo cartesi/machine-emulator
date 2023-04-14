@@ -354,7 +354,7 @@ test: luacartesi
 test-uarch-for-coverage:
 	$(MAKE) -C ../third-party/riscv-arch-tests LUA="$(LUA)"
 	$(MAKE) -C ../uarch
-	$(LUA) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*csr.*" --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin uarch_run
+	$(LUA) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*csr.*" --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin run_uarch
 
 test-hash: hash
 	./tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash

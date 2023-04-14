@@ -679,7 +679,7 @@ private:
 
     /// \brief Abort request received from uarch
     static void uarch_abort() {
-        throw std::runtime_error("Microarchitecture execution aborted");
+        throw std::runtime_error("microarchitecture execution aborted");
     }
 };
 

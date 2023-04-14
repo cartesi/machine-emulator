@@ -23,7 +23,7 @@
 namespace cartesi {
 
 /// \briefThe value that halts the microarchitecture when written to shadow_state_csr::uarch_halt_flag:
-const uint64_t uarch_halt_flag_halt_value = UARCH_HALT_FLAG_HALT_VALUE_DEF;
+constexpr uint64_t uarch_halt_flag_halt_value = UARCH_HALT_FLAG_HALT_VALUE_DEF;
 
 /// \brief Memory addresses with special meaning to the microarchitecture
 enum class uarch_mmio_address : uint64_t {
@@ -32,7 +32,7 @@ enum class uarch_mmio_address : uint64_t {
 };
 
 /// \briefThe value that aborts the micro machine execution written to uarch_mmio_address::abort
-const uint64_t uarch_mmio_abort_value = UARCH_MMIO_ABORT_VALUE_DEF;
+constexpr uint64_t uarch_mmio_abort_value = UARCH_MMIO_ABORT_VALUE_DEF;
 
 } // namespace cartesi
 

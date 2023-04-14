@@ -1942,7 +1942,7 @@ access_log machine::uarch_step(const access_log::type &log_type, bool one_based)
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-uarch_interpreter_status machine::uarch_run(uint64_t uarch_cycle_end) {
+uarch_interpreter_break_reason machine::uarch_run(uint64_t uarch_cycle_end) {
     uarch_state_access a(m_uarch.get_state(), get_state());
     return uarch_interpret(a, uarch_cycle_end);
 }

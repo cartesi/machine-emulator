@@ -487,7 +487,7 @@ uint64_t virtual_machine::do_read_uarch_ram_length(void) const {
     return m_machine->read_uarch_ram_length();
 }
 
-uarch_interpreter_status virtual_machine::do_uarch_run(uint64_t uarch_cycle_end) {
+uarch_interpreter_break_reason virtual_machine::do_uarch_run(uint64_t uarch_cycle_end) {
     return m_machine->uarch_run(uarch_cycle_end);
 }
 

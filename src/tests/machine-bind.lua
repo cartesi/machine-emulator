@@ -623,7 +623,7 @@ do_test("advance one micro cycle without halting",
         assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
         assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
         local status = machine:uarch_run(1)
-        assert(status == cartesi.UARCH_REACHED_TARGET_CYCLE)
+        assert(status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE)
         assert(machine:read_uarch_cycle() == 1, "uarch cycle should be 1")
         assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
     end
@@ -634,7 +634,7 @@ do_test("advance micro cycles until halt",
         assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
         assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
         local status = machine:uarch_run()
-        assert(status == cartesi.UARCH_HALTED)
+        assert(status == cartesi.UARCH_BREAK_REASON_HALTED)
         assert(machine:read_uarch_cycle() == 4, "uarch cycle should be 4")
         assert(machine:read_uarch_halt_flag() == true, "machine should be halted")
     end

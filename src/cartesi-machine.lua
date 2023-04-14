@@ -1577,7 +1577,7 @@ else
     if max_uarch_cycle > 0 then
         -- Save halt flag before micro cycles
         local previously_halted = machine:read_iflags_H() 
-        if machine:uarch_run(max_uarch_cycle) == cartesi.UARCH_HALTED then
+        if machine:uarch_run(max_uarch_cycle) == cartesi.UARCH_BREAK_REASON_HALTED then
             -- Microarchitecture  halted. This means that one "macro" instruction was totally executed
             -- The mcycle counter was incremented, unless the machine was already halted
             if machine:read_iflags_H()  and not previously_halted then

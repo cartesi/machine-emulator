@@ -2301,7 +2301,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_long_cycle_test, ordinary_machine_fix
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(machine_uarch_run_null_machine_test) {
-    auto status{CM_UARCH_REACHED_TARGET_CYCLE};
+    auto status{CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE};
     int error_code = cm_machine_uarch_run(nullptr, 1000, &status, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
@@ -2317,11 +2317,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_uarch_run_advance_one_cycle, access_log_m
     BOOST_REQUIRE_EQUAL(cycle, 0);
 
     // advance one uarch cycle
-    auto status{CM_UARCH_HALTED};
+    auto status{CM_UARCH_BREAK_REASON_HALTED};
     error_code = cm_machine_uarch_run(_machine, 1, &status, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_REQUIRE_EQUAL(status, CM_UARCH_REACHED_TARGET_CYCLE);
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE);
 
     // confirm uarch cycle was incremented
     error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, &err_msg);
@@ -2352,11 +2352,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_uarch_run_advance_until_halt, access_log_
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
     // advance one micro cycle
-    auto status{CM_UARCH_HALTED};
+    auto status{CM_UARCH_BREAK_REASON_HALTED};
     error_code = cm_machine_uarch_run(_machine, 1, &status, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_REQUIRE_EQUAL(status, CM_UARCH_REACHED_TARGET_CYCLE);
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE);
 
     error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
@@ -2373,7 +2373,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_uarch_run_advance_until_halt, access_log_
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     // assert result status reports
-    BOOST_REQUIRE_EQUAL(status, CM_UARCH_HALTED);
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_HALTED);
 
     // confirm uarch cycle advanced
     error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, nullptr);
@@ -2412,11 +2412,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_uarch_reset_state, access_log_machine_fix
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
     // run until halts
-    auto status{CM_UARCH_HALTED};
+    auto status{CM_UARCH_BREAK_REASON_HALTED};
     error_code = cm_machine_uarch_run(_machine, 100, &status, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_REQUIRE_EQUAL(status, CM_UARCH_HALTED);
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_HALTED);
 
     // confirm if halt flag is set
     error_code = cm_read_csr(_machine, CM_PROC_UARCH_HALT_FLAG, &halt, &err_msg);
@@ -2432,7 +2432,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_uarch_reset_state, access_log_machine_fix
     // try uarch_run past micro cycle 4
     error_code = cm_machine_uarch_run(_machine, 100, &status, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(status, CM_UARCH_HALTED);
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_HALTED);
 
     // should stay at micro cycle 4
     error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, nullptr);

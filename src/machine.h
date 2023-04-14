@@ -199,7 +199,7 @@ public:
     /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle
     /// counter (uarch_cycle) reaches uarch_cycle_end
     /// \param uarch_cycle_end uarch_cycle limit
-    uarch_interpreter_status uarch_run(uint64_t uarch_cycle_end);
+    uarch_interpreter_break_reason uarch_run(uint64_t uarch_cycle_end);
 
     /// \brief Resets the microarchitecture state
     void uarch_reset_state();

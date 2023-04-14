@@ -148,9 +148,9 @@ typedef enum { // NOLINT(modernize-use-using)
 
 /// \brief Return values of uarch_interpret
 typedef enum { // NOLINT(modernize-use-using)
-    CM_UARCH_REACHED_TARGET_CYCLE,
-    CM_UARCH_HALTED
-} CM_UARCH_INTERPRETER_STATUS;
+    CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE,
+    CM_UARCH_BREAK_REASON_HALTED
+} CM_UARCH_BREAK_REASON;
 
 /// \brief Processor state configuration
 typedef struct {                        // NOLINT(modernize-use-using)
@@ -1687,7 +1687,7 @@ CM_API int cm_uarch_reset_state(cm_machine *m, char **err_msg);
 /// must be deleted by the function caller using cm_delete_error_message.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_machine_uarch_run(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_INTERPRETER_STATUS *status_result,
+CM_API int cm_machine_uarch_run(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *status_result,
     char **err_msg);
 
 #ifdef __cplusplus

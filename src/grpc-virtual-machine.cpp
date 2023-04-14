@@ -938,16 +938,16 @@ uint64_t grpc_virtual_machine::do_read_uarch_ram_length(void) const {
     return read_csr(csr::uarch_ram_length);
 }
 
-uarch_interpreter_status grpc_virtual_machine::do_uarch_run(uint64_t uarch_cycle_end) {
+uarch_interpreter_break_reason grpc_virtual_machine::do_uarch_run(uint64_t uarch_cycle_end) {
     UarchRunRequest request;
     request.set_limit(uarch_cycle_end);
     UarchRunResponse response;
     ClientContext context;
     check_status(m_stub->get_stub()->UarchRun(&context, request, &response));
     if (response.halt_flag()) {
-        return uarch_interpreter_status::halted;
+        return uarch_interpreter_break_reason::halted;
     }
-    return uarch_interpreter_status::reached_target_cycle;
+    return uarch_interpreter_break_reason::reached_target_cycle;
 }
 
 } // namespace cartesi

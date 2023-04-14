@@ -437,7 +437,7 @@ static int machine_obj_index_uarch_reset_state(lua_State *L) {
 static int machine_obj_index_uarch_run(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     uint64_t cycle_end = luaL_optinteger(L, 2, UINT64_MAX);
-    CM_UARCH_INTERPRETER_STATUS status = CM_UARCH_REACHED_TARGET_CYCLE;
+    CM_UARCH_BREAK_REASON status = CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE;
     TRY_EXECUTE(cm_machine_uarch_run(m.get(), cycle_end, &status, err_msg));
     lua_pushinteger(L, static_cast<lua_Integer>(status));
     return 1;

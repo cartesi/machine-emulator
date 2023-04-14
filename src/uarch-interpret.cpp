@@ -26,13 +26,13 @@
 namespace cartesi {
 
 template <typename STATE_ACCESS>
-uarch_interpreter_status uarch_interpret(STATE_ACCESS &a, uint64_t cycle_end) {
+uarch_interpreter_break_reason uarch_interpret(STATE_ACCESS &a, uint64_t cycle_end) {
     // This must be the first read because we assume the first log access is a
     // uarch_cycle read in machine::verify_state_transition
     auto cycle = readCycle(a);
     while (cycle < cycle_end) {
         if (readHaltFlag(a)) {
-            return uarch_interpreter_status::halted;
+            return uarch_interpreter_break_reason::halted;
         }
         auto pc = readPc(a);
         auto insn = readUint32(a, pc);
@@ -40,16 +40,16 @@ uarch_interpreter_status uarch_interpret(STATE_ACCESS &a, uint64_t cycle_end) {
         cycle = cycle + 1;
         writeCycle(a, cycle);
     }
-    return uarch_interpreter_status::reached_target_cycle;
+    return uarch_interpreter_break_reason::reached_target_cycle;
 }
 
 // Explicit instantiation for uarch_state_access
-template uarch_interpreter_status uarch_interpret(uarch_state_access &a, uint64_t uarch_cycle_end);
+template uarch_interpreter_break_reason uarch_interpret(uarch_state_access &a, uint64_t uarch_cycle_end);
 
 // Explicit instantiation for uarch_record_state_access
-template uarch_interpreter_status uarch_interpret(uarch_record_state_access &a, uint64_t uarch_cycle_end);
+template uarch_interpreter_break_reason uarch_interpret(uarch_record_state_access &a, uint64_t uarch_cycle_end);
 
 // Explicit instantiation for uarch_replay_state_access
-template uarch_interpreter_status uarch_interpret(uarch_replay_state_access &a, uint64_t uarch_cycle_end);
+template uarch_interpreter_break_reason uarch_interpret(uarch_replay_state_access &a, uint64_t uarch_cycle_end);
 
 } // namespace cartesi

@@ -638,7 +638,7 @@ public:
 
     /// \brief Runs the microarchitecture until the machine advances to the next mcycle or the current  micro cycle
     /// (uarch_cycle) reaches uarch_cycle_end \param uarch_cycle_end uarch_cycle limit
-    uarch_interpreter_status uarch_run(uint64_t uarch_cycle_end) {
+    uarch_interpreter_break_reason uarch_run(uint64_t uarch_cycle_end) {
         return do_uarch_run(uarch_cycle_end);
     }
 
@@ -758,7 +758,7 @@ private:
     virtual void do_set_uarch_halt_flag() = 0;
     virtual void do_uarch_reset_state() = 0;
     virtual uint64_t do_read_uarch_ram_length(void) const = 0;
-    virtual uarch_interpreter_status do_uarch_run(uint64_t uarch_cycle_end) = 0;
+    virtual uarch_interpreter_break_reason do_uarch_run(uint64_t uarch_cycle_end) = 0;
 };
 
 } // namespace cartesi

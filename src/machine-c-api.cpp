@@ -807,12 +807,12 @@ CM_API int cm_uarch_reset_state(cm_machine *m, char **err_msg) try {
     return cm_result_failure(err_msg);
 }
 
-int cm_machine_uarch_run(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_INTERPRETER_STATUS *status_result,
+int cm_machine_uarch_run(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *status_result,
     char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
     auto status = cpp_machine->uarch_run(uarch_cycle_end);
     if (status_result) {
-        *status_result = static_cast<CM_UARCH_INTERPRETER_STATUS>(status);
+        *status_result = static_cast<CM_UARCH_BREAK_REASON>(status);
     }
     return cm_result_success(err_msg);
 } catch (...) {

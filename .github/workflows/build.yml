@@ -1,11 +1,11 @@
 name: Build/Test/Verify/Release
 on: [push]
 env:
-  ROM_VERSION: v0.16.0
-  KERNEL_VERSION: v0.16.0
+  ROM_VERSION: v0.16.0-plic3
+  KERNEL_VERSION: v0.16.0-virtio1
   LINUX_VERSION: 5.15.63-ctsi-2
   ROOTFS_VERSION: v0.17.0
-  TEST_VERSION: v0.28.0
+  TEST_VERSION: v0.28.0-plic
   GROUND_TRUTH_VERSION: v0.28.0-0001
   BUILD_CACHE_VERSION: v0.10.0-0006
 jobs:

@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.14.0] - 2023-05-03
 ### Added
 
+- Added PLIC device
+- Added support for VirtIO devices
+- Added VirtIO console device, interactive mode terminal is now resizable and more responsive
+- Added VirtIO net device, interactive mode now supports networking
+- Added VirtIO 9pfs device, interactive mode now supports accessing shared host directories
+
+### Changed
+- Interactive sessions with option -i by default now uses VirtIO console instead of HTIF console
+- Interactive sessions with option -i cannot have its machine state stored or root hash computed anymore
+
+### Added
+
 - Added uarch halt flag
 - Added reset\_uarch\_state
 - Added and improved uarch tests

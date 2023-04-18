@@ -5,11 +5,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+
+- Added uarch halt flag
+- Added reset_uarch_state
+- Added and improved uarch tests
+- Added get_uarch_x_address
+
 ### Changed
 
 - Optimized interpreter instruction fetch
 - Optimized interpreter hot loop to commit pc/mcycle only when necessary
 - Renamed voucher field: address -> destination
+- Removed uarch ROM
+- Improved uarch support on cartesi-machine.lua
+- Refactored uarch interpreter making it easier to port to Solidity
+- Changed return type of run_uarch from void to break reason
+- Renamed uarch related method names on machine class
 
 ## [0.13.0] - 2023-02-16
 ### Added

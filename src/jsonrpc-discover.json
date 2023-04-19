@@ -1065,6 +1065,8 @@
           "ilrsc",
           "iflags",
           "clint_mtimecmp",
+          "plic_girqpend",
+          "plic_girqsrvd",
           "htif_tohost",
           "htif_fromhost",
           "htif_ihalt",
@@ -1484,6 +1486,18 @@
         }
       },
 
+      "PLICConfig": {
+        "type": "object",
+        "properties": {
+          "girqpend": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "girqsrvd": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      },
+
       "HTIFConfig": {
         "type": "object",
         "properties": {
@@ -1585,6 +1599,9 @@
           },
           "clint": {
             "$ref": "#/components/schemas/CLINTConfig"
+          },
+          "plic": {
+            "$ref": "#/components/schemas/PLICConfig"
           },
           "htif": {
             "$ref": "#/components/schemas/HTIFConfig"

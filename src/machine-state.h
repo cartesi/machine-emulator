@@ -103,6 +103,12 @@ struct machine_state {
         uint64_t mtimecmp; ///< CSR mtimecmp.
     } clint;
 
+    /// \brief PLIC state
+    struct {
+        uint64_t girqpend; ///< CSR girqpend (global interrupts pending).
+        uint64_t girqsrvd; ///< CSR girqsrvd (global interrupts served).
+    } plic;
+
     /// \brief TLB state
     shadow_tlb_state tlb;
 

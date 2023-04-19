@@ -150,6 +150,8 @@ IMPL_MACHINE_OBJ_READ_WRITE(htif_ihalt)
 IMPL_MACHINE_OBJ_READ_WRITE(htif_iconsole)
 IMPL_MACHINE_OBJ_READ_WRITE(htif_iyield)
 IMPL_MACHINE_OBJ_READ_WRITE(clint_mtimecmp)
+IMPL_MACHINE_OBJ_READ_WRITE(plic_girqpend)
+IMPL_MACHINE_OBJ_READ_WRITE(plic_girqsrvd)
 IMPL_MACHINE_OBJ_READ_WRITE(uarch_cycle)
 IMPL_MACHINE_OBJ_READ_WRITE(uarch_pc)
 IMPL_MACHINE_OBJ_READ(uarch_ram_length)
@@ -535,6 +537,8 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"get_initial_config", machine_obj_index_get_initial_config},
     {"get_root_hash", machine_obj_index_get_root_hash},
     {"read_clint_mtimecmp", machine_obj_index_read_clint_mtimecmp},
+    {"read_plic_girqpend", machine_obj_index_read_plic_girqpend},
+    {"read_plic_girqsrvd", machine_obj_index_read_plic_girqsrvd},
     {"read_csr", machine_obj_index_read_csr},
     {"read_htif_fromhost", machine_obj_index_read_htif_fromhost},
     {"read_htif_tohost", machine_obj_index_read_htif_tohost},
@@ -598,6 +602,8 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"verify_dirty_page_maps", machine_obj_index_verify_dirty_page_maps},
     {"verify_merkle_tree", machine_obj_index_verify_merkle_tree},
     {"write_clint_mtimecmp", machine_obj_index_write_clint_mtimecmp},
+    {"write_plic_girqpend", machine_obj_index_write_plic_girqpend},
+    {"write_plic_girqsrvd", machine_obj_index_write_plic_girqsrvd},
     {"write_csr", machine_obj_index_write_csr},
     {"write_htif_fromhost", machine_obj_index_write_htif_fromhost},
     {"write_htif_fromhost_data", machine_obj_index_write_htif_fromhost_data},

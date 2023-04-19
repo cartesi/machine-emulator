@@ -68,7 +68,8 @@ EMULATOR_SOURCES=\
 	shadow-tlb.cpp \
 	shadow-state.cpp \
 	shadow-pmas.cpp \
-	clint.cpp
+	clint.cpp \
+	plic.cpp
 
 UARCH_OBJS = $(patsubst %.c,%.uarch_c.o,$(patsubst %.cpp,%.uarch_cpp.o,$(UARCH_SOURCES)))
 EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,$(EMULATOR_SOURCES)))

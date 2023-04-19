@@ -289,6 +289,8 @@ CARTESI_OBJS:= \
 	pma-driver.o \
 	clint.o \
 	clint-factory.o \
+	plic.o \
+	plic-factory.o \
 	rom.o \
 	tty.o \
 	htif.o \
@@ -532,6 +534,8 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	pma-driver.o \
 	clint.o \
 	clint-factory.o \
+	plic.o \
+	plic-factory.o \
 	rom.o \
 	tty.o \
 	htif.o \
@@ -559,6 +563,8 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	pma-driver.o \
 	clint.o \
 	clint-factory.o \
+	plic.o \
+	plic-factory.o \
 	rom.o \
 	tty.o \
 	htif.o \

@@ -541,6 +541,8 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"ilrsc", CM_PROC_ILRSC},
         {"iflags", CM_PROC_IFLAGS},
         {"clint_mtimecmp", CM_PROC_CLINT_MTIMECMP},
+        {"plic_girqpend", CM_PROC_PLIC_GIRQPEND},
+        {"plic_girqsrvd", CM_PROC_PLIC_GIRQSRVD},
         {"htif_tohost", CM_PROC_HTIF_TOHOST},
         {"htif_fromhost", CM_PROC_HTIF_FROMHOST},
         {"htif_ihalt", CM_PROC_HTIF_IHALT},
@@ -811,6 +813,15 @@ static void push_cm_clint_config(lua_State *L, const cm_clint_config *c) {
     clua_setintegerfield(L, c->mtimecmp, "mtimecmp", -1);
 }
 
+/// \brief Pushes an cm_plic_config to the Lua stack
+/// \param L Lua state.
+/// \param c Plic configuration to be pushed.
+static void push_cm_plic_config(lua_State *L, const cm_plic_config *c) {
+    lua_newtable(L);
+    clua_setintegerfield(L, c->girqpend, "girqpend", -1);
+    clua_setintegerfield(L, c->girqsrvd, "girqsrvd", -1);
+}
+
 /// \brief Pushes cm_memory_range_config to the Lua stack
 /// \param L Lua state.
 /// \param m Memory range config to be pushed.
@@ -899,6 +910,8 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
     lua_setfield(L, -2, "htif");                     // config
     push_cm_clint_config(L, &c->clint);              // config clint
     lua_setfield(L, -2, "clint");                    // config
+    push_cm_plic_config(L, &c->plic);                // config plic
+    lua_setfield(L, -2, "plic");                     // config
     push_cm_flash_drive_configs(L, &c->flash_drive); // config flash_drive
     lua_setfield(L, -2, "flash_drive");              // config
     push_cm_ram_config(L, &c->ram);                  // config ram
@@ -1123,6 +1136,19 @@ static void check_cm_clint_config(lua_State *L, int tabidx, cm_clint_config *c) 
     lua_pop(L, 1);
 }
 
+/// \brief Loads C api PLIC config from Lua
+/// \param L Lua state
+/// \param tabidx Config stack index
+/// \param c PLIC config structure to receive results
+static void check_cm_plic_config(lua_State *L, int tabidx, cm_plic_config *c) {
+    if (!opt_table_field(L, tabidx, "plic")) {
+        return;
+    }
+    c->girqpend = opt_uint_field(L, -1, "girqpend", c->girqpend);
+    c->girqsrvd = opt_uint_field(L, -1, "girqsrvd", c->girqsrvd);
+    lua_pop(L, 1);
+}
+
 cm_processor_config get_default_processor_config(lua_State *L) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to adjust config
     const auto *config = cm_new_default_machine_config();
@@ -1208,6 +1234,7 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
     check_cm_tlb_config(L, tabidx, &config->tlb);
     check_cm_htif_config(L, tabidx, &config->htif);
     check_cm_clint_config(L, tabidx, &config->clint);
+    check_cm_plic_config(L, tabidx, &config->plic);
     check_cm_uarch_config(L, tabidx, &config->uarch);
     check_cm_rollup_config(L, tabidx, &config->rollup);
     check_cm_flash_drive_configs(L, tabidx, &config->flash_drive);

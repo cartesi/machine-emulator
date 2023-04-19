@@ -95,6 +95,22 @@ private:
         return m_a.write_clint_mtimecmp(val);
     }
 
+    uint64_t do_read_plic_girqpend(void) override {
+        return m_a.read_plic_girqpend();
+    }
+
+    void do_write_plic_girqpend(uint64_t val) override {
+        return m_a.write_plic_girqpend(val);
+    }
+
+    uint64_t do_read_plic_girqsrvd(void) override {
+        return m_a.read_plic_girqsrvd();
+    }
+
+    void do_write_plic_girqsrvd(uint64_t val) override {
+        return m_a.write_plic_girqsrvd(val);
+    }
+
     uint64_t do_read_htif_fromhost(void) override {
         return m_a.read_htif_fromhost();
     }

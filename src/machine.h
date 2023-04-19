@@ -157,6 +157,8 @@ public:
         ilrsc,
         iflags,
         clint_mtimecmp,
+        plic_girqpend,
+        plic_girqsrvd,
         htif_tohost,
         htif_fromhost,
         htif_ihalt,
@@ -665,6 +667,22 @@ public:
     /// \brief Writes the value of CLINT's mtimecmp register.
     /// \param value New register value.
     void write_clint_mtimecmp(uint64_t value);
+
+    /// \brief Reads the value of PLIC's girqpend register.
+    /// \returns The value of the register.
+    uint64_t read_plic_girqpend(void) const;
+
+    /// \brief Writes the value of PLIC's girqpend register.
+    /// \param val New register value.
+    void write_plic_girqpend(uint64_t val);
+
+    /// \brief Reads the value of PLIC's girqsrvd register.
+    /// \returns The value of the register.
+    uint64_t read_plic_girqsrvd(void) const;
+
+    /// \brief Writes the value of PLIC's girqsrvd register.
+    /// \param val New register value.
+    void write_plic_girqsrvd(uint64_t val);
 
     /// \brief Checks the value of the iflags_X flag.
     /// \returns The flag value.

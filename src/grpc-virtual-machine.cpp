@@ -780,6 +780,22 @@ void grpc_virtual_machine::do_write_clint_mtimecmp(uint64_t val) {
     write_csr(csr::clint_mtimecmp, val);
 }
 
+uint64_t grpc_virtual_machine::do_read_plic_girqpend(void) const {
+    return read_csr(csr::plic_girqpend);
+}
+
+void grpc_virtual_machine::do_write_plic_girqpend(uint64_t val) {
+    write_csr(csr::plic_girqpend, val);
+}
+
+uint64_t grpc_virtual_machine::do_read_plic_girqsrvd(void) const {
+    return read_csr(csr::plic_girqsrvd);
+}
+
+void grpc_virtual_machine::do_write_plic_girqsrvd(uint64_t val) {
+    write_csr(csr::plic_girqsrvd, val);
+}
+
 void grpc_virtual_machine::do_get_root_hash(hash_type &hash) const {
     GetRootHashResponse response;
     Void request;

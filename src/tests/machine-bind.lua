@@ -163,11 +163,13 @@ local cpu_csr_addr = {
     ilrsc = 736,
     iflags = 744,
     clint_mtimecmp = 752,
-    htif_tohost = 760,
-    htif_fromhost = 768,
-    htif_ihalt = 776,
-    htif_iconsole = 784,
-    htif_iyield = 792,
+    plic_girqpend = 760,
+    plic_girqsrvd = 768,
+    htif_tohost = 776,
+    htif_fromhost = 784,
+    htif_ihalt = 792,
+    htif_iconsole = 800,
+    htif_iyield = 808,
 }
 
 local function get_cpu_csr_test_values()
@@ -236,6 +238,7 @@ local pmas_file_names = {
     "0000000000010000--0000000000001000.bin", -- shadow pmas
     "0000000000020000--0000000000006000.bin", -- shadow tlb
     "0000000002000000--00000000000c0000.bin", -- clint
+    -- "0000000040100000--0000000000400000.bin", -- plic
     "0000000040008000--0000000000001000.bin", -- htif
     "0000000080000000--0000000000100000.bin", -- ram
     "0000000070000000--0000000000010000.bin"  -- uarch ram
@@ -521,6 +524,8 @@ do_test("should return expected values",
         local to_ignore = {
             iflags = true,
             clint_mtimecmp = true,
+            plic_girqpend = true,
+            plic_girqsrvd = true,
             htif_ihalt = true,
             htif_iconsole = true,
         }

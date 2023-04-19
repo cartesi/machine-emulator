@@ -30,6 +30,7 @@
 #include "htif-factory.h"
 #include "interpret.h"
 #include "machine.h"
+#include "plic-factory.h"
 #include "riscv-constants.h"
 #include "rom.h"
 #include "rtc.h"
@@ -396,10 +397,17 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     uint64_t htif_iyield = static_cast<uint64_t>(m_c.htif.yield_manual) << HTIF_YIELD_MANUAL |
         static_cast<uint64_t>(m_c.htif.yield_automatic) << HTIF_YIELD_AUTOMATIC;
     write_htif_iyield(htif_iyield);
-    // Resiter CLINT device
+
+    // Register CLINT device
     register_pma_entry(make_clint_pma_entry(PMA_CLINT_START, PMA_CLINT_LENGTH));
     // Copy CLINT state to from config to machine
     write_clint_mtimecmp(m_c.clint.mtimecmp);
+
+    // Register PLIC device
+    register_pma_entry(make_plic_pma_entry(PMA_PLIC_START, PMA_PLIC_LENGTH));
+    // Copy PLIC state from config to machine
+    write_plic_girqpend(m_c.plic.girqpend);
+    write_plic_girqsrvd(m_c.plic.girqsrvd);
 
     // Register TLB device
     register_pma_entry(make_shadow_tlb_pma_entry(PMA_SHADOW_TLB_START, PMA_SHADOW_TLB_LENGTH));
@@ -517,6 +525,9 @@ machine_config machine::get_serialization_config(void) const {
     c.processor.iflags = read_iflags();
     // Copy current CLINT state to config
     c.clint.mtimecmp = read_clint_mtimecmp();
+    // Copy current PLIC state to config
+    c.plic.girqpend = read_plic_girqpend();
+    c.plic.girqsrvd = read_plic_girqsrvd();
     // Copy current HTIF state to config
     c.htif.tohost = read_htif_tohost();
     c.htif.fromhost = read_htif_fromhost();
@@ -1054,6 +1065,22 @@ void machine::write_clint_mtimecmp(uint64_t val) {
     m_s.clint.mtimecmp = val;
 }
 
+uint64_t machine::read_plic_girqpend(void) const {
+    return m_s.plic.girqpend;
+}
+
+void machine::write_plic_girqpend(uint64_t val) {
+    m_s.plic.girqpend = val;
+}
+
+uint64_t machine::read_plic_girqsrvd(void) const {
+    return m_s.plic.girqsrvd;
+}
+
+void machine::write_plic_girqsrvd(uint64_t val) {
+    m_s.plic.girqsrvd = val;
+}
+
 uint64_t machine::read_csr(csr r) const {
     switch (r) {
         case csr::pc:
@@ -1118,6 +1145,10 @@ uint64_t machine::read_csr(csr r) const {
             return read_iflags();
         case csr::clint_mtimecmp:
             return read_clint_mtimecmp();
+        case csr::plic_girqpend:
+            return read_plic_girqpend();
+        case csr::plic_girqsrvd:
+            return read_plic_girqsrvd();
         case csr::htif_tohost:
             return read_htif_tohost();
         case csr::htif_fromhost:
@@ -1200,6 +1231,10 @@ void machine::write_csr(csr csr, uint64_t value) {
             return write_iflags(value);
         case csr::clint_mtimecmp:
             return write_clint_mtimecmp(value);
+        case csr::plic_girqpend:
+            return write_plic_girqpend(value);
+        case csr::plic_girqsrvd:
+            return write_plic_girqsrvd(value);
         case csr::htif_tohost:
             return write_htif_tohost(value);
         case csr::htif_fromhost:
@@ -1303,6 +1338,10 @@ uint64_t machine::get_csr_address(csr csr) {
             return shadow_state_get_csr_abs_addr(shadow_state_csr::htif_iyield);
         case csr::clint_mtimecmp:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::clint_mtimecmp);
+        case csr::plic_girqpend:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::plic_girqpend);
+        case csr::plic_girqsrvd:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::plic_girqsrvd);
         case csr::uarch_pc:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_pc);
         case csr::uarch_cycle:

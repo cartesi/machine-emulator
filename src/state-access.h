@@ -371,6 +371,22 @@ private:
         m_m.get_state().clint.mtimecmp = val;
     }
 
+    uint64_t do_read_plic_girqpend(void) const {
+        return m_m.get_state().plic.girqpend;
+    }
+
+    void do_write_plic_girqpend(uint64_t val) {
+        m_m.get_state().plic.girqpend = val;
+    }
+
+    uint64_t do_read_plic_girqsrvd(void) const {
+        return m_m.get_state().plic.girqsrvd;
+    }
+
+    void do_write_plic_girqsrvd(uint64_t val) {
+        m_m.get_state().plic.girqsrvd = val;
+    }
+
     uint64_t do_read_htif_fromhost(void) const {
         return m_m.get_state().htif.fromhost;
     }

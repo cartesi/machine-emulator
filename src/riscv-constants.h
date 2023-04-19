@@ -459,6 +459,8 @@ enum CARTESI_init : uint64_t {
     ILRSC_INIT = UINT64_C(-1),                                      ///< Initial value for ilrsc
     IFLAGS_INIT = static_cast<uint64_t>(PRV_M) << IFLAGS_PRV_SHIFT, ///< Initial value for iflags
     MTIMECMP_INIT = UINT64_C(0),                                    ///< Initial value for mtimecmp
+    GIRQPEND_INIT = UINT64_C(0),                                    ///< Initial value for girqpend
+    GIRQSRVD_INIT = UINT64_C(0),                                    ///< Initial value for girqsrvd
     FROMHOST_INIT = UINT64_C(0),                                    ///< Initial value for fromhost
     TOHOST_INIT = UINT64_C(0),                                      ///< Initial value for tohost
     MENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for menvcfg

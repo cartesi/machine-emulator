@@ -659,7 +659,6 @@ local function print_machine(test_name, expected_cycles)
 end
 
 local function add_error(ctx,  msg, ...)
-    local ram_image = ctx.ram_image
     local e = string.format(msg, ...)
     ctx.failed = true
     ctx.errors[#ctx.errors + 1] = e
@@ -724,7 +723,7 @@ local function run_parallel(contexts)
     for pid in pairs(pids) do
         local retpid, reason, exitcode = syswait.wait(pid)
         if not (retpid == pid and reason == 'exited' and exitcode == 0) then
-            error_count = error_count + 1
+            add_error("unexpected child process exit")
         end
         pids[pid] = nil
         running_jobs = running_jobs - 1
@@ -732,8 +731,8 @@ local function run_parallel(contexts)
     assert(running_jobs == 0 and next(pids) == nil)
 end
 
-local function  run_sync(contexts)
-    for _, ctx in pairs(contexts) do 
+local function run_sync(contexts)
+    for _, ctx in pairs(contexts) do
         local machine = ctx.target.build(ctx.ram_image)
         ctx.cycles = ctx.target.run(machine, ctx, 2 * ctx.expected_cycles)
         check_test_result(ctx)
@@ -766,7 +765,7 @@ local function run_tests(tests, target)
     end
     -- collect results
     local error_count = 0
-    for _, ctx in pairs(contexts) do 
+    for _, ctx in pairs(contexts) do
         if ctx.failed then
             error_count = error_count + 1
         end

@@ -89,7 +89,7 @@ for _, proofs in ipairs{true, false} do
         assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
         assert(#log.accesses == 1)
         assert(log.accesses[1].type == "read")
-        assert(log.accesses[1].address == 0x320) -- address of uarch_cycle in shadow
+        assert(log.accesses[1].address == 0x330) -- address of uarch_cycle in shadow
         assert(log.accesses[1].read == string.pack('J', MAX_UARCH_CYCLE))
         assert((log.accesses[1].proof ~= nil) == proofs)
     end)

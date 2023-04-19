@@ -1931,7 +1931,7 @@ public:
 
         uint32_t test_uarch_ram[] = {
             0x07b00513, //  li	a0,123
-            0x32800293, // li t0, UARCH_HALT_FLAG_SHADDOW_ADDR_DEF (0x328)
+            0x33800293, //  li t0, UARCH_HALT_FLAG_SHADDOW_ADDR_DEF (0x338)
             0x00100313, //  li	t1,1
             0x0062b023, //  sd	t1,0(t0)  Halt microarchitecture at uarch cycle 4
         };

@@ -156,7 +156,7 @@ $(BUILDDIR)/include/nlohmann/json.hpp: | $(BUILDDIR) $(DOWNLOADDIR)
 	cp $(DOWNLOADDIR)/json.hpp $(BUILDDIR)/include/nlohmann
 
 $(BUILDDIR)/include/mongoose.h $(BUILDDIR)/lib/libmongoose.a: | $(BUILDDIR) $(DOWNLOADDIR)
-	if [ ! -d $(DEPDIR)/mongoose-7.9 ]; then unzip $(DOWNLOADDIR)/7.9.zip -d $(DEPDIR); fi
+	if [ ! -d $(DEPDIR)/mongoose-7.9 ]; then tar -xzf $(DOWNLOADDIR)/7.9.tar.gz -C $(DEPDIR); fi
 	cp $(DEPDIR)/mongoose-7.9/mongoose.c $(BUILDDIR)/lib
 	cp $(DEPDIR)/mongoose-7.9/mongoose.h $(BUILDDIR)/include
 

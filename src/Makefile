@@ -21,8 +21,6 @@ BUILDDIR ?= $(abspath ../build/$(UNAME)_$(shell uname -m))
 LUA_INC:=$(shell pkg-config --cflags-only-I lua5.3)
 LUA_LIB:=-llua5.3
 LUA_BIN?=lua5.3
-CRYPTOPP_LIB:=-L$(BUILDDIR)/lib -lcryptopp
-CRYPTOPP_INC:=-I$(BUILDDIR)/include
 GRPC_DIR:=../lib/grpc-interfaces
 HEALTHCHECK_DIR:=$(BUILDDIR)/share/grpc/health/v1
 
@@ -50,9 +48,17 @@ SOLDFLAGS_Darwin+=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
 ifneq (,$(wildcard /usr/local/opt/boost/lib))
 BOOST_LIB_DIR_Darwin=-L/usr/local/opt/boost/lib
 BOOST_INC_Darwin=-I/usr/local/opt/boost/include
+CRYPTOPP_LIB_Darwin:=-L/usr/local/opt/cryptopp/lib -lcryptopp
+CRYPTOPP_INC_Darwin:=-I/usr/local/opt/cryptopp/include
+B64_LIB_Darwin:=-L/usr/local/opt/b64/lib -lb64
+B64_INC_Darwin:=-I/usr/local/opt/b64/include
 else # Macports installation
 BOOST_LIB_DIR_Darwin=-L/opt/local/lib
 BOOST_INC_Darwin=-I/opt/local/include
+CRYPTOPP_LIB_Darwin:=-L/opt/local/lib -lcryptopp
+CRYPTOPP_INC_Darwin:=-I/opt/local/include
+B64_LIB_Darwin:=-L/opt/local/lib -lb64
+B64_INC_Darwin:=-I/opt/local/include
 endif
 endif
 
@@ -87,8 +93,11 @@ BOOST_CORO_LIB_Linux:=-lboost_coroutine -lboost_context
 BOOST_FILESYSTEM_LIB_Linux:=-lboost_system -lboost_filesystem
 BOOST_LOG_LIB_Linux:=-lboost_log -lboost_log_setup -lboost_thread
 BOOST_PROCESS_LIB_Linux:=-lpthread
-B64_LIB_Linux:=-lb64
 BOOST_INC_Linux=
+B64_LIB_Linux:=-lb64
+B64_INC_Linux:=
+CRYPTOPP_LIB_Linux:=-lcryptopp
+CRYPTOPP_INC_Linux:=
 GRPC_INC_Linux:=-I$(BUILDDIR)/include
 GRPC_LIB_Linux:=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
 PROTOBUF_LIB_Linux:=-L$(BUILDDIR)/lib -lprotobuf -lpthread
@@ -114,9 +123,12 @@ BOOST_PROCESS_LIB=$(BOOST_PROCESS_LIB_$(UNAME))
 BOOST_FILESYSTEM_LIB=$(BOOST_FILESYSTEM_LIB_$(UNAME))
 BOOST_LOG_LIB=$(BOOST_LOG_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
+B64_LIB=$(B64_LIB_$(UNAME))
+B64_INC=$(B64_INC_$(UNAME))
+CRYPTOPP_LIB=$(CRYPTOPP_LIB_$(UNAME))
+CRYPTOPP_INC=$(CRYPTOPP_INC_$(UNAME))
 GRPC_LIB=$(GRPC_LIB_$(UNAME))
 GRPC_INC=$(GRPC_INC_$(UNAME))
-B64_LIB=$(B64_LIB_$(UNAME))
 PROTOBUF_LIB=$(PROTOBUF_LIB_$(UNAME))
 LIBCARTESI=$(LIBCARTESI_$(UNAME))
 LIBCARTESI_LDFLAGS=$(LIBCARTESI_LDFLAGS_$(UNAME))
@@ -672,7 +684,7 @@ remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS) $(LIBCARTESI_PROTOBUF)
 $(BUILDDIR)/lib/mongoose.o: CFLAGS := $(patsubst %-std=c99,%,$(CFLAGS))
 
 jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) $(LIBCARTESI_PROTOBUF)
-	$(CXX) $(LDFLAGS) -o $@ $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) $(JSONRPC_REMOTE_CARTESI_MACHINE_LIBS)
+	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) $(JSONRPC_REMOTE_CARTESI_MACHINE_LIBS)
 
 remote-cartesi-machine-proxy: $(REMOTE_CARTESI_MACHINE_PROXY_OBJS) $(LIBCARTESI_PROTOBUF)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(REMOTE_CARTESI_MACHINE_PROXY_OBJS) $(REMOTE_CARTESI_MACHINE_PROXY_LIBS)

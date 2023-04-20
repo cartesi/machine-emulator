@@ -398,7 +398,7 @@ size_t count_args(const std::tuple<ARGS...> &tup) {
 template <typename... ARGS, size_t... I>
 std::tuple<ARGS...> parse_array_args(const json &j, std::index_sequence<I...>) {
     std::tuple<ARGS...> tp;
-    (cartesi::ju_get_field(j, I, std::get<I>(tp)), ...);
+    (cartesi::ju_get_field(j, static_cast<uint64_t>(I), std::get<I>(tp)), ...);
     return tp;
 }
 

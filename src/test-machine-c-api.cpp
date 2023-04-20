@@ -2805,7 +2805,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_version_wrong_addr_test, grpc_machine_fi
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_hash0_test, grpc_access_log_machine_fixture) {
     char *err_msg{};
     cm_hash hash1;
-    int error_code = cm_grpc_verify_state_transition(m_stub, nullptr, _access_log, &hash1, false, &err_msg);
+    int error_code =
+        cm_grpc_verify_state_transition(m_stub, nullptr, _access_log, &hash1, &_runtime_config, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
     std::string origin("invalid hash");
@@ -2816,7 +2817,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_hash0_test, grp
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_hash1_test, grpc_access_log_machine_fixture) {
     char *err_msg{};
     cm_hash hash0{};
-    int error_code = cm_grpc_verify_state_transition(m_stub, &hash0, _access_log, nullptr, false, &err_msg);
+    int error_code =
+        cm_grpc_verify_state_transition(m_stub, &hash0, _access_log, nullptr, &_runtime_config, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
     std::string origin("invalid hash");
@@ -2828,7 +2830,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_ljog_test, grpc
     char *err_msg{};
     cm_hash hash0{};
     cm_hash hash1{};
-    int error_code = cm_grpc_verify_state_transition(m_stub, &hash0, nullptr, &hash1, false, &err_msg);
+    int error_code =
+        cm_grpc_verify_state_transition(m_stub, &hash0, nullptr, &hash1, &_runtime_config, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
     std::string origin("invalid access log");
@@ -2838,7 +2841,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_ljog_test, grpc
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_access_log_null_log_test, grpc_access_log_machine_fixture) {
     char *err_msg{};
-    int error_code = cm_grpc_verify_access_log(m_stub, nullptr, false, &err_msg);
+    int error_code = cm_grpc_verify_access_log(m_stub, nullptr, &_runtime_config, false, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = err_msg;
     std::string origin("invalid access log");

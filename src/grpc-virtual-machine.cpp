@@ -277,23 +277,26 @@ void grpc_virtual_machine::shutdown(const grpc_machine_stub_ptr &stub) {
     check_status(stub->get_stub()->Shutdown(&context, request, &response));
 }
 
-void grpc_virtual_machine::verify_access_log(const grpc_machine_stub_ptr &stub, const access_log &log, bool one_based) {
+void grpc_virtual_machine::verify_access_log(const grpc_machine_stub_ptr &stub, const access_log &log,
+    const machine_runtime_config &r, bool one_based) {
     VerifyAccessLogRequest request;
     Void response;
     ClientContext context;
     set_proto_access_log(log, request.mutable_log());
+    set_proto_machine_runtime_config(r, request.mutable_runtime());
     request.set_one_based(one_based);
     check_status(stub->get_stub()->VerifyAccessLog(&context, request, &response));
 }
 
 void grpc_virtual_machine::verify_state_transition(const grpc_machine_stub_ptr &stub, const hash_type &root_hash_before,
-    const access_log &log, const hash_type &root_hash_after, bool one_based) {
+    const access_log &log, const hash_type &root_hash_after, const machine_runtime_config &r, bool one_based) {
     VerifyStateTransitionRequest request;
     Void response;
     ClientContext context;
     set_proto_hash(root_hash_before, request.mutable_root_hash_before());
     set_proto_access_log(log, request.mutable_log());
     set_proto_hash(root_hash_after, request.mutable_root_hash_after());
+    set_proto_machine_runtime_config(r, request.mutable_runtime());
     request.set_one_based(one_based);
     check_status(stub->get_stub()->VerifyStateTransition(&context, request, &response));
 }

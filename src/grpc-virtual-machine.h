@@ -95,10 +95,12 @@ public:
 
     static machine_config get_default_config(const grpc_machine_stub_ptr &stub);
 
-    static void verify_access_log(const grpc_machine_stub_ptr &stub, const access_log &log, bool one_based = false);
+    static void verify_access_log(const grpc_machine_stub_ptr &stub, const access_log &log,
+        const machine_runtime_config &r = {}, bool one_based = false);
 
     static void verify_state_transition(const grpc_machine_stub_ptr &stub, const hash_type &root_hash_before,
-        const access_log &log, const hash_type &root_hash_after, bool one_based = false);
+        const access_log &log, const hash_type &root_hash_after, const machine_runtime_config &r = {},
+        bool one_based = false);
 
     static uint64_t get_x_address(const grpc_machine_stub_ptr &stub, int i);
     static uint64_t get_f_address(const grpc_machine_stub_ptr &stub, int i);

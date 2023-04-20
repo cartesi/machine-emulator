@@ -97,26 +97,29 @@ CM_API int cm_grpc_get_default_config(const cm_grpc_machine_stub *stub, const cm
 /// \brief Checks the internal consistency of an access log
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object
 /// \param log State access log to be verified.
+/// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_7_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_grpc_verify_access_log(const cm_grpc_machine_stub *stub, const cm_access_log *log, bool one_based,
-    char **err_msg);
+CM_API int cm_grpc_verify_access_log(const cm_grpc_machine_stub *stub, const cm_access_log *log,
+    const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
 
 /// \brief Checks the validity of a state transition
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object
 /// \param root_hash_before State hash before step
 /// \param log Step state access log
 /// \param root_hash_after State hash after step
+/// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_error_message
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_grpc_verify_state_transition(const cm_grpc_machine_stub *stub, const cm_hash *root_hash_before,
-    const cm_access_log *log, const cm_hash *root_hash_after, bool one_based, char **err_msg);
+    const cm_access_log *log, const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config,
+    bool one_based, char **err_msg);
 
 /// \brief Gets the address of a general-purpose register from remote cartesi server
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object

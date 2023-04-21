@@ -50,8 +50,9 @@ BOOST_LIB_DIR_Darwin=-L/usr/local/opt/boost/lib
 BOOST_INC_Darwin=-I/usr/local/opt/boost/include
 CRYPTOPP_LIB_Darwin:=-L/usr/local/opt/cryptopp/lib -lcryptopp
 CRYPTOPP_INC_Darwin:=-I/usr/local/opt/cryptopp/include
-B64_LIB_Darwin:=-L/usr/local/opt/b64/lib -lb64
-B64_INC_Darwin:=-I/usr/local/opt/b64/include
+NLOHMANN_JSON_INC_Darwin:=-I/usr/local/opt/nlohmann-json/include
+B64_LIB_Darwin:=-L/usr/local/opt/libb64/lib -lb64
+B64_INC_Darwin:=-I/usr/local/opt/libb64/include
 else # Macports installation
 BOOST_LIB_DIR_Darwin=-L/opt/local/lib
 BOOST_INC_Darwin=-I/opt/local/include
@@ -127,6 +128,7 @@ B64_LIB=$(B64_LIB_$(UNAME))
 B64_INC=$(B64_INC_$(UNAME))
 CRYPTOPP_LIB=$(CRYPTOPP_LIB_$(UNAME))
 CRYPTOPP_INC=$(CRYPTOPP_INC_$(UNAME))
+NLOHMANN_JSON_INC=$(NLOHMANN_JSON_INC_$(UNAME))
 GRPC_LIB=$(GRPC_LIB_$(UNAME))
 GRPC_INC=$(GRPC_INC_$(UNAME))
 PROTOBUF_LIB=$(PROTOBUF_LIB_$(UNAME))
@@ -164,7 +166,7 @@ WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
 INCS=-I../lib/machine-emulator-defines -I../third-party/llvm-flang-uint128 \
-	$(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
+	$(LUA_INC) $(CRYPTOPP_INC) $(NLOHMANN_JSON_INC) $(B64_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS

@@ -60,7 +60,7 @@ sudo luarocks install md5
 
 ##### Homebrew
 ```
-brew install llvm@12 automake boost libomp wget cmake pkg-config c-ares zlib openssl lua@5.3 libb64 libcryptopp luarocks
+brew install llvm@12 automake boost libomp wget cmake pkg-config c-ares zlib openssl lua@5.3 libb64 libcryptopp luarocks nlohmann-json
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install lpeg
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install dkjson
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install luasocket

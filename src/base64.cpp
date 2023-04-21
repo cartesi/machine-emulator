@@ -16,7 +16,15 @@
 
 #include <sstream>
 
+#ifndef BUFFERSIZE
+// To fulfill libb64's assumption that the macro BUFFERSIZE is always defined. It is not.
+// bug https://sourceforge.net/p/libb64/bugs/3/
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define BUFFERSIZE 1024
+#endif
+
 #include <b64/decode.h>
+
 #include <b64/encode.h>
 
 #include "base64.h"

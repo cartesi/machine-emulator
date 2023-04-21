@@ -60,7 +60,7 @@ sudo luarocks install md5
 
 ##### Homebrew
 ```
-brew install llvm@12 automake boost libomp wget cmake pkg-config c-ares zlib openssl lua@5.3 libb64 libcryptopp luarocks nlohmann-json
+brew install llvm@12 automake boost libomp wget cmake pkg-config c-ares zlib openssl lua@5.3 libb64 luarocks nlohmann-json
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install lpeg
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install dkjson
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install luasocket
@@ -70,6 +70,10 @@ luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install md5
 ```
 
 For emulator scripts to work it is expected that `lua5.3` binary is available in the system PATH. If operating system/package manager that you are using provides only `lua` or lua binary named in a different way (e.g. on `Homebrew`), please create symbolic link or alias `lua5.3`.
+
+###### libcryptopp
+Homebrew does not have a formula for this library on the official repository, at the time of this writing.
+More information on how to obtain this library can be found on https://www.cryptopp.com
 
 ### Build
 

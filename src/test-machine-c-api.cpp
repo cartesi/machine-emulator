@@ -2901,13 +2901,6 @@ BOOST_AUTO_TEST_CASE_NOLINT(uarch_solidity_compatibility_layer) {
     BOOST_CHECK_EQUAL(int64ShiftRight(INT64_MIN, 62), -2);
     BOOST_CHECK_EQUAL(int64ShiftRight(INT64_MIN, 63), -1);
 
-    BOOST_CHECK_EQUAL(int64ShiftLeft(0, 0), 0);
-    BOOST_CHECK_EQUAL(int64ShiftLeft(0, 1), 0);
-    BOOST_CHECK_EQUAL(int64ShiftLeft(4, 1), 8);
-    BOOST_CHECK_EQUAL(int64ShiftLeft(4, 2), 16);
-    BOOST_CHECK_EQUAL(int64ShiftLeft(1, 63), INT64_MIN);
-    BOOST_CHECK_EQUAL(int64ShiftLeft(INT64_MAX, 1), -2);
-
     BOOST_CHECK_EQUAL(int64AddInt64(0, 0), 0);
     BOOST_CHECK_EQUAL(int64AddInt64(0, 1), 1);
     BOOST_CHECK_EQUAL(int64AddInt64(0, -1), -1);

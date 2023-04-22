@@ -116,10 +116,6 @@ static inline int64 int64ShiftRight(int64 v, uint32 count) {
     return v >> (count & 0x3f);
 }
 
-static inline int64 int64ShiftLeft(int64 v, uint32 count) {
-    return v << (count & 0x3f);
-}
-
 static inline int64 int64AddInt64(int64 v, int64 w) {
     int64 res = 0;
     __builtin_add_overflow(v, w, &res);

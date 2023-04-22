@@ -164,7 +164,7 @@ static inline int32 operandSimm12(uint32 insn) {
 
 template <typename UarchState>
 static inline void advancePc(UarchState &a, uint64 pc) {
-    uint64 newPc = pc + 4;
+    uint64 newPc = uint64AddUint64(pc, 4);
     return writePc(a, newPc);
 }
 
@@ -207,7 +207,7 @@ static inline void executeJAL(UarchState &a, uint32 insn, uint64 pc) {
     int32 imm = operandJimm20(insn);
     uint8 rd = operandRd(insn);
     if (rd != 0) {
-        writeX(a, rd, pc + 4);
+        writeX(a, rd, uint64AddUint64(pc, 4));
     }
     return branch(a, uint64AddInt32(pc, imm));
 }
@@ -222,7 +222,7 @@ static inline void executeJALR(UarchState &a, uint32 insn, uint64 pc) {
     uint8 rs1 = operandRs1(insn);
     uint64 rs1val = readX(a, rs1);
     if (rd != 0) {
-        writeX(a, rd, pc + 4);
+        writeX(a, rd, uint64AddUint64(pc, 4));
     }
     return branch(a, uint64AddInt32(rs1val, imm) & (~uint64(1)));
 }

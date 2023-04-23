@@ -29,6 +29,7 @@ local function hexstring(hash)
 end
 
 local hexhash = hexstring
+_M.hexstring = hexstring
 _M.hexhash = hexstring
 
 local function dump_json_sibling_hashes(sibling_hashes, out, indent)

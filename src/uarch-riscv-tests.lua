@@ -88,27 +88,27 @@ where options are:
   --test=<pattern>
     select tests to run based on a Lua string <pattern>
     (default: ".*", i.e., all tests)
-  --output=<filename>
-    write the output of hash and step commands to the file at
-    <filename>. If the argument is not present the output is written
-    to stdout.
-    (default: none)
-  --json-test-list
-    write the output of the list command as json
+  --output-dir=<directory-path>
+    write json logs to this  directory
+    required by the command json-logs
+      
 and command can be:
   run
     run test and report errors
   
   list
     list tests selected by the test <pattern>
+
+  json-logs
+    generate json log files, used by by Solidity unit tests, to the directory specified by --output-dir
+
 ]=], arg[0]))
     os.exit()
 end
 
 local test_path = "./"
 local test_pattern = ".*"
-local output = nil
-local json_list = false
+local output_dir = nil
 local cleanup = {}
 
 local options = {
@@ -120,14 +120,9 @@ local options = {
         if not all then return false end
         help()
     end },     
-    { "^%-%-output%=(.*)$", function(o)
+    { "^%-%-output%-dir%=(.*)$", function(o)
         if not o or #o < 1 then return false end
-        output = o
-        return true
-    end },
-    { "^%-%-json%-test%-list$", function(all)
-        if not all then return false end
-        json_list = true
+        output_dir = o
         return true
     end },
     { "^%-%-test%-path%=(.*)$", function(o)
@@ -251,25 +246,9 @@ local function run(tests)
     end
 end
 
-
-
 local function list(tests)
-    if json_list then
-        local out = io.stdout
-        local indentout = util.indentout
-        out:write("{\n  \"tests\": [\n")
-        for i, test in ipairs(tests) do
-            if i ~= 1 then out:write(",\n") end
-            indentout(out, 2, "{\n")
-            indentout(out, 3, "\"file\": \"" .. test[1] .. "\",\n")
-            indentout(out, 3, "\"cycle\": " .. test[2] .. "\n")
-            indentout(out, 2, "}")
-        end
-        out:write("\n  ]\n}\n")
-    else
-        for _, test in ipairs(tests) do
-            print(test[1])
-        end
+    for _, test in ipairs(tests) do
+        print(test[1])
     end
 end
 
@@ -278,6 +257,124 @@ local function select(test_name, test_pattern)
     if i == 1 and j == #test_name then return true end
     i, j = test_name:find(test_pattern, 1, true)
     return i == 1 and j == #test_name
+end
+
+local function make_json_log_file_name(test_name, suffix)
+    return test_name .. (suffix or "") .. ".json"
+end
+
+local function create_json_log_file(test_name, suffix)
+    local file_path =  output_dir .. "/" .. make_json_log_file_name(test_name, suffix)
+    return assert(io.open(file_path, "w"), "error opening file " .. file_path)
+end
+
+local function open_steps_json_log(test_name, indent)
+    local f = create_json_log_file(test_name, "-steps")
+    return f
+end
+
+local function write_access_to_log(access, out, indent, last)
+    util.indentout(out, indent, '{\n')
+    util.indentout(out, indent+1, '"type": "%s",\n', access.type)
+    util.indentout(out, indent+1, '"address": %u,\n', access.address)
+    if access.type == "write" then
+        util.indentout(out, indent+1, '"value": "%s"\n', util.hexstring(access.written))
+    else
+        util.indentout(out, indent+1, '"value": "%s"\n', util.hexstring(access.read))
+    end
+    util.indentout(out, indent, '}')
+    if not last then out:write(',') end
+    out:write('\n')
+end
+
+local function write_step_to_log(log, out, indent, last)
+    local n = #log.accesses
+    util.indentout(out, indent, '{\n')
+    util.indentout(out, indent+1, '"accesses": [\n')
+    for i, access in ipairs(log.accesses) do
+        write_access_to_log(access, out, indent+2, i==n)
+    end
+    util.indentout(out, indent+1, ']\n')
+    util.indentout(out, indent, '}')
+    if not last then out:write(',') end
+    out:write('\n')
+end
+
+local function create_catalog_json_log(contexts)
+    local out = create_json_log_file("catalog")
+    util.indentout(out, 0, '[\n')
+    local n = #contexts
+    for i, ctx in ipairs(contexts) do
+        local path = make_json_log_file_name(ctx.test_name, "-steps")        
+        util.indentout(out, 1, '{"path": "%s", "steps": %d}', path, ctx.step_count)
+        if i < n then out:write(',\n') else out:write('\n') end
+    end
+    util.indentout(out, 0, ']\n')
+    out:close()
+end
+
+local function run_machine_writing_json_logs(machine, ctx)    
+    local test_name = ctx.test_name
+    local max_cycle = ctx.expected_cycles * 2
+    local out = open_steps_json_log(test_name)
+    local indent = 0
+    util.indentout(out, indent, '{ "steps":[\n')
+    local step_count = 0
+    while math.ult(machine:read_uarch_cycle(), max_cycle) do        
+        local log_type = {} -- no proofs, no annotations
+        local log = machine:step_uarch(log_type)
+        step_count = step_count + 1
+        local halted = machine:read_uarch_halt_flag()
+        write_step_to_log(log, out, indent+1, halted)
+        if halted then
+            break
+        end
+    end
+    ctx.step_count = step_count
+    util.indentout(out, indent, '] }\n')
+    out:close()
+end
+
+local function json_logs(tests)
+    assert(output_dir, "output-dir is required for json-logs")
+    local errors, error_count = {}, 0
+    local contexts = {}
+    for _, test in ipairs(tests) do
+        local ctx = {
+            ram_image = test[1],
+            test_name = test[1]:gsub(".bin$",""),
+            expected_cycles = test[2],
+            failed = false,
+            step_count = 0,
+            accesses_count = 0
+        }
+        contexts[#contexts+1] = ctx
+        local machine = build_machine(ctx.ram_image)
+        io.write(ctx.ram_image, ": ")
+        run_machine_writing_json_logs(machine, ctx)
+        check_test_result(machine, ctx, errors)
+        if ctx.failed then
+            print("failed")
+            error_count = error_count + 1
+        else
+            print("passed")
+        end
+        machine:destroy()
+    end
+    if error_count > 0 then
+        io.write(string.format("\nFAILED %d of %d tests:\n\n", error_count, #tests))
+        for k, v in pairs(errors) do
+          for _, e in ipairs(v) do
+            io.write(string.format("\t%s: %s\n", k, e))
+          end
+        end
+        os.exit(1, true)
+    else
+        io.write(string.format("\nPASSED all %d tests\n\n", #tests))
+        create_catalog_json_log(contexts)
+        os.exit(0, true)
+    end
+
 end
 
 local selected_tests = {}
@@ -290,4 +387,5 @@ end
 if #selected_tests < 1 then error("no test selected")
 elseif command == "run" then run(selected_tests)
 elseif command == "list" then list(selected_tests)
+elseif command == "json-logs" then json_logs(selected_tests)
 else error("command not found") end

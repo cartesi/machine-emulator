@@ -102,6 +102,7 @@ static execute_status htif_console(i_device_state_access *a, uint64_t cmd, uint6
             // to every participant in a dispute: where would c come from? So if the code reached here in the
             // blockchain, there must be some serious bug
             // In interactive mode, we just get the next character from the console and send it back in the ack
+            tty_poll_console(0);
             int c = tty_getchar();
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, cmd, c));
         }

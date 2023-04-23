@@ -85,8 +85,9 @@ void tty_initialize(void) {}
 
 void tty_finalize(void) {}
 
-void tty_poll_console(uint64_t wait) {
+bool tty_poll_console(uint64_t wait) {
     (void) wait;
+    return false;
 }
 
 int tty_getchar(void) {

@@ -374,7 +374,7 @@ local memory_range_replace = { }
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
 local rom_image_filename = images_path .. "rom.bin"
-local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce"
+local rom_bootargs = "quiet earlycon=sbi console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw swiotlb=noforce"
 local rollup = nil
 local uarch = nil
 local rollup_advance = nil
@@ -489,11 +489,13 @@ local options = {
     { "^%-%-htif%-console%-getchar$", function(all)
         if not all then return false end
         htif_console_getchar = true
+        rom_bootargs = rom_bootargs:gsub('console=hvc0', 'console=hvc1')
         return true
     end },
     { "^%-i$", function(all)
         if not all then return false end
         htif_console_getchar = true
+        rom_bootargs = rom_bootargs:gsub('console=hvc0', 'console=hvc1')
         return true
     end },
     { "^%-%-htif%-yield%-manual$", function(all)
@@ -669,7 +671,7 @@ local options = {
         flash_length.root = nil
         flash_shared.root = nil
         table.remove(flash_label_order, 1)
-        rom_bootargs = "console=hvc0"
+        rom_bootargs = rom_bootargs:gsub("rootfstype=ext2 root=/dev/mtdblock0 rw", '')
         return true
     end },
     { "^%-%-dump%-pmas$", function(all)

@@ -291,6 +291,9 @@ CARTESI_OBJS:= \
 	clint-factory.o \
 	plic.o \
 	plic-factory.o \
+	virtio-factory.o \
+	virtio-device.o \
+	virtio-console.o \
 	rom.o \
 	tty.o \
 	htif.o \
@@ -536,6 +539,9 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	clint-factory.o \
 	plic.o \
 	plic-factory.o \
+	virtio-factory.o \
+	virtio-device.o \
+	virtio-console.o \
 	rom.o \
 	tty.o \
 	htif.o \
@@ -565,6 +571,9 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	clint-factory.o \
 	plic.o \
 	plic-factory.o \
+	virtio-factory.o \
+	virtio-device.o \
+	virtio-console.o \
 	rom.o \
 	tty.o \
 	htif.o \

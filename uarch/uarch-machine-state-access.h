@@ -521,8 +521,8 @@ private:
         return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::htif_iyield));
     }
 
-    uint64_t do_poll_console(uint64_t mcycle) {
-        return mcycle;
+    std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
+        return {mcycle, false};
     }
     
     uint64_t do_read_pma_istart(int i) {

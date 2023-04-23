@@ -17,6 +17,7 @@
 #include <boost/range/adaptor/sliced.hpp>
 #include <chrono>
 #include <cinttypes>
+#include <csignal>
 #include <cstdio>
 #include <cstring>
 #include <future>
@@ -45,6 +46,9 @@
 #include "uarch-replay-state-access.h"
 #include "uarch-state-access.h"
 #include "unique-c-ptr.h"
+#include "virtio-factory.h"
+
+#include "virtio-console.h"
 
 /// \file
 /// \brief Cartesi machine implementation
@@ -421,6 +425,16 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // Initialize PMA extension metadata on ROM
     rom_init(m_c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
 
+    // TODO(edubart): user should be able to configure these devices
+    if (m_c.htif.console_getchar) {
+        // Register VirtIO console device
+        auto vdev_console = std::make_unique<virtio_console>(m_vdevs.size());
+        register_pma_entry(
+            make_virtio_pma_entry(PMA_FIRST_VIRTIO_START + vdev_console->get_virtio_index() * PMA_VIRTIO_LENGTH,
+                PMA_VIRTIO_LENGTH, "VirtIO console device", &virtio_driver, vdev_console.get()));
+        m_vdevs.push_back(std::move(vdev_console));
+    }
+
     // Add sentinel to PMA vector
     register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
 
@@ -460,6 +474,15 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     if (m_c.htif.console_getchar) {
         tty_initialize();
     }
+
+    // Disable SIGPIPE handler, because this signal be raised and terminate the emulator process,
+    // when calling write() on closed file descriptors.
+    // This can happen with the stdout console file descriptors or network file descriptors.
+    struct sigaction sigact {};
+    sigact.sa_handler = SIG_IGN;
+    if (sigaction(SIGPIPE, &sigact, nullptr) != 0) {
+        throw std::runtime_error{"error setting SIGPIPE signal handler"};
+    }
 }
 
 static void load_hash(const std::string &dir, machine::hash_type &h) {
@@ -481,6 +504,22 @@ machine::machine(const std::string &dir, const machine_runtime_config &r) : mach
     if (hstored != hrestored) {
         throw std::runtime_error{"stored and restored hashes do not match"};
     }
+}
+
+void machine::poll_virtio_devices_before_select(int *pmaxfd, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
+    timeval *timeout) {
+    for (auto &vdev : m_vdevs) {
+        vdev->poll_before_select(pmaxfd, readfds, writefds, exceptfds, timeout);
+    }
+}
+
+bool machine::poll_virtio_devices_after_select(i_device_state_access *a, fd_set *readfds, fd_set *writefds,
+    fd_set *exceptfds, int select_ret) {
+    bool interrupt_requested = false;
+    for (auto &vdev : m_vdevs) {
+        interrupt_requested |= vdev->poll_after_select(a, readfds, writefds, exceptfds, select_ret);
+    }
+    return interrupt_requested;
 }
 
 machine_config machine::get_serialization_config(void) const {

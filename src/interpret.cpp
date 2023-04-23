@@ -521,12 +521,10 @@ static inline uint64_t raise_interrupt_if_any(STATE_ACCESS &a, uint64_t pc) {
 /// \param mcycle Machine current cycle.
 template <typename STATE_ACCESS>
 static inline void set_rtc_interrupt(STATE_ACCESS &a, uint64_t mcycle) {
-    if (rtc_is_tick(mcycle)) {
-        uint64_t timecmp_cycle = rtc_time_to_cycle(a.read_clint_mtimecmp());
-        if (timecmp_cycle <= mcycle && timecmp_cycle != 0) {
-            uint64_t mip = a.read_mip();
-            a.write_mip(mip | MIP_MTIP_MASK);
-        }
+    uint64_t timecmp_cycle = rtc_time_to_cycle(a.read_clint_mtimecmp());
+    if (timecmp_cycle <= mcycle && timecmp_cycle != 0) {
+        uint64_t mip = a.read_mip();
+        a.write_mip(mip | MIP_MTIP_MASK);
     }
 }
 
@@ -914,7 +912,8 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(S
             return {execute_status::success, pc};
         } else if (likely(pma.get_istart_IO())) {
             uint64_t offset = paddr - pma.get_start();
-            auto status = a.write_device(pma, mcycle, offset, val64, log2_size<U>::value);
+            auto status =
+                a.write_device(pma, mcycle, offset, static_cast<U>(static_cast<T>(val64)), log2_size<U>::value);
             // If we do not know how to write, we treat this as a PMA violation
             if (likely(status != execute_status::failure)) {
                 return {status, pc};
@@ -2619,9 +2618,19 @@ static FORCE_INLINE execute_status execute_WFI(STATE_ACCESS &a, uint64_t &pc, ui
     if (unlikely(priv == PRV_U || (priv < PRV_M && (mstatus & MSTATUS_TW_MASK)))) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    // Poll console, this may advance mcycle when in interactive mode
-    mcycle = a.poll_console(mcycle);
-    return advance_to_next_insn(a, pc);
+    // We wait for interrupts until the next mtimecmp.
+    const uint64_t mcycle_max = rtc_time_to_cycle(a.read_clint_mtimecmp());
+    execute_status status = execute_status::success;
+    if (mcycle_max > mcycle) {
+        // Poll for external interrupts (e.g console or network),
+        // this may advance mcycle only when interactive mode is enabled
+        const auto [next_mcycle, interrupted] = a.poll_external_interrupts(mcycle, mcycle_max);
+        mcycle = next_mcycle;
+        if (interrupted) {
+            status = execute_status::success_and_serve_interrupts;
+        }
+    }
+    return advance_to_next_insn(a, pc, status);
 }
 
 /// \brief Implementation of the FENCE instruction.
@@ -5536,8 +5545,16 @@ NO_INLINE void interpret_loop(STATE_ACCESS &a, uint64_t mcycle_end, uint64_t mcy
     while (mcycle < mcycle_end) {
         INC_COUNTER(a.get_statistics(), outer_loop);
 
-        // Set interrupt flag for RTC
-        set_rtc_interrupt(a, mcycle);
+        if (rtc_is_tick(mcycle)) {
+            // Set interrupt flag for RTC
+            set_rtc_interrupt(a, mcycle);
+
+            // Polling external interrupts only in WFI instructions is not enough
+            // because Linux won't execute WFI instructions while under heavy load,
+            // yet external interrupts still need to be triggered.
+            // Therefore we poll for external interrupt once a while in the interpreter loop.
+            a.poll_external_interrupts(mcycle, mcycle);
+        }
 
         // Raise the highest priority pending interrupt, if any
         pc = raise_interrupt_if_any(a, pc);

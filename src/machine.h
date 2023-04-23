@@ -22,6 +22,8 @@
 
 #include <memory>
 
+#include <boost/container/static_vector.hpp>
+
 #include "access-log.h"
 #include "htif.h"
 #include "interpret.h"
@@ -31,13 +33,13 @@
 #include "machine-state.h"
 #include "uarch-interpret.h"
 #include "uarch-machine.h"
+#include "virtio-device.h"
 
 namespace cartesi {
 
 /// \class machine
 /// \brief Cartesi Machine implementation
 class machine final {
-
     //??D Ideally, we would hold a unique_ptr to the state. This
     //    would allow us to remove the machine-state.h include and
     //    therefore hide its contents from anyone who includes only
@@ -50,6 +52,8 @@ class machine final {
     machine_config m_c;              ///< Copy of initialization config
     uarch_machine m_uarch;           ///< Microarchitecture machine
     machine_runtime_config m_r;      ///< Copy of initialization runtime config
+
+    boost::container::static_vector<std::unique_ptr<virtio_device>, VIRTIO_MAX> m_vdevs; ///< Array of VirtIO devices
 
     static const pma_entry::flags m_rom_flags;                   ///< PMA flags used for ROM
     static const pma_entry::flags m_ram_flags;                   ///< PMA flags used for RAM
@@ -249,6 +253,25 @@ public:
 
     /// \brief Destructor.
     ~machine();
+
+    /// \brief Fill file descriptors to be polled by select() for all VirtIO devices.
+    /// \param pmaxfd Pointer to the maximum select() file descriptor (it may be updated).
+    /// \param writefs Pointer to write file descriptor set to be updated.
+    /// \param readfds Pointer to read file descriptor set to be updated.
+    /// \param exceptfds Pointer to except file descriptor set to be updated.
+    /// \param timeout Maximum amount of time to wait, this may be updated (always to lower values).
+    void poll_virtio_devices_before_select(int *pmaxfd, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
+        timeval *timeout);
+
+    /// \brief Poll file descriptors that were marked as ready by select() for all VirtIO devices.
+    /// \param writefs Pointer to write file descriptor set to be checked.
+    /// \param readfds Pointer to read file descriptor set to be checked.
+    /// \param exceptfds Pointer to except file descriptor set to be checked.
+    /// \param select_ret Return value from the most recent select() call.
+    /// \returns True if an interrupt was requested, false otherwise.
+    /// \details This function process pending events and trigger interrupt requests (if any).
+    bool poll_virtio_devices_after_select(i_device_state_access *a, fd_set *readfds, fd_set *writefds,
+        fd_set *exceptfds, int select_ret);
 
     /// \brief Update the Merkle tree so it matches the contents of the machine state.
     /// \returns true if succeeded, false otherwise.

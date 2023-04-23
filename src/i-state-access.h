@@ -602,11 +602,16 @@ public:
         return derived().do_read_htif_iyield();
     }
 
-    /// \brief Polls console for pending input.
+    /// \brief Poll for external interrupts.
     /// \param mcycle Current machine mcycle.
-    /// \returns The new machine mcycle advanced by the relative time elapsed while polling.
-    uint64_t poll_console(uint64_t mcycle) {
-        return derived().do_poll_console(mcycle);
+    /// \param mcycle_max Maximum mcycle to wait for interrupts.
+    /// \returns A pair, the first value is the new machine mcycle advanced by the relative elapsed time while
+    /// polling, the second value is a boolean that is true when the poll is stopped due do an external interrupt
+    /// request.
+    /// \details When mcycle_max is greater than mcycle, this function will sleep until an external interrupt
+    /// is triggered or mcycle_max relative elapsed time is reached.
+    std::pair<uint64_t, bool> poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
+        return derived().do_poll_external_interrupts(mcycle, mcycle_max);
     }
 
     /// \brief Reads PMA at a given index.

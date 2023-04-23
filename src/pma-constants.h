@@ -43,10 +43,10 @@ enum PMA_ranges : uint64_t {
     PMA_HTIF_START = EXPAND_UINT64_C(PMA_HTIF_START_DEF),                   ///< Start of HTIF range
     PMA_HTIF_LENGTH = EXPAND_UINT64_C(PMA_HTIF_LENGTH_DEF),                 ///< Length of HTIF range
     PMA_UARCH_RAM_START = EXPAND_UINT64_C(PMA_UARCH_RAM_START_DEF),         ///< Length of microarchitecture RAM range
-    //    PMA_FIRST_VIRTIO_START  = EXPAND_UINT64_C(PMA_FIRST_VIRTIO_START_DEF),    ///< Start of first VIRTIO range
-    //    PMA_VIRTIO_LENGTH  = EXPAND_UINT64_C(PMA_VIRTIO_LENGTH_DEF),   ///< Length of each VIRTIO range
-    //    PMA_LAST_VIRTIO_END  = EXPAND_UINT64_C(PMA_LAST_VIRTIO_END_DEF),   ///< End of last VIRTIO range
-    PMA_RAM_START = EXPAND_UINT64_C(PMA_RAM_START_DEF), ///< Start of RAM range
+    PMA_FIRST_VIRTIO_START = EXPAND_UINT64_C(PMA_FIRST_VIRTIO_START_DEF),   ///< Start of first VIRTIO range
+    PMA_VIRTIO_LENGTH = EXPAND_UINT64_C(PMA_VIRTIO_LENGTH_DEF),             ///< Length of each VIRTIO range
+    PMA_LAST_VIRTIO_END = EXPAND_UINT64_C(PMA_LAST_VIRTIO_END_DEF),         ///< End of last VIRTIO range
+    PMA_RAM_START = EXPAND_UINT64_C(PMA_RAM_START_DEF),                     ///< Start of RAM range
 };
 
 /// \brief PMA constants.
@@ -105,6 +105,7 @@ enum class PMA_ISTART_DID {
     CLINT = PMA_CLINT_DID_DEF,                                 ///< DID for CLINT device
     PLIC = PMA_PLIC_DID_DEF,                                   ///< DID for PLIC device
     HTIF = PMA_HTIF_DID_DEF,                                   ///< DID for HTIF device
+    VIRTIO = PMA_VIRTIO_DID_DEF,                               ///< DID for VirtIO devices
     rollup_rx_buffer = PMA_ROLLUP_RX_BUFFER_DID_DEF,           ///< DID for rollup receive buffer
     rollup_tx_buffer = PMA_ROLLUP_TX_BUFFER_DID_DEF,           ///< DID for rollup transmit buffer
     rollup_input_metadata = PMA_ROLLUP_INPUT_METADATA_DID_DEF, ///< DID for rollup input metadata memory range

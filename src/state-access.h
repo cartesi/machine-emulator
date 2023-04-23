@@ -415,24 +415,49 @@ private:
         return m_m.get_state().htif.iyield;
     }
 
-    NO_INLINE uint64_t do_poll_console(uint64_t mcycle) {
+    NO_INLINE std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
+        bool interrupt_raised = false;
+        // Only poll external interrupts if we are in interactive mode (console get char is enabled)
         bool htif_console_getchar = static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
-        if (htif_console_getchar) {
-            uint64_t warp_cycle = rtc_time_to_cycle(read_clint_mtimecmp());
-            if (warp_cycle > mcycle) {
-                constexpr uint64_t cycles_per_us = RTC_CLOCK_FREQ / 1000000; // CLOCK_FREQ / 10^6
-                uint64_t wait = (warp_cycle - mcycle) / cycles_per_us;
-                timeval start{};
-                timeval end{};
+        if (unlikely(htif_console_getchar)) {
+            // Convert the relative interval of cycles we can wait to the interval of host time we can wait
+            const uint64_t timeout_us = (mcycle_max - mcycle) / RTC_CYCLES_PER_US;
+            timeval timeout{};
+            timeout.tv_sec = static_cast<time_t>(timeout_us / 1000000);
+            timeout.tv_usec = static_cast<suseconds_t>(timeout_us % 1000000);
+            // If timeout is greater than zero, we should track time
+            timeval start{};
+            if (timeout_us > 0) {
+                //??(edubart): we could use std::chrono or clock_gettime() to track time,
+                // they are more portable and precise, plus gettimeofday() is deprecated in recent POSIX
                 gettimeofday(&start, nullptr);
-                tty_poll_console(wait);
+            }
+            device_state_access da(*this, mcycle);
+            // Initialize fd sets as empty
+            int maxfd = -1;
+            fd_set readfds{};
+            fd_set writefds{};
+            fd_set exceptfds{};
+            FD_ZERO(&readfds);
+            FD_ZERO(&writefds);
+            FD_ZERO(&exceptfds);
+            // Fill fd sets with the fds we should wait for events (e.g console stdin, network sockets)
+            // Timeout may be decremented in case a device has deadline timers (e.g network device)
+            m_m.poll_virtio_devices_before_select(&maxfd, &readfds, &writefds, &exceptfds, &timeout);
+            // Wait until at least one file descriptor becomes "ready" or timeout expires
+            const int select_ret = select(maxfd + 1, &readfds, &writefds, &exceptfds, &timeout);
+            // Poll events in file descriptors marked as ready by previous select
+            interrupt_raised = m_m.poll_virtio_devices_after_select(&da, &readfds, &writefds, &exceptfds, select_ret);
+            // If timeout is greater than zero, we should also increment mcycle relative to the elapsed time
+            if (timeout_us > 0) {
+                timeval end{};
                 gettimeofday(&end, nullptr);
                 uint64_t elapsed_us = (end.tv_sec - start.tv_sec) * 1000000 + end.tv_usec - start.tv_usec;
-                uint64_t tty_cycle = mcycle + (elapsed_us * cycles_per_us);
-                mcycle = std::min(std::max(tty_cycle, mcycle), warp_cycle);
+                uint64_t next_mcycle = mcycle + (elapsed_us * RTC_CYCLES_PER_US);
+                mcycle = std::min(std::max(next_mcycle, mcycle), mcycle_max);
             }
         }
-        return mcycle;
+        return {mcycle, interrupt_raised};
     }
 
     uint64_t do_read_pma_istart(int i) const {

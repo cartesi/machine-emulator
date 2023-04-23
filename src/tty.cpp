@@ -17,6 +17,7 @@
 #include <array>
 #include <csignal>
 #include <cstdint>
+#include <cstring>
 #include <fcntl.h>
 #include <iostream>
 #include <sys/ioctl.h>
@@ -29,16 +30,17 @@
 
 namespace cartesi {
 
-static const int CONSOLE_BUF_SIZE = 1024; ///< Number of characters in console input buffer
-
 /// \brief TTY global state
 struct tty_state {
     bool initialized{false};
+    bool resize_pending{false};
     int ttyfd{-1};
     termios oldtty{};
-    std::array<char, CONSOLE_BUF_SIZE> buf{};
+    std::array<char, TTY_CONSOLE_BUF_SIZE> buf{};
     ssize_t buf_pos{};
     ssize_t buf_len{};
+    unsigned short cols{TTY_CONSOLE_DEFAULT_COLS};
+    unsigned short rows{TTY_CONSOLE_DEFAULT_ROWS};
 };
 
 static int new_ttyfd(const char *path) {
@@ -65,40 +67,56 @@ static int get_ttyfd(void) {
     return -1;
 }
 
-static bool try_read_chars_from_stdin(uint64_t wait, char *data, size_t max_len, long *actual_len) {
-    int fd_max{0};
-    fd_set rfds{};
-    timeval tv{};
-    tv.tv_usec = static_cast<suseconds_t>(wait);
-    FD_ZERO(&rfds); // NOLINT: suppress cause on MacOSX it resolves to __builtin_bzero
-    FD_SET(STDIN_FILENO, &rfds);
-    if (select(fd_max + 1, &rfds, nullptr, nullptr, &tv) > 0 && FD_ISSET(0, &rfds)) {
-        *actual_len = read(STDIN_FILENO, data, max_len);
-        // If stdin is closed, pass EOF to client
-        if (*actual_len <= 0) {
-            *actual_len = 1;
-            data[0] = 4; // CTRL+D
-        }
-        return true;
-    }
-    return false;
-}
-
 /// Returns pointer to the global TTY state
 static tty_state *get_state() {
     static tty_state data;
     return &data;
 }
 
+/// \brief Signal raised whenever TTY size changes
+static void signal_SIGWINCH_handler(int sig) {
+    (void) sig;
+    auto *s = get_state();
+    if (!s->initialized) {
+        return;
+    }
+    // It's not safe to do complex logic in signal handlers,
+    // therefore we will actually update the console size in the next get size request.
+    s->resize_pending = true;
+}
+
 void tty_initialize(void) {
     auto *s = get_state();
-    if (s->initialized) {
-        throw std::runtime_error("TTY already initialized.");
+    if (s->initialized) { // Already initialized, just ignore
+        return;
     }
     s->initialized = true;
-    if ((s->ttyfd = get_ttyfd()) >= 0) {
+    s->ttyfd = get_ttyfd();
+    if (s->ttyfd >= 0) {
+        //??(edubart) For some unknown reason TIOCGWINSZ ioctl doesn't return correct value in its first call.
+        // A workaround is to get size multiple times on startup to fix the issue.
+        for (int i = 0; i < 16; ++i) {
+            // Get the window size for the first time
+            winsize ws{};
+            if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0) {
+                if (ws.ws_col >= 1 && ws.ws_row >= 1) {
+                    s->cols = ws.ws_col;
+                    s->rows = ws.ws_row;
+                }
+            }
+        }
+
+        // Install console resize signal handler
+        struct sigaction sigact {};
+        sigact.sa_handler = signal_SIGWINCH_handler;
+        if (sigaction(SIGWINCH, &sigact, nullptr) != 0) {
+            throw std::runtime_error{"error setting SIGWINCH signal handler"};
+        }
+
         struct termios tty {};
-        tcgetattr(s->ttyfd, &tty);
+        if (tcgetattr(s->ttyfd, &tty) != 0) {
+            throw std::runtime_error{"tcgetattr failed"};
+        }
         s->oldtty = tty;
         // Set terminal to "raw" mode
         tty.c_lflag &= ~(ECHO | // Echo off
@@ -123,15 +141,17 @@ void tty_initialize(void) {
         // Read returns with 1 char and no delay
         tty.c_cc[VMIN] = 1;
         tty.c_cc[VTIME] = 0;
-        tcsetattr(s->ttyfd, TCSANOW, &tty);
+        if (tcsetattr(s->ttyfd, TCSANOW, &tty) != 0) {
+            throw std::runtime_error{"tcsetattr failed"};
+        }
         //??D Should we check to see if changes stuck?
     }
 }
 
 void tty_finalize(void) {
     auto *s = get_state();
-    if (!s->initialized) {
-        throw std::runtime_error("TTY not initialized");
+    if (!s->initialized) { // Not initialized, just ignore
+        return;
     }
     s->initialized = false;
     if (s->ttyfd >= 0) {
@@ -141,37 +161,113 @@ void tty_finalize(void) {
     }
 }
 
-void tty_poll_console(uint64_t wait) {
+void tty_poll_before_select(int *pmaxfd, fd_set *readfds) {
     auto *s = get_state();
+    // Ignore if TTY is not initialized or stdin was closed
     if (!s->initialized) {
-        throw std::runtime_error("can't poll TTY, it is not initialized");
+        return;
     }
-    // Check for input from console, if requested by HTIF
-    // Obviously, somethind different must be done in blockchain
-    // If we don't have any characters left in buffer, try to obtain more
-    if (s->buf_pos >= s->buf_len) {
-        if (try_read_chars_from_stdin(wait, s->buf.data(), s->buf.size(), &s->buf_len)) {
-            s->buf_pos = 0;
-        }
+    FD_SET(STDIN_FILENO, readfds);
+    if (STDIN_FILENO > *pmaxfd) {
+        *pmaxfd = STDIN_FILENO;
     }
+}
+
+bool tty_poll_after_select(fd_set *readfds, int select_ret) {
+    auto *s = get_state();
+    if (!s->initialized) { // We can't poll when TTY is not initialized
+        return false;
+    }
+    // If we have characters left in buffer, we don't need to obtain more characters
+    if (s->buf_pos < s->buf_len) {
+        return true;
+    }
+    // If the stdin file description is not ready, we can't obtain more characters
+    if (select_ret <= 0 || !FD_ISSET(STDIN_FILENO, readfds)) {
+        return false;
+    }
+    const ssize_t len = read(STDIN_FILENO, s->buf.data(), s->buf.size());
+    // If stdin is closed, pass EOF to client
+    if (len <= 0) {
+        s->buf_len = 1;
+        s->buf[0] = TTY_CONSOLE_CTRL_D;
+    } else {
+        s->buf_len = len;
+    }
+    s->buf_pos = 0;
+    return true;
+}
+
+bool tty_poll_console(uint64_t wait_us) {
+    int maxfd = -1;
+    fd_set readfds{};
+    FD_ZERO(&readfds);
+    timeval timeout{};
+    timeout.tv_sec = static_cast<time_t>(wait_us / 1000000);
+    timeout.tv_usec = static_cast<suseconds_t>(wait_us % 1000000);
+    tty_poll_before_select(&maxfd, &readfds);
+    const int select_ret = select(maxfd + 1, &readfds, nullptr, nullptr, &timeout);
+    return tty_poll_after_select(&readfds, select_ret);
 }
 
 int tty_getchar(void) {
     auto *s = get_state();
-    if (!s->initialized) {
-        throw std::runtime_error("can't get char, TTY is not initialized");
-    }
-    tty_poll_console(0);
-    if (s->buf_pos < s->buf_len) {
+    if (s->initialized && s->buf_pos < s->buf_len) {
         return s->buf[s->buf_pos++] + 1;
     }
     return 0;
 }
 
-void tty_putchar(uint8_t ch) {
-    if (write(STDOUT_FILENO, &ch, 1) < 1) {
-        ;
+size_t tty_getchars(unsigned char *data, size_t max_len) {
+    auto *s = get_state();
+    if (!s->initialized) {
+        return 0;
     }
+    size_t written_len = 0;
+    // Fill data until the buffer is full or there no more characters available in TTY input
+    while (written_len < max_len) {
+        // Are there characters available in TTY input?
+        if (s->buf_pos >= s->buf_len) {
+            return written_len;
+        }
+        const size_t buf_avail = static_cast<size_t>(s->buf_len - s->buf_pos);
+        const size_t chunk_len = std::min(buf_avail, max_len - written_len);
+        memcpy(&data[written_len], &s->buf[s->buf_pos], chunk_len);
+        s->buf_pos += static_cast<ssize_t>(chunk_len);
+        written_len += chunk_len;
+    }
+    return written_len;
+}
+
+void tty_putchar(uint8_t ch) {
+    (void) write(STDOUT_FILENO, &ch, 1);
+}
+
+void tty_putchars(const uint8_t *data, size_t len) {
+    if (len > 0) {
+        (void) write(STDOUT_FILENO, data, len);
+    }
+}
+
+void tty_get_size(uint16_t *pwidth, uint16_t *pheight) {
+    auto *s = get_state();
+    if (!s->initialized) {
+        // fallback values
+        *pwidth = TTY_CONSOLE_DEFAULT_COLS;
+        *pheight = TTY_CONSOLE_DEFAULT_ROWS;
+        return;
+    }
+    // Update console size after a SIGWINCH signal
+    if (s->resize_pending) {
+        winsize ws{};
+        if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col >= 1 && ws.ws_row >= 1) {
+            s->cols = ws.ws_col;
+            s->rows = ws.ws_row;
+            s->resize_pending = false;
+        }
+    }
+    *pwidth = s->cols;
+    *pheight = s->rows;
 }
 
 } // namespace cartesi

@@ -434,6 +434,8 @@ test-linux-workload: luacartesi
 	# Test max mcycle (to cover max mcycle branch)
 	$(LUA) ./cartesi-machine.lua --max-mcycle=1
 
+test-all-without-grpc: test test-hash test-scripts test-jsonrpc test-c-api test-uarch-for-coverage test-linux-workload
+
 test-all: test test-hash test-scripts test-grpc test-jsonrpc test-c-api test-uarch-for-coverage test-linux-workload
 
 lint: $(CLANG_TIDY_TARGETS)

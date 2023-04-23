@@ -144,7 +144,7 @@ $(COREPROTO):
 	$(info gprc-interfaces submodule not initialized!)
 	@exit 1
 grpc: | $(COREPROTO)
-hash luacartesi grpc test test-all lint coverage check-format format:
+hash luacartesi grpc test test-all test-all-without-grpc lint coverage check-format format:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 riscv-arch-tests:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C third-party/riscv-arch-tests

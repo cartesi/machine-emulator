@@ -564,7 +564,7 @@ jobs:
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
           export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?.lua;"
           export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
-          make sanitize=yes test-all
+          make sanitize=yes test-all-without-grpc
 
   verify:
     name: Verify

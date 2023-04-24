@@ -8,9 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added uarch halt flag
-- Added reset_uarch_state
+- Added reset\_uarch\_state
 - Added and improved uarch tests
-- Added get_uarch_x_address
+- Added get\_uarch\_x\_address
 - Added new jsonrpc-remote-cartesi-machine server
 - Added client support for new jsonrpc-remote-cartesi-machine server
 - Added command-line support for new jsonrpc-remote-cartesi-machine server in cartesi-machine
@@ -23,11 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed uarch ROM
 - Improved uarch support on cartesi-machine.lua
 - Refactored uarch interpreter making it easier to port to Solidity
-- Changed return type of run_uarch from void to break reason
+- Changed return type of run\_uarch from void to break reason
 - Renamed uarch related method names on machine class
 - Removed Alpine image generation from CI
 - Removed crypto++ library from third-party. Using system-installed library instead.
 - Changed --step command-line option to --step-uarch in cartesi-machine.lua, for consistency
+- Removed server-manager implementation from the emulator repository
 
 ## [0.13.0] - 2023-02-16
 ### Added
@@ -39,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added coverage workflow with summary reports to the CI
 - Added sanitize workflow to the CI, for catching leaks and undefined behavior
 - Added support for running RISC-V tests in parallel to the CI
-- Added support for passing NULL err_msg in all C APIs, meaning the error message won't be received
+- Added support for passing NULL err\_msg in all C APIs, meaning the error message won't be received
 
 ### Fixed
 

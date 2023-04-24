@@ -26,7 +26,7 @@ STRIP_EXEC= strip -x
 
 DEP_TO_BIN=
 DEP_TO_LIB=
-EMU_TO_BIN= jsonrpc-remote-cartesi-machine remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash server-manager
+EMU_TO_BIN= jsonrpc-remote-cartesi-machine remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash
 EMU_TO_LIB= $(LIBCARTESI_$(UNAME)) $(LIBCARTESI_PROTOBUF_$(UNAME)) $(LIBCARTESI_GRPC_$(UNAME))
 EMU_LUA_TO_BIN= cartesi-machine-tests.lua cartesi-machine.lua cartesi-machine-stored-hash.lua rollup-memory-range.lua uarch-riscv-tests.lua
 EMU_TO_LUA_PATH= cartesi/util.lua cartesi/proof.lua
@@ -116,7 +116,6 @@ help:
 	@echo '  distclean                  - depclean + profile information and downloads'
 	@echo 'Docker targets:'
 	@echo '  build-ubuntu-image         - Build an ubuntu based docker image'
-	@echo '  build-server-manager-image - Build a docker image based on cartesi/machine-emulator with the server manager'
 	@echo 'Generic targets:'
 	@echo '* all                        - build the src/ code. To build from a clean clone, run: make submodules downloads dep all'
 	@echo '  doc                        - build the doxygen documentation (requires doxygen to be installed)'
@@ -179,9 +178,6 @@ build-linux-env:
 
 build-ubuntu-image:
 	docker build -t cartesi/machine-emulator:$(TAG) -f .github/workflows/Dockerfile .
-
-build-server-manager-image:
-	docker build -t cartesi/server-manager:$(TAG) -f tools/server-manager/Dockerfile --build-arg EMULATOR_VERSION=$(TAG) tools/server-manager
 
 toolchain-env:
 	@docker run --hostname toolchain-env -it --rm \

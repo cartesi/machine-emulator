@@ -17,7 +17,6 @@ Cleaning targets:
   distclean                  - depclean + profile information and downloads
 Docker targets:
   build-ubuntu-image         - Build an ubuntu based docker image
-  build-server-manager-image - Build a docker image based on cartesi/machine-emulator with the server manager
 ```
 
 ### Requirements

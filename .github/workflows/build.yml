@@ -8,7 +8,6 @@ env:
   TEST_VERSION: v0.27.0
   GROUND_TRUTH_VERSION: v0.27.0-0001
   BUILD_CACHE_VERSION: v0.10.0-0006
-  SERVER_MANAGER_VERSION: 0.7.0
 jobs:
   build:
     name: Build
@@ -108,10 +107,9 @@ jobs:
           find /opt/cartesi/bin -type f \! -iname "*.lua" -exec chmod 755 {} +
           find /opt/cartesi/lib -type f -exec chmod 755 {} +
           find ./tests/ -type f -name "*.lua" -exec chmod 755 {} +
-          chmod 755 ./tests/test-merkle-tree-hash ./tests/test-machine-c-api ./tests/test-server-manager ./tests/test-grpc-server.sh ./tests/test-jsonrpc-server.sh
+          chmod 755 ./tests/test-merkle-tree-hash ./tests/test-machine-c-api ./tests/test-grpc-server.sh ./tests/test-jsonrpc-server.sh
           patchelf --set-rpath /opt/cartesi/lib ./tests/test-merkle-tree-hash
           patchelf --set-rpath /opt/cartesi/lib ./tests/test-machine-c-api
-          patchelf --set-rpath /opt/cartesi/lib ./tests/test-server-manager
 
       - name: Download [rootfs.ext2]
         uses: Legion2/download-release-action@v2.1.0
@@ -201,30 +199,6 @@ jobs:
         run: |
           export PATH=/opt/cartesi/bin:$PATH
           ./tests/test-machine-c-api
-
-      - name: Run server-manager tests with ioctl-echo-loop
-        env:
-          CARTESI_IMAGES_PATH: /opt/cartesi/share/images
-          REMOTE_CARTESI_MACHINE_LOG_LEVEL: debug
-          SERVER_MANAGER_LOG_LEVEL: trace
-        run: |
-          cd /opt/cartesi/bin && ./server-manager --manager-address=127.0.0.1:50001 &
-          timeout 20 bash -c 'while ! nc -q0 127.0.0.1 50001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
-          cd ~/work/machine-emulator/machine-emulator && ./tests/test-server-manager 127.0.0.1:50001
-          pkill -f server-manager || true
-          pkill -f remote-cartesi-machine || true
-
-      - name: Run server-manager tests with rollup http-echo-dapp
-        env:
-          CARTESI_IMAGES_PATH: /opt/cartesi/share/images
-          REMOTE_CARTESI_MACHINE_LOG_LEVEL: debug
-          SERVER_MANAGER_LOG_LEVEL: trace
-        run: |
-          cd /opt/cartesi/bin && ./server-manager --manager-address=127.0.0.1:50001 &
-          timeout 20 bash -c 'while ! nc -q0 127.0.0.1 50001 < /dev/null > /dev/null 2>&1; do sleep 1; done'
-          cd ~/work/machine-emulator/machine-emulator && ./tests/test-server-manager -r --http 127.0.0.1:50001
-          pkill -f server-manager || true
-          pkill -f remote-cartesi-machine || true
 
   uarch-test:
     name: Microarchitecture Test
@@ -837,10 +811,6 @@ jobs:
       - name: Run test suite inside the docker image (Ubuntu)
         run: docker run --rm -v /opt/cartesi/tests:/opt/cartesi/tests -t ${{ steps.docker_image_default_tag.outputs.name }} /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests run
 
-      - name: Build Ubuntu based server-manager docker image
-        run: |
-          docker build -t ${{ secrets.DOCKER_ORGANIZATION }}/server-manager:build_check -f tools/server-manager/Dockerfile --build-arg EMULATOR_REPOSITORY=${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator --build-arg EMULATOR_VERSION=${{ fromJSON(steps.docker_image_tags.outputs.json).labels['org.opencontainers.image.version'] }} tools/server-manager
-
   publish_images:
     name: Publish Docker images
     needs: [static-analysis, coverage, sanitize, test, uarch-test, ubuntu-image-build]
@@ -886,23 +856,6 @@ jobs:
           cache-from: type=gha,mode=max,scope=ubuntu
           cache-to: type=gha,scope=ubuntu
           build-args: RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
-
-      - name: Build and push Ubuntu based server-manager docker image
-        shell: bash
-        env:
-          IS_DEVELOP_BRANCH: ${{ github.ref == 'refs/heads/develop' }}
-        run: |
-          SERVER_MANAGER_IMAGE_TAG=${SERVER_MANAGER_VERSION}
-          if [ "${IS_DEVELOP_BRANCH}" = true ] ; then
-            SERVER_MANAGER_IMAGE_TAG=develop
-          else
-            if docker manifest inspect ${{ secrets.DOCKER_ORGANIZATION }}/server-manager:${SERVER_MANAGER_IMAGE_TAG} > /dev/null 2>&1 ; then
-              echo 'Error: ${{ secrets.DOCKER_ORGANIZATION }}/server-manager:${SERVER_MANAGER_IMAGE_TAG} already exists!';
-              exit 1;
-            fi
-          fi
-          docker build -t ${{ secrets.DOCKER_ORGANIZATION }}/server-manager:${SERVER_MANAGER_IMAGE_TAG} -f tools/server-manager/Dockerfile --build-arg EMULATOR_REPOSITORY=${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator --build-arg EMULATOR_VERSION=${{ fromJSON(steps.ubuntu_docker_image_tags.outputs.json).labels['org.opencontainers.image.version'] }} tools/server-manager
-          docker push ${{ secrets.DOCKER_ORGANIZATION }}/server-manager:${SERVER_MANAGER_IMAGE_TAG}
 
   release:
     name: Release machine emulator tarball

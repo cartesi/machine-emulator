@@ -22,7 +22,6 @@ LUA_INC:=$(shell pkg-config --cflags-only-I lua5.3)
 LUA_LIB:=-llua5.3
 LUA_BIN?=lua5.3
 GRPC_DIR:=../lib/grpc-interfaces
-HEALTHCHECK_DIR:=$(BUILDDIR)/share/grpc/health/v1
 
 PROTOC:=$(BUILDDIR)/bin/protoc
 GRPC_CPP_PLUGIN=$(BUILDDIR)/bin/grpc_cpp_plugin
@@ -155,8 +154,6 @@ LUACARTESI_JSONRPC_LIBS:=$(CRYPTOPP_LIB) $(LIBCARTESI_JSONRPC_LIB) $(LIBCARTESI_
 REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_LOG_LIB) $(LIBCARTESI_PROTOBUF_LIB)
 JSONRPC_REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(BOOST_LOG_LIB) $(LIBCARTESI_PROTOBUF_LIB) $(PROTOBUF_LIB) $(B64_LIB)
 REMOTE_CARTESI_MACHINE_PROXY_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB) $(LIBCARTESI_PROTOBUF_LIB) -ldl
-SERVER_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB) $(BOOST_LOG_LIB) $(LIBCARTESI_PROTOBUF_LIB) -ldl
-TEST_SERVER_MANAGER_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(LIBCARTESI_PROTOBUF_LIB) -ldl
 TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(LIBCARTESI_PROTOBUF_LIB) $(LIBCARTESI_GRPC_LIB) $(BOOST_PROCESS_LIB) $(BOOST_FILESYSTEM_LIB) $(PROTOBUF_LIB)
 HASH_LIBS:=$(CRYPTOPP_LIB)
 
@@ -493,7 +490,7 @@ luacartesi-pgo:
 	$(MAKE) --no-print-directory use
 	$(MAKE) clean-profile
 
-grpc: cartesi/jsonrpc.so cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager
+grpc: cartesi/jsonrpc.so cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy
 
 jsonrpc: cartesi/jsonrpc.so jsonrpc-remote-cartesi-machine
 
@@ -516,20 +513,9 @@ TEST_MERKLE_TREE_HASH_OBJS:= \
 TEST_MACHINE_C_API_OBJS:= \
     test-machine-c-api.o
 
-SERVER_MANAGER_PROTO_OBJS:= \
-	server-manager.pb.o \
-	server-manager.grpc.pb.o
-
-HEALTHCHECK_PROTO_OBJS:= \
-	health.pb.o \
-	health.grpc.pb.o
-
 PROTO_OBJS:= \
 	$(CARTESI_PROTOBUF_GEN_OBJS) \
-	$(CARTESI_GRPC_GEN_OBJS) \
-	$(SERVER_MANAGER_PROTO_OBJS) \
-	$(HEALTHCHECK_PROTO_OBJS)
-
+	$(CARTESI_GRPC_GEN_OBJS)
 
 $(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-deprecated-declarations -Wno-deprecated-copy -Wno-type-limits
 
@@ -538,23 +524,6 @@ PROTO_SOURCES:=$(PROTO_OBJS:.o=.cc)
 REMOTE_CARTESI_MACHINE_PROXY_OBJS:= \
 	$(CARTESI_GRPC_GEN_OBJS) \
 	remote-machine-proxy.o
-
-SERVER_MANAGER_OBJS:= \
-	$(CARTESI_GRPC_GEN_OBJS) \
-	$(SERVER_MANAGER_PROTO_OBJS) \
-	$(HEALTHCHECK_PROTO_OBJS) \
-	complete-merkle-tree.o \
-	pristine-merkle-tree.o \
-	protobuf-util.o \
-	server-manager.o
-
-TEST_SERVER_MANAGER_OBJS:= \
-	$(CARTESI_OBJS) \
-	$(CARTESI_GRPC_GEN_OBJS) \
-	$(SERVER_MANAGER_PROTO_OBJS) \
-	$(HEALTHCHECK_PROTO_OBJS) \
-	complete-merkle-tree.o \
-	test-server-manager.o
 
 REMOTE_CARTESI_MACHINE_OBJS:= \
 	$(CARTESI_GRPC_GEN_OBJS) \
@@ -691,13 +660,7 @@ jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) $(LIBCART
 remote-cartesi-machine-proxy: $(REMOTE_CARTESI_MACHINE_PROXY_OBJS) $(LIBCARTESI_PROTOBUF)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(REMOTE_CARTESI_MACHINE_PROXY_OBJS) $(REMOTE_CARTESI_MACHINE_PROXY_LIBS)
 
-server-manager: $(SERVER_MANAGER_OBJS) $(LIBCARTESI_PROTOBUF)
-	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(SERVER_MANAGER_OBJS) $(SERVER_MANAGER_LIBS)
-
-tests/test-server-manager: $(TEST_SERVER_MANAGER_OBJS) $(LIBCARTESI_PROTOBUF)
-	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(TEST_SERVER_MANAGER_OBJS) $(TEST_SERVER_MANAGER_LIBS)
-
-remote-cartesi-machine remote-cartesi-machine-proxy server-manager tests/test-server-manager: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
+remote-cartesi-machine remote-cartesi-machine-proxy: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
 tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_GRPC)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(TEST_MACHINE_C_API_LIBS)
@@ -709,12 +672,6 @@ tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_
 
 %.pb.cc: $(GRPC_DIR)/%.proto
 	$(PROTOC) -I$(GRPC_DIR) --cpp_out=. $<
-
-%.grpc.pb.cc: $(HEALTHCHECK_DIR)/%.proto
-	$(PROTOC) -I$(HEALTHCHECK_DIR) --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN) $<
-
-%.pb.cc: $(HEALTHCHECK_DIR)/%.proto
-	$(PROTOC) -I$(HEALTHCHECK_DIR) --cpp_out=. $<
 
 machine-config.o protobuf-util.o: $(CARTESI_PROTOBUF_GEN_OBJS)
 
@@ -765,10 +722,10 @@ clean-libcartesi: clean-objs
 	@rm -f $(LIBCARTESI) $(LIBCARTESI_PROTOBUF) $(LIBCARTESI_GRPC) cartesi.so cartesi/grpc.so cartesi/jsonrpc.so
 
 clean-executables:
-	@rm -f jsonrpc-remote-cartesi-machine remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash server-manager
+	@rm -f jsonrpc-remote-cartesi-machine remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash
 
 clean-tests:
-	@rm -f tests/test-merkle-tree-hash tests/test-machine-c-api tests/test-server-manager
+	@rm -f tests/test-merkle-tree-hash tests/test-machine-c-api
 
 clean-coverage:
 	@rm -f *.profdata *.profraw tests/*.profraw *.gcda *.gcov coverage.info coverage.txt

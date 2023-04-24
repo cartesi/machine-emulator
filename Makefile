@@ -33,6 +33,7 @@ EMU_TO_LUA_PATH= cartesi/util.lua cartesi/proof.lua
 EMU_TO_LUA_CPATH= cartesi.so
 EMU_TO_LUA_CARTESI_CPATH= cartesi/grpc.so cartesi/jsonrpc.so
 EMU_TO_INC= pma-defines.h rtc-defines.h
+UARCH_TO_IMAGES= uarch-ram.bin
 
 # Build settings
 DEPDIR := third-party
@@ -79,6 +80,8 @@ LIB_EXTENSION := dll
 DEP_TO_LIB += *.$(LIB_EXTENSION)
 endif
 
+TOOLCHAIN_IMAGE ?= cartesi/toolchain
+TOOLCHAIN_TAG ?= 0.11.0
 
 # Check if some binary dependencies already exists on build directory to skip
 # downloading and building them.
@@ -118,6 +121,7 @@ help:
 	@echo '* all                        - build the src/ code. To build from a clean clone, run: make submodules downloads dep all'
 	@echo '  doc                        - build the doxygen documentation (requires doxygen to be installed)'
 	@echo '  uarch                      - build microarchitecture'
+	@echo '  uarch-with-toolchain       - build microarchitecture using the toolchain docker image'
 	@echo '  riscv-arch-tests           - build and run microarchitecture rv64i instruction tests'
 
 $(DOWNLOADDIR):
@@ -179,6 +183,29 @@ build-ubuntu-image:
 build-server-manager-image:
 	docker build -t cartesi/server-manager:$(TAG) -f tools/server-manager/Dockerfile --build-arg EMULATOR_VERSION=$(TAG) tools/server-manager
 
+toolchain-env:
+	@docker run --hostname toolchain-env -it --rm \
+		-e USER=$$(id -u -n) \
+		-e GROUP=$$(id -g -n) \
+		-e UID=$$(id -u) \
+		-e GID=$$(id -g) \
+		-v `pwd`:/opt/cartesi/machine-emulator \
+		-w /opt/cartesi/machine-emulator \
+		$(TOOLCHAIN_IMAGE):$(TOOLCHAIN_TAG) /bin/bash
+
+toolchain-exec:
+	@docker run --hostname toolchain-env --rm \
+		-e USER=$$(id -u -n) \
+		-e GROUP=$$(id -g -n) \
+		-e UID=$$(id -u) \
+		-e GID=$$(id -g) \
+		-v `pwd`:/opt/cartesi/machine-emulator \
+		-w /opt/cartesi/machine-emulator \
+		$(TOOLCHAIN_IMAGE):$(TOOLCHAIN_TAG) /bin/bash -c "$(CONTAINER_COMMAND)"
+
+uarch-with-toolchain:
+	$(MAKE) toolchain-exec CONTAINER_COMMAND="make -C uarch"
+
 install-Darwin:
 	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi.so
 	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi/grpc.so
@@ -213,6 +240,7 @@ install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL
 	cd $(BIN_INSTALL_PATH) && $(CHMOD_DATA) $(EMU_LUA_TO_BIN)
 	cd lib/machine-emulator-defines && $(INSTALL) $(EMU_TO_INC) $(INC_INSTALL_PATH)
 	cd $(LUA_INSTALL_CPATH) && $(CHMOD_EXEC) $(EMU_TO_LUA_CPATH)
+	cd uarch && $(INSTALL) $(UARCH_TO_IMAGES) $(IMAGES_INSTALL_PATH)
 
 install-strip:
 	cd $(BIN_INSTALL_PATH) && $(STRIP_EXEC) $(EMU_TO_BIN) $(DEP_TO_BIN)

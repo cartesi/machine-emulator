@@ -1,4 +1,4 @@
-FROM ubuntu:22.04 as builder
+FROM cartesi/toolchain:0.11.0 as builder
 ARG RELEASE=no
 
 RUN apt-get update && \
@@ -22,6 +22,7 @@ COPY . .
 
 RUN make -j$(nproc) dep && \
     make -j$(nproc) release=$RELEASE && \
+    make -j$(nproc) uarch && \
     make install && \
     make clean && \
     rm -rf *

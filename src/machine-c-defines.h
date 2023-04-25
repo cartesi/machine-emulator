@@ -31,5 +31,6 @@
 #define CM_TREE_LOG2_PAGE_SIZE 12         // NOLINT(cppcoreguidelines-macro-usage)
 #define CM_TREE_LOG2_ROOT_SIZE 64         // NOLINT(cppcoreguidelines-macro-usage)
 #define CM_FLASH_DRIVE_CONFIGS_MAX_SIZE 8 // NOLINT(cppcoreguidelines-macro-usage)
+#define CM_VIRTIO_CONFIGS_MAX_SIZE 16     // NOLINT(cppcoreguidelines-macro-usage)
 
 #endif // MACHINE_EMULATOR_SDK_MACHINE_C_DEFINES_H

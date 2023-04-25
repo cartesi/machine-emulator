@@ -257,8 +257,80 @@ where options are:
   --auto-reset-uarch-state
     automatically reset state after miroarchitecture halt
 
-  -i or --htif-console-getchar
-    run in interactive mode.
+  --htif-console-getchar
+    run in interactive mode
+
+  --virtio-console
+    add a VirtIO console device,
+    this console is more responsive than HTIF console and has support for terminal size
+
+  -i
+    run in an interactive mode using a VirtIO console device
+    same as --htif-console-getchar --virtio-console
+
+  --share-dir=<directory>
+    Add a VirtIO Plan 9 filesystem device sharing a host directory with the guest.
+
+    This argument can be specified multiple times, each filesystem device will have
+    a tag (e.g. vfs0, vfs1, ...) that keeps incrementing to be used with the mount command.
+
+    The filesystem can be mounted in the guest with the following command:
+      mount -t 9p vfs0 /mnt
+
+  --net-dev=user
+    Add a VirtIO network device using host user-space networking,
+    this effectively allows to use host network from inside the machine with ease.
+
+    This is a user-mode network,
+    meaning you don't need root privilege or any configuration in the host to use it,
+    in most case it should work out of the box.
+
+    While being of use, this mode has the following limitations:
+      - There is an additional an emulation layer of the TCP/IP stack, so there is an overhead.
+      - Not all IP protocols are emulated, but TCP and UDP should work.
+      - Host cannot connect to guest TCP ports.
+
+    The implementation uses libslirp TCP/IP emulator library.
+
+    To enable networking, execute the following commands inside the guest with root privilege:
+      ip link set dev eth0 up
+      ip addr add 10.0.2.1/24 dev eth0
+      ip route add default via 10.0.2.2 dev eth0
+      echo 'nameserver 10.0.2.3' > /etc/resolv.conf
+
+    The network settings configuration is fixed to the following:
+      Network:      10.0.2.0
+      Netmask:      255.255.255.0
+      Host/Gateway: 10.0.2.2
+      DHCP Start:   10.0.2.15
+      Nameserver:   10.0.2.3
+
+  --net-dev=<iface>
+    Add a VirtIO network device using host TUN/TAP interface,
+    this effectively allows to use host network from inside the machine.
+
+    This is more efficient and has less limitations than the user-space networking.
+
+    The following commands in the host with root privilege before starting the machine:
+      modprobe tun
+      ip link add br0 type bridge
+      ip tuntap add dev tap0 mode tap user $USER
+      ip link set dev tap0 master br0
+      ip link set dev br0 up
+      ip link set dev tap0 up
+      ip addr add 192.168.3.1/24 dev br0
+      sysctl -w net.ipv4.ip_forward=1
+      iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+
+    In the example above the host public internet interface is eth0,
+    but this depends in the host.
+
+    Finally start the machine with using --net-dev=tap0 and
+    execute the following commands in the guest with root privilege:
+      ip link set dev eth0 up
+      ip addr add 192.168.3.2/24 dev eth0
+      ip route add default via 192.168.3.1 dev eth0
+      echo "nameserver 8.8.8.8" > /etc/resolv.conf
 
   --htif-yield-manual
     honor yield requests with manual reset by target.
@@ -370,6 +442,9 @@ local flash_label_order = { "root" }
 local flash_shared = { }
 local flash_start = { }
 local flash_length = { }
+local virtio = {}
+local virtio_console = false
+local virtio_shared_dir_count = 0
 local memory_range_replace = { }
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
@@ -489,13 +564,25 @@ local options = {
     { "^%-%-htif%-console%-getchar$", function(all)
         if not all then return false end
         htif_console_getchar = true
-        rom_bootargs = rom_bootargs:gsub('console=hvc0', 'console=hvc1')
+        return true
+    end },
+    { "^%-%-virtio%-console$", function(all)
+        if not all then return false end
+        if not virtio_console then
+          virtio_console = true
+          rom_bootargs = rom_bootargs:gsub('console=hvc0', 'console=hvc1')
+          table.insert(virtio, 1, {type='console'})
+        end
         return true
     end },
     { "^%-i$", function(all)
         if not all then return false end
         htif_console_getchar = true
-        rom_bootargs = rom_bootargs:gsub('console=hvc0', 'console=hvc1')
+        if not virtio_console then
+          virtio_console = true
+          rom_bootargs = rom_bootargs:gsub('console=hvc0', 'console=hvc1')
+          table.insert(virtio, 1, {type='console'})
+        end
         return true
     end },
     { "^%-%-htif%-yield%-manual$", function(all)
@@ -837,6 +924,22 @@ local options = {
         end
         return false
     end },
+    { "^%-%-share%-dir%=(.*)$", function(opts)
+        if not opts then return false end
+        local mount_tag = 'vfs'..virtio_shared_dir_count
+        virtio_shared_dir_count = virtio_shared_dir_count + 1
+        table.insert(virtio, {type='p9fs', mount_tag=mount_tag, shared_path=opts})
+        return true
+    end },
+    { "^%-%-net%-dev%=(.*)$", function(opts)
+        if not opts then return false end
+        if opts == 'user' then
+          table.insert(virtio, {type='net-user'})
+        else
+          table.insert(virtio, {type='net-tuntap', iface=opts})
+        end
+        return true
+    end },
     { ".*", function(all)
         if not all then return false end
         local not_option = all:sub(1,1) ~= "-"
@@ -983,6 +1086,15 @@ local function store_machine_config(config, output)
     for i, f in ipairs(config.flash_drive) do
         output("    ")
         store_memory_range(f, "    ", output)
+    end
+    output("  },\n")
+    output("  virtio = {\n")
+    for _, d in ipairs(config.virtio) do
+        output("    {\n")
+        for k,v in pairs(d) do
+            output('      %s = "%s",\n', k, v)
+        end
+        output("    },\n")
     end
     output("  },\n")
     if config.rollup then
@@ -1164,6 +1276,7 @@ else
         rollup = rollup,
         uarch = uarch,
         flash_drive = {},
+        virtio = virtio,
     }
     local mtdparts = {}
     for i, label in ipairs(flash_label_order) do

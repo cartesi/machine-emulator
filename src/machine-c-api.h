@@ -241,6 +241,54 @@ typedef struct {          // NOLINT(modernize-use-using)
     bool yield_automatic; ///< Make yield automatic available?
 } cm_htif_config;
 
+/// \brief VirtIO device type
+typedef enum { // NOLINT(modernize-use-using)
+    CM_VIRTIO_DEVICE_NONE = 0,
+    CM_VIRTIO_DEVICE_CONSOLE,
+    CM_VIRTIO_DEVICE_P9FS,
+    CM_VIRTIO_DEVICE_NET_USER,
+    CM_VIRTIO_DEVICE_NET_TUNTAP
+} CM_VIRTIO_DEVICE_TYPE;
+
+/// \brief VirtIO console device state configuration
+typedef struct {
+} cm_virtio_console_config;
+
+/// \brief VirtIO Plan 9 filesystem device state configuration
+typedef struct {
+    const char *mount_tag;   ///< Guest mount tag
+    const char *shared_path; ///< Path to the host shared directory
+} cm_virtio_p9fs_config;
+
+/// \brief VirtIO user network device state configuration
+typedef struct {
+} cm_virtio_net_user_config;
+
+/// \brief VirtIO TUN/TAP network device state configuration
+typedef struct {
+    const char *iface; ///< Host's tap network interface (e.g "tap0")
+} cm_virtio_net_tuntap_config;
+
+/// \brief VirtIO device union
+typedef union {
+    cm_virtio_console_config console;       ///< Console
+    cm_virtio_p9fs_config p9fs;             ///< Plan 9 filesystem
+    cm_virtio_net_user_config net_user;     ///< User-mode networking
+    cm_virtio_net_tuntap_config net_tuntap; ///< TUN/TAP networking
+} cm_virtio_device_config_union;
+
+/// \brief VirtIO device state configuration
+typedef struct {
+    CM_VIRTIO_DEVICE_TYPE type;           ///< VirtIO device type
+    cm_virtio_device_config_union device; ///< VirtIO device config
+} cm_virtio_device_config;
+
+/// \brief VirtIO device configuration array
+typedef struct { // NOLINT(modernize-use-using)
+    cm_virtio_device_config *entry;
+    size_t count;
+} cm_virtio_configs;
+
 /// \brief Rollup state configuration
 typedef struct {                           // NOLINT(modernize-use-using)
     bool has_value;                        ///< Represents whether the rest of the struct have been filled
@@ -281,6 +329,7 @@ typedef struct { // NOLINT(modernize-use-using)
     cm_clint_config clint;
     cm_plic_config plic;
     cm_htif_config htif;
+    cm_virtio_configs virtio;
     cm_rollup_config rollup;
     cm_uarch_config uarch;
 } cm_machine_config;

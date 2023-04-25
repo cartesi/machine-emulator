@@ -72,6 +72,7 @@ local tests = {
     {"rv64ui-uarch-subw.bin", 428},
     {"rv64ui-uarch-xor.bin", 544},
     {"rv64ui-uarch-xori.bin", 178},
+    {"rv64ui-uarch-fence.bin", 13},
 }
 
 

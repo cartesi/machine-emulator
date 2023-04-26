@@ -30,7 +30,6 @@
 
 using namespace std::string_literals;
 using json = nlohmann::json;
-using namespace nlohmann::literals;
 
 using hash_type = cartesi::machine_merkle_tree::hash_type;
 

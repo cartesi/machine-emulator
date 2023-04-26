@@ -7,7 +7,7 @@ RUN apt-get update && \
         libreadline-dev libboost-coroutine-dev libboost-context-dev \
         libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev \
         ca-certificates automake libtool patchelf cmake pkg-config lua5.3 liblua5.3-dev \
-        luarocks libb64-dev libcrypto++-dev && \
+        luarocks libb64-dev libcrypto++-dev nlohmann-json3-dev && \
     rm -rf /var/lib/apt/lists/*
 
 RUN luarocks install luasocket && \

@@ -54,7 +54,6 @@
 
 using namespace std::string_literals;
 using json = nlohmann::json;
-using namespace nlohmann::literals;
 
 /// \brief Server semantic version major
 static constexpr uint32_t server_version_major = 0;
@@ -164,7 +163,7 @@ enum jsonrpc_error_code : int {
 /// \param result Result to send in response (defaults to true)
 /// \returns JSON object with response
 static json jsonrpc_response_ok(const json &j, const json &result = true) {
-    return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : nullptr}, {"result", result}};
+    return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : json{nullptr}}, {"result", result}};
 }
 
 /// \brief Returns a failed JSONRPC response as a JSON object
@@ -173,7 +172,7 @@ static json jsonrpc_response_ok(const json &j, const json &result = true) {
 /// \param message Error message
 /// \returns JSON object with response
 static json jsonrpc_response_error(const json &j, jsonrpc_error_code code, const std::string &message) {
-    return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : nullptr},
+    return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : json{nullptr}},
         {"error", {{"code", code}, {"message", message}}}};
 }
 

@@ -82,7 +82,7 @@ endif
 
 # Check if some binary dependencies already exists on build directory to skip
 # downloading and building them.
-DEPBINS := $(addprefix $(BUILDDIR)/,lib/libgrpc.$(LIB_EXTENSION) include/nlohmann/json.hpp include/mongoose.h)
+DEPBINS := $(addprefix $(BUILDDIR)/,lib/libgrpc.$(LIB_EXTENSION) include/mongoose.h)
 
 all: source-default
 
@@ -150,12 +150,8 @@ source-default:
 uarch:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C uarch
 
-$(BUILDDIR)/include/nlohmann/json.hpp: | $(BUILDDIR) $(DOWNLOADDIR)
-	mkdir -p $(BUILDDIR)/include/nlohmann
-	mkdir -p $(BUILDDIR)/lib
-	cp $(DOWNLOADDIR)/json.hpp $(BUILDDIR)/include/nlohmann
-
 $(BUILDDIR)/include/mongoose.h $(BUILDDIR)/lib/libmongoose.a: | $(BUILDDIR) $(DOWNLOADDIR)
+	mkdir -p $(BUILDDIR)/include $(BUILDDIR)/lib
 	if [ ! -d $(DEPDIR)/mongoose-7.9 ]; then tar -xzf $(DOWNLOADDIR)/7.9.tar.gz -C $(DEPDIR); fi
 	cp $(DEPDIR)/mongoose-7.9/mongoose.c $(BUILDDIR)/lib
 	cp $(DEPDIR)/mongoose-7.9/mongoose.h $(BUILDDIR)/include

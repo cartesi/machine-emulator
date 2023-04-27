@@ -165,6 +165,9 @@ WARNS=-W -Wall -pedantic
 INCS=-I../lib/machine-emulator-defines -I../third-party/llvm-flang-uint128 \
 	$(LUA_INC) $(CRYPTOPP_INC) $(NLOHMANN_JSON_INC) $(B64_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
+# Use 64-bit offsets for file operations in POSIX APIs
+DEFS+=-D_FILE_OFFSET_BITS=64
+
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
 #DEFS+=-DDUMP_EXCEPTIONS
@@ -294,6 +297,7 @@ CARTESI_OBJS:= \
 	virtio-factory.o \
 	virtio-device.o \
 	virtio-console.o \
+	virtio-p9fs.o \
 	rom.o \
 	tty.o \
 	htif.o \
@@ -542,6 +546,7 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	virtio-factory.o \
 	virtio-device.o \
 	virtio-console.o \
+	virtio-p9fs.o \
 	rom.o \
 	tty.o \
 	htif.o \
@@ -574,6 +579,7 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	virtio-factory.o \
 	virtio-device.o \
 	virtio-console.o \
+	virtio-p9fs.o \
 	rom.o \
 	tty.o \
 	htif.o \

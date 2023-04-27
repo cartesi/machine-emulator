@@ -49,6 +49,9 @@
 #include "virtio-factory.h"
 
 #include "virtio-console.h"
+#include "virtio-net-carrier-slirp.h"
+#include "virtio-net-carrier-tuntap.h"
+#include "virtio-net.h"
 #include "virtio-p9fs.h"
 
 /// \file
@@ -441,6 +444,13 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
             make_virtio_pma_entry(PMA_FIRST_VIRTIO_START + vdev_p9fs->get_virtio_index() * PMA_VIRTIO_LENGTH,
                 PMA_VIRTIO_LENGTH, "VirtIO p9fs device", &virtio_driver, vdev_p9fs.get()));
         m_vdevs.push_back(std::move(vdev_p9fs));
+
+        // Register VirtIO network device
+        auto vdev_net = std::make_unique<virtio_net>(m_vdevs.size(), std::make_unique<virtio_net_carrier_slirp>());
+        register_pma_entry(
+            make_virtio_pma_entry(PMA_FIRST_VIRTIO_START + vdev_net->get_virtio_index() * PMA_VIRTIO_LENGTH,
+                PMA_VIRTIO_LENGTH, "VirtIO network device", &virtio_driver, vdev_net.get()));
+        m_vdevs.push_back(std::move(vdev_net));
     }
 
     // Add sentinel to PMA vector

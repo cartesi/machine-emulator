@@ -298,6 +298,9 @@ CARTESI_OBJS:= \
 	virtio-device.o \
 	virtio-console.o \
 	virtio-p9fs.o \
+	virtio-net.o \
+	virtio-net-carrier-tuntap.o \
+	virtio-net-carrier-slirp.o \
 	rom.o \
 	tty.o \
 	htif.o \
@@ -547,6 +550,9 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	virtio-device.o \
 	virtio-console.o \
 	virtio-p9fs.o \
+	virtio-net.o \
+	virtio-net-carrier-tuntap.o \
+	virtio-net-carrier-slirp.o \
 	rom.o \
 	tty.o \
 	htif.o \
@@ -580,6 +586,9 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	virtio-device.o \
 	virtio-console.o \
 	virtio-p9fs.o \
+	virtio-net.o \
+	virtio-net-carrier-tuntap.o \
+	virtio-net-carrier-slirp.o \
 	rom.o \
 	tty.o \
 	htif.o \

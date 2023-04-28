@@ -259,16 +259,13 @@ jobs:
         run: |
           mkdir -p /tmp/uarch-riscv-tests-json-logs
           /opt/cartesi/bin/uarch-riscv-tests --test-path=/opt/cartesi/tests --output-dir=/tmp/uarch-riscv-tests-json-logs json-logs
-          tar -czf uarch-riscv-tests-json-logs-`git describe --tags --exact-match`.tar.gz -C /tmp/uarch-riscv-tests-json-logs .
 
-      - uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Upload uarch json logs to be used  to test the Solidity based microarchitecture interpreter
+        uses: actions/upload-artifact@master
         with:
-          prerelease: true
-          files: uarch-riscv-tests-json-logs-*.tar.gz
-        env:
-          GITHUB_TOKEN: ${{ secrets.CI_TOKEN }}
-      
+          name: uarch-riscv-tests-json-logs
+          path: /tmp/uarch-riscv-tests-json-logs
+
       - name: Run test suite with Microarchitecture
         run: /opt/cartesi/bin/cartesi-machine-tests --test-path=/opt/cartesi/tests --uarch-ram-length=0x20000 --uarch-ram-image=/opt/cartesi/share/images/uarch-ram.bin --jobs=$(nproc) run_uarch
 
@@ -879,6 +876,15 @@ jobs:
           find /opt/cartesi/bin -type f \! -iname "*.lua" -exec chmod 755 {} +
           find /opt/cartesi/lib -type f -exec chmod 755 {} +
 
+      - name: Download uarch json logs to be used  to test the Solidity based microarchitecture interpreter
+        uses: actions/download-artifact@master
+        with:
+          name: uarch-riscv-tests-json-logs
+          path: /tmp/uarch-riscv-tests-json-logs
+
+      - name: Create uarch json logs TAR
+        run: tar -czf uarch-riscv-tests-json-logs-${GITHUB_REF:10}.tar.gz -C /tmp/uarch-riscv-tests-json-logs .
+
       - name: Create TAR
         run: tar -czf machine-emulator-`uname`-${GITHUB_REF:10}.tar.gz -C /opt/cartesi .
 
@@ -886,6 +892,8 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           prerelease: true
-          files: machine-emulator-*.tar.gz
+          files: |
+            machine-emulator-*.tar.gz
+            uarch-riscv-tests-json-logs-*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.CI_TOKEN }}

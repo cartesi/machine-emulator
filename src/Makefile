@@ -21,7 +21,6 @@ BUILDDIR ?= $(abspath ../build/$(UNAME)_$(shell uname -m))
 LUA_INC:=$(shell pkg-config --cflags-only-I lua5.3)
 LUA_LIB:=-llua5.3
 LUA_BIN?=lua5.3
-SLIRP_LIB=-lslirp
 GRPC_DIR:=../lib/grpc-interfaces
 
 PROTOC:=$(BUILDDIR)/bin/protoc
@@ -53,6 +52,8 @@ CRYPTOPP_INC_Darwin:=-I/usr/local/opt/cryptopp/include
 NLOHMANN_JSON_INC_Darwin:=-I/usr/local/opt/nlohmann-json/include
 B64_LIB_Darwin:=-L/usr/local/opt/libb64/lib -lb64
 B64_INC_Darwin:=-I/usr/local/opt/libb64/include
+SLIRP_LIB_Darwin:=-L/usr/local/opt/libslirp/lib -lslirp
+SLIRP_INC_Darwin:=-I/usr/local/opt/libslirp/include
 else # Macports installation
 BOOST_LIB_DIR_Darwin=-L/opt/local/lib
 BOOST_INC_Darwin=-I/opt/local/include
@@ -60,6 +61,8 @@ CRYPTOPP_LIB_Darwin:=-L/opt/local/lib -lcryptopp
 CRYPTOPP_INC_Darwin:=-I/opt/local/include
 B64_LIB_Darwin:=-L/opt/local/lib -lb64
 B64_INC_Darwin:=-I/opt/local/include
+SLIRP_LIB_Darwin:=-L/opt/local/lib  -lslirp
+SLIRP_INC_Darwin:=-I/opt/local/include
 endif
 endif
 
@@ -97,6 +100,8 @@ BOOST_PROCESS_LIB_Linux:=-lpthread
 BOOST_INC_Linux=
 B64_LIB_Linux:=-lb64
 B64_INC_Linux:=
+SLIRP_LIB_Linux:=-lslirp
+SLIRP_INC_Linux:=
 CRYPTOPP_LIB_Linux:=-lcryptopp
 CRYPTOPP_INC_Linux:=
 GRPC_INC_Linux:=-I$(BUILDDIR)/include
@@ -126,6 +131,8 @@ BOOST_LOG_LIB=$(BOOST_LOG_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
 B64_LIB=$(B64_LIB_$(UNAME))
 B64_INC=$(B64_INC_$(UNAME))
+SLIRP_LIB=$(SLIRP_LIB_$(UNAME))
+SLIRP_INC=$(SLIRP_INC_$(UNAME))
 CRYPTOPP_LIB=$(CRYPTOPP_LIB_$(UNAME))
 CRYPTOPP_INC=$(CRYPTOPP_INC_$(UNAME))
 NLOHMANN_JSON_INC=$(NLOHMANN_JSON_INC_$(UNAME))
@@ -164,7 +171,7 @@ WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
 INCS=-I../lib/machine-emulator-defines -I../third-party/llvm-flang-uint128 \
-	$(LUA_INC) $(CRYPTOPP_INC) $(NLOHMANN_JSON_INC) $(B64_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
+	$(LUA_INC) $(CRYPTOPP_INC) $(NLOHMANN_JSON_INC) $(B64_INC)  $(SLIRP_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
 # Use 64-bit offsets for file operations in POSIX APIs
 DEFS+=-D_FILE_OFFSET_BITS=64

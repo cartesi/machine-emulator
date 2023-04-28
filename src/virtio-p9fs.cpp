@@ -41,8 +41,13 @@
 #include <fcntl.h>
 #include <sys/file.h>
 #include <sys/stat.h>
+#ifdef __APPLE__
+#include <sys/mount.h>
+#include <sys/param.h>
+#else
 #include <sys/statfs.h>
 #include <sys/sysmacros.h>
+#endif
 #include <unistd.h>
 
 namespace cartesi {
@@ -136,42 +141,10 @@ static p9_error host_errno_to_p9(int err) {
             return P9_ENOTEMPTY;
         case ELOOP:
             return P9_ELOOP;
-        // case EWOULDBLOCK: return P9_EWOULDBLOCK;
         case ENOMSG:
             return P9_ENOMSG;
         case EIDRM:
             return P9_EIDRM;
-        case ECHRNG:
-            return P9_ECHRNG;
-        case EL2NSYNC:
-            return P9_EL2NSYNC;
-        case EL3HLT:
-            return P9_EL3HLT;
-        case EL3RST:
-            return P9_EL3RST;
-        case ELNRNG:
-            return P9_ELNRNG;
-        case EUNATCH:
-            return P9_EUNATCH;
-        case ENOCSI:
-            return P9_ENOCSI;
-        case EL2HLT:
-            return P9_EL2HLT;
-        case EBADE:
-            return P9_EBADE;
-        case EBADR:
-            return P9_EBADR;
-        case EXFULL:
-            return P9_EXFULL;
-        case ENOANO:
-            return P9_ENOANO;
-        case EBADRQC:
-            return P9_EBADRQC;
-        case EBADSLT:
-            return P9_EBADSLT;
-        // case EDEADLOCK: return P9_EDEADLOCK;
-        case EBFONT:
-            return P9_EBFONT;
         case ENOSTR:
             return P9_ENOSTR;
         case ENODATA:
@@ -180,52 +153,20 @@ static p9_error host_errno_to_p9(int err) {
             return P9_ETIME;
         case ENOSR:
             return P9_ENOSR;
-        case ENONET:
-            return P9_ENONET;
-        case ENOPKG:
-            return P9_ENOPKG;
         case EREMOTE:
             return P9_EREMOTE;
         case ENOLINK:
             return P9_ENOLINK;
-        case EADV:
-            return P9_EADV;
-        case ESRMNT:
-            return P9_ESRMNT;
-        case ECOMM:
-            return P9_ECOMM;
         case EPROTO:
             return P9_EPROTO;
         case EMULTIHOP:
             return P9_EMULTIHOP;
-        case EDOTDOT:
-            return P9_EDOTDOT;
         case EBADMSG:
             return P9_EBADMSG;
         case EOVERFLOW:
             return P9_EOVERFLOW;
-        case ENOTUNIQ:
-            return P9_ENOTUNIQ;
-        case EBADFD:
-            return P9_EBADFD;
-        case EREMCHG:
-            return P9_EREMCHG;
-        case ELIBACC:
-            return P9_ELIBACC;
-        case ELIBBAD:
-            return P9_ELIBBAD;
-        case ELIBSCN:
-            return P9_ELIBSCN;
-        case ELIBMAX:
-            return P9_ELIBMAX;
-        case ELIBEXEC:
-            return P9_ELIBEXEC;
         case EILSEQ:
             return P9_EILSEQ;
-        case ERESTART:
-            return P9_ERESTART;
-        case ESTRPIPE:
-            return P9_ESTRPIPE;
         case EUSERS:
             return P9_EUSERS;
         case ENOTSOCK:
@@ -286,6 +227,82 @@ static p9_error host_errno_to_p9(int err) {
             return P9_EINPROGRESS;
         case ESTALE:
             return P9_ESTALE;
+        case EDQUOT:
+            return P9_EDQUOT;
+        case ECANCELED:
+            return P9_ECANCELED;
+        case EOWNERDEAD:
+            return P9_EOWNERDEAD;
+        case ENOTRECOVERABLE:
+            return P9_ENOTRECOVERABLE;
+#ifdef __APPLE__
+        case ENOATTR:
+            return P9_ENODATA;
+        case ENOTSUP:
+            return P9_EOPNOTSUPP;
+#else
+        case ECHRNG:
+            return P9_ECHRNG;
+        case EL2NSYNC:
+            return P9_EL2NSYNC;
+        case EL3HLT:
+            return P9_EL3HLT;
+        case EL3RST:
+            return P9_EL3RST;
+        case ELNRNG:
+            return P9_ELNRNG;
+        case EUNATCH:
+            return P9_EUNATCH;
+        case ENOCSI:
+            return P9_ENOCSI;
+        case EL2HLT:
+            return P9_EL2HLT;
+        case EBADE:
+            return P9_EBADE;
+        case EBADR:
+            return P9_EBADR;
+        case EXFULL:
+            return P9_EXFULL;
+        case ENOANO:
+            return P9_ENOANO;
+        case EBADRQC:
+            return P9_EBADRQC;
+        case EBADSLT:
+            return P9_EBADSLT;
+        case EBFONT:
+            return P9_EBFONT;
+        case ENONET:
+            return P9_ENONET;
+        case ENOPKG:
+            return P9_ENOPKG;
+        case EADV:
+            return P9_EADV;
+        case ESRMNT:
+            return P9_ESRMNT;
+        case ECOMM:
+            return P9_ECOMM;
+        case EDOTDOT:
+            return P9_EDOTDOT;
+        case ENOTUNIQ:
+            return P9_ENOTUNIQ;
+        case EBADFD:
+            return P9_EBADFD;
+        case EREMCHG:
+            return P9_EREMCHG;
+        case ELIBACC:
+            return P9_ELIBACC;
+        case ELIBBAD:
+            return P9_ELIBBAD;
+        case ELIBSCN:
+            return P9_ELIBSCN;
+        case ELIBMAX:
+            return P9_ELIBMAX;
+        case ELIBEXEC:
+            return P9_ELIBEXEC;
+        case ERESTART:
+            return P9_ERESTART;
+        case ESTRPIPE:
+            return P9_ESTRPIPE;
         case EUCLEAN:
             return P9_EUCLEAN;
         case ENOTNAM:
@@ -296,14 +313,10 @@ static p9_error host_errno_to_p9(int err) {
             return P9_EISNAM;
         case EREMOTEIO:
             return P9_EREMOTEIO;
-        case EDQUOT:
-            return P9_EDQUOT;
         case ENOMEDIUM:
             return P9_ENOMEDIUM;
         case EMEDIUMTYPE:
             return P9_EMEDIUMTYPE;
-        case ECANCELED:
-            return P9_ECANCELED;
         case ENOKEY:
             return P9_ENOKEY;
         case EKEYEXPIRED:
@@ -312,14 +325,11 @@ static p9_error host_errno_to_p9(int err) {
             return P9_EKEYREVOKED;
         case EKEYREJECTED:
             return P9_EKEYREJECTED;
-        case EOWNERDEAD:
-            return P9_EOWNERDEAD;
-        case ENOTRECOVERABLE:
-            return P9_ENOTRECOVERABLE;
         case ERFKILL:
             return P9_ERFKILL;
         case EHWPOISON:
             return P9_EHWPOISON;
+#endif
         default:
             return P9_EINVAL;
     }
@@ -363,20 +373,11 @@ static int p9_open_flags_to_host(uint32_t flags) {
                 case P9_O_FASYNC:
                     oflags |= FASYNC;
                     break;
-                case P9_O_DIRECT:
-                    oflags |= O_DIRECT;
-                    break;
-                case P9_O_LARGEFILE:
-                    oflags |= O_LARGEFILE;
-                    break;
                 case P9_O_DIRECTORY:
                     oflags |= O_DIRECTORY;
                     break;
                 case P9_O_NOFOLLOW:
                     oflags |= O_NOFOLLOW;
-                    break;
-                case P9_O_NOATIME:
-                    oflags |= O_NOATIME;
                     break;
                 case P9_O_CLOEXEC:
                     oflags |= O_CLOEXEC;
@@ -384,6 +385,17 @@ static int p9_open_flags_to_host(uint32_t flags) {
                 case P9_O_SYNC:
                     oflags |= O_SYNC;
                     break;
+#ifndef __APPLE__
+                case P9_O_DIRECT:
+                    oflags |= O_DIRECT;
+                    break;
+                case P9_O_LARGEFILE:
+                    oflags |= O_LARGEFILE;
+                    break;
+                case P9_O_NOATIME:
+                    oflags |= O_NOATIME;
+                    break;
+#endif
                 default:
                     break;
             }
@@ -671,8 +683,14 @@ bool virtio_p9fs_device::op_statfs(virtq_unserializer &&msg, uint16_t tag) {
     uint64_t bavail = static_cast<uint64_t>(stfs.f_bavail);
     uint64_t files = static_cast<uint64_t>(stfs.f_files);
     uint64_t ffree = static_cast<uint64_t>(stfs.f_ffree);
+#ifdef __APPLE__
+    uint64_t fsid = static_cast<uint64_t>(stfs.f_fsid.val[0]) | (static_cast<uint64_t>(stfs.f_fsid.val[1]) << 32);
+    uint32_t namelen =
+        std::min<uint32_t>(static_cast<uint32_t>(NAME_MAX), P9_NAME_MAX); // f_namelen does not exist on Darwin
+#else
     uint64_t fsid = static_cast<uint64_t>(stfs.f_fsid.__val[0]) | (static_cast<uint64_t>(stfs.f_fsid.__val[1]) << 32);
     uint32_t namelen = std::min<uint32_t>(static_cast<uint32_t>(stfs.f_namelen), P9_NAME_MAX);
+#endif
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&type, &bsize, &blocks, &bfree, &bavail, &files, &ffree, &fsid, &namelen)) {
@@ -1131,6 +1149,20 @@ bool virtio_p9fs_device::op_getattr(virtq_unserializer &&msg, uint16_t tag) {
         rstat.blksize = st.st_blksize;
         rstat.blocks = st.st_blocks;
     }
+#ifdef __APPLE__
+    if (mask & P9_GETATTR_ATIME) {
+        rstat.atime_sec = st.st_atimespec.tv_sec;
+        rstat.atime_nsec = st.st_atimespec.tv_nsec;
+    }
+    if (mask & P9_GETATTR_MTIME) {
+        rstat.mtime_sec = st.st_mtimespec.tv_sec;
+        rstat.mtime_nsec = st.st_mtimespec.tv_nsec;
+    }
+    if (mask & P9_GETATTR_CTIME) {
+        rstat.ctime_sec = st.st_ctimespec.tv_sec;
+        rstat.ctime_nsec = st.st_ctimespec.tv_nsec;
+    }
+#else
     if (mask & P9_GETATTR_ATIME) {
         rstat.atime_sec = st.st_atim.tv_sec;
         rstat.atime_nsec = st.st_atim.tv_nsec;
@@ -1143,6 +1175,7 @@ bool virtio_p9fs_device::op_getattr(virtq_unserializer &&msg, uint16_t tag) {
         rstat.ctime_sec = st.st_ctim.tv_sec;
         rstat.ctime_nsec = st.st_ctim.tv_nsec;
     }
+#endif
     // P9_GETATTR_BTIME, P9_GETATTR_GEN, P9_GETATTR_DATA_VERSION are not supported, they are hardwired to zero.
     // P9_GETATTR_INO is contained in qid.
     // Reply

@@ -57,11 +57,21 @@
 #include <cerrno>
 
 #include <fcntl.h>
-#include <linux/if_tun.h>
 #include <net/if.h>
 #include <sched.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+
+// Include TUN/TAP headers
+#ifdef __linux__
+#include <linux/if_tun.h>
+constexpr const char NET_TUN_DEV[] = "/dev/net/tun";
+#else // Other platform, most likely MacOS or FreeBSD
+#define IFF_TAP 0x0002
+#define IFF_NO_PI 0x1000 // Don't provide packet info
+#define TUNSETIFF _IOW('T', 202, int)
+constexpr const char NET_TUN_DEV[] = "/dev/tun";
+#endif
 
 namespace cartesi {
 
@@ -70,9 +80,10 @@ virtio_net_carrier_tuntap::virtio_net_carrier_tuntap(const std::string &tap_name
     const int flags = O_RDWR | // Read/write
         O_NONBLOCK |           // Read/write should never block
         O_DSYNC;               // Flush packets right-away upon write
-    const int fd = open("/dev/net/tun", flags);
+    const int fd = open(NET_TUN_DEV, flags);
     if (fd < 0) {
-        throw std::runtime_error(std::string("could not open tun network device '/dev/net/tun': ") + strerror(errno));
+        throw std::runtime_error(
+            std::string("could not open tun network device '") + NET_TUN_DEV + "': " + strerror(errno));
     }
     // Set the tap network interface
     ifreq ifr{};

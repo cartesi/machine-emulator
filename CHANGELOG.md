@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed uarch related method names on machine class
 - Removed Alpine image generation from CI
 - Removed crypto++ library from third-party. Using system-installed library instead.
+- Changed --step command-line option to --step-uarch in cartesi-machine.lua, for consistency
 
 ## [0.13.0] - 2023-02-16
 ### Added

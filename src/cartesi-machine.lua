@@ -285,8 +285,8 @@ where options are:
     --initial-hash and --final-hash.
     (default: none)
 
-  --step
-    print step log for 1 additional cycle when done.
+  --step-uarch
+    print step log for 1 additional micro cycle when done.
 
   --json-steps=<filename>
     output json with step logs for all micro cycles to <filename>.
@@ -688,9 +688,9 @@ local options = {
         quiet = true
         return true
     end },
-    { "^%-%-step$", function(all)
+    { "^%-%-step%-uarch$", function(all)
         if not all then return false end
-        step = true
+        step_uarch = true
         return true
     end },
     { "^(%-%-max%-mcycle%=(.*))$", function(all, n)
@@ -1416,7 +1416,7 @@ if json_steps then
         local init_uarch_cycle = machine:read_uarch_cycle()
         if init_mcycle > max_mcycle then break end
         if init_mcycle == max_mcycle and init_uarch_cycle == max_uarch_cycle then break end
-        -- Advance one micro step 
+        -- Advance one micro step
         local log = machine:step_uarch(log_type)
         steps_count = steps_count + 1
         local final_mcycle = machine:read_mcycle()
@@ -1429,7 +1429,7 @@ if json_steps then
             machine:reset_iflags_Y() -- move past any potential yield
             -- Reset uarch_halt_flag in order to allow interpreting the next mcycle
             machine:reset_uarch_state()
-            if machine:read_iflags_H() then 
+            if machine:read_iflags_H() then
                 stderr("Halted at %u.%u\n", final_mcycle, final_uarch_cycle)
                 break
             end
@@ -1596,7 +1596,7 @@ else
     -- Advance micro cycles
     if max_uarch_cycle > 0 then
         -- Save halt flag before micro cycles
-        local previously_halted = machine:read_iflags_H() 
+        local previously_halted = machine:read_iflags_H()
         if machine:run_uarch(max_uarch_cycle) == cartesi.UARCH_BREAK_REASON_HALTED then
             -- Microarchitecture  halted. This means that one "macro" instruction was totally executed
             -- The mcycle counter was incremented, unless the machine was already halted
@@ -1614,9 +1614,9 @@ else
     if gdb_stub then
         gdb_stub:close()
     end
-    if step then
-        assert(not config.htif.console_getchar, "step proof is meaningless in interactive mode")
-        stderr("Gathering step proof: please wait\n")
+    if step_uarch then
+        assert(not config.htif.console_getchar, "micro step proof is meaningless in interactive mode")
+        stderr("Gathering micro step log: please wait\n")
         util.dump_log(machine:step_uarch{ proofs = true, annotations = true }, io.stderr)
     end
     if dump_pmas then

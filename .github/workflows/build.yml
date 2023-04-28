@@ -8,6 +8,10 @@ env:
   TEST_VERSION: v0.28.0
   GROUND_TRUTH_VERSION: v0.28.0-0001
   BUILD_CACHE_VERSION: v0.10.0-0006
+permissions:
+  contents: read
+  packages: write
+  id-token: write
 jobs:
   build:
     name: Build
@@ -730,7 +734,9 @@ jobs:
         id: docker_image_tags
         uses: docker/metadata-action@v3
         with:
-          images: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator
+          images: |
+            name=ghcr.io/${{ github.repository_owner }}/machine-emulator
+            name=docker.io/${{ github.repository_owner }}/machine-emulator,enable=${{startsWith(github.ref, 'refs/tags/v')}}
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -832,7 +838,9 @@ jobs:
         id: debian_docker_image_tags
         uses: docker/metadata-action@v3
         with:
-          images: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator
+          images: |
+            name=ghcr.io/${{ github.repository_owner }}/machine-emulator
+            name=docker.io/${{ github.repository_owner }}/machine-emulator
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
@@ -846,6 +854,13 @@ jobs:
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to Github Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Debian based docker image
         id: debian_docker_build

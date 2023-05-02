@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed crypto++ library from third-party. Using system-installed library instead.
 - Changed --step command-line option to --step-uarch in cartesi-machine.lua, for consistency
 - Removed server-manager implementation from the emulator repository
+- Changed marchid to 0xf
 
 ## [0.13.0] - 2023-02-16
 ### Added

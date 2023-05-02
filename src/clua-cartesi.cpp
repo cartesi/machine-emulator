@@ -21,6 +21,7 @@
 #include "clua-machine.h"
 #include "clua.h"
 #include "machine-c-api.h"
+#include "riscv-constants.h"
 
 /// \file
 /// \brief Scripting interface for the Cartesi SDK.
@@ -120,6 +121,10 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_BREAK_REASON_REACHED_TARGET_MCYCLE, "BREAK_REASON_REACHED_TARGET_MCYCLE", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE, "UARCH_BREAK_REASON_REACHED_TARGET_CYCLE", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_HALTED, "UARCH_BREAK_REASON_HALTED", -1);
+
+    clua_setintegerfield(L, MVENDORID_INIT, "MVENDORID", -1);
+    clua_setintegerfield(L, MARCHID_INIT, "MARCHID", -1);
+    clua_setintegerfield(L, MIMPID_INIT, "MIMPID", -1);
     return 1;
 }
 }

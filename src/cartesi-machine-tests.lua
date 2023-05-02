@@ -668,10 +668,10 @@ end
 local function check_test_result(ctx)
     io.write(ctx.ram_image, ": ")
     if #ctx.expected_yield_payloads ~= (ctx.yield_payload_index - 1) then
-        add_error(ctx, "yielded %d times, expected %d", ctx.yield_payload_index-1, #ctx.expected_yield_payloads)        
+        add_error(ctx, "yielded %d times, expected %d", ctx.yield_payload_index-1, #ctx.expected_yield_payloads)
     end
     if ctx.read_htif_tohost_data >> 1 ~= ctx.expected_halt_payload then
-        add_error(ctx,  "returned halt payload %d, expected %d",  read_htif_tohost_data >> 1, ctx.expected_halt_payload)
+        add_error(ctx, "returned halt payload %d, expected %d",  ctx.read_htif_tohost_data >> 1, ctx.expected_halt_payload)
     end
     if ctx.cycles ~= ctx.expected_cycles then
         add_error(ctx, "terminated with mcycle = %d, expected %d", ctx.cycles, ctx.expected_cycles)

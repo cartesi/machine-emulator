@@ -230,7 +230,7 @@ do_test("machine halt and yield flags and config matches",
         -- Get machine default config  and test for known fields
         local initial_config = machine:get_initial_config()
         -- test_util.print_table(initial_config)
-        assert(initial_config["processor"]["marchid"] == 0xe,
+        assert(initial_config["processor"]["marchid"] == cartesi.MARCHID,
             "marchid value does not match")
         assert(initial_config["processor"]["pc"] == 0x1000,
             "pc value does not match")

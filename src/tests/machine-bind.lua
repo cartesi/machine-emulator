@@ -508,9 +508,9 @@ print("\n\n test read_csr")
 do_test("should return expected values",
     function(machine)
         local initial_csr_values = get_cpu_csr_test_values()
-        initial_csr_values.mvendorid = 0x6361727465736920
-        initial_csr_values.marchid = 0xe
-        initial_csr_values.mimpid = 0x1
+        initial_csr_values.mvendorid = cartesi.MVENDORID
+        initial_csr_values.marchid = cartesi.MARCHID
+        initial_csr_values.mimpid = cartesi.MIMPID
         initial_csr_values.htif_tohost = 0x0
         initial_csr_values.htif_fromhost = 0x0
         initial_csr_values.htif_ihalt = 0x0

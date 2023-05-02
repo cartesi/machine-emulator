@@ -31,6 +31,7 @@
 
 #include "grpc-machine-c-api.h"
 #include "machine-c-api.h"
+#include "riscv-constants.h"
 #include "test-utils.h"
 #include "uarch-solidity-compat.h"
 
@@ -1347,17 +1348,17 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(ids_read_test, ordinary_machine_fixture) {
     int error_code = cm_read_mvendorid(_machine, &vendorid, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(vendorid, static_cast<uint64_t>(0x6361727465736920));
+    BOOST_CHECK_EQUAL(vendorid, static_cast<uint64_t>(cartesi::MVENDORID_INIT));
 
     error_code = cm_read_marchid(_machine, &archid, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(archid, static_cast<uint64_t>(0xe));
+    BOOST_CHECK_EQUAL(archid, static_cast<uint64_t>(cartesi::MARCHID_INIT));
 
     error_code = cm_read_mimpid(_machine, &impid, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(impid, static_cast<uint64_t>(0x1));
+    BOOST_CHECK_EQUAL(impid, static_cast<uint64_t>(cartesi::MIMPID_INIT));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_tohost_read_complex_test, ordinary_machine_fixture) {

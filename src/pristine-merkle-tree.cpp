@@ -16,6 +16,8 @@
 
 #include "pristine-merkle-tree.h"
 
+#include <stdexcept>
+
 /// \file
 /// \brief Pristine Merkle tree implementation.
 

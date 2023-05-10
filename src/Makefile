@@ -431,6 +431,9 @@ format:
 check-format:
 	@$(CLANG_FORMAT) -Werror --dry-run $(CLANG_FORMAT_FILES)
 
+check-lua:
+	luacheck .
+
 fs.ext2: fs/*
 	genext2fs -f -i 512 -b 8192 -d fs fs.ext2
 	truncate -s %4096 fs.ext2

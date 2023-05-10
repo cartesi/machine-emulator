@@ -286,7 +286,11 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.4 liblua5.4-dev lua-socket libb64-dev libcrypto++-dev nlohmann-json3-dev
+          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.4 liblua5.4-dev luarocks lua-socket libb64-dev libcrypto++-dev nlohmann-json3-dev
+
+      - name: Install lua test dependencies
+        run: |
+          sudo luarocks install --lua-version=5.4 luacheck
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
@@ -305,6 +309,9 @@ jobs:
 
       - name: Check format
         run: make check-format
+
+      - name: Check Lua
+        run: make check-lua
 
       - name: Setup update-alternatives for clang-tidy
         run: sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-14 120

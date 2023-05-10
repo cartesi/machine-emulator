@@ -5,7 +5,8 @@ local cartesi = require"cartesi"
 
 local rom_filename = os.tmpname()
 io.open(rom_filename, 'w'):close()
-local deleter = setmetatable({}, { __gc = function() os.remove(rom_filename) end } )
+local rom_deleter = {}
+setmetatable(rom_deleter, { __gc = function() os.remove(rom_filename) end } )
 
 local config = {
     processor = {
@@ -20,7 +21,7 @@ local config = {
     rom = {
         image_filename = rom_filename
     },
-    uarch = { 
+    uarch = {
         ram = { length = 1 << 20, image_filename = test_util.create_test_uarch_program() }
     }
 }

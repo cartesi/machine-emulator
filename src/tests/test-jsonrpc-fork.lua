@@ -59,9 +59,9 @@ local options = {
 }
 
 -- Process command line options
-for i, argument in ipairs({...}) do
+for _, argument in ipairs({...}) do
     if argument:sub(1,1) == "-" then
-        for j, option in ipairs(options) do
+        for _, option in ipairs(options) do
             if option[2](argument:match(option[1])) then
                 break
             end
@@ -141,7 +141,7 @@ end
 local function pre_order(node, f, depth)
     depth = depth or 0
     f(node, depth)
-    for i, child in ipairs(node.children) do
+    for _, child in ipairs(node.children) do
         pre_order(child, f, depth+1)
     end
 end

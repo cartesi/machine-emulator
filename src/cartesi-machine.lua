@@ -384,9 +384,10 @@ or a left shift (e.g., 2 << 20).
     os.exit()
 end
 
+local remote
 local remote_protocol = "grpc"
-local remote_address = nil
-local checkin_address = nil
+local remote_address
+local checkin_address
 local remote_shutdown = false
 local remote_create = true
 local remote_destroy = true
@@ -401,10 +402,10 @@ local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
 local rom_image_filename = images_path .. "rom.bin"
 local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce"
-local rollup = nil
-local uarch = nil
-local rollup_advance = nil
-local rollup_inspect = nil
+local rollup
+local uarch
+local rollup_advance
+local rollup_inspect
 local concurrency_update_merkle_tree = 0
 local skip_root_hash_check = false
 local skip_version_check = false
@@ -424,15 +425,16 @@ local max_mcycle = math.maxinteger
 local json_steps
 local max_uarch_cycle = 0
 local auto_reset_uarch_state = false
-local step = false
-local store_dir = nil
-local load_dir = nil
+local step_uarch = false
+local store_dir
+local load_dir
 local cmdline_opts_finished = false
 local store_config = false
 local load_config = false
-local gdb_address = nil
+local gdb_address
 local exec_arguments = {}
 local quiet = false
+local assert_rolling_template = false
 
 local function parse_memory_range(opts, what, all)
     local f = util.parse_options(opts, {
@@ -681,7 +683,7 @@ local options = {
         rollup_advance = r
         return true
     end },
-    { "^(%-%-rollup%-inspect%-state%=(.+))$", function(all, opts)
+    { "^(%-%-rollup%-inspect%-state%=(.+))$", function(_, opts)
         if not opts then return false end
         local r = util.parse_options(opts, {
             query = true,
@@ -783,7 +785,7 @@ local options = {
     end },
     { "%-%-quiet", function(all)
         if not all then return false end
-        stderr = function(...) end
+        stderr = function() end
         quiet = true
         return true
     end },
@@ -947,9 +949,9 @@ local options = {
 }
 
 -- Process command line options
-for i, a in ipairs(arg) do
+for _, a in ipairs(arg) do
     if not cmdline_opts_finished then
-      for j, option in ipairs(options) do
+      for _, option in ipairs(options) do
           if option[2](a:match(option[1])) then
               break
           end
@@ -975,7 +977,7 @@ local function store_memory_range(r, indent, output)
     local function comment_default(u, v)
         output(u == v and " -- default\n" or "\n")
     end
-    output("{\n", i)
+    output("{\n")
     output("%s  start = 0x%x,", indent, r.start)
     comment_default(0, r.start)
     output("%s  length = 0x%x,", indent, r.length)
@@ -1027,7 +1029,7 @@ local function store_machine_config(config, output)
         end
     end
     table.sort(order)
-    for i,csr in ipairs(order) do
+    for _,csr in ipairs(order) do
         local c = processor[csr] or def.processor[csr]
         output("    %s = 0x%x,", csr, c)
         comment_default(c,  def.processor[csr])
@@ -1071,7 +1073,7 @@ local function store_machine_config(config, output)
     comment_default(clint.mtimecmp, def.clint.mtimecmp)
     output("  },\n")
     output("  flash_drive = {\n")
-    for i, f in ipairs(config.flash_drive) do
+    for _, f in ipairs(config.flash_drive) do
         output("    ")
         store_memory_range(f, "    ", output)
     end
@@ -1090,13 +1092,12 @@ local function store_machine_config(config, output)
         store_memory_range(config.rollup.notice_hashes, "    ", output)
         output("  },\n")
     end
-    local uarch = config.uarch or def.uarch
     output("  uarch = {\n")
     output("    ram = {\n")
-    output("      length = 0x%x,", uarch.ram.length or def.uarch.ram.length)
-    comment_default(uarch.ram.length, def.uarch.ram.length)
-    output("      image_filename = %q,", uarch.ram.image_filename or def.uarch.ram.image_filename)
-    comment_default(uarch.ram.image_filename, def.uarch.ram.image_filename)
+    output("      length = 0x%x,", config.uarch.ram.length or def.uarch.ram.length)
+    comment_default(config.uarch.ram.length, def.uarch.ram.length)
+    output("      image_filename = %q,", config.uarch.ram.image_filename or def.uarch.ram.image_filename)
+    comment_default(config.uarch.ram.image_filename, def.uarch.ram.image_filename)
     output("    },\n")
     output("    processor = {\n")
     output("      x = {\n")
@@ -1115,8 +1116,8 @@ local function store_machine_config(config, output)
     output("}\n")
 end
 
-local function resolve_flash_lengths(label_order, image_filename, start, length)
-    for i, label in ipairs(label_order) do
+local function resolve_flash_lengths(label_order, image_filename, length)
+    for _, label in ipairs(label_order) do
         local filename = image_filename[label]
         local len = length[label]
         local filelen
@@ -1137,17 +1138,17 @@ local function resolve_flash_lengths(label_order, image_filename, start, length)
     end
 end
 
-local function resolve_flash_starts(label_order, image_filename, start, length)
+local function resolve_flash_starts(label_order, start)
     local auto_start = 1<<55
     if next(start) == nil then
-        for i, label in ipairs(label_order) do
+        for _, label in ipairs(label_order) do
             start[label] = auto_start
             auto_start = auto_start + (1 << 52)
         end
     else
         local missing = {}
         local found = {}
-        for i, label in ipairs(label_order) do
+        for _, label in ipairs(label_order) do
             local quoted = string.format("'%s'", label)
             if start[label] then
                 found[#found+1] = quoted
@@ -1162,12 +1163,12 @@ local function resolve_flash_starts(label_order, image_filename, start, length)
     end
 end
 
-local function dump_value_proofs(machine, desired_proofs, htif_console_getchar)
+local function dump_value_proofs(machine, desired_proofs, has_htif_console_getchar)
     if #desired_proofs > 0 then
-        assert(not htif_console_getchar,
+        assert(not has_htif_console_getchar,
             "proofs are meaningless in interactive mode")
     end
-    for i, desired in ipairs(desired_proofs) do
+    for _, desired in ipairs(desired_proofs) do
         local proof = machine:get_proof(desired.address, desired.log2_size)
         local out = desired.filename and assert(io.open(desired.filename, "wb"))
             or io.stdout
@@ -1192,8 +1193,7 @@ local function create_machine(config_or_dir, runtime)
     return cartesi.machine(config_or_dir, runtime)
 end
 
-local machine
-
+local remote_shutdown_deleter = {}
 if remote_address then
     stderr("Connecting to %s remote cartesi machine at '%s'\n", remote_protocol, remote_address)
     local protocol = require("cartesi." .. remote_protocol)
@@ -1206,7 +1206,7 @@ if remote_address then
     stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
     local shutdown = function() remote.shutdown() end
     if remote_shutdown then
-        remote_shutdown = setmetatable({}, { __gc = function()
+        setmetatable(remote_shutdown_deleter, { __gc = function()
             stderr("Shutting down remote cartesi machine\n")
             pcall(shutdown)
         end })
@@ -1224,17 +1224,16 @@ local runtime = {
     skip_version_check = skip_version_check
 }
 
+local main_machine
 if remote and not remote_create then
-    machine = remote.get_machine()
+    main_machine = remote.get_machine()
 elseif load_dir then
     stderr("Loading machine: please wait\n")
-    machine = create_machine(load_dir, runtime)
+    main_machine = create_machine(load_dir, runtime)
 else
     -- Resolve all device starts and lengths
-    resolve_flash_lengths(flash_label_order, flash_image_filename, flash_start,
-        flash_length)
-    resolve_flash_starts(flash_label_order, flash_image_filename, flash_start,
-        flash_length)
+    resolve_flash_lengths(flash_label_order, flash_image_filename, flash_length)
+    resolve_flash_starts(flash_label_order, flash_start)
 
     -- Build machine config
     local config = {
@@ -1299,19 +1298,19 @@ else
         config = setmetatable(ret, {__index = config})
     end
 
-    machine = create_machine(config, runtime)
+    main_machine = create_machine(config, runtime)
 end
 
 -- obtain config from instantiated machine
-local config = machine:get_initial_config()
+local main_config = main_machine:get_initial_config()
 
 for _,r in ipairs(memory_range_replace) do
-    machine:replace_memory_range(r)
+    main_machine:replace_memory_range(r)
 end
 
 if type(store_config) == "string" then
     store_config = assert(io.open(store_config, "w"))
-    store_machine_config(config, function (...) store_config:write(string.format(...)) end)
+    store_machine_config(main_config, function (...) store_config:write(string.format(...)) end)
     store_config:close()
 end
 
@@ -1499,14 +1498,16 @@ local function save_rollup_inspect_state_report(machine, config, inspect)
     f:close()
 end
 
-local function store_machine(machine, config, store_dir)
+local function store_machine(machine, config, dir)
     assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
     stderr("Storing machine: please wait\n")
     local h = util.hexhash(machine:get_root_hash())
-    local name = instantiate_filename(store_dir, { h = h })
+    local name = instantiate_filename(dir, { h = h })
     machine:store(name)
 end
 
+local machine = main_machine
+local config = main_config
 if json_steps then
     assert(not rollup_advance, "json-steps and rollup advance state are incompatible")
     assert(not rollup_inspect, "json-steps and rollup inspect state are incompatible")
@@ -1616,7 +1617,7 @@ else
             break
         -- deal with yield manual
         elseif machine:read_iflags_Y() then
-            local cmd, reason = get_and_print_yield(machine, config.htif)
+            local _, reason = get_and_print_yield(machine, config.htif)
             -- there are advance state inputs to feed
             if reason == cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION then
                 dump_exception(machine, config.rollup.tx_buffer)
@@ -1665,7 +1666,7 @@ else
             end
         -- deal with yield automatic
         elseif machine:read_iflags_X() then
-            local cmd, reason = get_and_print_yield(machine, config.htif)
+            local _, reason = get_and_print_yield(machine, config.htif)
             -- we have fed an advance state input
             if rollup_advance and rollup_advance.next_input_index > rollup_advance.input_index_begin then
                 if reason == cartesi.machine.HTIF_YIELD_REASON_TX_VOUCHER then
@@ -1736,7 +1737,8 @@ else
     end
     if assert_rolling_template then
         local cmd, reason = get_yield(machine)
-        if not (cmd == cartesi.machine.HTIF_YIELD_MANUAL and reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED) then
+        if not (cmd == cartesi.machine.HTIF_YIELD_MANUAL and
+                reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED) then
             exit_code = 2
         end
     end

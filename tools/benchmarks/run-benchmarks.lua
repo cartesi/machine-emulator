@@ -114,7 +114,7 @@ end
 
 local function measure(exec_args)
     local results = {}
-    for i = 1, N_RUNS do
+    for _ = 1, N_RUNS do
         local machine = build_machine(exec_args)
         local start = socket.gettime()
         repeat

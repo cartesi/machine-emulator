@@ -100,7 +100,7 @@ local function unhex(hex)
         return string.char(n)
     end)
     if invalid then
-        return nil, format("'%q' not valid hex", c)
+        return nil, string.format("'%q' not valid hex", invalid)
     else
         return data
     end
@@ -173,7 +173,7 @@ local function errorf(...)
 end
 
 local function read_json()
-    local j, p, e = json.decode(io.read("*a"))
+    local j, _, e = json.decode(io.read("*a"))
     if not j then error(e) end
     return j
 end
@@ -207,7 +207,7 @@ local function check_number(number, name)
 end
 
 
-local function encode_input_metadata(arg)
+local function encode_input_metadata()
     local j = read_json()
     j.msg_sender = unhexhash(j.msg_sender, "msg_sender")
     j.block_number = check_number(j.block_number, "block_number")
@@ -222,15 +222,7 @@ local function encode_input_metadata(arg)
     write_be256(j.input_index)
 end
 
-local function encode_string(arg)
-    local j = read_json()
-    local payload = assert(j.payload, "missing payload")
-    write_be256(32) -- offset
-    write_be256(#payload)
-    io.stdout:write(payload)
-end
-
-local function encode_voucher(arg)
+local function encode_voucher()
     local j = read_json()
     local payload = assert(j.payload, "missing payload")
     local destination = unhexhash(j.destination, "destination")
@@ -254,7 +246,7 @@ local function read_be256()
     return string.unpack(">I8", string.sub(io.stdin:read(32), 25))
 end
 
-local function decode_input_metadata(arg)
+local function decode_input_metadata()
     local msg_sender = read_address()
     local block_number = read_be256()
     local time_stamp = read_be256()
@@ -278,14 +270,14 @@ local function decode_input_metadata(arg)
     }), "\n")
 end
 
-local function decode_string(arg)
+local function decode_string()
     assert(read_be256() == 32) -- skip offset
     local length = read_be256()
     local payload = length == 0 and '' or assert(io.stdin:read(length))
     io.stdout:write(json.encode({ payload = payload }, { indent = true }), "\n")
 end
 
-local function encode_string(arg)
+local function encode_string()
     local j = read_json()
     assert(j.payload, "missing payload")
     write_be256(32)
@@ -293,7 +285,7 @@ local function encode_string(arg)
     io.stdout:write(j.payload)
 end
 
-local function decode_voucher(arg)
+local function decode_voucher()
     local destination = hexhash(read_address())
     local offset = read_be256()
     assert(offset == 64, "expected offset 64, got " .. offset) -- skip offset
@@ -311,7 +303,7 @@ local function decode_voucher(arg)
     }), "\n")
 end
 
-local function decode_hashes(arg)
+local function decode_hashes()
     local t = {}
     while 1 do
         local hash = read_hash()

@@ -52,7 +52,7 @@ end
 print("testing mtime interrupt")
 
 do_test("machine:run should interrupt for mtime", function(machine)
-    for i = 1, EXPECTED_MCYCLE do
+    for _ = 1, EXPECTED_MCYCLE do
         machine:run(-1)
         if machine:read_iflags_H() then break end
     end
@@ -60,7 +60,7 @@ do_test("machine:run should interrupt for mtime", function(machine)
 end)
 
 test_util.disabled_test("machine:step_uarch should interrupt for mtime", function(machine)
-    for i = 1, EXPECTED_MCYCLE do
+    for _ = 1, EXPECTED_MCYCLE do
         machine:step_uarch{}
         if machine:read_iflags_H() then break end
     end

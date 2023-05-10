@@ -73,7 +73,7 @@ for i, argument in ipairs({...}) do
 end
 
 -- Config yields 5 times with progress
-local config =  {
+local config_base =  {
   processor = {
     mvendorid = -1,
     mimpid = -1,
@@ -171,6 +171,7 @@ end
 
 local final_mcycle = 561
 local exit_payload = 42
+local progress_enable = false
 
 local function test(config, yield_automatic_enable, yield_manual_enable)
     stderr("  testing yield_automatic:%s yield_manual:%s\n",
@@ -183,7 +184,7 @@ local function test(config, yield_automatic_enable, yield_manual_enable)
     }
     local machine = cartesi.machine(config)
     local break_reason
-    for i, v in ipairs(yields) do
+    for _, v in ipairs(yields) do
         if (v.reason == REASON_PROGRESS and progress_enable) or
            (v.cmd    == YIELD_MANUAL and yield_manual_enable) or
            (v.cmd    == YIELD_AUTOMATIC and yield_automatic_enable)
@@ -200,7 +201,8 @@ local function test(config, yield_automatic_enable, yield_manual_enable)
                 string.format("mcycle: expected %d, got %d", v.mcycle, mcycle))
 
             if yield_automatic_enable and v.cmd == YIELD_AUTOMATIC then
-                assert(break_reason == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY, "expected break reason yielded automatically")
+                assert(break_reason == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY,
+                    "expected break reason yielded automatically")
                 assert(machine:read_iflags_X(), "expected iflags_X set")
                 assert(not machine:read_iflags_Y(), "expected iflags_Y not set")
             elseif yield_manual_enable and v.cmd == YIELD_MANUAL then
@@ -252,6 +254,6 @@ stderr("testing yield sink\n")
 
 for _, auto in ipairs{true, false} do
     for _, manual in ipairs{true, false} do
-        test(config, auto, manual)
+        test(config_base, auto, manual)
     end
 end

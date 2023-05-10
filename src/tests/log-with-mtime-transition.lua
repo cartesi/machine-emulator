@@ -1,4 +1,4 @@
-#!/usr/bin/env lua5.3
+#!/usr/bin/env lua5.4
 
 local test_util = require "tests.util"
 local cartesi = require"cartesi"

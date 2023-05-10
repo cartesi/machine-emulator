@@ -1,4 +1,4 @@
-#!/usr/bin/env lua5.3
+#!/usr/bin/env lua5.4
 
 -- Copyright 2019-2021 Cartesi Pte. Ltd.
 --

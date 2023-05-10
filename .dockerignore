@@ -14,7 +14,6 @@ build
 third-party/cryptopp-CRYPTOPP_7_0_0
 third-party/downloads
 third-party/grpc
-third-party/lua-5.3.5
 src/cartesi-machine-client
 src/cartesi-machine-server
 src/cartesi-machine-hash

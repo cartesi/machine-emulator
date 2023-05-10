@@ -6,16 +6,16 @@ RUN apt-get update && \
         build-essential wget git \
         libreadline-dev libboost-coroutine-dev libboost-context-dev \
         libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev \
-        ca-certificates automake libtool patchelf cmake pkg-config lua5.3 liblua5.3-dev \
+        ca-certificates automake libtool patchelf cmake pkg-config lua5.4 liblua5.4-dev \
         luarocks libb64-dev libcrypto++-dev nlohmann-json3-dev && \
     rm -rf /var/lib/apt/lists/*
 
-RUN luarocks install luasocket && \
-    luarocks install luasec && \
-    luarocks install luaposix && \
-    luarocks install lpeg && \
-    luarocks install md5 && \
-    luarocks install dkjson
+RUN luarocks install --lua-version=5.4 luasocket && \
+    luarocks install --lua-version=5.4 luasec && \
+    luarocks install --lua-version=5.4 luaposix && \
+    luarocks install --lua-version=5.4 lpeg && \
+    luarocks install --lua-version=5.4 md5 && \
+    luarocks install --lua-version=5.4 dkjson
 
 WORKDIR /usr/src/emulator
 COPY . .
@@ -40,7 +40,7 @@ RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
     zlib1g \
     ca-certificates \
     libgomp1 \
-    lua5.3 \
+    lua5.4 \
     genext2fs \
     libb64-0d \
     libcrypto++8 \

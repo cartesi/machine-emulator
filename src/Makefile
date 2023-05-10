@@ -18,9 +18,9 @@ UNAME:=$(shell uname)
 
 BUILDDIR ?= $(abspath ../build/$(UNAME)_$(shell uname -m))
 
-LUA_INC:=$(shell pkg-config --cflags-only-I lua5.3)
-LUA_LIB:=-llua5.3
-LUA_BIN?=lua5.3
+LUA_INC:=$(shell pkg-config --cflags-only-I lua5.4)
+LUA_LIB:=-llua5.4
+LUA_BIN?=lua5.4
 GRPC_DIR:=../lib/grpc-interfaces
 
 PROTOC:=$(BUILDDIR)/bin/protoc

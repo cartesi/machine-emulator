@@ -1,5 +1,5 @@
 #!/bin/sh
-export LUA_PATH="$(lua -e 'print(package.path)');ARG_LUA_PATH"
-export LUA_CPATH="$(lua -e 'print(package.cpath)');ARG_LUA_CPATH"
+export LUA_PATH="$(lua5.3 -e 'print(package.path)');ARG_LUA_PATH"
+export LUA_CPATH="$(lua5.3 -e 'print(package.cpath)');ARG_LUA_CPATH"
 export CARTESI_IMAGES_PATH="ARG_INSTALL_PATH"
 lua5.3 "ARG_BIN_INSTALL_PATH/cartesi-machine.lua" "$@"

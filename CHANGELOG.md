@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added --version and --version-json command-line options in cartesi-machine
 
+### Changed
+
+- Updated Lua version to 5.4
+- Use Lua path environment variables specific for version 5.4
+
 ## [0.14.0] - 2023-05-03
 ### Added
 

@@ -6,8 +6,8 @@ BIN_INSTALL_PATH= $(PREFIX)/bin
 LIB_INSTALL_PATH= $(PREFIX)/lib
 SHARE_INSTALL_PATH= $(PREFIX)/share
 IMAGES_INSTALL_PATH= $(SHARE_INSTALL_PATH)/images
-CDIR=lib/lua/5.3
-LDIR=share/lua/5.3
+CDIR=lib/lua/5.4
+LDIR=share/lua/5.4
 LUA_INSTALL_CPATH= $(PREFIX)/$(CDIR)
 LUA_INSTALL_PATH= $(PREFIX)/$(LDIR)
 INC_INSTALL_PATH= $(PREFIX)/include/machine-emulator
@@ -48,7 +48,7 @@ COREPROTO := lib/grpc-interfaces/core.proto
 GRPC_VERSION ?= v1.50.0
 LUASOCKET_VERSION ?= 5b18e475f38fcf28429b1cc4b17baee3b9793a62
 LUA_DEFAULT_PATHS = ${LUA_INSTALL_PATH}/?.lua
-LUA_DEFAULT_C_PATHS = ./?.so;/usr/local/lib/lua/5.3/?.so;/usr/local/share/lua/5.3/?.so;/opt/cartesi/lib/lua/5.3/?.so
+LUA_DEFAULT_C_PATHS = ./?.so;/usr/local/lib/lua/5.4/?.so;/usr/local/share/lua/5.4/?.so;/opt/cartesi/lib/lua/5.4/?.so
 
 # Docker image tag
 TAG ?= devel
@@ -103,8 +103,8 @@ $(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_IN
 env:
 	@echo $(LIBRARY_PATH)
 	@echo "export PATH='$(SRCDIR):$(BUILDDIR)/bin:${PATH}'"
-	@echo "export LUA_CPATH='./?.so;$(SRCDIR)/?.so;$(BUILDDIR)/$(CDIR)/?.so;$$(lua5.3 -e 'print(package.cpath)')'"
-	@echo "export LUA_PATH='./?.lua;$(SRCDIR)/?.lua;$(BUILDDIR)/$(LDIR)/?.lua;$$(lua5.3 -e 'print(package.path)')'"
+	@echo "export LUA_CPATH='./?.so;$(SRCDIR)/?.so;$(BUILDDIR)/$(CDIR)/?.so;$$(lua5.4 -e 'print(package.cpath)')'"
+	@echo "export LUA_PATH='./?.lua;$(SRCDIR)/?.lua;$(BUILDDIR)/$(LDIR)/?.lua;$$(lua5.4 -e 'print(package.path)')'"
 
 doc:
 	cd doc && doxygen Doxyfile

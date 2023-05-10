@@ -25,7 +25,7 @@ Docker targets:
 - GNU Make >= 3.81
 - Cryptopp >= 7.0.0
 - GRPC 1.38.0
-- Lua 5.3.5
+- Lua >= 5.4.4
 - b64 >=  1.2.1
 - Boost >= 1.71
 - nlohmann JSON >= 3.10
@@ -35,14 +35,14 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 #### Ubuntu 22.04
 
 ```
-sudo apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-filesystem-dev libboost-log-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates liblua5.3-dev libb64-dev libcrypto++-dev nlohmann-json3-dev luarocks
+sudo apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-filesystem-dev libboost-log-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates liblua5.4-dev libb64-dev libcrypto++-dev nlohmann-json3-dev luarocks
 
-sudo luarocks install lpeg
-sudo luarocks install dkjson
-sudo luarocks install luasocket
-sudo luarocks install luasec
-sudo luarocks install luaposix
-sudo luarocks install md5
+sudo luarocks install --lua-version=5.4 lpeg
+sudo luarocks install --lua-version=5.4 dkjson
+sudo luarocks install --lua-version=5.4 luasocket
+sudo luarocks install --lua-version=5.4 luasec
+sudo luarocks install --lua-version=5.4 luaposix
+sudo luarocks install --lua-version=5.4 md5
 ```
 #### MacOS
 
@@ -50,26 +50,26 @@ sudo luarocks install md5
 ```
 sudo port install clang-14 automake boost libtool wget cmake pkgconfig c-ares zlib openssl lua libb64 libcryptopp nlohmann-json lua-luarocks
 
-sudo luarocks install lpeg
-sudo luarocks install dkjson
-sudo luarocks install luasocket
-sudo luarocks install luasec
-sudo luarocks install luaposix
-sudo luarocks install md5
+sudo luarocks install --lua-version=5.4 lpeg
+sudo luarocks install --lua-version=5.4 dkjson
+sudo luarocks install --lua-version=5.4 luasocket
+sudo luarocks install --lua-version=5.4 luasec
+sudo luarocks install --lua-version=5.4 luaposix
+sudo luarocks install --lua-version=5.4 md5
 ```
 
 ##### Homebrew
 ```
-brew install llvm@12 automake boost libomp wget cmake pkg-config c-ares zlib openssl lua@5.3 libb64 nlohmann-json luarocks
-luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install lpeg
-luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install dkjson
-luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install luasocket
-luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install luasec
-luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install luaposix
-luarocks --lua-dir=$(brew --prefix)/opt/lua@5.3 install md5
+brew install llvm@12 automake boost libomp wget cmake pkg-config c-ares zlib openssl lua@5.4 libb64 nlohmann-json luarocks
+luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install lpeg
+luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install dkjson
+luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luasocket
+luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luasec
+luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luaposix
+luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install md5
 ```
 
-For emulator scripts to work it is expected that `lua5.3` binary is available in the system PATH. If operating system/package manager that you are using provides only `lua` or lua binary named in a different way (e.g. on `Homebrew`), please create symbolic link or alias `lua5.3`.
+For emulator scripts to work it is expected that `lua5.4` binary is available in the system PATH. If operating system/package manager that you are using provides only `lua` or lua binary named in a different way (e.g. on `Homebrew`), please create symbolic link or alias `lua5.4`.
 
 ###### libcryptopp
 Homebrew does not have a formula for this library on the official repository, at the time of this writing.

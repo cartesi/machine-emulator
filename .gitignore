@@ -7,8 +7,6 @@ build
 third-party/cryptopp-CRYPTOPP_7_0_0
 third-party/downloads
 third-party/grpc
-third-party/lua-5.3.5
-third-party/luasocket
 third-party/mongoose-7.9
 src/remote-cartesi-machine-proxy
 src/remote-cartesi-machine

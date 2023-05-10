@@ -169,8 +169,8 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.4/?.lua;/usr/local/share/lua/5.4/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.4/?.so;/usr/local/lib/lua/5.4/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do echo -n 'CTSICTSI' | lua5.4 $x local; done
 
       - name: Run grpc lua test scripts
@@ -178,8 +178,8 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.4/?.lua;/usr/local/share/lua/5.4/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.4/?.so;/usr/local/lib/lua/5.4/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           ./tests/test-grpc-server.sh remote-cartesi-machine cartesi-machine cartesi-machine-tests $CARTESI_TESTS_PATH
 
       - name: Run jsonrpc lua test scripts
@@ -187,8 +187,8 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.4/?.lua;/usr/local/share/lua/5.4/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.4/?.so;/usr/local/lib/lua/5.4/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           ./tests/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests $CARTESI_TESTS_PATH
 
       - name: Run Merkle tree tests
@@ -234,8 +234,8 @@ jobs:
 
       - name: Test microarchitecture interpreter
         run: |
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.4/?.lua;/usr/local/share/lua/5.4/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.4/?.so;/usr/local/lib/lua/5.4/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           make riscv-arch-tests JOBS=$(nproc)
 
       - name: Download test suite
@@ -424,8 +424,8 @@ jobs:
           export TEST_PATH=/opt/cartesi/tests
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.4/?.lua;/usr/local/share/lua/5.4/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.4/?.so;/usr/local/lib/lua/5.4/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           make -j1 coverage-toolchain=gcc coverage
 
       - name: Show coverage summary
@@ -562,8 +562,8 @@ jobs:
           export TEST_PATH=/opt/cartesi/tests
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.4/?.lua;/usr/local/share/lua/5.4/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.4/?.so;/usr/local/lib/lua/5.4/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           make sanitize=yes test-all
 
   verify:
@@ -646,8 +646,8 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export TEST_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.4/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.4/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           cd ./src
           make -j$(nproc) CYCLE_PERIOD=1 truth-logs
 
@@ -664,8 +664,8 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export TEST_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.4/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.4/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           cd ./src
           make -j$(nproc) CYCLE_PERIOD=1 test-logs
 
@@ -687,8 +687,8 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export TEST_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.4/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.4/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           cd ./src
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=1 truth-hashes
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=2 truth-hashes
@@ -708,8 +708,8 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export TEST_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.4/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.4/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           cd ./src
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=1 test-hashes
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=2 compare-hashes

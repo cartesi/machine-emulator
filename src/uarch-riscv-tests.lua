@@ -21,7 +21,7 @@ local util = require"cartesi.util"
 
 -- Tests Cases
 -- format {"ram_image_file", number_of_uarch_cycles}
-local tests = {
+local riscv_tests = {
     {"rv64ui-uarch-simple.bin", 12},
     {"rv64ui-uarch-add.bin", 441},
     {"rv64ui-uarch-addi.bin", 216},
@@ -91,11 +91,11 @@ where options are:
   --output-dir=<directory-path>
     write json logs to this  directory
     required by the command json-logs
-      
+
 and command can be:
   run
     run test and report errors
-  
+
   list
     list tests selected by the test <pattern>
 
@@ -108,8 +108,7 @@ end
 
 local test_path = "./"
 local test_pattern = ".*"
-local output_dir = nil
-local cleanup = {}
+local output_dir
 
 local options = {
     { "^%-%-h$", function(all)
@@ -119,7 +118,7 @@ local options = {
     { "^%-%-help$", function(all)
         if not all then return false end
         help()
-    end },     
+    end },
     { "^%-%-output%-dir%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         output_dir = o
@@ -130,7 +129,7 @@ local options = {
         test_path = o
         return true
     end },
-    { "^%-%-test%=(.*)$", function(o, a)
+    { "^%-%-test%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         test_pattern = o
         return true
@@ -143,9 +142,9 @@ local options = {
 local values = {}
 
 -- Process command line options
-for i, argument in ipairs({...}) do
+for _, argument in ipairs({...}) do
     if argument:sub(1,1) == "-" then
-        for j, option in ipairs(options) do
+        for _, option in ipairs(options) do
             if option[2](argument:match(option[1])) then
                 break
             end
@@ -157,9 +156,6 @@ end
 
 local command = assert(values[1], "missing command")
 assert(test_path, "missing test path")
-
-local function nothing()
-end
 
 local function build_machine(test_name)
     local config = {
@@ -188,10 +184,10 @@ local function add_error(errors, ram_image, msg, ...)
     ram_image_errors[#ram_image_errors + 1] = e
 end
 
-local TEST_STATUS_X      = 1           -- When test finishes executing, the value of this register contains the test result code
-local FAILED_TEST_CASE_X = 3           -- If test fails, the value of this register contains the failed test case
+local TEST_STATUS_X      = 1 -- When test finishes executing,the value of this register contains the test result code
+local FAILED_TEST_CASE_X = 3 -- If test fails, the value of this register contains the failed test case
 local TEST_SUCEEDED      = 0xbe1e7aaa  -- Value indicating that test has passed
-local TEST_FAILED        = 0xdeadbeef  -- Value indicating that test has failed 
+local TEST_FAILED        = 0xdeadbeef  -- Value indicating that test has failed
 
 local function check_test_result(machine, ctx, errors)
     local test_status = machine:read_uarch_x(TEST_STATUS_X)
@@ -252,10 +248,10 @@ local function list(tests)
     end
 end
 
-local function select(test_name, test_pattern)
-    local i, j = test_name:find(test_pattern)
+local function select_test(test_name, patt)
+    local i, j = test_name:find(patt)
     if i == 1 and j == #test_name then return true end
-    i, j = test_name:find(test_pattern, 1, true)
+    i, j = test_name:find(patt, 1, true)
     return i == 1 and j == #test_name
 end
 
@@ -268,9 +264,8 @@ local function create_json_log_file(test_name, suffix)
     return assert(io.open(file_path, "w"), "error opening file " .. file_path)
 end
 
-local function open_steps_json_log(test_name, indent)
-    local f = create_json_log_file(test_name, "-steps")
-    return f
+local function open_steps_json_log(test_name)
+    return create_json_log_file(test_name, "-steps")
 end
 
 local function write_access_to_log(access, out, indent, last)
@@ -305,7 +300,7 @@ local function create_catalog_json_log(contexts)
     util.indentout(out, 0, '[\n')
     local n = #contexts
     for i, ctx in ipairs(contexts) do
-        local path = make_json_log_file_name(ctx.test_name, "-steps")        
+        local path = make_json_log_file_name(ctx.test_name, "-steps")
         util.indentout(out, 1, '{"path": "%s", "steps": %d}', path, ctx.step_count)
         if i < n then out:write(',\n') else out:write('\n') end
     end
@@ -313,14 +308,14 @@ local function create_catalog_json_log(contexts)
     out:close()
 end
 
-local function run_machine_writing_json_logs(machine, ctx)    
+local function run_machine_writing_json_logs(machine, ctx)
     local test_name = ctx.test_name
     local max_cycle = ctx.expected_cycles * 2
     local out = open_steps_json_log(test_name)
     local indent = 0
     util.indentout(out, indent, '{ "steps":[\n')
     local step_count = 0
-    while math.ult(machine:read_uarch_cycle(), max_cycle) do        
+    while math.ult(machine:read_uarch_cycle(), max_cycle) do
         local log_type = {} -- no proofs, no annotations
         local log = machine:step_uarch(log_type)
         step_count = step_count + 1
@@ -378,8 +373,8 @@ local function json_logs(tests)
 end
 
 local selected_tests = {}
-for _, test in ipairs(tests) do
-    if select(test[1], test_pattern) then
+for _, test in ipairs(riscv_tests) do
+    if select_test(test[1], test_pattern) then
         selected_tests[#selected_tests+1] = test
     end
 end

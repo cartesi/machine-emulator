@@ -27,8 +27,8 @@ local md5 = require "md5"
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
 local MAX_MCYCLE = -1
 
-local remote_address = nil
-local checkin_address = nil
+local remote_address
+local checkin_address
 local test_path = "./"
 local cleanup = {}
 
@@ -107,9 +107,9 @@ local options = {
 
 -- Process command line options
 local arguments = {}
-for i, argument in ipairs({...}) do
+for _, argument in ipairs({...}) do
     if argument:sub(1,1) == "-" then
-        for j, option in ipairs(options) do
+        for _, option in ipairs(options) do
             if option[2](argument:match(option[1])) then
                 break
             end
@@ -166,14 +166,7 @@ local pmas_file_names_with_uarch = {
     "0000000070000000--0000000000100000.bin" -- uarch ram
 }
 
-
-local function run_loop(machine, mcycle_end)
-    while machine:read_mcycle() < mcycle_end do
-        machine:run(mcycle_end)
-        if machine:read_iflags_H() then break end
-    end
-end
-
+local remote
 local function build_machine(type, config)
     -- Create new machine
     -- Use default config to be max reproducible
@@ -188,7 +181,7 @@ local function build_machine(type, config)
             update_merkle_tree = concurrency_update_merkle_tree
         }
     }
-    local new_machine = nil
+    local new_machine
     if (type ~= "local") then
         if not remote then remote = connect() end
         new_machine = assert(remote.machine(config, runtime))
@@ -203,10 +196,10 @@ local function build_uarch_machine(type)
         processor = {},
         ram = {length = 1 << 20},
         rom = {image_filename = rom_image},
-        uarch = { 
-            ram = { 
-                length = 1 << 20, 
-                image_filename = test_util.create_test_uarch_program() 
+        uarch = {
+            ram = {
+                length = 1 << 20,
+                image_filename = test_util.create_test_uarch_program()
             }
         }
     }
@@ -420,7 +413,6 @@ do_test("mcycle and root hash should match",
 print("\n\nwrite something to ram memory and check if hash and proof matches")
 do_test("proof  and root hash should match",
     function(machine)
-        local root_hash = machine:get_root_hash()
         local ram_address_start = 0x80000000
 
         -- Find proof for first KB of ram
@@ -440,8 +432,8 @@ do_test("proof  and root hash should match",
 
         machine:write_memory(0x8000000F, "mydataol12345678", 0x10)
 
-        local root_hash_step1 = machine:get_root_hash()
         local verify = machine:verify_merkle_tree()
+        assert(verify, "verify merkle tree failed")
 
         -- Find proof for first KB of ram
         local ram_proof = machine:get_proof(ram_address_start, 10)

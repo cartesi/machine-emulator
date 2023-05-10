@@ -3,7 +3,7 @@
 local cartesi = require"cartesi"
 local test_util = require "tests.util"
 
-local config =  {
+local config_base =  {
   processor = {
     mvendorid = -1,
     mimpid = -1,
@@ -25,7 +25,7 @@ end
 local final_mcycle = 2141
 local exit_payload = 42
 
-function test(config, console_getchar_enable)
+local function test(config, console_getchar_enable)
     stderr("  testing console_getchar:%s\n",
         console_getchar_enable and "on" or "off"
     )
@@ -51,5 +51,5 @@ function test(config, console_getchar_enable)
 end
 
 for _, getchar in ipairs{true, false} do
-    test(config, getchar)
+    test(config_base, getchar)
 end

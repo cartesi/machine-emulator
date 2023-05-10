@@ -22,11 +22,10 @@
 -- same computer and jsonrpc-remote-cartesi-machine execution path must be provided
 
 local cartesi = require "cartesi"
-local cartesi_util = require "cartesi.util"
 local test_util = require "tests.util"
 
-local remote_address = nil
-local checkin_address = nil
+local remote_address
+local checkin_address
 local test_path = "./"
 local cleanup = {}
 
@@ -94,9 +93,9 @@ local options = {
 
 -- Process command line options
 local arguments = {}
-for i, argument in ipairs({...}) do
+for _, argument in ipairs({...}) do
     if argument:sub(1,1) == "-" then
-        for j, option in ipairs(options) do
+        for _, option in ipairs(options) do
             if option[2](argument:match(option[1])) then
                 break
             end
@@ -109,10 +108,8 @@ end
 local SHADOW_BASE = 0x0
 
 local cpu_x_addr = {}
-local cpu_f_addr = {}
 for i=0,31 do
     cpu_x_addr[i] = i * 8
-    cpu_f_addr[i] = 0x100 + i * 8
 end
 
 local function get_cpu_xreg_test_values()
@@ -242,6 +239,7 @@ local pmas_file_names = {
 }
 local pmas_sizes = { 4096, 61440, 4096, 24576, 786432, 4096, 1048576, 65536, 65536}
 
+local remote
 local function build_machine(type)
     -- Create new machine
     local concurrency_update_merkle_tree = 0
@@ -253,7 +251,7 @@ local function build_machine(type)
         processor = initial_csr_values,
         rom = {image_filename = test_util.images_path .. "rom.bin"},
         ram = {length = 1 << 20},
-        uarch = { 
+        uarch = {
             processor = {
                 x = initial_uarch_xreg_values
             },
@@ -266,7 +264,7 @@ local function build_machine(type)
         }
     }
 
-    local new_machine = nil
+    local new_machine
     if (type ~= "local") then
         if not remote then remote = connect() end
         new_machine = assert(remote.machine(config, runtime))
@@ -348,7 +346,7 @@ do_test("should provide proof for values in registers",
 
 print("\n\ntesting get_csr_address function binding")
 do_test("should return address value for csr register",
-    function(machine)
+    function()
         local module = cartesi
         if (machine_type ~= "local") then
             if not remote then remote = connect() end
@@ -364,7 +362,7 @@ do_test("should return address value for csr register",
 
 print("\n\ntesting get_x_address function binding")
 do_test("should return address value for x registers",
-    function(machine)
+    function()
         local module = cartesi
         if (machine_type ~= "local") then
             if not remote then remote = connect() end
@@ -379,7 +377,7 @@ do_test("should return address value for x registers",
 
 print("\n\ntesting get_x_uarch_address function binding")
     do_test("should return address value for uarch x registers",
-        function(machine)
+        function()
             local SHADOW_UARCH_XBASE = 0x340
             local module = cartesi
             if (machine_type == "grpc") then
@@ -405,7 +403,6 @@ local function test_config(config)
     for _, field in ipairs{"processor", "htif", "clint", "flash_drive", "ram", "rom"} do
         assert(config[field] and type(config[field]) == 'table', "invalid field " .. field)
     end
-    local processor = config.processor
     for i = 1, 31 do
         assert(type(config.processor.x[i]) == "number", "x"..i.." is not a number")
     end
@@ -425,7 +422,7 @@ local function test_config(config)
     assert(rom.bootargs == nil or type(rom.bootargs) == "string", "invalid rom.bootargs")
     local tlb = config.tlb
     assert(tlb.image_filename == nil or type(tlb.image_filename) == "string", "invalid tlb.image_filename")
-    for i, f in ipairs(config.flash_drive) do
+    for _, f in ipairs(config.flash_drive) do
         test_config_memory_range(f)
     end
     local rollup = config.rollup
@@ -440,7 +437,7 @@ end
 
 print("\n\ntesting get_default_config function binding")
 do_test("should return default machine config",
-    function(machine)
+    function()
         local module = cartesi
         if (machine_type ~= "local") then
             if not remote then remote = connect() end
@@ -570,7 +567,7 @@ do_test("writen and expected register values should match",
         machine:write_x(1, x1_initial_value)
         assert(machine:read_x(1) == x1_initial_value)
         -- Read unexsisting register
-        local status_invalid_reg, retval = pcall(machine.read_x, machine, 1000)
+        local status_invalid_reg = pcall(machine.read_x, machine, 1000)
         assert(status_invalid_reg == false, "no error reading invalid x register")
     end
 )
@@ -587,7 +584,7 @@ do_test("writen and expected register values should match",
         machine:write_uarch_x(1, x1_initial_value)
         assert(machine:read_uarch_x(1) == x1_initial_value)
         -- Read unexsisting uarch register
-        local status_invalid_reg, retval = pcall(machine.read_uarch_x, machine, 1000)
+        local status_invalid_reg = pcall(machine.read_uarch_x, machine, 1000)
         assert(status_invalid_reg == false, "no error reading invalid uarch x register")
     end
 )
@@ -604,7 +601,7 @@ do_test("writen and expected register values should match",
         machine:write_csr('sscratch', sscratch_initial_value)
 
         -- Read unexsisting register
-        local status_invalid_reg, retval = pcall(machine.read_csr, machine, "invalidreg")
+        local status_invalid_reg = pcall(machine.read_csr, machine, "invalidreg")
         assert(status_invalid_reg == false, "no error reading invalid csr register")
     end
 )
@@ -688,9 +685,8 @@ print("\n\n check memory reading/writing")
 do_test("written and read values should match",
     function(machine)
         -- Check mem write and mem read
-        local memory_read = machine:read_memory(0x80000000, 0x8)
         machine:write_memory(0x800000FF, "mydataol12345678", 0x10)
-        memory_read = machine:read_memory(0x800000FF, 0x10)
+        local memory_read = machine:read_memory(0x800000FF, 0x10)
         assert(memory_read == "mydataol12345678")
 
     end
@@ -698,7 +694,7 @@ do_test("written and read values should match",
 
 print("\n\n dump log  to console")
 do_test("dumped log content should match",
-    function(machine)
+    function()
         -- Dump log and check values
         local lua_code = [[ "
                                  local cartesi = require 'cartesi'
@@ -711,7 +707,7 @@ do_test("dumped log content should match",
                                  processor = initial_csr_values,
                                  ram = {length = 1 << 20},
                                  rom = {image_filename = test_util.images_path .. 'rom.bin'},
-                                 uarch = { 
+                                 uarch = {
                                     ram = { length = 1 << 16, image_filename = uarch_ram_path }
                                  }
                                  }
@@ -723,7 +719,7 @@ do_test("dumped log content should match",
         local p = io.popen(lua_cmd .. lua_code)
         local output = p:read(2000)
         p:close()
-        local expected_output = 
+        local expected_output =
             "begin step\n" ..
             "  1: read uarch.cycle@0x320(800): 0x0(0)\n" ..
             "  2: read uarch.halt_flag@0x328(808): 0x0(0)\n" ..

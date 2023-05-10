@@ -19,7 +19,7 @@
 local cartesi = require"cartesi"
 local test_util = require "tests.util"
 
-local config =  {
+local config_base =  {
     processor = {
         mvendorid = -1,
         mimpid = -1,
@@ -65,12 +65,12 @@ end
 local final_mcycle = 8981
 local exit_payload = 0
 
-function check_buffer(machine, pattern, buffer)
+local function check_buffer(machine, pattern, buffer)
     local mem = string.rep(pattern, buffer.length/8)
     assert(mem == machine:read_memory(buffer.start, buffer.length))
 end
 
-function test(config)
+local function test(config)
     local pattern = "\xef\xcd\xab\x89\x67\x45\x23\x01"
     local machine = cartesi.machine(config)
 
@@ -100,4 +100,4 @@ function test(config)
 end
 
 stderr("testing rollup\n")
-test(config)
+test(config_base)

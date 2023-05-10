@@ -38,10 +38,10 @@ local function build_machine()
             image_filename = test_util.tests_path .. "mcycle_overflow.bin",
             length = 32 << 20,
         },
-        uarch = { 
-            ram = { 
+        uarch = {
+            ram = {
                 length = 1 << 20,
-                image_filename = test_util.create_test_uarch_program() 
+                image_filename = test_util.create_test_uarch_program()
             }
         }
     }

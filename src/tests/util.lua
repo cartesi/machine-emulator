@@ -102,7 +102,7 @@ local test_util = {
     tests_path = adjust_images_path(os.getenv("CARTESI_TESTS_PATH"))
 }
 
-function test_util.create_test_uarch_program() 
+function test_util.create_test_uarch_program()
     local file_path = os.tmpname()
     local f = io.open(file_path, 'wb')
     f:write(string.pack("I4", 0x07b00513)) --   li	a0,123
@@ -123,7 +123,7 @@ function test_util.make_do_test(build_machine, type, config)
     end
 end
 
-function test_util.disabled_test(description, f)
+function test_util.disabled_test(description)
     print("Disabled test - "..description)
 end
 
@@ -388,7 +388,9 @@ function test_util.calculate_emulator_hash(test_path, pmas_files)
 
     local tlb_size_log2 = ceil_log2(PMA_SHADOW_TLB_LENGTH)
     local tlb_space_hash =
-        calculate_region_hash(shadow_tlb, (#shadow_tlb + PMA_PAGE_SIZE - 1) // PMA_PAGE_SIZE, PMA_PAGE_SIZE_LOG2, tlb_size_log2)
+        calculate_region_hash(shadow_tlb,
+            (#shadow_tlb + PMA_PAGE_SIZE - 1) // PMA_PAGE_SIZE,
+            PMA_PAGE_SIZE_LOG2, tlb_size_log2)
     tlb_space_hash = extend_region_hash(tlb_space_hash, PMA_SHADOW_TLB_START, tlb_size_log2, 17)
 
     local shadow_rom_tlb_space_hash = cartesi.keccak(shadow_rom_space_hash, tlb_space_hash) -- 18
@@ -409,7 +411,9 @@ function test_util.calculate_emulator_hash(test_path, pmas_files)
     local uarch_ram_space_hash = test_util.fromhex(zero_keccak_hash_table[30])
     if #uarch_ram > 0 then
         local uarch_ram_size_log2 = ceil_log2(#uarch_ram)
-        uarch_ram_space_hash = calculate_region_hash(uarch_ram, (#uarch_ram + PMA_PAGE_SIZE - 1) // PMA_PAGE_SIZE, PMA_PAGE_SIZE_LOG2, uarch_ram_size_log2)
+        uarch_ram_space_hash = calculate_region_hash(uarch_ram,
+            (#uarch_ram + PMA_PAGE_SIZE - 1) // PMA_PAGE_SIZE,
+            PMA_PAGE_SIZE_LOG2, uarch_ram_size_log2)
         uarch_ram_space_hash = extend_region_hash(uarch_ram_space_hash, PMA_UARCH_RAM_START, uarch_ram_size_log2, 30)
     end
     left = cartesi.keccak(left, uarch_ram_space_hash) -- 31

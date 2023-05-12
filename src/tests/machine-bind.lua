@@ -21,8 +21,8 @@
 -- Note: for jsongrpc machine test to work, jsonrpc-remote-cartesi-machine must run on
 -- same computer and jsonrpc-remote-cartesi-machine execution path must be provided
 
-local cartesi = require "cartesi"
-local test_util = require "tests.util"
+local cartesi = require("cartesi")
+local test_util = require("tests.util")
 
 local remote_address
 local checkin_address
@@ -33,7 +33,8 @@ local lua_cmd = arg[-1] .. " -e "
 
 -- Print help and exit
 local function help()
-    io.stderr:write(string.format([=[
+    io.stderr:write(string.format(
+        [=[
 Usage:
 
   %s <machine_type> [options]
@@ -57,64 +58,79 @@ where options are:
    unix:<path>
 
 <host> can be a host name, IPv4 or IPv6 address.
-]=], arg[0]))
+]=],
+        arg[0]
+    ))
     os.exit()
 end
 
-
 local options = {
-    { "^%-%-h$", function(all)
-        if not all then return false end
-        help()
-    end },
-    { "^%-%-help$", function(all)
-        if not all then return false end
-        help()
-    end },
-    { "^%-%-remote%-address%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        remote_address = o
-        return true
-    end },
-    { "^%-%-checkin%-address%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        checkin_address = o
-        return true
-    end },
-    { "^%-%-test%-path%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        test_path = o
-        return true
-    end },
-    { ".*", function(all)
-        error("unrecognized option " .. all)
-    end }
+    {
+        "^%-%-h$",
+        function(all)
+            if not all then return false end
+            help()
+        end,
+    },
+    {
+        "^%-%-help$",
+        function(all)
+            if not all then return false end
+            help()
+        end,
+    },
+    {
+        "^%-%-remote%-address%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            remote_address = o
+            return true
+        end,
+    },
+    {
+        "^%-%-checkin%-address%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            checkin_address = o
+            return true
+        end,
+    },
+    {
+        "^%-%-test%-path%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            test_path = o
+            return true
+        end,
+    },
+    {
+        ".*",
+        function(all) error("unrecognized option " .. all) end,
+    },
 }
 
 -- Process command line options
 local arguments = {}
-for _, argument in ipairs({...}) do
-    if argument:sub(1,1) == "-" then
+for _, argument in ipairs({ ... }) do
+    if argument:sub(1, 1) == "-" then
         for _, option in ipairs(options) do
-            if option[2](argument:match(option[1])) then
-                break
-            end
+            if option[2](argument:match(option[1])) then break end
         end
     else
-        arguments[#arguments+1] = argument
+        arguments[#arguments + 1] = argument
     end
 end
 
 local SHADOW_BASE = 0x0
 
 local cpu_x_addr = {}
-for i=0,31 do
+for i = 0, 31 do
     cpu_x_addr[i] = i * 8
 end
 
 local function get_cpu_xreg_test_values()
     local values = {}
-    for i=0,31 do
+    for i = 0, 31 do
         values[i] = i * 8
     end
     return values
@@ -122,7 +138,7 @@ end
 
 local function get_cpu_uarch_xreg_test_values()
     local values = {}
-    for i=0,31 do
+    for i = 0, 31 do
         values[i] = 0x10000 + (i * 8)
     end
     return values
@@ -202,16 +218,18 @@ local function get_cpu_csr_test_values()
 end
 
 local machine_type = assert(arguments[1], "missing machine type")
-assert(machine_type == "local" or machine_type == "grpc" or machine_type == "jsonrpc",
-    "unknown machine type, should be 'local', 'grpc', or 'jsonrpc'")
+assert(
+    machine_type == "local" or machine_type == "grpc" or machine_type == "jsonrpc",
+    "unknown machine type, should be 'local', 'grpc', or 'jsonrpc'"
+)
 local protocol
-if (machine_type == "grpc") then
+if machine_type == "grpc" then
     assert(remote_address ~= nil, "remote cartesi machine address is missing")
     assert(checkin_address, "missing checkin address")
     assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
     protocol = require("cartesi.grpc")
 end
-if (machine_type == "jsonrpc") then
+if machine_type == "jsonrpc" then
     assert(remote_address ~= nil, "remote cartesi machine address is missing")
     assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
     protocol = require("cartesi.jsonrpc")
@@ -219,10 +237,11 @@ end
 
 local function connect()
     local remote = protocol.stub(remote_address, checkin_address)
-    local version = assert(remote.get_version(),
-        "could not connect to remote cartesi machine at " .. remote_address)
+    local version = assert(remote.get_version(), "could not connect to remote cartesi machine at " .. remote_address)
     local shutdown = function() remote.shutdown() end
-    local mt = { __gc = function() pcall(shutdown) end}
+    local mt = {
+        __gc = function() pcall(shutdown) end,
+    }
     setmetatable(cleanup, mt)
     return remote, version
 end
@@ -235,9 +254,9 @@ local pmas_file_names = {
     "0000000002000000--00000000000c0000.bin", -- clint
     "0000000040008000--0000000000001000.bin", -- htif
     "0000000080000000--0000000000100000.bin", -- ram
-    "0000000070000000--0000000000010000.bin"  -- uarch ram
+    "0000000070000000--0000000000010000.bin", -- uarch ram
 }
-local pmas_sizes = { 4096, 61440, 4096, 24576, 786432, 4096, 1048576, 65536, 65536}
+local pmas_sizes = { 4096, 61440, 4096, 24576, 786432, 4096, 1048576, 65536, 65536 }
 
 local remote
 local function build_machine(type)
@@ -249,23 +268,23 @@ local function build_machine(type)
     initial_csr_values.x = initial_xreg_values
     local config = {
         processor = initial_csr_values,
-        rom = {image_filename = test_util.images_path .. "rom.bin"},
-        ram = {length = 1 << 20},
+        rom = { image_filename = test_util.images_path .. "rom.bin" },
+        ram = { length = 1 << 20 },
         uarch = {
             processor = {
-                x = initial_uarch_xreg_values
+                x = initial_uarch_xreg_values,
             },
             ram = { length = 1 << 16, image_filename = test_util.create_test_uarch_program() },
-        }
+        },
     }
     local runtime = {
         concurrency = {
-            update_merkle_tree = concurrency_update_merkle_tree
-        }
+            update_merkle_tree = concurrency_update_merkle_tree,
+        },
     }
 
     local new_machine
-    if (type ~= "local") then
+    if type ~= "local" then
         if not remote then remote = connect() end
         new_machine = assert(remote.machine(config, runtime))
     else
@@ -284,131 +303,119 @@ local do_test = test_util.make_do_test(build_machine, machine_type)
 print("Testing machine bindings for type " .. machine_type)
 
 print("\n\ntesting machine initial flags")
-do_test("machine should not have halt and yield initial flags set",
-    function(machine)
-        -- Check machine is not halted
-        assert(not machine:read_iflags_H(), "machine shouldn't be halted")
-        -- Check machine is not yielded
-        assert(not machine:read_iflags_Y(), "machine shouldn't be yielded")
-    end
-)
+do_test("machine should not have halt and yield initial flags set", function(machine)
+    -- Check machine is not halted
+    assert(not machine:read_iflags_H(), "machine shouldn't be halted")
+    -- Check machine is not yielded
+    assert(not machine:read_iflags_Y(), "machine shouldn't be yielded")
+end)
 
 print("\n\ntesting machine register initial flag values ")
-do_test("machine should have default config shadow register values",
-    function(machine)
-        local initial_csr_values = get_cpu_csr_test_values()
-        local initial_xreg_values = get_cpu_xreg_test_values()
-        initial_csr_values.x = nil
-        initial_csr_values.mvendorid = nil
-        initial_csr_values.marchid = nil
-        initial_csr_values.mimpid = nil
-        -- Check initialization and shadow reads
-        for k, v in pairs(initial_csr_values) do
-            local r = machine:read_word(cpu_csr_addr[k])
-            assert(v == r)
-        end
-        for k, v in pairs(initial_xreg_values) do
-            local r = machine:read_word(cpu_x_addr[k])
-            assert(v == r)
-        end
+do_test("machine should have default config shadow register values", function(machine)
+    local initial_csr_values = get_cpu_csr_test_values()
+    local initial_xreg_values = get_cpu_xreg_test_values()
+    initial_csr_values.x = nil
+    initial_csr_values.mvendorid = nil
+    initial_csr_values.marchid = nil
+    initial_csr_values.mimpid = nil
+    -- Check initialization and shadow reads
+    for k, v in pairs(initial_csr_values) do
+        local r = machine:read_word(cpu_csr_addr[k])
+        assert(v == r)
     end
-)
+    for k, v in pairs(initial_xreg_values) do
+        local r = machine:read_word(cpu_x_addr[k])
+        assert(v == r)
+    end
+end)
 
 print("\n\ntesting merkle tree get_proof for values for registers")
-do_test("should provide proof for values in registers",
-    function(machine)
-        local initial_csr_values = get_cpu_csr_test_values()
-        local initial_xreg_values = get_cpu_xreg_test_values()
-        initial_csr_values.x = nil
-        initial_csr_values.mvendorid = nil
-        initial_csr_values.marchid = nil
-        initial_csr_values.mimpid = nil
+do_test("should provide proof for values in registers", function(machine)
+    local initial_csr_values = get_cpu_csr_test_values()
+    local initial_xreg_values = get_cpu_xreg_test_values()
+    initial_csr_values.x = nil
+    initial_csr_values.mvendorid = nil
+    initial_csr_values.marchid = nil
+    initial_csr_values.mimpid = nil
 
-        -- Check proofs
-        for _, v in pairs(initial_csr_values) do
-            for el = 3, 63 do
-                local a = test_util.align(v, el)
-                assert(test_util.check_proof(assert(machine:get_proof(a, el)),
-                                            "no proof"), "proof failed")
-            end
-        end
-
-        for _, v in pairs(initial_xreg_values) do
-            for el = 3, 63 do
-                local a = test_util.align(v, el)
-                assert(test_util.check_proof(
-                        assert(machine:get_proof(a, el), "no proof")),
-                    "proof failed")
-            end
+    -- Check proofs
+    for _, v in pairs(initial_csr_values) do
+        for el = 3, 63 do
+            local a = test_util.align(v, el)
+            assert(test_util.check_proof(assert(machine:get_proof(a, el)), "no proof"), "proof failed")
         end
     end
-)
+
+    for _, v in pairs(initial_xreg_values) do
+        for el = 3, 63 do
+            local a = test_util.align(v, el)
+            assert(test_util.check_proof(assert(machine:get_proof(a, el), "no proof")), "proof failed")
+        end
+    end
+end)
 
 print("\n\ntesting get_csr_address function binding")
-do_test("should return address value for csr register",
-    function()
-        local module = cartesi
-        if (machine_type ~= "local") then
-            if not remote then remote = connect() end
-            module = remote
-        end
-        -- Check CSR address
-        for k, v in pairs(cpu_csr_addr) do
-            local u = module.machine.get_csr_address(k)
-            assert(u == v, "invalid return for " .. v)
-        end
+do_test("should return address value for csr register", function()
+    local module = cartesi
+    if machine_type ~= "local" then
+        if not remote then remote = connect() end
+        module = remote
     end
-)
+    -- Check CSR address
+    for k, v in pairs(cpu_csr_addr) do
+        local u = module.machine.get_csr_address(k)
+        assert(u == v, "invalid return for " .. v)
+    end
+end)
 
 print("\n\ntesting get_x_address function binding")
-do_test("should return address value for x registers",
-    function()
-        local module = cartesi
-        if (machine_type ~= "local") then
-            if not remote then remote = connect() end
-            module = remote
-        end
-        -- Check x address
-        for i = 0,31 do
-            assert(module.machine.get_x_address(i) == SHADOW_BASE+i*8, "invalid return for x"..i)
-        end
+do_test("should return address value for x registers", function()
+    local module = cartesi
+    if machine_type ~= "local" then
+        if not remote then remote = connect() end
+        module = remote
     end
-)
+    -- Check x address
+    for i = 0, 31 do
+        assert(module.machine.get_x_address(i) == SHADOW_BASE + i * 8, "invalid return for x" .. i)
+    end
+end)
 
 print("\n\ntesting get_x_uarch_address function binding")
-    do_test("should return address value for uarch x registers",
-        function()
-            local SHADOW_UARCH_XBASE = 0x340
-            local module = cartesi
-            if (machine_type == "grpc") then
-                if not remote then remote = connect() end
-                module = remote
-            end
-            -- Check x address
-            for i = 0,31 do
-                assert(module.machine.get_uarch_x_address(i) == SHADOW_UARCH_XBASE+i*8, "invalid return for uarch x"..i)
-            end
-        end
-    )
+do_test("should return address value for uarch x registers", function()
+    local SHADOW_UARCH_XBASE = 0x340
+    local module = cartesi
+    if machine_type == "grpc" then
+        if not remote then remote = connect() end
+        module = remote
+    end
+    -- Check x address
+    for i = 0, 31 do
+        assert(module.machine.get_uarch_x_address(i) == SHADOW_UARCH_XBASE + i * 8, "invalid return for uarch x" .. i)
+    end
+end)
 
 local function test_config_memory_range(range, name)
-    assert(type(range.length) == "number", "invalid "..name..".length")
-    assert(type(range.start) == "number", "invalid "..name..".start")
-    assert(range.shared == nil or type(range.shared) == "boolean", "invalid "..name..".shared")
-    assert(range.image_filename == nil or type(range.image_filename) == "string", "invalid "..name..".image_filename")
+    assert(type(range.length) == "number", "invalid " .. name .. ".length")
+    assert(type(range.start) == "number", "invalid " .. name .. ".start")
+    assert(range.shared == nil or type(range.shared) == "boolean", "invalid " .. name .. ".shared")
+    assert(
+        range.image_filename == nil or type(range.image_filename) == "string",
+        "invalid " .. name .. ".image_filename"
+    )
 end
 
 local function test_config(config)
     assert(type(config) == "table", "config not a table")
-    for _, field in ipairs{"processor", "htif", "clint", "flash_drive", "ram", "rom"} do
-        assert(config[field] and type(config[field]) == 'table', "invalid field " .. field)
+    for _, field in ipairs({ "processor", "htif", "clint", "flash_drive", "ram", "rom" }) do
+        assert(config[field] and type(config[field]) == "table", "invalid field " .. field)
     end
     for i = 1, 31 do
-        assert(type(config.processor.x[i]) == "number", "x"..i.." is not a number")
+        assert(type(config.processor.x[i]) == "number", "x" .. i .. " is not a number")
     end
     local htif = config.htif
-    for _, field in ipairs{"console_getchar", "yield_manual", "yield_automatic"} do
-        assert(htif[field] == nil or type(htif[field]) == "boolean", "invalid htif."..field)
+    for _, field in ipairs({ "console_getchar", "yield_manual", "yield_automatic" }) do
+        assert(htif[field] == nil or type(htif[field]) == "boolean", "invalid htif." .. field)
     end
     assert(type(htif.tohost) == "number", "invalid htif.tohost")
     assert(type(htif.fromhost) == "number", "invalid htif.fromhost")
@@ -436,267 +443,219 @@ local function test_config(config)
 end
 
 print("\n\ntesting get_default_config function binding")
-do_test("should return default machine config",
-    function()
-        local module = cartesi
-        if (machine_type ~= "local") then
-            if not remote then remote = connect() end
-            module = remote
-        end
-        test_config(module.machine.get_default_config())
+do_test("should return default machine config", function()
+    local module = cartesi
+    if machine_type ~= "local" then
+        if not remote then remote = connect() end
+        module = remote
     end
-)
+    test_config(module.machine.get_default_config())
+end)
 
 print("\n\n test verifying integrity of the merkle tree")
-do_test("verify_merkle_tree should return true",
-    function(machine)
-        -- Verify starting merkle tree
-        assert(machine:verify_merkle_tree(), "error, non consistent merkle tree")
-    end
-)
+do_test("verify_merkle_tree should return true", function(machine)
+    -- Verify starting merkle tree
+    assert(machine:verify_merkle_tree(), "error, non consistent merkle tree")
+end)
 
 print("\n\n test calculation of initial root hash")
-do_test("should return expected value",
-    function(machine)
-        -- Get starting root hash
-        local root_hash = machine:get_root_hash()
-        print("Root hash: ", test_util.tohex(root_hash))
+do_test("should return expected value", function(machine)
+    -- Get starting root hash
+    local root_hash = machine:get_root_hash()
+    print("Root hash: ", test_util.tohex(root_hash))
 
-        machine:dump_pmas()
-        local calculated_root_hash = test_util.calculate_emulator_hash(test_path,
-                                                pmas_file_names, machine)
-        for _, file_name in pairs(pmas_file_names) do
-            os.remove(test_path .. file_name)
-        end
-
-        assert(test_util.tohex(root_hash) == test_util.tohex(calculated_root_hash),
-            "initial root hash does not match")
+    machine:dump_pmas()
+    local calculated_root_hash = test_util.calculate_emulator_hash(test_path, pmas_file_names, machine)
+    for _, file_name in pairs(pmas_file_names) do
+        os.remove(test_path .. file_name)
     end
-)
+
+    assert(test_util.tohex(root_hash) == test_util.tohex(calculated_root_hash), "initial root hash does not match")
+end)
 
 print("\n\n test get_initial_config")
-do_test("should have expected values",
-    function(machine)
-        -- Check initial config
-        local initial_config = machine:get_initial_config()
-        test_config(initial_config)
-        assert(initial_config.processor.pc == 0x200,
-            "wrong pc reg initial config value")
-        assert(initial_config.processor.ilrsc == 0x2e0,
-            "wrong ilrsc reg initial config value")
-        assert(initial_config.processor.mstatus == 0x230,
-            "wrong mstatus reg initial config value")
-        assert(initial_config.clint.mtimecmp == 0,
-            "wrong clint mtimecmp initial config value")
-        assert(initial_config.htif.fromhost == 0,
-            "wrong htif fromhost initial config value")
-        assert(initial_config.htif.tohost == 0,
-            "wrong htif tohost initial config value")
-        assert(initial_config.htif.yield_automatic == false,
-            "wrong htif yield automatic initial config value")
-        assert(initial_config.htif.yield_manual == false,
-            "wrong htif yield manual initial config value")
-        assert(initial_config.rom.image_filename == test_util.images_path .. "rom.bin",
-            "wrong initial config image path name")
-    end
-)
+do_test("should have expected values", function(machine)
+    -- Check initial config
+    local initial_config = machine:get_initial_config()
+    test_config(initial_config)
+    assert(initial_config.processor.pc == 0x200, "wrong pc reg initial config value")
+    assert(initial_config.processor.ilrsc == 0x2e0, "wrong ilrsc reg initial config value")
+    assert(initial_config.processor.mstatus == 0x230, "wrong mstatus reg initial config value")
+    assert(initial_config.clint.mtimecmp == 0, "wrong clint mtimecmp initial config value")
+    assert(initial_config.htif.fromhost == 0, "wrong htif fromhost initial config value")
+    assert(initial_config.htif.tohost == 0, "wrong htif tohost initial config value")
+    assert(initial_config.htif.yield_automatic == false, "wrong htif yield automatic initial config value")
+    assert(initial_config.htif.yield_manual == false, "wrong htif yield manual initial config value")
+    assert(
+        initial_config.rom.image_filename == test_util.images_path .. "rom.bin",
+        "wrong initial config image path name"
+    )
+end)
 
 print("\n\n test read_csr")
-do_test("should return expected values",
-    function(machine)
-        local initial_csr_values = get_cpu_csr_test_values()
-        initial_csr_values.mvendorid = cartesi.MVENDORID
-        initial_csr_values.marchid = cartesi.MARCHID
-        initial_csr_values.mimpid = cartesi.MIMPID
-        initial_csr_values.htif_tohost = 0x0
-        initial_csr_values.htif_fromhost = 0x0
-        initial_csr_values.htif_ihalt = 0x0
-        initial_csr_values.htif_iconsole = 0x0
-        initial_csr_values.htif_iyield = 0x0
+do_test("should return expected values", function(machine)
+    local initial_csr_values = get_cpu_csr_test_values()
+    initial_csr_values.mvendorid = cartesi.MVENDORID
+    initial_csr_values.marchid = cartesi.MARCHID
+    initial_csr_values.mimpid = cartesi.MIMPID
+    initial_csr_values.htif_tohost = 0x0
+    initial_csr_values.htif_fromhost = 0x0
+    initial_csr_values.htif_ihalt = 0x0
+    initial_csr_values.htif_iconsole = 0x0
+    initial_csr_values.htif_iyield = 0x0
 
-        -- Check csr register read
-        local to_ignore = {
-            iflags = true,
-            clint_mtimecmp = true,
-            htif_ihalt = true,
-            htif_iconsole = true,
-        }
-        for k in pairs(cpu_csr_addr) do
-            if not to_ignore[k] then
-                local method_name = "read_" .. k
-                assert(machine[method_name](machine) == initial_csr_values[k],
-                    "wrong " .. k .. " value")
-            end
+    -- Check csr register read
+    local to_ignore = {
+        iflags = true,
+        clint_mtimecmp = true,
+        htif_ihalt = true,
+        htif_iconsole = true,
+    }
+    for k in pairs(cpu_csr_addr) do
+        if not to_ignore[k] then
+            local method_name = "read_" .. k
+            assert(machine[method_name](machine) == initial_csr_values[k], "wrong " .. k .. " value")
         end
     end
-)
+end)
 
 print("\n\n dump pmas to files")
-do_test("there should exist dumped files of expected size",
-    function(machine)
-        -- Dump pmas to files
-        machine:dump_pmas()
+do_test("there should exist dumped files of expected size", function(machine)
+    -- Dump pmas to files
+    machine:dump_pmas()
 
-        for i = 1, #pmas_file_names do
-            local dumped_file = test_path .. pmas_file_names[i]
-            local fd = assert(io.open(dumped_file, "rb"))
-            local real_file_size = fd:seek("end")
-            fd:close(dumped_file)
+    for i = 1, #pmas_file_names do
+        local dumped_file = test_path .. pmas_file_names[i]
+        local fd = assert(io.open(dumped_file, "rb"))
+        local real_file_size = fd:seek("end")
+        fd:close(dumped_file)
 
-            assert(real_file_size == pmas_sizes[i],
-                "unexpected pmas file size " .. dumped_file)
+        assert(real_file_size == pmas_sizes[i], "unexpected pmas file size " .. dumped_file)
 
-            assert(test_util.file_exists(dumped_file),
-                "dumping pmas to file failed " .. dumped_file)
+        assert(test_util.file_exists(dumped_file), "dumping pmas to file failed " .. dumped_file)
 
-            os.remove(dumped_file)
-        end
+        os.remove(dumped_file)
     end
-)
-
+end)
 
 print("\n\n read and write x registers")
-do_test("writen and expected register values should match",
-    function(machine)
-        local initial_xreg_values = get_cpu_xreg_test_values()
-        -- Write/Read X registers
-        local x1_initial_value = machine:read_x(1)
-        assert(x1_initial_value == initial_xreg_values[1], "error reading x1 register")
-        machine:write_x(1, 0x1122)
-        assert(machine:read_x(1) == 0x1122, "error with writing to x1 register")
-        machine:write_x(1, x1_initial_value)
-        assert(machine:read_x(1) == x1_initial_value)
-        -- Read unexsisting register
-        local status_invalid_reg = pcall(machine.read_x, machine, 1000)
-        assert(status_invalid_reg == false, "no error reading invalid x register")
-    end
-)
+do_test("writen and expected register values should match", function(machine)
+    local initial_xreg_values = get_cpu_xreg_test_values()
+    -- Write/Read X registers
+    local x1_initial_value = machine:read_x(1)
+    assert(x1_initial_value == initial_xreg_values[1], "error reading x1 register")
+    machine:write_x(1, 0x1122)
+    assert(machine:read_x(1) == 0x1122, "error with writing to x1 register")
+    machine:write_x(1, x1_initial_value)
+    assert(machine:read_x(1) == x1_initial_value)
+    -- Read unexsisting register
+    local status_invalid_reg = pcall(machine.read_x, machine, 1000)
+    assert(status_invalid_reg == false, "no error reading invalid x register")
+end)
 
 print("\n\n read and write uarch x registers")
-do_test("writen and expected register values should match",
-    function(machine)
-        local initial_xreg_values = get_cpu_uarch_xreg_test_values()
-        -- Write/Read uarch X registers
-        local x1_initial_value = machine:read_uarch_x(1)
-        assert(x1_initial_value == initial_xreg_values[1], "error reading uarch x1 register")
-        machine:write_uarch_x(1, 0x1122)
-        assert(machine:read_uarch_x(1) == 0x1122, "error with writing to uarch x1 register")
-        machine:write_uarch_x(1, x1_initial_value)
-        assert(machine:read_uarch_x(1) == x1_initial_value)
-        -- Read unexsisting uarch register
-        local status_invalid_reg = pcall(machine.read_uarch_x, machine, 1000)
-        assert(status_invalid_reg == false, "no error reading invalid uarch x register")
-    end
-)
+do_test("writen and expected register values should match", function(machine)
+    local initial_xreg_values = get_cpu_uarch_xreg_test_values()
+    -- Write/Read uarch X registers
+    local x1_initial_value = machine:read_uarch_x(1)
+    assert(x1_initial_value == initial_xreg_values[1], "error reading uarch x1 register")
+    machine:write_uarch_x(1, 0x1122)
+    assert(machine:read_uarch_x(1) == 0x1122, "error with writing to uarch x1 register")
+    machine:write_uarch_x(1, x1_initial_value)
+    assert(machine:read_uarch_x(1) == x1_initial_value)
+    -- Read unexsisting uarch register
+    local status_invalid_reg = pcall(machine.read_uarch_x, machine, 1000)
+    assert(status_invalid_reg == false, "no error reading invalid uarch x register")
+end)
 
 print("\n\n read and write csr registers")
-do_test("writen and expected register values should match",
-    function(machine)
-        -- Check csr register write
-        local sscratch_initial_value = machine:read_csr('sscratch')
-        assert(machine:read_sscratch() == sscratch_initial_value,
-            "error reading csr sscratch")
-        machine:write_csr('sscratch', 0x1122)
-        assert(machine:read_csr('sscratch') == 0x1122)
-        machine:write_csr('sscratch', sscratch_initial_value)
+do_test("writen and expected register values should match", function(machine)
+    -- Check csr register write
+    local sscratch_initial_value = machine:read_csr("sscratch")
+    assert(machine:read_sscratch() == sscratch_initial_value, "error reading csr sscratch")
+    machine:write_csr("sscratch", 0x1122)
+    assert(machine:read_csr("sscratch") == 0x1122)
+    machine:write_csr("sscratch", sscratch_initial_value)
 
-        -- Read unexsisting register
-        local status_invalid_reg = pcall(machine.read_csr, machine, "invalidreg")
-        assert(status_invalid_reg == false, "no error reading invalid csr register")
-    end
-)
+    -- Read unexsisting register
+    local status_invalid_reg = pcall(machine.read_csr, machine, "invalidreg")
+    assert(status_invalid_reg == false, "no error reading invalid csr register")
+end)
 
 print("\n\n perform step and check mcycle register")
-do_test("mcycle value should match",
-    function(machine)
-        local log_type = {}
-        local uarch_cycle_initial_value = machine:read_csr('uarch_cycle')
+do_test("mcycle value should match", function(machine)
+    local log_type = {}
+    local uarch_cycle_initial_value = machine:read_csr("uarch_cycle")
 
-        machine:step_uarch(log_type)
+    machine:step_uarch(log_type)
 
-        -- Check mcycle increment
-        local uarch_cycle_current_value = machine:read_csr('uarch_cycle')
-        assert(uarch_cycle_current_value == uarch_cycle_initial_value + 1,
-            "wrong uarch_cycle value")
-    end
-)
+    -- Check mcycle increment
+    local uarch_cycle_current_value = machine:read_csr("uarch_cycle")
+    assert(uarch_cycle_current_value == uarch_cycle_initial_value + 1, "wrong uarch_cycle value")
+end)
 
 print("\n\n run_uarch tests")
-do_test("advance one micro cycle without halting",
-    function(machine)
-        assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
-        assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
-        local status = machine:run_uarch(1)
-        assert(status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE)
-        assert(machine:read_uarch_cycle() == 1, "uarch cycle should be 1")
-        assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
-    end
-)
+do_test("advance one micro cycle without halting", function(machine)
+    assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
+    assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
+    local status = machine:run_uarch(1)
+    assert(status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE)
+    assert(machine:read_uarch_cycle() == 1, "uarch cycle should be 1")
+    assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
+end)
 
-do_test("advance micro cycles until halt",
-    function(machine)
-        assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
-        assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
-        local status = machine:run_uarch()
-        assert(status == cartesi.UARCH_BREAK_REASON_HALTED)
-        assert(machine:read_uarch_cycle() == 4, "uarch cycle should be 4")
-        assert(machine:read_uarch_halt_flag() == true, "machine should be halted")
-    end
-)
-
+do_test("advance micro cycles until halt", function(machine)
+    assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
+    assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
+    local status = machine:run_uarch()
+    assert(status == cartesi.UARCH_BREAK_REASON_HALTED)
+    assert(machine:read_uarch_cycle() == 4, "uarch cycle should be 4")
+    assert(machine:read_uarch_halt_flag() == true, "machine should be halted")
+end)
 
 print("\n\n run machine to 1000 mcycle")
-do_test("mcycle value should be 1000 after execution",
-    function(machine)
-        -- Run machine
-        machine:write_csr('mcycle', 0)
-        assert(machine:read_csr('mcycle') == 0)
+do_test("mcycle value should be 1000 after execution", function(machine)
+    -- Run machine
+    machine:write_csr("mcycle", 0)
+    assert(machine:read_csr("mcycle") == 0)
 
-        local test = machine:read_mcycle()
-        while test < 1000 do
-            machine:run(1000)
-            test = machine:read_mcycle()
-        end
-        assert(machine:read_csr('mcycle') == 1000)
+    local test = machine:read_mcycle()
+    while test < 1000 do
+        machine:run(1000)
+        test = machine:read_mcycle()
     end
-)
+    assert(machine:read_csr("mcycle") == 1000)
+end)
 
 print("\n\n check reading and writing htif registers")
-do_test("htif register values should match",
-    function(machine)
-        -- Check HTIF interface bindings
-        assert(machine:read_htif_tohost(), "error reading htif tohost")
-        assert(machine:read_htif_tohost_dev(), "error reading htif tohost dev")
-        assert(machine:read_htif_tohost_cmd(), "error reading htif tohost cmd")
-        assert(machine:read_htif_tohost_data(), "error reading htif tohost data")
-        assert(machine:read_htif_fromhost(), "error reading htif fromhost")
-        machine:write_htif_tohost(0x123456)
-        assert(machine:read_htif_tohost() == 0x123456, "error writing htif tohost")
-        machine:write_htif_fromhost(0x12345678)
-        assert(machine:read_htif_fromhost() == 0x12345678,
-            "error writing htif fromhost")
-        machine:write_htif_fromhost_data(0x123456789A)
-        assert(machine:read_htif_ihalt(), "error reading htif ihalt")
-        assert(machine:read_htif_iyield(), "error reading htif yield")
-    end
-)
+do_test("htif register values should match", function(machine)
+    -- Check HTIF interface bindings
+    assert(machine:read_htif_tohost(), "error reading htif tohost")
+    assert(machine:read_htif_tohost_dev(), "error reading htif tohost dev")
+    assert(machine:read_htif_tohost_cmd(), "error reading htif tohost cmd")
+    assert(machine:read_htif_tohost_data(), "error reading htif tohost data")
+    assert(machine:read_htif_fromhost(), "error reading htif fromhost")
+    machine:write_htif_tohost(0x123456)
+    assert(machine:read_htif_tohost() == 0x123456, "error writing htif tohost")
+    machine:write_htif_fromhost(0x12345678)
+    assert(machine:read_htif_fromhost() == 0x12345678, "error writing htif fromhost")
+    machine:write_htif_fromhost_data(0x123456789A)
+    assert(machine:read_htif_ihalt(), "error reading htif ihalt")
+    assert(machine:read_htif_iyield(), "error reading htif yield")
+end)
 
 print("\n\n check memory reading/writing")
-do_test("written and read values should match",
-    function(machine)
-        -- Check mem write and mem read
-        machine:write_memory(0x800000FF, "mydataol12345678", 0x10)
-        local memory_read = machine:read_memory(0x800000FF, 0x10)
-        assert(memory_read == "mydataol12345678")
-
-    end
-)
+do_test("written and read values should match", function(machine)
+    -- Check mem write and mem read
+    machine:write_memory(0x800000FF, "mydataol12345678", 0x10)
+    local memory_read = machine:read_memory(0x800000FF, 0x10)
+    assert(memory_read == "mydataol12345678")
+end)
 
 print("\n\n dump log  to console")
-do_test("dumped log content should match",
-    function()
-        -- Dump log and check values
-        local lua_code = [[ "
+do_test("dumped log content should match", function()
+    -- Dump log and check values
+    local lua_code = [[ "
                                  local cartesi = require 'cartesi'
                                  test_util = require 'tests.util'
                                  cartesi_util = require 'cartesi.util'
@@ -716,45 +675,41 @@ do_test("dumped log content should match",
                                  local log = machine:step_uarch(log_type)
                                  cartesi_util.dump_log(log, io.stdout)
                                  " 2>&1]]
-        local p = io.popen(lua_cmd .. lua_code)
-        local output = p:read(2000)
-        p:close()
-        local expected_output =
-            "begin step\n" ..
-            "  1: read uarch.cycle@0x320(800): 0x0(0)\n" ..
-            "  2: read uarch.halt_flag@0x328(808): 0x0(0)\n" ..
-            "  3: read uarch.pc@0x330(816): 0x70000000(1879048192)\n" ..
-            "  4: read memory@0x70000000(1879048192): 0x3280029307b00513(3638911329427784979)\n" ..
-            "  begin addi\n" ..
-            "    5: read uarch.x@0x340(832): 0x0(0)\n" ..
-            "    6: write uarch.x@0x390(912): 0x0(0) -> 0x7b(123)\n" ..
-            "    7: write uarch.pc@0x330(816): 0x70000000(1879048192) -> 0x70000004(1879048196)\n" ..
-            "  end addi\n" ..
-            "  8: write uarch.cycle@0x320(800): 0x0(0) -> 0x1(1)\n" ..
-            "end step\n"
+    local p = io.popen(lua_cmd .. lua_code)
+    local output = p:read(2000)
+    p:close()
+    local expected_output = "begin step\n"
+        .. "  1: read uarch.cycle@0x320(800): 0x0(0)\n"
+        .. "  2: read uarch.halt_flag@0x328(808): 0x0(0)\n"
+        .. "  3: read uarch.pc@0x330(816): 0x70000000(1879048192)\n"
+        .. "  4: read memory@0x70000000(1879048192): 0x3280029307b00513(3638911329427784979)\n"
+        .. "  begin addi\n"
+        .. "    5: read uarch.x@0x340(832): 0x0(0)\n"
+        .. "    6: write uarch.x@0x390(912): 0x0(0) -> 0x7b(123)\n"
+        .. "    7: write uarch.pc@0x330(816): 0x70000000(1879048192) -> 0x70000004(1879048196)\n"
+        .. "  end addi\n"
+        .. "  8: write uarch.cycle@0x320(800): 0x0(0) -> 0x1(1)\n"
+        .. "end step\n"
 
-        print("Output of dump log:")
-        print("--------------------------")
-        print(output)
-        print("--------------------------")
-        assert(output == expected_output, "Output does not match expected output:\n"..expected_output)
-    end
-)
+    print("Output of dump log:")
+    print("--------------------------")
+    print(output)
+    print("--------------------------")
+    assert(output == expected_output, "Output does not match expected output:\n" .. expected_output)
+end)
 
 print("\n\ntesting step and verification")
-do_test("machine step should pass verifications",
-    function(machine)
-        local module = cartesi
-        if (machine_type ~= "local") then
-            if not remote then remote = connect() end
-            module = remote
-        end
-        local initial_hash = machine:get_root_hash()
-        local log = machine:step_uarch({proofs = true, annotations = true})
-        local final_hash = machine:get_root_hash()
-        module.machine.verify_state_transition(initial_hash, log, final_hash, {})
-        module.machine.verify_access_log(log, {})
+do_test("machine step should pass verifications", function(machine)
+    local module = cartesi
+    if machine_type ~= "local" then
+        if not remote then remote = connect() end
+        module = remote
     end
-)
+    local initial_hash = machine:get_root_hash()
+    local log = machine:step_uarch({ proofs = true, annotations = true })
+    local final_hash = machine:get_root_hash()
+    module.machine.verify_state_transition(initial_hash, log, final_hash, {})
+    module.machine.verify_access_log(log, {})
+end)
 
 print("\n\nAll machine binding tests for type " .. machine_type .. " passed")

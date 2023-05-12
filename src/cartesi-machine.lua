@@ -16,12 +16,10 @@
 -- along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 --
 
-local cartesi = require"cartesi"
-local util = require"cartesi.util"
+local cartesi = require("cartesi")
+local util = require("cartesi.util")
 
-local function stderr_unsilenceable(fmt, ...)
-    io.stderr:write(string.format(fmt, ...))
-end
+local function stderr_unsilenceable(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
 local stderr = stderr_unsilenceable
 
 local function adjust_images_path(path)
@@ -31,7 +29,8 @@ end
 
 -- Print help and exit
 local function help()
-    stderr([=[
+    stderr(
+        [=[
 Usage:
 
   %s [options] [command] [arguments]
@@ -354,7 +353,9 @@ or a left shift (e.g., 2 << 20).
 
 <host> can be a host name, IPv4 or IPv6 address.
 
-]=], arg[0])
+]=],
+        arg[0]
+    )
     os.exit()
 end
 
@@ -365,13 +366,13 @@ local checkin_address
 local remote_shutdown = false
 local remote_create = true
 local remote_destroy = true
-local images_path = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH'))
+local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
 local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
-local flash_shared = { }
-local flash_start = { }
-local flash_length = { }
-local memory_range_replace = { }
+local flash_shared = {}
+local flash_start = {}
+local flash_length = {}
+local memory_range_replace = {}
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
 local rom_image_filename = images_path .. "rom.bin"
@@ -412,17 +413,14 @@ local function parse_memory_range(opts, what, all)
         filename = true,
         shared = true,
         length = true,
-        start = true
+        start = true,
     })
     f.image_filename = f.filename
     f.filename = nil
     if f.image_filename == true then f.image_filename = "" end
-    assert(not f.shared or f.shared == true,
-        "invalid " .. what .. " shared value in " .. all)
-    f.start = assert(util.parse_number(f.start),
-        "invalid " .. what .. " start in " .. all)
-    f.length = assert(util.parse_number(f.length),
-        "invalid " .. what .. " length in " .. all)
+    assert(not f.shared or f.shared == true, "invalid " .. what .. " shared value in " .. all)
+    f.start = assert(util.parse_number(f.start), "invalid " .. what .. " start in " .. all)
+    f.length = assert(util.parse_number(f.length), "invalid " .. what .. " length in " .. all)
     return f
 end
 
@@ -434,438 +432,575 @@ end
 --     if callback returns true, the option is accepted.
 --     if callback returns false, the option is rejected.
 local options = {
-    { "^%-h$", function(all)
-        if not all then return false end
-        help()
-        return true
-    end },
-    { "^%-%-help$", function(all)
-        if not all then return false end
-        help()
-        return true
-    end },
-    { "^%-%-rom%-image%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        rom_image_filename = o
-        return true
-    end },
-    { "^%-%-no%-rom%-bootargs$", function(all)
-        if not all then return false end
-        rom_bootargs = ""
-        return true
-    end },
-    { "^%-%-append%-rom%-bootargs%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        append_rom_bootargs = o
-        return true
-    end },
-    { "^%-%-ram%-length%=(.+)$", function(n)
-        if not n then return false end
-        ram_length = assert(util.parse_number(n), "invalid RAM length " .. n)
-        return true
-    end },
-    { "^%-%-ram%-image%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        ram_image_filename = o
-        return true
-    end },
-    { "^%-%-no%-ram%-image$", function(all)
-        if not all then return false end
-        ram_image_filename = ""
-        return true
-    end },
-    { "^%-%-uarch%-ram%-length%=(.+)$", function(n)
-        if not n then return false end
-        uarch = uarch or {}
-        uarch.ram = uarch.ram or {}
-        uarch.ram.length = assert(util.parse_number(n), "invalid microarchitecture RAM length " .. n)
-        return true
-    end },
-    { "^%-%-uarch%-ram%-image%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        uarch = uarch or {}
-        uarch.ram = uarch.ram or {}
-        uarch.ram.image_filename = o
-        return true
-    end },
-    { "^%-%-htif%-console%-getchar$", function(all)
-        if not all then return false end
-        htif_console_getchar = true
-        return true
-    end },
-    { "^%-i$", function(all)
-        if not all then return false end
-        htif_console_getchar = true
-        return true
-    end },
-    { "^%-%-htif%-yield%-manual$", function(all)
-        if not all then return false end
-        htif_yield_manual = true
-        return true
-    end },
-    { "^%-%-htif%-yield%-automatic$", function(all)
-        if not all then return false end
-        htif_yield_automatic = true
-        return true
-    end },
-    { "^%-%-rollup$", function(all)
-        if not all then return false end
-        rollup = rollup or {}
-        rollup.rx_buffer = { start = 0x60000000, length = 2 << 20 }
-        rollup.tx_buffer = { start = 0x60200000, length = 2 << 20 }
-        rollup.input_metadata = { start = 0x60400000, length = 4096 }
-        rollup.voucher_hashes = { start = 0x60600000, length = 2 << 20 }
-        rollup.notice_hashes = { start = 0x60800000, length = 2 << 20 }
-        htif_yield_automatic = true
-        htif_yield_manual = true
-        return true
-    end },
-    { "^(%-%-flash%-drive%=(.+))$", function(all, opts)
-        if not opts then return false end
-        local f = util.parse_options(opts, {
-            label = true,
-            filename = true,
-            shared = true,
-            length = true,
-            start = true
-        })
-        assert(f.label, "missing flash drive label in " .. all)
-        f.image_filename = f.filename
-        f.filename = nil
-        if f.image_filename == true then f.image_filename = "" end
-        assert(not f.shared or f.shared == true,
-            "invalid flash drive shared value in " .. all)
-        if f.start then
-            f.start = assert(util.parse_number(f.start),
-                "invalid flash drive start in " .. all)
-        end
-        if f.length then
-            f.length = assert(util.parse_number(f.length),
-                "invalid flash drive length in " .. all)
-        end
-        local d = f.label
-        if not flash_image_filename[d] then
-            flash_label_order[#flash_label_order+1] = d
-            flash_image_filename[d] = ""
-        end
-        flash_image_filename[d] = f.image_filename or
-            flash_image_filename[d]
-        flash_start[d] = f.start or flash_start[d]
-        flash_length[d] = f.length or flash_length[d]
-        flash_shared[d] = f.shared or flash_shared[d]
-        return true
-    end },
-    { "^(%-%-replace%-flash%-drive%=(.+))$", function(all, opts)
-        if not opts then return false end
-        memory_range_replace[#memory_range_replace+1] =
-            parse_memory_range(opts, "flash drive", all)
-        return true
-    end },
-    { "^(%-%-replace%-memory%-range%=(.+))$", function(all, opts)
-        if not opts then return false end
-        memory_range_replace[#memory_range_replace+1] =
-            parse_memory_range(opts, "flash drive", all)
-        return true
-    end },
-    { "^(%-%-rollup%-advance%-state%=(.+))$", function(all, opts)
-        if not opts then return false end
-        local r = util.parse_options(opts, {
-            epoch_index = true,
-            input = true,
-            input_metadata = true,
-            input_index_begin = true,
-            input_index_end = true,
-            voucher = true,
-            voucher_hashes = true,
-            notice = true,
-            notice_hashes = true,
-            report = true,
-            hashes = true,
-        })
-        assert(not r.hashes or r.hashes == true, "invalid hashes value in " .. all)
-        r.epoch_index = assert(util.parse_number(r.epoch_index), "invalid epoch index in " .. all)
-        r.input = r.input or "epoch-%e-input-%i.bin"
-        r.input_metadata = r.input_metadata or "epoch-%e-input-metadata-%i.bin"
-        r.input_index_begin = r.input_index_begin or 0
-        r.input_index_begin = assert(util.parse_number(r.input_index_begin), "invalid input index begin in " .. all)
-        r.input_index_end = r.input_index_end or 0
-        r.input_index_end = assert(util.parse_number(r.input_index_end), "invalid input index end in " .. all)
-        r.voucher = r.voucher or "epoch-%e-input-%i-voucher-%o.bin"
-        r.voucher_hashes = r.voucher_hashes or "epoch-%e-input-%i-voucher-hashes.bin"
-        r.notice = r.notice or "epoch-%e-input-%i-notice-%o.bin"
-        r.notice_hashes = r.notice_hashes or "epoch-%e-input-%i-notice-hashes.bin"
-        r.report = r.report or "epoch-%e-input-%i-report-%o.bin"
-        r.next_input_index = r.input_index_begin
-        rollup_advance = r
-        return true
-    end },
-    { "^(%-%-rollup%-inspect%-state%=(.+))$", function(_, opts)
-        if not opts then return false end
-        local r = util.parse_options(opts, {
-            query = true,
-            report = true,
-        })
-        r.query = r.query or "query.bin"
-        r.report = r.report or "query-report-%o.bin"
-        rollup_inspect = r
-        return true
-    end },
-    { "^%-%-rollup%-inspect%-state$", function(all)
-        if not all then return false end
-        rollup_inspect = {
-            query = "query.bin",
-            report = "query-report-%o.bin"
-        }
-        return true
-    end },
-    { "^(%-%-concurrency%=(.+))$", function(all, opts)
-        if not opts then return false end
-        local c = util.parse_options(opts, {
-            update_merkle_tree = true
-        })
-        c.update_merkle_tree = assert(util.parse_number(c.update_merkle_tree),
-                "invalid update_merkle_tree number in " .. all)
-        concurrency_update_merkle_tree = c.update_merkle_tree
-        return true
-    end },
-    { "^(%-%-initial%-proof%=(.+))$", function(all, opts)
-        if not opts then return false end
-        local p = util.parse_options(opts, {
-            address = true,
-            log2_size = true,
-            filename = true
-        })
-        p.cmdline = all
-        p.address = assert(util.parse_number(p.address),
-            "invalid address in " .. all)
-        p.log2_size = assert(util.parse_number(p.log2_size),
-            "invalid log2_size in " .. all)
-        assert(p.log2_size >= 3,
-            "log2_size must be at least 3 in " .. all)
-        initial_proof[#initial_proof+1] = p
-        return true
-    end },
-    { "^(%-%-final%-proof%=(.+))$", function(all, opts)
-        if not opts then return false end
-        local p = util.parse_options(opts, {
-            address = true,
-            log2_size = true,
-            filename = true
-        })
-        p.cmdline = all
-        p.address = assert(util.parse_number(p.address),
-            "invalid address in " .. all)
-        p.log2_size = assert(util.parse_number(p.log2_size),
-            "invalid log2_size in " .. all)
-        assert(p.log2_size >= 3,
-            "log2_size must be at least 3 in " .. all)
-        final_proof[#final_proof+1] = p
-        return true
-    end },
-    { "^%-%-no%-root%-flash%-drive$", function(all)
-        if not all then return false end
-        assert(flash_image_filename.root and flash_label_order[1] == "root",
-                 "no root flash drive to remove")
-        flash_image_filename.root = nil
-        flash_start.root = nil
-        flash_length.root = nil
-        flash_shared.root = nil
-        table.remove(flash_label_order, 1)
-        rom_bootargs = "console=hvc0"
-        return true
-    end },
-    { "^%-%-dump%-pmas$", function(all)
-        if not all then return false end
-        dump_pmas = true
-        return true
-    end },
-    { "%-%-assert%-rolling%-template", function(all)
-        if not all then return false end
-        assert_rolling_template = true
-        return true
-    end },
-    { "%-%-quiet", function(all)
-        if not all then return false end
-        stderr = function() end
-        quiet = true
-        return true
-    end },
-    { "^%-%-step%-uarch$", function(all)
-        if not all then return false end
-        step_uarch = true
-        return true
-    end },
-    { "^(%-%-max%-mcycle%=(.*))$", function(all, n)
-        if not n then return false end
-        max_mcycle = assert(util.parse_number(n), "invalid option " .. all)
-        return true
-    end },
-    { "^(%-%-max%-uarch%-cycle%=(.*))$", function(all, n)
-        if not n then return false end
-        max_uarch_cycle = assert(util.parse_number(n), "invalid option " .. all)
-        return true
-    end },
-    { "^%-%-auto%-reset%-uarch%-state$", function(all)
-        if not all then return false end
-        auto_reset_uarch_state = true
-        return true
-    end },
-    { "^%-%-load%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        load_dir = o
-        return true
-    end },
-    { "^%-%-store%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        store_dir = o
-        return true
-    end },
-    { "^%-%-remote%-address%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        remote_address = o
-        return true
-    end },
-    { "^%-%-remote%-protocol%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        remote_protocol = o
-        return true
-    end },
-    { "^%-%-checkin%-address%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        checkin_address = o
-        return true
-    end },
-    { "^%-%-remote%-shutdown$", function(o)
-        if not o then return false end
-        remote_shutdown = true
-        return true
-    end },
-    { "^%-%-no%-remote%-create$", function(o)
-        if not o then return false end
-        remote_create = false
-        return true
-    end },
-    { "^%-%-no%-remote%-destroy$", function(o)
-        if not o then return false end
-        remote_destroy = false
-        return true
-    end },
-    { "^%-%-json%-steps%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        json_steps = o
-        return true
-    end },
-    { "^%-%-initial%-hash$", function(all)
-        if not all then return false end
-        initial_hash = true
-        return true
-    end },
-    { "^%-%-final%-hash$", function(all)
-        if not all then return false end
-        final_hash = true
-        return true
-    end },
-    { "^(%-%-periodic%-hashes%=(.*))$", function(all, v)
-        if not v then return false end
-        string.gsub(v, "^([^%,]+),(.+)$", function(p, s)
-            periodic_hashes_period = assert(util.parse_number(p),
-                "invalid period " .. all)
-            periodic_hashes_start = assert(util.parse_number(s),
-                "invalid start " .. all)
-        end)
-        if periodic_hashes_period == math.maxinteger then
-            periodic_hashes_period = assert(util.parse_number(v),
-                "invalid period " .. all)
-            periodic_hashes_start = 0
-        end
-        initial_hash = true
-        final_hash = true
-        return true
-    end },
-    { "^%-%-store%-config(%=?)(%g*)$", function(o, v)
-        if not o then return false end
-        if o == '=' then
-            if not v or #v < 1 then return false end
-            store_config = v
-        else
-            store_config = stderr
-        end
-        return true
-    end },
-    { "^%-%-load%-config%=(%g*)$", function(o)
-        if not o or #o < 1 then return false end
-        load_config = o
-        return true
-    end },
-    { "^(%-%-rollup%-rx%-buffer%=(.+))$", function(all, opts)
-        if not opts then return false end
-        rollup = rollup or {}
-        rollup.rx_buffer = parse_memory_range(opts, "rollup rx buffer", all)
-        return true
-    end },
-    { "^(%-%-rollup%-tx%-buffer%=(.+))$", function(all, opts)
-        if not opts then return false end
-        rollup = rollup or {}
-        rollup.tx_buffer = parse_memory_range(opts, "tx buffer", all)
-        return true
-    end },
-    { "^(%-%-rollup%-input%-metadata%=(.+))$", function(all, opts)
-        if not opts then return false end
-        rollup = rollup or {}
-        rollup.input_metadata = parse_memory_range(opts, "rollup input metadata", all)
-        return true
-    end },
-    { "^(%-%-rollup%-voucher%-hashes%=(.+))$", function(all, opts)
-        if not opts then return false end
-        rollup = rollup or {}
-        rollup.voucher_hashes = parse_memory_range(opts, "rollup voucher hashes", all)
-        return true
-    end },
-    { "^(%-%-rollup%-notice%-hashes%=(.+))$", function(all, opts)
-        if not opts then return false end
-        rollup = rollup or {}
-        rollup.notice_hashes = parse_memory_range(opts, "rollup notice hashes", all)
-        return true
-    end },
-    { "^%-%-gdb(%=?)(.*)$", function(o, address)
-        if o == '='  and #o > 0 then
-          gdb_address = address
-          return true
-        elseif o == '' then
-          gdb_address = '127.0.0.1:1234'
-          return true
-        end
-        return false
-    end },
-    { ".*", function(all)
-        if not all then return false end
-        local not_option = all:sub(1,1) ~= "-"
-        if not_option or all == "--" then
-          cmdline_opts_finished = true
-          if not_option then exec_arguments = { all } end
-          return true
-        end
-        error("unrecognized option " .. all)
-    end }
+    {
+        "^%-h$",
+        function(all)
+            if not all then return false end
+            help()
+            return true
+        end,
+    },
+    {
+        "^%-%-help$",
+        function(all)
+            if not all then return false end
+            help()
+            return true
+        end,
+    },
+    {
+        "^%-%-rom%-image%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            rom_image_filename = o
+            return true
+        end,
+    },
+    {
+        "^%-%-no%-rom%-bootargs$",
+        function(all)
+            if not all then return false end
+            rom_bootargs = ""
+            return true
+        end,
+    },
+    {
+        "^%-%-append%-rom%-bootargs%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            append_rom_bootargs = o
+            return true
+        end,
+    },
+    {
+        "^%-%-ram%-length%=(.+)$",
+        function(n)
+            if not n then return false end
+            ram_length = assert(util.parse_number(n), "invalid RAM length " .. n)
+            return true
+        end,
+    },
+    {
+        "^%-%-ram%-image%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            ram_image_filename = o
+            return true
+        end,
+    },
+    {
+        "^%-%-no%-ram%-image$",
+        function(all)
+            if not all then return false end
+            ram_image_filename = ""
+            return true
+        end,
+    },
+    {
+        "^%-%-uarch%-ram%-length%=(.+)$",
+        function(n)
+            if not n then return false end
+            uarch = uarch or {}
+            uarch.ram = uarch.ram or {}
+            uarch.ram.length = assert(util.parse_number(n), "invalid microarchitecture RAM length " .. n)
+            return true
+        end,
+    },
+    {
+        "^%-%-uarch%-ram%-image%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            uarch = uarch or {}
+            uarch.ram = uarch.ram or {}
+            uarch.ram.image_filename = o
+            return true
+        end,
+    },
+    {
+        "^%-%-htif%-console%-getchar$",
+        function(all)
+            if not all then return false end
+            htif_console_getchar = true
+            return true
+        end,
+    },
+    {
+        "^%-i$",
+        function(all)
+            if not all then return false end
+            htif_console_getchar = true
+            return true
+        end,
+    },
+    {
+        "^%-%-htif%-yield%-manual$",
+        function(all)
+            if not all then return false end
+            htif_yield_manual = true
+            return true
+        end,
+    },
+    {
+        "^%-%-htif%-yield%-automatic$",
+        function(all)
+            if not all then return false end
+            htif_yield_automatic = true
+            return true
+        end,
+    },
+    {
+        "^%-%-rollup$",
+        function(all)
+            if not all then return false end
+            rollup = rollup or {}
+            rollup.rx_buffer = { start = 0x60000000, length = 2 << 20 }
+            rollup.tx_buffer = { start = 0x60200000, length = 2 << 20 }
+            rollup.input_metadata = { start = 0x60400000, length = 4096 }
+            rollup.voucher_hashes = { start = 0x60600000, length = 2 << 20 }
+            rollup.notice_hashes = { start = 0x60800000, length = 2 << 20 }
+            htif_yield_automatic = true
+            htif_yield_manual = true
+            return true
+        end,
+    },
+    {
+        "^(%-%-flash%-drive%=(.+))$",
+        function(all, opts)
+            if not opts then return false end
+            local f = util.parse_options(opts, {
+                label = true,
+                filename = true,
+                shared = true,
+                length = true,
+                start = true,
+            })
+            assert(f.label, "missing flash drive label in " .. all)
+            f.image_filename = f.filename
+            f.filename = nil
+            if f.image_filename == true then f.image_filename = "" end
+            assert(not f.shared or f.shared == true, "invalid flash drive shared value in " .. all)
+            if f.start then f.start = assert(util.parse_number(f.start), "invalid flash drive start in " .. all) end
+            if f.length then f.length = assert(util.parse_number(f.length), "invalid flash drive length in " .. all) end
+            local d = f.label
+            if not flash_image_filename[d] then
+                flash_label_order[#flash_label_order + 1] = d
+                flash_image_filename[d] = ""
+            end
+            flash_image_filename[d] = f.image_filename or flash_image_filename[d]
+            flash_start[d] = f.start or flash_start[d]
+            flash_length[d] = f.length or flash_length[d]
+            flash_shared[d] = f.shared or flash_shared[d]
+            return true
+        end,
+    },
+    {
+        "^(%-%-replace%-flash%-drive%=(.+))$",
+        function(all, opts)
+            if not opts then return false end
+            memory_range_replace[#memory_range_replace + 1] = parse_memory_range(opts, "flash drive", all)
+            return true
+        end,
+    },
+    {
+        "^(%-%-replace%-memory%-range%=(.+))$",
+        function(all, opts)
+            if not opts then return false end
+            memory_range_replace[#memory_range_replace + 1] = parse_memory_range(opts, "flash drive", all)
+            return true
+        end,
+    },
+    {
+        "^(%-%-rollup%-advance%-state%=(.+))$",
+        function(all, opts)
+            if not opts then return false end
+            local r = util.parse_options(opts, {
+                epoch_index = true,
+                input = true,
+                input_metadata = true,
+                input_index_begin = true,
+                input_index_end = true,
+                voucher = true,
+                voucher_hashes = true,
+                notice = true,
+                notice_hashes = true,
+                report = true,
+                hashes = true,
+            })
+            assert(not r.hashes or r.hashes == true, "invalid hashes value in " .. all)
+            r.epoch_index = assert(util.parse_number(r.epoch_index), "invalid epoch index in " .. all)
+            r.input = r.input or "epoch-%e-input-%i.bin"
+            r.input_metadata = r.input_metadata or "epoch-%e-input-metadata-%i.bin"
+            r.input_index_begin = r.input_index_begin or 0
+            r.input_index_begin = assert(util.parse_number(r.input_index_begin), "invalid input index begin in " .. all)
+            r.input_index_end = r.input_index_end or 0
+            r.input_index_end = assert(util.parse_number(r.input_index_end), "invalid input index end in " .. all)
+            r.voucher = r.voucher or "epoch-%e-input-%i-voucher-%o.bin"
+            r.voucher_hashes = r.voucher_hashes or "epoch-%e-input-%i-voucher-hashes.bin"
+            r.notice = r.notice or "epoch-%e-input-%i-notice-%o.bin"
+            r.notice_hashes = r.notice_hashes or "epoch-%e-input-%i-notice-hashes.bin"
+            r.report = r.report or "epoch-%e-input-%i-report-%o.bin"
+            r.next_input_index = r.input_index_begin
+            rollup_advance = r
+            return true
+        end,
+    },
+    {
+        "^(%-%-rollup%-inspect%-state%=(.+))$",
+        function(_, opts)
+            if not opts then return false end
+            local r = util.parse_options(opts, {
+                query = true,
+                report = true,
+            })
+            r.query = r.query or "query.bin"
+            r.report = r.report or "query-report-%o.bin"
+            rollup_inspect = r
+            return true
+        end,
+    },
+    {
+        "^%-%-rollup%-inspect%-state$",
+        function(all)
+            if not all then return false end
+            rollup_inspect = {
+                query = "query.bin",
+                report = "query-report-%o.bin",
+            }
+            return true
+        end,
+    },
+    {
+        "^(%-%-concurrency%=(.+))$",
+        function(all, opts)
+            if not opts then return false end
+            local c = util.parse_options(opts, {
+                update_merkle_tree = true,
+            })
+            c.update_merkle_tree =
+                assert(util.parse_number(c.update_merkle_tree), "invalid update_merkle_tree number in " .. all)
+            concurrency_update_merkle_tree = c.update_merkle_tree
+            return true
+        end,
+    },
+    {
+        "^(%-%-initial%-proof%=(.+))$",
+        function(all, opts)
+            if not opts then return false end
+            local p = util.parse_options(opts, {
+                address = true,
+                log2_size = true,
+                filename = true,
+            })
+            p.cmdline = all
+            p.address = assert(util.parse_number(p.address), "invalid address in " .. all)
+            p.log2_size = assert(util.parse_number(p.log2_size), "invalid log2_size in " .. all)
+            assert(p.log2_size >= 3, "log2_size must be at least 3 in " .. all)
+            initial_proof[#initial_proof + 1] = p
+            return true
+        end,
+    },
+    {
+        "^(%-%-final%-proof%=(.+))$",
+        function(all, opts)
+            if not opts then return false end
+            local p = util.parse_options(opts, {
+                address = true,
+                log2_size = true,
+                filename = true,
+            })
+            p.cmdline = all
+            p.address = assert(util.parse_number(p.address), "invalid address in " .. all)
+            p.log2_size = assert(util.parse_number(p.log2_size), "invalid log2_size in " .. all)
+            assert(p.log2_size >= 3, "log2_size must be at least 3 in " .. all)
+            final_proof[#final_proof + 1] = p
+            return true
+        end,
+    },
+    {
+        "^%-%-no%-root%-flash%-drive$",
+        function(all)
+            if not all then return false end
+            assert(flash_image_filename.root and flash_label_order[1] == "root", "no root flash drive to remove")
+            flash_image_filename.root = nil
+            flash_start.root = nil
+            flash_length.root = nil
+            flash_shared.root = nil
+            table.remove(flash_label_order, 1)
+            rom_bootargs = "console=hvc0"
+            return true
+        end,
+    },
+    {
+        "^%-%-dump%-pmas$",
+        function(all)
+            if not all then return false end
+            dump_pmas = true
+            return true
+        end,
+    },
+    {
+        "%-%-assert%-rolling%-template",
+        function(all)
+            if not all then return false end
+            assert_rolling_template = true
+            return true
+        end,
+    },
+    {
+        "%-%-quiet",
+        function(all)
+            if not all then return false end
+            stderr = function() end
+            quiet = true
+            return true
+        end,
+    },
+    {
+        "^%-%-step%-uarch$",
+        function(all)
+            if not all then return false end
+            step_uarch = true
+            return true
+        end,
+    },
+    {
+        "^(%-%-max%-mcycle%=(.*))$",
+        function(all, n)
+            if not n then return false end
+            max_mcycle = assert(util.parse_number(n), "invalid option " .. all)
+            return true
+        end,
+    },
+    {
+        "^(%-%-max%-uarch%-cycle%=(.*))$",
+        function(all, n)
+            if not n then return false end
+            max_uarch_cycle = assert(util.parse_number(n), "invalid option " .. all)
+            return true
+        end,
+    },
+    {
+        "^%-%-auto%-reset%-uarch%-state$",
+        function(all)
+            if not all then return false end
+            auto_reset_uarch_state = true
+            return true
+        end,
+    },
+    {
+        "^%-%-load%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            load_dir = o
+            return true
+        end,
+    },
+    {
+        "^%-%-store%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            store_dir = o
+            return true
+        end,
+    },
+    {
+        "^%-%-remote%-address%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            remote_address = o
+            return true
+        end,
+    },
+    {
+        "^%-%-remote%-protocol%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            remote_protocol = o
+            return true
+        end,
+    },
+    {
+        "^%-%-checkin%-address%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            checkin_address = o
+            return true
+        end,
+    },
+    {
+        "^%-%-remote%-shutdown$",
+        function(o)
+            if not o then return false end
+            remote_shutdown = true
+            return true
+        end,
+    },
+    {
+        "^%-%-no%-remote%-create$",
+        function(o)
+            if not o then return false end
+            remote_create = false
+            return true
+        end,
+    },
+    {
+        "^%-%-no%-remote%-destroy$",
+        function(o)
+            if not o then return false end
+            remote_destroy = false
+            return true
+        end,
+    },
+    {
+        "^%-%-json%-steps%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            json_steps = o
+            return true
+        end,
+    },
+    {
+        "^%-%-initial%-hash$",
+        function(all)
+            if not all then return false end
+            initial_hash = true
+            return true
+        end,
+    },
+    {
+        "^%-%-final%-hash$",
+        function(all)
+            if not all then return false end
+            final_hash = true
+            return true
+        end,
+    },
+    {
+        "^(%-%-periodic%-hashes%=(.*))$",
+        function(all, v)
+            if not v then return false end
+            string.gsub(v, "^([^%,]+),(.+)$", function(p, s)
+                periodic_hashes_period = assert(util.parse_number(p), "invalid period " .. all)
+                periodic_hashes_start = assert(util.parse_number(s), "invalid start " .. all)
+            end)
+            if periodic_hashes_period == math.maxinteger then
+                periodic_hashes_period = assert(util.parse_number(v), "invalid period " .. all)
+                periodic_hashes_start = 0
+            end
+            initial_hash = true
+            final_hash = true
+            return true
+        end,
+    },
+    {
+        "^%-%-store%-config(%=?)(%g*)$",
+        function(o, v)
+            if not o then return false end
+            if o == "=" then
+                if not v or #v < 1 then return false end
+                store_config = v
+            else
+                store_config = stderr
+            end
+            return true
+        end,
+    },
+    {
+        "^%-%-load%-config%=(%g*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            load_config = o
+            return true
+        end,
+    },
+    {
+        "^(%-%-rollup%-rx%-buffer%=(.+))$",
+        function(all, opts)
+            if not opts then return false end
+            rollup = rollup or {}
+            rollup.rx_buffer = parse_memory_range(opts, "rollup rx buffer", all)
+            return true
+        end,
+    },
+    {
+        "^(%-%-rollup%-tx%-buffer%=(.+))$",
+        function(all, opts)
+            if not opts then return false end
+            rollup = rollup or {}
+            rollup.tx_buffer = parse_memory_range(opts, "tx buffer", all)
+            return true
+        end,
+    },
+    {
+        "^(%-%-rollup%-input%-metadata%=(.+))$",
+        function(all, opts)
+            if not opts then return false end
+            rollup = rollup or {}
+            rollup.input_metadata = parse_memory_range(opts, "rollup input metadata", all)
+            return true
+        end,
+    },
+    {
+        "^(%-%-rollup%-voucher%-hashes%=(.+))$",
+        function(all, opts)
+            if not opts then return false end
+            rollup = rollup or {}
+            rollup.voucher_hashes = parse_memory_range(opts, "rollup voucher hashes", all)
+            return true
+        end,
+    },
+    {
+        "^(%-%-rollup%-notice%-hashes%=(.+))$",
+        function(all, opts)
+            if not opts then return false end
+            rollup = rollup or {}
+            rollup.notice_hashes = parse_memory_range(opts, "rollup notice hashes", all)
+            return true
+        end,
+    },
+    {
+        "^%-%-gdb(%=?)(.*)$",
+        function(o, address)
+            if o == "=" and #o > 0 then
+                gdb_address = address
+                return true
+            elseif o == "" then
+                gdb_address = "127.0.0.1:1234"
+                return true
+            end
+            return false
+        end,
+    },
+    {
+        ".*",
+        function(all)
+            if not all then return false end
+            local not_option = all:sub(1, 1) ~= "-"
+            if not_option or all == "--" then
+                cmdline_opts_finished = true
+                if not_option then exec_arguments = { all } end
+                return true
+            end
+            error("unrecognized option " .. all)
+        end,
+    },
 }
 
 -- Process command line options
 for _, a in ipairs(arg) do
     if not cmdline_opts_finished then
-      for _, option in ipairs(options) do
-          if option[2](a:match(option[1])) then
-              break
-          end
-      end
+        for _, option in ipairs(options) do
+            if option[2](a:match(option[1])) then break end
+        end
     else
-      exec_arguments[#exec_arguments+1] = a
+        exec_arguments[#exec_arguments + 1] = a
     end
 end
 
 local function get_file_length(filename)
     local file = io.open(filename, "rb")
     if not file then return nil end
-    local size = file:seek("end")    -- get file size
+    local size = file:seek("end") -- get file size
     file:close()
     return size
 end
@@ -875,9 +1010,7 @@ local function print_root_hash(machine, print)
 end
 
 local function store_memory_range(r, indent, output)
-    local function comment_default(u, v)
-        output(u == v and " -- default\n" or "\n")
-    end
+    local function comment_default(u, v) output(u == v and " -- default\n" or "\n") end
     output("{\n")
     output("%s  start = 0x%x,", indent, r.start)
     comment_default(0, r.start)
@@ -892,9 +1025,7 @@ local function store_memory_range(r, indent, output)
 end
 
 local function store_machine_config(config, output)
-    local function comment_default(u, v)
-        output(u == v and " -- default\n" or "\n")
-    end
+    local function comment_default(u, v) output(u == v and " -- default\n" or "\n") end
 
     local def
     if remote then
@@ -908,7 +1039,7 @@ local function store_machine_config(config, output)
     local processor = config.processor or { x = {} }
     for i = 1, 31 do
         local xi = processor.x[i] or def.processor.x[i]
-        output("      0x%x,",  xi)
+        output("      0x%x,", xi)
         comment_default(xi, def.processor.x[i])
     end
     output("    },\n")
@@ -916,24 +1047,22 @@ local function store_machine_config(config, output)
     for i = 0, 31 do
         local xi = processor.f[i] or def.processor.f[i]
         if i == 0 then
-          output("      [0] = 0x%x,",  xi)
+            output("      [0] = 0x%x,", xi)
         else
-          output("      0x%x,",  xi)
+            output("      0x%x,", xi)
         end
         comment_default(xi, def.processor.f[i])
     end
     output("    },\n")
     local order = {}
-    for i,v in pairs(def.processor) do
-        if type(v) == "number" then
-            order[#order+1] = i
-        end
+    for i, v in pairs(def.processor) do
+        if type(v) == "number" then order[#order + 1] = i end
     end
     table.sort(order)
-    for _,csr in ipairs(order) do
+    for _, csr in ipairs(order) do
         local c = processor[csr] or def.processor[csr]
         output("    %s = 0x%x,", csr, c)
-        comment_default(c,  def.processor[csr])
+        comment_default(c, def.processor[csr])
     end
     output("  },\n")
     local ram = config.ram or {}
@@ -1004,7 +1133,7 @@ local function store_machine_config(config, output)
     output("      x = {\n")
     for i = 1, 31 do
         local xi = uarch.processor.x[i] or def.uarch.processor.x[i]
-        output("        0x%x,",  xi)
+        output("        0x%x,", xi)
         comment_default(xi, def.uarch.processor.x[i])
     end
     output("      },\n")
@@ -1023,24 +1152,31 @@ local function resolve_flash_lengths(label_order, image_filename, length)
         local len = length[label]
         local filelen
         if filename and filename ~= "" then
-            filelen = assert(get_file_length(filename), string.format(
-                "unable to find length of flash drive '%s' image file '%s'",
-                label, filename))
+            filelen = assert(
+                get_file_length(filename),
+                string.format("unable to find length of flash drive '%s' image file '%s'", label, filename)
+            )
             if len and len ~= filelen then
-                error(string.format("flash drive '%s' length (%u) and image file '%s' length (%u) do not match", label,
-                    len, filename, filelen))
+                error(
+                    string.format(
+                        "flash drive '%s' length (%u) and image file '%s' length (%u) do not match",
+                        label,
+                        len,
+                        filename,
+                        filelen
+                    )
+                )
             else
                 length[label] = filelen
             end
         elseif not len then
-            error(string.format(
-                "flash drive '%s' nas no length or image file", label))
+            error(string.format("flash drive '%s' nas no length or image file", label))
         end
     end
 end
 
 local function resolve_flash_starts(label_order, start)
-    local auto_start = 1<<55
+    local auto_start = 1 << 55
     if next(start) == nil then
         for _, label in ipairs(label_order) do
             start[label] = auto_start
@@ -1052,27 +1188,28 @@ local function resolve_flash_starts(label_order, start)
         for _, label in ipairs(label_order) do
             local quoted = string.format("'%s'", label)
             if start[label] then
-                found[#found+1] = quoted
+                found[#found + 1] = quoted
             else
-                missing[#missing+1] = quoted
+                missing[#missing + 1] = quoted
             end
         end
         if #missing > 0 then
-            error(string.format("flash drive start set for %s but missing for %s",
-                table.concat(found, ", "), table.concat(missing, ", ")))
+            error(
+                string.format(
+                    "flash drive start set for %s but missing for %s",
+                    table.concat(found, ", "),
+                    table.concat(missing, ", ")
+                )
+            )
         end
     end
 end
 
 local function dump_value_proofs(machine, desired_proofs, has_htif_console_getchar)
-    if #desired_proofs > 0 then
-        assert(not has_htif_console_getchar,
-            "proofs are meaningless in interactive mode")
-    end
+    if #desired_proofs > 0 then assert(not has_htif_console_getchar, "proofs are meaningless in interactive mode") end
     for _, desired in ipairs(desired_proofs) do
         local proof = machine:get_proof(desired.address, desired.log2_size)
-        local out = desired.filename and assert(io.open(desired.filename, "wb"))
-            or io.stdout
+        local out = desired.filename and assert(io.open(desired.filename, "wb")) or io.stdout
         out:write("{\n")
         util.dump_json_proof(proof, out, 1)
         out:write("}\n")
@@ -1088,9 +1225,7 @@ local function append(a, b)
 end
 
 local function create_machine(config_or_dir, runtime)
-    if remote then
-        return remote.machine(config_or_dir, runtime)
-    end
+    if remote then return remote.machine(config_or_dir, runtime) end
     return cartesi.machine(config_or_dir, runtime)
 end
 
@@ -1107,17 +1242,19 @@ if remote_address then
     stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
     local shutdown = function() remote.shutdown() end
     if remote_shutdown then
-        setmetatable(remote_shutdown_deleter, { __gc = function()
-            stderr("Shutting down remote cartesi machine\n")
-            pcall(shutdown)
-        end })
+        setmetatable(remote_shutdown_deleter, {
+            __gc = function()
+                stderr("Shutting down remote cartesi machine\n")
+                pcall(shutdown)
+            end,
+        })
     end
 end
 
 local runtime = {
     concurrency = {
-        update_merkle_tree = concurrency_update_merkle_tree
-    }
+        update_merkle_tree = concurrency_update_merkle_tree,
+    },
 }
 
 local main_machine
@@ -1137,20 +1274,20 @@ else
             -- Request automatic default values for versioning CSRs
             mimpid = -1,
             marchid = -1,
-            mvendorid = -1
+            mvendorid = -1,
         },
         rom = {
             image_filename = rom_image_filename,
-            bootargs = rom_bootargs
+            bootargs = rom_bootargs,
         },
         ram = {
             image_filename = ram_image_filename,
-            length = ram_length
+            length = ram_length,
         },
         htif = {
             console_getchar = htif_console_getchar,
             yield_automatic = htif_yield_automatic,
-            yield_manual = htif_yield_manual
+            yield_manual = htif_yield_manual,
         },
         rollup = rollup,
         uarch = uarch,
@@ -1158,31 +1295,27 @@ else
     }
     local mtdparts = {}
     for i, label in ipairs(flash_label_order) do
-        config.flash_drive[#config.flash_drive+1] = {
+        config.flash_drive[#config.flash_drive + 1] = {
             image_filename = flash_image_filename[label],
             shared = flash_shared[label],
             start = flash_start[label],
-            length = flash_length[label]
+            length = flash_length[label],
         }
-        mtdparts[#mtdparts+1] = string.format("flash.%d:-(%s)", i-1, label)
+        mtdparts[#mtdparts + 1] = string.format("flash.%d:-(%s)", i - 1, label)
     end
     if #mtdparts > 0 then
-        config.rom.bootargs = append(config.rom.bootargs, "mtdparts=" ..
-            table.concat(mtdparts, ";"))
+        config.rom.bootargs = append(config.rom.bootargs, "mtdparts=" .. table.concat(mtdparts, ";"))
     end
 
-    config.rom.bootargs = append(
-        append(config.rom.bootargs, append_rom_bootargs),
-        quiet and ' splash=no' or '')
+    config.rom.bootargs = append(append(config.rom.bootargs, append_rom_bootargs), quiet and " splash=no" or "")
 
     if #exec_arguments > 0 then
-        config.rom.bootargs = append(config.rom.bootargs, "-- " ..
-            table.concat(exec_arguments, " "))
+        config.rom.bootargs = append(config.rom.bootargs, "-- " .. table.concat(exec_arguments, " "))
     end
 
     if load_config then
         local env = {}
-        local ok, ret = loadfile(load_config, 't', env)
+        local ok, ret = loadfile(load_config, "t", env)
         if ok then
             local chunk = ok
             ok, ret = pcall(chunk)
@@ -1191,7 +1324,7 @@ else
             stderr("Failed to load machine config (%s):\n", load_config)
             error(ret)
         end
-        config = setmetatable(ret, {__index = config})
+        config = setmetatable(ret, { __index = config })
     end
 
     main_machine = create_machine(config, runtime)
@@ -1200,13 +1333,13 @@ end
 -- obtain config from instantiated machine
 local main_config = main_machine:get_initial_config()
 
-for _,r in ipairs(memory_range_replace) do
+for _, r in ipairs(memory_range_replace) do
     main_machine:replace_memory_range(r)
 end
 
 if type(store_config) == "string" then
     store_config = assert(io.open(store_config, "w"))
-    store_machine_config(main_config, function (...) store_config:write(string.format(...)) end)
+    store_machine_config(main_config, function(...) store_config:write(string.format(...)) end)
     store_config:close()
 end
 
@@ -1225,9 +1358,7 @@ local htif_yield_mode = {
     [cartesi.machine.HTIF_YIELD_AUTOMATIC] = "Automatic",
 }
 
-local function is_power_of_two(value)
-    return value > 0 and ((value & (value - 1)) == 0)
-end
+local function is_power_of_two(value) return value > 0 and ((value & (value - 1)) == 0) end
 
 local function ilog2(value)
     value = assert(math.tointeger(value), "expected integer")
@@ -1243,12 +1374,16 @@ end
 local function check_rollup_memory_range_config(range, name)
     assert(range, string.format("rollup range %s must be defined", name))
     assert(not range.shared, string.format("rollup range %s cannot be shared", name))
-    assert(is_power_of_two(range.length), string.format("rollup range %s length not a power of two (%u)", name,
-        range.length))
+    assert(
+        is_power_of_two(range.length),
+        string.format("rollup range %s length not a power of two (%u)", name, range.length)
+    )
     local log = ilog2(range.length)
     local aligned_start = (range.start >> log) << log
-    assert(aligned_start == range.start,
-        string.format("rollup range %s start not aligned to its power of two size", name))
+    assert(
+        aligned_start == range.start,
+        string.format("rollup range %s start not aligned to its power of two size", name)
+    )
     range.image_filename = nil
 end
 
@@ -1268,7 +1403,7 @@ end
 local function get_and_print_yield(machine, htif)
     local cmd, reason, data = get_yield(machine)
     if cmd == cartesi.machine.HTIF_YIELD_AUTOMATIC and reason == cartesi.machine.HTIF_YIELD_REASON_PROGRESS then
-        stderr("Progress: %6.2f" .. (htif.console_getchar and "\n" or "\r"), data/10)
+        stderr("Progress: %6.2f" .. (htif.console_getchar and "\n" or "\r"), data / 10)
     else
         local cmd_str = htif_yield_mode[cmd] or "Unknown"
         local reason_str = htif_yield_reason[reason] or "unknown"
@@ -1285,10 +1420,8 @@ local function save_rollup_hashes(machine, range, filename)
     local zeros = string.rep("\0", hash_len)
     local offset = 0
     while offset < range.length do
-        local hash = machine:read_memory(range.start+offset, 32)
-        if hash == zeros then
-            break
-        end
+        local hash = machine:read_memory(range.start + offset, 32)
+        if hash == zeros then break end
         assert(f:write(hash))
         offset = offset + hash_len
     end
@@ -1298,9 +1431,7 @@ end
 local function instantiate_filename(pattern, values)
     -- replace escaped % with something safe
     pattern = string.gsub(pattern, "%\\%%", "\0")
-    pattern = string.gsub(pattern, "%%(%a)", function(s)
-        return values[s] or s
-    end)
+    pattern = string.gsub(pattern, "%%(%a)", function(s) return values[s] or s end)
     -- restore escaped %
     return (string.gsub(pattern, "\0", "%"))
 end
@@ -1335,61 +1466,61 @@ local function load_rollup_query(machine, config, inspect)
 end
 
 local function save_rollup_advance_state_voucher(machine, config, advance)
-    local values = { e = advance.epoch_index, i = advance.next_input_index-1, o =  advance.voucher_index }
+    local values = { e = advance.epoch_index, i = advance.next_input_index - 1, o = advance.voucher_index }
     local name = instantiate_filename(advance.voucher, values)
     stderr("Storing %s\n", name)
     local f = assert(io.open(name, "wb"))
     -- skip address and offset to reach payload length
-    local length = string.unpack(">I8", machine:read_memory(config.start+3*32-8, 8))
+    local length = string.unpack(">I8", machine:read_memory(config.start + 3 * 32 - 8, 8))
     -- add address, offset, and payload length to amount to be read
-    length = length+3*32
+    length = length + 3 * 32
     assert(f:write(machine:read_memory(config.start, length)))
     f:close()
 end
 
 local function save_rollup_advance_state_notice(machine, config, advance)
-    local values = { e = advance.epoch_index, i = advance.next_input_index-1, o =  advance.notice_index }
+    local values = { e = advance.epoch_index, i = advance.next_input_index - 1, o = advance.notice_index }
     local name = instantiate_filename(advance.notice, values)
     stderr("Storing %s\n", name)
     local f = assert(io.open(name, "wb"))
     -- skip offset to reach payload length
-    local length = string.unpack(">I8", machine:read_memory(config.start+2*32-8, 8))
+    local length = string.unpack(">I8", machine:read_memory(config.start + 2 * 32 - 8, 8))
     -- add offset and payload length to amount to be read
-    length = length+2*32
+    length = length + 2 * 32
     assert(f:write(machine:read_memory(config.start, length)))
     f:close()
 end
 
 local function dump_exception(machine, config)
     -- skip offset to reach payload length
-    local length = string.unpack(">I8", machine:read_memory(config.start+2*32-8, 8))
+    local length = string.unpack(">I8", machine:read_memory(config.start + 2 * 32 - 8, 8))
     -- add offset and payload length to amount to be read
-    local payload = machine:read_memory(config.start+2*32, length)
-    stderr("Rollup exception with payload: %q\n", payload);
+    local payload = machine:read_memory(config.start + 2 * 32, length)
+    stderr("Rollup exception with payload: %q\n", payload)
 end
 
 local function save_rollup_advance_state_report(machine, config, advance)
-    local values = { e = advance.epoch_index, i = advance.next_input_index-1, o =  advance.report_index }
+    local values = { e = advance.epoch_index, i = advance.next_input_index - 1, o = advance.report_index }
     local name = instantiate_filename(advance.report, values)
     stderr("Storing %s\n", name)
     local f = assert(io.open(name, "wb"))
     -- skip offset to reach payload length
-    local length = string.unpack(">I8", machine:read_memory(config.start+2*32-8, 8))
+    local length = string.unpack(">I8", machine:read_memory(config.start + 2 * 32 - 8, 8))
     -- add offset and payload length to amount to be read
-    length = length+2*32
+    length = length + 2 * 32
     assert(f:write(machine:read_memory(config.start, length)))
     f:close()
 end
 
 local function save_rollup_inspect_state_report(machine, config, inspect)
-    local values = { o =  inspect.report_index }
+    local values = { o = inspect.report_index }
     local name = instantiate_filename(inspect.report, values)
     stderr("Storing %s\n", name)
     local f = assert(io.open(name, "wb"))
     -- skip offset to reach payload length
-    local length = string.unpack(">I8", machine:read_memory(config.start+2*32-8, 8))
+    local length = string.unpack(">I8", machine:read_memory(config.start + 2 * 32 - 8, 8))
     -- add offset and payload length to amount to be read
-    length = length+2*32
+    length = length + 2 * 32
     assert(f:write(machine:read_memory(config.start, length)))
     f:close()
 end
@@ -1423,9 +1554,9 @@ if json_steps then
         local final_mcycle = machine:read_mcycle()
         local final_uarch_cycle = machine:read_uarch_cycle()
         -- Save log recorded during micro step
-        if steps_count > 1 then json_steps:write(',\n') end
-        util.dump_json_log(log, init_mcycle,  init_uarch_cycle, final_mcycle, final_uarch_cycle,  json_steps, 1)
-        if  machine:read_uarch_halt_flag() then
+        if steps_count > 1 then json_steps:write(",\n") end
+        util.dump_json_log(log, init_mcycle, init_uarch_cycle, final_mcycle, final_uarch_cycle, json_steps, 1)
+        if machine:read_uarch_halt_flag() then
             -- microarchitecture halted because it finished interpreting a whole mcycle
             machine:reset_iflags_Y() -- move past any potential yield
             -- Reset uarch_halt_flag in order to allow interpreting the next mcycle
@@ -1437,27 +1568,23 @@ if json_steps then
         end
         stderr("%u.%u -> %u.%u\n", init_mcycle, init_uarch_cycle, final_mcycle, final_uarch_cycle)
     end
-    json_steps:write('\n]\n')
+    json_steps:write("\n]\n")
     json_steps:close()
-    if store_dir then
-        store_machine(machine, config, store_dir)
-    end
+    if store_dir then store_machine(machine, config, store_dir) end
 else
     local gdb_stub
     if gdb_address then
-        assert(periodic_hashes_start == 0 and periodic_hashes_period == math.maxinteger,
-          "periodic hashing is not supported when debugging")
-        gdb_stub = require"cartesi.gdbstub".new(machine)
-        local address, port = gdb_address:match('^(.*):(%d+)$')
+        assert(
+            periodic_hashes_start == 0 and periodic_hashes_period == math.maxinteger,
+            "periodic hashing is not supported when debugging"
+        )
+        gdb_stub = require("cartesi.gdbstub").new(machine)
+        local address, port = gdb_address:match("^(.*):(%d+)$")
         assert(address and port, "invalid address for GDB")
         gdb_stub:listen_and_wait_gdb(address, tonumber(port))
     end
-    if config.htif.console_getchar then
-        stderr("Running in interactive mode!\n")
-    end
-    if store_config == stderr then
-        store_machine_config(config, stderr)
-    end
+    if config.htif.console_getchar then stderr("Running in interactive mode!\n") end
+    if store_config == stderr then store_machine_config(config, stderr) end
     if rollup_advance or rollup_inspect then
         check_rollup_htif_config(config.htif)
         assert(config.rollup, "rollup device must be present")
@@ -1496,9 +1623,9 @@ else
     while math.ult(cycles, max_mcycle) do
         local next_mcycle = math.min(next_hash_mcycle, max_mcycle)
         if gdb_stub and gdb_stub:is_connected() then
-          gdb_stub:run(next_mcycle)
+            gdb_stub:run(next_mcycle)
         else
-          machine:run(next_mcycle)
+            machine:run(next_mcycle)
         end
         cycles = machine:read_mcycle()
         -- deal with halt
@@ -1530,14 +1657,10 @@ else
                     assert(reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED, "invalid manual yield reason")
                 end
                 stderr("\nEpoch %d before input %d\n", rollup_advance.epoch_index, rollup_advance.next_input_index)
-                if rollup_advance.hashes then
-                    print_root_hash(machine)
-                end
+                if rollup_advance.hashes then print_root_hash(machine) end
                 machine:snapshot()
                 load_rollup_input_and_metadata(machine, config.rollup, rollup_advance)
-                if rollup_advance.hashes then
-                    print_root_hash(machine)
-                end
+                if rollup_advance.hashes then print_root_hash(machine) end
                 machine:reset_iflags_Y()
                 machine:write_htif_fromhost_data(0) -- tell machine it is an rollup_advance state, but this is default
                 rollup_advance.voucher_index = 0
@@ -1576,7 +1699,7 @@ else
                     rollup_advance.report_index = rollup_advance.report_index + 1
                 end
                 -- ignore other reasons
-            -- we have feed the inspect state query
+                -- we have feed the inspect state query
             elseif rollup_inspect and not rollup_inspect.query then
                 if reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
                     save_rollup_inspect_state_report(machine, config.rollup.tx_buffer, rollup_inspect)
@@ -1586,9 +1709,7 @@ else
             end
             -- otherwise ignore
         end
-        if machine:read_iflags_Y() then
-            break
-        end
+        if machine:read_iflags_Y() then break end
         if cycles == next_hash_mcycle then
             print_root_hash(machine)
             next_hash_mcycle = next_hash_mcycle + periodic_hashes_period
@@ -1601,45 +1722,36 @@ else
         if machine:run_uarch(max_uarch_cycle) == cartesi.UARCH_BREAK_REASON_HALTED then
             -- Microarchitecture  halted. This means that one "macro" instruction was totally executed
             -- The mcycle counter was incremented, unless the machine was already halted
-            if machine:read_iflags_H()  and not previously_halted then
-                stderr("Halted\n")
-            end
+            if machine:read_iflags_H() and not previously_halted then stderr("Halted\n") end
             stderr("Cycles: %u\n", machine:read_mcycle())
-            if auto_reset_uarch_state  then
+            if auto_reset_uarch_state then
                 machine:reset_uarch_state()
             else
                 stderr("uCycles: %u\n", machine:read_uarch_cycle())
             end
         end
     end
-    if gdb_stub then
-        gdb_stub:close()
-    end
+    if gdb_stub then gdb_stub:close() end
     if step_uarch then
         assert(not config.htif.console_getchar, "micro step proof is meaningless in interactive mode")
         stderr("Gathering micro step log: please wait\n")
-        util.dump_log(machine:step_uarch{ proofs = true, annotations = true }, io.stderr)
+        util.dump_log(machine:step_uarch({ proofs = true, annotations = true }), io.stderr)
     end
-    if dump_pmas then
-        machine:dump_pmas()
-    end
+    if dump_pmas then machine:dump_pmas() end
     if final_hash then
         assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
         print_root_hash(machine, stderr_unsilenceable)
     end
     dump_value_proofs(machine, final_proof, config.htif.console_getchar)
-    if store_dir then
-        store_machine(machine, config, store_dir)
-    end
+    if store_dir then store_machine(machine, config, store_dir) end
     if assert_rolling_template then
         local cmd, reason = get_yield(machine)
-        if not (cmd == cartesi.machine.HTIF_YIELD_MANUAL and
-                reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED) then
+        if
+            not (cmd == cartesi.machine.HTIF_YIELD_MANUAL and reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED)
+        then
             exit_code = 2
         end
     end
-    if not remote or remote_destroy then
-        machine:destroy()
-    end
+    if not remote or remote_destroy then machine:destroy() end
     os.exit(exit_code, true)
 end

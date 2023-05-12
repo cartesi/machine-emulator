@@ -286,7 +286,18 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.4 liblua5.4-dev lua-socket libb64-dev libcrypto++-dev nlohmann-json3-dev
+          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.4 liblua5.4-dev luarocks lua-socket libb64-dev libcrypto++-dev nlohmann-json3-dev
+
+      - name: Install lua test dependencies
+        run: |
+          sudo luarocks install --lua-version=5.4 luacheck
+
+      - name: Install StyLua
+        run: |
+          sudo apt-get install -y wget unzip
+          wget https://github.com/JohnnyMorganz/StyLua/releases/download/v0.17.1/stylua-linux-x86_64.zip -O /tmp/stylua-linux-x86_64.zip
+          echo "c44231ca27bdcc3801682efd8b4460efb94f6c22 /tmp/stylua-linux-x86_64.zip" | sha1sum -c
+          sudo unzip /tmp/stylua-linux-x86_64.zip stylua -d /usr/bin
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
@@ -303,8 +314,14 @@ jobs:
       - name: Setup update-alternatives for clang-format
         run: sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-14 120
 
-      - name: Check format
+      - name: Check format (C++)
         run: make check-format
+
+      - name: Check format (Lua)
+        run: make check-format-lua
+
+      - name: Check Lua
+        run: make check-lua
 
       - name: Setup update-alternatives for clang-tidy
         run: sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-14 120

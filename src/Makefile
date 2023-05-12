@@ -252,6 +252,9 @@ CLANG_FORMAT_UARCH_FILES:=$(filter-out %uarch-printf%,$(strip $(CLANG_FORMAT_UAR
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.c) $(wildcard *.h) $(wildcard *.hpp) $(CLANG_FORMAT_UARCH_FILES)
 CLANG_FORMAT_FILES:=$(filter-out %.pb.h,$(strip $(CLANG_FORMAT_FILES)))
 
+STYLUA=stylua
+STYLUA_FLAGS=--indent-type Spaces --collapse-simple-statement Always
+
 EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
 CLANG_TIDY_HEADER_FILTER=$(PWD)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
@@ -283,7 +286,7 @@ endif
 
 all: luacartesi grpc hash c-api jsonrpc-remote-cartesi-machine
 
-.PHONY: all generate use clean test lint format check-format luacartesi grpc hash docker c-api compile_flags.txt
+.PHONY: all generate use clean test lint format format-lua check-format check-format-lua luacartesi grpc hash docker c-api compile_flags.txt
 
 CARTESI_OBJS:= \
 	pma-driver.o \
@@ -430,6 +433,12 @@ format:
 
 check-format:
 	@$(CLANG_FORMAT) -Werror --dry-run $(CLANG_FORMAT_FILES)
+
+format-lua:
+	@$(STYLUA) $(STYLUA_FLAGS) .
+
+check-format-lua:
+	@$(STYLUA) $(STYLUA_FLAGS) --check .
 
 check-lua:
 	luacheck .

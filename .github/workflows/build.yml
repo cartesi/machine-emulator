@@ -307,11 +307,15 @@ jobs:
       - name: Setup update-alternatives for clang-format
         run: sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-14 120
 
-      - name: Check format
+      - name: Check format (C++)
         run: make check-format
 
-      - name: Check Lua
-        run: make check-lua
+      - name: Check format (Lua)
+        uses: JohnnyMorganz/stylua-action@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: 0.17.1
+          args: --indent-type Spaces --collapse-simple-statement Always --check src
 
       - name: Setup update-alternatives for clang-tidy
         run: sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-14 120

@@ -160,7 +160,6 @@ jobs:
           repository: ${{ github.repository_owner }}/machine-tests
           tag: ${{ env.TEST_VERSION }}
           file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
-          token: ${{ secrets.CI_TOKEN }}
 
       - name: Untar test suite
         run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
@@ -248,7 +247,6 @@ jobs:
           repository: ${{ github.repository_owner }}/machine-tests
           tag: ${{ env.TEST_VERSION }}
           file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
-          token: ${{ secrets.CI_TOKEN }}
 
       - name: Untar test suite
         run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
@@ -406,7 +404,6 @@ jobs:
           repository: ${{ github.repository_owner }}/machine-tests
           tag: ${{ env.TEST_VERSION }}
           file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
-          token: ${{ secrets.CI_TOKEN }}
 
       - name: Untar test suite
         run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
@@ -544,7 +541,6 @@ jobs:
           repository: ${{ github.repository_owner }}/machine-tests
           tag: ${{ env.TEST_VERSION }}
           file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
-          token: ${{ secrets.CI_TOKEN }}
 
       - name: Untar test suite
         run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
@@ -602,7 +598,6 @@ jobs:
           repository: ${{ github.repository_owner }}/machine-tests
           tag: ${{ env.TEST_VERSION }}
           file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
-          token: ${{ secrets.CI_TOKEN }}
 
       - name: Untar test suite
         run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests
@@ -799,7 +794,6 @@ jobs:
           repository: ${{ github.repository_owner }}/machine-tests
           tag: ${{ env.TEST_VERSION }}
           file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
-          token: ${{ secrets.CI_TOKEN }}
 
       - name: Untar test suite
         run: mkdir -p /opt/cartesi/tests && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C /opt/cartesi/tests

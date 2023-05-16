@@ -16,7 +16,7 @@ Cleaning targets:
   depclean                   - clean + dependencies
   distclean                  - depclean + profile information and downloads
 Docker targets:
-  build-ubuntu-image         - Build an ubuntu based docker image
+  build-debian-image         - Build a debian based docker image
 ```
 
 ### Requirements

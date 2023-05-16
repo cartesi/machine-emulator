@@ -115,7 +115,7 @@ help:
 	@echo '  depclean                   - clean + dependencies'
 	@echo '  distclean                  - depclean + profile information and downloads'
 	@echo 'Docker targets:'
-	@echo '  build-ubuntu-image         - Build an ubuntu based docker image'
+	@echo '  build-debian-image         - Build a debian based docker image'
 	@echo 'Generic targets:'
 	@echo '* all                        - build the src/ code. To build from a clean clone, run: make submodules downloads dep all'
 	@echo '  doc                        - build the doxygen documentation (requires doxygen to be installed)'
@@ -176,7 +176,7 @@ linux-env:
 build-linux-env:
 	docker build -t cartesi/linux-env:v2 tools/docker
 
-build-ubuntu-image:
+build-debian-image:
 	docker build -t cartesi/machine-emulator:$(TAG) -f .github/workflows/Dockerfile .
 
 toolchain-env:

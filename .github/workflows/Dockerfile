@@ -1,4 +1,4 @@
-FROM cartesi/toolchain:0.11.0 as builder
+FROM cartesi/toolchain:0.11.0-bullseye as builder
 ARG RELEASE=no
 
 RUN apt-get update && \
@@ -11,7 +11,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 RUN luarocks install luasocket && \
-    luarocks install luasec && \
+    luarocks install luasec OPENSSL_LIBDIR=/usr/lib/$(arch)-linux-gnu && \
     luarocks install luaposix && \
     luarocks install lpeg && \
     luarocks install md5 && \
@@ -27,7 +27,7 @@ RUN make -j$(nproc) dep && \
     make clean && \
     rm -rf *
 
-FROM ubuntu:22.04
+FROM debian:bullseye-20230502-slim
 
 RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
     libboost-coroutine1.74.0 \

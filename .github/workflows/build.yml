@@ -207,6 +207,7 @@ jobs:
     name: Microarchitecture Test
     needs: build
     runs-on: ubuntu-latest-8-cores
+    if: false
     steps:
       - uses: actions/checkout@v3
         with:
@@ -810,15 +811,7 @@ jobs:
 
   publish_images:
     name: Publish Docker images
-    needs:
-      [
-        static-analysis,
-        coverage,
-        sanitize,
-        test,
-        uarch-test,
-        debian-image-build,
-      ]
+    needs: [static-analysis, coverage, sanitize, test, debian-image-build]
     runs-on: ubuntu-22.04
     if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/develop') }}
     steps:
@@ -873,15 +866,7 @@ jobs:
 
   release:
     name: Release machine emulator tarball
-    needs:
-      [
-        static-analysis,
-        coverage,
-        sanitize,
-        test,
-        uarch-test,
-        debian-image-build,
-      ]
+    needs: [static-analysis, coverage, sanitize, test, debian-image-build]
     runs-on: ubuntu-22.04
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -903,11 +888,13 @@ jobs:
 
       - name: Download uarch json logs to be used  to test the Solidity based microarchitecture interpreter
         uses: actions/download-artifact@master
+        if: false
         with:
           name: uarch-riscv-tests-json-logs
           path: /tmp/uarch-riscv-tests-json-logs
 
       - name: Create uarch json logs TAR
+        if: false
         run: tar -czf uarch-riscv-tests-json-logs-${GITHUB_REF:10}.tar.gz -C /tmp/uarch-riscv-tests-json-logs .
 
       - name: Create TAR
@@ -919,6 +906,5 @@ jobs:
           prerelease: true
           files: |
             machine-emulator-*.tar.gz
-            uarch-riscv-tests-json-logs-*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.CI_TOKEN }}

@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+
+- Fixed compile errors with GCC 13.1
+- Fixed Lua path being mixed with different Lua version path
 
 ## [0.14.0] - 2023-05-03
 ### Added

@@ -1569,7 +1569,6 @@ void machine::dump_pmas(void) const {
         }
         std::array<char, 256> filename{};
         (void) sprintf(filename.data(), "%016" PRIx64 "--%016" PRIx64 ".bin", pma->get_start(), pma->get_length());
-        std::cerr << "writing to " << filename.data() << '\n';
         auto fp = unique_fopen(filename.data(), "wb");
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma->get_length();
              page_start_in_range += PMA_PAGE_SIZE) {

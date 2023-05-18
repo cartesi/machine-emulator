@@ -410,6 +410,7 @@ test-jsonrpc: luacartesi jsonrpc
 	./tests/test-jsonrpc-server.sh ./jsonrpc-remote-cartesi-machine "$(LUA) ./cartesi-machine.lua" "$(LUA) ./cartesi-machine-tests.lua" "$(TEST_PATH)" "$(LUA)"
 
 test-scripts: luacartesi
+	$(LUA) spec/all-tests.lua
 	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do \
 		echo -n 'CTSICTSI' | $(LUA) $$x local || exit 1; \
 	done

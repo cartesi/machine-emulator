@@ -5,6 +5,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+
+- Added static analysis for Lua code
+- Added code formatter for Lua code
+
 ### Fixed
 
 - Fixed compile errors with GCC 13.1

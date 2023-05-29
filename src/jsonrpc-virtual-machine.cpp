@@ -347,6 +347,12 @@ uint64_t jsonrpc_virtual_machine::get_x_address(const jsonrpc_mg_mgr_ptr &mgr, i
     return result;
 }
 
+std::string jsonrpc_virtual_machine::fork(const jsonrpc_mg_mgr_ptr &mgr) {
+    std::string result;
+    jsonrpc_request(mgr->get_mgr(), mgr->get_remote_address(), "fork", std::tie(), result);
+    return result;
+}
+
 uint64_t jsonrpc_virtual_machine::do_read_f(int i) const {
     uint64_t result = 0;
     jsonrpc_request(m_mgr->get_mgr(), m_mgr->get_remote_address(), "machine.read_f", std::tie(i), result);

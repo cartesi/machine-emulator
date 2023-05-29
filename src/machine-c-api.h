@@ -401,7 +401,7 @@ CM_API void cm_delete_machine_config(const cm_machine_config *config);
 /// \param new_machine Receives the pointer to new machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
@@ -413,7 +413,7 @@ CM_API int cm_create_machine(const cm_machine_config *config, const cm_machine_r
 /// \param new_machine Receives the pointer to new machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_load_machine(const char *dir, const cm_machine_runtime_config *runtime_config, cm_machine **new_machine,
@@ -424,7 +424,7 @@ CM_API int cm_load_machine(const char *dir, const cm_machine_runtime_config *run
 /// \param dir Directory where the machine will be serialized
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \details The method changes machine because it updates the root hash
 /// \returns 0 for success, non zero code for error
@@ -440,7 +440,7 @@ CM_API void cm_delete_machine(cm_machine *m);
 /// \param break_reason Receives reason for machine run interruption when not NULL
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason_result, char **err_msg);
@@ -452,7 +452,7 @@ CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *b
 /// \param access_log Receives the state access log.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_step_uarch(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
@@ -468,7 +468,7 @@ CM_API void cm_delete_access_log(cm_access_log *acc_log);
 /// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_verify_access_log(const cm_access_log *log, const cm_machine_runtime_config *runtime_config,
@@ -482,7 +482,7 @@ CM_API int cm_verify_access_log(const cm_access_log *log, const cm_machine_runti
 /// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for successful verification, non zero code for error
 CM_API int cm_verify_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
@@ -497,7 +497,7 @@ CM_API int cm_verify_state_transition(const cm_hash *root_hash_before, const cm_
 /// proof must be deleted with the function cm_delete_merkle_tree_proof
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
@@ -513,7 +513,7 @@ CM_API void cm_delete_merkle_tree_proof(cm_merkle_tree_proof *proof);
 /// \param hash Valid pointer to cm_hash structure that  receives the hash.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_get_root_hash(const cm_machine *m, cm_hash *hash, char **err_msg);
@@ -523,7 +523,7 @@ CM_API int cm_get_root_hash(const cm_machine *m, cm_hash *hash, char **err_msg);
 /// \param result True if tree is self-consistent, false otherwise.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_verify_merkle_tree(const cm_machine *m, bool *result, char **err_msg);
@@ -533,7 +533,7 @@ CM_API int cm_verify_merkle_tree(const cm_machine *m, bool *result, char **err_m
 /// \param val Receives value read from the CSR
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_csr(const cm_machine *m, CM_PROC_CSR r, uint64_t *val, char **err_msg);
@@ -544,7 +544,7 @@ CM_API int cm_read_csr(const cm_machine *m, CM_PROC_CSR r, uint64_t *val, char *
 /// \param val Value to write
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg);
@@ -560,7 +560,7 @@ CM_API uint64_t cm_get_csr_address(CM_PROC_CSR w);
 /// \param word_value Receives word value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 /// \warning The current implementation of this function is very slow!
@@ -573,7 +573,7 @@ CM_API int cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *wo
 /// \param length Size of chunk.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 /// \details The entire chunk, from \p address to \p address + \p length must
@@ -587,7 +587,7 @@ CM_API int cm_read_memory(const cm_machine *m, uint64_t address, unsigned char *
 /// \param length Size of chunk.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 /// \details The entire chunk, from \p address to \p address + \p length must
@@ -602,7 +602,7 @@ CM_API int cm_write_memory(cm_machine *m, uint64_t address, const unsigned char 
 /// \param length Size of chunk.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_virtual_memory(const cm_machine *m, uint64_t address, unsigned char *data, uint64_t length,
@@ -615,7 +615,7 @@ CM_API int cm_read_virtual_memory(const cm_machine *m, uint64_t address, unsigne
 /// \param length Size of chunk.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_virtual_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length,
@@ -627,7 +627,7 @@ CM_API int cm_write_virtual_memory(cm_machine *m, uint64_t address, const unsign
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_x(const cm_machine *m, int i, uint64_t *val, char **err_msg);
@@ -638,7 +638,7 @@ CM_API int cm_read_x(const cm_machine *m, int i, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_x(cm_machine *m, int i, uint64_t val, char **err_msg);
@@ -659,7 +659,7 @@ CM_API uint64_t cm_get_uarch_x_address(int i);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_f(const cm_machine *m, int i, uint64_t *val, char **err_msg);
@@ -670,7 +670,7 @@ CM_API int cm_read_f(const cm_machine *m, int i, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_f(cm_machine *m, int i, uint64_t val, char **err_msg);
@@ -685,7 +685,7 @@ CM_API uint64_t cm_get_f_address(int i);
 /// \param val Receives the value of the register
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_pc(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -695,7 +695,7 @@ CM_API int cm_read_pc(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_pc(cm_machine *m, uint64_t val, char **err_msg);
@@ -705,7 +705,7 @@ CM_API int cm_write_pc(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_fcsr(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -715,7 +715,7 @@ CM_API int cm_read_fcsr(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_fcsr(cm_machine *m, uint64_t val, char **err_msg);
@@ -725,7 +725,7 @@ CM_API int cm_write_fcsr(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_mvendorid(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -735,7 +735,7 @@ CM_API int cm_read_mvendorid(const cm_machine *m, uint64_t *val, char **err_msg)
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_marchid(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -745,7 +745,7 @@ CM_API int cm_read_marchid(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_mimpid(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -755,7 +755,7 @@ CM_API int cm_read_mimpid(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_mcycle(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -765,7 +765,7 @@ CM_API int cm_read_mcycle(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_mcycle(cm_machine *m, uint64_t val, char **err_msg);
@@ -775,7 +775,7 @@ CM_API int cm_write_mcycle(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_icycleinstret(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -785,7 +785,7 @@ CM_API int cm_read_icycleinstret(const cm_machine *m, uint64_t *val, char **err_
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_icycleinstret(cm_machine *m, uint64_t val, char **err_msg);
@@ -795,7 +795,7 @@ CM_API int cm_write_icycleinstret(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_mstatus(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -805,7 +805,7 @@ CM_API int cm_read_mstatus(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_mstatus(cm_machine *m, uint64_t val, char **err_msg);
@@ -815,7 +815,7 @@ CM_API int cm_write_mstatus(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_menvcfg(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -825,7 +825,7 @@ CM_API int cm_read_menvcfg(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_menvcfg(cm_machine *m, uint64_t val, char **err_msg);
@@ -835,7 +835,7 @@ CM_API int cm_write_menvcfg(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_mtvec(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -845,7 +845,7 @@ CM_API int cm_read_mtvec(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_mtvec(cm_machine *m, uint64_t val, char **err_msg);
@@ -855,7 +855,7 @@ CM_API int cm_write_mtvec(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_mscratch(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -865,7 +865,7 @@ CM_API int cm_read_mscratch(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_mscratch(cm_machine *m, uint64_t val, char **err_msg);
@@ -875,7 +875,7 @@ CM_API int cm_write_mscratch(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_mepc(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -885,7 +885,7 @@ CM_API int cm_read_mepc(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_mepc(cm_machine *m, uint64_t val, char **err_msg);
@@ -895,7 +895,7 @@ CM_API int cm_write_mepc(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_mcause(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -905,7 +905,7 @@ CM_API int cm_read_mcause(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_mcause(cm_machine *m, uint64_t val, char **err_msg);
@@ -915,7 +915,7 @@ CM_API int cm_write_mcause(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_mtval(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -925,7 +925,7 @@ CM_API int cm_read_mtval(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_mtval(cm_machine *m, uint64_t val, char **err_msg);
@@ -935,7 +935,7 @@ CM_API int cm_write_mtval(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_misa(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -945,7 +945,7 @@ CM_API int cm_read_misa(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_misa(cm_machine *m, uint64_t val, char **err_msg);
@@ -955,7 +955,7 @@ CM_API int cm_write_misa(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_mie(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -965,7 +965,7 @@ CM_API int cm_read_mie(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_mie(cm_machine *m, uint64_t val, char **err_msg);
@@ -975,7 +975,7 @@ CM_API int cm_write_mie(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_mip(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -985,7 +985,7 @@ CM_API int cm_read_mip(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_mip(cm_machine *m, uint64_t val, char **err_msg);
@@ -995,7 +995,7 @@ CM_API int cm_write_mip(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_medeleg(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1005,7 +1005,7 @@ CM_API int cm_read_medeleg(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_medeleg(cm_machine *m, uint64_t val, char **err_msg);
@@ -1015,7 +1015,7 @@ CM_API int cm_write_medeleg(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_mideleg(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1025,7 +1025,7 @@ CM_API int cm_read_mideleg(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_mideleg(cm_machine *m, uint64_t val, char **err_msg);
@@ -1035,7 +1035,7 @@ CM_API int cm_write_mideleg(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_mcounteren(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1045,7 +1045,7 @@ CM_API int cm_read_mcounteren(const cm_machine *m, uint64_t *val, char **err_msg
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_mcounteren(cm_machine *m, uint64_t val, char **err_msg);
@@ -1055,7 +1055,7 @@ CM_API int cm_write_mcounteren(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_stvec(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1065,7 +1065,7 @@ CM_API int cm_read_stvec(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_stvec(cm_machine *m, uint64_t val, char **err_msg);
@@ -1075,7 +1075,7 @@ CM_API int cm_write_stvec(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_sscratch(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1085,7 +1085,7 @@ CM_API int cm_read_sscratch(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_sscratch(cm_machine *m, uint64_t val, char **err_msg);
@@ -1095,7 +1095,7 @@ CM_API int cm_write_sscratch(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_sepc(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1105,7 +1105,7 @@ CM_API int cm_read_sepc(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_sepc(cm_machine *m, uint64_t val, char **err_msg);
@@ -1115,7 +1115,7 @@ CM_API int cm_write_sepc(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_scause(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1125,7 +1125,7 @@ CM_API int cm_read_scause(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_scause(cm_machine *m, uint64_t val, char **err_msg);
@@ -1135,7 +1135,7 @@ CM_API int cm_write_scause(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_stval(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1145,7 +1145,7 @@ CM_API int cm_read_stval(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_stval(cm_machine *m, uint64_t val, char **err_msg);
@@ -1155,7 +1155,7 @@ CM_API int cm_write_stval(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_satp(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1165,7 +1165,7 @@ CM_API int cm_read_satp(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_satp(cm_machine *m, uint64_t val, char **err_msg);
@@ -1175,7 +1175,7 @@ CM_API int cm_write_satp(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_scounteren(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1185,7 +1185,7 @@ CM_API int cm_read_scounteren(const cm_machine *m, uint64_t *val, char **err_msg
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_scounteren(cm_machine *m, uint64_t val, char **err_msg);
@@ -1195,7 +1195,7 @@ CM_API int cm_write_scounteren(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_senvcfg(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1205,7 +1205,7 @@ CM_API int cm_read_senvcfg(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_senvcfg(cm_machine *m, uint64_t val, char **err_msg);
@@ -1215,7 +1215,7 @@ CM_API int cm_write_senvcfg(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_ilrsc(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1225,7 +1225,7 @@ CM_API int cm_read_ilrsc(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_ilrsc(cm_machine *m, uint64_t val, char **err_msg);
@@ -1235,7 +1235,7 @@ CM_API int cm_write_ilrsc(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_iflags(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1249,7 +1249,7 @@ CM_API uint64_t cm_packed_iflags(int PRV, int X, int Y, int H);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_iflags(cm_machine *m, uint64_t val, char **err_msg);
@@ -1259,7 +1259,7 @@ CM_API int cm_write_iflags(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_htif_tohost(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1269,7 +1269,7 @@ CM_API int cm_read_htif_tohost(const cm_machine *m, uint64_t *val, char **err_ms
 /// \param val Receives the value of the field
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_htif_tohost_dev(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1279,7 +1279,7 @@ CM_API int cm_read_htif_tohost_dev(const cm_machine *m, uint64_t *val, char **er
 /// \param val Receives the value of the field
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_htif_tohost_cmd(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1289,7 +1289,7 @@ CM_API int cm_read_htif_tohost_cmd(const cm_machine *m, uint64_t *val, char **er
 /// \param val Receives the value of the field
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_htif_tohost_data(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1299,7 +1299,7 @@ CM_API int cm_read_htif_tohost_data(const cm_machine *m, uint64_t *val, char **e
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_htif_tohost(cm_machine *m, uint64_t val, char **err_msg);
@@ -1309,7 +1309,7 @@ CM_API int cm_write_htif_tohost(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_htif_fromhost(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1319,7 +1319,7 @@ CM_API int cm_read_htif_fromhost(const cm_machine *m, uint64_t *val, char **err_
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_htif_fromhost(cm_machine *m, uint64_t val, char **err_msg);
@@ -1329,7 +1329,7 @@ CM_API int cm_write_htif_fromhost(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val New value for the field.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_htif_fromhost_data(cm_machine *m, uint64_t val, char **err_msg);
@@ -1339,7 +1339,7 @@ CM_API int cm_write_htif_fromhost_data(cm_machine *m, uint64_t val, char **err_m
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_htif_ihalt(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1349,7 +1349,7 @@ CM_API int cm_read_htif_ihalt(const cm_machine *m, uint64_t *val, char **err_msg
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_htif_ihalt(cm_machine *m, uint64_t val, char **err_msg);
@@ -1359,7 +1359,7 @@ CM_API int cm_write_htif_ihalt(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_htif_iconsole(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1369,7 +1369,7 @@ CM_API int cm_read_htif_iconsole(const cm_machine *m, uint64_t *val, char **err_
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_htif_iconsole(cm_machine *m, uint64_t val, char **err_msg);
@@ -1379,7 +1379,7 @@ CM_API int cm_write_htif_iconsole(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_htif_iyield(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1389,7 +1389,7 @@ CM_API int cm_read_htif_iyield(const cm_machine *m, uint64_t *val, char **err_ms
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_htif_iyield(cm_machine *m, uint64_t val, char **err_msg);
@@ -1399,7 +1399,7 @@ CM_API int cm_write_htif_iyield(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_clint_mtimecmp(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1409,7 +1409,7 @@ CM_API int cm_read_clint_mtimecmp(const cm_machine *m, uint64_t *val, char **err
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_clint_mtimecmp(cm_machine *m, uint64_t val, char **err_msg);
@@ -1419,7 +1419,7 @@ CM_API int cm_write_clint_mtimecmp(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives the flag value
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_iflags_X(const cm_machine *m, bool *val, char **err_msg);
@@ -1428,7 +1428,7 @@ CM_API int cm_read_iflags_X(const cm_machine *m, bool *val, char **err_msg);
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_reset_iflags_X(cm_machine *m, char **err_msg);
@@ -1437,7 +1437,7 @@ CM_API int cm_reset_iflags_X(cm_machine *m, char **err_msg);
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_set_iflags_X(cm_machine *m, char **err_msg);
@@ -1447,7 +1447,7 @@ CM_API int cm_set_iflags_X(cm_machine *m, char **err_msg);
 /// \param val Receives the flag value
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_iflags_Y(const cm_machine *m, bool *val, char **err_msg);
@@ -1456,7 +1456,7 @@ CM_API int cm_read_iflags_Y(const cm_machine *m, bool *val, char **err_msg);
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_reset_iflags_Y(cm_machine *m, char **err_msg);
@@ -1465,7 +1465,7 @@ CM_API int cm_reset_iflags_Y(cm_machine *m, char **err_msg);
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_set_iflags_Y(cm_machine *m, char **err_msg);
@@ -1475,7 +1475,7 @@ CM_API int cm_set_iflags_Y(cm_machine *m, char **err_msg);
 /// \param val Receives the flag value
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_iflags_H(const cm_machine *m, bool *val, char **err_msg);
@@ -1484,7 +1484,7 @@ CM_API int cm_read_iflags_H(const cm_machine *m, bool *val, char **err_msg);
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_set_iflags_H(cm_machine *m, char **err_msg);
@@ -1493,7 +1493,7 @@ CM_API int cm_set_iflags_H(cm_machine *m, char **err_msg);
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_dump_pmas(const cm_machine *m, char **err_msg);
@@ -1503,7 +1503,7 @@ CM_API int cm_dump_pmas(const cm_machine *m, char **err_msg);
 /// \param result True if dirty page maps are consistent, false if there is an error.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char **err_msg);
@@ -1514,7 +1514,7 @@ CM_API int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char **e
 /// It should be deleted with cm_delete_machine_config.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 /// \details Object acquired from this function must not be changed and
@@ -1526,7 +1526,7 @@ CM_API int cm_get_initial_config(const cm_machine *m, const cm_machine_config **
 /// It should be deleted with cm_delete_machine_config
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 /// \details Object acquired from this function must not be changed and
@@ -1538,7 +1538,7 @@ CM_API int cm_get_default_config(const cm_machine_config **config, char **err_ms
 /// \param new_range Configuration of the new memory range
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 /// \details The machine must contain an existing memory range matching the start and length specified in new_range
@@ -1553,7 +1553,7 @@ CM_API void cm_delete_memory_range_config(const cm_memory_range_config *config);
 /// \details This C API is meant to be used for various language bindings.
 /// Many of them could not directly call C free function,
 /// so this is a convenience function for cleanup of error messages
-CM_API void cm_delete_error_message(const char *err_msg);
+CM_API void cm_delete_cstring(const char *err_msg);
 
 /// \brief Deletes machine runtime config
 /// \returns void
@@ -1574,7 +1574,7 @@ CM_API void cm_delete_semantic_version(const cm_semantic_version *version);
 /// \brief Destroys machine
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_destroy(cm_machine *m, char **err_msg);
@@ -1582,7 +1582,7 @@ CM_API int cm_destroy(cm_machine *m, char **err_msg);
 /// \brief Do a snapshot of the machine
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_snapshot(cm_machine *m, char **err_msg);
@@ -1590,7 +1590,7 @@ CM_API int cm_snapshot(cm_machine *m, char **err_msg);
 /// \brief Performs rollback
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_rollback(cm_machine *m, char **err_msg);
@@ -1601,7 +1601,7 @@ CM_API int cm_rollback(cm_machine *m, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_uarch_x(const cm_machine *m, int i, uint64_t *val, char **err_msg);
@@ -1612,7 +1612,7 @@ CM_API int cm_read_uarch_x(const cm_machine *m, int i, uint64_t *val, char **err
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_uarch_x(cm_machine *m, int i, uint64_t val, char **err_msg);
@@ -1622,7 +1622,7 @@ CM_API int cm_write_uarch_x(cm_machine *m, int i, uint64_t val, char **err_msg);
 /// \param val Receives the value of the register
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_uarch_pc(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1632,7 +1632,7 @@ CM_API int cm_read_uarch_pc(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_uarch_pc(cm_machine *m, uint64_t val, char **err_msg);
@@ -1642,7 +1642,7 @@ CM_API int cm_write_uarch_pc(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the register.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_uarch_cycle(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1652,7 +1652,7 @@ CM_API int cm_read_uarch_cycle(const cm_machine *m, uint64_t *val, char **err_ms
 /// \param val Receives value of the microarchitecture RAM length.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_uarch_ram_length(const cm_machine *m, uint64_t *val, char **err_msg);
@@ -1662,7 +1662,7 @@ CM_API int cm_read_uarch_ram_length(const cm_machine *m, uint64_t *val, char **e
 /// \param val New register value.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_uarch_cycle(cm_machine *m, uint64_t val, char **err_msg);
@@ -1672,7 +1672,7 @@ CM_API int cm_write_uarch_cycle(cm_machine *m, uint64_t val, char **err_msg);
 /// \param val Receives value of the halt flag.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_uarch_halt_flag(const cm_machine *m, bool *val, char **err_msg);
 
@@ -1680,7 +1680,7 @@ CM_API int cm_read_uarch_halt_flag(const cm_machine *m, bool *val, char **err_ms
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_set_uarch_halt_flag(cm_machine *m, char **err_msg);
 
@@ -1688,7 +1688,7 @@ CM_API int cm_set_uarch_halt_flag(cm_machine *m, char **err_msg);
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_reset_uarch_state(cm_machine *m, char **err_msg);
 
@@ -1697,7 +1697,7 @@ CM_API int cm_reset_uarch_state(cm_machine *m, char **err_msg);
 /// \param status_result Receives status of machine run_uarch when not NULL
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message.
+/// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_machine_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *status_result,

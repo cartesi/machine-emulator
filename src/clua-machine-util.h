@@ -41,7 +41,7 @@ constexpr size_t MAX_ERR_MSG_LEN = 1024;
             std::array<char, MAX_ERR_MSG_LEN> err_msg_stack{};                                                         \
             strncpy(err_msg_stack.data(), err_msg_heap, MAX_ERR_MSG_LEN - 1);                                          \
             err_msg_stack[MAX_ERR_MSG_LEN - 1] = '\0';                                                                 \
-            cm_delete_error_message(err_msg_heap);                                                                     \
+            cm_delete_cstring(err_msg_heap);                                                                           \
             return luaL_error(L, err_msg_stack.data());                                                                \
         }                                                                                                              \
     } while (0)

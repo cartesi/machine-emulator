@@ -212,11 +212,23 @@ static int jsonrpc_server_class_shutdown(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the fork method implementation.
+static int jsonrpc_server_class_fork(lua_State *L) {
+    auto &managed_jsonrpc_mg_mgr =
+        clua_check<clua_managed_cm_ptr<cm_jsonrpc_mg_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
+    char *address = nullptr;
+    TRY_EXECUTE(cm_jsonrpc_fork(managed_jsonrpc_mg_mgr.get(), &address, err_msg));
+    lua_pushstring(L, address);
+    cm_delete_cstring(address);
+    return 1;
+}
+
 /// \brief JSONRPC server static methods
 static const auto jsonrpc_server_static_methods = cartesi::clua_make_luaL_Reg_array({
     {"get_machine", jsonrpc_server_class_get_machine},
     {"get_version", jsonrpc_server_class_get_version},
     {"shutdown", jsonrpc_server_class_shutdown},
+    {"fork", jsonrpc_server_class_fork},
 });
 
 /// \brief This is the jsonrpc.stub() method implementation.

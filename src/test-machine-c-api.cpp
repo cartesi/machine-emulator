@@ -135,7 +135,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_unknown_dir_test, default_machine_fi
     std::string origin("unable to open '/unknown_dir/config.protobuf' for reading");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_path_test, default_machine_fixture) {
@@ -147,7 +147,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_path_test, default_machine_fixt
     std::string origin("unable to open '/config.protobuf' for reading");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_config_test, default_machine_fixture) {
@@ -158,7 +158,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_config_test, default_machine_
     std::string origin("invalid machine configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_rt_config_test, default_machine_fixture) {
@@ -169,7 +169,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_rt_config_test, default_machi
     std::string origin("invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_error_placeholder_test, default_machine_fixture) {
@@ -186,7 +186,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_default_machine_test, default_mach
     std::string origin("ROM image filename is undefined");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 static char *new_cstr(const char *str) {
@@ -315,7 +315,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, machine_rom_fix
     std::string origin("invalid new machine output");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_unknown_rom_file_test, incomplete_machine_fixture) {
@@ -328,7 +328,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_unknown_rom_file_test, incomplete_
     std::string origin("error opening image file '/unknown/file.bin' when initializing ROM: No such file or directory");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 class machine_rom_flash_fixture : public machine_rom_fixture {
@@ -363,7 +363,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, machin
     std::string origin("range of flash drive 1 overlaps with range of existing flash drive 0");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 class machine_rom_flash_simple_fixture : public machine_rom_fixture {
@@ -396,7 +396,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, mach
     std::string origin("start of flash drive 0 (36028797018963967) must be aligned to page boundary of 4096 bytes");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machine_rom_flash_simple_fixture) {
@@ -411,7 +411,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machin
     std::string origin("range of flash drive 0 must use at most 56 bits to be addressable");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 class ordinary_machine_fixture : public machine_rom_fixture {
@@ -542,7 +542,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_invalid_config_version_test, seriali
     int error_code = cm_load_machine(_machine_config_path.c_str(), &_runtime_config, &_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     BOOST_CHECK_EQUAL(err_msg, expected_err.str().c_str());
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 class store_file_fixture : public ordinary_machine_fixture {
@@ -597,7 +597,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_machine_test, ordinary_machine_fixture
     int error_code = cm_store(nullptr, _machine_dir_path.c_str(), &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     BOOST_CHECK_EQUAL(std::string("invalid machine"), std::string(err_msg));
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_dir_path_test, ordinary_machine_fixture) {
@@ -608,7 +608,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_dir_path_test, ordinary_machine_fixtur
     std::string origin("error creating directory ''");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_error_placeholder_test, ordinary_machine_fixture) {
@@ -627,7 +627,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_rtc_test, ordinary_machine_fixt
     std::string origin("invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_machine_test, ordinary_machine_fixture) {
@@ -682,7 +682,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_root_hash_null_machine_test) {
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_null_test) {
-    cm_delete_error_message(nullptr);
+    cm_delete_cstring(nullptr);
     cm_delete_memory_range_config(nullptr);
     cm_delete_machine_runtime_config(nullptr);
     cm_delete_machine_config(nullptr);
@@ -730,7 +730,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_invalid_address_test, ordinary_machine_
     std::string origin("address not aligned to log2_size");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_invalid_log2_test, ordinary_machine_fixture) {
@@ -744,7 +744,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_invalid_log2_test, ordinary_machine_fix
     std::string origin("invalid log2_size");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 
     // log2_word_size = 3
     error_code = cm_get_proof(_machine, 0, 2, &proof, &err_msg);
@@ -752,7 +752,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_invalid_log2_test, ordinary_machine_fix
     result = err_msg;
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_inconsistent_tree_test, ordinary_machine_fixture) {
@@ -818,7 +818,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_invalid_address_test, ordinary_machine_
     std::string origin("address not aligned");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_null_output_test, default_machine_fixture) {
@@ -924,7 +924,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_invalid_address_range_test, ordinary
     std::string origin("address range not entirely in memory PMA");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_word_basic_test, ordinary_machine_fixture) {
@@ -1024,7 +1024,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_virtual_memory_invalid_address_range_test, 
     std::string origin("address range not entirely in memory PMA");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_virtual_memory_basic_test, ordinary_machine_fixture) {
@@ -1477,7 +1477,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_flash_config_test, ordi
     std::string origin("invalid memory range configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 class flash_drive_machine_fixture : public machine_rom_flash_simple_fixture {
@@ -1591,7 +1591,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_pma_test, flash_driv
     std::string origin = "attempt to replace inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_length_test, flash_drive_machine_fixture) {
@@ -1606,7 +1606,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_length_test, flash_d
     std::string origin = "attempt to replace inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_file_length_mismatch_test, flash_drive_machine_fixture) {
@@ -1620,7 +1620,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_file_length_mismatch_test, f
     std::string origin = "attempt to replace inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_zero_length_test, flash_drive_machine_fixture) {
@@ -1634,7 +1634,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_zero_length_test, flash_driv
     std::string origin = "attempt to replace inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_basic_test, flash_drive_machine_fixture) {
@@ -1677,7 +1677,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(snapshot_basic_test, ordinary_machine_fixture) {
     std::string origin("snapshot is not supported");
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(rollback_null_machine_test) {
@@ -1692,7 +1692,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(rollback_basic_test, ordinary_machine_fixture) {
     std::string origin("rollback is not supported");
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_x_null_machine_test) {
@@ -1913,7 +1913,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_log_test, default_machine_
     std::string origin("invalid access log");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 class access_log_machine_fixture : public machine_rom_fixture {
@@ -1970,7 +1970,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_rt_config_test, access_log
     std::string origin("invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
     cm_delete_access_log(_access_log);
 }
 
@@ -2013,7 +2013,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_hash0_test, access_l
     std::string origin("invalid hash");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_hash1_test, access_log_machine_fixture) {
@@ -2026,7 +2026,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_hash1_test, access_l
     std::string origin("invalid hash");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_access_log_test, access_log_machine_fixture) {
@@ -2040,7 +2040,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_access_log_test, acc
     std::string origin("invalid access log");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, access_log_machine_fixture) {
@@ -2055,7 +2055,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, acce
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
     std::string origin("invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
 
@@ -2277,7 +2277,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_to_past_test, ordinary_machine_fixtur
     std::string origin("mcycle is past");
     BOOST_CHECK_EQUAL(origin, result);
 
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_long_cycle_test, ordinary_machine_fixture) {
@@ -2483,7 +2483,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch_state, access_log_machine_fix
     error_code = cm_reset_uarch_state(_machine, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     BOOST_REQUIRE_EQUAL(err_msg, "reset uarch state is not allowed when uarch is not halted");
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_root_updates_test, ordinary_machine_fixture) {
@@ -2571,7 +2571,7 @@ static bool wait_for_server(cm_grpc_machine_stub *stub, int retries = 10) {
             cm_delete_semantic_version(version);
             return true;
         } else {
-            cm_delete_error_message(err_msg);
+            cm_delete_cstring(err_msg);
         }
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
@@ -2616,7 +2616,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(create_grpc_machine_stub_wrong_address_test) {
     std::string result = err_msg;
     std::string origin("unable to create checkin server");
     BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(create_grpc_machine_stub_no_server_test) {
@@ -2636,7 +2636,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_config_test, grpc_machin
     std::string result = err_msg;
     std::string origin("invalid machine configuration");
     BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
     cm_delete_machine(new_machine);
 }
 
@@ -2648,7 +2648,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_null_rt_config_test, grpc_mac
     std::string result = err_msg;
     std::string origin("invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
     cm_delete_machine(new_machine);
 }
 
@@ -2661,7 +2661,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_wrong_address_test, grpc_mach
     std::string result = err_msg;
     std::string origin("unable to create checkin server");
     BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_no_server_test, grpc_machine_fixture) {
@@ -2673,7 +2673,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_no_server_test, grpc_machine_
     std::string result = err_msg;
     std::string origin("failed to connect to all addresses");
     BOOST_CHECK_MESSAGE(result.find(origin) != std::string::npos, "unexpected error message: " << result);
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
     cm_delete_machine(new_machine);
 }
 
@@ -2685,7 +2685,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_grpc_machine_basic_test, grpc_machine_fixt
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     if (err_msg != nullptr) {
         printf("error creating grpc machine: %s\n", err_msg);
-        cm_delete_error_message(err_msg);
+        cm_delete_cstring(err_msg);
     }
     cm_delete_machine(machine);
 }
@@ -2737,7 +2737,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_dir, grpc_machine_fixture_
     std::string result = err_msg;
     std::string origin("unable to open '/config.protobuf' for reading");
     BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_rt_config_test, grpc_machine_fixture_with_server) {
@@ -2748,7 +2748,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_rt_config_test, grpc_machi
     std::string result = err_msg;
     std::string origin("invalid machine runtime configuration");
     BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_default_config_basic_test, grpc_machine_fixture_with_server) {
@@ -2758,7 +2758,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_default_config_basic_test, grpc_machine_
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
         printf("error getting default config: %s\n", err_msg);
-        cm_delete_error_message(err_msg);
+        cm_delete_cstring(err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     cm_delete_machine_config(config);
@@ -2771,7 +2771,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_x_address_basic_test, grpc_machine_fixtu
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
         printf("error getting x address: %s\n", err_msg);
-        cm_delete_error_message(err_msg);
+        cm_delete_cstring(err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     BOOST_REQUIRE_EQUAL(val, static_cast<uint64_t>(40));
@@ -2784,7 +2784,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_csr_address_basic_test, grpc_machine_fix
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
         printf("error getting csr address: %s\n", err_msg);
-        cm_delete_error_message(err_msg);
+        cm_delete_cstring(err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     BOOST_REQUIRE_EQUAL(val, static_cast<uint64_t>(544));
@@ -2797,7 +2797,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_get_version_wrong_addr_test, grpc_machine_fi
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     if (err_msg != nullptr) {
         printf("error getting semantic version: %s\n", err_msg);
-        cm_delete_error_message(err_msg);
+        cm_delete_cstring(err_msg);
     }
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     cm_delete_semantic_version(version);
@@ -2812,7 +2812,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_hash0_test, grp
     std::string result = err_msg;
     std::string origin("invalid hash");
     BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_hash1_test, grpc_access_log_machine_fixture) {
@@ -2824,7 +2824,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_hash1_test, grp
     std::string result = err_msg;
     std::string origin("invalid hash");
     BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_ljog_test, grpc_access_log_machine_fixture) {
@@ -2837,7 +2837,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_state_transition_null_ljog_test, grpc
     std::string result = err_msg;
     std::string origin("invalid access log");
     BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_access_log_null_log_test, grpc_access_log_machine_fixture) {
@@ -2847,7 +2847,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(grpc_verify_access_log_null_log_test, grpc_access
     std::string result = err_msg;
     std::string origin("invalid access log");
     BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_error_message(err_msg);
+    cm_delete_cstring(err_msg);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(uarch_solidity_compatibility_layer) {

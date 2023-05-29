@@ -35,7 +35,7 @@
 #include "semantic-version.h"
 #include "virtual-machine.h"
 
-static char *copy_cstr(const char *str) {
+static char *copy_cstring(const char *str) {
     auto size = strlen(str) + 1;
     auto *copy = new char[size];
     strncpy(copy, str, size);
@@ -43,11 +43,11 @@ static char *copy_cstr(const char *str) {
 }
 
 static char *get_error_message_unknown() {
-    return copy_cstr("unknown error");
+    return copy_cstring("unknown error");
 }
 
 static char *get_error_message(const std::exception &ex) {
-    return copy_cstr(ex.what());
+    return copy_cstring(ex.what());
 }
 
 std::string null_to_empty(const char *s) {
@@ -125,7 +125,7 @@ int cm_result_success(char **err_msg) {
 // String conversion (strdup equivalent with new)
 // --------------------------------------------
 char *convert_to_c(const std::string &cpp_str) {
-    return copy_cstr(cpp_str.c_str());
+    return copy_cstring(cpp_str.c_str());
 }
 
 // --------------------------------------------
@@ -1293,7 +1293,7 @@ void cm_delete_memory_range_config(const cm_memory_range_config *config) {
     delete config;
 }
 
-void cm_delete_error_message(const char *err_msg) {
+void cm_delete_cstring(const char *err_msg) {
     if (err_msg == nullptr) {
         return;
     }

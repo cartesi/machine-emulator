@@ -152,6 +152,16 @@ int cm_jsonrpc_verify_state_transition(const cm_jsonrpc_mg_mgr *mgr, const cm_ha
     return cm_result_failure(err_msg);
 }
 
+int cm_jsonrpc_fork(const cm_jsonrpc_mg_mgr *mgr, char **address, char **err_msg) try {
+    const auto *cpp_mgr = convert_from_c(mgr);
+    auto cpp_address = cartesi::jsonrpc_virtual_machine::fork(*cpp_mgr);
+    *address = convert_to_c(cpp_address);
+    return cm_result_success(err_msg);
+} catch (...) {
+    *address = nullptr;
+    return cm_result_failure(err_msg);
+}
+
 int cm_jsonrpc_get_x_address(const cm_jsonrpc_mg_mgr *mgr, int i, uint64_t *val, char **err_msg) try {
     const auto *cpp_mgr = convert_from_c(mgr);
     *val = cartesi::jsonrpc_virtual_machine::get_x_address(*cpp_mgr, i);

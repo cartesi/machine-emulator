@@ -25,7 +25,7 @@ namespace cartesi {
 /// \brief Deleter for C string
 template <>
 void cm_delete<char>(char *ptr) {
-    cm_delete_error_message(ptr);
+    cm_delete_cstring(ptr);
 }
 
 /// \brief Deleter for C data buffer

@@ -41,7 +41,7 @@ typedef struct cm_jsonrpc_mg_mgr_tag cm_jsonrpc_mg_mgr; // NOLINT(modernize-use-
 /// \param mgr Receives new connection manager instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_create_jsonrpc_mg_mgr(const char *remote_address, cm_jsonrpc_mg_mgr **mgr, char **err_msg);
 
@@ -56,7 +56,7 @@ CM_API void cm_delete_jsonrpc_mg_mgr(const cm_jsonrpc_mg_mgr *mgr);
 /// \param new_machine Receives the pointer to new remote machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_create_jsonrpc_machine(const cm_jsonrpc_mg_mgr *mgr, const cm_machine_config *config,
     const cm_machine_runtime_config *runtime_config, cm_machine **new_machine, char **err_msg);
@@ -68,7 +68,7 @@ CM_API int cm_create_jsonrpc_machine(const cm_jsonrpc_mg_mgr *mgr, const cm_mach
 /// \param new_machine Receives the pointer to new remote machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_load_jsonrpc_machine(const cm_jsonrpc_mg_mgr *mgr, const char *dir,
     const cm_machine_runtime_config *runtime_config, cm_machine **new_machine, char **err_msg);
@@ -78,7 +78,7 @@ CM_API int cm_load_jsonrpc_machine(const cm_jsonrpc_mg_mgr *mgr, const char *dir
 /// \param new_machine Receives the pointer to new remote machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_get_jsonrpc_machine(const cm_jsonrpc_mg_mgr *mgr, cm_machine **new_machine, char **err_msg);
 
@@ -87,7 +87,7 @@ CM_API int cm_get_jsonrpc_machine(const cm_jsonrpc_mg_mgr *mgr, cm_machine **new
 /// \param config Receives the default configuration
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_jsonrpc_get_default_config(const cm_jsonrpc_mg_mgr *mgr, const cm_machine_config **config,
     char **err_msg);
@@ -113,11 +113,22 @@ CM_API int cm_jsonrpc_verify_access_log(const cm_jsonrpc_mg_mgr *mgr, const cm_a
 /// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_jsonrpc_verify_state_transition(const cm_jsonrpc_mg_mgr *mgr, const cm_hash *root_hash_before,
     const cm_access_log *log, const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config,
     bool one_based, char **err_msg);
+
+/// \brief Forks the server
+/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
+/// \param address Receives address of new server if function execution succeeds or NULL
+/// otherwise. In case of success, address must be deleted by the function caller using
+/// cm_delete_cstring.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring
+/// \returns 0 for successfull verification, non zero code for error
+CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mg_mgr *mgr, char **address, char **err_msg);
 
 /// \brief Gets the address of a general-purpose register from remote cartesi server
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
@@ -125,7 +136,7 @@ CM_API int cm_jsonrpc_verify_state_transition(const cm_jsonrpc_mg_mgr *mgr, cons
 /// \param val Receives address of the register
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_jsonrpc_get_x_address(const cm_jsonrpc_mg_mgr *mgr, int i, uint64_t *val, char **err_msg);
 
@@ -135,7 +146,7 @@ CM_API int cm_jsonrpc_get_x_address(const cm_jsonrpc_mg_mgr *mgr, int i, uint64_
 /// \param val Receives address of the register
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_jsonrpc_get_f_address(const cm_jsonrpc_mg_mgr *mgr, int i, uint64_t *val, char **err_msg);
 
@@ -145,7 +156,7 @@ CM_API int cm_jsonrpc_get_f_address(const cm_jsonrpc_mg_mgr *mgr, int i, uint64_
 /// \param val Receives address of the register
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_jsonrpc_get_uarch_x_address(const cm_jsonrpc_mg_mgr *mgr, int i, uint64_t *val, char **err_msg);
 
@@ -155,7 +166,7 @@ CM_API int cm_jsonrpc_get_uarch_x_address(const cm_jsonrpc_mg_mgr *mgr, int i, u
 /// \param val Receives address of the register
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mg_mgr *mgr, CM_PROC_CSR w, uint64_t *val, char **err_msg);
 
@@ -164,7 +175,7 @@ CM_API int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mg_mgr *mgr, CM_PROC_CSR 
 /// \param version Receives semantic version
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_jsonrpc_get_semantic_version(const cm_jsonrpc_mg_mgr *mgr, const cm_semantic_version **version,
     char **err_msg);
@@ -173,7 +184,7 @@ CM_API int cm_jsonrpc_get_semantic_version(const cm_jsonrpc_mg_mgr *mgr, const c
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_error_message
+/// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_jsonrpc_shutdown(const cm_jsonrpc_mg_mgr *mgr, char **err_msg);
 

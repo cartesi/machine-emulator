@@ -331,10 +331,7 @@ function test_util.calculate_region_hash_2(data_address, data_buffer,
 end
 
 function test_util.parse_pma_file(filename)
-    local fd = io.open(filename, "rb")
-    if not fd then
-        return ""
-    end
+    local fd = assert(io.open(filename, "rb"))
     local data_size = fd:seek("end")
     fd:seek("set")
     local data = fd:read(data_size)
@@ -357,6 +354,7 @@ local PMA_PAGE_SIZE_LOG2 = 12
 local PMA_PAGE_SIZE = 1 << PMA_PAGE_SIZE_LOG2
 
 local function ceil_log2(x)
+    assert(x > 0, "shouldn't try to compute log of x <= 0")
     return math.ceil(math.log(x, 2)) // 1
 end
 

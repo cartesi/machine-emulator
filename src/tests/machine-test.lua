@@ -98,6 +98,9 @@ local options = {
     { "^%-%-test%-path%=(.*)$", function(o)
         if not o or #o < 1 then return false end
         test_path = o
+        if string.sub(test_path, -1, -1) ~= "/" then
+            error("test-path must end in '/'")
+        end
         return true
     end },
     { ".*", function(all)

@@ -41,7 +41,7 @@ coverage?=no
 
 COVERAGE_TOOLCHAIN?=gcc
 COVERAGE_OUTPUT_DIR?=coverage
-CARTESI_TESTS_PATH?=/opt/cartesi/share/tests
+CARTESI_TESTS_PATH?=/opt/cartesi/share/cartesi-machine/tests
 
 # So we can use gcc to check if there are unused symbols
 ifeq ($(gc),yes)
@@ -397,6 +397,9 @@ CARTESI_PROTOBUF_LIBS+=-lprofiler
 CARTESI_GRPC_LIBS+=-lprofiler
 LUACARTESI_LIBS+=-lprofiler
 endif
+
+version:
+	@echo $(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).$(EMULATOR_VERSION_PATCH)$(EMULATOR_VERSION_LABEL)
 
 $(LIBCARTESI): $(CARTESI_OBJS) $(LIBCARTESI_PROTOBUF)
 	$(CXX) $(LDFLAGS) $(LIBCARTESI_LDFLAGS) -o $@ $(CARTESI_OBJS) $(CARTESI_LIBS)

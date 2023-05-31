@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed bug in get\_proto\_access\_log()
 - Fixed lint warnings with CLANG 15
 - Introduced a workaround for high memory usage when running on QEMU ARM64
+- Added deb to release process
 
 ### Added
 

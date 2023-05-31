@@ -36,53 +36,41 @@ COPY third-party third-party
 RUN make -j$(nproc) dep
 
 FROM --platform=$TARGETPLATFORM dep-builder as builder
+ARG DEB_FILENAME=cartesi-machine.deb
 
 COPY . .
 RUN make -j$(nproc) git_commit=$GIT_COMMIT release=$RELEASE coverage=$COVERAGE sanitize=$SANITIZE && \
     make -j$(nproc) uarch
 
-FROM --platform=$TARGETPLATFORM builder as installer
+FROM --platform=$TARGETPLATFORM builder as debian-packager
+RUN make install-uarch debian-package DESTDIR=$PWD/_install
 
-RUN make install
+FROM --platform=$TARGETPLATFORM debian-packager as installer
+ARG MACHINE_EMULATOR_VERSION=0.0.0
+ARG TARGETARCH
 
-# For testing purposes
-ENV PATH="/opt/cartesi/bin:${PATH}"
-ENV CARTESI_IMAGES_PATH=/opt/cartesi/share/images
-ENV CARTESI_TESTS_PATH=/opt/cartesi/share/tests
-ENV LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
-ENV LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
+RUN make install-tests install-uarch debian-package DESTDIR=$PWD/_install
+RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt install -y \
+    ./cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${TARGETARCH}.deb \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV CARTESI_TESTS_PATH="/usr/share/cartesi-machine/tests"
+ENV CARTESI_IMAGES_PATH="/usr/share/cartesi-machine/images"
 
 FROM --platform=$TARGETPLATFORM debian:bookworm-20230725-slim
+ARG MACHINE_EMULATOR_VERSION=0.0.0
+ARG TARGETARCH
 
-RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
-    libboost-coroutine1.74.0 \
-    libboost-context1.74.0 \
-    libboost-filesystem1.74.0 \
-    libreadline8 \
-    openssl \
-    libc-ares2 \
-    zlib1g \
-    ca-certificates \
-    libgomp1 \
-    lua5.4 \
-    genext2fs \
-    libb64-0d \
-    libcrypto++8 \
-    libgrpc++1.51 \
-    && rm -rf /var/lib/apt/lists/*
+COPY --from=debian-packager \
+	/usr/src/emulator/cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${TARGETARCH}.deb \
+	cartesi-machine.deb
+RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt install -y \
+    ./cartesi-machine.deb \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm cartesi-machine.deb
 
 RUN addgroup --system --gid 102 cartesi && \
     adduser --system --uid 102 --ingroup cartesi --disabled-login --no-create-home --home /nonexistent --gecos "cartesi user" --shell /bin/false cartesi
-
-COPY --from=installer /opt/cartesi /opt/cartesi
-COPY --from=installer /usr/local/lib/lua /usr/local/lib/lua
-COPY --from=installer /usr/local/share/lua /usr/local/share/lua
-
-ENV PATH="/opt/cartesi/bin:${PATH}"
-ENV CARTESI_IMAGES_PATH=/opt/cartesi/share/images
-ENV CARTESI_TESTS_PATH=/opt/cartesi/share/tests
-ENV LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
-ENV LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
 
 WORKDIR /opt/cartesi
 
@@ -90,4 +78,4 @@ EXPOSE 5002
 
 USER cartesi
 
-CMD [ "/opt/cartesi/bin/remote-cartesi-machine", "--server-address=0.0.0.0:5002"]
+CMD [ "/usr/bin/remote-cartesi-machine", "--server-address=0.0.0.0:5002"]

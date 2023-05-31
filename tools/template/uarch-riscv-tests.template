@@ -2,4 +2,4 @@
 export LUA_PATH_5_4="ARG_LUA_PATH;${LUA_PATH_5_4:-;}"
 export LUA_CPATH_5_4="ARG_LUA_CPATH;${LUA_CPATH_5_4:-;}"
 export CARTESI_IMAGES_PATH="ARG_INSTALL_PATH"
-lua5.4 "ARG_BIN_INSTALL_PATH/uarch-riscv-tests.lua" "$@"
+lua5.4 "ARG_LUA_RUNTIME_PATH/uarch-riscv-tests.lua" "$@"

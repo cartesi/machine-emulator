@@ -776,7 +776,7 @@ static void push_cm_rom_config(lua_State *L, const cm_rom_config *r) {
     if (r->bootargs != nullptr) {
         clua_setstringfield(L, r->bootargs, "bootargs", -1);
     }
-    if (r->image_filename) {
+    if (r->image_filename != nullptr) {
         clua_setstringfield(L, r->image_filename, "image_filename", -1);
     }
 }

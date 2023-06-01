@@ -343,10 +343,6 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     write_ilrsc(m_c.processor.ilrsc);
     write_iflags(m_c.processor.iflags);
 
-    if (m_c.rom.image_filename.empty()) {
-        throw std::invalid_argument{"ROM image filename is undefined"};
-    }
-
     // Register RAM
     if (m_c.ram.image_filename.empty()) {
         register_pma_entry(make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, m_c.ram.length).set_flags(m_ram_flags));
@@ -356,9 +352,10 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     }
 
     // Register ROM
-    pma_entry &rom =
-        register_pma_entry(make_callocd_memory_pma_entry("ROM"s, PMA_ROM_START, PMA_ROM_LENGTH, m_c.rom.image_filename)
-                               .set_flags(m_rom_flags));
+    pma_entry &rom = register_pma_entry((m_c.rom.image_filename.empty() ?
+            make_callocd_memory_pma_entry("ROM"s, PMA_ROM_START, PMA_ROM_LENGTH) :
+            make_callocd_memory_pma_entry("ROM"s, PMA_ROM_START, PMA_ROM_LENGTH, m_c.rom.image_filename))
+                                            .set_flags(m_rom_flags));
 
     // Register all flash drives
     int i = 0;

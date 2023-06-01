@@ -32,18 +32,9 @@ local checkin_address
 local test_path = "./"
 local cleanup = {}
 
-local function get_file_length(filename)
-    local file = io.open(filename, "rb")
-    if not file then return nil end
-    local size = file:seek("end") -- get file size
-    file:close()
-    return size
-end
-
 local linux_image = test_util.images_path .. "linux.bin"
 local rom_image = test_util.images_path .. "rom.bin"
 local rootfs_image = test_util.images_path .. "rootfs.ext2"
-local rootfs_length = get_file_length(rootfs_image)
 
 -- Print help and exit
 local function help()
@@ -475,12 +466,12 @@ test_util.make_do_test(build_machine, machine_type, {
     flash_drive = {
         {
             start = 0x80000000000000,
-            length = rootfs_length,
             shared = false,
             image_filename = rootfs_image,
         },
     },
 })("should replace flash drive and read something", function(machine)
+    local rootfs_length = machine:get_initial_config().flash_drive[1].length
     -- Create temp flash file
     local input_path = test_path .. "input.raw"
     local command = "echo 'test data 1234567890' > "
@@ -525,12 +516,10 @@ test_util.make_do_test(build_machine, machine_type, {
     flash_drive = {
         {
             start = 0x80000000000000,
-            length = rootfs_length,
             image_filename = rootfs_image,
         },
         {
             start = 0x90000000000000,
-            length = rootfs_length,
             image_filename = rootfs_image,
         },
         {

@@ -19,6 +19,7 @@
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <future>
 #include <iomanip>
 #include <iostream>
@@ -359,8 +360,19 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
 
     // Register all flash drives
     int i = 0;
-    for (const auto &f : m_c.flash_drive) {
-        register_pma_entry(make_flash_drive_pma_entry("flash drive "s + std::to_string(i++), f));
+    for (auto &f : m_c.flash_drive) {
+        const std::string flash_description = "flash drive "s + std::to_string(i++);
+        // Auto detect flash drive image length
+        if (f.length == UINT64_C(-1)) {
+            std::error_code ec;
+            f.length = std::filesystem::file_size(f.image_filename, ec);
+            if (ec) {
+                throw std::system_error{ec.value(), ec.category(),
+                    "unable to obtain length of image file '"s + f.image_filename + "' when initializing "s +
+                        flash_description};
+            }
+        }
+        register_pma_entry(make_flash_drive_pma_entry(flash_description, f));
     }
 
     // Register rollup memory ranges

@@ -960,7 +960,7 @@ cm_memory_range_config *clua_check_cm_memory_range_config(lua_State *L, int tabi
     }
     m->shared = opt_boolean_field(L, tabidx, "shared");
     m->start = check_uint_field(L, tabidx, "start");
-    m->length = check_uint_field(L, tabidx, "length");
+    m->length = opt_uint_field(L, tabidx, "length", UINT64_C(-1));
     m->image_filename = opt_copy_string_field(L, tabidx, "image_filename");
     return m;
 }

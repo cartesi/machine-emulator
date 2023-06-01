@@ -143,6 +143,18 @@ int clua_gc(lua_State *L) {
     return 0;
 }
 
+/// \brief Close an object of a previously defined type
+/// \tparam T Associated C++ type
+/// \param L Lua state.
+template <typename T>
+int clua_close(lua_State *L) {
+    T *ptr = static_cast<T *>(lua_touserdata(L, 1));
+    ptr->~T();
+    lua_pushnil(L);
+    lua_setmetatable(L, 1);
+    return 0;
+}
+
 /// \brief Prints an object of a previously defined type
 /// \tparam T Associated C++ type
 /// \param L Lua state.
@@ -291,6 +303,7 @@ void clua_createtype(lua_State *L, const char *name, int ctxidx) {
     // create new type
     auto default_meta = clua_make_luaL_Reg_array({
         {"__gc", &clua_gc<T>},
+        {"__close", &clua_close<T>},
         {"__tostring", &clua_tostring<T>},
     });
     lua_pushstring(L, clua_rawname<T>());     // T_rawname

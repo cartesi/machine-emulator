@@ -171,7 +171,7 @@ jobs:
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
           export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?.lua;"
           export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
-          for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do echo -n 'CTSICTSI' | lua5.3 $x local; done
+          for x in `cat tests/autorun`; do echo -n 'CTSICTSI' | lua5.3 tests/$x local; done
 
       - name: Run grpc lua test scripts
         run: |

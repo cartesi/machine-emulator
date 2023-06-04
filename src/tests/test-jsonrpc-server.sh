@@ -29,6 +29,7 @@ tests=(
     "$lua ./tests/machine-bind.lua jsonrpc --remote-address=$server_address"
     "$lua ./tests/machine-test.lua jsonrpc --remote-address=$server_address"
     "$cartesi_machine --remote-address=$server_address --remote-protocol="jsonrpc" --remote-shutdown"
+    "$lua ./tests/test-jsonrpc-fork.lua --remote-address=$server_address"
 )
 
 is_server_running () {

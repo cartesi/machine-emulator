@@ -407,8 +407,8 @@ test-jsonrpc: luacartesi jsonrpc
 	./tests/test-jsonrpc-server.sh ./jsonrpc-remote-cartesi-machine "$(LUA) ./cartesi-machine.lua" "$(LUA) ./cartesi-machine-tests.lua" "$(TEST_PATH)" "$(LUA)"
 
 test-scripts: luacartesi
-	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do \
-		echo -n 'CTSICTSI' | $(LUA) $$x local || exit 1; \
+	for x in `cat tests/autorun` ; do \
+		echo -n 'CTSICTSI' | $(LUA) tests/$$x local || exit 1; \
 	done
 
 test-c-api: c-api remote-cartesi-machine

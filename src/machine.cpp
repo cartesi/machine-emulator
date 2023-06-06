@@ -19,6 +19,7 @@
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <future>
 #include <iomanip>
 #include <iostream>
@@ -342,10 +343,6 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     write_ilrsc(m_c.processor.ilrsc);
     write_iflags(m_c.processor.iflags);
 
-    if (m_c.rom.image_filename.empty()) {
-        throw std::invalid_argument{"ROM image filename is undefined"};
-    }
-
     // Register RAM
     if (m_c.ram.image_filename.empty()) {
         register_pma_entry(make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, m_c.ram.length).set_flags(m_ram_flags));
@@ -355,14 +352,26 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     }
 
     // Register ROM
-    pma_entry &rom =
-        register_pma_entry(make_callocd_memory_pma_entry("ROM"s, PMA_ROM_START, PMA_ROM_LENGTH, m_c.rom.image_filename)
-                               .set_flags(m_rom_flags));
+    pma_entry &rom = register_pma_entry((m_c.rom.image_filename.empty() ?
+            make_callocd_memory_pma_entry("ROM"s, PMA_ROM_START, PMA_ROM_LENGTH) :
+            make_callocd_memory_pma_entry("ROM"s, PMA_ROM_START, PMA_ROM_LENGTH, m_c.rom.image_filename))
+                                            .set_flags(m_rom_flags));
 
     // Register all flash drives
     int i = 0;
-    for (const auto &f : m_c.flash_drive) {
-        register_pma_entry(make_flash_drive_pma_entry("flash drive "s + std::to_string(i++), f));
+    for (auto &f : m_c.flash_drive) {
+        const std::string flash_description = "flash drive "s + std::to_string(i++);
+        // Auto detect flash drive image length
+        if (f.length == UINT64_C(-1)) {
+            std::error_code ec;
+            f.length = std::filesystem::file_size(f.image_filename, ec);
+            if (ec) {
+                throw std::system_error{ec.value(), ec.category(),
+                    "unable to obtain length of image file '"s + f.image_filename + "' when initializing "s +
+                        flash_description};
+            }
+        }
+        register_pma_entry(make_flash_drive_pma_entry(flash_description, f));
     }
 
     // Register rollup memory ranges
@@ -1560,7 +1569,6 @@ void machine::dump_pmas(void) const {
         }
         std::array<char, 256> filename{};
         (void) sprintf(filename.data(), "%016" PRIx64 "--%016" PRIx64 ".bin", pma->get_start(), pma->get_length());
-        std::cerr << "writing to " << filename.data() << '\n';
         auto fp = unique_fopen(filename.data(), "wb");
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma->get_length();
              page_start_in_range += PMA_PAGE_SIZE) {

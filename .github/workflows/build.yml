@@ -21,7 +21,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev lua-socket libb64-dev libcrypto++-dev nlohmann-json3-dev
+          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.4 liblua5.4-dev lua-socket libb64-dev libcrypto++-dev nlohmann-json3-dev
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
@@ -78,12 +78,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Install Ubuntu dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.74.0 libboost-coroutine1.74.0 libboost-filesystem1.74.0 libboost-log1.74.0 libssl1.1 libc-ares2 zlib1g netcat patchelf lua5.3 lua-socket liblua5.3-dev luarocks libb64-dev libcrypto++-dev nlohmann-json3-dev
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-context1.74.0 libboost-coroutine1.74.0 libboost-filesystem1.74.0 libboost-log1.74.0 libssl1.1 libc-ares2 zlib1g netcat patchelf lua5.4 lua-socket liblua5.4-dev luarocks libb64-dev libcrypto++-dev nlohmann-json3-dev
 
       - name: Install lua test dependencies
         run: |
-          sudo luarocks install md5
-          sudo luarocks install luaposix
+          sudo luarocks install --lua-version=5.4 md5
+          sudo luarocks install --lua-version=5.4 luaposix
 
       - name: Download emulator
         uses: actions/download-artifact@master
@@ -169,17 +169,17 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
-          for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do echo -n 'CTSICTSI' | lua5.3 $x local; done
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
+          for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do echo -n 'CTSICTSI' | lua5.4 $x local; done
 
       - name: Run grpc lua test scripts
         run: |
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           ./tests/test-grpc-server.sh remote-cartesi-machine cartesi-machine cartesi-machine-tests $CARTESI_TESTS_PATH
 
       - name: Run jsonrpc lua test scripts
@@ -187,8 +187,8 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           ./tests/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests $CARTESI_TESTS_PATH
 
       - name: Run Merkle tree tests
@@ -213,11 +213,11 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libboost-context1.74.0 libboost-coroutine1.74.0 libboost-filesystem1.74.0 libboost-log1.74.0 libssl1.1 libc-ares2 zlib1g lua5.3 lua-socket liblua5.3-dev luarocks libb64-dev libcrypto++-dev nlohmann-json3-dev
+          sudo apt-get install -y libboost-context1.74.0 libboost-coroutine1.74.0 libboost-filesystem1.74.0 libboost-log1.74.0 libssl1.1 libc-ares2 zlib1g lua5.4 lua-socket liblua5.4-dev luarocks libb64-dev libcrypto++-dev nlohmann-json3-dev
 
       - name: Install lua test dependencies
         run: |
-          sudo luarocks install luaposix
+          sudo luarocks install --lua-version=5.4 luaposix
 
       - name: Download emulator
         uses: actions/download-artifact@master
@@ -234,8 +234,8 @@ jobs:
 
       - name: Test microarchitecture interpreter
         run: |
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           make riscv-arch-tests JOBS=$(nproc)
 
       - name: Download test suite
@@ -286,7 +286,11 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev lua-socket libb64-dev libcrypto++-dev nlohmann-json3-dev
+          sudo apt-get install -y libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.4 liblua5.4-dev luarocks lua-socket libb64-dev libcrypto++-dev nlohmann-json3-dev
+
+      - name: Install lua test dependencies
+        run: |
+          sudo luarocks install --lua-version=5.4 luacheck
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
@@ -303,8 +307,15 @@ jobs:
       - name: Setup update-alternatives for clang-format
         run: sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-14 120
 
-      - name: Check format
+      - name: Check format (C++)
         run: make check-format
+
+      - name: Check format (Lua)
+        uses: JohnnyMorganz/stylua-action@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: 0.17.1
+          args: --indent-type Spaces --collapse-simple-statement Always --check src
 
       - name: Setup update-alternatives for clang-tidy
         run: sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-14 120
@@ -324,7 +335,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y build-essential libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev luarocks lua-socket clang llvm lcov libb64-dev libcrypto++-dev nlohmann-json3-dev
+          sudo apt-get install -y build-essential libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.4 liblua5.4-dev luarocks lua-socket clang llvm lcov libb64-dev libcrypto++-dev nlohmann-json3-dev
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 12
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 12
           sudo update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-12 12
@@ -334,8 +345,8 @@ jobs:
 
       - name: Install lua test dependencies
         run: |
-          sudo luarocks install md5
-          sudo luarocks install luaposix
+          sudo luarocks install --lua-version=5.4 md5
+          sudo luarocks install --lua-version=5.4 luaposix
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
@@ -424,8 +435,8 @@ jobs:
           export TEST_PATH=/opt/cartesi/tests
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           make -j1 coverage-toolchain=gcc coverage
 
       - name: Show coverage summary
@@ -458,7 +469,7 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y build-essential libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.3 liblua5.3-dev luarocks lua-socket clang llvm lcov libb64-dev libcrypto++-dev nlohmann-json3-dev
+          sudo apt-get install -y build-essential libreadline-dev libboost-context-dev libboost-coroutine-dev libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev ca-certificates patchelf automake cmake clang-tidy-14 clang-format-14 lua5.4 liblua5.4-dev luarocks lua-socket clang llvm lcov libb64-dev libcrypto++-dev nlohmann-json3-dev
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 12
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 12
           sudo update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-12 12
@@ -472,8 +483,8 @@ jobs:
 
       - name: Install lua test dependencies
         run: |
-          sudo luarocks install md5
-          sudo luarocks install luaposix
+          sudo luarocks install --lua-version=5.4 md5
+          sudo luarocks install --lua-version=5.4 luaposix
 
       - name: Download cache of third-party build
         run: aws s3 sync s3://cartesi-ci/${GITHUB_REPOSITORY}/cache/build-${BUILD_CACHE_VERSION} ./build && test -f ./build/`uname`_`uname -m`/lib/libcryptopp.so.7
@@ -562,8 +573,8 @@ jobs:
           export TEST_PATH=/opt/cartesi/tests
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export CARTESI_TESTS_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;/usr/local/lib/lua/5.3/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           make sanitize=yes test-all
 
   verify:
@@ -590,7 +601,7 @@ jobs:
           find /opt/cartesi/lib -type f -exec chmod 755 {} +
 
       - name: Install Ubuntu dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y libboost-coroutine1.74.0 libboost-context1.74.0 libboost-filesystem1.74.0 libboost-log1.74.0 libreadline8 openssl libc-ares2 zlib1g ca-certificates libgomp1 lua5.3 liblua5.3-dev lua-socket libb64-dev libcrypto++-dev nlohmann-json3-dev
+        run: sudo apt-get update -y && sudo apt-get install -y libboost-coroutine1.74.0 libboost-context1.74.0 libboost-filesystem1.74.0 libboost-log1.74.0 libreadline8 openssl libc-ares2 zlib1g ca-certificates libgomp1 lua5.4 liblua5.4-dev lua-socket libb64-dev libcrypto++-dev nlohmann-json3-dev
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0
@@ -646,8 +657,8 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export TEST_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           cd ./src
           make -j$(nproc) CYCLE_PERIOD=1 truth-logs
 
@@ -664,8 +675,8 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export TEST_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           cd ./src
           make -j$(nproc) CYCLE_PERIOD=1 test-logs
 
@@ -687,8 +698,8 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export TEST_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           cd ./src
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=1 truth-hashes
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=2 truth-hashes
@@ -708,8 +719,8 @@ jobs:
           export PATH=/opt/cartesi/bin:$PATH
           export CARTESI_IMAGES_PATH=/opt/cartesi/share/images
           export TEST_PATH=/opt/cartesi/tests
-          export LUA_PATH="./?.lua;./tests/?.lua;/opt/cartesi/share/lua/5.3/?.lua;"
-          export LUA_CPATH="/opt/cartesi/lib/lua/5.3/?.so;"
+          export LUA_PATH_5_4="/opt/cartesi/share/lua/5.4/?.lua;;"
+          export LUA_CPATH_5_4="/opt/cartesi/lib/lua/5.4/?.so;;"
           cd ./src
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=1 test-hashes
           make -j$(nproc) CONCURRENCY_MERKLE_TREE=1 CYCLE_PERIOD=2 compare-hashes

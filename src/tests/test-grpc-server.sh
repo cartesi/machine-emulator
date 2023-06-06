@@ -20,7 +20,7 @@ remote_cartesi_machine=$1
 cartesi_machine=$2
 cartesi_machine_tests=$3
 test_path=$4
-lua=${5:-lua5.3}
+lua=${5:-lua5.4}
 
 server_address=127.0.0.1:5001
 checkin_address=127.0.0.1:5002

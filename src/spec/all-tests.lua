@@ -1,6 +1,6 @@
 #!/usr/bin/env lua5.4
 
--- Copyright 2019 Cartesi Pte. Ltd.
+-- Copyright 2023 Cartesi Pte. Ltd.
 --
 -- This file is part of the machine-emulator. The machine-emulator is free
 -- software: you can redistribute it and/or modify it under the terms of the GNU
@@ -16,12 +16,17 @@
 -- along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 --
 
-local util = require("cartesi.util")
+local lester = require("spec.util.lester")
 
-local f = assert(
-    io.open(assert(arg[1], "missing machine name") .. "/hash", "rb"),
-    string.format("unable to open machine '%s'", tostring(arg[1]))
-)
-local h = assert(f:read("a"), "unable to read hash")
-f:close()
-print(util.hexhash(h))
+-- Parse arguments from command line.
+lester.parse_args()
+
+require("spec.keccak-tests")
+require("spec.config-tests")
+require("spec.htif-tests")
+require("spec.machine-tests")
+require("spec.clua-tests")
+require("spec.step-tests")
+
+lester.report() -- Print overall statistic of the tests run.
+lester.exit() -- Exit with success if all tests passed.

@@ -1,4 +1,4 @@
-#!/usr/bin/env lua5.3
+#!/usr/bin/env lua5.4
 
 -- Copyright 2021 Cartesi Pte. Ltd.
 --
@@ -16,16 +16,15 @@
 -- along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 --
 
-local util = require"cartesi.util"
-local json = require"dkjson"
+local util = require("cartesi.util")
+local json = require("dkjson")
 
-local function stderr(fmt, ...)
-    io.stderr:write(string.format(fmt, ...))
-end
+local function stderr(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
 
 -- Print help and exit
 local function help()
-    stderr([=[
+    stderr(
+        [=[
 Usage:
 
   %s [action] [what]
@@ -85,7 +84,9 @@ JSON object to stdout.
         [ <hash>, <hash>, ... <hash ]
       (only works for decoding)
 
-]=], arg[0])
+]=],
+        arg[0]
+    )
     os.exit()
 end
 
@@ -100,33 +101,25 @@ local function unhex(hex)
         return string.char(n)
     end)
     if invalid then
-        return nil, format("'%q' not valid hex", c)
+        return nil, string.format("'%q' not valid hex", invalid)
     else
         return data
     end
 end
 
 local function hex(hash)
-    if type(hash) ~= "string" then
-        return nil, "expected string, got " .. type(hash)
-    end
-    return (string.gsub(hash, ".", function(c)
-        return string.format("%02x", string.byte(c))
-    end))
+    if type(hash) ~= "string" then return nil, "expected string, got " .. type(hash) end
+    return (string.gsub(hash, ".", function(c) return string.format("%02x", string.byte(c)) end))
 end
 
-local function hexhash(hash)
-    return "0x" .. hex(hash)
-end
+local function hexhash(hash) return "0x" .. hex(hash) end
 
 if not arg[1] then
     stderr("expected action\n")
     help()
 end
 
-if arg[1] == "-h" or arg[1] == "--help" then
-    help()
-end
+if arg[1] == "-h" or arg[1] == "--help" then help() end
 
 if arg[1] ~= "encode" and arg[1] ~= "decode" then
     stderr("unexpected action '%s'\n", arg[1])
@@ -159,55 +152,38 @@ end
 
 local what = arg[2]
 
-if arg[3] then
-    error("unexpected option " .. arg[3])
-end
+if arg[3] then error("unexpected option " .. arg[3]) end
 
 local function write_be256(value)
-    io.stdout:write(string.rep("\0", 32-8))
+    io.stdout:write(string.rep("\0", 32 - 8))
     io.stdout:write(string.pack(">I8", value))
 end
 
-local function errorf(...)
-    error(string.format(...))
-end
+local function errorf(...) error(string.format(...)) end
 
 local function read_json()
-    local j, p, e = json.decode(io.read("*a"))
+    local j, _, e = json.decode(io.read("*a"))
     if not j then error(e) end
     return j
 end
 
 local function unhexhash(addr, name)
-    if not addr then
-        errorf("missing %s", name)
-    end
-    if string.sub(addr, 1, 2) ~= "0x" then
-        errorf("invalid %s %s (missing 0x prefix)", name, addr)
-    end
-    if #addr ~= 42 then
-        errorf("%s must contain 40 hex digits (%s has %g digits)", name, addr, #addr-2)
-    end
+    if not addr then errorf("missing %s", name) end
+    if string.sub(addr, 1, 2) ~= "0x" then errorf("invalid %s %s (missing 0x prefix)", name, addr) end
+    if #addr ~= 42 then errorf("%s must contain 40 hex digits (%s has %g digits)", name, addr, #addr - 2) end
     local bin, err = unhex(string.sub(addr, 3))
-    if not bin then
-        errorf("invalid %s %s (%s)", name, addr, err)
-    end
+    if not bin then errorf("invalid %s %s (%s)", name, addr, err) end
     return bin
 end
 
 local function check_number(number, name)
-    if not number then
-        errorf("missing %s", name)
-    end
+    if not number then errorf("missing %s", name) end
     number = util.parse_number(number)
-    if not number then
-        errorf("invalid %s %s", name, tostring(number))
-    end
+    if not number then errorf("invalid %s %s", name, tostring(number)) end
     return number
 end
 
-
-local function encode_input_metadata(arg)
+local function encode_input_metadata()
     local j = read_json()
     j.msg_sender = unhexhash(j.msg_sender, "msg_sender")
     j.block_number = check_number(j.block_number, "block_number")
@@ -222,15 +198,7 @@ local function encode_input_metadata(arg)
     write_be256(j.input_index)
 end
 
-local function encode_string(arg)
-    local j = read_json()
-    local payload = assert(j.payload, "missing payload")
-    write_be256(32) -- offset
-    write_be256(#payload)
-    io.stdout:write(payload)
-end
-
-local function encode_voucher(arg)
+local function encode_voucher()
     local j = read_json()
     local payload = assert(j.payload, "missing payload")
     local destination = unhexhash(j.destination, "destination")
@@ -241,51 +209,50 @@ local function encode_voucher(arg)
     io.stdout:write(payload)
 end
 
-local function read_address()
-    return string.sub(assert(io.stdin:read(32)), 13)
-end
+local function read_address() return string.sub(assert(io.stdin:read(32)), 13) end
 
 local function read_hash()
     local s = io.stdin:read(32)
     if s and #s == 32 then return s end
 end
 
-local function read_be256()
-    return string.unpack(">I8", string.sub(io.stdin:read(32), 25))
-end
+local function read_be256() return string.unpack(">I8", string.sub(io.stdin:read(32), 25)) end
 
-local function decode_input_metadata(arg)
+local function decode_input_metadata()
     local msg_sender = read_address()
     local block_number = read_be256()
     local time_stamp = read_be256()
     local epoch_index = read_be256()
     local input_index = read_be256()
-    io.stdout:write(json.encode({
-        msg_sender = hexhash(msg_sender),
-        block_number = block_number,
-        time_stamp = time_stamp,
-        epoch_index = epoch_index,
-        input_index = input_index,
-    }, {
-        indent = true,
-        keyorder = {
-            "msg_sender",
-            "block_number",
-            "time_stamp",
-            "epoch_index",
-            "input_index"
-        }
-    }), "\n")
+    io.stdout:write(
+        json.encode({
+            msg_sender = hexhash(msg_sender),
+            block_number = block_number,
+            time_stamp = time_stamp,
+            epoch_index = epoch_index,
+            input_index = input_index,
+        }, {
+            indent = true,
+            keyorder = {
+                "msg_sender",
+                "block_number",
+                "time_stamp",
+                "epoch_index",
+                "input_index",
+            },
+        }),
+        "\n"
+    )
 end
 
-local function decode_string(arg)
+local function decode_string()
     assert(read_be256() == 32) -- skip offset
     local length = read_be256()
-    local payload = length == 0 and '' or assert(io.stdin:read(length))
+    local payload = length == 0 and "" or assert(io.stdin:read(length))
     io.stdout:write(json.encode({ payload = payload }, { indent = true }), "\n")
 end
 
-local function encode_string(arg)
+local function encode_string()
     local j = read_json()
     assert(j.payload, "missing payload")
     write_be256(32)
@@ -293,30 +260,33 @@ local function encode_string(arg)
     io.stdout:write(j.payload)
 end
 
-local function decode_voucher(arg)
+local function decode_voucher()
     local destination = hexhash(read_address())
     local offset = read_be256()
     assert(offset == 64, "expected offset 64, got " .. offset) -- skip offset
     local length = read_be256()
-    local payload = length == 0 and '' or assert(io.stdin:read(length))
-    io.stdout:write(json.encode({
-        destination = destination,
-        payload = payload
-    }, {
-        indent = true,
-        keyorder = {
-            "destination",
-            "payload"
-        }
-    }), "\n")
+    local payload = length == 0 and "" or assert(io.stdin:read(length))
+    io.stdout:write(
+        json.encode({
+            destination = destination,
+            payload = payload,
+        }, {
+            indent = true,
+            keyorder = {
+                "destination",
+                "payload",
+            },
+        }),
+        "\n"
+    )
 end
 
-local function decode_hashes(arg)
+local function decode_hashes()
     local t = {}
     while 1 do
         local hash = read_hash()
         if not hash then break end
-        t[#t+1] = hexhash(hash)
+        t[#t + 1] = hexhash(hash)
     end
     io.stdout:write(json.encode(t, { indent = true }), "\n")
 end

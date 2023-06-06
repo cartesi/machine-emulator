@@ -16,16 +16,12 @@
 
 local _M = {}
 
-local function indentout(f, indent, fmt, ...)
-    f:write(string.rep("  ", indent), string.format(fmt, ...))
-end
+local function indentout(f, indent, fmt, ...) f:write(string.rep("  ", indent), string.format(fmt, ...)) end
 
 _M.indentout = indentout
 
 local function hexstring(hash)
-    return (string.gsub(hash, ".", function(c)
-        return string.format("%02x", string.byte(c))
-    end))
+    return (string.gsub(hash, ".", function(c) return string.format("%02x", string.byte(c)) end))
 end
 
 local hexhash = hexstring
@@ -35,8 +31,11 @@ _M.hexhash = hexstring
 local function dump_json_sibling_hashes(sibling_hashes, out, indent)
     for i, h in ipairs(sibling_hashes) do
         indentout(out, indent, '"%s"', hexhash(h))
-        if sibling_hashes[i+1] then out:write(',\n')
-        else out:write('\n') end
+        if sibling_hashes[i + 1] then
+            out:write(",\n")
+        else
+            out:write("\n")
+        end
     end
 end
 
@@ -46,8 +45,8 @@ local function dump_json_proof(proof, out, indent)
     indentout(out, indent, '"log2_root_size": %u,\n', proof.log2_root_size)
     indentout(out, indent, '"target_hash": "%s",\n', hexhash(proof.target_hash))
     indentout(out, indent, '"sibling_hashes": [\n')
-    dump_json_sibling_hashes(proof.sibling_hashes, out, indent+1)
-    indentout(out, indent, '],\n')
+    dump_json_sibling_hashes(proof.sibling_hashes, out, indent + 1)
+    indentout(out, indent, "],\n")
     indentout(out, indent, '"root_hash": "%s"\n', hexhash(proof.root_hash))
 end
 
@@ -57,75 +56,84 @@ local function dump_json_log_notes(notes, out, indent)
     local n = #notes
     for i, note in ipairs(notes) do
         indentout(out, indent, '"%s"', note)
-        if i < n then out:write(',\n')
-        else out:write("\n") end
+        if i < n then
+            out:write(",\n")
+        else
+            out:write("\n")
+        end
     end
 end
 
 local function dump_json_log_brackets(brackets, out, indent)
     local n = #brackets
     for i, bracket in ipairs(brackets) do
-        indentout(out, indent, '{\n')
-        indentout(out, indent+1, '"type": "%s",\n', bracket.type)
-        indentout(out, indent+1, '"where": %u,\n', bracket.where)
-        indentout(out, indent+1, '"text": "%s"\n', bracket.text)
-        indentout(out, indent, '}')
-        if i < n then out:write(',\n')
-        else out:write("\n") end
+        indentout(out, indent, "{\n")
+        indentout(out, indent + 1, '"type": "%s",\n', bracket.type)
+        indentout(out, indent + 1, '"where": %u,\n', bracket.where)
+        indentout(out, indent + 1, '"text": "%s"\n', bracket.text)
+        indentout(out, indent, "}")
+        if i < n then
+            out:write(",\n")
+        else
+            out:write("\n")
+        end
     end
 end
 
 local function dump_json_log_access(access, out, indent)
-    indentout(out, indent, '{\n')
-    indentout(out, indent+1, '"type": "%s",\n', access.type)
-    indentout(out, indent+1, '"address": %u,\n', access.address)
-    indentout(out, indent+1, '"read": "%s"', hexstring(access.read))
+    indentout(out, indent, "{\n")
+    indentout(out, indent + 1, '"type": "%s",\n', access.type)
+    indentout(out, indent + 1, '"address": %u,\n', access.address)
+    indentout(out, indent + 1, '"read": "%s"', hexstring(access.read))
     if access.type == "write" then
         out:write(",\n")
-        indentout(out, indent+1, '"written": "%s"', hexstring(access.written))
+        indentout(out, indent + 1, '"written": "%s"', hexstring(access.written))
     end
     if access.proof then
         out:write(",\n")
-        indentout(out, indent+1, '"proof": {\n')
-        dump_json_proof(access.proof, out, indent+2)
-        indentout(out, indent+1, '}\n')
+        indentout(out, indent + 1, '"proof": {\n')
+        dump_json_proof(access.proof, out, indent + 2)
+        indentout(out, indent + 1, "}\n")
     else
         out:write("\n")
     end
-    indentout(out, indent, '}')
+    indentout(out, indent, "}")
 end
 
 local function dump_json_log_accesses(accesses, out, indent)
     local n = #accesses
     for i, access in ipairs(accesses) do
         dump_json_log_access(access, out, indent)
-        if i < n then out:write(',\n')
-        else out:write('\n') end
+        if i < n then
+            out:write(",\n")
+        else
+            out:write("\n")
+        end
     end
 end
 
-function _M.dump_json_log(log, init_mcycle, init_uarch_cycle, final_mcycle,final_uarch_cycle, out, indent)
+function _M.dump_json_log(log, init_mcycle, init_uarch_cycle, final_mcycle, final_uarch_cycle, out, indent)
     indent = indent or 0
-    indentout(out, indent, '{\n')
-    indentout(out, indent+1, '"init_mcycle": %u,\n', init_mcycle)
-    indentout(out, indent+1, '"init_uarch_cycle": %u,\n', init_uarch_cycle)
-    indentout(out, indent+1, '"final_mcycle": %u,\n', final_mcycle)
-    indentout(out, indent+1, '"final_uarch_cycle": %u,\n', final_uarch_cycle)
-    indentout(out, indent+1, '"accesses": [\n')
-    dump_json_log_accesses(log.accesses, out, indent+2)
-    indentout(out, indent+1, "]");
+    indentout(out, indent, "{\n")
+    indentout(out, indent + 1, '"init_mcycle": %u,\n', init_mcycle)
+    indentout(out, indent + 1, '"init_uarch_cycle": %u,\n', init_uarch_cycle)
+    indentout(out, indent + 1, '"final_mcycle": %u,\n', final_mcycle)
+    indentout(out, indent + 1, '"final_uarch_cycle": %u,\n', final_uarch_cycle)
+    indentout(out, indent + 1, '"accesses": [\n')
+    dump_json_log_accesses(log.accesses, out, indent + 2)
+    indentout(out, indent + 1, "]")
     if log.log_type.annotations then
         out:write(",\n")
-        indentout(out, indent+1, '"notes": [\n')
-        dump_json_log_notes(log.notes, out, indent+2)
-        indentout(out, indent+1, '],\n')
-        indentout(out, indent+1, '"brackets": [\n')
-        dump_json_log_brackets(log.brackets, out, indent+2)
-        indentout(out, indent+1, ']\n')
+        indentout(out, indent + 1, '"notes": [\n')
+        dump_json_log_notes(log.notes, out, indent + 2)
+        indentout(out, indent + 1, "],\n")
+        indentout(out, indent + 1, '"brackets": [\n')
+        dump_json_log_brackets(log.brackets, out, indent + 2)
+        indentout(out, indent + 1, "]\n")
     else
         out:write("\n")
     end
-    indentout(out, indent, '}')
+    indentout(out, indent, "}")
 end
 
 function _M.parse_number(n)
@@ -136,10 +144,15 @@ function _M.parse_number(n)
     end
     base = tonumber(base)
     if not base then return nil end
-    if rest == "Ki" then return base << 10
-    elseif rest == "Mi" then return base << 20
-    elseif rest == "Gi" then return base << 30
-    elseif rest == "" then return base end
+    if rest == "Ki" then
+        return base << 10
+    elseif rest == "Mi" then
+        return base << 20
+    elseif rest == "Gi" then
+        return base << 30
+    elseif rest == "" then
+        return base
+    end
     local shift = string.match(rest, "^%s*%<%<%s*(%d+)$")
     if shift then
         shift = tonumber(shift)
@@ -177,18 +190,19 @@ function _M.parse_options(s, keys)
     return options
 end
 
-local function hexhash8(hash)
-    return string.sub(hexhash(hash), 1, 8)
-end
+local function hexhash8(hash) return string.sub(hexhash(hash), 1, 8) end
 
 local function accessdatastring(data, log2_size)
     if log2_size == 3 then
         data = string.unpack("<I8", data)
         return string.format("0x%x(%u)", data, data)
     else
-        return string.format("%s...%s(2^%d bytes)",
+        return string.format(
+            "%s...%s(2^%d bytes)",
             hexstring(string.sub(data, 1, 3)),
-            hexstring(string.sub(data, -3, -1)), log2_size)
+            hexstring(string.sub(data, -3, -1)),
+            log2_size
+        )
     end
 end
 
@@ -216,19 +230,24 @@ function _M.dump_log(log, out)
             j = j + 1
         -- Otherwise, output access
         elseif ai then
-            if ai.proof then
-                indentout(out, indent, "hash %s\n",
-                    hexhash8(ai.proof.root_hash))
-            end
+            if ai.proof then indentout(out, indent, "hash %s\n", hexhash8(ai.proof.root_hash)) end
             local read = accessdatastring(ai.read, ai.log2_size)
             if ai.type == "read" then
-                indentout(out, indent, "%d: read %s@0x%x(%u): %s\n", i,
-                    notes[i] or "", ai.address, ai.address, read)
+                indentout(out, indent, "%d: read %s@0x%x(%u): %s\n", i, notes[i] or "", ai.address, ai.address, read)
             else
                 assert(ai.type == "write", "unknown access type")
                 local written = accessdatastring(ai.written, ai.log2_size)
-                indentout(out, indent, "%d: write %s@0x%x(%u): %s -> %s\n", i,
-                    notes[i] or "", ai.address, ai.address, read, written)
+                indentout(
+                    out,
+                    indent,
+                    "%d: write %s@0x%x(%u): %s -> %s\n",
+                    i,
+                    notes[i] or "",
+                    ai.address,
+                    ai.address,
+                    read,
+                    written
+                )
             end
             i = i + 1
         end

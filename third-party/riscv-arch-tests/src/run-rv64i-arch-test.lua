@@ -1,4 +1,4 @@
-#!/usr/bin/env lua5.3
+#!/usr/bin/env lua5.4
 
 -- Copyright 2019-2021 Cartesi Pte. Ltd.
 --
@@ -16,10 +16,11 @@
 -- along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 --
 
-local cartesi = require "cartesi"
+local cartesi = require("cartesi")
 
-if  #arg ~= 2 then
-  io.stderr:write(string.format([=[
+if #arg ~= 2 then
+    io.stderr:write(string.format(
+        [=[
 Usage:
 
   %s <uarch-ram-image> <output-signature-file>
@@ -30,57 +31,58 @@ where:
 
   <output-signature-file>
   name of file to write test signature results
-  ]=], arg[0]))
-  os.exit(1)
+  ]=],
+        arg[0]
+    ))
+    os.exit(1)
 end
 
 local uarch_ram_image_filename = arg[1]
 local output_signature_file = arg[2]
-local uarch_ram_start = 0x70000000 
+local uarch_ram_start = 0x70000000
 local uarch_ram_length = 0x1000000
 local dummy_rom_filename = os.tmpname()
-io.open(dummy_rom_filename, 'w'):close()
-local deleter = setmetatable({}, { __gc = function() os.remove(dummy_rom_filename) end } )
+io.open(dummy_rom_filename, "w"):close()
+local deleter = {}
+setmetatable(deleter, {
+    __gc = function() os.remove(dummy_rom_filename) end,
+})
 
 local config = {
-  uarch ={
-    ram = {
-      image_filename = uarch_ram_image_filename,
-      length = uarch_ram_length
+    uarch = {
+        ram = {
+            image_filename = uarch_ram_image_filename,
+            length = uarch_ram_length,
+        },
     },
-  },
-  processor = {},
-  rom = { image_filename = dummy_rom_filename },
-  ram = { length = 0x1000 }  
+    processor = {},
+    rom = { image_filename = dummy_rom_filename },
+    ram = { length = 0x1000 },
 }
 
-local runtime_config = {}
-
-local machine = assert(cartesi.machine(config, runtime))
+local machine = assert(cartesi.machine(config))
 
 -- run microarchitecture
 machine:run_uarch()
 
--- extract test result signature from microarchitecture RAM 
+-- extract test result signature from microarchitecture RAM
 local mem = machine:read_memory(uarch_ram_start, uarch_ram_length)
 local s1, e1 = string.find(mem, "BEGIN_CTSI_SIGNATURE____")
 local s2, e2 = string.find(mem, "END_CTSI_SIGNATURE______")
-local sig = string.sub(mem, e1+1, s2-1)
+local sig = string.sub(mem, e1 + 1, s2 - 1)
 
 -- write signature to file, in the format expected by the arch test script
 local fd = io.open(output_signature_file, "w")
-for i=1, #sig, 4 do   
-  local w = string.reverse(string.sub(sig, i, i+3))
-  for j=1,4,1 do 
-    local b = string.byte(string.sub(w, j, h))
-    fd:write(string.format("%02x", b))
-  end
-  fd:write("\n")
+for i = 1, #sig, 4 do
+    local w = string.reverse(string.sub(sig, i, i + 3))
+    for j = 1, 4, 1 do
+        local b = string.byte(string.sub(w, j))
+        fd:write(string.format("%02x", b))
+    end
+    fd:write("\n")
 end
 
 -- pad fill output file
-if (#sig % 16) ~= 0 then
-  fd:write("00000000\n00000000\n")
-end
+if (#sig % 16) ~= 0 then fd:write("00000000\n00000000\n") end
 
-fd:close(sig_file)
+fd:close()

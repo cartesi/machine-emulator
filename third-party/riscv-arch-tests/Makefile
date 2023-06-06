@@ -9,7 +9,7 @@ SRCDIR = $(abspath src)
 DEPDIR = third-party
 RISCV_ARCH_TEST = $(DEPDIR)/$(RISCV_ARCH_TEST_PROJ)-$(RISCV_ARCHTEST_RELEASE)
 TEST_BOOTSTRAP = $(abspath src/bootstrap.bin)
-LUA = lua5.3
+LUA = lua5.4
 RUN_ARCH_TEST = $(LUA) $(abspath src/run-rv64i-arch-test.lua)
 
 # Arguments required by the riscv arch test suite

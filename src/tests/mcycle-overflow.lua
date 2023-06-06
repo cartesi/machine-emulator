@@ -1,4 +1,4 @@
-#!/usr/bin/env lua5.3
+#!/usr/bin/env lua5.4
 
 -- Copyright 2019 Cartesi Pte. Ltd.
 --
@@ -16,34 +16,34 @@
 -- along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 --
 
-local cartesi = require"cartesi"
-local test_util = require "tests.util"
+local cartesi = require("cartesi")
+local test_util = require("tests.util")
 
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
 local MAX_MCYCLE = -1
 local MAX_UARCH_CYCLE = -1
 
 local function build_machine()
-    local config =  {
+    local config = {
         processor = {
             -- Request automatic default values for versioning CSRs
             mimpid = -1,
             marchid = -1,
-            mvendorid = -1
+            mvendorid = -1,
         },
         rom = {
-            image_filename = test_util.tests_path .. "bootstrap.bin"
+            image_filename = test_util.tests_path .. "bootstrap.bin",
         },
         ram = {
             image_filename = test_util.tests_path .. "mcycle_overflow.bin",
             length = 32 << 20,
         },
-        uarch = { 
-            ram = { 
+        uarch = {
+            ram = {
                 length = 1 << 20,
-                image_filename = test_util.create_test_uarch_program() 
-            }
-        }
+                image_filename = test_util.create_test_uarch_program(),
+            },
+        },
     }
     local machine = cartesi.machine(config)
     os.remove(config.uarch.ram.image_filename)
@@ -56,9 +56,8 @@ end
 
 local function do_test(description, f)
     io.write("  " .. description .. "...")
-    local machine = build_machine()
+    local machine <close> = build_machine()
     f(machine)
-    machine:destroy()
     print(" passed")
 end
 
@@ -81,16 +80,15 @@ do_test("machine run shouldn't change state in max mcycle", function(machine)
     assert(hash_before == hash_after)
 end)
 
-for _, proofs in ipairs{true, false} do
-    do_test("machine step should do nothing on max mcycle [proofs=" ..
-            tostring(proofs) .. "]", function(machine)
+for _, proofs in ipairs({ true, false }) do
+    do_test("machine step should do nothing on max mcycle [proofs=" .. tostring(proofs) .. "]", function(machine)
         machine:write_uarch_cycle(MAX_UARCH_CYCLE)
-        local log = machine:step_uarch{proofs=proofs}
+        local log = machine:step_uarch({ proofs = proofs })
         assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
         assert(#log.accesses == 1)
         assert(log.accesses[1].type == "read")
         assert(log.accesses[1].address == 0x320) -- address of uarch_cycle in shadow
-        assert(log.accesses[1].read == string.pack('J', MAX_UARCH_CYCLE))
+        assert(log.accesses[1].read == string.pack("J", MAX_UARCH_CYCLE))
         assert((log.accesses[1].proof ~= nil) == proofs)
     end)
 end

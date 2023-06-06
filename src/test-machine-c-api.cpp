@@ -183,7 +183,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_default_machine_test, default_mach
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = err_msg;
-    std::string origin("ROM image filename is undefined");
+    std::string origin("RAM length cannot be zero");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_error_message(err_msg);

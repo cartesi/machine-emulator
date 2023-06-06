@@ -645,10 +645,24 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"reset_uarch_state", machine_obj_index_reset_uarch_state},
 });
 
+/// \brief This is the machine __close metamethod implementation.
+/// \param L Lua state.
+static int machine_obj_close(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_destroy(m.get(), err_msg));
+    clua_close<clua_managed_cm_ptr<cm_machine>>(L);
+    return 0;
+}
+
 int clua_i_virtual_machine_init(lua_State *L, int ctxidx) {
     if (!clua_typeexists<clua_managed_cm_ptr<cm_machine>>(L, ctxidx)) {
         clua_createtype<clua_managed_cm_ptr<cm_machine>>(L, "cartesi machine object", ctxidx);
         clua_setmethods<clua_managed_cm_ptr<cm_machine>>(L, machine_obj_index.data(), 0, ctxidx);
+        // Override __close to actually destroy the machine
+        static const auto machine_class_meta = cartesi::clua_make_luaL_Reg_array({
+            {"__close", machine_obj_close},
+        });
+        clua_setmetamethods<clua_managed_cm_ptr<cm_machine>>(L, machine_class_meta.data(), 0, ctxidx);
     }
     return 1;
 }

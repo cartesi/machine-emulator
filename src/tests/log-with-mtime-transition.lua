@@ -1,31 +1,26 @@
-#!/usr/bin/env lua5.3
+#!/usr/bin/env lua5.4
 
-local test_util = require "tests.util"
-local cartesi = require"cartesi"
-
-local rom_filename = os.tmpname()
-io.open(rom_filename, 'w'):close()
-local deleter = setmetatable({}, { __gc = function() os.remove(rom_filename) end } )
+local test_util = require("tests.util")
+local cartesi = require("cartesi")
 
 local config = {
     processor = {
         marchid = -1,
         mimplid = -1,
         mvendorid = -1,
-        mcycle = 99
+        mcycle = 99,
     },
     ram = {
-        length = 1<<12
+        length = 1 << 12,
     },
     rom = {
-        image_filename = rom_filename
+        image_filename = "",
     },
-    uarch = { 
-        ram = { length = 1 << 20, image_filename = test_util.create_test_uarch_program() }
-    }
+    uarch = {
+        ram = { length = 1 << 20, image_filename = test_util.create_test_uarch_program() },
+    },
 }
-local machine = cartesi.machine(config)
-os.remove(config.uarch.ram.image_filename)
+local machine <close> = cartesi.machine(config)
 
 local old_hash = machine:get_root_hash()
 local access_log = machine:step_uarch({ proofs = true })

@@ -18,9 +18,9 @@ UNAME:=$(shell uname)
 
 BUILDDIR ?= $(abspath ../build/$(UNAME)_$(shell uname -m))
 
-LUA_INC:=$(shell pkg-config --cflags-only-I lua5.3)
-LUA_LIB:=-llua5.3
-LUA_BIN?=lua5.3
+LUA_INC:=$(shell pkg-config --cflags-only-I lua5.4)
+LUA_LIB:=-llua5.4
+LUA_BIN?=lua5.4
 GRPC_DIR:=../lib/grpc-interfaces
 
 PROTOC:=$(BUILDDIR)/bin/protoc
@@ -252,6 +252,9 @@ CLANG_FORMAT_UARCH_FILES:=$(filter-out %uarch-printf%,$(strip $(CLANG_FORMAT_UAR
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.c) $(wildcard *.h) $(wildcard *.hpp) $(CLANG_FORMAT_UARCH_FILES)
 CLANG_FORMAT_FILES:=$(filter-out %.pb.h,$(strip $(CLANG_FORMAT_FILES)))
 
+STYLUA=stylua
+STYLUA_FLAGS=--indent-type Spaces --collapse-simple-statement Always
+
 EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
 CLANG_TIDY_HEADER_FILTER=$(PWD)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
@@ -283,7 +286,7 @@ endif
 
 all: luacartesi grpc hash c-api jsonrpc-remote-cartesi-machine
 
-.PHONY: all generate use clean test lint format check-format luacartesi grpc hash docker c-api compile_flags.txt
+.PHONY: all generate use clean test lint format format-lua check-format check-format-lua luacartesi grpc hash docker c-api compile_flags.txt
 
 CARTESI_OBJS:= \
 	pma-driver.o \
@@ -407,6 +410,7 @@ test-jsonrpc: luacartesi jsonrpc
 	./tests/test-jsonrpc-server.sh ./jsonrpc-remote-cartesi-machine "$(LUA) ./cartesi-machine.lua" "$(LUA) ./cartesi-machine-tests.lua" "$(TEST_PATH)" "$(LUA)"
 
 test-scripts: luacartesi
+	$(LUA) spec/all-tests.lua
 	for x in `find tests -maxdepth 1 -type f -name "*.lua"` ; do \
 		echo -n 'CTSICTSI' | $(LUA) $$x local || exit 1; \
 	done
@@ -430,6 +434,15 @@ format:
 
 check-format:
 	@$(CLANG_FORMAT) -Werror --dry-run $(CLANG_FORMAT_FILES)
+
+format-lua:
+	@$(STYLUA) $(STYLUA_FLAGS) .
+
+check-format-lua:
+	@$(STYLUA) $(STYLUA_FLAGS) --check .
+
+check-lua:
+	luacheck .
 
 fs.ext2: fs/*
 	genext2fs -f -i 512 -b 8192 -d fs fs.ext2

@@ -116,9 +116,8 @@ end
 function test_util.make_do_test(build_machine, type, config)
     return function(description, f)
         io.write("  " .. description .. "...\n")
-        local machine = build_machine(type, config)
+        local machine <close> = build_machine(type, config)
         f(machine)
-        machine:destroy()
         print("<<<<<<<<<<<<<<<< passed >>>>>>>>>>>>>>>")
     end
 end

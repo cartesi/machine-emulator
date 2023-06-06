@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added static analysis for Lua code
 - Added code formatter for Lua code
+- Added support for to-be-closed variables for machine Lua API
 
 ### Fixed
 

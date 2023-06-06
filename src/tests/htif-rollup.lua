@@ -80,7 +80,7 @@ end
 
 local function test(config)
     local pattern = "\xef\xcd\xab\x89\x67\x45\x23\x01"
-    local machine = cartesi.machine(config)
+    local machine <close> = cartesi.machine(config)
 
     -- fill input with `pattern`
     local rx = config.rollup.rx_buffer

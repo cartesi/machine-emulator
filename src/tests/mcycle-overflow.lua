@@ -56,9 +56,8 @@ end
 
 local function do_test(description, f)
     io.write("  " .. description .. "...")
-    local machine = build_machine()
+    local machine <close> = build_machine()
     f(machine)
-    machine:destroy()
     print(" passed")
 end
 

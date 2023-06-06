@@ -116,13 +116,12 @@ end
 local function measure(exec_args)
     local results = {}
     for _ = 1, N_RUNS do
-        local machine = build_machine(exec_args)
+        local machine <close> = build_machine(exec_args)
         local start = socket.gettime()
         repeat
             machine:run(MAX_MCYCLE)
         until machine:read_iflags_H() or machine:read_mcycle() < MAX_MCYCLE
         local elapsed = socket.gettime() - start
-        machine:destroy()
         table.insert(results, elapsed)
     end
     return results

@@ -193,7 +193,7 @@ local function test(config, yield_automatic_enable, yield_manual_enable)
         yield_automatic = yield_automatic_enable,
         yield_manual = yield_manual_enable,
     }
-    local machine = cartesi.machine(config)
+    local machine <close> = cartesi.machine(config)
     local break_reason
     for _, v in ipairs(yields) do
         if

@@ -228,7 +228,7 @@ local function run(tests)
             failed = false,
             cycles = 0,
         }
-        local machine = build_machine(ctx.ram_image)
+        local machine <close> = build_machine(ctx.ram_image)
         io.write(ctx.ram_image, ": ")
         machine:run_uarch(2 * ctx.expected_cycles)
         check_test_result(machine, ctx, errors)
@@ -238,7 +238,6 @@ local function run(tests)
         else
             print("passed")
         end
-        machine:destroy()
     end
     if error_count > 0 then
         io.write(string.format("\nFAILED %d of %d tests:\n\n", error_count, #tests))
@@ -354,7 +353,7 @@ local function json_logs(tests)
             accesses_count = 0,
         }
         contexts[#contexts + 1] = ctx
-        local machine = build_machine(ctx.ram_image)
+        local machine <close> = build_machine(ctx.ram_image)
         io.write(ctx.ram_image, ": ")
         run_machine_writing_json_logs(machine, ctx)
         check_test_result(machine, ctx, errors)
@@ -364,7 +363,6 @@ local function json_logs(tests)
         else
             print("passed")
         end
-        machine:destroy()
     end
     if error_count > 0 then
         io.write(string.format("\nFAILED %d of %d tests:\n\n", error_count, #tests))

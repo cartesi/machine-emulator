@@ -28,7 +28,7 @@ local function test(config, console_getchar_enable)
     config.htif = {
         console_getchar = console_getchar_enable,
     }
-    local machine = cartesi.machine(config)
+    local machine <close> = cartesi.machine(config)
     machine:run(math.maxinteger)
 
     -- should be halted

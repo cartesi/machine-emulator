@@ -20,7 +20,7 @@ local config = {
         ram = { length = 1 << 20, image_filename = test_util.create_test_uarch_program() },
     },
 }
-local machine = cartesi.machine(config)
+local machine <close> = cartesi.machine(config)
 
 local old_hash = machine:get_root_hash()
 local access_log = machine:step_uarch({ proofs = true })

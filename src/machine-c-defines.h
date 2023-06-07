@@ -32,4 +32,21 @@
 #define CM_TREE_LOG2_ROOT_SIZE 64         // NOLINT(cppcoreguidelines-macro-usage)
 #define CM_FLASH_DRIVE_CONFIGS_MAX_SIZE 8 // NOLINT(cppcoreguidelines-macro-usage)
 
+// Every new emulator release should bump this constant when its RISC-V interpreter change
+#define CM_MARCHID 15 // NOLINT(cppcoreguidelines-macro-usage)
+
+// Every new emulator release should bump these constants
+#define CM_VERSION_MAJOR 0  // NOLINT(cppcoreguidelines-macro-usage)
+#define CM_VERSION_MINOR 14 // NOLINT(cppcoreguidelines-macro-usage)
+#define CM_VERSION_PATCH 0  // NOLINT(cppcoreguidelines-macro-usage)
+#define CM_VERSION_LABEL "" // NOLINT(cppcoreguidelines-macro-usage)
+
+#define _CM_STR_HELPER(x) #x
+#define _CM_STR(x) _CM_STR_HELPER(x)
+#define CM_VERSION                                                                                                     \
+    _CM_STR(CM_VERSION_MAJOR) "." _CM_STR(CM_VERSION_MINOR) "." _CM_STR(CM_VERSION_PATCH) CM_VERSION_LABEL
+
+#define CM_MIMPID                                                                                                      \
+    (CM_VERSION_MAJOR * 1000000 + CM_VERSION_MINOR * 1000 + CM_VERSION_PATCH) // NOLINT(cppcoreguidelines-macro-usage)
+
 #endif // MACHINE_EMULATOR_SDK_MACHINE_C_DEFINES_H

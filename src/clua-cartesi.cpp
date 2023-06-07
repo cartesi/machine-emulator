@@ -125,6 +125,19 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, MVENDORID_INIT, "MVENDORID", -1);
     clua_setintegerfield(L, MARCHID_INIT, "MARCHID", -1);
     clua_setintegerfield(L, MIMPID_INIT, "MIMPID", -1);
+    clua_setintegerfield(L, CM_VERSION_MAJOR, "VERSION_MAJOR", -1);
+    clua_setintegerfield(L, CM_VERSION_MINOR, "VERSION_MINOR", -1);
+    clua_setintegerfield(L, CM_VERSION_PATCH, "VERSION_PATCH", -1);
+    clua_setstringfield(L, CM_VERSION_LABEL, "VERSION_LABEL", -1);
+    clua_setstringfield(L, CM_VERSION, "VERSION", -1);
+    clua_setstringfield(L, BOOST_COMPILER, "COMPILER", -1);
+    clua_setstringfield(L, BOOST_PLATFORM, "PLATFORM", -1);
+#ifdef GIT_COMMIT
+    clua_setstringfield(L, GIT_COMMIT, "GIT_COMMIT", -1);
+#endif
+#if defined(__DATE__) && defined(__TIME__)
+    clua_setstringfield(L, __DATE__ " " __TIME__, "BUILD_TIME", -1);
+#endif
     return 1;
 }
 }

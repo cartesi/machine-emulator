@@ -21,7 +21,7 @@ WORKDIR /usr/src/emulator
 COPY . .
 
 RUN make -j$(nproc) dep && \
-    make -j$(nproc) release=$RELEASE && \
+    make -j$(nproc) release=$RELEASE git_commit=$GIT_COMMIT && \
     make -j$(nproc) uarch && \
     make install && \
     make clean && \

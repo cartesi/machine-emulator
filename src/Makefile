@@ -190,6 +190,11 @@ else
 OPTFLAGS+=-O2 -g
 endif
 
+# Git commit hash (for releases)
+ifneq ($(git_commit),)
+DEFS+=-DGIT_COMMIT='"$(git_commit)"'
+endif
+
 # Optimization flags
 ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
 DEFS+=-DNDEBUG

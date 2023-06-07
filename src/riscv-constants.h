@@ -17,6 +17,7 @@
 #ifndef RISCV_CONSTANTS_H
 #define RISCV_CONSTANTS_H
 
+#include "machine-c-defines.h"
 #include <cstdint>
 #include <pma-defines.h>
 
@@ -430,8 +431,8 @@ enum CARTESI_init : uint64_t {
     PC_INIT = UINT64_C(0x1000),                    ///< Initial value for pc
     FCSR_INIT = UINT64_C(0),                       ///< Initial value for fcsr
     MVENDORID_INIT = UINT64_C(0x6361727465736920), ///< Initial value for mvendorid
-    MARCHID_INIT = UINT64_C(0xf),                  ///< Initial value for marchid
-    MIMPID_INIT = UINT64_C(1),                     ///< Initial value for mimpid
+    MARCHID_INIT = CM_MARCHID,                     ///< Initial value for marchid
+    MIMPID_INIT = CM_MIMPID,                       ///< Initial value for mimpid
     MCYCLE_INIT = UINT64_C(0),                     ///< Initial value for mcycle
     ICYCLEINSTRET_INIT = UINT64_C(0),              ///< Initial value for icycleinstret
     MSTATUS_INIT =

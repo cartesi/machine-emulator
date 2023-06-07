@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed compile errors with GCC 13.1
 - Fixed Lua path being mixed with different Lua version path
 
+### Added
+
+- Added --version and --version-json command-line options in cartesi-machine
+
 ## [0.14.0] - 2023-05-03
 ### Added
 

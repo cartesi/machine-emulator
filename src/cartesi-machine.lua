@@ -1,6 +1,6 @@
 #!/usr/bin/env lua5.3
 
--- Copyright 2019-2021 Cartesi Pte. Ltd.
+-- Copyright 2019-2023 Cartesi Pte. Ltd.
 --
 -- This file is part of the machine-emulator. The machine-emulator is free
 -- software: you can redistribute it and/or modify it under the terms of the GNU
@@ -37,6 +37,14 @@ Usage:
   %s [options] [command] [arguments]
 
 where options are:
+  --help
+    display this information.
+
+  --version
+    display cartesi machine version information and exit.
+
+  --version-json
+    display cartesi machine semantic version and exit.
 
   --remote-protocol=<protocol>
     select protocol to use with remote cartesi machine.
@@ -440,6 +448,61 @@ local options = {
     { "^%-%-help$", function(all)
         if not all then return false end
         help()
+        return true
+    end },
+    { "^%-%-version$", function(all)
+        if not all then return false end
+        print(string.format("cartesi-machine %s", cartesi.VERSION))
+        if cartesi.GIT_COMMIT then
+          print(string.format("git commit: %s", cartesi.GIT_COMMIT))
+        end
+        if cartesi.BUILD_TIME then
+          print(string.format("build time: %s", cartesi.BUILD_TIME))
+        end
+        print(string.format("platform: %s", cartesi.PLATFORM))
+        print(string.format("compiler: %s", cartesi.COMPILER))
+        print("Copyright 2019-2023 Cartesi Pte. Ltd.")
+        os.exit()
+        return true
+    end },
+    { "^%-%-version%-json$", function(all)
+        if not all then return false end
+        print("{")
+        print(string.format('  "version": "%s",', cartesi.VERSION))
+        print(string.format('  "version_major": %d,', cartesi.VERSION_MAJOR))
+        print(string.format('  "version_minor": %d,', cartesi.VERSION_MINOR))
+        print(string.format('  "version_patch": %d,', cartesi.VERSION_PATCH))
+        print(string.format('  "version_label": "%s",', cartesi.VERSION_LABEL))
+        print(string.format('  "marchid": %d,', cartesi.MARCHID))
+        print(string.format('  "mimpid": %d,', cartesi.MIMPID))
+        -- the following works only when luaposix is available in the system
+        local ok, stdlib = pcall(require, 'posix.stdlib')
+        if ok and stdlib then
+          -- use realpath to get images real filenames,
+          -- tools could use this information to detect rom/linux/rootfs versions
+          local rom_image = stdlib.realpath(images_path .. 'rom.bin')
+          local ram_image = stdlib.realpath(images_path .. 'linux.bin')
+          local rootfs_image = stdlib.realpath(images_path .. 'rootfs.ext2')
+          if rom_image then
+            print(string.format('  "default_rom_image": "%s",', rom_image))
+          end
+          if ram_image then
+            print(string.format('  "default_ram_image": "%s",', ram_image))
+          end
+          if rootfs_image then
+            print(string.format('  "default_rootfs_image": "%s",', rootfs_image))
+          end
+        end
+        if cartesi.GIT_COMMIT then
+          print(string.format('  "git_commit": "%s",', cartesi.GIT_COMMIT))
+        end
+        if cartesi.BUILD_TIME then
+          print(string.format('  "build_time": "%s",', cartesi.BUILD_TIME))
+        end
+        print(string.format('  "compiler": "%s",', cartesi.COMPILER))
+        print(string.format('  "platform": "%s"', cartesi.PLATFORM))
+        print("}")
+        os.exit()
         return true
     end },
     { "^%-%-rom%-image%=(.*)$", function(o)

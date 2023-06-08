@@ -463,6 +463,9 @@ static void load_hash(const std::string &dir, machine::hash_type &h) {
 }
 
 machine::machine(const std::string &dir, const machine_runtime_config &r) : machine{machine_config::load(dir), r} {
+    if (r.skip_root_hash_check) {
+        return;
+    }
     hash_type hstored;
     hash_type hrestored;
     load_hash(dir, hstored);

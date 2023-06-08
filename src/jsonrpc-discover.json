@@ -1612,6 +1612,9 @@
         "properties": {
           "concurrency": {
             "$ref": "#/components/schemas/ConcurrencyConfig"
+          },
+          "skip_root_hash_check": {
+            "type": "boolean"
           }
         }
       }

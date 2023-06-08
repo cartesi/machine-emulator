@@ -1234,6 +1234,7 @@ cm_machine_runtime_config *clua_check_cm_machine_runtime_config(lua_State *L, in
         clua_push_to(L, clua_managed_cm_ptr<cm_machine_runtime_config>(new cm_machine_runtime_config{}), ctxidx);
     cm_machine_runtime_config *config = managed.get();
     check_cm_concurrency_runtime_config(L, tabidx, &config->concurrency);
+    config->skip_root_hash_check = opt_boolean_field(L, tabidx, "skip_root_hash_check");
     managed.release();
     lua_pop(L, 1);
     return config;

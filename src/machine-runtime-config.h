@@ -30,6 +30,7 @@ struct concurrency_config {
 /// \brief Machine runtime configuration
 struct machine_runtime_config {
     concurrency_config concurrency{};
+    bool skip_root_hash_check{};
 };
 
 /// \brief CONCURRENCY constants

@@ -256,6 +256,13 @@ where options are:
         when ommited or defined as 0, the number of hardware threads is used if
         it can be identified or else a single thread is used.
 
+  --skip-root-hash-check
+    skip merkle tree root hash when loading a stored machine,
+    assuming the stored machine files are not corrupt,
+    this is only intended to speed up machine loading in emulator tests.
+
+    DON'T USE THIS OPTION IN PRODUCTION
+
   --max-mcycle=<number>
     stop at a given mcycle (default: 2305843009213693952).
 
@@ -388,6 +395,7 @@ local uarch = nil
 local rollup_advance = nil
 local rollup_inspect = nil
 local concurrency_update_merkle_tree = 0
+local skip_root_hash_check = false
 local append_rom_bootargs = ""
 local htif_console_getchar = false
 local htif_yield_automatic = false
@@ -687,6 +695,11 @@ local options = {
         c.update_merkle_tree = assert(util.parse_number(c.update_merkle_tree),
                 "invalid update_merkle_tree number in " .. all)
         concurrency_update_merkle_tree = c.update_merkle_tree
+        return true
+    end },
+    { "^%-%-skip%-root%-hash%-check$", function(all)
+        if not all then return false end
+        skip_root_hash_check = true
         return true
     end },
     { "^(%-%-initial%-proof%=(.+))$", function(all, opts)
@@ -1180,7 +1193,8 @@ end
 local runtime = {
     concurrency = {
         update_merkle_tree = concurrency_update_merkle_tree
-    }
+    },
+    skip_root_hash_check = skip_root_hash_check
 }
 
 if remote and not remote_create then

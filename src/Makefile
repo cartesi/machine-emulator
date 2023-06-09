@@ -14,6 +14,15 @@
 # along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 #
 
+# Every new emulator release should bump this constant when its RISC-V interpreter change
+EMULATOR_MARCHID=15
+
+# Every new emulator release should bump these constants
+EMULATOR_VERSION_MAJOR=0
+EMULATOR_VERSION_MINOR=14
+EMULATOR_VERSION_PATCH=0
+EMULATOR_VERSION_LABEL=
+
 UNAME:=$(shell uname)
 
 BUILDDIR ?= $(abspath ../build/$(UNAME)_$(shell uname -m))
@@ -682,6 +691,9 @@ machine-config.o protobuf-util.o: $(CARTESI_PROTOBUF_GEN_OBJS)
 
 grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o proxy.o: $(CARTESI_GRPC_GEN_OBJS) $(CARTESI_PROTOBUF_GEN_OBJS)
 
+machine-c-version.h: ../tools/template/machine-c-version.h.template
+	sed "s|EMULATOR_MARCHID|$(EMULATOR_MARCHID)|g;s|EMULATOR_VERSION_MAJOR|$(EMULATOR_VERSION_MAJOR)|g;s|EMULATOR_VERSION_MINOR|$(EMULATOR_VERSION_MINOR)|g;s|EMULATOR_VERSION_PATCH|$(EMULATOR_VERSION_PATCH)|g;s|EMULATOR_VERSION_LABEL|$(EMULATOR_VERSION_LABEL)|g" $< > $@
+
 jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo '// This file is auto-generated and should not be modified' > jsonrpc-discover.cpp
 	echo 'namespace cartesi {' >> jsonrpc-discover.cpp
@@ -690,7 +702,7 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo ')json";' >> jsonrpc-discover.cpp
 	echo '} // namespace cartesi' >> jsonrpc-discover.cpp
 
-%.clang-tidy: %.cpp $(PROTO_SOURCES)
+%.clang-tidy: %.cpp $(PROTO_SOURCES) machine-c-version.h
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) 2>/dev/null
 	@$(CXX) $(CXXFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
@@ -700,7 +712,7 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
-%.o: %.cpp
+%.o: %.cpp machine-c-version.h
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 %.o: %.cc $(PROTO_SOURCES)
@@ -712,7 +724,7 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 clean: clean-auto-generated clean-coverage clean-profile clean-proto-sources clean-tidy clean-libcartesi clean-executables clean-tests
 
 clean-auto-generated:
-	@rm -f jsonrpc-discover.cpp
+	@rm -f jsonrpc-discover.cpp machine-c-version.h
 
 clean-proto-sources:
 	@rm -f *.pb.cc *.pb.h

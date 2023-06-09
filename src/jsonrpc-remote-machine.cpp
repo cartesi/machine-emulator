@@ -68,32 +68,50 @@ static constexpr const char *server_version_build = "";
 
 /// \brief Volatile variable to abort server loop in case of signal
 static volatile bool abort_due_to_signal = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-                                                  //
-/// \brief Signal handler installed for SIGTERM and SIGINT signals
-/// \param signal Signal number
-static void signal_handler_SIGTERM_SIGINT(int signal) {
+
+/// \brief Signal handler installed for SIGTERM
+/// \param signal Signal number (will be SIGTERM)
+static void signal_handler_SIGTERM(int signal) {
     (void) signal;
     // Set variable to break out from server loop
+    BOOST_LOG_TRIVIAL(fatal) << "caught SIGTERM";
     abort_due_to_signal = true;
-    if (signal == SIGINT) {
-        BOOST_LOG_TRIVIAL(fatal) << "caught SIGINT";
-    } else if (signal == SIGTERM) {
-        BOOST_LOG_TRIVIAL(fatal) << "caught SIGTERM";
-    } else {
-        // Should not happen
-        BOOST_LOG_TRIVIAL(fatal) << "caught signal (" << signal << ")";
-    }
+}
+
+/// \brief Signal handler installed for SIGINT
+/// \param signal Signal number (will be SIGINT)
+static void signal_handler_SIGINT(int signal) {
+    (void) signal;
+    // Set variable to break out from server loop
+    BOOST_LOG_TRIVIAL(fatal) << "caught SIGINT";
+    abort_due_to_signal = true;
 }
 
 /// \brief Signal handler installed for SIGCHLD signals
-/// \param signal Signal number (will obviously be SIGCHLD)
+/// \param signal Signal number (will be SIGCHLD)
 static void signal_handler_SIGCHLD(int signal) {
     // Make sure to wait on dead children so they don't turn into zombies
     // If we die before them, there is no solution, but if they die first, we reap them right away
     (void) signal;
+    BOOST_LOG_TRIVIAL(trace) << "caught SIGCHLD";
     while (waitpid(static_cast<pid_t>(-1), nullptr, WNOHANG) > 0) {
         ;
     }
+}
+
+/// \brief Signal handler installed for SIGTTOU signals
+/// \param signal Signal number (will be SIGTTOU)
+static void signal_handler_SIGTTOU(int signo) {
+    (void) signo;
+    BOOST_LOG_TRIVIAL(trace) << "caught SIGTOU";
+    // force an error on tc write operations (e.g., tcsetattr(2))
+}
+
+/// \brief Signal handler installed for SIGPIPE signals
+/// \param signal Signal number (will be SIGPIPE)
+static void signal_handler_SIGPIPE(int signo) {
+    (void) signo;
+    BOOST_LOG_TRIVIAL(trace) << "caught SIGPIPE";
 }
 
 /// \brief Install our signal handlers
@@ -101,19 +119,31 @@ static void install_signal_handlers(void) {
 
     struct sigaction sa {};
     sa.sa_handler = signal_handler_SIGCHLD; // NOLINT(cppcoreguidelines-pro-type-union-access)
-    sa.sa_flags = 0;
+    sigemptyset(&sa.sa_mask);
     sigaction(SIGCHLD, &sa, nullptr);
 
-    sa.sa_handler = SIG_IGN;
-    sa.sa_flags = 0;
+    // Prevent this process from suspending after issuing a SIGTTOU when trying
+    // to configure terminal (on htif::init_console())
+    //
+    // https://pubs.opengroup.org/onlinepubs/009604599/basedefs/xbd_chap11.html#tag_11_01_04
+    // https://pubs.opengroup.org/onlinepubs/009604499/functions/tcsetattr.html
+    // http://curiousthing.org/sigttin-sigttou-deep-dive-linux
+    sa.sa_handler = signal_handler_SIGTTOU; // NOLINT(cppcoreguidelines-pro-type-union-access)
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGTTOU, &sa, nullptr);
+
+    // Prevent this process from crashing on SIGPIPE when remote connection is closed
+    sa.sa_handler = signal_handler_SIGPIPE;
+    sigemptyset(&sa.sa_mask);
     sigaction(SIGPIPE, &sa, nullptr);
 
-    sa.sa_handler = signal_handler_SIGTERM_SIGINT;
-    sa.sa_flags = 0;
-    sigaction(SIGINT, &sa, nullptr);
-    sa.sa_handler = signal_handler_SIGTERM_SIGINT;
-    sa.sa_flags = 0;
+    // Set variable to break server loop and exit
+    sa.sa_handler = signal_handler_SIGTERM;
+    sigemptyset(&sa.sa_mask);
     sigaction(SIGTERM, &sa, nullptr);
+    sa.sa_handler = signal_handler_SIGINT;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGINT, &sa, nullptr);
 }
 
 /// \brief Closes event manager without interfering with other processes

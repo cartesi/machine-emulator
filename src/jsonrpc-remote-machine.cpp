@@ -60,7 +60,7 @@ static constexpr uint32_t server_version_major = 0;
 /// \brief Server semantic version minor
 static constexpr uint32_t server_version_minor = 1;
 /// \brief Server semantic version patch
-static constexpr uint32_t server_version_patch = 0;
+static constexpr uint32_t server_version_patch = 1;
 /// \brief Server semantic version pre_release
 static constexpr const char *server_version_pre_release = "";
 /// \brief Server semantic version build
@@ -1675,6 +1675,17 @@ where
 
 and options are
 
+    --log-level=<level>
+      sets the log level
+      <level> can be
+        trace
+        debug
+        info
+        warn
+        error
+      the command line option takes precedence over the environment variable
+      REMOTE_CARTESI_MACHINE_LOG_LEVEL
+
     --help
       prints this message and exits
 
@@ -1696,27 +1707,51 @@ static bool stringval(const char *pre, const char *str, const char **val) {
     return false;
 }
 
-int main(int argc, char *argv[]) {
-    const char *server_address = "localhost:0";
-
-    if (argc < 1) { // NOLINT: of course it could be < 1...
-        BOOST_LOG_TRIVIAL(fatal) << "missing argv[0]";
-        exit(1);
+/// \brief Initialize logger to appropriate format
+/// \param strlevel String with log level, or, if nullptr, use environment variable.
+static void init_logger(const char *strlevel) {
+    using namespace boost::log;
+    trivial::severity_level loglevel = trivial::info;
+    if (!strlevel) {
+        strlevel = std::getenv("REMOTE_CARTESI_MACHINE_LOG_LEVEL");
     }
+    if (strlevel) {
+        trivial::from_string(strlevel, strlen(strlevel), loglevel);
+    }
+    auto core = boost::log::core::get();
+    core->add_global_attribute("TimeStamp", attributes::local_clock());
+    core->add_global_attribute("PID", attributes::make_function(&getpid));
+    core->add_global_attribute("PPID", attributes::make_function(&getppid));
+    boost::log::add_console_log(std::clog, keywords::filter = trivial::severity >= loglevel,
+        keywords::format = "%TimeStamp% %Severity% jsonrpc-remote-machine pid:%PID% ppid:%PPID% %Message%");
+}
 
-    BOOST_LOG_TRIVIAL(info) << "server version is " << server_version_major << "." << server_version_minor << "."
-                            << server_version_patch;
+int main(int argc, char *argv[]) try {
+    const char *server_address = "localhost:0";
+    const char *log_level = nullptr;
+    const char *program_name = "jsonrpc-remote-cartesi-machine";
+
+    if (argc > 0) { // NOLINT: of course it could be == 0...
+        program_name = argv[0];
+    }
 
     for (int i = 1; i < argc; i++) {
         if (stringval("--server-address=", argv[i], &server_address)) {
             ;
+        } else if (stringval("--log-level=", argv[i], &log_level)) {
+            ;
         } else if (strcmp(argv[i], "--help") == 0) {
-            help(argv[0]);
+            help(program_name);
             exit(0);
         } else {
             server_address = argv[i];
         }
     }
+
+    init_logger(log_level);
+
+    BOOST_LOG_TRIVIAL(info) << "server version is " << server_version_major << "." << server_version_minor << "."
+                            << server_version_patch;
 
     BOOST_LOG_TRIVIAL(info) << "'" << server_address << "' requested as initial server address";
 
@@ -1776,4 +1811,10 @@ int main(int argc, char *argv[]) {
     mg_mgr_free(&h->event_manager);
     delete h;
     return 0;
+} catch (std::exception &e) {
+    std::cerr << "Caught exception: " << e.what() << '\n';
+    return 1;
+} catch (...) {
+    std::cerr << "Caught unknown exception\n";
+    return 1;
 }

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added static analysis for Lua code
 - Added code formatter for Lua code
+- Added support for to-be-closed variables for machine Lua API
 - Added --version and --version-json command-line options in cartesi-machine
 - Added --skip-root-hash-check command line option to speed up machine loading in tests
 - Added --skip-version-check command line option to allow testing old machine snapshots
@@ -26,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use Lua path environment variables specific for version 5.4
 - Move uarch halt from assembler to C++
 - Ensure that uarch does not advance to the next micro instruction  when iflags.H or iflags.Y is set
+- Made flash drive length and ROM image filename optional in machine config
 
 ## [0.14.0] - 2023-05-03
 ### Added

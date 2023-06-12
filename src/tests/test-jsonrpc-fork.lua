@@ -27,7 +27,8 @@ local remote_address = nil
 
 -- Print help and exit
 local function help()
-    io.stderr:write(string.format([=[
+    io.stderr:write(string.format(
+        [=[
 Usage:
 
   %s --remote-address=<host>:<port>
@@ -35,36 +36,43 @@ Usage:
 where remote-address gives the address of a running
 jsonrpc remote Cartesi machine server.
 
-]=], arg[0]))
+]=],
+        arg[0]
+    ))
     os.exit()
 end
 
 local options = {
-    { "^%-%-h$", function(all)
-        if not all then return false end
-        help()
-    end },
-    { "^%-%-help$", function(all)
-        if not all then return false end
-        help()
-    end },
-    { "^%-%-remote%-address%=(.*)$", function(o)
-        if not o or #o < 1 then return false end
-        remote_address = o
-        return true
-    end },
-    { ".*", function(all)
-        error("unrecognized option " .. all)
-    end }
+    {
+        "^%-%-h$",
+        function(all)
+            if not all then return false end
+            help()
+        end,
+    },
+    {
+        "^%-%-help$",
+        function(all)
+            if not all then return false end
+            help()
+        end,
+    },
+    {
+        "^%-%-remote%-address%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            remote_address = o
+            return true
+        end,
+    },
+    { ".*", function(all) error("unrecognized option " .. all) end },
 }
 
 -- Process command line options
-for _, argument in ipairs({...}) do
-    if argument:sub(1,1) == "-" then
+for _, argument in ipairs({ ... }) do
+    if argument:sub(1, 1) == "-" then
         for _, option in ipairs(options) do
-            if option[2](argument:match(option[1])) then
-                break
-            end
+            if option[2](argument:match(option[1])) then break end
         end
     else
         error("unrecognized argument " .. argument)
@@ -113,7 +121,7 @@ local function fork_tree(address, x, depth)
     local node = {
         address = address,
         stub = stub,
-        x = x
+        x = x,
     }
     local machine
     if depth == 0 then
@@ -132,7 +140,7 @@ local function fork_tree(address, x, depth)
             machine:write_x(child_index, depth)
             x[child_index] = depth
             local child = fork_tree(stub.fork(), clone_x(x), depth + 1)
-            children[#children+1] = child
+            children[#children + 1] = child
         end
     end
     return node
@@ -142,7 +150,7 @@ local function pre_order(node, f, depth)
     depth = depth or 0
     f(node, depth)
     for _, child in ipairs(node.children) do
-        pre_order(child, f, depth+1)
+        pre_order(child, f, depth + 1)
     end
 end
 
@@ -152,17 +160,13 @@ local function check_tree(root)
         local x = node.x
         io.write(string.rep("  ", depth), "{", table.concat(node.x, ","), "}\n")
         for i = 1, 31 do
-            if machine:read_x(i) ~= x[i] then
-                error("mismatch in x[" .. i .. "]")
-            end
+            if machine:read_x(i) ~= x[i] then error("mismatch in x[" .. i .. "]") end
         end
     end)
 end
 
 local function kill_tree(root)
-    pre_order(root, function(node)
-        node.stub.shutdown()
-    end)
+    pre_order(root, function(node) node.stub.shutdown() end)
 end
 
 local tree = fork_tree(remote_address, new_x(), 0)

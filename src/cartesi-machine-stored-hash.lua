@@ -16,11 +16,12 @@
 -- along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 --
 
-local util = require"cartesi.util"
+local util = require("cartesi.util")
 
 local f = assert(
     io.open(assert(arg[1], "missing machine name") .. "/hash", "rb"),
-    string.format("unable to open machine '%s'", tostring(arg[1])))
+    string.format("unable to open machine '%s'", tostring(arg[1]))
+)
 local h = assert(f:read("a"), "unable to read hash")
 f:close()
 print(util.hexhash(h))

@@ -16,10 +16,10 @@
 -- along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 --
 
-local cartesi = require"cartesi"
-local test_util = require "tests.util"
+local cartesi = require("cartesi")
+local test_util = require("tests.util")
 
-local config_base =  {
+local config_base = {
     processor = {
         mvendorid = -1,
         mimpid = -1,
@@ -34,39 +34,47 @@ local config_base =  {
         length = 0x4000000,
     },
     rom = {
-        image_filename = test_util.tests_path .. "bootstrap.bin"
+        image_filename = test_util.tests_path .. "bootstrap.bin",
     },
     htif = {
         yield_automatic = true,
     },
     rollup = {
         rx_buffer = {
-            start = 0x60000000, length = 0x1000, shared = false,
+            start = 0x60000000,
+            length = 0x1000,
+            shared = false,
         },
         tx_buffer = {
-            start = 0x60001000, length = 0x1000, shared = false,
+            start = 0x60001000,
+            length = 0x1000,
+            shared = false,
         },
         input_metadata = {
-            start = 0x60002000, length = 0x1000, shared = false,
+            start = 0x60002000,
+            length = 0x1000,
+            shared = false,
         },
         voucher_hashes = {
-            start = 0x60003000, length = 0x1000, shared = false,
+            start = 0x60003000,
+            length = 0x1000,
+            shared = false,
         },
         notice_hashes = {
-            start = 0x60004000, length = 0x1000, shared = false,
+            start = 0x60004000,
+            length = 0x1000,
+            shared = false,
         },
-    }
+    },
 }
 
-local function stderr(...)
-    io.stderr:write(string.format(...))
-end
+local function stderr(...) io.stderr:write(string.format(...)) end
 
 local final_mcycle = 8981
 local exit_payload = 0
 
 local function check_buffer(machine, pattern, buffer)
-    local mem = string.rep(pattern, buffer.length/8)
+    local mem = string.rep(pattern, buffer.length / 8)
     assert(mem == machine:read_memory(buffer.start, buffer.length))
 end
 
@@ -75,12 +83,12 @@ local function test(config)
     local machine = cartesi.machine(config)
 
     -- fill input with `pattern`
-    local rx = config.rollup.rx_buffer;
-    machine:write_memory(rx.start, string.rep(pattern, rx.length/8), rx.length);
+    local rx = config.rollup.rx_buffer
+    machine:write_memory(rx.start, string.rep(pattern, rx.length / 8), rx.length)
 
     -- fill input_metadata with `pattern`
-    local im = config.rollup.input_metadata;
-    machine:write_memory(im.start, string.rep(pattern, im.length/8), im.length);
+    local im = config.rollup.input_metadata
+    machine:write_memory(im.start, string.rep(pattern, im.length / 8), im.length)
     machine:run(math.maxinteger)
 
     -- check that buffers got filled in with `pattern`

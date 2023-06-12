@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added static analysis for Lua code
+- Added code formatter for Lua code
 - Added --version and --version-json command-line options in cartesi-machine
 - Added --skip-root-hash-check command line option to speed up machine loading in tests
 - Added --skip-version-check command line option to allow testing old machine snapshots

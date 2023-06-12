@@ -1615,6 +1615,9 @@
           },
           "skip_root_hash_check": {
             "type": "boolean"
+          },
+          "skip_version_check": {
+            "type": "boolean"
           }
         }
       }

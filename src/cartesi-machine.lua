@@ -257,9 +257,16 @@ where options are:
         it can be identified or else a single thread is used.
 
   --skip-root-hash-check
-    skip merkle tree root hash when loading a stored machine,
+    skip merkle tree root hash check when loading a stored machine,
     assuming the stored machine files are not corrupt,
     this is only intended to speed up machine loading in emulator tests.
+
+    DON'T USE THIS OPTION IN PRODUCTION
+
+  --skip-version-check
+    skip emulator version check when loading a stored machine,
+    assuming the stored machine is compatible with current emulator version,
+    this is only intended to test old snapshots during emulator development.
 
     DON'T USE THIS OPTION IN PRODUCTION
 
@@ -396,6 +403,7 @@ local rollup_advance = nil
 local rollup_inspect = nil
 local concurrency_update_merkle_tree = 0
 local skip_root_hash_check = false
+local skip_version_check = false
 local append_rom_bootargs = ""
 local htif_console_getchar = false
 local htif_yield_automatic = false
@@ -700,6 +708,11 @@ local options = {
     { "^%-%-skip%-root%-hash%-check$", function(all)
         if not all then return false end
         skip_root_hash_check = true
+        return true
+    end },
+    { "^%-%-skip%-version%-check$", function(all)
+        if not all then return false end
+        skip_version_check = true
         return true
     end },
     { "^(%-%-initial%-proof%=(.+))$", function(all, opts)
@@ -1194,7 +1207,8 @@ local runtime = {
     concurrency = {
         update_merkle_tree = concurrency_update_merkle_tree
     },
-    skip_root_hash_check = skip_root_hash_check
+    skip_root_hash_check = skip_root_hash_check,
+    skip_version_check = skip_version_check
 }
 
 if remote and not remote_create then

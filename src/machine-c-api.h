@@ -361,6 +361,7 @@ typedef struct { // NOLINT(modernize-use-using)
 typedef struct { // NOLINT(modernize-use-using)
     cm_concurrency_config concurrency;
     bool skip_root_hash_check;
+    bool skip_version_check;
 } cm_machine_runtime_config;
 
 /// \brief Machine instance handle

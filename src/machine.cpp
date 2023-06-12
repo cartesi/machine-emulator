@@ -284,24 +284,24 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
         m_c.processor.marchid = MARCHID_INIT;
     }
 
-    if (m_c.processor.marchid != MARCHID_INIT) {
-        throw std::invalid_argument{"marchid mismatch."};
+    if (m_c.processor.marchid != MARCHID_INIT && !r.skip_version_check) {
+        throw std::invalid_argument{"marchid mismatch, emulator version is incompatible"};
     }
 
     if (m_c.processor.mvendorid == UINT64_C(-1)) {
         m_c.processor.mvendorid = MVENDORID_INIT;
     }
 
-    if (m_c.processor.mvendorid != MVENDORID_INIT) {
-        throw std::invalid_argument{"mvendorid mismatch."};
+    if (m_c.processor.mvendorid != MVENDORID_INIT && !r.skip_version_check) {
+        throw std::invalid_argument{"mvendorid mismatch, emulator version is incompatible"};
     }
 
     if (m_c.processor.mimpid == UINT64_C(-1)) {
         m_c.processor.mimpid = MIMPID_INIT;
     }
 
-    if (m_c.processor.mimpid != MIMPID_INIT) {
-        throw std::invalid_argument{"mimpid mismatch."};
+    if (m_c.processor.mimpid != MIMPID_INIT && !r.skip_version_check) {
+        throw std::invalid_argument{"mimpid mismatch, emulator version is incompatible"};
     }
 
     // General purpose registers

@@ -52,6 +52,9 @@
 #include "machine.h"
 #include "unique-c-ptr.h"
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define PROGRAM_NAME "jsonrpc-remote-cartesi-machine"
+
 using namespace std::string_literals;
 using json = nlohmann::json;
 
@@ -69,12 +72,34 @@ static constexpr const char *server_version_build = "";
 /// \brief Volatile variable to abort server loop in case of signal
 static volatile bool abort_due_to_signal = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
+/// \brief Volatile variables to report relevant signals that were observed
+static volatile bool SIGTERM_caught = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+static volatile bool SIGINT_caught = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+static volatile bool SIGTTOU_caught = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+static volatile bool SIGPIPE_caught = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+static volatile bool SIGCHLD_caught = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+static volatile bool SIGBUS_caught = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+/// \brief Name and pointer to caught-Boolean for a signal
+/// \detail Using std::pair would have been easier but its default constructor
+/// is not marked as noexcept
+struct signal_to_log {
+    const char *name;
+    volatile bool *caught;
+};
+
+/// \brief Signals to log when caught
+static const std::array<signal_to_log, 6> signals_to_log = {
+    {{"SIGTERM", &SIGTERM_caught}, {"SIGINT", &SIGINT_caught}, {"SIGTTOU", &SIGTTOU_caught},
+        {"SIGPIPE", &SIGPIPE_caught}, {"SIGCHLD", &SIGCHLD_caught}, {"SIGBUS", &SIGBUS_caught}}};
+
 /// \brief Signal handler installed for SIGTERM
 /// \param signal Signal number (will be SIGTERM)
 static void signal_handler_SIGTERM(int signal) {
     (void) signal;
+    // Set variable to report signal in log
+    SIGTERM_caught = true;
     // Set variable to break out from server loop
-    BOOST_LOG_TRIVIAL(fatal) << "caught SIGTERM";
     abort_due_to_signal = true;
 }
 
@@ -82,8 +107,9 @@ static void signal_handler_SIGTERM(int signal) {
 /// \param signal Signal number (will be SIGINT)
 static void signal_handler_SIGINT(int signal) {
     (void) signal;
+    // Set variable to report signal in log
+    SIGINT_caught = true;
     // Set variable to break out from server loop
-    BOOST_LOG_TRIVIAL(fatal) << "caught SIGINT";
     abort_due_to_signal = true;
 }
 
@@ -93,17 +119,19 @@ static void signal_handler_SIGCHLD(int signal) {
     // Make sure to wait on dead children so they don't turn into zombies
     // If we die before them, there is no solution, but if they die first, we reap them right away
     (void) signal;
-    BOOST_LOG_TRIVIAL(trace) << "caught SIGCHLD";
     while (waitpid(static_cast<pid_t>(-1), nullptr, WNOHANG) > 0) {
         ;
     }
+    // Set variable to report signal in log
+    SIGCHLD_caught = true;
 }
 
 /// \brief Signal handler installed for SIGTTOU signals
 /// \param signal Signal number (will be SIGTTOU)
 static void signal_handler_SIGTTOU(int signo) {
     (void) signo;
-    BOOST_LOG_TRIVIAL(trace) << "caught SIGTOU";
+    // Set variable to report signal in log
+    SIGTTOU_caught = true;
     // force an error on tc write operations (e.g., tcsetattr(2))
 }
 
@@ -111,7 +139,32 @@ static void signal_handler_SIGTTOU(int signo) {
 /// \param signal Signal number (will be SIGPIPE)
 static void signal_handler_SIGPIPE(int signo) {
     (void) signo;
-    BOOST_LOG_TRIVIAL(trace) << "caught SIGPIPE";
+    // Set variable to report signal in log
+    SIGPIPE_caught = true;
+}
+
+/// \brief Signal handler installed for SIGBUS
+/// \param signal Signal number (will be SIGBUS)
+static void signal_handler_SIGBUS(int signal) {
+    (void) signal;
+    // Set variable to report signal in log
+    SIGBUS_caught = true;
+    // Set variable to break out from server loop
+    abort_due_to_signal = true;
+}
+
+/// \brief Convert errors in sigemptyset to exceptions
+static void sigemptysetx(sigset_t *set) {
+    if (sigemptyset(set) < 0) {
+        throw std::system_error{errno, std::generic_category(), "sigemptyset failed"};
+    }
+}
+
+/// \brief Convert errors in sigaction to exceptions
+static void sigactionx(int signum, const struct sigaction *act, struct sigaction *oldact) {
+    if (sigaction(signum, act, oldact) < 0) {
+        throw std::system_error{errno, std::generic_category(), "sigaction failed"};
+    }
 }
 
 /// \brief Install our signal handlers
@@ -119,8 +172,8 @@ static void install_signal_handlers(void) {
 
     struct sigaction sa {};
     sa.sa_handler = signal_handler_SIGCHLD; // NOLINT(cppcoreguidelines-pro-type-union-access)
-    sigemptyset(&sa.sa_mask);
-    sigaction(SIGCHLD, &sa, nullptr);
+    sigemptysetx(&sa.sa_mask);
+    sigactionx(SIGCHLD, &sa, nullptr);
 
     // Prevent this process from suspending after issuing a SIGTTOU when trying
     // to configure terminal (on htif::init_console())
@@ -129,21 +182,36 @@ static void install_signal_handlers(void) {
     // https://pubs.opengroup.org/onlinepubs/009604499/functions/tcsetattr.html
     // http://curiousthing.org/sigttin-sigttou-deep-dive-linux
     sa.sa_handler = signal_handler_SIGTTOU; // NOLINT(cppcoreguidelines-pro-type-union-access)
-    sigemptyset(&sa.sa_mask);
-    sigaction(SIGTTOU, &sa, nullptr);
+    sigemptysetx(&sa.sa_mask);
+    sigactionx(SIGTTOU, &sa, nullptr);
 
     // Prevent this process from crashing on SIGPIPE when remote connection is closed
     sa.sa_handler = signal_handler_SIGPIPE;
-    sigemptyset(&sa.sa_mask);
-    sigaction(SIGPIPE, &sa, nullptr);
+    sigemptysetx(&sa.sa_mask);
+    sigactionx(SIGPIPE, &sa, nullptr);
 
     // Set variable to break server loop and exit
     sa.sa_handler = signal_handler_SIGTERM;
-    sigemptyset(&sa.sa_mask);
-    sigaction(SIGTERM, &sa, nullptr);
+    sigemptysetx(&sa.sa_mask);
+    sigactionx(SIGTERM, &sa, nullptr);
     sa.sa_handler = signal_handler_SIGINT;
-    sigemptyset(&sa.sa_mask);
-    sigaction(SIGINT, &sa, nullptr);
+    sigemptysetx(&sa.sa_mask);
+    sigactionx(SIGINT, &sa, nullptr);
+    sa.sa_handler = signal_handler_SIGBUS;
+    sigemptysetx(&sa.sa_mask);
+    sigactionx(SIGBUS, &sa, nullptr);
+}
+
+/// \brief Log all signals caught
+/// \detail If a signal that is currently marked for reporting is caught while this function is executing,
+/// the second signal instance might get lost. Solving this potential issue is not worth the excruciating trouble
+static void log_signals(void) {
+    for (const auto &signal : signals_to_log) {
+        if (*signal.caught) {
+            BOOST_LOG_TRIVIAL(trace) << signal.name << " caught";
+            *signal.caught = false;
+        }
+    }
 }
 
 /// \brief Closes event manager without interfering with other processes
@@ -1723,13 +1791,13 @@ static void init_logger(const char *strlevel) {
     core->add_global_attribute("PID", attributes::make_function(&getpid));
     core->add_global_attribute("PPID", attributes::make_function(&getppid));
     boost::log::add_console_log(std::clog, keywords::filter = trivial::severity >= loglevel,
-        keywords::format = "%TimeStamp% %Severity% jsonrpc-remote-machine pid:%PID% ppid:%PPID% %Message%");
+        keywords::format = "%TimeStamp% %Severity% " PROGRAM_NAME " pid:%PID% ppid:%PPID% %Message%");
 }
 
 int main(int argc, char *argv[]) try {
     const char *server_address = "localhost:0";
     const char *log_level = nullptr;
-    const char *program_name = "jsonrpc-remote-cartesi-machine";
+    const char *program_name = PROGRAM_NAME;
 
     if (argc > 0) { // NOLINT: of course it could be == 0...
         program_name = argv[0];
@@ -1784,9 +1852,10 @@ int main(int argc, char *argv[]) try {
     }
     h->server_address = server_address;
 
-    BOOST_LOG_TRIVIAL(info) << "initial server bound to port " << ntohs(con->loc.port) << "\n";
+    BOOST_LOG_TRIVIAL(info) << "initial server bound to port " << ntohs(con->loc.port);
 
     while (!abort_due_to_signal) {
+        log_signals();
         h->status = http_handler_status::ready_for_next;
         mg_mgr_poll(&h->event_manager, 10000);
         switch (h->status) {
@@ -1808,6 +1877,7 @@ int main(int argc, char *argv[]) try {
                 break;
         }
     }
+    log_signals();
     mg_mgr_free(&h->event_manager);
     delete h;
     return 0;

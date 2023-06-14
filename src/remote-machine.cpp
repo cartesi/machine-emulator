@@ -1281,12 +1281,6 @@ std::unique_ptr<Server> build_server(const char *server_address, handler_context
     return server;
 }
 
-static void tc_handler(int signo) {
-    (void) signo;
-    BOOST_LOG_TRIVIAL(trace) << "tc_handler called";
-    // force an error on tc write operations (e.g., tcsetattr(2))
-}
-
 static void tc_disable(void) {
     BOOST_LOG_TRIVIAL(trace) << "Registering handler for SIGTTOU";
     // prevent this process from suspending after issuing a SIGTTOU when trying
@@ -1297,7 +1291,7 @@ static void tc_disable(void) {
     // http://curiousthing.org/sigttin-sigttou-deep-dive-linux
     struct sigaction tc {};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
-    tc.sa_handler = tc_handler;
+    tc.sa_handler = SIG_IGN;
     tc.sa_flags = 0;
     sigemptyset(&tc.sa_mask);
     sigaction(SIGTTOU, &tc, nullptr);

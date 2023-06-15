@@ -119,13 +119,17 @@ jobs:
           file: rootfs-${{ env.ROOTFS_VERSION }}.ext2
           token: ${{ secrets.CI_TOKEN }}
 
-      - name: Download [kernel.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/image-kernel
-          tag: ${{ env.KERNEL_VERSION }}
-          file: linux-${{ env.LINUX_VERSION }}.bin
-          token: ${{ secrets.CI_TOKEN }}
+            #- name: Download [kernel.bin]
+            #  uses: Legion2/download-release-action@v2.1.0
+            #  with:
+            #    repository: ${{ github.repository_owner }}/image-kernel
+            #    tag: ${{ env.KERNEL_VERSION }}
+            #    file: linux-${{ env.LINUX_VERSION }}.bin
+            #    token: ${{ secrets.CI_TOKEN }}
+      - name: Download kernel artifact
+        run: gh run download 5272103472 -n linux-${{ env.LINUX_VERSION }}.bin -R cartesi/image-kernel && ls -la
+        env:
+          GITHUB_TOKEN: ${{ secrets.CI_TOKEN }}
 
       - name: Download [rom.bin]
         uses: Legion2/download-release-action@v2.1.0
@@ -370,13 +374,17 @@ jobs:
           file: rootfs-${{ env.ROOTFS_VERSION }}.ext2
           token: ${{ secrets.CI_TOKEN }}
 
-      - name: Download [kernel.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/image-kernel
-          tag: ${{ env.KERNEL_VERSION }}
-          file: linux-${{ env.LINUX_VERSION }}.bin
-          token: ${{ secrets.CI_TOKEN }}
+            #- name: Download [kernel.bin]
+            #  uses: Legion2/download-release-action@v2.1.0
+            #  with:
+            #    repository: ${{ github.repository_owner }}/image-kernel
+            #    tag: ${{ env.KERNEL_VERSION }}
+            #    file: linux-${{ env.LINUX_VERSION }}.bin
+            #    token: ${{ secrets.CI_TOKEN }}
+      - name: Download kernel artifact
+        run: gh run download 5272103472 -n linux-${{ env.LINUX_VERSION }}.bin -R cartesi/image-kernel && ls -la
+        env:
+          GITHUB_TOKEN: ${{ secrets.CI_TOKEN }}
 
       - name: Download [rom.bin]
         uses: Legion2/download-release-action@v2.1.0
@@ -508,13 +516,17 @@ jobs:
           file: rootfs-${{ env.ROOTFS_VERSION }}.ext2
           token: ${{ secrets.CI_TOKEN }}
 
-      - name: Download [kernel.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/image-kernel
-          tag: ${{ env.KERNEL_VERSION }}
-          file: linux-${{ env.LINUX_VERSION }}.bin
-          token: ${{ secrets.CI_TOKEN }}
+            #- name: Download [kernel.bin]
+            #  uses: Legion2/download-release-action@v2.1.0
+            #  with:
+            #    repository: ${{ github.repository_owner }}/image-kernel
+            #    tag: ${{ env.KERNEL_VERSION }}
+            #    file: linux-${{ env.LINUX_VERSION }}.bin
+            #    token: ${{ secrets.CI_TOKEN }}
+      - name: Download kernel artifact
+        run: gh run download 5272103472 -n linux-${{ env.LINUX_VERSION }}.bin -R cartesi/image-kernel && ls -la
+        env:
+          GITHUB_TOKEN: ${{ secrets.CI_TOKEN }}
 
       - name: Download [rom.bin]
         uses: Legion2/download-release-action@v2.1.0
@@ -763,13 +775,17 @@ jobs:
           file: rootfs-${{ env.ROOTFS_VERSION }}.ext2
           token: ${{ secrets.CI_TOKEN }}
 
-      - name: Download [kernel.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/image-kernel
-          tag: ${{ env.KERNEL_VERSION }}
-          file: linux-${{ env.LINUX_VERSION }}.bin
-          token: ${{ secrets.CI_TOKEN }}
+            #- name: Download [kernel.bin]
+            #  uses: Legion2/download-release-action@v2.1.0
+            #  with:
+            #    repository: ${{ github.repository_owner }}/image-kernel
+            #    tag: ${{ env.KERNEL_VERSION }}
+            #    file: linux-${{ env.LINUX_VERSION }}.bin
+            #    token: ${{ secrets.CI_TOKEN }}
+      - name: Download kernel artifact
+        run: gh run download 5272103472 -n linux-${{ env.LINUX_VERSION }}.bin -R cartesi/image-kernel && ls -la
+        env:
+          GITHUB_TOKEN: ${{ secrets.CI_TOKEN }}
 
       - name: Download [rom.bin]
         uses: Legion2/download-release-action@v2.1.0

@@ -362,6 +362,12 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
             iac++;
         }
     }
+    // push closing bracket notes
+    while (pbr != proto_brackets.end()) {
+        al.push_bracket(get_proto_bracket_type(pbr->type()), pbr->text().c_str());
+        assert(pbr->where() == al.get_brackets().back().where);
+        pbr++;
+    }
     return al;
 }
 

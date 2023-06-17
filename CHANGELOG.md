@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed compile errors with GCC 13.1
 - Fixed Lua path being mixed with different Lua version path
+- Fixed bug in get_proto_access_log()
 
 ### Added
 

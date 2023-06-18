@@ -28,11 +28,6 @@ _start:
     ld t0, 0(t0)   // t0=value of uarch_ram_length
     add sp, sp, t0 // stack pointer at the end of RAM
 
-    // Calls the macro machine interpreter that was compiled to microarchitecture
-    call run_uarch
+    call interpret_next_mcycle_with_uarch
 
-    // Halt the micro machine   
-    li  t0, UARCH_HALT_FLAG_SHADDOW_ADDR_DEF
-    li  t1, UARCH_HALT_FLAG_HALT_VALUE_DEF
-    sd t1, 0(t0) 
-    // The machine is halted.
+

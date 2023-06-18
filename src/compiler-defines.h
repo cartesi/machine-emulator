@@ -27,6 +27,8 @@
 
 #define NO_INLINE __attribute__((noinline))
 
+#define NO_RETURN [[noreturn]]
+
 // These macros are used only in very hot code paths (such as TLB hit checks).
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define likely(x) __builtin_expect((x), 1)

@@ -70,11 +70,10 @@ extern "C" void _putchar(char c) {
     *p = c;
 }
 
-extern "C" [[noreturn]] void abort(void) {
+extern "C" NO_RETURN void abort(void) {
     volatile char *p = reinterpret_cast<char *>(cartesi::uarch_mmio_address::abort);
     *p = uarch_mmio_abort_value;
     // execution will never reach this point
-    // infinite loop added to silence the compiler
     for (;;) {
     }
 }

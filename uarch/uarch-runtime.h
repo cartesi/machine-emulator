@@ -19,6 +19,8 @@
 #define UARCH_RUNTIME_H
 
 #include "uarch-printf.h"
+#include "compiler-defines.h"
+
 #include <inttypes.h>
 #include <stddef.h>
 
@@ -30,6 +32,6 @@
         abort();                                                                                                       \
     }
 
-extern "C" [[noreturn]] void abort(void);
+extern "C" NO_RETURN void abort(void);
 
 #endif

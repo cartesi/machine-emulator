@@ -24,17 +24,20 @@
 
 using namespace cartesi;
 
-extern "C" void run_uarch() {
+static void set_uarch_halt_flag() {
+    volatile uint64_t *uarch_halt_flag = reinterpret_cast<uint64_t *>(shadow_state_csr::uarch_halt_flag);
+    *uarch_halt_flag = uarch_halt_flag_halt_value;
+}
+
+/// \brief  Advances one mcycle by executing the "big machine interpreter" compiled to the microarchitecture
+/// \return This function never returns
+extern "C" NO_RETURN void interpret_next_mcycle_with_uarch() {
     uarch_machine_state_access a;
-    // We want to advance the cartesi machine to the next mcycle
     uint64_t mcycle_end = a.read_mcycle() + 1;
+    interpret(a, mcycle_end);
+    // Finished executing a whole mcycle: halt the microarchitecture
+    set_uarch_halt_flag();
+    // The micro interpreter will never execute this line because the micro machine is halted
     for (;;) {
-        if (a.read_iflags_H() || a.read_iflags_Y()) {
-            break;
-        }
-        interpret(a, mcycle_end);
-        if (a.read_mcycle() >= mcycle_end) {
-            break;
-        }
     }
 }

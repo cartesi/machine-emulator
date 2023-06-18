@@ -32,6 +32,10 @@ local cleanup = {}
 
 local lua_cmd = arg[-1] .. " -e "
 
+-- There is no UINT64_MAX in Lua, so we have to use the signed representation
+local MAX_MCYCLE = -1
+local MAX_UARCH_CYCLE = -1
+
 -- Print help and exit
 local function help()
     io.stderr:write(string.format([=[
@@ -627,15 +631,104 @@ do_test("mcycle value should match",
     end
 )
 
+do_test("should error if target mcycle is smaller than current mcycle",
+    function(machine)
+        machine:write_mcycle(MAX_MCYCLE)
+        assert(machine:read_mcycle() == MAX_MCYCLE)
+        success, err = pcall(function() machine:run(MAX_MCYCLE - 1) end)
+        assert(success == false)
+        assert(err:match("mcycle is past"))
+        assert(machine:read_mcycle() == MAX_MCYCLE)
+    end
+)
+
+do_test("should error if target uarch_cycle is smaller than current uarch_cycle",
+    function(machine)
+        machine:write_uarch_cycle(MAX_UARCH_CYCLE)
+        assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
+        local success, err = pcall(function() machine:run_uarch(MAX_UARCH_CYCLE - 1) end)
+        assert(success == false)
+        assert(err:match("uarch_cycle is past"))
+        assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
+    end
+)
+
 print("\n\n run_uarch tests")
 do_test("advance one micro cycle without halting",
     function(machine)
         assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
-        assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
+        assert(machine:read_uarch_halt_flag() == false, "uarch halt flag should be cleared")
+        assert(machine:read_iflags_Y() == false, "iflags.Y should be cleared")
+        assert(machine:read_iflags_H() == false, "iflags.H should be cleared")
         local status = machine:run_uarch(1)
         assert(status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE)
         assert(machine:read_uarch_cycle() == 1, "uarch cycle should be 1")
-        assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
+        assert(machine:read_uarch_halt_flag() == false, "uarch should not be halted")
+    end
+)
+
+do_test("do not advance micro cycle if uarch is halted",
+    function(machine)
+        machine:set_uarch_halt_flag()
+        assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
+        assert(machine:read_uarch_halt_flag() == true, "uarch halt flag should be set")
+        assert(machine:read_iflags_Y() == false, "iflags.Y should be cleared")
+        assert(machine:read_iflags_H() == false, "iflags.H should be cleared")
+        local status = machine:run_uarch(1)
+        assert(status == cartesi.UARCH_BREAK_REASON_UARCH_HALTED, "run_uarch should return UARCH_BREAK_REASON_UARCH_HALTED")
+        assert(machine:read_uarch_cycle() == 0, "uarch cycle should still be 0")
+    end
+)
+
+do_test("do not advance micro cycle if iflags.H is set",
+    function(machine)
+        machine:set_iflags_H()
+        assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
+        assert(machine:read_uarch_halt_flag() == false, "uarch halt flag should be cleared")
+        assert(machine:read_iflags_Y() == false, "iflags.Y should be cleared")
+        assert(machine:read_iflags_H() == true, "iflags.H should be set")
+        local status = machine:run_uarch(1)
+        assert(status == cartesi.UARCH_BREAK_REASON_HALTED, "run_uarch should return UARCH_BREAK_REASON_HALTED")
+        assert(machine:read_uarch_cycle() == 0, "uarch cycle should still be 0")
+    end
+)
+
+do_test("do not advance micro cycle if iflags.Y is set",
+    function(machine)
+        machine:set_iflags_Y()
+        assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
+        assert(machine:read_uarch_halt_flag() == false, "uarch should not be halted")
+        assert(machine:read_iflags_Y() == true, "machine iflags.Y should be set")
+        assert(machine:read_iflags_H() == false, "machine iflags.H should be cleared")
+        local status = machine:run_uarch(1)
+        assert(status == cartesi.UARCH_BREAK_REASON_YIELDED_MANUALLY, "run_uarch should return UARCH_BREAK_REASON_YIELDED_MANUALLY")
+        assert(machine:read_uarch_cycle() == 0, "uarch cycle should still be 0")
+    end
+)
+
+do_test("return UARCH_BREAK_REASON_UARCH_HALTED if uarch halt, iflags.H and iflags.Y are set",
+    function(machine)
+        machine:set_uarch_halt_flag()
+        machine:set_iflags_Y()
+        machine:set_iflags_H()
+        assert(machine:read_uarch_halt_flag() == true, "uarch halt should be set")
+        assert(machine:read_iflags_Y() == true, "iflags.Y should be set")
+        assert(machine:read_iflags_H() == true, "iflags.H should be set")
+        io.write("ANTES com io")
+        local status = machine:run_uarch(1)
+        assert(status == cartesi.UARCH_BREAK_REASON_UARCH_HALTED, "run_uarch should return UARCH_BREAK_REASON_UARCH_HALTED ")
+    end
+)
+
+do_test("return UARCH_BREAK_REASON_HALTED if uarch halt is not set,  iflags.H is set and iflags.Y is set",
+    function(machine)
+        machine:set_iflags_Y()
+        machine:set_iflags_H()
+        assert(machine:read_uarch_halt_flag() == false, "uarch halt should be cleared")
+        assert(machine:read_iflags_Y() == true, "iflags.Y should be set")
+        assert(machine:read_iflags_H() == true, "iflags.H should be set")
+        local status = machine:run_uarch(1)
+        assert(status == cartesi.UARCH_BREAK_REASON_HALTED, "run_uarch should return UARCH_BREAK_REASON_HALTED")
     end
 )
 
@@ -644,12 +737,11 @@ do_test("advance micro cycles until halt",
         assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
         assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
         local status = machine:run_uarch()
-        assert(status == cartesi.UARCH_BREAK_REASON_HALTED)
+        assert(status == cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
         assert(machine:read_uarch_cycle() == 4, "uarch cycle should be 4")
-        assert(machine:read_uarch_halt_flag() == true, "machine should be halted")
+        assert(machine:read_uarch_halt_flag() == true, "uarch should be halted")
     end
 )
-
 
 print("\n\n run machine to 1000 mcycle")
 do_test("mcycle value should be 1000 after execution",
@@ -726,18 +818,20 @@ do_test("dumped log content should match",
         local p = io.popen(lua_cmd .. lua_code)
         local output = p:read(2000)
         p:close()
-        local expected_output = 
+        local expected_output =
             "begin step\n" ..
             "  1: read uarch.cycle@0x320(800): 0x0(0)\n" ..
             "  2: read uarch.halt_flag@0x328(808): 0x0(0)\n" ..
-            "  3: read uarch.pc@0x330(816): 0x70000000(1879048192)\n" ..
-            "  4: read memory@0x70000000(1879048192): 0x3280029307b00513(3638911329427784979)\n" ..
+            "  3: read iflags@0x2e8(744): 0x18(24)\n" ..
+            "  4: read uarch.pc@0x330(816): 0x70000000(1879048192)\n" ..
+            "  5: read memory@0x70000000(1879048192): 0x3280029307b00513(3638911329427784979)\n" ..
             "  begin addi\n" ..
-            "    5: read uarch.x@0x340(832): 0x0(0)\n" ..
-            "    6: write uarch.x@0x390(912): 0x0(0) -> 0x7b(123)\n" ..
-            "    7: write uarch.pc@0x330(816): 0x70000000(1879048192) -> 0x70000004(1879048196)\n" ..
+            "    6: read uarch.x@0x340(832): 0x0(0)\n" ..
+            "    7: write uarch.x@0x390(912): 0x0(0) -> 0x7b(123)\n" ..
+            "    8: write uarch.pc@0x330(816): 0x70000000(1879048192) -> 0x70000004(1879048196)\n" ..
             "  end addi\n" ..
-            "  8: write uarch.cycle@0x320(800): 0x0(0) -> 0x1(1)\n" ..
+            "  9: write uarch.cycle@0x320(800): 0x0(0) -> 0x1(1)\n" ..
+            "  10: read iflags@0x2e8(744): 0x18(24)\n" ..
             "end step\n"
 
         print("Output of dump log:")
@@ -759,6 +853,26 @@ do_test("machine step should pass verifications",
         local initial_hash = machine:get_root_hash()
         local log = machine:step_uarch({proofs = true, annotations = true})
         local final_hash = machine:get_root_hash()
+        module.machine.verify_state_transition(initial_hash, log, final_hash, {})
+        module.machine.verify_access_log(log, {})
+    end
+)
+
+do_test("step when uarch cycle is max",
+    function(machine)
+        local module = cartesi
+        if (machine_type ~= "local") then
+            if not remote then remote = connect() end
+            module = remote
+        end
+        local MAX_UARCH_CYCLE = -1
+        machine:write_uarch_cycle(MAX_UARCH_CYCLE)
+        assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
+        local initial_hash = machine:get_root_hash()
+        local log = machine:step_uarch({proofs = true, annotations = true})
+        assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
+        local final_hash = machine:get_root_hash()
+        assert(final_hash == initial_hash)
         module.machine.verify_state_transition(initial_hash, log, final_hash, {})
         module.machine.verify_access_log(log, {})
     end

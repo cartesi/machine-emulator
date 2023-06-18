@@ -31,6 +31,7 @@
 #include "uarch-constants.h"
 #include "uarch-defines.h"
 #include "strict-aliasing.h"
+#include "compiler-defines.h"
 #include <optional>
 
 namespace cartesi {
@@ -411,10 +412,12 @@ private:
         raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::iflags), val);
     }
 
-    void do_set_iflags_H(void) {
+    NO_RETURN NO_INLINE void do_set_iflags_H(void) {
         auto old_iflags = read_iflags();
         auto new_iflags = old_iflags | IFLAGS_H_MASK;
         write_iflags(new_iflags);
+        // The micro interpreter will never execute this line because it will halt as soon as iflags.H is set
+        __builtin_trap();
     }
 
     bool do_read_iflags_H(void) {
@@ -439,10 +442,12 @@ private:
         return (iflags & IFLAGS_X_MASK) != 0;
     }
 
-    void do_set_iflags_Y(void) {
+    NO_INLINE NO_RETURN void do_set_iflags_Y(void) {
         auto old_iflags = read_iflags();
         auto new_iflags = old_iflags | IFLAGS_Y_MASK;
         write_iflags(new_iflags);
+        // The micro interpreter will never execute this line because it will halt as soon as iflags.Y is set
+        __builtin_trap();
     }
 
     void do_reset_iflags_Y(void) {

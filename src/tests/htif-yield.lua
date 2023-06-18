@@ -2,6 +2,75 @@
 
 local cartesi = require"cartesi"
 local test_util = require "tests.util"
+local util = require"cartesi.util"
+
+local function help()
+    io.stderr:write(string.format([=[
+Usage:
+
+  %s [options]
+
+where options are:
+
+  --uarch-test
+    use microarchitecture to run tests
+
+  --uarch-ram-image=<filename>
+    name of file containing microarchitecture RAM image.
+
+  --uarch-ram-length=<number>
+    set microarchitecture RAM length.
+
+]=], arg[0]))
+    os.exit()
+end
+
+local uarch = false
+local uarch_ram_length = nil
+local uarch_ram_image_filename = nil
+
+-- List of supported options
+-- Options are processed in order
+-- For each option,
+--   first entry is the pattern to match
+--   second entry is a callback
+--     if callback returns true, the option is accepted.
+--     if callback returns false, the option is rejected.
+local options = {
+    { "^%-%-help$", function(all)
+        if not all then return false end
+        help()
+    end },
+    { "^%-%-uarch$", function(all)
+        if not all then return false end
+        uarch = true
+        return true
+    end },
+    { "^%-%-uarch%-ram%-image%=(.*)$", function(o)
+        if not o or #o < 1 then return false end
+        uarch_ram_image_filename = o
+        return true
+    end },
+    { "^%-%-uarch%-ram%-length%=(.+)$", function(n)
+        if not n then return false end
+        uarch_ram_length = assert(util.parse_number(n), "invalid microarchitecture RAM length " .. n)
+        return true
+    end },
+    { ".*", function(all)
+        error("unrecognized option " .. all .. ". Use --help to obtain a list of supported options.")
+    end }
+}
+
+-- Process command line options
+for i, argument in ipairs({...}) do
+    if argument:sub(1,1) == "-" then
+        for j, option in ipairs(options) do
+            if option[2](argument:match(option[1])) then
+                break
+            end
+        end
+    end
+end
 
 -- Config yields 5 times with progress
 local config =  {
@@ -16,8 +85,16 @@ local config =  {
   },
   rom = {
     image_filename = test_util.tests_path .. "bootstrap.bin"
-  },
+  }
 }
+
+if uarch then
+    assert(uarch_ram_length, "--uarch-ram-length was not specified")
+    assert(uarch_ram_image_filename, "--uarch-ram-image was not specified")
+    config.uarch = {
+        ram = { length = uarch_ram_length, image_filename = uarch_ram_image_filename }
+    }
+end
 
 local YIELD_MANUAL = cartesi.machine.HTIF_YIELD_MANUAL
 local YIELD_AUTOMATIC = cartesi.machine.HTIF_YIELD_AUTOMATIC
@@ -51,6 +128,43 @@ local yields = {
     { mcycle = 520, data = 27, cmd = YIELD_AUTOMATIC, reason = REASON_TX_REPORT},
 }
 
+local function run_machine_with_uarch(machine)
+    -- mimics "machine:run()" using the microarchitecture
+    while true do
+        local ubr = machine:run_uarch()
+        if ubr == cartesi.UARCH_BREAK_REASON_HALTED then
+            -- iflags.H was already set when uarch started 
+            return cartesi.BREAK_REASON_HALTED
+        end
+        if ubr == cartesi.UARCH_BREAK_REASON_YIELDED_MANUALLY then
+            -- iflags.Y was already set when uarch started 
+            return cartesi.BREAK_REASON_YIELDED_MANUALLY
+        end
+        if ubr == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
+            machine:reset_uarch_state()
+            if machine:read_iflags_H() then
+                -- iflags.H was set during the last mcycle
+                return cartesi.BREAK_REASON_HALTED
+            end
+            if machine:read_iflags_Y() then
+                -- iflags.Y was set during the last mcycle
+                return cartesi.BREAK_REASON_YIELDED_MANUALLY
+            end
+            if machine:read_iflags_X() then
+                -- machine was yielded with automatic reset. iflags.X will be cleared on the next mcycle
+                return cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY
+            end
+        end
+    end
+end
+
+local function run_machine(machine)
+    if uarch then
+        return run_machine_with_uarch(machine)
+    end
+    return machine:run()
+end
+
 local function stderr(...)
     io.stderr:write(string.format(...))
 end
@@ -58,7 +172,7 @@ end
 local final_mcycle = 561
 local exit_payload = 42
 
-function test(config, yield_automatic_enable, yield_manual_enable)
+local function test(config, yield_automatic_enable, yield_manual_enable)
     stderr("  testing yield_automatic:%s yield_manual:%s\n",
         yield_automatic_enable and "on" or "off",
         yield_manual_enable and "on" or "off"
@@ -77,7 +191,7 @@ function test(config, yield_automatic_enable, yield_manual_enable)
             while not machine:read_iflags_Y() and
                   not machine:read_iflags_X() and
                   not machine:read_iflags_H() do
-                break_reason = machine:run()
+                break_reason = run_machine(machine)
             end
 
             -- mcycle should be as expected
@@ -108,7 +222,7 @@ function test(config, yield_automatic_enable, yield_manual_enable)
             assert(machine:read_htif_tohost_cmd() == v.cmd)
             -- trying to run it without resetting iflags.Y should not advance
             if machine:read_iflags_Y() then
-                machine:run()
+                run_machine(machine)
                 assert(mcycle == machine:read_mcycle())
                 assert(machine:read_iflags_Y())
             end
@@ -119,7 +233,7 @@ function test(config, yield_automatic_enable, yield_manual_enable)
     end
     -- finally run to completion
     while not machine:read_iflags_Y() and not machine:read_iflags_H() do
-        break_reason = machine:run()
+        break_reason = run_machine(machine)
     end
     -- should be halted
     assert(break_reason == cartesi.BREAK_REASON_HALTED)

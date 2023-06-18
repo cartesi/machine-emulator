@@ -14,42 +14,38 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#include <stdexcept>
-
-#include "machine.h"
-#include "uarch-execute-insn.h"
 #include "uarch-interpret.h"
-#include "uarch-record-state-access.h"
-#include "uarch-replay-state-access.h"
-#include "uarch-state-access.h"
+#include "uarch-step.h"
 
 namespace cartesi {
 
-template <typename STATE_ACCESS>
-uarch_interpreter_break_reason uarch_interpret(STATE_ACCESS &a, uint64_t cycle_end) {
-    // This must be the first read because we assume the first log access is a
-    // uarch_cycle read in machine::verify_state_transition
-    auto cycle = readCycle(a);
+uarch_interpreter_break_reason uarch_interpret(uarch_state_access &a, uint64_t cycle_end) {
+    uint64_t cycle = a.read_cycle();
+    if (cycle_end < cycle) {
+        throw std::invalid_argument{"uarch_cycle is past"};
+    }
     while (cycle < cycle_end) {
-        if (readHaltFlag(a)) {
-            return uarch_interpreter_break_reason::halted;
+        uarch_step_status status = uarch_step(a);
+        switch (status) {
+            case uarch_step_status::success:
+                cycle += 1;
+                break;
+            case uarch_step_status::success_and_uarch_halted:
+                [[fallthrough]];
+            case uarch_step_status::uarch_halted:
+                return uarch_interpreter_break_reason::uarch_halted;
+            case uarch_step_status::halted:
+                return uarch_interpreter_break_reason::halted;
+            case uarch_step_status::yielded_manually:
+                return uarch_interpreter_break_reason::yielded_manually;
+            // LCOV_EXCL_START
+            case uarch_step_status::cycle_overflow:
+                // Prior condition ensures this case is unreachable. but linter may complain about missing it
+                return uarch_interpreter_break_reason::reached_target_cycle;
+                // LCOV_EXCL_STOP
         }
-        auto pc = readPc(a);
-        auto insn = readUint32(a, pc);
-        uarchExecuteInsn(a, insn, pc);
-        cycle = cycle + 1;
-        writeCycle(a, cycle);
     }
     return uarch_interpreter_break_reason::reached_target_cycle;
 }
-
-// Explicit instantiation for uarch_state_access
-template uarch_interpreter_break_reason uarch_interpret(uarch_state_access &a, uint64_t uarch_cycle_end);
-
-// Explicit instantiation for uarch_record_state_access
-template uarch_interpreter_break_reason uarch_interpret(uarch_record_state_access &a, uint64_t uarch_cycle_end);
-
-// Explicit instantiation for uarch_replay_state_access
-template uarch_interpreter_break_reason uarch_interpret(uarch_replay_state_access &a, uint64_t uarch_cycle_end);
 
 } // namespace cartesi

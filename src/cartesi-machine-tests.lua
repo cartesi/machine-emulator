@@ -571,7 +571,7 @@ local function run_machine(machine, ctx, max_mcycle, callback, advance_machine_f
 end
 
 local function advance_machine_with_uarch(machine, max_mcycle)
-    if machine:run_uarch() == cartesi.UARCH_BREAK_REASON_HALTED then
+    if machine:run_uarch() == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
         machine:reset_uarch_state()
     end
 end
@@ -808,7 +808,7 @@ local function hash(tests)
                 out:write(machine:read_mcycle(), " ", final_cycle, " ", util.hexhash(machine:get_root_hash()), "\n")
                 total_cycles = total_cycles + 1
             end
-            if status == cartesi.UARCH_BREAK_REASON_HALTED then
+            if status == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
                 machine:reset_uarch_state()
                 if machine:read_iflags_H() then break end
             end

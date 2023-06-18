@@ -320,6 +320,7 @@ CARTESI_OBJS:= \
 	protobuf-util.o \
 	machine-c-api.o \
 	uarch-machine.o \
+	uarch-step.o \
 	uarch-interpret.o
 
 LUACARTESI_OBJS:= \
@@ -403,6 +404,8 @@ test-uarch-for-coverage:
 	$(MAKE) -C ../third-party/riscv-arch-tests LUA="$(LUA)"
 	$(MAKE) -C ../uarch
 	$(LUA) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*csr.*" --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin run_uarch
+	$(LUA) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*csr.*" --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin run_host_and_uarch
+	$(LUA) tests/htif-yield.lua --uarch --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin
 
 test-hash: hash
 	./tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
@@ -561,6 +564,7 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	machine-config.o \
 	interpret.o \
 	uarch-machine.o \
+	uarch-step.o \
 	uarch-interpret.o
 
 JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
@@ -591,6 +595,7 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	machine-config.o \
 	interpret.o \
 	uarch-machine.o \
+	uarch-step.o \
 	uarch-interpret.o
 
 CYCLE_PERIOD ?= 13

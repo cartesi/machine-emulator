@@ -43,6 +43,7 @@
 #include "uarch-record-state-access.h"
 #include "uarch-replay-state-access.h"
 #include "uarch-state-access.h"
+#include "uarch-step.h"
 #include "unique-c-ptr.h"
 
 /// \file
@@ -1855,18 +1856,6 @@ static uint64_t saturate_next_cycle(uint64_t cycle) {
     return (cycle < UINT64_MAX) ? cycle + 1 : UINT64_MAX;
 }
 
-static uint64_t get_next_uarch_cycle_from_log(const access_log &log) {
-    const auto &first_access = log.get_accesses().front();
-    // The first access should always be a read to uarch cycle
-    if (first_access.get_type() != access_type::read ||
-        first_access.get_address() != shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_cycle)) {
-        throw std::invalid_argument{"invalid access log"};
-    }
-
-    uint64_t uarch_cycle = get_word_access_data(first_access.get_read());
-    return saturate_next_cycle(uarch_cycle);
-}
-
 void machine::verify_access_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
     (void) r;
     // There must be at least one access in log
@@ -1874,8 +1863,7 @@ void machine::verify_access_log(const access_log &log, const machine_runtime_con
         throw std::invalid_argument{"too few accesses in log"};
     }
     uarch_replay_state_access a(log, log.get_log_type().has_proofs(), one_based);
-    uint64_t next_uarch_cycle = get_next_uarch_cycle_from_log(log);
-    uarch_interpret(a, next_uarch_cycle);
+    uarch_step(a);
     a.finish();
 }
 
@@ -1904,8 +1892,7 @@ void machine::verify_state_transition(const hash_type &root_hash_before, const a
     }
     // Verify all intermediate state transitions
     uarch_replay_state_access a(log, true /* verify proofs! */, one_based);
-    uint64_t next_uarch_cycle = get_next_uarch_cycle_from_log(log);
-    uarch_interpret(a, next_uarch_cycle);
+    uarch_step(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
     hash_type obtained_root_hash;
@@ -1927,8 +1914,7 @@ access_log machine::step_uarch(const access_log::type &log_type, bool one_based)
     // Call interpret with a logged state access object
     uarch_record_state_access a(m_uarch.get_state(), *this, log_type);
     a.push_bracket(bracket_type::begin, "step");
-    uint64_t next_uarch_cycle = saturate_next_cycle(read_uarch_cycle());
-    uarch_interpret(a, next_uarch_cycle);
+    uarch_step(a);
     a.push_bracket(bracket_type::end, "step");
     // Verify access log before returning
     if (log_type.has_proofs()) {

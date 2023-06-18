@@ -2062,7 +2062,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_state_transition_null_rt_config_test, acce
     cm_delete_access_log(_access_log);
 }
 
-// loxa
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_uarch_complex_test_null_error_placeholder_test, access_log_machine_fixture) {
     cm_hash hash0;
     cm_hash hash1;
@@ -2318,7 +2317,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_one_cycle, access_log_m
     BOOST_REQUIRE_EQUAL(cycle, 0);
 
     // advance one uarch cycle
-    auto status{CM_UARCH_BREAK_REASON_HALTED};
+    auto status{CM_UARCH_BREAK_REASON_UARCH_HALTED};
     error_code = cm_machine_run_uarch(_machine, 1, &status, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
@@ -2353,7 +2352,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, access_log_
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
     // advance one micro cycle
-    auto status{CM_UARCH_BREAK_REASON_HALTED};
+    auto status{CM_UARCH_BREAK_REASON_UARCH_HALTED};
     error_code = cm_machine_run_uarch(_machine, 1, &status, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
@@ -2374,7 +2373,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, access_log_
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     // assert result status reports
-    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_HALTED);
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_UARCH_HALTED);
 
     // confirm uarch cycle advanced
     error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, nullptr);
@@ -2413,11 +2412,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch_state, access_log_machine_fix
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
 
     // run until halts
-    auto status{CM_UARCH_BREAK_REASON_HALTED};
+    auto status{CM_UARCH_BREAK_REASON_UARCH_HALTED};
     error_code = cm_machine_run_uarch(_machine, 100, &status, &err_msg);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_HALTED);
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_UARCH_HALTED);
 
     // confirm if halt flag is set
     error_code = cm_read_csr(_machine, CM_PROC_UARCH_HALT_FLAG, &halt, &err_msg);
@@ -2433,7 +2432,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch_state, access_log_machine_fix
     // try run_uarch past micro cycle 4
     error_code = cm_machine_run_uarch(_machine, 100, &status, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_HALTED);
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_UARCH_HALTED);
 
     // should stay at micro cycle 4
     error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, nullptr);

@@ -17,26 +17,14 @@
 #ifndef UARCH_INTERPRET_H
 #define UARCH_INTERPRET_H
 
+#include "uarch-state-access.h"
+
 namespace cartesi {
 
-enum class uarch_interpreter_break_reason : int { reached_target_cycle, halted };
+enum class uarch_interpreter_break_reason : int { reached_target_cycle, uarch_halted, halted, yielded_manually };
 
-// Run the microarchitecture interpreter until cycle hits a target or the micro machine halts
-template <typename STATE_ACCESS>
-uarch_interpreter_break_reason uarch_interpret(STATE_ACCESS &a, uint64_t uarch_cycle_end);
-
-class uarch_state_access;
-class uarch_record_state_access;
-class uarch_replay_state_access;
-
-// Declaration of explicit instantiation in module uarch_interpret.cpp
-extern template uarch_interpreter_break_reason uarch_interpret(uarch_state_access &a, uint64_t cycle_end);
-
-// Declaration of explicit instantiation in module uarch_interpret.cpp
-extern template uarch_interpreter_break_reason uarch_interpret(uarch_record_state_access &a, uint64_t cycle_end);
-
-// Declaration of explicit instantiation in module uarch_interpret.cpp
-extern template uarch_interpreter_break_reason uarch_interpret(uarch_replay_state_access &a, uint64_t cycle_end);
+// Run the microarchitecture interpreter until cycle hits a target or a fixed point is reached
+uarch_interpreter_break_reason uarch_interpret(uarch_state_access &a, uint64_t uarch_cycle_end);
 
 } // namespace cartesi
 

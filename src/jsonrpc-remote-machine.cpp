@@ -783,6 +783,10 @@ static json jsonrpc_machine_run_handler(const json &j, mg_connection *con, http_
 static std::string uarch_interpreter_break_reason_name(cartesi::uarch_interpreter_break_reason reason) {
     using R = cartesi::uarch_interpreter_break_reason;
     switch (reason) {
+        case R::uarch_halted:
+            return "uarch_halted";
+        case R::yielded_manually:
+            return "yielded_manually";
         case R::halted:
             return "halted";
         case R::reached_target_cycle:

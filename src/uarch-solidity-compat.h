@@ -67,6 +67,16 @@ static inline bool readHaltFlag(UarchState &a) {
 }
 
 template <typename UarchState>
+static inline void setHaltFlag(UarchState &a) {
+    return a.set_halt_flag();
+}
+
+template <typename UarchState>
+static inline uint64 readIflags(UarchState &a) {
+    return a.read_iflags();
+}
+
+template <typename UarchState>
 static inline uint64 readPc(UarchState &a) {
     return a.read_pc();
 }

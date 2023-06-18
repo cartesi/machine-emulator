@@ -81,6 +81,16 @@ do_test("machine run shouldn't change state in max mcycle", function(machine)
     assert(hash_before == hash_after)
 end)
 
+do_test("run_uarch shouldn't change state at max uarch_cycle", function(machine)
+    machine:write_uarch_cycle(MAX_UARCH_CYCLE)
+    assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
+    local hash_before = machine:get_root_hash()
+    assert(machine:run_uarch(MAX_UARCH_CYCLE) == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE)
+    assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
+    local hash_after = machine:get_root_hash()
+    assert(hash_before == hash_after)
+end)
+
 for _, proofs in ipairs{true, false} do
     do_test("machine step should do nothing on max mcycle [proofs=" ..
             tostring(proofs) .. "]", function(machine)

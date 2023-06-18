@@ -947,7 +947,14 @@ uarch_interpreter_break_reason grpc_virtual_machine::do_run_uarch(uint64_t uarch
     ClientContext context;
     check_status(m_stub->get_stub()->RunUarch(&context, request, &response));
     if (response.halt_flag()) {
+        return uarch_interpreter_break_reason::uarch_halted;
+    }
+    auto iflags = read_csr(csr::iflags);
+    if (iflags & IFLAGS_H_MASK) {
         return uarch_interpreter_break_reason::halted;
+    }
+    if (iflags & IFLAGS_Y_MASK) {
+        return uarch_interpreter_break_reason::yielded_manually;
     }
     return uarch_interpreter_break_reason::reached_target_cycle;
 }

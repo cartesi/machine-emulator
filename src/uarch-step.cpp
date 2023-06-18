@@ -22,7 +22,14 @@
 // Turn off this linter rule in order to allow using the Solidity casting style.
 // NOLINTBEGIN(google-readability-casting)
 
+#include <stdexcept>
+
+#include "riscv-constants.h"
+#include "uarch-record-state-access.h"
+#include "uarch-replay-state-access.h"
 #include "uarch-solidity-compat.h"
+#include "uarch-state-access.h"
+#include "uarch-step.h"
 
 namespace cartesi {
 
@@ -984,7 +991,7 @@ static inline bool insnMatchOpcodeFunct3Funct7Sr1(uint32 insn, uint32 opcode, ui
 
 // Decode and execute one instruction
 template <typename UarchState>
-static inline void uarchExecuteInsn(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeInsn(UarchState &a, uint32 insn, uint64 pc) {
     if (insnMatchOpcodeFunct3(insn, 0x13, 0x0)) {
         return executeADDI(a, insn, pc);
     } else if (insnMatchOpcodeFunct3(insn, 0x3, 0x3)) {
@@ -1088,6 +1095,56 @@ static inline void uarchExecuteInsn(UarchState &a, uint32 insn, uint64 pc) {
     }
     throw std::runtime_error("illegal instruction");
 }
+
+static inline bool getIflagsH(uint64 iflags) {
+    return (iflags & IFLAGS_H_MASK) != 0;
+}
+
+static inline bool getIflagsY(uint64 iflags) {
+    return (iflags & IFLAGS_Y_MASK) != 0;
+}
+
+template <typename UarchState>
+uarch_step_status uarch_step(UarchState &a) {
+    // This must be the first read in order to match the first log access in machine::verify_state_transition
+    uint64 cycle = readCycle(a);
+    // do not advance if machine is at a fixed point
+    if (cycle == UINT64_MAX) {
+        return uarch_step_status::cycle_overflow;
+    }
+    if (readHaltFlag(a)) {
+        return uarch_step_status::uarch_halted;
+    }
+    uint64 iflags = readIflags(a);
+    if (getIflagsH(iflags)) {
+        return uarch_step_status::halted;
+    }
+    if (getIflagsY(iflags)) {
+        return uarch_step_status::yielded_manually;
+    }
+    // execute next instruction
+    auto pc = readPc(a);
+    auto insn = readUint32(a, pc);
+    executeInsn(a, insn, pc);
+    cycle = cycle + 1;
+    writeCycle(a, cycle);
+    // halt if iflags.H or iflags.Y was set by the last instruction
+    iflags = readIflags(a);
+    if (getIflagsH(iflags) || getIflagsY(iflags)) {
+        setHaltFlag(a);
+        return uarch_step_status::success_and_uarch_halted;
+    }
+    return uarch_step_status::success;
+}
+
+// Explicit instantiation for uarch_state_access
+template uarch_step_status uarch_step(uarch_state_access &a);
+
+// Explicit instantiation for uarch_record_state_access
+template uarch_step_status uarch_step(uarch_record_state_access &a);
+
+// Explicit instantiation for uarch_replay_state_access
+template uarch_step_status uarch_step(uarch_replay_state_access &a);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting)

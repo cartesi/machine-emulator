@@ -74,8 +74,7 @@ extern "C" NO_RETURN void abort(void) {
     volatile char *p = reinterpret_cast<char *>(cartesi::uarch_mmio_address::abort);
     *p = uarch_mmio_abort_value;
     // execution will never reach this point
-    for (;;) {
-    }
+    __builtin_trap();
 }
 
 namespace cartesi {

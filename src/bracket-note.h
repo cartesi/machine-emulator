@@ -17,6 +17,7 @@
 #ifndef BRACKET_NOTE_H
 #define BRACKET_NOTE_H
 
+#include <cstdint>
 #include <string>
 
 /// \file

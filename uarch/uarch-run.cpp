@@ -38,6 +38,5 @@ extern "C" NO_RETURN void interpret_next_mcycle_with_uarch() {
     // Finished executing a whole mcycle: halt the microarchitecture
     set_uarch_halt_flag();
     // The micro interpreter will never execute this line because the micro machine is halted
-    for (;;) {
-    }
+    __builtin_trap();
 }

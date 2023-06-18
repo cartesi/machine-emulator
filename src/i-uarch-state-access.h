@@ -82,6 +82,10 @@ public:
         return derived().do_reset_halt_flag();
     }
 
+    auto read_iflags() {
+        return derived().do_read_iflags();
+    }
+
     auto write_cycle(uint64_t v) {
         return derived().do_write_cycle(v);
     }

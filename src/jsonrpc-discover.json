@@ -1033,6 +1033,7 @@
     "schemas": {
 
       "CSR": {
+        "title": "CSR",
         "enum": [
           "pc",
           "fcsr",
@@ -1077,6 +1078,7 @@
       },
 
       "InterpreterBreakReason": {
+        "title": "InterpreterBreakReason",
         "enum": [
           "failed",
           "halted",
@@ -1087,6 +1089,7 @@
       },
 
       "UarchInterpreterBreakReason": {
+        "title": "UarchInterpreterBreakReason",
         "enum": [
           "reached_target_cycle",
           "uarch_halted",
@@ -1096,6 +1099,7 @@
       },
 
       "SemanticVersion": {
+        "title": "SemanticVersion",
         "type": "object",
         "required": [
           "major",
@@ -1122,6 +1126,7 @@
       },
 
       "XRegConfig": {
+        "title": "XRegConfig",
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/UnsignedInteger"
@@ -1129,6 +1134,7 @@
       },
 
       "FRegConfig": {
+        "title": "FRegConfig",
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/UnsignedInteger"
@@ -1136,6 +1142,7 @@
       },
 
       "ProcessorConfig": {
+        "title": "ProcessorConfig",
         "type": "object",
         "properties": {
           "x": {
@@ -1238,16 +1245,19 @@
       },
 
       "UnsignedInteger": {
+        "title": "UnsignedInteger",
         "type": "integer",
         "minimum": 0
       },
 
       "Base64String": {
+        "title": "Base64String",
         "type": "string",
         "contentEncoding": "base64"
       },
 
       "Base64Hash": {
+        "title": "Base64Hash",
         "type": "string",
         "contentEncoding": "base64",
         "minLength": 45,
@@ -1255,6 +1265,7 @@
       },
 
       "Base64HashArray": {
+        "title": "Base64HashArray",
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/Base64Hash"
@@ -1262,6 +1273,7 @@
       },
 
       "NoteArray": {
+        "title": "NoteArray",
         "type": "array",
         "items": {
           "type": "string"
@@ -1269,6 +1281,7 @@
       },
 
       "BracketArray": {
+        "title": "BracketArray",
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/Bracket"
@@ -1276,6 +1289,7 @@
       },
 
       "BracketType": {
+        "title": "BracketType",
         "enum": [
           "begin",
           "end"
@@ -1283,6 +1297,7 @@
       },
 
       "Bracket": {
+        "title": "Bracket",
         "type": "object",
         "properties": {
           "type": {
@@ -1303,6 +1318,7 @@
       },
 
       "Proof": {
+        "title": "Proof",
         "type": "object",
         "properties": {
           "target_address": {
@@ -1335,6 +1351,7 @@
       },
 
       "Access": {
+        "title": "Access",
         "type": "object",
         "properties": {
           "type": {
@@ -1365,6 +1382,7 @@
       },
 
       "AccessArray": {
+        "title": "AccessArray",
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/Access"
@@ -1372,6 +1390,7 @@
       },
 
       "AccessType": {
+        "title": "AccessType",
         "enum": [
           "read",
           "write"
@@ -1379,6 +1398,7 @@
       },
 
       "AccessLogType": {
+        "title": "AccessLogType",
         "type": "object",
         "properties": {
           "has_proofs": {
@@ -1395,6 +1415,7 @@
       },
 
       "AccessLog": {
+        "title": "AccessLog",
         "type": "object",
         "properties": {
           "log_type": {
@@ -1417,6 +1438,7 @@
       },
 
       "RAMConfig": {
+        "title": "RAMConfig",
         "type": "object",
         "properties": {
           "length": {
@@ -1432,6 +1454,7 @@
       },
 
       "ROMConfig": {
+        "title": "ROMConfig",
         "type": "object",
         "properties": {
           "bootargs": {
@@ -1444,6 +1467,7 @@
       },
 
       "MemoryRangeConfig": {
+        "title": "MemoryRangeConfig",
         "type": "object",
         "properties": {
           "start": {
@@ -1462,6 +1486,7 @@
       },
 
       "FlashDriveConfigs": {
+        "title": "FlashDriveConfigs",
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/MemoryRangeConfig"
@@ -1469,6 +1494,7 @@
       },
 
       "TLBConfig": {
+        "title": "TLBConfig",
         "type": "object",
         "properties": {
           "image_filename": {
@@ -1478,6 +1504,7 @@
       },
 
       "CLINTConfig": {
+        "title": "CLINTConfig",
         "type": "object",
         "properties": {
           "mtimecmp": {
@@ -1487,6 +1514,7 @@
       },
 
       "HTIFConfig": {
+        "title": "HTIFConfig",
         "type": "object",
         "properties": {
           "fromhost": {
@@ -1508,6 +1536,7 @@
       },
 
       "UarchProcessorConfig": {
+        "title": "UarchProcessorConfig",
         "type": "object",
         "properties": {
           "x": {
@@ -1523,6 +1552,7 @@
       },
 
       "UarchRAMConfig": {
+        "title": "UarchRAMConfig",
         "type": "object",
         "properties": {
           "length": {
@@ -1535,6 +1565,7 @@
       },
 
       "UarchConfig": {
+        "title": "UarchConfig",
         "type": "object",
         "properties": {
           "processor": {
@@ -1547,6 +1578,7 @@
       },
 
       "RollupConfig": {
+        "title": "RollupConfig",
         "type": "object",
         "properties": {
           "rx_buffer": {
@@ -1568,6 +1600,7 @@
       },
 
       "MachineConfig": {
+        "title": "MachineConfig",
         "type": "object",
         "properties": {
           "processor": {
@@ -1601,6 +1634,7 @@
       },
 
       "ConcurrencyRuntimeConfig": {
+        "title": "ConcurrencyRuntimeConfig",
         "type": "object",
         "properties": {
           "update_merkle_tree": {
@@ -1620,6 +1654,7 @@
       },
 
       "MachineRuntimeConfig": {
+        "title": "MachineRuntimeConfig",
         "type": "object",
         "properties": {
           "concurrency": {

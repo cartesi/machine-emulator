@@ -126,7 +126,7 @@ void jsonrpc_request(struct mg_mgr &mgr, const std::string &url, const std::stri
     if (!response.contains("id")) {
         throw std::runtime_error(R"(jsonrpc server error: missing field "id")"s);
     }
-    if (!response["id"].is_number_integer() || response["id"] != 0) {
+    if (!response["id"].is_number() || response["id"] != 0) {
         throw std::runtime_error(R"(jsonrpc server error: invalid field "id" (expected 0))"s);
     }
     if (response.contains("error") && response.contains("result")) {

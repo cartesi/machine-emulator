@@ -1692,6 +1692,14 @@ static void http_handler(mg_connection *con, int ev, void *ev_data, void *h_data
                     jsonrpc_response_invalid_request(ji, "invalid field \"method\" (expected non-empty string)"));
                 continue;
             }
+            // check for valid id
+            if (ji.contains("id")) {
+                const auto &jiid = ji["id"];
+                if (!jiid.is_string() && !jiid.is_number() && !jiid.is_null()) {
+                    jr.push_back(jsonrpc_response_invalid_request(ji,
+                        "invalid field \"id\" (expected string, number, or null)"));
+                }
+            }
             json jri = jsonrpc_dispatch_method(ji, con, h);
             if (h->status == http_handler_status::forked_child) {
                 return;

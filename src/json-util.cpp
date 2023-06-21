@@ -276,7 +276,8 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uint64_t &value, co
     }
     if (jk.is_number_float()) {
         auto f = jk.template get<nlohmann::json::number_float_t>();
-        if (f < 0 || std::fmod(f, static_cast<nlohmann::json::number_float_t>(1.0)) != 0) {
+        if (f < 0 || std::fmod(f, static_cast<nlohmann::json::number_float_t>(1.0)) != 0 ||
+            f > static_cast<nlohmann::json::number_float_t>(UINT64_MAX)) {
             throw std::invalid_argument("field \""s + path + to_string(key) + "\" not an unsigned integer");
         }
         value = static_cast<uint64_t>(f);

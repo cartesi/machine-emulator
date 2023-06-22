@@ -875,12 +875,6 @@ where options are
         name);
 }
 
-static void cleanup_child_handler(int signal) {
-    (void) signal;
-    while (waitpid(static_cast<pid_t>(-1), nullptr, WNOHANG) > 0) {
-    }
-}
-
 int main(int argc, char *argv[]) try {
 
     const char *proxy_address = nullptr;
@@ -937,8 +931,8 @@ int main(int argc, char *argv[]) try {
     }
 
     struct sigaction sa {};
-    sa.sa_handler = cleanup_child_handler; // NOLINT(cppcoreguidelines-pro-type-union-access)
-    sa.sa_flags = 0;
+    sa.sa_handler = SIG_IGN; // NOLINT(cppcoreguidelines-pro-type-union-access)
+    sa.sa_flags = SA_RESTART;
     sigaction(SIGCHLD, &sa, nullptr);
 
     // spawn server

@@ -93,9 +93,6 @@ static volatile bool abort_due_to_signal = false; // NOLINT(cppcoreguidelines-av
 /// \brief Volatile variables to report relevant signals that were observed
 static volatile bool SIGTERM_caught = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 static volatile bool SIGINT_caught = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-static volatile bool SIGTTOU_caught = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-static volatile bool SIGPIPE_caught = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-static volatile bool SIGCHLD_caught = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 static volatile bool SIGBUS_caught = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 /// \brief Name and pointer to caught-Boolean for a signal
@@ -107,9 +104,8 @@ struct signal_to_log {
 };
 
 /// \brief Signals to log when caught
-static const std::array<signal_to_log, 6> signals_to_log = {
-    {{"SIGTERM", &SIGTERM_caught}, {"SIGINT", &SIGINT_caught}, {"SIGTTOU", &SIGTTOU_caught},
-        {"SIGPIPE", &SIGPIPE_caught}, {"SIGCHLD", &SIGCHLD_caught}, {"SIGBUS", &SIGBUS_caught}}};
+static const std::array<signal_to_log, 3> signals_to_log = {
+    {{"SIGTERM", &SIGTERM_caught}, {"SIGINT", &SIGINT_caught}, {"SIGBUS", &SIGBUS_caught}}};
 
 /// \brief Signal handler installed for SIGTERM
 /// \param signal Signal number (will be SIGTERM)
@@ -131,36 +127,6 @@ static void signal_handler_SIGINT(int signal) {
     abort_due_to_signal = true;
 }
 
-/// \brief Signal handler installed for SIGCHLD signals
-/// \param signal Signal number (will be SIGCHLD)
-static void signal_handler_SIGCHLD(int signal) {
-    // Make sure to wait on dead children so they don't turn into zombies
-    // If we die before them, there is no solution, but if they die first, we reap them right away
-    (void) signal;
-    while (waitpid(static_cast<pid_t>(-1), nullptr, WNOHANG) > 0) {
-        ;
-    }
-    // Set variable to report signal in log
-    SIGCHLD_caught = true;
-}
-
-/// \brief Signal handler installed for SIGTTOU signals
-/// \param signal Signal number (will be SIGTTOU)
-static void signal_handler_SIGTTOU(int signo) {
-    (void) signo;
-    // Set variable to report signal in log
-    SIGTTOU_caught = true;
-    // force an error on tc write operations (e.g., tcsetattr(2))
-}
-
-/// \brief Signal handler installed for SIGPIPE signals
-/// \param signal Signal number (will be SIGPIPE)
-static void signal_handler_SIGPIPE(int signo) {
-    (void) signo;
-    // Set variable to report signal in log
-    SIGPIPE_caught = true;
-}
-
 /// \brief Signal handler installed for SIGBUS
 /// \param signal Signal number (will be SIGBUS)
 static void signal_handler_SIGBUS(int signal) {
@@ -171,53 +137,36 @@ static void signal_handler_SIGBUS(int signal) {
     abort_due_to_signal = true;
 }
 
-/// \brief Convert errors in sigemptyset to exceptions
-static void sigemptysetx(sigset_t *set) {
-    if (sigemptyset(set) < 0) {
+/// \brief Installs a signal handler
+template <typename HANDLER>
+static void install_signal_handler(int signum, HANDLER handler) {
+    struct sigaction act {};
+    if (sigemptyset(&act.sa_mask) < 0) {
         throw std::system_error{errno, std::generic_category(), "sigemptyset failed"};
     }
-}
-
-/// \brief Convert errors in sigaction to exceptions
-static void sigactionx(int signum, const struct sigaction *act, struct sigaction *oldact) {
-    if (sigaction(signum, act, oldact) < 0) {
+    act.sa_handler = handler; // NOLINT(cppcoreguidelines-pro-type-union-access)
+    act.sa_flags = SA_RESTART;
+    if (sigaction(signum, &act, nullptr) < 0) {
         throw std::system_error{errno, std::generic_category(), "sigaction failed"};
     }
 }
 
-/// \brief Install our signal handlers
+/// \brief Installs all signal handlers
 static void install_signal_handlers(void) {
-
-    struct sigaction sa {};
-    sa.sa_handler = signal_handler_SIGCHLD; // NOLINT(cppcoreguidelines-pro-type-union-access)
-    sigemptysetx(&sa.sa_mask);
-    sigactionx(SIGCHLD, &sa, nullptr);
-
+    // Prevent dead children from becoming zombies
+    install_signal_handler(SIGCHLD, SIG_IGN);
     // Prevent this process from suspending after issuing a SIGTTOU when trying
     // to configure terminal (on htif::init_console())
-    //
     // https://pubs.opengroup.org/onlinepubs/009604599/basedefs/xbd_chap11.html#tag_11_01_04
     // https://pubs.opengroup.org/onlinepubs/009604499/functions/tcsetattr.html
     // http://curiousthing.org/sigttin-sigttou-deep-dive-linux
-    sa.sa_handler = signal_handler_SIGTTOU; // NOLINT(cppcoreguidelines-pro-type-union-access)
-    sigemptysetx(&sa.sa_mask);
-    sigactionx(SIGTTOU, &sa, nullptr);
-
+    install_signal_handler(SIGTTOU, SIG_IGN);
     // Prevent this process from crashing on SIGPIPE when remote connection is closed
-    sa.sa_handler = signal_handler_SIGPIPE;
-    sigemptysetx(&sa.sa_mask);
-    sigactionx(SIGPIPE, &sa, nullptr);
-
+    install_signal_handler(SIGPIPE, SIG_IGN);
     // Set variable to break server loop and exit
-    sa.sa_handler = signal_handler_SIGTERM;
-    sigemptysetx(&sa.sa_mask);
-    sigactionx(SIGTERM, &sa, nullptr);
-    sa.sa_handler = signal_handler_SIGINT;
-    sigemptysetx(&sa.sa_mask);
-    sigactionx(SIGINT, &sa, nullptr);
-    sa.sa_handler = signal_handler_SIGBUS;
-    sigemptysetx(&sa.sa_mask);
-    sigactionx(SIGBUS, &sa, nullptr);
+    install_signal_handler(SIGTERM, signal_handler_SIGTERM);
+    install_signal_handler(SIGINT, signal_handler_SIGINT);
+    install_signal_handler(SIGBUS, signal_handler_SIGBUS);
 }
 
 /// \brief Log all signals caught

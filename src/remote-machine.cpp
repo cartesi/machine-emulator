@@ -1310,9 +1310,13 @@ static void tc_disable(void) {
     struct sigaction tc {};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
     tc.sa_handler = SIG_IGN;
-    tc.sa_flags = 0;
-    sigemptyset(&tc.sa_mask);
-    sigaction(SIGTTOU, &tc, nullptr);
+    tc.sa_flags = SA_RESTART;
+    if (sigemptyset(&tc.sa_mask) < 0) {
+        throw std::system_error{errno, std::generic_category(), "sigemptyset failed"};
+    }
+    if (sigaction(SIGTTOU, &tc, nullptr) < 0) {
+        throw std::system_error{errno, std::generic_category(), "sigaction failed"};
+    }
 }
 
 static void server_loop(const char *server_address, const char *session_id, const char *checkin_address) {

@@ -27,12 +27,7 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #pragma GCC diagnostic ignored "-Wtype-limits"
-#define BOOST_LOG_DYN_LINK 1 // NOLINT(cppcoreguidelines-macro-usage)
 #include <boost/core/demangle.hpp>
-#include <boost/log/attributes/function.hpp>
-#include <boost/log/trivial.hpp>
-#include <boost/log/utility/setup/common_attributes.hpp>
-#include <boost/log/utility/setup/console.hpp>
 
 #include <grpc++/grpc++.h>
 #include <grpc++/resource_quota.h>
@@ -44,6 +39,11 @@
 #include "machine.h"
 #include "protobuf-util.h"
 #include "unique-c-ptr.h"
+#define SLOG_PREFIX log_prefix
+#include "slog.h"
+
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define PROGRAM_NAME "remote-cartesi-machine"
 
 using namespace cartesi;
 using hash_type = keccak_256_hasher::hash_type;
@@ -58,6 +58,27 @@ using grpc::Status;
 using grpc::StatusCode;
 // NOLINTNEXTLINE(misc-unused-using-decls)
 using std::chrono_literals::operator""ms;
+
+/// \brief Type for printing time, log severity level, program name, pid, and ppid prefix to each log line
+struct log_prefix {
+    slog::severity_level level;
+};
+
+/// \brief Stream-out operator for log prefix class
+std::ostream &operator<<(std::ostream &out, log_prefix prefix) {
+    using namespace slog;
+    char stime[std::size("yyyy-mm-dd hh-mm-ss")];
+    time_t t = time(nullptr);
+    struct tm ttime {};
+    if (strftime(std::data(stime), std::size(stime), "%Y-%m-%d %H-%M-%S", localtime_r(&t, &ttime))) {
+        out << stime << " ";
+    }
+    out << to_string(prefix.level) << " ";
+    out << PROGRAM_NAME << " ";
+    out << "pid:" << getpid() << " ";
+    out << "ppid:" << getppid() << " ";
+    return out;
+}
 
 static constexpr uint32_t server_version_major = 0;
 static constexpr uint32_t server_version_minor = 7;
@@ -145,9 +166,8 @@ class handler : public i_handler {
             m_waiting = false;
             if (hctx.ok) {
                 try {
-                    BOOST_LOG_TRIVIAL(debug)
-                        << "Executing " << boost::core::demangle(typeid(*this).name()) << " go method";
-                    BOOST_LOG_TRIVIAL(trace) << "Received request was: " << message_to_json(m_request);
+                    SLOG(debug) << "Executing " << boost::core::demangle(typeid(*this).name()) << " go method";
+                    SLOG(trace) << "Received request was: " << message_to_json(m_request);
                     return go(hctx, &m_request, &m_writer);
                 } catch (std::exception &e) {
                     return finish_with_exception(&m_writer, e);
@@ -157,8 +177,7 @@ class handler : public i_handler {
         } else {
             renew_ctx();
             m_waiting = true;
-            BOOST_LOG_TRIVIAL(trace) << "Executing " << boost::core::demangle(typeid(*this).name())
-                                     << " prepare method";
+            SLOG(trace) << "Executing " << boost::core::demangle(typeid(*this).name()) << " prepare method";
             return prepare(hctx, &m_sctx, &m_request, &m_writer);
         }
     }
@@ -171,28 +190,28 @@ class handler : public i_handler {
 protected:
     side_effect finish_ok(ServerAsyncResponseWriter<RESPONSE> *writer, const RESPONSE &resp,
         side_effect se = side_effect::none) {
-        BOOST_LOG_TRIVIAL(debug) << boost::core::demangle(typeid(*this).name()) << " finish_ok";
-        BOOST_LOG_TRIVIAL(trace) << "Response is: " << message_to_json(resp);
+        SLOG(debug) << boost::core::demangle(typeid(*this).name()) << " finish_ok";
+        SLOG(trace) << "Response is: " << message_to_json(resp);
         writer->Finish(resp, Status::OK, this); // NOLINT: suppress warning caused by gRPC
         return se;
     }
 
     side_effect finish_with_error(ServerAsyncResponseWriter<RESPONSE> *writer, StatusCode sc, const char *e,
         side_effect se = side_effect::none) {
-        BOOST_LOG_TRIVIAL(error) << boost::core::demangle(typeid(*this).name()) << " finish_with_error: " << e
-                                 << " StatusCode: " << sc << " side_effect: " << static_cast<unsigned int>(se);
+        SLOG(error) << boost::core::demangle(typeid(*this).name()) << " finish_with_error: " << e
+                    << " StatusCode: " << sc << " side_effect: " << static_cast<unsigned int>(se);
         writer->FinishWithError(Status(sc, e), this);
         return se;
     }
 
     side_effect finish_with_exception(ServerAsyncResponseWriter<RESPONSE> *writer, const std::exception &e,
         side_effect se = side_effect::none) {
-        BOOST_LOG_TRIVIAL(debug) << boost::core::demangle(typeid(*this).name()) << " finish_with_exception";
+        SLOG(debug) << boost::core::demangle(typeid(*this).name()) << " finish_with_exception";
         return finish_with_error(writer, StatusCode::ABORTED, e.what(), se);
     }
 
     side_effect finish_with_error_no_machine(ServerAsyncResponseWriter<RESPONSE> *writer) {
-        BOOST_LOG_TRIVIAL(debug) << boost::core::demangle(typeid(*this).name()) << " finish_with_error_no_machine";
+        SLOG(debug) << boost::core::demangle(typeid(*this).name()) << " finish_with_error_no_machine";
         return finish_with_error(writer, StatusCode::FAILED_PRECONDITION, "no machine", side_effect::none);
     }
 
@@ -209,18 +228,18 @@ public:
 };
 
 static void squash_parent(bool &forked) {
-    BOOST_LOG_TRIVIAL(trace) << "squash_parent called with forked: " << forked;
+    SLOG(trace) << "squash_parent called with forked: " << forked;
     // If we are a forked child, we have a parent waiting.
     // We want to take its place before exiting.
     // Wake parent up by signaling ourselves to stop.
     // Parent will wake us back up and then exit.
     if (forked) {
-        BOOST_LOG_TRIVIAL(trace) << "rasing SIGSTOP";
+        SLOG(trace) << "rasing SIGSTOP";
         int result = raise(SIGSTOP);
         if (result != 0) {
             // If raise SIGSTOP failed we should abort cause something went
             // wrong and we don't have information to recover.
-            BOOST_LOG_TRIVIAL(fatal) << "error raising SIGSTOP: " << std::strerror(errno);
+            SLOG(fatal) << "error raising SIGSTOP: " << std::strerror(errno);
             exit(1);
         }
         // When we wake up, we took the parent's place, so we are not "forked" anymore
@@ -229,35 +248,34 @@ static void squash_parent(bool &forked) {
 }
 
 static void snapshot(bool &forked) {
-    BOOST_LOG_TRIVIAL(trace) << "snapshot called with forked: " << forked;
+    SLOG(trace) << "snapshot called with forked: " << forked;
     pid_t childid = 0;
     squash_parent(forked);
     // Now actually fork
     if ((childid = fork()) == 0) {
-        BOOST_LOG_TRIVIAL(trace) << "Child after fork will continue serving requests";
+        SLOG(trace) << "Child after fork will continue serving requests";
         // Child simply goes on with next loop iteration.
         forked = true;
     } else {
-        BOOST_LOG_TRIVIAL(trace) << "Parent after fork will call waitpid";
+        SLOG(trace) << "Parent after fork will call waitpid";
         // Parent waits on child.
         int wstatus{};
         pid_t pid = waitpid(childid, &wstatus, WUNTRACED);
-        BOOST_LOG_TRIVIAL(trace) << "Waitpid result: " << pid;
+        SLOG(trace) << "Waitpid result: " << pid;
         if (pid == -1) {
             // If waitpid failed we should abort cause something went
             // wrong and we don't have information to recover.
-            BOOST_LOG_TRIVIAL(fatal) << "Error on waitpid: " << std::strerror(errno);
+            SLOG(fatal) << "Error on waitpid: " << std::strerror(errno);
             exit(1);
         }
         if (WIFSTOPPED(wstatus)) {
-            BOOST_LOG_TRIVIAL(trace)
-                << "Parent observed that the child has raised SIGSTOP and will send SIGCONT to it and exit";
+            SLOG(trace) << "Parent observed that the child has raised SIGSTOP and will send SIGCONT to it and exit";
             // Here the child wants to take our place.
             // Wake child and exit.
             kill(childid, SIGCONT);
             exit(0);
         } else {
-            BOOST_LOG_TRIVIAL(trace) << "Parent observed that the child has exited. This process will take it's place";
+            SLOG(trace) << "Parent observed that the child has exited. This process will take it's place";
             // Here the child exited.
             // We take its place, but are not "forked" anymore.
             // We go on with next loop iteration.
@@ -267,9 +285,9 @@ static void snapshot(bool &forked) {
 }
 
 static void rollback(bool &forked) {
-    BOOST_LOG_TRIVIAL(trace) << "rollback called with forked: " << forked;
+    SLOG(trace) << "rollback called with forked: " << forked;
     if (forked) {
-        BOOST_LOG_TRIVIAL(trace) << "Calling exit";
+        SLOG(trace) << "Calling exit";
         // Here, we are a child and forked.
         // We simply exit so parent can take our place.
         exit(0);
@@ -1245,7 +1263,7 @@ static std::string replace_port(const std::string &address, int port) {
 }
 
 std::unique_ptr<Server> build_server(const char *server_address, handler_context &hctx) {
-    BOOST_LOG_TRIVIAL(debug) << "Building new GRPC server";
+    SLOG(debug) << "Building new GRPC server";
     hctx.s = std::make_unique<Machine::AsyncService>();
     ServerBuilder builder;
     builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
@@ -1261,28 +1279,28 @@ std::unique_ptr<Server> build_server(const char *server_address, handler_context
         Void response;
         request.set_session_id(hctx.checkin.value().session_id);
         request.set_address(replace_port(server_address, server_port));
-        BOOST_LOG_TRIVIAL(debug) << "Doing check-in. Session id: " << request.session_id() << " " << request.address();
-        BOOST_LOG_TRIVIAL(debug) << "check-in timeout: " << checkin_deadline;
+        SLOG(debug) << "Doing check-in. Session id: " << request.session_id() << " " << request.address();
+        SLOG(debug) << "check-in timeout: " << checkin_deadline;
         for (uint64_t i = 1; i <= checkin_retry_attempts; i++) {
-            BOOST_LOG_TRIVIAL(debug) << "check-in attempt: " << i;
+            SLOG(debug) << "check-in attempt: " << i;
             grpc::ClientContext context;
             context.set_deadline(std::chrono::system_clock::now() + std::chrono::milliseconds(checkin_deadline));
             auto status = stub->CheckIn(&context, request, &response);
             if (status.ok()) {
-                BOOST_LOG_TRIVIAL(debug) << "check-in succeeded!";
+                SLOG(debug) << "check-in succeeded!";
                 return server;
             }
-            BOOST_LOG_TRIVIAL(error) << "check-in failed. " << status.error_message();
+            SLOG(error) << "check-in failed. " << status.error_message();
             std::this_thread::sleep_for(checkin_retry_wait_time);
         }
-        BOOST_LOG_TRIVIAL(fatal) << "unable to check-in";
+        SLOG(fatal) << "unable to check-in";
         return nullptr;
     }
     return server;
 }
 
 static void tc_disable(void) {
-    BOOST_LOG_TRIVIAL(trace) << "Registering handler for SIGTTOU";
+    SLOG(trace) << "Registering handler for SIGTTOU";
     // prevent this process from suspending after issuing a SIGTTOU when trying
     // to configure terminal (on htif::init_console())
     //
@@ -1298,20 +1316,20 @@ static void tc_disable(void) {
 }
 
 static void server_loop(const char *server_address, const char *session_id, const char *checkin_address) {
-    BOOST_LOG_TRIVIAL(info) << "Initializing server on " << server_address;
+    SLOG(info) << "Initializing server on " << server_address;
     handler_context hctx{};
     if (session_id && checkin_address) {
-        BOOST_LOG_TRIVIAL(debug) << "Initializing checkin info: " << session_id << " " << checkin_address;
+        SLOG(debug) << "Initializing checkin info: " << session_id << " " << checkin_address;
         hctx.checkin.emplace(session_id, checkin_address);
     }
     for (;;) {
         auto server = build_server(server_address, hctx);
         if (!server) {
-            BOOST_LOG_TRIVIAL(fatal) << "Server creation failed";
+            SLOG(fatal) << "Server creation failed";
             exit(1);
         }
 
-        BOOST_LOG_TRIVIAL(trace) << "Registering GRPC handlers";
+        SLOG(trace) << "Registering GRPC handlers";
         handler_GetVersion hGetVersion(hctx);
         handler_SetCheckInTarget hSetCheckInTarget(hctx);
         handler_Machine hMachine(hctx);
@@ -1355,25 +1373,25 @@ static void server_loop(const char *server_address, const char *session_id, cons
         using side_effect = i_handler::side_effect;
         side_effect s_effect = side_effect::none;
         for (;;) {
-            BOOST_LOG_TRIVIAL(debug) << "Waiting next request";
+            SLOG(debug) << "Waiting next request";
             i_handler *h = nullptr;
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
             if (!hctx.cq->Next(reinterpret_cast<void **>(&h), &hctx.ok)) {
                 s_effect = side_effect::shutdown;
-                BOOST_LOG_TRIVIAL(debug) << "Breaking from server loop with side effect == shutdown";
+                SLOG(debug) << "Breaking from server loop with side effect == shutdown";
                 break;
             }
             if ((s_effect = h->advance(hctx)) != side_effect::none) {
-                BOOST_LOG_TRIVIAL(debug) << "Breaking from server loop with side effect != none";
+                SLOG(debug) << "Breaking from server loop with side effect != none";
                 break;
             }
         }
 
-        BOOST_LOG_TRIVIAL(trace) << "Start GRPC server shutdown";
+        SLOG(trace) << "Start GRPC server shutdown";
         // Shutdown server and completion queue before handling side effect
         // Server must be shutdown before completion queue
         server->Shutdown(std::chrono::system_clock::now());
-        BOOST_LOG_TRIVIAL(trace) << "GRPC completion queue shutdown";
+        SLOG(trace) << "GRPC completion queue shutdown";
         hctx.cq->Shutdown();
         {
             // Drain completion queue before exiting
@@ -1384,7 +1402,7 @@ static void server_loop(const char *server_address, const char *session_id, cons
                 ;
             }
         }
-        BOOST_LOG_TRIVIAL(trace) << "Waiting GRPC server to finish shutdown";
+        SLOG(trace) << "Waiting GRPC server to finish shutdown";
         server->Wait();
         // Release and delete
         server.reset(nullptr);
@@ -1394,19 +1412,19 @@ static void server_loop(const char *server_address, const char *session_id, cons
         // Handle side effect
         switch (s_effect) {
             case side_effect::none:
-                BOOST_LOG_TRIVIAL(debug) << "Handling side effect side effect none";
+                SLOG(debug) << "Handling side effect side effect none";
                 // do nothing
                 break;
             case side_effect::snapshot:
-                BOOST_LOG_TRIVIAL(debug) << "Handling side effect side effect snapshot";
+                SLOG(debug) << "Handling side effect side effect snapshot";
                 snapshot(hctx.forked);
                 break;
             case side_effect::rollback:
-                BOOST_LOG_TRIVIAL(debug) << "Handling side effect side effect rollback";
+                SLOG(debug) << "Handling side effect side effect rollback";
                 rollback(hctx.forked);
                 break;
             case side_effect::shutdown:
-                BOOST_LOG_TRIVIAL(debug) << "Handling side effect side effect shutdown";
+                SLOG(debug) << "Handling side effect side effect shutdown";
                 // Make sure we don't leave a snapshot burried
                 squash_parent(hctx.forked);
                 return;
@@ -1454,6 +1472,18 @@ and options are
     --session-id=<string>
       arbitrary string used when sending the check-in message
 
+    --log-level=<level>
+      sets the log level
+      <level> can be
+        trace
+        debug
+        info
+        warn
+        error
+        fatal
+      the command line option takes precedence over the environment variable
+      REMOTE_CARTESI_MACHINE_LOG_LEVEL
+
     --help
       prints this message and exits
 
@@ -1461,24 +1491,16 @@ and options are
         name);
 }
 
-static boost::log::trivial::severity_level get_log_level() {
-    if (const char *env_level = std::getenv("REMOTE_CARTESI_MACHINE_LOG_LEVEL")) {
-        boost::log::trivial::severity_level level = boost::log::trivial::info;
-        if (boost::log::trivial::from_string(env_level, strlen(env_level), level)) {
-            return level;
-        }
+static void init_logger(const char *strlevel) {
+    using namespace slog;
+    severity_level level = severity_level::info;
+    if (!strlevel) {
+        strlevel = std::getenv("REMOTE_CARTESI_MACHINE_LOG_LEVEL");
     }
-    return boost::log::trivial::info;
-}
-
-static void init_logger() {
-    namespace keywords = boost::log::keywords;
-    auto core = boost::log::core::get();
-    core->add_global_attribute("TimeStamp", boost::log::attributes::local_clock());
-    core->add_global_attribute("PID", boost::log::attributes::make_function(&getpid));
-    core->add_global_attribute("PPID", boost::log::attributes::make_function(&getppid));
-    boost::log::add_console_log(std::clog, keywords::filter = boost::log::trivial::severity >= get_log_level(),
-        keywords::format = "%TimeStamp% %Severity% remote-machine pid:%PID% ppid:%PPID% %Message%");
+    if (strlevel) {
+        level = from_string(strlevel);
+    }
+    log_level(level_operation::set, level);
 }
 
 int main(int argc, char *argv[]) try {
@@ -1486,6 +1508,12 @@ int main(int argc, char *argv[]) try {
     const char *server_address = nullptr;
     const char *session_id = nullptr;
     const char *checkin_address = nullptr;
+    const char *program_name = PROGRAM_NAME;
+    const char *log_level = nullptr;
+
+    if (argc > 0) { // NOLINT: of course it could be == 0...
+        program_name = argv[0];
+    }
 
     for (int i = 1; i < argc; i++) {
         if (stringval("--server-address=", argv[i], &server_address)) {
@@ -1494,8 +1522,10 @@ int main(int argc, char *argv[]) try {
             ;
         } else if (stringval("--session-id=", argv[i], &session_id)) {
             ;
+        } else if (stringval("--log-level=", argv[i], &log_level)) {
+            ;
         } else if (strcmp(argv[i], "--help") == 0) {
-            help(argv[0]);
+            help(program_name);
             exit(0);
         } else {
             if (!server_address) {
@@ -1517,7 +1547,7 @@ int main(int argc, char *argv[]) try {
         exit(1);
     }
 
-    init_logger();
+    init_logger(log_level);
     tc_disable();
     server_loop(server_address, session_id, checkin_address);
 

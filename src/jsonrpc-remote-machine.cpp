@@ -16,9 +16,11 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <exception>
 #include <iostream>
 #include <optional>
@@ -35,14 +37,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define BOOST_LOG_DYN_LINK 1 // NOLINT(cppcoreguidelines-macro-usage)
-#include <boost/log/attributes/function.hpp>
-#include <boost/log/attributes/named_scope.hpp>
-#include <boost/log/attributes/scoped_attribute.hpp>
-#include <boost/log/trivial.hpp>
-#include <boost/log/utility/setup/common_attributes.hpp>
-#include <boost/log/utility/setup/console.hpp>
-
 #include <mongoose.h>
 #include <nlohmann/json.hpp>
 
@@ -52,8 +46,32 @@
 #include "machine.h"
 #include "unique-c-ptr.h"
 
+#define SLOG_PREFIX log_prefix
+#include "slog.h"
+
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define PROGRAM_NAME "jsonrpc-remote-cartesi-machine"
+
+/// \brief Type for printing time, log severity level, program name, pid, and ppid prefix to each log line
+struct log_prefix {
+    slog::severity_level level;
+};
+
+/// \brief Stream-out operator for log prefix class
+std::ostream &operator<<(std::ostream &out, log_prefix prefix) {
+    using namespace slog;
+    char stime[std::size("yyyy-mm-dd hh-mm-ss")];
+    time_t t = time(nullptr);
+    struct tm ttime {};
+    if (strftime(std::data(stime), std::size(stime), "%Y-%m-%d %H-%M-%S", localtime_r(&t, &ttime))) {
+        out << stime << " ";
+    }
+    out << to_string(prefix.level) << " ";
+    out << PROGRAM_NAME << " ";
+    out << "pid:" << getpid() << " ";
+    out << "ppid:" << getppid() << " ";
+    return out;
+}
 
 using namespace std::string_literals;
 using json = nlohmann::json;
@@ -208,7 +226,7 @@ static void install_signal_handlers(void) {
 static void log_signals(void) {
     for (const auto &signal : signals_to_log) {
         if (*signal.caught) {
-            BOOST_LOG_TRIVIAL(trace) << signal.name << " caught";
+            SLOG(trace) << signal.name << " caught";
             *signal.caught = false;
         }
     }
@@ -642,7 +660,7 @@ static json jsonrpc_fork_handler(const json &j, mg_connection *con, http_handler
     // Initialize child's server before fork so failures happen still in parent, who can directly report them to client
     h->child = new (std::nothrow) http_handler_data{};
     if (!h->child) {
-        BOOST_LOG_TRIVIAL(fatal) << h->server_address << " out of memory";
+        SLOG(fatal) << h->server_address << " out of memory";
         return jsonrpc_response_server_error(j, "out of memory");
     }
     mg_mgr_init(&h->child->event_manager);
@@ -650,7 +668,7 @@ static json jsonrpc_fork_handler(const json &j, mg_connection *con, http_handler
     // Event manager initialization does not return whether it failed or not
     // It could only fail if the epoll_fd allocation failed
     if (h->child->event_manager.epoll_fd < 0) {
-        BOOST_LOG_TRIVIAL(error) << h->server_address << " failed creating event manager";
+        SLOG(error) << h->server_address << " failed creating event manager";
         mg_mgr_free(&h->child->event_manager);
         delete h->child;
         h->child = nullptr;
@@ -660,7 +678,7 @@ static json jsonrpc_fork_handler(const json &j, mg_connection *con, http_handler
     std::string any_port_address = replace_port(h->server_address, 0);
     mg_connection *new_con = mg_http_listen(&h->child->event_manager, any_port_address.c_str(), http_handler, h->child);
     if (!new_con) {
-        BOOST_LOG_TRIVIAL(error) << h->server_address << " failed listening";
+        SLOG(error) << h->server_address << " failed listening";
         mg_mgr_free(&h->child->event_manager);
         delete h->child;
         h->child = nullptr;
@@ -671,7 +689,7 @@ static json jsonrpc_fork_handler(const json &j, mg_connection *con, http_handler
     auto ret = fork();
     if (ret == -1) { // failed forking
         auto errno_copy = errno;
-        BOOST_LOG_TRIVIAL(error) << h->server_address << " fork failed (" << strerror(errno_copy) << ")";
+        SLOG(error) << h->server_address << " fork failed (" << strerror(errno_copy) << ")";
         mg_mgr_free(&h->child->event_manager);
         delete h->child;
         h->child = nullptr;
@@ -1528,7 +1546,7 @@ static json jsonrpc_machine_dump_pmas_handler(const json &j, mg_connection *con,
 /// \param con Mongoose connection
 /// \param j JSON response object
 void jsonrpc_http_reply(mg_connection *con, http_handler_data *h, const json &j) {
-    BOOST_LOG_TRIVIAL(trace) << h->server_address << " response is " << j.dump().data();
+    SLOG(trace) << h->server_address << " response is " << j.dump().data();
     return mg_http_reply(con, 200, "Access-Control-Allow-Origin: *\r\nContent-Type: application/json\r\n", "%s",
         j.dump().data());
 }
@@ -1536,7 +1554,7 @@ void jsonrpc_http_reply(mg_connection *con, http_handler_data *h, const json &j)
 /// \brief Sends an empty response through the Mongoose connection
 /// \param con Mongoose connection
 void jsonrpc_send_empty_reply(mg_connection *con, http_handler_data *h) {
-    BOOST_LOG_TRIVIAL(trace) << h->server_address << " response is empty";
+    SLOG(trace) << h->server_address << " response is empty";
     return mg_http_reply(con, 200, "Access-Control-Allow-Origin: *\r\nContent-Type: application/json\r\n", "");
 }
 
@@ -1602,7 +1620,7 @@ static json jsonrpc_dispatch_method(const json &j, mg_connection *con, http_hand
         {"machine.dump_pmas", jsonrpc_machine_dump_pmas_handler},
     };
     auto method = j["method"].get<std::string>();
-    BOOST_LOG_TRIVIAL(debug) << h->server_address << " handling \"" << method << "\" method";
+    SLOG(debug) << h->server_address << " handling \"" << method << "\" method";
     auto found = dispatch.find(method);
     if (found != dispatch.end()) {
         return found->second(j, con, h);
@@ -1626,7 +1644,7 @@ static void http_handler(mg_connection *con, int ev, void *ev_data, void *h_data
         std::string_view method{hm->method.ptr, hm->method.len};
         // Answer OPTIONS request to support cross origin resource sharing (CORS) preflighted browser requests
         if (method == "OPTIONS") {
-            BOOST_LOG_TRIVIAL(trace) << h->server_address << " serving \"" << method << "\" request";
+            SLOG(trace) << h->server_address << " serving \"" << method << "\" request";
             std::string headers;
             headers += "Access-Control-Allow-Origin: *\r\n";
             headers += "Access-Control-Allow-Methods: *\r\n";
@@ -1639,16 +1657,16 @@ static void http_handler(mg_connection *con, int ev, void *ev_data, void *h_data
         if (method != "POST") {
             std::string headers;
             headers += "Access-Control-Allow-Origin: *\r\n";
-            BOOST_LOG_TRIVIAL(trace) << h->server_address << " rejected unexpected \"" << method << "\" request";
+            SLOG(trace) << h->server_address << " rejected unexpected \"" << method << "\" request";
             mg_http_reply(con, 405, headers.c_str(), "method not allowed");
             return;
         }
         // Only accept / URI
         std::string_view uri{hm->uri.ptr, hm->uri.len};
-        BOOST_LOG_TRIVIAL(trace) << h->server_address << " request is " << std::string_view{hm->body.ptr, hm->body.len};
+        SLOG(trace) << h->server_address << " request is " << std::string_view{hm->body.ptr, hm->body.len};
         if (uri != "/") {
             // anything else
-            BOOST_LOG_TRIVIAL(trace) << h->server_address << " rejected unexpected \"" << uri << "\" uri";
+            SLOG(trace) << h->server_address << " rejected unexpected \"" << uri << "\" uri";
             mg_http_reply(con, 404, "Access-Control-Allow-Origin: *\r\n", "not found");
             return;
         }
@@ -1726,7 +1744,7 @@ static void http_handler(mg_connection *con, int ev, void *ev_data, void *h_data
         }
     }
     if (ev == MG_EV_ERROR) {
-        BOOST_LOG_TRIVIAL(debug) << h->server_address << " " << static_cast<char *>(ev_data);
+        SLOG(debug) << h->server_address << " " << static_cast<char *>(ev_data);
         return;
     }
 }
@@ -1759,6 +1777,7 @@ and options are
         info
         warn
         error
+        fatal
       the command line option takes precedence over the environment variable
       REMOTE_CARTESI_MACHINE_LOG_LEVEL
 
@@ -1783,23 +1802,16 @@ static bool stringval(const char *pre, const char *str, const char **val) {
     return false;
 }
 
-/// \brief Initialize logger to appropriate format
-/// \param strlevel String with log level, or, if nullptr, use environment variable.
 static void init_logger(const char *strlevel) {
-    using namespace boost::log;
-    trivial::severity_level loglevel = trivial::info;
+    using namespace slog;
+    severity_level level = severity_level::info;
     if (!strlevel) {
         strlevel = std::getenv("REMOTE_CARTESI_MACHINE_LOG_LEVEL");
     }
     if (strlevel) {
-        trivial::from_string(strlevel, strlen(strlevel), loglevel);
+        level = from_string(strlevel);
     }
-    auto core = boost::log::core::get();
-    core->add_global_attribute("TimeStamp", attributes::local_clock());
-    core->add_global_attribute("PID", attributes::make_function(&getpid));
-    core->add_global_attribute("PPID", attributes::make_function(&getppid));
-    boost::log::add_console_log(std::clog, keywords::filter = trivial::severity >= loglevel,
-        keywords::format = "%TimeStamp% %Severity% " PROGRAM_NAME " pid:%PID% ppid:%PPID% %Message%");
+    log_level(level_operation::set, level);
 }
 
 int main(int argc, char *argv[]) try {
@@ -1820,22 +1832,27 @@ int main(int argc, char *argv[]) try {
             help(program_name);
             exit(0);
         } else {
-            server_address = argv[i];
+            if (!server_address) {
+                server_address = argv[i];
+            } else {
+                std::cerr << "repeated [<server-address>] option";
+                exit(1);
+            }
         }
     }
 
     init_logger(log_level);
 
-    BOOST_LOG_TRIVIAL(info) << "server version is " << server_version_major << "." << server_version_minor << "."
-                            << server_version_patch;
+    SLOG(info) << "server version is " << server_version_major << "." << server_version_minor << "."
+               << server_version_patch;
 
-    BOOST_LOG_TRIVIAL(info) << "'" << server_address << "' requested as initial server address";
+    SLOG(info) << "'" << server_address << "' requested as initial server address";
 
     install_signal_handlers();
 
     http_handler_data *h = new (std::nothrow) http_handler_data{};
     if (!h) {
-        BOOST_LOG_TRIVIAL(fatal) << "out of memory";
+        SLOG(fatal) << "out of memory";
         exit(1);
     }
 
@@ -1846,7 +1863,7 @@ int main(int argc, char *argv[]) try {
     if (h->event_manager.epoll_fd < 0) {
         mg_mgr_free(&h->event_manager);
         delete h;
-        BOOST_LOG_TRIVIAL(fatal) << "failed creating event manager";
+        SLOG(fatal) << "failed creating event manager";
         exit(1);
     }
 #endif
@@ -1855,12 +1872,12 @@ int main(int argc, char *argv[]) try {
     if (!con) {
         mg_mgr_free(&h->event_manager);
         delete h;
-        BOOST_LOG_TRIVIAL(fatal) << "failed listening";
+        SLOG(fatal) << "failed listening";
         exit(1);
     }
     h->server_address = server_address;
 
-    BOOST_LOG_TRIVIAL(info) << "initial server bound to port " << ntohs(con->loc.port);
+    SLOG(info) << "initial server bound to port " << ntohs(con->loc.port);
 
     while (!abort_due_to_signal) {
         log_signals();

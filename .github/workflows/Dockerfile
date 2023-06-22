@@ -5,7 +5,7 @@ RUN apt-get update && \
     DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends -y \
         build-essential wget git \
         libreadline-dev libboost-coroutine-dev libboost-context-dev \
-        libboost-filesystem-dev libboost-log-dev libssl-dev libc-ares-dev zlib1g-dev \
+        libboost-filesystem-dev libssl-dev libc-ares-dev zlib1g-dev \
         ca-certificates automake libtool patchelf cmake pkg-config lua5.4 liblua5.4-dev \
         luarocks libb64-dev libcrypto++-dev nlohmann-json3-dev && \
     rm -rf /var/lib/apt/lists/*
@@ -33,7 +33,6 @@ RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
     libboost-coroutine1.74.0 \
     libboost-context1.74.0 \
     libboost-filesystem1.74.0 \
-    libboost-log1.74.0 \
     libreadline8 \
     openssl \
     libc-ares2 \

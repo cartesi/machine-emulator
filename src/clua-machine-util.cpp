@@ -914,10 +914,10 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
 }
 
 #if 0
-/// \brief Pushes an cm_concurrency_config to the Lua stack
+/// \brief Pushes an cm_concurrency_runtime_config to the Lua stack
 /// \param L Lua state.
-/// \param c C api concurrency config to be pushed.
-static void push_cm_concurrency_runtime_config(lua_State *L, const cm_concurrency_config *c) {
+/// \param c C api concurrency runtime config to be pushed.
+static void push_cm_concurrency_runtime_config(lua_State *L, const cm_concurrency_runtime_config *c) {
     lua_newtable(L);
     clua_setintegerfield(L, c->update_merkle_tree, "update_merkle_tree", -1);
 }
@@ -1220,7 +1220,7 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
 /// \param L Lua state
 /// \param tabidx Runtime config stack index
 /// \param c C api concurrency runtime config structure to receive results
-static void check_cm_concurrency_runtime_config(lua_State *L, int tabidx, cm_concurrency_config *c) {
+static void check_cm_concurrency_runtime_config(lua_State *L, int tabidx, cm_concurrency_runtime_config *c) {
     if (!opt_table_field(L, tabidx, "concurrency")) {
         return;
     }

@@ -398,18 +398,19 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     uarch_interpreter_break_reason &value, const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, concurrency_config &value, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, concurrency_runtime_config &value,
+    const std::string &path) {
     if (!contains(j, key)) {
         return;
     }
     ju_get_opt_field(j[key], "update_merkle_tree"s, value.update_merkle_tree, path + to_string(key) + "/");
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, concurrency_config &value,
-    const std::string &path);
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
+    concurrency_runtime_config &value, const std::string &path);
 
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, concurrency_config &value,
-    const std::string &path);
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    concurrency_runtime_config &value, const std::string &path);
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, htif_runtime_config &value, const std::string &path) {
@@ -1202,7 +1203,7 @@ void to_json(nlohmann::json &j, const machine_config &config) {
     }
 }
 
-void to_json(nlohmann::json &j, const concurrency_config &config) {
+void to_json(nlohmann::json &j, const concurrency_runtime_config &config) {
     j = nlohmann::json{
         {"update_merkle_tree", config.update_merkle_tree},
     };

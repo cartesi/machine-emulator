@@ -365,7 +365,8 @@ cartesi::machine_runtime_config convert_from_c(const cm_machine_runtime_config *
         throw std::invalid_argument("invalid machine runtime configuration");
     }
     cartesi::machine_runtime_config new_cpp_machine_runtime_config{};
-    new_cpp_machine_runtime_config.concurrency = cartesi::concurrency_config{c_config->concurrency.update_merkle_tree};
+    new_cpp_machine_runtime_config.concurrency =
+        cartesi::concurrency_runtime_config{c_config->concurrency.update_merkle_tree};
     new_cpp_machine_runtime_config.htif = cartesi::htif_runtime_config{c_config->htif.no_console_putchar};
     new_cpp_machine_runtime_config.skip_root_hash_check = c_config->skip_root_hash_check;
     new_cpp_machine_runtime_config.skip_version_check = c_config->skip_version_check;

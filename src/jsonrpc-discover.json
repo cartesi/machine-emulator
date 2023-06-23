@@ -1598,7 +1598,7 @@
         }
       },
 
-      "ConcurrencyConfig": {
+      "ConcurrencyRuntimeConfig": {
         "type": "object",
         "properties": {
           "update_merkle_tree": {
@@ -1621,7 +1621,7 @@
         "type": "object",
         "properties": {
           "concurrency": {
-            "$ref": "#/components/schemas/ConcurrencyConfig"
+            "$ref": "#/components/schemas/ConcurrencyRuntimeConfig"
           },
           "htif": {
             "$ref": "#/components/schemas/HTIFRuntimeConfig"

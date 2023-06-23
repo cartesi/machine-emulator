@@ -355,7 +355,7 @@ typedef struct {                    // NOLINT(modernize-use-using)
 /// \brief Concurrency runtime configuration
 typedef struct { // NOLINT(modernize-use-using)
     uint64_t update_merkle_tree;
-} cm_concurrency_config;
+} cm_concurrency_runtime_config;
 
 /// \brief HTIF runtime configuration
 typedef struct { // NOLINT(modernize-use-using)
@@ -364,7 +364,7 @@ typedef struct { // NOLINT(modernize-use-using)
 
 /// \brief Machine runtime configuration
 typedef struct { // NOLINT(modernize-use-using)
-    cm_concurrency_config concurrency;
+    cm_concurrency_runtime_config concurrency;
     cm_htif_runtime_config htif;
     bool skip_root_hash_check;
     bool skip_version_check;

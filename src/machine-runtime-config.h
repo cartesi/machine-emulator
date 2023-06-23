@@ -23,7 +23,7 @@
 namespace cartesi {
 
 /// \brief Concurrency runtime configuration
-struct concurrency_config {
+struct concurrency_runtime_config {
     uint64_t update_merkle_tree{};
 };
 
@@ -34,7 +34,7 @@ struct htif_runtime_config {
 
 /// \brief Machine runtime configuration
 struct machine_runtime_config {
-    concurrency_config concurrency{};
+    concurrency_runtime_config concurrency{};
     htif_runtime_config htif{};
     bool skip_root_hash_check{};
     bool skip_version_check{};

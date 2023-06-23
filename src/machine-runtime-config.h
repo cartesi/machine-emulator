@@ -27,9 +27,15 @@ struct concurrency_config {
     uint64_t update_merkle_tree{};
 };
 
+/// \brief HTIF runtime configuration
+struct htif_runtime_config {
+    bool no_console_putchar;
+};
+
 /// \brief Machine runtime configuration
 struct machine_runtime_config {
     concurrency_config concurrency{};
+    htif_runtime_config htif{};
     bool skip_root_hash_check{};
     bool skip_version_check{};
 };

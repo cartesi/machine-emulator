@@ -256,6 +256,10 @@ where options are:
         when ommited or defined as 0, the number of hardware threads is used if
         it can be identified or else a single thread is used.
 
+  --htif-no-console-putchar
+    suppress any console output during machine run,
+    this includes anything written to machine's stdout or stderr.
+
   --skip-root-hash-check
     skip merkle tree root hash check when loading a stored machine,
     assuming the stored machine files are not corrupt,
@@ -335,7 +339,7 @@ where options are:
     exit with failure in case the generated machine is not Rolling Cartesi Machine templates compatible.
 
   --quiet
-    supress cartesi-machine.lua output.
+    suppress cartesi-machine.lua output.
     exceptions: --initial-hash, --final-hash and text emitted from the target.
 
   --gdb[=<address>]
@@ -405,6 +409,7 @@ local concurrency_update_merkle_tree = 0
 local skip_root_hash_check = false
 local skip_version_check = false
 local append_rom_bootargs = ""
+local htif_no_console_putchar = false
 local htif_console_getchar = false
 local htif_yield_automatic = false
 local htif_yield_manual = false
@@ -703,6 +708,11 @@ local options = {
         c.update_merkle_tree = assert(util.parse_number(c.update_merkle_tree),
                 "invalid update_merkle_tree number in " .. all)
         concurrency_update_merkle_tree = c.update_merkle_tree
+        return true
+    end },
+    { "^%-%-htif%-no%-console%-putchar$", function(all)
+        if not all then return false end
+        htif_no_console_putchar = true
         return true
     end },
     { "^%-%-skip%-root%-hash%-check$", function(all)
@@ -1206,6 +1216,9 @@ end
 local runtime = {
     concurrency = {
         update_merkle_tree = concurrency_update_merkle_tree
+    },
+    htif = {
+        no_console_putchar = htif_no_console_putchar,
     },
     skip_root_hash_check = skip_root_hash_check,
     skip_version_check = skip_version_check

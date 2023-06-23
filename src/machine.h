@@ -743,6 +743,11 @@ public:
         return m_c;
     }
 
+    /// \brief Returns the machine runtime config.
+    const machine_runtime_config &get_runtime_config(void) const {
+        return m_r;
+    }
+
     /// \brief Replaces a memory range.
     /// \param range Configuration of the new memory range.
     /// \details The machine must contain an existing memory range

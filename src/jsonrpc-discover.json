@@ -1607,11 +1607,24 @@
         }
       },
 
+      "HTIFRuntimeConfig": {
+        "title": "HTIFRuntimeConfig",
+        "type": "object",
+        "properties": {
+          "no_console_putchar": {
+            "type": "boolean"
+          }
+        }
+      },
+
       "MachineRuntimeConfig": {
         "type": "object",
         "properties": {
           "concurrency": {
             "$ref": "#/components/schemas/ConcurrencyConfig"
+          },
+          "htif": {
+            "$ref": "#/components/schemas/HTIFRuntimeConfig"
           },
           "skip_root_hash_check": {
             "type": "boolean"

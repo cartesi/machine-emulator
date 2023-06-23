@@ -19,12 +19,13 @@
 
 #include "htif.h"
 #include "machine-config.h"
+#include "machine-runtime-config.h"
 #include "pma.h"
 
 namespace cartesi {
 
 /// \brief Creates a PMA entry for the HTIF device
-pma_entry make_htif_pma_entry(uint64_t start, uint64_t length);
+pma_entry make_htif_pma_entry(uint64_t start, uint64_t length, htif_runtime_config *context);
 
 } // namespace cartesi
 

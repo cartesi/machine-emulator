@@ -382,7 +382,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     }
 
     // Register HTIF device
-    register_pma_entry(make_htif_pma_entry(PMA_HTIF_START, PMA_HTIF_LENGTH));
+    register_pma_entry(make_htif_pma_entry(PMA_HTIF_START, PMA_HTIF_LENGTH, &m_r.htif));
 
     // Copy HTIF state to from config to machine
     write_htif_tohost(m_c.htif.tohost);

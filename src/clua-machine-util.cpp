@@ -1228,12 +1228,25 @@ static void check_cm_concurrency_runtime_config(lua_State *L, int tabidx, cm_con
     lua_pop(L, 1);
 }
 
+/// \brief Loads C api htif runtime config from Lua
+/// \param L Lua state
+/// \param tabidx Runtime config stack index
+/// \param c C api htif runtime config structure to receive results
+static void check_cm_htif_runtime_config(lua_State *L, int tabidx, cm_htif_runtime_config *c) {
+    if (!opt_table_field(L, tabidx, "htif")) {
+        return;
+    }
+    c->no_console_putchar = opt_boolean_field(L, -1, "no_console_putchar");
+    lua_pop(L, 1);
+}
+
 cm_machine_runtime_config *clua_check_cm_machine_runtime_config(lua_State *L, int tabidx, int ctxidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
     auto &managed =
         clua_push_to(L, clua_managed_cm_ptr<cm_machine_runtime_config>(new cm_machine_runtime_config{}), ctxidx);
     cm_machine_runtime_config *config = managed.get();
     check_cm_concurrency_runtime_config(L, tabidx, &config->concurrency);
+    check_cm_htif_runtime_config(L, tabidx, &config->htif);
     config->skip_root_hash_check = opt_boolean_field(L, tabidx, "skip_root_hash_check");
     config->skip_version_check = opt_boolean_field(L, tabidx, "skip_version_check");
     managed.release();

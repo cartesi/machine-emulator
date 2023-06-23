@@ -156,6 +156,16 @@ template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, concurrency_config &value,
     const std::string &path = "params/");
 
+/// \brief Attempts to load an htif_runtime_config object from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, htif_runtime_config &value,
+    const std::string &path = "params/");
+
 /// \brief Attempts to load an machine_runtime_config object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
@@ -541,6 +551,7 @@ void to_json(nlohmann::json &j, const uarch_ram_config &config);
 void to_json(nlohmann::json &j, const uarch_config &config);
 void to_json(nlohmann::json &j, const machine_config &config);
 void to_json(nlohmann::json &j, const concurrency_config &config);
+void to_json(nlohmann::json &j, const htif_runtime_config &config);
 void to_json(nlohmann::json &j, const machine_runtime_config &runtime);
 void to_json(nlohmann::json &j, const machine::csr &csr);
 
@@ -578,6 +589,10 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const std::string
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, concurrency_config &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, concurrency_config &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const bool &key, htif_runtime_config &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, htif_runtime_config &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, machine_runtime_config &value,
     const std::string &base = "params/");

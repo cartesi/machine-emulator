@@ -412,11 +412,26 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, htif_runtime_config &value, const std::string &path) {
+    if (!contains(j, key)) {
+        return;
+    }
+    ju_get_opt_field(j[key], "no_console_putchar"s, value.no_console_putchar, path + to_string(key) + "/");
+}
+
+template void ju_get_opt_field<bool>(const nlohmann::json &j, const bool &key, htif_runtime_config &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, htif_runtime_config &value,
+    const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_runtime_config &value, const std::string &path) {
     if (!contains(j, key)) {
         return;
     }
     ju_get_field(j[key], "concurrency"s, value.concurrency, path + to_string(key) + "/");
+    ju_get_field(j[key], "htif"s, value.htif, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "skip_root_hash_check"s, value.skip_root_hash_check, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "skip_version_check"s, value.skip_version_check, path + to_string(key) + "/");
 }
@@ -1193,9 +1208,16 @@ void to_json(nlohmann::json &j, const concurrency_config &config) {
     };
 }
 
+void to_json(nlohmann::json &j, const htif_runtime_config &config) {
+    j = nlohmann::json{
+        {"no_console_putchar", config.no_console_putchar},
+    };
+}
+
 void to_json(nlohmann::json &j, const machine_runtime_config &runtime) {
     j = nlohmann::json{
         {"concurrency", runtime.concurrency},
+        {"htif", runtime.htif},
         {"skip_root_hash_check", runtime.skip_root_hash_check},
         {"skip_version_check", runtime.skip_version_check},
     };

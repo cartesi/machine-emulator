@@ -1,5 +1,5 @@
 name: Build/Test/Verify/Release
-on: [push]
+on: [push, pull_request_target]
 env:
   ROM_VERSION: v0.16.0
   KERNEL_VERSION: v0.16.0

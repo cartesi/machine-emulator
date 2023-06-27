@@ -798,7 +798,7 @@ jobs:
     name: Publish Docker images
     needs: [static-analysis, coverage, sanitize, test, uarch-test, ubuntu-image-build]
     runs-on: ubuntu-22.04
-    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main') }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     steps:
       - name: Checkout emulator source code
         uses: actions/checkout@v3

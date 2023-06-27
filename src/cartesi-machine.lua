@@ -1097,14 +1097,6 @@ for _, a in ipairs(arg) do
     end
 end
 
-local function get_file_length(filename)
-    local file = io.open(filename, "rb")
-    if not file then return nil end
-    local size = file:seek("end") -- get file size
-    file:close()
-    return size
-end
-
 local function print_root_hash(machine, print)
     (print or stderr)("%u: %s\n", machine:read_mcycle(), util.hexhash(machine:get_root_hash()))
 end
@@ -1246,35 +1238,6 @@ local function store_machine_config(config, output)
     output("}\n")
 end
 
-local function resolve_flash_lengths(label_order, image_filename, length)
-    for _, label in ipairs(label_order) do
-        local filename = image_filename[label]
-        local len = length[label]
-        local filelen
-        if filename and filename ~= "" then
-            filelen = assert(
-                get_file_length(filename),
-                string.format("unable to find length of flash drive '%s' image file '%s'", label, filename)
-            )
-            if len and len ~= filelen then
-                error(
-                    string.format(
-                        "flash drive '%s' length (%u) and image file '%s' length (%u) do not match",
-                        label,
-                        len,
-                        filename,
-                        filelen
-                    )
-                )
-            else
-                length[label] = filelen
-            end
-        elseif not len then
-            error(string.format("flash drive '%s' nas no length or image file", label))
-        end
-    end
-end
-
 local function resolve_flash_starts(label_order, start)
     local auto_start = 1 << 55
     if next(start) == nil then
@@ -1370,7 +1333,6 @@ elseif load_dir then
     main_machine = create_machine(load_dir, runtime)
 else
     -- Resolve all device starts and lengths
-    resolve_flash_lengths(flash_label_order, flash_image_filename, flash_length)
     resolve_flash_starts(flash_label_order, flash_start)
 
     -- Build machine config
@@ -1404,7 +1366,7 @@ else
             image_filename = flash_image_filename[label],
             shared = flash_shared[label],
             start = flash_start[label],
-            length = flash_length[label],
+            length = flash_length[label] or -1,
         }
         mtdparts[#mtdparts + 1] = string.format("flash.%d:-(%s)", i - 1, label)
     end

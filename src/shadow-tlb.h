@@ -98,15 +98,25 @@ static inline bool tlb_is_hit(uint64_t vaddr_page, uint64_t vaddr) {
 }
 
 template <TLB_entry_type ETYPE>
-static inline uint64_t tlb_get_entry_hot_abs_addr(uint64_t eidx) {
-    return PMA_SHADOW_TLB_START + offsetof(shadow_tlb_state, hot) +
+static inline uint64_t tlb_get_entry_hot_rel_addr(uint64_t eidx) {
+    return offsetof(shadow_tlb_state, hot) +
         (ETYPE * sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>)) + (eidx * sizeof(tlb_hot_entry));
 }
 
 template <TLB_entry_type ETYPE>
-static inline uint64_t tlb_get_entry_cold_abs_addr(uint64_t eidx) {
-    return PMA_SHADOW_TLB_START + offsetof(shadow_tlb_state, cold) +
+static inline uint64_t tlb_get_entry_cold_rel_addr(uint64_t eidx) {
+    return offsetof(shadow_tlb_state, cold) +
         (ETYPE * sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>)) + (eidx * sizeof(tlb_cold_entry));
+}
+
+template <TLB_entry_type ETYPE>
+static inline uint64_t tlb_get_entry_hot_abs_addr(uint64_t eidx) {
+    return PMA_SHADOW_TLB_START + tlb_get_entry_hot_rel_addr<ETYPE>(eidx);
+}
+
+template <TLB_entry_type ETYPE>
+static inline uint64_t tlb_get_entry_cold_abs_addr(uint64_t eidx) {
+    return PMA_SHADOW_TLB_START + tlb_get_entry_cold_rel_addr<ETYPE>(eidx);
 }
 
 template <TLB_entry_type ETYPE>

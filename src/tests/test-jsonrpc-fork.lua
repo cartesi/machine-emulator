@@ -92,14 +92,6 @@ end
 local FANOUT = 3
 local MAXDEPTH = 3
 
-local function new_x()
-    local t = {}
-    for i = 1, 31 do
-        t[i] = 0
-    end
-    return t
-end
-
 local function clone_x(x)
     local y = {}
     for i = 1, 31 do
@@ -108,31 +100,22 @@ local function clone_x(x)
     return y
 end
 
-local function tmprom()
-    local name = os.tmpname()
-    local f = io.open(name, "wb")
-    f:write(string.rep("\0", 4096))
-    f:close()
-    return name
-end
-
 local function fork_tree(address, x, depth)
     local stub = assert(jsonrpc.stub(address))
     local node = {
         address = address,
         stub = stub,
-        x = x,
     }
     local machine
     if depth == 0 then
         local config = stub.machine.get_default_config()
-        config.rom.image_filename = tmprom()
+        x = config.processor.x
         config.ram.length = 1 << 22
         machine = stub.machine(config)
-        os.remove(config.rom.image_filename)
     else
         machine = stub.get_machine()
     end
+    node.x = x
     local children = {}
     node.children = children
     if depth <= MAXDEPTH then
@@ -169,6 +152,6 @@ local function kill_tree(root)
     pre_order(root, function(node) node.stub.shutdown() end)
 end
 
-local tree = fork_tree(remote_address, new_x(), 0)
+local tree = fork_tree(remote_address, nil, 0)
 check_tree(tree)
 kill_tree(tree)

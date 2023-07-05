@@ -1,7 +1,6 @@
 name: Build/Test/Verify/Release
 on: [push, pull_request]
 env:
-  ROM_VERSION: v0.16.0
   KERNEL_VERSION: v0.16.0
   LINUX_VERSION: 5.15.63-ctsi-2
   ROOTFS_VERSION: v0.17.0
@@ -127,19 +126,10 @@ jobs:
           file: linux-${{ env.LINUX_VERSION }}.bin
           token: ${{ secrets.CI_TOKEN }}
 
-      - name: Download [rom.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/machine-emulator-rom
-          tag: ${{ env.ROM_VERSION }}
-          file: rom-${{ env.ROM_VERSION }}.bin
-          token: ${{ secrets.CI_TOKEN }}
-
       - name: Move images to cartesi images folder
         run: |
-          mv rom-*.bin linux-*.bin rootfs-*.ext2 /opt/cartesi/share/images/
+          mv linux-*.bin rootfs-*.ext2 /opt/cartesi/share/images/
           cd /opt/cartesi/share/images/ && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
-          cd /opt/cartesi/share/images/ && ln -s rom-${{ env.ROM_VERSION }}.bin rom.bin
           cd /opt/cartesi/share/images/ && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
 
       - name: Simple Boot
@@ -395,22 +385,13 @@ jobs:
           file: linux-${{ env.LINUX_VERSION }}.bin
           token: ${{ secrets.CI_TOKEN }}
 
-      - name: Download [rom.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/machine-emulator-rom
-          tag: ${{ env.ROM_VERSION }}
-          file: rom-${{ env.ROM_VERSION }}.bin
-          token: ${{ secrets.CI_TOKEN }}
-
       - name: Create images folder
         run: mkdir -m 755 -p /opt/cartesi/share/images
 
       - name: Move images to cartesi images folder
         run: |
-          mv rom-*.bin linux-*.bin rootfs-*.ext2 /opt/cartesi/share/images/
+          mv linux-*.bin rootfs-*.ext2 /opt/cartesi/share/images/
           cd /opt/cartesi/share/images/ && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
-          cd /opt/cartesi/share/images/ && ln -s rom-${{ env.ROM_VERSION }}.bin rom.bin
           cd /opt/cartesi/share/images/ && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
 
       - name: Download test suite
@@ -533,22 +514,13 @@ jobs:
           file: linux-${{ env.LINUX_VERSION }}.bin
           token: ${{ secrets.CI_TOKEN }}
 
-      - name: Download [rom.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/machine-emulator-rom
-          tag: ${{ env.ROM_VERSION }}
-          file: rom-${{ env.ROM_VERSION }}.bin
-          token: ${{ secrets.CI_TOKEN }}
-
       - name: Create images folder
         run: mkdir -m 755 -p /opt/cartesi/share/images
 
       - name: Move images to cartesi images folder
         run: |
-          mv rom-*.bin linux-*.bin rootfs-*.ext2 /opt/cartesi/share/images/
+          mv linux-*.bin rootfs-*.ext2 /opt/cartesi/share/images/
           cd /opt/cartesi/share/images/ && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
-          cd /opt/cartesi/share/images/ && ln -s rom-${{ env.ROM_VERSION }}.bin rom.bin
           cd /opt/cartesi/share/images/ && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
 
       - name: Download test suite
@@ -778,20 +750,11 @@ jobs:
           file: linux-${{ env.LINUX_VERSION }}.bin
           token: ${{ secrets.CI_TOKEN }}
 
-      - name: Download [rom.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/machine-emulator-rom
-          tag: ${{ env.ROM_VERSION }}
-          file: rom-${{ env.ROM_VERSION }}.bin
-          token: ${{ secrets.CI_TOKEN }}
-
       - name: Move images to cartesi images folder
         run: |
           mkdir -m 755 -p /opt/cartesi/share/images
-          mv rom-*.bin linux-*.bin rootfs-*.ext2 /opt/cartesi/share/images/
+          mv linux-*.bin rootfs-*.ext2 /opt/cartesi/share/images/
           cd /opt/cartesi/share/images/ && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
-          cd /opt/cartesi/share/images/ && ln -s rom-${{ env.ROM_VERSION }}.bin rom.bin
           cd /opt/cartesi/share/images/ && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
 
       - name: Download test suite

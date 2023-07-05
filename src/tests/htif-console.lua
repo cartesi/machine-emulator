@@ -13,14 +13,11 @@ local config_base = {
         image_filename = test_util.tests_path .. "htif_console.bin",
         length = 0x4000000,
     },
-    rom = {
-        image_filename = test_util.tests_path .. "bootstrap.bin",
-    },
 }
 
 local function stderr(...) io.stderr:write(string.format(...)) end
 
-local final_mcycle = 2141
+local final_mcycle = 2137
 local exit_payload = 42
 
 local function test(config, console_getchar_enable)

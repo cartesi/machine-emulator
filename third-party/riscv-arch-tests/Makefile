@@ -1,5 +1,4 @@
 MACHINE_EMULATOR_DEFINES_DIR ?= $(abspath ../../lib/machine-emulator-defines)
-EMULATOR_ROM ?= $(abspath ../../../rom.bin)
 
 RISCV_ARCH_TEST_PROJ = riscv-arch-test
 RISCV_ARCHTEST_BASE_URL = https://github.com/riscv-non-isa/$(RISCV_ARCH_TEST_PROJ)/archive
@@ -27,7 +26,6 @@ RUN_RISCV_ARCH_TESTS = \
 		TARGETDIR=$(TARGETDIR) \
 		RISCV_DEVICE=$(RISCV_DEVICE) \
 		TEST_BOOTSTRAP=$(TEST_BOOTSTRAP) \
-		EMULATOR_ROM=$(EMULATOR_ROM) \
 		RUN_ARCH_TEST="$(RUN_ARCH_TEST)" \
 		MACHINE_EMULATOR_DEFINES_DIR=$(MACHINE_EMULATOR_DEFINES_DIR) \
 		JOBS=-j$(JOBS)

@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Move uarch halt from assembler to C++
 - Ensure that uarch does not advance to the next micro instruction  when iflags.H or iflags.Y is set
 - Made flash drive length and ROM image filename optional in machine config
+- Build device tree automatically into machine's ROM, eliminating the need of a ROM
 
 ## [0.14.0] - 2023-05-03
 ### Added

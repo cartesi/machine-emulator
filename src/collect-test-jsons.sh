@@ -19,7 +19,7 @@ task() {
     local f=$1
     local b=${output_path}/$(basename $f .bin).json
     echo running $f
-    ./cartesi-machine.lua --no-root-backing --rom-image=${test_path}/bootstrap.bin --ram-image=$f --memory-size=128 --json-steps=$b --batch
+    ./cartesi-machine.lua --no-root-backing --ram-image=$f --memory-size=128 --json-steps=$b --batch
     echo compressing $b
     brotli -j $b
 }

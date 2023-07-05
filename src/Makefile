@@ -617,7 +617,7 @@ GROUND_TRUTH_DIR ?= ground-truth
 CONCURRENCY_MERKLE_TREE ?= 0
 
 ifneq ($(wildcard $(TEST_PATH)),)
-TESTS=$(shell find $(TEST_PATH) -name '*.bin' -type f -exec basename {} \;)
+TESTS=$(shell find $(TEST_PATH) -name '*.bin' -type f -print | xargs basename -a)
 endif
 TEST_HASHES=$(addprefix $(HASH_DIR)/,$(TESTS:.bin=.hashes))
 TEST_LOGS=$(addprefix $(LOG_DIR)/,$(TESTS:.bin=.json.br))

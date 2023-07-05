@@ -172,9 +172,6 @@ assert(test_path, "missing test path")
 
 local function build_machine(test_name)
     local config = {
-        rom = {
-            image_filename = test_path .. "/bootstrap.bin",
-        },
         ram = {
             length = 0x20000,
         },

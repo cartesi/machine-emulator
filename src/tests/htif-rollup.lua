@@ -33,9 +33,6 @@ local config_base = {
         image_filename = test_util.tests_path .. "htif_rollup.bin",
         length = 0x4000000,
     },
-    rom = {
-        image_filename = test_util.tests_path .. "bootstrap.bin",
-    },
     htif = {
         yield_automatic = true,
     },
@@ -70,7 +67,7 @@ local config_base = {
 
 local function stderr(...) io.stderr:write(string.format(...)) end
 
-local final_mcycle = 8981
+local final_mcycle = 8977
 local exit_payload = 0
 
 local function check_buffer(machine, pattern, buffer)

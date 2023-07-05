@@ -78,7 +78,6 @@ local benchmarks = {
 }
 
 local function build_machine(exec_args)
-    local rom_image_filename = IMAGES_PATH .. "rom.bin"
     local ram_image_filename = IMAGES_PATH .. "linux.bin"
     local flash_image_filename = IMAGES_PATH .. "rootfs.ext2"
 
@@ -90,7 +89,6 @@ local function build_machine(exec_args)
             mvendorid = -1,
         },
         rom = {
-            image_filename = rom_image_filename,
             bootargs = (
                 "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw "
                 .. "quiet mtdparts=flash.0:-(root) -- "

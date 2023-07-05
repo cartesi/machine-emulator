@@ -76,7 +76,7 @@ where options are:
     set RAM length.
 
   --rom-image=<filename>
-    name of file containing ROM image (default: "rom.bin").
+    name of file containing ROM image (default: auto generated flattened device tree).
 
   --no-rom-bootargs
     clear default bootargs.
@@ -401,7 +401,7 @@ local flash_length = {}
 local memory_range_replace = {}
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
-local rom_image_filename = images_path .. "rom.bin"
+local rom_image_filename = nil
 local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce"
 local rollup
 local uarch
@@ -508,10 +508,8 @@ local options = {
             if ok and stdlib then
                 -- use realpath to get images real filenames,
                 -- tools could use this information to detect rom/linux/rootfs versions
-                local rom_image = stdlib.realpath(images_path .. "rom.bin")
                 local ram_image = stdlib.realpath(images_path .. "linux.bin")
                 local rootfs_image = stdlib.realpath(images_path .. "rootfs.ext2")
-                if rom_image then print(string.format('  "default_rom_image": "%s",', rom_image)) end
                 if ram_image then print(string.format('  "default_ram_image": "%s",', ram_image)) end
                 if rootfs_image then print(string.format('  "default_rootfs_image": "%s",', rootfs_image)) end
             end

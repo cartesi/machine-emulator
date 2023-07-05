@@ -197,7 +197,7 @@ $ make coverage-toolchain=clang -j$(nproc)
 
 After building the emulator with coverage enable, you should run the following command.
 You need to specify the binaries test path using the `TEST_PATH` and the `CARTESI_TESTS_PATH` variables.
-You also need to specify the directory containg the ROM, kernel and rootfs with the `CARTESI_IMAGES_PATH` variable.
+You also need to specify the directory containing the kernel and rootfs with the `CARTESI_IMAGES_PATH` variable.
 For instance:
 
 ```bash

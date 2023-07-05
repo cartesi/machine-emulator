@@ -33,7 +33,6 @@ local test_path = "./"
 local cleanup = {}
 
 local linux_image = test_util.images_path .. "linux.bin"
-local rom_image = test_util.images_path .. "rom.bin"
 local rootfs_image = test_util.images_path .. "rootfs.ext2"
 
 -- Print help and exit
@@ -177,12 +176,10 @@ local function build_machine(type, config)
     -- Create new machine
     -- Use default config to be max reproducible
     local concurrency_update_merkle_tree = 0
-    config = config
-        or {
-            processor = {},
-            ram = { length = 1 << 20 },
-            rom = { image_filename = rom_image },
-        }
+    config = config or {
+        processor = {},
+        ram = { length = 1 << 20 },
+    }
     local runtime = {
         concurrency = {
             update_merkle_tree = concurrency_update_merkle_tree,
@@ -202,7 +199,6 @@ local function build_uarch_machine(type)
     local config = {
         processor = {},
         ram = { length = 1 << 20 },
-        rom = { image_filename = rom_image },
         uarch = {
             ram = {
                 length = 1 << 20,
@@ -231,9 +227,8 @@ do_test("machine halt and yield flags and config matches", function(machine)
     local initial_config = machine:get_initial_config()
     -- test_util.print_table(initial_config)
     assert(initial_config["processor"]["marchid"] == cartesi.MARCHID, "marchid value does not match")
-    assert(initial_config["processor"]["pc"] == 0x1000, "pc value does not match")
+    assert(initial_config["processor"]["pc"] == 0x80000000, "pc value does not match")
     assert(initial_config["ram"]["length"] == 1048576, "ram length value does not match")
-    assert(initial_config["rom"]["image_filename"] ~= "", "rom image filename not set")
     -- Check machine is not halted
     assert(not machine:read_iflags_H(), "machine shouldn't be halted")
     -- Check machine is not yielded
@@ -376,12 +371,19 @@ end)
 
 print("\n\nrun machine to end mcycle and check for mcycle, hash and halt flag")
 do_test("mcycle and root hash should match", function(machine)
+    -- The following is a RISC-V bytecode that will halt the machine immediately,
+    -- by writing 1 to HTIF tohost (0x40008000)
+    local halt_bytecode = "\x93\x02\x10\x00" -- li t0,1
+        .. "\x37\x83\x00\x40" -- lui t1,0x40008
+        .. "\x23\x30\x53\x00" -- sd t0,0(t1) # 40008000
+    machine:write_memory(machine:read_pc(), halt_bytecode)
+
     machine:run(MAX_MCYCLE)
     -- Check machine is halted
     assert(machine:read_iflags_H(), "machine should be halted")
     -- Check for end mcycle
     local end_mcycle = machine:read_mcycle()
-    assert(end_mcycle > 400000, "machine mcycle should be above 400000")
+    assert(end_mcycle == 3, "machine mcycle should be 3")
 
     local root_hash = machine:get_root_hash()
     print("End hash: ", test_util.tohex(root_hash))
@@ -462,7 +464,6 @@ print("\n\n check replace flash drives")
 test_util.make_do_test(build_machine, machine_type, {
     processor = {},
     ram = { length = 1 << 20 },
-    rom = { image_filename = rom_image },
     flash_drive = {
         {
             start = 0x80000000000000,
@@ -508,7 +509,6 @@ test_util.make_do_test(build_machine, machine_type, {
         length = 0x4000000,
     },
     rom = {
-        image_filename = rom_image,
         bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce single=yes splash=no "
             .. "mtdparts=flash.0:-(root);flash.1:-(input);flash.2:-(output) -- "
             .. "cat /mnt/input/etc/issue | dd status=none of=/dev/mtdblock2",

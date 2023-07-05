@@ -97,9 +97,6 @@ local config_base = {
         image_filename = test_util.tests_path .. "htif_yield.bin",
         length = 0x4000000,
     },
-    rom = {
-        image_filename = test_util.tests_path .. "bootstrap.bin",
-    },
 }
 
 if uarch then
@@ -122,24 +119,24 @@ local REASON_TX_REPORT = cartesi.machine.HTIF_YIELD_REASON_TX_REPORT
 local REASON_TX_EXCEPTION = cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION
 
 local yields = {
-    { mcycle = 13, data = 10, cmd = YIELD_MANUAL, reason = REASON_PROGRESS },
-    { mcycle = 44, data = 11, cmd = YIELD_MANUAL, reason = REASON_PROGRESS },
-    { mcycle = 75, data = 12, cmd = YIELD_MANUAL, reason = REASON_PROGRESS },
-    { mcycle = 107, data = 13, cmd = YIELD_MANUAL, reason = REASON_RX_ACCEPTED },
-    { mcycle = 139, data = 14, cmd = YIELD_MANUAL, reason = REASON_RX_REJECTED },
-    { mcycle = 171, data = 15, cmd = YIELD_MANUAL, reason = REASON_TX_VOUCHER },
-    { mcycle = 203, data = 16, cmd = YIELD_MANUAL, reason = REASON_TX_NOTICE },
-    { mcycle = 235, data = 17, cmd = YIELD_MANUAL, reason = REASON_TX_REPORT },
-    { mcycle = 267, data = 18, cmd = YIELD_MANUAL, reason = REASON_TX_EXCEPTION },
+    { mcycle = 9, data = 10, cmd = YIELD_MANUAL, reason = REASON_PROGRESS },
+    { mcycle = 40, data = 11, cmd = YIELD_MANUAL, reason = REASON_PROGRESS },
+    { mcycle = 71, data = 12, cmd = YIELD_MANUAL, reason = REASON_PROGRESS },
+    { mcycle = 103, data = 13, cmd = YIELD_MANUAL, reason = REASON_RX_ACCEPTED },
+    { mcycle = 135, data = 14, cmd = YIELD_MANUAL, reason = REASON_RX_REJECTED },
+    { mcycle = 167, data = 15, cmd = YIELD_MANUAL, reason = REASON_TX_VOUCHER },
+    { mcycle = 199, data = 16, cmd = YIELD_MANUAL, reason = REASON_TX_NOTICE },
+    { mcycle = 231, data = 17, cmd = YIELD_MANUAL, reason = REASON_TX_REPORT },
+    { mcycle = 263, data = 18, cmd = YIELD_MANUAL, reason = REASON_TX_EXCEPTION },
 
-    { mcycle = 298, data = 20, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
-    { mcycle = 329, data = 21, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
-    { mcycle = 360, data = 22, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
-    { mcycle = 392, data = 23, cmd = YIELD_AUTOMATIC, reason = REASON_RX_ACCEPTED },
-    { mcycle = 424, data = 24, cmd = YIELD_AUTOMATIC, reason = REASON_RX_REJECTED },
-    { mcycle = 456, data = 25, cmd = YIELD_AUTOMATIC, reason = REASON_TX_VOUCHER },
-    { mcycle = 488, data = 26, cmd = YIELD_AUTOMATIC, reason = REASON_TX_NOTICE },
-    { mcycle = 520, data = 27, cmd = YIELD_AUTOMATIC, reason = REASON_TX_REPORT },
+    { mcycle = 294, data = 20, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
+    { mcycle = 325, data = 21, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
+    { mcycle = 356, data = 22, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
+    { mcycle = 388, data = 23, cmd = YIELD_AUTOMATIC, reason = REASON_RX_ACCEPTED },
+    { mcycle = 420, data = 24, cmd = YIELD_AUTOMATIC, reason = REASON_RX_REJECTED },
+    { mcycle = 452, data = 25, cmd = YIELD_AUTOMATIC, reason = REASON_TX_VOUCHER },
+    { mcycle = 484, data = 26, cmd = YIELD_AUTOMATIC, reason = REASON_TX_NOTICE },
+    { mcycle = 516, data = 27, cmd = YIELD_AUTOMATIC, reason = REASON_TX_REPORT },
 }
 
 local function run_machine_with_uarch(machine)
@@ -171,7 +168,7 @@ end
 
 local function stderr(...) io.stderr:write(string.format(...)) end
 
-local final_mcycle = 561
+local final_mcycle = 557
 local exit_payload = 42
 local progress_enable = false
 

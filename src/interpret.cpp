@@ -94,7 +94,6 @@
 #include "interpret.h"
 #include "meta.h"
 #include "riscv-constants.h"
-#include "rom.h"
 #include "rtc.h"
 #include "soft-float.h"
 #include "strict-aliasing.h"

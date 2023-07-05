@@ -420,8 +420,14 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // Register pma board shadow device
     register_pma_entry(make_shadow_pmas_pma_entry(PMA_SHADOW_PMAS_START, PMA_SHADOW_PMAS_LENGTH));
 
-    // Initialize PMA extension metadata on ROM
-    rom_init(m_c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
+    // Initialize ROM
+    if (m_c.rom.image_filename.empty()) {
+        // Write the FDT (flattened device tree) into ROM
+        rom_init_device_tree(m_c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
+    } else {
+        // Initialize PMA extension metadata on ROM
+        rom_init(m_c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
+    }
 
     // Add sentinel to PMA vector
     register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));

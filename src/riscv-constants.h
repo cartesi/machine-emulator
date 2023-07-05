@@ -18,6 +18,7 @@
 #define RISCV_CONSTANTS_H
 
 #include "machine-c-defines.h"
+#include "pma-constants.h"
 #include <cstdint>
 #include <pma-defines.h>
 
@@ -428,7 +429,9 @@ enum IFLAGS_masks : uint64_t {
 
 /// \brief Initial values for Cartesi machines
 enum CARTESI_init : uint64_t {
-    PC_INIT = UINT64_C(0x1000),                    ///< Initial value for pc
+    // The machines starts executing instructions from RAM start by default,
+    // and expects a working firmware to be available there.
+    PC_INIT = PMA_RAM_START,                       ///< Initial value for pc
     FCSR_INIT = UINT64_C(0),                       ///< Initial value for fcsr
     MVENDORID_INIT = UINT64_C(0x6361727465736920), ///< Initial value for mvendorid
     MARCHID_INIT = CM_MARCHID,                     ///< Initial value for marchid
@@ -466,6 +469,44 @@ enum CARTESI_init : uint64_t {
     SENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for senvcfg
     UARCH_PC_INIT = UINT64_C(0x70000000),                           ///< Initial value for microarchitecture pc
     UARCH_CYCLE_INIT = UINT64_C(0),                                 ///< Initial value for microarchitecture cycle
+    MHARTID_INIT = UINT64_C(0),                                     ///< Initial mhartid
+    FDTADDR_INIT = PMA_ROM_START,                                   ///< Initial FDT address
+
+    // Registers
+    REG_X0 = UINT64_C(0), //< zero - hardwired zero
+    REG_X1 = UINT64_C(0), //< ra - return address
+    REG_X2 = UINT64_C(0), //< sp - stack pointer
+    REG_X3 = UINT64_C(0), //< gp - global pointer
+    REG_X4 = UINT64_C(0), //< tp - thread pointer
+    REG_X5 = UINT64_C(0), //< t0 - temporary register 0
+    REG_X6 = UINT64_C(0), //< t1 - temporary register 1
+    REG_X7 = UINT64_C(0), //< t2 - temporary register 2
+    REG_X8 = UINT64_C(0), //< s0 - fp,  saved register 0 / frame pointer
+    REG_X9 = UINT64_C(0), //< s1 - saved register 1
+    // a0 passes the initial mhartid to SBI firmware on boot
+    REG_X10 = MHARTID_INIT, //< a0 - function argument 0 / return value 0
+    // a1 passes the FDT (flattened device tree) address to SBI firmware on boot
+    REG_X11 = FDTADDR_INIT, //< a1 - function argument 1 / return value 1
+    REG_X12 = UINT64_C(0),  //< a2 - function argument 2
+    REG_X13 = UINT64_C(0),  //< a3 - function argument 3
+    REG_X14 = UINT64_C(0),  //< a4 - function argument 4
+    REG_X15 = UINT64_C(0),  //< a5 - function argument 5
+    REG_X16 = UINT64_C(0),  //< a6 - function argument 6
+    REG_X17 = UINT64_C(0),  //< a7 - function argument 7
+    REG_X18 = UINT64_C(0),  //< s2 - saved register 2
+    REG_X19 = UINT64_C(0),  //< s3 - saved register 3
+    REG_X20 = UINT64_C(0),  //< s4 - saved register 4
+    REG_X21 = UINT64_C(0),  //< s5 - saved register 5
+    REG_X22 = UINT64_C(0),  //< s6 - saved register 6
+    REG_X23 = UINT64_C(0),  //< s7 - saved register 7
+    REG_X24 = UINT64_C(0),  //< s8 - saved register 8
+    REG_X25 = UINT64_C(0),  //< s9 - saved register 9
+    REG_X26 = UINT64_C(0),  //< s10 - saved register 10
+    REG_X27 = UINT64_C(0),  //< s11 - saved register 11
+    REG_X28 = UINT64_C(0),  //< t3 - temporary register 3
+    REG_X29 = UINT64_C(0),  //< t4 - temporary register 4
+    REG_X30 = UINT64_C(0),  //< t5 - temporary register 5
+    REG_X31 = UINT64_C(0)   //< t6 - temporary register 6
 };
 
 /// \brief Mapping between CSR names and addresses

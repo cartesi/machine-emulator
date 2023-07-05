@@ -291,7 +291,6 @@ local function build_machine(type, build_options)
     initial_csr_values.x = initial_xreg_values
     local config = {
         processor = initial_csr_values,
-        rom = { image_filename = test_util.images_path .. "rom.bin" },
         ram = { length = 1 << 20 },
         uarch = {
             processor = {
@@ -512,10 +511,6 @@ do_test("should have expected values", function(machine)
     assert(initial_config.htif.tohost == 0, "wrong htif tohost initial config value")
     assert(initial_config.htif.yield_automatic == false, "wrong htif yield automatic initial config value")
     assert(initial_config.htif.yield_manual == false, "wrong htif yield manual initial config value")
-    assert(
-        initial_config.rom.image_filename == test_util.images_path .. "rom.bin",
-        "wrong initial config image path name"
-    )
 end)
 
 print("\n\n test read_csr")
@@ -723,7 +718,6 @@ do_test("dumped log content should match", function()
                                  local machine = cartesi.machine {
                                  processor = initial_csr_values,
                                  ram = {length = 1 << 20},
-                                 rom = {image_filename = test_util.images_path .. 'rom.bin'},
                                  uarch = {
                                     ram = { length = 1 << 16, image_filename = uarch_ram_path }
                                  }

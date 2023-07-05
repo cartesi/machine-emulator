@@ -31,9 +31,6 @@ local function build_machine()
             marchid = -1,
             mvendorid = -1,
         },
-        rom = {
-            image_filename = test_util.tests_path .. "bootstrap.bin",
-        },
         ram = {
             image_filename = test_util.tests_path .. "mcycle_overflow.bin",
             length = 32 << 20,

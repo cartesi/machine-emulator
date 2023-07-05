@@ -21,9 +21,6 @@ local test_util = require("tests.util")
 
 local function build_machine()
     local machine_config = {
-        rom = {
-            image_filename = test_util.tests_path .. "bootstrap.bin",
-        },
         ram = {
             image_filename = test_util.tests_path .. "mtime_interrupt.bin",
             length = 32 << 20,

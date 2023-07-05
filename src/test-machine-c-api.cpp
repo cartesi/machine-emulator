@@ -823,7 +823,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_null_error_placeholder_test, ordinary_m
     uint64_t word_value = 0;
     int error_code = cm_read_word(_machine, cm_get_csr_address(CM_PROC_PC), &word_value, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(word_value, static_cast<uint64_t>(0x1000));
+    BOOST_CHECK_EQUAL(word_value, static_cast<uint64_t>(0x80000000));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_basic_test, ordinary_machine_fixture) {
@@ -832,7 +832,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_basic_test, ordinary_machine_fixture) {
     int error_code = cm_read_word(_machine, cm_get_csr_address(CM_PROC_PC), &word_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(word_value, static_cast<uint64_t>(0x1000));
+    BOOST_CHECK_EQUAL(word_value, static_cast<uint64_t>(0x80000000));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_memory_null_machine_test) {

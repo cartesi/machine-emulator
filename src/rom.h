@@ -22,6 +22,8 @@
 
 #include <cstdint>
 
+#include "machine-config.h"
+
 namespace cartesi {
 
 // Forward declarations
@@ -32,6 +34,12 @@ struct machine_config;
 /// \param rom_start Pointer to start of ROM contiguous range in host memory
 /// \param length Maximum amount of ROM to use from start.
 void rom_init(const machine_config &c, unsigned char *rom_start, uint64_t length);
+
+/// \brief Initializes FDT metadata on ROM
+/// \param c Machine configuration.
+/// \param rom_start Pointer to start of ROM contiguous range in host memory
+/// \param length Maximum amount of ROM to use from start.
+void rom_init_device_tree(const machine_config &c, unsigned char *rom_start, uint64_t length);
 
 } // namespace cartesi
 

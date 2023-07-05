@@ -1,7 +1,6 @@
 name: Build/Test/Release
 on: [push]
 env:
-  ROM_VERSION: v0.17.0
   KERNEL_VERSION: v0.17.0
   LINUX_VERSION: 5.15.63-ctsi-2-v0.17.0
   ROOTFS_VERSION: v0.18.0
@@ -173,19 +172,11 @@ jobs:
           tag: ${{ env.KERNEL_VERSION }}
           file: linux-${{ env.LINUX_VERSION }}.bin
 
-      - name: Download [rom.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/machine-emulator-rom
-          tag: ${{ env.ROM_VERSION }}
-          file: rom-${{ env.ROM_VERSION }}.bin
-
       - name: Move images to cartesi images folder
         run: |
           mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}
-          mv rom-*.bin linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}
+          mv linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
-          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rom-${{ env.ROM_VERSION }}.bin rom.bin
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
 
       - name: Download test suite
@@ -327,19 +318,11 @@ jobs:
           tag: ${{ env.KERNEL_VERSION }}
           file: linux-${{ env.LINUX_VERSION }}.bin
 
-      - name: Download [rom.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/machine-emulator-rom
-          tag: ${{ env.ROM_VERSION }}
-          file: rom-${{ env.ROM_VERSION }}.bin
-
       - name: Move images to cartesi images folder
         run: |
           mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}
           mv rom-*.bin linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}/
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
-          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rom-${{ env.ROM_VERSION }}.bin rom.bin
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
 
       - name: Download test suite
@@ -527,19 +510,11 @@ jobs:
           tag: ${{ env.KERNEL_VERSION }}
           file: linux-${{ env.LINUX_VERSION }}.bin
 
-      - name: Download [rom.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/machine-emulator-rom
-          tag: ${{ env.ROM_VERSION }}
-          file: rom-${{ env.ROM_VERSION }}.bin
-
       - name: Move images to cartesi images folder
         run: |
           mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}
           mv rom-*.bin linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}/
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
-          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rom-${{ env.ROM_VERSION }}.bin rom.bin
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
 
       - name: Download test suite
@@ -633,19 +608,11 @@ jobs:
           tag: ${{ env.KERNEL_VERSION }}
           file: linux-${{ env.LINUX_VERSION }}.bin
 
-      - name: Download [rom.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/machine-emulator-rom
-          tag: ${{ env.ROM_VERSION }}
-          file: rom-${{ env.ROM_VERSION }}.bin
-
       - name: Move images to cartesi images folder
         run: |
           mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}
           mv rom-*.bin linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}/
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
-          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rom-${{ env.ROM_VERSION }}.bin rom.bin
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
 
       - name: Download test suite

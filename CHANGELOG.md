@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Made emulator patch version not impact machine root hash
 - Enabled line buffering for machine stdout in non-interactive mode
 - Changed stored machine configs from protobuf to JSON
+- Build device tree automatically into machine's ROM, eliminating the need for a ROM image
 
 ## [0.15.1] - 2023-08-17
 ### Fixed

@@ -34,6 +34,14 @@
 
 namespace cartesi {
 
+/// \brief Tag type used to indicate that merkle tree updates should be skipped.
+struct skip_merkle_tree_update_t {
+    explicit skip_merkle_tree_update_t() = default;
+};
+
+/// \brief Tag indicating that merkle tree updates should be skipped.
+constexpr skip_merkle_tree_update_t skip_merkle_tree_update;
+
 /// \class machine
 /// \brief Cartesi Machine implementation
 class machine final {
@@ -262,8 +270,18 @@ public:
     /// \param log2_size log<sub>2</sub> of size subintended by target node.
     /// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
     /// \param proof Receives the proof.
-    /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
+    /// \details If the node is
+    /// smaller than a page size, then it must lie entirely inside the same PMA range.
     machine_merkle_tree::proof_type get_proof(uint64_t address, int log2_size) const;
+
+    /// \brief Obtains the proof for a node in the Merkle tree without making any modifications to the tree.
+    /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
+    /// \param log2_size log<sub>2</sub> of size subintended by target node.
+    /// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
+    /// \param proof Receives the proof.
+    /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
+    /// This overload is used to optimize proof generation when the caller knows that the tree is already up to date.
+    machine_merkle_tree::proof_type get_proof(uint64_t address, int log2_size, skip_merkle_tree_update_t) const;
 
     /// \brief Obtains the root hash of the Merkle tree.
     /// \param hash Receives the hash.

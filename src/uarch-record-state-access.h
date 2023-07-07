@@ -149,7 +149,10 @@ private:
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
         access a;
         if (m_log->get_log_type().has_proofs()) {
-            a.set_proof(m_m.get_proof(paligned, machine_merkle_tree::get_log2_word_size()));
+            // We can skip updating the merkle tree while getting the proof because we assume that:
+            // 1) A full merkle tree update was called at the beginning of machine::step_uarch()
+            // 2) We called update_merkle_tree_page on all write accesses
+            a.set_proof(m_m.get_proof(paligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update));
         }
         a.set_type(access_type::read);
         a.set_address(paligned);
@@ -170,7 +173,10 @@ private:
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
         access a;
         if (m_log->get_log_type().has_proofs()) {
-            a.set_proof(m_m.get_proof(paligned, machine_merkle_tree::get_log2_word_size()));
+            // We can skip updating the merkle tree while getting the proof because we assume that:
+            // 1) A full merkle tree update was called at the beginning of machine::step_uarch()
+            // 2) We called update_merkle_tree_page on all write accesses
+            a.set_proof(m_m.get_proof(paligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update));
         }
         a.set_type(access_type::write);
         a.set_address(paligned);
@@ -319,8 +325,16 @@ private:
         log_before_write(paddr, old_data, data, "memory");
         // Actually modify the state
         aliased_aligned_write<uint64_t>(hdata, data);
-        // Finaly update the Merkle tree
-        update_after_write(paddr);
+
+        // Finally, update Merkle tree or mark the page dirty, depending on whether proofs are being requested or not
+        if (m_log->get_log_type().has_proofs()) {
+            // When proofs are requested, we always want to update the Merkle tree
+            update_after_write(paddr);
+        } else {
+            // Marking the page dirty is only needed for pages of memory PMAs, when proofs are not requested
+            uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+            pma.mark_dirty_page(paddr_page - pma.get_start());
+        }
     }
 
     /// \brief Writes a uint64 machine state register mapped to a memory address

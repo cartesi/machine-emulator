@@ -1606,12 +1606,9 @@ bool machine::verify_merkle_tree(void) const {
     return m_t.verify_tree();
 }
 
-machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_size) const {
+machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_size, skip_merkle_tree_update_t) const {
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
-    if (!update_merkle_tree()) {
-        throw std::runtime_error{"error updating Merkle tree"};
-    }
     // Check for valid target node size
     if (log2_size > machine_merkle_tree::get_log2_root_size() ||
         log2_size < machine_merkle_tree::get_log2_word_size()) {
@@ -1651,6 +1648,13 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
     } else {
         return m_t.get_proof(address, log2_size, nullptr);
     }
+}
+
+machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_size) const {
+    if (!update_merkle_tree()) {
+        throw std::runtime_error{"error updating Merkle tree"};
+    }
+    return get_proof(address, log2_size, skip_merkle_tree_update);
 }
 
 void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length) const {

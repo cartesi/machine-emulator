@@ -102,13 +102,26 @@ local test_util = {
     tests_path = adjust_images_path(os.getenv("CARTESI_TESTS_PATH")),
 }
 
-function test_util.create_test_uarch_program()
+test_util.uarch_programs = {
+    halt = {
+        0x32800293, --   li t0, UARCH_HALT_FLAG_SHADDOW_ADDR_DEF (0x328)
+        0x00100313, --   li	t1,1           UARCH_MMIO_HALT_VALUE_DEF
+        0x0062b023, --   sd	t1,0(t0)       Halt uarch
+    },
+}
+
+test_util.uarch_programs.default = {
+    0x07b00513, --   li	a0,123
+    table.unpack(test_util.uarch_programs.halt),
+}
+
+function test_util.create_test_uarch_program(instructions)
+    if not instructions then instructions = test_util.uarch_programs.default end
     local file_path = os.tmpname()
     local f = io.open(file_path, "wb")
-    f:write(string.pack("I4", 0x07b00513)) --   li	a0,123
-    f:write(string.pack("I4", 0x32800293)) --   li t0, UARCH_HALT_FLAG_SHADDOW_ADDR_DEF (0x328)
-    f:write(string.pack("I4", 0x00100313)) --   li	t1,1           UARCH_MMIO_HALT_VALUE_DEF
-    f:write(string.pack("I4", 0x0062b023)) --   sd	t1,0(t0)       Halt uarch
+    for _, insn in pairs(instructions) do
+        f:write(string.pack("I4", insn))
+    end
     f:close()
     return file_path
 end

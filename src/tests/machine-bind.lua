@@ -259,7 +259,10 @@ local pmas_file_names = {
 local pmas_sizes = { 4096, 61440, 4096, 24576, 786432, 4096, 1048576, 65536, 65536 }
 
 local remote
-local function build_machine(type)
+
+local function build_machine(type, build_options)
+    if not build_options then build_options = {} end
+
     -- Create new machine
     local concurrency_update_merkle_tree = 0
     local initial_csr_values = get_cpu_csr_test_values()
@@ -274,7 +277,10 @@ local function build_machine(type)
             processor = {
                 x = initial_uarch_xreg_values,
             },
-            ram = { length = 1 << 16, image_filename = test_util.create_test_uarch_program() },
+            ram = {
+                length = 1 << 16,
+                image_filename = test_util.create_test_uarch_program(build_options.uarch_program),
+            },
         },
     }
     local runtime = {
@@ -813,5 +819,49 @@ do_test("step when uarch cycle is max", function(machine)
     module.machine.verify_state_transition(initial_hash, log, final_hash, {})
     module.machine.verify_access_log(log, {})
 end)
+
+local uarch_proof_step_program = {
+    0x00000297, -- auipc	t0,0x0
+    0x10028293, -- addi	t0,t0,256 # 0x100
+    0x0ca00313, -- li	t1,0xca
+    0x0fe00393, -- li	t2,0xfe
+    0x0062b023, -- sd	t1,0(t0) [0xca]
+    0x0072b023, -- sd	t2,0(t0) [0xfe]
+    0x0062b023, -- sd	t1,0(t0) [0xca]
+}
+
+test_util.make_do_test(build_machine, machine_type, { uarch_program = uarch_proof_step_program })(
+    "merkle tree must be consistent when stepping alternating with and without proofs",
+    function(machine)
+        local t0 = 5
+        local t1 = 6
+        local t2 = 7
+        local uarch_ram_start = 0x70000000
+        local with_proofs = { proofs = true }
+        local without_proofs = {}
+
+        machine:step_uarch(with_proofs) -- auipc	t0,0x0
+        machine:step_uarch(with_proofs) -- addi	t0,t0,256 # 0x100
+        assert(machine:read_uarch_x(t0) == uarch_ram_start + 0x100)
+        machine:step_uarch(with_proofs) -- li	t1,0xca
+        assert(machine:read_uarch_x(t1) == 0xca)
+        machine:step_uarch(with_proofs) -- li	t2,0xfe
+        assert(machine:read_uarch_x(t2) == 0xfe)
+
+        -- sd and assert stored correctly
+        machine:step_uarch(with_proofs) -- sd	t1,0(t0) [0xca]
+        assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xca)
+
+        -- sd and assert stored correctly
+        machine:step_uarch(without_proofs) -- t2,0(t0) [0xfe]
+        assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xfe)
+
+        -- This step should run successfully
+        -- The previous unproven step should have marked the updated pages dirty, allowing
+        -- the tree to be updated correctly in the next proved step
+        machine:step_uarch(with_proofs) -- sd	t1,0(t0) [0xca]
+        assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xca)
+    end
+)
 
 print("\n\nAll machine binding tests for type " .. machine_type .. " passed")

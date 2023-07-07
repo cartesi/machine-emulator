@@ -258,7 +258,7 @@ jobs:
       - name: Create uarch json logs to be used  to test the Solidity based microarchitecture interpreter
         run: |
           mkdir -p /tmp/uarch-riscv-tests-json-logs
-          /opt/cartesi/bin/uarch-riscv-tests --test-path=/opt/cartesi/tests --output-dir=/tmp/uarch-riscv-tests-json-logs json-logs
+          /opt/cartesi/bin/uarch-riscv-tests --test-path=/opt/cartesi/tests --output-dir=/tmp/uarch-riscv-tests-json-logs --proofs --proofs-frequency=50 json-logs
 
       - name: Upload uarch json logs to be used  to test the Solidity based microarchitecture interpreter
         uses: actions/upload-artifact@master

@@ -91,6 +91,11 @@ where options are:
   --output-dir=<directory-path>
     write json logs to this  directory
     required by the command json-logs
+  --proofs
+    include proofs in the log
+  --proofs-frequency=<number>
+    write proof of every <number> uarch cycles
+    (default: 1, i.e., all accesses)
 
 and command can be:
   run
@@ -111,6 +116,9 @@ end
 local test_path = "./"
 local test_pattern = ".*"
 local output_dir
+local proofs = false
+local proofs_frequency = 1
+local total_steps_counter = 0
 
 local options = {
     {
@@ -148,6 +156,23 @@ local options = {
         function(o)
             if not o or #o < 1 then return false end
             test_pattern = o
+            return true
+        end,
+    },
+    {
+        "^%-%-proofs$",
+        function(o)
+            if not o or #o < 1 then return false end
+            proofs = true
+            return true
+        end,
+    },
+    {
+        "^%-%-proofs%-frequency%=(.+)$",
+        function(n)
+            if not n then return false end
+            proofs_frequency = assert(util.parse_number(n), "invalid proofs frequency " .. n)
+            assert(proofs_frequency > 0, "proofs frequency must be > 0")
             return true
         end,
     },
@@ -275,14 +300,44 @@ end
 
 local function open_steps_json_log(test_name) return create_json_log_file(test_name, "-steps") end
 
+local function write_sibling_hashes_to_log(sibling_hashes, out, indent)
+    for i, h in ipairs(sibling_hashes) do
+        util.indentout(out, indent, '"%s"', util.hexhash(h))
+        if sibling_hashes[i + 1] then
+            out:write(",\n")
+        else
+            out:write("\n")
+        end
+    end
+end
+
+local function write_proof_to_log(proof, out, indent)
+    util.indentout(out, indent, '"target_address": %u,\n', proof.target_address)
+    util.indentout(out, indent, '"log2_target_size": %u,\n', proof.log2_target_size)
+    util.indentout(out, indent, '"log2_root_size": %u,\n', proof.log2_root_size)
+    util.indentout(out, indent, '"target_hash": "%s",\n', util.hexhash(proof.target_hash))
+    util.indentout(out, indent, '"sibling_hashes": [\n')
+    write_sibling_hashes_to_log(proof.sibling_hashes, out, indent + 1)
+    util.indentout(out, indent, "],\n")
+    util.indentout(out, indent, '"root_hash": "%s"\n', util.hexhash(proof.root_hash))
+end
+
 local function write_access_to_log(access, out, indent, last)
     util.indentout(out, indent, "{\n")
     util.indentout(out, indent + 1, '"type": "%s",\n', access.type)
     util.indentout(out, indent + 1, '"address": %u,\n', access.address)
     if access.type == "write" then
-        util.indentout(out, indent + 1, '"value": "%s"\n', util.hexstring(access.written))
+        util.indentout(out, indent + 1, '"value": "%s"', util.hexstring(access.written))
     else
-        util.indentout(out, indent + 1, '"value": "%s"\n', util.hexstring(access.read))
+        util.indentout(out, indent + 1, '"value": "%s"', util.hexstring(access.read))
+    end
+    if access.proof then
+        out:write(",\n")
+        util.indentout(out, indent + 1, '"proof": {\n')
+        write_proof_to_log(access.proof, out, indent + 2)
+        util.indentout(out, indent + 1, "}\n")
+    else
+        out:write("\n")
     end
     util.indentout(out, indent, "}")
     if not last then out:write(",") end
@@ -308,7 +363,15 @@ local function create_catalog_json_log(contexts)
     local n = #contexts
     for i, ctx in ipairs(contexts) do
         local path = make_json_log_file_name(ctx.test_name, "-steps")
-        util.indentout(out, 1, '{"path": "%s", "steps": %d}', path, ctx.step_count)
+        util.indentout(
+            out,
+            1,
+            '{"path": "%s", "steps": %d, "proofs":%s, "proofsFrequency":%d}',
+            path,
+            ctx.step_count,
+            proofs,
+            proofs_frequency
+        )
         if i < n then
             out:write(",\n")
         else
@@ -319,6 +382,11 @@ local function create_catalog_json_log(contexts)
     out:close()
 end
 
+local function should_log_proofs()
+    if not proofs then return false end
+    return (total_steps_counter % proofs_frequency) == 0
+end
+
 local function run_machine_writing_json_logs(machine, ctx)
     local test_name = ctx.test_name
     local max_cycle = ctx.expected_cycles * 2
@@ -327,8 +395,9 @@ local function run_machine_writing_json_logs(machine, ctx)
     util.indentout(out, indent, '{ "steps":[\n')
     local step_count = 0
     while math.ult(machine:read_uarch_cycle(), max_cycle) do
-        local log_type = {} -- no proofs, no annotations
+        local log_type = { proofs = should_log_proofs() }
         local log = machine:step_uarch(log_type)
+        total_steps_counter = total_steps_counter + 1
         step_count = step_count + 1
         local halted = machine:read_uarch_halt_flag()
         write_step_to_log(log, out, indent + 1, halted)

@@ -14,7 +14,7 @@ Cleaning targets:
   depclean                   - clean + dependencies
   distclean                  - depclean + profile information and downloads
 Docker targets:
-  build-ubuntu-image         - Build an ubuntu based docker image
+  build-debian-image         - Build the machine-emulator debian based docker image
 ```
 
 ### Requirements
@@ -22,7 +22,7 @@ Docker targets:
 - C++ Compiler with support for C++17 (tested with GCC >= 8+ and Clang >= 8.x).
 - GNU Make >= 3.81
 - Cryptopp >= 7.0.0
-- GRPC 1.38.0
+- GRPC >= 1.45.0
 - Lua >= 5.4.4
 - b64 >=  1.2.1
 - Boost >= 1.71
@@ -30,10 +30,15 @@ Docker targets:
 
 Obs: Please note that Apple Clang Version number does not follow upstream LLVM/Clang.
 
-#### Ubuntu 22.04
+#### Debian Bookworm
 
 ```
-sudo apt-get install build-essential automake libtool patchelf cmake pkg-config wget git libreadline-dev libboost-coroutine-dev libboost-context-dev libboost-filesystem-dev libssl-dev openssl libc-ares-dev zlib1g-dev ca-certificates liblua5.4-dev libb64-dev libcrypto++-dev nlohmann-json3-dev luarocks
+apt-get install build-essential wget git clang-tidy-15 clang-format-15 \
+        libreadline-dev libboost-coroutine-dev libboost-context-dev \
+        libboost-filesystem-dev libssl-dev libc-ares-dev zlib1g-dev \
+        ca-certificates automake libtool patchelf cmake pkg-config lua5.4 liblua5.4-dev \
+        libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
+        luarocks libb64-dev libcrypto++-dev nlohmann-json3-dev
 
 sudo luarocks install --lua-version=5.4 lpeg
 sudo luarocks install --lua-version=5.4 dkjson
@@ -46,7 +51,7 @@ sudo luarocks install --lua-version=5.4 md5
 
 ##### MacPorts
 ```
-sudo port install clang-14 automake boost libtool wget cmake pkgconfig c-ares zlib openssl lua libb64 libcryptopp nlohmann-json lua-luarocks
+sudo port install clang-15 automake boost libtool wget cmake pkgconfig grpc zlib openssl lua libb64 libcryptopp nlohmann-json lua-luarocks
 
 sudo luarocks install --lua-version=5.4 lpeg
 sudo luarocks install --lua-version=5.4 dkjson
@@ -58,7 +63,7 @@ sudo luarocks install --lua-version=5.4 md5
 
 ##### Homebrew
 ```
-brew install llvm@12 automake boost libomp wget cmake pkg-config c-ares zlib openssl lua@5.4 libb64 nlohmann-json luarocks
+brew install llvm@12 automake boost libomp wget cmake pkg-config grpc zlib openssl lua@5.4 libb64 nlohmann-json luarocks
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install lpeg
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install dkjson
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luasocket
@@ -103,10 +108,10 @@ Copy the tests binaries to a directory called `tests` and run: (Eg.: )
 $ make test
 ```
 
-The default search path for binaries is `machine-emulator/tests`. Alternatively you can specify the binaries path using the `TEST_PATH` variable as in:
+The default search path for binaries is `machine-emulator/tests`. Alternatively you can specify the binaries path using the `CARTESI_TESTS_PATH` variable as in:
 
 ```bash
-$ make test TEST_PATH=/full/path/to/test/binaries
+$ make test CARTESI_TESTS_PATH=/full/path/to/test/binaries
 ```
 
 ## Linter
@@ -115,13 +120,13 @@ We use clang-tidy 14 as the linter.
 
 ### Install
 
-#### Ubuntu 22.04
+#### Debian Bookworm
 
-You need to install the package clang-tidy-14 and set it as the default executable with update-alternatives.
+You need to install the package clang-tidy-15 and set it as the default executable with update-alternatives.
 
 ```bash
-$ apt install clang-tidy-14
-$ update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-14 120
+$ apt install clang-tidy-15
+$ update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-15 120
 ```
 
 ### Running Lint
@@ -136,13 +141,13 @@ We use clang-format to format the code base.
 
 ### Install
 
-#### Ubuntu
+#### Debian Bookworm
 
-You need to install the package clang-format-14 and set is as the default executable with update-alternatives.
+You need to install the package clang-format-15 and set is as the default executable with update-alternatives.
 
 ```bash
-$ apt install clang-format-14
-$ update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-14 120
+$ apt install clang-format-15
+$ update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 120
 ```
 
 ### Formatting code
@@ -161,7 +166,7 @@ $ make check-format
 
 ### Dependencies
 
-#### Ubuntu
+#### Debian Bookworm
 
 If you want to run the GCC-based coverage, you should install the lcov package with the following command.
 
@@ -194,13 +199,12 @@ $ make coverage-toolchain=clang -j$(nproc)
 ### Running coverage
 
 After building the emulator with coverage enable, you should run the following command.
-You need to specify the binaries test path using the `TEST_PATH` and the `CARTESI_TESTS_PATH` variables.
+You need to specify the binaries test path using the `CARTESI_TESTS_PATH` variable.
 You also need to specify the directory containg the ROM, kernel and rootfs with the `CARTESI_IMAGES_PATH` variable.
 For instance:
 
 ```bash
-$ make coverage-toolchain=gcc coverage \
-    TEST_PATH=$(realpath ../tests/build) \
+$ make coverage=yes test-all coverage-report \
     CARTESI_TESTS_PATH=$(realpath ../tests/build) \
     CARTESI_IMAGES_PATH=$(realpath ./src)
 ```

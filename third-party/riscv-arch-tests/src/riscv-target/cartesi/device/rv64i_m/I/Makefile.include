@@ -1,60 +1,36 @@
-TOOLCHAIN_IMAGE ?= cartesi/toolchain:0.11.0
-TOOLCHAIN_PREFIX ?= riscv64-cartesi-linux-gnu-
-EMULATOR_ROM ?= rom.bin
-RUN_ARCH_TEST ?= run-rv64i-arch-test.lua
-MACHINE_EMULATOR_DEFINES_DIR ?= machine-emulator-defines
-
-CONTAINER_ROOTDIR = /opt/cartesi/riscv-arch-test
-CONTAINER_WORKDIR = $(CONTAINER_ROOTDIR)/work
-CONTAINER_TARGETDIR = $(CONTAINER_ROOTDIR)/src/target
-CONTAINER_MACHINE_EMULATOR_DEFINES_DIR = $(CONTAINER_ROOTDIR)/src/machine-emulator-defines
-
-RUN_TOOLCHAIN=docker run --rm  \
-  --hostname toolchain-env \
-  -e USER=$$(id -u -n) \
-  -e GROUP=$$(id -g -n) \
-  -e UID=$$(id -u) \
-	-e GID=$$(id -g) \
-  -v $(ROOTDIR):$(CONTAINER_ROOTDIR)  \
-  -v $(TARGETDIR):$(CONTAINER_TARGETDIR)  \
-  -v $(MACHINE_EMULATOR_DEFINES_DIR):$(CONTAINER_MACHINE_EMULATOR_DEFINES_DIR) \
-  -w $(CONTAINER_ROOTDIR)/riscv-test-suite/rv64i_m/I \
-  -t ${TOOLCHAIN_IMAGE} 
+WORKDIR = $(ROOTDIR)/work
 
 GCC_OPTS = -march=rv64i -g0 -static -mcmodel=medany -fvisibility=hidden -nostdlib -nostartfiles $(RVTEST_DEFINES)
-COMPILE_CMD=$(RUN_TOOLCHAIN) \
-  $(TOOLCHAIN_PREFIX)gcc $(1) $$(GCC_OPTS) \
-							-I$(CONTAINER_ROOTDIR)/riscv-test-suite/env/ \
-							-I$(CONTAINER_TARGETDIR)/$(RISCV_TARGET)/ \
-              -I$(CONTAINER_MACHINE_EMULATOR_DEFINES_DIR) \
-							-T$(CONTAINER_TARGETDIR)/$(RISCV_TARGET)/link.ld \
-              $$(<) -o $$(subst $(WORK),$(CONTAINER_WORKDIR),$$@).temp
+COMPILE_CMD=$(TOOLCHAIN_PREFIX)gcc $(1) $$(GCC_OPTS) \
+    -I$(ROOTDIR)/riscv-test-suite/env/ \
+    -I$(TARGETDIR)/$(RISCV_TARGET) \
+    -I$(MACHINE_EMULATOR_DEFINES_DIR) \
+    -T$(TARGETDIR)/$(RISCV_TARGET)/link.ld \
+    $$(<) -o $$(subst $(WORK),$(WORKDIR),$$@).temp
 
-CONTAINER_TARGET = $$(subst $(WORK),$(CONTAINER_WORKDIR),$$@)
+TARGET = $$(subst $(WORK),$(WORKDIR),$$@)
 
-OBJCOPY_CMD=$(RUN_TOOLCHAIN) \
-  $(TOOLCHAIN_PREFIX)objcopy  -S -O binary  \
-    $(CONTAINER_TARGET).temp \
-    $(CONTAINER_TARGET)
+OBJCOPY_CMD=$(TOOLCHAIN_PREFIX)objcopy  -S -O binary  \
+    $(TARGET).temp \
+    $(TARGET)
 
-OBJDUMP_CMD=$(RUN_TOOLCHAIN) bash -c '$(TOOLCHAIN_PREFIX)objdump $(CONTAINER_TARGET).temp -D > $(CONTAINER_TARGET).objdump'
+OBJDUMP_CMD=$(TOOLCHAIN_PREFIX)objdump $(TARGET).temp -D > $(TARGET).objdump
 
 # Symbols used by the test suite runner
 COMPILE_TARGET=\
-				$(COMPILE_CMD); \
-        if [ $$$$? -ne 0 ] ; \
-                then \
-                echo "\e[31m$$(RISCV_GCC) failed for target $$(@) \e[39m" ; \
-                exit 1 ; \
-                fi ; \
-      $(OBJCOPY_CMD); \
-      $(OBJDUMP_CMD); \
-      if [ $$$$? -ne 0 ] ; \
+    $(COMPILE_CMD); \
+    if [ $$$$? -ne 0 ] ; \
               then \
-              echo "\e[31m$$(RISCV_OBJCOPY) failed for target $$(@) \e[39m" ; \
+              echo "\e[31m$$(RISCV_GCC) failed for target $$(@) \e[39m" ; \
               exit 1 ; \
               fi ; \
+    $(OBJCOPY_CMD); \
+    $(OBJDUMP_CMD); \
+    if [ $$$$? -ne 0 ] ; \
+            then \
+            echo "\e[31m$$(RISCV_OBJCOPY) failed for target $$(@) \e[39m" ; \
+            exit 1 ; \
+            fi ; \
 
 RUN_TARGET=\
-	$(RUN_ARCH_TEST) $(<)  $(*).signature.output
-
+        $(RUN_ARCH_TEST) $(<)  $(*).signature.output

@@ -22,6 +22,7 @@ BIN_INSTALL_PATH= $(PREFIX)/bin
 LIB_INSTALL_PATH= $(PREFIX)/lib
 SHARE_INSTALL_PATH= $(PREFIX)/share
 IMAGES_INSTALL_PATH= $(SHARE_INSTALL_PATH)/images
+UARCH_INSTALL_PATH= $(SHARE_INSTALL_PATH)/uarch
 LUA_INSTALL_CPATH= $(PREFIX)/lib/lua/5.4
 LUA_INSTALL_PATH= $(PREFIX)/share/lua/5.4
 INC_INSTALL_PATH= $(PREFIX)/include/machine-emulator
@@ -47,7 +48,7 @@ EMU_TO_LUA_PATH= cartesi/util.lua cartesi/proof.lua
 EMU_TO_LUA_CPATH= cartesi.so
 EMU_TO_LUA_CARTESI_CPATH= cartesi/grpc.so cartesi/jsonrpc.so
 EMU_TO_INC= pma-defines.h rtc-defines.h
-UARCH_TO_IMAGES= uarch-ram.bin
+UARCH_TO_SHARE= uarch-ram.bin
 
 # Build settings
 DEPDIR := third-party
@@ -65,6 +66,20 @@ LUA_DEFAULT_C_PATHS = $(LUA_INSTALL_CPATH)/?.so
 
 # Docker image tag
 TAG ?= devel
+# Docker image platform
+BUILD_PLATFORM ?=
+
+ifneq ($(BUILD_PLATFORM),)
+DOCKER_PLATFORM=--platform $(BUILD_PLATFORM)
+endif
+
+# Code instrumentation
+release?=no
+sanitize?=no
+coverage?=no
+export sanitize
+export release
+export coverage
 
 # Mac OS X specific settings
 ifeq ($(UNAME),Darwin)
@@ -93,9 +108,6 @@ LIB_EXTENSION := dll
 DEP_TO_LIB += *.$(LIB_EXTENSION)
 endif
 
-TOOLCHAIN_IMAGE ?= cartesi/toolchain
-TOOLCHAIN_TAG ?= 0.11.0
-
 # Check if some binary dependencies already exists on build directory to skip
 # downloading and building them.
 DEPBINS := $(addprefix $(BUILDDIR)/,include/mongoose.h)
@@ -106,11 +118,14 @@ clean: $(SUBCLEAN)
 
 depclean: $(DEPCLEAN) clean
 	rm -rf $(BUILDDIR)
+	$(MAKE) -C third-party/riscv-arch-tests depclean
 
-distclean: clean
+distclean:
 	rm -rf $(BUILDBASE) $(DOWNLOADDIR) $(DEPDIRS)
+	$(MAKE) -C third-party/riscv-arch-tests depclean
+	$(MAKE) clean
 
-$(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH):
+$(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH) $(UARCH_INSTALL_PATH):
 	mkdir -m 0755 -p $@
 
 env:
@@ -128,13 +143,14 @@ help:
 	@echo '  depclean                   - clean + dependencies'
 	@echo '  distclean                  - depclean + profile information and downloads'
 	@echo 'Docker targets:'
-	@echo '  build-ubuntu-image         - Build an ubuntu based docker image'
+	@echo '  build-debian-image         - Build the machine-emulator debian based docker image'
 	@echo 'Generic targets:'
 	@echo '* all                        - build the src/ code. To build from a clean clone, run: make submodules downloads dep all'
 	@echo '  doc                        - build the doxygen documentation (requires doxygen to be installed)'
 	@echo '  uarch                      - build microarchitecture'
-	@echo '  uarch-with-toolchain       - build microarchitecture using the toolchain docker image'
-	@echo '  riscv-arch-tests           - build and run microarchitecture rv64i instruction tests'
+	@echo '  uarch-with-linux-env       - build microarchitecture using the linux-env docker image'
+	@echo '  uarch-tests                - build and run microarchitecture rv64i instruction tests'
+	@echo '  uarch-tests-with-linux-env - build and run microarchitecture rv64i instruction tests using the linux-env docker image'
 
 $(DOWNLOADDIR):
 	@mkdir -p $(DOWNLOADDIR)
@@ -152,56 +168,78 @@ submodules:
 $(COREPROTO):
 	$(info grpc-interfaces submodule not initialized!)
 	@exit 1
+
 grpc: | $(COREPROTO)
-hash luacartesi grpc test test-all lint coverage check-format check-format-lua check-lua format format-lua:
+
+hash luacartesi grpc test lint coverage-report check-format format check-format-lua check-lua format-lua:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
-riscv-arch-tests:
+
+test-%:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
+
+uarch-tests:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C third-party/riscv-arch-tests
+
+run-uarch-tests:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C third-party/riscv-arch-tests run
+
 source-default:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR)
-uarch:
+
+uarch: $(SRCDIR)/machine-c-version.h
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C uarch
 
 $(BUILDDIR)/include/mongoose.h $(BUILDDIR)/lib/libmongoose.a: | $(BUILDDIR) $(DOWNLOADDIR)
 	mkdir -p $(BUILDDIR)/include $(BUILDDIR)/lib
-	if [ ! -d $(DEPDIR)/mongoose-7.9 ]; then tar -xzf $(DOWNLOADDIR)/7.9.tar.gz -C $(DEPDIR); fi
+	if [ ! -d $(DEPDIR)/mongoose-7.9 ]; then tar -xzf $(DOWNLOADDIR)/7.9.tar.gz -C /tmp/; mv /tmp/mongoose-7.9 $(DEPDIR)/; fi
 	cp $(DEPDIR)/mongoose-7.9/mongoose.c $(BUILDDIR)/lib
 	cp $(DEPDIR)/mongoose-7.9/mongoose.h $(BUILDDIR)/include
+
+$(SRCDIR)/machine-c-version.h:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) machine-c-version.h
 
 $(SUBCLEAN) $(DEPCLEAN): %.clean:
 	$(MAKE) -C $* clean
 
-linux-env:
-	docker run -it --rm -v `pwd`:/opt/emulator -w /opt/emulator cartesi/linux-env:$(TAG)
-
 build-linux-env:
-	docker build --target linux-env -t cartesi/linux-env:$(TAG) -f Dockerfile .
+	docker build $(DOCKER_PLATFORM) --target linux-env -t cartesi/linux-env:$(TAG) -f Dockerfile .
 
 build-debian-image:
-	docker build -t cartesi/machine-emulator:$(TAG) -f Dockerfile .
+	docker build $(DOCKER_PLATFORM) --build-arg RELEASE=$(release) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) -t cartesi/machine-emulator:$(TAG) -f Dockerfile .
 
-toolchain-env:
-	@docker run --hostname toolchain-env -it --rm \
+check-linux-env:
+	@if docker images $(DOCKER_PLATFORM) -q cartesi/linux-env:$(TAG)$(image_name) 2>/dev/null | grep -q .; then \
+		echo "Docker image cartesi/linux-env:$(TAG) exists"; \
+	else \
+		echo "Docker image cartesi/linux-env:$(TAG) does not exist. Creating:"; \
+		$(MAKE) build-linux-env; \
+	fi
+
+linux-env: check-linux-env
+	@docker run $(DOCKER_PLATFORM) --hostname linux-env -it --rm \
 		-e USER=$$(id -u -n) \
 		-e GROUP=$$(id -g -n) \
 		-e UID=$$(id -u) \
 		-e GID=$$(id -g) \
 		-v `pwd`:/opt/cartesi/machine-emulator \
 		-w /opt/cartesi/machine-emulator \
-		$(TOOLCHAIN_IMAGE):$(TOOLCHAIN_TAG) /bin/bash
+		cartesi/linux-env:$(TAG) /bin/bash
 
-toolchain-exec:
-	@docker run --hostname toolchain-env --rm \
+linux-env-exec: check-linux-env
+	@docker run --hostname linux-env --rm \
 		-e USER=$$(id -u -n) \
 		-e GROUP=$$(id -g -n) \
 		-e UID=$$(id -u) \
 		-e GID=$$(id -g) \
 		-v `pwd`:/opt/cartesi/machine-emulator \
 		-w /opt/cartesi/machine-emulator \
-		$(TOOLCHAIN_IMAGE):$(TOOLCHAIN_TAG) /bin/bash -c "$(CONTAINER_COMMAND)"
+		cartesi/linux-env:$(TAG) /bin/bash -c "$(CONTAINER_COMMAND)"
 
-uarch-with-toolchain:
-	$(MAKE) toolchain-exec CONTAINER_COMMAND="make -C uarch"
+uarch-with-linux-env:
+	@$(MAKE) linux-env-exec CONTAINER_COMMAND="make uarch"
+
+uarch-tests-with-linux-env:
+	@$(MAKE) linux-env-exec CONTAINER_COMMAND="make uarch-tests"
 
 install-Darwin:
 	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi.so
@@ -217,27 +255,23 @@ install-Linux:
 	cd $(LIB_INSTALL_PATH) && for x in `find . -maxdepth 1 -type f -name "*.so*"`; do patchelf --set-rpath $(LIB_INSTALL_PATH) $$x ; done
 	cd $(LUA_INSTALL_CPATH) && for x in `find . -maxdepth 2 -type f -name "*.so"`; do patchelf --set-rpath $(LIB_INSTALL_PATH) $$x ; done
 
-#install-dep: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH)
-#	cd $(BUILDDIR)/lib && $(INSTALL) $(DEP_TO_LIB) $(LIB_INSTALL_PATH)
-#	cd $(LIB_INSTALL_PATH) && $(CHMOD_EXEC) $(DEP_TO_LIB)
-
-install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH)
+install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH) $(UARCH_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_TO_BIN) $(BIN_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_TO_LIB) $(LIB_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_LUA_TO_BIN) $(BIN_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_TO_LUA_CPATH) $(LUA_INSTALL_CPATH)
 	cd src && $(INSTALL) $(EMU_TO_LUA_CARTESI_CPATH) $(LUA_INSTALL_CPATH)/cartesi
 	cd src && $(INSTALL) $(EMU_TO_LUA_PATH) $(LUA_INSTALL_PATH)/cartesi
+	cd uarch && $(INSTALL) $(UARCH_TO_SHARE) $(UARCH_INSTALL_PATH)
 	cat tools/template/cartesi-machine.template | sed 's|ARG_LUA_PATH|${LUA_DEFAULT_PATHS}|g;s|ARG_LUA_CPATH|${LUA_DEFAULT_C_PATHS}|g;s|ARG_INSTALL_PATH|${IMAGES_INSTALL_PATH}|g;s|ARG_BIN_INSTALL_PATH|${BIN_INSTALL_PATH}|g' > $(BIN_INSTALL_PATH)/cartesi-machine
 	cat tools/template/cartesi-machine-tests.template | sed 's|ARG_LUA_PATH|${LUA_DEFAULT_PATHS}|g;s|ARG_LUA_CPATH|${LUA_DEFAULT_C_PATHS}|g;s|ARG_BIN_INSTALL_PATH|${BIN_INSTALL_PATH}|g' > $(BIN_INSTALL_PATH)/cartesi-machine-tests
 	cat tools/template/cartesi-machine-stored-hash.template | sed 's|ARG_LUA_PATH|${LUA_DEFAULT_PATHS}|g;s|ARG_LUA_CPATH|${LUA_DEFAULT_C_PATHS}|g;s|ARG_BIN_INSTALL_PATH|${BIN_INSTALL_PATH}|g' > $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash
 	cat tools/template/rollup-memory-range.template | sed 's|ARG_LUA_PATH|${LUA_DEFAULT_PATHS}|g;s|ARG_LUA_CPATH|${LUA_DEFAULT_C_PATHS}|g;s|ARG_BIN_INSTALL_PATH|${BIN_INSTALL_PATH}|g' > $(BIN_INSTALL_PATH)/rollup-memory-range
 	cat tools/template/uarch-riscv-tests.template | sed 's|ARG_LUA_PATH|${LUA_DEFAULT_PATHS}|g;s|ARG_LUA_CPATH|${LUA_DEFAULT_C_PATHS}|g;s|ARG_BIN_INSTALL_PATH|${BIN_INSTALL_PATH}|g' > $(BIN_INSTALL_PATH)/uarch-riscv-tests
-	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(EMU_TO_BIN) cartesi-machine cartesi-machine-tests cartesi-machine-stored-hash rollup-memory-range
+	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(EMU_TO_BIN) cartesi-machine cartesi-machine-tests cartesi-machine-stored-hash rollup-memory-range uarch-riscv-tests
 	cd $(BIN_INSTALL_PATH) && $(CHMOD_DATA) $(EMU_LUA_TO_BIN)
 	cd lib/machine-emulator-defines && $(INSTALL) $(EMU_TO_INC) $(INC_INSTALL_PATH)
 	cd $(LUA_INSTALL_CPATH) && $(CHMOD_EXEC) $(EMU_TO_LUA_CPATH)
-	cd uarch && $(INSTALL) $(UARCH_TO_IMAGES) $(IMAGES_INSTALL_PATH)
 
 install-strip:
 	cd $(BIN_INSTALL_PATH) && $(STRIP_EXEC) $(EMU_TO_BIN) $(DEP_TO_BIN)

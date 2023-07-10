@@ -16,6 +16,7 @@
 # with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 #
 
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 remote_cartesi_machine=$1
 cartesi_machine=$2
 cartesi_machine_tests=$3
@@ -25,10 +26,12 @@ lua=${5:-lua5.4}
 server_address=127.0.0.1:5001
 checkin_address=127.0.0.1:5002
 
+export LUA_PATH_5_4="$( dirname "${script_dir}")/?.lua;${LUA_PATH_5_4:-;}"
+
 tests=(
     "$cartesi_machine_tests --remote-address=$server_address --checkin-address=$checkin_address --test-path=\"$test_path\" --test='.*' run"
-    "$lua ./tests/machine-bind.lua grpc --remote-address=$server_address --checkin-address=$checkin_address"
-    "$lua ./tests/machine-test.lua grpc --remote-address=$server_address --checkin-address=$checkin_address"
+    "$lua $script_dir/machine-bind.lua grpc --remote-address=$server_address --checkin-address=$checkin_address"
+    "$lua $script_dir/machine-test.lua grpc --remote-address=$server_address --checkin-address=$checkin_address"
     "$cartesi_machine --remote-address=$server_address --checkin-address=$checkin_address --remote-shutdown"
 )
 

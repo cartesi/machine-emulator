@@ -32,7 +32,16 @@ LUA_BIN?=lua5.4
 GRPC_DIR:=../lib/grpc-interfaces
 
 PROTOC:=$(shell which protoc)
-GRPC_CPP_PLUGIN=$(shell which grpc_cpp_plugin)
+GRPC_CPP_PLUGIN:=$(shell which grpc_cpp_plugin)
+
+# Code instrumentation
+release?=no
+sanitize?=no
+coverage?=no
+
+COVERAGE_TOOLCHAIN?=gcc
+COVERAGE_OUTPUT_DIR?=coverage
+CARTESI_TESTS_PATH?=/opt/cartesi/share/tests
 
 # So we can use gcc to check if there are unused symbols
 ifeq ($(gc),yes)
@@ -228,12 +237,16 @@ ifeq ($(sanitize),yes)
 # Enable address and undefined sanitizers
 UBFLAGS+=-fsanitize=address,undefined -fno-sanitize-recover=all
 LIBASAN_SO=$(shell realpath `$(CC) -print-file-name=libasan.so`)
-LUA=LD_PRELOAD=$(LIBASAN_SO) $(LUA_BIN)
+LIBSTDCPP_SO=$(shell realpath `$(CC) -print-file-name=libstdc++.so`)
+LD_PRELOAD="$(LIBASAN_SO) $(LIBSTDCPP_SO)"
+LD_PRELOAD_PREFIX=LD_PRELOAD=$(LD_PRELOAD)
+LUA=$(LD_PRELOAD_PREFIX) $(LUA_BIN)
 else
 # Flags to minimize undefined behavior
 UBFLAGS+=-fno-strict-aliasing
 UBFLAGS+=-fno-strict-overflow
 UBFLAGS+=-fno-delete-null-pointer-checks
+LD_PRELOAD_PREFIX=
 LUA=$(LUA_BIN)
 endif
 
@@ -282,25 +295,27 @@ COVERAGE_WORKLOAD=\
 	whetstone 100
 COVERAGE_CPP_SOURCES=$(wildcard *.cpp)
 COVERAGE_SOURCES=$(filter-out %.pb.h, $(wildcard *.h) $(wildcard *.cpp))
-ifeq ($(coverage-toolchain),gcc)
+ifeq ($(coverage),yes)
+ifeq ($(COVERAGE_TOOLCHAIN),gcc)
 CC=gcc
 CXX=g++
 CXXFLAGS+=-g -Og -fno-dce -fno-inline -DCODE_COVERAGE --coverage
 LDFLAGS+=--coverage
 LCOV_CONFIG=--rc lcov_branch_coverage=1
-else ifeq ($(coverage-toolchain),clang)
+else ifeq ($(COVERAGE_TOOLCHAIN),clang)
 CC=clang
 CXX=clang++
 CXXFLAGS+=-g -O0 -DCODE_COVERAGE -fprofile-instr-generate -fcoverage-mapping
 LDFLAGS+=-fprofile-instr-generate -fcoverage-mapping
 export LLVM_PROFILE_FILE=coverage-%p.profraw
-else ifneq ($(coverage-toolchain),)
-$(error invalid value for coverage-toolchain: $(coverage-toolchain))
+else ifneq ($(COVERAGE_TOOLCHAIN),)
+$(error invalid value for COVERAGE_TOOLCHAIN: $(COVERAGE_TOOLCHAIN))
+endif
 endif
 
 all: luacartesi grpc hash c-api jsonrpc-remote-cartesi-machine
 
-.PHONY: all generate use clean test lint format format-lua check-format check-format-lua luacartesi grpc hash docker c-api compile_flags.txt
+.PHONY: all generate use clean test lint format format-lua check-format check-format-lua luacartesi grpc hash c-api compile_flags.txt
 
 CARTESI_OBJS:= \
 	pma-driver.o \
@@ -404,35 +419,33 @@ cartesi/jsonrpc.so: $(LUACARTESI_JSONRPC_OBJS) $(LIBCARTESI_JSONRPC) $(LIBCARTES
 	$(CXX) $(LDFLAGS) $(SOLDFLAGS) -o $@ $(LUACARTESI_JSONRPC_OBJS) $(LUACARTESI_JSONRPC_LIBS)
 
 test: luacartesi
-	$(LUA) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
+	$(LUA) cartesi-machine-tests.lua --test-path="$(CARTESI_TESTS_PATH)" --test=".*" run
 
 test-uarch-for-coverage:
-	$(MAKE) -C ../third-party/riscv-arch-tests LUA="$(LUA)"
+	$(MAKE) -C ../third-party/riscv-arch-tests LUA='$(LUA)'
 	$(MAKE) -C ../uarch
-	$(LUA) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*csr.*" --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin run_uarch
-	$(LUA) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*csr.*" --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin run_host_and_uarch
+	$(LUA) cartesi-machine-tests.lua --test-path="$(CARTESI_TESTS_PATH)" --test=".*csr.*" --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin run_uarch
+	$(LUA) cartesi-machine-tests.lua --test-path="$(CARTESI_TESTS_PATH)" --test=".*csr.*" --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin run_host_and_uarch
 	$(LUA) tests/htif-yield.lua --uarch --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin
 
 test-hash: hash
-	./tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
+	$(LD_PRELOAD_PREFIX) ./tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
 
-# In order to run tests environment variable TEST_PATH with directory path
+# In order to run tests environment variable CARTESI_TESTS_PATH with directory path
 # to asset files for cartesi machine tests must be set
 test-grpc: luacartesi grpc
-	./tests/test-grpc-server.sh ./remote-cartesi-machine "$(LUA) ./cartesi-machine.lua" "$(LUA) ./cartesi-machine-tests.lua" "$(TEST_PATH)" "$(LUA)"
+	./tests/test-grpc-server.sh ./remote-cartesi-machine '$(LUA) ./cartesi-machine.lua' '$(LUA) ./cartesi-machine-tests.lua' '$(CARTESI_TESTS_PATH)' '$(LUA)'
 
-# In order to run tests environment variable TEST_PATH with directory path
+# In order to run tests environment variable CARTESI_TESTS_PATH with directory path
 # to asset files for cartesi machine tests must be set
 test-jsonrpc: luacartesi jsonrpc
-	./tests/test-jsonrpc-server.sh ./jsonrpc-remote-cartesi-machine "$(LUA) ./cartesi-machine.lua" "$(LUA) ./cartesi-machine-tests.lua" "$(TEST_PATH)" "$(LUA)"
+	./tests/test-jsonrpc-server.sh ./jsonrpc-remote-cartesi-machine '$(LUA) ./cartesi-machine.lua' '$(LUA) ./cartesi-machine-tests.lua' '$(CARTESI_TESTS_PATH)' '$(LUA)'
 
 test-scripts: luacartesi
-	for x in `cat tests/autorun` ; do \
-		echo -n 'CTSICTSI' | $(LUA) tests/$$x local || exit 1; \
-	done
+	./tests/run.sh $(LD_PRELOAD)
 
 test-c-api: c-api remote-cartesi-machine
-	./tests/test-machine-c-api
+	$(LD_PRELOAD_PREFIX) ./tests/test-machine-c-api
 
 test-linux-workload: luacartesi
 	$(LUA) ./cartesi-machine.lua -- "$(COVERAGE_WORKLOAD)"
@@ -468,18 +481,18 @@ generate: CXXFLAGS += -fprofile-generate
 generate: LDFLAGS += -fprofile-generate
 generate: luacartesi
 
-ifeq ($(coverage-toolchain),gcc)
+ifeq ($(COVERAGE_TOOLCHAIN),gcc)
 coverage-report:
 	rm -f *.pb.cc.gcda *.pb.h.gcda
 	gcov --demangled-names --relative-only --branch-probabilities *.gcda
 	lcov --capture --directory . --no-external --exclude '*.pb.*' -o coverage.info $(LCOV_CONFIG) --quiet
-	genhtml --quiet coverage.info --output-directory coverage-gcc $(LCOV_CONFIG)
-	lcov --list coverage.info $(LCOV_CONFIG) | tee coverage.txt
-	lcov --summary coverage.info $(LCOV_CONFIG) | tee -a coverage.txt
-else ifeq ($(coverage-toolchain),clang)
+	genhtml --quiet coverage.info --output-directory $(COVERAGE_OUTPUT_DIR)/gcc $(LCOV_CONFIG)
+	lcov --list coverage.info $(LCOV_CONFIG) | tee $(COVERAGE_OUTPUT_DIR)/coverage.txt
+	lcov --summary coverage.info $(LCOV_CONFIG) | tee -a $(COVERAGE_OUTPUT_DIR)/coverage.txt
+else ifeq ($(COVERAGE_TOOLCHAIN),clang)
 coverage-report:
 	llvm-profdata merge -sparse $(shell find . -name 'coverage*.profraw') -o coverage.profdata
-	llvm-cov show -format=html -output-dir=coverage-clang -instr-profile=coverage.profdata \
+	llvm-cov show -format=html -output-dir=$(COVERAGE_OUTPUT_DIR)/clang -instr-profile=coverage.profdata \
 		./cartesi.so \
 		-object ./cartesi/grpc.so \
 		-object ./cartesi/jsonrpc.so \
@@ -492,12 +505,8 @@ coverage-report:
 		$(COVERAGE_SOURCES)
 endif
 
-ifneq ($(coverage-toolchain),)
-coverage: test-all coverage-report
-endif
-
 valgrind: luacartesi
-	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) cartesi-machine-tests.lua --test-path="$(TEST_PATH)" --test=".*" run
+	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) cartesi-machine-tests.lua --test-path="$(CARTESI_TESTS_PATH)" --test=".*" run
 	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) cartesi-machine.lua --initial-hash --final-hash -- /bin/true
 
 $(PROFILE_DATA_Darwin):
@@ -619,8 +628,8 @@ LOG_DIR = logs/$(CYCLE_PERIOD)
 GROUND_TRUTH_DIR ?= ground-truth
 CONCURRENCY_MERKLE_TREE ?= 0
 
-ifneq ($(wildcard $(TEST_PATH)),)
-TESTS=$(shell find $(TEST_PATH) -name '*.bin' -type f -exec basename {} \;)
+ifneq ($(wildcard $(CARTESI_TESTS_PATH)),)
+TESTS=$(shell find $(CARTESI_TESTS_PATH) -name '*.bin' -type f -exec basename {} \;)
 endif
 TEST_HASHES=$(addprefix $(HASH_DIR)/,$(TESTS:.bin=.hashes))
 TEST_LOGS=$(addprefix $(LOG_DIR)/,$(TESTS:.bin=.json.br))
@@ -655,23 +664,23 @@ compare-hashes: | $(TEST_EACH_CYCLE_HASHES) $(TEST_HASHES)
 		fi \
 	done
 
-$(HASH_EACH_CYCLE_DIR)/%.hashes: $(TEST_PATH)/%.bin | $(HASH_EACH_CYCLE_DIR)
-	$(LUA) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=1 --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
+$(HASH_EACH_CYCLE_DIR)/%.hashes: $(CARTESI_TESTS_PATH)/%.bin | $(HASH_EACH_CYCLE_DIR)
+	$(LUA) cartesi-machine-tests.lua --test-path=$(CARTESI_TESTS_PATH) --test="$(notdir $<)" --periodic-action=1 --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
 
-$(HASH_DIR)/%.hashes: $(TEST_PATH)/%.bin | $(HASH_DIR)
-	$(LUA) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
+$(HASH_DIR)/%.hashes: $(CARTESI_TESTS_PATH)/%.bin | $(HASH_DIR)
+	$(LUA) cartesi-machine-tests.lua --test-path=$(CARTESI_TESTS_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
 	diff $@ $(GROUND_TRUTH_DIR)/$@
 
-$(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(LOG_DIR)
-	$(LUA) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$(basename $@) step
+$(LOG_DIR)/%.json.br: $(CARTESI_TESTS_PATH)/%.bin $(LOG_DIR)
+	$(LUA) cartesi-machine-tests.lua --test-path=$(CARTESI_TESTS_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$(basename $@) step
 	brotli -j -f $(basename $@)
 	diff $@ $(GROUND_TRUTH_DIR)/$@
 
-$(GROUND_TRUTH_DIR)/$(HASH_DIR)/%.hashes: $(TEST_PATH)/%.bin | $(GROUND_TRUTH_DIR)/$(HASH_DIR)
-	$(LUA) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
+$(GROUND_TRUTH_DIR)/$(HASH_DIR)/%.hashes: $(CARTESI_TESTS_PATH)/%.bin | $(GROUND_TRUTH_DIR)/$(HASH_DIR)
+	$(LUA) cartesi-machine-tests.lua --test-path=$(CARTESI_TESTS_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$@ --concurrency=update_merkle_tree:$(CONCURRENCY_MERKLE_TREE) hash
 
-$(GROUND_TRUTH_DIR)/$(LOG_DIR)/%.json.br: $(TEST_PATH)/%.bin $(GROUND_TRUTH_DIR)/$(LOG_DIR)
-	$(LUA) cartesi-machine-tests.lua --test-path=$(TEST_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$(basename $@) step
+$(GROUND_TRUTH_DIR)/$(LOG_DIR)/%.json.br: $(CARTESI_TESTS_PATH)/%.bin $(GROUND_TRUTH_DIR)/$(LOG_DIR)
+	$(LUA) cartesi-machine-tests.lua --test-path=$(CARTESI_TESTS_PATH) --test="$(notdir $<)" --periodic-action=$(CYCLE_PERIOD) --output=$(basename $@) step
 	brotli -j -f $(basename $@)
 
 merkle-tree-hash: $(MERKLE_TREE_HASH_OBJS)
@@ -716,7 +725,7 @@ machine-c-version.h: ../tools/template/machine-c-version.h.template
 jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo '// This file is auto-generated and should not be modified' > jsonrpc-discover.cpp
 	echo 'namespace cartesi {' >> jsonrpc-discover.cpp
-	echo 'extern char const * const jsonrpc_discover_json = R"json(' >> jsonrpc-discover.cpp
+	echo 'extern char const *const jsonrpc_discover_json = R"json(' >> jsonrpc-discover.cpp
 	cat jsonrpc-discover.json >> jsonrpc-discover.cpp
 	echo ')json";' >> jsonrpc-discover.cpp
 	echo '} // namespace cartesi' >> jsonrpc-discover.cpp

@@ -31,8 +31,8 @@ LUA_LIB:=-llua5.4
 LUA_BIN?=lua5.4
 GRPC_DIR:=../lib/grpc-interfaces
 
-PROTOC:=$(BUILDDIR)/bin/protoc
-GRPC_CPP_PLUGIN=$(BUILDDIR)/bin/grpc_cpp_plugin
+PROTOC:=$(shell which protoc)
+GRPC_CPP_PLUGIN=$(shell which grpc_cpp_plugin)
 
 # So we can use gcc to check if there are unused symbols
 ifeq ($(gc),yes)
@@ -60,6 +60,9 @@ CRYPTOPP_INC_Darwin:=-I/usr/local/opt/cryptopp/include
 NLOHMANN_JSON_INC_Darwin:=-I/usr/local/opt/nlohmann-json/include
 B64_LIB_Darwin:=-L/usr/local/opt/libb64/lib -lb64
 B64_INC_Darwin:=-I/usr/local/opt/libb64/include
+GRPC_INC_Darwin=-I/usr/local/opt/gprc/include
+GRPC_LIB_Darwin=-L/usr/local/opt/grpc/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
+PROTOBUF_LIB_Darwin:=-L/usr/local/opt/protobuf/lib -lprotobuf -lpthread
 else # Macports installation
 BOOST_LIB_DIR_Darwin=-L/opt/local/lib
 BOOST_INC_Darwin=-I/opt/local/include
@@ -67,15 +70,15 @@ CRYPTOPP_LIB_Darwin:=-L/opt/local/lib -lcryptopp
 CRYPTOPP_INC_Darwin:=-I/opt/local/include
 B64_LIB_Darwin:=-L/opt/local/lib -lb64
 B64_INC_Darwin:=-I/opt/local/include
+GRPC_INC_Darwin=-I/opt/local/include
+GRPC_LIB_Darwin=-L/opt/local/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
+PROTOBUF_LIB_Darwin:=-L/opt/local/lib -lprotobuf -lpthread
 endif
 endif
 
 BOOST_CORO_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_coroutine-mt -lboost_context-mt
 BOOST_FILESYSTEM_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_system-mt -lboost_filesystem-mt
 BOOST_PROCESS_LIB_Darwin:=-lpthread
-GRPC_INC_Darwin=-I$(BUILDDIR)/include
-GRPC_LIB_Darwin=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
-PROTOBUF_LIB_Darwin:=-L$(BUILDDIR)/lib -lprotobuf -lpthread
 LIBCARTESI_Darwin=libcartesi.dylib
 LIBCARTESI_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_Darwin)'
 LIBCARTESI_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
@@ -104,9 +107,9 @@ B64_LIB_Linux:=-lb64
 B64_INC_Linux:=
 CRYPTOPP_LIB_Linux:=-lcryptopp
 CRYPTOPP_INC_Linux:=
-GRPC_INC_Linux:=-I$(BUILDDIR)/include
-GRPC_LIB_Linux:=-L$(BUILDDIR)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
-PROTOBUF_LIB_Linux:=-L$(BUILDDIR)/lib -lprotobuf -lpthread
+GRPC_INC_Linux:=
+GRPC_LIB_Linux:=-lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
+PROTOBUF_LIB_Linux:=-lprotobuf -lpthread
 LIBCARTESI_Linux=libcartesi.so
 LIBCARTESI_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
 LIBCARTESI_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
@@ -133,6 +136,7 @@ B64_INC=$(B64_INC_$(UNAME))
 CRYPTOPP_LIB=$(CRYPTOPP_LIB_$(UNAME))
 CRYPTOPP_INC=$(CRYPTOPP_INC_$(UNAME))
 NLOHMANN_JSON_INC=$(NLOHMANN_JSON_INC_$(UNAME))
+MONGOOSE_INC=-I$(BUILDDIR)/include
 GRPC_LIB=$(GRPC_LIB_$(UNAME))
 GRPC_INC=$(GRPC_INC_$(UNAME))
 PROTOBUF_LIB=$(PROTOBUF_LIB_$(UNAME))
@@ -168,7 +172,7 @@ WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
 INCS=-I../lib/machine-emulator-defines -I../third-party/llvm-flang-uint128 \
-	$(LUA_INC) $(CRYPTOPP_INC) $(NLOHMANN_JSON_INC) $(B64_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
+	$(LUA_INC) $(CRYPTOPP_INC) $(NLOHMANN_JSON_INC) $(MONGOOSE_INC) $(B64_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS

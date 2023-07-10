@@ -56,10 +56,9 @@ BUILDBASE := $(abspath build)
 BUILDDIR = $(BUILDBASE)/$(UNAME)_$(shell uname -m)
 DOWNLOADDIR := $(DEPDIR)/downloads
 SUBCLEAN := $(addsuffix .clean,$(SRCDIR) uarch third-party/riscv-arch-tests)
-DEPDIRS := $(addprefix $(DEPDIR)/,grpc mongoose-7.9)
+DEPDIRS := $(addprefix $(DEPDIR)/,mongoose-7.9)
 DEPCLEAN := $(addsuffix .clean,$(DEPDIRS))
 COREPROTO := lib/grpc-interfaces/core.proto
-GRPC_VERSION ?= v1.50.0
 LUASOCKET_VERSION ?= 5b18e475f38fcf28429b1cc4b17baee3b9793a62
 LUA_DEFAULT_PATHS = $(LUA_INSTALL_PATH)/?.lua
 LUA_DEFAULT_C_PATHS = $(LUA_INSTALL_CPATH)/?.so
@@ -99,7 +98,7 @@ TOOLCHAIN_TAG ?= 0.11.0
 
 # Check if some binary dependencies already exists on build directory to skip
 # downloading and building them.
-DEPBINS := $(addprefix $(BUILDDIR)/,lib/libgrpc.$(LIB_EXTENSION) include/mongoose.h)
+DEPBINS := $(addprefix $(BUILDDIR)/,include/mongoose.h)
 
 all: source-default
 
@@ -146,16 +145,12 @@ downloads: $(DOWNLOADDIR)
 
 dep: $(DEPBINS)
 	@rm -f $(BUILDDIR)/lib/*.a
-	@$(STRIP_EXEC) \
-		$(BUILDDIR)/bin/grpc* \
-		$(BUILDDIR)/bin/protoc* \
-		$(BUILDDIR)/lib/*.$(LIB_EXTENSION)*
 
 submodules:
 	git submodule update --init --recursive
 
 $(COREPROTO):
-	$(info gprc-interfaces submodule not initialized!)
+	$(info grpc-interfaces submodule not initialized!)
 	@exit 1
 grpc: | $(COREPROTO)
 hash luacartesi grpc test test-all lint coverage check-format check-format-lua check-lua format format-lua:
@@ -173,25 +168,17 @@ $(BUILDDIR)/include/mongoose.h $(BUILDDIR)/lib/libmongoose.a: | $(BUILDDIR) $(DO
 	cp $(DEPDIR)/mongoose-7.9/mongoose.c $(BUILDDIR)/lib
 	cp $(DEPDIR)/mongoose-7.9/mongoose.h $(BUILDDIR)/include
 
-$(DEPDIR)/grpc $(BUILDDIR)/lib/libgrpc.$(LIB_EXTENSION): | $(BUILDDIR)
-	if [ ! -d $(DEPDIR)/grpc ]; then git clone --branch $(GRPC_VERSION) --depth 1 https://github.com/grpc/grpc.git $(DEPDIR)/grpc; fi
-	cd $(DEPDIR)/grpc && git submodule update --init --recursive --depth 1
-	mkdir -p $(DEPDIR)/grpc/cmake/build && cd $(DEPDIR)/grpc/cmake/build && cmake -C $(abspath $(DEPDIR))/grpc.cmake -DCMAKE_INSTALL_PREFIX=$(BUILDDIR) ../..
-	$(MAKE) -C $(DEPDIR)/grpc/cmake/build all install
-	mkdir -p $(BUILDDIR)/share/grpc/health/v1/ && cp -a $(DEPDIR)/grpc/src/proto/grpc/health/v1/health.proto $(BUILDDIR)/share/grpc/health/v1/
-	if [ "$(UNAME)" = "Darwin" ]; then install_name_tool -add_rpath @loader_path/../lib $(BUILDDIR)/bin/grpc_cpp_plugin; fi
-
 $(SUBCLEAN) $(DEPCLEAN): %.clean:
 	$(MAKE) -C $* clean
 
 linux-env:
-	docker run -it --rm -v `pwd`:/opt/emulator -w /opt/emulator cartesi/linux-env:v2
+	docker run -it --rm -v `pwd`:/opt/emulator -w /opt/emulator cartesi/linux-env:$(TAG)
 
 build-linux-env:
-	docker build -t cartesi/linux-env:v2 tools/docker
+	docker build --target linux-env -t cartesi/linux-env:$(TAG) -f Dockerfile .
 
-build-ubuntu-image:
-	docker build -t cartesi/machine-emulator:$(TAG) -f .github/workflows/Dockerfile .
+build-debian-image:
+	docker build -t cartesi/machine-emulator:$(TAG) -f Dockerfile .
 
 toolchain-env:
 	@docker run --hostname toolchain-env -it --rm \
@@ -230,9 +217,9 @@ install-Linux:
 	cd $(LIB_INSTALL_PATH) && for x in `find . -maxdepth 1 -type f -name "*.so*"`; do patchelf --set-rpath $(LIB_INSTALL_PATH) $$x ; done
 	cd $(LUA_INSTALL_CPATH) && for x in `find . -maxdepth 2 -type f -name "*.so"`; do patchelf --set-rpath $(LIB_INSTALL_PATH) $$x ; done
 
-install-dep: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH)
-	cd $(BUILDDIR)/lib && $(INSTALL) $(DEP_TO_LIB) $(LIB_INSTALL_PATH)
-	cd $(LIB_INSTALL_PATH) && $(CHMOD_EXEC) $(DEP_TO_LIB)
+#install-dep: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH)
+#	cd $(BUILDDIR)/lib && $(INSTALL) $(DEP_TO_LIB) $(LIB_INSTALL_PATH)
+#	cd $(LIB_INSTALL_PATH) && $(CHMOD_EXEC) $(DEP_TO_LIB)
 
 install-emulator: $(BIN_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH)
 	cd src && $(INSTALL) $(EMU_TO_BIN) $(BIN_INSTALL_PATH)
@@ -257,7 +244,7 @@ install-strip:
 	cd $(LIB_INSTALL_PATH) && $(STRIP_EXEC) $(DEP_TO_LIB)
 	cd $(LUA_INSTALL_CPATH) && $(STRIP_EXEC) *.so
 
-install: install-dep install-emulator install-strip $(INSTALL_PLAT)
+install: install-emulator install-strip $(INSTALL_PLAT)
 
 .SECONDARY: $(DOWNLOADDIR) $(DEPDIRS) $(COREPROTO)
 

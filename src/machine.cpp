@@ -64,12 +64,16 @@ const pma_entry::flags machine::m_ram_flags{
     PMA_ISTART_DID::memory // DID
 };
 
+// The ROM is not really read-only, this might seem counter-intuitive at first.
+// When we pass a RNG seed in a FDT stored in ROM,
+// Linux will wipe out its contents as a security measure,
+// therefore we need to make ROM writable, otherwise boot will hang.
 const pma_entry::flags machine::m_rom_flags{
     true,                  // R
-    false,                 // W
+    true,                  // W
     true,                  // X
     true,                  // IR
-    false,                 // IW
+    true,                  // IW
     PMA_ISTART_DID::memory // DID
 };
 

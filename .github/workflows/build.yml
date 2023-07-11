@@ -321,7 +321,7 @@ jobs:
       - name: Move images to cartesi images folder
         run: |
           mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}
-          mv rom-*.bin linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}/
+          mv linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}/
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
 
@@ -513,7 +513,7 @@ jobs:
       - name: Move images to cartesi images folder
         run: |
           mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}
-          mv rom-*.bin linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}/
+          mv linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}/
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
 
@@ -611,7 +611,7 @@ jobs:
       - name: Move images to cartesi images folder
         run: |
           mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}
-          mv rom-*.bin linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}/
+          mv linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}/
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
 

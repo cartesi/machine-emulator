@@ -402,8 +402,8 @@ local memory_range_replace = {}
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
 local rom_image_filename = nil
-local rom_bootargs =
-    "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce init=/opt/cartesi/bin/init"
+local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet \z
+                      swiotlb=noforce init=/opt/cartesi/bin/init random.trust_bootloader=on"
 local rollup
 local uarch
 local rollup_advance

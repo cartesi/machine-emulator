@@ -26,6 +26,7 @@
 #include "machine-c-version.h"
 #include "pma-constants.h"
 #include "riscv-constants.h"
+#include "rng-seed.h"
 #include "rom.h"
 #include "rtc.h"
 
@@ -80,6 +81,8 @@ void rom_init_device_tree(const machine_config &c, unsigned char *rom_start, uin
         { // chosen
             fdt.begin_node("chosen");
             fdt.prop_string("bootargs", c.rom.bootargs);
+            // ??(edubart): make this configurable in machine config?
+            fdt.prop("rng-seed", FDT_RNG_SEED, sizeof(FDT_RNG_SEED));
             fdt.end_node();
         }
 

@@ -101,14 +101,6 @@
 #include "translate-virtual-address.h"
 #include "uint128.h"
 
-#define read_csr_or_return_on_failure(func, state_accessor, ret)                                                       \
-    {                                                                                                                  \
-        bool status = false;                                                                                           \
-        ret = func(state_accessor, &status);                                                                           \
-        if (!status)                                                                                                   \
-            return execute_status::failure;                                                                            \
-    }
-
 namespace cartesi {
 
 static const std::array<const char *, X_REG_COUNT> reg_name{"zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0",
@@ -162,7 +154,7 @@ static void dump_exception_or_interrupt(uint64_t cause, STATE &s) {
                 (void) fprintf(stderr, "supervisor software interrupt");
                 break;
             case 2:
-                (void) fprintf(stderr, "reserved software interrupt");
+                (void) fprintf(stderr, "virtual software interrupt");
                 break;
             case 3:
                 (void) fprintf(stderr, "machine software interrupt");
@@ -174,7 +166,7 @@ static void dump_exception_or_interrupt(uint64_t cause, STATE &s) {
                 (void) fprintf(stderr, "supervisor timer interrupt");
                 break;
             case 6:
-                (void) fprintf(stderr, "reserved timer interrupt");
+                (void) fprintf(stderr, "virtual timer interrupt");
                 break;
             case 7:
                 (void) fprintf(stderr, "machine timer interrupt");
@@ -186,7 +178,7 @@ static void dump_exception_or_interrupt(uint64_t cause, STATE &s) {
                 (void) fprintf(stderr, "supervisor external interrupt");
                 break;
             case 10:
-                (void) fprintf(stderr, "reserved external interrupt");
+                (void) fprintf(stderr, "virtual external interrupt");
                 break;
             case 11:
                 (void) fprintf(stderr, "machine external interrupt");
@@ -241,6 +233,18 @@ static void dump_exception_or_interrupt(uint64_t cause, STATE &s) {
                 break;
             case 15:
                 (void) fprintf(stderr, "store/amo page fault");
+                break;
+            case 20:
+                (void) fprintf(stderr, "instruction guest page fault");
+                break;
+            case 21:
+                (void) fprintf(stderr, "load guest page fault");
+                break;
+            case 22:
+                (void) fprintf(stderr, "virtual instruction page fault");
+                break;
+            case 23:
+                (void) fprintf(stderr, "store/amo guest page fault");
                 break;
             default:
                 (void) fprintf(stderr, "reserved");
@@ -562,10 +566,10 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t
     bool interrupt = cause & MCAUSE_INTERRUPT_FLAG;
     if (interrupt) {
         if (mode == MODE_VS || mode == MODE_VU) {
-            read_csr_or_return_on_failure(read_csr_hideleg, a, vsdeleg);
+            vsdeleg = a.read_hideleg();
         }
         if (mode != MODE_M) {
-            read_csr_or_return_on_failure(read_csr_mideleg, a, hsdeleg);
+            hsdeleg = a.read_mideleg();
         }
     } else {
         if (mode == MODE_VS || mode == MODE_VU) {
@@ -1775,25 +1779,17 @@ static inline uint64_t read_csr_hedeleg(STATE_ACCESS &a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_hideleg(STATE_ACCESS &a, bool *status) {
-    auto mideleg = read_csr_mideleg(a, status);
-    // for bits of mideleg that are zero, the corresponding bits in hideleg are read-only zeros
-    return read_csr_success(a.read_hideleg() & mideleg, status);
+    return read_csr_success(a.read_hideleg(), status);
 }
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_hie(STATE_ACCESS &a, bool *status) {
-    auto mideleg = read_csr_mideleg(a, status);
-    // for bits of mideleg that are zero, the corresponding bits in hie are read-only zeros
-    return read_csr_success(a.read_hie() & mideleg, status);
+    return read_csr_success(a.read_hie(), status);
 }
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_hip(STATE_ACCESS &a, bool *status) {
-    auto mideleg = read_csr_mideleg(a, status);
-    const uint64_t mask = MIP_VSEIP_MASK | MIP_VSTIP_MASK | MIP_VSSIP_MASK;
-    auto val = (a.read_hvip() & mask); // ignoring hip.SGEIP as we do not support guest external interrupts
-    //  for bits of mideleg that are zero, the corresponding bits in hip are read-only zeros
-    return read_csr_success(val & mideleg, status);
+    return read_csr_success(a.read_hip(), status);
 }
 
 template <typename STATE_ACCESS>
@@ -1828,9 +1824,7 @@ static inline uint64_t read_csr_vsstatus(STATE_ACCESS &a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_vsie(STATE_ACCESS &a, bool *status) {
-    uint64_t hideleg = a.read_hideleg();
-    uint64_t hie = read_csr_hie(a, status) & hideleg;
-    return hie >> 1; // bits 2, 6, 10 in hie correspond to 1, 5, 9 in vsie
+    return read_csr_success(a.read_vsie(), status);
 }
 
 template <typename STATE_ACCESS>
@@ -1860,10 +1854,7 @@ static inline uint64_t read_csr_vstval(STATE_ACCESS &a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_vsip(STATE_ACCESS &a, bool *status) {
-    auto hideleg = read_csr_hideleg(a, status);
-    auto hip = read_csr_hip(a, status);
-    hip &= hideleg;
-    return hip >> 1; // bits 2, 6, 10 in hip correspond to 1, 5, 9 in vsip
+    return read_csr_success(a.read_vsip(), status);
 }
 
 template <typename STATE_ACCESS>
@@ -2007,7 +1998,7 @@ static inline uint64_t read_csr_medeleg(STATE_ACCESS &a, bool *status) {
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_mideleg(STATE_ACCESS &a, bool *status) {
     auto mideleg = a.read_mideleg();
-    return read_csr_success(mideleg | HIX_R_MASK, status);
+    return read_csr_success(mideleg | HIP_R_MASK, status);
 }
 
 template <typename STATE_ACCESS>
@@ -2393,28 +2384,48 @@ static execute_status write_csr_hstatus(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_hedeleg(STATE_ACCESS &a, uint64_t val) {
-    a.write_hedeleg(val);
+    a.write_hedeleg(val & HEDELEG_W_MASK);
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_hideleg(STATE_ACCESS &a, uint64_t val) {
-    a.write_hideleg(val & HIX_R_MASK);
+    a.write_hideleg(val & HIDELEG_W_MASK);
+
+    // when bits 2, 6, 10 in hideleg are zero, bits 1, 5, 9 in vsie & vsip are read-only zero
+    auto hideleg = a.read_hideleg() >> 1;
+    a.write_vsie(a.read_vsie() & hideleg);
+    a.write_vsip(a.read_vsip() & hideleg);
     return execute_status::success_and_serve_interrupts;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_hie(STATE_ACCESS &a, uint64_t val) {
-    a.write_hie((a.read_hie() & ~HIX_W_MASK) | (val & HIX_W_MASK));
-    a.write_mie((a.read_mie() & ~HIX_W_MASK) | (val & HIX_W_MASK));
+    auto hie = (a.read_hie() & ~HIE_W_MASK) | (val & HIE_W_MASK);
+    a.write_hie(hie);
+
+    a.write_mie((a.read_mie() & ~HIE_W_MASK) | (val & HIE_W_MASK));
+
+    uint64_t hideleg = a.read_hideleg();
+    // when bits 2, 6, 10 in hideleg are zero, bits 1, 5, 9 in vsie are read-only zero
+    uint64_t vsie = (hie & hideleg) >> 1;
+    a.write_vsie(vsie);
+
     return execute_status::success_and_serve_interrupts;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_hip(STATE_ACCESS &a, uint64_t val) {
-    // only hip.VSSIP is writable and is an alias for hvip
-    a.write_hvip((a.read_hvip() & ~MIP_VSSIP_MASK) | (val & MIP_VSSIP_MASK));
-    a.write_mip((a.read_mip() & ~MIP_VSSIP_MASK) | (val & MIP_VSSIP_MASK));
+    auto hip = val & HIP_W_MASK;
+    a.write_hip(hip);
+    a.write_hvip((a.read_hvip() & ~HIP_W_MASK) | hip);
+    a.write_mip((a.read_mip() & ~HIP_W_MASK) | hip);
+
+    // when bits 2, 6, 10 in hideleg are zero, bits 1, 5, 9 in vsip are read-only zero
+    auto hideleg = a.read_hideleg() >> 1;
+    hip >>= 1;
+    a.write_vsip(hip & hideleg);
+
     return execute_status::success_and_serve_interrupts;
 }
 
@@ -2435,8 +2446,21 @@ static execute_status write_csr_hgatp(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_hvip(STATE_ACCESS &a, uint64_t val) {
-    a.write_hvip((a.read_hvip() & ~HIX_R_MASK) | (val & HIX_R_MASK));
-    a.write_mip((a.read_mip() & ~HIX_R_MASK) | (val & HIX_R_MASK));
+    a.write_hvip((a.read_hvip() & ~HVIP_W_MASK) | (val & HVIP_W_MASK));
+    a.write_mip((a.read_mip() & ~HVIP_W_MASK) | (val & HVIP_W_MASK));
+
+    // hip.SGEIP is read-only 0 as we do not support guest external interrupts
+    // hip.VSEIP is the logical-OR of hvip.VSEIP and the bit of hgeip selected by hstatus.VGEIN (not supported)
+    // hip.VSTIP is the logical-OR of hvip.VSTIP and any other platform-specific timer interrupt signal directed to VS-level (not supported)
+    // hip.VSSIP is an alias of hvip.VSSIP
+    // thus, hip = hvip
+    a.write_hip((a.read_hip() & ~HVIP_W_MASK) | (val & HVIP_W_MASK));
+
+    // when bits 2, 6, 10 in hideleg are zero, bits 1, 5, 9 in vsip are read-only zero
+    auto hideleg = a.read_hideleg() >> 1;
+    auto vsip = a.read_hip() >> 1;
+    a.write_vsip(vsip & hideleg);
+
     return execute_status::success_and_serve_interrupts;
 }
 
@@ -2489,10 +2513,19 @@ static execute_status write_csr_vsstatus(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_vsie(STATE_ACCESS &a, uint64_t val) {
+    // when bits 2, 6, 10 in hideleg are zero, bits 1, 5, 9 in vsie are read-only zero
     auto hideleg = a.read_hideleg();
-    auto vsie = val & MIP_W_MASK;
-    auto hie = (vsie << 1) & hideleg; // bits 2, 6, 10 in hie correspond to 1, 5, 9 in vsie
-    return write_csr_hie(a, (a.read_hie() & ~HIX_R_MASK & hideleg) | hie);
+    auto vsie = val & VSIE_RW_MASK & (hideleg >> 1);
+    a.write_vsie(vsie);
+
+    // vsie bits are aliases for the corresponding hie bits
+    auto hie = (a.read_hie() & ~HIE_W_MASK) | (vsie << 1);
+    a.write_hie(hie);
+
+    auto mie = (a.read_mie() & ~MIE_VIRTUAL_RW_MASK) | hie;
+    a.write_mie(mie);
+
+    return execute_status::success_and_serve_interrupts;
 }
 
 template <typename STATE_ACCESS>
@@ -2527,10 +2560,20 @@ static execute_status write_csr_vstval(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_vsip(STATE_ACCESS &a, uint64_t val) {
+    // when bits 2, 6, 10 in hideleg are zero, bits 1, 5, 9 in vsip are read-only zero
     auto hideleg = a.read_hideleg();
-    auto vsip = val & MIP_W_MASK;
-    auto hip = (vsip << 1) & hideleg; // bits 2, 6, 10 in hip correspond to 1, 5, 9 in vsip
-    return write_csr_hip(a, (a.read_hip() & ~HIX_R_MASK & hideleg) | hip);
+    auto vsip = val & VSIP_RW_MASK & (hideleg >> 1);
+    a.write_vsip(vsip);
+
+    // vsip bits are aliases for the corresponding hip bits, and thus hvip bits
+    auto hvip = (a.read_hvip() & ~HVIP_W_MASK) | (vsip << 1);
+    a.write_hvip(hvip);
+    a.write_hip(hvip);
+
+    auto mip = (a.read_mip() & ~MIP_VIRTUAL_RW_MASK) | hvip;
+    a.write_mip(mip);
+
+    return execute_status::success_and_serve_interrupts;
 }
 
 template <typename STATE_ACCESS>
@@ -2582,12 +2625,14 @@ static execute_status write_csr_senvcfg(STATE_ACCESS &a, uint64_t val) {
 template <typename STATE_ACCESS>
 static execute_status write_csr_sie(STATE_ACCESS &a, uint64_t val) {
     if (a.read_iflags_VRT()) {
-        val <<= 1; // bits 1; 5; 9 in vssie correspond to bits 2; 6; 10 in hie
+        uint64_t hideleg = a.read_hideleg();
+        // when bits 2, 6, 10 in hideleg are zero, bits 1, 5, 9 in vsie are read-only zero
+        val <<= 1;
+        val &= hideleg;
+        a.write_hie(val);
 
-        uint64_t mask = 0, hie = 0;
-        read_csr_or_return_on_failure(read_csr_hideleg, a, mask);
-        read_csr_or_return_on_failure(read_csr_hie, a, hie);
-        a.write_hie((hie & ~mask) | (val & mask));
+        uint64_t vsie = val >> 1;
+        a.write_vsie(vsie);
     } else {
         uint64_t mask = a.read_mideleg();
         uint64_t mie = a.read_mie();
@@ -2656,18 +2701,16 @@ template <typename STATE_ACCESS>
 static execute_status write_csr_sip(STATE_ACCESS &a, uint64_t val) {
     // interrupts directed to HS-level continue to be indicated in the HS-level
     // sip register, not in vsip, when machine is in a virtual mode
-    uint64_t mask = 0, mip = 0;
-    read_csr_or_return_on_failure(read_csr_mideleg, a, mask);
-    read_csr_or_return_on_failure(read_csr_mip, a, mip);
+    uint64_t mask = a.read_mideleg();
+    uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     write_csr_mip(a, mip);
 
     // an interrupt that has been delegated to HS-mode (using mideleg) is further
     // delegated to VS-mode if the corresponding hideleg bit is set
     if (a.read_iflags_VRT()) {
-        uint64_t hmask = 0, hip = 0;
-        read_csr_or_return_on_failure(read_csr_hideleg, a, mask);
-        read_csr_or_return_on_failure(read_csr_hip, a, mip);
+        uint64_t hmask = a.read_hideleg();
+        uint64_t hip = a.read_hip();
         hip = (hip & ~hmask) | (val & hmask);
         write_csr_hip(a, hip);
     }
@@ -2688,6 +2731,13 @@ static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
 
     uint64_t old_satp = a.read_satp();
     if (a.read_iflags_VRT()) {
+        uint64_t hstatus = a.read_hstatus();
+        // When VTVM=1, an attempt in VS-mode to access CSR satp raises a virtual instruction
+        // exception
+        if (unlikely(priv == PRV_S && (hstatus & HSTATUS_VTVM_MASK))) {
+            return execute_status::failure;
+        }
+
         old_satp = a.read_vsatp();
     }
     uint64_t atp = old_satp;
@@ -2826,16 +2876,27 @@ static execute_status write_csr_menvcfg(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_medeleg(STATE_ACCESS &a, uint64_t val) {
-    a.write_medeleg(val);
+    a.write_medeleg(val & MEDELEG_W_MASK);
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mideleg(STATE_ACCESS &a, uint64_t val) {
-    const uint64_t mask = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
     uint64_t mideleg = a.read_mideleg();
-    mideleg = (mideleg & ~mask) | (val & mask);
+    mideleg = (mideleg & ~MIDELEG_W_MASK) | (val & MIDELEG_W_MASK);
     a.write_mideleg(mideleg);
+
+    // for bits of mideleg that are zero, the corresponding bits in hideleg, hip and hie are read-only zeros
+    a.write_hip(a.read_hip() & mideleg);
+    a.write_hie(a.read_hie() & mideleg);
+    a.write_hideleg(a.read_hideleg() & mideleg);
+
+    // when bits 2, 6, 10 in hideleg are zero, bits 1, 5, 9 in vsie and vsip are read-only zero
+    uint64_t vsie = (a.read_hie() & a.read_hideleg()) >> 1;
+    uint64_t vsip = (a.read_hip() & a.read_hideleg()) >> 1;
+    a.write_vsie(vsie);
+    a.write_vsip(vsip);
+
     return execute_status::success_and_serve_interrupts;
 }
 
@@ -2844,8 +2905,12 @@ static execute_status write_csr_mie(STATE_ACCESS &a, uint64_t val) {
     uint64_t mie = (a.read_mie() & ~MIE_W_MASK) | (val & MIE_W_MASK);
     a.write_mie(mie);
 
-    uint64_t hie = (a.read_hie() & ~HIX_W_MASK) | (val & HIX_W_MASK);
-    write_csr_hie(a, hie);
+    uint64_t hie = (a.read_hie() & ~HIE_W_MASK) | (val & HIE_W_MASK);
+    a.write_hie(hie);
+
+    // when bits 2, 6, 10 in hideleg are zero, bits 1, 5, 9 in vsie are read-only zero
+    uint64_t vsie = (a.read_hie() & a.read_hideleg()) >> 1;
+    a.write_vsie(vsie);
 
     return execute_status::success_and_serve_interrupts;
 }
@@ -2912,8 +2977,16 @@ template <typename STATE_ACCESS>
 static execute_status write_csr_mip(STATE_ACCESS &a, uint64_t val) {
     uint64_t mip = (a.read_mip() & ~MIP_W_MASK) | (val & MIP_W_MASK);
     a.write_mip(mip);
-    uint64_t hip = (a.read_hip() & ~HIX_W_MASK) | (val & HIX_W_MASK);
-    write_csr_hip(a, hip);
+
+    uint64_t hvip = (a.read_hvip() & ~HVIP_W_MASK) | (val & HVIP_W_MASK);
+    a.write_hvip(hvip);
+    // writing hvip here because hip is effectively a read-only hip version
+    a.write_hip(hvip);
+
+    // when bits 2, 6, 10 in hideleg are zero, bits 1, 5, 9 in vsip are read-only zero
+    auto vsip = (a.read_hip() & a.read_hideleg()) >> 1;
+    a.write_vsip(vsip);
+
     return execute_status::success_and_serve_interrupts;
 }
 
@@ -3166,7 +3239,6 @@ static NO_INLINE execute_status write_csr(STATE_ACCESS &a, uint64_t mcycle, CSR_
         case CSR_address::tdata2:
         case CSR_address::tdata3:
         case CSR_address::htinst:
-        case CSR_address::hgeip:
         case CSR_address::hgeie:
         case CSR_address::hcounteren:
             return execute_status::success;
@@ -3422,7 +3494,11 @@ static FORCE_INLINE execute_status execute_MRET(STATE_ACCESS &a, uint64_t &pc, u
     if (mpp == PRV_M) {
         a.reset_iflags_VRT();
     } else {
-        mpv ? a.set_iflags_VRT() : a.reset_iflags_VRT();
+        if (mpv) {
+            a.set_iflags_VRT();
+        } else {
+            a.reset_iflags_VRT();
+        }
     }
 
     //??D we can save one shift here, but maybe the compiler already does
@@ -4167,20 +4243,19 @@ static execute_status execute_HINVAL_GVMA(STATE_ACCESS &a, uint64_t &pc, uint32_
 }
 
 template <typename STATE_ACCESS>
-static inline bool check_HV_insn_allowed(STATE_ACCESS &a, MODE_constants &access_mode, uint64_t &pc, uint32_t insn) {
+static inline execute_status check_HV_insn_allowed(STATE_ACCESS &a, MODE_constants &access_mode, uint64_t &pc, uint32_t insn) {
     auto mode = current_mode(a);
     auto vrt = (mode & ACCESS_MODE_VRT_MASK) >> ACCESS_MODE_VRT_SHIFT;
     // HV instructions are not allowed in virtual mode
     if (unlikely(vrt)) {
         pc = raise_exception(a, pc, MCAUSE_VIRTUAL_INSTRUCTION, pc, 0);
-        return false;
+        return execute_status::failure;
     }
-    uint64_t hstatus = 0;
-    read_csr_or_return_on_failure(read_csr_hstatus, a, hstatus);
+    uint64_t hstatus = a.read_hstatus();
     // HV instructions are not allowed in user mode unless hstatus.HU is set
     if (unlikely(mode == MODE_U && !(hstatus & HSTATUS_HU_MASK))) {
         pc = raise_exception(a, pc, MCAUSE_ILLEGAL_INSN, insn, 0);
-        return false;
+        return execute_status::failure;
     }
 
     // hstatus.SPVP controls the privilege level of access
@@ -4190,15 +4265,16 @@ static inline bool check_HV_insn_allowed(STATE_ACCESS &a, MODE_constants &access
     }
     // HV instructions perform a memory access as though we are in a virtual mode
     access_mode = encode_access_mode(priv, true);
-    return true;
+    return execute_status::success;
 }
 
 template <typename T, typename STATE_ACCESS>
-static inline execute_status do_execute_HLV(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn,
+static inline execute_status execute_HLV(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn,
     uint8_t xwr_shift) {
     MODE_constants access_mode = MODE_U;
-    if (unlikely(!check_HV_insn_allowed(a, access_mode, pc, insn))) {
-        return execute_status::failure;
+    auto hv_allowed = check_HV_insn_allowed(a, access_mode, pc, insn);
+    if (unlikely(hv_allowed != execute_status::success)) {
+        return hv_allowed;
     }
 
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));
@@ -4225,7 +4301,7 @@ static inline execute_status do_execute_HLV(STATE_ACCESS &a, uint64_t &pc, uint6
 
 template <typename T, typename STATE_ACCESS>
 static inline execute_status execute_HLV(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
-    return do_execute_HLV<T, STATE_ACCESS>(a, pc, mcycle, insn, PTE_XWR_R_SHIFT);
+    return execute_HLV<T, STATE_ACCESS>(a, pc, mcycle, insn, PTE_XWR_R_SHIFT);
 }
 
 /// \brief Implementation of the HLV.B instruction.
@@ -4272,7 +4348,7 @@ static execute_status execute_HLV_WU(STATE_ACCESS &a, uint64_t &pc, uint64_t mcy
 
 template <typename T, typename STATE_ACCESS>
 static inline execute_status execute_HLVX(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
-    return do_execute_HLV<T, STATE_ACCESS>(a, pc, mcycle, insn, PTE_XWR_X_SHIFT);
+    return execute_HLV<T, STATE_ACCESS>(a, pc, mcycle, insn, PTE_XWR_X_SHIFT);
 }
 
 /// \brief Implementation of the HLVX.HU instruction.
@@ -4299,8 +4375,9 @@ static execute_status execute_HLV_D(STATE_ACCESS &a, uint64_t &pc, uint64_t mcyc
 template <typename T, typename STATE_ACCESS>
 static inline execute_status execute_HSV(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     MODE_constants access_mode = MODE_U;
-    if (!check_HV_insn_allowed(a, access_mode, pc, insn)) {
-        return execute_status::failure;
+    auto hv_allowed = check_HV_insn_allowed(a, access_mode, pc, insn);
+    if (unlikely(hv_allowed != execute_status::success)) {
+        return hv_allowed;
     }
 
     uint64_t vaddr = a.read_x(insn_get_rs1(insn));

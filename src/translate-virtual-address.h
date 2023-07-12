@@ -109,7 +109,7 @@ static constexpr uint8_t to_mcause_code() {
 }
 
 template <typename STATE_ACCESS, uint8_t TRANSLATION_MODE, uint8_t ACCESS_TYPE, bool UPDATE_PTE>
-static uint8_t do_translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift,
+static uint8_t translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift,
     uint8_t priv) {
     bool mxr = false;
     bool sum = false;
@@ -201,7 +201,7 @@ static uint8_t do_translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, u
             // ```
             // Thus, here we apply G-stage translation to the PTE address.
             uint64_t pte_addr_g = 0;
-            int ret = do_translate_virtual_address<STATE_ACCESS, TRANSLATION_G, ACCESS_TYPE_LOAD, UPDATE_PTE>(a,
+            int ret = translate_virtual_address<STATE_ACCESS, TRANSLATION_G, ACCESS_TYPE_LOAD, UPDATE_PTE>(a,
                 &pte_addr_g, pte_addr, xwr_shift, priv);
             if (ret) {
                 *ppaddr = pte_addr;
@@ -333,16 +333,16 @@ static uint8_t translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint
 
     if (unlikely(virt)) {
         uint64_t guest_paddr = 0;
-        int ret = details::do_translate_virtual_address<STATE_ACCESS, TRANSLATION_VS, ACCESS_TYPE, UPDATE_PTE>(a,
+        int ret = details::translate_virtual_address<STATE_ACCESS, TRANSLATION_VS, ACCESS_TYPE, UPDATE_PTE>(a,
             &guest_paddr, vaddr, xwr_shift, priv);
         if (unlikely(ret)) {
             return ret;
         }
         // for G-stage translation guest-page-fault exceptions are raised instead of regular page-fault exceptions
-        return details::do_translate_virtual_address<STATE_ACCESS, TRANSLATION_G, ACCESS_TYPE, UPDATE_PTE>(a, ppaddr,
+        return details::translate_virtual_address<STATE_ACCESS, TRANSLATION_G, ACCESS_TYPE, UPDATE_PTE>(a, ppaddr,
             guest_paddr, xwr_shift, priv);
     } else {
-        return details::do_translate_virtual_address<STATE_ACCESS, TRANSLATION_HS, ACCESS_TYPE, UPDATE_PTE>(a, ppaddr,
+        return details::translate_virtual_address<STATE_ACCESS, TRANSLATION_HS, ACCESS_TYPE, UPDATE_PTE>(a, ppaddr,
             vaddr, xwr_shift, priv);
     }
 }

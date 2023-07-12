@@ -18,7 +18,7 @@
 #include <uarch-defines.h>
 
 .section .text.init;
-.align 3;
+.align 2;
 .global _start;
 _start:    
     // Initialize stack

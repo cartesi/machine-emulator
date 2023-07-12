@@ -20,7 +20,11 @@ CXX := $(TOOLCHAIN_PREFIX)g++
 OBJCOPY := $(TOOLCHAIN_PREFIX)objcopy
 OBJDUMP := $(TOOLCHAIN_PREFIX)objdump
 
-#
+# Instructions supported by the microarchitecture interpreter (rv64ui)
+SUPPORTED_UARCH_INSN := add|addi|addiw|addw|and|andi|auipc|beq|bge|bgeu|blt|bltu|bne|ebreak|fence|jal|jalr|lb|lbu|ld|lh|$\
+	lhu|lui|lw|lwu|or|ori|sb|sd|sh|sll|slli|slliw|sllw|slt|slti|sltiu|sltu|sra|srai|sraiw|sraw|srl|srli|srliw|srlw|sub|$\
+	subw|sw|xor|xori
+
 ifeq ($(relwithdebinfo),yes)
 OPTFLAGS+=-O2 -DNDEBUG -g
 else ifeq ($(release),yes)
@@ -74,9 +78,9 @@ UARCH_OBJS = $(patsubst %.c,%.uarch_c.o,$(patsubst %.cpp,%.uarch_cpp.o,$(UARCH_S
 EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,$(EMULATOR_SOURCES)))
 TARGETS=$(UARCH_OBJS) $(EMULATOR_OBJS)
 
-.PHONY: all clean
+.PHONY: all clean validate-instruction-set
 
-all: $(TARGETS) uarch-ram.bin
+all: $(TARGETS) uarch-ram.bin  validate-instruction-set
 
 uarch-ram.bin: uarch-ram.elf
 	$(OBJCOPY) -S -O binary  $^ $@
@@ -100,5 +104,18 @@ uarch-ram-entry.o: uarch-ram-entry.S
 	$(CC) -o $(@F).tmp -x c $(CFLAGS) -E $(^F)
 	grep -v '^#' $@.tmp > $@
 
+uarch-ram.elf.insn.txt: uarch-ram.elf.objdump
+	grep -oP '^\s*[0-9a-f]{8}\:\s+[0-9a-f]{4,8}\s+\K[a-z]\S+' $(^F) | sort -u > $@
+
+uarch-ram.elf.objdump: uarch-ram.elf
+	@$(OBJDUMP) -M no-aliases  -d $(^F) > $@
+
+validate-instruction-set: uarch-ram.elf.insn.txt
+	@grep  -v -w -E "$(SUPPORTED_UARCH_INSN)" $(<F);\
+	if [ $$? -eq 0 ]; then\
+		echo "Unsupported uarch instruction(s) detected. See objdump output in in uarch-ram.elf.objdump"; \
+		false;\
+	fi
+
 clean:
-	rm -f *.ld *.elf *.bin *.tmp link.ld *.o
+	rm -f *.ld *.elf *.bin *.tmp link.ld *.o uarch-ram.elf.insn.txt uarch-ram.elf.objdump

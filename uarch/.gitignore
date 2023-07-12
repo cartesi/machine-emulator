@@ -5,3 +5,7 @@
 *.bin
 .DS_Store
 .vscode
+uarch-ram.elf.insn.txt
+uarch-ram.elf.objdump
+
+

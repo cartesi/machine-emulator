@@ -183,6 +183,7 @@ toolchain-env:
 		-e GROUP=$$(id -g -n) \
 		-e UID=$$(id -u) \
 		-e GID=$$(id -g) \
+		$(if $(TOOLCHAIN_PREFIX), -e TOOLCHAIN_PREFIX=$(TOOLCHAIN_PREFIX), ) \
 		-v `pwd`:/opt/cartesi/machine-emulator \
 		-w /opt/cartesi/machine-emulator \
 		$(TOOLCHAIN_IMAGE):$(TOOLCHAIN_TAG) /bin/bash
@@ -193,6 +194,7 @@ toolchain-exec:
 		-e GROUP=$$(id -g -n) \
 		-e UID=$$(id -u) \
 		-e GID=$$(id -g) \
+		$(if $(TOOLCHAIN_PREFIX), -e TOOLCHAIN_PREFIX=$(TOOLCHAIN_PREFIX), ) \
 		-v `pwd`:/opt/cartesi/machine-emulator \
 		-w /opt/cartesi/machine-emulator \
 		$(TOOLCHAIN_IMAGE):$(TOOLCHAIN_TAG) /bin/bash -c "$(CONTAINER_COMMAND)"

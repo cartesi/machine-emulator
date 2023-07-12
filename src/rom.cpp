@@ -154,13 +154,10 @@ void rom_init_device_tree(const machine_config &c, unsigned char *rom_start, uin
         // flash
         int drive_index = 0;
         for (const auto &f : c.flash_drive) {
-            fdt.begin_node_num("flash", f.start);
-            fdt.prop_u32("#address-cells", 2);
-            fdt.prop_u32("#size-cells", 2);
-            fdt.prop_string("compatible", "mtd-ram");
-            fdt.prop_u32("bank-width", 4);
+            fdt.begin_node_num("pmem", f.start);
+            fdt.prop_string("compatible", "pmem-region");
             fdt.prop_u64_list<2>("reg", {f.start, f.length});
-            fdt.prop_string("linux,mtd-name", "flash."s + std::to_string(drive_index));
+            fdt.prop_empty("volatile");
             fdt.end_node();
             drive_index++;
         }

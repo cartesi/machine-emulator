@@ -90,7 +90,7 @@ local function build_machine(exec_args)
         },
         rom = {
             bootargs = (
-                "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw "
+                "console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw "
                 .. "quiet mtdparts=flash.0:-(root) -- "
                 .. exec_args
             ),

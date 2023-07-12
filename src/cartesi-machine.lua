@@ -89,7 +89,7 @@ where options are:
 
   --flash-drive=<key>:<value>[,<key>:<value>[,...]...]
     defines a new flash drive, or modify an existing flash drive definition
-    flash drives appear as /dev/mtdblock[1-7].
+    flash drives appear as /dev/pmem[1-7].
 
     <key>:<value> is one of
         label:<label>
@@ -402,7 +402,7 @@ local memory_range_replace = {}
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
 local rom_image_filename = nil
-local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet \z
+local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw quiet \z
                       swiotlb=noforce random.trust_bootloader=on"
 local rollup
 local uarch
@@ -1359,18 +1359,13 @@ else
         uarch = uarch,
         flash_drive = {},
     }
-    local mtdparts = {}
-    for i, label in ipairs(flash_label_order) do
+    for _, label in ipairs(flash_label_order) do
         config.flash_drive[#config.flash_drive + 1] = {
             image_filename = flash_image_filename[label],
             shared = flash_shared[label],
             start = flash_start[label],
             length = flash_length[label] or -1,
         }
-        mtdparts[#mtdparts + 1] = string.format("flash.%d:-(%s)", i - 1, label)
-    end
-    if #mtdparts > 0 then
-        config.rom.bootargs = append(config.rom.bootargs, "mtdparts=" .. table.concat(mtdparts, ";"))
     end
 
     config.rom.bootargs = append(append(config.rom.bootargs, append_rom_bootargs), quiet and " splash=no" or "")

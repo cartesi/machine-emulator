@@ -426,6 +426,8 @@ local function test_config(config)
     local rom = config.rom
     assert(rom.image_filename == nil or type(rom.image_filename) == "string", "invalid rom.image_filename")
     assert(rom.bootargs == nil or type(rom.bootargs) == "string", "invalid rom.bootargs")
+    assert(rom.init == nil or type(rom.init) == "string", "invalid rom.init")
+    assert(rom.entrypoint == nil or type(rom.entrypoint) == "string", "invalid rom.entrypoint")
     local tlb = config.tlb
     assert(tlb.image_filename == nil or type(tlb.image_filename) == "string", "invalid tlb.image_filename")
     for _, f in ipairs(config.flash_drive) do

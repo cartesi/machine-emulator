@@ -793,6 +793,8 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, rom_config &value, 
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
     ju_get_opt_field(jconfig, "bootargs"s, value.bootargs, new_path);
+    ju_get_opt_field(jconfig, "init"s, value.init, new_path);
+    ju_get_opt_field(jconfig, "entrypoint"s, value.entrypoint, new_path);
     ju_get_opt_field(jconfig, "image_filename"s, value.image_filename, new_path);
 }
 
@@ -1135,6 +1137,8 @@ void to_json(nlohmann::json &j, const ram_config &config) {
 void to_json(nlohmann::json &j, const rom_config &config) {
     j = nlohmann::json{
         {"bootargs", config.bootargs},
+        {"init", config.init},
+        {"entrypoint", config.entrypoint},
         {"image_filename", config.image_filename},
     };
 }

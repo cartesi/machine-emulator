@@ -199,6 +199,8 @@ typedef struct {                // NOLINT(modernize-use-using)
 /// \brief ROM state configuration
 typedef struct {                // NOLINT(modernize-use-using)
     const char *bootargs;       ///< Bootargs to pass to kernel
+    const char *init;           ///< Initialization commands to be executed as root on boot
+    const char *entrypoint;     ///< Commands to execute the main application
     const char *image_filename; ///< ROM image file
 } cm_rom_config;
 

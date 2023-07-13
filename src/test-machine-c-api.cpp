@@ -222,6 +222,8 @@ protected:
         target->ram.image_filename = new_cstr(source->ram.image_filename);
 
         target->rom.bootargs = new_cstr(source->rom.bootargs);
+        target->rom.init = new_cstr(source->rom.init);
+        target->rom.entrypoint = new_cstr(source->rom.entrypoint);
         target->rom.image_filename = new_cstr(source->rom.image_filename);
 
         target->flash_drive.count = source->flash_drive.count;
@@ -248,6 +250,8 @@ protected:
         delete[] config->flash_drive.entry;
         delete[] config->rom.image_filename;
         delete[] config->rom.bootargs;
+        delete[] config->rom.init;
+        delete[] config->rom.entrypoint;
         delete[] config->ram.image_filename;
         delete[] config->uarch.ram.image_filename;
     }
@@ -462,7 +466,8 @@ bool operator==(const cm_ram_config &lhs, const cm_ram_config &rhs) {
 }
 
 bool operator==(const cm_rom_config &lhs, const cm_rom_config &rhs) {
-    return ((strcmp(lhs.bootargs, rhs.bootargs) == 0) && (strcmp(lhs.image_filename, rhs.image_filename) == 0));
+    return ((strcmp(lhs.bootargs, rhs.bootargs) == 0) && (strcmp(lhs.init, rhs.init) == 0) &&
+        (strcmp(lhs.entrypoint, rhs.entrypoint) == 0) && (strcmp(lhs.image_filename, rhs.image_filename) == 0));
 }
 
 bool operator==(const cm_tlb_config &lhs, const cm_tlb_config &rhs) {

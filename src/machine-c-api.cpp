@@ -190,6 +190,8 @@ static cm_ram_config convert_to_c(const cartesi::ram_config &cpp_config) {
 static cartesi::rom_config convert_from_c(const cm_rom_config *c_config) {
     cartesi::rom_config new_cpp_rom_config{};
     new_cpp_rom_config.bootargs = null_to_empty(c_config->bootargs);
+    new_cpp_rom_config.init = null_to_empty(c_config->init);
+    new_cpp_rom_config.entrypoint = null_to_empty(c_config->entrypoint);
     new_cpp_rom_config.image_filename = null_to_empty(c_config->image_filename);
     return new_cpp_rom_config;
 }
@@ -197,6 +199,8 @@ static cartesi::rom_config convert_from_c(const cm_rom_config *c_config) {
 static cm_rom_config convert_to_c(const cartesi::rom_config &cpp_config) {
     cm_rom_config new_c_rom_config{};
     new_c_rom_config.bootargs = convert_to_c(cpp_config.bootargs);
+    new_c_rom_config.init = convert_to_c(cpp_config.init);
+    new_c_rom_config.entrypoint = convert_to_c(cpp_config.entrypoint);
     new_c_rom_config.image_filename = convert_to_c(cpp_config.image_filename);
     return new_c_rom_config;
 }
@@ -703,6 +707,8 @@ void cm_delete_machine_config(const cm_machine_config *config) {
     delete[] config->flash_drive.entry;
     delete[] config->rom.image_filename;
     delete[] config->rom.bootargs;
+    delete[] config->rom.init;
+    delete[] config->rom.entrypoint;
     delete[] config->ram.image_filename;
     delete[] config->tlb.image_filename;
     delete[] config->rollup.rx_buffer.image_filename;

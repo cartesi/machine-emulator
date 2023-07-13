@@ -76,6 +76,8 @@ struct ram_config final {
 /// \brief ROM state configuration
 struct rom_config final {
     std::string bootargs{};       ///< Bootargs to pass to kernel
+    std::string init{};           ///< Initialization commands to be executed as root on boot
+    std::string entrypoint{};     ///< Commands to execute the main application
     std::string image_filename{}; ///< ROM image file
 };
 

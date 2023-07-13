@@ -1460,6 +1460,12 @@
           "bootargs": {
             "type": "string"
           },
+          "init": {
+            "type": "string"
+          },
+          "entrypoint": {
+            "type": "string"
+          },
           "image_filename": {
             "type": "string"
           }

@@ -46,6 +46,8 @@ void set_proto_rollup(const rollup_config &r, CartesiMachine::RollupConfig *prot
 void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineConfig *proto_c) {
     auto *proto_rom = proto_c->mutable_rom();
     proto_rom->set_bootargs(c.rom.bootargs);
+    proto_rom->set_init(c.rom.init);
+    proto_rom->set_entrypoint(c.rom.entrypoint);
     proto_rom->set_image_filename(c.rom.image_filename);
     auto *proto_ram = proto_c->mutable_ram();
     proto_ram->set_length(c.ram.length);
@@ -814,6 +816,8 @@ machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &pro
     }
     if (proto_c.has_rom()) {
         c.rom.bootargs = proto_c.rom().bootargs();
+        c.rom.init = proto_c.rom().init();
+        c.rom.entrypoint = proto_c.rom().entrypoint();
         c.rom.image_filename = proto_c.rom().image_filename();
     }
     if (proto_c.has_ram()) {

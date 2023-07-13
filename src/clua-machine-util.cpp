@@ -776,6 +776,12 @@ static void push_cm_rom_config(lua_State *L, const cm_rom_config *r) {
     if (r->bootargs != nullptr) {
         clua_setstringfield(L, r->bootargs, "bootargs", -1);
     }
+    if (r->init != nullptr) {
+        clua_setstringfield(L, r->init, "init", -1);
+    }
+    if (r->entrypoint != nullptr) {
+        clua_setstringfield(L, r->entrypoint, "entrypoint", -1);
+    }
     if (r->image_filename != nullptr) {
         clua_setstringfield(L, r->image_filename, "image_filename", -1);
     }
@@ -950,6 +956,8 @@ static void check_cm_rom_config(lua_State *L, int tabidx, cm_rom_config *r) {
     }
     r->image_filename = opt_copy_string_field(L, -1, "image_filename");
     r->bootargs = opt_copy_string_field(L, -1, "bootargs");
+    r->init = opt_copy_string_field(L, -1, "init");
+    r->entrypoint = opt_copy_string_field(L, -1, "entrypoint");
     lua_pop(L, 1);
 }
 

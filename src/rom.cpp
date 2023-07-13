@@ -86,10 +86,12 @@ void rom_init_device_tree(const machine_config &c, unsigned char *rom_start, uin
             fdt.end_node();
         }
 
-        // We add emulator version, so can inspect it from inside the machine by reading the FDT
-        { // cartesi-machine
-            fdt.begin_node("cartesi-machine");
-            fdt.prop_string("version", CM_VERSION);
+        { // cartesi
+            fdt.begin_node("cartesi");
+            // We add emulator version, so can inspect it from inside the machine by reading the FDT
+            fdt.prop_string_data("version", CM_VERSION);
+            fdt.prop_string_data("init", c.rom.init);
+            fdt.prop_string_data("entrypoint", c.rom.entrypoint);
             fdt.end_node();
         }
 

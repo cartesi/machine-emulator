@@ -404,6 +404,7 @@ local ram_length = 64 << 20
 local rom_image_filename = nil
 local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw quiet \z
                       swiotlb=noforce random.trust_bootloader=on"
+local init_commands = ""
 local rollup
 local uarch
 local rollup_advance
@@ -411,7 +412,7 @@ local rollup_inspect
 local concurrency_update_merkle_tree = 0
 local skip_root_hash_check = false
 local skip_version_check = false
-local append_rom_bootargs = ""
+local append_rom_bootargs
 local htif_no_console_putchar = false
 local htif_console_getchar = false
 local htif_yield_automatic = false
@@ -1278,14 +1279,6 @@ local function dump_value_proofs(machine, desired_proofs, has_htif_console_getch
     end
 end
 
-local function append(a, b)
-    a = a or ""
-    b = b or ""
-    if a == "" then return b end
-    if b == "" then return a end
-    return a .. " " .. b
-end
-
 local function create_machine(config_or_dir, runtime)
     if remote then return remote.machine(config_or_dir, runtime) end
     return cartesi.machine(config_or_dir, runtime)
@@ -1345,6 +1338,7 @@ else
         rom = {
             image_filename = rom_image_filename,
             bootargs = rom_bootargs,
+            init = init_commands,
         },
         ram = {
             image_filename = ram_image_filename,
@@ -1360,19 +1354,44 @@ else
         flash_drive = {},
     }
     for _, label in ipairs(flash_label_order) do
+        local devname = "pmem" .. #config.flash_drive
         config.flash_drive[#config.flash_drive + 1] = {
             image_filename = flash_image_filename[label],
             shared = flash_shared[label],
             start = flash_start[label],
             length = flash_length[label] or -1,
         }
+        if label ~= "root" then
+            config.rom.init = config.rom.init
+                .. ([[
+  busybox mkdir "/mnt/LABEL" && \
+  busybox mount "/dev/DEVNAME" "/mnt/LABEL"
+  ]]):gsub("LABEL", label):gsub("DEVNAME", devname)
+        end
     end
 
-    config.rom.bootargs = append(append(config.rom.bootargs, append_rom_bootargs), quiet and " splash=no" or "")
+    if append_rom_bootargs then config.rom.bootargs = config.rom.bootargs .. " " .. append_rom_bootargs end
 
-    if #exec_arguments > 0 then
-        config.rom.bootargs = append(config.rom.bootargs, "-- " .. table.concat(exec_arguments, " "))
+    if not quiet then
+        config.rom.init = config.rom.init
+            .. ([[
+cat <<EOF
+
+         .
+        / \
+      /    \
+\---/---\  /----\
+ \       X       \
+  \----/  \---/---\
+       \    / CARTESI
+        \ /   MACHINE
+         '    VERSION
+
+EOF
+]]):gsub("\n", "\r\n"):gsub("VERSION", "v" .. cartesi.VERSION)
     end
+
+    if #exec_arguments > 0 then config.rom.entrypoint = table.concat(exec_arguments, " ") end
 
     if load_config then
         local env = {}
